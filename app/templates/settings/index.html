@@ -812,7 +812,7 @@
           </div>
           <div class="fw-card-body">
             <p class="text-muted mb-3" style="font-size:13px;">
-              The proactive health engine (<code>satom-alerts.timer</code>, every 15&nbsp;min) checks cert expiry, git divergence, device reachability, backup freshness and config drift, then notifies by <strong>{{ _('email + in-app bell') }}</strong>{{ _('. Email uses the transport configured above — set it to external SMTP if the local relay can\'t reach your inbox.') }}
+              The proactive health engine (<code>satom-alerts.timer</code>, every 15&nbsp;min) checks cert expiry, git divergence, device reachability, backup freshness and config drift, then routes each finding to the sinks below — <strong>{{ _('in-app bell, email, and a syslog/CEF feed') }}</strong>{{ _('. Email uses the transport configured above — set it to external SMTP if the local relay can\'t reach your inbox.') }}
             </p>
             <form method="POST" action="{{ url_for('settings.save_alerts') }}">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -897,6 +897,108 @@
                   </div>
                 </div>
               </div>
+              <hr class="my-4">
+              <label class="fw-form-label mb-1"><i class="bi bi-diagram-3 me-1"></i>{{ _('Delivery sinks') }}</label>
+              <div class="form-text mb-2">
+                {{ _('Each sink decides for itself how bad a finding has to be and which family it has to belong to. A sink with no family ticked delivers nothing and says so.') }}
+                <strong>{{ _('Engine failures — and any finding from a check this router does not recognise — ignore both filters:') }}</strong>
+                {{ _('a channel silenced by a broken check is indistinguishable from a healthy quiet one.') }}
+              </div>
+              <div class="fw-table-wrapper">
+                <table class="table fw-table align-middle mb-0" style="font-size:13px;">
+                  <thead>
+                    <tr>
+                      <th style="width:180px;">{{ _('Sink') }}</th>
+                      <th style="width:70px;">{{ _('On') }}</th>
+                      <th style="width:180px;">{{ _('Minimum severity') }}</th>
+                      <th>{{ _('Families delivered') }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                  {% for sk in ['in_app', 'email', 'syslog'] %}
+                    {% set s = alerts_config.sinks[sk] %}
+                    <tr>
+                      <td>
+                        <strong>{{ s.label }}</strong>
+                        {% if s.silent %}<div><span class="fw-badge fw-badge-danger">{{ _('delivers nothing') }}</span></div>{% endif %}
+                        {% if sk == 'syslog' %}<div class="text-muted" style="font-size:12px;">{{ _('no cooldown — a record, not a recipient') }}</div>{% endif %}
+                        {% if sk == 'email' %}<div class="text-muted" style="font-size:12px;">{{ _('also needs the master switch above') }}</div>{% endif %}
+                      </td>
+                      <td>
+                        <input type="hidden" name="{{ sk }}_checks_submitted" value="1">
+                        <div class="form-check form-switch">
+                          <input class="form-check-input" type="checkbox" name="{{ sk }}_enabled"
+                                 id="al-sink-{{ sk }}" {{ 'checked' if s.enabled else '' }}>
+                          <label class="form-check-label visually-hidden" for="al-sink-{{ sk }}">{{ s.label }}</label>
+                        </div>
+                      </td>
+                      <td>
+                        <select name="{{ sk }}_min_severity" class="form-select fw-form-select form-select-sm">
+                          {% for sv in alerts_config.severities %}
+                          <option value="{{ sv }}" {{ 'selected' if s.min_severity == sv else '' }}>{{ sv }}</option>
+                          {% endfor %}
+                        </select>
+                      </td>
+                      <td>
+                        <div class="d-flex flex-wrap gap-3">
+                          {% for fam, lbl in alerts_config.sink_families %}
+                          <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="{{ sk }}_checks"
+                                   value="{{ fam }}" id="al-{{ sk }}-{{ fam }}"
+                                   {{ 'checked' if fam in s.checks else '' }}>
+                            <label class="form-check-label" for="al-{{ sk }}-{{ fam }}" style="font-size:12px;">{{ lbl }}</label>
+                          </div>
+                          {% endfor %}
+                        </div>
+                      </td>
+                    </tr>
+                  {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+
+              <label class="fw-form-label mt-4 mb-1"><i class="bi bi-hdd-network me-1"></i>{{ _('Syslog collector (FortiAnalyzer, SIEM)') }}</label>
+              <div class="form-text mb-2">
+                {{ _('The feed emits on every evaluation, for every matching finding, from the primary AND from the read-only standby — repetition included. It carries no cooldown on purpose: a record with suppression holes reads as "nothing was wrong" when it is queried after the fact.') }}
+                {{ _('TLS transport and the LEEF encoding are not implemented.') }}
+              </div>
+              <div class="row g-2">
+                <div class="col-md-4">
+                  <label class="fw-form-label">{{ _('Collector host') }}</label>
+                  <input type="text" name="syslog_host" class="form-control fw-form-control"
+                         value="{{ alerts_config.syslog.host }}" placeholder="faz.example.com">
+                </div>
+                <div class="col-md-2">
+                  <label class="fw-form-label">{{ _('Port') }}</label>
+                  <input type="number" name="syslog_port" class="form-control fw-form-control"
+                         min="1" max="65535" value="{{ alerts_config.syslog.port }}">
+                </div>
+                <div class="col-md-2">
+                  <label class="fw-form-label">{{ _('Transport') }}</label>
+                  <select name="syslog_proto" class="form-select fw-form-select">
+                    {% for p in alerts_config.syslog_protocols %}
+                    <option value="{{ p }}" {{ 'selected' if alerts_config.syslog.proto == p else '' }}>{{ p|upper }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="col-md-2">
+                  <label class="fw-form-label">{{ _('Encoding') }}</label>
+                  <select name="syslog_format" class="form-select fw-form-select">
+                    {% for f in alerts_config.syslog_formats %}
+                    <option value="{{ f }}" {{ 'selected' if alerts_config.syslog.format == f else '' }}>{{ 'RFC 5424' if f == 'rfc5424' else 'CEF' }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="col-md-2">
+                  <label class="fw-form-label">{{ _('Facility') }}</label>
+                  <select name="syslog_facility" class="form-select fw-form-select">
+                    {% for fa in alerts_config.syslog_facilities %}
+                    <option value="{{ fa }}" {{ 'selected' if alerts_config.syslog.facility == fa else '' }}>{{ fa }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+              </div>
+
               <div class="mt-3 d-flex gap-2 align-items-center">
                 <button type="submit" class="btn fw-btn-primary"><i class="bi bi-save me-1"></i>{{ _('Save alert settings') }}</button>
                 <button type="button" class="btn btn-sm btn-outline-secondary" id="al-preview-btn"><i class="bi bi-search me-1"></i>{{ _('Preview now (no send)') }}</button>

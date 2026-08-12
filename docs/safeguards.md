@@ -8124,3 +8124,60 @@ harness measures the mutation instead of the guard.)
 `test_published_site_documentation_is_current` already covers the drift — it was
 **red** when this round started, and had been since sections 6 and 7 were
 written. Regenerating is part of the change, not a follow-up.
+
+## §79 — an untracked file is not a decision, and deleting one leaves no record
+
+**The trap.** Two sessions worked `/opt/satom` in the same hour on 2026-08-12
+and both built the `/api/v1` object-authoring surface. One got wired into the
+blueprint and shipped. The other left three files on disk, untracked:
+a complete alternative guard layer (`app/services/api_exceptions.py`), 35 tests
+written against it, and a one-off route probe. For three rounds every session
+that opened the tree saw them, could not tell whose they were, and left them —
+which is the correct instinct and also a state that never resolves. `git status`
+reported the same three lines each time; nothing failed; the tests were never
+run, so nobody knew that 15 of them failed and 14 errored.
+
+**Why it is worse than it looks.** The obvious cleanup — `rm` the duplicate —
+is the one that destroys the evidence. An untracked file that is deleted leaves
+*no* diff, *no* history and *no* commit message: the next person cannot tell
+whether a second implementation ever existed, what it decided differently, or
+whether anything was lost with it. The record and the cleanup are two separate
+operations and they must happen in that order.
+
+**The recipe.**
+
+1. **Commit the files as received, first, in their own commit.** Say in the
+   message that the tree is not green at that sha and why. A knowingly-red
+   commit that is *labelled* red is a record; a deletion is not. Push only
+   after the reconciling commit, so no standby ever converges on the red one.
+2. **Run the orphan tests before judging them.** `6 passed, 15 failed,
+   14 errored` is the fact that tells you what the file actually is. The 14
+   errors were a fixture monkeypatching `waf.FortiWebOps`, a name the shipped
+   module does not have — proof it was written against the other design, not
+   evidence of a defect in the live one.
+3. **Salvage by SUBJECT, never by origin.** Diff the two test files by what
+   each *asserts*, keep only the promises the live suite does not already pin,
+   and re-express them against the live surface inside the existing file. A
+   test kept because of where it came from is how a suite grows a second,
+   drifting copy of itself — the same failure this file records for prose in
+   §67 and for documentation in §78.
+4. **Then remove the duplicate**, in a second commit that names the sha of the
+   first.
+
+**What it found here.** Seven promises no test held: 401-as-JSON on all five
+routes (a fallback to Flask-Login's redirect would hand integrators a 302 to
+HTML, which most client libraries report as a successful request with an odd
+body); the apply/create/denied audit receipts on FortiWeb and the create
+receipt on FortiADC (without them a change SATOM made is reported as drift with
+no author); key order in the idempotency key; and that an unknown body field
+cannot steer the device path. **10 mutations, 10 bite** — harness
+`/tmp/mut_salvage.py`, measured by return code, `rc==1` only.
+
+**Recipe.**
+
+```bash
+git status --porcelain                 # anything '??' older than this session
+pgrep -af 'venv/bin/python -m py[t]est'  # someone else may be mid-run
+venv/bin/python -m pytest <orphan_test> -q   # judge it by its result, not its name
+git add <the orphan files> && git commit     # record BEFORE reconciling
+```

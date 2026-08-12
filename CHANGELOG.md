@@ -84,13 +84,15 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   and would expand exactly what someone chose to collapse. Reaching a section
   without the menu (in-page `#tab-…` links, the redirect after a save) still
   opens its group.
-- **Admin Console: pane content is laid out in two columns**, so the width the
-  lateral menu left over is used instead of one tall stack. The rule applies to
-  each pane's TOP-LEVEL blocks — those are the cards. Grids nested inside a card
-  body lay out FIELDS, and a port input stretched to half the screen loses the
-  tie between label and control, so they are untouched. A block holding a table
-  keeps the whole width, long badges and `<code>` runs wrap instead of leaving
-  the card, and the two columns fold back to one below 1200px.
+- **Admin Console: pane content is laid out in a single column.** Every block
+  of a pane — cards, tables, banners — takes the whole width and stacks in the
+  order it is written, at every depth: the pane's own grid, the top-level row
+  that used to put `col-lg-7` beside `col-lg-5`, and the grids inside a card
+  body that laid two tables abreast. `col-auto` is the one exception, because
+  it means "size to the content" and is how the page writes an inline toolbar
+  or the button beside a field; stretching those would produce a stack of
+  buttons rather than a column. Long badges and `<code>` runs still wrap
+  instead of running past their card.
 
 - **The Admin Console menu is lateral and grouped by theme.** Twenty-four
   sections were reached from one horizontal strip that wrapped onto three rows

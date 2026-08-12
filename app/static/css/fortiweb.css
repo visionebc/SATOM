@@ -1002,6 +1002,11 @@ div.fw-nav-section.fw-nav-context-label {
 /* ============================================================
    Footer
    ============================================================ */
+/* Footer link to the Concept Map. --fw-accent on --fw-surface is 8.9:1 — the
+   footer's own --fw-text-secondary would read as disabled text, not a link. */
+.fw-footer-link { color: var(--fw-accent); text-decoration: none; font-weight: 600; }
+.fw-footer-link:hover, .fw-footer-link:focus { color: var(--fw-accent-hover); text-decoration: underline; }
+
 .fw-footer {
   text-align: center;
   padding: 16px;
@@ -1826,14 +1831,13 @@ body.fw-entering-page {
 }
 
 /* ------------------------------------------------------------------
-   Admin Console panes: TWO columns, so the width the menu left over is
-   used instead of a single tall stack the operator has to scroll.
+   Admin Console panes: ONE column.  The blocks of a pane stack, full
+   width, in the order they are written.
 
-   The rule applies to the pane's TOP-LEVEL blocks only — those are the
-   cards.  Grids NESTED inside a card body lay out FIELDS, and a port
-   input stretched to half the screen is not "using the width", it is
-   losing the association between label and control.  That is the line:
-   top level = cards = two columns; anything deeper is untouched.
+   The pane is still a GRID rather than a plain block, because the gap is
+   what owns the vertical spacing here: Bootstrap's mb-3/mt-3 on those
+   blocks is zeroed below, and two spacing systems on one axis read as an
+   alignment bug.
 
    Only the ACTIVE pane becomes a grid.  Bootstrap hides the others with
    `display:none` on `.tab-pane`, and a blanket `display:grid` here would
@@ -1841,17 +1845,14 @@ body.fw-entering-page {
    ------------------------------------------------------------------ */
 .fw-settings-main .tab-content > .tab-pane.active {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  /* dense: a full-width block (a table, a toolbar) otherwise leaves the
-     half-row before it permanently empty. */
-  grid-auto-flow: row dense;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   align-items: start;
 }
 
 /* The gap owns the spacing now.  Bootstrap's mb-3/mt-3 on those blocks was
    compensating for a stack that no longer exists, and it stacks ON TOP of the
-   gap — two spacing systems on one axis read as an alignment bug. */
+   gap. */
 .fw-settings-main .tab-content > .tab-pane.active > .fw-card,
 .fw-settings-main .tab-content > .tab-pane.active > .row,
 .fw-settings-main .tab-content > .tab-pane.active > .alert,
@@ -1860,53 +1861,30 @@ body.fw-entering-page {
   margin-bottom: 0 !important;
 }
 
-/* Blocks that are not cards span the full width: a toolbar, a banner or a
-   heading cut to half the screen looks like a layout accident, not a column. */
-.fw-settings-main .tab-content > .tab-pane.active > .row,
-.fw-settings-main .tab-content > .tab-pane.active > .alert,
-.fw-settings-main .tab-content > .tab-pane.active > .d-flex,
-.fw-settings-main .tab-content > .tab-pane.active > hr,
-.fw-settings-main .tab-content > .tab-pane.active > h1,
-.fw-settings-main .tab-content > .tab-pane.active > h2,
-.fw-settings-main .tab-content > .tab-pane.active > h3,
-.fw-settings-main .tab-content > .tab-pane.active > h4,
-.fw-settings-main .tab-content > .tab-pane.active > h5,
-.fw-settings-main .tab-content > .tab-pane.active > h6,
-.fw-settings-main .tab-content > .tab-pane.active > p {
-  grid-column: 1 / -1;
-}
+/* The pane grid is only ONE of the places a pane splits in two.  Bootstrap
+   rows carry a grid of their own and they nest: `col-lg-7` beside `col-lg-5`
+   stacks cards side by side at the top level, and inside a card body a
+   `row g-4` lays two tables abreast (System Information).  Both read as two
+   columns to the operator, so BOTH collapse — the rule is a descendant one on
+   purpose.
 
-/* A block holding a table keeps the whole width.  Halving a 7-column table
-   does not use the screen better — it hands the operator a horizontal
-   scrollbar in exchange for white space somewhere else. */
-.fw-settings-main .tab-content > .tab-pane.active > *:has(table) {
-  grid-column: 1 / -1;
-}
-
-/* A top-level .row already carries a grid of its own, so it spans (above) and
-   is capped at TWO columns here: col-md-4 / col-md-3 / col-md-2 were laying
-   cards out three, four and six abreast inside a column that is now half the
-   page wide. */
-.fw-settings-main .tab-content > .tab-pane.active > .row > [class*="col-"] {
+   `col-auto` is the exception, and it is not an inconsistency: it means "size
+   to the content", and it is how this page writes inline toolbars and the
+   button beside a field.  Stretching those to the full width does not give one
+   column, it gives a stack of buttons.  `col-form-label` is excluded for the
+   same reason — it is a label, not a column of the layout. */
+.fw-settings-main .tab-content > .tab-pane.active [class*="col-"]:not([class*="col-auto"]):not([class*="col-form-label"]) {
   flex: 0 0 auto;
-  width: 50%;
-  max-width: 50%;
-}
-.fw-settings-main .tab-content > .tab-pane.active > .row > .col-12,
-.fw-settings-main .tab-content > .tab-pane.active > .row > .col-md-12,
-.fw-settings-main .tab-content > .tab-pane.active > .row > [class*="col-"]:has(table) {
   width: 100%;
   max-width: 100%;
 }
 
-/* Half the width is half the room a nowrap run had. Bootstrap's .badge is
-   white-space:nowrap, so the DNS-provider card's "missing: A, B, C, D, E" ran
-   PAST the card instead of wrapping — the operator reads a truncated list of
-   environment variables and gets no scrollbar to tell them so. Found by
-   rendering, not by a test: the payload and the rule were both correct and the
-   defect lived between them. Same for a long <code> token. Scoped to these
-   panes: elsewhere a badge sits in a table cell, where wrapping is the
-   regression. */
+/* Bootstrap's .badge is white-space:nowrap, so the DNS-provider card's
+   "missing: A, B, C, D, E" runs PAST the card instead of wrapping — the
+   operator reads a truncated list of environment variables and gets no
+   scrollbar to tell them so.  One column is wider than two, but a card is
+   still not as wide as the run: kept.  Scoped to these panes: elsewhere a
+   badge sits in a table cell, where wrapping is the regression. */
 .fw-settings-main .tab-content > .tab-pane.active .badge {
   white-space: normal;
   overflow-wrap: anywhere;
@@ -1914,18 +1892,4 @@ body.fw-entering-page {
 }
 .fw-settings-main .tab-content > .tab-pane.active code {
   overflow-wrap: anywhere;
-}
-
-/* Below ~1200px the content column is narrower than two readable cards, and
-   two columns of 470px is worse than one of 960px.  The breakpoint is the
-   CONTENT's, not the viewport's: the menu keeps 258px + 20px of gap until
-   991.98px, where it moves above the panes. */
-@media (max-width: 1199.98px) {
-  .fw-settings-main .tab-content > .tab-pane.active {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .fw-settings-main .tab-content > .tab-pane.active > .row > [class*="col-"] {
-    width: 100%;
-    max-width: 100%;
-  }
 }

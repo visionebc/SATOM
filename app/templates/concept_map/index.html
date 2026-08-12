@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Concept Map') }}{% endblock %}
+
+{% block content %}
+<div class="fw-page-title">
+  <div>
+    <h1><i class="bi bi-diagram-2"></i> {{ _('Concept Map') }}</h1>
+    <p class="text-muted mb-0">{{ _('Every page in this console, grouped by what it is for. Search a concept, not a menu.') }}</p>
+  </div>
+</div>
+
+<div class="fw-card mb-3">
+  <div class="fw-card-body">
+    <div class="cm-toolbar">
+      <div class="cm-search">
+        <i class="bi bi-search cm-search-icon"></i>
+        <input type="search" id="cm-q" class="form-control" autocomplete="off"
+               placeholder="{{ _('Search a concept, a page or a path — e.g. certificate, rollback, who changed it') }}"
+               aria-label="{{ _('Search the concept map') }}">
+      </div>
+      <div class="btn-group" role="group" aria-label="{{ _('View') }}">
+        <button type="button" class="btn btn-sm btn-outline-secondary active" id="cm-view-map">
+          <i class="bi bi-diagram-3"></i> {{ _('Map') }}</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="cm-view-list">
+          <i class="bi bi-list-ul"></i> {{ _('List') }}</button>
+      </div>
+    </div>
+    <div class="cm-status" id="cm-status" role="status" aria-live="polite">
+      {{ total }} {{ _('pages') }} · {{ clusters|length }} {{ _('concepts') }}
+    </div>
+  </div>
+</div>
+
+{% if coverage.unmapped or coverage.dangling %}
+<div class="fw-card mb-3" style="border-left:3px solid #7A5700;">
+  <div class="fw-card-body">
+    <strong class="d-block mb-1"><i class="bi bi-exclamation-triangle"></i>
+      {{ _('This map is incomplete') }}</strong>
+    <span class="text-muted">
+      {% if coverage.unmapped %}{{ coverage.unmapped|length }} {{ _('page(s) exist but are not on the map') }}:
+        <code>{{ coverage.unmapped|join(', ') }}</code>.{% endif %}
+      {% if coverage.dangling %} {{ coverage.dangling|length }} {{ _('mapped entr(y/ies) point at an endpoint that no longer exists') }}:
+        <code>{{ coverage.dangling|join(', ') }}</code>.{% endif %}
+    </span>
+  </div>
+</div>
+{% endif %}
+
+<!-- MAP VIEW — pure SVG, drawn from /map/data -->
+<div class="fw-card mb-3" id="cm-map-card">
+  <div class="fw-card-body p-0">
+    <div id="cm-canvas" class="cm-canvas" data-src="{{ url_for('concept_map.data') }}"></div>
+    <div class="cm-canvas-tools">
+      <button type="button" class="btn btn-sm btn-outline-secondary" id="cm-fit" title="{{ _('Fit') }}"><i class="bi bi-arrows-fullscreen"></i></button>
+      <button type="button" class="btn btn-sm btn-outline-secondary" id="cm-zin" title="{{ _('Zoom in') }}"><i class="bi bi-zoom-in"></i></button>
+      <button type="button" class="btn btn-sm btn-outline-secondary" id="cm-zout" title="{{ _('Zoom out') }}"><i class="bi bi-zoom-out"></i></button>
+    </div>
+  </div>
+</div>
+
+<!-- LIST VIEW — the same data, readable and printable -->
+<div id="cm-list" hidden>
+  {% for c in clusters %}
+  <div class="fw-card mb-3 cm-cluster" data-concept="{{ c.key }}" style="border-left:3px solid {{ c.accent }};">
+    <div class="fw-card-header">
+      <span class="fw-card-title">
+        <i class="bi {{ c.icon }}" style="color:{{ c.accent }};"></i>
+        {{ c.label }}
+        <span class="fw-badge fw-badge-secondary ms-2">{{ c.pages|length }}</span>
+      </span>
+    </div>
+    <div class="fw-card-body">
+      <p class="text-muted cm-cluster-blurb">{{ c.blurb }}</p>
+      <div class="cm-grid">
+        {% for p in c.pages %}
+        <a class="cm-node" href="{{ p.href }}"
+           data-hay="{{ (p.label ~ ' ' ~ p.blurb ~ ' ' ~ p.keywords ~ ' ' ~ p.href ~ ' ' ~ c.label)|lower }}">
+          <span class="cm-node-label">{{ p.label }}</span>
+          <span class="cm-node-blurb">{{ p.blurb }}</span>
+          <span class="cm-node-path"><code>{{ p.href }}</code>{% if p.permission %}
+            <span class="fw-badge fw-badge-secondary ms-1">{{ p.permission }}</span>{% endif %}</span>
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+  <div class="fw-card mb-3" id="cm-empty" hidden>
+    <div class="fw-card-body text-muted">{{ _('No page matches that search.') }}</div>
+  </div>
+</div>
+
+<style>
+/* Light theme only — this product has no dark mode (safeguards §9m). Every
+   colour below is either a --fw-* token or verified against #FFFFFF. */
+.cm-toolbar { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+.cm-search { position:relative; flex:1 1 320px; }
+.cm-search .form-control { padding-left:34px; }
+.cm-search-icon { position:absolute; left:11px; top:50%; transform:translateY(-50%);
+  color:var(--fw-text-secondary); pointer-events:none; }
+.cm-status { margin-top:10px; font-size:12.5px; color:var(--fw-text-secondary); }
+.cm-canvas { height:640px; background:var(--fw-surface-alt);
+  border-radius:var(--fw-radius-lg); overflow:hidden; position:relative; }
+.cm-canvas-tools { position:absolute; right:16px; bottom:16px; display:flex; gap:6px; }
+.cm-cluster-blurb { font-size:13px; margin-bottom:14px; }
+.cm-grid { display:grid; gap:10px;
+  grid-template-columns:repeat(auto-fill, minmax(250px, 1fr)); }
+.cm-node { display:flex; flex-direction:column; gap:3px; padding:11px 13px;
+  border:1px solid var(--fw-border); border-radius:var(--fw-radius);
+  background:var(--fw-surface); text-decoration:none; color:var(--fw-text-primary);
+  transition:box-shadow var(--fw-transition), border-color var(--fw-transition); }
+.cm-node:hover { border-color:var(--fw-accent); box-shadow:var(--fw-card-shadow-hover);
+  color:var(--fw-text-primary); }
+.cm-node-label { font-weight:600; font-size:13.5px; }
+.cm-node-blurb { font-size:12px; color:var(--fw-text-secondary); line-height:1.4; }
+.cm-node-path { font-size:11px; color:var(--fw-text-secondary); margin-top:2px; }
+.cm-node-path code { color:var(--fw-accent); background:none; padding:0; }
+.cm-node.cm-hit { border-color:var(--fw-accent); box-shadow:0 0 0 2px var(--fw-accent-light); }
+</style>
+<script src="{{ asset('js/concept_map.js') }}"></script>
+{% endblock %}

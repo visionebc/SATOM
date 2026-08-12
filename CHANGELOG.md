@@ -8,6 +8,44 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Added
 
+- **Alerts route to sinks now, each with its own severity floor and family
+  mask — and a new syslog/CEF feed.** The engine has had seven checks, three
+  severities and a cooldown since it shipped, but exactly one control: an
+  engine-wide on/off switch. Every finding went to email and to the in-app
+  bell, including the `info` ones. That is survivable with two outlets and
+  fatal with five — an operator who wires a chat channel, receives every drift
+  note and turns the integration off takes the `critical` alerts with it. New
+  `services/alert_routing.py` gives each sink two dimensions and no more: how
+  bad a finding has to be (`min_severity`) and which of the seven families it
+  has to belong to. Both reuse the vocabulary already printed on the same
+  Settings page. A pattern language over the finding key was rejected: the rule
+  everybody writes is `.*`, which is this with more surface to get wrong.
+  **Defaults reproduce the pre-filter behaviour exactly** — the bell and email
+  stay on, at `info`, unmasked — so upgrading an install cannot quietly narrow
+  a path nobody asked to narrow. **Engine failures and findings from a check
+  the router does not recognise bypass both filters**: a channel silenced by a
+  crashed check is indistinguishable from a healthy quiet one, and an
+  unrecognised prefix is a silent loss if dropped and mere noise if delivered.
+
+- **Syslog / CEF feed to a FortiAnalyzer or SIEM** (`services/alert_syslog.py`,
+  off by default). RFC 5424 or CEF over UDP/TCP, configurable facility, framing
+  and escaping owned by the product rather than by whoever writes the
+  integration — an unescaped `|` in an alert title truncates a CEF header at
+  the collector and the event lands mangled. **This sink is a record, not a
+  recipient**, so it is deliberately *not* one more entry in a list of
+  destinations: it carries **no cooldown** and it runs on the **read-only
+  standby** as well. A record queried after the fact ("was fw08 unreachable at
+  03:10?") cannot have six-hour holes in it, because a hole reads exactly like
+  "it was fine" — and without the standby emitting, that node's own cert, host
+  and reachability findings never leave it at all. It is also **excluded from
+  `dispatched`**: a healthy collector must not be able to make a dead mailbox
+  look alive. TLS transport and the LEEF encoding are not implemented.
+
+- **Settings → Email & Alerts** grows a *Delivery sinks* table (three rows, on/
+  off + floor + seven family boxes) and a *Syslog collector* block. The
+  **Preview** button now answers the question the filter created: not just what
+  would fire, but which sinks would actually hear it.
+
 - **The rediscovery sweep now records a verdict per endpoint, and the catalog
   reads them back.** New page **Registry reconcile** on both API hubs
   (`/web/registry/reconcile`, `/adc/api/reconcile`, `REGISTRY_EDIT`). The sweep
@@ -201,6 +239,21 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   giving them one would have re-created the two-implementations defect below.
 
 ### Changed
+
+- **`dispatched` is now the count of findings a notification sink actually
+  accepted and delivered**, and the cooldown stamps exactly those. Previously
+  both were computed over the whole fresh set, which was correct only while
+  every finding went to every channel. With a filter in play, stamping a
+  finding that reached nobody would suppress it for the full window — so
+  widening a mask tomorrow would appear not to work until the window it never
+  earned expired.
+
+- The CEF header now carries **local time plus an unambiguous `rt=` epoch**.
+  The RFC 3164 header CEF rides on has no timezone field, so a collector reads
+  it as the sender's local clock; emitting UTC there filed every event at the
+  wrong hour on any install not running UTC — invisibly, because the event
+  itself was perfectly well formed. The RFC 5424 line is unaffected: it has a
+  zone field and states it.
 
 - **The duplicate carve-out implementation from the 2026-08-12 collision is
   retired — the coverage it held is not.** Two sessions built the `/api/v1`

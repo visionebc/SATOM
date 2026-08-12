@@ -95,6 +95,47 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
 <h3 id="added">Added</h3>
 <ul>
 <li>
+<p><strong>Alerts route to sinks now, each with its own severity floor and family
+  mask — and a new syslog/CEF feed.</strong> The engine has had seven checks, three
+  severities and a cooldown since it shipped, but exactly one control: an
+  engine-wide on/off switch. Every finding went to email and to the in-app
+  bell, including the <code>info</code> ones. That is survivable with two outlets and
+  fatal with five — an operator who wires a chat channel, receives every drift
+  note and turns the integration off takes the <code>critical</code> alerts with it. New
+  <code>services/alert_routing.py</code> gives each sink two dimensions and no more: how
+  bad a finding has to be (<code>min_severity</code>) and which of the seven families it
+  has to belong to. Both reuse the vocabulary already printed on the same
+  Settings page. A pattern language over the finding key was rejected: the rule
+  everybody writes is <code>.*</code>, which is this with more surface to get wrong.
+  <strong>Defaults reproduce the pre-filter behaviour exactly</strong> — the bell and email
+  stay on, at <code>info</code>, unmasked — so upgrading an install cannot quietly narrow
+  a path nobody asked to narrow. <strong>Engine failures and findings from a check
+  the router does not recognise bypass both filters</strong>: a channel silenced by a
+  crashed check is indistinguishable from a healthy quiet one, and an
+  unrecognised prefix is a silent loss if dropped and mere noise if delivered.</p>
+</li>
+<li>
+<p><strong>Syslog / CEF feed to a FortiAnalyzer or SIEM</strong> (<code>services/alert_syslog.py</code>,
+  off by default). RFC 5424 or CEF over UDP/TCP, configurable facility, framing
+  and escaping owned by the product rather than by whoever writes the
+  integration — an unescaped <code>|</code> in an alert title truncates a CEF header at
+  the collector and the event lands mangled. <strong>This sink is a record, not a
+  recipient</strong>, so it is deliberately <em>not</em> one more entry in a list of
+  destinations: it carries <strong>no cooldown</strong> and it runs on the <strong>read-only
+  standby</strong> as well. A record queried after the fact ("was {device} unreachable at
+  03:10?") cannot have six-hour holes in it, because a hole reads exactly like
+  "it was fine" — and without the standby emitting, that node's own cert, host
+  and reachability findings never leave it at all. It is also <strong>excluded from
+  <code>dispatched</code></strong>: a healthy collector must not be able to make a dead mailbox
+  look alive. TLS transport and the LEEF encoding are not implemented.</p>
+</li>
+<li>
+<p><strong>Settings → Email &amp; Alerts</strong> grows a <em>Delivery sinks</em> table (three rows, on/
+  off + floor + seven family boxes) and a <em>Syslog collector</em> block. The
+  <strong>Preview</strong> button now answers the question the filter created: not just what
+  would fire, but which sinks would actually hear it.</p>
+</li>
+<li>
 <p><strong>The rediscovery sweep now records a verdict per endpoint, and the catalog
   reads them back.</strong> New page <strong>Registry reconcile</strong> on both API hubs
   (<code>/web/registry/reconcile</code>, <code>/adc/api/reconcile</code>, <code>REGISTRY_EDIT</code>). The sweep
@@ -293,7 +334,25 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
 </ul>
 <h3 id="changed">Changed</h3>
 <ul>
-<li><strong>The duplicate carve-out implementation from the 2026-08-12 collision is
+<li>
+<p><strong><code>dispatched</code> is now the count of findings a notification sink actually
+  accepted and delivered</strong>, and the cooldown stamps exactly those. Previously
+  both were computed over the whole fresh set, which was correct only while
+  every finding went to every channel. With a filter in play, stamping a
+  finding that reached nobody would suppress it for the full window — so
+  widening a mask tomorrow would appear not to work until the window it never
+  earned expired.</p>
+</li>
+<li>
+<p>The CEF header now carries <strong>local time plus an unambiguous <code>rt=</code> epoch</strong>.
+  The RFC 3164 header CEF rides on has no timezone field, so a collector reads
+  it as the sender's local clock; emitting UTC there filed every event at the
+  wrong hour on any install not running UTC — invisibly, because the event
+  itself was perfectly well formed. The RFC 5424 line is unaffected: it has a
+  zone field and states it.</p>
+</li>
+<li>
+<p><strong>The duplicate carve-out implementation from the 2026-08-12 collision is
   retired — the coverage it held is not.</strong> Two sessions built the <code>/api/v1</code>
   object-authoring surface within the same hour. One was wired into the
   blueprint and shipped; the other stayed on disk, imported by nothing, for
@@ -309,7 +368,8 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   carve-out's identity, so a caller that re-serialises between retries does not
   author twice; and no request field can steer the device path. The audit ones
   reach past the API: a change SATOM makes on a device without leaving a
-  receipt is reported back to the operator as drift with no known author.</li>
+  receipt is reported back to the operator as drift with no known author.</p>
+</li>
 </ul>
 <p>The retired files were committed <strong>before</strong> they were removed. Deleting an
   untracked file leaves no trace anywhere — no diff, no history, nothing to

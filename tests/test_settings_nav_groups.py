@@ -245,15 +245,31 @@ def _decls(match):
     return got
 
 
-def test_the_pane_lays_its_blocks_out_in_two_columns():
-    """The whole point of the change: the width the lateral menu left over is
-    used by a second column instead of white space."""
+def test_the_pane_lays_its_blocks_out_in_one_column():
+    """The operator asked for one column: the blocks of a pane stack, full
+    width, in the order they are written."""
     bodies = _decls(PANE_SEL)
     assert bodies, "no rule lays the active pane out at all"
     grid = [b for b in bodies if "display: grid" in b]
     assert grid, "the pane is not a grid"
-    assert any("repeat(2," in b for b in grid), \
-        "the pane grid is not two columns"
+    assert any("grid-template-columns: minmax(0, 1fr)" in b for b in grid), \
+        "the pane grid is not a single column"
+
+
+def test_nothing_puts_the_panes_back_into_two_columns():
+    """This is the guard that carries the request, and it has to cover BOTH
+    places a pane can split: the pane grid itself, and a top-level Bootstrap
+    row whose columns sit side by side without the pane grid having any say.
+    A second column reintroduced in either one looks identical to the operator
+    and would read as 'unchanged' in a diff that only touched the other."""
+    for sel, body in _css_rules():
+        if PANE_SEL not in sel:
+            continue
+        assert "repeat(2," not in body, \
+            "%s puts the pane back into two columns" % sel
+        for half in ("width: 50%", "width: 49", "flex: 0 0 50%", "grid-column: span 1 / span 1"):
+            assert half not in body, \
+                "%s halves a top-level block: %s" % (sel, half)
 
 
 def test_only_the_active_pane_becomes_a_grid():
@@ -271,56 +287,52 @@ def test_only_the_active_pane_becomes_a_grid():
                     "%s makes inactive panes visible" % part
 
 
-def test_a_block_holding_a_table_keeps_the_whole_width():
-    """Half of a seven-column table is not a better use of the screen; it is a
-    horizontal scrollbar bought with white space elsewhere."""
-    bodies = _decls("%s > *:has(table)" % PANE_SEL)
-    assert bodies, "table-bearing blocks are not exempted from the two columns"
-    assert any("grid-column: 1 / -1" in b for b in bodies)
+def _stacking_rules():
+    return [(sel, body) for sel, body in _css_rules()
+            if PANE_SEL in sel and "col-" in sel and "width: 100%" in body]
 
 
-def test_only_top_level_rows_are_capped_at_two_columns():
-    """Top level = cards. Deeper = fields. A `col-md-2` port input inside a card
-    body stretched to half the page is not 'using the width', it is losing the
-    tie between the label and its control — so the cap must use the child
-    combinator the whole way down."""
-    capped = [sel for sel, body in _css_rules()
-              if "50%" in body and ".tab-pane.active" in sel and "col-" in sel]
-    assert capped, "no rule caps the top-level rows at two columns"
-    for sel in capped:
+def test_the_bootstrap_columns_stack_at_every_depth():
+    """A pane splits in two WITHOUT the pane grid having any say: `col-lg-7`
+    beside `col-lg-5` at the top level, and a `row g-4` inside a card body
+    laying two tables abreast. Both read as two columns to the operator, so a
+    rule that only reaches the top level leaves half the request undone — and
+    the screenshot still shows two columns."""
+    rules = _stacking_rules()
+    assert rules, "nothing stacks the Bootstrap columns inside the panes"
+    descendant = []
+    for sel, body in rules:
+        if "max-width: 100%" not in body:
+            continue
         for part in sel.split(","):
             part = part.strip()
             if ".tab-pane.active" not in part:
                 continue
             tail = part.split(".tab-pane.active", 1)[1]
-            assert tail.count(">") >= 2, \
-                "%s reaches into nested grids — it must be > .row > col" % part
+            if ">" not in tail:
+                descendant.append(part)
+    assert descendant, \
+        "the stacking only reaches direct children — nested grids still split"
 
 
-def test_two_columns_fold_back_to_one_when_the_column_is_narrow():
-    """Two 470px columns are worse than one of 960px, and the pane sits inside a
-    layout that keeps 278px for the menu down to 991.98px.
-
-    The CONDITION is asserted, not just the block: a fold-back gated on
-    something that can never match is the same as no fold-back at all, and it
-    reads as present in every diff and every grep."""
-    src = re.sub(r"/\*.*?\*/", " ", io.open(CSS_PATH, encoding="utf-8").read(), flags=re.S)
-    blocks = re.findall(r"@media([^{]*)\{(.*?\n\})\s*\n", src, flags=re.S)
-    folded = [(c, " ".join(b.split())) for c, b in blocks]
-    folded = [(c, b) for c, b in folded if PANE_SEL in b and "minmax(0, 1fr)" in b]
-    assert folded, "the two columns never fold back to one on a narrow screen"
-    assert any("max-width" in c for c, _ in folded), \
-        "the fold-back is gated on a condition that cannot match a narrow screen"
+def test_the_inline_col_auto_is_left_alone():
+    """`col-auto` means 'size to the content': it is how this page writes an
+    inline toolbar and the button beside a field. Stretched to the full width
+    it does not give one column, it gives a vertical stack of buttons — which
+    is a worse layout than the one being fixed, arrived at by being literal."""
+    rules = _stacking_rules()
+    assert rules, "nothing stacks the Bootstrap columns inside the panes"
+    assert all("col-auto" in sel for sel, _ in rules), \
+        "a stacking rule swallows col-auto and stacks the inline toolbars"
 
 
 def test_a_long_badge_wraps_instead_of_leaving_the_card():
-    """Bootstrap's `.badge` is `white-space: nowrap`. At half the width the DNS
-    provider card's `missing: A, B, C, D, E` ran past the card — a truncated
-    list of environment variables, with no scrollbar to say so. Found by
-    rendering: the markup and the grid rule were each correct and the defect
-    lived between them, which is exactly the class of bug no assertion on
-    either side can see."""
+    """Bootstrap's `.badge` is `white-space: nowrap`. The DNS provider card's
+    `missing: A, B, C, D, E` ran past the card — a truncated list of
+    environment variables, with no scrollbar to say so. One column is wider
+    than two, but a card is still narrower than that run, so the rule stays:
+    it was never the column count that caused it."""
     bodies = _decls("%s .badge" % PANE_SEL)
-    assert bodies, "nothing lets a long badge wrap inside the two-column panes"
+    assert bodies, "nothing lets a long badge wrap inside the console panes"
     assert any("white-space: normal" in b for b in bodies), \
         "the badge still cannot wrap"

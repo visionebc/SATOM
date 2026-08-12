@@ -7736,7 +7736,7 @@ Twelve mutations, measured by **return code** (`rc == 1` is the guard firing;
 Every mutation restores its file in `finally` — other sessions work this tree.
 **12/12 bite** as of 2026-08-11.
 
-## §73 — the menu default, the store that encodes it, and the two columns
+## §73 — the menu default, the store that encodes it, and the single column
 
 `tests/test_settings_nav_groups.py`
 
@@ -7758,22 +7758,37 @@ stripped first**: every rule has a comment beside it repeating the words being
 asserted, which is the twelfth assert-by-substring trap in this repo
 (§68, §69, §70).
 
-**The line they defend:** top level = cards = two columns; anything deeper =
-fields = untouched. `test_only_top_level_rows_are_capped_at_two_columns` counts
-`>` after `.tab-pane.active` — a cap written with a descendant combinator
-stretches a `col-md-2` port input to half the page, which is not "using the
-width", it is losing the tie between a label and its control.
+**The line they defend:** ONE column, at every depth — and the guard has to
+cover both places a pane splits, because they are independent and a fix to
+either one alone leaves a screenshot that still shows two columns. The pane's
+own grid is the obvious one; the second is a Bootstrap row, which carries a
+grid of its own and NESTS: `col-lg-7` beside `col-lg-5` at the top level, and a
+`row g-4` inside a card body laying two tables abreast (System Information).
+`test_the_bootstrap_columns_stack_at_every_depth` therefore requires a
+DESCENDANT selector, which is the exact opposite of what this guard asserted
+while the panes were two columns — the earlier rule was scoped with `>` the
+whole way down on purpose, and the operator overruled the trade-off it encoded.
+
+`test_the_inline_col_auto_is_left_alone` holds the other end. `col-auto` means
+"size to the content": it is the idiom for an inline toolbar and for the button
+beside a field. Swallowing it satisfies "everything is one column" literally
+and produces a vertical stack of buttons — a worse layout than the one being
+fixed, arrived at by being obedient rather than correct. `col-form-label` is
+excluded for the same reason: it is a label, not a column of the layout.
 
 **Three failure modes that keep working while being wrong:**
 - A grid rule that drops `.active` outranks Bootstrap's `display:none` on
   `.tab-pane` and paints all 24 sections at once, stacked — and the page still
   responds. `test_only_the_active_pane_becomes_a_grid` scans EVERY rule that
   sets `display: grid`, not just the intended one.
-- A fold-back gated on a condition that can never match reads as present in
-  every diff and every grep. The guard asserts the CONDITION, not the block —
-  it was the one mutation that survived the first pass.
-- Halving a block that holds a table buys a horizontal scrollbar with white
-  space elsewhere. `test_a_block_holding_a_table_keeps_the_whole_width`.
+- A second column can come back through EITHER place, and each looks identical
+  to the operator while reading as "unchanged" in a diff that only touched the
+  other. `test_nothing_puts_the_panes_back_into_two_columns` scans every rule
+  whose selector mentions the pane for `repeat(2,` and for any half-width
+  declaration, rather than asserting the shape of the one rule it expects.
+- Excluding `col-auto` with `:not()` is invisible in a rendered page until
+  someone opens the one tab that has a toolbar, so the exclusion is asserted in
+  the stylesheet rather than trusted to review.
 
 **One defect only the browser found.** Bootstrap's `.badge` is
 `white-space: nowrap`; at half the width the DNS-provider card's
@@ -7783,10 +7798,12 @@ them — the same shape as the panel footer in § Fase C. Render with the
 authenticated `test_client`, rewrite the asset paths to absolute and screenshot
 with chromium; a green suite cannot replace it.
 
-**Checking it.** `python3 /tmp/mutate_settings2col.py` on a1 — 10 mutations
-(drop `.active`, three columns, un-exempt the tables, widen the cap into nested
-grids, unreachable media query, re-expand the groups server-side, flip
-`aria-expanded`, restore the retired store key, drop the `removeItem`, drop the
-anchor), plus the badge rule renamed by hand. Measured by **rc**; only `rc==1`
-is a failure — `rc==4` is a usage error and would read as a bite it never made.
+**Checking it.** `python3 /tmp/mut_onecol2_20260812.py` on a1 — 8 mutations
+(two columns in the pane grid, half-width columns, delete the stacking rule,
+narrow it back to direct children, swallow `col-auto`, drop `.active`, un-wrap
+the badge, remove the pane layout entirely): **8/8 bite**. Measured by **rc**;
+only `rc==1` is a failure — `rc==4` is a usage error and would read as a bite it
+never made. The rendered check is not optional here either: the nested split in
+System Information is invisible in the stylesheet and in the markup, and only
+shows up in a screenshot of the pane.
 

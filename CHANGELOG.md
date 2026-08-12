@@ -8,6 +8,45 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Added
 
+- **The console can now reboot or upgrade an appliance BY NAME — without
+  becoming a second way to authorize one.** `satom execute device reboot
+  <device> --yes` and `satom execute device upgrade <device> --yes`. The
+  privilege was never actually missing: `execute scheduler run <id>` has always
+  been able to fire a reboot action. What was missing was the *addressing* —
+  turning "reboot fortiweb08" into the one action id allowed to do it — and
+  that gap fell on the operator who is on SSH, inside a maintenance window,
+  because the web UI is exactly what is unavailable.
+
+  So the new verbs **select and never execute**. `device_ops.select_action()`
+  resolves the device to a single scheduled action that is already bound to an
+  approved change request, and hands that id to the same `execute_and_record()`
+  the scheduler uses — which re-runs the change-request gate itself. Every
+  check in the selector can therefore only refuse *earlier* than the gate
+  would; none of them can permit something the gate would have stopped. A CLI
+  that called the device directly would be a second implementation of one
+  authorization boundary, and the weaker of two implementations is the one that
+  ends up being the real one.
+
+  It refuses in five ways and names which one fired: no such action, an action
+  bound to no change request, a change request that is not approved / has no
+  window / whose window has closed, an action that targets other devices too,
+  an action that targets the whole fleet (never narrowed — the recorded row is
+  what an auditor reads), and two runnable candidates (never disambiguated by
+  row order). A bare "not authorized" at 03:00 is worse than useless: the
+  operator cannot tell a missing action from a window that shut twenty minutes
+  ago, and the fastest way out of an undiagnosable refusal is to go around it.
+
+- **`satom get device config` reads a device's configuration from the LOCAL
+  store, never from the box.** Three levels — sections, tables, rows — over the
+  content-addressed source-of-truth store, with `--version <id>` for an older
+  snapshot. It answers with the appliance unreachable, its credentials rotated
+  or its management plane rebooting, which is precisely when an operator
+  reaches for it. Resolving a section or table name prefers an exact match,
+  accepts a unique prefix, and **refuses an ambiguous one** rather than
+  choosing: printing a different section under the heading that was typed is a
+  configuration confusion in the middle of a change window. A `--version` that
+  belongs to another device is refused for the same reason.
+
 - **External teams can file their own FortiWeb WAF carve-outs — and, when
   trusted, apply them — over `/api/v1`.** Until now the integration API was
   read-biased: the only mutation was triggering a scheduled action an operator
@@ -233,6 +272,21 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   updates a ticket instead of opening a second one for the same window.
 
 ### Fixed
+
+- **`upgrade` asserted a change-request requirement it never declared.** Its
+  own `summary` said it was "authorized by an approved Change Request inside
+  its maintenance window", and `_do_upgrade`'s docstring said the check was
+  "enforced upstream in `execute_and_record`". Neither was true: the unbound
+  refusal reads `spec.requires_change_request`, and the `upgrade` spec never
+  set it — so an upgrade action with no bound CR passed the gate. It was
+  harmless only because the executor is still a guarded stub that flashes
+  nothing; the day the flash runbook lands it would have been a destructive
+  action running unapproved while three separate pieces of prose swore it could
+  not. This is the same shape as `upgrade_prep` once shipping
+  destructive-and-ungated while the gate watched only `upgrade`. The flag is
+  now declared, and the guard pins the **rule** (danger + a schedule forced to
+  `once` requires a change request) rather than the word `upgrade`, so the next
+  fixed-date destructive action arrives gated instead of arriving free.
 
 - **The API manual described an API that no longer existed.** `docs/api_v1.md`
   opened by telling integrators that *"mutations happen only through pre-created

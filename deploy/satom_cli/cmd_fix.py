@@ -715,6 +715,143 @@ def scheduler_disable(ctx, args):
     return _action_op(ctx, args, "disable", "disable")
 
 
+# -- appliance operations --------------------------------------------------
+# These verbs deliberately add NO new privileged path to the device. They
+# address, by device name, a scheduled action that ALREADY exists and is
+# ALREADY bound to an approved change request, and hand it to the same
+# execute_and_record() the scheduler uses. The authorization stays exactly
+# where it was: the CR gate re-checks cr_runnable() when it fires, so the
+# checks below can only ever REFUSE earlier - never permit something the gate
+# would have stopped. A CLI that reimplemented the reboot call would be a
+# second implementation of an authorization boundary, and two implementations
+# of one boundary is how the weaker one becomes the real one.
+_DEVICE_CODE = """
+import json, sys
+from app import create_app
+from app.models import ScheduledAction
+from app.services import device_ops
+from app.services import scheduled_actions as sa
+
+arg = json.loads(sys.stdin.read())
+app = create_app()
+with app.app_context():
+    sel = device_ops.select_action(arg["device"], arg["op"])
+    if "action_id" not in sel:
+        print(json.dumps(sel))
+    else:
+        row = ScheduledAction.query.get(sel["action_id"])
+        run = sa.execute_and_record(row, trigger="manual")
+        sel["status"] = getattr(run, "status", "?")
+        sel["summary"] = (getattr(run, "summary", "") or "")[:400]
+        sel["ok"] = True
+        print(json.dumps(sel))
+"""
+
+
+_DEVICE_EFFECT = {
+    "reboot": ["The appliance STOPS SERVING until it comes back.",
+               "A 2xx means the box accepted the reboot, not that it recovered."],
+    "upgrade": ["Flashes firmware and reboots into the new partition.",
+                "The headless executor is still a guarded stub: it flashes",
+                "NOTHING and says so. It is gated anyway, because the gate has",
+                "to be right before the runbook lands, not after."],
+}
+
+
+def _device_op(ctx, args, op):
+    args = list(args)
+    yes = "--yes" in args
+    args = [a for a in args if a != "--yes"]
+    if len(args) != 1:
+        r = Result("bad", "usage: execute device %s <device> --yes" % op, exit_code=2)
+        r.lines("devices", ["  satom get device status"])
+        return r
+    device = args[0]
+    if not yes:
+        r = Result("bad", "refusing to %s %s without --yes" % (op, device), exit_code=2)
+        r.lines("what this does", _DEVICE_EFFECT.get(op, []))
+        r.lines("re-run as", ["  satom execute device %s %s --yes" % (op, device)])
+        return r
+
+    rc, out, err = _app_stdin(ctx, _DEVICE_CODE,
+                              json.dumps({"device": device, "op": op}), timeout=1800)
+    if rc != 0:
+        r = Result("bad", "could not reach the application", exit_code=4)
+        r.lines("error", (err or out).splitlines()[-12:])
+        return r
+    try:
+        res = json.loads(out.strip().splitlines()[-1])
+    except Exception:  # noqa: BLE001
+        r = Result("bad", "unexpected output from the app", exit_code=4)
+        r.lines("output", (out or err).splitlines()[-12:])
+        return r
+    if res.get("error"):
+        r = Result("bad", res["error"], exit_code=1)
+        r.lines("devices", ["  satom get device status"])
+        return r
+
+    if res.get("refused"):
+        return _device_refusal(res, op, device)
+
+    status = res.get("status", "?")
+    r = Result("ok" if status == "ok" else "bad",
+               "%s %s — %s" % (op, res.get("device", device), status),
+               exit_code=None if status == "ok" else 1)
+    r.rows("ran", [("action", "#%s %s" % (res.get("action_id"), res.get("action"))),
+                   ("authorized by", "change request %s" % res.get("cr"))])
+    r.lines("summary", [res.get("summary") or "(no summary)"])
+    r.set(**{k: res.get(k) for k in ("device", "action_id", "cr", "status")})
+    r.note("The change request was opened and closed by this run, exactly as if "
+           "the scheduler had fired it. Watch recovery yourself — SATOM reports "
+           "that the box ACCEPTED the command, never that it came back.")
+    return r
+
+
+def _device_refusal(res, op, device):
+    """Refused. Say WHICH rule refused and what would satisfy it.
+
+    A bare 'not authorized' during a maintenance window is worse than useless:
+    the operator cannot tell a missing action from an unapproved CR from a
+    window that closed twenty minutes ago, and the fastest way out of an
+    undiagnosable refusal is to go around it.
+    """
+    runnable = res.get("runnable") or []
+    rejected = res.get("rejected") or []
+    if len(runnable) > 1:
+        r = Result("bad", "%s: %d actions are runnable — refusing to choose"
+                          % (device, len(runnable)), exit_code=1)
+        r.rows("candidates", [("#%s %s" % (a[0], a[1]), "CR %s" % a[2])
+                              for a in runnable], keys="plain")
+        r.lines("pick one", ["  satom execute scheduler run <action-id>"])
+        return r
+    r = Result("bad", "%s: no approved %s is runnable right now" % (device, op),
+               exit_code=1)
+    if rejected:
+        r.rows("why each candidate was rejected",
+               [("#%s %s" % (a[0], a[1]), a[2]) for a in rejected], keys="plain")
+    else:
+        r.lines("why", ["No '%s' scheduled action targets %s at all." % (op, device)])
+    r.lines("to authorize one", [
+        "1. Web -> Change Requests: raise one for %s and get it APPROVED," % device,
+        "   with a maintenance window that contains the moment you will run.",
+        "2. Scheduling it from the CR creates the action already bound to it.",
+        "3. Come back here, or let the window fire it on its own.",
+    ])
+    r.note("This CLI never creates the authorization it needs — a tool that can "
+           "approve its own change request is not a gate.")
+    return r
+
+
+def device_reboot(ctx, args):
+    """Reboot ONE appliance through its approved, CR-bound scheduled action."""
+    return _device_op(ctx, args, "reboot")
+
+
+def device_upgrade(ctx, args):
+    """Firmware upgrade of ONE appliance through its approved, CR-bound action."""
+    return _device_op(ctx, args, "upgrade")
+
+
 _MAINT_CODE = """
 import json, sys
 from app import create_app

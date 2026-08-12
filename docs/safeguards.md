@@ -7674,3 +7674,64 @@ from one it accepted.
   not ISSUE the query. Asserting only that the result is empty proved nothing:
   `timestamp >= NULL` and a backwards range both return no rows anyway, so that
   assertion held with the guard deleted.
+
+
+## §72 — a menu and its sections are a pair, and nothing fails when they drift
+
+`tests/test_settings_nav_groups.py` — the Admin Console menu (`app/templates/
+settings/index.html`).
+
+**What cannot fail on its own.** A settings pane whose menu entry was never
+added still exists: it renders, it answers, it keeps its state, and no operator
+can reach it. The reverse — a menu entry whose pane was deleted — looks like a
+section and opens nothing. Neither raises, neither logs, and both survive a
+click-through of the entries you happen to remember. This is the same class of
+rot that left the horizontal strip this menu replaced with one `<li>` holding
+two buttons for four months.
+
+The guard therefore asserts the **pairing**, in both directions, on the
+rendered page: `set(menu targets) == set(pane ids)`, no target listed twice,
+and every target inside some group. Plus a non-vacuity floor (`>= 20` entries)
+— a slice that swallowed the menu would make both sets trivially empty and the
+equality would pass.
+
+**Slice the `<aside>`, not "everything before the main column".** The first
+version split the page at `<div class="fw-settings-main">` and called the left
+half "the menu". That half also contains `<head>` and the product's OWN sidebar
+from `base.html`, so the chrome guard tripped on `#8b5cf6` — a colour belonging
+to the fleet navigation, on a page whose settings menu was clean. A guard that
+reports a defect in code it does not cover teaches people to ignore it.
+
+**Identity is asserted by rendering twice, not by grepping the template.**
+The target (`#tab-auth`) is what the panes, the in-page links, the URL-hash
+restore and `tests/test_theme.py` all key off. The failure to prevent is
+someone wrapping it in `_()` — but a `grep` for `_(` near `data-bs-target`
+matches the comment that forbids it (the eleventh such trap in this repo, see
+§68, §69). So the page is rendered in English and in Spanish and the target
+lists are compared, with `es != en` asserted alongside — without that second
+line, a locale that silently never switched would make the comparison prove
+nothing.
+
+**The default state has to be the one an empty store produces.** The menu
+renders every group `open` server-side and the browser store holds the CLOSED
+groups. Storing the open set would mean an operator who has never touched the
+menu has an empty store, and an empty set of open groups collapses the entire
+console — with no click on record to explain it. Key is `satom.settingsnav.
+closed.v1`, deliberately new: reusing an older key would read a set saved with
+the opposite meaning and hide exactly the groups someone chose to keep. (Same
+lesson as the probe cards, §9j.)
+
+**Screen and store must not disagree.** On restore, the group holding the
+selected section is forced open *and dropped from the store*. Leaving it closed
+paints a menu with no selection anywhere, which reads as "nothing is open"
+rather than "it is hidden in here"; forcing it open without touching the store
+leaves a stored preference that the page never honours.
+
+### Verification recipe
+
+    venv/bin/python data/i18n_sweep/mut_settings_nav.py
+
+Twelve mutations, measured by **return code** (`rc == 1` is the guard firing;
+`rc == 4` is a pytest usage error and `grep -i failed` reports it as a pass).
+Every mutation restores its file in `finally` — other sessions work this tree.
+**12/12 bite** as of 2026-08-11.

@@ -7735,3 +7735,58 @@ Twelve mutations, measured by **return code** (`rc == 1` is the guard firing;
 `rc == 4` is a pytest usage error and `grep -i failed` reports it as a pass).
 Every mutation restores its file in `finally` — other sessions work this tree.
 **12/12 bite** as of 2026-08-11.
+
+## §73 — the menu default, the store that encodes it, and the two columns
+
+`tests/test_settings_nav_groups.py`
+
+**Two halves that have to agree and cannot check each other.** The server draws
+the groups; the script decides what an EMPTY store means. Render `open` while
+the script reads an empty store as "nothing open" and every untouched operator
+watches the menu expand on first paint and fold a frame later. Nothing fails.
+This is the inversion the probe-card store hit (§9j), and the reason the key is
+RENAMED rather than reused: a set saved under `…closed.v1` means the
+complement, so reading it here would expand exactly the groups someone had
+collapsed. `test_the_menu_starts_collapsed` asserts on the RENDERED aside (the
+`open` class is also written by the script; the point is what arrives before any
+script runs) and `test_the_store_key_moved_with_its_meaning` allows the retired
+key to appear only next to a `removeItem`.
+
+**The column guards read `fortiweb.css`**, because the panes carry no layout
+class of their own and there is no rendered artefact to read. **Comments are
+stripped first**: every rule has a comment beside it repeating the words being
+asserted, which is the twelfth assert-by-substring trap in this repo
+(§68, §69, §70).
+
+**The line they defend:** top level = cards = two columns; anything deeper =
+fields = untouched. `test_only_top_level_rows_are_capped_at_two_columns` counts
+`>` after `.tab-pane.active` — a cap written with a descendant combinator
+stretches a `col-md-2` port input to half the page, which is not "using the
+width", it is losing the tie between a label and its control.
+
+**Three failure modes that keep working while being wrong:**
+- A grid rule that drops `.active` outranks Bootstrap's `display:none` on
+  `.tab-pane` and paints all 24 sections at once, stacked — and the page still
+  responds. `test_only_the_active_pane_becomes_a_grid` scans EVERY rule that
+  sets `display: grid`, not just the intended one.
+- A fold-back gated on a condition that can never match reads as present in
+  every diff and every grep. The guard asserts the CONDITION, not the block —
+  it was the one mutation that survived the first pass.
+- Halving a block that holds a table buys a horizontal scrollbar with white
+  space elsewhere. `test_a_block_holding_a_table_keeps_the_whole_width`.
+
+**One defect only the browser found.** Bootstrap's `.badge` is
+`white-space: nowrap`; at half the width the DNS-provider card's
+`missing: A, B, C, D, E` ran past the card, and there is no scrollbar to say so.
+The markup was correct, the grid rule was correct, and the defect lived between
+them — the same shape as the panel footer in § Fase C. Render with the
+authenticated `test_client`, rewrite the asset paths to absolute and screenshot
+with chromium; a green suite cannot replace it.
+
+**Checking it.** `python3 /tmp/mutate_settings2col.py` on a1 — 10 mutations
+(drop `.active`, three columns, un-exempt the tables, widen the cap into nested
+grids, unreachable media query, re-expand the groups server-side, flip
+`aria-expanded`, restore the retired store key, drop the `removeItem`, drop the
+anchor), plus the badge rule renamed by hand. Measured by **rc**; only `rc==1`
+is a failure — `rc==4` is a usage error and would read as a bite it never made.
+

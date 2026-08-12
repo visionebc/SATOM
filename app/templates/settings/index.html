@@ -84,9 +84,14 @@
         {% endfor %}
         {% if vis %}
         {% set holds_active = vis | selectattr('t', 'equalto', active_tab) | list %}
-        <div class="fw-set-nav-group open" role="presentation"
+        {# Collapsed is the DEFAULT, server-side: 8 groups holding 24 sections
+           expand into a wall taller than the viewport, and the operator then
+           has to close what they never opened.  The state is rendered here and
+           not left to the script so the first paint is already the default —
+           a menu that flashes open and then folds looks like a bug. #}
+        <div class="fw-set-nav-group" role="presentation"
              data-set-group="{{ g.key }}"{% if holds_active %} data-set-anchor="1"{% endif %}>
-          <button type="button" class="fw-set-nav-toggle" aria-expanded="true"
+          <button type="button" class="fw-set-nav-toggle" aria-expanded="false"
                   data-set-toggle="{{ g.key }}">
             <i class="bi {{ g.icon }} fw-set-nav-group-icon"></i>
             <span class="fw-set-nav-group-label">{{ g.label }}</span>
@@ -3798,16 +3803,19 @@ document.addEventListener('DOMContentLoaded', function () {
 {% endif %}
 
 // --- Admin Console lateral menu: collapsible theme groups ------------------
-// The store holds the CLOSED groups, never the open ones. The default is
-// "everything expanded", and an absent/unreadable store has to render that
-// default; a store of OPEN groups would collapse the whole menu for every
-// operator who has not touched it yet. The key is new (…closed.v1) on
-// purpose — reusing an older one would read a set saved with the opposite
-// meaning and hide exactly the groups someone had chosen to keep.
+// The store holds the OPEN groups, never the closed ones.  The default is
+// "everything collapsed", and an absent or unreadable store has to render that
+// default; a store of CLOSED groups would expand the whole menu for every
+// operator who has not touched it yet.  The key is NEW (...open.v1) on
+// purpose: the previous key holds sets written with the OPPOSITE meaning, and
+// reading one of those here would open exactly the groups an operator had
+// chosen to collapse.  The stale key is dropped rather than left to rot.
 (function () {
-  var KEY = 'satom.settingsnav.closed.v1';
+  var KEY = 'satom.settingsnav.open.v1';
+  var DEAD = 'satom.settingsnav.closed.v1';   // meaning inverted; never read again
   var nav = document.getElementById('settingsTabs');
   if (!nav) return;
+  try { localStorage.removeItem(DEAD); } catch (e) {}
 
   function read() {
     try {
@@ -3826,28 +3834,16 @@ document.addEventListener('DOMContentLoaded', function () {
   function openGroup(g) {
     if (!g || g.classList.contains('open')) { return; }
     paint(g, true);
-    var k = keyOf(g), closed = read();
-    if (closed.indexOf(k) !== -1) {
-      write(closed.filter(function (x) { return x !== k; }));
-    }
+    var k = keyOf(g), list = read();
+    if (list.indexOf(k) === -1) { list.push(k); write(list); }
   }
 
-  // Restore. The group holding the SELECTED section is forced open and
-  // dropped from the store, so screen and store never disagree: a collapsed
-  // group with the active entry inside it shows a menu with no selection at
-  // all, which reads as "nothing is open" rather than "it is hidden here".
-  var closed = read(), changed = false;
+  // Restore.  Only what the operator opened before; everything else stays as
+  // the server drew it.
+  var open = read();
   Array.prototype.forEach.call(nav.querySelectorAll('.fw-set-nav-group'), function (g) {
-    var k = keyOf(g);
-    if (closed.indexOf(k) === -1) { return; }
-    if (g.querySelector('.nav-link.active')) {
-      closed = closed.filter(function (x) { return x !== k; });
-      changed = true;
-      return;
-    }
-    paint(g, false);
+    if (open.indexOf(keyOf(g)) !== -1) { paint(g, true); }
   });
-  if (changed) { write(closed); }
 
   nav.addEventListener('click', function (e) {
     var head = e.target.closest ? e.target.closest('.fw-set-nav-toggle') : null;
@@ -3857,13 +3853,14 @@ document.addEventListener('DOMContentLoaded', function () {
     var willOpen = !g.classList.contains('open');
     paint(g, willOpen);
     var k = keyOf(g), list = read().filter(function (x) { return x !== k; });
-    if (!willOpen) { list.push(k); }
+    if (willOpen) { list.push(k); }
     write(list);
   });
 
-  // Anything that reveals a section also reveals its group: the in-page
-  // links (href="…#tab-auth"), the URL-hash restore below and the redirects
-  // after a save all activate a tab WITHOUT going through this menu.
+  // Anything that reveals a section also reveals its group: the in-page links
+  // (href="...#tab-auth"), the URL-hash restore below and the redirects after
+  // a save all activate a tab WITHOUT going through this menu.  Without this
+  // the operator lands on a pane whose menu shows no selection anywhere.
   nav.addEventListener('shown.bs.tab', function (e) { openGroup(groupOf(e.target)); }, true);
 })();
 // --- activate the tab named in the URL hash (after a save redirect) ---

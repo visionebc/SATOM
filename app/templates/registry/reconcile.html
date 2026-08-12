@@ -1,0 +1,230 @@
+{% extends "base.html" %}
+{% block title %}Registry Reconcile{% endblock %}
+
+{% macro verdict_badge(v) -%}
+  {%- if v == 'ok' -%}<span class="fw-badge fw-badge-success">ok</span>
+  {%- elif v == 'absent' -%}<span class="fw-badge fw-badge-warning">absent</span>
+  {%- else -%}<span class="fw-badge fw-badge-danger">error</span>{%- endif -%}
+{%- endmacro %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-clipboard2-check me-2 text-accent"></i>Registry reconcile
+      <span class="fw-badge fw-badge-secondary">{{ report.product }}</span></h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      What the live appliances say about the endpoint catalog, read back from the
+      last rediscovery sweep of each one. Nothing here is applied automatically —
+      a proposal is a soft-delete waiting for your approval, and every approval is
+      re-checked against the evidence before it is written.
+    </p>
+  </div>
+  <div>
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for(hub_endpoint) }}">
+      <i class="bi bi-code-slash me-1"></i>API hub</a>
+  </div>
+</div>
+
+<!-- Evidence: which appliances may be believed, and why -->
+<div class="fw-card mb-3">
+  <div class="fw-card-header">
+    <span class="fw-card-title"><i class="bi bi-hdd-network me-2 text-accent"></i>Evidence</span>
+    <span class="text-muted" style="font-size:12px;">
+      {{ report.trusted_devices | length }} of {{ report.devices | length }} live appliance(s) usable
+    </span>
+  </div>
+  <div class="fw-card-body">
+    {% if not report.devices %}
+      <p class="text-muted mb-0">No live appliance of this product is in the inventory.</p>
+    {% else %}
+    <div class="table-responsive">
+      <table class="table table-sm align-middle mb-0">
+        <thead><tr>
+          <th>Appliance</th><th>Firmware</th><th>Swept</th><th>Age</th>
+          <th class="text-end">ok</th><th class="text-end">absent</th><th class="text-end">error</th>
+          <th>Usable as evidence</th>
+        </tr></thead>
+        <tbody>
+        {% for d in report.devices %}
+          <tr>
+            <td><strong>{{ d.device }}</strong> <span class="text-muted">{{ d.host }}</span></td>
+            <td>{{ d.firmware or '—' }}</td>
+            <td>{{ (d.swept_at or '—')[:16] }}</td>
+            <td>{% if d.age_days is not none %}{{ d.age_days }}d{% else %}—{% endif %}</td>
+            <td class="text-end">{{ d.counts.ok }}</td>
+            <td class="text-end">{{ d.counts.absent }}</td>
+            <td class="text-end">{{ d.counts.error }}</td>
+            <td>
+              {% if d.trusted %}<span class="fw-badge fw-badge-success">yes</span>
+              {% else %}<span class="fw-badge fw-badge-secondary">no</span>
+                <span class="text-muted" style="font-size:12px;">{{ d.reason }}</span>{% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="text-muted mb-0 mt-2" style="font-size:12px;">
+      A sweep older than {{ report.stale_days }} days, or one where more than
+      {{ (report.max_error_ratio * 100) | round | int }}% of the endpoints failed, is
+      not counted: a device answering errors everywhere is telling you about itself,
+      not about the catalog.
+    </p>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Proposals -->
+<div class="fw-card mb-3">
+  <div class="fw-card-header">
+    <span class="fw-card-title"><i class="bi bi-slash-circle me-2 text-accent"></i>Not served by any live appliance
+      <span class="fw-badge fw-badge-warning">{{ report.proposals | length }}</span></span>
+    {% if report.fleet_firmware_lines %}
+    <span class="text-muted" style="font-size:12px;">
+      fleet firmware: {{ report.fleet_firmware_lines | join(', ') }}</span>
+    {% endif %}
+  </div>
+  <div class="fw-card-body">
+    {% if report.proposals and report.fleet_spans_one_firmware %}
+    <div class="alert alert-warning py-2 px-3 mb-3" style="font-size:13px;">
+      <strong>Read this before disabling anything.</strong> Every usable appliance runs
+      {% if report.fleet_firmware_lines %}
+        <strong>{{ report.fleet_firmware_lines | join(', ') }}</strong>,
+      {% else %}
+        an <strong>unknown</strong> firmware line,
+      {% endif %}
+      so "absent everywhere" here means <em>not in that release</em> — it does not
+      mean the endpoint is dead. The catalog is a deliberate cross-firmware
+      superset: some of these are features of a LATER release
+      (<code>waf/mcp-security.*</code> and <code>ml-based-anomaly-detection</code> are
+      8.0), and disabling them removes them from the catalog your next upgrade will
+      need. Disable a row only when you know the endpoint is gone for good — a wrong
+      URN, a withdrawn feature — not merely because this firmware lacks it.
+    </div>
+    {% endif %}
+    {% if report.proposals %}
+    <form method="post" action="{{ url_for(apply_endpoint) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+          <thead><tr>
+            <th style="width:32px;"></th><th>Endpoint</th><th>URN</th><th>Evidence</th>
+          </tr></thead>
+          <tbody>
+          {% for p in report.proposals %}
+            <tr>
+              <td><input type="checkbox" name="endpoint" value="{{ p.name }}" id="ep-{{ p.id }}"></td>
+              <td><label for="ep-{{ p.id }}" class="mb-0"><strong>{{ p.name }}</strong></label></td>
+              <td><code style="font-size:12px;">{{ p.urn }}</code></td>
+              <td style="font-size:12px;">
+                {% for e in p.evidence %}
+                  <div>{{ verdict_badge(e.verdict) }} {{ e.device }}
+                    {% if e.firmware %}<span class="fw-badge fw-badge-secondary">{{ e.firmware }}</span>{% endif %}
+                    <span class="text-muted">{{ e.detail }}</span></div>
+                {% endfor %}
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="mt-3">
+        <button type="submit" class="btn btn-sm btn-danger">
+          <i class="bi bi-slash-circle me-1"></i>Disable selected</button>
+        <span class="text-muted ms-2" style="font-size:12px;">
+          Soft delete — the row stays so the boot seeder cannot resurrect it, and the
+          Explorer can restore it.
+        </span>
+      </div>
+    </form>
+    {% else %}
+      <p class="text-muted mb-0">
+        Nothing is proposed. An endpoint only reaches this list when
+        <strong>every</strong> usable appliance reports the path does not exist.
+      </p>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Cannot conclude -->
+<div class="fw-card mb-3">
+  <div class="fw-card-header">
+    <span class="fw-card-title"><i class="bi bi-question-circle me-2 text-accent"></i>Cannot conclude
+      <span class="fw-badge fw-badge-secondary">{{ report.partial | length + report.divergent | length }}</span></span>
+  </div>
+  <div class="fw-card-body">
+    {% if report.divergent or report.partial %}
+    <div class="table-responsive">
+      <table class="table table-sm align-middle mb-0">
+        <thead><tr><th>Endpoint</th><th>Why not</th><th>Measured by</th></tr></thead>
+        <tbody>
+        {% for p in report.divergent + report.partial %}
+          <tr>
+            <td><strong>{{ p.name }}</strong><br><code style="font-size:11px;">{{ p.urn }}</code></td>
+            <td style="font-size:12px;">{{ p.why }}</td>
+            <td style="font-size:12px;">{{ p.measured_by | join(', ') or '—' }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+      <p class="text-muted mb-0">Every measured endpoint gave a single, consistent answer.</p>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Never measured -->
+<div class="fw-card mb-3">
+  <div class="fw-card-header">
+    <span class="fw-card-title"><i class="bi bi-eye-slash me-2 text-accent"></i>Never measured
+      <span class="fw-badge fw-badge-secondary">{{ report.unproven | length }}</span></span>
+    <span class="text-muted" style="font-size:12px;">{{ report.verified | length }} verified</span>
+  </div>
+  <div class="fw-card-body">
+    {% if report.unproven %}
+      <p class="text-muted" style="font-size:13px;">
+        These are in the sweep plan and no usable sweep has ever asked an appliance
+        about them. Run a rediscovery on the appliances above to give them a verdict —
+        an unmeasured endpoint is neither good nor dead, it is unknown.
+      </p>
+      <div style="max-height:260px; overflow:auto;">
+        {% for p in report.unproven %}
+          <span class="fw-badge fw-badge-secondary me-1 mb-1">{{ p.name }}</span>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="text-muted mb-0">
+        Every endpoint the sweep can measure ({{ report.plan_size }} of
+        {{ report.catalog_size }} enabled) has at least one verdict.
+      </p>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Outside the sweep plan -->
+<div class="fw-card mb-3">
+  <div class="fw-card-header">
+    <span class="fw-card-title"><i class="bi bi-diagram-3 me-2 text-accent"></i>Outside the sweep plan
+      <span class="fw-badge fw-badge-secondary">{{ report.unsweepable | length }}</span></span>
+  </div>
+  <div class="fw-card-body">
+    {% if report.unsweepable %}
+      <p class="text-muted" style="font-size:13px;">
+        Sub-tables whose parent URN is itself an endpoint: they need an
+        <code>mkey</code>, so the object-list sweep skips them and <strong>no sweep
+        can ever give them a verdict</strong>. Listing them as "never measured" would
+        send you to run a sweep that structurally cannot answer. Their contents belong
+        to the Policy Inspector / deep capture.
+      </p>
+      <div style="max-height:200px; overflow:auto;">
+        {% for p in report.unsweepable %}
+          <span class="fw-badge fw-badge-secondary me-1 mb-1">{{ p.name }}</span>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="text-muted mb-0">The sweep plan covers every enabled endpoint.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

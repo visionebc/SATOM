@@ -8,6 +8,26 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Added
 
+- **The rediscovery sweep now records a verdict per endpoint, and the catalog
+  reads them back.** New page **Registry reconcile** on both API hubs
+  (`/web/registry/reconcile`, `/adc/api/reconcile`, `REGISTRY_EDIT`). The sweep
+  already GET-ed every enabled endpoint against a live appliance; it kept only
+  the rows. Each endpoint is now classified `ok` / `absent` / `error` into
+  `_config.json → endpoint_status`, and `services/registry_reconcile.py` groups
+  the fleet's verdicts into **proposals** (every live appliance says the path
+  does not exist), **divergent** (served by some, absent on others — a firmware
+  split, never proposed), **partial**, **unproven** and **unsweepable** (rows
+  outside the sweep plan, which no sweep can ever answer). Approving a proposal
+  performs the existing soft-delete; the service **re-derives the proposal set
+  server-side**, so the checkbox list filters the evidence and never extends it.
+  Every finding carries the **firmware line** that produced it, because absence
+  is a claim about a firmware and the catalog is a deliberate cross-firmware
+  superset: when the whole quorum runs one line, the page leads with that
+  warning instead of a delete button. First run against the real fleet: **38
+  FortiWeb endpoints served by no live appliance**, agreed on by fortiweb09 and
+  fortiweb10 (both 7.6.8) — several of them 8.0 features, not dead rows. The
+  FortiADC catalog (8.0.3) came back clean.
+
 - **The console can now reboot or upgrade an appliance BY NAME — without
   becoming a second way to authorize one.** `satom execute device reboot
   <device> --yes` and `satom execute device upgrade <device> --yes`. The
@@ -272,6 +292,23 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   updates a ticket instead of opening a second one for the same window.
 
 ### Fixed
+
+- **`errors[]` was empty on every rediscovery snapshot ever written — including
+  ones taken from an appliance that was rejecting a URN outright.**
+  `FortiWebClient._results_list` folds a device error envelope into `[]`, so the
+  sweep could not tell "this collection is empty" from "this firmware has no
+  such endpoint" and recorded neither. That is how `interface` →
+  `system/network.interface` (`errcode -20001`) stayed enabled and clickable in
+  the API Explorer for months. The sweep now classifies with the same codes
+  `cmdb_names_checked` already trusts (`-20001`/`-3` absent on FortiWeb, HTTP
+  404 on FortiADC), and keeps `absent` OUT of `errors[]` so real failures are
+  not buried under dozens of benign rows.
+- **A sick appliance can no longer speak for the catalog.** A ledger where more
+  than 25% of endpoints failed, one older than 45 days, and a pre-verdict
+  snapshot are all refused as evidence, with the reason shown on the page.
+  Verified live: fortiweb08 answered `-20010 "The license of peer VM FortiWeb is
+  not valid"` to 283 of 321 reads while the inventory still called it `online` —
+  read naively it would have proposed deleting the entire catalog.
 
 - **`upgrade` asserted a change-request requirement it never declared.** Its
   own `summary` said it was "authorized by an approved Change Request inside

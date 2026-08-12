@@ -301,7 +301,7 @@ def create_app(config_override: object | None = None) -> Flask:
             # the ADC API console (adc_api), Certificate Manager, and
             # the DB browser. 'cert_manager'/'database' are product-scoped;
             # 'adc_api' is the ADC-scoped API hub. RBAC still gates each write.
-            adc_bps = {'adc', 'adc_api', 'appliances', 'settings', 'audit',
+            adc_bps = {'concept_map', 'adc', 'adc_api', 'appliances', 'settings', 'audit',
                        'jobs', 'notifications', 'profiles', 'users', 'docs',
                        'database', 'locks',
                        # Change Types is an Administration page, mirrored
@@ -358,7 +358,7 @@ def create_app(config_override: object | None = None) -> Flask:
             # (Firmware, Network segment, Appliances, Audit). The
             # Configuration/Operation/Automation sections are faz-blueprint
             # scaffolds. RBAC still gates each write.
-            faz_bps = {'faz', 'faz_api', 'appliances', 'settings', 'audit', 'jobs',
+            faz_bps = {'concept_map', 'faz', 'faz_api', 'appliances', 'settings', 'audit', 'jobs',
                        'notifications', 'profiles', 'users', 'docs',
                        'database', 'locks', 'firmware', 'segments',
                        'device_provision',
@@ -391,7 +391,7 @@ def create_app(config_override: object | None = None) -> Flask:
             # Shared pages + the product-scoped Fleet/Administration pages.
             # The Authentication/Certificate/Logging sections are fac-blueprint
             # pages. RBAC still gates each write.
-            fac_bps = {'fac', 'fac_api', 'appliances', 'settings', 'audit', 'jobs',
+            fac_bps = {'concept_map', 'fac', 'fac_api', 'appliances', 'settings', 'audit', 'jobs',
                        'notifications', 'profiles', 'users', 'docs',
                        'database', 'locks', 'segments', 'firmware',
                        'device_provision',
@@ -1793,6 +1793,7 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.backups", "bp"),
         ("app.views.logs", "bp"),
         ("app.views.search", "bp"),
+        ("app.views.concept_map", "bp"),
         ("app.views.dns_tool", "bp"),
         ("app.views.users", "bp"),
         ("app.views.profiles", "bp"),

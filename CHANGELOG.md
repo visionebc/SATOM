@@ -8,6 +8,26 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Added
 
+- **Concept Map (`/map`) — every page in the console, grouped by
+  what it is for.** The sidebar answers "what can I do in this ADOM?"; it has never
+  answered "where does X live?", which is the question a new operator actually
+  asks. The new page draws the whole console as a mind map — SATOM at the
+  centre, one card per concept around it, every page listed inside its card and
+  clickable — with one search box that matches a page's name, its purpose, its
+  path and the words someone types under pressure ("certificate", "rollback",
+  "who changed it"). A list view renders the same set for reading and printing;
+  both views share the search box, so toggling never changes the result set.
+  Linked from the footer of every page, and reachable from all five ADOMs.
+
+  Two things keep it honest rather than decorative. The URL map is the
+  authority on what exists: every reachable page is either on the map or
+  explicitly excluded with a reason, and a page added without an entry fails a
+  test instead of quietly never appearing — the page itself also states its own
+  coverage, so an incomplete map says so out loud rather than looking finished.
+  And nothing is restated: paths come from the router and the permission each
+  page requires is read off the view function itself, so the map hides the
+  doors this user cannot open and can never drift into advertising a 403.
+
 - **Config-drift alerts say who made the change.** When a device's
   configuration changes, SATOM now checks its own audit log for a write it made
   to that device inside the interval the change has to fall in, and names the

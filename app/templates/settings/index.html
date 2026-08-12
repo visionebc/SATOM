@@ -3802,14 +3802,30 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 {% endif %}
 
-// --- Admin Console lateral menu: collapsible theme groups ------------------
-// The store holds the OPEN groups, never the closed ones.  The default is
+// --- Admin Console lateral menu: one group open at a time ------------------
+// The menu is an ACCORDION: opening a group -- or selecting a section inside
+// one -- collapses every other group.  Selecting is the half that is easy to
+// miss: a section can be activated without ever touching a group header (the
+// in-page links "...#tab-auth", the URL-hash restore below, the redirect after
+// a save), so a fold driven only from the header handler leaves those paths
+// with several groups expanded -- the wall of entries the collapsed default
+// exists to avoid.  The collapse therefore lives in selectGroup, which every
+// one of those paths goes through, and not in the header handler.
+//
+// The store holds the OPEN group, never the closed ones.  The default is
 // "everything collapsed", and an absent or unreadable store has to render that
 // default; a store of CLOSED groups would expand the whole menu for every
 // operator who has not touched it yet.  The key is NEW (...open.v1) on
 // purpose: the previous key holds sets written with the OPPOSITE meaning, and
 // reading one of those here would open exactly the groups an operator had
 // chosen to collapse.  The stale key is dropped rather than left to rot.
+//
+// The stored value stays a LIST, because stores written by the multi-open
+// version are already out there under this key.  Restoring one of those opens
+// the LAST entry -- the most recent group the operator opened -- and rewrites
+// the store with that one alone.  Opening all of them would paint exactly the
+// state this accordion removes, on the first load after the change, and only
+// for the operators who had used the menu most.
 (function () {
   var KEY = 'satom.settingsnav.open.v1';
   var DEAD = 'satom.settingsnav.closed.v1';   // meaning inverted; never read again
@@ -3824,6 +3840,7 @@ document.addEventListener('DOMContentLoaded', function () {
     } catch (e) { return []; }
   }
   function write(list) { try { localStorage.setItem(KEY, JSON.stringify(list)); } catch (e) {} }
+  function allGroups() { return nav.querySelectorAll('.fw-set-nav-group'); }
   function groupOf(el) { return el && el.closest ? el.closest('.fw-set-nav-group') : null; }
   function keyOf(g) { return g ? g.getAttribute('data-set-group') : null; }
   function paint(g, open) {
@@ -3831,37 +3848,58 @@ document.addEventListener('DOMContentLoaded', function () {
     var btn = g.querySelector('.fw-set-nav-toggle');
     if (btn) { btn.setAttribute('aria-expanded', open ? 'true' : 'false'); }
   }
-  function openGroup(g) {
-    if (!g || g.classList.contains('open')) { return; }
-    paint(g, true);
-    var k = keyOf(g), list = read();
-    if (list.indexOf(k) === -1) { list.push(k); write(list); }
+  function groupNamed(name) {
+    var found = null;
+    Array.prototype.forEach.call(allGroups(), function (g) {
+      if (!found && keyOf(g) === name) { found = g; }
+    });
+    return found;
   }
+  // Open g, collapse the rest.  Deliberately NOT guarded on "g is already
+  // open": a section can be selected inside the open group while a second
+  // group is still expanded from an earlier click, and returning early there
+  // would leave that one open -- the exact case this exists for.
+  function selectGroup(g) {
+    if (!g) { return; }
+    Array.prototype.forEach.call(allGroups(), function (other) {
+      if (other !== g) { paint(other, false); }
+    });
+    paint(g, true);
+    write([keyOf(g)]);
+  }
+  function closeGroup(g) { paint(g, false); write([]); }
 
   // Restore.  Only what the operator opened before; everything else stays as
   // the server drew it.
-  var open = read();
-  Array.prototype.forEach.call(nav.querySelectorAll('.fw-set-nav-group'), function (g) {
-    if (open.indexOf(keyOf(g)) !== -1) { paint(g, true); }
-  });
+  var saved = read();
+  for (var i = saved.length - 1; i >= 0; i--) {
+    var hit = groupNamed(saved[i]);
+    if (hit) { selectGroup(hit); break; }
+  }
 
   nav.addEventListener('click', function (e) {
     var head = e.target.closest ? e.target.closest('.fw-set-nav-toggle') : null;
-    if (!head) { return; }
-    var g = groupOf(head);
-    if (!g) { return; }
-    var willOpen = !g.classList.contains('open');
-    paint(g, willOpen);
-    var k = keyOf(g), list = read().filter(function (x) { return x !== k; });
-    if (willOpen) { list.push(k); }
-    write(list);
+    if (head) {
+      var g = groupOf(head);
+      if (!g) { return; }
+      if (g.classList.contains('open')) { closeGroup(g); } else { selectGroup(g); }
+      return;
+    }
+    // Selecting a section folds the other groups.  Bootstrap does not fire
+    // shown.bs.tab when the clicked section is ALREADY the active one, so a
+    // handler hung only on that event would ignore the click that re-selects
+    // the current section: from the operator's side, an accordion that
+    // sometimes does not fold.
+    var item = e.target.closest ? e.target.closest('[data-bs-toggle="tab"]') : null;
+    if (item) { selectGroup(groupOf(item)); }
   });
 
-  // Anything that reveals a section also reveals its group: the in-page links
-  // (href="...#tab-auth"), the URL-hash restore below and the redirects after
-  // a save all activate a tab WITHOUT going through this menu.  Without this
-  // the operator lands on a pane whose menu shows no selection anywhere.
-  nav.addEventListener('shown.bs.tab', function (e) { openGroup(groupOf(e.target)); }, true);
+  // Anything that reveals a section also reveals its group -- and only its
+  // group: the in-page links (href="...#tab-auth"), the URL-hash restore below
+  // and the redirects after a save all activate a tab WITHOUT going through
+  // this menu.  Without this the operator lands on a pane whose menu shows no
+  // selection anywhere.
+  nav.addEventListener('shown.bs.tab', function (e) { selectGroup(groupOf(e.target)); }, true);
 })();
 // --- activate the tab named in the URL hash (after a save redirect) ---
 (function () {

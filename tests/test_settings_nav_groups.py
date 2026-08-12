@@ -336,3 +336,161 @@ def test_a_long_badge_wraps_instead_of_leaving_the_card():
     assert bodies, "nothing lets a long badge wrap inside the console panes"
     assert any("white-space: normal" in b for b in bodies), \
         "the badge still cannot wrap"
+
+
+# --------------------------------------------------------- the accordion --
+#
+# The menu holds ONE open group. Nothing fails when that rots: a second group
+# simply stays expanded, and the operator scrolls past entries they did not ask
+# for — the wall the collapsed default exists to avoid, arrived at one click at
+# a time. The script never runs in a Flask test, so these read the RENDERED
+# script and assert on its structure.
+
+SCRIPT_HEAD = "(function () {"
+SCRIPT_ANCHOR = "var KEY = 'satom.settingsnav.open.v1'"
+SCRIPT_END = "// --- activate the tab named in the URL hash"
+
+
+def _strip_comments(code):
+    """Drop ``//`` comments, respecting quotes.
+
+    This repo has collected eleven assertions that matched the comment
+    explaining the rule they guard. Every rule below names things the comments
+    also name (``selectGroup``, ``shown.bs.tab``), so the comments go first.
+    Quotes are tracked because the block holds selectors — ``'[data-bs-toggle=
+    "tab"]'`` — whose contents have to survive.
+    """
+    out = []
+    for line in code.splitlines():
+        quote, cut, i = None, None, 0
+        while i < len(line):
+            c = line[i]
+            if quote:
+                if c == "\\":
+                    i += 2
+                    continue
+                if c == quote:
+                    quote = None
+            elif c in "\"'":
+                quote = c
+            elif c == "/" and line[i + 1:i + 2] == "/":
+                cut = i
+                break
+            i += 1
+        out.append(line if cut is None else line[:cut])
+    return "\n".join(out)
+
+
+def _menu_script(html):
+    """The lateral-menu IIFE, comments removed. Loud when it finds nothing:
+    a slice that silently comes back empty turns every rule below into a
+    statement about the empty string (docs/safeguards.md §68)."""
+    at = html.find(SCRIPT_ANCHOR)
+    assert at != -1, "the lateral-menu script is gone from the rendered page"
+    head = html.rfind(SCRIPT_HEAD, 0, at)
+    assert head != -1, "the menu script is no longer wrapped in an IIFE"
+    end = html.find(SCRIPT_END, at)
+    assert end != -1, "the URL-hash restore that followed the menu script is gone"
+    code = _strip_comments(html[head:end])
+    assert code.count("{") == code.count("}"), "the slice does not hold whole blocks"
+    return code
+
+
+def _block(code, opener):
+    """The braced body that follows ``opener``, brace-balanced.
+
+    Balanced rather than a fixed window: a window wide enough for the body
+    today reaches into the NEXT function tomorrow and reports a rule satisfied
+    by code the operator never runs through this path."""
+    at = code.find(opener)
+    assert at != -1, "%r is not in the menu script" % opener
+    start = code.index("{", at)
+    depth = 0
+    for i in range(start, len(code)):
+        if code[i] == "{":
+            depth += 1
+        elif code[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return code[start:i + 1]
+    raise AssertionError("%r is never closed" % opener)
+
+
+def _script(app, client):
+    login(client, admin_user_id(app))
+    html, _, _ = _page(client)
+    return _menu_script(html)
+
+
+def test_opening_a_group_collapses_every_other_group(app, client):
+    """One routine opens a group, and it is the same one that folds the rest.
+    Split in two — one that opens, one that folds — and every caller has to
+    remember to call both; the caller that forgets is the one that ships."""
+    body = _block(_script(app, client), "function selectGroup(")
+    assert "allGroups()" in body, "selectGroup no longer looks at the other groups"
+    assert re.search(r"!==\s*g\b", body), \
+        "nothing in selectGroup separates the chosen group from the rest"
+    assert re.search(r"paint\(\s*\w+\s*,\s*false\s*\)", body), \
+        "selectGroup opens a group without folding the others — not an accordion"
+    assert re.search(r"paint\(\s*g\s*,\s*true\s*\)", body), \
+        "selectGroup no longer opens the group it was given"
+
+
+def test_selecting_a_section_folds_the_other_groups(app, client):
+    """The fold has to fire on the ENTRIES, not only on the group headers.
+    Selecting a section is how this menu is used; a fold bound to the headers
+    alone leaves the previous group expanded for the whole session."""
+    handler = _block(_script(app, client), "nav.addEventListener('click'")
+    assert 'data-bs-toggle="tab"' in handler, \
+        "the click handler no longer recognises a section entry"
+    tail = handler.split('data-bs-toggle="tab"', 1)[1]
+    assert "selectGroup(" in tail, \
+        "a section is selected without folding the other groups"
+
+
+def test_re_selecting_the_open_section_folds_the_rest_too(app, client):
+    """No early return on "already open". Bootstrap does not fire
+    ``shown.bs.tab`` when the clicked section is already the active one, and a
+    group can be open while ANOTHER one is still expanded from an earlier
+    click — the case an early return leaves untouched, which is the case this
+    accordion is for."""
+    body = _block(_script(app, client), "function selectGroup(")
+    assert "contains('open')" not in body, \
+        "selectGroup returns early for a group already open — the rest never fold"
+
+
+def test_a_tab_shown_without_the_menu_folds_the_rest(app, client):
+    """The in-page links, the URL-hash restore and the redirect after a save
+    activate a section without touching the menu. They go through the same
+    routine, or those paths keep the multi-open behaviour that was removed."""
+    code = _script(app, client)
+    at = code.find("shown.bs.tab")
+    assert at != -1, "the menu no longer follows a tab it did not open"
+    assert "selectGroup(" in code[at:at + 220], \
+        "a tab shown from elsewhere opens its group without folding the others"
+
+
+def test_the_store_never_holds_more_than_one_group(app, client):
+    """The store is the state on the next load. Keep appending to it and the
+    menu is an accordion for exactly as long as the page stays open."""
+    code = _script(app, client)
+    body = _block(code, "function selectGroup(")
+    assert re.search(r"write\(\s*\[\s*keyOf\(\s*g\s*\)\s*\]\s*\)", body), \
+        "selectGroup does not store its group as the only open one"
+    assert ".push(" not in code, \
+        "the store is appended to — it holds a set of open groups again"
+
+
+def test_a_store_from_the_multi_open_version_restores_one_group(app, client):
+    """The key did not change, so stores holding SEVERAL groups are already out
+    there. Restoring all of them would paint the state this change removes, on
+    the first load after it, for the operators who used the menu most."""
+    code = _script(app, client)
+    parts = code.split("var saved = read();")
+    assert len(parts) == 2, "the restore no longer reads the store"
+    loop = parts[1].split("nav.addEventListener", 1)[0]
+    assert "saved.length - 1" in loop and "i--" in loop, \
+        "the restore no longer starts from the most recently opened group"
+    assert "break" in loop, "the restore keeps opening groups after the first hit"
+    assert "selectGroup(" in loop, \
+        "the restore opens a group without folding the rest or rewriting the store"

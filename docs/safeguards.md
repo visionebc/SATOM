@@ -7807,3 +7807,52 @@ never made. The rendered check is not optional here either: the nested split in
 System Information is invisible in the stylesheet and in the markup, and only
 shows up in a screenshot of the pane.
 
+
+## §75 — an accordion is only an accordion if SELECTING folds too
+
+The Admin Console menu (`app/templates/settings/index.html`) holds **one** open
+group. The rule that costs the time is not "opening one closes the others" —
+it is that **selecting a section** closes them as well, and a section can be
+selected through four paths that never touch a group header:
+
+1. clicking the entry in the menu;
+2. an in-page link (`href="…#tab-auth"`) from inside another pane;
+3. the URL-hash restore at the foot of the file, after a save redirect;
+4. `bootstrap.Tab(...).show()` from any script.
+
+A fold written into the header handler covers **none** of them. So the fold
+lives in `selectGroup`, which every path goes through, and the entries are
+wired on **click** as well as on `shown.bs.tab`: Bootstrap does not fire
+`shown.bs.tab` when the clicked section is **already the active one**, and an
+accordion that folds most of the time but not always reads as a bug rather than
+as a rule.
+
+`selectGroup` is deliberately **not** guarded on "this group is already open".
+A group can be open while a *second* one is still expanded from an earlier
+click — precisely the state to collapse — and an early return there leaves it.
+That guard is the previous `openGroup`, and it is mutation M3.
+
+**The store keeps its key and its list shape.** Sets holding several groups are
+already written under `satom.settingsnav.open.v1` in operators' browsers. The
+restore walks that list from the END (the most recently opened group), stops at
+the first group that still exists, and rewrites the store with that one alone.
+Opening all of them would paint exactly the state this change removes, on the
+first load after it, and only for the operators who had used the menu most.
+
+### Checking it
+
+The script never runs in a Flask test. The guards in
+`tests/test_settings_nav_groups.py` read the **rendered** script, strip its
+comments (every rule names things the comments also name — the twelfth
+assert-by-substring trap in this repo) and assert on brace-balanced function
+bodies, never on a fixed window. Behaviour is checked in a real browser:
+render `/settings/` with an authenticated `test_client`, rewrite `/static/` to
+relative paths, append a driver script that clicks and reports the open groups
+into a `#RESULT` node, and run
+`chromium --headless --virtual-time-budget=8000 --dump-dom`. Real Bootstrap
+loads (`typeof bootstrap === "object"`), so the "already active section" case
+is genuine and not a stub. Seed `localStorage` from a `<script>` in `<head>` to
+exercise a legacy multi-entry store — a headless run starts with an empty
+profile, so nothing persists between runs.
+
+8 mutations, 8 bite (harness measured by **rc**; only `rc==1` is a failure).

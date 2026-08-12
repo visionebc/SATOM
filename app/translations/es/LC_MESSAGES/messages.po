@@ -15804,3 +15804,27 @@ msgstr "No lo informes"
 
 msgid "When a config change matches a write SATOM recorded in its own audit log, the alert names who made it instead of asking you to remember. Unexplained drift is always reported."
 msgstr "Cuando un cambio de configuración coincide con una escritura SATOM registrada en su propio registro de auditoría, la alerta indica quién lo hizo en lugar de pedirte que te acuerdes. Cualquier desviación no explicada siempre se informa."
+
+msgid "Access & Identity"
+msgstr "Acceso e Identidad"
+
+msgid "Certificates & Trust"
+msgstr "Certificados y Confianza"
+
+msgid "Monitoring & Alerts"
+msgstr "Monitoreo y Alertas"
+
+msgid "Network & DNS"
+msgstr "Red y DNS"
+
+msgid "Fleet & Devices"
+msgstr "Flota y dispositivos"
+
+msgid "My Account"
+msgstr "Mi Cuenta"
+
+msgid "Settings sections"
+msgstr "Secciones de configuración"
+
+msgid "User Interface"
+msgstr "Interfaz de usuario"

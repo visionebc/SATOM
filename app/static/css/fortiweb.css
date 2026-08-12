@@ -1693,3 +1693,134 @@ body.fw-entering-page {
   filter: drop-shadow(0 0 6px color-mix(in srgb, var(--fw-glow) 60%, transparent))
           drop-shadow(0 0 2px color-mix(in srgb, var(--fw-glow-accent) 40%, transparent));
 }
+
+/* ============================================================
+   Admin Console — lateral, theme-grouped settings menu
+   Replaces the 24-entry horizontal tab strip on /settings/.
+   Built from the --fw-* tokens only: this product has ONE theme
+   (light chrome on #F3F6FC), so no dark glass belongs here.
+   ============================================================ */
+.fw-settings-layout {
+  display: grid;
+  grid-template-columns: 258px minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+  margin-bottom: 24px;
+}
+
+.fw-settings-nav {
+  display: block;                       /* .nav is a flex ROW; this is a column */
+  position: sticky;
+  top: calc(var(--fw-topbar-height) + 16px);
+  max-height: calc(100vh - var(--fw-topbar-height) - 32px);
+  overflow-y: auto;
+  padding: 6px;
+  background: var(--fw-surface);
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius-lg);
+  box-shadow: var(--fw-card-shadow);
+}
+
+.fw-set-nav-group + .fw-set-nav-group { border-top: 1px solid var(--fw-border-light); }
+
+.fw-set-nav-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 10px;
+  background: none;
+  border: 0;
+  border-radius: var(--fw-radius);
+  color: var(--fw-text-secondary);
+  font-family: var(--fw-font);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: .035em;
+  text-transform: uppercase;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--fw-transition), color var(--fw-transition);
+}
+.fw-set-nav-toggle:hover { background: var(--fw-surface-alt); color: var(--fw-text-primary); }
+.fw-set-nav-toggle:focus-visible { outline: 2px solid var(--fw-accent); outline-offset: -2px; }
+
+.fw-set-nav-group-icon { font-size: 13px; color: var(--fw-accent); flex: none; }
+.fw-set-nav-group-label { flex: 1; min-width: 0; }
+.fw-set-nav-count {
+  flex: none;
+  padding: 1px 6px;
+  background: var(--fw-surface-alt);
+  border: 1px solid var(--fw-border-light);
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--fw-text-secondary);
+}
+/* Caret convention is the sidebar's, not a new one: chevron-down while the
+   group is open, rotated -90deg while it is closed (fortiweb.css .fw-nav-caret).
+   Two accordions on the same screen pointing opposite ways read as two
+   different controls. */
+.fw-set-nav-caret {
+  flex: none;
+  font-size: 10px;
+  opacity: .65;
+  transition: transform .28s cubic-bezier(.4, 0, .2, 1);
+}
+.fw-set-nav-group:not(.open) .fw-set-nav-caret { transform: rotate(-90deg); }
+
+.fw-set-nav-body {
+  overflow: hidden;
+  padding: 0 0 6px;
+  transition: opacity .2s ease;
+}
+/* visibility (not just max-height:0) so a collapsed group's entries leave the
+   TAB ORDER too — a hidden control you can still focus is worse than one that
+   is simply absent. */
+.fw-set-nav-group:not(.open) > .fw-set-nav-body {
+  max-height: 0;
+  padding-bottom: 0;
+  opacity: 0;
+  visibility: hidden;
+}
+.fw-set-nav-group.open > .fw-set-nav-body { max-height: none; opacity: 1; visibility: visible; }
+
+.fw-settings-nav .nav-link {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  margin: 1px 0;
+  padding: 7px 10px 7px 16px;
+  background: none;
+  border: 0;
+  border-radius: var(--fw-radius);
+  color: var(--fw-text-primary);
+  font-family: var(--fw-font);
+  font-size: 13px;
+  line-height: 1.3;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--fw-transition), color var(--fw-transition);
+}
+.fw-settings-nav .nav-link:hover { background: var(--fw-accent-light); color: var(--fw-accent); }
+.fw-settings-nav .nav-link:focus-visible { outline: 2px solid var(--fw-accent); outline-offset: -2px; }
+.fw-settings-nav .nav-link.active { background: var(--fw-accent); color: #FFFFFF; font-weight: 600; }
+.fw-settings-nav .nav-link > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fw-set-nav-icon { flex: none; width: 16px; text-align: center; font-size: 13px; color: var(--fw-text-secondary); }
+.fw-settings-nav .nav-link:hover .fw-set-nav-icon { color: var(--fw-accent); }
+.fw-settings-nav .nav-link.active .fw-set-nav-icon { color: #FFFFFF; }
+
+/* Narrow viewports: the menu stops being a column and rides above the
+   panes — the same place the tab strip used to occupy. */
+@media (max-width: 991.98px) {
+  .fw-settings-layout { grid-template-columns: minmax(0, 1fr); }
+  .fw-settings-nav { position: static; max-height: none; }
+}

@@ -18,131 +18,97 @@
   </div>
 </div>
 
-<!-- Tab navigation -->
-<ul class="nav nav-tabs mb-4" id="settingsTabs" role="tablist">
-  {% if is_admin %}
-  <li class="nav-item" role="presentation">
-    <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-general" type="button">
-      <i class="bi bi-sliders me-1"></i>{{ _('General') }}
-    </button>
-  </li>
-  <li class="nav-item" role="presentation">
-    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-access" type="button">
-      <i class="bi bi-shield-lock me-1"></i>{{ _('Access Control') }}
-    </button>
-  </li>
-  <li class="nav-item" role="presentation">
-    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-users" type="button">
-      <i class="bi bi-people me-1"></i>{{ _('Users') }}
-    </button>
-  </li>
-  <li class="nav-item" role="presentation">
-    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-profiles" type="button">
-      <i class="bi bi-person-badge me-1"></i>{{ _('Profiles') }}
-    </button>
-  </li>
-  <li class="nav-item" role="presentation">
-    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-git" type="button">
-      <i class="bi bi-git me-1"></i>{{ _('Git') }}
-    </button>
-  </li>
-  <li class="nav-item" role="presentation">
-    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-sotbackup" type="button">
-      <i class="bi bi-hdd-network me-1"></i>SoT &amp; Backup
-    </button>
-  </li>
-  <li class="nav-item" role="presentation">
-    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-email" type="button">
-      <i class="bi bi-envelope me-1"></i>Email &amp; Alerts
-    </button>
-  </li>
-  <li class="nav-item" role="presentation">
-    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-thresholds" type="button">
-      <i class="bi bi-sliders me-1"></i>{{ _('Thresholds') }}
-    </button>
-  </li>
-  <li class="nav-item" role="presentation">
-    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-auth" type="button">
-      <i class="bi bi-shield-lock me-1"></i>{{ _('Authentication') }}
-    </button>
-  </li>
-  <li class="nav-item" role="presentation">
-    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-certmgr" type="button">
-      <i class="bi bi-award me-1"></i>{{ _('Certificate Manager') }}
-    </button>
-  </li>
-  <li class="nav-item" role="presentation">
-    {% if current_user.can('advisor.configure') %}
-  <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-ai" type="button" id="ai-settings-tab-btn">
-    <i class="bi bi-stars me-1"></i>{{ _('AI Advisor') }}
-  </button>
-  {% endif %}
-<button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-nodetls" type="button">
-      <i class="bi bi-shield-lock-fill me-1"></i>{{ _('Node TLS') }}
-    </button>
-  </li>
-  <li class="nav-item" role="presentation">
-    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-catrust" type="button">
-      <i class="bi bi-patch-check-fill me-1"></i>{{ _('Trust store') }}
-    </button>
-  </li>
-  <li class="nav-item" role="presentation">
-    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-hypervisors" type="button">
-      <i class="bi bi-hdd-stack-fill me-1"></i>{{ _('Hypervisors') }}
-    </button>
-  </li>
-  <li class="nav-item" role="presentation">
-    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-dnstool" type="button">
-      <i class="bi bi-globe2 me-1"></i>{{ _('DNS Lookup') }}
-    </button>
-  </li>
-  <li class="nav-item" role="presentation">
-    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-dnsrecords" type="button">
-      <i class="bi bi-pencil-square me-1"></i>{{ _('DNS Records') }}
-    </button>
-  </li>
-  <li class="nav-item" role="presentation">
-    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-policylinks" type="button">
-      <i class="bi bi-link-45deg me-1"></i>{{ _('Policy Links') }}
-    </button>
-  </li>
-  <li class="nav-item" role="presentation">
-    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-clonerules" type="button">
-      <i class="bi bi-files me-1"></i>{{ _('Clone / Migrate') }}
-    </button>
-  </li>
-  <li class="nav-item" role="presentation">
-    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-adoms" type="button">
-      <i class="bi bi-grid-1x2 me-1"></i>{{ _('ADOMs') }}
-    </button>
-  </li>
-  <li class="nav-item" role="presentation">
-    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-appearance" type="button">
-      <i class="bi bi-palette me-1"></i>{{ _('Appearance') }}
-    </button>
-  </li>
-  <li class="nav-item" role="presentation">
-    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-languages" type="button">
-      <i class="bi bi-translate me-1"></i>{{ _('Languages') }}
-    </button>
-  </li>
-  <li class="nav-item" role="presentation">
-    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-fazmenu" type="button">
-      <i class="bi bi-list-check me-1"></i>{{ _('FAZ Menu') }}
-    </button>
-  </li>
-  {% endif %}
-  <li class="nav-item" role="presentation">
-    <button class="nav-link {{ 'active' if not is_admin else '' }}" data-bs-toggle="tab" data-bs-target="#tab-security" type="button">
-      <i class="bi bi-shield-lock me-1"></i>{{ _('Security') }}
-    </button>
-  </li>
-  <li class="nav-item" role="presentation">
-    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-password" type="button">
-      <i class="bi bi-key me-1"></i>{{ _('Change Password') }}
-    </button>
-  </li>
-</ul>
+<!-- ── Admin Console navigation ────────────────────────────────────────────
+     Lateral menu, one collapsible group per theme.
+
+     The tab TARGET is the identity of a section: the panes below, the
+     in-page links (#tab-auth), the URL-hash restore at the foot of this
+     file and tests/test_theme.py all key off it. Targets are therefore
+     literal and are NEVER translated — only `label` goes through _().
+     (Same rule the sidebar learned the hard way: an identifier is not
+     copy — docs/safeguards.md §68.)
+
+     Icons and labels are the ones the horizontal tab strip used, verbatim:
+     regrouping the menu must not silently restyle its entries.
+-->
+{% set active_tab = 'tab-general' if is_admin else 'tab-security' %}
+{% set nav_groups = [
+  {'key': 'system', 'label': _('System'), 'icon': 'bi-hdd-rack', 'admin': true, 'items': [
+    {'t': 'tab-general',     'icon': 'bi-sliders',          'label': _('General')},
+    {'t': 'tab-git',         'icon': 'bi-git',              'label': _('Git')},
+    {'t': 'tab-sotbackup',   'icon': 'bi-hdd-network',      'label': 'SoT & Backup'},
+    {'t': 'tab-ai',          'icon': 'bi-stars',            'label': _('AI Advisor'),
+     'perm': 'advisor.configure', 'id': 'ai-settings-tab-btn'}]},
+  {'key': 'access', 'label': _('Access & Identity'), 'icon': 'bi-people', 'admin': true, 'items': [
+    {'t': 'tab-users',       'icon': 'bi-people',           'label': _('Users')},
+    {'t': 'tab-profiles',    'icon': 'bi-person-badge',     'label': _('Profiles')},
+    {'t': 'tab-auth',        'icon': 'bi-shield-lock',      'label': _('Authentication')},
+    {'t': 'tab-access',      'icon': 'bi-shield-lock',      'label': _('Access Control')}]},
+  {'key': 'certs', 'label': _('Certificates & Trust'), 'icon': 'bi-award', 'admin': true, 'items': [
+    {'t': 'tab-certmgr',     'icon': 'bi-award',            'label': _('Certificate Manager')},
+    {'t': 'tab-nodetls',     'icon': 'bi-shield-lock-fill', 'label': _('Node TLS')},
+    {'t': 'tab-catrust',     'icon': 'bi-patch-check-fill', 'label': _('Trust store')}]},
+  {'key': 'monitoring', 'label': _('Monitoring & Alerts'), 'icon': 'bi-activity', 'admin': true, 'items': [
+    {'t': 'tab-email',       'icon': 'bi-envelope',         'label': 'Email & Alerts'},
+    {'t': 'tab-thresholds',  'icon': 'bi-sliders',          'label': _('Thresholds')}]},
+  {'key': 'network', 'label': _('Network & DNS'), 'icon': 'bi-globe2', 'admin': true, 'items': [
+    {'t': 'tab-dnstool',     'icon': 'bi-globe2',           'label': _('DNS Lookup')},
+    {'t': 'tab-dnsrecords',  'icon': 'bi-pencil-square',    'label': _('DNS Records')}]},
+  {'key': 'fleet', 'label': _('Fleet & Devices'), 'icon': 'bi-hdd-stack-fill', 'admin': true, 'items': [
+    {'t': 'tab-hypervisors', 'icon': 'bi-hdd-stack-fill',   'label': _('Hypervisors')},
+    {'t': 'tab-adoms',       'icon': 'bi-grid-1x2',         'label': _('ADOMs')},
+    {'t': 'tab-policylinks', 'icon': 'bi-link-45deg',       'label': _('Policy Links')},
+    {'t': 'tab-clonerules',  'icon': 'bi-files',            'label': _('Clone / Migrate')}]},
+  {'key': 'interface', 'label': _('User Interface'), 'icon': 'bi-palette', 'admin': true, 'items': [
+    {'t': 'tab-appearance',  'icon': 'bi-palette',          'label': _('Appearance')},
+    {'t': 'tab-languages',   'icon': 'bi-translate',        'label': _('Languages')},
+    {'t': 'tab-fazmenu',     'icon': 'bi-list-check',       'label': _('FAZ Menu')}]},
+  {'key': 'account', 'label': _('My Account'), 'icon': 'bi-person-circle', 'admin': false, 'items': [
+    {'t': 'tab-security',    'icon': 'bi-shield-lock',      'label': _('Security')},
+    {'t': 'tab-password',    'icon': 'bi-key',              'label': _('Change Password')}]}
+] %}
+
+<div class="fw-settings-layout">
+  <aside class="nav fw-settings-nav" id="settingsTabs" role="tablist"
+         aria-label="{{ _('Settings sections') }}">
+    {% for g in nav_groups %}
+      {% if is_admin or not g.admin %}
+        {# A group with nothing the caller may see is not rendered at all —
+           an empty accordion header is a promise of a section that is not
+           there. #}
+        {% set vis = [] %}
+        {% for it in g['items'] %}
+          {% if not it.perm or (current_user and current_user.can(it.perm)) %}
+            {% set _ = vis.append(it) %}
+          {% endif %}
+        {% endfor %}
+        {% if vis %}
+        {% set holds_active = vis | selectattr('t', 'equalto', active_tab) | list %}
+        <div class="fw-set-nav-group open" role="presentation"
+             data-set-group="{{ g.key }}"{% if holds_active %} data-set-anchor="1"{% endif %}>
+          <button type="button" class="fw-set-nav-toggle" aria-expanded="true"
+                  data-set-toggle="{{ g.key }}">
+            <i class="bi {{ g.icon }} fw-set-nav-group-icon"></i>
+            <span class="fw-set-nav-group-label">{{ g.label }}</span>
+            <span class="fw-set-nav-count">{{ vis | length }}</span>
+            <i class="bi bi-chevron-down fw-set-nav-caret"></i>
+          </button>
+          <div class="fw-set-nav-body">
+            {% for it in vis %}
+            <button class="nav-link{{ ' active' if it.t == active_tab else '' }}" type="button"
+                    data-bs-toggle="tab" data-bs-target="#{{ it.t }}"
+                    {%- if it.id %} id="{{ it.id }}"{% endif %}>
+              <i class="bi {{ it.icon }} fw-set-nav-icon"></i><span>{{ it.label }}</span>
+            </button>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+      {% endif %}
+    {% endfor %}
+  </aside>
+
+  <div class="fw-settings-main">
 
 <div class="tab-content">
 
@@ -3563,7 +3529,9 @@
     </div>
   </div>
 
-</div>
+</div><!-- /.tab-content -->
+  </div><!-- /.fw-settings-main -->
+</div><!-- /.fw-settings-layout -->
 {% endblock %}
 
 {% block scripts %}
@@ -3829,6 +3797,75 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 {% endif %}
 
+// --- Admin Console lateral menu: collapsible theme groups ------------------
+// The store holds the CLOSED groups, never the open ones. The default is
+// "everything expanded", and an absent/unreadable store has to render that
+// default; a store of OPEN groups would collapse the whole menu for every
+// operator who has not touched it yet. The key is new (…closed.v1) on
+// purpose — reusing an older one would read a set saved with the opposite
+// meaning and hide exactly the groups someone had chosen to keep.
+(function () {
+  var KEY = 'satom.settingsnav.closed.v1';
+  var nav = document.getElementById('settingsTabs');
+  if (!nav) return;
+
+  function read() {
+    try {
+      var v = JSON.parse(localStorage.getItem(KEY) || '[]');
+      return Array.isArray(v) ? v : [];
+    } catch (e) { return []; }
+  }
+  function write(list) { try { localStorage.setItem(KEY, JSON.stringify(list)); } catch (e) {} }
+  function groupOf(el) { return el && el.closest ? el.closest('.fw-set-nav-group') : null; }
+  function keyOf(g) { return g ? g.getAttribute('data-set-group') : null; }
+  function paint(g, open) {
+    g.classList.toggle('open', open);
+    var btn = g.querySelector('.fw-set-nav-toggle');
+    if (btn) { btn.setAttribute('aria-expanded', open ? 'true' : 'false'); }
+  }
+  function openGroup(g) {
+    if (!g || g.classList.contains('open')) { return; }
+    paint(g, true);
+    var k = keyOf(g), closed = read();
+    if (closed.indexOf(k) !== -1) {
+      write(closed.filter(function (x) { return x !== k; }));
+    }
+  }
+
+  // Restore. The group holding the SELECTED section is forced open and
+  // dropped from the store, so screen and store never disagree: a collapsed
+  // group with the active entry inside it shows a menu with no selection at
+  // all, which reads as "nothing is open" rather than "it is hidden here".
+  var closed = read(), changed = false;
+  Array.prototype.forEach.call(nav.querySelectorAll('.fw-set-nav-group'), function (g) {
+    var k = keyOf(g);
+    if (closed.indexOf(k) === -1) { return; }
+    if (g.querySelector('.nav-link.active')) {
+      closed = closed.filter(function (x) { return x !== k; });
+      changed = true;
+      return;
+    }
+    paint(g, false);
+  });
+  if (changed) { write(closed); }
+
+  nav.addEventListener('click', function (e) {
+    var head = e.target.closest ? e.target.closest('.fw-set-nav-toggle') : null;
+    if (!head) { return; }
+    var g = groupOf(head);
+    if (!g) { return; }
+    var willOpen = !g.classList.contains('open');
+    paint(g, willOpen);
+    var k = keyOf(g), list = read().filter(function (x) { return x !== k; });
+    if (!willOpen) { list.push(k); }
+    write(list);
+  });
+
+  // Anything that reveals a section also reveals its group: the in-page
+  // links (href="…#tab-auth"), the URL-hash restore below and the redirects
+  // after a save all activate a tab WITHOUT going through this menu.
+  nav.addEventListener('shown.bs.tab', function (e) { openGroup(groupOf(e.target)); }, true);
+})();
 // --- activate the tab named in the URL hash (after a save redirect) ---
 (function () {
   var hash = window.location.hash;

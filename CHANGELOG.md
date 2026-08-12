@@ -74,6 +74,26 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Changed
 
+- **The Admin Console menu is lateral and grouped by theme.** Twenty-four
+  sections were reached from one horizontal strip that wrapped onto three rows
+  on a normal screen: the row a section sat on moved as the window resized, so
+  there was no stable place to look for anything, and nothing on screen said
+  which sections belonged together. They are now a column beside the panes,
+  grouped under eight headings — System, Access & Identity, Certificates &
+  Trust, Monitoring & Alerts, Network & DNS, Fleet & Devices, User Interface,
+  My Account — and every group collapses to its heading. The menu opens fully
+  expanded, so the console still shows everything it did before; what an
+  operator collapses is remembered per browser. Nothing about the sections
+  themselves changed: same entries, same icons, same panes, same in-page links
+  and URL hashes (`…/settings/#tab-auth`).
+
+  The remembered state is the set of groups an operator has CLOSED, never the
+  set they left open: the default is "everything expanded", and a store of open
+  groups would have collapsed the whole console for every operator who had
+  never touched it. A section reached without the menu — an in-page link, a
+  redirect after a save, a URL hash — reveals its group, so the selection is
+  never hidden inside a collapsed heading.
+
 - **The external CRQ now carries the window, not just its primary keys.** The
   `change.requested` hook sent `device_ids` — bare integers, meaningful only
   inside SATOM's database — and a flat list of policy names. It now also sends

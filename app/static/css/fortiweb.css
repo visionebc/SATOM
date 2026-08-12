@@ -1824,3 +1824,108 @@ body.fw-entering-page {
   .fw-settings-layout { grid-template-columns: minmax(0, 1fr); }
   .fw-settings-nav { position: static; max-height: none; }
 }
+
+/* ------------------------------------------------------------------
+   Admin Console panes: TWO columns, so the width the menu left over is
+   used instead of a single tall stack the operator has to scroll.
+
+   The rule applies to the pane's TOP-LEVEL blocks only — those are the
+   cards.  Grids NESTED inside a card body lay out FIELDS, and a port
+   input stretched to half the screen is not "using the width", it is
+   losing the association between label and control.  That is the line:
+   top level = cards = two columns; anything deeper is untouched.
+
+   Only the ACTIVE pane becomes a grid.  Bootstrap hides the others with
+   `display:none` on `.tab-pane`, and a blanket `display:grid` here would
+   override that and paint all 24 sections at once.
+   ------------------------------------------------------------------ */
+.fw-settings-main .tab-content > .tab-pane.active {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  /* dense: a full-width block (a table, a toolbar) otherwise leaves the
+     half-row before it permanently empty. */
+  grid-auto-flow: row dense;
+  gap: 16px;
+  align-items: start;
+}
+
+/* The gap owns the spacing now.  Bootstrap's mb-3/mt-3 on those blocks was
+   compensating for a stack that no longer exists, and it stacks ON TOP of the
+   gap — two spacing systems on one axis read as an alignment bug. */
+.fw-settings-main .tab-content > .tab-pane.active > .fw-card,
+.fw-settings-main .tab-content > .tab-pane.active > .row,
+.fw-settings-main .tab-content > .tab-pane.active > .alert,
+.fw-settings-main .tab-content > .tab-pane.active > .d-flex {
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+}
+
+/* Blocks that are not cards span the full width: a toolbar, a banner or a
+   heading cut to half the screen looks like a layout accident, not a column. */
+.fw-settings-main .tab-content > .tab-pane.active > .row,
+.fw-settings-main .tab-content > .tab-pane.active > .alert,
+.fw-settings-main .tab-content > .tab-pane.active > .d-flex,
+.fw-settings-main .tab-content > .tab-pane.active > hr,
+.fw-settings-main .tab-content > .tab-pane.active > h1,
+.fw-settings-main .tab-content > .tab-pane.active > h2,
+.fw-settings-main .tab-content > .tab-pane.active > h3,
+.fw-settings-main .tab-content > .tab-pane.active > h4,
+.fw-settings-main .tab-content > .tab-pane.active > h5,
+.fw-settings-main .tab-content > .tab-pane.active > h6,
+.fw-settings-main .tab-content > .tab-pane.active > p {
+  grid-column: 1 / -1;
+}
+
+/* A block holding a table keeps the whole width.  Halving a 7-column table
+   does not use the screen better — it hands the operator a horizontal
+   scrollbar in exchange for white space somewhere else. */
+.fw-settings-main .tab-content > .tab-pane.active > *:has(table) {
+  grid-column: 1 / -1;
+}
+
+/* A top-level .row already carries a grid of its own, so it spans (above) and
+   is capped at TWO columns here: col-md-4 / col-md-3 / col-md-2 were laying
+   cards out three, four and six abreast inside a column that is now half the
+   page wide. */
+.fw-settings-main .tab-content > .tab-pane.active > .row > [class*="col-"] {
+  flex: 0 0 auto;
+  width: 50%;
+  max-width: 50%;
+}
+.fw-settings-main .tab-content > .tab-pane.active > .row > .col-12,
+.fw-settings-main .tab-content > .tab-pane.active > .row > .col-md-12,
+.fw-settings-main .tab-content > .tab-pane.active > .row > [class*="col-"]:has(table) {
+  width: 100%;
+  max-width: 100%;
+}
+
+/* Half the width is half the room a nowrap run had. Bootstrap's .badge is
+   white-space:nowrap, so the DNS-provider card's "missing: A, B, C, D, E" ran
+   PAST the card instead of wrapping — the operator reads a truncated list of
+   environment variables and gets no scrollbar to tell them so. Found by
+   rendering, not by a test: the payload and the rule were both correct and the
+   defect lived between them. Same for a long <code> token. Scoped to these
+   panes: elsewhere a badge sits in a table cell, where wrapping is the
+   regression. */
+.fw-settings-main .tab-content > .tab-pane.active .badge {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+.fw-settings-main .tab-content > .tab-pane.active code {
+  overflow-wrap: anywhere;
+}
+
+/* Below ~1200px the content column is narrower than two readable cards, and
+   two columns of 470px is worse than one of 960px.  The breakpoint is the
+   CONTENT's, not the viewport's: the menu keeps 258px + 20px of gap until
+   991.98px, where it moves above the panes. */
+@media (max-width: 1199.98px) {
+  .fw-settings-main .tab-content > .tab-pane.active {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .fw-settings-main .tab-content > .tab-pane.active > .row > [class*="col-"] {
+    width: 100%;
+    max-width: 100%;
+  }
+}

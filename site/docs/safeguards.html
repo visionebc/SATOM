@@ -6928,6 +6928,1029 @@ masking, the residue rejection and the ledger row live there, and a second path
 to the same model is a second place for them to be missing. After any <code>.po</code>
 edit: <code>venv/bin/pybabel compile -d app/translations</code> <strong>as <code>satom</code></strong>, then
 restart — root-owned catalogue files break the next run.</p>
+<h2 id="62-two-implementations-of-one-operation-and-the-useful-one-stores-nothing">§62. Two implementations of one operation, and the useful one stores nothing</h2>
+<p><strong>Guard:</strong> <code>tests/test_upgrade_flow.py</code> (19 tests). <strong>15 mutations, 15 bite.</strong></p>
+<p>SATOM had two things called "upgrade prep". <code>views.appliances.upgrade_prep_run</code>
+ran <code>upgrade.prepare()</code> — configuration backup, health battery, maintenance
+permission, HTTP baseline of every published service — and persisted an
+<code>UpgradePrep</code> row with the affected-service inventory.
+<code>services.scheduled_actions._do_upgrade_prep</code> ran <code>create_backup()</code> plus
+<code>status_check()</code> and persisted nothing.</p>
+<p>Neither ever failed. Both reported <code>ok=True</code>. The reason it mattered is <em>which
+of the two accepts more than one device</em>: the scheduled action, because
+<code>ActionSpec("upgrade_prep")</code> has <code>needs_targets=True</code> and no <code>single_target</code>.
+So the only way to pre-flight a whole maintenance window was the only way that
+left no evidence, and the feature everybody assumed existed — pre-flight in
+bulk, then raise the change — could not be built on top of it.</p>
+<p><strong>The shape of the defect, stated generally:</strong> when one operation has two
+implementations and they differ in what they <em>record</em> rather than in what they
+<em>do</em>, no test of either one fails. Each is internally consistent. The gap is
+only visible from a caller that expects the two to be interchangeable, and
+there was no such caller until somebody tried to build one.</p>
+<p>Two more defects of exactly the same shape were sitting behind it, and both
+were about a document being <em>narrower than it reads</em>:</p>
+<ul>
+<li><code>ChangeRequest.prep_id</code> is scalar, and the create path dropped any run whose
+  appliance was not among the change's devices. A twenty-device change carried
+  one device's baseline. It did not render as incomplete — it rendered as a
+  change whose pre-upgrade passed.</li>
+<li>the customer-impact spreadsheet is generated from the inventory frozen at
+  creation, and that inventory came off the single cited run. The outage
+  warning under-stated itself by however many devices were not that one.</li>
+</ul>
+<h3 id="recipe_1">Recipe</h3>
+<ol>
+<li><strong>The unification bites:</strong> revert <code>_do_upgrade_prep</code> to return without
+   calling <code>prep_store.run_for</code> — <code>test_the_scheduled_action_delegates_to_the_
+   same_runner_as_the_page</code> fails on <code>UpgradePrep.query.count()</code>.</li>
+<li><strong>The per-run device check bites:</strong> relax
+   <code>prep.appliance_id not in device_ids</code> to <code>prep is None</code> — a change certifies
+   a machine it does not target.</li>
+<li><strong>The merge bites:</strong> freeze <code>preps[0].inventory_list</code> instead of
+   <code>merged_inventory(preps)</code> — the frozen inventory covers one device of N.</li>
+<li><strong>De-duplication is keyed on (device_id, device, policy), not on policy
+   alone.</strong> Two appliances legitimately publish the same policy name; keying on
+   the name collapses them into one row and <em>under</em>-states the outage, which is
+   the same class of error as the double-count it is there to prevent.</li>
+<li><strong>A sweep returns one row per appliance, always.</strong> Mutate the per-device
+   <code>except</code> to <code>raise</code> — one unreachable box ends the sweep and the rest of the
+   window goes un-prepared. Mutate the cap to <code>ids = ids[:MAX_SWEEP]</code> — devices
+   are dropped silently and the page reports success.</li>
+</ol>
+<p><strong>Trap in the guard itself.</strong> The cap test first posted invented device ids, so
+a truncating implementation still fell into the "one or more do not exist"
+branch and never swept — the test passed against the very defect it names. It
+had to create <code>MAX_SWEEP + 1</code> REAL appliances before the mutation could bite.
+That is the eighth assertion in this repo that passed for a reason unrelated to
+its subject; the tell is always the same, a mutation that survives against a
+test whose name says it should not.</p>
+<p><strong><code>ok</code> still means the sweep RAN</strong>, not that it came back clean. Grading the
+scheduled action by the verdict would newly fail every schedule whose devices
+have a service already down before the window — and finding that out is the
+single most valuable thing the pre-flight produces. Same reasoning as
+<code>prep_store.verdict</code>, and the same reasoning as §-the-collector rule that a
+failed collector writes <code>satom_scrape_up 0</code> rather than staying silent.</p>
+<hr>
+<h2 id="63-a-ticket-that-leaves-the-product-carrying-only-primary-keys">§63. A ticket that leaves the product carrying only primary keys</h2>
+<p><code>cr_orchestrator.request_crq</code> is the one place a change request becomes
+somebody else's ticket. It sent <code>device_ids</code> — bare integers, meaningful only
+inside this database — plus a flat list of policy names. Everything the bulk
+pre-upgrade exists to produce (N configuration backups, N health batteries, N
+service baselines, N verdicts) stayed here. A change-management system received
+a request to take down <code>[17, 18, 19]</code>, and the only way to find out what that
+was, or whether any of it had been pre-flighted, was to open this console.</p>
+<p>Nothing failed. The hook fired, the ticket opened, the fields were populated.
+The request was simply narrower than the change it described — the same shape
+as §62's two implementations and as the About card that claimed <code>v1.0</code> for
+eight releases.</p>
+<p><strong>What the payload had to gain, and why each one is not decoration:</strong></p>
+<table>
+<thead>
+<tr>
+<th>key</th>
+<th>without it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>cr_ref</code></td>
+<td>the ticket and the signed document share no identifier</td>
+</tr>
+<tr>
+<td><code>devices[]</code></td>
+<td>an approver cannot tell which boxes go down</td>
+</tr>
+<tr>
+<td><code>evidence[]</code></td>
+<td>the N baselines never leave the product</td>
+</tr>
+<tr>
+<td><code>evidence_missing[]</code></td>
+<td>a receiver counting list lengths cannot tell an un-pre-flighted box from an omitted one</td>
+</tr>
+<tr>
+<td><code>policy_count</code> + <code>policies_truncated</code></td>
+<td>a capped list reads as the whole outage</td>
+</tr>
+<tr>
+<td><code>approval_mode</code></td>
+<td>a system that holds the gate is never told it does, and the window elapses</td>
+</tr>
+<tr>
+<td><code>crq_ref</code></td>
+<td>a double-clicked button opens a second ticket for one window</td>
+</tr>
+</tbody>
+</table>
+<p><strong>The cap is the interesting one.</strong> One appliance carried a few dozen policy
+names; sixty carry tens of thousands, in a payload written to a queue file and
+POSTed to a third party. Capping is correct and capping SILENTLY is the defect
+— so the exact total always travels beside the capped list. Same rule as the
+sweep that refuses naming the number instead of truncating to it.</p>
+<p><strong>Evidence carries the verdict, never the blob.</strong> <code>UpgradePrep.result</code> holds a
+probe row per published service. Shipping it would push megabytes of the
+fleet's service topology into a ticket system that never asked for it. What an
+approver needs is: did it pass, when, against which firmware, and does a
+rollback point exist — and the backup is quoted ONLY when it succeeded, because
+naming a failed backup puts a rollback in writing with nothing behind it.</p>
+<p><strong>One author for coverage.</strong> "Which appliances have a baseline" is now asked by
+three readers — the change's own page, the outbound payload, and the operator's
+flash message — and answered once, by <code>prep_store.coverage</code>. Two of them
+computing it separately is how the console shows twenty green appliances while
+the ticket says nine are bare, with only one of the two right.</p>
+<h3 id="verification_1">Verification</h3>
+<p>Mutations that must bite: send <code>device_ids</code> alone; drop <code>evidence_missing</code>;
+return every prep instead of the first per appliance; remove the policy cap;
+keep the cap but drop <code>policy_count</code>; inline the coverage computation back into
+<code>_evidence_rows</code>. The contract guard is two-sided now — every documented key
+must be emitted AND every emitted key must be documented, because a key nobody
+wrote down is a key nobody will read.</p>
+<hr>
+<h2 id="64-a-four-hour-change-that-could-only-say-running">§64. A four-hour change that could only say "running"</h2>
+<p>Per-device outcomes of a multi-target fire lived as text lines built in memory
+and committed ONCE, in <code>execute_and_record</code>'s <code>finally</code>. For the hourly
+one-box sweeps that was invisible and harmless. For a change request upgrading
+sixty appliances sequentially inside a maintenance window it fails twice:</p>
+<ul>
+<li><strong>Unobservable.</strong> Which box is being upgraded, how many are done, whether the
+  third failed forty minutes ago — none of it existed anywhere until the last
+  device returned. The honest answer to "how far along is it?" was a shrug, to
+  an operator personally accountable for the window.</li>
+<li><strong>Not durable.</strong> Kill the worker at device 50 of 60 and the log had never
+  been written: fifty appliances changed, no record of which. The one moment
+  the log matters most is the one moment it is guaranteed to be missing.</li>
+</ul>
+<p><code>ScheduledActionTarget</code> is one row per (run, appliance), INSERTed as <code>running</code>
+before the device is touched and UPDATEd the moment it returns, each with its
+own commit. It is written <strong>best-effort by contract</strong>: a progress row that will
+not insert must never abort a change already touching production hardware.
+Bookkeeping does not get a veto over the work it only describes.</p>
+<p><strong>Three distinctions the panel refuses to collapse</strong>, all of which a simpler
+implementation flattens into "failed":</p>
+<ul>
+<li><code>pending</code> — the run has not reached this device yet;</li>
+<li><code>not_run</code> — the run ENDED and never opened a row for it (a target-resolution
+  bug, not progress);</li>
+<li><code>interrupted</code> — a row opened and never closed because the worker died. It is
+  <strong>not</strong> graded failed: nobody observed the device, and asserting an outcome
+  nobody measured is how a box that upgraded fine gets rolled back.</li>
+</ul>
+<p><strong>Devices are listed from the CHANGE, not from the run.</strong> A twenty-box window
+that has reached the third must show seventeen pending rows; listing only what
+the run has touched renders 15 % done as complete. And the progress bar counts
+appliances reported, never elapsed window time — a window half over says
+nothing about how many boxes are upgraded.</p>
+<p><strong>"Start now" does not run the upgrade.</strong> It brings the bound one-shot action's
+<code>next_run</code> forward and lets the scheduler sidecar do the work out of process.
+Scheduled Actions' own Run-now executes synchronously in the web worker, which
+is right for a one-box sweep and wrong here: sixty appliances outstay any HTTP
+timeout, and a recycled worker kills the change halfway with the browser
+showing a gateway error. The window is not bypassed either — <code>cr_runnable</code> is
+re-checked at fire time regardless, and the button refuses first, while
+somebody is still looking at the screen.</p>
+<hr>
+<h2 id="65-a-duplicate-key-in-the-boot-migration-is-a-silent-amputation">§65. A duplicate key in the boot migration is a silent amputation</h2>
+<p><code>create_app._ensure_columns</code> holds one dict literal mapping table -&gt; columns
+added after that table already existed. Write the same table name twice and
+Python keeps the LAST entry; every column under the earlier copy is never
+added. No exception, no log line, a clean boot, tables created, pages
+rendering — and three columns the model swears exist simply do not.</p>
+<p>Caught for real on 2026-08-11: the wave columns were appended under a fresh
+<code>'change_request'</code> key while an existing one sat forty lines below. The table
+<code>scheduled_action_target</code> (a NEW table, so <code>create_all</code> made it) came up fine,
+which made the boot look entirely healthy.</p>
+<p><strong>The guard cannot live in the function.</strong> By the time <code>adds</code> is a value the
+duplicates have already collapsed — a runtime assertion over <code>adds.keys()</code> can
+never fail, which makes it exactly the kind of check that passes against the
+defect it names. <code>tests/test_schema_migration_keys.py</code> parses the SOURCE with
+<code>ast</code> instead, and also asserts that the literal is still findable: a guard
+that finds nothing to check passes for the wrong reason.</p>
+<hr>
+<h2 id="66-a-wave-is-an-ordinary-change-or-it-is-a-second-implementation">§66. A wave is an ordinary change, or it is a second implementation</h2>
+<p>A ninety-appliance rollout is neither one window nor ninety unrelated changes:
+it is an ordered set of waves, each with its own window and its own approval.
+The temptation is a wave-shaped model with its own creation path, its own
+approval and its own execution. That is §62 again, in advance.</p>
+<p>So a wave IS a change request. <code>upgrade_flow.waves</code> chunks the selection and
+calls <code>views.change_requests.create_change_request</code> — the same function the
+ordinary form calls, extracted from that form's POST handler precisely so there
+would be one author of what a legal change is. A guard asserts the route never
+constructs <code>ChangeRequest(</code> itself.</p>
+<p><strong>Three columns make the set a thing rather than a naming convention.</strong>
+<code>wave_group</code> / <code>wave_index</code> / <code>wave_total</code>, nullable, meaning "not part of a
+batched rollout" for every change raised before they existed. "Wave 2 of 5"
+living only in the title is prose, and prose cannot answer "did wave 1 land?".</p>
+<p><strong>Windows chain off the previous END, never off the first start.</strong>
+<code>start + k*(minutes+gap)</code> gives the same answer only until an operator
+lengthens one window by hand, at which point the arithmetic quietly puts two
+waves on the same upstream at once.</p>
+<p><strong>A refused wave plan creates nothing.</strong> The batch stops on the first failure
+and says which wave it was, because creating waves 1-3 and abandoning 4-6
+leaves a rollout that LOOKS scheduled while a third of the fleet has no window.
+And more waves than <code>MAX_WAVES</code> is refused <strong>naming the number</strong>, never
+truncated — a wave that silently disappeared takes its appliances out of every
+window without anybody being told.</p>
+<h2 id="67-the-monitor-may-not-assert-what-it-has-not-measured">§67 — the monitor may not assert what it has not measured</h2>
+<p><code>tests/test_monitor_truthfulness.py</code> (31 tests). Four checks were each stating
+something false while every test passed, because in all four cases the code was
+internally consistent and only the CLAIM was wrong. Between them they produced
+about 790 of the ~825 alerts of the week to 2026-08-11, which buried the two
+alerts that were real.</p>
+<p><strong>The shape to recognise.</strong> None of these is a crash, a regression or a
+performance problem. Each is a number or a sentence that means something other
+than what it says, and no unit test can see it, because the unit is behaving
+exactly as written. They are found by asking of every rendered claim: <em>what
+would have to be true for this sentence to be true, and did we measure it?</em></p>
+<p><strong>1. Identity must exclude what the device moves on its own.</strong> <code>sot_store</code>
+hashed the appliance's clock. The rule was derived from the data, not guessed:
+enumerating the differing leaf paths across all 206 consecutive version pairs
+in the live store showed 194 differing only in <code>system_time_manual</code>. Each
+exclusion is keyed as narrowly as the evidence allows — the clock fields are
+dropped only inside an object carrying <code>system_dateTime</code> (so a policy field
+named <code>hour</code> is still hashed), and a <code>*_val</code> handle only when the sibling name
+it resolves to is present (so a standalone <code>*_val</code> is still hashed). <code>tz</code>,
+<code>ntpsync</code>, <code>dst</code> and <code>syncinterval</code> live in the same object and are deliberately
+kept: the goal is to stop reporting the clock, not to stop reporting time
+configuration. Verification recipe: re-hash every pair in the store and count
+how many collapse — a rule that collapses nothing is either wrong or dead.</p>
+<p><strong>2. Never mix a host numerator with a container denominator.</strong> <code>100 *
+os.getloadavg()[0] / os.cpu_count()</code> inside an LXC divides the hypervisor's
+load by this container's cores. The tell was decisive and cost nothing to
+check: two independent containers reported the <strong>same uptime and the same load
+average to the decimal</strong>. lxcfs virtualises <code>/proc/meminfo</code> but not
+<code>/proc/loadavg</code> or <code>/proc/uptime</code>, which is why memory was right and only CPU
+lied. <code>load_pct</code> was <strong>removed</strong> rather than corrected, and the guard is
+derived — it scans every module in <code>app/</code> for <code>getloadavg</code> on a line that also
+mentions <code>cpu_count</code>/<code>cpus</code>, rather than allow-listing the file that had the
+bug. A node that reports no <code>cpu_pct</code> is graded <strong>unknown</strong>; falling back to
+<code>load_pct</code> would restore the bug for precisely the node that still has it.</p>
+<p><strong>3. "Not checked" is not "down", and fail-closed is not a licence to
+misdescribe.</strong> Folding <code>healthCheckStatus: "disable"</code> into the down-count was a
+deliberate fail-closed choice with a test fixing it — and the resulting
+sentence, <code>ALL backends down</code>, was false about devices reporting those members
+up. The grade was kept non-green (an untested backend is a real gap) and the
+CLAIM was corrected, as a separate governable fact. <strong>When a fail-closed
+default is right but its wording is wrong, change the wording; do not weaken
+the default, and do not keep the wording because a test asserts it.</strong> The old
+test was updated in the same commit as the code it fixed.</p>
+<p><strong>4. A delivery counter counts deliveries.</strong> <code>dispatched</code> was <code>len(fresh)</code>
+regardless of outcome, so weeks of <code>454 Relay access denied</code> read as success —
+and the cooldown was stamped on that fiction, so each finding was counted as
+sent and then silenced for six hours. Three rules follow: count per channel and
+name the ones that failed; only record suppression state for what was actually
+delivered; and make total failure change something an operator already looks at
+(here, a non-zero exit so the timer's unit goes <code>failed</code>). A summary line in a
+log nobody reads is not a signal.</p>
+<p><strong>Ninth instance of the assert-by-substring trap.</strong> The guard that forbids
+grading CPU from <code>getloadavg</code> matches its own explanatory comment, and the AST
+guard on <code>alerts-run</code> first tried to strip comments from <code>app/__init__.py</code> and
+truncated a multi-line string literal containing a <code>#</code>. Strip comments before
+asserting on source — or, when the question is structural, parse the ORIGINAL
+source and assert on the AST, which carries no comments at all.</p>
+<h2 id="68-a-guard-anchored-on-a-visible-label-dies-the-day-the-label-is-translated">§68 — a guard anchored on a visible label dies the day the label is translated</h2>
+<p><code>tests/test_monitoring_split.py::test_every_administrator_group_offers_collection</code>
+promises the same thing it always did: <strong>every</strong> Administrator/Administration
+block in <code>base.html</code> reaches the Collection page through the one shared partial,
+so an entry can never be added to Global and forgotten in the four others. What
+broke was not the promise but the way the guard found the blocks:</p>
+<pre><code class="language-python">re.finditer(r&quot;&lt;span&gt;Administrat(?:or|ion)&lt;/span&gt;&quot;, text)   # pre-i18n
+</code></pre>
+<p>The nav labels became <code>{{ _('Administrator') }}</code>. The extractor stopped matching,
+returned <code>[]</code>, and the loop below it iterated over nothing. <strong>A <code>for</code> loop over an
+empty list asserts nothing and reports success.</strong> The only reason this surfaced
+at all is the non-vacuity assert (<code>len(bodies) == 5</code>) that the same test already
+carried — without it the guard would have gone green over zero blocks and nobody
+would have known the promise was no longer being checked.</p>
+<p>Three rules:</p>
+<ol>
+<li><strong>Anchor structural guards on structural identity, never on rendered text.</strong>
+   The group already carries <code>data-nav-group="Administrator"</code> — the attribute the
+   sidebar JS keys open/closed state off, and the one
+   <code>tests/test_automation_adom_nav.py</code> was already using. Rendered text is a
+   product surface: it gets translated, retitled and rewritten, and it <em>should</em>
+   be able to change without breaking a guard about layout.</li>
+<li><strong>The identity attribute is now itself guarded.</strong>
+   <code>test_the_nav_group_identity_is_not_translated</code> fails if any <code>data-nav-group</code>
+   value is routed through <code>_()</code>. Translating an identifier would break every
+   nav-slicing guard at once <em>and</em> collapse the operator's expanded groups on
+   every language change.</li>
+<li><strong>Every extractor needs a non-vacuity assert</strong>, and it is worth more than it
+   looks: here it was the entire difference between a visible failure and a guard
+   that silently stopped guarding. Bodies are also asserted non-empty
+   (<code>fw-nav-item in b</code>), so a slice that matches the marker but captures nothing
+   cannot pass either.</li>
+</ol>
+<p>The replacement closes the body by <strong>counting <code>&lt;div&gt;</code>/<code>&lt;/div&gt;</code> from the opening
+tag</strong> instead of scanning for the next section header. The old stop-list ended a
+group at the next <code>fw-nav-section fw-nav-toggle</code>, which means a group that lost
+its own closing tags would run on and find the <em>next</em> group's Collection include
+— reporting an entry the operator cannot see. The counted version raises instead,
+and the mutation that removes one group's include together with its closing divs
+proves it: <code>AssertionError: the extractor ran past the group and swallowed the
+next one</code>.</p>
+<p><strong>Verified:</strong> 8 mutations run, 7 bite (drop the include from one group; translate
+the anchor — against both the slicer and the new identity guard; rename one
+anchor; revert to the label anchor; point the extractor at a group that does not
+exist; and the run-on above). The eighth — deleting a single <code>&lt;/div&gt;</code> <em>inside</em> a
+body — correctly survives: the slice grows by one nesting level but stays inside
+its own group, and the block genuinely does still include the partial. A mutation
+that does not change the truth of the assertion is not supposed to kill it.</p>
+<h2 id="67-one-operation-two-authors-of-its-prose">§67. One operation, two authors of its prose</h2>
+<p><strong>Guard:</strong> <code>tests/test_upgrade_flow_wording.py</code> (12 tests). <strong>14 mutations, 14
+bite</strong> (harness <code>/root/ufw/mutate.py</code> on a1; judged by <strong>rc</strong>, and only <code>rc==1</code>
+is a failure).</p>
+<p>The Upgrade Flow's stage 2 composed its own change-request wording: a title
+placeholder written into <code>upgrade_flow/index.html</code>, a reason placeholder beside
+it, and no rollback field at all. The single-change form thirty lines away in
+<code>change_requests/form.html</code> proposed all three through <code>services.cr_types</code>,
+where an administrator's text wins per field and the product's sentence stands
+for every field they left alone.</p>
+<p>Neither form ever failed. The failure is what an administrator's correction
+does: they rename the change on Administration → Change Types, the single
+change picks it up, and the bulk one keeps offering the compiled sentence
+forever. Two documents about the same work, raised from the same console,
+disagreeing — and the one that disagreed covered the whole window.</p>
+<p>This is the §62 shape again (two implementations of one operation, differing in
+what they RECORD rather than in what they DO) with the roles reversed: here the
+duplicate is a sentence, not a function, and duplicated prose has no caller
+whose test could notice.</p>
+<p><strong>What the guard fixes in place</strong></p>
+<ul>
+<li>The template composes no proposal: <code>test_the_template_composes_no_proposal_of_its_own</code>
+  bans the three shipped placeholders <em>after stripping Jinja comments</em> — the
+  paragraph explaining the rule names the strings it bans, which is the eighth
+  time an assert-by-substring has matched its own comment in this repo.</li>
+<li>The batched (wave) path is not a narrower carbon copy: reason, rollback and
+  document language are asserted on every change of a rollout, because a field
+  that is simply never posted comes out empty and an empty rollback prints as a
+  change with no rollback plan rather than as a bug.</li>
+<li>The proposal quotes no single pre-flight run. <code>cr_types.draft_fields(prep=…)</code>
+  names one run's id, timestamp and backup; this stage rests on N of them.</li>
+<li>A change type disabled on the Change Types page is reported on arrival.
+  <code>create_change_request</code> rejects an action that is not on offer, so without
+  this the operator learns it after the pre-flight sweep — the expensive half —
+  with the form filled in.</li>
+</ul>
+<p><strong>Traps paid for here</strong></p>
+<ol>
+<li><code>cr_types.save_texts</code> walks the WHOLE field list and writes an empty string
+   over anything the payload omits. A test helper that wrote one override per
+   call silently blanked the previous one, and the failure read as "the page
+   ignores the administrator's wording" — the exact defect under test, reported
+   by a broken fixture.</li>
+<li>Two sentences split around a Jinja expression are two msgids that no
+   translator can order correctly. Both were folded into single msgids with
+   <code>%(lang)s</code> before the catalogues were touched.</li>
+<li>The JS payload legitimately carries the raw <code>{devices}</code> token — substituting
+   the live selection is its entire job — so a page-wide assertion that the
+   token never appears fails against a correct page. Assert on the FIELDS.</li>
+</ol>
+<p><strong>Recipe.</strong> <code>venv/bin/python -m pytest tests/test_upgrade_flow_wording.py
+tests/test_upgrade_flow.py tests/test_upgrade_flow_exec.py
+tests/test_i18n_foundation.py tests/test_ui_locale.py tests/test_cr_doc_i18n.py
+tests/test_cr_types.py -q</code> as <code>satom</code>. Live render (EN and ES, one fresh app
+context per request — flask-babel caches the locale on <code>g</code>):
+<code>/tmp/render2.py</code> pattern in §61.</p>
+<h2 id="69-a-language-gate-is-only-a-gate-if-every-surface-asks-it">§69 — a language gate is only a gate if every surface asks it</h2>
+<p><strong>Guard:</strong> <code>tests/test_lang_availability.py</code> (30 tests) + the widened
+<code>tests/test_i18n_foundation.py::test_the_registry_is_the_only_author_of_the_language_list</code>.
+<strong>22 mutations, 22 bite.</strong></p>
+<p>Settings → Languages lets an administrator choose which of the five languages
+SATOM speaks this installation <em>offers</em>. The interesting part is not the
+checkbox. It is that "offered" is asked in four places that have nothing to do
+with each other, and a gate that only reaches the obvious one is worse than no
+gate: the operator now believes French is off.</p>
+<p>The four askers, and what each would do wrong on its own:</p>
+<ol>
+<li><strong>The profile picker</strong> — the obvious one.</li>
+<li><strong>Browser negotiation</strong> (<code>ui_locale._from_browser</code>). <code>Accept-Language: fr</code>
+   would have kept rendering French to anyone whose browser asked for it,
+   <em>including operators who never set a preference</em>. Narrowing has to happen
+   <strong>before</strong> <code>best_match</code>, not after: <code>best_match</code> returns the browser's
+   highest-weighted match <strong>from the list it is given</strong>, so filtering the
+   winner afterwards answers "no match" for a browser whose second choice is
+   offered.</li>
+<li><strong>The stored preference</strong> (<code>ui_locale._saved_preference</code>). Honoured blindly,
+   a withdrawal changes nothing for exactly the users who already chose the
+   withdrawn language — the population the setting is about.</li>
+<li><strong>The change-document picker</strong> (<code>cr_document.document_langs</code>). A withdrawal
+   that stopped at the chrome would leave the language on the form that
+   produces a signed document.</li>
+</ol>
+<p><strong>Three rules live in <code>services/lang_policy.py</code>, not in the form</strong>, because a
+form is one caller and a rule with one caller is a rule until somebody adds the
+second:</p>
+<ul>
+<li><strong>The source language cannot be switched off.</strong> Its checkbox is rendered
+  <code>disabled</code>, so it never posts — which means the POST handler receives a set
+  <em>without</em> it on <strong>every single save</strong>. <code>save()</code> adds it back unconditionally.
+  Without that, the ordinary act of pressing Save would leave the install with
+  no readable language, from a checkbox, with no way back in through the UI.</li>
+<li><strong>Withdrawing deletes nothing.</strong> The per-user row stays verbatim and the
+  translation catalogues stay filled, so switching a language back on restores
+  it complete instead of empty. Clearing the row would answer, on the user's
+  behalf, a question they had already answered.</li>
+<li><strong>Unset or unreadable means everything.</strong> <code>get_json</code> answers "unset" and
+  "unparseable" identically; this gate uses <code>get_json_checked</code> so a hand-edited
+  row cannot silently shrink the product to English.</li>
+</ul>
+<p><strong>The circular-claim trap, and why <code>renderable_langs()</code> exists.</strong> The console
+prints "change documents: produced / not translated yet" <em>beside the switch for
+that language</em>. Computing that column through <code>document_langs()</code> — which is now
+gated — would have printed "not translated yet" for every language the operator
+had not ticked yet: an answer that depends on the setting it is describing, and
+switching the language on would be the only way to discover the claim was
+circular. So the derivation moved to <code>renderable_langs()</code> (ungated) and
+<code>document_langs()</code> narrows it.</p>
+<p><strong>That split broke an existing guard, correctly.</strong>
+<code>test_the_registry_is_the_only_author_of_the_language_list</code> anchored on
+"<code>document_langs</code>'s body mentions <code>langs.codes()</code>". After the split the
+derivation is one function over, so the guard failed against <em>correct</em> code
+while still passing against a second hardcoded list in the function next to it
+— wrong in both directions. It now asserts on the pair: <code>renderable_langs</code>
+derives, <code>document_langs</code> <strong>delegates to it</strong> and does not label languages
+itself. Same lesson as §68: anchor on the structure, not on where the structure
+happened to be yesterday.</p>
+<p><strong><code>&lt;html lang&gt;</code> was hardcoded <code>"en"</code>.</strong> Nothing failed, and nothing would have:
+a screen reader simply pronounced every Spanish, German, French and Italian
+page with English phonetics. It now carries <code>ui_lang</code> — the language the page
+is <strong>rendered</strong> in, which is deliberately not <code>user_lang</code> (what the user
+<em>asked</em> for): the two differ for an anonymous visitor, for a user with no
+preference, and for one whose language was just withdrawn.</p>
+<p><strong>The console lists every language, including the withdrawn ones.</strong> A page that
+hid what it switched off would make the switch one-way.</p>
+<p><strong>Eight of the twenty-two mutations survived the first pass, and every one of
+them was informative.</strong> Four were rules with no caller that could tell them
+apart: <code>offered_codes()</code> also forces the source language in, but <code>save()</code> had
+already done so, so nothing distinguished the reader's copy of the rule — the
+test now writes the row directly, which is what a migration or a restored
+backup does. Two were assertions too loose to fail (<code>!= what I posted</code> passes
+by luck when a set iterates in registry order; a fixed-width window round the
+<code>&lt;input&gt;</code> cut the tag mid-attribute). One was a genuinely dead branch: a
+malformed row and an unset row both degraded to "offer everything" and <em>nothing
+could see the difference</em>, so the branch was unobservable — it now surfaces as
+<code>lang_policy.malformed()</code> and the console says the stored setting is being
+ignored, rather than telling an operator "never configured" while they look
+straight at a setting they saved. One mutation was simply badly designed (a
+dead duplicate function harms nothing) and was replaced with the real risk:
+<code>document_langs</code> re-deriving the list instead of delegating.</p>
+<p><strong>Recipe.</strong> <code>venv/bin/python -m pytest tests/test_lang_availability.py
+tests/test_i18n_foundation.py tests/test_ui_locale.py
+tests/test_lang_preference.py tests/test_cr_doc_i18n.py -q</code> — judged by <strong>rc</strong>,
+and only <code>rc==1</code> is a failure (<code>rc==4</code> is a usage error). Mutation harness:
+<code>data/i18n_sweep/mut_lang_gate.py</code> (22). Render against the live database in
+both languages with a <strong>fresh <code>app_context</code> per request</strong> — flask-babel caches
+the negotiated locale on <code>g</code>, so one context renders every language in the
+first one — and restore the operator's stored preference afterwards.</p>
+<p><strong>Catalogue trap, new this round.</strong> <code>pybabel extract</code> + <code>pybabel update</code>
+reflowed all four catalogues by <strong>26 000 lines each</strong>: the checked-in <code>.po</code>
+files carry no <code>#:</code> location comments and were last written sorted-with-a-tail,
+so a regenerate rewrites everything and buries the change — and drags any
+parallel session's uncommitted catalogue work through a rewrite nobody
+reviewed. New msgids are <strong>appended</strong> by
+<code>data/i18n_sweep/append_new_msgids.py</code> (extract to a <em>temporary</em> pot, diff the ids, translate
+through <code>translator.translate</code>, append). Result here: +69 lines per catalogue,
+zero reflow. Also: <code>git checkout -- app/translations/</code> <strong>as root</strong> leaves the
+catalogues root-owned and the next <code>pybabel compile</code> as <code>satom</code> dies with
+<code>PermissionError</code> — chown back before compiling.</p>
+<h2 id="70-dictget-does-not-call-__missing__-so-it-cannot-see-a-translated-language">§70 — <code>dict.get()</code> does not call <code>__missing__</code>, so it cannot see a translated language</h2>
+<p><code>cr_document._Localized</code> builds a language that exists only as a catalogue by
+overlaying it onto the authored English, and it does that in <code>__missing__</code>.
+<code>__missing__</code> is reached by SUBSCRIPTION alone. <code>dict.get()</code> never calls it.</p>
+<p><code>_profile_text</code> asked with <code>profile.get(lang)</code>. For English and German — the two
+languages authored as Python literals — the key is really there, so it answered
+correctly and every test passed. For French, Italian and Spanish it answered
+<code>None</code> no matter how complete the catalogue was, and the fallback line asked the
+generic profile the same wrong way, so the action profile came back <code>{}</code>.</p>
+<p>The reason this survived is the order in which the two failures appear:</p>
+<ul>
+<li>while the language is GATED (catalogue incomplete, or the administrator has
+  not offered it) <code>normalize_lang</code> degrades it to English <em>before</em> the lookup —
+  nothing raises, the document is simply English, and the operator concludes
+  "French is not translated yet";</li>
+<li>the day the catalogue completes the gate opens, the degrade stops, and the
+  renderer reaches <code>p['label']</code> on an empty dict — <code>KeyError</code>, in front of an
+  approver waiting for paper.</li>
+</ul>
+<p>So completing a catalogue is what <em>detonates</em> it. Any work that finishes a
+language walks into this.</p>
+<p><strong>Rule.</strong> A <code>_Localized</code> block is read with <code>block[lang]</code>, never <code>block.get(lang)</code>.
+<code>_lang_block</code> is the single place that does it, and it degrades to the authored
+English rather than to <code>{}</code> — an empty profile does not print an empty section,
+it raises on the first key read (<code>cr_i18n</code> states the same promise for the
+overlay: <em>never to a blank</em>).</p>
+<p><strong>Guard.</strong> <code>tests/test_cr_doc_profile_overlay.py</code> (9 tests). The structural one
+asks the <strong>AST</strong>, not the text: a substring scan for <code>.get(</code> matches the
+docstrings that explain this rule, so it would pass with the defect present.</p>
+<p><strong>Checking it.</strong> <code>pytest tests/test_cr_doc_profile_overlay.py -q</code> → 9 passed.
+Mutation harness <code>/tmp/mut2.py</code> on a1: <strong>7 of 8 mutations bite</strong>, measured by
+<strong>rc</strong> (only <code>rc==1</code> is a failure). The survivor — dropping the <code>isinstance</code>
+belt in <code>_lang_block</code> — survives with reason: no realistic block is a non-dict,
+and no test distinguishes it. Two mutations survived the FIRST pass and both
+were real findings, not noise: "degrade to the authored English" was the
+correct behaviour and the code had <code>{}</code>, and the generic-fallback branch was
+indistinguishable from dead code until a test built a profile that never went
+through <code>_localize_all</code>.</p>
+<h2 id="71-a-console-that-holds-the-receipt-must-not-ask-the-operator-for-it">§71 — a console that holds the receipt must not ask the operator for it</h2>
+<p>The drift alert ended, from the day it was written, with <em>"If nobody edited it
+via SATOM, a device-side (CLI/GUI) change has drifted from the baseline"</em>.</p>
+<p>On 2026-08-11 it fired for <code>{device}</code> at 09:15 UTC. The cause was an
+allow-method exception <strong>SATOM itself had written</strong> at 08:37 UTC — from Attack
+Search, by <code>admin</code>, from 162.23.30.43 — recorded in <code>audit_logs</code> 1253-1256 and
+in <code>change_history</code> #309. The product was holding the answer and printing the
+question.</p>
+<p>Nothing raised. Nothing was slow. No test failed — the code did exactly what it
+said. Only the <em>assertion</em> was weaker than what the process knew, which is the
+same class as §67 and the reason both exist.</p>
+<p><strong>The rule.</strong> Before shipping a sentence that asks the reader to correlate,
+ask whether this process can perform the correlation itself. If it can, the
+sentence is a defect even though every test is green.</p>
+<h3 id="the-window-is-bounded-by-last_seen_at-not-by-taken_at">The window is bounded by <code>last_seen_at</code>, not by <code>taken_at</code></h3>
+<p>The content-addressed store is what makes the attribution tight, and using the
+obvious field throws that away. An unchanged device mints <strong>no</strong> row — the
+newest row's <code>last_seen_at</code> advances instead. So:</p>
+<ul>
+<li>left edge = <code>prev.last_seen_at</code> — the last moment the harvest CONFIRMED the
+  old config still stood;</li>
+<li>right edge = <code>new.taken_at</code>.</li>
+</ul>
+<p>Measured on the live store, the difference is not cosmetic:</p>
+<table>
+<thead>
+<tr>
+<th>device</th>
+<th>window on <code>last_seen_at</code></th>
+<th>window on <code>taken_at</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>{device}</td>
+<td>62 min</td>
+<td><strong>8 h 21 min</strong></td>
+</tr>
+<tr>
+<td>{device}</td>
+<td>62 min</td>
+<td><strong>4 days 3 h</strong></td>
+</tr>
+</tbody>
+</table>
+<p>A four-day window will find <em>a</em> SATOM write for almost any device, and will
+credit the wrong one. <code>max(taken_at, last_seen_at)</code> guards a legacy row whose
+<code>last_seen_at</code> predates its <code>taken_at</code>; widening leftwards there could only
+invent attributions.</p>
+<p>Known and documented rather than engineered around: the harvest reads the
+device seconds before it stores the snapshot, so a write landing in that gap is
+inside the window while its effect appears in the NEXT version.</p>
+<h3 id="the-two-errors-are-not-symmetric-when-in-doubt-no-receipt">The two errors are not symmetric — when in doubt, no receipt</h3>
+<p>Failing to credit a real SATOM write leaves a WARNING that overstates: noisy,
+and the operator finds the write in two clicks. Crediting a device-side change
+to SATOM downgrades a genuine intrusion to an approving nod and buries the one
+alert that mattered. <strong>Every rule requires positive evidence; anything
+unparseable is "no receipt".</strong> Concretely, none of these count as a write:</p>
+<ul>
+<li>a <strong>preview</strong> — <code>fortiweb_ops._record</code> logs dry runs under the same action
+  name, and a preview never reached the device;</li>
+<li>a <strong>refused</strong> write — <code>errcode -56</code> changed nothing;</li>
+<li>a <code>.failed</code> twin — <code>faz.device.authorize.failed</code> is emitted by the same
+  helper as its success twin and sails straight through a <code>faz.</code> prefix match;</li>
+<li>a <strong>GET</strong> through the FAZ/ADC API consoles, which log <em>every</em> verb;</li>
+<li>an audit row that names this device in its <code>target</code> but carries <strong>another</strong>
+  appliance's id — <code>faz.device.authorize</code> lists MANAGED devices in its target,
+  so target-text matching would let a FortiAnalyzer action explain a FortiWeb's
+  drift. Id-linked actions match on the id, full stop; the four name-linked
+  actions match the <strong>first token</strong> only.</li>
+</ul>
+<h3 id="audit_logsextra-is-a-python-repr-not-json"><code>audit_logs.extra</code> is a Python repr, not JSON</h3>
+<p><code>audit.log_action</code> stores <code>str(extra)</code>. <code>json.loads</code> fails on <strong>every row ever
+written</strong> (single quotes, bare <code>True</code>), and a reader that swallowed that and
+returned <code>{}</code> would make every device look unattributed — this very defect,
+reintroduced one layer down. Read it with <code>ast.literal_eval</code>.</p>
+<p><code>audit_logs</code> is the source, not <code>change_history</code>: the latter is FortiWeb-only
+and has <strong>no error column</strong>, so a write the device refused is indistinguishable
+from one it accepted.</p>
+<h3 id="verifying">Verifying</h3>
+<ul>
+<li>the setting is <code>alerts.drift_attributed</code> = <code>info</code> (default) | <code>warn</code> | <code>off</code>.
+  An unknown value falls back to <strong><code>info</code>, never to <code>off</code></strong> — a typo in a
+  settings field must not be able to mute a check. There is a test.</li>
+<li><code>tests/test_drift_attribution.py</code> (30 tests) — <strong>24 mutations, 24 bite</strong>,
+  measured by return code (<code>rc==1</code> only; <code>rc==4</code> is a usage error).</li>
+<li>An assertion that greps <code>alerts.py</code> for the retired sentence would match the
+  comment explaining why it is gone (the eleventh substring-assert trap in this
+  repo). Assert on the <strong>rendered finding</strong>.</li>
+<li><code>test_a_nonsense_window_never_reaches_the_audit_table</code> asserts the guard does
+  not ISSUE the query. Asserting only that the result is empty proved nothing:
+  <code>timestamp &gt;= NULL</code> and a backwards range both return no rows anyway, so that
+  assertion held with the guard deleted.</li>
+</ul>
+<h2 id="72-a-menu-and-its-sections-are-a-pair-and-nothing-fails-when-they-drift">§72 — a menu and its sections are a pair, and nothing fails when they drift</h2>
+<p><code>tests/test_settings_nav_groups.py</code> — the Admin Console menu (<code>app/templates/
+settings/index.html</code>).</p>
+<p><strong>What cannot fail on its own.</strong> A settings pane whose menu entry was never
+added still exists: it renders, it answers, it keeps its state, and no operator
+can reach it. The reverse — a menu entry whose pane was deleted — looks like a
+section and opens nothing. Neither raises, neither logs, and both survive a
+click-through of the entries you happen to remember. This is the same class of
+rot that left the horizontal strip this menu replaced with one <code>&lt;li&gt;</code> holding
+two buttons for four months.</p>
+<p>The guard therefore asserts the <strong>pairing</strong>, in both directions, on the
+rendered page: <code>set(menu targets) == set(pane ids)</code>, no target listed twice,
+and every target inside some group. Plus a non-vacuity floor (<code>&gt;= 20</code> entries)
+— a slice that swallowed the menu would make both sets trivially empty and the
+equality would pass.</p>
+<p><strong>Slice the <code>&lt;aside&gt;</code>, not "everything before the main column".</strong> The first
+version split the page at <code>&lt;div class="fw-settings-main"&gt;</code> and called the left
+half "the menu". That half also contains <code>&lt;head&gt;</code> and the product's OWN sidebar
+from <code>base.html</code>, so the chrome guard tripped on <code>#8b5cf6</code> — a colour belonging
+to the fleet navigation, on a page whose settings menu was clean. A guard that
+reports a defect in code it does not cover teaches people to ignore it.</p>
+<p><strong>Identity is asserted by rendering twice, not by grepping the template.</strong>
+The target (<code>#tab-auth</code>) is what the panes, the in-page links, the URL-hash
+restore and <code>tests/test_theme.py</code> all key off. The failure to prevent is
+someone wrapping it in <code>_()</code> — but a <code>grep</code> for <code>_(</code> near <code>data-bs-target</code>
+matches the comment that forbids it (the eleventh such trap in this repo, see
+§68, §69). So the page is rendered in English and in Spanish and the target
+lists are compared, with <code>es != en</code> asserted alongside — without that second
+line, a locale that silently never switched would make the comparison prove
+nothing.</p>
+<p><strong>The default state has to be the one an empty store produces.</strong> The menu
+renders every group <code>open</code> server-side and the browser store holds the CLOSED
+groups. Storing the open set would mean an operator who has never touched the
+menu has an empty store, and an empty set of open groups collapses the entire
+console — with no click on record to explain it. Key is <code>satom.settingsnav.
+closed.v1</code>, deliberately new: reusing an older key would read a set saved with
+the opposite meaning and hide exactly the groups someone chose to keep. (Same
+lesson as the probe cards, §9j.)</p>
+<p><strong>Screen and store must not disagree.</strong> On restore, the group holding the
+selected section is forced open <em>and dropped from the store</em>. Leaving it closed
+paints a menu with no selection anywhere, which reads as "nothing is open"
+rather than "it is hidden in here"; forcing it open without touching the store
+leaves a stored preference that the page never honours.</p>
+<h3 id="verification-recipe">Verification recipe</h3>
+<pre><code>venv/bin/python data/i18n_sweep/mut_settings_nav.py
+</code></pre>
+<p>Twelve mutations, measured by <strong>return code</strong> (<code>rc == 1</code> is the guard firing;
+<code>rc == 4</code> is a pytest usage error and <code>grep -i failed</code> reports it as a pass).
+Every mutation restores its file in <code>finally</code> — other sessions work this tree.
+<strong>12/12 bite</strong> as of 2026-08-11.</p>
+<h2 id="73-the-menu-default-the-store-that-encodes-it-and-the-single-column">§73 — the menu default, the store that encodes it, and the single column</h2>
+<p><code>tests/test_settings_nav_groups.py</code></p>
+<p><strong>Two halves that have to agree and cannot check each other.</strong> The server draws
+the groups; the script decides what an EMPTY store means. Render <code>open</code> while
+the script reads an empty store as "nothing open" and every untouched operator
+watches the menu expand on first paint and fold a frame later. Nothing fails.
+This is the inversion the probe-card store hit (§9j), and the reason the key is
+RENAMED rather than reused: a set saved under <code>…closed.v1</code> means the
+complement, so reading it here would expand exactly the groups someone had
+collapsed. <code>test_the_menu_starts_collapsed</code> asserts on the RENDERED aside (the
+<code>open</code> class is also written by the script; the point is what arrives before any
+script runs) and <code>test_the_store_key_moved_with_its_meaning</code> allows the retired
+key to appear only next to a <code>removeItem</code>.</p>
+<p><strong>The column guards read <code>fortiweb.css</code></strong>, because the panes carry no layout
+class of their own and there is no rendered artefact to read. <strong>Comments are
+stripped first</strong>: every rule has a comment beside it repeating the words being
+asserted, which is the twelfth assert-by-substring trap in this repo
+(§68, §69, §70).</p>
+<p><strong>The line they defend:</strong> ONE column, at every depth — and the guard has to
+cover both places a pane splits, because they are independent and a fix to
+either one alone leaves a screenshot that still shows two columns. The pane's
+own grid is the obvious one; the second is a Bootstrap row, which carries a
+grid of its own and NESTS: <code>col-lg-7</code> beside <code>col-lg-5</code> at the top level, and a
+<code>row g-4</code> inside a card body laying two tables abreast (System Information).
+<code>test_the_bootstrap_columns_stack_at_every_depth</code> therefore requires a
+DESCENDANT selector, which is the exact opposite of what this guard asserted
+while the panes were two columns — the earlier rule was scoped with <code>&gt;</code> the
+whole way down on purpose, and the operator overruled the trade-off it encoded.</p>
+<p><code>test_the_inline_col_auto_is_left_alone</code> holds the other end. <code>col-auto</code> means
+"size to the content": it is the idiom for an inline toolbar and for the button
+beside a field. Swallowing it satisfies "everything is one column" literally
+and produces a vertical stack of buttons — a worse layout than the one being
+fixed, arrived at by being obedient rather than correct. <code>col-form-label</code> is
+excluded for the same reason: it is a label, not a column of the layout.</p>
+<p><strong>Three failure modes that keep working while being wrong:</strong>
+- A grid rule that drops <code>.active</code> outranks Bootstrap's <code>display:none</code> on
+  <code>.tab-pane</code> and paints all 24 sections at once, stacked — and the page still
+  responds. <code>test_only_the_active_pane_becomes_a_grid</code> scans EVERY rule that
+  sets <code>display: grid</code>, not just the intended one.
+- A second column can come back through EITHER place, and each looks identical
+  to the operator while reading as "unchanged" in a diff that only touched the
+  other. <code>test_nothing_puts_the_panes_back_into_two_columns</code> scans every rule
+  whose selector mentions the pane for <code>repeat(2,</code> and for any half-width
+  declaration, rather than asserting the shape of the one rule it expects.
+- Excluding <code>col-auto</code> with <code>:not()</code> is invisible in a rendered page until
+  someone opens the one tab that has a toolbar, so the exclusion is asserted in
+  the stylesheet rather than trusted to review.</p>
+<p><strong>One defect only the browser found.</strong> Bootstrap's <code>.badge</code> is
+<code>white-space: nowrap</code>; at half the width the DNS-provider card's
+<code>missing: A, B, C, D, E</code> ran past the card, and there is no scrollbar to say so.
+The markup was correct, the grid rule was correct, and the defect lived between
+them — the same shape as the panel footer in § Fase C. Render with the
+authenticated <code>test_client</code>, rewrite the asset paths to absolute and screenshot
+with chromium; a green suite cannot replace it.</p>
+<p><strong>Checking it.</strong> <code>python3 /tmp/mut_onecol2_20260812.py</code> on a1 — 8 mutations
+(two columns in the pane grid, half-width columns, delete the stacking rule,
+narrow it back to direct children, swallow <code>col-auto</code>, drop <code>.active</code>, un-wrap
+the badge, remove the pane layout entirely): <strong>8/8 bite</strong>. Measured by <strong>rc</strong>;
+only <code>rc==1</code> is a failure — <code>rc==4</code> is a usage error and would read as a bite it
+never made. The rendered check is not optional here either: the nested split in
+System Information is invisible in the stylesheet and in the markup, and only
+shows up in a screenshot of the pane.</p>
+<hr>
+<h2 id="74-an-index-of-the-product-is-a-claim-and-nothing-fails-when-it-stops-being-true">§74 — an index of the product is a claim, and nothing fails when it stops being true</h2>
+<p>The Concept Map (<code>/map</code>, 2026-08-12) says: <em>this is every page in the console,
+and here is what each one is for</em>. That is the only thing it sells. A map that
+has quietly fallen four pages behind renders <strong>exactly</strong> like a complete one —
+same clusters, same confident layout — and the operator who does not find
+Capacity on it concludes the product does not have it. Nothing throws. Nothing
+turns red. The claim just silently becomes false.</p>
+<p>So the map is a <strong>curated registry cross-checked against <code>app.url_map</code></strong>, not a
+hand-written list:</p>
+<ul>
+<li><code>page_endpoints()</code> returns every parameterless GET endpoint that is not
+  <code>/static</code> or <code>/api/</code>. That set is the authority.</li>
+<li>Every member is either in <code>PAGES</code> or in <code>EXCLUDED</code> <strong>with a reason</strong>.
+  <code>test_every_page_endpoint_is_mapped_or_excluded_with_a_reason</code> fails on a new
+  page until someone spends one line. One line is the whole price, and it is
+  what converts "the map is complete" from a hope into a checked fact.</li>
+<li><code>coverage()</code> is printed <strong>on the page itself</strong>. If the guard is ever skipped,
+  the map says it is incomplete and names the endpoints. An index that omits
+  things must admit it; it cannot look identical to one that does not.</li>
+</ul>
+<p><strong><code>render_template</code> in the source is NOT a usable classifier</strong>, and the first
+attempt used it. Fourteen real pages — <code>index</code>, <code>fortiweb_home</code>,
+<code>web_protection.index</code>, <code>server_objects.index</code>, <code>workspace.index</code>,
+<code>registry.index</code>, <code>api_tokens.index</code>, the <code>analysis.*</code> views — render through
+helpers, so the heuristic filed them as JSON feeds and the map would have
+shipped missing its own front door. Classification is explicit for that reason.</p>
+<h3 id="the-permission-is-read-off-the-view-never-restated">The permission is read off the view, never restated</h3>
+<p><code>require_permission</code> now stamps <code>decorated.__required_permission__ = perm</code>, and
+<code>concept_map.required_permission()</code> reads it. A <code>permission</code> column in the
+registry would be a second source of truth: it drifts the first time a page is
+re-gated, and a drifted map is worse than no map, because it walks people into
+a 403 with the product's own confidence behind it.
+<code>test_the_registry_never_declares_a_permission_itself</code> forbids the column, and
+<code>test_the_stamp_does_not_replace_the_gate</code> proves the stamp did not become the
+place the permission is <em>enforced</em> — it is a description of the gate, not the
+gate.</p>
+<h3 id="a-swallowed-url_for-makes-a-page-vanish-which-is-the-one-lie-that-matters">A swallowed <code>url_for</code> makes a page VANISH, which is the one lie that matters</h3>
+<p><code>build()</code> originally wrapped <code>url_for</code> in <code>except Exception: continue</code>. In
+production it never fires — there is always a request context — so it looked
+free. It is not: the failure mode it creates is a page silently missing from an
+index whose entire purpose is completeness, and it is indistinguishable from
+"this page does not exist". The wrap is gone. Anything <code>coverage()</code> could not
+have caught now raises.</p>
+<p>This surfaced as a <em>test</em> failure (<code>url_for</code> outside a request context returned
+nothing and the map came back empty), which is worth noting: the swallow was
+invisible in every real code path and only a test without a request context
+could see it.</p>
+<h3 id="reachability-is-part-of-the-claim">Reachability is part of the claim</h3>
+<p>The ADOM gate is an <strong>allowlist</strong> (<code>adc_bps</code> / <code>faz_bps</code> / <code>fac_bps</code>). Forget
+one entry and the index of the product is invisible from that console — via a
+redirect, not an error. <code>test_the_map_answers_in_every_adom</code> parametrises all
+five. The footer link is the only global entry point, so it has its own test,
+plus one asserting it is <strong>not</strong> offered to anonymous visitors: the map is
+<code>login_required</code>, and advertising it on the login screen is a redirect loop.</p>
+<h3 id="verification_2">Verification</h3>
+<p>29 tests; <strong>21 mutations applied, all bite</strong> (measured by <strong>rc</strong>; only <code>rc==1</code>
+is a failing test — <code>rc==4</code> is a usage error, and pytest prints <code>FAILED</code> in
+capitals, so grepping for <code>failed</code> reports every bite as a survivor). Each
+mutation restores its file in <code>finally</code>, because other sessions work in this
+tree with uncommitted changes.</p>
+<p>Recipe: drop a page from <code>PAGES</code> · point an entry at a dead endpoint · delete
+an exclusion · blank an exclusion's reason · name a concept that does not exist
+· strip a page's keywords · add a <code>permission</code> column · list an endpoint twice
+· make <code>_visible</code> always true · make a broken user object show everything ·
+keep empty clusters · make <code>coverage()</code> report no holes · stop stamping the
+permission · stamp but stop enforcing · remove the map from one ADOM allowlist
+· remove the footer link · show the footer link to anonymous visitors · put a
+translucent slate card on the white page · render half the list · paint an
+empty canvas on a failed fetch · drop <code>login_required</code>.</p>
+<h2 id="75-an-accordion-is-only-an-accordion-if-selecting-folds-too">§75 — an accordion is only an accordion if SELECTING folds too</h2>
+<p>The Admin Console menu (<code>app/templates/settings/index.html</code>) holds <strong>one</strong> open
+group. The rule that costs the time is not "opening one closes the others" —
+it is that <strong>selecting a section</strong> closes them as well, and a section can be
+selected through four paths that never touch a group header:</p>
+<ol>
+<li>clicking the entry in the menu;</li>
+<li>an in-page link (<code>href="…#tab-auth"</code>) from inside another pane;</li>
+<li>the URL-hash restore at the foot of the file, after a save redirect;</li>
+<li><code>bootstrap.Tab(...).show()</code> from any script.</li>
+</ol>
+<p>A fold written into the header handler covers <strong>none</strong> of them. So the fold
+lives in <code>selectGroup</code>, which every path goes through, and the entries are
+wired on <strong>click</strong> as well as on <code>shown.bs.tab</code>: Bootstrap does not fire
+<code>shown.bs.tab</code> when the clicked section is <strong>already the active one</strong>, and an
+accordion that folds most of the time but not always reads as a bug rather than
+as a rule.</p>
+<p><code>selectGroup</code> is deliberately <strong>not</strong> guarded on "this group is already open".
+A group can be open while a <em>second</em> one is still expanded from an earlier
+click — precisely the state to collapse — and an early return there leaves it.
+That guard is the previous <code>openGroup</code>, and it is mutation M3.</p>
+<p><strong>The store keeps its key and its list shape.</strong> Sets holding several groups are
+already written under <code>satom.settingsnav.open.v1</code> in operators' browsers. The
+restore walks that list from the END (the most recently opened group), stops at
+the first group that still exists, and rewrites the store with that one alone.
+Opening all of them would paint exactly the state this change removes, on the
+first load after it, and only for the operators who had used the menu most.</p>
+<h3 id="checking-it">Checking it</h3>
+<p>The script never runs in a Flask test. The guards in
+<code>tests/test_settings_nav_groups.py</code> read the <strong>rendered</strong> script, strip its
+comments (every rule names things the comments also name — the twelfth
+assert-by-substring trap in this repo) and assert on brace-balanced function
+bodies, never on a fixed window. Behaviour is checked in a real browser:
+render <code>/settings/</code> with an authenticated <code>test_client</code>, rewrite <code>/static/</code> to
+relative paths, append a driver script that clicks and reports the open groups
+into a <code>#RESULT</code> node, and run
+<code>chromium --headless --virtual-time-budget=8000 --dump-dom</code>. Real Bootstrap
+loads (<code>typeof bootstrap === "object"</code>), so the "already active section" case
+is genuine and not a stub. Seed <code>localStorage</code> from a <code>&lt;script&gt;</code> in <code>&lt;head&gt;</code> to
+exercise a legacy multi-entry store — a headless run starts with an empty
+profile, so nothing persists between runs.</p>
+<p>8 mutations, 8 bite (harness measured by <strong>rc</strong>; only <code>rc==1</code> is a failure).</p>
+<h2 id="76-a-permissive-default-is-a-grant-when-you-add-a-new-door-behind-it">§76 — a permissive default is a grant when you add a new door behind it</h2>
+<p><code>app/models_api_token.py</code> · <code>app/services/api_object_rules.py</code> ·
+<code>app/api_v1/waf.py</code> · <code>app/api_v1/adc.py</code> ·
+<code>tests/test_api_v1_object_rules.py</code></p>
+<p>An API token carries a <code>capabilities</code> allow-list where <strong>empty means
+unrestricted</strong>. That default was correct for what it governed: scheduled
+actions, which an operator has already created, already flagged non-destructive,
+and already bound to an ADOM. It is a backwards-compatibility affordance for
+tokens minted before capabilities existed.</p>
+<p>The object writers added this round sit behind the same field. Had they read it
+the same way, <strong>every token already issued would have gained FortiWeb
+config-write the moment this shipped</strong> — a privilege grant nobody approved,
+applied retroactively to credentials that are already outside the building. The
+code would have been consistent, the tests would have passed, and nothing would
+have failed.</p>
+<p>So the field now has two readings, and the split is declared rather than
+implied: <code>EXPLICIT_ONLY_CAPABILITIES</code>, gated by <code>authorize_object()</code> — a
+different function from <code>authorize_capability()</code> on purpose, because the two
+answer different questions and sharing one function is how the wrong default
+leaks. <code>authorize_object()</code> never falls back to permissive, and additionally
+requires the token's ADOM to match the capability's product.</p>
+<p><strong>The claim on screen had to move with it.</strong> The API-tokens page printed <code>all</code>
+for an empty capability list. That was true while every capability was
+permissive-by-default; the moment object writes became explicit-only it became a
+false statement about a security boundary — an operator reading "all" would
+believe a token can author a WAF bypass when it cannot, or skip granting the
+capability because the page said it was already there. The label is now
+<code>all actions · no object writes</code>, and a guard fails if <code>else 'all'</code> returns.</p>
+<p>Three more rules the same surface encodes:</p>
+<ol>
+<li><strong>The privilege is on the credential, never in the request.</strong> "Some teams
+   file for approval, others write directly" is two capabilities, not an
+   <code>apply: true</code> flag a caller sets for itself. A draft-only token that asks to
+   apply gets a 403 and writes nothing — <em>not</em> a silent downgrade, which would
+   return success to an automation that then believes the appliance is fixed.</li>
+<li><strong>Owning the policies is not owning the profile.</strong> A Web Protection Profile
+   is usually shared, so a carve-out authored "for my app" applies to every
+   policy that binds it. An AppID-scoped token is refused when the target
+   profile reaches outside its scope — and refused again, <code>wpp_scope_unprovable</code>,
+   when the cache cannot prove that it does not. Treating "I could not read it"
+   as "it is not shared" is the failure this exists to prevent.</li>
+<li><strong>No endpoint that cannot tell whose object it is.</strong> FortiADC has no
+   desired-state store, so there is no recorded author, so there is no DELETE —
+   absent, not present-and-403, because there is nothing correct for it to do.
+   A test asserts the route does not exist.</li>
+</ol>
+<p><strong>Idempotency is on content, not on a header.</strong> An <code>Idempotency-Key</code> cache is
+per-process and per-restart; a retry that arrives after either would still
+create a second identical desired-state row. Dedupe compares the normalised
+(appliance, profile, type, payload, policies) tuple — and normalisation runs on
+the way in <em>and</em> on comparison, or <code>"80 "</code> and <code>"80"</code> become two rows the device
+then rejects as one.</p>
+<p><strong>Verification.</strong> 47 tests, rc=0. 31 mutations covering every rule above,
+measured by <strong>return code</strong> (only <code>rc==1</code> is a failure). The mutation that
+matters most is the first: restore the permissive default in
+<code>authorize_object()</code> and <code>test_a_token_with_no_capabilities_cannot_author_a_carve_out</code>
+fails.</p>
+<h2 id="77-a-firmware-line-is-a-claim-about-a-device-and-the-device-was-never-asked">§77 — a firmware line is a claim about a device, and the device was never asked</h2>
+<p><code>scripts/build_field_catalog.py</code> takes the line from
+<code>SATOM_FIELD_CATALOG_SOURCES="fortiweb=8.0:&lt;appliance&gt;"</code> and writes it into the
+folder path <em>and</em> the artefact's <code>source</code> string. Nothing read the box's own
+version. Aim an 8.0 line at a 7.6.8 appliance and you get a complete 8.0 catalog
+built from 7.6 fields, where the folder, the <code>line</code> key and the <code>source</code> string
+all agree — so no later reader, and no test comparing artefacts to each other,
+can tell. The only witness was the device, and it was never consulted.</p>
+<p>That is not a hypothetical operator error here. The estate has <strong>no 8.0
+FortiWeb</strong> ({device}/09/10 all report 7.6.8) while <code>8.0/</code> exists, harvested
+from <code>{device}@8.0</code>, an appliance that has since left the inventory. The next person
+told to "refresh 8.0" has no 8.0 device and exactly one obvious-looking way to
+proceed.</p>
+<p><strong>Rule.</strong> A harvest that files data under a label must verify the label against
+the source, record what the source actually was, and stop rather than assert.
+<code>device_firmware</code> and <code>line_mismatch</code> are now in every artefact; the override
+(<code>--allow-line-mismatch</code>) is legitimate but is recorded, so a schema built under
+protest says so instead of looking identical to a verified one.</p>
+<p><strong>Two failure modes, and both need a guard.</strong> A gate that refuses everything
+passes "it refuses a mismatched line" perfectly while breaking the tool. The
+guards assert both directions.</p>
+<h3 id="the-assert-by-substring-trap-eleventh-instance-this-time-in-my-own-guard">The assert-by-substring trap, eleventh instance — this time in my own guard</h3>
+<p>The first version of the mismatch guard asserted that <code>allow_mismatch</code> appears in
+<code>inspect.getsource(build)</code>. Mutating the gate to <code>if False: continue</code> <strong>survived</strong>:
+the name is still in the function <em>signature</em>. A guard that a deleted gate passes
+is not a guard. It was replaced by three behavioural tests that run <code>build()</code>
+against a fake device with <code>_write_if</code> captured, and assert on what it tried to
+write — nothing on a mismatch, everything on a match, everything <em>marked</em> under
+the override. All three mutations bite.</p>
+<h3 id="the-other-half-two-states-must-not-render-as-one-line">The other half: two states must not render as one line</h3>
+<p><code>_safe_one()</code> flattens "the table is empty" and "the device rejected this URN"
+into the same <code>{}</code>, and the harvest printed the same message for both. The states
+call for opposite responses — one is fine and self-healing, the other means a
+registry entry is dead and every consumer of that key is broken. Conflating them
+is how <code>interface</code> (<code>system/network.interface</code>, <code>errcode -20001</code>) stayed in the
+registry, enabled and clickable in the API Explorer, while the object an operator
+is most likely to configure silently had no schema for months. Same family as
+§71: the console held the evidence and threw it away.</p>
+<p><strong>Verification recipe.</strong> Point a line at a device on another line and confirm the
+run refuses it and writes nothing:</p>
+<pre><code>SATOM_FIELD_CATALOG_SOURCES=&quot;fortiweb=8.0:{device}&quot; \
+  PYTHONPATH=. venv/bin/python -m scripts.build_field_catalog --product fortiweb
+# =&gt; !! line 8.0 via {device}: the device runs 7.6.8, NOT a 8.0 build — refusing
+</code></pre>
+<p>Then confirm <code>data/field_schemas/fortiweb/8.0/</code> is byte-identical to before.</p>
+<h2 id="78-a-manual-is-an-interface-and-nothing-fails-when-it-stops-matching-the-product">§78 — a manual is an interface, and nothing fails when it stops matching the product</h2>
+<p><code>docs/api_v1.md</code> is the whole of what an external team reads before wiring an
+automation against SATOM. On 2026-08-13 it said, in its <strong>first paragraph</strong>,
+that "mutations happen only through pre-created Scheduled Actions" while the
+running API already served seven object-authoring routes, and its endpoint
+table listed <strong>6 of 13</strong>.</p>
+<p>The interesting part is why that survived: a stale manual is <em>invisible</em>. A
+page that lost an endpoint renders exactly like a complete one. There is no
+error, no warning, no diff — only a reader who cannot find a capability and
+concludes the product does not have it, or who cannot find an error code and
+writes a client that treats it as success. This is the same failure class as
+the <code>Version: 1.0</code> line that outlived four releases in the README (§7f).</p>
+<p><code>tests/test_api_v1_manual.py</code> (9 guards) pins the page to the code:</p>
+<table>
+<thead>
+<tr>
+<th>guard</th>
+<th>authority</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>every <code>/api/v1</code> rule has a row</td>
+<td><code>app.url_map</code> — the router, never a second hand-kept list</td>
+</tr>
+<tr>
+<td>the manual advertises no route that is gone</td>
+<td>the same map, compared the other way</td>
+</tr>
+<tr>
+<td>every object-write capability is named</td>
+<td><code>EXPLICIT_ONLY_CAPABILITIES</code></td>
+</tr>
+<tr>
+<td>section 1 says an empty capability list grants <strong>no</strong> object writes</td>
+<td>prose, because the trap is semantic (§76)</td>
+</tr>
+<tr>
+<td>every emitted error code is documented</td>
+<td>regex over the modules that build error bodies</td>
+</tr>
+<tr>
+<td>the false preamble cannot come back</td>
+<td>prose</td>
+</tr>
+<tr>
+<td>the "generated from the live routes" claim cannot come back</td>
+<td>prose</td>
+</tr>
+</tbody>
+</table>
+<p>Two rules that cost time to find:</p>
+<ol>
+<li><strong>Compare route shapes, not strings.</strong> <code>/appliances/&lt;int:id&gt;</code> and
+   <code>/appliances/&lt;id&gt;</code> are the same endpoint; a guard that demands Werkzeug
+   converter syntax fails against a correct manual, and renaming a view argument
+   is not a documentation defect. Both sides normalise <code>&lt;...&gt;</code> to <code>&lt;&gt;</code>.</li>
+<li><strong>An exemption needs a reason, and the reason is tested.</strong> <code>unknown_capability</code>
+   is unreachable through HTTP (only a SATOM bug reaches it), so it is exempt —
+   with the reason in the dict and a guard that fails if the reason is blank. An
+   exemption list without reasons is just a smaller guard.</li>
+</ol>
+<h3 id="verification-recipe_1">Verification recipe</h3>
+<pre><code class="language-bash">venv/bin/python -m pytest tests/test_api_v1_manual.py -q     # 9 passed
+# mutation: any of these must turn it red (measure by rc; only rc==1 is a bite)
+#   - delete a row from the section-3 table
+#   - add a row for a route the API does not serve
+#   - rename a capability in the page
+#   - add a new _err(400, &quot;some_new_code&quot;, ...) to app/api_v1/waf.py
+</code></pre>
+<p>Measured 2026-08-13: <strong>10 mutations, 10 bite.</strong> (The first pass reported 9/10;
+the survivor was a weak mutation — it renamed 1 of the 3 occurrences of
+<code>adc_rule_apply</code>. Renaming all three bites. Mutate every occurrence, or the
+harness measures the mutation instead of the guard.)</p>
+<h3 id="the-published-copy-is-a-second-surface">The published copy is a second surface</h3>
+<p><code>site/docs/api.html</code> is generated from this Markdown by
+<code>deploy/gen_site_docs.py</code> and is what the public site serves.
+<code>test_published_site_documentation_is_current</code> already covers the drift — it was
+<strong>red</strong> when this round started, and had been since sections 6 and 7 were
+written. Regenerating is part of the change, not a follow-up.</p>
     </div>
   </div>
 </section>

@@ -65,6 +65,8 @@
       <a href="#3-endpoints">3. Endpoints</a>
       <a href="#4-a-complete-example-drain-restore-a-backend">4. A complete example — drain / restore a backend</a>
       <a href="#5-errors">5. Errors</a>
+      <a href="#6-waf-carve-outs-apiv1waf-fortiweb">6. WAF carve-outs — /api/v1/waf/* (FortiWeb)</a>
+      <a href="#7-fortiadc-rules-apiv1adc">7. FortiADC rules — /api/v1/adc/*</a>
     </aside>
     <div class="doc-body mdx">
 <h1 id="api-v1-integration-manual">API v1 — Integration Manual</h1>
@@ -75,10 +77,23 @@ HTTP API at <code>/api/v1</code> for third-party integrations and automation.</p
 <li><strong>Auth:</strong> every request carries <code>Authorization: Bearer &lt;token&gt;</code></li>
 <li><strong>Format:</strong> JSON in, JSON out (always — even on errors)</li>
 </ul>
-<p>This surface is <strong>deliberately narrow and read-biased</strong>. It cannot upgrade,
-flash or reboot a device, and it cannot run any action flagged <em>destructive</em> —
-no token, of any scope, can reach those. Mutations happen only through
-pre-created <strong>Scheduled Actions</strong> that you trigger by id.</p>
+<p>This surface is <strong>deliberately narrow</strong>. It cannot upgrade, flash or reboot a
+device, and it cannot run any action flagged <em>destructive</em> — no token, of any
+scope, can reach those.</p>
+<p>There are exactly <strong>two</strong> ways to change anything, and they are not
+interchangeable:</p>
+<ol>
+<li><strong>Scheduled Actions</strong> (§3) — operational moves an operator pre-created for
+   you. You trigger one <em>by id</em>; you cannot alter the parameters it was saved
+   with.</li>
+<li><strong>Object authoring</strong> (§6 FortiWeb, §7 FortiADC) — you write your own WAF
+   carve-out or FortiADC rule. Only a type on a <strong>curated allow-list</strong>, and only
+   if an administrator granted your token the matching <strong>capability</strong>.</li>
+</ol>
+<p>Object authoring is <strong>not</strong> a proxy to the appliance configuration database. No
+token, of any scope, can author an administrator account, an interface or a
+route through this API: those types are not on the list, and the list is
+published by the API itself (<code>GET /waf/exception-types</code>, <code>GET /adc/rule-types</code>).</p>
 <hr>
 <h2 id="1-getting-a-token">1. Getting a token</h2>
 <p>Tokens are issued by an administrator in the app (<strong>API Tokens</strong> section). You
@@ -87,7 +102,8 @@ you receive the plaintext <strong>once</strong>; it is stored only as a hash and
 shown again. A token looks like:</p>
 <pre><code>fmk_&lt;public_id&gt;_&lt;secret&gt;
 </code></pre>
-<p>Each token has three chained limits you should understand before you rely on it:</p>
+<p>Each token has <strong>four</strong> chained limits you should understand before you rely
+on it. All four are evaluated on every call; the first that says no wins:</p>
 <table>
 <thead>
 <tr>
@@ -108,12 +124,21 @@ shown again. A token looks like:</p>
 <td><strong>Product (ADOM)</strong></td>
 <td>The token is bound to <code>fortiweb</code>, <code>fortiadc</code> or <code>global</code> and acts only on that product.</td>
 </tr>
+<tr>
+<td><strong>Capability</strong></td>
+<td>Object authoring (§6, §7) is refused unless the token <em>carries</em> the matching capability — <code>waf_exception_draft</code> / <code>waf_exception_apply</code> / <code>adc_rule_draft</code> / <code>adc_rule_apply</code>. An <strong>empty capability list means no object writes at all</strong>; it is never read as "everything". Ask the administrator for the one you need, by name.</td>
+</tr>
 </tbody>
 </table>
 <blockquote>
 <p>A <code>write</code> token is <strong>not</strong> scoped to a single action or a single device — it
 can run <em>any</em> non-destructive action enabled in its ADOM. Treat it as a
 credential for all non-destructive automation of that product.</p>
+<p><strong>Draft and apply are different credentials, not a flag you choose.</strong> A token
+holding only <code>*_draft</code> that sends <code>"apply": true</code> is refused with
+<code>403 capability_denied</code> and <strong>nothing is written</strong> — it is never quietly
+downgraded to a draft. That matters: a silent downgrade would return success
+to an automation that then believes the hole is closed.</p>
 </blockquote>
 <hr>
 <h2 id="2-authentication">2. Authentication</h2>
@@ -124,12 +149,15 @@ credential for all non-destructive automation of that product.</p>
 The API never issues an HTML login redirect — you always get JSON.</p>
 <hr>
 <h2 id="3-endpoints">3. Endpoints</h2>
+<p>Paths are relative to the base URL. <strong>Scope</strong> is the minimum token scope;
+<strong>capability</strong> is the extra explicit grant, where one applies.</p>
 <table>
 <thead>
 <tr>
 <th>Method</th>
 <th>Path</th>
 <th>Scope</th>
+<th>Capability</th>
 <th>Purpose</th>
 </tr>
 </thead>
@@ -138,40 +166,103 @@ The API never issues an HTML login redirect — you always get JSON.</p>
 <td><code>GET</code></td>
 <td><code>/ping</code></td>
 <td>read</td>
+<td>—</td>
 <td>Identity of the token (owner, scopes, product)</td>
 </tr>
 <tr>
 <td><code>GET</code></td>
 <td><code>/appliances</code></td>
 <td>read</td>
+<td>—</td>
 <td>Device inventory + cached status</td>
 </tr>
 <tr>
 <td><code>GET</code></td>
 <td><code>/appliances/&lt;id&gt;</code></td>
 <td>read</td>
+<td>—</td>
 <td>One device</td>
 </tr>
 <tr>
 <td><code>GET</code></td>
 <td><code>/actions</code></td>
 <td>read</td>
+<td>—</td>
 <td>Scheduled actions visible to the token</td>
 </tr>
 <tr>
 <td><code>POST</code></td>
 <td><code>/actions/&lt;id&gt;/run</code></td>
 <td>write</td>
+<td>—</td>
 <td>Trigger a <strong>non-destructive</strong> action</td>
 </tr>
 <tr>
 <td><code>GET</code></td>
 <td><code>/actions/runs/&lt;run_id&gt;</code></td>
 <td>read</td>
+<td>—</td>
 <td>Poll the outcome of a run</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/waf/exception-types</code></td>
+<td>read</td>
+<td>—</td>
+<td>The allow-list of WAF carve-out types (§6)</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/waf/exceptions</code></td>
+<td>read</td>
+<td>—</td>
+<td>Carve-outs this token authored (<code>?all=1</code> needs <code>admin</code>)</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/waf/exceptions/&lt;id&gt;</code></td>
+<td>read</td>
+<td>—</td>
+<td>One carve-out</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/waf/exceptions</code></td>
+<td>write</td>
+<td><code>waf_exception_draft</code> (+ <code>waf_exception_apply</code> for <code>"apply": true</code>)</td>
+<td>File a WAF carve-out (§6)</td>
+</tr>
+<tr>
+<td><code>DELETE</code></td>
+<td><code>/waf/exceptions/&lt;id&gt;</code></td>
+<td>write</td>
+<td><code>waf_exception_draft</code></td>
+<td>Withdraw one <strong>you</strong> authored, from desired state only (§6)</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/adc/rule-types</code></td>
+<td>read</td>
+<td>—</td>
+<td>The allow-list of FortiADC rule types (§7)</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/adc/rules</code></td>
+<td>read</td>
+<td>—</td>
+<td>FortiADC rules of a type, read from the appliance (§7)</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/adc/rules</code></td>
+<td>write</td>
+<td><code>adc_rule_draft</code> (+ <code>adc_rule_apply</code> for <code>"apply": true</code>)</td>
+<td>Create a FortiADC rule (§7)</td>
 </tr>
 </tbody>
 </table>
+<p>The write endpoints are rate-limited to <strong>30/min</strong>, like <code>/actions/&lt;id&gt;/run</code>.</p>
 <h3 id="get-ping"><code>GET /ping</code></h3>
 <p>Verify a token and see what it can do.</p>
 <pre><code class="language-json">{
@@ -336,10 +427,181 @@ curl -s -H &quot;Authorization: Bearer $TOKEN&quot; $BASE/actions/runs/99 | jq
 </tr>
 </tbody>
 </table>
-<p>Every authenticated call and every run is <strong>audited</strong> (who, when, which token).</p>
+<p>Object authoring answers with these too, plus its own set — see
+<strong>§7 → Additional error codes</strong> for the full list.</p>
+<p>Every authenticated call and every run is <strong>audited</strong> (who, when, which token),
+and so is every <em>refusal</em> of an object write: the denial reason is recorded
+against your token.</p>
 <hr>
-<p><em>This manual is generated from the live route definitions. Endpoints, scopes and
-response shapes reflect the running version of the API.</em></p>
+<h2 id="6-waf-carve-outs-apiv1waf-fortiweb">6. WAF carve-outs — <code>/api/v1/waf/*</code> (FortiWeb)</h2>
+<p>File an exception on the Web Protection Profile in front of your application.</p>
+<p>This is <strong>not</strong> a proxy to the FortiWeb configuration database. The type you may
+author comes from a curated catalog, and only the <em>exception</em> half of it —
+signature customisations edit a shared signature set and stay operator-only.
+<code>GET /waf/exception-types</code> publishes the exact allow-list, with the required
+fields and the enum values for each type; it is the same list the server
+enforces.</p>
+<p>Two capabilities decide what your token may do. They are granted by an
+administrator on the token and <strong>cannot be requested in the call</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>capability</th>
+<th>effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>waf_exception_draft</code></td>
+<td>Records the carve-out as desired state and returns the exact device request that would be sent. <strong>Never touches an appliance.</strong></td>
+</tr>
+<tr>
+<td><code>waf_exception_apply</code></td>
+<td>May additionally push it, with <code>"apply": true</code>.</td>
+</tr>
+</tbody>
+</table>
+<p>A draft-only token that sends <code>"apply": true</code> gets <code>403 capability_denied</code> and
+nothing is written — it is never silently downgraded to a draft.</p>
+<pre><code class="language-bash"># 1. What may I author?
+curl -sH &quot;$AUTH&quot; https://satom/api/v1/waf/exception-types | jq '.types[].key'
+
+# 2. File one (draft — no device is touched)
+curl -sX POST -H &quot;$AUTH&quot; -H 'Content-Type: application/json' \
+  https://satom/api/v1/waf/exceptions -d '{
+    &quot;appliance_id&quot;: 3,
+    &quot;wpp_mkey&quot;: &quot;wpp-app1&quot;,
+    &quot;exc_type&quot;: &quot;allow_method_exception_item&quot;,
+    &quot;policies&quot;: [&quot;pol-app1&quot;],
+    &quot;reason&quot;: &quot;CVE-2026-1234 mitigation needs PATCH on /api/v2/upload&quot;,
+    &quot;payload&quot;: {&quot;request-type&quot;: &quot;plain&quot;,
+                &quot;request-file&quot;: &quot;/api/v2/upload&quot;,
+                &quot;allow-request&quot;: &quot;put patch&quot;}
+  }'
+# -&gt; 201 {&quot;created&quot;:true,&quot;applied&quot;:false,&quot;exception&quot;:{...},&quot;plan&quot;:{...}}
+
+# 3. With an apply-capable token, push it (target = the device object it goes in)
+#    ... same body plus:  &quot;target&quot;: &quot;am-exc&quot;, &quot;apply&quot;: true
+</code></pre>
+<p><code>GET /waf/exceptions?appliance_id=3</code> lists <strong>the carve-outs your token
+authored</strong>. <code>?all=1</code> widens to every carve-out on the appliance and needs the
+<code>admin</code> scope. <code>DELETE /waf/exceptions/&lt;id&gt;</code> withdraws one you authored — from
+desired state only: if it was already applied, the entry is still on the
+appliance and the response says so.</p>
+<p><strong>AppID-scoped tokens.</strong> If your token is pinned to AppIDs you must list the
+<code>policies</code> the carve-out is for, and they must be yours. You will also be
+refused when the Web Protection Profile you named is bound to a policy outside
+your scope: a profile is usually shared, so the exception would apply to every
+application on it. Ask an operator for a dedicated profile (clone + rebind).</p>
+<h2 id="7-fortiadc-rules-apiv1adc">7. FortiADC rules — <code>/api/v1/adc/*</code></h2>
+<p>Same capability model (<code>adc_rule_draft</code> / <code>adc_rule_apply</code>), same curated
+allow-list (<code>GET /adc/rule-types</code>), one honest difference: FortiADC writes go
+straight to the appliance because there is no desired-state store for it. So:</p>
+<ul>
+<li><code>"apply": false</code> (the default) returns the exact request that <em>would</em> be sent,
+  built locally — no session is opened.</li>
+<li>Creating a name that already exists is refused with <code>409 already_exists</code>
+  rather than risking an overwrite of an object your token does not own.</li>
+<li><strong>There is no DELETE.</strong> Without a store there is no recorded author, so
+  "delete only what you created" cannot be proven, and an endpoint that cannot
+  tell your object from an operator's is a way to remove someone else's
+  protection. Withdrawal is an operator action.</li>
+<li>An AppID-scoped token cannot use this surface at all: AppID scope resolves to
+  FortiWeb server policies and is unprovable here.</li>
+</ul>
+<h3 id="additional-error-codes">Additional error codes</h3>
+<table>
+<thead>
+<tr>
+<th>HTTP</th>
+<th><code>error</code></th>
+<th>When</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>400</td>
+<td><code>bad_request</code></td>
+<td>The body is not a JSON object</td>
+</tr>
+<tr>
+<td>400</td>
+<td><code>type_not_allowed</code></td>
+<td>The carve-out type / ADC logical is not on the allow-list</td>
+</tr>
+<tr>
+<td>400</td>
+<td><code>invalid_payload</code></td>
+<td>Required fields missing or badly formatted (<code>errors[]</code> says which)</td>
+</tr>
+<tr>
+<td>400</td>
+<td><code>target_required</code></td>
+<td><code>apply: true</code> without the device object to write into</td>
+</tr>
+<tr>
+<td>403</td>
+<td><code>capability_denied</code></td>
+<td>The token lacks <code>*_draft</code> / <code>*_apply</code></td>
+</tr>
+<tr>
+<td>403</td>
+<td><code>appid_scope_unresolved</code></td>
+<td>An AppID-scoped token did not name its policies</td>
+</tr>
+<tr>
+<td>403</td>
+<td><code>appid_scope_denied</code></td>
+<td>A named policy is outside the token's AppID scope</td>
+</tr>
+<tr>
+<td>403</td>
+<td><code>wpp_shared_denied</code></td>
+<td>The profile is bound to a policy outside the scope</td>
+</tr>
+<tr>
+<td>403</td>
+<td><code>wpp_scope_unprovable</code></td>
+<td>SATOM cannot prove the profile is unshared (no cache)</td>
+</tr>
+<tr>
+<td>403</td>
+<td><code>not_appid_scopable</code></td>
+<td>An AppID-scoped token on the FortiADC surface</td>
+</tr>
+<tr>
+<td>409</td>
+<td><code>template_locked</code></td>
+<td>The profile is template-managed; templates stay clean</td>
+</tr>
+<tr>
+<td>409</td>
+<td><code>already_exists</code></td>
+<td>An ADC object of that name is already on the appliance</td>
+</tr>
+<tr>
+<td>500</td>
+<td><code>registry_mismatch</code></td>
+<td>The rule type resolved to an endpoint SATOM cannot address — report it; retrying will not help</td>
+</tr>
+<tr>
+<td>502</td>
+<td><code>device_unreachable</code></td>
+<td>SATOM could not open a session to the appliance</td>
+</tr>
+<tr>
+<td>502</td>
+<td><code>device_error</code></td>
+<td>The appliance rejected or could not serve the write</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<p><em>This manual is hand-written, and that is exactly why it is pinned by a test.</em>
+<code>tests/test_api_v1_manual.py</code> fails when a route, an object-write capability or
+an error code exists in the code and not in this page — a manual that quietly
+loses an endpoint looks identical to one that is complete, and a reader who
+cannot find a capability concludes the product does not have it.*</p>
     </div>
   </div>
 </section>

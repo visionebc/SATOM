@@ -8,6 +8,55 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Added
 
+- **External teams can file their own FortiWeb WAF carve-outs — and, when
+  trusted, apply them — over `/api/v1`.** Until now the integration API was
+  read-biased: the only mutation was triggering a scheduled action an operator
+  had already created. A security or application team that needed an exception
+  on the WAF in front of its own app had to ask someone to retype it. Two new
+  resources close that gap without opening the appliance:
+  `/api/v1/waf/exceptions` (FortiWeb, desired-state first) and
+  `/api/v1/adc/rules` (FortiADC).
+
+  What it is deliberately **not** is a proxy to the device configuration
+  database. That database does not distinguish "a WAF carve-out" from an admin
+  account, an interface or a static route, so an endpoint that writes whatever
+  object type it is handed is not a rules API — it is a way to take over the
+  appliance. The authorable types come from the curated carve-out catalog the
+  console already uses, and in this version only the *exception* half of it: a
+  signature customisation edits a shared signature set that every policy
+  binding it inherits, and that blast radius stays with operators.
+
+  The two audiences the operator described — teams that file a request for
+  approval, and teams that write directly — are **not** a flag in the request.
+  A caller must never be able to elect its own privilege. They are two separate
+  capabilities on the token (`waf_exception_draft`, `waf_exception_apply`;
+  `adc_rule_draft`, `adc_rule_apply`), and a draft-only token that asks to apply
+  is told so rather than quietly downgraded — a silent downgrade returns success
+  to an automation that then believes the hole is closed on the appliance.
+
+  Both capabilities are **explicit grants**. For scheduled actions an empty
+  capability list has always meant "unrestricted"; reusing that default here
+  would have handed WAF config-write to every token already in a third party's
+  hands, retroactively and without anyone approving it.
+
+  Four guarantees carry the rest. Every API-authored record carries its author,
+  so a token can only withdraw what it filed and an operator's carve-out is
+  invisible to it. A retried request is deduplicated on the *content* of the
+  carve-out, so a SOAR that retries does not leave a second identical row for
+  the alignment report to double-count. An AppID-scoped token must name the
+  server policies it is authoring for, and they must be its own. And — the one
+  that is easy to miss — owning those policies is not owning the profile they
+  share: a Web Protection Profile is usually bound to several policies, so a
+  carve-out "for my app" lands on every other app on the same profile. A scoped
+  token is refused when the target profile reaches outside its scope, and
+  refused again when SATOM cannot prove that it does not.
+
+  FortiADC differs in one honest way: it has no desired-state store, so SATOM
+  cannot record who authored a rule, so there is **no delete** on that half —
+  an endpoint that cannot tell an external team's object from an operator's is
+  a way to remove someone else's protection. The API says so in its own type
+  listing rather than leaving an integrator to discover it.
+
 - **Concept Map (`/map`) — every page in the console, grouped by
   what it is for.** The sidebar answers "what can I do in this ADOM?"; it has never
   answered "where does X live?", which is the question a new operator actually
@@ -161,6 +210,76 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   updates a ticket instead of opening a second one for the same window.
 
 ### Fixed
+
+- **The API manual described an API that no longer existed.** `docs/api_v1.md`
+  opened by telling integrators that *"mutations happen only through pre-created
+  Scheduled Actions"* — false since object authoring shipped — and its endpoint
+  table, the page's own list of what the API serves, named **6 of the 13** live
+  routes. The seven `/waf/*` and `/adc/*` routes were described further down in
+  sections 6 and 7, so the page contradicted itself: a reader who trusted the
+  table concluded the product could not do what it had just been given. The
+  preamble, the token-limits table (capabilities are now the fourth chained
+  limit, and the one that decides object writes), section 3 and the error tables
+  now describe the shipping surface. Three codes an integrator can genuinely
+  receive — `bad_request`, `registry_mismatch`, `device_unreachable` — were
+  absent from every table and are documented.
+
+- **The manual claimed to be generated from the live routes. It is hand-written.**
+  That sentence is worse than a missing endpoint: it tells the reader that a gap
+  is impossible, which is the belief that lets one open. Replaced with the truth
+  and with the guard that now enforces it — `tests/test_api_v1_manual.py` pins
+  every `/api/v1` rule in the URL map, every object-write capability the model
+  defines, and every error code the API modules literally emit, against the page.
+  The published copy `site/docs/api.html` was regenerated: it had been built
+  before sections 6 and 7 existed, so the *public* manual — the one an external
+  team actually reads — described none of it.
+
+
+- **The field-catalog harvest can no longer file a device's configuration under a
+  firmware line it does not run.** The line came from the operator's environment
+  (`SATOM_FIELD_CATALOG_SOURCES="fortiweb=8.0:<box>"`) and was written into both
+  the folder path and the artefact's `source` string verbatim; nothing asked the
+  device what it actually ran. Pointing an 8.0 line at a 7.6.8 appliance produced
+  a complete, well-formed, confidently-labelled 8.0 catalog built from 7.6 data —
+  and undetectable afterwards, because every artefact agreed with every other
+  artefact. This estate makes that the *likely* mistake rather than an exotic one:
+  there is no 8.0 FortiWeb left in it (fortiweb08/09/10 are all 7.6.8), while
+  `data/field_schemas/fortiweb/8.0/` exists and was harvested from `fw1`, a box
+  that has since left the inventory. The harvest now reads the firmware, refuses
+  the line on a mismatch, and records both `device_firmware` and `line_mismatch`
+  in every artefact so a reader can tell a verified line from an asserted one.
+  `--allow-line-mismatch` overrides it deliberately, and the artefact says so.
+
+- **A harvested schema records when it was harvested.** The payload carried a
+  literal `"generated_at": "2026-06-28"`, so every rebuild re-asserted a June
+  date. Nothing failed; the artefact simply could not report the one property a
+  rebuild exists to deliver.
+
+- **An empty harvest now says WHICH kind of empty it hit.** `_safe_one()` returns
+  `{}` both for a table the operator never populated and for a URN the device
+  rejects, and the harvest printed the same "empty live object" line for both.
+  That is how a dead registry entry stayed invisible: `interface` pointed at
+  `/api/v2.0/cmdb/system/network.interface`, which FortiWeb 7.6.8 answers with
+  `errcode -20001 "The REST API has invalid URL."`, and it read as "nothing
+  configured".
+
+- **The dead `interface` endpoint is retired and provisioning points at the
+  working key.** `interface_2` (`/api/v2.0/cmdb/system/interface`, 200, 3 rows) is
+  what `interface_inventory`, `analysis`, `config_sections` and the inventory
+  tests already treat as canonical. The broken key was enabled in the registry, so
+  an operator clicking it in the API Explorer got `-20001` with no explanation,
+  and the provisioning catalog pointed at it — which is why **Network interface**,
+  the object an operator is most likely to configure, had never had a field
+  schema. Fixed on all three surfaces: the provisioning spec, `endpoints.yaml` (so
+  a fresh install cannot recreate it) and the live registry row (soft-disabled,
+  because the YAML seeder is INSERT-ONLY and would never rewrite an existing row).
+
+- **Six field schemas that never existed.** `interface` (34 fields),
+  `snmp_community` (19), `snmp_user` (19), `radius` (16), `user_group` (8) and
+  `syslog` (7), harvested read-only from fortiweb08 (7.6.8) into `7.6/` and
+  `_default/`. `ldap` remains absent, correctly: the reference box has no LDAP
+  server configured, so there is nothing to learn field names from — and the
+  harvest now says exactly that instead of implying a defect.
 
 - **Change documents are produced in French and Italian.** Both languages were
   one and two strings short of a complete catalogue (of 292), and a catalogue

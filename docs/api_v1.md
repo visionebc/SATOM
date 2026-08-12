@@ -7,10 +7,24 @@ HTTP API at `/api/v1` for third-party integrations and automation.
 - **Auth:** every request carries `Authorization: Bearer <token>`
 - **Format:** JSON in, JSON out (always — even on errors)
 
-This surface is **deliberately narrow and read-biased**. It cannot upgrade,
-flash or reboot a device, and it cannot run any action flagged *destructive* —
-no token, of any scope, can reach those. Mutations happen only through
-pre-created **Scheduled Actions** that you trigger by id.
+This surface is **deliberately narrow**. It cannot upgrade, flash or reboot a
+device, and it cannot run any action flagged *destructive* — no token, of any
+scope, can reach those.
+
+There are exactly **two** ways to change anything, and they are not
+interchangeable:
+
+1. **Scheduled Actions** (§3) — operational moves an operator pre-created for
+   you. You trigger one *by id*; you cannot alter the parameters it was saved
+   with.
+2. **Object authoring** (§6 FortiWeb, §7 FortiADC) — you write your own WAF
+   carve-out or FortiADC rule. Only a type on a **curated allow-list**, and only
+   if an administrator granted your token the matching **capability**.
+
+Object authoring is **not** a proxy to the appliance configuration database. No
+token, of any scope, can author an administrator account, an interface or a
+route through this API: those types are not on the list, and the list is
+published by the API itself (`GET /waf/exception-types`, `GET /adc/rule-types`).
 
 ---
 
@@ -25,17 +39,25 @@ shown again. A token looks like:
 fmk_<public_id>_<secret>
 ```
 
-Each token has three chained limits you should understand before you rely on it:
+Each token has **four** chained limits you should understand before you rely
+on it. All four are evaluated on every call; the first that says no wins:
 
 | Limit | Meaning |
 |---|---|
 | **Scope** | `read` ⊂ `write` ⊂ `admin`. Triggering an action needs `write`. |
 | **Owner-capped** | The token never exceeds its owner's role. If the owner lacks `config_write`, the token's `write` scope does nothing. Disable the owner → the token dies with them. |
 | **Product (ADOM)** | The token is bound to `fortiweb`, `fortiadc` or `global` and acts only on that product. |
+| **Capability** | Object authoring (§6, §7) is refused unless the token *carries* the matching capability — `waf_exception_draft` / `waf_exception_apply` / `adc_rule_draft` / `adc_rule_apply`. An **empty capability list means no object writes at all**; it is never read as "everything". Ask the administrator for the one you need, by name. |
 
 > A `write` token is **not** scoped to a single action or a single device — it
 > can run *any* non-destructive action enabled in its ADOM. Treat it as a
 > credential for all non-destructive automation of that product.
+
+> **Draft and apply are different credentials, not a flag you choose.** A token
+> holding only `*_draft` that sends `"apply": true` is refused with
+> `403 capability_denied` and **nothing is written** — it is never quietly
+> downgraded to a draft. That matters: a silent downgrade would return success
+> to an automation that then believes the hole is closed.
 
 ---
 
@@ -54,14 +76,27 @@ The API never issues an HTML login redirect — you always get JSON.
 
 ## 3. Endpoints
 
-| Method | Path | Scope | Purpose |
-|---|---|---|---|
-| `GET`  | `/ping` | read | Identity of the token (owner, scopes, product) |
-| `GET`  | `/appliances` | read | Device inventory + cached status |
-| `GET`  | `/appliances/<id>` | read | One device |
-| `GET`  | `/actions` | read | Scheduled actions visible to the token |
-| `POST` | `/actions/<id>/run` | write | Trigger a **non-destructive** action |
-| `GET`  | `/actions/runs/<run_id>` | read | Poll the outcome of a run |
+Paths are relative to the base URL. **Scope** is the minimum token scope;
+**capability** is the extra explicit grant, where one applies.
+
+| Method | Path | Scope | Capability | Purpose |
+|---|---|---|---|---|
+| `GET`  | `/ping` | read | — | Identity of the token (owner, scopes, product) |
+| `GET`  | `/appliances` | read | — | Device inventory + cached status |
+| `GET`  | `/appliances/<id>` | read | — | One device |
+| `GET`  | `/actions` | read | — | Scheduled actions visible to the token |
+| `POST` | `/actions/<id>/run` | write | — | Trigger a **non-destructive** action |
+| `GET`  | `/actions/runs/<run_id>` | read | — | Poll the outcome of a run |
+| `GET`  | `/waf/exception-types` | read | — | The allow-list of WAF carve-out types (§6) |
+| `GET`  | `/waf/exceptions` | read | — | Carve-outs this token authored (`?all=1` needs `admin`) |
+| `GET`  | `/waf/exceptions/<id>` | read | — | One carve-out |
+| `POST` | `/waf/exceptions` | write | `waf_exception_draft` (+ `waf_exception_apply` for `"apply": true`) | File a WAF carve-out (§6) |
+| `DELETE` | `/waf/exceptions/<id>` | write | `waf_exception_draft` | Withdraw one **you** authored, from desired state only (§6) |
+| `GET`  | `/adc/rule-types` | read | — | The allow-list of FortiADC rule types (§7) |
+| `GET`  | `/adc/rules` | read | — | FortiADC rules of a type, read from the appliance (§7) |
+| `POST` | `/adc/rules` | write | `adc_rule_draft` (+ `adc_rule_apply` for `"apply": true`) | Create a FortiADC rule (§7) |
+
+The write endpoints are rate-limited to **30/min**, like `/actions/<id>/run`.
 
 ### `GET /ping`
 Verify a token and see what it can do.
@@ -202,7 +237,12 @@ Every error is JSON with an `error` code (and usually a `message`).
 | 409 | `already_running` | The action is already running |
 | 429 | `rate_limited` | Too many requests (run is 30/min) |
 
-Every authenticated call and every run is **audited** (who, when, which token).
+Object authoring answers with these too, plus its own set — see
+**§7 → Additional error codes** for the full list.
+
+Every authenticated call and every run is **audited** (who, when, which token),
+and so is every *refusal* of an object write: the denial reason is recorded
+against your token.
 
 ---
 
@@ -283,6 +323,7 @@ straight to the appliance because there is no desired-state store for it. So:
 
 | HTTP | `error` | When |
 |---|---|---|
+| 400 | `bad_request` | The body is not a JSON object |
 | 400 | `type_not_allowed` | The carve-out type / ADC logical is not on the allow-list |
 | 400 | `invalid_payload` | Required fields missing or badly formatted (`errors[]` says which) |
 | 400 | `target_required` | `apply: true` without the device object to write into |
@@ -294,9 +335,14 @@ straight to the appliance because there is no desired-state store for it. So:
 | 403 | `not_appid_scopable` | An AppID-scoped token on the FortiADC surface |
 | 409 | `template_locked` | The profile is template-managed; templates stay clean |
 | 409 | `already_exists` | An ADC object of that name is already on the appliance |
+| 500 | `registry_mismatch` | The rule type resolved to an endpoint SATOM cannot address — report it; retrying will not help |
+| 502 | `device_unreachable` | SATOM could not open a session to the appliance |
 | 502 | `device_error` | The appliance rejected or could not serve the write |
 
 ---
 
-*This manual is generated from the live route definitions. Endpoints, scopes and
-response shapes reflect the running version of the API.*
+*This manual is hand-written, and that is exactly why it is pinned by a test.*
+`tests/test_api_v1_manual.py` fails when a route, an object-write capability or
+an error code exists in the code and not in this page — a manual that quietly
+loses an endpoint looks identical to one that is complete, and a reader who
+cannot find a capability concludes the product does not have it.*

@@ -17,3 +17,7 @@ bp = Blueprint("api_v1", __name__, url_prefix="/api/v1")
 csrf.exempt(bp)
 
 from . import routes  # noqa: E402,F401
+# Object-write resources. Imported AFTER ``routes`` so the blueprint-level JSON
+# error handlers registered there cover these views too.
+from . import waf  # noqa: E402,F401
+from . import adc  # noqa: E402,F401

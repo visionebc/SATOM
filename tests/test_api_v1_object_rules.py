@@ -17,6 +17,7 @@ through a stubbed ops object.
 """
 from __future__ import annotations
 
+import ast
 import json
 
 import pytest
@@ -705,3 +706,205 @@ def test_every_mintable_capability_is_described_on_the_page(app):
     block = src.split("{% set CAP_DESC = {", 1)[1].split("} %}", 1)[0]
     for cap in CAPABILITIES:
         assert f"'{cap}'" in block, f"{cap} has no operator-facing description"
+
+
+# --------------------------------------------------------------------------- #
+#  10. Salvaged guards (parallel-implementation collision, 2026-08-12)          #
+#                                                                              #
+#  Two sessions built this surface within the same hour. The other one's tests  #
+#  were written against a service module that never got wired into a route, so  #
+#  they could never run — but seven of its guards pin promises the sections     #
+#  above do not. They are re-expressed here against the LIVE surface rather     #
+#  than kept as a second file: a suite that keeps a test for its ORIGIN instead #
+#  of its SUBJECT is exactly how it grows a second, drifting copy of itself.    #
+# --------------------------------------------------------------------------- #
+def _audit_rows(app, action):
+    from app.models import AuditLog
+    with app.app_context():
+        return AuditLog.query.filter_by(action=action).all()
+
+
+def _extra(row):
+    # audit.log_action stores ``str(dict)`` — a Python repr, NOT JSON, despite
+    # the column comment. json.loads() on it raises on the single quotes.
+    return ast.literal_eval(row.extra)
+
+
+def _stub_apply(monkeypatch, *, ok=True):
+    """Make the apply path reach its audit call without touching a device."""
+    def _fake_apply(ops, **kw):
+        return {"ok": ok, "already_present": False, "dry_run": False,
+                "steps": [{"step": "entry", "ok": ok, "duplicate": False,
+                           "note": "", "request": None, "error": ""}],
+                "plan": {"status": "ready", "method": "POST",
+                         "endpoint": "/api/v2.0/cmdb/waf/x", "error": ""}}
+    monkeypatch.setattr("app.api_v1.waf.exception_inject.apply_injection",
+                        _fake_apply)
+    monkeypatch.setattr("app.services.fortiweb_ops.FortiWebOps",
+                        lambda appliance: object())
+
+
+@pytest.mark.parametrize("method,path", [
+    ("get", "/api/v1/waf/exception-types"),
+    ("get", "/api/v1/waf/exceptions"),
+    ("post", "/api/v1/waf/exceptions"),
+    ("get", "/api/v1/adc/rule-types"),
+    ("post", "/api/v1/adc/rules"),
+])
+def test_an_anonymous_call_is_refused_as_json_never_as_a_login_page(
+        app, client, method, path):
+    """This blueprint lives inside a session-login Flask app. If the token
+    decorator ever falls back to Flask-Login's ``unauthorized`` handler, an
+    unauthenticated integrator gets a 302 to an HTML form — which most client
+    libraries report as a successful request with a strange body, not as an
+    auth failure. The contract is 401 + JSON, on every route of the surface.
+    """
+    r = getattr(client, method)(path, headers=CT, data="{}")
+    assert r.status_code == 401, f"{method.upper()} {path} -> {r.status_code}"
+    assert r.mimetype == "application/json"
+    assert r.get_json()["error"]
+
+
+def test_an_applied_carve_out_leaves_a_receipt_that_names_its_author(
+        app, client, monkeypatch):
+    """Every device-side change SATOM makes must be attributable to whoever
+    asked for it. Without this row the new object surfaces on the drift/alerts
+    path as a change "with no receipt" — the console would tell an operator
+    that someone edited the appliance behind SATOM's back, when SATOM wrote it
+    itself on this token's behalf.
+    """
+    _stub_apply(monkeypatch)
+    aid = _appliance(app)
+    t = _mint(app, capabilities=["waf_exception_draft", "waf_exception_apply"])
+    r = client.post("/api/v1/waf/exceptions", headers=_auth(t),
+                    data=json.dumps(_body(aid, apply=True, target="am-exc")))
+    assert r.status_code == 200, r.get_json()
+
+    rows = _audit_rows(app, "api.wpp_exception.apply")
+    assert len(rows) == 1
+    extra = _extra(rows[0])
+    assert extra["via"] == "api"
+    assert extra["device_target"] == "am-exc"
+    assert extra["appliance_id"] == aid
+    assert rows[0].target.startswith("wpp_exception:")
+    # The receipt must lead back to a HUMAN, not just to a credential.
+    from app.models_api_token import ApiToken
+    with app.app_context():
+        owner = ApiToken.query.filter_by(public_id=extra["token"]).one().owner
+        assert extra["owner"] == owner.username
+
+
+def test_a_preview_is_never_filed_as_a_write(app, client):
+    """A draft changed nothing on the appliance. Filing it as an apply would
+    credit SATOM for a device-side change it never made, and the next drift
+    report would be reconciled against a write that does not exist.
+    """
+    aid = _appliance(app)
+    t = _mint(app, capabilities=["waf_exception_draft"])
+    r = client.post("/api/v1/waf/exceptions", headers=_auth(t),
+                    data=json.dumps(_body(aid, target="am-exc")))
+    assert r.status_code == 201
+    assert _audit_rows(app, "api.wpp_exception.apply") == []
+    assert len(_audit_rows(app, "api.wpp_exception.create")) == 1
+
+
+def test_a_refused_call_is_audited_so_probing_leaves_a_trail(app, client):
+    """A token walking the surface to find what it can reach must be visible.
+    A 403 that writes nothing anywhere is a silent enumeration.
+    """
+    aid = _appliance(app)
+    t = _mint(app, capabilities=[])          # granted nothing on this surface
+    r = client.post("/api/v1/waf/exceptions", headers=_auth(t),
+                    data=json.dumps(_body(aid)))
+    assert r.status_code == 403
+    rows = _audit_rows(app, "api.wpp_exception.denied")
+    assert len(rows) == 1
+    extra = _extra(rows[0])
+    assert extra["via"] == "api"
+    # The receipt records the SAME reason the caller was given, so the audit
+    # trail and the API answer can never tell two different stories.
+    assert extra["reason"] == r.get_json()["error"]
+
+
+def test_an_adc_create_leaves_its_own_receipt(app, client, monkeypatch):
+    """FortiADC has no desired-state row to inspect afterwards, so the audit
+    log is the ONLY record that this object came from the API rather than from
+    an operator at the console.
+    """
+    aid = _appliance(app, name="adc1", kind="fortiadc")
+    t = _mint(app, product="fortiadc",
+              capabilities=["adc_rule_draft", "adc_rule_apply"])
+    monkeypatch.setattr("app.clients.fortiadc.FortiADCClient.get_object",
+                        lambda self, logical, mkey, **kw: None)
+    monkeypatch.setattr("app.clients.fortiadc.FortiADCClient.create",
+                        lambda self, logical, data, **kw: {"ok": True})
+    r = client.post("/api/v1/adc/rules", headers=_auth(t),
+                    data=json.dumps({"appliance_id": aid,
+                                     "logical": "security_waf_exception",
+                                     "mkey": "exc-1",
+                                     "fields": {"comments": "team X"},
+                                     "apply": True}))
+    assert r.status_code == 201, r.get_json()
+    rows = _audit_rows(app, "api.adc_rule.create")
+    assert len(rows) == 1
+    assert rows[0].target == "security_waf_exception/exc-1"
+    extra = _extra(rows[0])
+    assert extra["via"] == "api" and extra["token"]
+    assert extra["logical"] == "security_waf_exception"
+
+
+def test_key_order_is_not_part_of_a_carve_outs_identity(app, client):
+    """A caller that re-serialises its payload between retries (a different
+    language, a different JSON library, a dict that lost its order) must not
+    author a second row. Identity is the VALUES, not their spelling.
+    """
+    aid = _appliance(app)
+    t = _mint(app, capabilities=["waf_exception_draft"])
+    client.post("/api/v1/waf/exceptions", headers=_auth(t),
+                data=json.dumps(_body(aid)))
+    shuffled = {k: GOOD["payload"][k] for k in reversed(list(GOOD["payload"]))}
+    r = client.post("/api/v1/waf/exceptions", headers=_auth(t),
+                    data=json.dumps(_body(aid, payload=shuffled)))
+    assert r.get_json()["idempotent"] is True
+    from app.models import WppException
+    with app.app_context():
+        assert WppException.query.count() == 1
+
+
+def test_the_published_catalog_tells_a_caller_which_fields_to_fill(app, client):
+    """A catalog that names the types but not their fields makes the integrator
+    guess the payload, and a guessed payload comes back as a 400 they have no
+    way to fix. What the API advertises must be what validation enforces.
+    """
+    t = _mint(app, scopes=["read"], capabilities=["waf_exception_draft"])
+    types = client.get("/api/v1/waf/exception-types",
+                       headers=_auth(t)).get_json()["types"]
+    row = next(x for x in types if x["key"] == GOOD["exc_type"])
+    from app.services import wpp_exceptions as store
+    assert row["required"] == list(store.REQUIRED_FIELDS.get(GOOD["exc_type"], []))
+    assert row["required"], "the advertised type would need no input at all"
+    assert row["fields"] and all(f["key"] for f in row["fields"])
+
+
+def test_no_body_field_can_steer_the_device_path(app, client):
+    """The whole design rests on the device path being derived from the type
+    CATALOG. The moment a request field can name a collection, this stops being
+    a carve-out API and becomes a cmdb proxy with ``system/admin`` one POST
+    away. Unknown body fields must be inert, not steering.
+    """
+    aid = _appliance(app)
+    t = _mint(app, capabilities=["waf_exception_draft"])
+    clean = client.post("/api/v1/waf/exceptions", headers=_auth(t),
+                        data=json.dumps(_body(aid, target="am-exc"))).get_json()
+    steered = client.post(
+        "/api/v1/waf/exceptions", headers=_auth(t),
+        data=json.dumps(_body(aid, target="am-exc",
+                              endpoint="/api/v2.0/cmdb/system/admin",
+                              collection="system/admin",
+                              path="system/admin",
+                              logical="system_admin",
+                              url="/api/v2.0/cmdb/router/static"))).get_json()
+    assert clean["plan"]["endpoint"]
+    assert steered["plan"] == clean["plan"]
+    assert "system/admin" not in json.dumps(steered)
+    assert "router/static" not in json.dumps(steered)

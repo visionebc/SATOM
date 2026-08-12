@@ -143,6 +143,29 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Changed
 
+- **The duplicate carve-out implementation from the 2026-08-12 collision is
+  retired — the coverage it held is not.** Two sessions built the `/api/v1`
+  object-authoring surface within the same hour. One was wired into the
+  blueprint and shipped; the other stayed on disk, imported by nothing, for
+  three rounds. Its 35 tests could never pass, because they targeted the module
+  that was never wired up — but seven of the promises they pinned were pinned
+  nowhere else. Those seven are now expressed against the live surface, in the
+  suite that already covers it: an unauthenticated call is answered as 401 JSON
+  on every route rather than a redirect to the HTML login form; an applied
+  carve-out leaves an audit receipt naming the token *and* the human who owns
+  it; a preview is never filed as a write; a refused call is recorded, so
+  probing the surface leaves a trail; a FortiADC create leaves its own receipt,
+  which is the only record that exists on that half; key order is not part of a
+  carve-out's identity, so a caller that re-serialises between retries does not
+  author twice; and no request field can steer the device path. The audit ones
+  reach past the API: a change SATOM makes on a device without leaving a
+  receipt is reported back to the operator as drift with no known author.
+
+  The retired files were committed **before** they were removed. Deleting an
+  untracked file leaves no trace anywhere — no diff, no history, nothing to
+  read later — so the independent implementation, its tests and the ad-hoc
+  route probe are in the history at the commit that precedes their removal.
+
 - **The Admin Console menu keeps one group open.** Opening a group — or
   selecting a section inside one — now folds every other group. Selecting is
   the half that is easy to miss: a section can be activated without ever

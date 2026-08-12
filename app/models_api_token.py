@@ -63,7 +63,39 @@ TOKEN_PREFIX = "fmk"  # Fortinet-Manager-Key
 #
 # This is exactly the operator's ask (translated from Spanish): "a token that can ONLY
 # edit the backends of these AppIDs".
-CAPABILITIES = ("backend_edit", "backend_config", "policy_status", "cert_swap", "maintenance", "reports")
+CAPABILITIES = ("backend_edit", "backend_config", "policy_status", "cert_swap",
+                "maintenance", "reports",
+                # --- object-write capabilities (see EXPLICIT_ONLY below) ------
+                "waf_exception_draft", "waf_exception_apply",
+                "adc_rule_draft", "adc_rule_apply")
+
+# ---------------------------------------------------------------------------
+# EXPLICIT-ONLY capabilities — the empty-list default does NOT grant these.
+#
+# For CATALOG ACTIONS an empty ``capabilities`` list means "unrestricted", which
+# is safe there because /api/v1 only ever exposed actions the operator had
+# already created and flagged non-danger. Reusing that default for the object
+# writers below would SILENTLY grant WAF/ADC config-write to every token minted
+# before this feature existed — a privilege grant nobody approved, applied
+# retroactively to credentials already in third-party hands.
+#
+# So these are opt-in, always: the capability must be listed on the token.
+# ``authorize_object`` is the only gate for them and it never falls back to the
+# permissive default.
+# ---------------------------------------------------------------------------
+EXPLICIT_ONLY_CAPABILITIES = frozenset({
+    "waf_exception_draft", "waf_exception_apply",
+    "adc_rule_draft", "adc_rule_apply",
+})
+
+# An object capability is only meaningful on a token bound to the matching
+# ADOM (or to ``global``). A FortiWeb-only token can never write ADC rules.
+CAPABILITY_PRODUCTS = {
+    "waf_exception_draft": ("fortiweb",),
+    "waf_exception_apply": ("fortiweb",),
+    "adc_rule_draft": ("fortiadc",),
+    "adc_rule_apply": ("fortiadc",),
+}
 
 # Every runnable catalog action → the capability tag it belongs to. An action
 # missing here has tag None, so a capability-restricted token can never run it
@@ -199,6 +231,31 @@ class ApiToken(db.Model):
                     "This token is AppID-scoped; it can only run actions that "
                     "target a specific server policy (backend/policy/cert ops), "
                     "not fleet-wide actions.")
+        return (True, "", "")
+
+    def authorize_object(self, cap: str) -> tuple[bool, str, str]:
+        """Gate an OBJECT write (WAF carve-out / ADC rule) on an explicit grant.
+
+        Deliberately NOT ``authorize_capability``: that one treats an empty
+        allow-list as "unrestricted", which is right for catalog actions and
+        catastrophic here (see EXPLICIT_ONLY_CAPABILITIES). This one requires
+        the capability to be present on the token, always, and additionally
+        requires the token's ADOM to match the capability's product.
+
+        Returns ``(ok, error_code, message)``.
+        """
+        if cap not in EXPLICIT_ONLY_CAPABILITIES:
+            return (False, "unknown_capability",
+                    f"'{cap}' is not an object-write capability.")
+        if cap not in self.capability_list:
+            return (False, "capability_denied",
+                    f"This token does not hold the '{cap}' capability. Ask an "
+                    "administrator to grant it.")
+        wanted = CAPABILITY_PRODUCTS.get(cap, ())
+        if wanted and self.product not in wanted and self.product != "global":
+            return (False, "wrong_product",
+                    f"'{cap}' applies to {'/'.join(wanted)}; this token is bound "
+                    f"to the '{self.product}' ADOM.")
         return (True, "", "")
 
     # --------------------------------------------------------------- lifecycle

@@ -18,7 +18,18 @@
   'cert_swap': "swap a policy's certificate",
   'maintenance': 'backups / sync / signatures (fleet)',
   'reports': 'stats / inventory / health (read-only, fleet)',
+  'waf_exception_draft': 'FILE a FortiWeb WAF carve-out (desired state only — never touches a device)',
+  'waf_exception_apply': 'PUSH a filed FortiWeb carve-out onto the appliance',
+  'adc_rule_draft': 'PREVIEW a FortiADC carve-out (never touches a device)',
+  'adc_rule_apply': 'CREATE a FortiADC carve-out on the appliance',
 } %}
+{# Object-write capabilities are EXPLICIT-only: an empty capability list grants
+   every non-danger catalog action but NO object write. Printing "all" for an
+   empty list — which this page did until the object writers existed — would
+   tell the operator a token can author WAF carve-outs when it cannot. #}
+{% set EXPLICIT_ONLY = ['waf_exception_draft', 'waf_exception_apply',
+                        'adc_rule_draft', 'adc_rule_apply'] %}
+{% set NO_CAPS_LABEL = _('all actions · no object writes') %}
 {% set SCOPE_DESC = {'read': '(GET)', 'write': '(run actions / config_write)', 'admin': '(admin)'} %}
 <div class="d-flex align-items-center mb-3">
   <h4 class="mb-0"><i class="bi bi-key me-2"></i>{{ _('API Tokens') }}</h4>
@@ -36,7 +47,7 @@
   <input class="form-control mt-2" readonly value="{{ new_token }}"
          style="font-family:monospace">
   <div class="small text-muted mt-1">
-    {{ _('Owner:') }} <strong>{{ new_token_row.owner.username }}</strong> {{ _('· Scopes:') }} <strong>{{ new_token_row.scope_list|join(', ') }}</strong> {{ _('· Capabilities:') }} <strong>{{ new_token_row.capability_list|join(', ') if new_token_row.capability_list else 'all' }}</strong> {{ _('· AppID scope:') }} <strong>{{ new_token_row.app_id_list|join(', ') if new_token_row.app_id_list else 'any' }}</strong> {{ _('· ADOM:') }} <strong>{{ new_token_row.product }}</strong>
+    {{ _('Owner:') }} <strong>{{ new_token_row.owner.username }}</strong> {{ _('· Scopes:') }} <strong>{{ new_token_row.scope_list|join(', ') }}</strong> {{ _('· Capabilities:') }} <strong>{{ new_token_row.capability_list|join(', ') if new_token_row.capability_list else NO_CAPS_LABEL }}</strong> {{ _('· AppID scope:') }} <strong>{{ new_token_row.app_id_list|join(', ') if new_token_row.app_id_list else 'any' }}</strong> {{ _('· ADOM:') }} <strong>{{ new_token_row.product }}</strong>
   </div>
 </div>
 {% endif %}
@@ -85,7 +96,7 @@
       </div>
 
       <div class="col-md-6">
-        <label class="form-label d-block">{{ _('Capabilities') }} <span class="text-muted small">{{ _('(what — leave all unchecked for no restriction)') }}</span></label>
+        <label class="form-label d-block">{{ _('Capabilities') }} <span class="text-muted small">{{ _('(what — unchecked = every catalog action; object writes are always explicit)') }}</span></label>
         {% for c in capabilities %}
         <div class="form-check">
           <input class="form-check-input" type="checkbox" name="capabilities" value="{{ c }}"
@@ -137,7 +148,7 @@
           <td><code>{{ t.masked }}</code></td>
           <td>{{ t.owner.username if t.owner else '—' }}</td>
           <td>{{ t.scope_list|join(', ') }}</td>
-          <td class="small">{{ t.capability_list|join(', ') if t.capability_list else 'all' }}</td>
+          <td class="small">{{ t.capability_list|join(', ') if t.capability_list else NO_CAPS_LABEL }}</td>
           <td class="small">{{ t.app_id_list|join(', ') if t.app_id_list else 'any' }}</td>
           <td>{{ t.product }}</td>
           <td>

@@ -206,5 +206,97 @@ Every authenticated call and every run is **audited** (who, when, which token).
 
 ---
 
+## 6. WAF carve-outs — `/api/v1/waf/*` (FortiWeb)
+
+File an exception on the Web Protection Profile in front of your application.
+
+This is **not** a proxy to the FortiWeb configuration database. The type you may
+author comes from a curated catalog, and only the *exception* half of it —
+signature customisations edit a shared signature set and stay operator-only.
+`GET /waf/exception-types` publishes the exact allow-list, with the required
+fields and the enum values for each type; it is the same list the server
+enforces.
+
+Two capabilities decide what your token may do. They are granted by an
+administrator on the token and **cannot be requested in the call**:
+
+| capability | effect |
+|---|---|
+| `waf_exception_draft` | Records the carve-out as desired state and returns the exact device request that would be sent. **Never touches an appliance.** |
+| `waf_exception_apply` | May additionally push it, with `"apply": true`. |
+
+A draft-only token that sends `"apply": true` gets `403 capability_denied` and
+nothing is written — it is never silently downgraded to a draft.
+
+```bash
+# 1. What may I author?
+curl -sH "$AUTH" https://satom/api/v1/waf/exception-types | jq '.types[].key'
+
+# 2. File one (draft — no device is touched)
+curl -sX POST -H "$AUTH" -H 'Content-Type: application/json' \
+  https://satom/api/v1/waf/exceptions -d '{
+    "appliance_id": 3,
+    "wpp_mkey": "wpp-app1",
+    "exc_type": "allow_method_exception_item",
+    "policies": ["pol-app1"],
+    "reason": "CVE-2026-1234 mitigation needs PATCH on /api/v2/upload",
+    "payload": {"request-type": "plain",
+                "request-file": "/api/v2/upload",
+                "allow-request": "put patch"}
+  }'
+# -> 201 {"created":true,"applied":false,"exception":{...},"plan":{...}}
+
+# 3. With an apply-capable token, push it (target = the device object it goes in)
+#    ... same body plus:  "target": "am-exc", "apply": true
+```
+
+`GET /waf/exceptions?appliance_id=3` lists **the carve-outs your token
+authored**. `?all=1` widens to every carve-out on the appliance and needs the
+`admin` scope. `DELETE /waf/exceptions/<id>` withdraws one you authored — from
+desired state only: if it was already applied, the entry is still on the
+appliance and the response says so.
+
+**AppID-scoped tokens.** If your token is pinned to AppIDs you must list the
+`policies` the carve-out is for, and they must be yours. You will also be
+refused when the Web Protection Profile you named is bound to a policy outside
+your scope: a profile is usually shared, so the exception would apply to every
+application on it. Ask an operator for a dedicated profile (clone + rebind).
+
+## 7. FortiADC rules — `/api/v1/adc/*`
+
+Same capability model (`adc_rule_draft` / `adc_rule_apply`), same curated
+allow-list (`GET /adc/rule-types`), one honest difference: FortiADC writes go
+straight to the appliance because there is no desired-state store for it. So:
+
+* `"apply": false` (the default) returns the exact request that *would* be sent,
+  built locally — no session is opened.
+* Creating a name that already exists is refused with `409 already_exists`
+  rather than risking an overwrite of an object your token does not own.
+* **There is no DELETE.** Without a store there is no recorded author, so
+  "delete only what you created" cannot be proven, and an endpoint that cannot
+  tell your object from an operator's is a way to remove someone else's
+  protection. Withdrawal is an operator action.
+* An AppID-scoped token cannot use this surface at all: AppID scope resolves to
+  FortiWeb server policies and is unprovable here.
+
+### Additional error codes
+
+| HTTP | `error` | When |
+|---|---|---|
+| 400 | `type_not_allowed` | The carve-out type / ADC logical is not on the allow-list |
+| 400 | `invalid_payload` | Required fields missing or badly formatted (`errors[]` says which) |
+| 400 | `target_required` | `apply: true` without the device object to write into |
+| 403 | `capability_denied` | The token lacks `*_draft` / `*_apply` |
+| 403 | `appid_scope_unresolved` | An AppID-scoped token did not name its policies |
+| 403 | `appid_scope_denied` | A named policy is outside the token's AppID scope |
+| 403 | `wpp_shared_denied` | The profile is bound to a policy outside the scope |
+| 403 | `wpp_scope_unprovable` | SATOM cannot prove the profile is unshared (no cache) |
+| 403 | `not_appid_scopable` | An AppID-scoped token on the FortiADC surface |
+| 409 | `template_locked` | The profile is template-managed; templates stay clean |
+| 409 | `already_exists` | An ADC object of that name is already on the appliance |
+| 502 | `device_error` | The appliance rejected or could not serve the write |
+
+---
+
 *This manual is generated from the live route definitions. Endpoints, scopes and
 response shapes reflect the running version of the API.*

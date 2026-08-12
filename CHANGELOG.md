@@ -73,6 +73,24 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   giving them one would have re-created the two-implementations defect below.
 
 ### Changed
+- **Admin Console: the lateral menu now starts fully collapsed.** Eight groups
+  holding twenty-four sections expanded into a wall taller than the viewport, so
+  the operator had to close what they never opened. The collapsed state is
+  rendered server-side rather than applied by the script, so the first paint is
+  already the default — a menu that flashes open and folds a frame later reads
+  as a bug. The store was inverted with it: it now holds the OPEN groups under a
+  new key (`satom.settingsnav.open.v1`), and the retired key is deleted rather
+  than left to rot, because a set saved under the old name means the opposite
+  and would expand exactly what someone chose to collapse. Reaching a section
+  without the menu (in-page `#tab-…` links, the redirect after a save) still
+  opens its group.
+- **Admin Console: pane content is laid out in two columns**, so the width the
+  lateral menu left over is used instead of one tall stack. The rule applies to
+  each pane's TOP-LEVEL blocks — those are the cards. Grids nested inside a card
+  body lay out FIELDS, and a port input stretched to half the screen loses the
+  tie between label and control, so they are untouched. A block holding a table
+  keeps the whole width, long badges and `<code>` runs wrap instead of leaving
+  the card, and the two columns fold back to one below 1200px.
 
 - **The Admin Console menu is lateral and grouped by theme.** Twenty-four
   sections were reached from one horizontal strip that wrapped onto three rows

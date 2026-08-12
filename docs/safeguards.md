@@ -8330,3 +8330,88 @@ PY
 A device listed as untrusted with an empty reason, or a proposal whose evidence
 list is shorter than the trusted-device list, means rule 2 or the unanimity
 check has come loose.
+
+---
+
+## §82 — a filter fails by delivering silence, and silence is what success looks like
+
+**Guarded by** `tests/test_alert_routing.py` (38),
+`tests/test_alerts_dispatch_paths.py` (10). **27 mutations, 27 bite**
+(`/var/tmp/mut_alertsinks_a13.py` on a1, measured by **rc**; only `rc==1` is a
+failure; every file restored in `finally`).
+
+### What has no failure mode of its own
+
+A router that drops the wrong finding raises nothing, logs nothing and turns no
+badge red. The channel simply goes quiet — and a quiet channel is precisely
+what a healthy one looks like. Every guard in this section exists because its
+failure would otherwise surface weeks later as "why were we never paged for
+that?".
+
+### The three rules that cost the most to find
+
+1. **`action.*` findings belong to the `actions` family.** The engine's key
+   prefix and the family name have never matched: the toggle, the settings key
+   and the label all say *actions*, the finding says `action.error.7`. A mask
+   built on the raw prefix ticks a box in the UI that matches nothing. Mapped
+   explicitly, with a guard that reads the key literals **out of `alerts.py`
+   itself** — a second hand-written list of prefixes is how the first one
+   drifts.
+2. **`None` and `""` are different intentions.** An unset mask means "never
+   configured" and delivers every family, so a fresh install is not silent. A
+   stored empty string is an operator who ticked no box, and it is honoured
+   literally. Collapsing the empty set into "all" makes the settings page a
+   liar in the one direction that matters: no family shown, every family
+   delivered. This is the same shape as the capability default in §76.
+3. **Engine failures and unknown families bypass both filters.** A filter is a
+   statement about what you want to hear; "the component that decides what you
+   hear is broken" is not a coherent thing to opt out of. Unknown prefixes fail
+   *towards delivery* for the same reason — noise is visible and fixable, a
+   silent drop is neither.
+
+### Two dispatch paths, not one list of destinations
+
+Email, the bell and the syslog feed look like three entries in one list. A
+single loop over them gets one wrong by construction, because the feed must
+**not** carry the cooldown, must run on the **read-only standby** where the
+notification path correctly refuses to, and must **not** count towards
+`dispatched`. That last one is §-worthy on its own: `dispatched` exists because
+a run whose every message the relay refused still reported `dispatched: 2` for
+weeks. Letting a healthy collector top up that counter re-opens the same hole
+from the other side.
+
+### Verification recipe
+
+* Pure predicate, pure framing: `accepts()` takes floor and mask as arguments
+  and touches no database; `format_line()` takes a config dict and a timestamp
+  and touches no socket. Both are asserted on directly.
+* Wire correctness is proven **against a real socket**, not against the escape
+  helpers: bind a listener on loopback, call `_send`, read the bytes back. That
+  is what caught the timezone defect below — every unit test passed.
+* The PEN check is `grep -c '_PEN = "32473"' app/services/alert_syslog.py` → 1,
+  **not** a grep for `satom@32473`: that string is composed at format time and
+  never appears in the source, so the obvious recipe returns 0 against correct
+  code. (It did, on the first draft of this section — a verification recipe
+  that verifies nothing is the exact defect this file exists to prevent.) The
+  assembled value is pinned by `test_rfc5424_carries_key_family_and_node_as_structured_data`.
+  32473 is IANA's reserved documentation number; Vision EBC holds no registered
+  PEN and borrowing somebody else's would make the structured-data block a
+  false claim about who defined those fields.
+
+### Traps this round
+
+1. **A guard that reproduces the transformation it checks is not a guard.** The
+   first CEF-timestamp test built its expectation with `astimezone()` — the
+   same call the code makes. a1 runs UTC, so the mutation `local = ts` survived
+   against a test that would have passed either way. Fixed by pinning `TZ` to
+   Europe/Zurich inside the test and asserting the literal hour.
+2. **An equivalent mutant is not a hole.** Mutating the `if not delivered:
+   return result` early-out survived, correctly: once the stamping loop
+   iterates `delivered` rather than `fresh`, that return only skips a pointless
+   write. The invariant was moved into the loop and the mutation replaced with
+   one that attacks it for real (a refused email still stamping the cooldown).
+3. `runuser -u satom` **cannot read `/root`** — harness and patch scripts go to
+   `/var/tmp` with mode 644.
+4. Rendering the app outside systemd needs its `EnvironmentFile`
+   (`set -a; . /opt/satom/.env`), or SQLAlchemy silently falls back to a SQLite
+   path that does not exist and the traceback blames the database.

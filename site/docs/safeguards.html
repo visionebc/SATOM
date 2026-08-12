@@ -8153,6 +8153,84 @@ PY
 <p>A device listed as untrusted with an empty reason, or a proposal whose evidence
 list is shorter than the trusted-device list, means rule 2 or the unanimity
 check has come loose.</p>
+<hr>
+<h2 id="82-a-filter-fails-by-delivering-silence-and-silence-is-what-success-looks-like">§82 — a filter fails by delivering silence, and silence is what success looks like</h2>
+<p><strong>Guarded by</strong> <code>tests/test_alert_routing.py</code> (38),
+<code>tests/test_alerts_dispatch_paths.py</code> (10). <strong>27 mutations, 27 bite</strong>
+(<code>/var/tmp/mut_alertsinks_a13.py</code> on a1, measured by <strong>rc</strong>; only <code>rc==1</code> is a
+failure; every file restored in <code>finally</code>).</p>
+<h3 id="what-has-no-failure-mode-of-its-own">What has no failure mode of its own</h3>
+<p>A router that drops the wrong finding raises nothing, logs nothing and turns no
+badge red. The channel simply goes quiet — and a quiet channel is precisely
+what a healthy one looks like. Every guard in this section exists because its
+failure would otherwise surface weeks later as "why were we never paged for
+that?".</p>
+<h3 id="the-three-rules-that-cost-the-most-to-find">The three rules that cost the most to find</h3>
+<ol>
+<li><strong><code>action.*</code> findings belong to the <code>actions</code> family.</strong> The engine's key
+   prefix and the family name have never matched: the toggle, the settings key
+   and the label all say <em>actions</em>, the finding says <code>action.error.7</code>. A mask
+   built on the raw prefix ticks a box in the UI that matches nothing. Mapped
+   explicitly, with a guard that reads the key literals <strong>out of <code>alerts.py</code>
+   itself</strong> — a second hand-written list of prefixes is how the first one
+   drifts.</li>
+<li><strong><code>None</code> and <code>""</code> are different intentions.</strong> An unset mask means "never
+   configured" and delivers every family, so a fresh install is not silent. A
+   stored empty string is an operator who ticked no box, and it is honoured
+   literally. Collapsing the empty set into "all" makes the settings page a
+   liar in the one direction that matters: no family shown, every family
+   delivered. This is the same shape as the capability default in §76.</li>
+<li><strong>Engine failures and unknown families bypass both filters.</strong> A filter is a
+   statement about what you want to hear; "the component that decides what you
+   hear is broken" is not a coherent thing to opt out of. Unknown prefixes fail
+   <em>towards delivery</em> for the same reason — noise is visible and fixable, a
+   silent drop is neither.</li>
+</ol>
+<h3 id="two-dispatch-paths-not-one-list-of-destinations">Two dispatch paths, not one list of destinations</h3>
+<p>Email, the bell and the syslog feed look like three entries in one list. A
+single loop over them gets one wrong by construction, because the feed must
+<strong>not</strong> carry the cooldown, must run on the <strong>read-only standby</strong> where the
+notification path correctly refuses to, and must <strong>not</strong> count towards
+<code>dispatched</code>. That last one is §-worthy on its own: <code>dispatched</code> exists because
+a run whose every message the relay refused still reported <code>dispatched: 2</code> for
+weeks. Letting a healthy collector top up that counter re-opens the same hole
+from the other side.</p>
+<h3 id="verification-recipe_2">Verification recipe</h3>
+<ul>
+<li>Pure predicate, pure framing: <code>accepts()</code> takes floor and mask as arguments
+  and touches no database; <code>format_line()</code> takes a config dict and a timestamp
+  and touches no socket. Both are asserted on directly.</li>
+<li>Wire correctness is proven <strong>against a real socket</strong>, not against the escape
+  helpers: bind a listener on loopback, call <code>_send</code>, read the bytes back. That
+  is what caught the timezone defect below — every unit test passed.</li>
+<li>The PEN check is <code>grep -c '_PEN = "32473"' app/services/alert_syslog.py</code> → 1,
+  <strong>not</strong> a grep for <code>satom@32473</code>: that string is composed at format time and
+  never appears in the source, so the obvious recipe returns 0 against correct
+  code. (It did, on the first draft of this section — a verification recipe
+  that verifies nothing is the exact defect this file exists to prevent.) The
+  assembled value is pinned by <code>test_rfc5424_carries_key_family_and_node_as_structured_data</code>.
+  32473 is IANA's reserved documentation number; Vision EBC holds no registered
+  PEN and borrowing somebody else's would make the structured-data block a
+  false claim about who defined those fields.</li>
+</ul>
+<h3 id="traps-this-round">Traps this round</h3>
+<ol>
+<li><strong>A guard that reproduces the transformation it checks is not a guard.</strong> The
+   first CEF-timestamp test built its expectation with <code>astimezone()</code> — the
+   same call the code makes. a1 runs UTC, so the mutation <code>local = ts</code> survived
+   against a test that would have passed either way. Fixed by pinning <code>TZ</code> to
+   Europe/Zurich inside the test and asserting the literal hour.</li>
+<li><strong>An equivalent mutant is not a hole.</strong> Mutating the <code>if not delivered:
+   return result</code> early-out survived, correctly: once the stamping loop
+   iterates <code>delivered</code> rather than <code>fresh</code>, that return only skips a pointless
+   write. The invariant was moved into the loop and the mutation replaced with
+   one that attacks it for real (a refused email still stamping the cooldown).</li>
+<li><code>runuser -u satom</code> <strong>cannot read <code>/root</code></strong> — harness and patch scripts go to
+   <code>/var/tmp</code> with mode 644.</li>
+<li>Rendering the app outside systemd needs its <code>EnvironmentFile</code>
+   (<code>set -a; . /opt/satom/.env</code>), or SQLAlchemy silently falls back to a SQLite
+   path that does not exist and the traceback blames the database.</li>
+</ol>
     </div>
   </div>
 </section>

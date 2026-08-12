@@ -44,6 +44,7 @@ from ..services import advisor as ai_advisor
 from ..services.advisor_providers import ProviderError as _AiProviderError
 from ..services import clone_rules as clone_rules_svc
 from ..services import faz_menu
+from ..services import alert_routing
 from ..services import alerts as alerts_svc
 from ..services.audit import log_action
 
@@ -1324,9 +1325,23 @@ def preview_alerts():
     would fire right now before turning alerts on."""
     try:
         findings = alerts_svc.evaluate()
+        # Per-sink counts, so the preview answers the question the filter
+        # created: not just "what would fire" but "who would actually hear
+        # it". A finding every sink drops is invisible on the old preview.
+        routed = {s: len(alert_routing.route(findings, s))
+                  for s in alert_routing.SINKS}
+        for f in findings:
+            f['family'] = alert_routing.family_of(f.get('key', ''))
+            f['sinks'] = [s for s in alert_routing.SINKS
+                          if alert_routing.accepts(
+                              family=f['family'],
+                              severity=f.get('severity', 'info'),
+                              floor=alert_routing.min_severity(s),
+                              families=alert_routing.mask(s))
+                          and alert_routing.is_enabled(s)]
         return jsonify({'ok': True, 'count': len(findings),
                         'recipients': alerts_svc.recipients(),
-                        'findings': findings})
+                        'routed': routed, 'findings': findings})
     except Exception as exc:  # noqa: BLE001
         return jsonify({'ok': False, 'detail': str(exc)}), 500
 

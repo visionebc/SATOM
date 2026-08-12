@@ -18,6 +18,13 @@ Design notes
   every message so a two-node fleet is legible.
 * **Never raises**: a broken individual check degrades to a logged skip; the run
   keeps going. Email delivery is best-effort (``send_email`` never raises).
+* **Two dispatch paths, not one list of destinations.** Email and the in-app
+  bell *notify a person*: they carry the cooldown, they run on the primary only,
+  and they answer to the per-sink filter in :mod:`app.services.alert_routing`.
+  The syslog/CEF feed is a *record*: no cooldown, every evaluation, and it runs
+  on the standby too. Folding the two into one loop over three sinks would give
+  the feed cooldown holes that read as "nothing was wrong" — see
+  :mod:`app.services.alert_syslog`.
 """
 from __future__ import annotations
 
@@ -26,6 +33,8 @@ import socket
 from datetime import datetime, timezone
 
 from ..models import AppSetting
+from . import alert_routing as routing
+from . import alert_syslog
 from . import drift_attribution
 from . import email_service
 from . import notifications as notify
@@ -175,6 +184,16 @@ def config() -> dict:
             "actions": _flag(K_CHK_ACTIONS),
             "host": _flag(K_CHK_HOST),
         },
+        # Per-sink routing (severity floor + family mask) and the syslog
+        # collector. Kept in their own modules so the filter can be tested as
+        # a pure function and the wire framing as a pure string.
+        "sinks": routing.config(),
+        "sink_families": [(f, routing.FAMILY_LABELS[f]) for f in routing.FAMILIES],
+        "severities": list(routing.SEVERITIES),
+        "syslog": alert_syslog.config(),
+        "syslog_formats": list(alert_syslog.FORMATS),
+        "syslog_protocols": list(alert_syslog.PROTOCOLS),
+        "syslog_facilities": sorted(alert_syslog.FACILITIES),
     }
 
 
@@ -225,6 +244,11 @@ def save_config(form) -> None:
     AppSetting.set(K_CHK_DRIFT, cb("check_drift"))
     AppSetting.set(K_CHK_ACTIONS, cb("check_actions"))
     AppSetting.set(K_CHK_HOST, cb("check_host"))
+    # Per-sink routing and the syslog collector ride the same form and the
+    # same POST: a severity floor saved in a different round-trip from the
+    # engine toggle is a window in which the two disagree.
+    routing.save_all(form)
+    alert_syslog.save(form)
     # AppSetting.set commits per call — no trailing commit needed.
 
 
@@ -847,38 +871,66 @@ def _email_body(new_findings: list[dict]) -> tuple[str, str]:
 
 
 def run(*, force: bool = False, dry_run: bool = False) -> dict:
-    """Evaluate, apply cooldown, and dispatch new findings via email + in-app bell.
+    """Evaluate, feed the record, then notify the humans who asked to hear it.
 
     ``force`` ignores the cooldown; ``dry_run`` evaluates and reports what WOULD
     fire without sending anything or touching state. Returns a summary dict."""
     findings = evaluate()
+    node = _node()
     if dry_run:
-        return {"node": _node(), "evaluated": len(findings),
-                "findings": findings, "dispatched": 0, "dry_run": True}
+        return {"node": node, "evaluated": len(findings),
+                "findings": findings, "dispatched": 0, "dry_run": True,
+                "syslog": alert_syslog.emit(findings, node, dry_run=True)}
 
-    # On a read-only standby, dispatch (in-app + cooldown state) can't be written
-    # and email would spam without persistable cooldown. Evaluate + log only; the
-    # writable primary owns dispatch. A promoted standby flips writable and starts.
+    # ---- feed path --------------------------------------------------------
+    # Deliberately BEFORE the replica guard and BEFORE the cooldown. The syslog
+    # sink writes no state, so a read-only standby can still put its own cert /
+    # host / reachability findings on the wire — today they never leave the
+    # node. And a record with cooldown holes reads as "nothing was wrong".
+    syslog_res = alert_syslog.emit(findings, node)
+
+    # On a read-only standby, notification (in-app + cooldown state) can't be
+    # written and email would spam without persistable cooldown. Evaluate + log
+    # only; the writable primary owns it. A promoted standby flips and starts.
     if _is_read_only_replica():
-        return {"node": _node(), "evaluated": len(findings), "fresh": 0,
+        return {"node": node, "evaluated": len(findings), "fresh": 0,
                 "dispatched": 0, "email": None, "enabled": is_enabled(),
-                "skipped": "read-only replica — dispatch is primary-only"}
+                "syslog": syslog_res,
+                "skipped": "read-only replica — notification is primary-only"}
 
     state = _load_state()
     cooldown_h = _int(K_COOLDOWN_H, 6)
     fresh = [f for f in findings
              if force or not _in_cooldown(state, f["key"], cooldown_h)]
 
-    result = {"node": _node(), "evaluated": len(findings),
+    result = {"node": node, "evaluated": len(findings),
               "fresh": len(fresh), "dispatched": 0, "email": None,
               "in_app": 0, "channels": [], "delivery_failed": [],
+              "syslog": syslog_res, "routed": {},
               "enabled": is_enabled()}
+
+    # ---- notification path ------------------------------------------------
+    # Each sink gets only what its own severity floor and family mask accept.
+    # The engine master switch still gates email; the bell has always fired
+    # regardless (cheap, local) and keeps doing so, now under its own filter.
+    bell = routing.route(fresh, routing.SINK_IN_APP)
+    mail = routing.route(fresh, routing.SINK_EMAIL) if is_enabled() else []
+    result["routed"] = {
+        routing.SINK_IN_APP: len(bell),
+        routing.SINK_EMAIL: len(mail),
+        routing.SINK_SYSLOG: (syslog_res or {}).get("matched", 0),
+    }
     if not fresh:
         return result
 
-    # In-app bell always fires (cheap, local). Email only when the engine is on.
+    # A finding no notification sink accepted reached nobody. It is not
+    # ``dispatched`` and — see the cooldown note below — it is not stamped
+    # either, so widening a filter tomorrow does not have to wait out a
+    # suppression window for an alert that was never delivered.
+    delivered: set = set()
+
     admin_ids = _admin_ids()
-    for f in fresh:
+    for f in bell:
         kind = (notify.Notification.KIND_ERROR
                 if f["severity"] in (SEV_CRITICAL, SEV_WARNING)
                 else notify.Notification.KIND_INFO)
@@ -890,50 +942,62 @@ def run(*, force: bool = False, dry_run: bool = False) -> dict:
                                  body=f["detail"][:400],
                                  product=f.get("product") or None)
                 result["in_app"] += 1
-            except Exception as exc:  # noqa: BLE001 — count it, do not sink the run
+                delivered.add(f["key"])
+            except Exception as exc:  # noqa: BLE001 — count it, don't sink the run
                 result["delivery_failed"].append("in-app: %s" % exc)
-    if not admin_ids:
+    if bell and not admin_ids:
         result["delivery_failed"].append(
             "in-app: no admin recipients — nobody holds the bell")
 
-    if is_enabled():
+    if mail:
         to = recipients()
         if to:
-            subject = (f"[SATOM/{_node()}] {len(fresh)} alert(s) — "
-                       f"{fresh[0]['title']}")
-            text, html = _email_body(fresh)
-            result["email"] = email_service.send_email(to, subject, text, html=html)
+            subject = (f"[SATOM/{node}] {len(mail)} alert(s) — "
+                       f"{mail[0]['title']}")
+            text, html = _email_body(mail)
+            result["email"] = email_service.send_email(to, subject, text,
+                                                       html=html)
+            if (result["email"] or {}).get("ok"):
+                delivered.update(f["key"] for f in mail)
         else:
             result["email"] = {"ok": False, "detail": "no recipients configured"}
 
-    # ``dispatched`` means DELIVERED, on at least one channel. It used to be
-    # set to len(fresh) unconditionally, so a run whose every message the relay
-    # refused ("454 4.7.1 Relay access denied", every run for weeks) still
-    # reported ``dispatched: 2``. A counter that says "sent" when nothing was
-    # sent is worse than no counter: it is the number an operator checks to
-    # decide the channel is healthy.
+    # ``dispatched`` means DELIVERED, on at least one notification channel. It
+    # used to be set to len(fresh) unconditionally, so a run whose every message
+    # the relay refused ("454 4.7.1 Relay access denied", every run for weeks)
+    # still reported ``dispatched: 2``. A counter that says "sent" when nothing
+    # was sent is worse than no counter: it is the number an operator checks to
+    # decide the channel is healthy. The syslog feed is NOT counted here — a
+    # healthy record must not be able to make a dead mailbox look alive.
     if result["email"] is not None and not (result["email"] or {}).get("ok"):
         result["delivery_failed"].append(
             "email: %s" % ((result["email"] or {}).get("detail") or "send failed"))
+    if syslog_res is not None and not syslog_res.get("ok"):
+        result["delivery_failed"].append(
+            "syslog: %s" % (syslog_res.get("detail") or "send failed"))
     channels = []
     if result["in_app"]:
         channels.append("in-app")
     if (result["email"] or {}).get("ok"):
         channels.append("email")
+    if (syslog_res or {}).get("sent"):
+        channels.append("syslog")
     result["channels"] = channels
-    result["dispatched"] = len(fresh) if channels else 0
+    result["dispatched"] = len(delivered)
 
-    # Cooldown records what was DELIVERED. Stamping it after a run that reached
-    # nobody would swallow the finding for the whole cooldown window — the alert
-    # would exist, be counted, and never arrive. With no channel up we leave the
-    # state untouched so the next run retries.
-    if not channels:
+    # Cooldown records what was DELIVERED. Stamping a finding that reached
+    # nobody would swallow it for the whole window — the alert would exist, be
+    # counted, and never arrive. The invariant lives in the loop below, which
+    # iterates ``delivered`` and not ``fresh``; this early return is only there
+    # to skip a pointless write, and a mutation of it is equivalent.
+    if not delivered:
         return result
     now_iso = _now().isoformat()
-    for f in fresh:
-        state[f["key"]] = now_iso
+    for key in delivered:
+        state[key] = now_iso
     _save_state(state)
     return result
+
 
 
 __all__ = ["evaluate", "run", "is_enabled", "recipients", "DEFAULTS"]

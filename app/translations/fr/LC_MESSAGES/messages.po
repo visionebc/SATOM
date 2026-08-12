@@ -15832,3 +15832,33 @@ msgstr "Sections de paramètres"
 
 msgid "User Interface"
 msgstr "Interface utilisateur"
+
+msgid "Concept Map"
+msgstr "Carte conceptuelle"
+
+msgid "Every page in this console, grouped by what it is for. Search a concept, not a menu."
+msgstr "Chaque page de cette console, regroupée par ce qu'elle sert. Recherchez un concept, pas un menu."
+
+msgid "Search a concept, a page or a path — e.g. certificate, rollback, who changed it"
+msgstr "Recherchez un concept, une page ou un chemin — par ex. certificat, retour arrière, qui l'a modifié"
+
+msgid "Search the concept map"
+msgstr "Recherchez la carte de concepts"
+
+msgid "pages"
+msgstr "pages"
+
+msgid "concepts"
+msgstr "concepts"
+
+msgid "This map is incomplete"
+msgstr "Cette carte est incomplète"
+
+msgid "page(s) exist but are not on the map"
+msgstr "page(s) existe(nt) mais ne sont pas sur la carte"
+
+msgid "mapped entr(y/ies) point at an endpoint that no longer exists"
+msgstr "point d'entré(e/s) mappé(e) vers un point de terminaison qui n'existe plus"
+
+msgid "No page matches that search."
+msgstr "Aucune page ne correspond à cette recherche."

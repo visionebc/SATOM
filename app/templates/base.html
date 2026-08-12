@@ -1022,6 +1022,11 @@
   {{ product.title }} v{{ app_version }} &nbsp;&mdash;&nbsp;
   &copy; {{ now.year if now else '2026' }} &nbsp;
   <span class="text-muted">{{ product.tagline }}</span>
+  {%- if current_user and current_user.is_authenticated %}
+  &nbsp;&middot;&nbsp;
+  <a href="{{ url_for('concept_map.index') }}" class="fw-footer-link">
+    <i class="bi bi-diagram-2"></i> {{ _('Concept Map') }}</a>
+  {%- endif %}
 </footer>
 
 <!-- FortiWeb page-level JS — re-run on every Turbo visit (Turbo Drive, the

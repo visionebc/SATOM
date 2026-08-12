@@ -15828,3 +15828,33 @@ msgstr "Secciones de configuración"
 
 msgid "User Interface"
 msgstr "Interfaz de usuario"
+
+msgid "Concept Map"
+msgstr "Mapa Conceptual"
+
+msgid "Every page in this console, grouped by what it is for. Search a concept, not a menu."
+msgstr "Cada página en esta consola, agrupada por para qué es. Busque un concepto, no un menú."
+
+msgid "Search a concept, a page or a path — e.g. certificate, rollback, who changed it"
+msgstr "Busque un concepto, una página o una ruta — p. ej. certificado, reversión, quién lo cambió"
+
+msgid "Search the concept map"
+msgstr "Buscar el mapa conceptual"
+
+msgid "pages"
+msgstr "páginas"
+
+msgid "concepts"
+msgstr "conceptos"
+
+msgid "This map is incomplete"
+msgstr "Este mapa está incompleto"
+
+msgid "page(s) exist but are not on the map"
+msgstr "página(s) existen pero no están en el mapa"
+
+msgid "mapped entr(y/ies) point at an endpoint that no longer exists"
+msgstr "punto(s) de entrada mapeados a un punto final que ya no existe"
+
+msgid "No page matches that search."
+msgstr "Ninguna página coincide con esa búsqueda."

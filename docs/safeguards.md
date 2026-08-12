@@ -7808,6 +7808,91 @@ System Information is invisible in the stylesheet and in the markup, and only
 shows up in a screenshot of the pane.
 
 
+---
+
+## §74 — an index of the product is a claim, and nothing fails when it stops being true
+
+The Concept Map (`/map`, 2026-08-12) says: *this is every page in the console,
+and here is what each one is for*. That is the only thing it sells. A map that
+has quietly fallen four pages behind renders **exactly** like a complete one —
+same clusters, same confident layout — and the operator who does not find
+Capacity on it concludes the product does not have it. Nothing throws. Nothing
+turns red. The claim just silently becomes false.
+
+So the map is a **curated registry cross-checked against `app.url_map`**, not a
+hand-written list:
+
+* `page_endpoints()` returns every parameterless GET endpoint that is not
+  `/static` or `/api/`. That set is the authority.
+* Every member is either in `PAGES` or in `EXCLUDED` **with a reason**.
+  `test_every_page_endpoint_is_mapped_or_excluded_with_a_reason` fails on a new
+  page until someone spends one line. One line is the whole price, and it is
+  what converts "the map is complete" from a hope into a checked fact.
+* `coverage()` is printed **on the page itself**. If the guard is ever skipped,
+  the map says it is incomplete and names the endpoints. An index that omits
+  things must admit it; it cannot look identical to one that does not.
+
+**`render_template` in the source is NOT a usable classifier**, and the first
+attempt used it. Fourteen real pages — `index`, `fortiweb_home`,
+`web_protection.index`, `server_objects.index`, `workspace.index`,
+`registry.index`, `api_tokens.index`, the `analysis.*` views — render through
+helpers, so the heuristic filed them as JSON feeds and the map would have
+shipped missing its own front door. Classification is explicit for that reason.
+
+### The permission is read off the view, never restated
+
+`require_permission` now stamps `decorated.__required_permission__ = perm`, and
+`concept_map.required_permission()` reads it. A `permission` column in the
+registry would be a second source of truth: it drifts the first time a page is
+re-gated, and a drifted map is worse than no map, because it walks people into
+a 403 with the product's own confidence behind it.
+`test_the_registry_never_declares_a_permission_itself` forbids the column, and
+`test_the_stamp_does_not_replace_the_gate` proves the stamp did not become the
+place the permission is *enforced* — it is a description of the gate, not the
+gate.
+
+### A swallowed `url_for` makes a page VANISH, which is the one lie that matters
+
+`build()` originally wrapped `url_for` in `except Exception: continue`. In
+production it never fires — there is always a request context — so it looked
+free. It is not: the failure mode it creates is a page silently missing from an
+index whose entire purpose is completeness, and it is indistinguishable from
+"this page does not exist". The wrap is gone. Anything `coverage()` could not
+have caught now raises.
+
+This surfaced as a *test* failure (`url_for` outside a request context returned
+nothing and the map came back empty), which is worth noting: the swallow was
+invisible in every real code path and only a test without a request context
+could see it.
+
+### Reachability is part of the claim
+
+The ADOM gate is an **allowlist** (`adc_bps` / `faz_bps` / `fac_bps`). Forget
+one entry and the index of the product is invisible from that console — via a
+redirect, not an error. `test_the_map_answers_in_every_adom` parametrises all
+five. The footer link is the only global entry point, so it has its own test,
+plus one asserting it is **not** offered to anonymous visitors: the map is
+`login_required`, and advertising it on the login screen is a redirect loop.
+
+### Verification
+
+29 tests; **21 mutations applied, all bite** (measured by **rc**; only `rc==1`
+is a failing test — `rc==4` is a usage error, and pytest prints `FAILED` in
+capitals, so grepping for `failed` reports every bite as a survivor). Each
+mutation restores its file in `finally`, because other sessions work in this
+tree with uncommitted changes.
+
+Recipe: drop a page from `PAGES` · point an entry at a dead endpoint · delete
+an exclusion · blank an exclusion's reason · name a concept that does not exist
+· strip a page's keywords · add a `permission` column · list an endpoint twice
+· make `_visible` always true · make a broken user object show everything ·
+keep empty clusters · make `coverage()` report no holes · stop stamping the
+permission · stamp but stop enforcing · remove the map from one ADOM allowlist
+· remove the footer link · show the footer link to anonymous visitors · put a
+translucent slate card on the white page · render half the list · paint an
+empty canvas on a failed fetch · drop `login_required`.
+
+
 ## §75 — an accordion is only an accordion if SELECTING folds too
 
 The Admin Console menu (`app/templates/settings/index.html`) holds **one** open

@@ -16,6 +16,10 @@ def require_permission(perm):
             if not current_user.can(perm):
                 abort(403)
             return f(*args, **kwargs)
+        # The gate, stated on the wrapper. Read by services.concept_map so the
+        # map filters itself to what a user can actually open — a hand-copied
+        # permission column drifts, and a drifted map advertises a 403.
+        decorated.__required_permission__ = perm
         return decorated
     return decorator
 

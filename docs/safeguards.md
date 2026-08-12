@@ -7941,3 +7941,186 @@ exercise a legacy multi-entry store — a headless run starts with an empty
 profile, so nothing persists between runs.
 
 8 mutations, 8 bite (harness measured by **rc**; only `rc==1` is a failure).
+
+## §76 — a permissive default is a grant when you add a new door behind it
+
+`app/models_api_token.py` · `app/services/api_object_rules.py` ·
+`app/api_v1/waf.py` · `app/api_v1/adc.py` ·
+`tests/test_api_v1_object_rules.py`
+
+An API token carries a `capabilities` allow-list where **empty means
+unrestricted**. That default was correct for what it governed: scheduled
+actions, which an operator has already created, already flagged non-destructive,
+and already bound to an ADOM. It is a backwards-compatibility affordance for
+tokens minted before capabilities existed.
+
+The object writers added this round sit behind the same field. Had they read it
+the same way, **every token already issued would have gained FortiWeb
+config-write the moment this shipped** — a privilege grant nobody approved,
+applied retroactively to credentials that are already outside the building. The
+code would have been consistent, the tests would have passed, and nothing would
+have failed.
+
+So the field now has two readings, and the split is declared rather than
+implied: `EXPLICIT_ONLY_CAPABILITIES`, gated by `authorize_object()` — a
+different function from `authorize_capability()` on purpose, because the two
+answer different questions and sharing one function is how the wrong default
+leaks. `authorize_object()` never falls back to permissive, and additionally
+requires the token's ADOM to match the capability's product.
+
+**The claim on screen had to move with it.** The API-tokens page printed `all`
+for an empty capability list. That was true while every capability was
+permissive-by-default; the moment object writes became explicit-only it became a
+false statement about a security boundary — an operator reading "all" would
+believe a token can author a WAF bypass when it cannot, or skip granting the
+capability because the page said it was already there. The label is now
+`all actions · no object writes`, and a guard fails if `else 'all'` returns.
+
+Three more rules the same surface encodes:
+
+1. **The privilege is on the credential, never in the request.** "Some teams
+   file for approval, others write directly" is two capabilities, not an
+   `apply: true` flag a caller sets for itself. A draft-only token that asks to
+   apply gets a 403 and writes nothing — *not* a silent downgrade, which would
+   return success to an automation that then believes the appliance is fixed.
+2. **Owning the policies is not owning the profile.** A Web Protection Profile
+   is usually shared, so a carve-out authored "for my app" applies to every
+   policy that binds it. An AppID-scoped token is refused when the target
+   profile reaches outside its scope — and refused again, `wpp_scope_unprovable`,
+   when the cache cannot prove that it does not. Treating "I could not read it"
+   as "it is not shared" is the failure this exists to prevent.
+3. **No endpoint that cannot tell whose object it is.** FortiADC has no
+   desired-state store, so there is no recorded author, so there is no DELETE —
+   absent, not present-and-403, because there is nothing correct for it to do.
+   A test asserts the route does not exist.
+
+**Idempotency is on content, not on a header.** An `Idempotency-Key` cache is
+per-process and per-restart; a retry that arrives after either would still
+create a second identical desired-state row. Dedupe compares the normalised
+(appliance, profile, type, payload, policies) tuple — and normalisation runs on
+the way in *and* on comparison, or `"80 "` and `"80"` become two rows the device
+then rejects as one.
+
+**Verification.** 47 tests, rc=0. 31 mutations covering every rule above,
+measured by **return code** (only `rc==1` is a failure). The mutation that
+matters most is the first: restore the permissive default in
+`authorize_object()` and `test_a_token_with_no_capabilities_cannot_author_a_carve_out`
+fails.
+
+## §77 — a firmware line is a claim about a device, and the device was never asked
+
+`scripts/build_field_catalog.py` takes the line from
+`SATOM_FIELD_CATALOG_SOURCES="fortiweb=8.0:<appliance>"` and writes it into the
+folder path *and* the artefact's `source` string. Nothing read the box's own
+version. Aim an 8.0 line at a 7.6.8 appliance and you get a complete 8.0 catalog
+built from 7.6 fields, where the folder, the `line` key and the `source` string
+all agree — so no later reader, and no test comparing artefacts to each other,
+can tell. The only witness was the device, and it was never consulted.
+
+That is not a hypothetical operator error here. The estate has **no 8.0
+FortiWeb** (fortiweb08/09/10 all report 7.6.8) while `8.0/` exists, harvested
+from `fw1@8.0`, an appliance that has since left the inventory. The next person
+told to "refresh 8.0" has no 8.0 device and exactly one obvious-looking way to
+proceed.
+
+**Rule.** A harvest that files data under a label must verify the label against
+the source, record what the source actually was, and stop rather than assert.
+`device_firmware` and `line_mismatch` are now in every artefact; the override
+(`--allow-line-mismatch`) is legitimate but is recorded, so a schema built under
+protest says so instead of looking identical to a verified one.
+
+**Two failure modes, and both need a guard.** A gate that refuses everything
+passes "it refuses a mismatched line" perfectly while breaking the tool. The
+guards assert both directions.
+
+### The assert-by-substring trap, eleventh instance — this time in my own guard
+
+The first version of the mismatch guard asserted that `allow_mismatch` appears in
+`inspect.getsource(build)`. Mutating the gate to `if False: continue` **survived**:
+the name is still in the function *signature*. A guard that a deleted gate passes
+is not a guard. It was replaced by three behavioural tests that run `build()`
+against a fake device with `_write_if` captured, and assert on what it tried to
+write — nothing on a mismatch, everything on a match, everything *marked* under
+the override. All three mutations bite.
+
+### The other half: two states must not render as one line
+
+`_safe_one()` flattens "the table is empty" and "the device rejected this URN"
+into the same `{}`, and the harvest printed the same message for both. The states
+call for opposite responses — one is fine and self-healing, the other means a
+registry entry is dead and every consumer of that key is broken. Conflating them
+is how `interface` (`system/network.interface`, `errcode -20001`) stayed in the
+registry, enabled and clickable in the API Explorer, while the object an operator
+is most likely to configure silently had no schema for months. Same family as
+§71: the console held the evidence and threw it away.
+
+**Verification recipe.** Point a line at a device on another line and confirm the
+run refuses it and writes nothing:
+```
+SATOM_FIELD_CATALOG_SOURCES="fortiweb=8.0:fortiweb08" \
+  PYTHONPATH=. venv/bin/python -m scripts.build_field_catalog --product fortiweb
+# => !! line 8.0 via fortiweb08: the device runs 7.6.8, NOT a 8.0 build — refusing
+```
+Then confirm `data/field_schemas/fortiweb/8.0/` is byte-identical to before.
+
+## §78 — a manual is an interface, and nothing fails when it stops matching the product
+
+`docs/api_v1.md` is the whole of what an external team reads before wiring an
+automation against SATOM. On 2026-08-13 it said, in its **first paragraph**,
+that "mutations happen only through pre-created Scheduled Actions" while the
+running API already served seven object-authoring routes, and its endpoint
+table listed **6 of 13**.
+
+The interesting part is why that survived: a stale manual is *invisible*. A
+page that lost an endpoint renders exactly like a complete one. There is no
+error, no warning, no diff — only a reader who cannot find a capability and
+concludes the product does not have it, or who cannot find an error code and
+writes a client that treats it as success. This is the same failure class as
+the `Version: 1.0` line that outlived four releases in the README (§7f).
+
+`tests/test_api_v1_manual.py` (9 guards) pins the page to the code:
+
+| guard | authority |
+|---|---|
+| every `/api/v1` rule has a row | `app.url_map` — the router, never a second hand-kept list |
+| the manual advertises no route that is gone | the same map, compared the other way |
+| every object-write capability is named | `EXPLICIT_ONLY_CAPABILITIES` |
+| section 1 says an empty capability list grants **no** object writes | prose, because the trap is semantic (§76) |
+| every emitted error code is documented | regex over the modules that build error bodies |
+| the false preamble cannot come back | prose |
+| the "generated from the live routes" claim cannot come back | prose |
+
+Two rules that cost time to find:
+
+1. **Compare route shapes, not strings.** `/appliances/<int:id>` and
+   `/appliances/<id>` are the same endpoint; a guard that demands Werkzeug
+   converter syntax fails against a correct manual, and renaming a view argument
+   is not a documentation defect. Both sides normalise `<...>` to `<>`.
+2. **An exemption needs a reason, and the reason is tested.** `unknown_capability`
+   is unreachable through HTTP (only a SATOM bug reaches it), so it is exempt —
+   with the reason in the dict and a guard that fails if the reason is blank. An
+   exemption list without reasons is just a smaller guard.
+
+### Verification recipe
+
+```bash
+venv/bin/python -m pytest tests/test_api_v1_manual.py -q     # 9 passed
+# mutation: any of these must turn it red (measure by rc; only rc==1 is a bite)
+#   - delete a row from the section-3 table
+#   - add a row for a route the API does not serve
+#   - rename a capability in the page
+#   - add a new _err(400, "some_new_code", ...) to app/api_v1/waf.py
+```
+
+Measured 2026-08-13: **10 mutations, 10 bite.** (The first pass reported 9/10;
+the survivor was a weak mutation — it renamed 1 of the 3 occurrences of
+`adc_rule_apply`. Renaming all three bites. Mutate every occurrence, or the
+harness measures the mutation instead of the guard.)
+
+### The published copy is a second surface
+
+`site/docs/api.html` is generated from this Markdown by
+`deploy/gen_site_docs.py` and is what the public site serves.
+`test_published_site_documentation_is_current` already covers the drift — it was
+**red** when this round started, and had been since sections 6 and 7 were
+written. Regenerating is part of the change, not a follow-up.

@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Changes · 0 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Added · Changed · Fixed · 30 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Changes · 0 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Added · Changed · Fixed · 30 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,8 +59,8 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Changes · 0 entries</span>
-        <ul class="rel-leads"></ul>
+        <span class="rel-nav-meta">unreleased · Added · Changed · Fixed · 30 entries</span>
+        <ul class="rel-leads"><li>External teams can file their own FortiWeb WAF carve-outs — and, when trusted, apply them — over /api/v1</li><li>Concept Map (/map) — every page in the console, grouped by what it is for</li><li>Config-drift alerts say who made the change</li><li class="rel-more">… and 27 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v1.9.3.html" data-rel-version="1.9.3">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 1.9.3</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
@@ -185,7 +185,451 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
-
+<h3 id="added">Added</h3>
+<ul>
+<li><strong>External teams can file their own FortiWeb WAF carve-outs — and, when
+  trusted, apply them — over <code>/api/v1</code>.</strong> Until now the integration API was
+  read-biased: the only mutation was triggering a scheduled action an operator
+  had already created. A security or application team that needed an exception
+  on the WAF in front of its own app had to ask someone to retype it. Two new
+  resources close that gap without opening the appliance:
+  <code>/api/v1/waf/exceptions</code> (FortiWeb, desired-state first) and
+  <code>/api/v1/adc/rules</code> (FortiADC).</li>
+</ul>
+<p>What it is deliberately <strong>not</strong> is a proxy to the device configuration
+  database. That database does not distinguish "a WAF carve-out" from an admin
+  account, an interface or a static route, so an endpoint that writes whatever
+  object type it is handed is not a rules API — it is a way to take over the
+  appliance. The authorable types come from the curated carve-out catalog the
+  console already uses, and in this version only the <em>exception</em> half of it: a
+  signature customisation edits a shared signature set that every policy
+  binding it inherits, and that blast radius stays with operators.</p>
+<p>The two audiences the operator described — teams that file a request for
+  approval, and teams that write directly — are <strong>not</strong> a flag in the request.
+  A caller must never be able to elect its own privilege. They are two separate
+  capabilities on the token (<code>waf_exception_draft</code>, <code>waf_exception_apply</code>;
+  <code>adc_rule_draft</code>, <code>adc_rule_apply</code>), and a draft-only token that asks to apply
+  is told so rather than quietly downgraded — a silent downgrade returns success
+  to an automation that then believes the hole is closed on the appliance.</p>
+<p>Both capabilities are <strong>explicit grants</strong>. For scheduled actions an empty
+  capability list has always meant "unrestricted"; reusing that default here
+  would have handed WAF config-write to every token already in a third party's
+  hands, retroactively and without anyone approving it.</p>
+<p>Four guarantees carry the rest. Every API-authored record carries its author,
+  so a token can only withdraw what it filed and an operator's carve-out is
+  invisible to it. A retried request is deduplicated on the <em>content</em> of the
+  carve-out, so a SOAR that retries does not leave a second identical row for
+  the alignment report to double-count. An AppID-scoped token must name the
+  server policies it is authoring for, and they must be its own. And — the one
+  that is easy to miss — owning those policies is not owning the profile they
+  share: a Web Protection Profile is usually bound to several policies, so a
+  carve-out "for my app" lands on every other app on the same profile. A scoped
+  token is refused when the target profile reaches outside its scope, and
+  refused again when SATOM cannot prove that it does not.</p>
+<p>FortiADC differs in one honest way: it has no desired-state store, so SATOM
+  cannot record who authored a rule, so there is <strong>no delete</strong> on that half —
+  an endpoint that cannot tell an external team's object from an operator's is
+  a way to remove someone else's protection. The API says so in its own type
+  listing rather than leaving an integrator to discover it.</p>
+<ul>
+<li><strong>Concept Map (<code>/map</code>) — every page in the console, grouped by
+  what it is for.</strong> The sidebar answers "what can I do in this ADOM?"; it has never
+  answered "where does X live?", which is the question a new operator actually
+  asks. The new page draws the whole console as a mind map — SATOM at the
+  centre, one card per concept around it, every page listed inside its card and
+  clickable — with one search box that matches a page's name, its purpose, its
+  path and the words someone types under pressure ("certificate", "rollback",
+  "who changed it"). A list view renders the same set for reading and printing;
+  both views share the search box, so toggling never changes the result set.
+  Linked from the footer of every page, and reachable from all five ADOMs.</li>
+</ul>
+<p>Two things keep it honest rather than decorative. The URL map is the
+  authority on what exists: every reachable page is either on the map or
+  explicitly excluded with a reason, and a page added without an entry fails a
+  test instead of quietly never appearing — the page itself also states its own
+  coverage, so an incomplete map says so out loud rather than looking finished.
+  And nothing is restated: paths come from the router and the permission each
+  page requires is read off the view function itself, so the map hides the
+  doors this user cannot open and can never drift into advertising a 403.</p>
+<ul>
+<li><strong>Config-drift alerts say who made the change.</strong> When a device's
+  configuration changes, SATOM now checks its own audit log for a write it made
+  to that device inside the interval the change has to fall in, and names the
+  author, the time and the client address instead of ending with "if nobody
+  edited it via SATOM…" — a correlation the product had already performed and
+  thrown away. An unexplained change is still reported exactly as before, and
+  now states the interval that was searched, so "no write recorded" is a fact
+  the reader can weigh rather than a claim they have to trust.</li>
+</ul>
+<p>The interval is bounded by the last harvest that CONFIRMED the old
+  configuration, not by the older snapshot's timestamp: an unchanged device
+  mints no new version, so those two can be days apart, and the wider window
+  would credit the wrong write. Previews, writes the device refused, read-only
+  API-console calls and writes to a neighbouring appliance are all excluded —
+  crediting a device-side change to SATOM would downgrade a real intrusion to
+  an approving nod, so anything short of positive evidence counts as no
+  receipt. New setting under Settings → Alerts: report an attributed change as
+  informational (default), keep it at warning, or do not report it.</p>
+<ul>
+<li><strong>Settings → Languages: choose which languages this installation offers.</strong>
+  SATOM speaks five; an administrator can now decide which of them users may
+  pick here. A withdrawn language disappears from the profile picker, from the
+  change-document language question <strong>and</strong> from browser language negotiation —
+  so a browser asking for French stops being served French once French is off,
+  which was the half nobody would have noticed missing. The source language
+  (English) cannot be switched off: it is what every translation derives from
+  and what a page falls back to, so an installation without it would have no
+  readable fallback.</li>
+</ul>
+<p>Withdrawing deletes nothing. A user who had already chosen the language keeps
+  their choice — it is simply not honoured while the language is off, and their
+  profile says so in as many words — and the translated text stays in place, so
+  switching a language back on restores it complete rather than empty. The
+  console lists every language, including the withdrawn ones, and shows how
+  many users have picked each one <em>before</em> you switch it off, because
+  withdrawing a language changes the language other people's pages render in.</p>
+<ul>
+<li>
+<p><strong>A maintenance window is now one staged workflow: Automation → Upgrade
+  Flow.</strong> Pre-flight every appliance in the window in one sweep, raise a single
+  change request that cites <em>all</em> of that evidence, export the consolidated
+  customer impact, then execute. Each stage already existed; each was
+  per-device or unlinked, so an operator upgrading sixty appliances walked the
+  path sixty times and still finished holding a change document whose evidence
+  covered one box.</p>
+</li>
+<li>
+<p><strong>Per-appliance execution progress, written as it happens.</strong> A change request
+  now has a live panel showing every appliance it covers and what has happened
+  to it: pending, running, ok, failed — and, distinctly, <em>interrupted</em> for a
+  device the run opened and never closed. Progress is measured in appliances
+  reported, never in elapsed window time. "Start now" brings the approved
+  change's one-shot action forward and lets the scheduler execute it out of
+  process; it does not run the upgrade in the web request, and it does not
+  bypass the window (the executor re-checks the approval at fire time
+  regardless).</p>
+</li>
+<li>
+<p><strong>Batched rollouts: split a selection into waves, one change per wave.</strong>
+  Appliances are chunked in name order and each chunk becomes an ordinary
+  change request with its own window, its own approval and its own evidence, so
+  the first group can be watched before the next is approved. Windows are
+  consecutive and never overlap — each wave starts at the previous one's end
+  plus the configured gap. Nothing about approval, execution, the change
+  document or the customer-impact export needed a wave-shaped variant, and
+  giving them one would have re-created the two-implementations defect below.</p>
+</li>
+</ul>
+<h3 id="changed">Changed</h3>
+<ul>
+<li><strong>The Admin Console menu keeps one group open.</strong> Opening a group — or
+  selecting a section inside one — now folds every other group. Selecting is
+  the half that is easy to miss: a section can be activated without ever
+  touching a group header (the in-page links, the URL-hash restore, the
+  redirect after a save), so the fold is driven from the routine all of those
+  paths go through rather than from the header handler, and it fires on the
+  entry as well as on the header — Bootstrap stays silent when the clicked
+  section is already the active one, and an accordion that sometimes does not
+  fold reads as a bug. Stores written by the previous multi-open version keep
+  their key and restore the group opened most recently, rewritten to that one
+  alone.</li>
+<li><strong>Admin Console: the lateral menu now starts fully collapsed.</strong> Eight groups
+  holding twenty-four sections expanded into a wall taller than the viewport, so
+  the operator had to close what they never opened. The collapsed state is
+  rendered server-side rather than applied by the script, so the first paint is
+  already the default — a menu that flashes open and folds a frame later reads
+  as a bug. The store was inverted with it: it now holds the OPEN groups under a
+  new key (<code>satom.settingsnav.open.v1</code>), and the retired key is deleted rather
+  than left to rot, because a set saved under the old name means the opposite
+  and would expand exactly what someone chose to collapse. Reaching a section
+  without the menu (in-page <code>#tab-…</code> links, the redirect after a save) still
+  opens its group.</li>
+<li>
+<p><strong>Admin Console: pane content is laid out in a single column.</strong> Every block
+  of a pane — cards, tables, banners — takes the whole width and stacks in the
+  order it is written, at every depth: the pane's own grid, the top-level row
+  that used to put <code>col-lg-7</code> beside <code>col-lg-5</code>, and the grids inside a card
+  body that laid two tables abreast. <code>col-auto</code> is the one exception, because
+  it means "size to the content" and is how the page writes an inline toolbar
+  or the button beside a field; stretching those would produce a stack of
+  buttons rather than a column. Long badges and <code>&lt;code&gt;</code> runs still wrap
+  instead of running past their card.</p>
+</li>
+<li>
+<p><strong>The Admin Console menu is lateral and grouped by theme.</strong> Twenty-four
+  sections were reached from one horizontal strip that wrapped onto three rows
+  on a normal screen: the row a section sat on moved as the window resized, so
+  there was no stable place to look for anything, and nothing on screen said
+  which sections belonged together. They are now a column beside the panes,
+  grouped under eight headings — System, Access &amp; Identity, Certificates &amp;
+  Trust, Monitoring &amp; Alerts, Network &amp; DNS, Fleet &amp; Devices, User Interface,
+  My Account — and every group collapses to its heading. The menu opens fully
+  expanded, so the console still shows everything it did before; what an
+  operator collapses is remembered per browser. Nothing about the sections
+  themselves changed: same entries, same icons, same panes, same in-page links
+  and URL hashes (<code>…/settings/#tab-auth</code>).</p>
+</li>
+</ul>
+<p>The remembered state is the set of groups an operator has CLOSED, never the
+  set they left open: the default is "everything expanded", and a store of open
+  groups would have collapsed the whole console for every operator who had
+  never touched it. A section reached without the menu — an in-page link, a
+  redirect after a save, a URL hash — reveals its group, so the selection is
+  never hidden inside a collapsed heading.</p>
+<ul>
+<li><strong>The external CRQ now carries the window, not just its primary keys.</strong> The
+  <code>change.requested</code> hook sent <code>device_ids</code> — bare integers, meaningful only
+  inside SATOM's database — and a flat list of policy names. It now also sends
+  the change reference printed on the document, every appliance resolved by
+  name, product, management host and current firmware, one pre-upgrade summary
+  per appliance that has one (verdict, timestamp, firmware, backup name,
+  affected-service count), and the names of the appliances that have none. The
+  affected-policy list is capped for a fleet-sized window, and the true total
+  travels beside it with an explicit truncation flag — a receiver that reads a
+  capped list and believes it is the whole outage under-states it by an order
+  of magnitude. The payload also states whether the receiving system holds the
+  approval gate, and carries any existing ticket reference so a re-request
+  updates a ticket instead of opening a second one for the same window.</li>
+</ul>
+<h3 id="fixed">Fixed</h3>
+<ul>
+<li>
+<p><strong>The API manual described an API that no longer existed.</strong> <code>docs/api_v1.md</code>
+  opened by telling integrators that <em>"mutations happen only through pre-created
+  Scheduled Actions"</em> — false since object authoring shipped — and its endpoint
+  table, the page's own list of what the API serves, named <strong>6 of the 13</strong> live
+  routes. The seven <code>/waf/*</code> and <code>/adc/*</code> routes were described further down in
+  sections 6 and 7, so the page contradicted itself: a reader who trusted the
+  table concluded the product could not do what it had just been given. The
+  preamble, the token-limits table (capabilities are now the fourth chained
+  limit, and the one that decides object writes), section 3 and the error tables
+  now describe the shipping surface. Three codes an integrator can genuinely
+  receive — <code>bad_request</code>, <code>registry_mismatch</code>, <code>device_unreachable</code> — were
+  absent from every table and are documented.</p>
+</li>
+<li>
+<p><strong>The manual claimed to be generated from the live routes. It is hand-written.</strong>
+  That sentence is worse than a missing endpoint: it tells the reader that a gap
+  is impossible, which is the belief that lets one open. Replaced with the truth
+  and with the guard that now enforces it — <code>tests/test_api_v1_manual.py</code> pins
+  every <code>/api/v1</code> rule in the URL map, every object-write capability the model
+  defines, and every error code the API modules literally emit, against the page.
+  The published copy <code>site/docs/api.html</code> was regenerated: it had been built
+  before sections 6 and 7 existed, so the <em>public</em> manual — the one an external
+  team actually reads — described none of it.</p>
+</li>
+<li>
+<p><strong>The field-catalog harvest can no longer file a device's configuration under a
+  firmware line it does not run.</strong> The line came from the operator's environment
+  (<code>SATOM_FIELD_CATALOG_SOURCES="fortiweb=8.0:&lt;box&gt;"</code>) and was written into both
+  the folder path and the artefact's <code>source</code> string verbatim; nothing asked the
+  device what it actually ran. Pointing an 8.0 line at a 7.6.8 appliance produced
+  a complete, well-formed, confidently-labelled 8.0 catalog built from 7.6 data —
+  and undetectable afterwards, because every artefact agreed with every other
+  artefact. This estate makes that the <em>likely</em> mistake rather than an exotic one:
+  there is no 8.0 FortiWeb left in it ({device}/09/10 are all 7.6.8), while
+  <code>data/field_schemas/fortiweb/8.0/</code> exists and was harvested from <code>{device}</code>, a box
+  that has since left the inventory. The harvest now reads the firmware, refuses
+  the line on a mismatch, and records both <code>device_firmware</code> and <code>line_mismatch</code>
+  in every artefact so a reader can tell a verified line from an asserted one.
+  <code>--allow-line-mismatch</code> overrides it deliberately, and the artefact says so.</p>
+</li>
+<li>
+<p><strong>A harvested schema records when it was harvested.</strong> The payload carried a
+  literal <code>"generated_at": "2026-06-28"</code>, so every rebuild re-asserted a June
+  date. Nothing failed; the artefact simply could not report the one property a
+  rebuild exists to deliver.</p>
+</li>
+<li>
+<p><strong>An empty harvest now says WHICH kind of empty it hit.</strong> <code>_safe_one()</code> returns
+  <code>{}</code> both for a table the operator never populated and for a URN the device
+  rejects, and the harvest printed the same "empty live object" line for both.
+  That is how a dead registry entry stayed invisible: <code>interface</code> pointed at
+  <code>/api/v2.0/cmdb/system/network.interface</code>, which FortiWeb 7.6.8 answers with
+  <code>errcode -20001 "The REST API has invalid URL."</code>, and it read as "nothing
+  configured".</p>
+</li>
+<li>
+<p><strong>The dead <code>interface</code> endpoint is retired and provisioning points at the
+  working key.</strong> <code>interface_2</code> (<code>/api/v2.0/cmdb/system/interface</code>, 200, 3 rows) is
+  what <code>interface_inventory</code>, <code>analysis</code>, <code>config_sections</code> and the inventory
+  tests already treat as canonical. The broken key was enabled in the registry, so
+  an operator clicking it in the API Explorer got <code>-20001</code> with no explanation,
+  and the provisioning catalog pointed at it — which is why <strong>Network interface</strong>,
+  the object an operator is most likely to configure, had never had a field
+  schema. Fixed on all three surfaces: the provisioning spec, <code>endpoints.yaml</code> (so
+  a fresh install cannot recreate it) and the live registry row (soft-disabled,
+  because the YAML seeder is INSERT-ONLY and would never rewrite an existing row).</p>
+</li>
+<li>
+<p><strong>Six field schemas that never existed.</strong> <code>interface</code> (34 fields),
+  <code>snmp_community</code> (19), <code>snmp_user</code> (19), <code>radius</code> (16), <code>user_group</code> (8) and
+  <code>syslog</code> (7), harvested read-only from {device} (7.6.8) into <code>7.6/</code> and
+  <code>_default/</code>. <code>ldap</code> remains absent, correctly: the reference box has no LDAP
+  server configured, so there is nothing to learn field names from — and the
+  harvest now says exactly that instead of implying a defect.</p>
+</li>
+<li>
+<p><strong>Change documents are produced in French and Italian.</strong> Both languages were
+  one and two strings short of a complete catalogue (of 292), and a catalogue
+  that is one string short withdraws the whole language — deliberately, because
+  a partial one prints an English paragraph under an approver's signature. The
+  three missing units are translated, so French and Italian now render a
+  complete document and the profile picker stops marking them "change documents
+  not translated yet". Spanish was already complete; it is not offered only
+  because this installation has it switched off in Settings → Languages.</p>
+</li>
+<li>
+<p><strong>A translated action profile came back empty (<code>KeyError</code> on render).</strong>
+  <code>cr_document</code> builds a non-authored language by overlaying the catalogue in
+  <code>_Localized.__missing__</code>, which <code>dict.get()</code> never calls — and the profile
+  lookup used <code>.get()</code>. The effect depended on the gate and so appeared in the
+  worst possible order: while a language was incomplete the renderer degraded
+  it to English and nothing looked wrong, and the moment its catalogue was
+  completed the document raised instead. The lookup now subscripts, and
+  degrades to the authored English rather than to an empty profile. See
+  <code>docs/safeguards.md</code> §70.</p>
+</li>
+<li>
+<p><strong>A navigation guard that had quietly stopped guarding.</strong> The check that every
+  Administrator block in the sidebar reaches Collection through the one shared
+  partial located those blocks by their rendered label, so translating the nav
+  left it matching nothing and iterating over an empty list. It now anchors on
+  <code>data-nav-group</code>, the group's structural identity, closes each block by
+  counting its own tags (a block that lost its closing tags used to run on and
+  find the <em>next</em> block's entry), and a new guard fails if that identity is ever
+  routed through the translation catalog.</p>
+</li>
+<li>
+<p><strong>Upgrade Flow wrote its own prose; it now reads Administration → Change
+  Types like every other change form.</strong> Stage 2 offered a title box with an
+  English placeholder compiled into the template, a free-text reason with
+  another, and no rollback field at all — while the single-change form next
+  door proposed all three from the change type, an administrator's wording
+  winning per field. Nothing failed: an administrator renamed the change to
+  whatever their change board actually calls it, the single change followed,
+  and the bulk one — the one covering forty appliances — kept offering the
+  shipped sentence. Both stages (one window, and the batched wave rollout) now
+  share ONE set of proposed fields, in the document language the operator
+  chooses, with the pre-flight run deliberately <em>not</em> quoted: the per-device
+  draft names one run by id and this stage rests on N. A change type disabled
+  on that page is now reported here instead of being discovered when the form
+  is submitted, after the sweep. Waves additionally carry the reason, the
+  rollback and the document language they never forwarded before, refuse an
+  untitled plan rather than filing changes called "— wave 1/6", and reserve the
+  wave marker out of the title budget so a long title cannot truncate away the
+  only thing that tells two waves apart.</p>
+</li>
+<li>
+<p><strong>The monitor was raising ~790 alerts a week for conditions that were not
+  happening.</strong> Four independent checks each asserted something false; nothing
+  crashed, nothing was slow, and no test failed, so the only visible symptom
+  was a mailbox the operator learned to ignore. All four are fixed together
+  because the fifth defect was the noise itself: two genuine drift events of
+  the same week sat underneath ~825 alerts.</p>
+</li>
+<li>
+<p><em>Config drift on a device whose config did not change.</em> The source-of-truth
+    identity hashed fields the appliance moves by itself — its own wall clock,
+    the internal <code>*_val</code> handles it renumbers when proxyd restarts, the
+    reverse-reference lists it emits in an unstable order, and the rolling
+    <code>allow-time</code> window. Measured across every consecutive version pair in the
+    live store, 194 of 206 differed in <strong>nothing but the clock</strong>, so a FortiADC
+    wrote a fresh ~500 KB version every hour and raised an alert for it. The
+    exclusion applies to the identity only: the stored snapshot keeps every
+    field, so history, diff and restore are unchanged.</p>
+</li>
+<li>
+<p><em>"Host degraded — CPU load 220% of 3 cores" on an idle container.</em> lxcfs
+    does not virtualise <code>/proc/loadavg</code> or <code>/proc/uptime</code>, so both are the
+    hypervisor's. The manager divided the <strong>host's</strong> load average by the
+    <strong>container's</strong> core count; a hypervisor at 27% of 24 cores rendered as a
+    degraded node, and both HA members alerted in the same second with the same
+    load to the decimal. CPU is now read from this container's own cgroup
+    accounting, averaged over the window since the previous reading, and uptime
+    is derived from our PID 1. The host's load average is still shown, labelled
+    as the host's.</p>
+</li>
+<li>
+<p><em>"ALL backends down" over servers the appliance reported as up.</em>
+    <code>healthCheckStatus: "disable"</code> means no health check is <strong>configured</strong> for
+    that pool member, not that the member is down — its own status still reads
+    up. The two were graded as one fact, so a policy without health checks read
+    <code>crit</code> forever: 302 consecutive hourly buckets without a single healthy
+    sample. It is now reported as <strong>unverified</strong> at <code>warn</code>, with its own
+    governable severity, so an untested backend is still not green but the
+    console no longer states something the device contradicts.</p>
+</li>
+<li>
+<p><em><code>dispatched: 2</code> on runs that delivered nothing.</em> Every alert mail was
+    refused by the relay (<code>454 4.7.1 Relay access denied</code>) and the engine
+    counted them as sent, then stamped the cooldown, suppressing the finding
+    for six hours. <code>dispatched</code> now counts what actually left on some channel,
+    each failed channel is named, the cooldown is only stamped for what was
+    delivered, and a run that reaches nobody exits non-zero so the timer's unit
+    goes <code>failed</code> where systemctl and the Monitoring page both show it.</p>
+</li>
+<li>
+<p><strong>A change request's page claimed its evidence came from one pre-upgrade
+  run.</strong> "Captured by upgrade preparation #88" was true of a single-device
+  change and false of a window over twenty appliances, whose frozen inventory
+  is merged across every bound run. The page now lists each appliance with the
+  run that covers it, and names the ones that carry no baseline instead of
+  leaving them as ordinary rows.</p>
+</li>
+<li>
+<p><strong>A duplicate key in the boot-time column migration silently dropped three
+  columns.</strong> <code>_ensure_columns</code> is one dict literal keyed by table name; a table
+  written twice keeps only the last entry and every column under the earlier
+  one is never added — no exception, no log line, a clean boot. A guard now
+  parses the source and fails on a repeated key, because by the time the dict
+  is a value the duplicates have already collapsed and no runtime check can see
+  them.</p>
+</li>
+<li>
+<p><strong>The profile's About card drew the ACTIVE ADOM, not the console.</strong> It
+  sourced its emblem from <code>product.mark</code>, so under Global it showed the globe
+  and inside a FortiWeb ADOM it showed the FortiWeb logo — next to this
+  console's own name and version, which makes it a claim about what SATOM <em>is</em>.
+  It now uses the brand emblem the topbar and the login page already use (the
+  active theme's logo, falling back to the shipped mark). The version badge
+  also moves up beside the product name: name and version are one statement and
+  no longer render two lines apart. The brand guard that should have caught
+  this enumerated three templates and this card was a fourth, so it stopped
+  covering without ever failing; the roster is now derived from the templates
+  that actually render the console's identity, and an unclassified new one
+  fails the suite.</p>
+</li>
+<li>
+<p><strong>The pre-upgrade had two implementations, and the only one that accepted
+  more than one device stored nothing.</strong> The appliance page ran the full
+  pre-flight — configuration backup, health battery, maintenance permission and
+  an HTTP baseline of every published service — and kept it as citable
+  evidence. The scheduled action of the same name took a backup and a health
+  read, and kept nothing at all: no service baseline, no affected-service
+  inventory, no verdict, no record. Nothing ever failed. Pre-flighting a whole
+  window simply produced no evidence a change request could cite, which is why
+  a bulk pre-upgrade could not feed a change in the first place. There is now
+  one implementation, and the scheduled action uses it.</p>
+</li>
+<li>
+<p><strong>A change request could rest on the evidence of a single appliance.</strong> The
+  link was one-to-one, and the create path silently dropped any pre-upgrade run
+  whose device was not the change's own — so a twenty-device window carried one
+  device's baseline, and an approver reading <em>the pre-upgrade passed</em> was told
+  the truth about one box and nothing about the other nineteen. A change now
+  cites one run per device it covers, and each run is checked against the
+  change's devices individually.</p>
+</li>
+<li>
+<p><strong>The customer-impact spreadsheet under-stated the outage for exactly the
+  same reason.</strong> It is generated from the inventory frozen when the change was
+  raised, and that inventory came off the single cited run. It is now merged
+  across every bound run and de-duplicated, so a re-run does not double-count
+  its services and two appliances publishing the same policy name do not
+  collapse into one row.</p>
+</li>
+</ul>
 <p class="rel-prevnext"><a href="v1.9.3.html">Version 1.9.3 →</a></p>
       </div>
       <div class="callout" style="margin-top:24px;">

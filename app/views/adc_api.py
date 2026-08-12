@@ -34,6 +34,7 @@ from ..models import visible_appliances, visible_appliance_or_404
 from ..registry import loader
 from ..services import adc_menu
 from ..services.audit import log_action
+from . import _reconcile
 
 bp = Blueprint('adc_api', __name__, url_prefix='/adc/api')
 
@@ -207,3 +208,25 @@ def registry_toggle(rid):
                extra={'urn': row.urn, 'state': state})
     flash(f'FortiADC endpoint "{row.name}" {state}.', 'success')
     return _back()
+
+
+# ---------------------------------------------------------------------------
+# reconcile — the FortiADC half of the sweep-to-catalog return path
+# ---------------------------------------------------------------------------
+# Same page, same service, ``product='fortiadc'``. The ADC's "absent" signal is
+# an HTTP 404 rather than an errcode envelope (see adc_ops.make_probe), which
+# the sweep normalises into the same three verdicts before they get here.
+
+@bp.route('/reconcile')
+@login_required
+@require_permission(Permission.REGISTRY_EDIT)
+def reconcile():
+    return _reconcile.render_page('fortiadc', 'adc_api.reconcile_apply',
+                                  'adc_api.index')
+
+
+@bp.route('/reconcile/apply', methods=['POST'])
+@login_required
+@require_permission(Permission.REGISTRY_EDIT)
+def reconcile_apply():
+    return _reconcile.apply_page('fortiadc', 'adc_api.reconcile')

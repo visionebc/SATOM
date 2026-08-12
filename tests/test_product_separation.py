@@ -26,6 +26,11 @@ APP = ROOT / "app"
 ADC_MODULES = [
     "views/adc.py",
     "views/adc_api.py",
+    # The external object-authoring API's ADC half (commit 8c29807, 2026-08-12).
+    # It is an ADC module by construction — it imports FortiADCClient — but was
+    # never declared as one, so this guard has been red ever since: that round
+    # ran its own directed tests and nothing else looks at this list.
+    "api_v1/adc.py",
     "services/adc_menu.py",
     "services/adc_ops.py",
     "services/adc_objform.py",

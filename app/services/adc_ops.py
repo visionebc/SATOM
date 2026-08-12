@@ -114,6 +114,42 @@ def make_fetcher(appliance):
     return _fetch
 
 
+def make_probe(appliance):
+    """A ``probe(plan_entry) -> (rows, verdict, detail)`` closure — the ADC half
+    of the rediscovery ledger.
+
+    Same three verdicts as the FortiWeb probe, with the ADC's own shapes:
+
+    * ``absent`` — **HTTP 404** with the plain-text body ``404 page not found``.
+      Verified live against fortiadc02 (2026-08-13): a real object answers 200,
+      a URN the appliance does not implement answers 404 and is NOT a JSON
+      envelope, so ``_device_error`` alone cannot tell it from a transport
+      failure.
+    * ``error``  — anything else, including the negative-integer ``payload``
+      the ADC uses to signal a refusal.
+    * ``ok``     — the device answered; an empty list means an empty collection.
+
+    ``make_fetcher`` is kept for callers that only want rows.
+    """
+    from ..clients.fortiadc import FortiADCClient
+
+    client = FortiADCClient(appliance, timeout=20.0)
+
+    def _probe(ep: dict):
+        resp = client._api("GET", ep["urn"])
+        if resp.status_code == 404:
+            return [], "absent", "HTTP 404 (path not served)"
+        err = client._device_error(resp)
+        if err:
+            return [], "error", str(err)[:200]
+        rows = client._payload(resp)
+        if isinstance(rows, dict):
+            rows = [rows]
+        return (rows if isinstance(rows, list) else []), "ok", ""
+
+    return _probe
+
+
 _VM_HINTS = ("KVM", "VM", "XEN", "HYPERV", "AWS", "AZURE", "GCP", "OPENSTACK")
 
 

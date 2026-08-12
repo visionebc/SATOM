@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Added · Changed · Fixed · 31 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Added · Changed · Fixed · 34 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Added · Changed · Fixed · 31 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Added · Changed · Fixed · 34 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,8 +59,8 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Added · Changed · Fixed · 31 entries</span>
-        <ul class="rel-leads"><li>External teams can file their own FortiWeb WAF carve-outs — and, when trusted, apply them — over /api/v1</li><li>Concept Map (/map) — every page in the console, grouped by what it is for</li><li>Config-drift alerts say who made the change</li><li class="rel-more">… and 28 more</li></ul>
+        <span class="rel-nav-meta">unreleased · Added · Changed · Fixed · 34 entries</span>
+        <ul class="rel-leads"><li>The console can now reboot or upgrade an appliance BY NAME — without becoming a second way to authorize one</li><li>satom get device config reads a device&#x27;s configuration from the LOCAL store, never from the box</li><li>External teams can file their own FortiWeb WAF carve-outs — and, when trusted, apply them — over /api/v1</li><li class="rel-more">… and 31 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v1.9.3.html" data-rel-version="1.9.3">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 1.9.3</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
@@ -187,14 +187,55 @@
       <div class="mdx">
 <h3 id="added">Added</h3>
 <ul>
-<li><strong>External teams can file their own FortiWeb WAF carve-outs — and, when
+<li><strong>The console can now reboot or upgrade an appliance BY NAME — without
+  becoming a second way to authorize one.</strong> <code>satom execute device reboot
+  &lt;device&gt; --yes</code> and <code>satom execute device upgrade &lt;device&gt; --yes</code>. The
+  privilege was never actually missing: <code>execute scheduler run &lt;id&gt;</code> has always
+  been able to fire a reboot action. What was missing was the <em>addressing</em> —
+  turning "reboot {device}" into the one action id allowed to do it — and
+  that gap fell on the operator who is on SSH, inside a maintenance window,
+  because the web UI is exactly what is unavailable.</li>
+</ul>
+<p>So the new verbs <strong>select and never execute</strong>. <code>device_ops.select_action()</code>
+  resolves the device to a single scheduled action that is already bound to an
+  approved change request, and hands that id to the same <code>execute_and_record()</code>
+  the scheduler uses — which re-runs the change-request gate itself. Every
+  check in the selector can therefore only refuse <em>earlier</em> than the gate
+  would; none of them can permit something the gate would have stopped. A CLI
+  that called the device directly would be a second implementation of one
+  authorization boundary, and the weaker of two implementations is the one that
+  ends up being the real one.</p>
+<p>It refuses in five ways and names which one fired: no such action, an action
+  bound to no change request, a change request that is not approved / has no
+  window / whose window has closed, an action that targets other devices too,
+  an action that targets the whole fleet (never narrowed — the recorded row is
+  what an auditor reads), and two runnable candidates (never disambiguated by
+  row order). A bare "not authorized" at 03:00 is worse than useless: the
+  operator cannot tell a missing action from a window that shut twenty minutes
+  ago, and the fastest way out of an undiagnosable refusal is to go around it.</p>
+<ul>
+<li>
+<p><strong><code>satom get device config</code> reads a device's configuration from the LOCAL
+  store, never from the box.</strong> Three levels — sections, tables, rows — over the
+  content-addressed source-of-truth store, with <code>--version &lt;id&gt;</code> for an older
+  snapshot. It answers with the appliance unreachable, its credentials rotated
+  or its management plane rebooting, which is precisely when an operator
+  reaches for it. Resolving a section or table name prefers an exact match,
+  accepts a unique prefix, and <strong>refuses an ambiguous one</strong> rather than
+  choosing: printing a different section under the heading that was typed is a
+  configuration confusion in the middle of a change window. A <code>--version</code> that
+  belongs to another device is refused for the same reason.</p>
+</li>
+<li>
+<p><strong>External teams can file their own FortiWeb WAF carve-outs — and, when
   trusted, apply them — over <code>/api/v1</code>.</strong> Until now the integration API was
   read-biased: the only mutation was triggering a scheduled action an operator
   had already created. A security or application team that needed an exception
   on the WAF in front of its own app had to ask someone to retype it. Two new
   resources close that gap without opening the appliance:
   <code>/api/v1/waf/exceptions</code> (FortiWeb, desired-state first) and
-  <code>/api/v1/adc/rules</code> (FortiADC).</li>
+  <code>/api/v1/adc/rules</code> (FortiADC).</p>
+</li>
 </ul>
 <p>What it is deliberately <strong>not</strong> is a proxy to the device configuration
   database. That database does not distinguish "a WAF carve-out" from an admin
@@ -416,6 +457,22 @@
 </ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
+<li>
+<p><strong><code>upgrade</code> asserted a change-request requirement it never declared.</strong> Its
+  own <code>summary</code> said it was "authorized by an approved Change Request inside
+  its maintenance window", and <code>_do_upgrade</code>'s docstring said the check was
+  "enforced upstream in <code>execute_and_record</code>". Neither was true: the unbound
+  refusal reads <code>spec.requires_change_request</code>, and the <code>upgrade</code> spec never
+  set it — so an upgrade action with no bound CR passed the gate. It was
+  harmless only because the executor is still a guarded stub that flashes
+  nothing; the day the flash runbook lands it would have been a destructive
+  action running unapproved while three separate pieces of prose swore it could
+  not. This is the same shape as <code>upgrade_prep</code> once shipping
+  destructive-and-ungated while the gate watched only <code>upgrade</code>. The flag is
+  now declared, and the guard pins the <strong>rule</strong> (danger + a schedule forced to
+  <code>once</code> requires a change request) rather than the word <code>upgrade</code>, so the next
+  fixed-date destructive action arrives gated instead of arriving free.</p>
+</li>
 <li>
 <p><strong>The API manual described an API that no longer existed.</strong> <code>docs/api_v1.md</code>
   opened by telling integrators that <em>"mutations happen only through pre-created

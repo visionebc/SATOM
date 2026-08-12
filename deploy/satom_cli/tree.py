@@ -86,6 +86,10 @@ ROOT = Node("satom", "SATOM operator CLI", children=dict([
         ),
         _group("device", "Managed appliances.",
             _n("status", "Sync state, maintenance flag, last contact.", run=o.device_status),
+            _n("config", "The device's configuration as SATOM last harvested it — "
+                         "read from the LOCAL store, never from the box.",
+               run=o.device_config,
+               usage="get device config [<device> [<section> [<table>]]] [--version <id>]"),
         ),
         _group("monitor", "Probes.",
             _n("status", "Probe states, and how much coverage is disabled.",
@@ -301,6 +305,16 @@ ROOT = Node("satom", "SATOM operator CLI", children=dict([
         _group("support", "Hand-off.",
             _n("bundle", "Collect every diagnostic and journal into one 0600 file.",
                run=f.support_bundle, needs_root=True),
+        ),
+        _group("device", "Appliance operations. Each fires an EXISTING action "
+                         "bound to an approved change request — never a second "
+                         "privileged path to the box.",
+            _n("reboot", "Reboot one appliance via its CR-bound action. DESTRUCTIVE.",
+               run=f.device_reboot, needs_root=True, danger=True,
+               usage="execute device reboot <device> --yes"),
+            _n("upgrade", "Firmware upgrade of one appliance via its CR-bound action.",
+               run=f.device_upgrade, needs_root=True, danger=True,
+               usage="execute device upgrade <device> --yes"),
         ),
         _n("maintenance", "Park or un-park an appliance.", run=f.maintenance,
            needs_root=True, usage="execute maintenance <device> <on|off>"),

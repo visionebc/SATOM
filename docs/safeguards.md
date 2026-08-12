@@ -8181,3 +8181,57 @@ pgrep -af 'venv/bin/python -m py[t]est'  # someone else may be mid-run
 venv/bin/python -m pytest <orphan_test> -q   # judge it by its result, not its name
 git add <the orphan files> && git commit     # record BEFORE reconciling
 ```
+
+## §80 — prose is not a gate, and an alias is not a second door
+
+**The two failures this round are the same failure seen from both sides.**
+
+`upgrade` had a summary saying an approved change request authorized it, and an
+executor docstring saying the check was enforced upstream. Both sentences were
+written by someone who believed them. Neither ran. The gate that would have
+enforced them reads one field — `spec.requires_change_request` — and that field
+was never set. Nothing failed, because **nothing fails when a claim stops being
+true**; the claim simply becomes false and keeps being displayed. The only
+witness was the executor being a stub.
+
+The opposite pressure showed up in the same hour. The operator asked for
+`execute device reboot`, and the obvious implementation is to POST the reboot
+URN from the CLI. That code would have worked, passed review, and quietly
+created a **second implementation of an authorization boundary** — one that
+knows nothing about change requests, maintenance windows or external approval.
+When two implementations of one boundary exist, the weaker one is the real one,
+because that is the one an operator under pressure will reach for.
+
+**The rule.** A new surface onto a gated operation must *select*, never
+*execute*. It resolves what to run and hands it to the existing executor, which
+re-runs the gate. Then every check in the new surface can only refuse earlier —
+it is structurally incapable of permitting something the gate would stop, and
+that property survives someone editing it later without reading the gate.
+
+**And the guard for the first half must pin the rule, not the instance.**
+Asserting `get_spec("upgrade").requires_change_request is True` would have
+caught this one action and let the next one through. The guard asserts that
+**every** spec which is `danger` and pinned to `forced_schedule_kind == "once"`
+— which *is* the maintenance-window shape — declares the requirement. A second
+guard runs `execute_and_record` on an unbound destructive action and asserts it
+is skipped, because a flag test alone survives someone deleting the code that
+reads the flag.
+
+### Recipe
+
+```bash
+# Nothing may reach a device without the gate re-running:
+grep -n "execute_and_record\|run_action" app/services/device_ops.py   # must be EMPTY
+venv/bin/python -m pytest tests/test_cli_device_ops.py -q
+
+# Every destructive fixed-date action is gated (the RULE, not one key):
+venv/bin/python -c "from app.services.scheduled_actions import ALL_ACTIONS as A; \
+print([s.key for s in A.values() if s.danger and s.forced_schedule_kind=='once' \
+and not s.requires_change_request])"        # must print []
+```
+
+**Refusals are a product surface.** Five of the fifteen mutations this round
+target refusal *messages*, not refusal *logic*. A refusal that cannot be told
+apart from four other refusals sends the operator around the gate, which is the
+outcome the gate exists to prevent — so "which rule said no" is load-bearing
+and is tested as such.

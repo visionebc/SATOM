@@ -277,6 +277,89 @@ def maybe_apply_inventory(appliance) -> dict | None:
     return res
 
 
+# --- per-endpoint verdicts -------------------------------------------------
+# The sweep's job is not only to collect rows: it is the only thing in SATOM
+# that asks a live appliance about EVERY endpoint in the catalog. Recording
+# only the rows threw that away. ``_results_list`` folds a device error
+# envelope into ``[]``, so "this collection is empty" and "this firmware has
+# no such endpoint" were the same observation — which is why every snapshot
+# ever written carries ``errors: []``, including one taken from an appliance
+# that was answering ``errcode -20001`` to one of its URNs.
+VERDICT_OK = "ok"
+VERDICT_ABSENT = "absent"
+VERDICT_ERROR = "error"
+
+
+def _resp_message(resp) -> str:
+    try:
+        body = resp.json()
+        if isinstance(body, dict):
+            return str(body.get("message") or body.get("error") or "")[:120]
+    except Exception:  # noqa: BLE001 — non-JSON body
+        pass
+    return (getattr(resp, "text", "") or "")[:120]
+
+
+def _device_firmware(appliance_snap, is_adc: bool) -> str:
+    """Best-effort running firmware line, read from the device at sweep time.
+
+    NOT ``Appliance.firmware``: that column is filled by other flows and was
+    ``None`` for two of the three live FortiWebs when this was written. A
+    verdict ledger whose firmware is a guess is worse than one that says
+    "unknown", because the reconciler weights absence BY FIRMWARE LINE — the
+    endpoint catalog is a deliberate cross-firmware superset, so "absent" only
+    ever means "absent on the line this appliance runs".
+
+    Reads the same documented field as ``_model_from_status``
+    (``status.systemstatus → firmwareVersion``), which returns firmware as
+    ``None`` for FortiWeb and therefore cannot be reused directly.
+    """
+    import re as _re
+    try:
+        if is_adc:
+            from . import adc_ops
+            raw = adc_ops.model_inventory(appliance_snap)[2] or ""
+        else:
+            body = FortiWebClient(appliance_snap, timeout=10.0).status_check()
+            d = body.get("results", body) if isinstance(body, dict) else {}
+            raw = str(d.get("firmwareVersion") or "")
+        # Normalised to X.Y.Z for BOTH products: the reconciler groups by line,
+        # and "8.0.3 build0093,260401" would be its own line on every rebuild.
+        m = _re.search(r"\d+\.\d+(?:\.\d+)?", raw)
+        return m.group(0) if m else ""
+    except Exception:  # noqa: BLE001 — never let a version read sink a sweep
+        return ""
+
+
+def _probe_fortiweb(client, ep: dict) -> tuple[list, str, str]:
+    """GET one FortiWeb endpoint and classify the answer three ways.
+
+    ``ok``     the device answered — an empty list then means an EMPTY
+               collection, which is a fact about the config, not the catalog.
+    ``absent`` this firmware does not serve the path at all (``errcode -20001``
+               "The REST API has invalid URL", or ``-3``). Evidence about the
+               CATALOG.
+    ``error``  anything else — transport, auth, HTTP >= 400 without an absent
+               code, or a device-wide refusal such as ``-20010`` ("The license
+               of peer VM FortiWeb is not valid", observed live on fortiweb08
+               for every single read). Evidence about the DEVICE.
+
+    Collapsing ``absent`` into ``error`` loses the reconciler its only signal;
+    collapsing ``error`` into ``absent`` lets one sick appliance propose
+    deleting the whole catalog. The codes are the same ones
+    ``FortiWebClient.cmdb_names_checked`` already trusts.
+    """
+    resp = client.get(ep["urn"])
+    code = client._errcode(resp)
+    if code is not None and str(code) in client._ABSENT_ERRCODES:
+        return [], VERDICT_ABSENT, f"errcode {code}"
+    if code is not None:
+        return [], VERDICT_ERROR, f"errcode {code}: {_resp_message(resp)}"[:200]
+    if resp.status_code >= 400:
+        return [], VERDICT_ERROR, f"HTTP {resp.status_code}: {_resp_message(resp)}"[:200]
+    return client._results_list(resp.json()), VERDICT_OK, ""
+
+
 def _client_snapshot(appliance) -> SimpleNamespace:
     """A DB-detached copy of just the fields FortiWebClient reads, so the worker
     thread never touches the SQLAlchemy session."""
@@ -298,8 +381,10 @@ def _run(appliance_snap: SimpleNamespace, by: str, deep: bool = False,
         plan = sweep_plan_adc() if is_adc else sweep_plan()
     total = len(plan)
     started = datetime.utcnow().isoformat()
+    firmware = _device_firmware(appliance_snap, is_adc)
     state = {
         "state": "running", "appliance_id": aid, "appliance": appliance_snap.name,
+        "firmware": firmware,
         "total": total, "done": 0, "percent": 0, "objects": 0,
         "started": started, "by": by, "section": "", "errors": [], "finished": None,
     }
@@ -308,40 +393,69 @@ def _run(appliance_snap: SimpleNamespace, by: str, deep: bool = False,
     if is_adc:
         from . import adc_ops
 
-        _fetch = adc_ops.make_fetcher(appliance_snap)
+        _probe = adc_ops.make_probe(appliance_snap)
     else:
         client = FortiWebClient(appliance_snap, timeout=20.0)
 
-        def _fetch(ep: dict) -> list:
-            return client._results_list(client.get(ep["urn"]).json())
+        def _probe(ep: dict):
+            return _probe_fortiweb(client, ep)
 
     sections: dict[str, dict[str, list]] = {}
     total_objects = 0
     errors: list[dict] = []
+    absent: list[dict] = []
+    ledger: dict[str, dict] = {}
     for i, ep in enumerate(plan, 1):
         try:
-            rows = [r for r in _fetch(ep) if isinstance(r, dict)]
-            if rows:
-                sections.setdefault(ep["section"], {})[ep["name"]] = rows
-                total_objects += len(rows)
+            rows, verdict, detail = _probe(ep)
+            rows = [r for r in rows if isinstance(r, dict)]
         except Exception as exc:  # noqa: BLE001 — one endpoint never sinks the sweep
-            errors.append({"endpoint": ep["name"], "error": f"{type(exc).__name__}: {exc}"[:160]})
+            rows, verdict = [], VERDICT_ERROR
+            detail = f"{type(exc).__name__}: {exc}"[:160]
+        ledger[ep["name"]] = {"urn": ep["urn"], "section": ep["section"],
+                              "verdict": verdict, "rows": len(rows),
+                              "detail": (detail or "")[:200]}
+        if verdict == VERDICT_ERROR:
+            errors.append({"endpoint": ep["name"], "error": detail or "unknown error"})
+        elif verdict == VERDICT_ABSENT:
+            absent.append({"endpoint": ep["name"], "urn": ep["urn"],
+                           "detail": detail or ""})
+        elif rows:
+            sections.setdefault(ep["section"], {})[ep["name"]] = rows
+            total_objects += len(rows)
         if i % 5 == 0 or i == total:
             state.update(done=i, percent=int(i * 100 / total) if total else 100,
-                         objects=total_objects, section=ep["section"], errors=errors[-25:])
+                         objects=total_objects, section=ep["section"],
+                         errors=errors[-25:], absent_count=len(absent))
             _write_json(progress_path, state)
 
     generated_at = datetime.utcnow().isoformat()
     snapshot = {
         "device": appliance_snap.name, "appliance_id": aid, "generated_at": generated_at,
+        "firmware": firmware,
         "by": by, "endpoints_swept": total, "total_objects": total_objects,
         "section_count": len(sections), "sections": sections, "errors": errors,
+        # The ledger is the sweep's OTHER product: one verdict per endpoint,
+        # read back by services.registry_reconcile. ``absent`` is kept out of
+        # ``errors`` on purpose — an endpoint this firmware does not have is not
+        # a failure of the sweep, and folding it in would bury the real errors
+        # under dozens of benign rows on every run.
+        "endpoint_status": ledger,
+        "absent": absent,
+        "verdict_counts": {
+            "ok": sum(1 for v in ledger.values() if v["verdict"] == VERDICT_OK),
+            "absent": len(absent),
+            "error": len(errors),
+        },
     }
     _write_json(devdir / "_config.json", snapshot)
     state.update(state="done", done=total, percent=100, objects=total_objects,
                  section_count=len(sections), errors=errors, finished=generated_at,
+                 absent_count=len(absent),
                  summary=f"{total_objects} object(s) across {len(sections)} section(s) "
-                         f"from {total} endpoint(s)" + (f", {len(errors)} error(s)" if errors else ""))
+                         f"from {total} endpoint(s)"
+                         + (f", {len(absent)} absent" if absent else "")
+                         + (f", {len(errors)} error(s)" if errors else ""))
     _write_json(progress_path, state)
 
     if deep and not is_adc:  # deep capture is the FortiWeb WPP/policy layer
@@ -410,4 +524,5 @@ def start(appliance, by: str = "", deep: bool = False) -> dict:
 
 __all__ = ["sweep_plan", "sweep_plan_adc", "plan_for", "status",
            "latest_snapshot_meta", "start", "apply_inventory",
-           "maybe_apply_inventory", "_run_deep"]
+           "maybe_apply_inventory", "_run_deep", "_probe_fortiweb",
+           "VERDICT_OK", "VERDICT_ABSENT", "VERDICT_ERROR"]

@@ -8235,3 +8235,98 @@ target refusal *messages*, not refusal *logic*. A refusal that cannot be told
 apart from four other refusals sends the operator around the gate, which is the
 outcome the gate exists to prevent — so "which rule said no" is load-bearing
 and is tested as such.
+
+
+## §81 — a sweep that measures everything and reports nothing
+
+The rediscovery sweep is the only thing in SATOM that asks a live appliance
+about **every** endpoint in the catalog. For months it threw the answer away,
+and nothing anywhere failed.
+
+**How the silence was built.** `FortiWebClient._results_list` flattens a device
+error envelope to `[]`. The sweep stored rows, so "collection is empty" and
+"this firmware has no such endpoint" arrived as the same observation and neither
+reached `errors[]`. Every `_config.json` on the primary says `errors: []` —
+including the one taken from an appliance that answers `errcode -20001` to one
+of its URNs. The file looked like a clean bill of health and was in fact a blank
+page.
+
+**The verification that mattered was a live probe, not a reading.** Against the
+real fleet on 2026-08-13:
+
+| appliance | ok | absent | error |
+|---|---|---|---|
+| fortiweb09 / fortiweb10 | 283 | 38 | 0 |
+| fortiweb08 | 0 | 38 | **283** |
+| fortiadc02 / fortiadc03 | 217 | 0 | 0 |
+
+fortiweb08 was answering `-20010 "The license of peer VM FortiWeb is not
+valid."` to essentially every CMDB read **while `last_status` said `online`** —
+the status probe uses a different endpoint. A reconciler that read non-200 as
+"gone" would have proposed deleting the entire 321-endpoint catalog from that
+one sick appliance, with a plausible-looking table of evidence.
+
+**Three rules, and each one is a test.**
+
+1. **`absent` and `error` are never collapsed.** `absent` (FortiWeb `-20001` /
+   `-3`; FortiADC **HTTP 404**, plain text, not a JSON envelope) is evidence
+   about the CATALOG. `error` is evidence about the DEVICE. Collapsing either
+   way is a silent catastrophe in one of the two directions.
+2. **A ledger that is mostly errors is not evidence at all.** The per-endpoint
+   verdicts on fortiweb08 were individually correct and the witness was still
+   worthless. Trust is decided per LEDGER, not only per endpoint.
+3. **`apply_disable` re-derives the proposal set server-side.** The POSTed names
+   filter what the evidence already justifies; they never authorize it.
+   Otherwise the reconcile form is a way to disable any endpoint in the catalog,
+   and it would have passed review because the page only ever renders proposals.
+
+**The rule the first real run added, after the page was already working.**
+Absence is a claim about a FIRMWARE. The endpoint catalog is a deliberate
+cross-firmware superset — `FortiWebClient._BENIGN_ERRCODES` says so outright —
+so on a fleet whose every witness runs one line, "absent everywhere" means *not
+in that line*, not *dead*. Of the 38 endpoints both healthy 7.6.8 appliances
+rejected, several (`waf/mcp-security.*`, `ml-based-anomaly-detection`,
+`system/captcha-puzzle`, `certificate.eab-credentials`) are **8.0** features:
+disabling them strips the catalog of exactly what the next upgrade needs. Only
+5 of the 38 had a working twin already in the catalog
+(`bot_mitigation_policy` → `bot_mitigation_policy_2`, the same duplicate-name
+shape that hid the dead `interface` URN). Every finding therefore carries its
+firmware lines, `fleet_spans_one_firmware` is set when the quorum is
+single-line, and the page leads with the warning rather than the delete button.
+An **unknown** firmware is not a second line — treating `""` as diversity would
+clear the warning on precisely the fleet that needs it most.
+
+**Two more that only showed up against real data:**
+
+* **Ghost witnesses.** Six of the twelve directories under `data/rediscovery/`
+  belong to appliances that were deleted from the inventory, and four more are
+  the retired `*.invalid` hosts. Quorum is built from the **appliance table**,
+  never from the directory listing — a deletion justified by a ghost is one
+  nobody can reproduce.
+* **"Never measured" was a lie for 185 rows.** The sweep is the object-LIST
+  layer: sub-tables needing an `mkey` are dropped from the plan (321 of 506
+  enabled FortiWeb rows; 217 of 244 on FortiADC). Filing them under "never
+  measured" tells the operator to run a sweep that structurally cannot answer,
+  so they are reported as **unsweepable** with that reason.
+
+**Recipe (~5 s, no appliance needed):**
+
+```bash
+# every mutation of the three rules must fail the file:
+venv/bin/python -m pytest tests/test_registry_reconcile.py -q      # 32 tests
+
+# the loop, against the live fleet (read-only):
+venv/bin/python - <<'PY'
+from app import create_app
+from app.services import registry_reconcile as rr
+app = create_app()
+with app.app_context():
+    for p in ("fortiweb", "fortiadc"):
+        r = rr.reconcile(p)
+        print(p, r["counts"], [d["reason"] for d in r["devices"] if not d["trusted"]])
+PY
+```
+
+A device listed as untrusted with an empty reason, or a proposal whose evidence
+list is shorter than the trusted-device list, means rule 2 or the unanimity
+check has come loose.

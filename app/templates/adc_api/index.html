@@ -34,6 +34,11 @@
   </div>
   <div class="d-flex align-items-center gap-2">
     {% if can_edit %}
+    {# The sweep's verdicts, read back against this catalog. Lives next to the
+       New/Edit affordances because it drives the same write (registry.toggle). #}
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('adc_api.reconcile') }}">
+      <i class="bi bi-clipboard2-check me-1"></i>{{ _('Reconcile') }}
+    </a>
     <button class="btn btn-fw-primary btn-sm" data-js="new-endpoint">
       <i class="bi bi-plus-lg me-1"></i>{{ _('New Endpoint') }}
     </button>

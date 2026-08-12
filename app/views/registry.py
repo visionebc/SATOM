@@ -21,6 +21,7 @@ from ..extensions import db
 from ..models import Permission, RegistryEndpoint
 from ..registry import loader
 from ..services.audit import log_action
+from . import _reconcile
 
 bp = Blueprint('registry', __name__, url_prefix='/registry')
 
@@ -156,3 +157,30 @@ def toggle(rid):
                extra={'urn': row.urn, 'state': state})
     flash(f'Endpoint "{row.name}" {state}.', 'success')
     return _redirect_back()
+
+
+# ---------------------------------------------------------------------------
+# reconcile — the sweep's verdicts read back against the catalog
+# ---------------------------------------------------------------------------
+# The rediscovery sweep is the only thing in SATOM that asks a live appliance
+# about every endpoint in the catalog. Its verdicts used to die in a JSON file;
+# these two routes are the return path. The body is shared with the FortiADC
+# hub (``views/_reconcile.py``) because the catalog is keyed (product,
+# api_version) and each product's API hub is its own ADOM-scoped page.
+#
+# Both routes require REGISTRY_EDIT: the page exists to drive registry.toggle,
+# and its apply POST performs exactly that write.
+
+@bp.route('/reconcile')
+@login_required
+@require_permission(Permission.REGISTRY_EDIT)
+def reconcile():
+    return _reconcile.render_page('fortiweb', 'registry.reconcile_apply',
+                                  'api_explorer.index')
+
+
+@bp.route('/reconcile/apply', methods=['POST'])
+@login_required
+@require_permission(Permission.REGISTRY_EDIT)
+def reconcile_apply():
+    return _reconcile.apply_page('fortiweb', 'registry.reconcile')

@@ -149,6 +149,52 @@ def request_crq(cr, *, by: str = "operator") -> dict:
         "window_end": _iso(cr.window_end),
         "requested_by": cr.requested_by or by,
     }
+    # ---------------------------------------------------------------- #
+    #  Native tracker backend (Jira / OpenProject / Vikunja)             #
+    # ---------------------------------------------------------------- #
+    # Runs BEFORE the hooks and SYNCHRONOUSLY, because unlike a hook it can
+    # answer: the API returns the issue key inline, so the CR carries a real
+    # reference the moment the operator clicks instead of "queued" plus a wait.
+    #
+    # IDEMPOTENCY IS ENFORCED HERE, NOT IN THE UI. A CR that already carries a
+    # reference is a RE-request — the window moved or the scope grew — and it
+    # must not open a second ticket. Leaving that to a disabled button means a
+    # double-click, a browser retry or a second operator each produce another
+    # CRQ for the same window, and change management has no way to tell which
+    # of them is the real one.
+    tracker_result = {"ok": False, "ref": "", "url": "", "backend": "none",
+                      "detail": "not attempted", "attempted": False}
+    existing_ref = (getattr(cr, "crq_ref", "") or "").strip()
+    try:
+        from . import tracker_client as tracker
+    except ImportError:  # pragma: no cover - tracker not installed
+        tracker = None
+    if tracker is not None and tracker.is_configured():
+        if existing_ref:
+            tracker_result.update(
+                backend=tracker.config()["backend"],
+                detail=(f"this change already carries {existing_ref}; no second "
+                        f"ticket was opened"))
+        else:
+            tracker_result = dict(tracker.create_ticket(payload))
+            tracker_result["attempted"] = True
+            if tracker_result.get("ok") and tracker_result.get("ref"):
+                record_crq(cr, tracker_result["ref"],
+                           tracker_result.get("url", ""),
+                           by=f"tracker:{tracker_result.get('backend', '')}")
+                _log(cr, "tracker %s opened %s"
+                     % (tracker_result.get("backend"), tracker_result["ref"]))
+            else:
+                # NAMED, never swallowed. A tracker that was switched on and
+                # then failed is the case where silence is most expensive.
+                _log(cr, "tracker %s did NOT open a ticket: %s"
+                     % (tracker_result.get("backend"),
+                        tracker_result.get("detail") or "no detail"))
+                _event(cr, "crq_failed", by,
+                       "tracker %s failed: %s"
+                       % (tracker_result.get("backend"),
+                          tracker_result.get("detail") or "no detail"))
+
     results = hooks.dispatch("change.requested", payload, by=by)
     detail = (f"{len(payload['devices'])} device(s), {len(evidence)} with a "
               f"stored pre-upgrade run"
@@ -161,6 +207,7 @@ def request_crq(cr, *, by: str = "operator") -> dict:
             "evidence": len(evidence), "uncovered": uncovered,
             "policy_count": len(names),
             "truncated": bool(payload["policies_truncated"]),
+            "tracker": tracker_result,
             "requests": [r.get("request_id") for r in results]}
 
 

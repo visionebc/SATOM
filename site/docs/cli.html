@@ -588,7 +588,7 @@ check. <code>tests/test_docs_publication.py</code> fails the suite when this blo
 longer matches the console you are running.</p>
 <!-- BEGIN GENERATED COMMAND REFERENCE -->
 
-<p><em>102 commands in 37 groups. This table is generated from <code>deploy/satom_cli/tree.py</code> by <code>deploy/gen_cli_reference.py</code> — it cannot drift from the console you are running. <code>!</code> marks a command that changes state destructively and demands <code>--yes</code>.</em></p>
+<p><em>104 commands in 38 groups. This table is generated from <code>deploy/satom_cli/tree.py</code> by <code>deploy/gen_cli_reference.py</code> — it cannot drift from the console you are running. <code>!</code> marks a command that changes state destructively and demands <code>--yes</code>.</em></p>
 <h3 id="get"><code>get</code></h3>
 <p>Read state. Every command below works as <strong>any user</strong> — this is the half of the console that has to keep working when everything else does not.</p>
 <table>
@@ -690,6 +690,18 @@ longer matches the console you are running.</p>
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
 <td>What exists, when it last ran, what is overdue.</td>
+</tr>
+<tr>
+<td><code>satom get api versions [&lt;product&gt;]</code></td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td>Firmware lines SATOM has evidence for, and how much.</td>
+</tr>
+<tr>
+<td><code>satom get api preflight &lt;appliance\|line&gt; &lt;object&gt; &lt;field&gt;... [--product &lt;p&gt;]</code></td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td>Would a payload of these fields be understood on that line? 'unmeasured' is an answer, never a yes.</td>
 </tr>
 <tr>
 <td><code>satom get device status</code></td>

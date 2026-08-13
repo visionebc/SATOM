@@ -8231,6 +8231,118 @@ from the other side.</p>
    (<code>set -a; . /opt/satom/.env</code>), or SQLAlchemy silently falls back to a SQLite
    path that does not exist and the traceback blames the database.</li>
 </ol>
+<h2 id="83-the-same-api-version-and-not-the-same-fields">§83 — the same API version, and not the same fields</h2>
+<p><code>tests/test_api_matrix.py</code> (43 tests) guards <code>services/api_matrix.py</code>, the four
+registry readers in <code>app/registry/loader.py</code>, the API-versions page and the
+<code>get api …</code> CLI branch.</p>
+<p><strong>Why it needs a guard at all.</strong> Nothing here fails on its own. A matrix that
+stops telling <em>measured and absent</em> apart from <em>never measured</em> still renders a
+full page, still fills every table and still answers a preflight — it just
+answers wrong, and the caller's next move is a write to a production appliance.
+This is the <code>feedback</code>-class failure this repo keeps rediscovering: the
+artifact stays well-formed and the claim quietly becomes false.</p>
+<p><strong>The four rules the module is shaped around</strong>, each one a way it could lie
+instead of loudly not-knowing:</p>
+<ol>
+<li><strong><code>fields=None</code> is not <code>fields=[]</code>.</strong> An endpoint that answered <code>ok</code> with
+   zero rows proves the endpoint EXISTS and proves nothing about its fields.
+   Folding that into an empty set makes the line look like it lost every field
+   of an empty collection, and the diff against a populated line invents dozens
+   of removals that never happened.</li>
+<li><strong>A line with no evidence is <code>unmeasured</code>, never <code>ok</code>.</strong> Five preflight
+   outcomes, five names, and <code>unmeasured</code> has its own exit code (4) — distinct
+   from a usage error (2) and from a real rejection (1). A script asking "is
+   9.0 supported?" the week before an upgrade must not get the same rc as one
+   that typed the command wrong.</li>
+<li><strong>Present-here / unknown-there is UNKNOWN, never a change.</strong> An addition is
+   only claimed when the base line returned an explicit <code>absent</code>.</li>
+<li><strong>A delta is only ever computed within ONE kind of evidence.</strong> This one cost
+   a rewrite mid-round and only real data exposed it: a <em>sweep</em> field set is
+   the raw dict FortiWeb puts on the wire, carrying the <code>_val</code> companion of
+   every enum plus <code>sz_</code>/<code>q_</code> internals; the harvested <em>schema</em> strips exactly
+   those on purpose (<code>fortiweb_field_schema._NOISE_*</code>). Subtracting one from
+   the other reported <strong>56 removed fields</strong> for 7.6 → 8.0 that were nothing but
+   that filter. A page whose headline number is noise is a page the operator
+   learns to ignore. Cross-kind pairs now land in <code>fields_incomparable</code> and are
+   reported, never subtracted. After the fix the same comparison reports <strong>+7 /
+   −1</strong>, all schema↔schema, which is the credible answer.</li>
+</ol>
+<p><strong>Two evidence gates carried over from §81, for the same reasons.</strong> Witnesses
+come from the <code>Appliance</code> table, never from the snapshot directory (half of
+<code>data/rediscovery/</code> belongs to deleted appliances and four more are the retired
+<code>*.invalid</code> hosts). A ledger that is more than 25 % errors is evidence about
+that appliance, not about the catalog — {device} answers <code>-20010</code> (peer VM
+licence) to 283 of 321 CMDB reads while the inventory still calls it <code>online</code>,
+and reading it naively attributes 283 phantom absences to the 7.6 line.</p>
+<p><strong>Not a database table, on purpose.</strong> The matrix is <em>derived</em>: delete the file
+and a rebuild reconstructs it exactly. Both evidence sources already live under
+<code>data/</code> and are already carried by <code>satom-ha-datasync</code> and by the system
+bundles; putting the derived view in Postgres would put it in a different
+backup path from the evidence it summarises.</p>
+<p><strong>The loader guard is an AST check, not a string match.</strong> Every
+<code>seed_*_from_yaml</code> has always scoped by <code>(product, api_version)</code> and no reader
+ever did, which is exactly how the two halves stayed inconsistent for as long
+as both existed. The guard walks the parse tree of <code>app/registry/loader.py</code> and
+fails on any <code>api_version=</code> keyword whose value is a literal — so the drift
+cannot come back through a fifth product or a copy-paste.</p>
+<h3 id="verification-recipe_3">Verification recipe</h3>
+<pre><code>cd /opt/satom
+runuser -u satom -- venv/bin/python -m pytest tests/test_api_matrix.py -q
+
+# the matrix, and the difference the whole section is about
+satom get api versions
+satom get api preflight &lt;a 7.6 appliance&gt; admin fortiai old-password   # rc 1
+satom get api preflight 8.0 admin fortiai old-password                 # rc 0
+satom get api preflight 9.9 admin foo                                  # rc 4
+
+# the loader guard, from the parse tree rather than from grep
+runuser -u satom -- venv/bin/python -m pytest \
+  tests/test_api_matrix.py -q -k api_version
+</code></pre>
+<p>Mutation harness: <code>/var/tmp/mut_apimatrix.py</code> on a1 — measured by <strong>rc</strong>, only
+<code>rc==1</code> counts as caught, restores in <code>finally</code>.</p>
+<h2 id="84-issue-tracker-integration-teststest_tracker_clientpy">§84 — Issue tracker integration (<code>tests/test_tracker_client.py</code>)</h2>
+<p><strong>What silently breaks.</strong> Every failure mode in this integration renders as a
+working one, which is why a test is the only thing that catches them:</p>
+<ul>
+<li><strong>Vikunja creates with <code>PUT</code>; <code>POST</code> is its update verb.</strong> A backend that
+  sends <code>POST /api/v1/projects/&lt;id&gt;/tasks</code> looks configured, gets a non-error
+  answer, and creates nothing.</li>
+<li><strong>Jira API v3 rejects a string description</strong> — it takes Atlassian Document
+  Format. The 400 it returns reads like a permissions problem, so the operator
+  rotates a perfectly good token.</li>
+<li><strong>OpenProject's Basic-auth username is the literal <code>apikey</code>.</strong> Sending the
+  operator's e-mail there 401s exactly like a bad credential.</li>
+<li><strong>A 2xx with no id.</strong> A tracker behind a proxy answering 200 with an HTML
+  login page would otherwise stamp an empty reference onto the change and
+  report a ticket that does not exist.</li>
+<li><strong>A probe that only proves authentication.</strong> Green tick, invisible project,
+  discovered while a window opens.</li>
+<li><strong>A second ticket for the same window</strong>, after which change management cannot
+  tell which CRQ is real.</li>
+<li>The API token reaching a flash message, an audit row or a support ticket
+  through a <code>detail</code> string — OpenProject echoes the request back in its error
+  bodies.</li>
+</ul>
+<p><strong>Where the authority lives.</strong> The backend catalogue <code>BACKENDS</code> is the single
+source for which fields each backend needs; the settings page's JavaScript
+reads it through <code>|tojson</code> rather than carrying a second list. Two authors of
+"does Vikunja need a username" is how the answers drift apart — the same shape
+as the duplicated licence footer in §7f.</p>
+<p><strong>Verification recipe</strong></p>
+<pre><code class="language-bash">cd /opt/satom
+runuser -u satom -- venv/bin/python -m pytest tests/test_tracker_client.py -q
+/opt/satom/venv/bin/python /root/mut_tracker.py      # 28 mutations
+</code></pre>
+<p>Measure mutations by <strong>return code</strong>; only <code>rc == 1</code> is a bite. <code>pytest</code> prints
+<code>FAILED</code> in capitals, so grepping for <code>failed</code> reports survivors that actually
+died, and <code>rc == 4</code> is a usage error rather than a test failure. Every mutation
+restores in <code>finally</code>.</p>
+<p><strong>What is NOT covered.</strong> No live round-trip against a real tracker is in the
+suite — every HTTP call is faked. <strong>Test connection</strong> is the live check, and it
+is the only thing that proves the operator's own credentials, project id and
+network path. A green suite says the request shapes are right; it does not say
+the tracker is reachable from this node.</p>
     </div>
   </div>
 </section>

@@ -11,6 +11,7 @@ help text or a declared privilege level. A command that forgets to say it needs
 root would otherwise fail with a traceback for an unprivileged operator — the
 one moment a traceback is least useful.
 """
+from . import cmd_apiver as v
 from . import cmd_checks as k
 from . import cmd_diagnose as d
 from . import cmd_docs as b
@@ -83,6 +84,16 @@ ROOT = Node("satom", "SATOM operator CLI", children=dict([
         _group("scheduler", "Scheduled actions.",
             _n("status", "What exists, when it last ran, what is overdue.",
                run=o.scheduler_status),
+        ),
+        _group("api", "The API surface, keyed by FIRMWARE LINE — 7.6 and 8.0 "
+                      "speak the same api_version and do NOT take the same fields.",
+            _n("versions", "Firmware lines SATOM has evidence for, and how much.",
+               run=v.api_versions, usage="get api versions [<product>]"),
+            _n("preflight", "Would a payload of these fields be understood on that "
+                            "line? 'unmeasured' is an answer, never a yes.",
+               run=v.api_preflight,
+               usage="get api preflight <appliance|line> <object> <field>... "
+                     "[--product <p>]"),
         ),
         _group("device", "Managed appliances.",
             _n("status", "Sync state, maintenance flag, last contact.", run=o.device_status),

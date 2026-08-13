@@ -34,7 +34,7 @@ from ..models import visible_appliances, visible_appliance_or_404
 from ..registry import loader
 from ..services import adc_menu
 from ..services.audit import log_action
-from . import _reconcile
+from . import _apiversions, _reconcile
 
 bp = Blueprint('adc_api', __name__, url_prefix='/adc/api')
 
@@ -230,3 +230,27 @@ def reconcile():
 @require_permission(Permission.REGISTRY_EDIT)
 def reconcile_apply():
     return _reconcile.apply_page('fortiadc', 'adc_api.reconcile')
+
+
+# ---------------------------------------------------------------------------
+# API versions (firmware-line matrix) — shared body in views/_apiversions.py
+# ---------------------------------------------------------------------------
+# The registry's api_version axis says FortiWeb 7.6 and 8.0 are the same
+# surface (both v2.0). Measured on this fleet's own artifacts they are not:
+# 8.0 carries more FIELDS. This page is that difference, and the rebuild POST
+# writes only the derived matrix file.
+
+@bp.route('/versions')
+@login_required
+@require_permission(Permission.REGISTRY_EDIT)
+def api_versions():
+    return _apiversions.render_page('fortiadc', 'adc_api.index',
+                                    'adc_api.api_versions_rebuild',
+                                    'adc_api.api_versions')
+
+
+@bp.route('/versions/rebuild', methods=['POST'])
+@login_required
+@require_permission(Permission.REGISTRY_EDIT)
+def api_versions_rebuild():
+    return _apiversions.rebuild_page('fortiadc', 'adc_api.api_versions')

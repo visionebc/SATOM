@@ -115,6 +115,12 @@ def _write_json_atomic(path: str, payload) -> None:
     try:
         with os.fdopen(fd, "w") as fh:
             json.dump(payload, fh, indent=1, sort_keys=True)
+        # mkstemp hands back 0600. Every other artifact under data/ is 0644
+        # and this one holds no secret — it is a derived summary of endpoint
+        # names and field names. An inherited mode is an accident; a stated
+        # one is a decision, and the decision here is "same as its siblings",
+        # so a mode audit does not turn up one odd file with no reason.
+        os.chmod(tmp, 0o644)
         os.replace(tmp, path)
     except BaseException:
         try:

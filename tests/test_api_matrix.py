@@ -481,6 +481,36 @@ def test_rebuild_persists_and_load_reads_it_back(app, isolated):
     assert am.load("fortiweb")["lines"]["7.6"]["counts"]["ok"] == 1
 
 
+def test_the_store_file_matches_the_mode_of_its_siblings(app, isolated):
+    """0644, like every other artifact under ``data/``.
+
+    ``mkstemp`` hands back 0600, so without an explicit ``chmod`` the mode is
+    whatever the tempfile module happened to choose — and a mode audit then
+    turns up one odd file with no reason attached to it. The matrix holds no
+    secret: it is a derived summary of endpoint names and field names.
+    """
+    a = _appliance("fw09")
+    _snapshot(isolated, a, {"x": _ok(1)})
+    am.rebuild("fortiweb")
+    assert oct(os.stat(am.matrix_path("fortiweb")).st_mode & 0o777) == oct(0o644)
+
+
+def test_rebuild_over_an_existing_file_is_atomic(app, isolated):
+    """A rebuild replaces the file; it never truncates it in place. A reader
+    mid-rebuild gets the old matrix, never half of the new one."""
+    a = _appliance("fw09")
+    _snapshot(isolated, a, {"x": _ok(1)})
+    am.rebuild("fortiweb")
+    first = io.open(am.matrix_path("fortiweb")).read()
+    _snapshot(isolated, a, {"x": _ok(1), "y": _ok(1)})
+    am.rebuild("fortiweb")
+    second = io.open(am.matrix_path("fortiweb")).read()
+    assert first != second
+    assert json.loads(second)["lines"]["7.6"]["counts"]["swept"] == 2
+    # no .tmp left behind
+    assert [f for f in os.listdir(am.MATRIX_ROOT) if f.endswith(".tmp")] == []
+
+
 def test_load_of_a_foreign_product_file_is_rejected(app, isolated):
     """A file whose ``product`` does not match is not this product's matrix —
     serving it would answer FortiADC questions with FortiWeb evidence."""

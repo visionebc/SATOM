@@ -8416,7 +8416,85 @@ from the other side.
    (`set -a; . /opt/satom/.env`), or SQLAlchemy silently falls back to a SQLite
    path that does not exist and the traceback blames the database.
 
-## §83 — Issue tracker integration (`tests/test_tracker_client.py`)
+## §83 — the same API version, and not the same fields
+
+`tests/test_api_matrix.py` (43 tests) guards `services/api_matrix.py`, the four
+registry readers in `app/registry/loader.py`, the API-versions page and the
+`get api …` CLI branch.
+
+**Why it needs a guard at all.** Nothing here fails on its own. A matrix that
+stops telling *measured and absent* apart from *never measured* still renders a
+full page, still fills every table and still answers a preflight — it just
+answers wrong, and the caller's next move is a write to a production appliance.
+This is the `feedback`-class failure this repo keeps rediscovering: the
+artifact stays well-formed and the claim quietly becomes false.
+
+**The four rules the module is shaped around**, each one a way it could lie
+instead of loudly not-knowing:
+
+1. **`fields=None` is not `fields=[]`.** An endpoint that answered `ok` with
+   zero rows proves the endpoint EXISTS and proves nothing about its fields.
+   Folding that into an empty set makes the line look like it lost every field
+   of an empty collection, and the diff against a populated line invents dozens
+   of removals that never happened.
+2. **A line with no evidence is `unmeasured`, never `ok`.** Five preflight
+   outcomes, five names, and `unmeasured` has its own exit code (4) — distinct
+   from a usage error (2) and from a real rejection (1). A script asking "is
+   9.0 supported?" the week before an upgrade must not get the same rc as one
+   that typed the command wrong.
+3. **Present-here / unknown-there is UNKNOWN, never a change.** An addition is
+   only claimed when the base line returned an explicit `absent`.
+4. **A delta is only ever computed within ONE kind of evidence.** This one cost
+   a rewrite mid-round and only real data exposed it: a *sweep* field set is
+   the raw dict FortiWeb puts on the wire, carrying the `_val` companion of
+   every enum plus `sz_`/`q_` internals; the harvested *schema* strips exactly
+   those on purpose (`fortiweb_field_schema._NOISE_*`). Subtracting one from
+   the other reported **56 removed fields** for 7.6 → 8.0 that were nothing but
+   that filter. A page whose headline number is noise is a page the operator
+   learns to ignore. Cross-kind pairs now land in `fields_incomparable` and are
+   reported, never subtracted. After the fix the same comparison reports **+7 /
+   −1**, all schema↔schema, which is the credible answer.
+
+**Two evidence gates carried over from §81, for the same reasons.** Witnesses
+come from the `Appliance` table, never from the snapshot directory (half of
+`data/rediscovery/` belongs to deleted appliances and four more are the retired
+`*.invalid` hosts). A ledger that is more than 25 % errors is evidence about
+that appliance, not about the catalog — fortiweb08 answers `-20010` (peer VM
+licence) to 283 of 321 CMDB reads while the inventory still calls it `online`,
+and reading it naively attributes 283 phantom absences to the 7.6 line.
+
+**Not a database table, on purpose.** The matrix is *derived*: delete the file
+and a rebuild reconstructs it exactly. Both evidence sources already live under
+`data/` and are already carried by `satom-ha-datasync` and by the system
+bundles; putting the derived view in Postgres would put it in a different
+backup path from the evidence it summarises.
+
+**The loader guard is an AST check, not a string match.** Every
+`seed_*_from_yaml` has always scoped by `(product, api_version)` and no reader
+ever did, which is exactly how the two halves stayed inconsistent for as long
+as both existed. The guard walks the parse tree of `app/registry/loader.py` and
+fails on any `api_version=` keyword whose value is a literal — so the drift
+cannot come back through a fifth product or a copy-paste.
+
+### Verification recipe
+
+    cd /opt/satom
+    runuser -u satom -- venv/bin/python -m pytest tests/test_api_matrix.py -q
+
+    # the matrix, and the difference the whole section is about
+    satom get api versions
+    satom get api preflight <a 7.6 appliance> admin fortiai old-password   # rc 1
+    satom get api preflight 8.0 admin fortiai old-password                 # rc 0
+    satom get api preflight 9.9 admin foo                                  # rc 4
+
+    # the loader guard, from the parse tree rather than from grep
+    runuser -u satom -- venv/bin/python -m pytest \
+      tests/test_api_matrix.py -q -k api_version
+
+Mutation harness: `/var/tmp/mut_apimatrix.py` on a1 — measured by **rc**, only
+`rc==1` counts as caught, restores in `finally`.
+
+## §84 — Issue tracker integration (`tests/test_tracker_client.py`)
 
 **What silently breaks.** Every failure mode in this integration renders as a
 working one, which is why a test is the only thing that catches them:

@@ -458,8 +458,58 @@ def _run(appliance_snap: SimpleNamespace, by: str, deep: bool = False,
                          + (f", {len(errors)} error(s)" if errors else ""))
     _write_json(progress_path, state)
 
+    _persist_firmware(aid, firmware)
+    _refresh_api_matrix(appliance_snap)
+
     if deep and not is_adc:  # deep capture is the FortiWeb WPP/policy layer
         _run_deep(appliance_snap, progress_path, state)
+
+
+def _persist_firmware(appliance_id: int, firmware: str) -> None:
+    """Write the firmware the sweep just measured onto the appliance row.
+
+    The sweep has always read the running firmware (``_device_firmware``) and
+    always thrown it away: ``appliances.firmware`` is filled only by
+    ``_apply_inventory``, out of ``_model_from_status``, which returns ``None``
+    for FortiWeb. That is why 8 of 10 appliances had an empty firmware column
+    while their own snapshots said 7.6.8 / 8.0.3 — and why anything keyed by
+    firmware line (capacity limits, the API matrix, the field catalog) had to
+    treat most of the fleet as "unknown line".
+
+    Best-effort by construction: a sweep that produced a good snapshot must not
+    be reported as failed because a column write did not land.
+    """
+    if not firmware:
+        return
+    try:
+        from ..extensions import db
+        from ..models import Appliance
+        app = _get_flask_app()
+        with app.app_context():
+            row = db.session.get(Appliance, appliance_id)
+            if row is None or (row.firmware or "") == firmware:
+                return
+            row.firmware = firmware
+            db.session.commit()
+    except Exception:  # noqa: BLE001 — never let bookkeeping sink a good sweep
+        pass
+
+
+def _refresh_api_matrix(appliance_snap) -> None:
+    """Fold this sweep's verdicts and field keys into the API matrix.
+
+    The matrix is derived, so this is a convenience, not a source of truth: it
+    only spares the operator a manual rebuild after every sweep. A failure here
+    leaves a stale-but-valid matrix and is silent for the same reason as above.
+    """
+    try:
+        from . import api_matrix
+        kind = getattr(appliance_snap, "kind", "") or "fortiweb"
+        app = _get_flask_app()
+        with app.app_context():
+            api_matrix.rebuild(kind)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _run_deep(appliance_snap: SimpleNamespace, progress_path, state: dict) -> None:

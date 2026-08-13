@@ -305,7 +305,7 @@ longer matches the console you are running.
 
 <!-- BEGIN GENERATED COMMAND REFERENCE -->
 
-*102 commands in 37 groups. This table is generated from `deploy/satom_cli/tree.py` by `deploy/gen_cli_reference.py` — it cannot drift from the console you are running. `!` marks a command that changes state destructively and demands `--yes`.*
+*104 commands in 38 groups. This table is generated from `deploy/satom_cli/tree.py` by `deploy/gen_cli_reference.py` — it cannot drift from the console you are running. `!` marks a command that changes state destructively and demands `--yes`.*
 
 ### `get`
 
@@ -328,6 +328,8 @@ Read state. Every command below works as **any user** — this is the half of th
 | `satom get backup status` | — | — | All four, side by side, with their real ages. |
 | `satom get backup list` | — | — | Database bundles you can hand to 'execute restore db'. |
 | `satom get scheduler status` | — | — | What exists, when it last ran, what is overdue. |
+| `satom get api versions [<product>]` | — | — | Firmware lines SATOM has evidence for, and how much. |
+| `satom get api preflight <appliance\|line> <object> <field>... [--product <p>]` | — | — | Would a payload of these fields be understood on that line? 'unmeasured' is an answer, never a yes. |
 | `satom get device status` | — | — | Sync state, maintenance flag, last contact. |
 | `satom get device config [<device> [<section> [<table>]]] [--version <id>]` | — | — | The device's configuration as SATOM last harvested it — read from the LOCAL store, never from the box. |
 | `satom get monitor status` | — | — | Probe states, and how much coverage is disabled. |

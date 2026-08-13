@@ -27,6 +27,27 @@ import yaml
 
 _CACHE_TTL = 60.0  # seconds — cross-worker convergence window after an edit
 
+# The registry key is (product, api_version, name) — the ACTIVE api_version per
+# product, in ONE place, read by both the seeder and the reader.
+#
+# Until this existed the two halves disagreed: every ``seed_*_from_yaml`` has
+# always scoped its INSERT-ONLY check by api_version, while every reader
+# filtered on product alone and built ``{r.name: r.urn}``. The moment a second
+# api_version row exists for a name the dict collapses — one row wins by
+# arbitrary query order and its URN is served to *every* consumer
+# (scheduled_actions, clone, write_through, exception_inject, objedit) with no
+# error and no log. The ``api_version`` box on the New/Edit Endpoint modal is
+# free text, so any REGISTRY_EDIT holder could arm that today.
+#
+# Note this is the API version, NOT the firmware line: FortiWeb 7.6 and 8.0
+# both speak v2.0 and differ in FIELDS, which is ``services.api_matrix``.
+API_VERSION = {
+    "fortiweb": "v2.0",
+    "fortiadc": "v1",
+    "fortianalyzer": "jsonrpc",
+    "fortiauthenticator": "v1",
+}
+
 _yaml_cache: dict | None = None
 _db_cache: dict = {"map": None, "ts": 0.0}
 
@@ -57,7 +78,8 @@ def _db_registry() -> dict | None:
         return _db_cache["map"]
     try:
         from ..models import RegistryEndpoint
-        rows = RegistryEndpoint.query.filter_by(product="fortiweb", enabled=True).all()
+        rows = RegistryEndpoint.query.filter_by(
+            product="fortiweb", api_version=API_VERSION["fortiweb"], enabled=True).all()
         if not rows:
             return None
         reg = {r.name: r.urn for r in rows}
@@ -99,14 +121,14 @@ def seed_from_yaml() -> int:
         return 0
     existing = {
         name for (name,) in db.session.query(RegistryEndpoint.name)
-        .filter_by(product="fortiweb", api_version="v2.0")
+        .filter_by(product="fortiweb", api_version=API_VERSION["fortiweb"])
     }
     added = 0
     for name, urn in yaml_map.items():
         if not urn or name in existing:
             continue
         db.session.add(RegistryEndpoint(
-            product="fortiweb", api_version="v2.0",
+            product="fortiweb", api_version=API_VERSION["fortiweb"],
             name=str(name), urn=str(urn), updated_by="seed",
         ))
         added += 1
@@ -154,7 +176,8 @@ def _adc_db_registry() -> dict | None:
         return _adc_db_cache["map"]
     try:
         from ..models import RegistryEndpoint
-        rows = RegistryEndpoint.query.filter_by(product="fortiadc", enabled=True).all()
+        rows = RegistryEndpoint.query.filter_by(
+            product="fortiadc", api_version=API_VERSION["fortiadc"], enabled=True).all()
         if not rows:
             return None
         reg = {r.name: r.urn for r in rows}
@@ -201,14 +224,14 @@ def seed_adc_from_yaml() -> int:
         return 0
     existing = {
         name for (name,) in db.session.query(RegistryEndpoint.name)
-        .filter_by(product="fortiadc", api_version="v1")
+        .filter_by(product="fortiadc", api_version=API_VERSION["fortiadc"])
     }
     added = 0
     for name, urn in yaml_map.items():
         if not urn or name in existing:
             continue
         db.session.add(RegistryEndpoint(
-            product="fortiadc", api_version="v1",
+            product="fortiadc", api_version=API_VERSION["fortiadc"],
             name=str(name), urn=str(urn), updated_by="seed",
         ))
         added += 1
@@ -255,7 +278,8 @@ def _faz_db_registry() -> dict | None:
         return _faz_db_cache["map"]
     try:
         from ..models import RegistryEndpoint
-        rows = RegistryEndpoint.query.filter_by(product="fortianalyzer", enabled=True).all()
+        rows = RegistryEndpoint.query.filter_by(
+            product="fortianalyzer", api_version=API_VERSION["fortianalyzer"], enabled=True).all()
         if not rows:
             return None
         reg = {r.name: r.urn for r in rows}
@@ -302,14 +326,14 @@ def seed_faz_from_yaml() -> int:
         return 0
     existing = {
         name for (name,) in db.session.query(RegistryEndpoint.name)
-        .filter_by(product="fortianalyzer", api_version="jsonrpc")
+        .filter_by(product="fortianalyzer", api_version=API_VERSION["fortianalyzer"])
     }
     added = 0
     for name, urn in yaml_map.items():
         if not urn or name in existing:
             continue
         db.session.add(RegistryEndpoint(
-            product="fortianalyzer", api_version="jsonrpc",
+            product="fortianalyzer", api_version=API_VERSION["fortianalyzer"],
             name=str(name), urn=str(urn), updated_by="seed",
         ))
         added += 1
@@ -358,7 +382,8 @@ def _fac_db_registry() -> dict | None:
     try:
         from ..models import RegistryEndpoint
         rows = RegistryEndpoint.query.filter_by(
-            product="fortiauthenticator", enabled=True).all()
+            product="fortiauthenticator",
+            api_version=API_VERSION["fortiauthenticator"], enabled=True).all()
         if not rows:
             return None
         reg = {r.name: r.urn for r in rows}
@@ -407,14 +432,14 @@ def seed_fac_from_yaml() -> int:
         return 0
     existing = {
         name for (name,) in db.session.query(RegistryEndpoint.name)
-        .filter_by(product="fortiauthenticator", api_version="v1")
+        .filter_by(product="fortiauthenticator", api_version=API_VERSION["fortiauthenticator"])
     }
     added = 0
     for name, urn in yaml_map.items():
         if not urn or name in existing:
             continue
         db.session.add(RegistryEndpoint(
-            product="fortiauthenticator", api_version="v1",
+            product="fortiauthenticator", api_version=API_VERSION["fortiauthenticator"],
             name=str(name), urn=str(urn), updated_by="seed",
         ))
         added += 1

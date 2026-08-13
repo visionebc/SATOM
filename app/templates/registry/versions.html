@@ -1,0 +1,227 @@
+{% extends "base.html" %}
+{% block title %}API Versions{% endblock %}
+
+{% macro origin_badge(o) -%}
+  {%- if o == 'sweep' -%}<span class="fw-badge fw-badge-info">sweep</span>
+  {%- else -%}<span class="fw-badge fw-badge-secondary">schema</span>{%- endif -%}
+{%- endmacro %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-diagram-2 me-2 text-accent"></i>API versions
+      <span class="fw-badge fw-badge-secondary">{{ product }}</span></h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      Two firmware lines can speak the <strong>same API version</strong> and still
+      not accept the same payload.
+      {%- if product == 'fortiweb' %} FortiWeb 7.6 and 8.0 are both <code>v2.0</code>,
+      and 8.0 has more fields.{% endif %}
+      This page is what SATOM has actually <em>measured</em> per firmware line for
+      <strong>{{ product }}</strong>, and where it has measured nothing.
+      Built {{ matrix.built_at or '—' }} (UTC).
+    </p>
+  </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for(hub_endpoint) }}">
+      <i class="bi bi-code-slash me-1"></i>API hub</a>
+    <form method="post" action="{{ url_for(rebuild_endpoint) }}" class="d-inline">
+      <button class="btn btn-sm btn-primary" type="submit">
+        <i class="bi bi-arrow-repeat me-1"></i>Rebuild</button>
+    </form>
+  </div>
+</div>
+
+{% if not matrix.sweepable %}
+<div class="alert alert-warning" style="font-size:13px;">
+  <strong>{{ product }} has no rediscovery sweep.</strong> Its catalog can only ever be
+  described here by harvested field schemas — no appliance of this product has ever
+  been asked, endpoint by endpoint, what it serves.
+</div>
+{% endif %}
+
+{# ── the lines ─────────────────────────────────────────────────────────── #}
+<div class="fw-card mb-3">
+  <div class="fw-card-header"><i class="bi bi-layers me-2"></i>Firmware lines
+    <span class="text-muted" style="font-weight:400;">— evidence held per line</span></div>
+  <div class="table-responsive">
+    <table class="table fw-table mb-0">
+      <thead><tr>
+        <th>Line</th><th>In fleet</th><th>Witnesses</th>
+        <th class="text-end">Endpoints swept</th><th class="text-end">served</th>
+        <th class="text-end">absent</th><th class="text-end">with field evidence</th>
+        <th class="text-end">Schema objects</th><th class="text-end">Schema fields</th>
+      </tr></thead>
+      <tbody>
+      {% for ln in lines %}
+        {% set L = matrix.lines[ln] %}
+        <tr>
+          <td><code>{{ ln }}</code></td>
+          <td>{% if L.in_fleet %}<span class="fw-badge fw-badge-success">yes</span>
+              {% else %}<span class="fw-badge fw-badge-warning">no appliance runs it</span>{% endif %}</td>
+          <td style="font-size:12px;">{{ L.devices|join(', ') or '—' }}</td>
+          <td class="text-end">{{ L.counts.swept }}</td>
+          <td class="text-end">{{ L.counts.ok }}</td>
+          <td class="text-end">{{ L.counts.absent }}</td>
+          <td class="text-end">{{ L.counts.endpoints_with_fields }}</td>
+          <td class="text-end">{{ L.counts.schema_objects }}</td>
+          <td class="text-end">{{ L.counts.schema_fields }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="9" class="text-muted">No firmware line has any evidence yet.
+          Run a rediscovery sweep on an appliance, or harvest its field schemas.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% if matrix.notes %}
+<div class="alert alert-warning" style="font-size:13px;">
+  <strong>Witnesses excluded from the evidence:</strong>
+  <ul class="mb-0">
+    {% for n in matrix.notes %}
+      <li><code>{{ n.device }}</code>{% if n.line %} ({{ n.line }}){% endif %} — {{ n.skipped }}</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+{# ── the comparison ────────────────────────────────────────────────────── #}
+{% if lines|length > 1 %}
+<div class="fw-card mb-3">
+  <div class="fw-card-header d-flex justify-content-between align-items-center">
+    <span><i class="bi bi-arrow-left-right me-2"></i>What changes between two lines</span>
+    <form method="get" action="{{ url_for(page_endpoint) }}" class="d-flex gap-2 align-items-center mb-0">
+      <select name="base" class="form-select form-select-sm" style="width:auto;">
+        {% for ln in lines %}<option value="{{ ln }}" {% if ln == base %}selected{% endif %}>{{ ln }}</option>{% endfor %}
+      </select>
+      <span class="text-muted">→</span>
+      <select name="target" class="form-select form-select-sm" style="width:auto;">
+        {% for ln in lines %}<option value="{{ ln }}" {% if ln == target %}selected{% endif %}>{{ ln }}</option>{% endfor %}
+      </select>
+      <button class="btn btn-sm btn-outline-secondary" type="submit">Compare</button>
+    </form>
+  </div>
+
+  {% if not delta %}
+    <div class="p-3 text-muted" style="font-size:13px;">Pick two different lines to compare.</div>
+  {% else %}
+  <div class="p-3">
+    <p class="mb-3" style="font-size:13px;">
+      <strong>{{ delta.totals.fields_added }}</strong> field(s) added and
+      <strong>{{ delta.totals.fields_removed }}</strong> removed going
+      <code>{{ delta.base }}</code> → <code>{{ delta.target }}</code>,
+      across {{ delta.fields_changed|length }} object(s).
+      A delta is only ever computed between the <em>same kind</em> of evidence —
+      a sweep field set is the raw dict the device puts on the wire (it carries the
+      <code>_val</code> companion of every enum), a schema field set is the curated,
+      operator-settable subset. Comparing one to the other invents dozens of
+      differences that are nothing but that filter.
+    </p>
+
+    {% if delta.fields_changed %}
+    <div class="table-responsive mb-3">
+      <table class="table fw-table mb-0">
+        <thead><tr><th>Object</th><th>Evidence</th><th class="text-end">{{ delta.base }}</th>
+          <th class="text-end">{{ delta.target }}</th><th>Added on {{ delta.target }}</th><th>Removed</th></tr></thead>
+        <tbody>
+        {% for c in delta.fields_changed %}
+          <tr>
+            <td><code>{{ c.key }}</code></td>
+            <td>{{ origin_badge(c.origin) }}</td>
+            <td class="text-end">{{ c.base_count }}</td>
+            <td class="text-end">{{ c.target_count }}</td>
+            <td style="font-size:12px;">{% for f in c.added %}<span class="fw-badge fw-badge-success me-1">{{ f }}</span>{% endfor %}</td>
+            <td style="font-size:12px;">{% for f in c.removed %}<span class="fw-badge fw-badge-danger me-1">{{ f }}</span>{% endfor %}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+      <div class="text-muted mb-3" style="font-size:13px;">
+        No object is described by the same kind of evidence on both lines, so no
+        field delta can be computed. That is a gap in the evidence, not a
+        statement that the two lines are identical.
+      </div>
+    {% endif %}
+
+    <div class="row g-3">
+      <div class="col-md-4">
+        <div class="fw-card h-100">
+          <div class="fw-card-header" style="font-size:13px;">Endpoints</div>
+          <div class="p-3" style="font-size:13px;">
+            <div>added on {{ delta.target }}: <strong>{{ delta.endpoints_added|length }}</strong></div>
+            <div>removed: <strong>{{ delta.endpoints_removed|length }}</strong></div>
+            <div class="text-muted mt-2">
+              not measured on one of the two lines:
+              <strong>{{ delta.endpoints_unknown|length }}</strong>
+              — never counted as a change.
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="fw-card h-100">
+          <div class="fw-card-header" style="font-size:13px;">Fields known on one side only</div>
+          <div class="p-3" style="font-size:13px;">
+            <strong>{{ delta.fields_unknown|length }}</strong> object(s).
+            <div class="text-muted mt-2">Measured on one line and never on the other —
+              the missing side proves nothing.</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="fw-card h-100">
+          <div class="fw-card-header" style="font-size:13px;">Incomparable</div>
+          <div class="p-3" style="font-size:13px;">
+            <strong>{{ delta.fields_incomparable|length }}</strong> object(s).
+            <div class="text-muted mt-2">Known on both lines, but by different kinds of
+              evidence. Reported, never subtracted.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {% if delta.fields_incomparable %}
+    <div class="table-responsive mt-3">
+      <table class="table fw-table mb-0">
+        <thead><tr><th>Object</th><th>{{ delta.base }}</th><th>{{ delta.target }}</th></tr></thead>
+        <tbody>
+        {% for c in delta.fields_incomparable %}
+          <tr><td><code>{{ c.key }}</code></td>
+            <td>{{ origin_badge(c.base_origin) }} {{ c.base_count }} field(s)</td>
+            <td>{{ origin_badge(c.target_origin) }} {{ c.target_count }} field(s)</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+{# ── preflight ─────────────────────────────────────────────────────────── #}
+<div class="fw-card">
+  <div class="fw-card-header"><i class="bi bi-shield-check me-2"></i>Preflight
+    <span class="text-muted" style="font-weight:400;">— would this payload be understood?</span></div>
+  <div class="p-3" style="font-size:13px;">
+    <p class="text-muted">
+      Before writing a payload built against one line to an appliance running another,
+      ask. <code>satom api preflight &lt;appliance&gt; &lt;object&gt; &lt;field&gt;…</code>
+      answers from this matrix, and the answer <strong>unmeasured</strong> is a real
+      answer — it is never reported as compatible.
+    </p>
+    <ul class="mb-0">
+      <li><code>ok</code> — every field is present on that line.</li>
+      <li><code>unknown_fields</code> — named fields that line has never been seen to serve.</li>
+      <li><code>absent</code> — the appliance rejected that URN on that line.</li>
+      <li><code>fields_unknown</code> — the endpoint exists, but it answered with an empty
+          collection, so nothing is known about its fields.</li>
+      <li><code>unmeasured</code> — no evidence at all for that line. Sweep an appliance
+          on it, or harvest its field schemas, before trusting a cross-line payload.</li>
+    </ul>
+  </div>
+</div>
+{% endblock %}

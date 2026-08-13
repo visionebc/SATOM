@@ -21,7 +21,7 @@ from ..extensions import db
 from ..models import Permission, RegistryEndpoint
 from ..registry import loader
 from ..services.audit import log_action
-from . import _reconcile
+from . import _apiversions, _reconcile
 
 bp = Blueprint('registry', __name__, url_prefix='/registry')
 
@@ -184,3 +184,27 @@ def reconcile():
 @require_permission(Permission.REGISTRY_EDIT)
 def reconcile_apply():
     return _reconcile.apply_page('fortiweb', 'registry.reconcile')
+
+
+# ---------------------------------------------------------------------------
+# API versions (firmware-line matrix) — shared body in views/_apiversions.py
+# ---------------------------------------------------------------------------
+# The registry's api_version axis says FortiWeb 7.6 and 8.0 are the same
+# surface (both v2.0). Measured on this fleet's own artifacts they are not:
+# 8.0 carries more FIELDS. This page is that difference, and the rebuild POST
+# writes only the derived matrix file.
+
+@bp.route('/versions')
+@login_required
+@require_permission(Permission.REGISTRY_EDIT)
+def api_versions():
+    return _apiversions.render_page('fortiweb', 'api_explorer.index',
+                                    'registry.api_versions_rebuild',
+                                    'registry.api_versions')
+
+
+@bp.route('/versions/rebuild', methods=['POST'])
+@login_required
+@require_permission(Permission.REGISTRY_EDIT)
+def api_versions_rebuild():
+    return _apiversions.rebuild_page('fortiweb', 'registry.api_versions')

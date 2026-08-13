@@ -184,6 +184,13 @@ The API never issues an HTML login redirect — you always get JSON.</p>
 <td>One device</td>
 </tr>
 <tr>
+<td><code>POST</code></td>
+<td><code>/appliances/&lt;id&gt;/firmware-check</code></td>
+<td>write</td>
+<td><code>inventory</code></td>
+<td>Ask the device its running firmware, <strong>live</strong> (§8)</td>
+</tr>
+<tr>
 <td><code>GET</code></td>
 <td><code>/actions</code></td>
 <td>read</td>
@@ -284,9 +291,60 @@ The API never issues an HTML login redirect — you always get JSON.</p>
   &quot;port&quot;: 443,
   &quot;status&quot;: &quot;up&quot;,
   &quot;last_checked_at&quot;: &quot;2026-07-08T18:00:00+00:00&quot;,
-  &quot;maintenance&quot;: false
+  &quot;maintenance&quot;: false,
+  &quot;firmware&quot;: &quot;FortiWeb-KVM 7.6.8,build1128(GA.M),260602&quot;,
+  &quot;firmware_checked_at&quot;: &quot;2026-08-13T00:09:43.036612&quot;,
+  &quot;model&quot;: &quot;FortiWeb-KVM 7.6.8&quot;,
+  &quot;hw_type&quot;: &quot;vm&quot;
 }
 </code></pre>
+<p><code>firmware</code> is <strong>verbatim</strong> as the vendor spells it — SATOM does not normalise
+it. Turning that string into a comparable version is a matching rule that
+belongs to whatever owns the vulnerability dictionary; a second copy of the
+rule here would drift from it.</p>
+<p><code>firmware_checked_at</code> is the half that makes the version usable. <strong><code>null</code>
+means nobody ever confirmed this version against the device</strong> — it may be an
+operator's note, or a reading from a firmware ago. A consumer that correlates
+versions against advisories should refuse an unattested row rather than
+publish a verdict about a box it never observed.</p>
+<h3 id="post-appliancesidfirmware-check"><code>POST /appliances/&lt;id&gt;/firmware-check</code></h3>
+<p>Ask ONE device what it is running, right now. Read-only against the appliance
+(a single status call, the same one the connectivity probe makes) and it can
+never reach the firmware <em>upgrade</em> path, which is hard-blocked on this API.</p>
+<p>Requires the <code>write</code> scope <strong>and</strong> the explicit <code>inventory</code> capability: an
+empty capability list does <strong>not</strong> grant it. Rate-limited to <strong>10/min</strong> —
+every call opens an authenticated session to a live firewall.</p>
+<p>Success (<code>200</code>):</p>
+<pre><code class="language-json">{
+  &quot;ok&quot;: true,
+  &quot;id&quot;: 14,
+  &quot;name&quot;: &quot;{device}&quot;,
+  &quot;kind&quot;: &quot;fortiweb&quot;,
+  &quot;firmware&quot;: &quot;FortiWeb-KVM 7.6.8,build1128(GA.M),260602&quot;,
+  &quot;model&quot;: &quot;FortiWeb-KVM 7.6.8&quot;,
+  &quot;hw_type&quot;: &quot;vm&quot;,
+  &quot;checked_at&quot;: &quot;2026-08-13T00:09:43.036612&quot;,
+  &quot;changed&quot;: true,
+  &quot;previous&quot;: &quot;7.6.8&quot;,
+  &quot;source&quot;: &quot;live&quot;
+}
+</code></pre>
+<p><code>changed: false</code> means the version did <strong>not</strong> move — it is still a fresh
+observation, and <code>checked_at</code> advances.</p>
+<p>Failure (<code>502</code>) — the device was not reached, or answered without a version:</p>
+<pre><code class="language-json">{
+  &quot;error&quot;: &quot;device_refused&quot;,
+  &quot;detail&quot;: &quot;errcode -20010: The license of peer VM FortiWeb is not valid.&quot;,
+  &quot;message&quot;: &quot;The appliance did not return a firmware version; nothing was recorded.&quot;,
+  &quot;firmware&quot;: &quot;FortiWeb-KVM 7.6.8,build1128(GA.M),260602&quot;,
+  &quot;firmware_checked_at&quot;: null
+}
+</code></pre>
+<p><strong>A failed check writes nothing — not even the timestamp.</strong> The last known
+value and its (possibly <code>null</code>) age are echoed so the caller can decide
+whether the stale reading is still good enough for it. If <code>firmware_checked_at</code>
+could be stamped by a check that never reached a device, the field would mean
+nothing to anyone.</p>
 <h3 id="get-actions"><code>GET /actions</code></h3>
 <p>Lists the scheduled actions in the token's ADOM. Look at <code>api_runnable</code>: a
 destructive action (<code>danger: true</code>) is shown but can <strong>never</strong> be triggered

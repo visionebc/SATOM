@@ -42,8 +42,8 @@ Defaults reproduce the pre-filter behaviour
 -------------------------------------------
 ``in_app`` and ``email`` default to enabled, ``info`` floor, no mask — exactly
 what they did before this module existed.  Upgrading an install must not
-quietly narrow an alert path nobody asked to narrow.  ``syslog`` is new and
-therefore off until configured.
+quietly narrow an alert path nobody asked to narrow.  ``syslog`` and ``webhook`` are new
+and therefore off until configured.
 """
 from __future__ import annotations
 
@@ -106,21 +106,38 @@ def family_of(key: str) -> str:
 # ---- sinks ----------------------------------------------------------------
 SINK_IN_APP = "in_app"
 SINK_EMAIL = "email"
+SINK_WEBHOOK = "webhook"
+SINK_HOOKS = "hooks"
 SINK_SYSLOG = "syslog"
 
 #: Sinks that notify a *person* — these carry the cooldown and decide
 #: ``dispatched``.  ``syslog`` is a feed and is handled separately: see
 #: :mod:`app.services.alert_syslog`.
-NOTIFICATION_SINKS = (SINK_IN_APP, SINK_EMAIL)
-SINKS = (SINK_IN_APP, SINK_EMAIL, SINK_SYSLOG)
+#: ``hooks`` is here because it is on the notification path and therefore
+#: carries the cooldown -- without it a Telegram starter re-sends every
+#: finding every fifteen minutes forever. It is NOT counted in
+#: ``dispatched``: dispatching a hook writes a JSON file, and the runner
+#: that turns it into a process is a different unit that can be stopped.
+NOTIFICATION_SINKS = (SINK_IN_APP, SINK_EMAIL, SINK_WEBHOOK, SINK_HOOKS)
+#: Notification sinks first, then the feed: the settings page iterates
+#: this tuple, and a record listed among recipients invites the reading
+#: that silencing it is as harmless as silencing a mailbox.
+SINKS = (SINK_IN_APP, SINK_EMAIL, SINK_WEBHOOK, SINK_HOOKS, SINK_SYSLOG)
 
 SINK_LABELS = {
     SINK_IN_APP: "In-app bell",
     SINK_EMAIL: "Email",
+    SINK_WEBHOOK: "Webhook (HTTP POST)",
+    SINK_HOOKS: "Integration hooks",
     SINK_SYSLOG: "Syslog / CEF feed",
 }
 
-_DEFAULT_ENABLED = {SINK_IN_APP: "1", SINK_EMAIL: "1", SINK_SYSLOG: "0"}
+# ``in_app``/``email`` default ON because that is what they did before the
+# router existed; upgrading must not quietly narrow a path nobody asked to
+# narrow. ``webhook``/``syslog`` are new and have nowhere to point yet.
+_DEFAULT_ENABLED = {SINK_IN_APP: "1", SINK_EMAIL: "1",
+                    SINK_WEBHOOK: "0", SINK_HOOKS: "0",
+                    SINK_SYSLOG: "0"}
 
 
 def _k(sink: str, field: str) -> str:
@@ -238,7 +255,8 @@ def save_all(form) -> None:
 
 __all__ = [
     "FAMILIES", "FAMILY_LABELS", "SEVERITIES", "SINKS", "SINK_LABELS",
-    "NOTIFICATION_SINKS", "SINK_IN_APP", "SINK_EMAIL", "SINK_SYSLOG",
+    "NOTIFICATION_SINKS", "SINK_IN_APP", "SINK_EMAIL", "SINK_WEBHOOK",
+    "SINK_HOOKS", "SINK_SYSLOG",
     "UNFILTERABLE", "FAM_ENGINE", "FAM_UNKNOWN",
     "family_of", "accepts", "route", "is_enabled", "min_severity", "mask",
     "config", "sink_config", "save", "save_all",

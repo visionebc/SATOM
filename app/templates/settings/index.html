@@ -901,6 +901,7 @@
               <label class="fw-form-label mb-1"><i class="bi bi-diagram-3 me-1"></i>{{ _('Delivery sinks') }}</label>
               <div class="form-text mb-2">
                 {{ _('Each sink decides for itself how bad a finding has to be and which family it has to belong to. A sink with no family ticked delivers nothing and says so.') }}
+                {{ _('The hooks sink hands each finding to the') }} <a href="{{ url_for('integrations.index') }}">{{ _('integration hooks') }}</a> {{ _('bound to') }} <code>alert.fired</code>; {{ _('it counts as queued and never as dispatched, because the runner that executes a hook is a separate unit that can be stopped.') }}
                 <strong>{{ _('Engine failures — and any finding from a check this router does not recognise — ignore both filters:') }}</strong>
                 {{ _('a channel silenced by a broken check is indistinguishable from a healthy quiet one.') }}
               </div>
@@ -915,7 +916,7 @@
                     </tr>
                   </thead>
                   <tbody>
-                  {% for sk in ['in_app', 'email', 'syslog'] %}
+                  {% for sk in ['in_app', 'email', 'webhook', 'hooks', 'syslog'] %}
                     {% set s = alerts_config.sinks[sk] %}
                     <tr>
                       <td>
@@ -923,6 +924,8 @@
                         {% if s.silent %}<div><span class="fw-badge fw-badge-danger">{{ _('delivers nothing') }}</span></div>{% endif %}
                         {% if sk == 'syslog' %}<div class="text-muted" style="font-size:12px;">{{ _('no cooldown — a record, not a recipient') }}</div>{% endif %}
                         {% if sk == 'email' %}<div class="text-muted" style="font-size:12px;">{{ _('also needs the master switch above') }}</div>{% endif %}
+                        {% if sk == 'webhook' %}<div class="text-muted" style="font-size:12px;">{{ _('one POST per run, all-or-nothing — also needs the master switch') }}</div>{% endif %}
+                        {% if sk == 'hooks' %}<div class="text-muted" style="font-size:12px;">{{ _('one') }} <code>alert.fired</code> {{ _('per finding — enqueued, not delivered') }}</div>{% endif %}
                       </td>
                       <td>
                         <input type="hidden" name="{{ sk }}_checks_submitted" value="1">
@@ -956,6 +959,83 @@
                   </tbody>
                 </table>
               </div>
+
+              <label class="fw-form-label mt-4 mb-1"><i class="bi bi-send me-1"></i>{{ _('Webhook endpoint') }}</label>
+              <div class="form-text mb-2">
+                {{ _('One POST per evaluation carrying every finding this sink accepted — not one call per finding. Delivery is all-or-nothing exactly like email: it counts towards <em>dispatched</em>, it carries the cooldown, and it obeys the master switch above.') }}
+                {{ _('Retries are bounded and selective — 408, 425, 429 and 5xx are repeated with backoff; every other 4xx fails once and reports the status, because repeating a rejected request neither fixes it nor tells anyone.') }}
+                <strong>{{ _('Slack, Mattermost and Rocket.Chat accept the Slack-compatible encoding. Microsoft Teams and Discord expect their own payload shapes — use an integration hook on the') }} <a href="{{ url_for('integrations.index') }}">{{ _('Integrations') }}</a> {{ _('page for those.') }}</strong>
+              </div>
+              {% if alerts_config.webhook.url_problem %}
+              <div class="alert fw-alert-danger py-2 px-3 mb-2" style="font-size:13px;">
+                <i class="bi bi-exclamation-triangle me-1"></i>{{ alerts_config.webhook.url_problem }}
+              </div>
+              {% endif %}
+              <div class="row g-2">
+                <div class="col-md-6">
+                  <label class="fw-form-label">{{ _('Endpoint URL') }}</label>
+                  <input type="text" name="webhook_url" class="form-control fw-form-control"
+                         value="{{ alerts_config.webhook.url }}"
+                         placeholder="https://n8n.example.com/webhook/satom-alerts">
+                  <div class="form-text">{{ _('Private-network targets are allowed on purpose — an automation host on the management LAN is the normal case.') }}</div>
+                </div>
+                <div class="col-md-3">
+                  <label class="fw-form-label">{{ _('Encoding') }}</label>
+                  <select name="webhook_format" class="form-select fw-form-select">
+                    {% for f, lbl in alerts_config.webhook_formats %}
+                    <option value="{{ f }}" {{ 'selected' if alerts_config.webhook.format == f else '' }}>{{ lbl }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="col-md-3">
+                  <div class="row g-2">
+                    <div class="col-6">
+                      <label class="fw-form-label">{{ _('Timeout (s)') }}</label>
+                      <input type="number" name="webhook_timeout" class="form-control fw-form-control"
+                             min="1" max="30" value="{{ alerts_config.webhook.timeout }}">
+                    </div>
+                    <div class="col-6">
+                      <label class="fw-form-label">{{ _('Retries') }}</label>
+                      <input type="number" name="webhook_retries" class="form-control fw-form-control"
+                             min="0" max="3" value="{{ alerts_config.webhook.retries }}">
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="row g-2 mt-1">
+                <div class="col-md-6">
+                  <label class="fw-form-label">
+                    {{ _('Signing secret (HMAC-SHA256)') }}
+                    {% if alerts_config.webhook.secret_set %}
+                    <span class="fw-badge fw-badge-success">{{ _('set') }}</span>
+                    {% else %}
+                    <span class="fw-badge fw-badge-secondary">{{ _('not set — requests go unsigned') }}</span>
+                    {% endif %}
+                  </label>
+                  <input type="password" name="webhook_secret" class="form-control fw-form-control"
+                         autocomplete="new-password" placeholder="{{ _('leave blank to keep the current secret') }}">
+                  <div class="form-text">{{ _('Stored encrypted and never rendered back to this page, so a blank field means unchanged. Tick the box to remove it.') }}</div>
+                </div>
+                <div class="col-md-6">
+                  <div class="form-check mt-4">
+                    <input class="form-check-input" type="checkbox" name="webhook_secret_clear" id="wh-secret-clear">
+                    <label class="form-check-label" for="wh-secret-clear">{{ _('Remove the stored secret') }}</label>
+                  </div>
+                </div>
+              </div>
+              <details class="mt-3">
+                <summary style="cursor:pointer;font-size:13px;">{{ _('What the receiver gets, and how to verify it') }}</summary>
+                <div class="mt-2" style="font-size:12.5px;">
+                  <p class="mb-1">{{ _('Headers on every request:') }}</p>
+                  <ul class="mb-2">
+                    <li><code>{{ alerts_config.webhook.timestamp_header }}</code> — {{ _('Unix epoch seconds.') }}</li>
+                    <li><code>X-SATOM-Delivery</code> — {{ _('stable id for one batch. A retry repeats it; the next evaluation does not, so the receiver can dedupe.') }}</li>
+                    <li><code>{{ alerts_config.webhook.signature_header }}</code> — <code>v1=&lt;hex&gt;</code>, {{ _('HMAC-SHA256 over the literal bytes') }} <code>v1:&lt;timestamp&gt;:&lt;body&gt;</code>. <strong>{{ _('Absent entirely when no secret is set — never empty. A receiver whose check is "is a signature present" must not be handed one that proves nothing.') }}</strong></li>
+                  </ul>
+                  <p class="mb-1">{{ _('The timestamp is inside the signed string, not merely alongside it: a signature over the body alone stays valid forever and a captured POST replays cleanly. Reject requests whose timestamp is older than your tolerance.') }}</p>
+                  <pre class="fw-pre mb-0" style="font-size:11.5px;">{{ alerts_config.webhook_sample }}</pre>
+                </div>
+              </details>
 
               <label class="fw-form-label mt-4 mb-1"><i class="bi bi-hdd-network me-1"></i>{{ _('Syslog collector (FortiAnalyzer, SIEM)') }}</label>
               <div class="form-text mb-2">

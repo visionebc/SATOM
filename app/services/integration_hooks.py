@@ -236,6 +236,32 @@ EVENTS: dict[str, dict[str, Any]] = {
             "cr_id": 412, "duration_ms": 912_004,
         },
     },
+    "alert.fired": {
+        "description": "The health engine raised a finding that passed the "
+                       "\"Integration hooks\" sink filter. Fires ONCE PER "
+                       "FINDING, only for findings fresh out of the cooldown "
+                       "window, and only from the writable primary.",
+        "payload": {
+            "key": "str \u2014 stable identity of the finding; the cooldown "
+                   "and any dedupe on your side key off this",
+            "family": "str \u2014 cert | git | device | backup | drift | "
+                      "actions | host | engine | unknown",
+            "severity": "str \u2014 info | warning | critical",
+            "title": "str \u2014 one line, operator-facing",
+            "detail": "str \u2014 the evidence",
+            "product": "str \u2014 owning ADOM, '' when fleet-wide",
+            "node": "str \u2014 the SATOM node that evaluated it",
+            "fired_at": "str \u2014 ISO-8601",
+        },
+        "example": {
+            "key": "cert.expiry.satom-node-1", "family": "cert",
+            "severity": "critical",
+            "title": "TLS certificate expires in 3 days",
+            "detail": "CN=satom-node-1.example.com expires 2026-08-16T09:00:00Z",
+            "product": "", "node": "satom-node-1",
+            "fired_at": "2026-08-13T21:40:00+00:00",
+        },
+    },
 }
 
 EVENT_NAMES: tuple[str, ...] = tuple(EVENTS)

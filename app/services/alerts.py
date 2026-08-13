@@ -35,6 +35,7 @@ from datetime import datetime, timezone
 from ..models import AppSetting
 from . import alert_routing as routing
 from . import alert_syslog
+from . import alert_webhook
 from . import drift_attribution
 from . import email_service
 from . import notifications as notify
@@ -190,6 +191,10 @@ def config() -> dict:
         "sinks": routing.config(),
         "sink_families": [(f, routing.FAMILY_LABELS[f]) for f in routing.FAMILIES],
         "severities": list(routing.SEVERITIES),
+        "webhook": alert_webhook.config(),
+        "webhook_formats": [(f, alert_webhook.FORMAT_LABELS[f])
+                            for f in alert_webhook.FORMATS],
+        "webhook_sample": alert_webhook.sample_payload(),
         "syslog": alert_syslog.config(),
         "syslog_formats": list(alert_syslog.FORMATS),
         "syslog_protocols": list(alert_syslog.PROTOCOLS),
@@ -249,6 +254,7 @@ def save_config(form) -> None:
     # engine toggle is a window in which the two disagree.
     routing.save_all(form)
     alert_syslog.save(form)
+    alert_webhook.save(form)
     # AppSetting.set commits per call — no trailing commit needed.
 
 
@@ -870,6 +876,25 @@ def _email_body(new_findings: list[dict]) -> tuple[str, str]:
     return text, html
 
 
+def alert_event_payload(finding: dict, node: str) -> dict:
+    """The ``alert.fired`` payload for one finding.
+
+    ``family`` is resolved here rather than left to the hook author: the
+    key prefix and the family name genuinely differ (``action.*`` ->
+    ``actions``), and every hook re-deriving that mapping is four copies
+    of one rule that will drift."""
+    return {
+        "key": finding.get("key", ""),
+        "family": routing.family_of(finding.get("key", "")),
+        "severity": finding.get("severity", SEV_INFO),
+        "title": finding.get("title", ""),
+        "detail": finding.get("detail", ""),
+        "product": finding.get("product") or "",
+        "node": node or "",
+        "fired_at": _now().isoformat(),
+    }
+
+
 def run(*, force: bool = False, dry_run: bool = False) -> dict:
     """Evaluate, feed the record, then notify the humans who asked to hear it.
 
@@ -880,7 +905,9 @@ def run(*, force: bool = False, dry_run: bool = False) -> dict:
     if dry_run:
         return {"node": node, "evaluated": len(findings),
                 "findings": findings, "dispatched": 0, "dry_run": True,
-                "syslog": alert_syslog.emit(findings, node, dry_run=True)}
+                "syslog": alert_syslog.emit(findings, node, dry_run=True),
+                "webhook": alert_webhook.emit(findings, node,
+                                              dry_run=True)}
 
     # ---- feed path --------------------------------------------------------
     # Deliberately BEFORE the replica guard and BEFORE the cooldown. The syslog
@@ -906,7 +933,8 @@ def run(*, force: bool = False, dry_run: bool = False) -> dict:
     result = {"node": node, "evaluated": len(findings),
               "fresh": len(fresh), "dispatched": 0, "email": None,
               "in_app": 0, "channels": [], "delivery_failed": [],
-              "syslog": syslog_res, "routed": {},
+              "syslog": syslog_res, "webhook": None,
+              "hooks": None, "queued": 0, "routed": {},
               "enabled": is_enabled()}
 
     # ---- notification path ------------------------------------------------
@@ -915,9 +943,17 @@ def run(*, force: bool = False, dry_run: bool = False) -> dict:
     # regardless (cheap, local) and keeps doing so, now under its own filter.
     bell = routing.route(fresh, routing.SINK_IN_APP)
     mail = routing.route(fresh, routing.SINK_EMAIL) if is_enabled() else []
+    # The webhook is an OUTBOUND call to somebody else's system, so it
+    # answers to the engine master switch exactly like email. The bell is
+    # local and free and has always ignored it; the syslog feed ignores it
+    # too, on purpose, because a record with holes reads as "all was well".
+    hooked = routing.route(fresh, routing.SINK_WEBHOOK) if is_enabled() else []
+    hookable = routing.route(fresh, routing.SINK_HOOKS) if is_enabled() else []
     result["routed"] = {
         routing.SINK_IN_APP: len(bell),
         routing.SINK_EMAIL: len(mail),
+        routing.SINK_WEBHOOK: len(hooked),
+        routing.SINK_HOOKS: len(hookable),
         routing.SINK_SYSLOG: (syslog_res or {}).get("matched", 0),
     }
     if not fresh:
@@ -928,6 +964,12 @@ def run(*, force: bool = False, dry_run: bool = False) -> dict:
     # either, so widening a filter tomorrow does not have to wait out a
     # suppression window for an alert that was never delivered.
     delivered: set = set()
+    # Findings handed to the hook subsystem. Kept SEPARATE from
+    # ``delivered`` because the two answer different questions: an enqueue
+    # is enough to owe a cooldown (or a Telegram starter re-fires forever)
+    # and is NOT enough to claim delivery -- the runner is a different
+    # systemd unit, and it has been found disabled on a live node before.
+    queued_keys: set = set()
 
     admin_ids = _admin_ids()
     for f in bell:
@@ -962,6 +1004,42 @@ def run(*, force: bool = False, dry_run: bool = False) -> dict:
         else:
             result["email"] = {"ok": False, "detail": "no recipients configured"}
 
+    # ONE POST carrying every matching finding, not one per finding: the
+    # router exists so a channel stops being a hose, and twelve POSTs per
+    # evaluation is the hose with extra steps. All-or-nothing, like email.
+    if hooked:
+        webhook_res = alert_webhook.emit(fresh, node)
+        result["webhook"] = webhook_res
+        if (webhook_res or {}).get("ok") and (webhook_res or {}).get("sent"):
+            delivered.update(f["key"] for f in hooked)
+
+    if hookable:
+        # Lazy import: integration_hooks touches the filesystem at call
+        # time and nothing else in this module needs it.
+        from . import integration_hooks
+        rows = []
+        for f in hookable:
+            try:
+                r = integration_hooks.dispatch(
+                    "alert.fired", alert_event_payload(f, node),
+                    by="alerts")
+            except Exception as exc:  # noqa: BLE001 — report, do not sink the run
+                result["delivery_failed"].append("hooks: %s" % exc)
+                break
+            # An empty list means the sink is ON and NO hook is bound to
+            # the event. Nothing was enqueued, so nothing may be stamped:
+            # crediting it would silence the finding for the whole window
+            # on behalf of a subscriber that does not exist.
+            if r:
+                rows.extend(r)
+                queued_keys.add(f["key"])
+        result["hooks"] = {"requests": len(rows),
+                           "findings": len(queued_keys)}
+        result["queued"] = len(queued_keys)
+        if not rows:
+            result["delivery_failed"].append(
+                "hooks: sink enabled but no hook is bound to alert.fired")
+
     # ``dispatched`` means DELIVERED, on at least one notification channel. It
     # used to be set to len(fresh) unconditionally, so a run whose every message
     # the relay refused ("454 4.7.1 Relay access denied", every run for weeks)
@@ -975,25 +1053,37 @@ def run(*, force: bool = False, dry_run: bool = False) -> dict:
     if syslog_res is not None and not syslog_res.get("ok"):
         result["delivery_failed"].append(
             "syslog: %s" % (syslog_res.get("detail") or "send failed"))
+    _wh = result["webhook"]
+    if _wh is not None and not _wh.get("ok"):
+        result["delivery_failed"].append(
+            "webhook: %s" % (_wh.get("detail") or "send failed"))
     channels = []
     if result["in_app"]:
         channels.append("in-app")
     if (result["email"] or {}).get("ok"):
         channels.append("email")
+    if (result["webhook"] or {}).get("sent"):
+        channels.append("webhook")
+    # "hooks" is listed as a channel because something left this process,
+    # but it is deliberately absent from ``dispatched`` above.
+    if queued_keys:
+        channels.append("hooks")
     if (syslog_res or {}).get("sent"):
         channels.append("syslog")
     result["channels"] = channels
     result["dispatched"] = len(delivered)
 
-    # Cooldown records what was DELIVERED. Stamping a finding that reached
-    # nobody would swallow it for the whole window — the alert would exist, be
+    # Cooldown records what LEFT THIS PROCESS — delivered to a person, or
+    # accepted by the hook subsystem. Stamping a finding that reached nothing
+    # at all would swallow it for the whole window: the alert would exist, be
     # counted, and never arrive. The invariant lives in the loop below, which
-    # iterates ``delivered`` and not ``fresh``; this early return is only there
-    # to skip a pointless write, and a mutation of it is equivalent.
-    if not delivered:
+    # iterates ``delivered | queued_keys`` and NEVER ``fresh``; this early
+    # return only skips a pointless write, and a mutation of it is equivalent.
+    stamp = delivered | queued_keys
+    if not stamp:
         return result
     now_iso = _now().isoformat()
-    for key in delivered:
+    for key in stamp:
         state[key] = now_iso
     _save_state(state)
     return result

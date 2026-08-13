@@ -2423,6 +2423,81 @@ policy (what happens then), and the two are kept apart deliberately.</p>
   including the resolved recipient list, <strong>without sending anything</strong>. This is the
   right first move when a device is red and no mail arrived.</li>
 </ul>
+<p><strong>Delivery sinks</strong> — the same finding can go to five places, and each one
+decides for itself what it wants to hear. Every sink has exactly two knobs: a
+<strong>minimum severity</strong> and a <strong>family mask</strong> (the same seven families as <em>Checks
+enabled</em>). A pattern language was deliberately not built: the rule everybody
+writes is "everything", which is this with more surface to get wrong.</p>
+<table>
+<thead>
+<tr>
+<th>Sink</th>
+<th>What it is</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>In-app bell</strong></td>
+<td>local, free, always has fired regardless of the master switch</td>
+<td>on, <code>info</code>, unmasked</td>
+</tr>
+<tr>
+<td><strong>Email</strong></td>
+<td>the recipients above; needs the master switch</td>
+<td>on, <code>info</code>, unmasked</td>
+</tr>
+<tr>
+<td><strong>Webhook</strong></td>
+<td>one signed HTTP POST per evaluation; needs the master switch</td>
+<td>off</td>
+</tr>
+<tr>
+<td><strong>Integration hooks</strong></td>
+<td>one <code>alert.fired</code> per finding to your own Python hooks</td>
+<td>off</td>
+</tr>
+<tr>
+<td><strong>Syslog / CEF feed</strong></td>
+<td>a <em>record</em>, not a recipient</td>
+<td>off</td>
+</tr>
+</tbody>
+</table>
+<p>Two behaviours here are not oversights and should not be "fixed":</p>
+<ul>
+<li><strong>A sink with no family ticked delivers nothing</strong>, and the page says so in
+  red. An unticked mask and a never-configured one are different intentions,
+  and collapsing them would deliver the exact opposite of what the screen shows.</li>
+<li><strong>Engine failures — and findings from a check the router does not recognise —
+  ignore both filters.</strong> A channel silenced by a crashed check looks exactly
+  like a healthy quiet one, which is the failure alerting exists to prevent.</li>
+</ul>
+<p><strong>The feed is not a recipient.</strong> Syslog emits on <em>every</em> evaluation, for every
+matching finding, from the primary <strong>and</strong> from the read-only standby, and it
+carries <strong>no cooldown</strong>. A record queried after the fact cannot have six-hour
+holes in it, because a hole reads as "nothing was wrong". For the same reason
+the feed is <strong>not</strong> counted in <code>dispatched</code>: a healthy record must not be able
+to make a dead mailbox look alive. TLS transport and the LEEF encoding are not
+implemented, and the page says so.</p>
+<p><strong>The webhook</strong> sends one POST carrying every finding that sink accepted — not
+one call per finding. It is signed with HMAC-SHA256 over
+<code>v1:&lt;timestamp&gt;:&lt;body&gt;</code>; the timestamp is inside the signed string, so reject
+requests older than your tolerance and a captured POST cannot be replayed
+forever. Retries are bounded and selective: 408/425/429 and 5xx are repeated
+with backoff, every other 4xx fails once and reports the status. The signing
+secret is stored encrypted and never rendered back, so a blank field means
+"unchanged" — removing one needs the explicit checkbox. Pick the
+<strong>Slack-compatible</strong> encoding for Slack, Mattermost or Rocket.Chat; Teams and
+Discord want their own shapes, and those are integration hooks.</p>
+<p><strong>Integration hooks are enqueued, not delivered.</strong> Firing one writes a JSON
+request that a separate systemd unit executes, so the engine reports them as
+<code>queued</code> and never as <code>dispatched</code>. They <em>do</em> take the cooldown — otherwise a
+chat hook re-sends every finding every fifteen minutes. If the sink is on and
+no hook is bound to <code>alert.fired</code>, the engine says so and stamps nothing:
+suppressing an alert on behalf of a subscriber that does not exist would be the
+worse of the two failures. Starters for Telegram, Slack and Teams are on
+<code>Settings → Integrations → New hook</code>.</p>
 <h3 id="267-authentication-sign-in-sources-and-directory-import">26.7 Authentication — sign-in sources and directory import</h3>
 <p><strong>Sign-in sources.</strong> Tick as many as you need — Active Directory, LDAP,
 FortiAuthenticator/RADIUS — and give each an order. Sign-in walks them in that

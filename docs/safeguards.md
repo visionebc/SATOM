@@ -8542,3 +8542,104 @@ suite — every HTTP call is faked. **Test connection** is the live check, and i
 is the only thing that proves the operator's own credentials, project id and
 network path. A green suite says the request shapes are right; it does not say
 the tracker is reachable from this node.
+
+## §85 — an enqueue is not a delivery, and a signature without a timestamp is a permanent key
+
+Three questions look like one question, and answering them with one variable
+gets two of them wrong.
+
+**Did it reach a person?** drives `dispatched`. **Did it leave this process?**
+drives the cooldown. **Is it a record or a recipient?** drives whether the
+cooldown applies at all. Before this round `alerts.run` used a single
+`delivered` set for the first two, which was correct while every outlet was
+synchronous. An integration hook is not: `dispatch()` writes a JSON file, and a
+different systemd unit turns it into a process. So the engine now keeps two
+sets and unions them only at the stamp:
+
+* `delivered` — in-app, email, webhook. Feeds `dispatched`.
+* `queued_keys` — hooks. Feeds the cooldown and **nothing else**.
+
+Counting an enqueue as a delivery is the `dispatched: 2, delivered: 0` bug in a
+new hat — and it is not hypothetical here: `satom-updater.path` was found
+`disabled` on the standby, with enqueued work sitting as `queued` forever. Not
+stamping it is the opposite failure: a Telegram starter re-fires every finding
+every fifteen minutes, permanently.
+
+**The case that costs the most to see:** the sink is on and *no hook is bound
+to the event*. `dispatch()` returns `[]` — no error, no warning. Stamping on
+"we called dispatch" suppresses the finding for six hours on behalf of a
+subscriber that does not exist. The guard is one line (`if r:`) and one test,
+and neither is discoverable from reading the happy path.
+
+### Signing
+
+A signature over the body alone verifies forever. There is no expiry inside it,
+so a captured POST replays at any hour and the receiver has no way to notice —
+the bytes are genuinely ours and genuinely intact. The timestamp therefore goes
+**inside** the signed string (`v1:<epoch>:<body>`), not merely into a header
+beside it, and the scheme label goes inside too so a future `v2` cannot be
+replayed as a `v1` by a verifier that only reads the hex.
+
+Two more that produce no error on this side:
+
+* **Serialise once.** Signing `json.dumps(doc)` and sending a second
+  `json.dumps(doc)` is correct until a key order or separator differs, and then
+  the receiver *correctly* rejects a legitimate delivery, intermittently. The
+  test recomputes the HMAC the way a receiver would: from the captured bytes
+  and the captured header, using nothing from this process.
+* **No secret means no signature header, never an empty one.** A receiver whose
+  check is "is a signature present" must not be handed a value that passes that
+  check and proves nothing.
+
+And the delivery id must be **derived, not random**: a random component makes
+every retry look like a brand-new event to the receiver, which is the exact
+opposite of what a dedupe id is for.
+
+### Retry
+
+Which failures are worth repeating is a judgement about HTTP, not about the
+operator's receiver, so it belongs in the product. Retrying a 400 neither fixes
+the request nor tells anyone; not retrying a 502 loses the alert. Both look
+identical from a settings page. The policy is `RETRY_STATUSES` (408, 425, 429,
+5xx) plus transport errors; everything else fails once and reports
+`retryable: False` so the operator reads *"your URL is wrong"* instead of
+*"it retried and gave up"*. Attempts and backoff are both clamped: the timer
+fires every fifteen minutes and a sink that can outlive its own interval stacks
+runs on top of each other.
+
+### Starters, not adapters
+
+Teams wants an Adaptive Card inside an `attachments` envelope, Discord wants
+`content`, Opsgenie wants its own schema. One adapter per vendor is unbounded
+work whose failure mode is a silently stale integration after somebody else
+changes a field. A *starter* is the opposite trade: a working example the
+operator owns from the moment they save it.
+
+That only holds if the examples are checked like code, so they are:
+
+* every starter **compiles and defines `run`** — a starter that never compiled
+  ships a syntax error to everyone who clicks the button;
+* every `ctx.secret("X")` it reads **appears in the secrets it declares** — an
+  undeclared secret is simply absent from the child's environment and raises,
+  in a subprocess, in somebody else's install;
+* every payload key an `alert.fired` starter reads **is a key the engine
+  actually emits**, checked against `alert_event_payload` and never against the
+  documentation — a starter reading `payload["device"]` raises `KeyError` on the
+  first real alert;
+* no starter **hardcodes a credential**: hook sources are versioned and
+  readable in the editor, so a pasted token lives in every snapshot forever.
+
+The editor's default is an **alias** of the `change-ticket` starter, not a
+second copy. Two authors of one string is how the published site lost its Docs
+link (§78).
+
+### Verification recipe
+
+```
+venv/bin/python -m pytest tests/test_alert_webhook.py -q          # 56, rc=0
+grep -c 'X-SATOM-Signature' app/services/alert_webhook.py         # header defined once
+```
+
+The signature check that matters cannot be a grep: recompute the HMAC from the
+bytes captured at the transport boundary and compare it with the captured
+header. A grep for `hmac.new` proves only that signing was attempted.

@@ -2033,6 +2033,57 @@ policy (what happens then), and the two are kept apart deliberately.
   including the resolved recipient list, **without sending anything**. This is the
   right first move when a device is red and no mail arrived.
 
+**Delivery sinks** — the same finding can go to five places, and each one
+decides for itself what it wants to hear. Every sink has exactly two knobs: a
+**minimum severity** and a **family mask** (the same seven families as *Checks
+enabled*). A pattern language was deliberately not built: the rule everybody
+writes is "everything", which is this with more surface to get wrong.
+
+| Sink | What it is | Default |
+|---|---|---|
+| **In-app bell** | local, free, always has fired regardless of the master switch | on, `info`, unmasked |
+| **Email** | the recipients above; needs the master switch | on, `info`, unmasked |
+| **Webhook** | one signed HTTP POST per evaluation; needs the master switch | off |
+| **Integration hooks** | one `alert.fired` per finding to your own Python hooks | off |
+| **Syslog / CEF feed** | a *record*, not a recipient | off |
+
+Two behaviours here are not oversights and should not be "fixed":
+
+- **A sink with no family ticked delivers nothing**, and the page says so in
+  red. An unticked mask and a never-configured one are different intentions,
+  and collapsing them would deliver the exact opposite of what the screen shows.
+- **Engine failures — and findings from a check the router does not recognise —
+  ignore both filters.** A channel silenced by a crashed check looks exactly
+  like a healthy quiet one, which is the failure alerting exists to prevent.
+
+**The feed is not a recipient.** Syslog emits on *every* evaluation, for every
+matching finding, from the primary **and** from the read-only standby, and it
+carries **no cooldown**. A record queried after the fact cannot have six-hour
+holes in it, because a hole reads as "nothing was wrong". For the same reason
+the feed is **not** counted in `dispatched`: a healthy record must not be able
+to make a dead mailbox look alive. TLS transport and the LEEF encoding are not
+implemented, and the page says so.
+
+**The webhook** sends one POST carrying every finding that sink accepted — not
+one call per finding. It is signed with HMAC-SHA256 over
+`v1:<timestamp>:<body>`; the timestamp is inside the signed string, so reject
+requests older than your tolerance and a captured POST cannot be replayed
+forever. Retries are bounded and selective: 408/425/429 and 5xx are repeated
+with backoff, every other 4xx fails once and reports the status. The signing
+secret is stored encrypted and never rendered back, so a blank field means
+"unchanged" — removing one needs the explicit checkbox. Pick the
+**Slack-compatible** encoding for Slack, Mattermost or Rocket.Chat; Teams and
+Discord want their own shapes, and those are integration hooks.
+
+**Integration hooks are enqueued, not delivered.** Firing one writes a JSON
+request that a separate systemd unit executes, so the engine reports them as
+`queued` and never as `dispatched`. They *do* take the cooldown — otherwise a
+chat hook re-sends every finding every fifteen minutes. If the sink is on and
+no hook is bound to `alert.fired`, the engine says so and stamps nothing:
+suppressing an alert on behalf of a subscriber that does not exist would be the
+worse of the two failures. Starters for Telegram, Slack and Teams are on
+`Settings → Integrations → New hook`.
+
 ### 26.7 Authentication — sign-in sources and directory import
 
 **Sign-in sources.** Tick as many as you need — Active Directory, LDAP,

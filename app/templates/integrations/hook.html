@@ -57,6 +57,28 @@
     </div>
   </div>
 
+  {% if starters %}
+  <div class="card mb-3">
+    <div class="card-header"><strong>{{ _('Start from an example') }}</strong></div>
+    <div class="card-body">
+      <div class="form-text mb-2">
+        {{ _('Each example is a working hook you own from the moment you save it — not an adapter SATOM maintains. It encodes the part that is hard to discover: the Teams attachment envelope, Telegram\'s parse-mode trap, the fact that a non-2xx must be reported and not swallowed.') }}
+        <strong>{{ _('Picking one reloads this page and replaces the editor below, so choose before you type.') }}</strong>
+      </div>
+      <div class="d-flex flex-wrap gap-2">
+        {% for st in starters %}
+        <a class="btn btn-sm {{ 'btn-primary' if starter_slug == st.slug else 'btn-outline-secondary' }}"
+           href="{{ url_for('integrations.hook_detail', slug='new', starter=st.slug) }}"
+           title="{{ st.description }}">
+          {{ st.label }}
+          <span class="badge bg-light text-dark ms-1">{{ st.event }}</span>
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
   <div class="card mb-3">
     <div class="card-header"><strong>{{ _('hook.py') }}</strong></div>
     <div class="card-body">

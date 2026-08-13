@@ -8343,6 +8343,91 @@ suite — every HTTP call is faked. <strong>Test connection</strong> is the live
 is the only thing that proves the operator's own credentials, project id and
 network path. A green suite says the request shapes are right; it does not say
 the tracker is reachable from this node.</p>
+<h2 id="85-an-enqueue-is-not-a-delivery-and-a-signature-without-a-timestamp-is-a-permanent-key">§85 — an enqueue is not a delivery, and a signature without a timestamp is a permanent key</h2>
+<p>Three questions look like one question, and answering them with one variable
+gets two of them wrong.</p>
+<p><strong>Did it reach a person?</strong> drives <code>dispatched</code>. <strong>Did it leave this process?</strong>
+drives the cooldown. <strong>Is it a record or a recipient?</strong> drives whether the
+cooldown applies at all. Before this round <code>alerts.run</code> used a single
+<code>delivered</code> set for the first two, which was correct while every outlet was
+synchronous. An integration hook is not: <code>dispatch()</code> writes a JSON file, and a
+different systemd unit turns it into a process. So the engine now keeps two
+sets and unions them only at the stamp:</p>
+<ul>
+<li><code>delivered</code> — in-app, email, webhook. Feeds <code>dispatched</code>.</li>
+<li><code>queued_keys</code> — hooks. Feeds the cooldown and <strong>nothing else</strong>.</li>
+</ul>
+<p>Counting an enqueue as a delivery is the <code>dispatched: 2, delivered: 0</code> bug in a
+new hat — and it is not hypothetical here: <code>satom-updater.path</code> was found
+<code>disabled</code> on the standby, with enqueued work sitting as <code>queued</code> forever. Not
+stamping it is the opposite failure: a Telegram starter re-fires every finding
+every fifteen minutes, permanently.</p>
+<p><strong>The case that costs the most to see:</strong> the sink is on and <em>no hook is bound
+to the event</em>. <code>dispatch()</code> returns <code>[]</code> — no error, no warning. Stamping on
+"we called dispatch" suppresses the finding for six hours on behalf of a
+subscriber that does not exist. The guard is one line (<code>if r:</code>) and one test,
+and neither is discoverable from reading the happy path.</p>
+<h3 id="signing">Signing</h3>
+<p>A signature over the body alone verifies forever. There is no expiry inside it,
+so a captured POST replays at any hour and the receiver has no way to notice —
+the bytes are genuinely ours and genuinely intact. The timestamp therefore goes
+<strong>inside</strong> the signed string (<code>v1:&lt;epoch&gt;:&lt;body&gt;</code>), not merely into a header
+beside it, and the scheme label goes inside too so a future <code>v2</code> cannot be
+replayed as a <code>v1</code> by a verifier that only reads the hex.</p>
+<p>Two more that produce no error on this side:</p>
+<ul>
+<li><strong>Serialise once.</strong> Signing <code>json.dumps(doc)</code> and sending a second
+  <code>json.dumps(doc)</code> is correct until a key order or separator differs, and then
+  the receiver <em>correctly</em> rejects a legitimate delivery, intermittently. The
+  test recomputes the HMAC the way a receiver would: from the captured bytes
+  and the captured header, using nothing from this process.</li>
+<li><strong>No secret means no signature header, never an empty one.</strong> A receiver whose
+  check is "is a signature present" must not be handed a value that passes that
+  check and proves nothing.</li>
+</ul>
+<p>And the delivery id must be <strong>derived, not random</strong>: a random component makes
+every retry look like a brand-new event to the receiver, which is the exact
+opposite of what a dedupe id is for.</p>
+<h3 id="retry">Retry</h3>
+<p>Which failures are worth repeating is a judgement about HTTP, not about the
+operator's receiver, so it belongs in the product. Retrying a 400 neither fixes
+the request nor tells anyone; not retrying a 502 loses the alert. Both look
+identical from a settings page. The policy is <code>RETRY_STATUSES</code> (408, 425, 429,
+5xx) plus transport errors; everything else fails once and reports
+<code>retryable: False</code> so the operator reads <em>"your URL is wrong"</em> instead of
+<em>"it retried and gave up"</em>. Attempts and backoff are both clamped: the timer
+fires every fifteen minutes and a sink that can outlive its own interval stacks
+runs on top of each other.</p>
+<h3 id="starters-not-adapters">Starters, not adapters</h3>
+<p>Teams wants an Adaptive Card inside an <code>attachments</code> envelope, Discord wants
+<code>content</code>, Opsgenie wants its own schema. One adapter per vendor is unbounded
+work whose failure mode is a silently stale integration after somebody else
+changes a field. A <em>starter</em> is the opposite trade: a working example the
+operator owns from the moment they save it.</p>
+<p>That only holds if the examples are checked like code, so they are:</p>
+<ul>
+<li>every starter <strong>compiles and defines <code>run</code></strong> — a starter that never compiled
+  ships a syntax error to everyone who clicks the button;</li>
+<li>every <code>ctx.secret("X")</code> it reads <strong>appears in the secrets it declares</strong> — an
+  undeclared secret is simply absent from the child's environment and raises,
+  in a subprocess, in somebody else's install;</li>
+<li>every payload key an <code>alert.fired</code> starter reads <strong>is a key the engine
+  actually emits</strong>, checked against <code>alert_event_payload</code> and never against the
+  documentation — a starter reading <code>payload["device"]</code> raises <code>KeyError</code> on the
+  first real alert;</li>
+<li>no starter <strong>hardcodes a credential</strong>: hook sources are versioned and
+  readable in the editor, so a pasted token lives in every snapshot forever.</li>
+</ul>
+<p>The editor's default is an <strong>alias</strong> of the <code>change-ticket</code> starter, not a
+second copy. Two authors of one string is how the published site lost its Docs
+link (§78).</p>
+<h3 id="verification-recipe_4">Verification recipe</h3>
+<pre><code>venv/bin/python -m pytest tests/test_alert_webhook.py -q          # 56, rc=0
+grep -c 'X-SATOM-Signature' app/services/alert_webhook.py         # header defined once
+</code></pre>
+<p>The signature check that matters cannot be a grep: recompute the HMAC from the
+bytes captured at the transport boundary and compare it with the captured
+header. A grep for <code>hmac.new</code> proves only that signing was attempted.</p>
     </div>
   </div>
 </section>

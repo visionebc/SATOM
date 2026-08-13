@@ -20,6 +20,7 @@ from flask_login import current_user, login_required
 
 from ..auth.decorators import require_permission
 from ..models import Permission, visible_appliances
+from ..services import hook_starters
 
 bp = Blueprint("integrations", __name__, url_prefix="/settings/integrations")
 
@@ -28,39 +29,10 @@ def _who() -> str:
     return getattr(current_user, "username", "") or "system"
 
 
-SAMPLE_HOOK = '''"""Open a change ticket in our CRM when SATOM requests a change.
-
-Bound to the `change.requested` event. Declare CRM_TOKEN in the secrets field
-above and it arrives through ctx.secret() - never write it in this file.
-"""
-
-
-def run(ctx):
-    payload = ctx.payload
-    resp = ctx.http.post(
-        "https://crm.example.com/api/changes",
-        json={
-            "title": payload["title"],
-            "description": payload.get("reason", ""),
-            "risk": payload.get("risk", "medium"),
-            "starts_at": payload.get("window_start"),
-            "ends_at": payload.get("window_end"),
-            "assets": payload.get("device_ids", []),
-            "external_id": "SATOM-CR-%s" % payload["cr_id"],
-        },
-        headers={"Authorization": "Bearer " + ctx.secret("CRM_TOKEN")},
-    )
-    if resp.status_code >= 300:
-        # Return the failure rather than raising: the operator needs the CRM's
-        # own words, and an exception would only report ours.
-        return ctx.result(False, {"detail": "CRM said %s" % resp.status_code})
-
-    ticket = resp.json()
-    ctx.log("opened %s" % ticket.get("id"))
-    # Keys SATOM understands: crq_ref / crq_url are written back onto the
-    # change request, so the ticket is one click away from the CR page.
-    return ctx.result(True, {"crq_ref": ticket["id"], "crq_url": ticket.get("url", "")})
-'''
+#: The editor default now lives with the other starters. Kept as an alias
+#: rather than a second copy: two authors of one string is how the
+#: published site lost its Docs link.
+SAMPLE_HOOK = hook_starters.STARTERS["change-ticket"]["source"]
 
 
 # --------------------------------------------------------------------------- #
@@ -209,15 +181,28 @@ def hook_detail(slug):
         flash(error or "integrations unavailable", "danger")
         return redirect(url_for("integrations.index"))
     if slug == "new":
+        # A named starter, defaulting to the working CRM example. A blank
+        # editor is a worse starting point than a real one: what the author
+        # most needs to see is that the credential comes from ctx.secret()
+        # and the HTTP call is already time-boxed. An unknown slug falls
+        # back rather than 404s -- a typo in a query string must not look
+        # like "this product ships no examples".
+        want = (request.args.get("starter") or "").strip()
+        starter = hook_starters.get(want)
+        chosen = want if want in hook_starters.STARTERS \
+            else hook_starters.DEFAULT_STARTER
         # A blank editor is a worse starting point than a working example: the
         # thing an operator most needs to see is that the secret comes from
         # ctx.secret() and the HTTP call is already time-boxed.
         return render_template("integrations/hook.html",
                                hook={"slug": "new", "enabled": True,
-                                     "timeout": 30, "secrets": [],
-                                     "event": "change.requested"},
+                                     "timeout": 30,
+                                     "secrets": starter["secrets"],
+                                     "event": starter["event"]},
                                events=mod.EVENTS, recent=[],
-                               default_source=SAMPLE_HOOK)
+                               starters=hook_starters.catalog(),
+                               starter_slug=chosen,
+                               default_source=starter["source"])
     raw = mod.get_hook(slug)
     if raw is None:
         flash("Hook not found.", "warning")

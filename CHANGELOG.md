@@ -8,6 +8,51 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Added
 
+- **A signed, retried webhook sink** (`services/alert_webhook.py`), configured
+  by form on Settings → Admin console → Alerts. One HTTP POST per evaluation
+  carrying every finding that sink accepted — not one call per finding, which
+  would put back the hose the router exists to remove. It is a *notification*
+  sink, not a feed: it carries the cooldown, it counts towards `dispatched`,
+  and it obeys the engine master switch, because a chat channel is a recipient
+  and a recipient that hears the same finding every fifteen minutes mutes the
+  channel. Three things in an HTTP POST are the product's job rather than the
+  integrator's, and all three are here: **a versioned envelope** a receiver can
+  still parse next year; **an HMAC-SHA256 signature over `v1:<timestamp>:<body>`**
+  — the timestamp is *inside* the signed string, because a signature over the
+  body alone stays valid forever and a captured POST replays cleanly; and **a
+  selective retry** — 408/425/429 and 5xx are repeated with bounded backoff
+  while every other 4xx fails once and reports the status, since repeating a
+  rejected request neither fixes it nor tells anyone. The body is serialised
+  **once** and those exact bytes are both signed and sent: signing one dump and
+  sending another yields a signature the receiver correctly rejects whenever
+  key order differs, intermittently, with nothing on this side ever seeing an
+  error. Two encodings ship — the SATOM envelope and the flat `{"text": ...}`
+  that Slack, Mattermost and Rocket.Chat accept. The signing secret is stored
+  Fernet-encrypted and **never rendered back into the page**, so a blank field
+  means "unchanged" and removing one needs its own explicit control. Private
+  network targets are allowed on purpose: an automation host on the management
+  LAN is the normal case in every install this ships to.
+
+- **`alert.fired` in the integration-hook catalogue, plus Telegram, Slack and
+  Teams starters.** The hook runner — sandboxed subprocess, secret vault,
+  audit, dry-run — has existed for months with six events, none of them about
+  alerts. It now has a seventh, fired once per finding that passed a new
+  **"Integration hooks" sink** (default off, same severity floor and family
+  mask as every other outlet). Hooks are **enqueued, not delivered**, and the
+  engine now says so: they are stamped into the cooldown, because otherwise a
+  Telegram starter re-sends every finding every fifteen minutes, and they are
+  **counted as `queued` and never as `dispatched`**, because the runner that
+  executes a hook is a separate systemd unit that has been found disabled on a
+  live node. A sink enabled with **no hook bound to the event stamps nothing** —
+  crediting an empty dispatch would suppress the finding for the whole window
+  on behalf of a subscriber that does not exist. The three starters are
+  examples the operator owns on save, not adapters SATOM maintains: each
+  encodes the part that is hard to discover — the Teams Adaptive-Card
+  attachment envelope (sending the bare card returns 202 and posts nothing),
+  Telegram's parse-mode trap (alert detail is full of `_ * [` and a Markdown
+  parse_mode turns the message into a 400), and that a non-2xx must be reported
+  rather than swallowed.
+
 - **Issue tracker integration (Jira Cloud, OpenProject, Vikunja).** Settings →
   Integrations gains a native ticketing backend, so raising the CRQ on a change
   request opens a real ticket and writes its reference and URL back onto the

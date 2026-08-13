@@ -94,10 +94,15 @@ def run_one(event="change.requested", payload=None, *, resolver=None, by="tester
 # ===========================================================================
 #  1. The published contract
 # ===========================================================================
-def test_published_events_are_exactly_the_documented_six():
+def test_published_events_are_exactly_the_documented_set():
+    """The catalogue is a published contract: a hook author binds to a name and
+    a payload shape, so an event may not appear without both being written
+    down. The count deliberately does NOT live in this function's name -- a
+    literal in a name is a second place to update, and the two drift."""
     assert IH.EVENT_NAMES == (
         "change.requested", "change.approved", "window.opening",
-        "window.closing", "upgrade.finished", "upgrade.failed")
+        "window.closing", "upgrade.finished", "upgrade.failed",
+        "alert.fired")
 
 
 def test_every_event_documents_a_payload_shape_and_an_example():

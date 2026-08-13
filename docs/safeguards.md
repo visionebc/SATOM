@@ -8415,3 +8415,52 @@ from the other side.
 4. Rendering the app outside systemd needs its `EnvironmentFile`
    (`set -a; . /opt/satom/.env`), or SQLAlchemy silently falls back to a SQLite
    path that does not exist and the traceback blames the database.
+
+## §83 — Issue tracker integration (`tests/test_tracker_client.py`)
+
+**What silently breaks.** Every failure mode in this integration renders as a
+working one, which is why a test is the only thing that catches them:
+
+* **Vikunja creates with `PUT`; `POST` is its update verb.** A backend that
+  sends `POST /api/v1/projects/<id>/tasks` looks configured, gets a non-error
+  answer, and creates nothing.
+* **Jira API v3 rejects a string description** — it takes Atlassian Document
+  Format. The 400 it returns reads like a permissions problem, so the operator
+  rotates a perfectly good token.
+* **OpenProject's Basic-auth username is the literal `apikey`.** Sending the
+  operator's e-mail there 401s exactly like a bad credential.
+* **A 2xx with no id.** A tracker behind a proxy answering 200 with an HTML
+  login page would otherwise stamp an empty reference onto the change and
+  report a ticket that does not exist.
+* **A probe that only proves authentication.** Green tick, invisible project,
+  discovered while a window opens.
+* **A second ticket for the same window**, after which change management cannot
+  tell which CRQ is real.
+* The API token reaching a flash message, an audit row or a support ticket
+  through a `detail` string — OpenProject echoes the request back in its error
+  bodies.
+
+**Where the authority lives.** The backend catalogue `BACKENDS` is the single
+source for which fields each backend needs; the settings page's JavaScript
+reads it through `|tojson` rather than carrying a second list. Two authors of
+"does Vikunja need a username" is how the answers drift apart — the same shape
+as the duplicated licence footer in §7f.
+
+**Verification recipe**
+
+```bash
+cd /opt/satom
+runuser -u satom -- venv/bin/python -m pytest tests/test_tracker_client.py -q
+/opt/satom/venv/bin/python /root/mut_tracker.py      # 28 mutations
+```
+
+Measure mutations by **return code**; only `rc == 1` is a bite. `pytest` prints
+`FAILED` in capitals, so grepping for `failed` reports survivors that actually
+died, and `rc == 4` is a usage error rather than a test failure. Every mutation
+restores in `finally`.
+
+**What is NOT covered.** No live round-trip against a real tracker is in the
+suite — every HTTP call is faked. **Test connection** is the live check, and it
+is the only thing that proves the operator's own credentials, project id and
+network path. A green suite says the request shapes are right; it does not say
+the tracker is reachable from this node.

@@ -8,6 +8,58 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Added
 
+- **Issue tracker integration (Jira Cloud, OpenProject, Vikunja).** Settings →
+  Integrations gains a native ticketing backend, so raising the CRQ on a change
+  request opens a real ticket and writes its reference and URL back onto the
+  change — with no Python hook to write or maintain. Until now the only route
+  to a tracker was `data/integrations/<slug>/hook.py`: the right tool for a
+  bespoke in-house CRM, the wrong one for the three trackers most people
+  actually run. Asking a network operator to write Python — and to get its
+  timeouts, retries and secret handling right — so SATOM can POST one JSON
+  document is a configuration problem dressed up as a programming problem. The
+  ticket carries the appliances **by name**, the affected services, the stored
+  pre-upgrade evidence and, named rather than implied, the appliances that have
+  none. **The Python hooks are not replaced** and still fire alongside it.
+  Each backend's real trap is handled rather than left to the operator:
+  Vikunja creates with `PUT` (`POST` is its *update* verb, so a POST creates
+  nothing and does not look like a failure), Jira API v3 takes Atlassian
+  Document Format rather than a string description, and OpenProject
+  authenticates with the literal username `apikey`.
+- **A change that already carries a CRQ reference is never given a second
+  ticket.** Idempotency is enforced in `cr_orchestrator`, not by disabling a
+  button, so a double-click, a browser retry or a second operator cannot each
+  open another ticket for the same window — after which change management has
+  no way to tell which one is real.
+- **The tracker's Test connection probes the configured project, not just the
+  credential.** A token that authenticates but cannot see the project is
+  otherwise indistinguishable from a working one until a change window is
+  opening. The probe reports who it authenticated as *and* whether the project
+  is reachable, with the elapsed time; a tick with no numbers behind it is not
+  evidence.
+
+- **The API surface is now keyed by FIRMWARE LINE, not just by API version.**
+  FortiWeb 7.6 and 8.0 both speak `v2.0`, so the registry's `api_version` axis
+  cannot express the difference between them — and the difference is real.
+  Measured on this fleet's own artifacts: `admin` has 40 fields on 7.6 and
+  **42** on 8.0 (`fortiai`, `old-password`), `global` 60 vs **63**, `ntp` 3 vs
+  **4**. Building a payload against one line and writing it to a box running
+  the other is the failure that had no name. New `services/api_matrix.py`
+  derives, per `(product, firmware line, endpoint)`, what that line was
+  *observed* to serve, out of evidence that was already on disk and already
+  unread: the rediscovery sweep records both a per-endpoint verdict and the
+  objects it read back, and the keys of those objects **are** the fields that
+  firmware serves. New **API versions** page in each product's API hub
+  (`/web/registry/versions`, `/adc/api/versions`, `REGISTRY_EDIT`) with a
+  line-to-line comparison, and `satom get api versions` / `get api preflight`
+  on the CLI.
+
+- **Preflight**: `satom get api preflight <appliance|line> <object> <field>…`
+  answers whether a payload would be understood on that line *before* it is
+  written. Five outcomes, deliberately not four: `ok`, `unknown_fields`,
+  `absent`, `fields_unknown` and **`unmeasured`**. `unmeasured` is a real
+  answer with its own exit code — asking about a line SATOM has no evidence
+  for must never be reachable from the same result as "yes".
+
 - **Alerts route to sinks now, each with its own severity floor and family
   mask — and a new syslog/CEF feed.** The engine has had seven checks, three
   severities and a cooldown since it shipped, but exactly one control: an
@@ -345,6 +397,30 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   updates a ticket instead of opening a second one for the same window.
 
 ### Fixed
+
+- The **"nothing was sent"** warning on a change request no longer claims that
+  hooks are the only path. It now names both the tracker backend and the hook
+  binding, so an operator whose CRQ went nowhere is not sent to write Python
+  when the fix is a dropdown.
+
+- **The registry readers ignored `api_version` while the seeders honoured it.**
+  Every `seed_*_from_yaml` has always scoped its insert-only check by
+  `(product, api_version)`; every reader filtered on product alone and built
+  `{name: urn}`. The moment a second `api_version` row existed for a name that
+  dict collapsed — one row won by arbitrary query order and its URN was served
+  to *every* consumer (`scheduled_actions`, `clone`, `write_through`,
+  `exception_inject`, `objedit`) with no error and no log. The `api_version`
+  box on the New/Edit Endpoint modal is free text, so any `REGISTRY_EDIT`
+  holder could arm it. All four products now read the active version from one
+  `API_VERSION` map, and an AST guard fails the build if either half goes back
+  to a literal. Reproduced live before and after the fix.
+
+- **The sweep read the running firmware and threw it away.** `appliances.firmware`
+  was filled only by `_apply_inventory`, from `_model_from_status`, which
+  returns `None` for FortiWeb — so 8 of 10 appliances had an empty firmware
+  column while their own snapshots said `7.6.8` / `8.0.3`, and anything keyed
+  by firmware line had to treat most of the fleet as "unknown line". The sweep
+  now persists what it measured.
 
 - **`errors[]` was empty on every rediscovery snapshot ever written — including
   ones taken from an appliance that was rejecting a URN outright.**

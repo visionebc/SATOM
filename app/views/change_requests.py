@@ -735,6 +735,23 @@ def request_crq(id):
                detail=f"dispatched={result.get('dispatched', 0)} "
                       f"evidence={result.get('evidence', 0)} "
                       f"uncovered={len(result.get('uncovered') or [])}")
+    tracker = result.get('tracker') or {}
+    if tracker.get('ok') and tracker.get('ref'):
+        # The native backend already has the answer, so say the answer. This
+        # branch must come first: telling an operator to wait for a reference
+        # that is already on the page is how a working integration gets
+        # reported as broken.
+        where = tracker.get('url') or ''
+        flash(f"Opened {tracker['ref']} in "
+              f"{tracker.get('backend', 'the tracker')}"
+              + (f" — {where}" if where else '') + '.', 'success')
+    elif tracker.get('attempted'):
+        flash(f"The {tracker.get('backend', 'tracker')} integration is enabled "
+              f"but did NOT open a ticket: {tracker.get('detail') or 'no detail'}",
+              'danger')
+    elif tracker.get('detail') and not tracker.get('attempted') \
+            and tracker.get('backend', 'none') != 'none':
+        flash(tracker['detail'] + '.', 'info')
     if result.get('dispatched'):
         flash(f"Queued {result['dispatched']} integration hook(s). The ticket "
               f"reference appears here once your system answers.", 'success')
@@ -759,11 +776,14 @@ def request_crq(id):
             # ticket — and the operator is told that is what was sent.
             flash(f"This change already carries {had_ref}; it was sent as a "
                   f"re-request, not as a new ticket.", 'info')
-    else:
+    elif not tracker.get('ok') and not tracker.get('attempted'):
         # An enabled-but-unbound integration silently doing nothing is the
-        # failure mode this message exists to prevent.
-        flash('No enabled hook is bound to change.requested — nothing was sent.',
-              'warning')
+        # failure mode this message exists to prevent. It now names BOTH paths:
+        # since the native backend exists, "no hook is bound" alone would send
+        # an operator to write Python when the fix is a dropdown.
+        flash('Nothing was sent: no tracker backend is configured in '
+              'Settings -> Integrations and no enabled hook is bound to '
+              'change.requested.', 'warning')
     return redirect(url_for('change_requests.detail', id=id))
 
 

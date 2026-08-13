@@ -4,7 +4,7 @@
 <div class="fw-page-header">
   <h4 class="mb-1"><i class="bi bi-plug me-2"></i>{{ _('Integrations') }}</h4>
   <p class="text-muted mb-0" style="font-size:13px;">
-    {{ _('Outbound links to systems SATOM does not own: NetBox for maintenance windows, and your own Python hooks for everything else (CRM, ticketing, chat). Every integration here is optional — with all of them off, change requests and upgrades work exactly as before. Nothing on this page is contacted while the page renders.') }}
+    {{ _('Outbound links to systems SATOM does not own: NetBox for maintenance windows, an issue tracker (Jira, OpenProject or Vikunja) for change tickets, and your own Python hooks for anything else. Every integration here is optional — with all of them off, change requests and upgrades work exactly as before. Nothing on this page is contacted while the page renders.') }}
   </p>
 </div>
 
@@ -60,6 +60,87 @@
           <i class="bi bi-broadcast me-1"></i>{{ _('Test connection') }}
         </button>
         <span id="nb-test-result" class="small align-self-center"></span>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <strong><i class="bi bi-ticket-detailed me-1"></i>{{ _('Issue tracker') }}</strong>
+    <span class="small text-muted">{{ _('Where a change request opens its ticket') }}</span>
+  </div>
+  <div class="card-body">
+    <p class="small text-muted mb-3">
+      {{ _('With a backend selected, raising the CRQ on a change request opens a real ticket and writes its reference back onto the change — no Python hook required. The ticket carries the appliances') }} <strong>{{ _('by name') }}</strong>{{ _(', the pre-upgrade evidence, and the appliances that have none. A change that already carries a reference is never given a second ticket.') }}
+    </p>
+    <form method="post" action="{{ url_for('integrations.save_tracker') }}" class="row g-3">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <!-- verify_tls posts explicitly: HTML omits unchecked checkboxes, and an
+           absent flag defaulting to false would silently downgrade TLS. -->
+      <input type="hidden" name="verify_tls" value="0">
+      <div class="col-md-4">
+        <label class="form-label small">{{ _('Backend') }}</label>
+        <select class="form-select form-select-sm" name="backend" id="tk-backend">
+          {% for slug, spec in tracker_backends.items() %}
+            <option value="{{ slug }}" {% if tracker.backend == slug %}selected{% endif %}>{{ spec.label }}</option>
+          {% endfor %}
+        </select>
+        <div class="form-text" id="tk-help">{{ tracker_backends[tracker.backend].help }}</div>
+      </div>
+      <div class="col-md-2">
+        <div class="form-check form-switch mt-4">
+          <input class="form-check-input" type="checkbox" id="tk_enabled" name="enabled" {% if tracker.enabled %}checked{% endif %}>
+          <label class="form-check-label" for="tk_enabled">{{ _('Enabled') }}</label>
+        </div>
+      </div>
+      <div class="col-md-6" data-tk-field="url">
+        <label class="form-label small">{{ _('Base URL') }}</label>
+        <input class="form-control form-control-sm" name="url" id="tk-url" value="{{ tracker.url }}" placeholder="https://yourorg.atlassian.net">
+      </div>
+
+      <div class="col-md-4" data-tk-field="user">
+        <label class="form-label small" data-tk-label="user">{{ _('Account e-mail') }}</label>
+        <input class="form-control form-control-sm" name="user" value="{{ tracker.user }}" placeholder="you@example.com">
+      </div>
+      <div class="col-md-4" data-tk-field="token">
+        <label class="form-label small">{{ _('API token') }}</label>
+        <input class="form-control form-control-sm" name="token" type="password" autocomplete="new-password"
+               placeholder="{% if tracker.has_token %}•••••••• (leave blank to keep){% else %}paste token{% endif %}">
+        <div class="form-text">{{ _('Stored encrypted. Leaving this blank keeps the existing token — it never clears it.') }}</div>
+      </div>
+      <div class="col-md-4 d-flex align-items-end">
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" id="tk_clear" name="clear_token" value="1">
+          <label class="form-check-label small" for="tk_clear">{{ _('Clear the stored token') }}</label>
+        </div>
+      </div>
+
+      <div class="col-md-4" data-tk-field="project">
+        <label class="form-label small" data-tk-label="project">{{ _('Project key') }}</label>
+        <input class="form-control form-control-sm" name="project" value="{{ tracker.project }}">
+      </div>
+      <div class="col-md-3" data-tk-field="type">
+        <label class="form-label small" data-tk-label="type">{{ _('Issue type') }}</label>
+        <input class="form-control form-control-sm" name="issue_type" value="{{ tracker.issue_type }}" placeholder="Task">
+      </div>
+      <div class="col-md-2" data-tk-field="url">
+        <label class="form-label small">{{ _('Timeout (s)') }}</label>
+        <input class="form-control form-control-sm" name="timeout" type="number" min="3" max="60" value="{{ tracker.timeout }}">
+      </div>
+      <div class="col-md-3" data-tk-field="url">
+        <div class="form-check form-switch mt-4">
+          <input class="form-check-input" type="checkbox" id="tk_tls" name="verify_tls" value="1" {% if tracker.verify_tls %}checked{% endif %}>
+          <label class="form-check-label" for="tk_tls">{{ _('Verify TLS') }}</label>
+        </div>
+      </div>
+
+      <div class="col-12 d-flex gap-2">
+        <button class="btn btn-fw-primary btn-sm"><i class="bi bi-save me-1"></i>{{ _('Save') }}</button>
+        <button type="button" class="btn btn-outline-secondary btn-sm" id="tk-test">
+          <i class="bi bi-broadcast me-1"></i>{{ _('Test connection') }}
+        </button>
+        <span id="tk-test-result" class="small align-self-center"></span>
       </div>
     </form>
   </div>
@@ -196,6 +277,66 @@
         out.className = 'small align-self-center text-danger';
         out.textContent = (d.detail || 'failed') + (d.elapsed_ms != null ? ' · ' + d.elapsed_ms + ' ms' : '');
       }
+    }).catch(function (e) {
+      btn.disabled = false;
+      out.className = 'small align-self-center text-danger';
+      out.textContent = 'request failed: ' + e;
+    });
+  });
+})();
+
+(function () {
+  // Field visibility is driven by the SERVER's catalogue, not by a second
+  // list written here. Two authors of "does Vikunja need a username" is how
+  // the answers drift apart.
+  var SPECS = {{ tracker_backends|tojson }};
+  var sel = document.getElementById('tk-backend');
+  if (!sel) { return; }
+  var help = document.getElementById('tk-help');
+  var url = document.getElementById('tk-url');
+
+  function apply() {
+    var spec = SPECS[sel.value] || {};
+    var on = sel.value !== 'none';
+    document.querySelectorAll('[data-tk-field]').forEach(function (el) {
+      var need = el.getAttribute('data-tk-field');
+      var show = on && (need === 'url' || need === 'token'
+        || (need === 'user' && spec.needs_user)
+        || (need === 'project' && spec.needs_project)
+        || (need === 'type' && spec.needs_type));
+      el.style.display = show ? '' : 'none';
+    });
+    if (help) { help.textContent = spec.help || ''; }
+    if (url && spec.url_hint) { url.placeholder = spec.url_hint; }
+    document.querySelectorAll('[data-tk-label]').forEach(function (el) {
+      var k = el.getAttribute('data-tk-label');
+      var txt = k === 'user' ? spec.user_label
+        : (k === 'project' ? spec.project_label : spec.type_label);
+      if (txt) { el.textContent = txt; }
+    });
+  }
+  sel.addEventListener('change', apply);
+  apply();
+
+  var btn = document.getElementById('tk-test');
+  var out = document.getElementById('tk-test-result');
+  if (!btn || !out) { return; }
+  var tok = document.querySelector('input[name="csrf_token"]');
+  btn.addEventListener('click', function () {
+    btn.disabled = true;
+    out.textContent = 'testing…';
+    out.className = 'small align-self-center text-muted';
+    fetch({{ url_for('integrations.test_tracker')|tojson }}, {
+      method: 'POST',
+      headers: {'X-CSRFToken': tok ? tok.value : ''}
+    }).then(function (r) { return r.json(); }).then(function (d) {
+      btn.disabled = false;
+      // The probe tests identity AND the project. It reports what it tested,
+      // never a bare tick: "authenticated" alone is the state in which a
+      // change window discovers the project is invisible to the token.
+      out.className = 'small align-self-center ' + (d.ok ? 'text-success' : 'text-danger');
+      out.textContent = (d.detail || (d.ok ? 'ok' : 'failed'))
+        + (d.elapsed_ms != null ? ' · ' + d.elapsed_ms + ' ms' : '');
     }).catch(function (e) {
       btn.disabled = false;
       out.className = 'small align-self-center text-danger';

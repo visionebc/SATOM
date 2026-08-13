@@ -2691,7 +2691,46 @@ blank and SATOM falls back to an exact *name* match — that works right up unti
 somebody renames a device on either side, which is why the page shows you which
 devices rely on the fallback.
 
-### 35.2 Integration hooks
+### 35.2 Issue tracker (Jira, OpenProject, Vikunja)
+
+Pick a backend, fill in the URL, the API token and the project, and press
+**Test connection**. Raising the CRQ on a change request then opens a real
+ticket and writes its reference and URL straight onto the change — no Python
+required.
+
+| Backend | Authentication | Project field | Notes |
+|---|---|---|---|
+| **Jira Cloud** | Your account **e-mail** + an API token from `id.atlassian.com → Security → API tokens` | Project **key** (`OPS`, the prefix in `OPS-14`) — not the project name | Works on the free 10-user tier. SATOM builds the Atlassian Document Format description for you |
+| **OpenProject** | API key from *My account → Access tokens* (SATOM sends the username `apikey` itself) | Project id or identifier | Type id `1` is *Task* on a default install. Watchers are **not** notified — a change window is not an announcement |
+| **Vikunja** | API token from *Settings → API Tokens*, with at least `Create` on tasks | Project id (the number in the project URL) | Creation uses `PUT`; SATOM handles that |
+
+The token is stored encrypted. Leaving the token box blank when you save
+**keeps** the token you already have — tick **Clear the stored token** to
+remove it.
+
+**Test connection makes two calls, and the second is the one that matters.** It
+authenticates, then fetches the configured project. A token that authenticates
+but cannot see the project would otherwise show a green tick and fail at the
+only moment anyone cares: while a change window is opening.
+
+**What the ticket says.** The appliances **by name** (not database ids), the
+affected services, the stored pre-upgrade evidence, and — named, never implied
+— the appliances that have *no* baseline. An approver should not have to come
+back here to find out what they are approving. When the change is in
+**External** approval mode the ticket says so explicitly: it holds the gate.
+
+**One ticket per window, and only one.** A change that already carries a
+reference is a *re-request* — the window moved, the scope grew — and SATOM will
+not open a second ticket for it. That is enforced in the orchestrator rather
+than by disabling a button, so a double-click, a browser retry or a second
+operator cannot produce a duplicate.
+
+**If it fails, it says so.** A tracker that is switched on and then does not
+open a ticket produces a red message naming the reason, and the failure is
+recorded on the change's own timeline. It never degrades to silence, and a
+tracker outage can never break the change request itself.
+
+### 35.3 Integration hooks
 
 A hook is a small Python script SATOM runs when it emits an event. The usual use
 is opening a change ticket in your own CRM and handing the reference back.
@@ -2727,7 +2766,7 @@ which are written onto the change request so the ticket is one click away.
 > **HA:** `satom-integrations.path` must be enabled on **both** nodes. A standby
 > whose watcher is disabled accepts queued work and never runs it — silently.
 
-### 35.3 What this changes on a change request
+### 35.4 What this changes on a change request
 
 Create the change request as usual and set **Approval**:
 

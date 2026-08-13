@@ -3200,7 +3200,63 @@ only, and works against any NetBox:</p>
 blank and SATOM falls back to an exact <em>name</em> match — that works right up until
 somebody renames a device on either side, which is why the page shows you which
 devices rely on the fallback.</p>
-<h3 id="352-integration-hooks">35.2 Integration hooks</h3>
+<h3 id="352-issue-tracker-jira-openproject-vikunja">35.2 Issue tracker (Jira, OpenProject, Vikunja)</h3>
+<p>Pick a backend, fill in the URL, the API token and the project, and press
+<strong>Test connection</strong>. Raising the CRQ on a change request then opens a real
+ticket and writes its reference and URL straight onto the change — no Python
+required.</p>
+<table>
+<thead>
+<tr>
+<th>Backend</th>
+<th>Authentication</th>
+<th>Project field</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Jira Cloud</strong></td>
+<td>Your account <strong>e-mail</strong> + an API token from <code>id.atlassian.com → Security → API tokens</code></td>
+<td>Project <strong>key</strong> (<code>OPS</code>, the prefix in <code>OPS-14</code>) — not the project name</td>
+<td>Works on the free 10-user tier. SATOM builds the Atlassian Document Format description for you</td>
+</tr>
+<tr>
+<td><strong>OpenProject</strong></td>
+<td>API key from <em>My account → Access tokens</em> (SATOM sends the username <code>apikey</code> itself)</td>
+<td>Project id or identifier</td>
+<td>Type id <code>1</code> is <em>Task</em> on a default install. Watchers are <strong>not</strong> notified — a change window is not an announcement</td>
+</tr>
+<tr>
+<td><strong>Vikunja</strong></td>
+<td>API token from <em>Settings → API Tokens</em>, with at least <code>Create</code> on tasks</td>
+<td>Project id (the number in the project URL)</td>
+<td>Creation uses <code>PUT</code>; SATOM handles that</td>
+</tr>
+</tbody>
+</table>
+<p>The token is stored encrypted. Leaving the token box blank when you save
+<strong>keeps</strong> the token you already have — tick <strong>Clear the stored token</strong> to
+remove it.</p>
+<p><strong>Test connection makes two calls, and the second is the one that matters.</strong> It
+authenticates, then fetches the configured project. A token that authenticates
+but cannot see the project would otherwise show a green tick and fail at the
+only moment anyone cares: while a change window is opening.</p>
+<p><strong>What the ticket says.</strong> The appliances <strong>by name</strong> (not database ids), the
+affected services, the stored pre-upgrade evidence, and — named, never implied
+— the appliances that have <em>no</em> baseline. An approver should not have to come
+back here to find out what they are approving. When the change is in
+<strong>External</strong> approval mode the ticket says so explicitly: it holds the gate.</p>
+<p><strong>One ticket per window, and only one.</strong> A change that already carries a
+reference is a <em>re-request</em> — the window moved, the scope grew — and SATOM will
+not open a second ticket for it. That is enforced in the orchestrator rather
+than by disabling a button, so a double-click, a browser retry or a second
+operator cannot produce a duplicate.</p>
+<p><strong>If it fails, it says so.</strong> A tracker that is switched on and then does not
+open a ticket produces a red message naming the reason, and the failure is
+recorded on the change's own timeline. It never degrades to silence, and a
+tracker outage can never break the change request itself.</p>
+<h3 id="353-integration-hooks">35.3 Integration hooks</h3>
 <p>A hook is a small Python script SATOM runs when it emits an event. The usual use
 is opening a change ticket in your own CRM and handing the reference back.</p>
 <p>Events: <code>change.requested</code>, <code>change.approved</code>, <code>window.opening</code>,
@@ -3232,7 +3288,7 @@ which are written onto the change request so the ticket is one click away.</p>
 <p><strong>HA:</strong> <code>satom-integrations.path</code> must be enabled on <strong>both</strong> nodes. A standby
 whose watcher is disabled accepts queued work and never runs it — silently.</p>
 </blockquote>
-<h3 id="353-what-this-changes-on-a-change-request">35.3 What this changes on a change request</h3>
+<h3 id="354-what-this-changes-on-a-change-request">35.4 What this changes on a change request</h3>
 <p>Create the change request as usual and set <strong>Approval</strong>:</p>
 <ul>
 <li><strong>Manual</strong> — approved here in SATOM, exactly as before.</li>

@@ -71,6 +71,7 @@ def run(ctx):
 @require_permission(Permission.USER_MANAGE)
 def index():
     from ..services import netbox_client as netbox
+    from ..services import tracker_client as tracker
     hooks_mod, hooks_error = _hooks()
     return render_template(
         "integrations/index.html",
@@ -82,6 +83,8 @@ def index():
         events=(hooks_mod.EVENTS if hooks_mod else {}),
         recent=(hooks_mod.recent(20) if hooks_mod else []),  # newest first, all hooks
         hooks_error=hooks_error,
+        tracker=tracker.config(),            # never reveals the token
+        tracker_backends=tracker.BACKENDS,
     )
 
 
@@ -145,6 +148,43 @@ def save_map():
         return redirect(url_for("integrations.index"))
     flash(f"Saved {len(pairs)} device mapping(s).", "success")
     return redirect(url_for("integrations.index"))
+
+
+# --------------------------------------------------------------------------- #
+#  Issue tracker (Jira / OpenProject / Vikunja)                                 #
+# --------------------------------------------------------------------------- #
+@bp.route("/tracker", methods=["POST"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def save_tracker():
+    from ..services import audit
+    from ..services import tracker_client as tracker
+    try:
+        tracker.save_config(request.form)
+    except ValueError as exc:
+        flash(str(exc), "danger")
+        return redirect(url_for("integrations.index"))
+    # The token is never logged - not its value, not its length. An audit row
+    # that records how long a secret is has still narrowed it. The PROJECT is
+    # logged on purpose: "who pointed our changes at a different project" is
+    # the question this row exists to answer.
+    audit.log(_who(), "integrations.tracker.save",
+              detail=f"backend={request.form.get('backend', '')!r} "
+                     f"url={request.form.get('url', '')!r} "
+                     f"project={request.form.get('project', '')!r} "
+                     f"enabled={'1' if request.form.get('enabled') else '0'}")
+    flash("Issue tracker settings saved.", "success")
+    return redirect(url_for("integrations.index"))
+
+
+@bp.route("/tracker/test", methods=["POST"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def test_tracker():
+    """Probe identity AND the configured project. Returns the measured elapsed
+    time - a green tick with no numbers behind it is not evidence."""
+    from ..services import tracker_client as tracker
+    return jsonify(tracker.test_connection())
 
 
 # --------------------------------------------------------------------------- #

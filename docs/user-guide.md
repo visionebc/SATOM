@@ -2508,6 +2508,94 @@ is the permission.
 Endpoint conventions, dialects and per-product quirks:
 [docs/device-api.md](device-api.md).
 
+### 30.4 Reconcile: what the fleet says about the catalog
+
+**API explorer → Reconcile** (`/web/registry/reconcile`) or, in the FortiADC
+workspace, **API hub → Reconcile** (`/adc/api/reconcile`). Needs
+`registry_edit`, same as editing a row — because that is what Apply does.
+
+The rediscovery sweep (§4) already asks a live appliance about every endpoint in
+the catalog. This page reads those verdicts back across **all** live appliances
+of the product and sorts the catalog into six cards:
+
+| card | meaning |
+|---|---|
+| **Evidence** | which appliances were believed, and which were thrown out |
+| **Not served by any live appliance** | the only bucket with a disable button |
+| **Cannot conclude** | served by one appliance and absent on another, or simply not measured everywhere |
+| **Never measured** | in the sweep plan, no sweep has ever asked |
+| **Outside the sweep plan** | no sweep can ever answer — sub-tables that need an `mkey` |
+| *(verified)* | counted in the header; nothing to do |
+
+**An appliance can be excluded from its own evidence.** A device answering
+errors to more than a quarter of the sweep — the threshold is **25 %** — is
+reporting on *itself*, not on the catalog, and the page names it in the
+Evidence card with the ratio. The real
+case: an appliance whose licence had lapsed answered an error to 283 of 321
+reads while the inventory still showed it green. Believed naively it would have
+condemned the entire catalog.
+
+> **Before you press Disable, read the warning at the top of the proposals card.**
+> Absence is a statement about a **firmware release**, not about an endpoint. If
+> every appliance you own runs the same line — which the card tells you — then
+> "absent everywhere" means *"not in that release"*. On the first real run, of
+> the 38 endpoints both healthy 7.6.8 appliances rejected, several were **8.0**
+> features. Disabling them removes from the catalog exactly what your next
+> upgrade needs.
+
+Apply performs the ordinary soft delete: the row is kept, disabled, audited and
+restorable from the explorer. Submitting a name the evidence does not condemn is
+answered `rejected` — the form filters the proposals, it does not authorise
+them.
+
+### 30.5 API versions: what each firmware line actually takes
+
+**API explorer → API versions** (`/web/registry/versions`, and the FortiADC
+twin at `/adc/api/versions`). Also `registry_edit`.
+
+**Two firmware lines can speak the same API version and still not accept the
+same payload.** FortiWeb 7.6 and 8.0 are both `v2.0`; measured on this fleet's
+own data, `admin` has 40 fields on 7.6 and 42 on 8.0, `system_global` 60 versus
+63, `ntp` 3 versus 4. If nothing tracks that, a payload built against one line
+and written to the other fails on the appliance — which is the wrong place to
+find out.
+
+The page has four parts:
+
+1. **Firmware lines** — every line SATOM has evidence for, whether any appliance
+   in the fleet still runs it, which appliances witnessed it, and how much was
+   measured. A line marked **not in fleet** is archived evidence, and says so;
+   FortiWeb 8.0 is in exactly that state today.
+2. **Witnesses excluded** — the same honesty as §30.4: an unhealthy device is
+   not evidence.
+3. **Compare two lines** — endpoints added and removed, fields added and
+   removed per object, plus two buckets that are *not* changes: **known on one
+   side only** (nobody measured the other) and **incomparable** (the two sides
+   were measured by different means). Those exist because a naive subtraction
+   reported 56 phantom removals on the first draft of this page.
+4. **Preflight** — name an object and the fields you intend to send, and get
+   `ok`, `unknown_fields`, `absent`, `fields_unknown` or `unmeasured`.
+
+**`unmeasured` is an answer, never a yes.** If SATOM has never seen that line,
+it says so rather than guessing; the fix is to sweep an appliance running it, or
+harvest its field schemas, and press **Rebuild**.
+
+The same answers are available on a node whose web interface is down:
+
+```
+satom get api versions
+satom get api preflight fortiweb09 admin fortiai old-password
+satom get api preflight 8.0 admin fortiai old-password
+```
+
+Exit codes: `0` understood, `1` some field is not on that line, `4` unmeasured,
+`2` you typed the command wrong. `4` is separate from `0` deliberately — a
+script must never reach "go ahead" from "I have no evidence".
+
+Both commands print when the matrix was built, because it is a snapshot of the
+evidence, not a live query. Details, evidence rules and the CLI contract:
+[docs/device-api.md](device-api.md) §6–§7.
+
 ## 31. Release notes & the SATOM changelog
 
 **Two different things share the name "release notes", and confusing them wastes

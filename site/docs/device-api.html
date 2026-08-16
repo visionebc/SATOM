@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Device APIs &amp; the endpoint registry — SATOM</title>
-<meta name="description" content="The API consoles that drive the appliances, and the registry that makes a moved firmware URI a row edit instead of a release.">
+<meta name="description" content="The API consoles that drive the appliances, the registry that makes a moved firmware URI a row edit instead of a release, and the firmware-line evidence that says which fields a release actually takes.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../docs.html" style="color:inherit;text-decoration:none;">← Documentation</a></p>
   <h1>🔭 Device APIs &amp; the endpoint registry</h1>
-  <p class="sub">The API consoles that drive the appliances, and the registry that makes a moved firmware URI a row edit instead of a release.</p>
+  <p class="sub">The API consoles that drive the appliances, the registry that makes a moved firmware URI a row edit instead of a release, and the firmware-line evidence that says which fields a release actually takes.</p>
   <div class="callout" style="margin-top:18px;">
     <span class="cico">🕶️</span>
     <p><b>Published copy.</b> Internal addresses, hostnames and device names are replaced
@@ -65,7 +65,9 @@
       <a href="#3-permissions-and-what-is-actually-gated">3. Permissions, and what is actually gated</a>
       <a href="#4-adom-scoping">4. ADOM scoping</a>
       <a href="#5-recipes">5. Recipes</a>
-      <a href="#6-limits-gotchas">6. Limits &amp; gotchas</a>
+      <a href="#6-reconciling-the-catalog-against-the-fleet">6. Reconciling the catalog against the fleet</a>
+      <a href="#7-firmware-lines-which-fields-a-line-actually-serves">7. Firmware lines: which fields a line actually serves</a>
+      <a href="#8-limits-gotchas">8. Limits &amp; gotchas</a>
     </aside>
     <div class="doc-body mdx">
 <h1 id="device-apis-the-endpoint-registry">Device APIs &amp; the endpoint registry</h1>
@@ -392,11 +394,270 @@ entry back for you.</p>
 catalog. This is the right tool for a one-off probe — if you find yourself
 typing the same raw path twice, make it an entry.</p>
 <hr>
-<h2 id="6-limits-gotchas">6. Limits &amp; gotchas</h2>
+<h2 id="6-reconciling-the-catalog-against-the-fleet">6. Reconciling the catalog against the fleet</h2>
+<p>The rediscovery sweep (§ Appliances → <strong>Rediscovery</strong>) is the only thing in
+SATOM that asks a live appliance about <strong>every</strong> endpoint in a product's
+catalog. Its per-endpoint verdicts used to die inside the snapshot file.
+<strong>Registry reconcile</strong> is the return path: it reads those verdicts across every
+live appliance of the product and turns them into a <em>proposal</em>.</p>
+<table>
+<thead>
+<tr>
+<th>product</th>
+<th>where</th>
+<th>route</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>FortiWeb</td>
+<td>API explorer → <strong>Reconcile</strong></td>
+<td><code>/web/registry/reconcile</code></td>
+</tr>
+<tr>
+<td>FortiADC</td>
+<td>API hub → <strong>Reconcile</strong></td>
+<td><code>/adc/api/reconcile</code></td>
+</tr>
+</tbody>
+</table>
+<p>Both require <code>registry_edit</code>. That is deliberate: the page exists to drive the
+soft-delete toggle of §1.5, and its Apply POST performs exactly that write —
+no more permission than editing a row by hand, and no less.</p>
+<p>FortiAuthenticator and FortiAnalyzer have a catalog but <strong>no sweep plan</strong>, so
+they have no reconcile page: there is no evidence to read back.</p>
+<h3 id="61-two-signals-that-must-never-be-collapsed">6.1 Two signals that must never be collapsed</h3>
+<table>
+<thead>
+<tr>
+<th>verdict</th>
+<th>FortiWeb</th>
+<th>FortiADC</th>
+<th>what it is evidence about</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ok</code></td>
+<td>200, rows returned</td>
+<td>200</td>
+<td>the endpoint <strong>is</strong> served</td>
+</tr>
+<tr>
+<td><code>absent</code></td>
+<td><code>errcode -20001</code> / <code>-3</code></td>
+<td>HTTP 404</td>
+<td><strong>the catalog</strong> — that path is not on this firmware</td>
+</tr>
+<tr>
+<td><code>error</code></td>
+<td>transport, auth, licence, config lock</td>
+<td>same</td>
+<td><strong>the device</strong> — it says nothing about the catalog</td>
+</tr>
+</tbody>
+</table>
+<p>Reading any non-200 as "gone" is how one sick appliance deletes a whole catalog.
+This is not hypothetical: an appliance answering <code>-20010</code> (<em>"The license of peer
+VM FortiWeb is not valid"</em>) to 283 of its 321 configuration reads was still
+listed <code>online</code> by the inventory, because the status probe uses a different
+endpoint. A witness whose ledger is more than <strong>25 %</strong> errors is therefore
+dropped from the evidence <strong>entirely</strong> — and named on the page — rather than
+being believed endpoint by endpoint.</p>
+<h3 id="62-the-six-buckets">6.2 The six buckets</h3>
+<p>Every enabled endpoint lands in exactly one, and the bucket names the reason:</p>
+<table>
+<thead>
+<tr>
+<th>bucket</th>
+<th>meaning</th>
+<th>what to do</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>verified</code></td>
+<td>at least one usable appliance served it</td>
+<td>nothing</td>
+</tr>
+<tr>
+<td><code>proposals</code></td>
+<td><strong>every</strong> usable appliance says the path does not exist</td>
+<td>read §6.3 before acting</td>
+</tr>
+<tr>
+<td><code>divergent</code></td>
+<td>absent on one appliance, served by another</td>
+<td>nothing — that is a firmware or feature split, not a dead endpoint</td>
+</tr>
+<tr>
+<td><code>partial</code></td>
+<td>absent everywhere it was measured, but not measured everywhere</td>
+<td>sweep the appliances the page names</td>
+</tr>
+<tr>
+<td><code>unproven</code></td>
+<td>in the sweep plan, enabled, never measured anywhere</td>
+<td>run a rediscovery</td>
+</tr>
+<tr>
+<td><code>unsweepable</code></td>
+<td>enabled but <strong>not in the sweep plan at all</strong></td>
+<td>no sweep can ever give it a verdict — usually a sub-table needing an <code>mkey</code></td>
+</tr>
+</tbody>
+</table>
+<p><code>unsweepable</code> exists as its own bucket for one reason: filing those under "never
+measured" would tell an operator to run a sweep that structurally cannot answer.</p>
+<h3 id="63-the-firmware-caveat-read-this-before-disabling-anything">6.3 The firmware caveat — read this before disabling anything</h3>
+<p><strong>Absence is a claim about a firmware, not about an endpoint.</strong> The catalog is a
+deliberate cross-firmware superset, so on a fleet where every witness runs the
+same line, <em>"absent everywhere"</em> means <strong>"not in that release"</strong> — not "dead".</p>
+<p>The first real run proved it: of the 38 endpoints both healthy 7.6.8 appliances
+rejected, several (<code>waf/mcp-security.*</code>, <code>ml-based-anomaly-detection</code>,
+<code>system/captcha-puzzle</code>, <code>certificate.eab-credentials</code>) are <strong>8.0</strong> features.
+Disabling them would have stripped the catalog of exactly what the next upgrade
+needs.</p>
+<p>So every proposal carries the firmware lines that produced it, and when the
+whole quorum runs a single line the page <strong>leads with that warning instead of
+with the disable button</strong>.</p>
+<h3 id="64-applying">6.4 Applying</h3>
+<p>Selecting rows and pressing <strong>Disable selected</strong> performs the ordinary soft
+delete: <code>enabled=false</code>, the row kept, audited, reversible from the same
+explorer. The POST does <strong>not</strong> carry authority — <code>apply_disable</code> re-derives the
+proposal set server-side and treats the submitted names as a <em>filter</em> over it.
+Asking it to disable an endpoint the evidence does not condemn comes back
+<code>rejected</code>, and nothing is written.</p>
+<hr>
+<h2 id="7-firmware-lines-which-fields-a-line-actually-serves">7. Firmware lines: which fields a line actually serves</h2>
+<p><code>api_version</code> cannot answer this question, and assuming it can is a write that
+fails on the appliance. FortiWeb <strong>7.6 and 8.0 both speak <code>v2.0</code></strong> — the dialect
+is identical and the <em>field sets are not</em>. Measured on this fleet's own
+artifacts:</p>
+<table>
+<thead>
+<tr>
+<th>object</th>
+<th>7.6</th>
+<th>8.0</th>
+<th>added on 8.0</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>admin</code></td>
+<td>40</td>
+<td><strong>42</strong></td>
+<td><code>fortiai</code>, <code>old-password</code></td>
+</tr>
+<tr>
+<td><code>system_global</code></td>
+<td>60</td>
+<td><strong>63</strong></td>
+<td></td>
+</tr>
+<tr>
+<td><code>ntp</code></td>
+<td>3</td>
+<td><strong>4</strong></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>Code that builds a payload from one line and writes it to a box running the
+other is the failure this page exists to surface <strong>before</strong> the write.</p>
+<table>
+<thead>
+<tr>
+<th>product</th>
+<th>where</th>
+<th>route</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>FortiWeb</td>
+<td>API explorer → <strong>API versions</strong></td>
+<td><code>/web/registry/versions</code></td>
+</tr>
+<tr>
+<td>FortiADC</td>
+<td>API hub → <strong>API versions</strong></td>
+<td><code>/adc/api/versions</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="71-the-unit-is-product-firmware-line-endpoint">7.1 The unit is (product, firmware line, endpoint)</h3>
+<p>A <strong>line</strong> is <code>major.minor</code>. A patch release is not a new API surface, and
+keying by the full build string would give every build its own column of
+one-device evidence that never accumulates — the same granularity the capacity
+limits and <code>data/field_schemas/&lt;product&gt;/&lt;line&gt;/</code> already use.</p>
+<p>The matrix is <strong>derived, not authored</strong>. It is a file under <code>data/api_matrix/</code>,
+rebuilt from evidence that already exists on disk; delete it and a rebuild
+reconstructs it exactly. It is deliberately <em>not</em> a database table: a derived
+view in Postgres would sit in a different backup path from the evidence it
+summarises, and both of those evidence trees are already carried by the standby
+sync and by the system bundles.</p>
+<h3 id="72-two-kinds-of-evidence-never-subtracted-from-each-other">7.2 Two kinds of evidence, never subtracted from each other</h3>
+<ul>
+<li><strong>sweep</strong> — the rediscovery snapshot. The keys of the objects it read back
+  <em>are</em> the fields that firmware serves.</li>
+<li><strong>schema</strong> — the harvested field specs under <code>data/field_schemas/</code>. This is
+  the only evidence for FortiWeb 8.0 today, because no 8.0 FortiWeb is left in
+  the fleet; that folder was harvested from an appliance since retired. The page
+  says so on the line itself (<strong>in fleet: no</strong>) rather than presenting archived
+  evidence as current.</li>
+</ul>
+<p><strong>A delta is only ever computed sweep↔sweep or schema↔schema.</strong> The first
+version of the comparison merged them and reported <strong>56 removed fields</strong> for
+7.6 → 8.0 that were nothing but a filter: a sweep field set is the raw dict the
+appliance puts on the wire, carrying the <code>_val</code> companion of every enum plus
+<code>sz_</code>/<code>q_</code> internals, and the harvested schema strips exactly those because they
+are not operator-settable. An object known by different evidence kinds on the
+two lines is reported as <strong>incomparable</strong>, in its own bucket. A page whose
+headline number is noise is a page the operator learns to ignore.</p>
+<h3 id="73-three-rules">7.3 Three rules</h3>
+<ol>
+<li><strong><code>fields = none</code> is not <code>fields = []</code>.</strong> An endpoint that answered <code>ok</code> with
+   zero rows proves the endpoint exists and says <em>nothing</em> about its fields.
+   Folding that into an empty set would invent dozens of removals.</li>
+<li><strong>A line with no evidence is <code>unmeasured</code>, never "compatible".</strong> The default
+   answer is "I do not know", because the caller's next action is a write to a
+   real appliance.</li>
+<li><strong>"Absent on the other line" requires the other line to have been measured.</strong>
+   Present-here / unknown-there is reported as unknown, never as removed.</li>
+</ol>
+<h3 id="74-preflight-asking-before-you-write">7.4 Preflight — asking before you write</h3>
+<p>The page carries a preflight box, and the CLI carries the same answer for a node
+whose web interface is down:</p>
+<pre><code>satom get api versions [&lt;product&gt;]
+satom get api preflight &lt;appliance|line&gt; &lt;object&gt; &lt;field&gt; [&lt;field&gt;...] [--product &lt;p&gt;]
+</code></pre>
+<pre><code>$ satom get api preflight {device} admin fortiai old-password
+   status: unknown_fields   → rc 1   # 7.6 does not take those two
+$ satom get api preflight 8.0 admin fortiai old-password
+   status: ok               → rc 0
+$ satom get api preflight 9.9 admin anything
+   status: unmeasured       → rc 4
+</code></pre>
+<p>The exit codes are the contract, and <strong><code>unmeasured</code> has its own code on
+purpose</strong>: a script must not be able to reach "go ahead" and "I have no
+evidence" through the same <code>rc</code>. <code>rc 2</code> stays what it always was — you typed the
+command wrong — so <em>"is 9.0 supported?"</em>, the question somebody asks the week
+before an upgrade, never looks like a usage error.</p>
+<p>The CLI is stdlib-only and reads the matrix file directly: no database, no app
+import. The consequence is stated rather than hidden — the file is a snapshot,
+so both commands print its <code>built_at</code>, and a matrix nobody rebuilt reports what
+was true then. <strong>Rebuild</strong> on the page (or the first access after the file is
+removed) recomputes it.</p>
+<hr>
+<h2 id="8-limits-gotchas">8. Limits &amp; gotchas</h2>
 <ul>
 <li><strong>A "not found" is usually the truth.</strong> The catalog is a cross-firmware
   superset; an endpoint your firmware does not implement is a correct empty
-  answer, not a defect.</li>
+  answer, not a defect.
+  §6 reads those answers back across the whole fleet; §7 tells you which
+  firmware line they belong to.</li>
 <li><strong>Sixty seconds of eventual consistency.</strong> After an edit, other worker
   processes converge within the cache window. Do not diagnose a save failure
   faster than that.</li>

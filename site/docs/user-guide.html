@@ -2916,6 +2916,106 @@ an endpoint, choose a method, supply a JSON body, execute.</p>
 is the permission.</p>
 <p>Endpoint conventions, dialects and per-product quirks:
 <a href="device-api.html">docs/device-api.md</a>.</p>
+<h3 id="304-reconcile-what-the-fleet-says-about-the-catalog">30.4 Reconcile: what the fleet says about the catalog</h3>
+<p><strong>API explorer → Reconcile</strong> (<code>/web/registry/reconcile</code>) or, in the FortiADC
+workspace, <strong>API hub → Reconcile</strong> (<code>/adc/api/reconcile</code>). Needs
+<code>registry_edit</code>, same as editing a row — because that is what Apply does.</p>
+<p>The rediscovery sweep (§4) already asks a live appliance about every endpoint in
+the catalog. This page reads those verdicts back across <strong>all</strong> live appliances
+of the product and sorts the catalog into six cards:</p>
+<table>
+<thead>
+<tr>
+<th>card</th>
+<th>meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Evidence</strong></td>
+<td>which appliances were believed, and which were thrown out</td>
+</tr>
+<tr>
+<td><strong>Not served by any live appliance</strong></td>
+<td>the only bucket with a disable button</td>
+</tr>
+<tr>
+<td><strong>Cannot conclude</strong></td>
+<td>served by one appliance and absent on another, or simply not measured everywhere</td>
+</tr>
+<tr>
+<td><strong>Never measured</strong></td>
+<td>in the sweep plan, no sweep has ever asked</td>
+</tr>
+<tr>
+<td><strong>Outside the sweep plan</strong></td>
+<td>no sweep can ever answer — sub-tables that need an <code>mkey</code></td>
+</tr>
+<tr>
+<td><em>(verified)</em></td>
+<td>counted in the header; nothing to do</td>
+</tr>
+</tbody>
+</table>
+<p><strong>An appliance can be excluded from its own evidence.</strong> A device answering
+errors to more than a quarter of the sweep — the threshold is <strong>25 %</strong> — is
+reporting on <em>itself</em>, not on the catalog, and the page names it in the
+Evidence card with the ratio. The real
+case: an appliance whose licence had lapsed answered an error to 283 of 321
+reads while the inventory still showed it green. Believed naively it would have
+condemned the entire catalog.</p>
+<blockquote>
+<p><strong>Before you press Disable, read the warning at the top of the proposals card.</strong>
+Absence is a statement about a <strong>firmware release</strong>, not about an endpoint. If
+every appliance you own runs the same line — which the card tells you — then
+"absent everywhere" means <em>"not in that release"</em>. On the first real run, of
+the 38 endpoints both healthy 7.6.8 appliances rejected, several were <strong>8.0</strong>
+features. Disabling them removes from the catalog exactly what your next
+upgrade needs.</p>
+</blockquote>
+<p>Apply performs the ordinary soft delete: the row is kept, disabled, audited and
+restorable from the explorer. Submitting a name the evidence does not condemn is
+answered <code>rejected</code> — the form filters the proposals, it does not authorise
+them.</p>
+<h3 id="305-api-versions-what-each-firmware-line-actually-takes">30.5 API versions: what each firmware line actually takes</h3>
+<p><strong>API explorer → API versions</strong> (<code>/web/registry/versions</code>, and the FortiADC
+twin at <code>/adc/api/versions</code>). Also <code>registry_edit</code>.</p>
+<p><strong>Two firmware lines can speak the same API version and still not accept the
+same payload.</strong> FortiWeb 7.6 and 8.0 are both <code>v2.0</code>; measured on this fleet's
+own data, <code>admin</code> has 40 fields on 7.6 and 42 on 8.0, <code>system_global</code> 60 versus
+63, <code>ntp</code> 3 versus 4. If nothing tracks that, a payload built against one line
+and written to the other fails on the appliance — which is the wrong place to
+find out.</p>
+<p>The page has four parts:</p>
+<ol>
+<li><strong>Firmware lines</strong> — every line SATOM has evidence for, whether any appliance
+   in the fleet still runs it, which appliances witnessed it, and how much was
+   measured. A line marked <strong>not in fleet</strong> is archived evidence, and says so;
+   FortiWeb 8.0 is in exactly that state today.</li>
+<li><strong>Witnesses excluded</strong> — the same honesty as §30.4: an unhealthy device is
+   not evidence.</li>
+<li><strong>Compare two lines</strong> — endpoints added and removed, fields added and
+   removed per object, plus two buckets that are <em>not</em> changes: <strong>known on one
+   side only</strong> (nobody measured the other) and <strong>incomparable</strong> (the two sides
+   were measured by different means). Those exist because a naive subtraction
+   reported 56 phantom removals on the first draft of this page.</li>
+<li><strong>Preflight</strong> — name an object and the fields you intend to send, and get
+   <code>ok</code>, <code>unknown_fields</code>, <code>absent</code>, <code>fields_unknown</code> or <code>unmeasured</code>.</li>
+</ol>
+<p><strong><code>unmeasured</code> is an answer, never a yes.</strong> If SATOM has never seen that line,
+it says so rather than guessing; the fix is to sweep an appliance running it, or
+harvest its field schemas, and press <strong>Rebuild</strong>.</p>
+<p>The same answers are available on a node whose web interface is down:</p>
+<pre><code>satom get api versions
+satom get api preflight {device} admin fortiai old-password
+satom get api preflight 8.0 admin fortiai old-password
+</code></pre>
+<p>Exit codes: <code>0</code> understood, <code>1</code> some field is not on that line, <code>4</code> unmeasured,
+<code>2</code> you typed the command wrong. <code>4</code> is separate from <code>0</code> deliberately — a
+script must never reach "go ahead" from "I have no evidence".</p>
+<p>Both commands print when the matrix was built, because it is a snapshot of the
+evidence, not a live query. Details, evidence rules and the CLI contract:
+<a href="device-api.html">docs/device-api.md</a> §6–§7.</p>
 <h2 id="31-release-notes-the-satom-changelog">31. Release notes &amp; the SATOM changelog</h2>
 <p><strong>Two different things share the name "release notes", and confusing them wastes
 an afternoon.</strong> One is the <strong>vendor's</strong> notes for the <em>appliance</em> firmware,

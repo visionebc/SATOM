@@ -142,7 +142,7 @@ page.
 | [`engineering.md`](engineering.md) | Internal architecture: layers, registry, device clients, jobs, testing. |
 | [`source-of-truth-spec.md`](source-of-truth-spec.md) | The authoritative behavioural specification. |
 | [`api_v1.md`](api_v1.md) | Token authentication and the public API surface. |
-| [`device-api.md`](device-api.md) | The device API consoles and the endpoint registry behind them. |
+| [`device-api.md`](device-api.md) | The device API consoles, the endpoint registry behind them, reconciling that registry against the fleet, and the firmware-line field matrix. |
 
 ### Managed-device reference
 | Document | What it is for |

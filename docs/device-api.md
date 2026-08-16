@@ -258,11 +258,190 @@ typing the same raw path twice, make it an entry.
 
 ---
 
-## 6. Limits & gotchas
+## 6. Reconciling the catalog against the fleet
+
+The rediscovery sweep (§ Appliances → **Rediscovery**) is the only thing in
+SATOM that asks a live appliance about **every** endpoint in a product's
+catalog. Its per-endpoint verdicts used to die inside the snapshot file.
+**Registry reconcile** is the return path: it reads those verdicts across every
+live appliance of the product and turns them into a *proposal*.
+
+| product | where | route |
+|---|---|---|
+| FortiWeb | API explorer → **Reconcile** | `/web/registry/reconcile` |
+| FortiADC | API hub → **Reconcile** | `/adc/api/reconcile` |
+
+Both require `registry_edit`. That is deliberate: the page exists to drive the
+soft-delete toggle of §1.5, and its Apply POST performs exactly that write —
+no more permission than editing a row by hand, and no less.
+
+FortiAuthenticator and FortiAnalyzer have a catalog but **no sweep plan**, so
+they have no reconcile page: there is no evidence to read back.
+
+### 6.1 Two signals that must never be collapsed
+
+| verdict | FortiWeb | FortiADC | what it is evidence about |
+|---|---|---|---|
+| `ok` | 200, rows returned | 200 | the endpoint **is** served |
+| `absent` | `errcode -20001` / `-3` | HTTP 404 | **the catalog** — that path is not on this firmware |
+| `error` | transport, auth, licence, config lock | same | **the device** — it says nothing about the catalog |
+
+Reading any non-200 as "gone" is how one sick appliance deletes a whole catalog.
+This is not hypothetical: an appliance answering `-20010` (*"The license of peer
+VM FortiWeb is not valid"*) to 283 of its 321 configuration reads was still
+listed `online` by the inventory, because the status probe uses a different
+endpoint. A witness whose ledger is more than **25 %** errors is therefore
+dropped from the evidence **entirely** — and named on the page — rather than
+being believed endpoint by endpoint.
+
+### 6.2 The six buckets
+
+Every enabled endpoint lands in exactly one, and the bucket names the reason:
+
+| bucket | meaning | what to do |
+|---|---|---|
+| `verified` | at least one usable appliance served it | nothing |
+| `proposals` | **every** usable appliance says the path does not exist | read §6.3 before acting |
+| `divergent` | absent on one appliance, served by another | nothing — that is a firmware or feature split, not a dead endpoint |
+| `partial` | absent everywhere it was measured, but not measured everywhere | sweep the appliances the page names |
+| `unproven` | in the sweep plan, enabled, never measured anywhere | run a rediscovery |
+| `unsweepable` | enabled but **not in the sweep plan at all** | no sweep can ever give it a verdict — usually a sub-table needing an `mkey` |
+
+`unsweepable` exists as its own bucket for one reason: filing those under "never
+measured" would tell an operator to run a sweep that structurally cannot answer.
+
+### 6.3 The firmware caveat — read this before disabling anything
+
+**Absence is a claim about a firmware, not about an endpoint.** The catalog is a
+deliberate cross-firmware superset, so on a fleet where every witness runs the
+same line, *"absent everywhere"* means **"not in that release"** — not "dead".
+
+The first real run proved it: of the 38 endpoints both healthy 7.6.8 appliances
+rejected, several (`waf/mcp-security.*`, `ml-based-anomaly-detection`,
+`system/captcha-puzzle`, `certificate.eab-credentials`) are **8.0** features.
+Disabling them would have stripped the catalog of exactly what the next upgrade
+needs.
+
+So every proposal carries the firmware lines that produced it, and when the
+whole quorum runs a single line the page **leads with that warning instead of
+with the disable button**.
+
+### 6.4 Applying
+
+Selecting rows and pressing **Disable selected** performs the ordinary soft
+delete: `enabled=false`, the row kept, audited, reversible from the same
+explorer. The POST does **not** carry authority — `apply_disable` re-derives the
+proposal set server-side and treats the submitted names as a *filter* over it.
+Asking it to disable an endpoint the evidence does not condemn comes back
+`rejected`, and nothing is written.
+
+---
+
+## 7. Firmware lines: which fields a line actually serves
+
+`api_version` cannot answer this question, and assuming it can is a write that
+fails on the appliance. FortiWeb **7.6 and 8.0 both speak `v2.0`** — the dialect
+is identical and the *field sets are not*. Measured on this fleet's own
+artifacts:
+
+| object | 7.6 | 8.0 | added on 8.0 |
+|---|---|---|---|
+| `admin` | 40 | **42** | `fortiai`, `old-password` |
+| `system_global` | 60 | **63** | |
+| `ntp` | 3 | **4** | |
+
+Code that builds a payload from one line and writes it to a box running the
+other is the failure this page exists to surface **before** the write.
+
+| product | where | route |
+|---|---|---|
+| FortiWeb | API explorer → **API versions** | `/web/registry/versions` |
+| FortiADC | API hub → **API versions** | `/adc/api/versions` |
+
+### 7.1 The unit is (product, firmware line, endpoint)
+
+A **line** is `major.minor`. A patch release is not a new API surface, and
+keying by the full build string would give every build its own column of
+one-device evidence that never accumulates — the same granularity the capacity
+limits and `data/field_schemas/<product>/<line>/` already use.
+
+The matrix is **derived, not authored**. It is a file under `data/api_matrix/`,
+rebuilt from evidence that already exists on disk; delete it and a rebuild
+reconstructs it exactly. It is deliberately *not* a database table: a derived
+view in Postgres would sit in a different backup path from the evidence it
+summarises, and both of those evidence trees are already carried by the standby
+sync and by the system bundles.
+
+### 7.2 Two kinds of evidence, never subtracted from each other
+
+* **sweep** — the rediscovery snapshot. The keys of the objects it read back
+  *are* the fields that firmware serves.
+* **schema** — the harvested field specs under `data/field_schemas/`. This is
+  the only evidence for FortiWeb 8.0 today, because no 8.0 FortiWeb is left in
+  the fleet; that folder was harvested from an appliance since retired. The page
+  says so on the line itself (**in fleet: no**) rather than presenting archived
+  evidence as current.
+
+**A delta is only ever computed sweep↔sweep or schema↔schema.** The first
+version of the comparison merged them and reported **56 removed fields** for
+7.6 → 8.0 that were nothing but a filter: a sweep field set is the raw dict the
+appliance puts on the wire, carrying the `_val` companion of every enum plus
+`sz_`/`q_` internals, and the harvested schema strips exactly those because they
+are not operator-settable. An object known by different evidence kinds on the
+two lines is reported as **incomparable**, in its own bucket. A page whose
+headline number is noise is a page the operator learns to ignore.
+
+### 7.3 Three rules
+
+1. **`fields = none` is not `fields = []`.** An endpoint that answered `ok` with
+   zero rows proves the endpoint exists and says *nothing* about its fields.
+   Folding that into an empty set would invent dozens of removals.
+2. **A line with no evidence is `unmeasured`, never "compatible".** The default
+   answer is "I do not know", because the caller's next action is a write to a
+   real appliance.
+3. **"Absent on the other line" requires the other line to have been measured.**
+   Present-here / unknown-there is reported as unknown, never as removed.
+
+### 7.4 Preflight — asking before you write
+
+The page carries a preflight box, and the CLI carries the same answer for a node
+whose web interface is down:
+
+```
+satom get api versions [<product>]
+satom get api preflight <appliance|line> <object> <field> [<field>...] [--product <p>]
+```
+
+```
+$ satom get api preflight fortiweb09 admin fortiai old-password
+   status: unknown_fields   → rc 1   # 7.6 does not take those two
+$ satom get api preflight 8.0 admin fortiai old-password
+   status: ok               → rc 0
+$ satom get api preflight 9.9 admin anything
+   status: unmeasured       → rc 4
+```
+
+The exit codes are the contract, and **`unmeasured` has its own code on
+purpose**: a script must not be able to reach "go ahead" and "I have no
+evidence" through the same `rc`. `rc 2` stays what it always was — you typed the
+command wrong — so *"is 9.0 supported?"*, the question somebody asks the week
+before an upgrade, never looks like a usage error.
+
+The CLI is stdlib-only and reads the matrix file directly: no database, no app
+import. The consequence is stated rather than hidden — the file is a snapshot,
+so both commands print its `built_at`, and a matrix nobody rebuilt reports what
+was true then. **Rebuild** on the page (or the first access after the file is
+removed) recomputes it.
+
+---
+
+## 8. Limits & gotchas
 
 - **A "not found" is usually the truth.** The catalog is a cross-firmware
   superset; an endpoint your firmware does not implement is a correct empty
   answer, not a defect.
+  §6 reads those answers back across the whole fleet; §7 tells you which
+  firmware line they belong to.
 - **Sixty seconds of eventual consistency.** After an edit, other worker
   processes converge within the cache window. Do not diagnose a save failure
   faster than that.

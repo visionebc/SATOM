@@ -32,6 +32,46 @@
   </div>
 </div>
 
+<!-- BOOKMARK VIEW (per-user grouping order for the bookmarks rail) -->
+<div class="fw-card mb-3" id="bookmark-view">
+  <div class="fw-card-header">
+    <span class="fw-card-title"><i class="bi bi-sliders me-2 text-accent"></i>{{ _('Bookmarks \u2014 grouping order') }}</span>
+  </div>
+  <div class="fw-card-body">
+    <p class="text-muted" style="font-size:13px;">
+      {{ _('The bookmarks rail shows ONE view of the fleet, nested in the order you pick here. It is yours alone \u2014 changing it does not touch anybody else\'s panel, and it never moves a device: the grouping is recomputed from the live inventory on every render.') }}
+    </p>
+    <form method="POST" action="{{ url_for('auth.save_bookmark_view') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="row g-2">
+        {% for slot in range(bookmark_dims|length) %}
+        <div class="col-6 col-lg-4">
+          <label class="form-label" style="font-size:12px;" for="bmdim-{{ slot }}">
+            {{ _('Level') }} {{ slot + 1 }}</label>
+          <select class="form-select form-select-sm" name="dim" id="bmdim-{{ slot }}">
+            <option value="">{{ _('\u2014 none \u2014') }}</option>
+            {% for key, label, icon in bookmark_dims %}
+            <option value="{{ key }}"
+              {% if bookmark_lens|length > slot and bookmark_lens[slot] == key %}selected{% endif %}>
+              {{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        {% endfor %}
+      </div>
+      <p class="text-muted mt-2 mb-2" style="font-size:12px;">
+        {{ _('Blank levels are skipped. A dimension may only appear once \u2014 below its first level every device already shares one value, so a repeat would add depth and no information.') }}
+      </p>
+      <div class="d-flex align-items-center gap-2">
+        <button type="submit" class="btn btn-sm btn-primary">
+          <i class="bi bi-check2 me-1"></i>{{ _('Save order') }}</button>
+        <span class="text-muted" style="font-size:12px;">
+          {{ _('Currently:') }} <strong>{{ bookmark_lens_title }}</strong></span>
+      </div>
+    </form>
+  </div>
+</div>
+
 <!-- LANGUAGE (per-user setting, saved in the DB) -->
 <div class="fw-card mb-3" id="language">
   <div class="fw-card-header">

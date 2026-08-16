@@ -8643,3 +8643,664 @@ grep -c 'X-SATOM-Signature' app/services/alert_webhook.py         # header defin
 The signature check that matters cannot be a grep: recompute the HMAC from the
 bytes captured at the transport boundary and compare it with the captured
 header. A grep for `hmac.new` proves only that signing was attempted.
+
+
+## §86 — a sidebar that is a second copy of the inventory (`tests/test_bookmarks.py`, `tests/test_bookmarks_panel.py`, `tests/test_bookmarks_lens.py`)
+
+**What is being defended.** The bookmarks rail. 107 guards across three files:
+the service (visibility, authorship, placement), the panel (routes, tree shape,
+search) and the grouping order (the per-user lens).
+
+**Why it needs guarding at all.** Every failure mode in this feature renders
+*perfectly*. A tree grouped by the wrong dimension, a row calling a device by
+the name it had last month, a shared bookmark visible to somebody who may not
+open the device it points at — none of them throw, none of them look wrong, and
+the only symptom is that somebody acted on something false.
+
+**The rules, and the evidence for each.**
+
+1. **Nothing about a device is stored on a bookmark except its id.** Name, zone,
+   line, department, product and segment are read live on every render. Verified
+   by renaming an appliance and re-reading the name **off the bookmark row**,
+   by id — not off the page. The inventory lens prints the live name by a
+   completely different path, so a whole-body assertion passes against a
+   bookmark row that has gone stale. That exact hole let this mutation survive
+   the first harness of the round.
+2. **The reader's gate, never the sharer's.** Every row passes the ADOM stamp
+   filter and `visible_appliances` for the person looking. An id that belongs
+   to somebody else is **404, not 403** — a 403 confirms the row exists.
+   Verified with a reader who lacks `appliances.view_maintenance`, which is
+   where the asymmetry actually lives; two of the first tests in this file were
+   wrong because they assumed maintenance hides a device from an admin, and it
+   does not.
+3. **Filtering a row out never destroys its placement.** A device entering
+   maintenance leaves the panel and returns where its owner filed it.
+4. **The stores are not lenses.** Favourites, Folders and Shared are always
+   present. Folding them into the one-view rule would make a bookmark shared to
+   you unreachable whenever your chosen grouping happened to be something else.
+5. **Reading a preference is forgiving; writing it is strict.** `lens_for`
+   never raises — the rail renders on every page, so one retired dimension
+   would be a 500 on the whole console rather than a wrong sidebar — while
+   `parse_lens` refuses empty, unknown and repeated entries **by name**. The two
+   must not converge in either direction: a strict read takes the product down,
+   a forgiving write leaves the profile page and the tree disagreeing.
+6. **The root key is stable across a reorder.** The open-set is keyed by node
+   key; a root key derived from the order would slam the root shut every time
+   somebody re-ordered their own tree, punishing exactly the action the feature
+   exists to allow.
+7. **Depth is a CSS class, never an inline style.** This console ships a CSP
+   with a nonce, and a per-row `style=` is what stops working the day
+   `style-src` drops `unsafe-inline` — silently collapsing the tree to one
+   column with nothing failing.
+8. **Search filters on the SERVER.** A client-side `display:none` overlay
+   renders identically and leaves rows in the DOM that the reader's permissions
+   had removed from the answer.
+
+**Verification recipe.**
+
+```
+runuser -u satom -- venv/bin/python -m pytest \
+  tests/test_bookmarks.py tests/test_bookmarks_panel.py \
+  tests/test_bookmarks_lens.py -q          # 107, rc=0
+runuser -u satom -- venv/bin/python -u /var/tmp/mut_lens.py   # 27/27 bite
+```
+
+Node keys are the only thing that can tell two orders apart — both render the
+same device count — so assert on `data-bm-node="r:lens|…"`, never on names:
+
+```
+curl -s .../bookmarks/panel | grep -o 'data-bm-node="[^"]*"' | sort -u
+```
+
+**Traps this round cost time to find.**
+
+* **An anchored patcher that re-reads the file on every edit clobbers itself.**
+  Two edits to one file each start from the original, and only the last one
+  survives — while the patcher cheerfully reports "patched 15 files". Edits
+  must accumulate in memory.
+* **Idempotency is decided by the RESULT, never by the anchor.** Most edits here
+  insert *around* their anchor, so "anchor still present" means nothing;
+  testing it duplicated a whole block of functions and a route on the re-run.
+* **A page-wide assertion breaks when the page gains a second control.**
+  `test_lang_preference` scanned every `<option>` on the profile page for
+  `selected` and started failing the moment the grouping-order form marked its
+  own current value — against a perfectly correct page. Scope such a guard to
+  the element its docstring is actually about.
+* **`ssh root@host '…heredoc…'` with single quotes inside the script dies in
+  the outer shell.** Script to a file, `scp -O`, run it there.
+
+## §87 — two destinations, and a link that looks live (`tests/test_bookmarks_devlink.py`)
+
+**What is being defended.** The arrow on a panel row, and the same link on the
+appliance detail page. 34 guards.
+
+**Why it needs guarding at all.** Every failure mode here renders perfectly.
+A row with no arrow reads as "this device has no GUI". A row whose arrow points
+at a host that never resolves reads as "the device is down", and the operator
+goes and debugs the appliance instead of the record. And a row whose arrow was
+built by pasting `Appliance.host` into `https://` reads as "the device" and can
+navigate somewhere else entirely.
+
+**The rules, and the evidence for each.**
+
+* **Derived from `host`/`port`, never stored.** There is deliberately no
+  `mgmt_url` column: a stored copy of the management address is the copy that
+  survives a re-IP, and then the console sends people to whoever holds the old
+  address now. Guarded by re-addressing the appliance mid-test and asserting the
+  panel follows with no write to the bookmark.
+
+* **The host is PARSED, not interpolated.** `host` is free text an
+  administrator types and the link is rendered for everyone, read-only users
+  included. `fw1@evil.example` is a legal-looking value that navigates to
+  `evil.example`, because everything before the `@` is userinfo. Eleven
+  parametrised values cover userinfo, a smuggled path, a smuggled port, a query,
+  a fragment, whitespace, leading and trailing hyphens, an empty label,
+  `javascript:` and `//`. An IPv6 literal is bracketed — unbracketed, the colons
+  of the address are read as the port separator.
+
+* **The scheme is always `https`, and it does NOT come from `verify_ssl`.**
+  That flag says whether *we* trust the device's certificate; a self-signed
+  appliance is still an HTTPS appliance. Deriving the scheme from it would put
+  the phrase "we don't check this cert" in charge of what the browser does.
+
+* **A refusal is STATED, never a missing button.** The retired appliances in
+  this fleet are parked on `.invalid` hosts, which RFC 6761 guarantees never
+  resolve. Those rows keep their slot, dimmed, with the reason in the tooltip.
+  And the reason is a sentence: `bad_host` sends its reader to somebody who can
+  read the source, a sentence sends them to the inventory record.
+
+* **`rel` carries BOTH `noopener` and `noreferrer`.** The destination is an
+  appliance under audit: `noopener` stops it steering this tab through
+  `window.opener`, `noreferrer` stops it being handed the console URL — which
+  carries device ids — in the `Referer` header. Either alone leaves half of it
+  open, so they are two separate mutations.
+
+* **BOTH destinations survive.** The name opens what SATOM knows, the arrow
+  opens the device. A change that pointed the row itself at the appliance GUI
+  satisfies every other guard in the file and quietly takes the console out of
+  the operator's path.
+
+**Two mutations that survived the first harness, and why.**
+
+* *"an empty host is allowed through"* — every empty-host assertion read only
+  `url is None and why`, and with the guard deleted an empty host still gets
+  refused, one branch further down, as a *malformed* address. The guard was
+  load-bearing for the message and nothing read the message. The fix compares
+  the two reasons: "nobody filled this in" and "somebody typed it wrong" are
+  different mistakes with different fixes.
+
+* *"bookmarked device rows lose the link"* — every panel guard rendered the
+  device through the inventory **lens**, whose item dict is built by a different
+  function. A bookmarked device is drawn **twice**, so `'href="https://…" in
+  body` answered from the lens copy while the bookmark row had lost its link
+  entirely. The fix slices the row out by its `data-bm-id` and asserts inside
+  it. *Any* whole-page substring assertion about a panel that draws the same
+  device from two roots is suspect for this reason.
+
+**How to check it still bites.** Mutate: allow the `.invalid` TLD; read the
+first label instead of the last; drop the bracketing of an IPv6 literal; derive
+the scheme to `http`; drop the port from the URL; paste the host instead of
+parsing it; drop either `rel` token; render a refusal as nothing; point the row
+itself at the device. All bite.
+
+## §88 — a saved link is an `href` in everybody else's sidebar (`tests/test_bookmarks_linkurl.py`)
+
+**What is being defended.** The URL a `link` bookmark may carry, on the way in
+and on the way out. 44 guards.
+
+**Why it needs guarding at all.** A link bookmark is free text one person types
+and everybody renders. Share it with the team and it becomes an `href` in every
+colleague's sidebar, on **every page** of the console, for as long as it exists
+— including for the read-only users who cannot delete it. `javascript:` in that
+`href` runs in this origin on one click with the session cookie: it is stored
+XSS whose only entry requirement is the permission to save a bookmark. Nothing
+about the rendered panel looks wrong. The row is a row, the name is the name,
+and the trap is one click away.
+
+Before this section the only check on the field was that it was **non-empty**.
+
+**The rules, and the evidence for each.**
+
+* **An allowlist of schemes, not a blocklist.** `http` and `https`, plus an
+  internal path beginning with `/`. There is no useful "everything else" here,
+  and a blocklist is a list somebody has to keep adding to — `data:`,
+  `vbscript:`, `blob:`, `about:` and `file:` are all guarded, and all of them
+  are things a blocklist written for `javascript:` alone would have missed.
+
+* **The check reads the string the BROWSER will read.** Browsers delete NUL,
+  TAB, CR and LF from a URL *before* parsing the scheme, so
+  `java\tscript:alert(1)` navigates as `javascript:`. Measured rather than
+  assumed: `urlsplit` removes the same characters and lower-cases the scheme,
+  which is *why* a lower-case allowlist can catch those at all — pinned by a
+  test, since no input can distinguish a redundant `.lower()` from a necessary
+  one and a stdlib that stopped normalising would silently reopen the bypass.
+  The case only the control-character rule catches is a control character
+  inside an otherwise valid URL (`https://ok.example/a\nb`): scheme and host
+  both pass, and the raw value would go into an `href` attribute, where a
+  newline is how one value stops being one value.
+
+* **`//evil.example` is refused even though it starts with a slash.** One
+  character separates "a page of this console" from "somebody else's server",
+  and the panel renders both identically. A scheme-less relative URL
+  (`docs/runbook`) is refused for a duller reason: it resolves against whatever
+  page the panel is drawn on, and the panel is drawn on every page.
+
+* **Checked TWICE, and the two checks defend different things.**
+  `services.bookmarks.create` refuses on the way in, so the row is never stored
+  and the author is told why while they are still looking at the form. The panel
+  re-checks on the way out, because `create` is **not the only writer that
+  reaches this table**: a bundle restore and a Postgres replica both land rows
+  without passing through it. Checking only at write time trusts every row this
+  process did not write. Guarded by storing a legitimate link through the real
+  route and then corrupting the column directly — which is exactly what those
+  paths do.
+
+* **A refused row is DEFUSED, not dropped.** It keeps its place and states why
+  in the tooltip. A row that silently loses its `href` reads as a UI bug, and
+  nobody goes and fixes the URL — which is the only thing that ends the problem.
+
+* **The refusals are told apart.** "You left it blank", "that scheme is not
+  allowed", "that is another server" and "that has no scheme" are four mistakes
+  with four fixes; one shared message helps with none. The empty case keeps its
+  pre-existing `missing_url` code, so the form still says the right thing to
+  somebody who has simply not typed yet.
+
+**The lesson from the first harness run: five of these guards were proving a
+different check than the one they were written about.** `javascript:alert(1)`
+has **no netloc**, and so does `data:`, `vbscript:`, `blob:`, `about:` and
+`file:` — every payload in the original "dangerous scheme" list. All of them
+were refused by the *no-host* check further down, so re-admitting `javascript`
+to `LINK_SCHEMES` changed nothing any test could see. The allowlist, the thing
+the section is *about*, was unguarded.
+
+The payloads that isolate it are the ones that parse **with** a host:
+`javascript://evil.example/%0aalert(1)` — where `//` opens a JavaScript line
+comment and `%0a` closes it, so it is both executable and well-formed —
+plus `data://`, `ftp://` and `ws://`. Generalisable: when a function has
+several refusal paths, a payload that trips more than one of them proves the
+last one to run, not the one being written about.
+
+**How to check it still bites.** Mutate: re-admit `javascript` to
+`LINK_SCHEMES`; drop the control-character refusal; drop the `strip()`; treat
+`//` as internal; accept a scheme-less relative URL; drop the `netloc` check;
+collapse two refusal reasons into one; make `create` skip the check; store the
+link anyway after refusing it; report an empty URL as `bad_url` instead of
+`missing_url`; make the panel trust the stored column; have the template reach
+past `link_url` to `bm.url`; drop the refused row entirely; and — the inverse,
+which is the one a tightening this aggressive really needs — refuse a
+legitimate `https` link. **16 mutations, all bite.**
+
+* Measure mutations by **rc**, and only `rc==1` is a failure — `rc==4` is a
+  usage error and `rc==-15` an external SIGTERM, and both otherwise read as
+  "the guard caught it".
+
+## §89 — a catalog value is a key, not a word (`tests/test_classification_ops.py`, `tests/test_classification_page.py`)
+
+**What is being defended.** Every edit to the zones / lines / departments
+catalogs, and the references those edits move. 43 guards, 30 mutations.
+
+**Why it needs guarding at all.** The page looked like the safest one in the
+product: three textareas holding three lists of words. It was the most
+dangerous, because those words are **keys**. `Appliance.zone`,
+`Baseline.zone` and each network segment's `zone` hold the value as a plain
+`String(128)` — there is no foreign key anywhere in this schema. A textarea
+cannot distinguish *rename* from *delete-plus-add*, so it submitted both as
+"here is the new list", and the references were left pointing at a string that
+no longer exists.
+
+Nothing fails when that happens. Measured against the live fleet, one rename of
+`internal` leaves **6 appliances, 24 baselines and 2 segments** stranded, and
+each degrades differently:
+
+* Architecture groups the appliances under `(no zone)`; the bookmarks lens
+  buckets them as unclassified. Both are *displays* — wrong, and nobody's alarm.
+* `baselines.appliances_in_scope()` filters on `Appliance.zone ==
+  baseline.zone`. A half-applied rename does not raise; it returns an **empty
+  scope**, which on screen is indistinguishable from "no appliance matches this
+  baseline yet".
+* Combos are auto-generated from the catalogs. Leave 24 of them on the old
+  triple and the next `generate_missing_combos()` builds a second full grid:
+  **24 combos silently become 36**, and `missing_combos()` then reports nothing
+  missing, forever.
+
+**The rules the guards encode.**
+
+1. **A rename cascades, in one transaction.** The catalog entry and every
+   reference move together or neither moves.
+2. **A delete with references is refused until the caller decides.** Clear them
+   or reassign them — and the refusal names the counts, because "in use" is not
+   something anybody can act on.
+3. **"Clear them" and "not decided yet" carry the same empty target and must
+   never share a token.** They differ only by a flag. Collapse the two and an
+   untouched dropdown wipes every reference in the name of a choice nobody
+   made. The form submits `?` for undecided and `__clear__` for the decision.
+4. **A value the form does not send back is routed through the delete path,
+   not dropped.** Vanishing from the submission is precisely what the textarea
+   did; treating it as a plain removal reinstates the whole bug.
+5. **Usage is counted from the live rows, never from the catalog**, and never
+   folded case-insensitively: `Appliance.zone == "dmz"` does not match a row
+   holding `"DMZ"`, so merging the two would report a reference the query
+   cannot resolve. Values in use but absent from the catalog are **shown**, not
+   hidden — an operator cannot fix what the page pretends does not exist.
+6. **Validation for all three catalogs finishes before the first write.**
+   `AppSetting.set()` commits on its own, so validating-then-writing one
+   catalog at a time would leave zones saved and lines refused.
+7. **Segments are one JSON blob shared by all three axes**: loaded once, edited
+   by every plan, written once. Saving per axis makes the second write clobber
+   the first.
+8. **One writer.** `POST /settings/classification` was unreachable from any
+   template but still live, still `USER_MANAGE`, and still calling the store
+   directly. An **AST walk** — not a grep — now fails if anything outside
+   `classification_ops` calls `save_classification`, because a fifth view could
+   reach it through an alias a text search would miss.
+
+**Two refusals that only the data made obvious.**
+
+*Swaps.* `A → B` together with `B → A` passes every other check and then
+applies sequentially: the first move puts A's references onto B, the second
+sweeps up **all** of B — including what just arrived — onto A. Both sets land
+on one value and nothing warned. Refused, with "do it in two steps".
+
+*Combo collisions.* Reassigning `internal → external` sends a combo onto a
+triple that already has one. Two combos on one triple make `missing_combos()`
+consider the pair satisfied forever, so the duplicate never surfaces anywhere;
+the redundant one is absorbed instead. But absorbing is **refused** when the
+absorbed combo holds template assignments the survivor lacks — dropping those
+silently would be trading one invisible loss for another.
+
+**Verification recipe.** Directed set only (the user's standing rule):
+
+    runuser -u satom -- /opt/satom/venv/bin/python -m pytest \
+      tests/test_classification_ops.py tests/test_classification_page.py -q
+
+Mutation harness at `/var/tmp/mut_cls.py`, measured by **return code** — pytest
+prints `FAILED` in caps, `rc==4` is a usage error, and only `rc==1` is a test
+failure. It restores every mutation in a `finally` and re-runs the baseline
+afterwards to prove the tree came back clean.
+
+## §90 — a manual is a claim, and nothing fails when it stops being true (`tests/test_alerting_docs.py`)
+
+**What it prevents.** Documentation that describes an earlier version of the
+product. This is not hypothetical here: the alerting subsystem produced two
+instances in two rounds, and neither was caught by anything failing.
+
+* `docs/user-guide.md` §26.6 described the delivery policy for a full round
+  after per-sink routing and the syslog feed had shipped.
+* §35.3 listed the hook catalog as **six** events on the day `alert.fired` —
+  the seventh, and the entire point of the release — went live.
+* The Settings page introduced the health engine as routing to "in-app bell,
+  email, and a syslog/CEF feed", two sinks after that was true.
+
+A reader who trusts any of those concludes a capability they are looking at
+does not exist. The app boots, the page renders, the suite is green.
+
+**How.** Every guard is **derived from the registry that implements the
+thing**, never from a list in the test: `alert_routing.SINKS`, `FAMILIES`,
+`UNFILTERABLE`, `SEVERITIES` and `_PREFIX_FAMILY`; `integration_hooks.
+EVENT_NAMES` and the `alert.fired` payload spec; `hook_starters.STARTERS` with
+each starter's event and declared secrets; `alert_webhook.FORMATS`,
+`RETRY_STATUSES`, `SIG_HEADER`/`TS_HEADER`/`ID_HEADER`, `SIG_SCHEME` and
+`ENVELOPE_VERSION`; `alert_syslog.PROTOCOLS`, `FORMATS`, both severity maps and
+the private enterprise number. Adding a sink, an event or a starter fails the
+suite in the commit that adds it.
+
+**Two rules this file exists to encode.**
+
+1. **Bound the section, never scan the file.** Every assertion runs against a
+   `bounded(head, stop)` slice. `test_the_bounded_sections_actually_bound_
+   something` fails if a heading is renamed, because `bounded` would otherwise
+   silently return the rest of the file and turn every guard into a whole-file
+   one that passes on anything.
+2. **An absent capability is guarded from its own absence.** Syslog-over-TLS
+   and LEEF are asserted missing from `alert_syslog.PROTOCOLS`/`FORMATS`
+   *first*, then required to have a row in the "not implemented" table. The
+   premise assert fails the day either ships, forcing the row to be deleted
+   rather than left telling operators a feature in front of them does not
+   exist.
+
+**Deliberately not guarded:** prose quality. A guard that tries to police
+whether an explanation is *good* rejects correct writing; this repo already
+retired one such test. What is checkable is presence.
+
+**The two survivors, and both were real holes.** The harness ran 22 mutations
+and the first pass killed 20:
+
+* *Dropping `alert.fired` from the enumerated event list* survived, because the
+  paragraphs **below** the list mention the event by name and the guard was
+  scanning the whole section. The enumeration is what a reader scans to learn
+  what they can subscribe to, so the guard now bounds to `Events: ` → blank
+  line. Same class as §87: an assertion answered by a second copy of the fact.
+* *Deleting the "Syslog over TLS" row* survived, because the closing paragraph
+  of that same section mentions TLS in prose. The guard now asserts on the
+  **table row**, not on the section.
+
+**Prove it is armed** (from `/opt/satom`, as `satom`):
+
+```
+venv/bin/python -m pytest tests/test_alerting_docs.py -q          # 92 passed
+sed -i 's/`upgrade.failed` and `alert.fired`/`upgrade.failed`/' docs/user-guide.md
+venv/bin/python -m pytest tests/test_alerting_docs.py -q; git checkout -- docs/user-guide.md
+```
+
+The second run must fail. Mutation harness at `/var/tmp/mut_alertdocs.py`,
+measured by **return code** — only `rc==1` is a test failure; `rc==2` is a
+usage error, `rc==4` collection, and a negative rc is a signal and no verdict
+at all. It restores every mutation in a `finally` and re-runs the baseline
+afterwards to prove the tree came back clean. **22/22 bite.**
+
+
+## §91 — a device type is a product name, and a wash is not a label colour (`tests/test_bookmarks_type.py`)
+
+**What is claimed.** In the bookmarks rail, the bucket that says *what kind of
+box this is* is written the way the product is actually named and is set in a
+pill washed with the reader's own top-bar banner. Three separate things can rot
+here and none of them makes anything fail:
+
+1. **The name.** `Appliance.kind` is stored lowercase. Raising only the first
+   letter gives `Fortiweb`, which is not the name of anything; `str.capitalize`
+   additionally lower-cases the rest and destroys a hand-spelled custom kind.
+   The label comes from the ADOM registry, which is where the operator already
+   spells these products. `branding.get_product` **answers FortiWeb for a key
+   it does not know**, so `is_valid` runs first — calling it blind would give
+   every unregistered kind a confident wrong name instead of an honest raw one.
+2. **Which end of the gradient.** Fourteen of the twenty banner templates are
+   gradients and every one of them *starts* on a near-black anchor. Tinting
+   from the first stop renders Ocean, Ember and Emerald as the same grey, which
+   looks deliberate. The accent is the **last** stop.
+3. **What the colour touches.** The wash is a background at 8% alpha and the
+   text keeps `--fw-text-primary`. Painting the label in an 8% brand colour
+   reads at about 1.4:1 on white — a pill that says `FortiWeb` and cannot be
+   read. This console has already shipped that exact defect once, in its status
+   pills (§9m).
+
+**And one structural claim.** The node **key** is still built from the raw
+stored value; only the **name** is the displayed one. The tree's open/closed
+set is indexed by that key, so if the label became the key, renaming a product
+in the ADOM registry would silently collapse the product branch of every reader
+who had it open — punishing them for a change they never made.
+
+**The mutant that survived, and was not approved.** Deleting the
+`(unclassified) / (no segment) / (links and views)` check survives every
+assertion, because all three sentinels begin with `(` and a bracket has no
+upper case: the fallback returns them unchanged anyway. That is a property of
+today's *spelling*, not of the function. Rather than accept an equivalent
+mutant, the assumption is pinned —
+`test_the_synthetic_guard_does_not_ride_on_how_they_are_spelled` monkeypatches
+`UNCLASSIFIED` to `unclassified` and asserts it is still not relabelled, so the
+day somebody drops the brackets the check is provably load-bearing.
+
+**A sibling guard was narrowed, and its ground was replaced.**
+`test_indentation_is_a_class_not_an_inline_style` asserted `"style=" not in
+body` over the whole fragment — wider than its own claim, which is about
+per-row `padding-left`. The difference is real: a `style=` declaring only a
+`--bm-*` custom property that the stylesheet reads through `var(--x, fallback)`
+degrades to the fallback under a strict CSP, whereas a `padding-left` degrades
+to a flat one-column list. The guard now asserts on `.bm-row` elements, and
+`test_a_style_attribute_may_only_carry_a_custom_property` holds the rest: every
+inline declaration in the panel must be a `--bm-*` property **and** must be
+read from the stylesheet with a fallback.
+
+**Prove it is armed** (from `/opt/satom`, as `satom`):
+
+```
+venv/bin/python -m pytest tests/test_bookmarks_type.py -q        # 28 passed
+sed -i 's/if is_valid(value):/if True:/' app/services/bookmarks.py
+venv/bin/python -m pytest tests/test_bookmarks_type.py -q
+git checkout -- app/services/bookmarks.py
+```
+
+The second run must fail (an unregistered kind gets labelled `FortiWeb`).
+Mutation harness at `/var/tmp/mut_bmtype.py`, measured by **return code** —
+only `rc==1` is a test failure; `rc==2` is a usage error and `rc==4` is a
+collection error, and a harness that greps stdout for `failed` misses every one
+of them because pytest prints `FAILED`. It restores each file in a `finally`
+and re-runs the baseline afterwards. **19/19 bite.**
+
+## §92 — a hover is a state, and two states can want the same row (`tests/test_bookmarks_hover.py`)
+
+The sidebar row went from a flat grey hover to a wash of the reader's own
+banner colour. The colour itself is the easy part. What this section defends
+is that **three things now compete for one row's background**, and every way
+they can lose is silent.
+
+**The chip drowns in its own row.** The device-type chip paints an `rgba()`
+fill over the row it sits inside. Give the row the chip's alpha and the two
+land at the same weight — so the single chip that stops reading as a chip is
+the one under the pointer, which is the only one anybody is looking at. The
+alphas are ordered by a named constant (`ROW_HOVER_ALPHA`), not shared, so
+retuning the chip cannot drag the row along.
+
+**The drop target vanishes while you aim at it.** Dragging a row *is*
+hovering it, so `:hover` and `.bm-dragover` always apply together, and both
+are `(0,2,0)`. Source order is the only thing deciding which the operator
+sees. The guard asserts the drop-target rule appears *after* the wash in the
+stylesheet — a pure ordering test, with a mutation that relocates the block
+without changing a character of either rule.
+
+**An empty value defeats the fallback.** `var(--x, fallback)` takes the
+fallback when the property is *not set*, not when it is set to nothing. An
+empty custom property is a valid declared value, so a template that emits
+`--bm-row-hover: ;` takes hover off every row with no error anywhere. There
+is a guard for the property being present and a separate one for it being
+non-blank; the first passes happily on the second's failure.
+
+**The page and the service each keep a copy.** The rendered value is compared
+against what `reader_tint` computes for that same user, so the two cannot
+drift into disagreeing about a colour the operator chose once.
+
+Also fixed here, and not part of the request: a focused row now takes the
+wash. The row already revealed `.bm-actions` on `:focus-within`, so a keyboard
+reader got action buttons floating over an unlit row.
+
+**Verification recipe.** `/var/tmp/mut_hover.py` on a1 — 15 mutations,
+measured by **return code** (only `rc==1` is a failure; `rc==4` is a usage
+error and a negative rc is a killed run, neither of which is a verdict), each
+restoring its file in a `finally` and re-running the baseline at the end. The
+ordering mutation is the one worth keeping: it proves the suite is testing
+cascade order and not just the presence of two rules.
+
+
+## §93 — a page can promise a command that does not exist (`tests/test_documented_commands.py`)
+
+`docs/cli.md` has been held to the live command tree since §7: every runnable
+node appears in the reference, and every command named there resolves. Two
+surfaces an operator is far more likely to act on had no such guard — **the
+manual**, and **the product's own pages**.
+
+The gap shipped. The API-versions page told the operator, in its own words, to
+run:
+
+```
+satom api preflight <appliance> <object> <field>…
+```
+
+There is no `satom api`. The real command is `satom get api preflight`, so
+following the page's instruction exits **2, unknown command** — and the page
+that says so is the only place an operator learns the command exists at all.
+Nothing failed: the page rendered, the CLI worked, `docs/cli.md` was correct,
+and the manual written a day later used the right spelling. The wrong one sat
+in the interface. Same shape as §90 and §83: **the artifact stays well-formed
+and the claim quietly becomes false.**
+
+The guard scans `docs/user-guide.md` and every template under
+`app/templates/`, extracts each `satom …` invocation and resolves it against
+`deploy/satom_cli/tree.py`. `docs/cli.md` is deliberately **excluded** — it has
+its own generated-reference guard, and giving one claim two owners is how the
+two owners start disagreeing.
+
+**Two rules, both arrived at by measuring rather than guessing:**
+
+1. **Anchoring, not matching.** A naive `satom <word>` scan over the tree
+   returns 14 hits and 12 are prose: `/opt/satom/venv`, `sudo -u satom ssh`,
+   `systemctl status satom satom-scheduler`, `git -C /opt/satom remote
+   set-url`. A guard whose output is mostly noise is a guard somebody marks
+   `xfail`. A candidate counts only where a command can start — line start, a
+   `$ ` prompt, a backtick, an HTML tag boundary — and never after a path
+   separator.
+2. **Extra tokens after a leaf are arguments.** `satom get device config
+   fortiweb09` must pass. Resolution stops at the first leaf; only a *group* is
+   entitled to reject an unknown child. An earlier draft walked past the leaf
+   and would have fired on nearly every real example in the manual.
+
+**Two mutations were rejected as weak rather than approved.** Turning
+`assert not bad` into `assert True or bad` survives — on a clean tree there is
+no finding, so it is equivalent by construction; the lethal form breaks the
+finding path itself, which `test_scan_reports_a_bad_command_in_a_file_it_scans`
+covers by scanning a temporary directory with two planted bad commands. And a
+"the page has no wrong spelling" assertion is pure duplication of the scan; it
+was replaced by the half the scanner structurally cannot cover — that the page
+still names the command **at all**, since deleting the sentence leaves the scan
+perfectly green and the operator with nothing to type.
+
+### Verifying it is armed
+
+```bash
+runuser -u satom -- venv/bin/python -m pytest tests/test_documented_commands.py -q
+
+# it bites: plant a command that does not exist, expect rc=1
+printf '\n<!-- satom get apiversions -->\n' >> app/templates/registry/versions.html
+runuser -u satom -- venv/bin/python -m pytest tests/test_documented_commands.py -q ; echo "rc=$?"
+git checkout -- app/templates/registry/versions.html
+```
+
+Capture the exit code *before* any pipe — a pipeline ending in `tail` always
+exits 0. Measured this way, **12 of 12 mutations bite**, including reverting
+the page to the shipped spelling, deleting the sentence entirely, dropping the
+anchor, and making the scanner read nothing.
+
+## §94 — a page that offers to delete things must be documented before it is used (`tests/test_api_matrix_docs.py`)
+
+**What it prevents.** The same failure as §90, on the two pages where the cost
+of an undocumented sentence is highest. **Registry reconcile** offers an
+operator a *Disable selected* button, and **API versions** answers the question
+"will this payload be understood?" immediately before a write to a production
+appliance. Both shipped with nothing written about them: `docs/device-api.md`
+stopped at the explorer, and `docs/user-guide.md` §30 stopped at 30.3.
+
+Two specific misreadings that costs money:
+
+* `absent` and `error` look alike on screen and mean opposite things — one is
+  evidence about the **catalog**, the other about the **device**. A reader who
+  conflates them proposes disabling a catalog because one appliance's licence
+  lapsed. That exact device existed while this was written, answering `-20010`
+  to 283 of 321 reads with the inventory still calling it `online`.
+* `unmeasured` reads as a synonym for "fine" to anyone who has not been told
+  otherwise. It is the preflight's most important answer and the only one whose
+  whole purpose is to stop a write.
+
+**How.** Every guard is derived from the thing it describes, never from a list
+in the test:
+
+* bucket names from `registry_reconcile.reconcile()['counts']` — the report the
+  service actually returns, so a seventh bucket fails the suite;
+* the three verdicts from `registry_reconcile.VERDICT_*`, the five preflight
+  answers from `api_matrix.STATUS_*`;
+* the **card titles from the templates that render them**
+  (`registry/reconcile.html`, `registry/versions.html`), so renaming a card on
+  screen fails the manual that walks an operator through it;
+* the four page addresses from the **live URL map**, required in *both*
+  documents — the integrator scripts against the address and the operator
+  navigates to it;
+* the `25 %` witness-exclusion threshold from `MAX_ERROR_RATIO`;
+* the gating permission from `Permission.REGISTRY_EDIT`;
+* and the documented `unmeasured` exit code by **running** the real CLI entry
+  point (`satom_cli.cmd_apiver.api_preflight`) rather than transcribing it. A
+  script branches on that number; a manual that prints a different one is worse
+  than a manual that prints none.
+
+**Deliberately not guarded:** prose quality, and the measured field counts
+(`admin` 40 → 42 and so on). Those are this fleet's evidence, not the
+product's: asserting them would fail on every other installation, which is how
+a guard teaches people to delete it.
+
+**Seven survivors on the first pass, and three were real holes** (28 mutations,
+21 killed). The four weak ones removed **one** occurrence of a term the section
+legitimately uses several times — a mutation that tests my luck, not the
+guard. Re-run with section-scoped, replace-**all** mutations, they all bite.
+The three genuine holes:
+
+1. *The apply paragraph stops saying the proposal set is re-derived
+   server-side* survived, because `rejected` also appears in §6.3 — in a
+   sentence about **appliances** rejecting endpoints, the opposite direction.
+   Scoped to §6.4. Same class as §87: an assertion answered by an unrelated
+   copy of the word.
+2. *The documented `unmeasured` exit code changes from 4 to 5* survived,
+   because the guard searched for the digit `4` and the section contains a
+   **numbered list** whose fourth item is "4. **Preflight**". Now pinned to
+   `` `4` unmeasured `` and to the bounded `Exit codes:` paragraph.
+3. *A page URL moves* survived, because the guard accepted the address being
+   present in **either** document and the other still carried it. Now both.
+
+**Prove it is armed** (from `/opt/satom`, as `satom`):
+
+```
+venv/bin/python -m pytest tests/test_api_matrix_docs.py -q       # 40 passed
+sed -i 's/`4` unmeasured/`5` unmeasured/' docs/user-guide.md
+venv/bin/python -m pytest tests/test_api_matrix_docs.py -q; git checkout -- docs/user-guide.md
+```
+
+The second run must fail. Harnesses at `/var/tmp/mut_apidocs.py` (28) and
+`/var/tmp/mut_apidocs2.py` (11, section-scoped), measured by **return code** —
+only `rc==1` is a test failure; `rc==2` is a usage error and a negative rc is a
+signal, which is no verdict at all. Both restore in a `finally` and re-run the
+baseline afterwards to prove the tree came back clean.

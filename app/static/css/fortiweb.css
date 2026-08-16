@@ -1893,3 +1893,232 @@ body.fw-entering-page {
 .fw-settings-main .tab-content > .tab-pane.active code {
   overflow-wrap: anywhere;
 }
+
+/* ============================================================
+   BOOKMARKS RAIL  (right-hand collapsible panel)
+   LIGHT chrome only. This product has no dark mode: a slate card with
+   backdrop-filter over a #F3F6FC page renders as an opaque grey slab, and
+   pastel status pills sink to ~1.4:1 against it. Everything below is built
+   from --fw-* tokens and .fw-badge-*, which are calibrated against white.
+   ============================================================ */
+.bm-rail {
+  position: fixed;
+  top: var(--fw-topbar-height);
+  right: 0;
+  bottom: 0;
+  z-index: 1035;
+  display: flex;
+  align-items: flex-start;
+  pointer-events: none;
+}
+.bm-rail > * { pointer-events: auto; }
+
+.bm-tab {
+  margin-top: 12px;
+  width: 34px;
+  height: 42px;
+  border: 1px solid var(--fw-border);
+  border-right: none;
+  border-radius: var(--fw-radius) 0 0 var(--fw-radius);
+  background: var(--fw-surface);
+  color: var(--fw-accent);
+  box-shadow: var(--fw-card-shadow);
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+}
+.bm-tab:hover { background: var(--fw-accent-light); }
+.bm-tab-badge {
+  position: absolute;
+  top: -6px; left: -6px;
+  min-width: 18px;
+  padding: 0 4px;
+  border-radius: 9px;
+  background: var(--fw-accent);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 18px;
+}
+
+.bm-panel {
+  width: 0;
+  height: 100%;
+  overflow: hidden auto;
+  background: var(--fw-surface);
+  border-left: 1px solid var(--fw-border);
+  box-shadow: var(--fw-card-shadow);
+  transition: width var(--fw-transition, .2s ease);
+  font-size: 12.5px;
+}
+body.bm-open .bm-panel { width: 300px; }
+body.bm-open .fw-main { margin-right: 300px; }
+.fw-main { transition: margin-right var(--fw-transition, .2s ease); }
+
+.bm-loading { padding: 24px; text-align: center; color: var(--fw-text-secondary); }
+
+.bm-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; padding: 10px 12px;
+  border-bottom: 1px solid var(--fw-border-light);
+  position: sticky; top: 0; background: var(--fw-surface); z-index: 2;
+}
+.bm-title { display: flex; align-items: center; gap: 6px;
+  font-weight: 700; color: var(--fw-text-primary); }
+.bm-title i { color: var(--fw-accent); }
+.bm-head-actions { display: flex; gap: 2px; }
+
+.bm-iconbtn {
+  border: none; background: transparent; color: var(--fw-text-secondary);
+  padding: 3px 5px; border-radius: var(--fw-radius); line-height: 1;
+}
+.bm-iconbtn:hover { background: var(--fw-accent-light); color: var(--fw-accent); }
+.bm-iconbtn.bm-danger:hover { background: rgba(220,53,69,.12); color: #8B1C2A; }
+.bm-star-on { color: #C98A11; }
+
+.bm-searchbar {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 10px; border-bottom: 1px solid var(--fw-border-light);
+  background: var(--fw-surface-alt);
+  position: sticky; top: 41px; z-index: 2;
+}
+.bm-search-ico { color: var(--fw-text-secondary); font-size: 12px; }
+.bm-search {
+  flex: 1; min-width: 0; font-size: 12px; padding: 4px 7px;
+  border: 1px solid var(--fw-border); border-radius: var(--fw-radius);
+  background: var(--fw-surface); color: var(--fw-text-primary);
+}
+.bm-search:focus { outline: none; border-color: var(--fw-accent);
+  box-shadow: 0 0 0 2px var(--fw-accent-light); }
+
+.bm-note {
+  margin: 0; padding: 7px 12px; font-size: 11.5px;
+  color: var(--fw-accent-hover); background: var(--fw-accent-light);
+  border-bottom: 1px solid var(--fw-border-light);
+}
+.bm-note-muted { color: var(--fw-text-secondary); background: var(--fw-surface-alt); }
+
+/* ---- the tree ------------------------------------------------------------
+   Rows are uniform; only the left padding changes with depth, so a device
+   three levels down still lines up with its siblings and the caret column of
+   its parent stays readable. Depth is a CLASS, not an inline style: the CSP
+   here ships a nonce and per-row style attributes die the day style-src drops
+   unsafe-inline. */
+.bm-tree { padding: 2px 0 8px; }
+
+.bm-row {
+  display: flex; align-items: center; gap: 5px;
+  min-height: 25px; padding: 2px 8px 2px 8px;
+  color: var(--fw-text-primary);
+}
+/* Pointing at a row lights it in the reader's own banner colour, washed to
+   a fraction of it. Background only -- the label keeps --fw-text-primary.
+   Falls back to the neutral muted surface when no colour reaches the panel,
+   so a row fragment rendered outside the tree still answers the pointer.
+   :focus-within rides along because this row already treats a focused
+   descendant as equivalent to hover for .bm-actions; without it a keyboard
+   reader gets the action buttons appearing on an unlit row. */
+.bm-row:hover, .bm-row:focus-within {
+  background: var(--bm-row-hover, var(--fw-surface-alt));
+}
+.bm-grp { font-weight: 600; cursor: pointer; user-select: none; }
+.bm-row-hidden { opacity: .55; }
+.bm-row.bm-dragover {
+  background: var(--fw-accent-light);
+  outline: 1px dashed var(--fw-accent); outline-offset: -2px;
+}
+
+.bm-d0 { padding-left: 8px; }
+.bm-d1 { padding-left: 21px; }
+.bm-d2 { padding-left: 34px; }
+.bm-d3 { padding-left: 47px; }
+.bm-d4 { padding-left: 60px; }
+.bm-d5 { padding-left: 73px; }
+.bm-d6 { padding-left: 86px; }
+.bm-d7 { padding-left: 99px; }
+.bm-d8 { padding-left: 112px; }
+
+.bm-caret { color: var(--fw-text-secondary); font-size: 10px; width: 10px;
+  flex: 0 0 10px; text-align: center; }
+.bm-ico { color: var(--fw-text-secondary); font-size: 12px; flex: 0 0 auto; }
+.bm-ico-grp { color: #C98A11; }
+.bm-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bm-sub { color: var(--fw-text-secondary); font-size: 11px; flex: 0 0 auto;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bm-count {
+  color: var(--fw-text-secondary); font-size: 10.5px; font-weight: 600;
+  background: var(--fw-surface-alt); border: 1px solid var(--fw-border-light);
+  border-radius: 8px; padding: 0 5px; line-height: 15px; flex: 0 0 auto;
+}
+.bm-grp:hover .bm-count { background: var(--fw-surface); }
+
+.bm-link { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 6px;
+  color: var(--fw-text-primary); text-decoration: none; }
+.bm-link:hover { color: var(--fw-accent); }
+.bm-grp .bm-name { flex: 1; min-width: 0; }
+
+/* Device-type bucket. The wash is the reader's own top-bar banner at 8%; the
+   label keeps --fw-text-primary (~15:1 on white). Painting the TEXT in the
+   banner colour at this alpha is how a pill ends up saying something nobody
+   can read. Falls back to the neutral muted surface when no colour reaches
+   the panel, so the chip never renders as a bare word. */
+.bm-grp .bm-name.bm-type {
+  flex: 0 1 auto;
+  background: var(--bm-type-fill, var(--fw-surface-alt));
+  border: 1px solid var(--bm-type-line, var(--fw-border-light));
+  border-radius: 10px;
+  padding: 0 7px;
+  line-height: 17px;
+  font-weight: 600;
+  letter-spacing: .01em;
+}
+
+.bm-actions { display: flex; align-items: center; gap: 1px; opacity: 0;
+  transition: opacity .12s ease; flex: 0 0 auto; }
+.bm-row:hover .bm-actions, .bm-row:focus-within .bm-actions { opacity: 1; }
+.bm-fav { opacity: 1; }
+.bm-flag { color: var(--fw-text-secondary); font-size: 11px; padding: 0 2px; }
+.bm-del { color: var(--fw-text-secondary); padding: 0 2px; flex: 0 0 auto; }
+.bm-del:hover { color: #8B1C2A; }
+
+.bm-kids { }
+.bm-empty { margin: 0; padding: 4px 12px;
+  color: var(--fw-text-secondary); font-size: 11.5px; font-style: italic; }
+
+.bm-foot { padding: 8px 12px; color: var(--fw-text-secondary);
+  border-top: 1px solid var(--fw-border-light);
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.bm-check { display: flex; align-items: center; gap: 6px; margin: 0;
+  font-size: 11.5px; }
+.bm-foot-count { font-size: 11.5px; white-space: nowrap; }
+
+@media (max-width: 991.98px) {
+  body.bm-open .bm-panel { width: 84vw; }
+  body.bm-open .fw-main { margin-right: 0; }
+}
+
+
+/* --- BOOKMARKS: link to the grouping order -------------------------------
+   An <a> styled as one of the rail's icon buttons. Light chrome only: this
+   product has no dark mode, and a slate control on a white panel reads as a
+   grey slab. */
+a.bm-iconbtn { display:inline-flex; align-items:center; justify-content:center;
+               text-decoration:none; }
+.bm-order { margin-left:auto; padding:0 4px; color:var(--fw-text-muted,#6B7280);
+            text-decoration:none; font-size:12px; line-height:1; opacity:.75; }
+.bm-order:hover { color:var(--fw-accent,#EF5424); opacity:1; }
+
+/* --- BOOKMARKS: the link that leaves the console ------------------------ */
+/* Dimmed, not absent: a device whose record has no reachable address keeps
+   its slot so the row does not silently lose a control the row beside it has.
+   Colour comes from the --fw-* tokens; the accent is #EF5424. */
+a.bm-dev:hover { background: var(--fw-accent-light); color: var(--fw-accent); }
+.bm-dev-off { opacity: .3; cursor: not-allowed; }
+/* A refused saved link keeps its row and states why in the tooltip. It is
+   deliberately NOT styled as a broken control: the row is fine, the URL on
+   it is not, and the person who can fix that is the one reading the row. */
+.bm-link-off { color: var(--fw-text-secondary); cursor: not-allowed; }
+.bm-link-off .bm-ico { color: var(--fw-warning, #7A5700); }
+.bm-dev-off:hover { background: transparent; color: var(--fw-text-secondary); }

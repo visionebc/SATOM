@@ -67,7 +67,9 @@ CAPABILITIES = ("backend_edit", "backend_config", "policy_status", "cert_swap",
                 "maintenance", "reports",
                 # --- object-write capabilities (see EXPLICIT_ONLY below) ------
                 "waf_exception_draft", "waf_exception_apply",
-                "adc_rule_draft", "adc_rule_apply")
+                "adc_rule_draft", "adc_rule_apply",
+                # --- live inventory (see EXPLICIT_ONLY below) -----------------
+                "inventory")
 
 # ---------------------------------------------------------------------------
 # EXPLICIT-ONLY capabilities — the empty-list default does NOT grant these.
@@ -86,6 +88,12 @@ CAPABILITIES = ("backend_edit", "backend_config", "policy_status", "cert_swap",
 EXPLICIT_ONLY_CAPABILITIES = frozenset({
     "waf_exception_draft", "waf_exception_apply",
     "adc_rule_draft", "adc_rule_apply",
+    # 'inventory' = POST /appliances/<id>/firmware-check. It writes nothing to
+    # the device, but it DOES make SATOM open an authenticated session to a
+    # firewall using stored admin credentials, on demand, from outside. That is
+    # a capability an operator grants, not one every pre-existing token inherits
+    # the day the feature ships.
+    "inventory",
 })
 
 # An object capability is only meaningful on a token bound to the matching
@@ -95,6 +103,14 @@ CAPABILITY_PRODUCTS = {
     "waf_exception_apply": ("fortiweb",),
     "adc_rule_draft": ("fortiadc",),
     "adc_rule_apply": ("fortiadc",),
+    # 'inventory' (live firmware check) applies to EVERY ADOM: asking a box its
+    # own version is not a product feature. DERIVED from the registry rather
+    # than written as a tuple -- product_scope's own docstring records what a
+    # hardcoded product list costs here (adding FortiAuthenticator silently
+    # un-scoped an entire ADOM). An ADOM declared tomorrow is covered the day
+    # it is declared. 'global' is excluded because authorize_object() already
+    # lets a global token through every product binding.
+    "inventory": tuple(p for p in VALID_PRODUCTS if p != "global"),
 }
 
 # Every runnable catalog action → the capability tag it belongs to. An action

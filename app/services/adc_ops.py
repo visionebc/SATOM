@@ -161,6 +161,36 @@ def model_inventory(appliance) -> tuple[str | None, str | None, str | None]:
         p = FortiADCClient(appliance, timeout=15.0).platform_version()
     except Exception:  # noqa: BLE001
         return None, None, None
+    return model_inventory_from(p)
+
+
+def platform_payload(appliance) -> dict:
+    """The raw ``/api/platform/version`` payload, letting the device error
+    PROPAGATE (unlike :func:`model_inventory`, which swallows it into None).
+
+    Exists so a fleet-wide caller (:mod:`app.services.firmware_probe`) can read
+    an ADC without importing :mod:`app.clients.fortiadc` itself. Constructing
+    the ADC client is ADC business and belongs in an ADC module -- that is the
+    contract ``tests/test_product_separation.py`` locks, and the alternative
+    (whitelisting the generic caller as a platform module) would widen the one
+    list that keeps the two products apart."""
+    from ..clients.fortiadc import FortiADCClient
+
+    return FortiADCClient(appliance, timeout=15.0).platform_version()
+
+
+def model_inventory_from(p: dict) -> tuple[str | None, str | None, str | None]:
+    """The PURE half of :func:`model_inventory`: an already-fetched
+    ``/api/platform/version`` payload -> ``(model, hw_type, firmware)``.
+
+    Split out on 2026-08-13 so :mod:`app.services.firmware_probe` can surface
+    the device error (``model_inventory`` swallows every exception into
+    ``None``, which a live-check endpoint must not do) while still producing
+    the EXACT same firmware string this function has always produced. Two
+    formatters for one column is how an estate ends up with two spellings of
+    the same version and a dedupe key that no longer matches."""
+    if not isinstance(p, dict):
+        return None, None, None
     model = str(p.get("model") or "").strip()           # e.g. "KVM"
     ver = str(p.get("version") or "").replace("-", ".")  # "8-0-3" → "8.0.3"
     build = str(p.get("build") or "").strip()

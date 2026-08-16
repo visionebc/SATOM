@@ -19,7 +19,18 @@
     <div class="card-header fw-card-header">{{ _('Details') }}</div>
     <div class="card-body"><dl class="row mb-0">
       <dt class="col-sm-4">{{ _('Kind') }}</dt><dd class="col-sm-8"><span class="badge bg-primary">{{ appliance.kind }}</span></dd>
-      <dt class="col-sm-4">{{ _('Host') }}</dt><dd class="col-sm-8">{{ appliance.host }}:{{ appliance.port }}</dd>
+      <dt class="col-sm-4">{{ _('Host') }}</dt><dd class="col-sm-8">{{ appliance.host }}:{{ appliance.port }}
+        {# Same function as the bookmarks rail. A second expression here is how
+           two pages start disagreeing about where a device lives. #}
+        {% if device_url %}
+          <a href="{{ device_url }}" target="_blank" rel="noopener noreferrer"
+             class="ms-1 text-decoration-none"
+             title="{{ _('Open the device itself') }} &mdash; {{ device_url }}"
+             ><i class="bi bi-box-arrow-up-right"></i></a>
+        {% elif device_note %}
+          <span class="text-muted ms-1" title="{{ device_note }}"
+            ><i class="bi bi-box-arrow-up-right" style="opacity:.35"></i></span>
+        {% endif %}</dd>
       <dt class="col-sm-4">{{ _('Username') }}</dt><dd class="col-sm-8">{{ appliance.username }}</dd>
       <dt class="col-sm-4">{{ _('SSL Verify') }}</dt><dd class="col-sm-8">{{ 'Yes' if appliance.verify_ssl else 'No' }}</dd>
       <dt class="col-sm-4">{{ _('Firmware') }}</dt><dd class="col-sm-8">{{ appliance.firmware or '—' }}</dd>

@@ -6,7 +6,191 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Security
+
+- **A saved link bookmark can no longer carry a `javascript:` URL.** The only
+  check on the field was that it was non-empty, so any account able to save a
+  bookmark could store `javascript:…` and — once the bookmark was shared with
+  the team — have it rendered as an `href` in every colleague's sidebar, on
+  every page of the console, including for the read-only users who cannot
+  delete it. One click ran it in this origin with the session cookie: stored
+  XSS with no visible symptom, because the row renders exactly like any other.
+
+  Links are now restricted to `http`, `https`, or a path beginning with `/`.
+  An allowlist rather than a blocklist, because `data:`, `vbscript:` and
+  `blob:` are the same attack in other clothes; control characters are refused
+  outright, because browsers strip TAB/CR/LF/NUL *before* reading the scheme
+  and `java\tscript:` navigates as `javascript:`; and a protocol-relative
+  `//host` is refused despite the leading slash, since one character separates
+  "a page of this console" from "somebody else's server". The check runs on the
+  way **in** and again on the way **out** — a bundle restore and a Postgres
+  replica both land rows without passing through the create path, so checking
+  only at write time trusts every row the process did not write. A refused link
+  keeps its row and states why rather than silently losing its `href`, which
+  would read as a UI bug and leave the bad URL in place.
+
 ### Added
+
+- **The reconcile page and the firmware-line API matrix are documented, and the
+  manual no longer stops at section 30.3.** Both pages shipped in the last
+  two rounds and neither existed on paper: an operator could reach a screen
+  offering to disable catalog entries with no written explanation of what
+  `absent` means, and a preflight whose most important answer — `unmeasured` —
+  is worthless unless the reader knows it is not a yes.
+
+  `docs/device-api.md` gains **§6 Reconciling the catalog against the fleet**
+  and **§7 Firmware lines: which fields a line actually serves**: the three
+  sweep verdicts and which of them is evidence about the catalog versus about
+  the device, the 25 % error ratio that disqualifies a witness and the live
+  incident that set it, the six buckets and why `unsweepable` is not filed
+  under "never measured", the firmware caveat in full, the two evidence kinds
+  that are never subtracted from each other, and the CLI exit-code contract in
+  which `unmeasured` deliberately does not share a code with "go ahead".
+
+  `docs/user-guide.md` gains **§30.4** and **§30.5**, written from the screen
+  rather than from the code: the cards in the order they appear, the warning to
+  read before pressing Disable, and the three CLI commands for a node whose web
+  interface is down.
+
+  `tests/test_api_matrix_docs.py` (39 guards) derives every claim from the
+  thing it describes — the bucket names from the report the service returns,
+  the verdicts and preflight statuses from the modules that define them, the
+  card titles from the templates that render them, the page addresses from the
+  live URL map, and the documented `unmeasured` exit code by **running** the
+  CLI entry point. A new bucket, status, card or page now fails the suite in
+  the same commit that adds it, instead of quietly making a sentence false.
+
+- **Alerting has a reference document, and the manual no longer describes a
+  smaller product than the one that shipped.** Two rounds of delivery work —
+  per-sink routing, the syslog/CEF feed, the signed webhook, the `alert.fired`
+  hook event and its starters — left three surfaces describing the previous
+  version of themselves: the hook catalog in the user guide still said six
+  events on the day the seventh was the point of the release, the settings page
+  still introduced the engine as routing to "in-app bell, email, and a
+  syslog/CEF feed", and there was nowhere at all to read the wire contract.
+
+  New **[Alerting & notification delivery](docs/alerting.md)**, published with
+  the rest of the manual: the two delivery paths and why the feed carries no
+  cooldown, the per-sink severity floor and family mask, the key-prefix to
+  family map, the signed webhook envelope with a verification recipe and the
+  exact retry policy, the RFC 5424 and CEF line shapes with the three severity
+  scales side by side, the `alert.fired` payload and the starter registry, and
+  a table of what is deliberately **not** implemented.
+
+  The staleness itself is now a test rather than a habit. `tests/
+  test_alerting_docs.py` derives every claim from the code that implements it
+  — the sink roster, the family map, the event catalog, the starter registry,
+  the retried HTTP statuses, both wire encodings and both severity scales — so
+  adding a sink, an event or a starter without documenting it fails the suite
+  in the same commit that adds it. Nothing *fails* when a manual goes stale;
+  the sentence just stops being true, which is why this had happened twice.
+
+- **The Classification catalogs are edited one value at a time, and a rename
+  now moves everything that points at it.** Zones, lines and departments used
+  to be three free-text boxes, one value per line. That shape cannot express
+  the difference between *rename `internal` to `Internal`* and *delete
+  `internal`, add `Internal`* — and to the rest of the product those are
+  opposite instructions, because every appliance, baseline combo and network
+  segment stores the value as a plain string with no foreign key behind it.
+
+  Each value is now its own row, showing how many appliances, combos and
+  segments reference it. Editing the text renames it and carries those
+  references with it, in one transaction. Removing a value that is still
+  referenced is refused until you say what happens to the references — clear
+  them, or move them to another value — and the message names the counts
+  rather than saying "in use". Values that are in use but missing from the
+  catalog (exactly what the old textarea produced) are listed with a one-click
+  button to adopt them back.
+
+- **The device-type bucket in the rail carries the product's real name and the
+  reader's own banner colour.** Grouping the bookmarks panel by Product used to
+  print the raw column — `fortiweb`, `fortiadc` — in the same plain type as a
+  zone or a department, so the one bucket that says *what kind of box this is*
+  was the hardest one to pick out. It is now labelled from the ADOM registry
+  (**FortiWeb**, **FortiADC**, **FortiAnalyzer**, **FortiAuthenticator**) and
+  set in a pill washed with the top-bar banner that reader chose on their own
+  profile, at 8% — a hint of colour on paper, not a coloured label. Only the
+  fill is tinted: the text keeps the primary token, because a word painted in
+  an 8% brand colour is a word nobody can read. A kind with no registry row
+  still gets its first letter raised and every other letter left alone, and
+  `(unclassified)` stays plain text — it is a sentence about the record, not a
+  product. The node key is still the raw stored value, so renaming a product
+  in the registry cannot collapse the branch of every reader who had it open.
+
+- **A direct link to the device, beside the link into SATOM.** Every device row
+  in the rail — and the `Host` line on the appliance detail page — now carries
+  a second destination: the name opens what SATOM knows about the appliance,
+  the arrow opens the appliance's own management UI in a new tab. Both come
+  from one function, so the two surfaces cannot start disagreeing about where a
+  device lives.
+
+  The URL is **derived from `host`/`port` on every render, never stored**: a
+  `mgmt_url` column is a second copy of the management address, and the copy is
+  the one that survives a re-IP. The host is **parsed before it is allowed to
+  be an authority** — `host` is free text an administrator types and the link
+  is rendered for everyone, read-only users included, and `fw1@evil.example`
+  renders as "the device" while navigating to `evil.example`, because
+  everything before the `@` is userinfo. An IPv6 literal is bracketed. The
+  scheme is always `https` and is **not** read from `verify_ssl`: that flag
+  records whether *we* trust the certificate, and a self-signed appliance is
+  still an HTTPS appliance. `rel` carries both `noopener` and `noreferrer` —
+  the destination is an appliance under audit, and either token alone leaves
+  half of it open. A device with no usable address (the retired appliances
+  parked on `.invalid`, which RFC 6761 guarantees never resolve) keeps its
+  slot, dimmed, with the reason on it: a link that looks live and dies in the
+  browser makes people debug the device instead of the record.
+
+- **A bookmarks rail** — a collapsible right-hand panel, shaped like a browser
+  sidebar: folders with a folder icon and their name beside them, nested groups
+  that collapse, and a search box. Everything boots **collapsed**, and the
+  stored preference is the set of nodes left **open**, never the set left
+  closed — on a hundred-appliance fleet an empty preference has to mean "all
+  folded", and storing the collapsed set would make "no preference yet" mean
+  "expand everything". Three stores that are always present (Favourites,
+  Folders, Shared) plus **one inventory lens**.
+
+  The lens is **derived, never copied**. It lists the live inventory rather
+  than the bookmark table, so the panel is useful before anybody has
+  bookmarked anything and a device added to the fleet appears with no
+  migration; starring or filing one *adopts* it, idempotently, and that is the
+  only thing that creates a row. Re-zoning a device re-files it with no write
+  anywhere. A bookmark stores the appliance **id** and nothing else: a stored
+  copy of the name, zone or product is the first field to go stale after a
+  rename, and it goes stale invisibly.
+
+  **The reader's permissions decide the list, never the sharer's.** Every row
+  passes the ADOM stamp filter and `visible_appliances` for the person looking,
+  so sharing is not a way to hand somebody a device in maintenance or one from
+  another product. No by-id route touches `Bookmark.query.get`: an id belonging
+  to somebody else resolves to **404, never 403**, because a 403 confirms the
+  row exists and turns the favourite button into an oracle for enumerating what
+  other people have marked. Sharing moves a bookmark rather than copying it —
+  two rows diverge and nobody can say which one is authoritative — and it is
+  **audited**, because it changes what every operator sees. Placement is the
+  one exception: a shared bookmark is filed **per user**, so each person keeps
+  their own arrangement of the same row, and a row nobody has filed yet appears
+  in **Shared**, which is therefore the default destination rather than a
+  folder anybody can delete. Hiding is per-user and never silent: the counts of
+  unfiled and hidden rows render whether or not the tray is open, because "it
+  never reached me" has to stay checkable.
+
+- **The grouping order is a per-user setting** (Profile → *Bookmarks — grouping
+  order*), and the lens root is **named after it**. A `<select>` in the panel
+  could only answer "how is this grouped right now" once you opened it, and
+  four fixed roots answered a question nobody asked — "how *could* it be
+  grouped". Any order of Line, Zone, Department, Product, Network segment and
+  Tag nests outside-in; the default reproduces the previous fixed root exactly,
+  so upgrading cannot re-shape a tree nobody asked to re-shape. A dimension may
+  appear **once**: below its first level every device already shares one value,
+  so a repeat adds depth and no information, and the form refuses it by name
+  rather than silently de-duplicating — a form that saves something other than
+  what was submitted leaves the page disagreeing with the tree. Blank levels
+  are skipped, an empty order is refused (the alternative takes every device
+  off the panel to honour a preference nobody can see they set), and saving is
+  audited. Reading the preference is deliberately forgiving where writing it is
+  strict: the rail renders on every page in the console, so a value a later
+  release stops recognising degrades to the default instead of taking the whole
+  product down.
 
 - **A signed, retried webhook sink** (`services/alert_webhook.py`), configured
   by form on Settings → Admin console → Alerts. One HTTP POST per evaluation
@@ -337,6 +521,26 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Changed
 
+- **Pointing at a row in the bookmarks sidebar now lights it in the reader's
+  own banner colour** instead of the flat grey it used to take, washed to a
+  fraction of that colour so the label keeps its full-contrast text. The
+  colour comes from the same per-user setting the top bar is painted from, so
+  two people looking at the same fleet each see their own.
+
+  The wash is deliberately lighter than the device-type chip and does not
+  share its number: the chip paints its own translucent fill *over* the row,
+  so at equal weight the one chip that stopped reading as a chip would be the
+  chip you were pointing at. It is also declared *above* the drag-and-drop
+  rule rather than below it — dragging a row means hovering it, both rules
+  carry the same specificity, and the operator has to keep seeing where the
+  row is about to land. The colour travels as a single custom property on the
+  tree, read with a fallback to the old neutral surface, so a row rendered
+  outside the tree still answers the pointer.
+
+  A focused row now lights up the same way. The row already revealed its
+  action buttons on `:focus-within`; a keyboard reader was getting those
+  buttons on a row with no highlight under them.
+
 - **`dispatched` is now the count of findings a notification sink actually
   accepted and delivered**, and the cooldown stamps exactly those. Previously
   both were computed over the whole fresh set, which was correct only while
@@ -442,6 +646,27 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   updates a ticket instead of opening a second one for the same window.
 
 ### Fixed
+
+- **Renaming a classification value no longer orphans every row that used it.**
+  The old textarea rewrote the catalog and nothing else, so the ~30 rows still
+  holding the previous string simply stopped matching: appliances fell into
+  Architecture's "(no zone)" bucket and the bookmarks lens's unclassified one,
+  and — the one that changes behaviour rather than display —
+  `baselines.appliances_in_scope()` filters on `Appliance.zone ==
+  baseline.zone`, so a half-applied rename returned an empty scope, which reads
+  exactly like "no appliance matches this baseline yet". Worst of all, combos
+  are auto-generated from the catalogs: leaving 24 baselines on the old triple
+  meant the next generation pass built a **second full grid** for the new one.
+  A combo whose scope moves is now renamed with it when its name is the
+  generated one, and left alone when an operator named it by hand.
+
+- **The Settings console no longer keeps a second, unguarded writer for these
+  catalogs.** `POST /settings/classification` survived the page's move to the
+  Administrator section: no template posted to it any more, but it was still a
+  live `USER_MANAGE` endpoint calling the catalog store directly, with none of
+  the reference handling above. One URL bypassed every guard on the page. It is
+  gone, and an AST walk in the test suite now fails if any module other than
+  `services/classification_ops.py` calls the store's writer.
 
 - The **"nothing was sent"** warning on a change request no longer claims that
   hooks are the only path. It now names both the tracker backend and the hook
@@ -715,6 +940,14 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   its services and two appliances publishing the same policy name do not
   collapse into one row.
 
+- **The API-versions page named a command that does not exist.** Its preflight
+  hint read `satom api preflight …`; there is no `satom api` branch, so an
+  operator following the page's own instruction got `unknown command` and exit
+  2. The command is `satom get api preflight`. Corrected, and
+  `tests/test_documented_commands.py` now resolves every `satom …` invocation
+  in the user guide and in every template against the live command tree — the
+  rule "verify a command before documenting it" had only ever been enforced for
+  `docs/cli.md`, which was correct all along, while the interface was not.
 
 ## [1.9.3] - 2026-08-10
 

@@ -95,7 +95,7 @@
         </div>
       </div>
       <div class="modal-footer py-2">
-        <span class="me-auto small text-muted"><i class="bi bi-shield-check me-1"></i>Tested server-side against a PCRE-compatible engine — matches FortiWeb & FortiADC.</span>
+        <span class="me-auto small text-muted" id="fw-rxlab-engine"><i class="bi bi-cpu me-1"></i>Judged server-side by <strong>Python re</strong> — an approximation of the PCRE engine on FortiWeb / FortiADC.</span>
         <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Close</button>
         <button type="button" class="btn btn-sm btn-fw-primary d-none" id="fw-rxlab-use"><i class="bi bi-box-arrow-in-down me-1"></i>Use this pattern</button>
       </div>
@@ -167,6 +167,31 @@
     else runTest();
   }
 
+
+  // The verdict is only as good as the engine that produced it. When the
+  // pattern uses something PCRE has and Python re does not, the verdict above
+  // can be flatly wrong about the appliance -- so it is said HERE, next to it,
+  // not buried in the flavor notes on the side panel.
+  function renderEngine(j) {
+    const el = document.getElementById('fw-rxlab-engine');
+    if (!el) return;
+    const divs = j.divergences || [];
+    const warns = divs.filter(d => d.severity === 'warn');
+    const infos = divs.filter(d => d.severity !== 'warn');
+    let html = '<i class="bi bi-cpu me-1"></i>Judged server-side by <strong>Python re</strong>'
+             + ' \u2014 an approximation of the PCRE engine on FortiWeb / FortiADC.';
+    if (warns.length) {
+      html = '<i class="bi bi-exclamation-triangle-fill text-warning me-1"></i>'
+           + '<strong>This verdict may not match the appliance.</strong> '
+           + warns.map(d => '<code>' + esc(d.construct) + '</code> \u2014 ' + esc(d.note)).join('<br>');
+    } else if (infos.length) {
+      html += '<br><span class="fst-italic">'
+           + infos.map(d => '<code>' + esc(d.construct) + '</code>: ' + esc(d.note)).join(' ')
+           + '</span>';
+    }
+    el.innerHTML = html;
+  }
+
   function runTest() {
     const pattern = $('fw-rxlab-pattern').value;
     const lines = $('fw-rxlab-samples').value.split('\n').filter(s => s.length);
@@ -177,6 +202,7 @@
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ pattern, samples: lines, case_insensitive: $('fw-rxlab-ci').checked })
     }).then(r => r.json()).then(function (j) {
+      renderEngine(j);
       if (!j.ok) { verdict.innerHTML = '<span class="text-danger">' + esc(j.error || 'test failed') + '</span>'; out.innerHTML = ''; return; }
       verdict.innerHTML = '<strong>' + j.matched + '</strong> of <strong>' + j.total + '</strong> sample(s) match.';
       out.innerHTML = (j.results || []).map(function (r) {
@@ -203,6 +229,7 @@
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ pattern, replacement, samples: lines, case_insensitive: $('fw-rxlab-ci').checked })
     }).then(r => r.json()).then(function (j) {
+      renderEngine(j);
       if (!j.ok) { verdict.innerHTML = '<span class="text-danger">' + esc(j.error || 'test failed') + '</span>'; out.innerHTML = ''; return; }
       verdict.innerHTML = '<strong>' + j.matched + '</strong> of <strong>' + j.total + '</strong> sample(s) match &amp; rewrite.';
       out.innerHTML = (j.results || []).map(function (r) {

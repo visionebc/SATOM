@@ -9304,3 +9304,80 @@ The second run must fail. Harnesses at `/var/tmp/mut_apidocs.py` (28) and
 only `rc==1` is a test failure; `rc==2` is a usage error and a negative rc is a
 signal, which is no verdict at all. Both restore in a `finally` and re-run the
 baseline afterwards to prove the tree came back clean.
+
+## §95 — a tool that opens a socket must say what it measured (`tests/test_cert_inspect.py`, `tests/test_fp_triage.py`, `tests/test_txn_trace.py`)
+
+Three tools landed together (2026-08-17) and they share one failure mode:
+**they can produce a confident answer about something they never observed.**
+Nothing fails when they do. The page renders, the badge is green or red, and
+the operator acts on it.
+
+The three shapes, and the guard for each:
+
+1. **Unread is not incomplete** (`cert_inspect`). Python 3.11 exposes only the
+   peer certificate, so the chain comes from `openssl s_client`. On a node
+   without that binary the module reads the leaf, sets `chain_source='leaf'`
+   and reports completeness as `None`. `test_leaf_only_source_never_reports_incomplete`
+   and its paired `test_same_leaf_from_a_chain_read_IS_incomplete` are both
+   required — the first passes trivially if the module never detects anything.
+
+2. **Derived is not measured** (`txn_trace`). SATOM is not in the path between
+   the appliance and the backend, so leg B is computed from the device's own
+   configuration. `measured` is `False`, the note says so, every row names its
+   object and field, and a field this firmware does not carry goes into
+   `absent` — never rendered as "disabled". Those two are indistinguishable in
+   a table and are opposite facts.
+
+3. **Client-supplied is not device-read** (`fp_triage`). `attack_carveout`'s
+   contract is that a carve-out is built from the entry as the device reported
+   it. Pasted text is client-supplied, so the standalone tool explains and
+   drafts and **has no save endpoint at all** — guarded by asserting no route
+   under the blueprint contains `save` or `apply`, which is stronger than
+   asserting a hidden button.
+
+### Rules that came out of building them
+
+* **A row must not assert a behaviour from an enum field.** The first
+  derivation table read `http-reuse: never` as ENABLED and printed "backend
+  connections are reused between clients" — the exact opposite of the truth.
+  FortiWeb spells "off" at least six ways (`disable`, `0`, `off`, `no`,
+  `none`, `never`); the parametrised guard covers all of them, and enum fields
+  now carry value-descriptive text rather than a behavioural claim.
+
+* **Field names are read off a live object, not recalled.** Every entry in
+  `DERIVATIONS` was verified against fortiweb09's real `pol-shop-cms`,
+  `pool-shop-cms`, `wpp-int` and `x_forwarded_for` objects.
+  `test_derivation_against_the_real_snapshot_resolves_every_field` re-checks
+  them against the SoT snapshot, so a typo cannot make a row vanish in silence.
+
+* **The guard must fail for the reason it claims.** Three mutations survived
+  the first pass, and all three were weak guards, not weak mutations:
+  - `::ffff:169.254.169.254` was being refused for landing in IPv6's reserved
+    `::/8`, not for being metadata. Asserting "some denial happened" passed
+    with the unwrap deleted. The assertion is now on the **reason**.
+  - `verify_signed_by` returning `False` instead of `None` survived because
+    every probe hit the *parse* failure path, never the *verify* failure path.
+    A monkeypatched unsupported-algorithm test reaches it.
+  - The decoder's readability check survived because every negative probe was
+    already rejected by UTF-8 decoding. A probe that decodes to valid,
+    printable, non-payload UTF-8 reaches the check.
+
+* **A severity or verdict with no colour renders neutral grey**, which reads as
+  "nothing to see here" on a critical finding. `test_every_severity_the_service_emits_has_a_badge_class`
+  and `test_panel_has_a_class_for_every_verdict` scan the SERVICE source and
+  require every emitted key to be mapped in the panel.
+
+* **Free-target probing is allowed, and permissioned.** Blocking RFC1918 is the
+  standard SSRF advice and would block this product's job — the whole fleet is
+  RFC1918. The weight is carried by the inventory/free split
+  (`monitoring.probe_free`), the non-configurable metadata denial, resolve-once
+  /dial-the-address (so a name cannot answer differently between the check and
+  the connection), a non-HTTP port denial, and auditing every call including
+  the refusals. `test_every_answer_must_pass_not_just_the_first` is the
+  rebinding guard: a name answering with one good and one metadata address is
+  refused, because taking the first acceptable answer is exactly the bug that
+  attempt targets.
+
+**42 mutations, 42 bite** (`/var/tmp/mut_tools.py`, measured by rc; only
+`rc == 1` is a failure, every mutation restored in `finally`, baseline re-run
+after restore).

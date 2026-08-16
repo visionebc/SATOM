@@ -3123,3 +3123,130 @@ The order to work in:
 3. Print the change document, circulate it, collect the approvals.
 4. **Approve**, then **Schedule** — or flash by hand from the Upgrade page
    inside the window.
+
+## 37. The Tools menu: certificate inspector, false-positive explainer, tracer
+
+The wrench icon in the header opens SATOM's helper tools. Four of them are pure
+calculators (regex tester, regex cheat sheet, pattern library, network
+calculator). The three below do more than arithmetic, and two of them make
+**this server** open a connection on your behalf — so each one states what it
+measured and what it only derived.
+
+### 37.1 Certificate inspector
+
+Two ways in:
+
+* **Paste PEM.** A certificate, a fullchain, or an `openssl s_client -showcerts`
+  transcript pasted whole. Optionally a hostname to check and the private key.
+  Nothing leaves the process.
+* **Probe a host.** SATOM opens a TLS connection and reads what the server
+  presents. Appliances from your inventory are one click; any other host:port
+  requires the `monitoring.probe_free` permission and every probe — including
+  every refusal — is written to the audit log.
+
+What it reports:
+
+| answer | how it was obtained |
+|---|---|
+| chain order, leaf first | reconstructed from subject/issuer names |
+| each link verified | the child's signature checked with the parent's public key |
+| chain complete / incomplete | the anchor above the last certificate, looked for in the bundle and then **by name** in this host's trust store |
+| hostname covered | RFC 6125 matching against SAN, or CN when there is no SAN |
+| private key matches | the two public halves compared in DER |
+| expiry, key size, signature hash | read off each certificate |
+
+**Chain completeness can come back `UNKNOWN`, and that is not `incomplete`.**
+Python 3.11's TLS stack exposes only the peer certificate, so the full chain is
+read with `openssl s_client`. On a node without that binary only the leaf can be
+read, the panel says so, and no completeness claim is made. The two answers send
+you to different places; collapsing them would manufacture an incident.
+
+**Probing an appliance by address reports `hostname_is_ip` as informational,
+not critical.** Management certificates carry names, not IP SANs, so a critical
+verdict here would paint the whole fleet red on arrival — and an alarm that is
+always on stops being read. To check the name a real client uses, probe that
+hostname.
+
+A wildcard covers **one** label and **not** the apex: `*.api.example.com` covers
+`v1.api.example.com` and does not cover `api.example.com`.
+
+### 37.2 False-positive explainer
+
+Paste an attack-log entry — FortiWeb `key=value` syslog, JSON (envelopes are
+unwrapped), or a raw HTTP request — and SATOM answers the question that decides
+the fix: **which module blocked this, and therefore where the exception belongs.**
+A signature exception does not clear an HTTP-protocol-constraint block, and
+nothing on the log row says so in those words.
+
+For each candidate carve-out type you get the fields that can scope it, which
+of them SATOM would tick and why for each, the fields it skipped and why, and
+the **exact FortiWeb payload** — produced by running the same assembly the
+device-backed panel runs, not a friendlier copy of it.
+
+Three things the panel says out loud:
+
+* **Fields it could not place.** A key SATOM does not recognise is listed as
+  *not used* — it is evidence the recommendation never saw, and a carve-out
+  narrower than you expected is how that goes unnoticed.
+* **Fields the entry does not carry**, each with what it decides. A raw HTTP
+  request carries no `main_type` and no `signature_id`, so the module cannot be
+  identified from it and the tool says so instead of guessing.
+* **The payload, decoded.** Percent, HTML-entity, hex and base64 layers are
+  peeled one at a time so you can see where the readable string appeared. A
+  layer that does not decode to readable text is not reported: base64 will
+  "decode" almost anything, and a coincidence dressed as evidence is worse
+  than nothing.
+
+**There is no Save button here, by design.** A carve-out is assembled from the
+entry *as the device reported it*, never from values a browser sent back — a
+page that lets a client supply the evidence lets a client author the exception.
+To save, open the same entry in **Attack Search → the entry → Carve-out**: the
+recommendation is identical and the evidence is device-read.
+
+### 37.3 Transaction tracer
+
+Three legs, answering *is it the WAF or is it the app?*
+
+* **Leg A** — SATOM to the VIP, through the appliance. Measured.
+* **Leg B** — what the appliance *forwards*. **Derived from its configuration,
+  never measured.** SATOM is not in that path. Every row names the object and
+  field it came from, and a field this firmware does not carry is listed under
+  *settings SATOM did not read* rather than shown as "disabled".
+* **Leg C** — SATOM straight to the backend, bypassing the appliance, carrying
+  **the same `Host` header as leg A**. That is what makes the two comparable.
+
+The diff gives one sentence:
+
+| status | body | headers | verdict |
+|---|---|---|---|
+| differ | — | — | the appliance is **deciding** — check the attack log for this window |
+| same | differ | — | something is rewriting the response, or the legs did not reach the same application |
+| same | same | differ | the appliance is **transforming** — the table says which object does it |
+| same | same | same | the appliance is not altering this transaction |
+
+Volatile headers (`Date`, `ETag`, `Content-Length`, request ids…) are listed
+separately rather than dropped: a `Content-Length` that differs while the body
+hash matches is a real finding about transfer encoding.
+
+Per-leg timing (TCP / TLS / TTFB / total), the TLS version, cipher and
+certificate of each leg, and `curl` and HAR exports come with every trace. The
+`curl` line carries `--resolve`, because the point of leg C is the same `Host`
+against a different address and a `curl` without it reproduces a different
+request.
+
+**Guardrails.** `GET`, `HEAD` and `OPTIONS` are free. `POST`, `PUT`, `PATCH`
+and `DELETE` are real writes to someone's application issued from inside the
+management network, so they need the `monitoring.probe_free` permission **and**
+an explicit tick per call. Redirects are never followed — following them traces
+a different request from the one you asked about, and the redirect is often the
+finding. `Authorization`, `Cookie` and friends are recorded as present and never
+echoed back. Set-Cookie is reduced to its flags: the flags are the finding, the
+value is a session credential.
+
+**Destinations.** Inventory appliances are always available. A free `host:port`
+requires `monitoring.probe_free`. Cloud instance-metadata addresses
+(`169.254.169.254` and its siblings, including the `::ffff:` spelling) are
+refused in every mode and that refusal is not configurable. Names are resolved
+once and the **address** is dialled, with the hostname carried separately as
+SNI and `Host`, so a name cannot answer differently between the check and the
+connection.

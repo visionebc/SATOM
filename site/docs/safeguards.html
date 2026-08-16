@@ -8428,6 +8428,611 @@ grep -c 'X-SATOM-Signature' app/services/alert_webhook.py         # header defin
 <p>The signature check that matters cannot be a grep: recompute the HMAC from the
 bytes captured at the transport boundary and compare it with the captured
 header. A grep for <code>hmac.new</code> proves only that signing was attempted.</p>
+<h2 id="86-a-sidebar-that-is-a-second-copy-of-the-inventory-teststest_bookmarkspy-teststest_bookmarks_panelpy-teststest_bookmarks_lenspy">§86 — a sidebar that is a second copy of the inventory (<code>tests/test_bookmarks.py</code>, <code>tests/test_bookmarks_panel.py</code>, <code>tests/test_bookmarks_lens.py</code>)</h2>
+<p><strong>What is being defended.</strong> The bookmarks rail. 107 guards across three files:
+the service (visibility, authorship, placement), the panel (routes, tree shape,
+search) and the grouping order (the per-user lens).</p>
+<p><strong>Why it needs guarding at all.</strong> Every failure mode in this feature renders
+<em>perfectly</em>. A tree grouped by the wrong dimension, a row calling a device by
+the name it had last month, a shared bookmark visible to somebody who may not
+open the device it points at — none of them throw, none of them look wrong, and
+the only symptom is that somebody acted on something false.</p>
+<p><strong>The rules, and the evidence for each.</strong></p>
+<ol>
+<li><strong>Nothing about a device is stored on a bookmark except its id.</strong> Name, zone,
+   line, department, product and segment are read live on every render. Verified
+   by renaming an appliance and re-reading the name <strong>off the bookmark row</strong>,
+   by id — not off the page. The inventory lens prints the live name by a
+   completely different path, so a whole-body assertion passes against a
+   bookmark row that has gone stale. That exact hole let this mutation survive
+   the first harness of the round.</li>
+<li><strong>The reader's gate, never the sharer's.</strong> Every row passes the ADOM stamp
+   filter and <code>visible_appliances</code> for the person looking. An id that belongs
+   to somebody else is <strong>404, not 403</strong> — a 403 confirms the row exists.
+   Verified with a reader who lacks <code>appliances.view_maintenance</code>, which is
+   where the asymmetry actually lives; two of the first tests in this file were
+   wrong because they assumed maintenance hides a device from an admin, and it
+   does not.</li>
+<li><strong>Filtering a row out never destroys its placement.</strong> A device entering
+   maintenance leaves the panel and returns where its owner filed it.</li>
+<li><strong>The stores are not lenses.</strong> Favourites, Folders and Shared are always
+   present. Folding them into the one-view rule would make a bookmark shared to
+   you unreachable whenever your chosen grouping happened to be something else.</li>
+<li><strong>Reading a preference is forgiving; writing it is strict.</strong> <code>lens_for</code>
+   never raises — the rail renders on every page, so one retired dimension
+   would be a 500 on the whole console rather than a wrong sidebar — while
+   <code>parse_lens</code> refuses empty, unknown and repeated entries <strong>by name</strong>. The two
+   must not converge in either direction: a strict read takes the product down,
+   a forgiving write leaves the profile page and the tree disagreeing.</li>
+<li><strong>The root key is stable across a reorder.</strong> The open-set is keyed by node
+   key; a root key derived from the order would slam the root shut every time
+   somebody re-ordered their own tree, punishing exactly the action the feature
+   exists to allow.</li>
+<li><strong>Depth is a CSS class, never an inline style.</strong> This console ships a CSP
+   with a nonce, and a per-row <code>style=</code> is what stops working the day
+   <code>style-src</code> drops <code>unsafe-inline</code> — silently collapsing the tree to one
+   column with nothing failing.</li>
+<li><strong>Search filters on the SERVER.</strong> A client-side <code>display:none</code> overlay
+   renders identically and leaves rows in the DOM that the reader's permissions
+   had removed from the answer.</li>
+</ol>
+<p><strong>Verification recipe.</strong></p>
+<pre><code>runuser -u satom -- venv/bin/python -m pytest \
+  tests/test_bookmarks.py tests/test_bookmarks_panel.py \
+  tests/test_bookmarks_lens.py -q          # 107, rc=0
+runuser -u satom -- venv/bin/python -u /var/tmp/mut_lens.py   # 27/27 bite
+</code></pre>
+<p>Node keys are the only thing that can tell two orders apart — both render the
+same device count — so assert on <code>data-bm-node="r:lens|…"</code>, never on names:</p>
+<pre><code>curl -s .../bookmarks/panel | grep -o 'data-bm-node=&quot;[^&quot;]*&quot;' | sort -u
+</code></pre>
+<p><strong>Traps this round cost time to find.</strong></p>
+<ul>
+<li><strong>An anchored patcher that re-reads the file on every edit clobbers itself.</strong>
+  Two edits to one file each start from the original, and only the last one
+  survives — while the patcher cheerfully reports "patched 15 files". Edits
+  must accumulate in memory.</li>
+<li><strong>Idempotency is decided by the RESULT, never by the anchor.</strong> Most edits here
+  insert <em>around</em> their anchor, so "anchor still present" means nothing;
+  testing it duplicated a whole block of functions and a route on the re-run.</li>
+<li><strong>A page-wide assertion breaks when the page gains a second control.</strong>
+  <code>test_lang_preference</code> scanned every <code>&lt;option&gt;</code> on the profile page for
+  <code>selected</code> and started failing the moment the grouping-order form marked its
+  own current value — against a perfectly correct page. Scope such a guard to
+  the element its docstring is actually about.</li>
+<li><strong><code>ssh root@host '…heredoc…'</code> with single quotes inside the script dies in
+  the outer shell.</strong> Script to a file, <code>scp -O</code>, run it there.</li>
+</ul>
+<h2 id="87-two-destinations-and-a-link-that-looks-live-teststest_bookmarks_devlinkpy">§87 — two destinations, and a link that looks live (<code>tests/test_bookmarks_devlink.py</code>)</h2>
+<p><strong>What is being defended.</strong> The arrow on a panel row, and the same link on the
+appliance detail page. 34 guards.</p>
+<p><strong>Why it needs guarding at all.</strong> Every failure mode here renders perfectly.
+A row with no arrow reads as "this device has no GUI". A row whose arrow points
+at a host that never resolves reads as "the device is down", and the operator
+goes and debugs the appliance instead of the record. And a row whose arrow was
+built by pasting <code>Appliance.host</code> into <code>https://</code> reads as "the device" and can
+navigate somewhere else entirely.</p>
+<p><strong>The rules, and the evidence for each.</strong></p>
+<ul>
+<li>
+<p><strong>Derived from <code>host</code>/<code>port</code>, never stored.</strong> There is deliberately no
+  <code>mgmt_url</code> column: a stored copy of the management address is the copy that
+  survives a re-IP, and then the console sends people to whoever holds the old
+  address now. Guarded by re-addressing the appliance mid-test and asserting the
+  panel follows with no write to the bookmark.</p>
+</li>
+<li>
+<p><strong>The host is PARSED, not interpolated.</strong> <code>host</code> is free text an
+  administrator types and the link is rendered for everyone, read-only users
+  included. <code>{device}@evil.example</code> is a legal-looking value that navigates to
+  <code>evil.example</code>, because everything before the <code>@</code> is userinfo. Eleven
+  parametrised values cover userinfo, a smuggled path, a smuggled port, a query,
+  a fragment, whitespace, leading and trailing hyphens, an empty label,
+  <code>javascript:</code> and <code>//</code>. An IPv6 literal is bracketed — unbracketed, the colons
+  of the address are read as the port separator.</p>
+</li>
+<li>
+<p><strong>The scheme is always <code>https</code>, and it does NOT come from <code>verify_ssl</code>.</strong>
+  That flag says whether <em>we</em> trust the device's certificate; a self-signed
+  appliance is still an HTTPS appliance. Deriving the scheme from it would put
+  the phrase "we don't check this cert" in charge of what the browser does.</p>
+</li>
+<li>
+<p><strong>A refusal is STATED, never a missing button.</strong> The retired appliances in
+  this fleet are parked on <code>.invalid</code> hosts, which RFC 6761 guarantees never
+  resolve. Those rows keep their slot, dimmed, with the reason in the tooltip.
+  And the reason is a sentence: <code>bad_host</code> sends its reader to somebody who can
+  read the source, a sentence sends them to the inventory record.</p>
+</li>
+<li>
+<p><strong><code>rel</code> carries BOTH <code>noopener</code> and <code>noreferrer</code>.</strong> The destination is an
+  appliance under audit: <code>noopener</code> stops it steering this tab through
+  <code>window.opener</code>, <code>noreferrer</code> stops it being handed the console URL — which
+  carries device ids — in the <code>Referer</code> header. Either alone leaves half of it
+  open, so they are two separate mutations.</p>
+</li>
+<li>
+<p><strong>BOTH destinations survive.</strong> The name opens what SATOM knows, the arrow
+  opens the device. A change that pointed the row itself at the appliance GUI
+  satisfies every other guard in the file and quietly takes the console out of
+  the operator's path.</p>
+</li>
+</ul>
+<p><strong>Two mutations that survived the first harness, and why.</strong></p>
+<ul>
+<li>
+<p><em>"an empty host is allowed through"</em> — every empty-host assertion read only
+  <code>url is None and why</code>, and with the guard deleted an empty host still gets
+  refused, one branch further down, as a <em>malformed</em> address. The guard was
+  load-bearing for the message and nothing read the message. The fix compares
+  the two reasons: "nobody filled this in" and "somebody typed it wrong" are
+  different mistakes with different fixes.</p>
+</li>
+<li>
+<p><em>"bookmarked device rows lose the link"</em> — every panel guard rendered the
+  device through the inventory <strong>lens</strong>, whose item dict is built by a different
+  function. A bookmarked device is drawn <strong>twice</strong>, so <code>'href="https://…" in
+  body</code> answered from the lens copy while the bookmark row had lost its link
+  entirely. The fix slices the row out by its <code>data-bm-id</code> and asserts inside
+  it. <em>Any</em> whole-page substring assertion about a panel that draws the same
+  device from two roots is suspect for this reason.</p>
+</li>
+</ul>
+<p><strong>How to check it still bites.</strong> Mutate: allow the <code>.invalid</code> TLD; read the
+first label instead of the last; drop the bracketing of an IPv6 literal; derive
+the scheme to <code>http</code>; drop the port from the URL; paste the host instead of
+parsing it; drop either <code>rel</code> token; render a refusal as nothing; point the row
+itself at the device. All bite.</p>
+<h2 id="88-a-saved-link-is-an-href-in-everybody-elses-sidebar-teststest_bookmarks_linkurlpy">§88 — a saved link is an <code>href</code> in everybody else's sidebar (<code>tests/test_bookmarks_linkurl.py</code>)</h2>
+<p><strong>What is being defended.</strong> The URL a <code>link</code> bookmark may carry, on the way in
+and on the way out. 44 guards.</p>
+<p><strong>Why it needs guarding at all.</strong> A link bookmark is free text one person types
+and everybody renders. Share it with the team and it becomes an <code>href</code> in every
+colleague's sidebar, on <strong>every page</strong> of the console, for as long as it exists
+— including for the read-only users who cannot delete it. <code>javascript:</code> in that
+<code>href</code> runs in this origin on one click with the session cookie: it is stored
+XSS whose only entry requirement is the permission to save a bookmark. Nothing
+about the rendered panel looks wrong. The row is a row, the name is the name,
+and the trap is one click away.</p>
+<p>Before this section the only check on the field was that it was <strong>non-empty</strong>.</p>
+<p><strong>The rules, and the evidence for each.</strong></p>
+<ul>
+<li>
+<p><strong>An allowlist of schemes, not a blocklist.</strong> <code>http</code> and <code>https</code>, plus an
+  internal path beginning with <code>/</code>. There is no useful "everything else" here,
+  and a blocklist is a list somebody has to keep adding to — <code>data:</code>,
+  <code>vbscript:</code>, <code>blob:</code>, <code>about:</code> and <code>file:</code> are all guarded, and all of them
+  are things a blocklist written for <code>javascript:</code> alone would have missed.</p>
+</li>
+<li>
+<p><strong>The check reads the string the BROWSER will read.</strong> Browsers delete NUL,
+  TAB, CR and LF from a URL <em>before</em> parsing the scheme, so
+  <code>java\tscript:alert(1)</code> navigates as <code>javascript:</code>. Measured rather than
+  assumed: <code>urlsplit</code> removes the same characters and lower-cases the scheme,
+  which is <em>why</em> a lower-case allowlist can catch those at all — pinned by a
+  test, since no input can distinguish a redundant <code>.lower()</code> from a necessary
+  one and a stdlib that stopped normalising would silently reopen the bypass.
+  The case only the control-character rule catches is a control character
+  inside an otherwise valid URL (<code>https://ok.example/a\nb</code>): scheme and host
+  both pass, and the raw value would go into an <code>href</code> attribute, where a
+  newline is how one value stops being one value.</p>
+</li>
+<li>
+<p><strong><code>//evil.example</code> is refused even though it starts with a slash.</strong> One
+  character separates "a page of this console" from "somebody else's server",
+  and the panel renders both identically. A scheme-less relative URL
+  (<code>docs/runbook</code>) is refused for a duller reason: it resolves against whatever
+  page the panel is drawn on, and the panel is drawn on every page.</p>
+</li>
+<li>
+<p><strong>Checked TWICE, and the two checks defend different things.</strong>
+  <code>services.bookmarks.create</code> refuses on the way in, so the row is never stored
+  and the author is told why while they are still looking at the form. The panel
+  re-checks on the way out, because <code>create</code> is <strong>not the only writer that
+  reaches this table</strong>: a bundle restore and a Postgres replica both land rows
+  without passing through it. Checking only at write time trusts every row this
+  process did not write. Guarded by storing a legitimate link through the real
+  route and then corrupting the column directly — which is exactly what those
+  paths do.</p>
+</li>
+<li>
+<p><strong>A refused row is DEFUSED, not dropped.</strong> It keeps its place and states why
+  in the tooltip. A row that silently loses its <code>href</code> reads as a UI bug, and
+  nobody goes and fixes the URL — which is the only thing that ends the problem.</p>
+</li>
+<li>
+<p><strong>The refusals are told apart.</strong> "You left it blank", "that scheme is not
+  allowed", "that is another server" and "that has no scheme" are four mistakes
+  with four fixes; one shared message helps with none. The empty case keeps its
+  pre-existing <code>missing_url</code> code, so the form still says the right thing to
+  somebody who has simply not typed yet.</p>
+</li>
+</ul>
+<p><strong>The lesson from the first harness run: five of these guards were proving a
+different check than the one they were written about.</strong> <code>javascript:alert(1)</code>
+has <strong>no netloc</strong>, and so does <code>data:</code>, <code>vbscript:</code>, <code>blob:</code>, <code>about:</code> and
+<code>file:</code> — every payload in the original "dangerous scheme" list. All of them
+were refused by the <em>no-host</em> check further down, so re-admitting <code>javascript</code>
+to <code>LINK_SCHEMES</code> changed nothing any test could see. The allowlist, the thing
+the section is <em>about</em>, was unguarded.</p>
+<p>The payloads that isolate it are the ones that parse <strong>with</strong> a host:
+<code>javascript://evil.example/%0aalert(1)</code> — where <code>//</code> opens a JavaScript line
+comment and <code>%0a</code> closes it, so it is both executable and well-formed —
+plus <code>data://</code>, <code>ftp://</code> and <code>ws://</code>. Generalisable: when a function has
+several refusal paths, a payload that trips more than one of them proves the
+last one to run, not the one being written about.</p>
+<p><strong>How to check it still bites.</strong> Mutate: re-admit <code>javascript</code> to
+<code>LINK_SCHEMES</code>; drop the control-character refusal; drop the <code>strip()</code>; treat
+<code>//</code> as internal; accept a scheme-less relative URL; drop the <code>netloc</code> check;
+collapse two refusal reasons into one; make <code>create</code> skip the check; store the
+link anyway after refusing it; report an empty URL as <code>bad_url</code> instead of
+<code>missing_url</code>; make the panel trust the stored column; have the template reach
+past <code>link_url</code> to <code>bm.url</code>; drop the refused row entirely; and — the inverse,
+which is the one a tightening this aggressive really needs — refuse a
+legitimate <code>https</code> link. <strong>16 mutations, all bite.</strong></p>
+<ul>
+<li>Measure mutations by <strong>rc</strong>, and only <code>rc==1</code> is a failure — <code>rc==4</code> is a
+  usage error and <code>rc==-15</code> an external SIGTERM, and both otherwise read as
+  "the guard caught it".</li>
+</ul>
+<h2 id="89-a-catalog-value-is-a-key-not-a-word-teststest_classification_opspy-teststest_classification_pagepy">§89 — a catalog value is a key, not a word (<code>tests/test_classification_ops.py</code>, <code>tests/test_classification_page.py</code>)</h2>
+<p><strong>What is being defended.</strong> Every edit to the zones / lines / departments
+catalogs, and the references those edits move. 43 guards, 30 mutations.</p>
+<p><strong>Why it needs guarding at all.</strong> The page looked like the safest one in the
+product: three textareas holding three lists of words. It was the most
+dangerous, because those words are <strong>keys</strong>. <code>Appliance.zone</code>,
+<code>Baseline.zone</code> and each network segment's <code>zone</code> hold the value as a plain
+<code>String(128)</code> — there is no foreign key anywhere in this schema. A textarea
+cannot distinguish <em>rename</em> from <em>delete-plus-add</em>, so it submitted both as
+"here is the new list", and the references were left pointing at a string that
+no longer exists.</p>
+<p>Nothing fails when that happens. Measured against the live fleet, one rename of
+<code>internal</code> leaves <strong>6 appliances, 24 baselines and 2 segments</strong> stranded, and
+each degrades differently:</p>
+<ul>
+<li>Architecture groups the appliances under <code>(no zone)</code>; the bookmarks lens
+  buckets them as unclassified. Both are <em>displays</em> — wrong, and nobody's alarm.</li>
+<li><code>baselines.appliances_in_scope()</code> filters on <code>Appliance.zone ==
+  baseline.zone</code>. A half-applied rename does not raise; it returns an <strong>empty
+  scope</strong>, which on screen is indistinguishable from "no appliance matches this
+  baseline yet".</li>
+<li>Combos are auto-generated from the catalogs. Leave 24 of them on the old
+  triple and the next <code>generate_missing_combos()</code> builds a second full grid:
+  <strong>24 combos silently become 36</strong>, and <code>missing_combos()</code> then reports nothing
+  missing, forever.</li>
+</ul>
+<p><strong>The rules the guards encode.</strong></p>
+<ol>
+<li><strong>A rename cascades, in one transaction.</strong> The catalog entry and every
+   reference move together or neither moves.</li>
+<li><strong>A delete with references is refused until the caller decides.</strong> Clear them
+   or reassign them — and the refusal names the counts, because "in use" is not
+   something anybody can act on.</li>
+<li><strong>"Clear them" and "not decided yet" carry the same empty target and must
+   never share a token.</strong> They differ only by a flag. Collapse the two and an
+   untouched dropdown wipes every reference in the name of a choice nobody
+   made. The form submits <code>?</code> for undecided and <code>__clear__</code> for the decision.</li>
+<li><strong>A value the form does not send back is routed through the delete path,
+   not dropped.</strong> Vanishing from the submission is precisely what the textarea
+   did; treating it as a plain removal reinstates the whole bug.</li>
+<li><strong>Usage is counted from the live rows, never from the catalog</strong>, and never
+   folded case-insensitively: <code>Appliance.zone == "dmz"</code> does not match a row
+   holding <code>"DMZ"</code>, so merging the two would report a reference the query
+   cannot resolve. Values in use but absent from the catalog are <strong>shown</strong>, not
+   hidden — an operator cannot fix what the page pretends does not exist.</li>
+<li><strong>Validation for all three catalogs finishes before the first write.</strong>
+   <code>AppSetting.set()</code> commits on its own, so validating-then-writing one
+   catalog at a time would leave zones saved and lines refused.</li>
+<li><strong>Segments are one JSON blob shared by all three axes</strong>: loaded once, edited
+   by every plan, written once. Saving per axis makes the second write clobber
+   the first.</li>
+<li><strong>One writer.</strong> <code>POST /settings/classification</code> was unreachable from any
+   template but still live, still <code>USER_MANAGE</code>, and still calling the store
+   directly. An <strong>AST walk</strong> — not a grep — now fails if anything outside
+   <code>classification_ops</code> calls <code>save_classification</code>, because a fifth view could
+   reach it through an alias a text search would miss.</li>
+</ol>
+<p><strong>Two refusals that only the data made obvious.</strong></p>
+<p><em>Swaps.</em> <code>A → B</code> together with <code>B → A</code> passes every other check and then
+applies sequentially: the first move puts A's references onto B, the second
+sweeps up <strong>all</strong> of B — including what just arrived — onto A. Both sets land
+on one value and nothing warned. Refused, with "do it in two steps".</p>
+<p><em>Combo collisions.</em> Reassigning <code>internal → external</code> sends a combo onto a
+triple that already has one. Two combos on one triple make <code>missing_combos()</code>
+consider the pair satisfied forever, so the duplicate never surfaces anywhere;
+the redundant one is absorbed instead. But absorbing is <strong>refused</strong> when the
+absorbed combo holds template assignments the survivor lacks — dropping those
+silently would be trading one invisible loss for another.</p>
+<p><strong>Verification recipe.</strong> Directed set only (the user's standing rule):</p>
+<pre><code>runuser -u satom -- /opt/satom/venv/bin/python -m pytest \
+  tests/test_classification_ops.py tests/test_classification_page.py -q
+</code></pre>
+<p>Mutation harness at <code>/var/tmp/mut_cls.py</code>, measured by <strong>return code</strong> — pytest
+prints <code>FAILED</code> in caps, <code>rc==4</code> is a usage error, and only <code>rc==1</code> is a test
+failure. It restores every mutation in a <code>finally</code> and re-runs the baseline
+afterwards to prove the tree came back clean.</p>
+<h2 id="90-a-manual-is-a-claim-and-nothing-fails-when-it-stops-being-true-teststest_alerting_docspy">§90 — a manual is a claim, and nothing fails when it stops being true (<code>tests/test_alerting_docs.py</code>)</h2>
+<p><strong>What it prevents.</strong> Documentation that describes an earlier version of the
+product. This is not hypothetical here: the alerting subsystem produced two
+instances in two rounds, and neither was caught by anything failing.</p>
+<ul>
+<li><code>docs/user-guide.md</code> §26.6 described the delivery policy for a full round
+  after per-sink routing and the syslog feed had shipped.</li>
+<li>§35.3 listed the hook catalog as <strong>six</strong> events on the day <code>alert.fired</code> —
+  the seventh, and the entire point of the release — went live.</li>
+<li>The Settings page introduced the health engine as routing to "in-app bell,
+  email, and a syslog/CEF feed", two sinks after that was true.</li>
+</ul>
+<p>A reader who trusts any of those concludes a capability they are looking at
+does not exist. The app boots, the page renders, the suite is green.</p>
+<p><strong>How.</strong> Every guard is <strong>derived from the registry that implements the
+thing</strong>, never from a list in the test: <code>alert_routing.SINKS</code>, <code>FAMILIES</code>,
+<code>UNFILTERABLE</code>, <code>SEVERITIES</code> and <code>_PREFIX_FAMILY</code>; <code>integration_hooks.
+EVENT_NAMES</code> and the <code>alert.fired</code> payload spec; <code>hook_starters.STARTERS</code> with
+each starter's event and declared secrets; <code>alert_webhook.FORMATS</code>,
+<code>RETRY_STATUSES</code>, <code>SIG_HEADER</code>/<code>TS_HEADER</code>/<code>ID_HEADER</code>, <code>SIG_SCHEME</code> and
+<code>ENVELOPE_VERSION</code>; <code>alert_syslog.PROTOCOLS</code>, <code>FORMATS</code>, both severity maps and
+the private enterprise number. Adding a sink, an event or a starter fails the
+suite in the commit that adds it.</p>
+<p><strong>Two rules this file exists to encode.</strong></p>
+<ol>
+<li><strong>Bound the section, never scan the file.</strong> Every assertion runs against a
+   <code>bounded(head, stop)</code> slice. <code>test_the_bounded_sections_actually_bound_
+   something</code> fails if a heading is renamed, because <code>bounded</code> would otherwise
+   silently return the rest of the file and turn every guard into a whole-file
+   one that passes on anything.</li>
+<li><strong>An absent capability is guarded from its own absence.</strong> Syslog-over-TLS
+   and LEEF are asserted missing from <code>alert_syslog.PROTOCOLS</code>/<code>FORMATS</code>
+   <em>first</em>, then required to have a row in the "not implemented" table. The
+   premise assert fails the day either ships, forcing the row to be deleted
+   rather than left telling operators a feature in front of them does not
+   exist.</li>
+</ol>
+<p><strong>Deliberately not guarded:</strong> prose quality. A guard that tries to police
+whether an explanation is <em>good</em> rejects correct writing; this repo already
+retired one such test. What is checkable is presence.</p>
+<p><strong>The two survivors, and both were real holes.</strong> The harness ran 22 mutations
+and the first pass killed 20:</p>
+<ul>
+<li><em>Dropping <code>alert.fired</code> from the enumerated event list</em> survived, because the
+  paragraphs <strong>below</strong> the list mention the event by name and the guard was
+  scanning the whole section. The enumeration is what a reader scans to learn
+  what they can subscribe to, so the guard now bounds to <code>Events:</code> → blank
+  line. Same class as §87: an assertion answered by a second copy of the fact.</li>
+<li><em>Deleting the "Syslog over TLS" row</em> survived, because the closing paragraph
+  of that same section mentions TLS in prose. The guard now asserts on the
+  <strong>table row</strong>, not on the section.</li>
+</ul>
+<p><strong>Prove it is armed</strong> (from <code>/opt/satom</code>, as <code>satom</code>):</p>
+<pre><code>venv/bin/python -m pytest tests/test_alerting_docs.py -q          # 92 passed
+sed -i 's/`upgrade.failed` and `alert.fired`/`upgrade.failed`/' docs/user-guide.md
+venv/bin/python -m pytest tests/test_alerting_docs.py -q; git checkout -- docs/user-guide.md
+</code></pre>
+<p>The second run must fail. Mutation harness at <code>/var/tmp/mut_alertdocs.py</code>,
+measured by <strong>return code</strong> — only <code>rc==1</code> is a test failure; <code>rc==2</code> is a
+usage error, <code>rc==4</code> collection, and a negative rc is a signal and no verdict
+at all. It restores every mutation in a <code>finally</code> and re-runs the baseline
+afterwards to prove the tree came back clean. <strong>22/22 bite.</strong></p>
+<h2 id="91-a-device-type-is-a-product-name-and-a-wash-is-not-a-label-colour-teststest_bookmarks_typepy">§91 — a device type is a product name, and a wash is not a label colour (<code>tests/test_bookmarks_type.py</code>)</h2>
+<p><strong>What is claimed.</strong> In the bookmarks rail, the bucket that says <em>what kind of
+box this is</em> is written the way the product is actually named and is set in a
+pill washed with the reader's own top-bar banner. Three separate things can rot
+here and none of them makes anything fail:</p>
+<ol>
+<li><strong>The name.</strong> <code>Appliance.kind</code> is stored lowercase. Raising only the first
+   letter gives <code>Fortiweb</code>, which is not the name of anything; <code>str.capitalize</code>
+   additionally lower-cases the rest and destroys a hand-spelled custom kind.
+   The label comes from the ADOM registry, which is where the operator already
+   spells these products. <code>branding.get_product</code> <strong>answers FortiWeb for a key
+   it does not know</strong>, so <code>is_valid</code> runs first — calling it blind would give
+   every unregistered kind a confident wrong name instead of an honest raw one.</li>
+<li><strong>Which end of the gradient.</strong> Fourteen of the twenty banner templates are
+   gradients and every one of them <em>starts</em> on a near-black anchor. Tinting
+   from the first stop renders Ocean, Ember and Emerald as the same grey, which
+   looks deliberate. The accent is the <strong>last</strong> stop.</li>
+<li><strong>What the colour touches.</strong> The wash is a background at 8% alpha and the
+   text keeps <code>--fw-text-primary</code>. Painting the label in an 8% brand colour
+   reads at about 1.4:1 on white — a pill that says <code>FortiWeb</code> and cannot be
+   read. This console has already shipped that exact defect once, in its status
+   pills (§9m).</li>
+</ol>
+<p><strong>And one structural claim.</strong> The node <strong>key</strong> is still built from the raw
+stored value; only the <strong>name</strong> is the displayed one. The tree's open/closed
+set is indexed by that key, so if the label became the key, renaming a product
+in the ADOM registry would silently collapse the product branch of every reader
+who had it open — punishing them for a change they never made.</p>
+<p><strong>The mutant that survived, and was not approved.</strong> Deleting the
+<code>(unclassified) / (no segment) / (links and views)</code> check survives every
+assertion, because all three sentinels begin with <code>(</code> and a bracket has no
+upper case: the fallback returns them unchanged anyway. That is a property of
+today's <em>spelling</em>, not of the function. Rather than accept an equivalent
+mutant, the assumption is pinned —
+<code>test_the_synthetic_guard_does_not_ride_on_how_they_are_spelled</code> monkeypatches
+<code>UNCLASSIFIED</code> to <code>unclassified</code> and asserts it is still not relabelled, so the
+day somebody drops the brackets the check is provably load-bearing.</p>
+<p><strong>A sibling guard was narrowed, and its ground was replaced.</strong>
+<code>test_indentation_is_a_class_not_an_inline_style</code> asserted <code>"style=" not in
+body</code> over the whole fragment — wider than its own claim, which is about
+per-row <code>padding-left</code>. The difference is real: a <code>style=</code> declaring only a
+<code>--bm-*</code> custom property that the stylesheet reads through <code>var(--x, fallback)</code>
+degrades to the fallback under a strict CSP, whereas a <code>padding-left</code> degrades
+to a flat one-column list. The guard now asserts on <code>.bm-row</code> elements, and
+<code>test_a_style_attribute_may_only_carry_a_custom_property</code> holds the rest: every
+inline declaration in the panel must be a <code>--bm-*</code> property <strong>and</strong> must be
+read from the stylesheet with a fallback.</p>
+<p><strong>Prove it is armed</strong> (from <code>/opt/satom</code>, as <code>satom</code>):</p>
+<pre><code>venv/bin/python -m pytest tests/test_bookmarks_type.py -q        # 28 passed
+sed -i 's/if is_valid(value):/if True:/' app/services/bookmarks.py
+venv/bin/python -m pytest tests/test_bookmarks_type.py -q
+git checkout -- app/services/bookmarks.py
+</code></pre>
+<p>The second run must fail (an unregistered kind gets labelled <code>FortiWeb</code>).
+Mutation harness at <code>/var/tmp/mut_bmtype.py</code>, measured by <strong>return code</strong> —
+only <code>rc==1</code> is a test failure; <code>rc==2</code> is a usage error and <code>rc==4</code> is a
+collection error, and a harness that greps stdout for <code>failed</code> misses every one
+of them because pytest prints <code>FAILED</code>. It restores each file in a <code>finally</code>
+and re-runs the baseline afterwards. <strong>19/19 bite.</strong></p>
+<h2 id="92-a-hover-is-a-state-and-two-states-can-want-the-same-row-teststest_bookmarks_hoverpy">§92 — a hover is a state, and two states can want the same row (<code>tests/test_bookmarks_hover.py</code>)</h2>
+<p>The sidebar row went from a flat grey hover to a wash of the reader's own
+banner colour. The colour itself is the easy part. What this section defends
+is that <strong>three things now compete for one row's background</strong>, and every way
+they can lose is silent.</p>
+<p><strong>The chip drowns in its own row.</strong> The device-type chip paints an <code>rgba()</code>
+fill over the row it sits inside. Give the row the chip's alpha and the two
+land at the same weight — so the single chip that stops reading as a chip is
+the one under the pointer, which is the only one anybody is looking at. The
+alphas are ordered by a named constant (<code>ROW_HOVER_ALPHA</code>), not shared, so
+retuning the chip cannot drag the row along.</p>
+<p><strong>The drop target vanishes while you aim at it.</strong> Dragging a row <em>is</em>
+hovering it, so <code>:hover</code> and <code>.bm-dragover</code> always apply together, and both
+are <code>(0,2,0)</code>. Source order is the only thing deciding which the operator
+sees. The guard asserts the drop-target rule appears <em>after</em> the wash in the
+stylesheet — a pure ordering test, with a mutation that relocates the block
+without changing a character of either rule.</p>
+<p><strong>An empty value defeats the fallback.</strong> <code>var(--x, fallback)</code> takes the
+fallback when the property is <em>not set</em>, not when it is set to nothing. An
+empty custom property is a valid declared value, so a template that emits
+<code>--bm-row-hover: ;</code> takes hover off every row with no error anywhere. There
+is a guard for the property being present and a separate one for it being
+non-blank; the first passes happily on the second's failure.</p>
+<p><strong>The page and the service each keep a copy.</strong> The rendered value is compared
+against what <code>reader_tint</code> computes for that same user, so the two cannot
+drift into disagreeing about a colour the operator chose once.</p>
+<p>Also fixed here, and not part of the request: a focused row now takes the
+wash. The row already revealed <code>.bm-actions</code> on <code>:focus-within</code>, so a keyboard
+reader got action buttons floating over an unlit row.</p>
+<p><strong>Verification recipe.</strong> <code>/var/tmp/mut_hover.py</code> on a1 — 15 mutations,
+measured by <strong>return code</strong> (only <code>rc==1</code> is a failure; <code>rc==4</code> is a usage
+error and a negative rc is a killed run, neither of which is a verdict), each
+restoring its file in a <code>finally</code> and re-running the baseline at the end. The
+ordering mutation is the one worth keeping: it proves the suite is testing
+cascade order and not just the presence of two rules.</p>
+<h2 id="93-a-page-can-promise-a-command-that-does-not-exist-teststest_documented_commandspy">§93 — a page can promise a command that does not exist (<code>tests/test_documented_commands.py</code>)</h2>
+<p><code>docs/cli.md</code> has been held to the live command tree since §7: every runnable
+node appears in the reference, and every command named there resolves. Two
+surfaces an operator is far more likely to act on had no such guard — <strong>the
+manual</strong>, and <strong>the product's own pages</strong>.</p>
+<p>The gap shipped. The API-versions page told the operator, in its own words, to
+run:</p>
+<pre><code>satom api preflight &lt;appliance&gt; &lt;object&gt; &lt;field&gt;…
+</code></pre>
+<p>There is no <code>satom api</code>. The real command is <code>satom get api preflight</code>, so
+following the page's instruction exits <strong>2, unknown command</strong> — and the page
+that says so is the only place an operator learns the command exists at all.
+Nothing failed: the page rendered, the CLI worked, <code>docs/cli.md</code> was correct,
+and the manual written a day later used the right spelling. The wrong one sat
+in the interface. Same shape as §90 and §83: <strong>the artifact stays well-formed
+and the claim quietly becomes false.</strong></p>
+<p>The guard scans <code>docs/user-guide.md</code> and every template under
+<code>app/templates/</code>, extracts each <code>satom …</code> invocation and resolves it against
+<code>deploy/satom_cli/tree.py</code>. <code>docs/cli.md</code> is deliberately <strong>excluded</strong> — it has
+its own generated-reference guard, and giving one claim two owners is how the
+two owners start disagreeing.</p>
+<p><strong>Two rules, both arrived at by measuring rather than guessing:</strong></p>
+<ol>
+<li><strong>Anchoring, not matching.</strong> A naive <code>satom &lt;word&gt;</code> scan over the tree
+   returns 14 hits and 12 are prose: <code>/opt/satom/venv</code>, <code>sudo -u satom ssh</code>,
+   <code>systemctl status satom satom-scheduler</code>, <code>git -C /opt/satom remote
+   set-url</code>. A guard whose output is mostly noise is a guard somebody marks
+   <code>xfail</code>. A candidate counts only where a command can start — line start, a
+   <code>$</code> prompt, a backtick, an HTML tag boundary — and never after a path
+   separator.</li>
+<li><strong>Extra tokens after a leaf are arguments.</strong> <code>satom get device config
+   {device}</code> must pass. Resolution stops at the first leaf; only a <em>group</em> is
+   entitled to reject an unknown child. An earlier draft walked past the leaf
+   and would have fired on nearly every real example in the manual.</li>
+</ol>
+<p><strong>Two mutations were rejected as weak rather than approved.</strong> Turning
+<code>assert not bad</code> into <code>assert True or bad</code> survives — on a clean tree there is
+no finding, so it is equivalent by construction; the lethal form breaks the
+finding path itself, which <code>test_scan_reports_a_bad_command_in_a_file_it_scans</code>
+covers by scanning a temporary directory with two planted bad commands. And a
+"the page has no wrong spelling" assertion is pure duplication of the scan; it
+was replaced by the half the scanner structurally cannot cover — that the page
+still names the command <strong>at all</strong>, since deleting the sentence leaves the scan
+perfectly green and the operator with nothing to type.</p>
+<h3 id="verifying-it-is-armed">Verifying it is armed</h3>
+<pre><code class="language-bash">runuser -u satom -- venv/bin/python -m pytest tests/test_documented_commands.py -q
+
+# it bites: plant a command that does not exist, expect rc=1
+printf '\n&lt;!-- satom get apiversions --&gt;\n' &gt;&gt; app/templates/registry/versions.html
+runuser -u satom -- venv/bin/python -m pytest tests/test_documented_commands.py -q ; echo &quot;rc=$?&quot;
+git checkout -- app/templates/registry/versions.html
+</code></pre>
+<p>Capture the exit code <em>before</em> any pipe — a pipeline ending in <code>tail</code> always
+exits 0. Measured this way, <strong>12 of 12 mutations bite</strong>, including reverting
+the page to the shipped spelling, deleting the sentence entirely, dropping the
+anchor, and making the scanner read nothing.</p>
+<h2 id="94-a-page-that-offers-to-delete-things-must-be-documented-before-it-is-used-teststest_api_matrix_docspy">§94 — a page that offers to delete things must be documented before it is used (<code>tests/test_api_matrix_docs.py</code>)</h2>
+<p><strong>What it prevents.</strong> The same failure as §90, on the two pages where the cost
+of an undocumented sentence is highest. <strong>Registry reconcile</strong> offers an
+operator a <em>Disable selected</em> button, and <strong>API versions</strong> answers the question
+"will this payload be understood?" immediately before a write to a production
+appliance. Both shipped with nothing written about them: <code>docs/device-api.md</code>
+stopped at the explorer, and <code>docs/user-guide.md</code> §30 stopped at 30.3.</p>
+<p>Two specific misreadings that costs money:</p>
+<ul>
+<li><code>absent</code> and <code>error</code> look alike on screen and mean opposite things — one is
+  evidence about the <strong>catalog</strong>, the other about the <strong>device</strong>. A reader who
+  conflates them proposes disabling a catalog because one appliance's licence
+  lapsed. That exact device existed while this was written, answering <code>-20010</code>
+  to 283 of 321 reads with the inventory still calling it <code>online</code>.</li>
+<li><code>unmeasured</code> reads as a synonym for "fine" to anyone who has not been told
+  otherwise. It is the preflight's most important answer and the only one whose
+  whole purpose is to stop a write.</li>
+</ul>
+<p><strong>How.</strong> Every guard is derived from the thing it describes, never from a list
+in the test:</p>
+<ul>
+<li>bucket names from <code>registry_reconcile.reconcile()['counts']</code> — the report the
+  service actually returns, so a seventh bucket fails the suite;</li>
+<li>the three verdicts from <code>registry_reconcile.VERDICT_*</code>, the five preflight
+  answers from <code>api_matrix.STATUS_*</code>;</li>
+<li>the <strong>card titles from the templates that render them</strong>
+  (<code>registry/reconcile.html</code>, <code>registry/versions.html</code>), so renaming a card on
+  screen fails the manual that walks an operator through it;</li>
+<li>the four page addresses from the <strong>live URL map</strong>, required in <em>both</em>
+  documents — the integrator scripts against the address and the operator
+  navigates to it;</li>
+<li>the <code>25 %</code> witness-exclusion threshold from <code>MAX_ERROR_RATIO</code>;</li>
+<li>the gating permission from <code>Permission.REGISTRY_EDIT</code>;</li>
+<li>and the documented <code>unmeasured</code> exit code by <strong>running</strong> the real CLI entry
+  point (<code>satom_cli.cmd_apiver.api_preflight</code>) rather than transcribing it. A
+  script branches on that number; a manual that prints a different one is worse
+  than a manual that prints none.</li>
+</ul>
+<p><strong>Deliberately not guarded:</strong> prose quality, and the measured field counts
+(<code>admin</code> 40 → 42 and so on). Those are this fleet's evidence, not the
+product's: asserting them would fail on every other installation, which is how
+a guard teaches people to delete it.</p>
+<p><strong>Seven survivors on the first pass, and three were real holes</strong> (28 mutations,
+21 killed). The four weak ones removed <strong>one</strong> occurrence of a term the section
+legitimately uses several times — a mutation that tests my luck, not the
+guard. Re-run with section-scoped, replace-<strong>all</strong> mutations, they all bite.
+The three genuine holes:</p>
+<ol>
+<li><em>The apply paragraph stops saying the proposal set is re-derived
+   server-side</em> survived, because <code>rejected</code> also appears in §6.3 — in a
+   sentence about <strong>appliances</strong> rejecting endpoints, the opposite direction.
+   Scoped to §6.4. Same class as §87: an assertion answered by an unrelated
+   copy of the word.</li>
+<li><em>The documented <code>unmeasured</code> exit code changes from 4 to 5</em> survived,
+   because the guard searched for the digit <code>4</code> and the section contains a
+   <strong>numbered list</strong> whose fourth item is "4. <strong>Preflight</strong>". Now pinned to
+   <code>`4` unmeasured</code> and to the bounded <code>Exit codes:</code> paragraph.</li>
+<li><em>A page URL moves</em> survived, because the guard accepted the address being
+   present in <strong>either</strong> document and the other still carried it. Now both.</li>
+</ol>
+<p><strong>Prove it is armed</strong> (from <code>/opt/satom</code>, as <code>satom</code>):</p>
+<pre><code>venv/bin/python -m pytest tests/test_api_matrix_docs.py -q       # 40 passed
+sed -i 's/`4` unmeasured/`5` unmeasured/' docs/user-guide.md
+venv/bin/python -m pytest tests/test_api_matrix_docs.py -q; git checkout -- docs/user-guide.md
+</code></pre>
+<p>The second run must fail. Harnesses at <code>/var/tmp/mut_apidocs.py</code> (28) and
+<code>/var/tmp/mut_apidocs2.py</code> (11, section-scoped), measured by <strong>return code</strong> —
+only <code>rc==1</code> is a test failure; <code>rc==2</code> is a usage error and a negative rc is a
+signal, which is no verdict at all. Both restore in a <code>finally</code> and re-run the
+baseline afterwards to prove the tree came back clean.</p>
     </div>
   </div>
 </section>

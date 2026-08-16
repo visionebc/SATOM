@@ -22,13 +22,14 @@
   'waf_exception_apply': 'PUSH a filed FortiWeb carve-out onto the appliance',
   'adc_rule_draft': 'PREVIEW a FortiADC carve-out (never touches a device)',
   'adc_rule_apply': 'CREATE a FortiADC carve-out on the appliance',
+  'inventory': 'ASK a device its running firmware, live (reads the device, writes only this inventory)',
 } %}
 {# Object-write capabilities are EXPLICIT-only: an empty capability list grants
    every non-danger catalog action but NO object write. Printing "all" for an
    empty list — which this page did until the object writers existed — would
    tell the operator a token can author WAF carve-outs when it cannot. #}
 {% set EXPLICIT_ONLY = ['waf_exception_draft', 'waf_exception_apply',
-                        'adc_rule_draft', 'adc_rule_apply'] %}
+                        'adc_rule_draft', 'adc_rule_apply', 'inventory'] %}
 {% set NO_CAPS_LABEL = _('all actions · no object writes') %}
 {% set SCOPE_DESC = {'read': '(GET)', 'write': '(run actions / config_write)', 'admin': '(admin)'} %}
 <div class="d-flex align-items-center mb-3">

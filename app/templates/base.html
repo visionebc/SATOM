@@ -968,6 +968,287 @@
   </main>
 </div>
 
+{% if current_user and current_user.is_authenticated %}
+{#
+  Bookmarks rail. `data-turbo-permanent` keeps the element (and its scroll and
+  open/closed state) across Turbo navigations, so the panel is fetched once per
+  page load rather than re-rendered on every click through the console.
+#}
+<aside id="fw-bookmarks" class="bm-rail" data-turbo-permanent
+       data-bm-url="{{ url_for('bookmarks.panel') }}"
+       data-bm-devices="{{ url_for('bookmarks.devices') }}"
+       data-bm-prefs="{{ url_for('bookmarks.prefs') }}"
+       data-bm-create="{{ url_for('bookmarks.create') }}"
+       data-bm-adopt-url="{{ url_for('bookmarks.adopt') }}"
+       data-bm-csrf="{{ csrf_token() }}">
+  <button type="button" class="bm-tab" id="bm-tab" title="{{ _('Bookmarks') }}">
+    <i class="bi bi-bookmark-star"></i>
+    <span class="bm-tab-badge" id="bm-tab-badge" hidden>0</span>
+  </button>
+  <div class="bm-panel" id="bm-panel">
+    <div class="bm-loading"><span class="spinner-border spinner-border-sm"></span></div>
+  </div>
+</aside>
+
+<div class="modal fade" id="bmAddModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-bookmark-plus me-2"></i>{{ _('Add bookmark') }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label">{{ _('Type') }}</label>
+          <select class="form-select form-select-sm" id="bmAddKind">
+            <option value="appliance">{{ _('Device') }}</option>
+            <option value="link">{{ _('Link') }}</option>
+          </select>
+        </div>
+        <div class="mb-3" id="bmAddDeviceWrap">
+          <label class="form-label">{{ _('Device') }}</label>
+          <select class="form-select form-select-sm" id="bmAddDevice"></select>
+        </div>
+        <div class="mb-3 d-none" id="bmAddUrlWrap">
+          <label class="form-label">{{ _('URL') }}</label>
+          <input type="text" class="form-control form-control-sm" id="bmAddUrl"
+                 placeholder="https://…">
+        </div>
+        <div class="mb-0">
+          <label class="form-label">{{ _('Label') }} <span class="text-muted small">({{ _('optional') }})</span></label>
+          <input type="text" class="form-control form-control-sm" id="bmAddLabel" maxlength="160"
+                 placeholder="{{ _('leave empty to follow the live device name') }}">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+        <button type="button" class="btn btn-primary btn-sm" id="bmAddSave">{{ _('Add') }}</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var rail = document.getElementById('fw-bookmarks');
+  if (!rail || rail.dataset.bmWired) return;
+  rail.dataset.bmWired = '1';
+
+  var panel = document.getElementById('bm-panel');
+  var tab   = document.getElementById('bm-tab');
+  var badge = document.getElementById('bm-tab-badge');
+  var CSRF  = rail.dataset.bmCsrf;
+  var OPEN_KEY = 'satom.bookmarks.rail';
+  var query = '';
+  var timer = null;
+
+  function post(url, data) {
+    var body = new URLSearchParams(data || {});
+    body.set('csrf_token', CSRF);
+    // Every mutation answers with the tree the operator is LOOKING at. Replying
+    // with the unfiltered one would silently drop them out of their own search.
+    if (!body.has('q')) body.set('q', query);
+    return fetch(url, {
+      method: 'POST', credentials: 'same-origin',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: body.toString()
+    }).then(function (r) {
+      if (r.status === 400) {
+        return r.json().then(function (j) {
+          // Never a bare "not allowed": the reason is what tells the operator
+          // how to satisfy the rule instead of routing around it.
+          alert(j.error || j.reason || 'refused');
+          return null;
+        });
+      }
+      if (!r.ok) { alert('HTTP ' + r.status); return null; }
+      return r.text();
+    }).then(function (html) { if (html !== null) render(html); });
+  }
+
+  function render(html, keepFocus) {
+    panel.innerHTML = html;
+    wire();
+    var b = panel.querySelector('[data-bm-node="r:shared"] .fw-badge-primary');
+    var n = b ? parseInt((b.textContent || '0').trim(), 10) : 0;
+    if (n > 0) { badge.textContent = n; badge.hidden = false; }
+    else { badge.hidden = true; }
+    if (keepFocus) {
+      var s = panel.querySelector('[data-bm-search]');
+      if (s) { s.focus(); s.setSelectionRange(s.value.length, s.value.length); }
+    }
+  }
+
+  function load(keepFocus) {
+    var url = rail.dataset.bmUrl + (query ? '?q=' + encodeURIComponent(query) : '');
+    fetch(url, {credentials: 'same-origin'})
+      .then(function (r) { return r.text(); })
+      .then(function (h) { render(h, keepFocus); });
+  }
+
+  function openNodes() {
+    var out = [];
+    panel.querySelectorAll('[data-bm-kids]').forEach(function (box) {
+      if (!box.hidden) out.push(box.dataset.bmKids);
+    });
+    return out;
+  }
+
+  function persistOpen() {
+    // A search forces every matching branch open. Persisting THAT would
+    // overwrite the operator's collapsed tree with the shape of one query.
+    if (query) return;
+    post(rail.dataset.bmPrefs, {open: JSON.stringify(openNodes())});
+  }
+
+  function wire() {
+    panel.querySelectorAll('[data-bm-node]').forEach(function (head) {
+      head.addEventListener('click', function (ev) {
+        if (ev.target.closest('[data-bm-delete]')) return;
+        var box = head.nextElementSibling;
+        if (!box || !box.classList.contains('bm-kids')) return;
+        box.hidden = !box.hidden;
+        var caret = head.querySelector('.bm-caret');
+        if (caret) caret.className = 'bi bi-caret-' + (box.hidden ? 'right' : 'down') +
+                                     '-fill bm-caret';
+        persistOpen();
+      });
+    });
+
+    var search = panel.querySelector('[data-bm-search]');
+    if (search) search.addEventListener('input', function () {
+      query = search.value.trim();
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(function () { load(true); }, 220);
+    });
+    var clear = panel.querySelector('[data-bm-clear]');
+    if (clear) clear.addEventListener('click', function () { query = ''; load(true); });
+
+    panel.querySelectorAll('[data-bm-fav]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        post('/bookmarks/' + b.dataset.bmFav + '/favorite', {favorite: b.dataset.bmOn});
+      });
+    });
+    // A device shown by an inventory lens has no bookmark row until somebody
+    // wants one. Starring it mints exactly one, idempotently.
+    panel.querySelectorAll('[data-bm-adopt]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        post(rail.dataset.bmAdoptUrl,
+             {appliance_id: b.dataset.bmAdopt, favorite: '1'});
+      });
+    });
+    panel.querySelectorAll('[data-bm-hide]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        post('/bookmarks/' + b.dataset.bmHide + '/hidden', {hidden: b.dataset.bmOn});
+      });
+    });
+    panel.querySelectorAll('[data-bm-share]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        if (!confirm('Share this bookmark with the whole team? It leaves your private list.')) return;
+        post('/bookmarks/' + b.dataset.bmShare + '/share', {});
+      });
+    });
+    panel.querySelectorAll('[data-bm-delete]').forEach(function (b) {
+      b.addEventListener('click', function (ev) {
+        ev.stopPropagation();
+        if (!confirm('Delete this bookmark?')) return;
+        post('/bookmarks/' + b.dataset.bmDelete + '/delete', {});
+      });
+    });
+    var sh = panel.querySelector('[data-bm-showhidden]');
+    if (sh) sh.addEventListener('change', function () {
+      post(rail.dataset.bmPrefs, {showhidden: sh.checked ? '1' : '0'});
+    });
+    var close = panel.querySelector('[data-bm-close]');
+    if (close) close.addEventListener('click', function () { setOpen(false); });
+    var nf = panel.querySelector('[data-bm-new-folder]');
+    if (nf) nf.addEventListener('click', function () {
+      var name = prompt('Folder name');
+      if (name) post(rail.dataset.bmCreate, {kind: 'folder', label: name});
+    });
+    var add = panel.querySelector('[data-bm-add]');
+    if (add) add.addEventListener('click', openAdd);
+
+    // Rows drag from anywhere, but only FOLDERS accept a drop: the other roots
+    // are recomputed from the inventory on every render, so a drop there could
+    // not persist and the row would snap back with no explanation. Marking the
+    // valid targets (and only them) is that explanation.
+    panel.querySelectorAll('.bm-item[draggable="true"]').forEach(function (el) {
+      el.addEventListener('dragstart', function (ev) {
+        ev.dataTransfer.setData('text/plain',
+          el.dataset.bmId ? 'b' + el.dataset.bmId : 'a' + el.dataset.bmAppliance);
+      });
+    });
+    panel.querySelectorAll('[data-bm-drop]').forEach(function (row) {
+      row.addEventListener('dragover', function (ev) {
+        ev.preventDefault(); row.classList.add('bm-dragover');
+      });
+      row.addEventListener('dragleave', function () { row.classList.remove('bm-dragover'); });
+      row.addEventListener('drop', function (ev) {
+        ev.preventDefault(); row.classList.remove('bm-dragover');
+        var tok = ev.dataTransfer.getData('text/plain');
+        if (!tok) return;
+        var target = row.dataset.bmDrop;
+        var data = (target === '0' || !target) ? {} : {parent_id: target};
+        if (tok.charAt(0) === 'a') {
+          data.appliance_id = tok.slice(1);
+          post(rail.dataset.bmAdoptUrl, data);
+        } else {
+          post('/bookmarks/' + tok.slice(1) + '/place', data);
+        }
+      });
+    });
+  }
+
+  function openAdd() {
+    var kind = document.getElementById('bmAddKind');
+    var devWrap = document.getElementById('bmAddDeviceWrap');
+    var urlWrap = document.getElementById('bmAddUrlWrap');
+    var sel = document.getElementById('bmAddDevice');
+    sel.innerHTML = '<option>…</option>';
+    fetch(rail.dataset.bmDevices, {credentials: 'same-origin'})
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        sel.innerHTML = '';
+        (j.devices || []).forEach(function (d) {
+          var o = document.createElement('option');
+          o.value = d.id; o.textContent = d.name + '  ·  ' + d.host;
+          sel.appendChild(o);
+        });
+        if (!sel.options.length) sel.innerHTML = '<option value="">(no devices)</option>';
+      });
+    kind.onchange = function () {
+      var isDev = kind.value === 'appliance';
+      devWrap.classList.toggle('d-none', !isDev);
+      urlWrap.classList.toggle('d-none', isDev);
+    };
+    document.getElementById('bmAddSave').onclick = function () {
+      var data = {kind: kind.value, label: document.getElementById('bmAddLabel').value};
+      if (kind.value === 'appliance') data.appliance_id = sel.value;
+      else data.url = document.getElementById('bmAddUrl').value;
+      post(rail.dataset.bmCreate, data).then(function () {
+        var m = bootstrap.Modal.getInstance(document.getElementById('bmAddModal'));
+        if (m) m.hide();
+      });
+    };
+    new bootstrap.Modal(document.getElementById('bmAddModal')).show();
+  }
+
+  function setOpen(on) {
+    document.body.classList.toggle('bm-open', on);
+    try { localStorage.setItem(OPEN_KEY, on ? '1' : '0'); } catch (e) {}
+  }
+  tab.addEventListener('click', function () {
+    setOpen(!document.body.classList.contains('bm-open'));
+  });
+  // Default CLOSED. On a hundred-device fleet an open-by-default rail is a
+  // wall of text over the page the operator actually came for.
+  try { setOpen(localStorage.getItem(OPEN_KEY) === '1'); } catch (e) { setOpen(false); }
+  load();
+})();
+</script>
+{% endif %}
+
 {% if current_user and current_user.is_authenticated and product and product.key in ('fortiweb', 'fortiadc', 'fortianalyzer', 'fortiauthenticator') %}
 {% if product.key in ('fortiweb', 'fortiadc') %}{% include 'partials/release_notes_modal.html' %}{% endif %}
 <div class="modal fade" id="deviceSwitchModal" tabindex="-1" aria-hidden="true">

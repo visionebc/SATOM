@@ -856,21 +856,14 @@ def save_naming():
     return redirect(url_for('settings.index') + '#tab-naming')
 
 
-@bp.route('/classification', methods=['POST'])
-@login_required
-@require_permission(Permission.USER_MANAGE)
-def save_classification():
-    counts = {}
-    for kind in store.CLASSIFICATION_KINDS:
-        raw = request.form.get(kind, '')
-        values = [ln.strip() for ln in raw.splitlines() if ln.strip()]
-        store.save_classification(kind, values)
-        counts[kind] = len(store.classification(kind))
-    log_action('settings.classification',
-               detail=f"{counts.get('zones', 0)} zones, {counts.get('lines', 0)} lines, "
-                      f"{counts.get('departments', 0)} departments")
-    flash('Classification catalogs saved.', 'success')
-    return redirect(url_for('settings.index') + '#tab-classification')
+# The blob-textarea POST that used to live here is GONE. It was already
+# unreachable -- the Settings console dropped its Classification tab when the
+# page was ported to the Administrator section -- but it stayed a live,
+# USER_MANAGE-reachable writer that called store.save_classification()
+# directly. That path cannot tell a rename from a delete, so it orphaned every
+# Appliance / Baseline / segment reference in silence: exactly the failure
+# services/classification_ops.py exists to prevent. One writer, one set of
+# guards. See classification.save.
 
 
 @bp.route('/segments', methods=['POST'])

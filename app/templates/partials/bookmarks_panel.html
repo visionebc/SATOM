@@ -1,0 +1,65 @@
+{#
+  Bookmarks panel — INNER content only.
+
+  The shell (rail, tab, turbo-permanent wrapper) lives in base.html; every
+  mutation replaces this fragment, so the server is the only thing that decides
+  what the panel contains. There is no client-side copy of the tree to drift.
+
+  Shape: a browser sidebar. Folders with a folder icon and their name beside
+  them, nested groups that collapse, ONE search box where a grouping dropdown
+  used to be. The classification roots list the live inventory rather than the
+  bookmarks, so the panel is useful on the very first render.
+#}
+{% from 'partials/bookmarks_node.html' import node with context %}
+<div class="bm-head">
+  <div class="bm-title">
+    <i class="bi bi-bookmark-star"></i>
+    <span>{{ _('Bookmarks') }}</span>
+  </div>
+  <div class="bm-head-actions">
+    <button type="button" class="bm-iconbtn" data-bm-new-folder title="{{ _('New folder') }}">
+      <i class="bi bi-folder-plus"></i></button>
+    <button type="button" class="bm-iconbtn" data-bm-add title="{{ _('Add bookmark') }}">
+      <i class="bi bi-plus-lg"></i></button>
+    <a class="bm-iconbtn" href="{{ lens_url }}" data-bm-order
+       title="{{ _('Change how devices are grouped (your profile)') }}">
+      <i class="bi bi-sliders"></i></a>
+    <button type="button" class="bm-iconbtn" data-bm-close title="{{ _('Collapse panel') }}">
+      <i class="bi bi-chevron-double-right"></i></button>
+  </div>
+</div>
+
+<div class="bm-searchbar">
+  <i class="bi bi-search bm-search-ico"></i>
+  <input type="search" class="bm-search" data-bm-search value="{{ q }}"
+         autocomplete="off" spellcheck="false"
+         placeholder="{{ _('Search devices, folders, links…') }}">
+  {% if q %}
+  <button type="button" class="bm-iconbtn" data-bm-clear title="{{ _('Clear search') }}">
+    <i class="bi bi-x-lg"></i></button>
+  {% endif %}
+</div>
+
+{% if q %}
+  {# Said out loud because it is load-bearing: the tree below is already the
+     filtered answer. A client-side overlay would leave rows in the DOM that
+     the reader's own permissions had removed. #}
+  <p class="bm-note"><i class="bi bi-funnel"></i>
+    {{ _('Filtered on the server — matching groups keep their contents.') }}</p>
+{% endif %}
+
+<div class="bm-tree" style="--bm-type-fill: {{ type_fill }}; --bm-type-line: {{ type_line }}; --bm-row-hover: {{ row_hover }};">
+  {% for r in roots %}{{ node(r, 0) }}{% endfor %}
+  {% if not roots %}
+    <p class="bm-empty">{{ _('Nothing matches that.') }}</p>
+  {% endif %}
+</div>
+
+<div class="bm-foot">
+  <label class="bm-check">
+    <input type="checkbox" data-bm-showhidden {% if show_hidden %}checked{% endif %}>
+    <span>{{ _('Show hidden') }}</span>
+  </label>
+  <span class="bm-foot-count" title="{{ _('devices you may see') }}">
+    <i class="bi bi-hdd-network"></i> {{ device_count }}</span>
+</div>

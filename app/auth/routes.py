@@ -307,12 +307,17 @@ def profile():
             return redirect(url_for('auth.profile'))
 
     from ..services import cr_document, lang_policy, langs as lang_registry
+    from ..services import bookmarks as bookmarks_svc
     is_admin = bool(current_user and current_user.can(Permission.USER_MANAGE))
     _pref = user_store.language(current_user.id)
     return render_template(
         'auth/profile.html',
         is_admin=is_admin,
         pref_lang=_pref,
+        bookmark_dims=bookmarks_svc.DIMENSIONS,
+        bookmark_lens=bookmarks_svc.lens_for(current_user),
+        bookmark_lens_title=bookmarks_svc.lens_title(
+            bookmarks_svc.lens_for(current_user)),
         # What this INSTALL offers, not what the product speaks: an
         # administrator can withdraw a language in Settings, and a picker that
         # ignored that would keep offering a choice the chrome then refuses to
@@ -366,3 +371,34 @@ def save_language():
           'Language preference cleared \u2014 you will be asked each time.',
           'success')
     return redirect(url_for('auth.profile') + '#language')
+
+
+@bp.route('/profile/bookmark-view', methods=['POST'])
+@login_required
+def save_bookmark_view():
+    """Store this user's bookmarks grouping order.
+
+    Separate from the profile POST for the same reason as the language form:
+    that handler validates the current password and flashes "Current password
+    is incorrect" when it is absent, so routing a display preference through it
+    would either demand a password to re-order a sidebar or tempt the next
+    editor to weaken the password check for everybody.
+
+    The submitted order is validated by the service, never trusted: an
+    unchecked value would leave :func:`services.bookmarks.lens_for` — which is
+    deliberately forgiving, because it runs on every page — as the only thing
+    between a typo and a tree the operator cannot explain.
+    """
+    from ..services import bookmarks as bookmarks_svc
+
+    try:
+        stack = bookmarks_svc.save_lens(current_user, request.form.getlist('dim'))
+    except bookmarks_svc.BookmarkDenied as exc:
+        # The reason reaches the operator. A bare "invalid" at 03:00 is what
+        # sends people looking for a way around a rule instead of a way to
+        # satisfy it.
+        flash(str(exc), 'warning')
+        return redirect(url_for('auth.profile') + '#bookmark-view')
+    log_action('profile.bookmark_view', target=','.join(stack))
+    flash('Bookmark grouping order saved.', 'success')
+    return redirect(url_for('auth.profile') + '#bookmark-view')

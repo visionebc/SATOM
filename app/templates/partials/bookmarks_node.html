@@ -1,0 +1,154 @@
+{#
+  One node of the bookmarks tree, rendered recursively.
+
+  A node is either a GROUP (folder, or a derived classification bucket) or an
+  ITEM (device, link, saved view). Groups carry a caret, a folder icon and the
+  number of devices below them; items carry the star and the per-user controls.
+
+  Indentation is a class, never an inline style: this console ships a CSP with
+  a nonce, and a per-row `style=` attribute is exactly the thing that stops
+  working the day `style-src` drops `unsafe-inline`.
+
+  Chrome is the LIGHT product theme — .fw-* tokens, .fw-badge-* for counts. No
+  dark glassmorphism: this product has no dark mode and a slate row on a white
+  panel renders as a grey slab.
+#}
+{% macro node(n, depth) %}
+{% set is_open = force_open or n.key in open_nodes %}
+{% set d = depth if depth < 8 else 8 %}
+{% if n.kind == 'item' %}
+  {% set it = n.item %}
+  <div class="bm-row bm-item bm-d{{ d }}{% if it.hidden %} bm-row-hidden{% endif %}"
+       draggable="true"
+       {% if it.bm %}data-bm-id="{{ it.bm.id }}"{% endif %}
+       {% if it.appliance_id %}data-bm-appliance="{{ it.appliance_id }}"{% endif %}>
+    {% if it.appliance_id %}
+      <a class="bm-link" href="{{ url_for('appliances.detail', id=it.appliance_id) }}">
+        <i class="bi {{ n.icon }} bm-ico"></i>
+        <span class="bm-name">{{ n.name }}</span>
+        {% if n.sub %}<span class="bm-sub">{{ n.sub }}</span>{% endif %}
+      </a>
+    {% elif it.bm and it.bm.kind == 'link' %}
+      {#  `it.link_url`, never `it.bm.url`: the stored value is re-checked on
+          the way out, so a row that reached this table without passing through
+          `svc.create` cannot put a `javascript:` href in anybody's sidebar.
+          A refused link keeps its row and states why, for the same reason a
+          refused device does -- a row that silently loses its href reads as a
+          UI bug, and nobody goes and fixes the URL. #}
+      {% if it.link_url %}
+      <a class="bm-link" href="{{ it.link_url }}" rel="noopener noreferrer">
+        <i class="bi {{ n.icon }} bm-ico"></i>
+        <span class="bm-name">{{ n.name }}</span>
+      </a>
+      {% else %}
+      <span class="bm-link bm-link-off"
+            title="{{ _('This link was refused') }} &mdash; {{ it.link_note }}">
+        <i class="bi bi-exclamation-triangle bm-ico"></i>
+        <span class="bm-name">{{ n.name }}</span>
+      </span>
+      {% endif %}
+    {% else %}
+      <span class="bm-link">
+        <i class="bi {{ n.icon }} bm-ico"></i>
+        <span class="bm-name">{{ n.name }}</span>
+      </span>
+    {% endif %}
+
+    <span class="bm-actions">
+      {#  TWO destinations, and the difference has to survive a tired click.
+          The NAME opens what SATOM knows about the device; this button opens
+          the DEVICE. Both being plain rows of text is how somebody ends up on
+          an appliance GUI believing they are still inside the console.
+
+          target=_blank because the operator is mid-task in SATOM and a
+          navigation away is a lost place; rel=noreferrer as well as noopener
+          because the destination is an appliance under audit -- noopener stops
+          it steering this tab, and noreferrer stops it being handed the
+          console URL (which carries device ids) in the Referer header.
+
+          No link at all is a STATED refusal, never a missing button: a
+          retired .invalid host, or a `host` field that is not an address,
+          renders the icon dimmed with the reason on it. A silently absent
+          control reads as "this device has no GUI". #}
+      {% if it.dev_url %}
+        <a class="bm-iconbtn bm-dev" href="{{ it.dev_url }}" target="_blank"
+           rel="noopener noreferrer"
+           title="{{ _('Open the device itself') }} &mdash; {{ it.dev_url }}">
+          <i class="bi bi-box-arrow-up-right"></i></a>
+      {% elif it.appliance_id %}
+        <span class="bm-iconbtn bm-dev-off" aria-disabled="true"
+              title="{{ _('No direct link') }} &mdash; {{ it.dev_note }}">
+          <i class="bi bi-box-arrow-up-right"></i></span>
+      {% endif %}
+      {% if it.shared %}<i class="bi bi-people bm-flag" title="{{ _('Shared with the team') }}"></i>{% endif %}
+
+      {# Starring a device that has no bookmark yet ADOPTS it — one row, created
+         on demand, instead of seeding a bookmark per appliance up front. #}
+      <button type="button" class="bm-iconbtn bm-fav"
+              {% if it.bm %}data-bm-fav="{{ it.bm.id }}"{% else %}data-bm-adopt="{{ it.appliance_id }}"{% endif %}
+              data-bm-on="{{ '0' if it.fav else '1' }}"
+              title="{{ _('Unstar') if it.fav else _('Star') }}">
+        <i class="bi bi-star{{ '-fill bm-star-on' if it.fav else '' }}"></i></button>
+
+      {% if it.bm and it.shared %}
+        {# Hiding is per-user and never silent: the count in the Shared header
+           stays visible whether or not "show hidden" is on. #}
+        <button type="button" class="bm-iconbtn" data-bm-hide="{{ it.bm.id }}"
+                data-bm-on="{{ '0' if it.hidden else '1' }}"
+                title="{{ _('Unhide for me') if it.hidden else _('Hide for me') }}">
+          <i class="bi bi-eye{{ '' if it.hidden else '-slash' }}"></i></button>
+      {% elif it.bm and can_share and it.mine %}
+        <button type="button" class="bm-iconbtn" data-bm-share="{{ it.bm.id }}"
+                title="{{ _('Share with the team (moves it out of your private list)') }}">
+          <i class="bi bi-share"></i></button>
+      {% endif %}
+
+      {% if it.bm and it.may_edit %}
+        <button type="button" class="bm-iconbtn bm-danger" data-bm-delete="{{ it.bm.id }}"
+                title="{{ _('Delete') }}"><i class="bi bi-trash3"></i></button>
+      {% endif %}
+    </span>
+  </div>
+{% else %}
+  <div class="bm-row bm-grp bm-d{{ d }}" data-bm-node="{{ n.key }}"
+       {% if n.droppable %}data-bm-drop="{{ n.folder_id }}"{% endif %}>
+    <i class="bi bi-caret-{{ 'down' if is_open else 'right' }}-fill bm-caret"></i>
+    <i class="bi {{ n.icon or 'bi-folder2' }} bm-ico bm-ico-grp"></i>
+    {#  A product bucket wears the reader's own banner colour, at a wash so
+        light it reads as paper: the colour is a hint about WHICH kind of box
+        this is, and a label that has to be legible cannot pay for it with
+        contrast. Only the fill is tinted -- the text stays the primary token. #}
+    <span class="bm-name{% if n.chip %} bm-type{% endif %}">{{ n.name }}</span>
+    {% if n.count %}<span class="bm-count">{{ n.count }}</span>{% endif %}
+    {% if n.key == root_shared %}
+      {# Always rendered, collapsed or not: a bookmark shared into a collapsed
+         tray that nothing counts is a bookmark nobody ever sees, and a hidden
+         one nothing counts is how "it never reached me" becomes unfalsifiable. #}
+      {% if unplaced %}<span class="fw-badge fw-badge-primary"
+        title="{{ _('waiting to be filed') }}">{{ unplaced }} {{ _('new') }}</span>{% endif %}
+      {% if hidden_count %}<span class="fw-badge fw-badge-secondary"
+        title="{{ _('hidden by you') }}">{{ hidden_count }} {{ _('hidden') }}</span>{% endif %}
+    {% endif %}
+    {% if n.key == root_lens %}
+      {# The link sits ON the heading that shows the order, not only in the
+         toolbar: the operator who wants to change it is looking at the order
+         when they decide to. #}
+      <a class="bm-order" href="{{ lens_url }}"
+         title="{{ _('Change this order in your profile') }}"><i class="bi bi-sliders"></i></a>
+    {% endif %}
+    {% if n.folder_id %}
+      <span class="bm-del" role="button" tabindex="0" data-bm-delete="{{ n.folder_id }}"
+            title="{{ _('Delete folder (its bookmarks are kept)') }}"><i class="bi bi-trash3"></i></span>
+    {% endif %}
+  </div>
+  <div class="bm-kids" data-bm-kids="{{ n.key }}" {% if not is_open %}hidden{% endif %}>
+    {% for c in n.children %}{{ node(c, depth + 1) }}{% endfor %}
+    {% if not n.children %}
+      <p class="bm-empty bm-d{{ (depth + 1) if depth < 7 else 8 }}">
+        {%- if n.droppable %}{{ _('Empty — drag bookmarks here.') }}
+        {%- else %}{{ _('Nothing here.') }}{% endif -%}
+      </p>
+    {% endif %}
+  </div>
+{% endif %}
+{% endmacro %}

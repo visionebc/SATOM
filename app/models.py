@@ -274,6 +274,12 @@ class Appliance(db.Model):
     hw_type = db.Column(db.String(16), nullable=False, default="unknown")  # 'hardware'|'vm'|'unknown'
     model = db.Column(db.String(128), nullable=True)        # e.g. "FortiWeb 600F"
     firmware = db.Column(db.String(64), nullable=True)      # last-known OS version string from system status
+    # WHEN that string was last confirmed against the live device
+    # (services.firmware_probe.refresh). NULL = never verified. Deliberately
+    # separate from updated_at: a row edited in the UI is not a row whose
+    # firmware was observed, and a consumer correlating this version against a
+    # CVE feed needs to know which of the two it is looking at.
+    firmware_checked_at = db.Column(db.DateTime, nullable=True)
     datasheet_filename = db.Column(db.String(256), nullable=True)  # original PDF name; file on disk is <id>.pdf
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(

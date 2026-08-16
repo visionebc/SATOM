@@ -84,6 +84,7 @@ Paths are relative to the base URL. **Scope** is the minimum token scope;
 | `GET`  | `/ping` | read | — | Identity of the token (owner, scopes, product) |
 | `GET`  | `/appliances` | read | — | Device inventory + cached status |
 | `GET`  | `/appliances/<id>` | read | — | One device |
+| `POST` | `/appliances/<id>/firmware-check` | write | `inventory` | Ask the device its running firmware, **live** (§8) |
 | `GET`  | `/actions` | read | — | Scheduled actions visible to the token |
 | `POST` | `/actions/<id>/run` | write | — | Trigger a **non-destructive** action |
 | `GET`  | `/actions/runs/<run_id>` | read | — | Poll the outcome of a run |
@@ -124,9 +125,72 @@ Returns the devices the token's owner may see. Each device:
   "port": 443,
   "status": "up",
   "last_checked_at": "2026-07-08T18:00:00+00:00",
-  "maintenance": false
+  "maintenance": false,
+  "firmware": "FortiWeb-KVM 7.6.8,build1128(GA.M),260602",
+  "firmware_checked_at": "2026-08-13T00:09:43.036612",
+  "model": "FortiWeb-KVM 7.6.8",
+  "hw_type": "vm"
 }
 ```
+
+`firmware` is **verbatim** as the vendor spells it — SATOM does not normalise
+it. Turning that string into a comparable version is a matching rule that
+belongs to whatever owns the vulnerability dictionary; a second copy of the
+rule here would drift from it.
+
+`firmware_checked_at` is the half that makes the version usable. **`null`
+means nobody ever confirmed this version against the device** — it may be an
+operator's note, or a reading from a firmware ago. A consumer that correlates
+versions against advisories should refuse an unattested row rather than
+publish a verdict about a box it never observed.
+
+### `POST /appliances/<id>/firmware-check`
+Ask ONE device what it is running, right now. Read-only against the appliance
+(a single status call, the same one the connectivity probe makes) and it can
+never reach the firmware *upgrade* path, which is hard-blocked on this API.
+
+Requires the `write` scope **and** the explicit `inventory` capability: an
+empty capability list does **not** grant it. Rate-limited to **10/min** —
+every call opens an authenticated session to a live firewall.
+
+Success (`200`):
+
+```json
+{
+  "ok": true,
+  "id": 14,
+  "name": "fortiweb09",
+  "kind": "fortiweb",
+  "firmware": "FortiWeb-KVM 7.6.8,build1128(GA.M),260602",
+  "model": "FortiWeb-KVM 7.6.8",
+  "hw_type": "vm",
+  "checked_at": "2026-08-13T00:09:43.036612",
+  "changed": true,
+  "previous": "7.6.8",
+  "source": "live"
+}
+```
+
+`changed: false` means the version did **not** move — it is still a fresh
+observation, and `checked_at` advances.
+
+Failure (`502`) — the device was not reached, or answered without a version:
+
+```json
+{
+  "error": "device_refused",
+  "detail": "errcode -20010: The license of peer VM FortiWeb is not valid.",
+  "message": "The appliance did not return a firmware version; nothing was recorded.",
+  "firmware": "FortiWeb-KVM 7.6.8,build1128(GA.M),260602",
+  "firmware_checked_at": null
+}
+```
+
+**A failed check writes nothing — not even the timestamp.** The last known
+value and its (possibly `null`) age are echoed so the caller can decide
+whether the stale reading is still good enough for it. If `firmware_checked_at`
+could be stamped by a check that never reached a device, the field would mean
+nothing to anyone.
 
 ### `GET /actions`
 Lists the scheduled actions in the token's ADOM. Look at `api_runnable`: a

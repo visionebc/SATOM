@@ -41,6 +41,20 @@ def _appliance_json(a: Appliance) -> dict:
         "status": a.last_status or "unknown",
         "last_checked_at": a.last_checked_at.isoformat() if a.last_checked_at else None,
         "maintenance": bool(a.maintenance),
+        # --- physical / software inventory (added 2026-08-13) ---------------
+        # The firmware string is VERBATIM as the vendor spells it
+        # ("FortiWeb-KVM 7.6.8,build1128(GA.M),260602"). SATOM does not
+        # normalise it and must not: turning that into a comparable version is
+        # a matching rule, it belongs to the consumer that owns the CVE
+        # dictionary, and a second copy of the rule here would drift from it.
+        # ``firmware_checked_at`` is the half that makes the version usable --
+        # NULL means nobody ever confirmed it against the device, so a consumer
+        # can refuse to correlate it instead of trusting a value of unknown age.
+        "firmware": a.firmware or "",
+        "firmware_checked_at": (a.firmware_checked_at.isoformat()
+                                if a.firmware_checked_at else None),
+        "model": a.model or "",
+        "hw_type": a.hw_type or "unknown",
     }
 
 
@@ -89,6 +103,76 @@ def list_appliances():
 def get_appliance(id):
     a = visible_appliance_or_404(id, user=_owner())
     return jsonify(_appliance_json(a))
+
+
+# ---------------------------------------------------------------------------
+# Live firmware check -- the ONE write-shaped inventory call (added 2026-08-13)
+# ---------------------------------------------------------------------------
+# Read-only AGAINST THE DEVICE (one status call, the same one probe_status
+# makes) but it updates SATOM's own row, so it is a POST and needs 'write'.
+#
+# Three gates, deliberately: the 'write' scope, the EXPLICIT 'inventory'
+# capability (an empty capability list does NOT grant it -- see
+# EXPLICIT_ONLY_CAPABILITIES), and the ADOM, enforced by
+# visible_appliance_or_404, which answers 404 rather than 403 so the call never
+# confirms that another product's device exists.
+#
+# A FAILED probe returns 502 and persists NOTHING -- not even the timestamp.
+# The whole value of this endpoint to a consumer is that
+# 'firmware_checked_at' means "a device answered", so it must never be
+# stamped by a check that did not reach one.
+
+@bp.route("/appliances/<int:id>/firmware-check", methods=["POST"])
+@limiter.limit("10 per minute")
+@token_required("write")
+def firmware_check(id):
+    from ..services import firmware_probe
+
+    tok = g.api_token
+    ok, code, msg = tok.authorize_object("inventory")
+    if not ok:
+        log_action("api.firmware_check_denied", target=f"appliance:{id}",
+                   extra=audit_extra(reason=code))
+        return jsonify({"error": code, "message": msg}), 403
+
+    a = visible_appliance_or_404(id, user=_owner())
+    res = firmware_probe.refresh(a)
+    if not res.get("ok"):
+        log_action("api.firmware_check_failed", target=f"appliance:{a.id}",
+                   extra=audit_extra(appliance=a.name, reason=res.get("error"),
+                                     detail=res.get("detail", "")))
+        return jsonify({
+            "error": res.get("error") or "probe_failed",
+            "message": ("The appliance did not return a firmware version; "
+                        "nothing was recorded."),
+            "detail": res.get("detail", ""),
+            "id": a.id,
+            "name": a.name,
+            "kind": a.kind,
+            # Echo the LAST KNOWN value and its age so the caller can decide
+            # whether the stale reading is still usable to it.
+            "firmware": a.firmware or "",
+            "firmware_checked_at": (a.firmware_checked_at.isoformat()
+                                    if a.firmware_checked_at else None),
+        }), 502
+
+    log_action("api.firmware_check", target=f"appliance:{a.id}",
+               extra=audit_extra(appliance=a.name, firmware=res["firmware"],
+                                 previous=res.get("previous"),
+                                 changed=res.get("changed")))
+    return jsonify({
+        "ok": True,
+        "id": a.id,
+        "name": a.name,
+        "kind": a.kind,
+        "firmware": res["firmware"],
+        "model": a.model or "",
+        "hw_type": a.hw_type or "unknown",
+        "checked_at": res["checked_at"],
+        "changed": bool(res.get("changed")),
+        "previous": res.get("previous"),
+        "source": "live",
+    })
 
 
 # ---------------------------------------------------------------------------

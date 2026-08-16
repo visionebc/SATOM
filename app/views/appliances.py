@@ -153,8 +153,11 @@ def detail(id):
         AuditLog.target.like(f'%{appliance.name}%')
     ).order_by(AuditLog.timestamp.desc()).limit(20).all()
     from ..services import rediscovery
+    from ..services.bookmarks import device_link
+    device_url, device_note = device_link(appliance)
     return render_template('appliances/detail.html', appliance=appliance, audit_entries=recent_audit,
-                           has_snapshot=rediscovery.has_snapshot)
+                           has_snapshot=rediscovery.has_snapshot,
+                           device_url=device_url, device_note=device_note)
 
 
 @bp.route('/', methods=['POST'])

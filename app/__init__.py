@@ -1400,6 +1400,11 @@ def create_app(config_override: object | None = None) -> Flask:
                 ('model', 'VARCHAR(128)'),
                 ('datasheet_filename', 'VARCHAR(256)'),
                 ('firmware', 'VARCHAR(64)'),
+                # NULLABLE with NO default: every row predating the live
+                # firmware check reads as "never verified", which is the truth.
+                # A default of now() would have backdated an attestation onto
+                # 10 devices nobody ever probed.
+                ('firmware_checked_at', 'TIMESTAMP'),
                 ('maintenance', 'BOOLEAN DEFAULT FALSE'),
             ],
             'managed_certificate': [
@@ -1683,6 +1688,10 @@ def create_app(config_override: object | None = None) -> Flask:
             # the tables and the first save 500s.
             from . import models_i18n  # noqa: F401
             from . import models_cr_types  # noqa: F401
+            # Bookmarks panel (bookmarks + per-user placement/favourites).
+            # Without this import create_all() never makes the tables and
+            # the first render of the side panel 500s.
+            from . import models_bookmarks  # noqa: F401
             db.create_all()
             _ensure_columns()
             # After the additive pass: a column that already existed may be
@@ -1840,6 +1849,7 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.api_tokens", "bp"),
         ("app.views.appids", "bp"),
         ("app.views.advisor", "bp"),
+        ("app.views.bookmarks", "bp"),
     ]
 
     # FortiWeb-scoped areas live under the /web ADOM prefix (2026-07-07).

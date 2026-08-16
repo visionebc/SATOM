@@ -10,6 +10,106 @@
 </div>
 {% endblock %}
 
+{#
+  One row per value, not a textarea.
+
+  A textarea cannot distinguish "rename internal to Internal" from "delete
+  internal, add Internal", and those mean opposite things to every Appliance,
+  Baseline and network segment that stores the value as a plain string. Each
+  row therefore carries its ORIGINAL value in a hidden field: that is what lets
+  the server cascade a rename instead of orphaning ~30 references.
+
+  Colours come from the fw-* light theme (this product has no dark mode) and
+  status pills from the calibrated fw-badge-* set -- see safeguards §9m.
+#}
+{% macro catalog_card(kind, title, icon, hint, placeholder) %}
+<div class="fw-card mb-3" data-cls-card="{{ kind }}">
+  <div class="fw-card-header">
+    <span class="fw-card-title"><i class="bi {{ icon }} me-2 text-accent"></i>{{ title }}</span>
+    <span class="fw-badge fw-badge-secondary" data-cls-count>{{ rows[kind]|length }}</span>
+  </div>
+  <div class="fw-card-body">
+    <p class="text-muted" style="font-size:12.5px;">{{ hint }}</p>
+    <div class="fw-table-wrapper">
+      <table class="fw-table">
+        <thead>
+          <tr>
+            <th style="width:38%;">{{ _('Value') }}</th>
+            <th style="width:34%;">{{ _('In use by') }}</th>
+            <th style="width:28%;" class="text-end">{{ _('Actions') }}</th>
+          </tr>
+        </thead>
+        <tbody data-cls-body="{{ kind }}">
+          {% for row in rows[kind] %}
+          {% set u = usage[kind].get(row.orig) %}
+          <tr data-cls-row {% if row.action == 'delete' %}data-deleted="1"{% endif %}>
+            <td>
+              <input type="hidden" name="{{ kind }}_orig[]" value="{{ row.orig }}">
+              <input type="hidden" name="{{ kind }}_action[]" value="{{ row.action | default('keep') }}" data-cls-action>
+              <input class="form-control form-control-sm" name="{{ kind }}_value[]"
+                     value="{{ row.value }}" placeholder="{{ placeholder }}" data-cls-value
+                     {% if row.action == 'delete' %}readonly{% endif %}>
+            </td>
+            <td data-cls-usage>
+              {% if u and u.total %}
+                <span class="fw-badge fw-badge-info" title="{{ _('appliances') }}">{{ u.appliances }} {{ _('appl.') }}</span>
+                <span class="fw-badge fw-badge-info" title="{{ _('baseline combos') }}">{{ u.baselines }} {{ _('combo') }}</span>
+                <span class="fw-badge fw-badge-info" title="{{ _('network segments') }}">{{ u.segments }} {{ _('seg.') }}</span>
+              {% elif row.orig %}
+                <span class="text-muted" style="font-size:12px;">{{ _('not referenced') }}</span>
+              {% else %}
+                <span class="text-muted" style="font-size:12px;">{{ _('new') }}</span>
+              {% endif %}
+              <div class="mt-1" data-cls-reassign-wrap {% if row.action != 'delete' %}hidden{% endif %}>
+                <label class="text-muted d-block" style="font-size:11.5px;">
+                  {{ _('Move its references to:') }}
+                </label>
+                {% set chosen = row.reassign | default(undecided) %}
+                <select class="form-select form-select-sm" name="{{ kind }}_reassign[]" data-cls-reassign>
+                  <option value="{{ undecided }}" {{ 'selected' if chosen == undecided }}>{{ _('— choose —') }}</option>
+                  <option value="{{ clear_token }}" {{ 'selected' if chosen == clear_token }}>{{ _('Clear them (leave unclassified)') }}</option>
+                  {# A refused save must hand the operator back the target they
+                     picked; JS rebuilds the rest of the list from live inputs. #}
+                  {% if chosen not in (undecided, clear_token) %}
+                  <option value="{{ chosen }}" selected>{{ chosen }}</option>
+                  {% endif %}
+                </select>
+              </div>
+            </td>
+            <td class="text-end">
+              <button type="button" class="btn btn-sm btn-outline-danger" data-cls-remove>
+                <i class="bi bi-trash"></i> {{ _('Remove') }}
+              </button>
+              <button type="button" class="btn btn-sm btn-fw-outline" data-cls-undo
+                      {% if row.action != 'delete' %}hidden{% endif %}>
+                <i class="bi bi-arrow-counterclockwise"></i> {{ _('Undo') }}
+              </button>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if unregistered[kind] %}
+    <div class="mt-2" style="font-size:12.5px;">
+      <span class="fw-badge fw-badge-warning me-1">{{ _('In use but not in this catalog') }}</span>
+      {% for value, u in unregistered[kind].items() %}
+        <button type="button" class="btn btn-sm btn-fw-outline me-1 mb-1" data-cls-adopt="{{ value }}">
+          <i class="bi bi-plus-lg"></i> {{ value }}
+          <span class="text-muted">({{ u.total }})</span>
+        </button>
+      {% endfor %}
+    </div>
+    {% endif %}
+    <div class="mt-2">
+      <button type="button" class="btn btn-outline-secondary btn-sm" data-cls-add>
+        <i class="bi bi-plus-lg me-1"></i>{{ _('Add value') }}
+      </button>
+    </div>
+  </div>
+</div>
+{% endmacro %}
+
 {% block content %}
 <div class="fw-page-header">
   <div>
@@ -18,39 +118,157 @@
     </h1>
     <p class="text-muted mb-0" style="font-size:13px;">
       {{ _('Catalogs used to classify appliances —') }} <strong>{{ _('Zones') }}</strong> {{ _('(network zones),') }}
-      <strong>{{ _('Lines') }}</strong> {{ _('(service lines / environments) and') }} <strong>{{ _('Departments') }}</strong>{{ _('. Each appliance is assigned one value per catalog on its Edit page. One entry per line.') }}
+      <strong>{{ _('Lines') }}</strong> {{ _('(service lines / environments) and') }} <strong>{{ _('Departments') }}</strong>{{ _('. Each appliance is assigned one value per catalog on its Edit page.') }}
+      {{ _('Renaming a value moves every appliance, baseline combo and network segment that references it; removing one asks where those references should go.') }}
     </p>
   </div>
 </div>
 
-<div class="fw-card">
-  <div class="fw-card-header">
-    <span class="fw-card-title"><i class="bi bi-diagram-2 me-2 text-accent"></i>{{ _('Catalogs') }}</span>
+<form method="POST" action="{{ url_for('classification.save') }}" id="cls-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="row g-3">
+    <div class="col-xl-4">
+      {{ catalog_card('zones', _('Network Zones'), 'bi-shield-lock',
+                      _('Where the appliance sits: dmz, internal, external…'), 'internal') }}
+    </div>
+    <div class="col-xl-4">
+      {{ catalog_card('lines', _('Lines'), 'bi-diagram-3',
+                      _('Service line or environment: production, staging, lab…'), 'P') }}
+    </div>
+    <div class="col-xl-4">
+      {{ catalog_card('departments', _('Departments'), 'bi-people',
+                      _('Owning team or function: WAF/LB, WSG, SSLGATE…'), 'WAF/LB') }}
+    </div>
   </div>
-  <div class="fw-card-body">
-    <form method="POST" action="{{ url_for('classification.save') }}">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <div class="row g-3">
-        <div class="col-md-4">
-          <label class="fw-form-label">{{ _('Network Zones') }}</label>
-          <textarea name="zones" class="form-control fw-form-control" rows="10"
-                    placeholder="dmz&#10;internal&#10;external">{{ classification.zones | join('\n') }}</textarea>
-        </div>
-        <div class="col-md-4">
-          <label class="fw-form-label">{{ _('Lines') }}</label>
-          <textarea name="lines" class="form-control fw-form-control" rows="10"
-                    placeholder="production&#10;staging&#10;lab">{{ classification.lines | join('\n') }}</textarea>
-        </div>
-        <div class="col-md-4">
-          <label class="fw-form-label">{{ _('Departments') }}</label>
-          <textarea name="departments" class="form-control fw-form-control" rows="10"
-                    placeholder="IT&#10;Finance&#10;Sales">{{ classification.departments | join('\n') }}</textarea>
-        </div>
-      </div>
-      <div class="mt-3">
-        <button type="submit" class="btn btn-fw-primary"><i class="bi bi-check-lg me-1"></i>{{ _('Save Classification') }}</button>
-      </div>
-    </form>
+  <div class="mt-1">
+    <button type="submit" class="btn btn-fw-primary">
+      <i class="bi bi-check-lg me-1"></i>{{ _('Save Classification') }}
+    </button>
   </div>
-</div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+(function () {
+  // The reassign options are built from the LIVE inputs, not from the stored
+  // catalog: an operator who renames one value and removes another in the same
+  // save must be able to point the second at the first's NEW name.
+  function siblingValues(card, exceptRow) {
+    var out = [];
+    card.querySelectorAll('[data-cls-row]').forEach(function (tr) {
+      if (tr === exceptRow || tr.hasAttribute('data-deleted')) { return; }
+      var v = (tr.querySelector('[data-cls-value]') || {}).value || '';
+      v = v.trim();
+      if (v) { out.push(v); }
+    });
+    return out;
+  }
+
+  function refreshReassign(card, tr) {
+    var sel = tr.querySelector('[data-cls-reassign]');
+    if (!sel) { return; }
+    var chosen = sel.value;
+    while (sel.options.length > 2) { sel.remove(2); }
+    siblingValues(card, tr).forEach(function (v) {
+      var opt = document.createElement('option');
+      opt.value = v;
+      opt.textContent = v;
+      sel.appendChild(opt);
+    });
+    // Preserve an explicit choice across re-renders; never silently reset it
+    // to "clear", which is a destructive default nobody picked.
+    for (var i = 0; i < sel.options.length; i++) {
+      if (sel.options[i].value === chosen) { sel.selectedIndex = i; return; }
+    }
+    sel.selectedIndex = 0;
+  }
+
+  function setDeleted(card, tr, deleted) {
+    var action = tr.querySelector('[data-cls-action]');
+    var value = tr.querySelector('[data-cls-value]');
+    var wrap = tr.querySelector('[data-cls-reassign-wrap]');
+    var undo = tr.querySelector('[data-cls-undo]');
+    var del = tr.querySelector('[data-cls-remove]');
+    var isNew = !(tr.querySelector('input[name$="_orig[]"]') || {}).value;
+
+    if (deleted && isNew) { tr.remove(); return; }  // never saved: just drop it
+
+    if (deleted) {
+      tr.setAttribute('data-deleted', '1');
+      tr.style.opacity = '.6';
+      if (value) { value.readOnly = true; value.style.textDecoration = 'line-through'; }
+      if (action) { action.value = 'delete'; }
+      if (wrap) { wrap.hidden = false; }
+      refreshReassign(card, tr);
+    } else {
+      tr.removeAttribute('data-deleted');
+      tr.style.opacity = '';
+      if (value) { value.readOnly = false; value.style.textDecoration = ''; }
+      if (action) { action.value = 'keep'; }
+      if (wrap) { wrap.hidden = true; }
+      var sel = tr.querySelector('[data-cls-reassign]');
+      if (sel) { sel.selectedIndex = 0; }
+    }
+    if (undo) { undo.hidden = !deleted; }
+    if (del) { del.hidden = deleted; }
+  }
+
+  function addRow(card, kind, value) {
+    var body = card.querySelector('[data-cls-body]');
+    if (!body) { return; }
+    var tr = document.createElement('tr');
+    tr.setAttribute('data-cls-row', '');
+    tr.innerHTML =
+      '<td>' +
+        '<input type="hidden" name="' + kind + '_orig[]" value="">' +
+        '<input type="hidden" name="' + kind + '_action[]" value="keep" data-cls-action>' +
+        '<input class="form-control form-control-sm" name="' + kind + '_value[]" data-cls-value>' +
+      '</td>' +
+      '<td data-cls-usage><span class="text-muted" style="font-size:12px;">new</span>' +
+        '<div class="mt-1" data-cls-reassign-wrap hidden>' +
+          '<select class="form-select form-select-sm" name="' + kind + '_reassign[]" data-cls-reassign>' +
+            '<option value="{{ undecided }}" selected>— choose —</option>' +
+            '<option value="{{ clear_token }}">Clear them (leave unclassified)</option>' +
+          '</select>' +
+        '</div>' +
+      '</td>' +
+      '<td class="text-end">' +
+        '<button type="button" class="btn btn-sm btn-outline-danger" data-cls-remove>' +
+          '<i class="bi bi-trash"></i> Remove</button>' +
+        '<button type="button" class="btn btn-sm btn-fw-outline" data-cls-undo hidden>' +
+          '<i class="bi bi-arrow-counterclockwise"></i> Undo</button>' +
+      '</td>';
+    body.appendChild(tr);
+    var input = tr.querySelector('[data-cls-value]');
+    if (value) { input.value = value; }
+    input.focus();
+  }
+
+  document.querySelectorAll('[data-cls-card]').forEach(function (card) {
+    var kind = card.getAttribute('data-cls-card');
+    card.addEventListener('click', function (event) {
+      var add = event.target.closest('[data-cls-add]');
+      if (add) { addRow(card, kind); return; }
+      var adopt = event.target.closest('[data-cls-adopt]');
+      if (adopt) { addRow(card, kind, adopt.getAttribute('data-cls-adopt')); return; }
+      var rm = event.target.closest('[data-cls-remove]');
+      if (rm) { setDeleted(card, rm.closest('[data-cls-row]'), true); return; }
+      var undo = event.target.closest('[data-cls-undo]');
+      if (undo) { setDeleted(card, undo.closest('[data-cls-row]'), false); }
+    });
+    // A rename typed AFTER a removal has to reach that removal's dropdown.
+    card.addEventListener('input', function (event) {
+      if (!event.target.closest('[data-cls-value]')) { return; }
+      card.querySelectorAll('[data-cls-row][data-deleted]').forEach(function (tr) {
+        refreshReassign(card, tr);
+      });
+    });
+    // Rows that arrived already marked deleted (a refused save re-rendered).
+    card.querySelectorAll('[data-cls-row][data-deleted]').forEach(function (tr) {
+      setDeleted(card, tr, true);
+    });
+  });
+})();
+</script>
 {% endblock %}

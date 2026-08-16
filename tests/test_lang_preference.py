@@ -305,7 +305,15 @@ def test_profile_page_marks_no_preference_when_none_is_saved(app, client, admin)
     """
     with app.app_context():
         ustore.save_language(admin, "")
-    html = client.get("/auth/profile").get_data(as_text=True)
+    page = client.get("/auth/profile").get_data(as_text=True)
+    # Scoped to the LANGUAGE picker. The profile page carries other <select>s
+    # now — the bookmarks grouping order marks its own current value — and a
+    # page-wide scan reports their marks as language marks. That fails against
+    # a perfectly correct page, which is the fastest way to get a real guard
+    # deleted by whoever is unlucky enough to hit it.
+    _sel = re.search(r'<select[^>]+name="lang".*?</select>', page, re.S)
+    assert _sel, "the profile page has no language picker"
+    html = _sel.group(0)
     opts = re.findall(r'<option value="([a-z]*)"[^>]*>', html)
     marked = [c for c, tag in
               ((c, t) for c, t in

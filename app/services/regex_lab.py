@@ -1,12 +1,13 @@
 """Regex calculator ("laboratorio") — server-side pattern testing, rewrite/
 backreference preview, and the FortiWeb/FortiADC-oriented reference library.
 
-FortiWeb AND FortiADC both evaluate regular expressions with a PCRE-compatible
-engine, and BOTH reference capture groups in rewrite/redirect replacements as
-``$0 $1 … $9``. Python's ``re`` is the closest server-side approximation we can
-test against without shipping a PCRE binding (differences are edge-case:
-possessive quantifiers and recursion aren't supported here — flagged in the UI
-notes). The point is to let the operator PROVE a pattern — and the string it
+FortiWeb AND FortiADC both evaluate regular expressions with PCRE, and BOTH
+reference capture groups in rewrite/redirect replacements as ``$0 $1 … $9``.
+Python's ``re`` is the closest server-side approximation available without
+shipping a PCRE binding — but it is an APPROXIMATION, not a compatible engine,
+and every verdict now says so (see ``engine_report``). ``pcre_divergences``
+flags the constructs where the two part ways, so a pattern this tester calls
+invalid is not mistaken for one the appliance would reject. The point is to let the operator PROVE a pattern — and the string it
 rewrites to — against sample requests BEFORE it lands in a rule, instead of
 authoring blind.
 
@@ -38,8 +39,16 @@ def _norm_product(product: str) -> str:
 # ---------------------------------------------------------------------------
 # Flavor notes — general PCRE truths plus per-product practical guidance.
 # ---------------------------------------------------------------------------
+# The one note that must never be dropped by truncation: it is the note that
+# tells the operator the verdict came from a DIFFERENT engine than the box.
+ENGINE_NOTE = (
+    r"FortiWeb and FortiADC evaluate with PCRE; this lab judges with Python `re`, "
+    r"which is close but not the same engine. Constructs where they differ are "
+    r"called out under the verdict — `\p{L}`, `\K`, `\z`, `(?R)` and "
+    r"PCRE-style `(?<name>)` are rejected here but valid on the appliance."
+)
+
 _COMMON_NOTES = [
-    "Both FortiWeb and FortiADC use a PCRE-compatible engine — the patterns you prove here behave the same on the appliance (edge cases: possessive quantifiers `a++` and recursion aren't supported in this tester).",
     "An unanchored pattern matches ANYWHERE in the value. Anchor with `^` (start) and `$` (end) when you mean the whole string.",
     "Escape literal dots: `\\.php$`. A bare `.` matches ANY single character.",
     "Capture groups `( … )` are referenced in rewrite/redirect replacements as `$0 $1 … $9` on BOTH products (not `\\1`).",
@@ -249,10 +258,10 @@ def guide_notes(product: str = "fortiweb") -> list[str]:
             if g.get("flavor"):
                 notes.insert(0, g["flavor"])
             if notes:
-                return (notes + base)[:10]
+                return [ENGINE_NOTE] + (notes + base)[:9]
         except Exception:  # noqa: BLE001
             pass
-    return base[:10]
+    return [ENGINE_NOTE] + base[:9]
 
 
 def cheatsheet() -> list[dict]:
@@ -295,7 +304,7 @@ def _to_python_repl(replacement: str) -> str:
     return "".join(out)
 
 
-def test_pattern(pattern: str, samples: list[str],
+def _test_pattern_core(pattern: str, samples: list[str],
                  case_insensitive: bool = False) -> dict:
     """Test one pattern against up to ``MAX_SAMPLES`` sample values.
 
@@ -327,7 +336,7 @@ def test_pattern(pattern: str, samples: list[str],
             "total": len(results)}
 
 
-def render_rewrite(pattern: str, replacement: str, samples: list[str],
+def _render_rewrite_core(pattern: str, replacement: str, samples: list[str],
                    case_insensitive: bool = False) -> dict:
     r"""Show what each sample REWRITES to — the marquee feature for URL
     Rewriting (FortiWeb) and Content Rewriting (FortiADC), where you build a
@@ -372,3 +381,156 @@ def render_rewrite(pattern: str, replacement: str, samples: list[str],
 
 __all__ = ["test_pattern", "render_rewrite", "examples_for", "guide_notes",
            "cheatsheet", "PRODUCTS"]
+
+
+# ---------------------------------------------------------------------------
+# Which engine actually judged the pattern, and where it disagrees with the box
+# ---------------------------------------------------------------------------
+# FortiWeb and FortiADC evaluate with PCRE. This module judges with Python's
+# ``re``. Those are NOT the same language, and the difference is not always the
+# edge case it looks like: a pattern can be reported INVALID here and be
+# accepted by the appliance, or compile in both and match different input. A
+# tester that says "no match" for a pattern the device WOULD have matched is
+# worse than no tester, because the operator acts on it.
+#
+# So every verdict now carries the engine that produced it, and the pattern is
+# scanned for the constructs where the two engines are known to part ways. No
+# new dependency: the honest fix is to SAY who judged, not to pretend it was
+# PCRE.
+
+ENGINE = {
+    "id": "python-re",
+    "label": "Python re",
+    "target": "PCRE (FortiWeb / FortiADC)",
+    "exact": False,
+}
+
+# direction:
+#   device_only - PCRE accepts it, this tester does not (the verdict here is
+#                 about a pattern the appliance would have run fine)
+#   semantic    - both compile, the match can differ
+# severity:
+#   warn - can change the verdict on this very pattern
+#   info - a default-behaviour difference that only bites some input
+_ESC_RULES = {
+    "K": (r"\K", "device_only", "warn", r"Match reset. PCRE has it; this tester rejects the pattern outright."),
+    "R": (r"\R", "device_only", "warn", r"Any-newline. PCRE has it; this tester rejects the pattern outright."),
+    "h": (r"\h", "device_only", "warn", r"Horizontal whitespace. PCRE-only; test with [ \t] here instead."),
+    "H": (r"\H", "device_only", "warn", r"Non-horizontal whitespace. PCRE-only."),
+    "X": (r"\X", "device_only", "warn", r"Extended grapheme cluster. PCRE-only."),
+    "G": (r"\G", "device_only", "warn", r"Start of match attempt. PCRE-only."),
+    "N": (r"\N", "device_only", "warn", r"Any char except newline in PCRE; in Python only \N{NAME} exists."),
+    "p": (r"\p{...}", "device_only", "warn", r"Unicode property. PCRE-only; this tester rejects the pattern."),
+    "P": (r"\P{...}", "device_only", "warn", r"Negated Unicode property. PCRE-only."),
+    "k": (r"\k<name>", "device_only", "warn", r"Named backreference, PCRE spelling. Python needs (?P=name)."),
+    "z": (r"\z", "device_only", "warn", r"Absolute end of subject. PCRE-only; this tester rejects the pattern."),
+    "Z": (r"\Z", "semantic", "warn", r"Both compile and they differ: PCRE \Z also matches before a final newline, Python \Z does not (that is PCRE \z)."),
+    "d": (r"\d", "semantic", "info", r"Python matches Unicode digits by default; PCRE is ASCII-only unless UCP is on."),
+    "w": (r"\w", "semantic", "info", r"Python matches Unicode word chars by default; PCRE is ASCII-only unless UCP is on."),
+    "s": (r"\s", "semantic", "info", r"Python matches Unicode whitespace by default; PCRE is ASCII-only unless UCP is on."),
+    "b": (r"\b", "semantic", "info", r"Word boundary follows \w, so it inherits the Unicode-vs-ASCII difference above."),
+}
+
+# NOT in the table, deliberately, and each for a measured reason:
+#   a++ a*+ a{n,m}+ (?>...)  - Python 3.11 GAINED possessive quantifiers and
+#       atomic groups. Warning about them would send the operator to rewrite a
+#       pattern that already behaves identically on both sides. The first draft
+#       of this table did warn about them; ``tests/test_regex_pcre_divergence``
+#       compiles every entry and would fail again if that came back.
+#   (?P<n>) (?i:...) (?(1)y|n) - supported by both.
+
+def _add(found, seen, construct, direction, severity, note):
+    if construct in seen:
+        return
+    seen.add(construct)
+    found.append({"construct": construct, "direction": direction,
+                  "severity": severity, "note": note})
+
+
+def pcre_divergences(pattern: str) -> list:
+    """Scan *pattern* for constructs where PCRE and Python ``re`` disagree.
+
+    Walks the pattern tracking escape and character-class state, so a construct
+    written as a literal or sitting inside a class is not reported. Returns one
+    entry per DISTINCT construct - a pattern using the same token six times is
+    one finding, not six.
+    """
+    p = (pattern or "")[:MAX_PATTERN]
+    found = []
+    seen = set()
+    i, n = 0, len(p)
+    in_class = False
+    while i < n:
+        c = p[i]
+        if c == "\\":
+            nxt = p[i + 1] if i + 1 < n else ""
+            rule = _ESC_RULES.get(nxt)
+            if rule:
+                _add(found, seen, *rule)
+            i += 2
+            continue
+        if in_class:
+            if c == "]":
+                in_class = False
+            i += 1
+            continue
+        if c == "[":
+            in_class = True
+            i += 1
+            continue
+        if c == "(":
+            rest = p[i:]
+            if rest.startswith("(*"):
+                _add(found, seen, "(*VERB)", "device_only", "warn",
+                     "PCRE backtracking-control verb. PCRE-only.")
+            elif rest.startswith("(?C"):
+                _add(found, seen, "(?C...)", "device_only", "warn",
+                     "Callout. PCRE-only.")
+            elif rest.startswith("(?&") or rest.startswith("(?P>"):
+                _add(found, seen, "(?&name)", "device_only", "warn",
+                     "Subroutine call. PCRE-only; this tester rejects the pattern.")
+            elif re.match(r"\(\?(R|[+-]?\d+)\)", rest):
+                _add(found, seen, "(?R)", "device_only", "warn",
+                     "Recursion. PCRE-only; this tester rejects the pattern.")
+            elif re.match(r"\(\?<[^=!]", rest):
+                _add(found, seen, "(?<name>...)", "device_only", "warn",
+                     "PCRE named group. Python needs (?P<name>...).")
+            elif i > 0 and re.match(r"\(\?[aiLmsuxJUX]+\)", rest):
+                _add(found, seen, "(?i) mid-pattern", "device_only", "warn",
+                     "PCRE scopes an inline flag from where it appears; Python 3.11+ "
+                     "rejects a global flag that is not at the very start of the pattern.")
+            i += 1
+            continue
+        i += 1
+    return found
+
+
+def engine_report(pattern: str) -> dict:
+    """The engine block attached to EVERY verdict: who judged, and whether the
+    pattern contains anything that makes that judgement unsafe to trust."""
+    divs = pcre_divergences(pattern)
+    return {
+        "engine": dict(ENGINE),
+        "divergences": divs,
+        "blocking": any(d["severity"] == "warn" and d["direction"] == "device_only"
+                        for d in divs),
+    }
+
+
+def test_pattern(pattern, samples, case_insensitive=False):
+    """Public wrapper: the core verdict PLUS the engine that produced it.
+
+    Wrapping rather than editing each return keeps the engine block on every
+    path by construction - including the invalid-pattern path, which is exactly
+    where a PCRE-only construct is the explanation for the error.
+    """
+    res = _test_pattern_core(pattern, samples, case_insensitive)
+    res.update(engine_report(pattern))
+    return res
+
+
+def render_rewrite(pattern, replacement, samples, case_insensitive=False):
+    """Public wrapper: rewrite preview PLUS the engine that produced it."""
+    res = _render_rewrite_core(pattern, replacement, samples, case_insensitive)
+    res.update(engine_report(pattern))
+    return res

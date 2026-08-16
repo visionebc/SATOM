@@ -116,6 +116,47 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   would read as a UI bug and leave the bad URL in place.</p>
 <h3 id="added">Added</h3>
 <ul>
+<li><strong>Three tools that know something a browser tab does not: a certificate
+  inspector, a false-positive explainer and a three-leg transaction tracer.</strong>
+  Reachable from the header Tools menu.</li>
+</ul>
+<p>The <strong>certificate inspector</strong> takes a pasted PEM/fullchain (or an
+  <code>openssl s_client</code> transcript) or probes a live <code>host:port</code>, and reports the
+  chain in leaf-first order with <strong>every link verified by actually checking the
+  child's signature with the parent's key</strong> — plus expiry, key size, signature
+  hash, RFC 6125 hostname coverage and whether a pasted private key matches.
+  Built because this project already paid for not having it: CT 346 served a
+  chain one certificate short and the diagnosis was <code>unable to get local issuer
+  certificate</code> plus a manual count. Chain completeness can come back <strong>UNKNOWN</strong>
+  — on a node without <code>openssl</code> only the leaf is readable, and "not measured"
+  is not "incomplete"; the two send you to different places.</p>
+<p>The <strong>false-positive explainer</strong> turns a pasted attack-log entry (syslog
+  <code>key=value</code>, JSON, or a raw HTTP request) into the same row the device-backed
+  carve-out panel consumes, and calls that same engine — so which module
+  blocked, which carve-out type addresses it, which fields scope it and the
+  exact FortiWeb payload are computed once, not twice. It reports the keys it
+  could <strong>not</strong> place and the fields the entry does <strong>not</strong> carry with what each
+  one decides, and peels percent/entity/hex/base64 layers off the payload. It
+  has <strong>no save endpoint</strong>, deliberately: a carve-out is assembled from the
+  entry as the device reported it, and pasted text is client-supplied.</p>
+<p>The <strong>transaction tracer</strong> runs leg A (through the appliance) and leg C
+  (straight to the backend, carrying the same <code>Host</code>), and derives leg B — what
+  the appliance forwards — from the device's own configuration. Leg B is
+  labelled derived at every layer, names the object and field behind each row,
+  and lists the settings it could not read separately from the ones that are
+  off. The A/C diff answers <em>is it the WAF or is it the app?</em> in one sentence,
+  with per-leg TCP/TLS/TTFB timing, TLS detail, and <code>curl</code> (with <code>--resolve</code>)
+  and HAR exports.</p>
+<p><code>GET</code>/<code>HEAD</code>/<code>OPTIONS</code> are free; a mutating method is a real write to someone
+  else's application issued from inside the management network, so it needs the
+  new <code>monitoring.probe_free</code> permission and an explicit per-call tick.
+  Inventory destinations are always available; a free <code>host:port</code> needs that
+  same permission. Cloud instance-metadata addresses are refused in every mode
+  and that is not configurable. Names are resolved once and the <strong>address</strong> is
+  dialled, with the hostname carried as SNI/<code>Host</code>, so a name cannot answer
+  differently between the check and the connection. Every probe and trace,
+  including every refusal, is audited.</p>
+<ul>
 <li><strong>The reconcile page and the firmware-line API matrix are documented, and the
   manual no longer stops at section 30.3.</strong> Both pages shipped in the last
   two rounds and neither existed on paper: an operator could reach a screen
@@ -753,6 +794,9 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
 </ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
+<li>
+<p><strong>Regex Lab now names the engine that judged the pattern, and flags where it disagrees with the appliance.</strong> The modal footer claimed "Tested server-side against a PCRE-compatible engine — matches FortiWeb &amp; FortiADC"; the lab in fact judges with Python <code>re</code>, so a pattern using <code>\p{L}</code>, <code>\K</code>, <code>\z</code>, <code>(?R)</code> or PCRE-style <code>(?&lt;name&gt;)</code> was reported INVALID for a pattern the appliance accepts. Every verdict (match, rewrite, invalid and empty) now carries an <code>engine</code> block plus a <code>divergences</code> list, rendered under the verdict. The flavor note warning that possessive quantifiers and atomic groups "aren't supported in this tester" was also stale — Python 3.11 added both. The engine caveat is pinned to the head of <code>guide_notes</code>, because <code>(harvested + base)[:10]</code> used to truncate it away on FortiWeb.</p>
+</li>
 <li>
 <p><strong>Renaming a classification value no longer orphans every row that used it.</strong>
   The old textarea rewrote the catalog and nothing else, so the ~30 rows still

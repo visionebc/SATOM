@@ -31,6 +31,50 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Added
 
+- **Three tools that know something a browser tab does not: a certificate
+  inspector, a false-positive explainer and a three-leg transaction tracer.**
+  Reachable from the header Tools menu.
+
+  The **certificate inspector** takes a pasted PEM/fullchain (or an
+  `openssl s_client` transcript) or probes a live `host:port`, and reports the
+  chain in leaf-first order with **every link verified by actually checking the
+  child's signature with the parent's key** — plus expiry, key size, signature
+  hash, RFC 6125 hostname coverage and whether a pasted private key matches.
+  Built because this project already paid for not having it: CT 346 served a
+  chain one certificate short and the diagnosis was `unable to get local issuer
+  certificate` plus a manual count. Chain completeness can come back **UNKNOWN**
+  — on a node without `openssl` only the leaf is readable, and "not measured"
+  is not "incomplete"; the two send you to different places.
+
+  The **false-positive explainer** turns a pasted attack-log entry (syslog
+  `key=value`, JSON, or a raw HTTP request) into the same row the device-backed
+  carve-out panel consumes, and calls that same engine — so which module
+  blocked, which carve-out type addresses it, which fields scope it and the
+  exact FortiWeb payload are computed once, not twice. It reports the keys it
+  could **not** place and the fields the entry does **not** carry with what each
+  one decides, and peels percent/entity/hex/base64 layers off the payload. It
+  has **no save endpoint**, deliberately: a carve-out is assembled from the
+  entry as the device reported it, and pasted text is client-supplied.
+
+  The **transaction tracer** runs leg A (through the appliance) and leg C
+  (straight to the backend, carrying the same `Host`), and derives leg B — what
+  the appliance forwards — from the device's own configuration. Leg B is
+  labelled derived at every layer, names the object and field behind each row,
+  and lists the settings it could not read separately from the ones that are
+  off. The A/C diff answers *is it the WAF or is it the app?* in one sentence,
+  with per-leg TCP/TLS/TTFB timing, TLS detail, and `curl` (with `--resolve`)
+  and HAR exports.
+
+  `GET`/`HEAD`/`OPTIONS` are free; a mutating method is a real write to someone
+  else's application issued from inside the management network, so it needs the
+  new `monitoring.probe_free` permission and an explicit per-call tick.
+  Inventory destinations are always available; a free `host:port` needs that
+  same permission. Cloud instance-metadata addresses are refused in every mode
+  and that is not configurable. Names are resolved once and the **address** is
+  dialled, with the hostname carried as SNI/`Host`, so a name cannot answer
+  differently between the check and the connection. Every probe and trace,
+  including every refusal, is audited.
+
 - **The reconcile page and the firmware-line API matrix are documented, and the
   manual no longer stops at section 30.3.** Both pages shipped in the last
   two rounds and neither existed on paper: an operator could reach a screen
@@ -646,6 +690,7 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   updates a ticket instead of opening a second one for the same window.
 
 ### Fixed
+- **Regex Lab now names the engine that judged the pattern, and flags where it disagrees with the appliance.** The modal footer claimed "Tested server-side against a PCRE-compatible engine — matches FortiWeb & FortiADC"; the lab in fact judges with Python `re`, so a pattern using `\p{L}`, `\K`, `\z`, `(?R)` or PCRE-style `(?<name>)` was reported INVALID for a pattern the appliance accepts. Every verdict (match, rewrite, invalid and empty) now carries an `engine` block plus a `divergences` list, rendered under the verdict. The flavor note warning that possessive quantifiers and atomic groups "aren't supported in this tester" was also stale — Python 3.11 added both. The engine caveat is pinned to the head of `guide_notes`, because `(harvested + base)[:10]` used to truncate it away on FortiWeb.
 
 - **Renaming a classification value no longer orphans every row that used it.**
   The old textarea rewrote the catalog and nothing else, so the ~30 rows still

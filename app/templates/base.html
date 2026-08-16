@@ -156,6 +156,13 @@
         <li><hr class="dropdown-divider"></li>
         <li><a class="dropdown-item" href="#" data-fw-netcalc-open>
           <i class="bi bi-calculator me-2"></i>{{ _('Network calculator') }}</a></li>
+        <li><hr class="dropdown-divider"></li>
+        <li><a class="dropdown-item" href="#" data-fw-certinspect-open="">
+          <i class="bi bi-patch-check me-2"></i>{{ _('Certificate inspector') }}</a></li>
+        <li><a class="dropdown-item" href="#" data-fw-fptriage-open="">
+          <i class="bi bi-shield-exclamation me-2"></i>{{ _('False-positive explainer') }}</a></li>
+        <li><a class="dropdown-item" href="#" data-fw-txntrace-open="">
+          <i class="bi bi-diagram-3 me-2"></i>{{ _('Transaction tracer') }}</a></li>
       </ul>
     </div>
 
@@ -1316,6 +1323,9 @@
 <script src="{{ asset('js/main.js') }}"></script>
 <script src="{{ asset('js/regex_lab.js') }}"></script>
 <script src="{{ asset('js/net_calc.js') }}"></script>
+<script src="{{ asset('js/cert_inspect.js') }}"></script>
+<script src="{{ asset('js/fp_triage.js') }}"></script>
+<script src="{{ asset('js/txn_trace.js') }}"></script>
 <script nonce="{{ csp_nonce }}">
 (function(){
   document.body.dataset.product = '{{ product.key }}';

@@ -119,6 +119,10 @@ PUBLIC_DOCS: list[tuple[str, str, str, str, str]] = [
      "aggregated collection, the time-series store, selector dashboards, "
      "reports, and the content-addressed source-of-truth store that replaced "
      "the git-committed history."),
+    ("alerting.md", "alerting", "Alerting & notification delivery", "\U0001f4e2",
+     "What happens after a health check finds something: the two delivery "
+     "paths, the per-sink severity floor and family mask, the signed webhook "
+     "contract, the syslog/CEF field maps and the alert.fired hook payload."),
     ("git-backup-and-outage.md", "git-backup", "Git backup & surviving an outage", "\U0001f9ef",
      "The anti-reset guard, the unpushed-commit alert, repository bundles and the four-copy recovery runbook."),
     ("ai-advisor.md", "ai-advisor", "AI Advisor", "\u2728",
@@ -161,7 +165,8 @@ GROUPS: list[tuple[str, str, list[str]]] = [
      ["readme", "management-overview", "overview", "user-guide", "theming"]),
     ("Deploy & operate", "Getting it running, keeping it running, getting it back.",
      ["install", "cli", "privilege-model", "safeguards", "metrics-architecture",
-      "provisioning-hypervisors", "git-backup", "offline-update-packages"]),
+      "alerting", "provisioning-hypervisors", "git-backup",
+      "offline-update-packages"]),
     ("Security", "Certificates, transport encryption and trust between nodes.",
      ["encryption", "acme", "ai-advisor"]),
     ("Build & integrate", "For developers extending the platform or driving it from outside.",

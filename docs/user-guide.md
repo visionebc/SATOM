@@ -2035,9 +2035,23 @@ policy (what happens then), and the two are kept apart deliberately.
 
 **Delivery sinks** — the same finding can go to five places, and each one
 decides for itself what it wants to hear. Every sink has exactly two knobs: a
-**minimum severity** and a **family mask** (the same seven families as *Checks
-enabled*). A pattern language was deliberately not built: the rule everybody
-writes is "everything", which is this with more surface to get wrong.
+**minimum severity** and a **family mask**. A pattern language was deliberately
+not built: the rule everybody writes is "everything", which is this with more
+surface to get wrong.
+
+The seven maskable families are the same seven checks as *Checks enabled*, and
+the mask is written in the family's own name — which is not always the name of
+the key prefix behind it:
+
+| family | what it raises | key prefix |
+|---|---|---|
+| `cert` | Cert expiry | `cert.` |
+| `git` | Git divergence | `git.` |
+| `device` | Device health | `device.` |
+| `backup` | Backup freshness | `backup.` |
+| `drift` | Config drift | `drift.` |
+| `actions` | Scheduled automation | `action.` |
+| `host` | Host resources | `host.` |
 
 | Sink | What it is | Default |
 |---|---|---|
@@ -2074,6 +2088,11 @@ secret is stored encrypted and never rendered back, so a blank field means
 "unchanged" — removing one needs the explicit checkbox. Pick the
 **Slack-compatible** encoding for Slack, Mattermost or Rocket.Chat; Teams and
 Discord want their own shapes, and those are integration hooks.
+
+The wire-level contract for all of this — the signed webhook envelope and
+how to verify it, the RFC 5424 and CEF field maps, the `alert.fired` payload
+and what is deliberately not implemented — is in
+[Alerting & notification delivery](alerting.md).
 
 **Integration hooks are enqueued, not delivered.** Firing one writes a JSON
 request that a separate systemd unit executes, so the engine reports them as
@@ -2787,8 +2806,29 @@ A hook is a small Python script SATOM runs when it emits an event. The usual use
 is opening a change ticket in your own CRM and handing the reference back.
 
 Events: `change.requested`, `change.approved`, `window.opening`,
-`window.closing`, `upgrade.finished`, `upgrade.failed`. The editor lists the
-exact payload each one carries.
+`window.closing`, `upgrade.finished`, `upgrade.failed` and `alert.fired`. The
+editor lists the exact payload each one carries.
+
+`alert.fired` is the health engine's, and it behaves unlike the other six: it
+fires **once per finding** rather than once per change, only for findings fresh
+out of the cooldown window, and **only from the writable primary**. It is off
+until you switch the *Integration hooks* sink on in **Settings → Email &
+Alerts**, and a hook bound to it receives the finding's `key`, `family`,
+`severity`, `title`, `detail`, `product`, `node` and `fired_at`.
+
+**Starters.** *New hook* offers a working script you own the moment you save
+it: **CRM change ticket** (`change.requested`), **Telegram**, **Slack** and
+**Microsoft Teams** (all three on `alert.fired`). Picking one preselects the
+event and names the secret to declare.
+
+Starters rather than built-in vendor adapters, because one adapter per
+messaging product is unbounded work whose failure mode is an integration that
+goes stale without anything failing. Each starter carries the part that is
+expensive to find out: the Teams Adaptive Card must be wrapped in an
+`attachments` envelope — a bare card returns `202` and publishes nothing — and
+the Telegram one sends no `parse_mode`, because a finding's detail is full of
+`_`, `*` and `[` and Telegram answers `400` on unbalanced markup, which loses
+the message entirely.
 
 **Hooks never run inside the web application.** Saving one writes it to disk;
 `satom-integrations.service` — a separate, unprivileged runner — executes it, in

@@ -812,7 +812,7 @@
           </div>
           <div class="fw-card-body">
             <p class="text-muted mb-3" style="font-size:13px;">
-              The proactive health engine (<code>satom-alerts.timer</code>, every 15&nbsp;min) checks cert expiry, git divergence, device reachability, backup freshness and config drift, then routes each finding to the sinks below — <strong>{{ _('in-app bell, email, and a syslog/CEF feed') }}</strong>{{ _('. Email uses the transport configured above — set it to external SMTP if the local relay can\'t reach your inbox.') }}
+              The proactive health engine (<code>satom-alerts.timer</code>, every 15&nbsp;min) checks cert expiry, git divergence, device reachability, backup freshness and config drift, then routes each finding to the sinks below — <strong>{{ _('in-app bell, email, a signed webhook, your own integration hooks, and a syslog/CEF feed') }}</strong>{{ _('. Email uses the transport configured above — set it to external SMTP if the local relay can\'t reach your inbox.') }}
             </p>
             <form method="POST" action="{{ url_for('settings.save_alerts') }}">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

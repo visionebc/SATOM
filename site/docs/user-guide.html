@@ -2425,9 +2425,58 @@ policy (what happens then), and the two are kept apart deliberately.</p>
 </ul>
 <p><strong>Delivery sinks</strong> — the same finding can go to five places, and each one
 decides for itself what it wants to hear. Every sink has exactly two knobs: a
-<strong>minimum severity</strong> and a <strong>family mask</strong> (the same seven families as <em>Checks
-enabled</em>). A pattern language was deliberately not built: the rule everybody
-writes is "everything", which is this with more surface to get wrong.</p>
+<strong>minimum severity</strong> and a <strong>family mask</strong>. A pattern language was deliberately
+not built: the rule everybody writes is "everything", which is this with more
+surface to get wrong.</p>
+<p>The seven maskable families are the same seven checks as <em>Checks enabled</em>, and
+the mask is written in the family's own name — which is not always the name of
+the key prefix behind it:</p>
+<table>
+<thead>
+<tr>
+<th>family</th>
+<th>what it raises</th>
+<th>key prefix</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>cert</code></td>
+<td>Cert expiry</td>
+<td><code>cert.</code></td>
+</tr>
+<tr>
+<td><code>git</code></td>
+<td>Git divergence</td>
+<td><code>git.</code></td>
+</tr>
+<tr>
+<td><code>device</code></td>
+<td>Device health</td>
+<td><code>device.</code></td>
+</tr>
+<tr>
+<td><code>backup</code></td>
+<td>Backup freshness</td>
+<td><code>backup.</code></td>
+</tr>
+<tr>
+<td><code>drift</code></td>
+<td>Config drift</td>
+<td><code>drift.</code></td>
+</tr>
+<tr>
+<td><code>actions</code></td>
+<td>Scheduled automation</td>
+<td><code>action.</code></td>
+</tr>
+<tr>
+<td><code>host</code></td>
+<td>Host resources</td>
+<td><code>host.</code></td>
+</tr>
+</tbody>
+</table>
 <table>
 <thead>
 <tr>
@@ -2490,6 +2539,10 @@ secret is stored encrypted and never rendered back, so a blank field means
 "unchanged" — removing one needs the explicit checkbox. Pick the
 <strong>Slack-compatible</strong> encoding for Slack, Mattermost or Rocket.Chat; Teams and
 Discord want their own shapes, and those are integration hooks.</p>
+<p>The wire-level contract for all of this — the signed webhook envelope and
+how to verify it, the RFC 5424 and CEF field maps, the <code>alert.fired</code> payload
+and what is deliberately not implemented — is in
+<a href="alerting.html">Alerting &amp; notification delivery</a>.</p>
 <p><strong>Integration hooks are enqueued, not delivered.</strong> Firing one writes a JSON
 request that a separate systemd unit executes, so the engine reports them as
 <code>queued</code> and never as <code>dispatched</code>. They <em>do</em> take the cooldown — otherwise a
@@ -3335,8 +3388,26 @@ tracker outage can never break the change request itself.</p>
 <p>A hook is a small Python script SATOM runs when it emits an event. The usual use
 is opening a change ticket in your own CRM and handing the reference back.</p>
 <p>Events: <code>change.requested</code>, <code>change.approved</code>, <code>window.opening</code>,
-<code>window.closing</code>, <code>upgrade.finished</code>, <code>upgrade.failed</code>. The editor lists the
-exact payload each one carries.</p>
+<code>window.closing</code>, <code>upgrade.finished</code>, <code>upgrade.failed</code> and <code>alert.fired</code>. The
+editor lists the exact payload each one carries.</p>
+<p><code>alert.fired</code> is the health engine's, and it behaves unlike the other six: it
+fires <strong>once per finding</strong> rather than once per change, only for findings fresh
+out of the cooldown window, and <strong>only from the writable primary</strong>. It is off
+until you switch the <em>Integration hooks</em> sink on in <strong>Settings → Email &amp;
+Alerts</strong>, and a hook bound to it receives the finding's <code>key</code>, <code>family</code>,
+<code>severity</code>, <code>title</code>, <code>detail</code>, <code>product</code>, <code>node</code> and <code>fired_at</code>.</p>
+<p><strong>Starters.</strong> <em>New hook</em> offers a working script you own the moment you save
+it: <strong>CRM change ticket</strong> (<code>change.requested</code>), <strong>Telegram</strong>, <strong>Slack</strong> and
+<strong>Microsoft Teams</strong> (all three on <code>alert.fired</code>). Picking one preselects the
+event and names the secret to declare.</p>
+<p>Starters rather than built-in vendor adapters, because one adapter per
+messaging product is unbounded work whose failure mode is an integration that
+goes stale without anything failing. Each starter carries the part that is
+expensive to find out: the Teams Adaptive Card must be wrapped in an
+<code>attachments</code> envelope — a bare card returns <code>202</code> and publishes nothing — and
+the Telegram one sends no <code>parse_mode</code>, because a finding's detail is full of
+<code>_</code>, <code>*</code> and <code>[</code> and Telegram answers <code>400</code> on unbalanced markup, which loses
+the message entirely.</p>
 <p><strong>Hooks never run inside the web application.</strong> Saving one writes it to disk;
 <code>satom-integrations.service</code> — a separate, unprivileged runner — executes it, in
 its own process group, with a hard timeout. A hook that hangs on somebody else's

@@ -47,6 +47,9 @@
 35. [Integrations: NetBox, change tickets and your own Python](#35-integrations-netbox-change-tickets-and-your-own-python)
 36. [Putting any appliance under change control](#36-putting-any-appliance-under-change-control)
 37. [The Tools menu: certificate inspector, false-positive explainer, tracer](#37-the-tools-menu-certificate-inspector-false-positive-explainer-tracer)
+38. [Bookmarks: the panel you file yourself](#38-bookmarks-the-panel-you-file-yourself)
+39. [Concept Map: where does X live?](#39-concept-map-where-does-x-live)
+40. [Upgrade Flow: a maintenance window as one workflow](#40-upgrade-flow-a-maintenance-window-as-one-workflow)
 
 ---
 
@@ -1836,10 +1839,30 @@ is a single **global** one, not per-ADOM.
 
 ## 26. Settings, tab by tab
 
-`Settings` is one page with **22 tabs**. Twenty of them are admin-only
-(`user_manage`); the last two — **Security** and **Change Password** — are
-self-service and are the only ones a non-admin sees. Throughout this manual a
-setting is addressed as `Settings → <Tab>`.
+`Settings` is one page with a **grouped sidebar**: **8 groups, 24 panels**.
+Seven of the groups (22 panels) are admin-only (`user_manage`); the eighth —
+**My Account**, holding **Security** and **Change Password** — is self-service
+and is the only group a non-admin sees. A group with nothing you may see is not
+rendered at all, so the menu never offers a section that is not there.
+
+| Group | Panels |
+|---|---|
+| **System** | General · Git · SoT & Backup · AI Advisor |
+| **Access & Identity** | Users · Profiles · Authentication · Access Control |
+| **Certificates & Trust** | Certificate Manager · Node TLS · Trust store |
+| **Monitoring & Alerts** | Email & Alerts · Thresholds |
+| **Network & DNS** | DNS Lookup · DNS Records |
+| **Fleet & Devices** | Hypervisors · ADOMs · Policy Links · Clone / Migrate |
+| **User Interface** | Appearance · Languages · FAZ Menu |
+| **My Account** | Security · Change Password |
+
+The **AI Advisor** panel additionally needs `advisor.configure`; an admin
+without it does not see the entry.
+
+Regrouping the strip into a menu did **not** rename the panels' targets
+(`#tab-auth` and its siblings), so every deep link, every saved URL hash and
+every `§26.x` reference in this manual still lands exactly where it did.
+Throughout this manual a setting is addressed as `Settings → <Panel>`.
 
 Six tabs are documented where the feature they configure is documented, because
 the setting is meaningless without it. They are not repeated here:
@@ -2215,6 +2238,59 @@ everything under it; turning a single **item** off hides just that leaf. Hidden
 entries disappear from the sidebar and dashboard **and are not reachable by URL**.
 It applies to every user of that ADOM, and it changes only the GUI menu — the
 devices and the configuration harvest are unaffected.
+
+### 26.12b Languages — which of the five this install offers
+
+SATOM speaks five languages. English is the **source** language: the action
+profiles, the CLI help and the docs are authored in it, and every translation
+derives from it directly, never through a chain.
+
+| Code | Language |
+|---|---|
+| `en` | English *(source)* |
+| `es` | Español |
+| `de` | Deutsch |
+| `fr` | Français |
+| `it` | Italiano |
+
+This panel answers a **different question** from that list: not "which
+languages does the product speak" — that is the same on every install — but
+"which of them may a user pick **here**". A site with no French operators does
+not want French in the profile picker, and an install part-way through a
+translation pass may want to hold a language back until its catalogue is worth
+reading.
+
+Tick a language to offer it. Untick it to withdraw it, and it disappears from
+the profile picker, from the change-document language question, and from
+browser language negotiation — pages render in another language instead.
+Withdrawn languages stay **listed on this page**: a form that hid what it
+switched off would make the switch one-way.
+
+Three rules are enforced in the service rather than in the form, so a replayed
+POST meets them too:
+
+- **The source language is always offered.** `en` renders ticked and disabled,
+  and is added back regardless of what is posted. An install able to switch it
+  off could lock every user out of a readable page from a checkbox, with no way
+  back in.
+- **Withdrawing never rewrites anybody's answer.** A user who chose French
+  keeps that stored preference exactly as they wrote it; it simply stops being
+  honoured while French is withdrawn, and their profile page **says so**.
+  Deleting the row would answer a question on their behalf, silently, and
+  re-enabling would not bring it back.
+- **Unset or unreadable means everything.** An install that never opened this
+  page — and a row somebody hand-edited into nonsense — offers the whole
+  registry. Offering fewer languages is a change an operator makes on purpose,
+  never one a broken row makes for them.
+
+Two columns are reports, not settings. **Change documents** says whether a
+*complete* change document can actually be produced in that language; declaring
+a language never claims text exists in it. **Chosen by** counts the users whose
+stored preference is that language — read it before withdrawing one.
+
+What this gate does not touch is the catalogues. Text keeps being authored and
+translated for every language in the registry, so a language switched back on
+is complete the moment it reappears instead of starting from empty.
 
 ### 26.13 Security and Change Password — self-service, for every account
 
@@ -3251,3 +3327,150 @@ refused in every mode and that refusal is not configurable. Names are resolved
 once and the **address** is dialled, with the hostname carried separately as
 SNI and `Host`, so a name cannot answer differently between the check and the
 connection.
+
+
+---
+
+## 38. Bookmarks: the panel you file yourself
+
+The sidebar is organised the way the **product** is organised. `Bookmarks`
+(`/bookmarks/panel`) is organised the way **you** work. Every signed-in account
+has one; there is no permission to grant, and nothing here is admin-only.
+
+### 38.1 The four kinds
+
+| Kind | What it stores |
+|---|---|
+| **appliance** | A device in the inventory. Left unlabelled it shows the device's **live name**, so a rename in the inventory reaches your panel by itself; typing a label overrides it. Retiring the device removes the bookmark rather than leaving a tile that resolves to nothing. |
+| **link** | Any URL — a wiki page, a ticket queue, another console. |
+| **view** | A saved **filter**, not the rows it matched the day you saved it. Opening it re-runs the search, so a view of "policies in monitor mode" is still right tomorrow. Storing the rows would be the same staleness trap as copying a classification. |
+| **folder** | The only grouping you create by hand (§38.3). |
+
+Add a device from its own page or from `Bookmarks → Devices`; **Adopt** takes
+an existing team bookmark and files it on your own panel, so you can move it
+without touching what everybody else sees.
+
+### 38.2 Personal, team, and whose permissions decide
+
+There are two scopes: **personal** and **team**. "Team" here means *everyone
+who operates this SATOM* — there is deliberately no roster to maintain.
+
+**Sharing a bookmark is not a way to hand somebody a device.** The list you see
+is filtered by **your** permissions, never the sharer's: the ADOM stamp filter
+first, and then — for device bookmarks — the same visibility rule the inventory
+itself uses. A colleague who shares a FortiADC you may not operate has shared
+you nothing.
+
+Two consequences worth knowing before you file a hundred devices:
+
+- A device that enters maintenance drops off your panel and **comes back where
+  you filed it**. Filtering a row out never deletes its placement, so one
+  operator flipping a maintenance switch cannot wipe the team's filing.
+- Team bookmarks keep their **author**, including after sharing. An entry that
+  changes what every operator sees without a traceable origin is an
+  unattributable change to the console.
+
+**Favourite** pins an entry to the top of your own panel; **Hide** removes it
+from your view without deleting it for anyone else. Both are per-user.
+
+### 38.3 Grouping is computed, not stored
+
+The panel groups by any of seven modes: **folder**, **zone**, **line**,
+**department**, **segment**, **kind** (the product) and **tag**.
+
+Only **folder** is stored. The other six are recomputed from the live inventory
+on every render — which is why re-zoning a device, moving it to another
+department or re-tagging it **re-files its bookmark with no migration and no
+write**. Change the inventory; the panel is already right.
+
+Two buckets exist so that two different facts never merge into one: a bookmark
+that is not a device has no classification at all, and a device nobody has
+classified yet is a different situation. They are shown separately rather than
+both as "ungrouped".
+
+---
+
+## 39. Concept Map: where does X live?
+
+The sidebar answers *"what can I do here?"* by grouping pages under the product
+they belong to. It never answers *"where does X live?"* — which is the question
+an operator actually asks. `Concept Map` (`/map`) is that answer: every
+navigable page in the console, tagged with the concepts it serves, searchable
+as free text. Type "certificate", "rollback" or "who changed it" and land on
+the page instead of on a manual.
+
+Pages are clustered under **ten concepts**:
+
+| Concept | Covers |
+|---|---|
+| **Fleet & Discovery** | Which devices exist, how they are wired, and how to find an object across all of them. |
+| **Monitoring & Telemetry** | Is it healthy right now, what did it look like an hour ago, and who gets told when it is not. |
+| **Web Application Firewall** | FortiWeb protection: policies, signatures, exceptions and the attacks they actually stopped. |
+| **Application Delivery** | FortiADC load balancing — virtual servers, pools and the ADC signature sets. |
+| **Device Configuration** | Reading and writing what is actually on a box, and the object model behind it. |
+| **Automation & Change** | Turning an intention into a reviewed, scheduled, audited change on many devices at once. |
+| **Backup, Firmware & Recovery** | The copies you fall back to, the versions you move between, and the second node that takes over. |
+| **Identity & Access** | Who may do what, proven by certificates and recorded in the audit trail. |
+| **Platform & Administration** | SATOM itself: settings, its own database, its updates and its reports. |
+| **Developer & Extensibility** | Raw API access, tokens, scripting and custom views for people extending the product. |
+
+Three rules keep the map honest, and each is enforced by a test rather than by
+discipline:
+
+1. **The URL map is the authority on what exists.** Every parameterless page in
+   the console is either **on the map** (83 today) or **excluded with a written
+   reason** (106 today — JSON feeds, downloads, redirects and fragments that
+   are not pages). A page added without an entry fails the suite in the same
+   commit that adds it, so the map can never be quietly missing something.
+2. **Nothing here is a second source of truth.** Paths are generated from the
+   route table and the permission is read off the page itself — never re-typed
+   into the map. A hand-copied permission column is how a map ends up
+   advertising a page that 403s.
+3. **You only see what you may open.** The map is built for the account looking
+   at it.
+
+The concept keys are stable and appear in the URL (`/map/?c=waf`), so a cluster
+you use daily can itself be bookmarked (§38).
+
+---
+
+## 40. Upgrade Flow: a maintenance window as one workflow
+
+Every piece of a windowed firmware upgrade already existed in SATOM, and every
+piece was per-device: the pre-flight lived on one appliance's page, the change
+request could cite one run, and the customer-impact export came off that one
+change. An engineer upgrading sixty FortiWeb walked that path sixty times and
+still finished holding a change document whose evidence covered one box.
+
+`Upgrade Flow` (`/upgrade-flow`) is the staged front for the whole window. It
+needs the **backup** permission, because stage 1 takes a configuration backup
+of every device it touches.
+
+### 40.1 The four stages
+
+| Stage | What it does |
+|---|---|
+| **1 · Pre-upgrade (bulk)** | Runs the pre-flight against every selected device and **persists one record per device** — version, partitions, health, backup. |
+| **2 · Change request** | Raises **one** change of type `upgrade` citing **all** of those runs, so the change carries evidence for the whole window. |
+| **3 · Customer impact** | The consolidated XLSX/CSV export off that change's **frozen, merged** inventory — not a live re-read at export time. |
+| **4 · Execution** | The approved change's one-shot action, or manual. Progress is polled live. |
+
+The page **owns no workflow of its own**. Stage 1 calls the same pre-flight
+service an individual appliance page calls; stage 2 posts to the ordinary
+change-request form; stages 3 and 4 link into that change. This is deliberate:
+a second implementation of "upgrade prep" is exactly the defect this feature
+was built to remove.
+
+### 40.2 Two limits that refuse rather than truncate
+
+| Limit | Value | Why |
+|---|---|---|
+| Devices in one sweep | **40** | The sweep is sequential and each device takes a configuration backup. This is a request-timeout guard, not an opinion about your fleet. |
+| Waves in one selection | **12** | Stage 2 can split a selection into batched waves. |
+
+Both **refuse, naming the number**, rather than quietly doing less. A sweep
+that silently pre-flights the first 40 of 60 boxes and reports success is how
+nineteen devices enter a maintenance window with no baseline; a wave that
+silently disappeared takes its appliances out of every window without anybody
+being told. If you are over a limit, split the window — the tool will not do it
+behind your back.

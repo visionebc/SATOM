@@ -46,6 +46,7 @@
 34. [The Audit Log](#34-the-audit-log)
 35. [Integrations: NetBox, change tickets and your own Python](#35-integrations-netbox-change-tickets-and-your-own-python)
 36. [Putting any appliance under change control](#36-putting-any-appliance-under-change-control)
+37. [The Tools menu: certificate inspector, false-positive explainer, tracer](#37-the-tools-menu-certificate-inspector-false-positive-explainer-tracer)
 
 ---
 

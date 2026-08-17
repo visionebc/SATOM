@@ -59,7 +59,8 @@ def delete_policy(ops, policy: str, *, dry_run: bool):
 
 def clone_policy(planner, ops, policy: str, *, new_name: str, dry_run: bool,
                  disable: bool = True, vip_ip: str = "", copy_wpp: bool = True,
-                 wpp_new_name: str = "", wpp_suffix: str = "") -> list[clone.CloneItem]:
+                 wpp_new_name: str = "", wpp_suffix: str = "",
+                 iface_map: dict[str, str] | None = None) -> list[clone.CloneItem]:
     """Plan the full policy tree on the source and create the missing objects on
     the ``ops`` device (same box or another). The new root is left DISABLED.
 
@@ -75,7 +76,13 @@ def clone_policy(planner, ops, policy: str, *, new_name: str, dry_run: bool,
       pre-flight checklist enforces that).
     * ``wpp_new_name`` copies the WPP under a NEW name and re-points the policy
       at it — the escape when the destination has a same-name profile whose
-      values differ from the source."""
+      values differ from the source.
+    * ``iface_map`` — ``{source port: destination port}`` re-binding for the
+      copy. A port NAME is not portable between chassis: ``port3`` exists on
+      both boxes far more often than it means the same network on both, and
+      the REST create SUCCEEDS either way. Without a map the source names are
+      carried over verbatim (the pre-flight gate is what refuses that when the
+      name is absent at the destination)."""
     items = planner.plan(clone.ROOT_SERVER_POLICY, policy, new_name=new_name,
                          follow_wpp=copy_wpp, wpp_new_name=wpp_new_name,
                          wpp_suffix=wpp_suffix)
@@ -98,6 +105,14 @@ def clone_policy(planner, ops, policy: str, *, new_name: str, dry_run: bool,
         clone.set_vip_ip(items, transform=lambda ip: clone_rules.dummy_ip(ip, cfg))
     elif vip_ip:
         clone.set_vip_ip(items, ip=vip_ip)
+    # BEFORE the write, after the VIP rewrite. Both rewrites MERGE into the
+    # payload ({**payload, field: value}) rather than replacing it, so the
+    # order is not load-bearing TODAY — it becomes load-bearing the moment
+    # either one is rewritten to build a fresh dict, which is why the
+    # invariant is pinned by a test and not left to this comment.
+    if iface_map:
+        clone.set_interface(items, {str(k): str(v) for k, v in iface_map.items()
+                                    if k and v and k != v})
 
     def _write(item: clone.CloneItem) -> None:
         from . import objform
@@ -154,14 +169,15 @@ def _failed_msg(report: dict) -> str:
 def migrate_policy(dst_planner, dst_ops, src_ops, policy: str, *,
                    new_name: str, dry_run: bool, vip_ip: str = "",
                    copy_wpp: bool = True, wpp_new_name: str = "",
-                   wpp_suffix: str = "") -> dict:
+                   wpp_suffix: str = "",
+                   iface_map: dict[str, str] | None = None) -> dict:
     """Clone the policy tree onto the destination, then — ONLY on a clean clone
     and a real apply — disable the SOURCE policy (rollback-friendly; the source
     is kept). A failed clone leaves the source LIVE and untouched."""
     items = clone_policy(dst_planner, dst_ops, policy, new_name=new_name,
                          dry_run=dry_run, disable=True, vip_ip=vip_ip,
                          copy_wpp=copy_wpp, wpp_new_name=wpp_new_name,
-                         wpp_suffix=wpp_suffix)
+                         wpp_suffix=wpp_suffix, iface_map=iface_map)
     summary = clone_summary(items)
     clone_ok = summary["failed"] == 0 and (dry_run or summary["created"] > 0
                                            or summary["exists"] > 0)
@@ -211,6 +227,12 @@ def perform_one(action: str, *, source_appl, dest_appl=None, policy: str,
     copy_wpp = bool(opts.get("copy_wpp", True))
     wpp_new_name = str(opts.get("wpp_new_name") or "")
     wpp_suffix = str(opts.get("wpp_suffix") or "")
+    # {source port: destination port}. Only cross-box actions can carry one —
+    # a same-box clone shares the chassis, so a rewrite there would move the
+    # copy to a different network than the original for no stated reason.
+    iface_map = opts.get("iface_map") or {}
+    if not isinstance(iface_map, dict):
+        iface_map = {}
     rec = {"policy": policy, "action": action, "ok": False, "error": "",
            "detail": {}}
     try:
@@ -293,7 +315,8 @@ def perform_one(action: str, *, source_appl, dest_appl=None, policy: str,
             items = clone_policy(planner, _ops(dest_appl), policy,
                                  new_name=new_name or policy, dry_run=dry_run,
                                  vip_ip=vip_ip, copy_wpp=copy_wpp,
-                                 wpp_new_name=wpp_new_name, wpp_suffix=wpp_suffix)
+                                 wpp_new_name=wpp_new_name, wpp_suffix=wpp_suffix,
+                                 iface_map=iface_map)
             summary = clone_summary(items)
             rec["ok"] = summary["failed"] == 0 and (dry_run or summary["created"] > 0
                                                     or summary["exists"] > 0)
@@ -301,7 +324,8 @@ def perform_one(action: str, *, source_appl, dest_appl=None, policy: str,
             rec["detail"] = {"summary": summary, "plan": clone.render_plan(items),
                              "dest": dest_appl.name, "new_name": new_name or policy,
                              "vip_ip": vip_ip, "copy_wpp": copy_wpp,
-                             "wpp_new_name": wpp_new_name, "clone": report}
+                             "wpp_new_name": wpp_new_name, "clone": report,
+                             "iface_map": dict(iface_map)}
             if summary["failed"]:
                 rec["error"] = "%s on %s" % (_failed_msg(report), dest_appl.name)
         elif action == "migrate_to":
@@ -309,7 +333,8 @@ def perform_one(action: str, *, source_appl, dest_appl=None, policy: str,
             out = migrate_policy(planner, _ops(dest_appl), _ops(source_appl),
                                  policy, new_name=new_name or policy, dry_run=dry_run,
                                  vip_ip=vip_ip, copy_wpp=copy_wpp,
-                                 wpp_new_name=wpp_new_name, wpp_suffix=wpp_suffix)
+                                 wpp_new_name=wpp_new_name, wpp_suffix=wpp_suffix,
+                                 iface_map=iface_map)
             rec["ok"] = out["ok"]
             report = clone.outcome(out["items"])
             rec["detail"] = {"summary": out["summary"],
@@ -318,7 +343,8 @@ def perform_one(action: str, *, source_appl, dest_appl=None, policy: str,
                              "vip_ip": vip_ip, "copy_wpp": copy_wpp,
                              "wpp_new_name": wpp_new_name,
                              "source_disabled": out["source_disabled"],
-                             "clone": report}
+                             "clone": report,
+                             "iface_map": dict(iface_map)}
             if not out["ok"]:
                 rec["error"] = ("%s — source left live" % _failed_msg(report)
                                 if report["failed"] else "clone failed — source left live")
@@ -349,6 +375,214 @@ def _wpp_diff(src: dict, dst: dict) -> list[str]:
     a, b = sanitize_payload(dict(src or {})), sanitize_payload(dict(dst or {}))
     keys = sorted(set(a) | set(b))
     return [k for k in keys if a.get(k) != b.get(k) and k != "name"]
+
+
+def _same_chassis(a, b) -> bool:
+    """Are two appliance ROWS the same physical device?
+
+    Degrades to False on anything unresolvable: a false "same chassis" would
+    put a warning on an ordinary cross-device migrate, and a warning that
+    fires on the normal case is one operators learn to ignore."""
+    try:
+        from ..models import chassis_key
+    except Exception:  # noqa: BLE001 — unit tests drive this with fakes
+        return False
+    ka, kb = chassis_key(a), chassis_key(b)
+    return bool(ka) and ka == kb
+
+
+def _live_interfaces(reader) -> list[dict] | None:
+    """The destination's ``system/interface`` rows, or ``None`` when the device
+    could not be read.
+
+    ``None`` and ``[]`` mean opposite things and the caller branches on that:
+    ``[]`` is a device that answered and has no ports (every binding is
+    missing → block), ``None`` is a device that did not answer (nothing is
+    known → warn). Returning ``[]`` for both is how an unreachable destination
+    would masquerade as a definitively broken one."""
+    try:
+        rows, err = reader.client.list_with_error("/api/v2.0/cmdb/system/interface")
+    except Exception:  # noqa: BLE001
+        return None
+    if err:
+        return None
+    return [r for r in (rows or []) if isinstance(r, dict)]
+
+
+def _iface_name(row: dict) -> str:
+    return str(row.get("name") or row.get("mkey") or "").strip()
+
+
+def _documented_roles(appl) -> dict[str, dict]:
+    """``{port name: {role, role_label, segment, ip}}`` from the OPERATOR's
+    documentation (``ApplianceInterface``), not from the device.
+
+    Resolved across the whole CHASSIS, not just this row. Ports are physical:
+    verified live on fortiweb09, ``system/interface`` returns the identical
+    four ports from all four of its ADOMs. Documentation is stored per ROW, so
+    reading only ``appl.id`` reports every ADOM sibling as undeclared while the
+    operator had already declared those exact ports on the chassis' first row
+    — a warning produced by the data model, not by the network.
+
+    The row's OWN entries win a name collision: a per-ADOM override is a
+    deliberate statement and a sibling's value must not silently replace it.
+
+    Empty dict when nothing was documented anywhere — an absent declaration is
+    reported as such and never inferred from the live row, because the live row
+    carries no purpose to infer from."""
+    try:
+        from ..models import (ApplianceInterface, interface_role_label,
+                              chassis_siblings)
+    except Exception:  # noqa: BLE001 — unit tests drive this with fakes
+        return {}
+    try:
+        ids = [s.id for s in chassis_siblings(appl)] or [appl.id]
+        # Own row LAST so its entries overwrite a sibling's on the same name.
+        ids = [i for i in ids if i != appl.id] + [appl.id]
+        order = {i: n for n, i in enumerate(ids)}
+        rows = (ApplianceInterface.query
+                .filter(ApplianceInterface.appliance_id.in_(ids)).all())
+        rows.sort(key=lambda r: order.get(r.appliance_id, 0))
+    except Exception:  # noqa: BLE001 — no app context / no table yet
+        return {}
+    out: dict[str, dict] = {}
+    for r in rows:
+        nm = (r.name or "").strip()
+        if not nm:
+            continue
+        out[nm] = {"role": r.role or "unspecified",
+                   "role_label": interface_role_label(r.role),
+                   "segment": (r.segment or ""),
+                   "ip": (r.ip_address or "")}
+    return out
+
+
+def _iface_gate(refs, *, cross_box, dest_name, dest_ifaces, src_roles, dst_roles,
+                chosen: dict[str, str] | None = None):
+    """Interface decision for the clone/migrate pre-flight.
+
+    ``refs`` are the ``system/interface`` bindings the planned tree carries
+    (``clone.interface_refs``). Returns ``(check, suggest)``.
+
+    The rule this encodes: **a port name is not portable.** The REST create
+    happily accepts ``interface: port3`` on the destination as long as a
+    ``port3`` exists there, and it does on almost every FortiWeb — so the
+    dangerous outcome is not the failed clone, it is the SUCCESSFUL one that
+    lands the copy on the wrong network. Hence three distinct levels:
+
+      * name absent at the destination      → **block**  (loud, recoverable)
+      * name present, roles disagree        → **warn**   (silent risk, named)
+      * name present, roles agree & declared→ **ok**
+
+    A same-box clone shares the chassis, so the port means what it meant."""
+    suggest: dict[str, Any] = {"interfaces": [], "dest_interfaces": []}
+    wanted = sorted({str(r["interface"]) for r in refs})
+    if dest_ifaces is not None:
+        suggest["dest_interfaces"] = [
+            {"name": _iface_name(row),
+             "ip": str(row.get("ip") or "").split(" ")[0],
+             "status": str(row.get("status") or ""),
+             "role": (dst_roles.get(_iface_name(row)) or {}).get("role", "unspecified"),
+             "role_label": (dst_roles.get(_iface_name(row)) or {}).get(
+                 "role_label", "Not declared"),
+             "segment": (dst_roles.get(_iface_name(row)) or {}).get("segment", "")}
+            for row in dest_ifaces if _iface_name(row)
+        ]
+    # "nothing to check" is reported as such, never folded into the success
+    # wording below. Both are level ok; only one of them is a measurement, and
+    # a checklist that says "Interfaces resolve on fwb2" when it looked at zero
+    # bindings is asserting something it never verified.
+    if not wanted:
+        return ({"key": "iface", "level": "ok",
+                 "label": "No interface binding in the tree",
+                 "detail": "nothing names a system/interface — the copy inherits "
+                           "whatever the destination's VIP defaults to"}, suggest)
+
+    chosen = chosen or {}
+    # What each source port maps to at the destination (operator override, or
+    # the same name carried over — which is what happens with no override).
+    for name in wanted:
+        target = (chosen.get(name) or "").strip() or name
+        src_doc = src_roles.get(name) or {}
+        dst_doc = dst_roles.get(target) or {}
+        fields = sorted({r["field"] for r in refs if r["interface"] == name})
+        suggest["interfaces"].append({
+            "source": name, "target": target, "fields": fields,
+            "source_role": src_doc.get("role", "unspecified"),
+            "source_role_label": src_doc.get("role_label", "Not declared"),
+            "source_segment": src_doc.get("segment", ""),
+            "target_role": dst_doc.get("role", "unspecified"),
+            "target_role_label": dst_doc.get("role_label", "Not declared"),
+            "target_segment": dst_doc.get("segment", ""),
+        })
+
+    if not cross_box:
+        return ({"key": "iface", "level": "ok",
+                 "label": "Interfaces: same chassis",
+                 "detail": "the copy keeps %s — a same-box clone cannot land on a "
+                           "different network" % ", ".join(wanted)}, suggest)
+
+    if dest_ifaces is None:
+        return ({"key": "iface", "level": "warn",
+                 "label": "Interfaces on %s could NOT be verified" % dest_name,
+                 "detail": "the tree binds %s and the destination did not answer "
+                           "system/interface — this is 'not measured', not 'fine'"
+                           % ", ".join(wanted)}, suggest)
+
+    present = {_iface_name(r) for r in dest_ifaces if _iface_name(r)}
+    missing = [m["target"] for m in suggest["interfaces"] if m["target"] not in present]
+    if missing:
+        return ({"key": "iface", "level": "block",
+                 "label": "Interface %s does not exist on %s"
+                          % (", ".join(sorted(set(missing))), dest_name),
+                 "detail": "the VIP/policy would be created bound to a port the "
+                           "destination does not have. Pick an existing port below, "
+                           "or create it on %s first. Present: %s"
+                           % (dest_name, ", ".join(sorted(present)) or "(none)")},
+                suggest)
+
+    # Every name resolves. Now the part a name can never prove.
+    undeclared, mismatched = [], []
+    for m in suggest["interfaces"]:
+        s_role, t_role = m["source_role"], m["target_role"]
+        if s_role == "unspecified" or t_role == "unspecified":
+            undeclared.append(m)
+        elif s_role != t_role:
+            mismatched.append(m)
+    if mismatched:
+        bits = ["%s (%s) → %s (%s)" % (m["source"], m["source_role_label"],
+                                       m["target"], m["target_role_label"])
+                for m in mismatched]
+        return ({"key": "iface", "level": "warn",
+                 "label": "Interface ROLE differs at %s" % dest_name,
+                 "detail": "; ".join(bits) + " — the port exists and the clone will "
+                           "succeed, but it is documented as carrying different "
+                           "traffic. Verify before cutover."}, suggest)
+    if undeclared:
+        bits = ["%s → %s" % (m["source"], m["target"]) for m in undeclared]
+        return ({"key": "iface", "level": "warn",
+                 "label": "Interface exists on %s — purpose NOT declared" % dest_name,
+                 "detail": "; ".join(bits) + " — a matching port NAME proves the "
+                           "create will succeed, not that it is the same network. "
+                           "Set the role on both devices (Appliances → Edit → "
+                           "Interfaces) to turn this into a real check."}, suggest)
+    same_seg = all((m["source_segment"] or "") == (m["target_segment"] or "")
+                   or not (m["source_segment"] and m["target_segment"])
+                   for m in suggest["interfaces"])
+    bits = ["%s → %s (%s)" % (m["source"], m["target"], m["target_role_label"])
+            for m in suggest["interfaces"]]
+    if not same_seg:
+        return ({"key": "iface", "level": "warn",
+                 "label": "Interface roles match, SEGMENT differs",
+                 "detail": "; ".join(
+                     "%s on %s → %s on %s" % (m["source"], m["source_segment"],
+                                              m["target"], m["target_segment"])
+                     for m in suggest["interfaces"]
+                     if (m["source_segment"] or "") != (m["target_segment"] or ""))},
+                suggest)
+    return ({"key": "iface", "level": "ok",
+             "label": "Interfaces resolve on %s" % dest_name,
+             "detail": "; ".join(bits)}, suggest)
 
 
 def _source_gate(pol, src_name, *, live_ok, src_err, root_present, issues):
@@ -386,7 +620,8 @@ def preflight(action: str, *, source_appl, dest_appl=None, policies: list[str],
     Per policy: source present · destination reachable · target-name collision ·
     WPP present/identical/different at the destination (with the operator's
     choice when it differs) · VIP dummy-IP suggestion + address conflict ·
-    certificate carry-over · capacity headroom."""
+    certificate carry-over · INTERFACE bindings (present at the destination, and
+    whether the documented role agrees) · capacity headroom."""
     from ..clients.fortiweb import FortiWebClient
     from . import clone_rules, read_layer
     opts = opts or {}
@@ -417,6 +652,15 @@ def preflight(action: str, *, source_appl, dest_appl=None, policies: list[str],
     except Exception as exc:  # noqa: BLE001
         dest_live, dest_err = False, str(exc)
     dest_vip_ips = {str(v.get("vip") or "").split("/")[0] for v in dest_vips}
+
+    # Destination INTERFACE inventory — one read, reused by every policy.
+    # ``dest_ifaces is None`` means "could not be read", which is NOT the same
+    # as "the destination has no ports": the first must degrade to a warn, the
+    # second is a hard block. Collapsing them into an empty list would turn an
+    # unreadable device into a wall of false blocks.
+    dest_ifaces = _live_interfaces(dst_reader)
+    src_roles = _documented_roles(source_appl)
+    dst_roles = _documented_roles(dest)
 
     def _dest_has(logical: str, mkey: str) -> dict | None:
         """Object at the destination — live first, cache fallback when the
@@ -464,6 +708,24 @@ def preflight(action: str, *, source_appl, dest_appl=None, policies: list[str],
         policy_obj = dict(root_item.payload) if (root_item and root_item.payload) else {}
         # cached composite is used ONLY for the (non-blocking) VIP/WPP hints below.
         data, _cr, _meta = read_layer.policy_full_cached(source_appl.id, pol)
+        # 1b) SAME CHASSIS, different ADOM. ``cross_box`` only means "a
+        #     different appliance ROW", and on a multi-ADOM device that is not
+        #     a different box. The distinction matters most for MIGRATE, whose
+        #     whole promise is "the traffic now lands somewhere else": between
+        #     two ADOMs of one chassis it lands on the same CPU, the same
+        #     ports and the same failure domain, and the source is disabled
+        #     anyway. Warn, never block — moving a policy between ADOMs of one
+        #     box is a legitimate operation, just not the one the button's
+        #     name implies.
+        if cross_box and _same_chassis(source_appl, dest):
+            add("chassis", "warn",
+                "%s and %s are the SAME physical device (%s)"
+                % (source_appl.name, dest.name, source_appl.host),
+                "different ADOMs on one chassis — this %s does not move the "
+                "policy off the hardware, and the capacity, ports and outage "
+                "domain are shared. Verified live: interfaces and VIPs are "
+                "identical across ADOMs; only policies are partitioned."
+                % ("migration" if action == "migrate_to" else "clone"))
         # 2) destination reachability
         if cross_box:
             add("dest", "ok" if dest_live else "warn",
@@ -554,7 +816,20 @@ def preflight(action: str, *, source_appl, dest_appl=None, policies: list[str],
             add("certs", "warn", "Policy uses TLS certificates",
                 "certificate key material can NOT move over REST — upload it on %s "
                 "via SSH/Certificates before cutover" % dest.name)
-        # 7) capacity at the destination
+        # 7) INTERFACE bindings — read off the PLANNED tree, not the cached
+        #    composite: the cache describes the policy as it stands on the
+        #    source, while the plan is what is about to be written (already
+        #    renamed, already WPP-pruned). Checking the cache would validate a
+        #    payload nobody is going to send.
+        iface_chk, iface_suggest = _iface_gate(
+            clone.interface_refs(items) if (live_ok and items) else [],
+            cross_box=cross_box, dest_name=dest.name, dest_ifaces=dest_ifaces,
+            src_roles=src_roles, dst_roles=dst_roles,
+            chosen=(opts.get("iface_map") if isinstance(opts.get("iface_map"), dict)
+                    else None))
+        checks.append(iface_chk)
+        suggest.update(iface_suggest)
+        # 8) capacity at the destination
         try:
             from . import capacity
             allowed, msg = capacity.check_headroom(dest, "server_policy", want=1)

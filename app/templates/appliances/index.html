@@ -334,6 +334,27 @@
               <label class="fw-form-label">{{ _('Shared VIP address') }}</label>
               <input type="text" class="form-control fw-form-control" name="ha_vip" placeholder="192.0.2.50">
             </div>
+            <div class="col-12"><hr class="my-1"></div>
+            <div class="col-12 d-flex justify-content-between align-items-center">
+              <label class="fw-form-label mb-0"><i class="bi bi-ethernet me-1"></i>{{ _('Interfaces — what each port is FOR') }}</label>
+              <button type="button" class="btn btn-sm btn-fw-outline" id="addIfBtnNew"><i class="bi bi-plus-lg me-1"></i>{{ _('Add interface') }}</button>
+            </div>
+            <div class="col-12">
+              <div class="table-responsive">
+                <table class="table table-sm align-middle mb-1" id="ifTableNew">
+                  <thead><tr>
+                    <th style="min-width:110px;">{{ _('Interface') }}</th>
+                    <th style="min-width:190px;">{{ _('Role (what it is for)') }}</th>
+                    <th style="min-width:150px;">{{ _('Network / segment') }}</th>
+                    <th style="min-width:120px;">IP</th>
+                    <th>{{ _('Notes') }}</th>
+                    <th style="width:38px;"></th>
+                  </tr></thead>
+                  <tbody id="ifBodyNew"></tbody>
+                </table>
+              </div>
+              <div class="form-text">{{ _('Optional at registration and editable later, but declaring the role here is what lets a clone or migrate verify the destination instead of guessing. Media type and “connected to” are on the edit page; a Rediscovery fills name/type/IP but never the role — the device does not model one.') }}</div>
+            </div>
           </div>
         </div>
         <div class="modal-footer">
@@ -446,6 +467,34 @@
 
 {% block scripts %}
 <script nonce="{{ csp_nonce }}">
+// Interface rows in the Add-Appliance modal. The role list is rendered FROM the
+// server vocabulary (never re-typed): the same list the save path validates
+// against is the only one that may be offered.
+var IF_ROLES = {{ interface_roles | tojson }};
+var IF_ROLE_OPTIONS = IF_ROLES.map(function (r) {
+  return '<option value="' + r[0] + '">' + r[1] + '</option>';
+}).join('');
+(function () {
+  var body = document.getElementById('ifBodyNew');
+  var addBtn = document.getElementById('addIfBtnNew');
+  if (!body || !addBtn) return;
+  function blankRow() {
+    var tr = document.createElement('tr');
+    tr.innerHTML =
+      '<td><input type="text" name="if_name" class="form-control form-control-sm" placeholder="port1"></td>' +
+      '<td><select name="if_role" class="form-select form-select-sm">' + IF_ROLE_OPTIONS + '</select></td>' +
+      '<td><input type="text" name="if_segment" class="form-control form-control-sm" placeholder="DMZ / VLAN 20"></td>' +
+      '<td><input type="text" name="if_ip" class="form-control form-control-sm" placeholder="192.0.2.1"></td>' +
+      '<td><input type="text" name="if_notes" class="form-control form-control-sm"></td>' +
+      '<td><button type="button" class="btn btn-sm btn-outline-danger if-del" title="Remove row"><i class="bi bi-trash"></i></button></td>';
+    return tr;
+  }
+  addBtn.addEventListener('click', function () { body.appendChild(blankRow()); });
+  body.addEventListener('click', function (e) {
+    var btn = e.target.closest('.if-del');
+    if (btn) btn.closest('tr').remove();
+  });
+})();
 function toggleHA(scope) {
   const cb = document.getElementById(scope + '_is_cluster');
   const on = !!(cb && cb.checked);

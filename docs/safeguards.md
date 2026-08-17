@@ -9381,3 +9381,76 @@ The three shapes, and the guard for each:
 **42 mutations, 42 bite** (`/var/tmp/mut_tools.py`, measured by rc; only
 `rc == 1` is a failure, every mutation restored in `finally`, baseline re-run
 after restore).
+
+## §96 — a verification that cannot see the failure is not a verification (`tests/test_route_audit.py`)
+
+On 2026-08-17 the standby node `satom-node-2` returned HTTP 500 on **every
+authenticated page for about fifteen hours**, and every check the system ran
+said it was fine. That combination — total failure, unanimous green — is the
+thing this section exists to prevent, and it is worth being precise about how
+it happened, because none of the three components was broken.
+
+The self-update advanced the code on disk and did **not** restart the workers,
+because the runner's standby branch was written around the premise *"the app
+cannot run on a read-only replica, so it is stopped"*. That premise was true of
+a cold standby. It was false of this one: `satom.service` was `enabled`,
+`active`, and published at `https://satom-node-2.example.net/`. So the
+workers kept serving with the `url_map` they had built days earlier, while
+`base.html` — freshly pulled — called `url_for('bookmarks.panel')` for a
+blueprint that process had never registered. `BuildError`, i.e. 500, on every
+page that extends the base layout, which is all of them.
+
+Then both validations passed, and both had to:
+
+* **`import app` runs in a fresh interpreter.** It loads the new code from
+  disk. It is therefore green *precisely* when the running workers are stale —
+  the check is anti-correlated with the failure it is supposed to catch.
+* **`GET /healthz` renders no template.** A `BuildError` cannot reach it. The
+  probe answered 200 truthfully; it simply has no opinion about the pages.
+
+The update wrote `"restart services": ok — "scheduler only (standby; app stays
+stopped)"` and finished `success`. Everything reported what it measured. What
+nothing measured was whether a page could be served.
+
+**Three rules come out of this.**
+
+1. **Restore the state you found, not the state the role implies.**
+   `restart_and_validate()` asks systemd (`_svc_active`) what the node was
+   doing *before* the update touches anything, and puts it back that way: a
+   standby that serves traffic gets its workers restarted and validated over
+   HTTP; a standby that was deliberately stopped stays stopped and is validated
+   by import. The snapshot is taken before the first restart — taken after, it
+   would report the state the updater itself just created, and the check would
+   be circular. A guard asserts this ordering in all three update entrypoints.
+
+2. **A gate must be able to fail for the reason you care about.** `route_audit`
+   resolves every literal `url_for()` in all 171 templates against the real
+   `url_map` — 910 references, the check the other two structurally cannot
+   perform. Pointed at a `url_map` with the `bookmarks` blueprint removed it
+   reproduces the incident exactly, naming `bookmarks.panel` at `base.html:985`
+   — the line from the production traceback — plus four sibling references the
+   log never got far enough to show.
+
+3. **"Could not check" is not "checked and clean".** The audit has three exit
+   codes, and the runner reads its *output*, not just its return code. This is
+   not hypothetical caution: the first live run of the helper returned `rc=1`
+   because `runuser` refused to start it, and the caller reported *"the
+   templates are broken"* — a message that would have rolled a perfectly
+   healthy update back. Only the audit's own markers (`templates=` / `MISSING `)
+   promote a result out of `unmeasured`, and `unmeasured` logs a failed step
+   without triggering a rollback.
+
+Scope, stated so it is not mistaken for more: this reads **templates**. A
+`url_for` written in Python raises on the code path that runs it, which the
+suite exercises. Endpoints built from a variable (6 of them) cannot be resolved
+statically and are counted and reported as `dynamic`, never silently dropped;
+blueprint-relative `url_for('.view')` likewise, since it resolves against
+whichever blueprint renders it.
+
+**20 mutations, 20 bite** (`/var/tmp/mut_routeaudit.py`, measured by rc; only
+`rc == 1` is a failure, every mutation restored in `finally`, baseline re-run
+after restore). Two of them are the incident itself: making the restart
+conditional on the role again, and letting an unmeasurable audit roll a healthy
+update back. One guard was **rejected as weak on the first pass** — the cwd-leak
+test ran from the app root, so the `chdir` it was checking was a no-op and the
+test proved nothing; it now starts from a different directory.

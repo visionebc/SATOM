@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Security · Added · Changed · Fixed · 66 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Security · Added · Changed · Fixed · 68 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Security · Added · Changed · Fixed · 66 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Security · Added · Changed · Fixed · 68 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,8 +59,8 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Security · Added · Changed · Fixed · 66 entries</span>
-        <ul class="rel-leads"><li>A saved link bookmark can no longer carry a javascript: URL</li><li>Three tools that know something a browser tab does not: a certificate inspector, a false-positive explainer and a three-leg transaction tracer</li><li>The reconcile page and the firmware-line API matrix are documented, and the manual no longer stops at section 30.3</li><li class="rel-more">… and 63 more</li></ul>
+        <span class="rel-nav-meta">unreleased · Security · Added · Changed · Fixed · 68 entries</span>
+        <ul class="rel-leads"><li>A saved link bookmark can no longer carry a javascript: URL</li><li>Three tools that know something a browser tab does not: a certificate inspector, a false-positive explainer and a three-leg transaction tracer</li><li>The reconcile page and the firmware-line API matrix are documented, and the manual no longer stops at section 30.3</li><li class="rel-more">… and 65 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v1.9.3.html" data-rel-version="1.9.3">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 1.9.3</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
@@ -887,6 +887,32 @@
 </ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
+<li>
+<p><strong>A standby that serves traffic is now restarted by an update, instead of
+  being left running the previous release's routing table.</strong> The updater's
+  standby path was built on the premise that the application is stopped on a
+  read-only replica, so it restarted only the scheduler and validated with
+  <code>import app</code>. On a standby that is enabled, active and published, that left
+  the workers holding a <code>url_map</code> older than the templates on disk: a layout
+  calling <code>url_for()</code> for a blueprint the process never registered raises
+  <code>BuildError</code>, so <strong>every authenticated page returned HTTP 500</strong> — for about
+  fifteen hours, while the update reported success. Both existing checks were
+  structurally incapable of seeing it: <code>import app</code> runs in a fresh interpreter
+  (green exactly when the workers are stale) and <code>/healthz</code> renders no
+  template. The runner now asks systemd what the node was actually doing before
+  it touches anything and restores that state, validating over HTTP whenever
+  the application was running — on a standby too. A node that was deliberately
+  stopped still stays stopped.</p>
+</li>
+<li>
+<p><strong>A template that references an endpoint which does not exist now fails the
+  update instead of the page.</strong> A new route audit resolves every literal
+  <code>url_for()</code> in the templates against the real URL map, and runs as a gate on
+  every code, package and library update. Because "the check could not run" and
+  "the check found a problem" are different facts, the audit reports three
+  outcomes: a failure to even start it is recorded as unmeasured and does not
+  roll a healthy update back.</p>
+</li>
 <li>
 <p><strong>Regex Lab now names the engine that judged the pattern, and flags where it disagrees with the appliance.</strong> The modal footer claimed "Tested server-side against a PCRE-compatible engine — matches FortiWeb &amp; FortiADC"; the lab in fact judges with Python <code>re</code>, so a pattern using <code>\p{L}</code>, <code>\K</code>, <code>\z</code>, <code>(?R)</code> or PCRE-style <code>(?&lt;name&gt;)</code> was reported INVALID for a pattern the appliance accepts. Every verdict (match, rewrite, invalid and empty) now carries an <code>engine</code> block plus a <code>divergences</code> list, rendered under the verdict. The flavor note warning that possessive quantifiers and atomic groups "aren't supported in this tester" was also stale — Python 3.11 added both. The engine caveat is pinned to the head of <code>guide_notes</code>, because <code>(harvested + base)[:10]</code> used to truncate it away on FortiWeb.</p>
 </li>

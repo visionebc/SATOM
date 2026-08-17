@@ -260,6 +260,77 @@ def flight(kind, label):
         return False, "flight(%s) error: %s" % (kind, exc)
 
 
+def route_audit_ok():
+    """Every ``url_for()`` endpoint written in a template exists in the url_map.
+
+    Neither existing gate can see this class of failure: ``import app`` only
+    proves the modules parse, and ``/healthz`` renders no template. A template
+    naming an endpoint that is not registered raises BuildError -- HTTP 500 --
+    at request time, on the page, for a user.
+
+    Returns (status, detail) where status is "ok", "missing" or "unmeasured".
+    "unmeasured" is deliberately NOT "ok": a check that could not run has found
+    nothing, which is not the same as having found nothing wrong.
+    """
+    try:
+        r = run([str(VENV / "python"), "-m", "app.services.route_audit"],
+                timeout=180, user=APP_USER, cwd=str(APP))
+        out = (r.stdout or "")
+        detail = (out + (r.stderr or "")).strip()
+        # Read the OUTPUT, not just the return code. A non-zero rc from a
+        # failure to even start the check (runuser denied, venv missing,
+        # import error) is indistinguishable from a real finding by rc alone,
+        # and reporting 'the templates are broken' for 'the check could not
+        # run' would roll a healthy update back. Only the audit's own markers
+        # promote a result out of "unmeasured".
+        if r.returncode == 0 and out.startswith("templates="):
+            return "ok", detail
+        if r.returncode == 1 and "MISSING " in out:
+            return "missing", detail
+        return "unmeasured", detail
+    except Exception as exc:  # noqa: BLE001
+        return "unmeasured", str(exc)
+
+
+def restart_and_validate(st, is_standby, app_was_active, label):
+    """Restart what was ACTUALLY running, then prove the new code serves.
+
+    The standby branch used to be 'never restart the app -- it cannot run on a
+    read-only replica'. That premise was false on a standby that serves
+    traffic: on 2026-08-17 satom-node-2 was enabled, active and published, so
+    the code on disk advanced while the workers kept the previous url_map.
+    Every authenticated page returned 500 for ~15 hours and the update still
+    reported SUCCESS -- because ``import app`` runs in a FRESH interpreter (it
+    is green precisely when the running workers are stale) and ``/healthz``
+    renders no template (blind to a BuildError by construction).
+
+    So: ask systemd what state the node was in, restore that state, and
+    validate with the strongest check that state allows.
+    """
+    subprocess.run(["systemctl", "restart", SCHED], timeout=60)
+    if app_was_active:
+        subprocess.run(["systemctl", "restart", SERVICE], timeout=120)
+        st.step("restart services", True, "%s + scheduler%s"
+                % (SERVICE, " (standby serving traffic)" if is_standby else ""))
+        if not health_ok():
+            raise RuntimeError("health check did not return 200 within %ds"
+                               % HEALTH_TIMEOUT)
+        st.step("health check", True, "200 OK on %s" % label)
+    else:
+        ok, detail = import_smoke_ok()
+        if not ok:
+            raise RuntimeError("import smoke failed: %s" % detail[:300])
+        st.step("restart services", True,
+                "scheduler only (%s was not running before the update)" % SERVICE)
+        st.step("import smoke", True, "new code imports on %s" % label)
+
+    status, detail = route_audit_ok()
+    if status == "missing":
+        raise RuntimeError("route audit: template references an endpoint that "
+                           "does not exist: %s" % detail[:400])
+    st.step("route audit", status == "ok", detail[:300] if detail else status)
+
+
 def preserve_local_commits(target, snapshot, st):
     """Park commits that exist here but not on *target* under ``refs/backup/``
     before a destructive reset, plus any uncommitted worktree state.
@@ -384,6 +455,10 @@ def process(req_path):
     # updates code-only (no migration, no app restart, import-smoke validation).
     role = req.get("role") or ("standby" if pg_in_recovery() else "primary")
     is_standby = (role == "standby")
+    # Snapshot what the node is ACTUALLY doing, before anything is touched.
+    # The restart step restores this state instead of the state the role
+    # implies -- see restart_and_validate().
+    app_was_active = _svc_active(SERVICE) == "active"
     st.step("ha role", True, role)
 
     # PRE-FLIGHT: health baseline before we touch anything (primary only — the
@@ -494,16 +569,11 @@ def process(req_path):
             # Never fail an update because the console tool did not refresh.
             st.step("refresh operator CLI", False, str(exc)[:200])
 
+        new = git("rev-parse", "HEAD").stdout.strip()
+        restart_and_validate(st, is_standby, app_was_active,
+                             "revision %s" % new[:12])
+
         if is_standby:
-            # Do NOT start the app (gunicorn crashes on a read-only replica).
-            # The scheduler guard idle-waits; a restart just reloads its code.
-            subprocess.run(["systemctl", "restart", SCHED], timeout=60)
-            st.step("restart services", True, "scheduler only (standby; app stays stopped)")
-            ok, detail = import_smoke_ok()
-            if not ok:
-                raise RuntimeError("import smoke failed: %s" % detail[:300])
-            new = git("rev-parse", "HEAD").stdout.strip()
-            st.step("import smoke", True, "new code imports on revision %s" % new[:12])
             # Unlock the primary: write the validated marker into the PRIMARY's
             # read-write DB (our own replica is read-only). Best-effort — a failed
             # marker write doesn't fail the standby update, but it IS the seguro.
@@ -513,15 +583,6 @@ def process(req_path):
             st.finish("success", result_sha=new, rolled_back=False, standby=True,
                       validated_on_primary=mok)
             return
-
-        subprocess.run(["systemctl", "restart", SERVICE], timeout=120)
-        subprocess.run(["systemctl", "restart", SCHED], timeout=60)
-        st.step("restart services", True, "%s + scheduler" % SERVICE)
-
-        if not health_ok():
-            raise RuntimeError("health check did not return 200 within %ds" % HEALTH_TIMEOUT)
-        new = git("rev-parse", "HEAD").stdout.strip()
-        st.step("health check", True, "200 OK on new revision %s" % new[:12])
         # POST-FLIGHT: compare the after-state against the preflight baseline.
         # Non-fatal: the health gate above already passed; this surfaces device /
         # replication / cert deltas the bare health check can't see.
@@ -540,7 +601,7 @@ def process(req_path):
                 run([str(VENV / "pip"), "install", "-q", "-r",
                      str(APP / "requirements.txt")], timeout=900, user=APP_USER)
             subprocess.run(["systemctl", "restart", SCHED], timeout=60)
-            if is_standby:
+            if not app_was_active:
                 ok, _ = import_smoke_ok()
             else:
                 subprocess.run(["systemctl", "restart", SERVICE], timeout=120)
@@ -680,6 +741,8 @@ def pip_change(req_path):
     st.step("validate", True, "%s -> %s (%s)" % (pkg, version, action))
 
     role = req.get("role") or ("standby" if pg_in_recovery() else "primary")
+    is_standby = (role == "standby")
+    app_was_active = _svc_active(SERVICE) == "active"
     previous = _installed_version(pkg)
     st.step("snapshot installed version", True, "%s==%s" % (pkg, previous or "(absent)"))
     if previous == version:
@@ -701,12 +764,8 @@ def pip_change(req_path):
             raise RuntimeError("import smoke failed: %s" % detail[:200])
 
         # Reload the running workers so the new lib is actually loaded.
-        subprocess.run(["systemctl", "restart", SERVICE], timeout=120)
-        subprocess.run(["systemctl", "restart", SCHED], timeout=60)
-        st.step("restart services", True, "%s + scheduler" % SERVICE)
-        if not health_ok():
-            raise RuntimeError("health check did not return 200 within %ds" % HEALTH_TIMEOUT)
-        st.step("health check", True, "200 OK with %s==%s" % (pkg, version))
+        restart_and_validate(st, is_standby, app_was_active,
+                             "%s==%s" % (pkg, version))
 
         _record_lib_version(pkg, previous, version, action, by)
 
@@ -881,6 +940,10 @@ def package_change(req_path):
     freeze = None
     role = req.get("role") or ("standby" if pg_in_recovery() else "primary")
     is_standby = (role == "standby")
+    # Snapshot what the node is ACTUALLY doing, before anything is touched.
+    # The restart step restores this state instead of the state the role
+    # implies -- see restart_and_validate().
+    app_was_active = _svc_active(SERVICE) == "active"
 
     try:
         # -- 0. is this runner allowed to make a trust decision at all? ------
@@ -1047,20 +1110,8 @@ def package_change(req_path):
                         (cr.stdout or cr.stderr or "").strip()[-200:])
 
         # -- 10. restart and prove it works ----------------------------------
-        if is_standby:
-            subprocess.run(["systemctl", "restart", SCHED], timeout=60)
-            ok, detail = import_smoke_ok()
-            if not ok:
-                raise RuntimeError("import smoke failed: %s" % detail[:300])
-            st.step("import smoke", True, "new code imports on version %s" % new)
-        else:
-            subprocess.run(["systemctl", "restart", SERVICE], timeout=120)
-            subprocess.run(["systemctl", "restart", SCHED], timeout=60)
-            st.step("restart services", True, "%s + scheduler" % SERVICE)
-            if not health_ok():
-                raise RuntimeError("health check did not return 200 within %ds"
-                                   % HEALTH_TIMEOUT)
-            st.step("health check", True, "200 OK on version %s" % new)
+        restart_and_validate(st, is_standby, app_was_active,
+                             "version %s" % new)
 
         # -- 11. record what is deployed -------------------------------------
         # Without a commit the tree stays permanently dirty, `satom diagnose
@@ -1108,7 +1159,7 @@ def package_change(req_path):
                     timeout=1800, user=APP_USER)
             _chown_tree()
             subprocess.run(["systemctl", "restart", SCHED], timeout=60)
-            if is_standby:
+            if not app_was_active:
                 ok, _ = import_smoke_ok()
             else:
                 subprocess.run(["systemctl", "restart", SERVICE], timeout=120)

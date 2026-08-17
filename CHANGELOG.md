@@ -690,6 +690,31 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   updates a ticket instead of opening a second one for the same window.
 
 ### Fixed
+
+- **A standby that serves traffic is now restarted by an update, instead of
+  being left running the previous release's routing table.** The updater's
+  standby path was built on the premise that the application is stopped on a
+  read-only replica, so it restarted only the scheduler and validated with
+  `import app`. On a standby that is enabled, active and published, that left
+  the workers holding a `url_map` older than the templates on disk: a layout
+  calling `url_for()` for a blueprint the process never registered raises
+  `BuildError`, so **every authenticated page returned HTTP 500** — for about
+  fifteen hours, while the update reported success. Both existing checks were
+  structurally incapable of seeing it: `import app` runs in a fresh interpreter
+  (green exactly when the workers are stale) and `/healthz` renders no
+  template. The runner now asks systemd what the node was actually doing before
+  it touches anything and restores that state, validating over HTTP whenever
+  the application was running — on a standby too. A node that was deliberately
+  stopped still stays stopped.
+
+- **A template that references an endpoint which does not exist now fails the
+  update instead of the page.** A new route audit resolves every literal
+  `url_for()` in the templates against the real URL map, and runs as a gate on
+  every code, package and library update. Because "the check could not run" and
+  "the check found a problem" are different facts, the audit reports three
+  outcomes: a failure to even start it is recorded as unmeasured and does not
+  roll a healthy update back.
+
 - **Regex Lab now names the engine that judged the pattern, and flags where it disagrees with the appliance.** The modal footer claimed "Tested server-side against a PCRE-compatible engine — matches FortiWeb & FortiADC"; the lab in fact judges with Python `re`, so a pattern using `\p{L}`, `\K`, `\z`, `(?R)` or PCRE-style `(?<name>)` was reported INVALID for a pattern the appliance accepts. Every verdict (match, rewrite, invalid and empty) now carries an `engine` block plus a `divergences` list, rendered under the verdict. The flavor note warning that possessive quantifiers and atomic groups "aren't supported in this tester" was also stale — Python 3.11 added both. The engine caveat is pinned to the head of `guide_notes`, because `(harvested + base)[:10]` used to truncate it away on FortiWeb.
 
 - **Renaming a classification value no longer orphans every row that used it.**

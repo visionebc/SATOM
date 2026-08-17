@@ -45,44 +45,49 @@
     wrap.innerHTML =
       '<div class="modal-dialog modal-xl modal-dialog-scrollable">' +
       '<div class="modal-content">' +
-      '<div class="modal-header">' +
-      '<h5 class="modal-title"><i class="bi bi-patch-check me-2"></i>Certificate inspector</h5>' +
-      '<button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>' +
-      '<div class="modal-body">' +
+      '<div class="modal-header py-2">' +
+      '<h6 class="modal-title mb-0"><i class="bi bi-patch-check me-1"></i>Certificate inspector' +
+      '<span class="text-muted small fw-normal ms-1">chain, expiry, hostname</span></h6>' +
+      '<button type="button" class="btn-close ms-auto" data-bs-dismiss="modal" aria-label="Close"></button></div>' +
+      '<div class="modal-body pt-2">' +
       '<ul class="nav nav-tabs mb-3" id="fw-ci-tabs">' +
-      '<li class="nav-item"><a class="nav-link active" href="#" data-ci-tab="paste">Paste PEM</a></li>' +
-      '<li class="nav-item"><a class="nav-link" href="#" data-ci-tab="probe">Probe a host</a></li>' +
+      '<li class="nav-item"><button class="nav-link active" type="button" data-ci-tab="paste">' +
+      '<i class="bi bi-clipboard me-1"></i>Paste PEM</button></li>' +
+      '<li class="nav-item"><button class="nav-link" type="button" data-ci-tab="probe">' +
+      '<i class="bi bi-broadcast me-1"></i>Probe a host</button></li>' +
       '</ul>' +
 
       '<div data-ci-pane="paste">' +
       '<div class="row g-2">' +
       '<div class="col-md-8">' +
-      '<label class="form-label small text-muted mb-1">Certificate / fullchain (PEM)</label>' +
-      '<textarea id="fw-ci-pem" class="form-control font-monospace" rows="7" ' +
+      '<label class="form-label small fw-bold mb-1">Certificate / fullchain (PEM)</label>' +
+      '<textarea id="fw-ci-pem" class="form-control form-control-sm font-monospace" rows="7" ' +
       'placeholder="-----BEGIN CERTIFICATE-----&#10;…"></textarea></div>' +
       '<div class="col-md-4">' +
-      '<label class="form-label small text-muted mb-1">Hostname to check (optional)</label>' +
-      '<input id="fw-ci-host" class="form-control" placeholder="shop.example.com">' +
-      '<label class="form-label small text-muted mb-1 mt-2">Private key (optional)</label>' +
-      '<textarea id="fw-ci-key" class="form-control font-monospace" rows="3" ' +
+      '<label class="form-label small fw-bold mb-1">Hostname to check' +
+      '<span class="text-muted fw-normal"> — optional</span></label>' +
+      '<input id="fw-ci-host" class="form-control form-control-sm" placeholder="shop.example.com">' +
+      '<label class="form-label small fw-bold mb-1 mt-2">Private key' +
+      '<span class="text-muted fw-normal"> — optional</span></label>' +
+      '<textarea id="fw-ci-key" class="form-control form-control-sm font-monospace" rows="3" ' +
       'placeholder="' + KEY_PEM_PLACEHOLDER + '"></textarea>' +
       '<div class="form-text">Checked in-process against the leaf. Never stored, never logged.</div>' +
       '</div></div>' +
-      '<div class="mt-2"><button class="fw-btn fw-btn-primary" id="fw-ci-run">' +
+      '<div class="mt-2"><button class="btn btn-sm btn-fw-primary" id="fw-ci-run">' +
       '<i class="bi bi-search me-1"></i>Inspect</button></div>' +
       '</div>' +
 
       '<div data-ci-pane="probe" style="display:none">' +
       '<div class="row g-2 align-items-end">' +
       '<div class="col-md-5">' +
-      '<label class="form-label small text-muted mb-1">Inventory destination</label>' +
-      '<select id="fw-ci-inv" class="form-select"></select></div>' +
+      '<label class="form-label small fw-bold mb-1">Inventory destination</label>' +
+      '<select id="fw-ci-inv" class="form-select form-select-sm"></select></div>' +
       '<div class="col-md-5">' +
-      '<label class="form-label small text-muted mb-1">…or a free target ' +
+      '<label class="form-label small fw-bold mb-1">…or a free target ' +
       '<span id="fw-ci-freelock" class="fw-badge fw-badge-secondary ms-1" style="display:none">permission required</span></label>' +
-      '<input id="fw-ci-free" class="form-control" placeholder="host:443 or https://host/path"></div>' +
+      '<input id="fw-ci-free" class="form-control form-control-sm" placeholder="host:443 or https://host/path"></div>' +
       '<div class="col-md-2">' +
-      '<button class="fw-btn fw-btn-primary w-100" id="fw-ci-probe"><i class="bi bi-broadcast me-1"></i>Probe</button>' +
+      '<button class="btn btn-sm btn-fw-primary w-100" id="fw-ci-probe"><i class="bi bi-broadcast me-1"></i>Probe</button>' +
       '</div></div>' +
       '<div class="form-text mt-1" id="fw-ci-probenote"></div>' +
       '</div>' +
@@ -221,7 +226,10 @@
       h += '<div class="alert alert-success py-2 small"><i class="bi bi-check-circle me-1"></i>' +
         'Nothing to report on ' + esc(d.count) + ' certificate(s).</div>';
     } else {
-      h += '<div class="fw-card p-0 mb-3"><div class="list-group list-group-flush">';
+      h += '<div class="fw-card">' +
+        '<div class="fw-card-header"><h6 class="fw-card-title">Findings</h6>' +
+        '<span class="fw-badge fw-badge-secondary">' + esc(fs.length) + '</span></div>' +
+        '<div class="fw-card-body p-0"><div class="list-group list-group-flush">';
       fs.forEach(f => {
         h += '<div class="list-group-item">' +
           '<div class="d-flex align-items-start gap-2">' +
@@ -231,15 +239,16 @@
           (f.fix ? '<div class="small mt-1"><i class="bi bi-wrench-adjustable me-1"></i>' + esc(f.fix) + '</div>' : '') +
           '</div></div></div>';
       });
-      h += '</div></div>';
+      h += '</div></div></div>';
     }
 
     (d.certificates || []).forEach((c, i) => {
       const role = i === 0 ? 'leaf' : (c.self_signed ? 'root' : 'intermediate');
-      h += '<div class="fw-card p-3 mb-2">' +
-        '<div class="d-flex justify-content-between align-items-center mb-2">' +
-        '<strong>' + esc(c.cn || c.subject_dn || ('certificate ' + (i + 1))) + '</strong>' +
+      h += '<div class="fw-card">' +
+        '<div class="fw-card-header">' +
+        '<h6 class="fw-card-title">' + esc(c.cn || c.subject_dn || ('certificate ' + (i + 1))) + '</h6>' +
         '<span class="fw-badge fw-badge-secondary">' + esc(role) + '</span></div>' +
+        '<div class="fw-card-body">' +
         kv('Subject', c.subject_dn, true) +
         kv('Issuer', c.issuer_dn, true) +
         kv('Valid', (c.not_before || '?') + '  →  ' + (c.not_after || '?')) +
@@ -249,11 +258,13 @@
         kv('Serial', c.serial, true) +
         kv('SHA-256', c.fingerprint_sha256, true) +
         ((c.sans && c.sans.length) ? kv('SAN', c.sans.join(', '), true) : '') +
-        '</div>';
+        '</div></div>';
     });
 
     if (d.links && d.links.length) {
-      h += '<div class="fw-card p-3 mb-2"><div class="fw-semibold mb-2">Link verification</div>';
+      h += '<div class="fw-card">' +
+        '<div class="fw-card-header"><h6 class="fw-card-title">Link verification</h6></div>' +
+        '<div class="fw-card-body">';
       d.links.forEach(l => {
         const b = l.verified === true ? 'fw-badge-success' :
           l.verified === false ? 'fw-badge-danger' : 'fw-badge-secondary';
@@ -262,22 +273,26 @@
         h += '<div class="small py-1 border-bottom"><span class="fw-badge ' + b + ' me-2">' + esc(t) + '</span>' +
           '<span class="font-monospace">' + esc(l.child) + '</span> ← <span class="font-monospace">' + esc(l.parent) + '</span></div>';
       });
-      h += '</div>';
+      h += '</div></div>';
     }
 
     if (d.hostname && d.hostname.checked) {
       const ok = d.hostname.match === true;
-      h += '<div class="fw-card p-3 mb-2"><div class="fw-semibold mb-1">Hostname</div>' +
+      h += '<div class="fw-card">' +
+        '<div class="fw-card-header"><h6 class="fw-card-title">Hostname</h6></div>' +
+        '<div class="fw-card-body">' +
         '<span class="fw-badge ' + (ok ? 'fw-badge-success' : 'fw-badge-danger') + '">' +
         (ok ? 'covered by ' + esc(d.hostname.matched_name) : 'NOT covered') + '</span>' +
         '<div class="small text-muted mt-1">Checked against ' + esc(d.hostname.source) + ': ' +
-        esc((d.hostname.names || []).join(', ')) + '</div></div>';
+        esc((d.hostname.names || []).join(', ')) + '</div></div></div>';
     }
     if (d.private_key && d.private_key.checked) {
       const ok = d.private_key.match === true;
-      h += '<div class="fw-card p-3 mb-2"><div class="fw-semibold mb-1">Private key</div>' +
+      h += '<div class="fw-card">' +
+        '<div class="fw-card-header"><h6 class="fw-card-title">Private key</h6></div>' +
+        '<div class="fw-card-body">' +
         '<span class="fw-badge ' + (ok ? 'fw-badge-success' : 'fw-badge-danger') + '">' +
-        (ok ? 'matches the leaf certificate' : 'DOES NOT match the leaf certificate') + '</span></div>';
+        (ok ? 'matches the leaf certificate' : 'DOES NOT match the leaf certificate') + '</span></div></div>';
     }
     $('fw-ci-out').innerHTML = h;
   }

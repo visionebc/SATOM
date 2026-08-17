@@ -34,35 +34,36 @@
     w.tabIndex = -1;
     w.innerHTML =
       '<div class="modal-dialog modal-xl modal-dialog-scrollable"><div class="modal-content">' +
-      '<div class="modal-header">' +
-      '<h5 class="modal-title"><i class="bi bi-diagram-3 me-2"></i>Transaction tracer</h5>' +
-      '<button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>' +
-      '<div class="modal-body">' +
+      '<div class="modal-header py-2">' +
+      '<h6 class="modal-title mb-0"><i class="bi bi-diagram-3 me-1"></i>Transaction tracer' +
+      '<span class="text-muted small fw-normal ms-1">client → appliance → backend</span></h6>' +
+      '<button type="button" class="btn-close ms-auto" data-bs-dismiss="modal" aria-label="Close"></button></div>' +
+      '<div class="modal-body pt-2">' +
 
       '<div class="row g-2">' +
       '<div class="col-md-6">' +
-      '<label class="form-label small text-muted mb-1">Leg A — VIP (through the appliance)</label>' +
+      '<label class="form-label small fw-bold mb-1">Leg A — VIP (through the appliance)</label>' +
       '<div class="input-group">' +
-      '<select id="fw-tt-vipinv" class="form-select" style="max-width:45%"></select>' +
-      '<input id="fw-tt-vip" class="form-control" placeholder="or https://shop.example.com">' +
+      '<select id="fw-tt-vipinv" class="form-select form-select-sm" style="max-width:45%"></select>' +
+      '<input id="fw-tt-vip" class="form-control form-control-sm" placeholder="or https://shop.example.com">' +
       '</div></div>' +
       '<div class="col-md-6">' +
-      '<label class="form-label small text-muted mb-1">Leg C — backend (bypassing the appliance)</label>' +
-      '<input id="fw-tt-backend" class="form-control" placeholder="192.0.2.90:8080">' +
+      '<label class="form-label small fw-bold mb-1">Leg C — backend (bypassing the appliance)</label>' +
+      '<input id="fw-tt-backend" class="form-control form-control-sm" placeholder="192.0.2.90:8080">' +
       '</div>' +
       '<div class="col-md-3">' +
-      '<label class="form-label small text-muted mb-1">Method</label>' +
-      '<select id="fw-tt-method" class="form-select"></select></div>' +
+      '<label class="form-label small fw-bold mb-1">Method</label>' +
+      '<select id="fw-tt-method" class="form-select form-select-sm"></select></div>' +
       '<div class="col-md-9">' +
-      '<label class="form-label small text-muted mb-1">Path</label>' +
-      '<input id="fw-tt-path" class="form-control font-monospace" value="/"></div>' +
+      '<label class="form-label small fw-bold mb-1">Path</label>' +
+      '<input id="fw-tt-path" class="form-control form-control-sm font-monospace" value="/"></div>' +
       '<div class="col-md-6">' +
-      '<label class="form-label small text-muted mb-1">Extra request headers (one per line)</label>' +
-      '<textarea id="fw-tt-headers" class="form-control font-monospace" rows="3" ' +
+      '<label class="form-label small fw-bold mb-1">Extra request headers (one per line)</label>' +
+      '<textarea id="fw-tt-headers" class="form-control form-control-sm font-monospace" rows="3" ' +
       'placeholder="X-Forwarded-For: 203.0.113.9&#10;Accept-Language: es-MX"></textarea></div>' +
       '<div class="col-md-6">' +
-      '<label class="form-label small text-muted mb-1">Request body (mutating methods only)</label>' +
-      '<textarea id="fw-tt-body" class="form-control font-monospace" rows="3"></textarea></div>' +
+      '<label class="form-label small fw-bold mb-1">Request body (mutating methods only)</label>' +
+      '<textarea id="fw-tt-body" class="form-control form-control-sm font-monospace" rows="3"></textarea></div>' +
       '</div>' +
 
       '<div class="form-check mt-2" id="fw-tt-confirmwrap" style="display:none">' +
@@ -71,20 +72,20 @@
       'I understand this sends a real write to that application from this server.</label></div>' +
 
       '<div class="mt-2 d-flex gap-2 flex-wrap">' +
-      '<button class="fw-btn fw-btn-primary" id="fw-tt-run"><i class="bi bi-play-fill me-1"></i>Trace</button>' +
-      '<button class="fw-btn" id="fw-tt-curl"><i class="bi bi-terminal me-1"></i>Copy curl</button>' +
-      '<button class="fw-btn" id="fw-tt-har"><i class="bi bi-download me-1"></i>Download HAR</button>' +
-      '<button class="fw-btn" id="fw-tt-corr"><i class="bi bi-link-45deg me-1"></i>Correlate attack log</button>' +
+      '<button class="btn btn-sm btn-fw-primary" id="fw-tt-run"><i class="bi bi-play-fill me-1"></i>Trace</button>' +
+      '<button class="btn btn-sm btn-fw-outline" id="fw-tt-curl"><i class="bi bi-terminal me-1"></i>Copy curl</button>' +
+      '<button class="btn btn-sm btn-fw-outline" id="fw-tt-har"><i class="bi bi-download me-1"></i>Download HAR</button>' +
+      '<button class="btn btn-sm btn-fw-secondary" id="fw-tt-corr"><i class="bi bi-link-45deg me-1"></i>Correlate attack log</button>' +
       '</div>' +
 
       '<hr>' +
       '<div class="row g-2 align-items-end">' +
-      '<div class="col-md-5"><label class="form-label small text-muted mb-1">' +
+      '<div class="col-md-5"><label class="form-label small fw-bold mb-1">' +
       'Leg B — appliance for the config read</label>' +
-      '<select id="fw-tt-devinv" class="form-select"></select></div>' +
-      '<div class="col-md-5"><label class="form-label small text-muted mb-1">Server policy</label>' +
-      '<input id="fw-tt-policy" class="form-control" placeholder="pol-shop-cms"></div>' +
-      '<div class="col-md-2"><button class="fw-btn w-100" id="fw-tt-derive">' +
+      '<select id="fw-tt-devinv" class="form-select form-select-sm"></select></div>' +
+      '<div class="col-md-5"><label class="form-label small fw-bold mb-1">Server policy</label>' +
+      '<input id="fw-tt-policy" class="form-control form-control-sm" placeholder="pol-shop-cms"></div>' +
+      '<div class="col-md-2"><button class="btn btn-sm btn-fw-primary w-100" id="fw-tt-derive">' +
       '<i class="bi bi-file-earmark-code me-1"></i>Derive</button></div>' +
       '</div>' +
 
@@ -181,13 +182,14 @@
 
   function legCard(leg) {
     const t = leg.timing || {};
-    let h = '<div class="fw-card p-3 mb-2">' +
-      '<div class="d-flex justify-content-between align-items-center mb-2">' +
-      '<strong>Leg ' + esc((leg.leg || '').toUpperCase()) + ' — ' + esc(leg.label || '') + '</strong>' +
+    let h = '<div class="fw-card">' +
+      '<div class="fw-card-header">' +
+      '<h6 class="fw-card-title">Leg ' + esc((leg.leg || '').toUpperCase()) + ' — ' + esc(leg.label || '') + '</h6>' +
       '<span class="fw-badge ' + (leg.ok ? (leg.status < 400 ? 'fw-badge-success' : 'fw-badge-warning') : 'fw-badge-danger') + '">' +
-      (leg.ok ? esc(leg.status + ' ' + leg.reason) : 'failed') + '</span></div>';
+      (leg.ok ? esc(leg.status + ' ' + leg.reason) : 'failed') + '</span></div>' +
+      '<div class="fw-card-body">';
     if (!leg.ok) {
-      h += '<div class="text-danger small">' + esc(leg.error) + '</div></div>';
+      h += '<div class="text-danger small">' + esc(leg.error) + '</div></div></div>';
       return h;
     }
     const rq = leg.request || {};
@@ -210,7 +212,7 @@
     h += '</div></details>';
     h += '<div class="small text-muted mt-2">body ' + esc(leg.body_bytes) + ' bytes' +
       (leg.truncated ? ' (truncated)' : '') + ' · sha256 ' + esc((leg.body_sha256 || '').slice(0, 16)) + '…</div>';
-    return h + '</div>';
+    return h + '</div></div>';
   }
 
   function render(d) {
@@ -226,7 +228,11 @@
 
     const df = d.diff;
     if (df && df.comparable) {
-      h += '<div class="fw-card p-3 mb-2"><div class="fw-semibold mb-2">A vs C</div>';
+      h += '<div class="fw-card">' +
+        '<div class="fw-card-header"><h6 class="fw-card-title">A vs C</h6>' +
+        '<span class="fw-badge ' + (df.status.same && df.body.same ? 'fw-badge-success' : 'fw-badge-warning') + '">' +
+        (df.status.same && df.body.same ? 'status + body match' : 'differs') + '</span></div>' +
+        '<div class="fw-card-body">';
       h += '<div class="small border-bottom py-1">Status: <span class="font-monospace">' +
         esc(df.status.a) + '</span> vs <span class="font-monospace">' + esc(df.status.c) +
         '</span> <span class="fw-badge ' + (df.status.same ? 'fw-badge-success' : 'fw-badge-danger') + '">' +
@@ -260,7 +266,7 @@
         });
         h += '</details>';
       }
-      h += '</div>';
+      h += '</div></div>';
     }
     $('fw-tt-out').innerHTML = h;
   }
@@ -287,8 +293,11 @@
     // would be quoted as an observation.
     let h = '<div class="alert alert-info py-2 small"><i class="bi bi-info-circle me-1"></i>' +
       '<strong>Leg B is DERIVED, not measured.</strong> ' + esc(d.note) + '</div>';
-    h += '<div class="fw-card p-3 mb-2"><div class="fw-semibold mb-2">What ' +
-      esc(d.appliance) + ' forwards for ' + esc(d.policy) + '</div>';
+    h += '<div class="fw-card">' +
+      '<div class="fw-card-header"><h6 class="fw-card-title">What ' +
+      esc(d.appliance) + ' forwards for ' + esc(d.policy) + '</h6>' +
+      '<span class="fw-badge fw-badge-secondary">derived</span></div>' +
+      '<div class="fw-card-body">';
     (d.rows || []).forEach(r => {
       if (!r.effect && r.state === 'off') return;
       const cls = r.state === 'on' ? 'fw-badge-info' : (r.state === 'unset' ? 'fw-badge-secondary' : 'fw-badge-secondary');
@@ -297,16 +306,18 @@
         '<span class="font-monospace">' + esc(r.object) + '.' + esc(r.field) + ' = ' + esc(r.value || '(empty)') + '</span>' +
         (r.effect ? '<div class="text-muted">' + esc(r.effect) + '</div>' : '') + '</div>';
     });
-    h += '</div>';
+    h += '</div></div>';
     if ((d.backends || []).length) {
-      h += '<div class="fw-card p-3 mb-2"><div class="fw-semibold mb-2">Pool members</div>';
+      h += '<div class="fw-card">' +
+        '<div class="fw-card-header"><h6 class="fw-card-title">Pool members</h6></div>' +
+        '<div class="fw-card-body">';
       d.backends.forEach(b => {
         h += '<div class="small font-monospace border-bottom py-1">' +
           esc(b.ip + ':' + b.port) + ' · ' + esc(b.status) +
           (b.ssl ? ' · ssl ' + esc(b.ssl) : '') +
           (b.backup && b.backup !== 'disable' ? ' · BACKUP' : '') + '</div>';
       });
-      h += '</div>';
+      h += '</div></div>';
     }
     if ((d.absent || []).length) {
       h += '<details class="mb-2"><summary class="small text-muted">' + d.absent.length +
@@ -341,11 +352,11 @@
       }
       (r.d.candidates || []).forEach(c => {
         const row = c.row || {};
-        h += '<div class="fw-card p-2 mb-1"><div class="small">' +
+        h += '<div class="fw-card"><div class="fw-card-body"><div class="small">' +
           '<strong>' + esc(row.main_type || '') + '</strong> ' + esc(row.sub_type || '') +
           ' · <span class="font-monospace">' + esc(row.http_url || '') + '</span>' +
           ' · src ' + esc(row.src || '') + '</div>' +
-          '<div class="small text-muted">' + esc(c.why) + '</div></div>';
+          '<div class="small text-muted">' + esc(c.why) + '</div></div></div>';
       });
       $('fw-tt-corrout').innerHTML = h;
     }).catch(e => { $('fw-tt-err').textContent = String(e); });
@@ -364,8 +375,10 @@
       let pre = $('fw-tt-curlout');
       if (!pre) {
         $('fw-tt-out').insertAdjacentHTML('afterbegin',
-          '<div class="fw-card p-2 mb-2"><div class="fw-semibold small mb-1">curl</div>' +
-          '<pre class="fw-pre small mb-0" id="fw-tt-curlout"></pre></div>');
+          '<div class="fw-card">' +
+          '<div class="fw-card-header"><h6 class="fw-card-title">curl</h6></div>' +
+          '<div class="fw-card-body">' +
+          '<pre class="fw-pre small mb-0" id="fw-tt-curlout"></pre></div></div>');
         pre = $('fw-tt-curlout');
       }
       pre.textContent = text;

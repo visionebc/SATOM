@@ -9651,3 +9651,40 @@ source-level checks above cannot see an `fw-card-body` that is opened and never
 closed. Static token counts are useless for this: they double-count mutually
 exclusive branches (the error and success paths of `legCard`), which is why
 `txn_trace.js` shows two more `</div>` than `<div>` while being correct.
+
+
+## §100 — a button that cannot be submitted still renders (`tests/test_form_csrf.py`)
+
+**What went wrong.** `/registry/versions` shipped its Rebuild control as a
+plain `<form method="post">` with no `csrf_token`. Nothing failed: the route
+existed, the permission was right, the page rendered, the button was
+clickable. `CSRFProtect` rejected the POST and the handler in
+`app/__init__.py` flashed *"Your session expired or the form was stale — please
+try again."* — which names the **operator's session** as the cause. The
+operator reloads, logs in again, retries, and the button was never submittable.
+Two more shipped the same way: Revoke in `section_catalog/index.html` and Scan
+devices in `cert_manager/index.html`.
+
+**Why it survived.** The CSRF shim at the top of `app/static/js/main.js` sets
+`X-CSRFToken` on every same-origin state-changing `fetch()`, which covers
+essentially every control in the product — so the absence of a token in markup
+looks harmless right up until someone writes a native form. A browser form
+submit never enters `fetch()`.
+
+**Why a file-level grep is not enough.** `cert_manager/index.html` *does*
+contain `csrf_token` — in a different form, further down. Any check that asks
+"does this file mention the token" reports it clean. The guard resolves each
+`<form>…</form>` block and asks the question per form. That third case was
+found by the guard, not by the grep that preceded it.
+
+**Recipe.** Mutations must include a greedy `(?s).*` in the block regex — with
+greedy matching two sibling forms collapse into one block and a tokenless form
+borrows its neighbour's token, which is precisely the failure the guard exists
+to catch. Also mutate away the `method="post"` filter: the guard then flags GET
+search forms, becomes noise, and the next person `xfail`s it.
+
+**Verified 2026-08-17.** 8 tests rc=0; 5/5 mutations bite
+(`/var/tmp/mut_csrf.py`, measured by rc, only `rc==1` is a failure, restores in
+`finally`, post-restore baseline 0). Live render through the authenticated test
+client: `GET /registry/versions` 200 with `name="csrf_token"` inside the
+rebuild form.

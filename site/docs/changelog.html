@@ -108,6 +108,21 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
 <h3 id="fixed">Fixed</h3>
 <ul>
 <li>
+<p><strong>Three POST buttons could never be submitted.</strong> The Rebuild button on
+  <code>/registry/versions</code>, Revoke on the section-template catalog and "Scan
+  devices" on the certificate manager were plain <code>&lt;form method="post"&gt;</code>
+  blocks with no <code>csrf_token</code> hidden input, so Flask-WTF's <code>CSRFProtect</code>
+  rejected every submission and the app's <code>CSRFError</code> handler flashed <em>"Your
+  session expired or the form was stale — please try again."</em> The message
+  blames the operator's session; the session was fine and the form was never
+  submittable. The <code>fetch()</code> shim in <code>main.js</code> injects <code>X-CSRFToken</code> on every
+  same-origin state-changing call, which is why JSON callers never hit this —
+  a native form submit does not go through <code>fetch()</code>. New guard
+  <code>tests/test_form_csrf.py</code> re-parses every template and resolves each
+  <code>&lt;form&gt;</code> block itself, so a tokenless POST form breaks the suite in the
+  commit that adds it (safeguards §100).</p>
+</li>
+<li>
 <p><strong>Ten buttons in the three new diagnostic tools were unstyled.</strong> <code>fortiweb.css</code>
   defines <code>.btn-fw-primary</code> / <code>.btn-fw-outline</code> / <code>.btn-fw-secondary</code>; the
   certificate inspector, false-positive explainer and transaction tracer were

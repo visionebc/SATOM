@@ -25,6 +25,7 @@
     <a class="btn btn-sm btn-outline-secondary" href="{{ url_for(hub_endpoint) }}">
       <i class="bi bi-code-slash me-1"></i>API hub</a>
     <form method="post" action="{{ url_for(rebuild_endpoint) }}" class="d-inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button class="btn btn-sm btn-primary" type="submit">
         <i class="bi bi-arrow-repeat me-1"></i>Rebuild</button>
     </form>

@@ -39,6 +39,7 @@
           <form method="post"
                 action="{{ url_for('templates.unapprove', template_id=t.id) }}?next={{ request.path }}"
                 data-js="revoke-form" data-name="{{ t.name }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="btn btn-sm btn-outline-warning">
               <i class="bi bi-x-circle"></i> {{ _('Revoke') }}</button>
           </form>

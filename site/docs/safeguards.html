@@ -9410,6 +9410,36 @@ source-level checks above cannot see an <code>fw-card-body</code> that is opened
 closed. Static token counts are useless for this: they double-count mutually
 exclusive branches (the error and success paths of <code>legCard</code>), which is why
 <code>txn_trace.js</code> shows two more <code>&lt;/div&gt;</code> than <code>&lt;div&gt;</code> while being correct.</p>
+<h2 id="100-a-button-that-cannot-be-submitted-still-renders-teststest_form_csrfpy">§100 — a button that cannot be submitted still renders (<code>tests/test_form_csrf.py</code>)</h2>
+<p><strong>What went wrong.</strong> <code>/registry/versions</code> shipped its Rebuild control as a
+plain <code>&lt;form method="post"&gt;</code> with no <code>csrf_token</code>. Nothing failed: the route
+existed, the permission was right, the page rendered, the button was
+clickable. <code>CSRFProtect</code> rejected the POST and the handler in
+<code>app/__init__.py</code> flashed <em>"Your session expired or the form was stale — please
+try again."</em> — which names the <strong>operator's session</strong> as the cause. The
+operator reloads, logs in again, retries, and the button was never submittable.
+Two more shipped the same way: Revoke in <code>section_catalog/index.html</code> and Scan
+devices in <code>cert_manager/index.html</code>.</p>
+<p><strong>Why it survived.</strong> The CSRF shim at the top of <code>app/static/js/main.js</code> sets
+<code>X-CSRFToken</code> on every same-origin state-changing <code>fetch()</code>, which covers
+essentially every control in the product — so the absence of a token in markup
+looks harmless right up until someone writes a native form. A browser form
+submit never enters <code>fetch()</code>.</p>
+<p><strong>Why a file-level grep is not enough.</strong> <code>cert_manager/index.html</code> <em>does</em>
+contain <code>csrf_token</code> — in a different form, further down. Any check that asks
+"does this file mention the token" reports it clean. The guard resolves each
+<code>&lt;form&gt;…&lt;/form&gt;</code> block and asks the question per form. That third case was
+found by the guard, not by the grep that preceded it.</p>
+<p><strong>Recipe.</strong> Mutations must include a greedy <code>(?s).*</code> in the block regex — with
+greedy matching two sibling forms collapse into one block and a tokenless form
+borrows its neighbour's token, which is precisely the failure the guard exists
+to catch. Also mutate away the <code>method="post"</code> filter: the guard then flags GET
+search forms, becomes noise, and the next person <code>xfail</code>s it.</p>
+<p><strong>Verified 2026-08-17.</strong> 8 tests rc=0; 5/5 mutations bite
+(<code>/var/tmp/mut_csrf.py</code>, measured by rc, only <code>rc==1</code> is a failure, restores in
+<code>finally</code>, post-restore baseline 0). Live render through the authenticated test
+client: <code>GET /registry/versions</code> 200 with <code>name="csrf_token"</code> inside the
+rebuild form.</p>
     </div>
   </div>
 </section>

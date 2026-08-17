@@ -9504,3 +9504,76 @@ not an artefact.
 after the last restore). One of the 28 was rejected as a bad mutation first
 (the anchor did not match the file's line wrapping) rather than counted as a
 survivor.
+
+## §98 — the suite's own plumbing fails silently (`tests/test_suite_hygiene.py`)
+
+Two pieces of test infrastructure share a failure shape, and it is the shape
+this repo keeps rediscovering: **nothing fails when they break.**
+
+**1. The temp-root leak.** `tests/conftest.py` builds its temp root with
+`tempfile.mkdtemp()` at IMPORT time — one per pytest PROCESS — and every
+isolation redirect (`SATOM_JOBS_DIR`, `SATOM_SOT_DIR`, `SATOM_TRUST_DIR`,
+`FORTINET_DIAG_DIR`, `FORTINET_REPORTS_DIR`, the sqlite URI) hangs off it.
+Nothing ever removed it. On 2026-08-17 the node carried **2841 orphaned
+`/tmp/fmw-test-*` directories** from roughly a week of runs. Only ~11 MB, so
+`df` never complained: it is an **inode** leak, and inodes announce themselves
+only once they run out. Sharding multiplies the rate by the shard count.
+
+The cleanup is registered with `atexit` **at import time**, deliberately not
+from a session fixture: the directory is created at import time, so a
+collection error that aborts before any fixture runs would still leak it.
+`ignore_errors=True` is also deliberate — a cleanup that raises would turn a
+green run red, trading the bug for a worse one.
+
+**2. The shard runner's concurrency guard.** `scripts/run_test_shards.sh`
+decides whether it is safe to start. When that answer is wrong the visible
+result is a **green** run: two contending suites whose numbers mean nothing.
+
+### What the guard checks, and why each assertion is derived
+
+Every assertion comes from the artefact, never from a list typed into the
+test: the conftest's own AST, the real filenames on disk, and the actual
+behaviour of processes that are launched for the purpose.
+
+| guard | derived from |
+|---|---|
+| every module-level `mkdtemp` target is `rmtree`d in an atexit-registered function | conftest AST — a SECOND temp root breaks it |
+| the temp root is really gone after the interpreter exits | a child process that imports the conftest and exits |
+| the partition is a partition | `ls tests/test_*.py`, compared set-wise |
+| `--durations` rebalancing is wired | a synthetic log where one file dominates |
+| the runner refuses bad shard counts / non-root callers | executing the script |
+| `is_real_pytest()` accepts and rejects the right argv | live decoy processes |
+| rc 4 / 5 / 137 are classified as errors | `rc_label()` parsed out of the script |
+
+### The three traps this round paid for
+
+1. **`${1:-3}` turns an explicitly empty argument into 3**, silently, which
+   also left the "must be an integer" branch permanently dead. `${1-3}` only
+   defaults a genuinely *absent* argument. Caught because the arg-rejection
+   test asserted on the message, not just on rc 2.
+2. **Argument validation must precede the privilege check.** With the root
+   check first, every unprivileged invocation exits 2 for the same reason —
+   indistinguishable from "the argument was fine", including to a test.
+3. **An exception raised inside an `atexit` hook prints a traceback and the
+   process still exits 0.** A returncode assertion alone passes while every
+   run ends in a traceback; the guard asserts on stderr.
+
+Two further guards were **rejected as weak in the first pass** rather than
+counted: the decoy proving `is_real_pytest` recognises pytest used `exec -a
+pytest`, exercising only the `argv[0]` branch, while every real invocation in
+this repo is `venv/bin/python3 -m pytest` — the `-m` branch, which no test
+touched. A second probe (`exec -a python3 bash -c '…' -m pytest`) now covers
+it, and asserts it is *not* catchable by the argv[0] rule, or it would not be
+testing the branch at all.
+
+### Recipe
+
+```
+runuser -u satom -- venv/bin/python3 -m pytest tests/test_suite_hygiene.py -q
+DRY_RUN=1 scripts/run_test_shards.sh 3      # safe while a suite is in flight
+ls -d /tmp/fmw-test-* | wc -l               # must not grow across runs
+```
+
+Verified 2026-08-17: 20 tests rc=0, **12/12 mutations kill** (measured by rc,
+only rc==1 counts, restored in `finally`, post-restore baseline 0), dry-run
+plan balanced to ±0.06% over 263 files, 2841 orphaned temp roots swept.

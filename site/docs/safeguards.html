@@ -9258,6 +9258,95 @@ not an artefact.</p>
 after the last restore). One of the 28 was rejected as a bad mutation first
 (the anchor did not match the file's line wrapping) rather than counted as a
 survivor.</p>
+<h2 id="98-the-suites-own-plumbing-fails-silently-teststest_suite_hygienepy">§98 — the suite's own plumbing fails silently (<code>tests/test_suite_hygiene.py</code>)</h2>
+<p>Two pieces of test infrastructure share a failure shape, and it is the shape
+this repo keeps rediscovering: <strong>nothing fails when they break.</strong></p>
+<p><strong>1. The temp-root leak.</strong> <code>tests/conftest.py</code> builds its temp root with
+<code>tempfile.mkdtemp()</code> at IMPORT time — one per pytest PROCESS — and every
+isolation redirect (<code>SATOM_JOBS_DIR</code>, <code>SATOM_SOT_DIR</code>, <code>SATOM_TRUST_DIR</code>,
+<code>FORTINET_DIAG_DIR</code>, <code>FORTINET_REPORTS_DIR</code>, the sqlite URI) hangs off it.
+Nothing ever removed it. On 2026-08-17 the node carried <strong>2841 orphaned
+<code>/tmp/fmw-test-*</code> directories</strong> from roughly a week of runs. Only ~11 MB, so
+<code>df</code> never complained: it is an <strong>inode</strong> leak, and inodes announce themselves
+only once they run out. Sharding multiplies the rate by the shard count.</p>
+<p>The cleanup is registered with <code>atexit</code> <strong>at import time</strong>, deliberately not
+from a session fixture: the directory is created at import time, so a
+collection error that aborts before any fixture runs would still leak it.
+<code>ignore_errors=True</code> is also deliberate — a cleanup that raises would turn a
+green run red, trading the bug for a worse one.</p>
+<p><strong>2. The shard runner's concurrency guard.</strong> <code>scripts/run_test_shards.sh</code>
+decides whether it is safe to start. When that answer is wrong the visible
+result is a <strong>green</strong> run: two contending suites whose numbers mean nothing.</p>
+<h3 id="what-the-guard-checks-and-why-each-assertion-is-derived">What the guard checks, and why each assertion is derived</h3>
+<p>Every assertion comes from the artefact, never from a list typed into the
+test: the conftest's own AST, the real filenames on disk, and the actual
+behaviour of processes that are launched for the purpose.</p>
+<table>
+<thead>
+<tr>
+<th>guard</th>
+<th>derived from</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>every module-level <code>mkdtemp</code> target is <code>rmtree</code>d in an atexit-registered function</td>
+<td>conftest AST — a SECOND temp root breaks it</td>
+</tr>
+<tr>
+<td>the temp root is really gone after the interpreter exits</td>
+<td>a child process that imports the conftest and exits</td>
+</tr>
+<tr>
+<td>the partition is a partition</td>
+<td><code>ls tests/test_*.py</code>, compared set-wise</td>
+</tr>
+<tr>
+<td><code>--durations</code> rebalancing is wired</td>
+<td>a synthetic log where one file dominates</td>
+</tr>
+<tr>
+<td>the runner refuses bad shard counts / non-root callers</td>
+<td>executing the script</td>
+</tr>
+<tr>
+<td><code>is_real_pytest()</code> accepts and rejects the right argv</td>
+<td>live decoy processes</td>
+</tr>
+<tr>
+<td>rc 4 / 5 / 137 are classified as errors</td>
+<td><code>rc_label()</code> parsed out of the script</td>
+</tr>
+</tbody>
+</table>
+<h3 id="the-three-traps-this-round-paid-for">The three traps this round paid for</h3>
+<ol>
+<li><strong><code>${1:-3}</code> turns an explicitly empty argument into 3</strong>, silently, which
+   also left the "must be an integer" branch permanently dead. <code>${1-3}</code> only
+   defaults a genuinely <em>absent</em> argument. Caught because the arg-rejection
+   test asserted on the message, not just on rc 2.</li>
+<li><strong>Argument validation must precede the privilege check.</strong> With the root
+   check first, every unprivileged invocation exits 2 for the same reason —
+   indistinguishable from "the argument was fine", including to a test.</li>
+<li><strong>An exception raised inside an <code>atexit</code> hook prints a traceback and the
+   process still exits 0.</strong> A returncode assertion alone passes while every
+   run ends in a traceback; the guard asserts on stderr.</li>
+</ol>
+<p>Two further guards were <strong>rejected as weak in the first pass</strong> rather than
+counted: the decoy proving <code>is_real_pytest</code> recognises pytest used <code>exec -a
+pytest</code>, exercising only the <code>argv[0]</code> branch, while every real invocation in
+this repo is <code>venv/bin/python3 -m pytest</code> — the <code>-m</code> branch, which no test
+touched. A second probe (<code>exec -a python3 bash -c '…' -m pytest</code>) now covers
+it, and asserts it is <em>not</em> catchable by the argv[0] rule, or it would not be
+testing the branch at all.</p>
+<h3 id="recipe_3">Recipe</h3>
+<pre><code>runuser -u satom -- venv/bin/python3 -m pytest tests/test_suite_hygiene.py -q
+DRY_RUN=1 scripts/run_test_shards.sh 3      # safe while a suite is in flight
+ls -d /tmp/fmw-test-* | wc -l               # must not grow across runs
+</code></pre>
+<p>Verified 2026-08-17: 20 tests rc=0, <strong>12/12 mutations kill</strong> (measured by rc,
+only rc==1 counts, restored in <code>finally</code>, post-restore baseline 0), dry-run
+plan balanced to ±0.06% over 263 files, 2841 orphaned temp roots swept.</p>
     </div>
   </div>
 </section>

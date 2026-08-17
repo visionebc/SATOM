@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Changes · 0 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Added · Fixed · 2 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Changes · 0 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Added · Fixed · 2 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,8 +59,8 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Changes · 0 entries</span>
-        <ul class="rel-leads"></ul>
+        <span class="rel-nav-meta">unreleased · Added · Fixed · 2 entries</span>
+        <ul class="rel-leads"><li>Sharded test runner</li><li>The suite leaked one temp directory per pytest process</li></ul>
       </a>
       <a class="rel-nav-item" href="v1.10.0.html" data-rel-version="1.10.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 1.10.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
@@ -190,7 +190,27 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
-
+<h3 id="added">Added</h3>
+<ul>
+<li><strong>Sharded test runner</strong> — <code>scripts/run_test_shards.sh</code> splits the suite
+  across 2-4 parallel shards (by file, never within a file) and
+  <code>scripts/test_shard_plan.py</code> builds the partition, weighing files either by
+  a static AST proxy or by measured <code>--durations=0</code> seconds from a previous
+  run. Aggregation is by exit code only, and rc 4 (usage error) and rc 5 (no
+  tests collected) are reported as errors rather than read as passes. The
+  concurrency guard parses <code>/proc/&lt;pid&gt;/cmdline</code> as argv instead of
+  substring-matching it, because <code>pgrep -f pytest</code> returns any process that
+  merely <em>mentions</em> the word.</li>
+</ul>
+<h3 id="fixed">Fixed</h3>
+<ul>
+<li><strong>The suite leaked one temp directory per pytest process.</strong>
+  <code>tests/conftest.py</code> creates its temp root with <code>tempfile.mkdtemp()</code> at import
+  time and nothing removed it — 2841 orphaned <code>/tmp/fmw-test-*</code> directories had
+  accumulated. An inode leak rather than a byte leak, but unbounded, and
+  sharding multiplies it by the shard count. Cleanup is now registered with
+  <code>atexit</code> at import time.</li>
+</ul>
 <p class="rel-prevnext"><a href="v1.10.0.html">Version 1.10.0 →</a></p>
       </div>
       <div class="callout" style="margin-top:24px;">

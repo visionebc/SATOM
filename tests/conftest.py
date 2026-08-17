@@ -5,13 +5,36 @@ the live ``data/fortinet.db`` and never depend on the production FERNET_KEY.
 """
 from __future__ import annotations
 
+import atexit
 import os
+import shutil
 import tempfile
 
 import pytest
 
 # --- environment MUST be set before the app package is imported -------------
 _TMPDIR = tempfile.mkdtemp(prefix="fmw-test-")
+
+
+@atexit.register
+def _remove_tmpdir() -> None:
+    """Delete this process's temp root when the interpreter exits.
+
+    Nothing used to do this. On 2026-08-17 the node carried 2837 orphaned
+    ``/tmp/fmw-test-*`` directories left behind by a week of runs — an inode
+    leak rather than a byte leak, but one that grows without bound, and that
+    sharding the suite multiplies by the shard count.
+
+    Registered here at IMPORT time rather than from a session fixture on
+    purpose: the directory is created at import time, so a collection error
+    that aborts before any fixture ever runs would still leak it.
+
+    ``ignore_errors=True`` is also deliberate — a failed cleanup must never
+    turn a green run red. The leak is the bug being fixed; a suite that fails
+    while tidying up would be a new one.
+    """
+    shutil.rmtree(_TMPDIR, ignore_errors=True)
+
 os.environ["FLASK_ENV"] = "development"
 os.environ["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{_TMPDIR}/test.db"
 # Isolate services that keep state on disk from the production tree (the logs

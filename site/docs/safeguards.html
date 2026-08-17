@@ -9347,6 +9347,69 @@ ls -d /tmp/fmw-test-* | wc -l               # must not grow across runs
 <p>Verified 2026-08-17: 20 tests rc=0, <strong>12/12 mutations kill</strong> (measured by rc,
 only rc==1 counts, restored in <code>finally</code>, post-restore baseline 0), dry-run
 plan balanced to ±0.06% over 263 files, 2841 orphaned temp roots swept.</p>
+<h2 id="99-a-class-that-matches-no-rule-cannot-fail-teststest_tool_modal_chromepy">§99 — a class that matches no rule cannot fail (<code>tests/test_tool_modal_chrome.py</code>)</h2>
+<p>Reported by the user twice on 2026-08-17: <em>"Certificate inspector /
+False-positive explainer / Transaction tracer tienen todavia el formato
+viejo"</em>. The first review of it called the divergence a style drift. It was
+not: <strong><code>fw-btn-primary</code> matches no selector in any stylesheet the product
+loads.</strong> The real class is <code>btn-fw-primary</code> — the word order is reversed, and
+the two are indistinguishable at a glance in a diff.</p>
+<p><code>fortiweb.css</code> already carried the note for the previous instance of this exact
+bug: <em>".btn-fw-secondary was used by 5 templates but never defined, so it fell
+back to an unstyled .btn"</em>. The product has now made the mistake twice, in the
+same class family, so it gets a guard instead of a third comment.</p>
+<p><strong>Why nothing caught it.</strong> The round that shipped the three tools verified
+"0 dark-theme tokens" and was telling the truth. Neither that check nor any
+other asked whether the classes it <em>did</em> use resolved to a rule. A <code>&lt;button&gt;</code>
+with a class nobody defined renders as the browser's native grey bevel, works
+perfectly, and raises nothing.</p>
+<h3 id="what-the-guard-checks-and-where-each-expectation-comes-from">What the guard checks, and where each expectation comes from</h3>
+<p>Nothing in it is a typed list of blessed names:</p>
+<ul>
+<li><strong>Defined classes</strong> are read from every <code>.css</code> under <code>app/static/css</code> plus
+  the vendored <code>bootstrap.min.css</code> — the stylesheets <code>base.html</code> actually
+  links. That is what lets <code>fw-bold</code> / <code>fw-normal</code> / <code>fw-semibold</code> pass (they
+  are Bootstrap utilities) while <code>fw-btn-primary</code> fails, with no allowlist.</li>
+<li><strong>Element ids</strong> are read from the JavaScript itself (<code>id="…"</code> attributes,
+  <code>$('…')</code> and <code>getElementById('…')</code> calls). An id is not a class and must not
+  be checked against CSS; deriving the set means a fourth tool with a fourth
+  id prefix does not need an exception carved into the guard.</li>
+<li><strong>House chrome</strong> (<code>modal-header py-2</code>) is read from <code>net_calc.js</code> /
+  <code>regex_lab.js</code>, the two tools that predate these three and share the menu. If
+  the house density changes, the guard says so instead of silently disagreeing.</li>
+<li><strong>Card structure</strong> is counted: an <code>fw-card</code> must have an <code>fw-card-body</code>
+  (a <code>p-0</code> body is how <code>settings/index.html</code> handles a flush list-group), and
+  every <code>fw-card-header</code> must carry <code>fw-card-title</code>.</li>
+<li><strong><code>btn-fw-*</code> must be accompanied by Bootstrap's <code>.btn</code></strong>, which supplies the
+  padding, radius and cursor that <code>btn-fw-*</code> does not set.</li>
+</ul>
+<h3 id="two-defects-the-verification-found-in-itself">Two defects the verification found in itself</h3>
+<ol>
+<li><strong>The extractor reported correct markup as broken.</strong> A naive
+   <code>\bfw-[a-z-]+\b</code> sweep matched <code>data-fw-certinspect-open</code> — an <em>attribute
+   name</em>, not a class — and failed three files that were right. Tokens are now
+   taken from inside <code>class="…"</code> attributes plus whole-string literals (the
+   severity→badge maps concatenate those in at render time).</li>
+<li><strong><code>assert re.search(r"\bbtn\b", cls)</code> answers itself.</strong> <code>-</code> is a non-word
+   character, so <code>\bbtn\b</code> matches <em>inside</em> <code>btn-fw-outline</code>: the check for
+   "does this button also carry <code>.btn</code>" passed for a button that did not. Found
+   by mutation, not by reading. It is token equality now.</li>
+</ol>
+<h3 id="the-debt-this-came-out-of-frozen-rather-than-hidden">The debt this came out of, frozen rather than hidden</h3>
+<p>The reversed spelling is <strong>not</strong> confined to the three tools: 108 occurrences
+survive across 19 older templates, and those buttons are unstyled today.
+Cleaning them is a separate, user-authorised change. The guard freezes the
+count and prints it on every run, because a budget nobody sees reads as zero.</p>
+<h3 id="verification-recipe_5">Verification recipe</h3>
+<pre><code>runuser -u satom -- venv/bin/python -m pytest tests/test_tool_modal_chrome.py -q
+python3 /var/tmp/mut_chrome.py          # 17 mutations, 17 must bite
+</code></pre>
+<p>Markup nesting is checked separately by driving the three modules under a
+minimal DOM with a stubbed <code>fetch</code> and parsing every string they emit — the
+source-level checks above cannot see an <code>fw-card-body</code> that is opened and never
+closed. Static token counts are useless for this: they double-count mutually
+exclusive branches (the error and success paths of <code>legCard</code>), which is why
+<code>txn_trace.js</code> shows two more <code>&lt;/div&gt;</code> than <code>&lt;div&gt;</code> while being correct.</p>
     </div>
   </div>
 </section>

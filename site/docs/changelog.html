@@ -107,12 +107,36 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
 </ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
-<li><strong>The suite leaked one temp directory per pytest process.</strong>
+<li>
+<p><strong>Ten buttons in the three new diagnostic tools were unstyled.</strong> <code>fortiweb.css</code>
+  defines <code>.btn-fw-primary</code> / <code>.btn-fw-outline</code> / <code>.btn-fw-secondary</code>; the
+  certificate inspector, false-positive explainer and transaction tracer were
+  written with the word order reversed — <code>fw-btn-primary</code> — which matches no
+  selector in any stylesheet the product loads, so those buttons fell back to
+  the browser's native grey bevelled <code>&lt;button&gt;</code> inside a flat white modal. The
+  same round also substituted <code>fw-card p-3</code> for the real <code>fw-card-header</code> /
+  <code>fw-card-body</code> sub-structure (16px instead of 20px, and no header tint or
+  bottom border at all), titled its modals with <code>h5</code> where the two older tools
+  in the same Tools menu use <code>h6</code>, sized every form control full-size next to
+  <code>btn-sm</code> buttons, and built its tabs out of <code>&lt;a href="#"&gt;</code> instead of
+  <code>&lt;button&gt;</code>. Opening Network Calculator and then Certificate inspector from
+  the same dropdown showed two different header heights and two different form
+  densities. Nothing failed: the pages rendered, the handlers fired, and the
+  round's own check ("0 dark-theme tokens") was true and did not verify that
+  the classes it used resolved to a rule. <code>tests/test_tool_modal_chrome.py</code>
+  (31 guards, safeguards §99) now resolves every <code>fw-*</code> / <code>btn-fw-*</code> class the
+  tool JavaScript emits against the stylesheets the product actually links,
+  and freezes the 108 pre-existing occurrences of the reversed spelling in
+  older templates so the count cannot grow.</p>
+</li>
+<li>
+<p><strong>The suite leaked one temp directory per pytest process.</strong>
   <code>tests/conftest.py</code> creates its temp root with <code>tempfile.mkdtemp()</code> at import
   time and nothing removed it — 2841 orphaned <code>/tmp/fmw-test-*</code> directories had
   accumulated. An inode leak rather than a byte leak, but unbounded, and
   sharding multiplies it by the shard count. Cleanup is now registered with
-  <code>atexit</code> at import time.</li>
+  <code>atexit</code> at import time.</p>
+</li>
 </ul>
 <h2 id="1100-2026-08-17">[1.10.0] - 2026-08-17</h2>
 <h3 id="security">Security</h3>

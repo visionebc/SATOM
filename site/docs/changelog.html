@@ -795,6 +795,32 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
 <h3 id="fixed">Fixed</h3>
 <ul>
 <li>
+<p><strong>A standby that serves traffic is now restarted by an update, instead of
+  being left running the previous release's routing table.</strong> The updater's
+  standby path was built on the premise that the application is stopped on a
+  read-only replica, so it restarted only the scheduler and validated with
+  <code>import app</code>. On a standby that is enabled, active and published, that left
+  the workers holding a <code>url_map</code> older than the templates on disk: a layout
+  calling <code>url_for()</code> for a blueprint the process never registered raises
+  <code>BuildError</code>, so <strong>every authenticated page returned HTTP 500</strong> — for about
+  fifteen hours, while the update reported success. Both existing checks were
+  structurally incapable of seeing it: <code>import app</code> runs in a fresh interpreter
+  (green exactly when the workers are stale) and <code>/healthz</code> renders no
+  template. The runner now asks systemd what the node was actually doing before
+  it touches anything and restores that state, validating over HTTP whenever
+  the application was running — on a standby too. A node that was deliberately
+  stopped still stays stopped.</p>
+</li>
+<li>
+<p><strong>A template that references an endpoint which does not exist now fails the
+  update instead of the page.</strong> A new route audit resolves every literal
+  <code>url_for()</code> in the templates against the real URL map, and runs as a gate on
+  every code, package and library update. Because "the check could not run" and
+  "the check found a problem" are different facts, the audit reports three
+  outcomes: a failure to even start it is recorded as unmeasured and does not
+  roll a healthy update back.</p>
+</li>
+<li>
 <p><strong>Regex Lab now names the engine that judged the pattern, and flags where it disagrees with the appliance.</strong> The modal footer claimed "Tested server-side against a PCRE-compatible engine — matches FortiWeb &amp; FortiADC"; the lab in fact judges with Python <code>re</code>, so a pattern using <code>\p{L}</code>, <code>\K</code>, <code>\z</code>, <code>(?R)</code> or PCRE-style <code>(?&lt;name&gt;)</code> was reported INVALID for a pattern the appliance accepts. Every verdict (match, rewrite, invalid and empty) now carries an <code>engine</code> block plus a <code>divergences</code> list, rendered under the verdict. The flavor note warning that possessive quantifiers and atomic groups "aren't supported in this tester" was also stale — Python 3.11 added both. The engine caveat is pinned to the head of <code>guide_notes</code>, because <code>(harvested + base)[:10]</code> used to truncate it away on FortiWeb.</p>
 </li>
 <li>

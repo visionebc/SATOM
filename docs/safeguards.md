@@ -9454,3 +9454,53 @@ conditional on the role again, and letting an unmeasurable audit roll a healthy
 update back. One guard was **rejected as weak on the first pass** — the cwd-leak
 test ran from the app root, so the `chdir` it was checking was a no-op and the
 test proved nothing; it now starts from a different directory.
+
+
+## §97 — a manual goes stale without anything failing (`tests/test_user_guide_features.py`)
+
+**What went wrong.** `docs/user-guide.md` §26 opened with "`Settings` is one
+page with **22 tabs**" for weeks after Settings became a grouped sidebar of 8
+groups and 24 panels. Nothing failed: the page rendered, the suite passed, the
+sentence simply stopped being true — on a document that is **published
+publicly**. In the same sweep, three shipped features (Bookmarks, Concept Map,
+Upgrade Flow) and one whole settings panel (Languages) had **no entry at all**,
+so the only way to discover them was to notice them in the sidebar.
+
+**The rule.** Every claim the manual makes about a countable, enumerable thing
+is derived from the artefact that defines it, never from a list typed into the
+guard:
+
+| Claim | Derived from |
+|---|---|
+| Settings groups and panels | `nav_groups` parsed out of `app/templates/settings/index.html` |
+| Offered languages | `app.services.langs.SUPPORTED` / `DEFAULT` |
+| Bookmark kinds and scopes | `app.models_bookmarks.KINDS` / `SCOPES` |
+| Bookmark grouping modes | `app.services.bookmarks.GROUP_MODES` |
+| Concept clusters, page and exclusion counts | `app.services.concept_map.CONCEPTS` / `PAGES` / `EXCLUDED` |
+| Upgrade Flow limits | `app.views.upgrade_flow.MAX_SWEEP` / `MAX_WAVES` |
+
+Adding a group, a language, a bookmark kind, a concept or a page therefore
+breaks the suite **in the commit that adds it** — the only moment anybody knows
+what the new thing does.
+
+**Two rules that cost a rewrite each.**
+
+1. **Every assertion is scoped to the section that must carry it.** "language",
+   "bookmark" and "wave" all appear elsewhere in a 3 500-line manual, so an
+   unscoped search passes with the section deleted. `section()` and
+   `subsection()` do the scoping, and two tests guard *them* — an unscoped
+   helper would make every assertion above vacuous.
+2. **The parser is guarded too.** A `_nav_groups()` that silently returned `[]`
+   would turn every group and panel test into a no-op that reports green. The
+   mutation `GROUPS = _nav_groups() and []` must fail the suite; it does.
+
+**Found while deriving, and worth keeping:** the comment above `GROUP_MODES`
+says "the other **seven** are recomputed" and the tuple holds **six** derived
+modes. The manual documents the tuple; the guard pins the number. A comment is
+not an artefact.
+
+**Verification.** 28 mutations, 28 bite (`/var/tmp/mut_manual.py`, measured by
+**rc** — only `rc==1` is a failure, restores in `finally`, baseline re-measured
+after the last restore). One of the 28 was rejected as a bad mutation first
+(the anchor did not match the file's line wrapping) rather than counted as a
+survivor.

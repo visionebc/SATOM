@@ -6,6 +6,27 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added
+
+- **Sharded test runner** — `scripts/run_test_shards.sh` splits the suite
+  across 2-4 parallel shards (by file, never within a file) and
+  `scripts/test_shard_plan.py` builds the partition, weighing files either by
+  a static AST proxy or by measured `--durations=0` seconds from a previous
+  run. Aggregation is by exit code only, and rc 4 (usage error) and rc 5 (no
+  tests collected) are reported as errors rather than read as passes. The
+  concurrency guard parses `/proc/<pid>/cmdline` as argv instead of
+  substring-matching it, because `pgrep -f pytest` returns any process that
+  merely *mentions* the word.
+
+### Fixed
+
+- **The suite leaked one temp directory per pytest process.**
+  `tests/conftest.py` creates its temp root with `tempfile.mkdtemp()` at import
+  time and nothing removed it — 2841 orphaned `/tmp/fmw-test-*` directories had
+  accumulated. An inode leak rather than a byte leak, but unbounded, and
+  sharding multiplies it by the shard count. Cleanup is now registered with
+  `atexit` at import time.
+
 ## [1.10.0] - 2026-08-17
 
 ### Security

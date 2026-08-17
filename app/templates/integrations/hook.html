@@ -111,9 +111,9 @@
       {% for r in recent %}
         <tr>
           <td class="small text-muted">{{ r.started_at or r.queued_at or '' }}</td>
-          <td>{% if r.status == 'ok' %}<span class="fw-badge fw-badge-ok">{{ _('ok') }}</span>
-              {% elif r.status in ('failed', 'timeout') %}<span class="fw-badge fw-badge-crit">{{ r.status }}</span>
-              {% else %}<span class="fw-badge fw-badge-muted">{{ r.status }}</span>{% endif %}</td>
+          <td>{% if r.status == 'ok' %}<span class="fw-badge fw-badge-success">{{ _('ok') }}</span>
+              {% elif r.status in ('failed', 'timeout') %}<span class="fw-badge fw-badge-danger">{{ r.status }}</span>
+              {% else %}<span class="fw-badge fw-badge-secondary">{{ r.status }}</span>{% endif %}</td>
           <td class="small">{{ r.duration_ms if r.duration_ms is not none else '—' }}</td>
           <td class="small">{{ r.exit_code if r.exit_code is not none else '—' }}</td>
           <td><pre class="small mb-0" style="white-space:pre-wrap;">{{ (r.error or r.stdout or '')[:1500] }}</pre></td>

@@ -351,10 +351,10 @@
           <dd class="col-sm-8">
             {% if cr.approval_mode == 'external' %}
               {% if cr.external_approved_at %}
-                <span class="fw-badge fw-badge-ok">{{ _('external approval on record') }}</span>
+                <span class="fw-badge fw-badge-success">{{ _('external approval on record') }}</span>
                 <div class="text-muted">{{ cr.external_approved_by }} · {{ cr.external_approved_at|localtime }}</div>
               {% else %}
-                <span class="fw-badge fw-badge-warn">{{ _('waiting for external approval') }}</span>
+                <span class="fw-badge fw-badge-warning">{{ _('waiting for external approval') }}</span>
                 <div class="text-muted">{{ _('This change cannot run until the external authority approves it. No answer is not an approval.') }}</div>
               {% endif %}
             {% else %}
@@ -372,9 +372,9 @@
 
           <dt class="col-sm-4">{{ _('NetBox window') }}</dt>
           <dd class="col-sm-8">
-            {% if cr.mw_state == 'open' %}<span class="fw-badge fw-badge-warn">{{ _('open') }}</span>
-            {% elif cr.mw_state == 'closed' %}<span class="fw-badge fw-badge-ok">{{ _('closed') }}</span>
-            {% elif cr.mw_state == 'error' %}<span class="fw-badge fw-badge-crit">{{ _('error') }}</span>
+            {% if cr.mw_state == 'open' %}<span class="fw-badge fw-badge-warning">{{ _('open') }}</span>
+            {% elif cr.mw_state == 'closed' %}<span class="fw-badge fw-badge-success">{{ _('closed') }}</span>
+            {% elif cr.mw_state == 'error' %}<span class="fw-badge fw-badge-danger">{{ _('error') }}</span>
             {% else %}<span class="fw-badge fw-badge-secondary">{{ _('none requested') }}</span>{% endif %}
             {% if cr.mw_ref %}<div class="text-muted"><code>{{ cr.mw_ref }}</code></div>{% endif %}
             {% if cr.mw_state == 'error' %}

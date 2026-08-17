@@ -23,7 +23,52 @@ GOOD = "correct-horse-battery-staple-42"
 def seal_dir(tmp_path, monkeypatch):
     d = tmp_path / "recovery"
     monkeypatch.setattr(rs, "_seal_dir", lambda: d)
+    # Same leak as in test_seal_reachability: _seal_dir is redirected but
+    # _tree_owner still stats the real checkout, so check() answered about
+    # /opt/satom's owner rather than about this envelope.
+    monkeypatch.setattr(rs, "_tree_owner",
+                        lambda: (tmp_path.stat().st_uid, tmp_path.stat().st_gid))
     return d
+
+
+def _own_lie(monkeypatch, owners):
+    """Make the named paths stat as somebody else's, leaving mode intact."""
+    from pathlib import Path as _P
+    real = _P.stat
+
+    class Fake:
+        def __init__(self, st, uid, gid):
+            self.st_uid, self.st_gid = uid, gid
+            self.st_mode, self.st_mtime = st.st_mode, st.st_mtime
+
+    def patched(self, *a, **k):
+        st = real(self, *a, **k)
+        lie = owners.get(str(self))
+        return Fake(st, *lie) if lie else st
+
+    monkeypatch.setattr(_P, "stat", patched)
+
+
+def test_the_fixture_asks_about_its_own_envelope_not_about_the_checkout(
+        seal_dir, tmp_path, monkeypatch):
+    """Guard for the fixture above, not for the product.
+
+    Measured 2026-08-17: the suite ran as root against a root-owned checkout,
+    ``_seal_dir`` was redirected to tmp_path while ``_tree_owner`` still
+    statted /opt/satom, and every verdict in this file was about a tree it
+    never writes to. On a machine where the two owners coincide the leak is
+    invisible, so the lie below is what makes it observable at all.
+    """
+    from pathlib import Path as _P
+
+    here = _P(rs.__file__).resolve()
+    _own_lie(monkeypatch, {str(p): (4242, 4343) for p in
+                           (here, here.parents[0], here.parents[1],
+                            here.parents[2], here.parents[2] / "data")})
+
+    assert rs._tree_owner() == (tmp_path.stat().st_uid, tmp_path.stat().st_gid), \
+        "the fixture is not pinning _tree_owner: this file is answering " \
+        "about the checkout's owner instead of about its own envelope"
 
 
 @pytest.fixture()

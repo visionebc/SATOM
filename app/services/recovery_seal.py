@@ -113,13 +113,34 @@ def seal_path() -> Path:
 def _tree_owner() -> tuple:
     """(uid, gid) of whoever owns the app tree.
 
-    DERIVED, never named. The service account is ``satom`` on new installs and
-    ``fortinet`` on the nodes that adopted an existing tree, and hardcoding
-    either is how the datasync broke once already. The tree itself is the only
-    statement of the answer that cannot go stale.
+    DERIVED, never named: the account differs between new installs and the
+    nodes that adopted an existing tree, and hardcoding either is how the
+    datasync broke once already.
+
+    Read from the first tree anchor that is NOT root-owned. The install root
+    is the one anchor a stray root operation can flip -- an unpacked bundle,
+    a root checkout, a root-run build -- and root is the single answer this
+    function must never give, because it disables BOTH of its callers at the
+    same time: ``_hand_over`` chowns root to root, and ``_reachable`` then
+    compares root against root and calls an unreadable envelope reachable.
+    That is precisely the failure this module exists to catch, so it must not
+    be reachable through the module's own derivation.
+
+    Measured on a live node 2026-08-17: the install root was root-owned 0755
+    with every child owned by the service account, and diagnose reported a
+    critical unreachable finding against an envelope the service account
+    could read perfectly well.
     """
-    st = Path(__file__).resolve().parents[2].stat()
-    return st.st_uid, st.st_gid
+    here = Path(__file__).resolve()
+    for anchor in (here.parents[2], here.parents[1],
+                   here.parents[2] / "data", here):
+        try:
+            st = anchor.stat()
+        except OSError:                                   # pragma: no cover
+            continue
+        if st.st_uid != 0:
+            return st.st_uid, st.st_gid
+    return 0, 0                      # a genuinely root-run install
 
 
 def _hand_over(path: Path) -> None:
@@ -149,6 +170,10 @@ def _readable_by(st, uid: int, gid: int, want: int) -> bool:
     ``want`` is the octal permission triad: 4 for a file we must read, 5 for a
     directory we must read and traverse.
     """
+    if uid == 0:
+        # CAP_DAC_OVERRIDE: an all-root install reads every mode there is, so
+        # telling it that it cannot is a false critical on a healthy node.
+        return True
     if st.st_uid == uid:
         return st.st_mode & (want << 6) == (want << 6)
     if st.st_gid == gid:

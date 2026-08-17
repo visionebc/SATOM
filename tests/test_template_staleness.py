@@ -13,6 +13,7 @@ was never restarted, and a ``test_client`` render — a fresh process reading
 from disk — reported the change present while the live service served it on
 0 of 30 requests.
 """
+import ast
 import os
 import subprocess
 import sys
@@ -182,6 +183,59 @@ def test_the_template_case_names_the_per_worker_cache(tree):
 
 REQUEST_PATH_PREFIXES = ("app/views/", "app/auth/", "app/errors.py")
 
+RENDER_CALLS = ("render_template", "render_template_string")
+
+
+def _renders_jinja(src: str) -> bool:
+    """True for an actual CALL, never for the word.
+
+    The substring scan this replaced was answered by the prose that explains
+    why the module does NOT render: concept_map.py documents that its
+    classification is "Deliberately NOT ``render_template``-based", and that
+    sentence made it an offender. A guard that fires on the explanation has to
+    be silenced, and silencing it is exactly how the real case then gets waved
+    through — the same way an exemption list grows until it covers the file
+    the guard was written for.
+    """
+    try:
+        tree = ast.parse(src)
+    except SyntaxError:                                  # pragma: no cover
+        return False
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        fn = node.func
+        name = fn.attr if isinstance(fn, ast.Attribute) else getattr(fn, "id", "")
+        if name in RENDER_CALLS:
+            return True
+    return False
+
+
+def test_the_word_in_a_docstring_is_not_a_render():
+    """The exact shape that made this guard fail against correct code."""
+    assert not _renders_jinja(
+        '"""Deliberately NOT ``render_template``-based, see above."""\n')
+
+
+def test_a_bare_call_is_still_a_render():
+    assert _renders_jinja(
+        "from flask import render_template\n"
+        "def v():\n    return render_template('x.html')\n")
+
+
+def test_a_qualified_call_is_still_a_render():
+    """flask.render_template(...) is the same cache, spelled differently."""
+    assert _renders_jinja(
+        "import flask\n"
+        "def v():\n    return flask.render_template('x.html')\n")
+
+
+def test_render_template_string_counts_too():
+    """It compiles and caches exactly like a file-backed template."""
+    assert _renders_jinja(
+        "from flask import render_template_string\n"
+        "def v():\n    return render_template_string('{{ x }}')\n")
+
 
 def test_only_request_path_modules_render_templates():
     """TEMPLATE_CONSUMERS == ("web",) is only true while this holds.
@@ -195,7 +249,7 @@ def test_only_request_path_modules_render_templates():
         if "__pycache__" in path.parts:
             continue
         scanned += 1
-        if "render_template" not in path.read_text(errors="replace"):
+        if not _renders_jinja(path.read_text(errors="replace")):
             continue
         rel = path.relative_to(REPO).as_posix()
         if not rel.startswith(REQUEST_PATH_PREFIXES):

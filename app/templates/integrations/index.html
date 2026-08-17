@@ -164,7 +164,7 @@
             <td><input class="form-control form-control-sm" name="map_{{ a.id }}" value="{{ device_map.get(a.id|string, '') }}" placeholder="—"></td>
             <td>
               {% if device_map.get(a.id|string) %}
-                <span class="fw-badge fw-badge-ok">{{ _('mapped') }}</span>
+                <span class="fw-badge fw-badge-success">{{ _('mapped') }}</span>
               {% else %}
                 <span class="fw-badge fw-badge-info">{{ _('by name') }}</span>
               {% endif %}
@@ -205,7 +205,7 @@
           <td><a href="{{ url_for('integrations.hook_detail', slug=h.slug) }}"><strong>{{ h.name or h.slug }}</strong></a>
               <div class="small text-muted"><code>{{ h.slug }}</code></div></td>
           <td><code class="small">{{ h.event }}</code></td>
-          <td>{% if h.enabled %}<span class="fw-badge fw-badge-ok">{{ _('on') }}</span>{% else %}<span class="fw-badge fw-badge-muted">{{ _('off') }}</span>{% endif %}</td>
+          <td>{% if h.enabled %}<span class="fw-badge fw-badge-success">{{ _('on') }}</span>{% else %}<span class="fw-badge fw-badge-secondary">{{ _('off') }}</span>{% endif %}</td>
           <td class="small">{{ h.timeout }}s</td>
           <td class="small">{{ h.secrets|join(', ') or '—' }}</td>
           <td class="small text-muted">{{ h.updated_at or '' }}</td>
@@ -232,10 +232,10 @@
           <td class="small"><code>{{ r.slug }}</code></td>
           <td class="small"><code>{{ r.event }}</code></td>
           <td>
-            {% if r.status == 'ok' %}<span class="fw-badge fw-badge-ok">{{ _('ok') }}</span>
-            {% elif r.status in ('failed', 'timeout') %}<span class="fw-badge fw-badge-crit">{{ r.status }}</span>
+            {% if r.status == 'ok' %}<span class="fw-badge fw-badge-success">{{ _('ok') }}</span>
+            {% elif r.status in ('failed', 'timeout') %}<span class="fw-badge fw-badge-danger">{{ r.status }}</span>
             {% elif r.status == 'running' %}<span class="fw-badge fw-badge-info">{{ _('running') }}</span>
-            {% else %}<span class="fw-badge fw-badge-muted">{{ r.status }}</span>{% endif %}
+            {% else %}<span class="fw-badge fw-badge-secondary">{{ r.status }}</span>{% endif %}
           </td>
           <td class="small">{{ r.duration_ms if r.duration_ms is not none else '—' }}</td>
           <td class="small text-muted">{{ (r.error or r.detail or '')[:160] }}</td>

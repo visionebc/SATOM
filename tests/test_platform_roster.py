@@ -36,7 +36,26 @@ VERSION_LITERAL_EXEMPT = {
     "exceptions/index.html": "v2.0 es la version del API del appliance",
     "registry/index.html": "v2.0 es la version del API del appliance",
     "scheduled_actions/form.html": "v2.0 es la version del API del appliance",
+    "registry/versions.html": "v2.0 es la version del API del appliance; "
+                              "la pagina ENTERA trata de eso",
 }
+
+#: Un comentario Jinja se borra en el servidor y no llega a ningun navegador.
+JINJA_COMMENT = re.compile(r"\{#.*?#\}", re.S)
+
+
+def _strip_jinja_comments(text: str) -> str:
+    """El texto que un operador puede llegar a ver.
+
+    Sin este filtro el guardia se contesta con la prosa que lo explica:
+    change_requests/detail.html documenta en un comentario la tarjeta "that
+    claimed v1.0 for eight releases" -- el defecto historico que este mismo
+    test persigue. Marcarlo como infraccion obliga a exentar el fichero
+    entero, y entonces un literal DE VERDAD entra ahi sin vigilancia.
+
+    No greedy: dos comentarios en una linea no pueden tragarse lo de enmedio.
+    """
+    return JINJA_COMMENT.sub("", text)
 
 
 def _live_templates() -> list[pathlib.Path]:
@@ -59,7 +78,8 @@ def test_no_template_anywhere_hardcodes_the_application_version():
         rel = path.relative_to(TEMPLATES).as_posix()
         if rel in VERSION_LITERAL_EXEMPT:
             continue
-        found = VERSION_LITERAL.findall(path.read_text(encoding="utf-8"))
+        found = VERSION_LITERAL.findall(
+            _strip_jinja_comments(path.read_text(encoding="utf-8")))
         if found:
             offenders[rel] = found
     assert not offenders, (
@@ -72,8 +92,27 @@ def test_the_exemption_list_has_no_dead_entries():
     """Una excepcion que ya no aplica es una puerta abierta sin vigilancia."""
     dead = [rel for rel in VERSION_LITERAL_EXEMPT
             if not (TEMPLATES / rel).is_file()
-            or not VERSION_LITERAL.search((TEMPLATES / rel).read_text(encoding="utf-8"))]
+            or not VERSION_LITERAL.search(_strip_jinja_comments(
+                (TEMPLATES / rel).read_text(encoding="utf-8")))]
     assert not dead, f"excepciones que ya no hacen falta: {dead}"
+
+
+def test_a_version_literal_in_a_jinja_comment_is_not_an_offender():
+    """Nunca se renderiza, asi que no puede enganar a nadie."""
+    assert not VERSION_LITERAL.findall(
+        _strip_jinja_comments("{# the card that claimed v1.0 for releases #}"))
+
+
+def test_a_version_literal_outside_a_comment_is_still_an_offender():
+    """El filtro no puede ser una puerta trasera."""
+    assert VERSION_LITERAL.findall(
+        _strip_jinja_comments("<b>v1.0</b>{# esto si es un comentario #}"))
+
+
+def test_stripping_does_not_swallow_what_sits_between_two_comments():
+    """Un ``.*`` codicioso se comeria el literal de enmedio y daria verde."""
+    assert VERSION_LITERAL.findall(
+        _strip_jinja_comments("{# a #}<b>v9.9</b>{# b #}")) == ["v9.9"]
 
 
 def test_the_profile_about_card_interpolates_the_version(app, client):

@@ -47,6 +47,12 @@ def sealed(monkeypatch, tmp_path):
     # exactly the healthy case; the unhealthy case is simulated by lying about
     # the stat, not by trying to chown as a non-root user.
     monkeypatch.setattr(recovery_seal, "_data_dir", lambda: app_dir / "data")
+    # _tree_owner() derives from the REAL source tree, not from app_dir, so
+    # without this pin the verdict of every counterweight in this file depends
+    # on who happens to own the checkout on the machine running the suite.
+    # Pin it to the fixture's own tree, which is what the note above claims.
+    monkeypatch.setattr(recovery_seal, "_tree_owner",
+                        lambda: (app_dir.stat().st_uid, app_dir.stat().st_gid))
     monkeypatch.setattr(recovery, "current_fingerprints",
                         lambda: {"fernet": "aaaa", "ca": "bbbb"})
     monkeypatch.setattr(recovery, "export_material",
@@ -420,3 +426,76 @@ def test_a_supplied_passphrase_is_never_echoed_back(monkeypatch):
 
     assert PASS not in json.dumps(res.sections, default=str), \
         "the supplied passphrase came back out in the output"
+
+
+# --------------------------------------------------------------------------
+# the derivation itself: root is the one answer that disables both callers
+# --------------------------------------------------------------------------
+
+def _own_lie(monkeypatch, owners):
+    """Make the named paths stat as somebody else's, leaving mode intact."""
+    real = Path.stat
+
+    class Fake:
+        def __init__(self, st, uid, gid):
+            self.st_uid, self.st_gid = uid, gid
+            self.st_mode, self.st_mtime = st.st_mode, st.st_mtime
+
+    def patched(self, *a, **k):
+        st = real(self, *a, **k)
+        lie = owners.get(str(self))
+        return Fake(st, *lie) if lie else st
+
+    monkeypatch.setattr(Path, "stat", patched)
+
+
+def test_a_root_owned_install_root_does_not_redefine_the_service_account(
+        monkeypatch):
+    """Measured on a live node 2026-08-17, and it inverted this whole file.
+
+    The install root was root-owned 0755 with every child owned by the
+    service account. _tree_owner() answered root, so _hand_over() chowned the
+    envelope root->root (a no-op leaving it unreadable by the datasync) and
+    _reachable() then compared root against root and called that REACHABLE --
+    the exact false custody this module was written to make impossible.
+    """
+    here = Path(recovery_seal.__file__).resolve()
+    if here.parents[1].stat().st_uid == 0:
+        pytest.skip("this checkout is root-owned end to end; nothing to derive")
+
+    _own_lie(monkeypatch, {str(here.parents[2]): (0, 0)})
+
+    uid, gid = recovery_seal._tree_owner()
+
+    assert uid != 0, (
+        "a root-owned install root redefined the service account as root: "
+        "_hand_over becomes a no-op and _reachable compares root to root")
+    assert (uid, gid) == (here.parents[1].stat().st_uid,
+                          here.parents[1].stat().st_gid), \
+        "did not fall through to the anchor the service account owns"
+
+
+def test_the_derivation_still_prefers_the_install_root_when_it_is_owned(
+        monkeypatch):
+    """Falling through must be the exception, not the rule.
+
+    A derivation that always skipped to a child would answer about whichever
+    child it picked, which is how it would silently stop tracking a site that
+    adopted an existing tree under a different account.
+    """
+    here = Path(recovery_seal.__file__).resolve()
+    _own_lie(monkeypatch, {str(here.parents[2]): (4242, 4343)})
+
+    assert recovery_seal._tree_owner() == (4242, 4343)
+
+
+def test_a_root_service_account_is_not_told_it_cannot_read(sealed, monkeypatch):
+    """An all-root install genuinely reads every mode there is."""
+    recovery_seal.seal(PASS, by="test")
+    monkeypatch.setattr(recovery_seal, "_tree_owner", lambda: (0, 0))
+    _stat_lie(monkeypatch, uid=1000, gid=1000, mode=0o040700)
+
+    st = recovery_seal.seal_state()
+
+    assert st["reachable"] is True, \
+        "told root it cannot read a 0700 directory: %s" % st["reach_error"]

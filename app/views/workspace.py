@@ -1,3 +1,4 @@
+import re
 from urllib.parse import quote
 
 from flask import Blueprint, render_template, jsonify, request
@@ -27,6 +28,46 @@ EP_POOL = '/api/v2.0/cmdb/server-policy/server-pool'
 EP_WPP = '/api/v2.0/cmdb/waf/web-protection-profile.inline-protection'
 EP_VIPLIST = '/api/v2.0/cmdb/server-policy/vserver/vip-list'
 EP_PSERVER = '/api/v2.0/cmdb/server-policy/server-pool/pserver-list'
+# A FortiWeb port name: port1, port1.100 (VLAN), vzone names, aggregates.
+# Deliberately narrow — the value is written verbatim into a device payload,
+# and "the browser sent it" is not a reason to relay arbitrary text to a
+# firewall's config.
+_IFACE_NAME_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$')
+
+
+def clean_iface_map(action, raw):
+    """Normalise the dialog's ``{source port: destination port}`` mapping.
+
+    Returns ``(mapping, bad_name)``; ``bad_name`` is ``None`` on success and
+    the offending string otherwise, so the caller can refuse rather than
+    silently drop (a mapping quietly discarded would clone onto the source's
+    ports while the operator watched a selector say otherwise).
+
+    A FUNCTION, not four lines inline in the route, because the two rules it
+    encodes are the kind that get verified by grepping the route for a
+    keyword — and that assertion passes for the wrong reason as soon as the
+    keyword appears anywhere else in the same function. Here they are
+    executable:
+
+      * cross-box actions ONLY. A same-box clone shares the chassis, so
+        re-binding it would move the copy to a network nobody asked for.
+      * port names, not free text. The value is written verbatim into a
+        firewall's config; "the browser sent it" is not provenance.
+    """
+    if action not in policy_ops._NEEDS_TARGET or not isinstance(raw, dict):
+        return {}, None
+    out = {}
+    for src_if, dst_if in raw.items():
+        s, d = str(src_if or '').strip(), str(dst_if or '').strip()
+        if not s or not d or s == d:
+            continue
+        if not _IFACE_NAME_RE.match(s):
+            return {}, s
+        if not _IFACE_NAME_RE.match(d):
+            return {}, d
+        out[s] = d
+    return out, None
+
 _SAVE_EPS = {EP_POLICY, EP_POOL, EP_WPP, EP_VIPLIST, EP_PSERVER}
 _CHILD_EPS = {EP_VIPLIST, EP_PSERVER}
 
@@ -218,6 +259,13 @@ def _parse_action(appliance_id):
             except ValueError:
                 return _err('VIP IP %r is not a valid IPv4 address' % vip_ip)
         opts['vip_ip'] = vip_ip
+        # {source port: destination port}. Cross-box only: a same-box clone
+        # shares the chassis, so re-binding there would move the copy to a
+        # different network without the operator having asked for that.
+        iface_map, bad = clean_iface_map(action, body.get('iface_map'))
+        if bad is not None:
+            return _err('interface name %r is not a valid port name' % bad)
+        opts['iface_map'] = iface_map
     return appl, action, policies, new_name, dest, opts, None
 
 

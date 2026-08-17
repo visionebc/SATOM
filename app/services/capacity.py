@@ -105,6 +105,13 @@ def limit_for_appliance(appliance, object_type: str) -> CapacityLimit | None:
 # ---------------------------------------------------------------------------
 
 def current_count(appliance_id: int, object_type: str) -> int:
+    """Objects of ``object_type`` recorded against ONE appliance ROW.
+
+    Kept as THE counting seam: ``chassis_count`` sums this per sibling rather
+    than issuing its own widened query. A second query path would have moved
+    the seam that existing callers and tests already intercept, and the first
+    symptom of that is a test that stops isolating the database — which is
+    exactly how this refactor first broke tests/test_capacity_plan.py."""
     spec = OBJECT_TYPES.get(object_type)
     if not spec:
         return 0
@@ -113,6 +120,30 @@ def current_count(appliance_id: int, object_type: str) -> int:
     return int(db.session.query(func.count()).select_from(DeviceObject).filter(
         DeviceObject.appliance_id == appliance_id,
         DeviceObject.logical_name.in_(logicals)).scalar() or 0)
+
+
+def chassis_count(appliance, object_type: str) -> tuple[int, int]:
+    """``(used across the whole CHASSIS, number of rows counted)``.
+
+    A cap is a property of the HARDWARE — it comes from the model and the
+    firmware, not from the ADOM. A multi-ADOM device registered as three rows
+    was therefore getting three independent budgets against one physical box,
+    and every one of them reported room. Verified live on fortiweb09: the
+    policy list differs per ADOM (so the rows really do hold different
+    objects) while ``system/interface`` is identical from all of them (so the
+    hardware really is shared).
+
+    Degrades to the single row whenever the grouping cannot be resolved — an
+    unknown chassis must NARROW, never widen to unrelated devices."""
+    try:
+        from ..models import chassis_siblings
+        rows = chassis_siblings(appliance)
+    except Exception:  # noqa: BLE001 — no app context / unit-test fakes
+        rows = [appliance]
+    ids = [r.id for r in rows if getattr(r, "id", None) is not None] \
+        or [appliance.id]
+    ids = sorted(set(ids))
+    return sum(current_count(i, object_type) for i in ids), len(ids)
 
 
 @dataclass
@@ -126,6 +157,12 @@ class Headroom:
     free: int | None          # effective_cap - used (None if no cap defined)
     ok: bool                  # would a +1 create stay within the cap?
     known: bool               # is there a cap row at all?
+    # How many appliance ROWS the `used` count spans. 1 for an ordinary
+    # device; N for a multi-ADOM chassis. Carried on the measurement itself so
+    # every consumer describes the number it was given — asking a second time
+    # would be a second measurement, and a stubbed Headroom (the unit tests)
+    # would then be paired with a live DB query.
+    rows: int = 1
 
     def to_dict(self) -> dict:
         return self.__dict__.copy()
@@ -138,7 +175,9 @@ def headroom(appliance, object_type: str, want: int = 0) -> Headroom:
     used+want stays within the effective cap."""
     spec = OBJECT_TYPES.get(object_type, {})
     label = spec.get("label", object_type)
-    used = current_count(appliance.id, object_type)
+    # CHASSIS-wide, not row-wide. See chassis_count: the cap belongs to the
+    # hardware, and a multi-ADOM device is several rows on one box.
+    used, n_rows = chassis_count(appliance, object_type)
     lim = limit_for_appliance(appliance, object_type)
     hard = lim.hard_max if lim else None
     opcap = lim.operational_cap if lim else None
@@ -146,7 +185,7 @@ def headroom(appliance, object_type: str, want: int = 0) -> Headroom:
     free = (eff - used) if eff is not None else None
     ok = True if eff is None else (used + max(want, 0) <= eff)
     return Headroom(object_type, label, used, hard, opcap, eff, free, ok,
-                    known=lim is not None)
+                    known=lim is not None, rows=n_rows)
 
 
 def fleet_headroom(appliance) -> list[Headroom]:
@@ -160,16 +199,24 @@ def check_headroom(appliance, object_type: str, want: int = 1) -> tuple[bool, st
     un-provisioned model never blocks work) but the message says so. Fail-CLOSED
     only when a cap exists and would be exceeded."""
     h = headroom(appliance, object_type, want=want)
+    # When the count spans several ADOM rows, SAY SO. "used 812" against a row
+    # the operator believes holds 300 reads as a bug in the counter unless the
+    # message names the other rows it is counting. Read off the Headroom that
+    # was already computed — a second chassis_count here would query the DB
+    # even when the caller stubbed `headroom`, which is precisely the coupling
+    # that broke tests/test_capacity_plan.py.
+    scope = (f" across {h.rows} ADOM rows on {appliance.host}"
+             if getattr(h, "rows", 1) > 1 else "")
     if not h.known or h.effective_cap is None:
         return True, (f"No capacity limit set for {appliance.model or '?'} "
                       f"{firmware_major(appliance.firmware) or '?'} / {h.label}; "
-                      f"allowing (used={h.used}).")
+                      f"allowing (used={h.used}{scope}).")
     if h.ok:
         return True, (f"OK: {h.used}+{want} <= {h.effective_cap} {h.label} "
-                      f"(free {h.free}).")
+                      f"(free {h.free}{scope}).")
     return False, (f"Capacity limit reached for {h.label} on {appliance.name}: "
-                   f"used {h.used} + {want} would exceed cap {h.effective_cap} "
-                   f"(hard max {h.hard_max}).")
+                   f"used {h.used}{scope} + {want} would exceed cap "
+                   f"{h.effective_cap} (hard max {h.hard_max}).")
 
 
 def object_type_for_logical(logical: str) -> str | None:

@@ -530,10 +530,123 @@ def visible_appliance_or_404(id, user=None):
 
 
 # ---------------------------------------------------------------------------
+# CHASSIS grouping — several Appliance rows that are ONE physical device.
+#
+# A FortiWeb in ADOM mode partitions its CONFIG, not its hardware. The
+# authentication token carries one ADOM (``Appliance.vdom``) and there is no
+# per-request override, so a multi-ADOM device can only be registered as one
+# row per ADOM. Verified live on fortiweb09 (7.6.8, adom-admin enable):
+#
+#   * ``server-policy/policy`` differs per ADOM — that is the partition.
+#   * ``system/interface`` and ``system/vip`` are IDENTICAL from every ADOM —
+#     the network is a property of the chassis, not of the ADOM.
+#
+# So three rows are three views of one CPU, one RAM budget, one set of ports
+# and one credential. Anything that treats them as three devices — capacity
+# headroom, scrape scheduling, "migrate this policy to another FortiWeb" — is
+# answering a question about hardware with a count of rows.
+#
+# The key is DERIVED from (kind, host, port) and never stored. A stored group
+# id is one more thing that can disagree with reality after an edit; two rows
+# that dial the same address and port ARE the same box, and nothing an
+# operator types can make that false.
+# ---------------------------------------------------------------------------
+
+def chassis_key(appl) -> str | None:
+    """Stable identity of the PHYSICAL device behind an appliance row.
+
+    ``None`` when the row has no connection of its own — an HA cluster node 0
+    in per-node mode is a logical container, and grouping every such
+    container under one "no host" bucket would merge unrelated clusters."""
+    host = (getattr(appl, "host", "") or "").strip().lower()
+    if not host or getattr(appl, "is_cluster", False):
+        return None
+    return "%s|%s|%s" % (getattr(appl, "kind", "") or "", host,
+                         getattr(appl, "port", None) or 443)
+
+
+def chassis_siblings(appl, *, include_self: bool = True) -> list["Appliance"]:
+    """Every appliance row that is the SAME physical device as ``appl``.
+
+    Ordered by name so callers render a stable list. Returns ``[appl]`` (or
+    ``[]``) when the row has no chassis key — an unknown grouping must degrade
+    to "this row alone", never to "every ungrouped row"."""
+    key = chassis_key(appl)
+    if key is None:
+        return [appl] if include_self else []
+    rows = (Appliance.query
+            .filter(Appliance.kind == appl.kind,
+                    Appliance.host == appl.host,
+                    Appliance.port == appl.port,
+                    Appliance.is_cluster.is_(False))
+            .order_by(Appliance.name).all())
+    if not include_self:
+        rows = [r for r in rows if r.id != appl.id]
+    return rows
+
+
+def is_multi_adom_chassis(appl) -> bool:
+    """True when this row shares its hardware with at least one other row."""
+    return len(chassis_siblings(appl, include_self=False)) > 0
+
+
+# ---------------------------------------------------------------------------
 # ApplianceInterface — documented physical port and what it connects to.
 # Manual documentation (not pulled from the device); rebuilt replace-all when
 # the appliance is edited. Removed with its appliance via ON DELETE CASCADE.
 # ---------------------------------------------------------------------------
+
+# What a port is FOR. Discovery can read a port's name, media type and address
+# off the device; it can NOT read its PURPOSE, because the device does not
+# model one — 'port3 carries client traffic' is a fact about the network, not
+# about the appliance. That is why this is operator-authored and why a
+# cross-box clone cannot infer it: two boxes can both have a 'port3' and mean
+# entirely different networks by it (see services.policy_ops interface gate).
+#
+# 'unspecified' is the honest default for every row that predates the field —
+# it means NOT DECLARED, and it is deliberately distinct from 'other', which
+# means the operator looked and none of the roles fit. A gate that treated
+# "never declared" as "declared and unmatched" would report agreement between
+# two devices that have simply both been left blank.
+INTERFACE_ROLES: tuple[tuple[str, str], ...] = (
+    ("unspecified", "Not declared"),
+    ("management", "Management (GUI / API / SSH)"),
+    ("traffic_in", "Traffic — front-side (clients / VIPs)"),
+    ("traffic_out", "Traffic — back-side (real servers / pools)"),
+    ("traffic_both", "Traffic — one-arm (front + back)"),
+    ("inline_pair", "Inline inspection pair member"),
+    ("ha_sync", "HA heartbeat / config sync"),
+    ("ha_reserved", "HA reserved management"),
+    ("mirror", "Traffic mirror / sniffer (span)"),
+    ("unused", "Unused"),
+    ("other", "Other (see notes)"),
+)
+INTERFACE_ROLE_KEYS: tuple[str, ...] = tuple(k for k, _ in INTERFACE_ROLES)
+#: Roles that carry DATA-PLANE traffic — the ones a Server Policy's VIP, block
+#: port or capture port can legitimately be bound to. Used by the clone/migrate
+#: interface gate to tell "the destination has a port with that name" from "the
+#: destination has a port with that name AND it is a traffic port".
+INTERFACE_TRAFFIC_ROLES: frozenset[str] = frozenset(
+    {"traffic_in", "traffic_out", "traffic_both", "inline_pair", "mirror"}
+)
+
+
+def interface_role_label(role: str | None) -> str:
+    """Human label for a stored role key ('' / unknown → 'Not declared')."""
+    key = (role or "unspecified").strip() or "unspecified"
+    for k, label in INTERFACE_ROLES:
+        if k == key:
+            return label
+    return key
+
+
+def clean_interface_role(raw: str | None) -> str:
+    """Normalise a posted role to the vocabulary; anything unknown becomes
+    'unspecified' rather than being stored verbatim — a free-text role would
+    make the gate below compare strings nobody agreed on."""
+    key = (raw or "").strip().lower()
+    return key if key in INTERFACE_ROLE_KEYS else "unspecified"
+
 
 class ApplianceInterface(db.Model):
     __tablename__ = "appliance_interfaces"
@@ -547,16 +660,34 @@ class ApplianceInterface(db.Model):
     )
     name = db.Column(db.String(64), nullable=False, default="")          # e.g. "port1"
     if_type = db.Column(db.String(64), nullable=True)                    # e.g. "10G SFP+"
+    #: WHAT THE PORT IS FOR — one of INTERFACE_ROLE_KEYS. Declared by the
+    #: operator at device registration; never overwritten by rediscovery.
+    role = db.Column(db.String(32), nullable=False, default="unspecified")
+    #: The L3 segment this port sits on, free text ("DMZ / VLAN 20"). Two
+    #: appliances agreeing on a port NAME prove nothing; this is the field a
+    #: human reads when the gate says "same name, verify the network".
+    segment = db.Column(db.String(128), nullable=True)
     connected_to = db.Column(db.String(256), nullable=True)             # peer device + port
     ip_address = db.Column(db.String(64), nullable=True)
     notes = db.Column(db.Text, nullable=True)
     sort_order = db.Column(db.Integer, nullable=False, default=0)
+
+    @property
+    def role_label(self) -> str:
+        return interface_role_label(self.role)
+
+    @property
+    def carries_traffic(self) -> bool:
+        return (self.role or "") in INTERFACE_TRAFFIC_ROLES
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "name": self.name or "",
             "if_type": self.if_type or "",
+            "role": self.role or "unspecified",
+            "role_label": self.role_label,
+            "segment": self.segment or "",
             "connected_to": self.connected_to or "",
             "ip_address": self.ip_address or "",
             "notes": self.notes or "",

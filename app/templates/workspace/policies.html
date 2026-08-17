@@ -276,6 +276,20 @@
           <input type="text" class="form-control form-control-sm" id="actionVipIp" placeholder="{{ _('e.g. 240.1.10.1') }}" autocomplete="off">
           <div class="form-text" id="actionVipHint" style="font-size:12px;"></div>
         </div>
+        <div id="actionFieldIface" class="mb-3 d-none">
+          <label class="fw-fld-label">{{ _('Interface binding on the destination') }}</label>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-1" id="actionIfaceTable">
+              <thead><tr>
+                <th>{{ _('Source port') }}</th>
+                <th>{{ _('Used by') }}</th>
+                <th style="min-width:210px;">{{ _('Destination port') }}</th>
+              </tr></thead>
+              <tbody id="actionIfaceBody"></tbody>
+            </table>
+          </div>
+          <div class="form-text" id="actionIfaceHint" style="font-size:12px;"></div>
+        </div>
         <div id="actionBulkIpNote" class="mb-3 d-none">
           <span class="fw-badge fw-badge-secondary">{{ _('Bulk') }}</span>
           <span class="text-muted" style="font-size:12.5px;">{{ _('Each copy\'s VIP gets a') }} <strong>{{ _('dummy IP') }}</strong> automatically, per the admin rules:
@@ -571,6 +585,13 @@
     document.getElementById('actionFieldVip').classList.toggle('d-none', !(isClone && single));
     document.getElementById('actionVipIp').value = '';
     document.getElementById('actionVipHint').textContent = '';
+    // Interface re-binding: cross-box only, and only once the checklist has
+    // told us which ports the tree actually binds. Reset here so a second
+    // dialog never inherits the previous policy's mapping.
+    ifaceState = { rows: [], dest: [], chosen: {} };
+    document.getElementById('actionFieldIface').classList.add('d-none');
+    document.getElementById('actionIfaceBody').innerHTML = '';
+    document.getElementById('actionIfaceHint').textContent = '';
     document.getElementById('actionBulkIpNote').classList.toggle('d-none', !(isClone && !single));
     // WPP options: admin defaults, editable only after "Override admin defaults".
     document.getElementById('actionFieldWppOpts').classList.toggle('d-none', !isClone);
@@ -589,6 +610,79 @@
     if (isClone) runChecklist();
   }
 
+  // Source→destination port mapping the operator picked, plus what the last
+  // checklist told us about both sides. `chosen` holds ONLY real overrides:
+  // an entry equal to the source name is dropped, so "left alone" reaches the
+  // server as absent rather than as a rewrite to the same value.
+  var ifaceState = { rows: [], dest: [], chosen: {} };
+
+  function renderIfaceMap(sg) {
+    var box = document.getElementById('actionFieldIface');
+    var rows = (sg && sg.interfaces) || [];
+    var dest = (sg && sg.dest_interfaces) || [];
+    ifaceState.rows = rows; ifaceState.dest = dest;
+    if (!NEEDS_DEST[current.action] || !rows.length) {
+      box.classList.add('d-none');
+      document.getElementById('actionIfaceBody').innerHTML = '';
+      return;
+    }
+    box.classList.remove('d-none');
+    var present = {};
+    dest.forEach(function (d) { present[d.name] = d; });
+    var html = rows.map(function (r) {
+      var target = ifaceState.chosen[r.source] || r.target || r.source;
+      // The destination list is what the device reported. When it could not be
+      // read there is nothing to offer, so the current value is shown as the
+      // only option rather than an empty select that looks like a choice.
+      var opts;
+      if (dest.length) {
+        opts = dest.map(function (d) {
+          return '<option value="' + esc(d.name) + '"' + (d.name === target ? ' selected' : '') + '>'
+            + esc(d.name) + (d.ip ? ' — ' + esc(d.ip) : '')
+            + ' · ' + esc(d.role_label || 'Not declared') + '</option>';
+        }).join('');
+      } else {
+        opts = '<option value="' + esc(target) + '" selected>' + esc(target)
+          + ' (destination not readable)</option>';
+      }
+      var warn = (dest.length && !present[target])
+        ? '<div style="font-size:11.5px;"><span class="fw-badge fw-badge-danger">missing</span></div>' : '';
+      return '<tr><td class="font-monospace">' + esc(r.source)
+        + '<div class="text-muted" style="font-size:11.5px;">' + esc(r.source_role_label || 'Not declared')
+        + (r.source_segment ? ' · ' + esc(r.source_segment) : '') + '</div></td>'
+        + '<td class="text-muted" style="font-size:12px;">' + esc((r.fields || []).join(', ')) + '</td>'
+        + '<td><select class="form-select form-select-sm fw-iface-sel" data-src="' + esc(r.source) + '">'
+        + opts + '</select>' + warn + '</td></tr>';
+    }).join('');
+    document.getElementById('actionIfaceBody').innerHTML = html;
+    document.getElementById('actionIfaceHint').textContent = dest.length
+      ? 'Ports read live from the destination. The role next to each name is what an operator DECLARED on that device — a matching port name alone does not prove it is the same network.'
+      : 'The destination did not answer system/interface, so nothing could be verified. That is "not measured", not "fine".';
+  }
+
+  // Changing a target re-runs the checklist: the gate's verdict depends on the
+  // chosen port, so a stale verdict next to a new choice would be a checklist
+  // that describes a different operation than the one Apply would perform.
+  document.getElementById('actionIfaceBody').addEventListener('change', function (e) {
+    var sel = e.target.closest('.fw-iface-sel');
+    if (!sel) return;
+    var src = sel.dataset.src, val = sel.value;
+    if (!val || val === src) delete ifaceState.chosen[src];
+    else ifaceState.chosen[src] = val;
+    chk.previewDone = false;
+    document.getElementById('actionPreview').classList.add('d-none');
+    updateApply();
+    runChecklist();
+  });
+
+  function ifaceMapValue() {
+    var out = {};
+    Object.keys(ifaceState.chosen).forEach(function (k) {
+      if (ifaceState.chosen[k] && ifaceState.chosen[k] !== k) out[k] = ifaceState.chosen[k];
+    });
+    return out;
+  }
+
   function wppChoiceValue() {
     var box = document.getElementById('actionWppChoice');
     if (box.classList.contains('d-none')) return '';
@@ -604,6 +698,7 @@
     if (CLONE_ACTIONS[current.action]) {
       var single = current.policies.length === 1;
       if (single) p.vip_ip = document.getElementById('actionVipIp').value.trim();
+      if (NEEDS_DEST[current.action]) p.iface_map = ifaceMapValue();
       var choice = wppChoiceValue();
       if (choice === 'use_dest') {
         p.copy_wpp = false;
@@ -626,7 +721,7 @@
   function renderChecklist(data) {
     var LV = { ok: ['#10b981', 'bi-check-circle'], warn: ['#fbbf24', 'bi-exclamation-triangle'],
                choice: ['#fbbf24', 'bi-signpost-split'], block: ['#ef4444', 'bi-x-octagon'] };
-    var hasBlock = false, wppDiff = null, html = '';
+    var hasBlock = false, wppDiff = null, ifaceSuggest = null, html = '';
     (data.policies || []).forEach(function (pr) {
       html += '<div style="margin:6px 0 2px;"><strong>' + esc(pr.policy) + '</strong></div>';
       (pr.checks || []).forEach(function (c) {
@@ -640,7 +735,21 @@
       });
       var sg = pr.suggest || {};
       if (sg.wpp_status === 'different' && !wppDiff) wppDiff = sg;
+      // MERGED across every selected policy, not taken from the first one:
+      // a source→destination port mapping is a property of the two chassis,
+      // so it applies to the whole run — and a bulk run whose second policy
+      // binds a port the first does not would otherwise offer no control over
+      // that port while still rewriting nothing for it.
+      if (!ifaceSuggest) ifaceSuggest = { interfaces: [], dest_interfaces: [] };
+      if ((sg.dest_interfaces || []).length && !ifaceSuggest.dest_interfaces.length)
+        ifaceSuggest.dest_interfaces = sg.dest_interfaces;
+      (sg.interfaces || []).forEach(function (r) {
+        var prev = ifaceSuggest.interfaces.filter(function (x) { return x.source === r.source; })[0];
+        if (!prev) { ifaceSuggest.interfaces.push(Object.assign({}, r, { fields: (r.fields || []).slice() })); return; }
+        (r.fields || []).forEach(function (f) { if (prev.fields.indexOf(f) < 0) prev.fields.push(f); });
+      });
     });
+    renderIfaceMap(ifaceSuggest);
     document.getElementById('actionChecklistBody').innerHTML = html || '<span class="text-muted">No checks.</span>';
     chk.hasBlock = hasBlock;
     // Prefill the VIP suggestion (single) from the admin dummy-IP rules.

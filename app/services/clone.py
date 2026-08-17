@@ -53,6 +53,21 @@ _CERT_URNS = {"cmdb/system/certificate.local", "cmdb/system/certificate.sni"}
 _VIP_URN = "cmdb/system/vip"
 _WPP_URNS = (_WPP_INLINE, _WPP_OFFLINE)
 
+
+def interface_fields() -> frozenset[str]:
+    """Every payload field that names a ``system/interface``.
+
+    DERIVED from ``fortiweb_field_schema.REF_ENDPOINTS`` rather than restated
+    here. A hand-kept copy is how this stops agreeing with the schema on the
+    next FortiWeb release — and the failure mode is silent: a field that has
+    dropped out of the copy is simply never checked, so the clone binds it to a
+    port the destination may not have and the gate says everything is fine.
+    Today this resolves to ``interface`` (system/vip + the vip-list row),
+    ``data-capture-port`` and ``block-port`` (the policy itself)."""
+    from .fortiweb_field_schema import REF_ENDPOINTS
+    return frozenset(k for k, v in REF_ENDPOINTS.items()
+                     if v == "system/interface")
+
 # Values that mean "no reference" when read off a parent field.
 _EMPTY_REFS = {"", "0", "disable", "enable", "none", "None", "http://", "https://"}
 
@@ -607,6 +622,66 @@ def set_vip_ip(items: list[CloneItem], ip: str = "",
     return changed
 
 
+def interface_refs(items: list[CloneItem]) -> list[dict]:
+    """Every ``system/interface`` binding carried by a plan, in plan order.
+
+    Returns ``[{"interface", "field", "urn", "mkey", "kind", "status"}]``.
+
+    Reports bindings on items of EVERY status, not just ``create``. An item
+    that already exists at the destination is not evidence that its interface
+    does — ``skip-if-exists`` matches on the object's mkey, never on what the
+    object points at — but it IS the case where a rewrite must not happen,
+    so the caller needs to see both and tell them apart via ``status``."""
+    fields = interface_fields()
+    out: list[dict] = []
+    for it in items:
+        if it.kind not in ("object", "subrow") or not isinstance(it.payload, dict):
+            continue
+        for field in fields:
+            val = str(it.payload.get(field) or "").strip()
+            if not val or val in _EMPTY_REFS:
+                continue
+            out.append({"interface": val, "field": field, "urn": it.urn,
+                        "mkey": it.mkey, "kind": it.kind, "status": it.status})
+    return out
+
+
+def set_interface(items: list[CloneItem], mapping: dict[str, str]) -> list[str]:
+    """Re-bind TO-CREATE objects from a source port to a destination port.
+
+    ``mapping`` is ``{source interface name: destination interface name}`` —
+    per-name and not a single value, because one policy tree can legitimately
+    touch several ports (a VIP on the front-side port, a block port on
+    another) and collapsing them onto one address would silently merge two
+    networks.
+
+    Only ``create`` items are rewritten. An object that already exists at the
+    destination belongs to the destination; re-pointing its interface here
+    would describe a change this clone is not going to make — the plan would
+    claim a binding the device never receives."""
+    fields = interface_fields()
+    changed: list[str] = []
+    for it in items:
+        if it.status != "create" or it.kind not in ("object", "subrow"):
+            continue
+        if not isinstance(it.payload, dict):
+            continue
+        payload = it.payload
+        notes: list[str] = []
+        for field in fields:
+            cur = str(payload.get(field) or "").strip()
+            new = (mapping.get(cur) or "").strip()
+            if not cur or not new or new == cur:
+                continue
+            payload = {**payload, field: new}
+            notes.append("%s %s → %s" % (field, cur, new))
+            changed.append("%s.%s: %s → %s" % (it.mkey, field, cur, new))
+        if notes:
+            it.payload = payload
+            it.note = (it.note + " · " if it.note else "") + " · ".join(notes)
+    return changed
+
+
 def rename_wpp(items: list[CloneItem], new_name: str) -> str:
     """Re-label the copied Web Protection Profile as ``new_name`` and re-point
     every reference to it (the root policy's ``web-protection-profile`` field,
@@ -946,4 +1021,5 @@ __all__ = [
     "ROOT_SERVER_POLICY", "ROOT_WPP", "validate_completeness",
     "via_field_index", "classify_scope", "resolve_shared", "deep_rename",
     "wants_by_logical",
+    "interface_fields", "interface_refs", "set_interface",
 ]

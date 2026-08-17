@@ -34,20 +34,21 @@
     wrap.tabIndex = -1;
     wrap.innerHTML =
       '<div class="modal-dialog modal-xl modal-dialog-scrollable"><div class="modal-content">' +
-      '<div class="modal-header">' +
-      '<h5 class="modal-title"><i class="bi bi-shield-exclamation me-2"></i>False-positive explainer</h5>' +
-      '<button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>' +
-      '<div class="modal-body">' +
+      '<div class="modal-header py-2">' +
+      '<h6 class="modal-title mb-0"><i class="bi bi-shield-exclamation me-1"></i>False-positive explainer' +
+      '<span class="text-muted small fw-normal ms-1">attack log → carve-out</span></h6>' +
+      '<button type="button" class="btn-close ms-auto" data-bs-dismiss="modal" aria-label="Close"></button></div>' +
+      '<div class="modal-body pt-2">' +
       '<div class="row g-2">' +
       '<div class="col-md-9">' +
-      '<label class="form-label small text-muted mb-1">Attack-log entry, or a raw HTTP request</label>' +
-      '<textarea id="fw-fp-in" class="form-control font-monospace" rows="6" ' +
+      '<label class="form-label small fw-bold mb-1">Attack-log entry, or a raw HTTP request</label>' +
+      '<textarea id="fw-fp-in" class="form-control form-control-sm font-monospace" rows="6" ' +
       'placeholder="date=… main_type=&quot;Signature Detection&quot; http_url=&quot;/x&quot; signature_id=&quot;0902…&quot;&#10;— or —&#10;{&quot;main_type&quot;: &quot;…&quot;}&#10;— or —&#10;POST /api/v2/tickets HTTP/1.1"></textarea>' +
       '</div>' +
       '<div class="col-md-3 d-flex flex-column gap-2 justify-content-end">' +
-      '<button class="fw-btn fw-btn-primary" id="fw-fp-run"><i class="bi bi-search me-1"></i>Explain</button>' +
-      '<button class="fw-btn" id="fw-fp-sample"><i class="bi bi-file-text me-1"></i>Load a sample</button>' +
-      '<button class="fw-btn" id="fw-fp-clear"><i class="bi bi-x-lg me-1"></i>Clear</button>' +
+      '<button class="btn btn-sm btn-fw-primary" id="fw-fp-run"><i class="bi bi-search me-1"></i>Explain</button>' +
+      '<button class="btn btn-sm btn-fw-outline" id="fw-fp-sample"><i class="bi bi-file-text me-1"></i>Load a sample</button>' +
+      '<button class="btn btn-sm btn-fw-secondary" id="fw-fp-clear"><i class="bi bi-x-lg me-1"></i>Clear</button>' +
       '</div></div>' +
       '<div id="fw-fp-err" class="text-danger small mt-2"></div>' +
       '<div id="fw-fp-out" class="mt-3"></div>' +
@@ -97,10 +98,11 @@
     let h = '';
 
     // --- what was read, and what was NOT --------------------------------
-    h += '<div class="fw-card p-3 mb-3">' +
-      '<div class="d-flex justify-content-between align-items-center mb-2">' +
-      '<strong>Entry read</strong><span class="fw-badge fw-badge-secondary">' +
-      esc(d.fmt || 'unknown format') + '</span></div>';
+    h += '<div class="fw-card">' +
+      '<div class="fw-card-header"><h6 class="fw-card-title">Entry read</h6>' +
+      '<span class="fw-badge fw-badge-secondary">' +
+      esc(d.fmt || 'unknown format') + '</span></div>' +
+      '<div class="fw-card-body">';
     Object.keys(d.row || {}).forEach(k => { h += kv(k, d.row[k]); });
     if (d.mapped && Object.keys(d.mapped).length) {
       h += '<div class="small text-muted mt-2">Renamed to SATOM\'s field names: ' +
@@ -114,7 +116,7 @@
         esc(Object.keys(d.unmapped).join(', ')) +
         ' — these keys are not attack-log fields SATOM recognises, so nothing below rests on them.</div>';
     }
-    h += '</div>';
+    h += '</div></div>';
 
     if (d.missing && d.missing.length) {
       h += '<div class="alert alert-info py-2 small mb-3"><strong>Absent from this entry, and what each one decides:</strong><ul class="mb-0 mt-1">';
@@ -123,24 +125,27 @@
     }
 
     if (d.decoded && d.decoded.length) {
-      h += '<div class="fw-card p-3 mb-3"><div class="fw-semibold mb-2">Payload, decoded</div>';
+      h += '<div class="fw-card">' +
+        '<div class="fw-card-header"><h6 class="fw-card-title">Payload, decoded</h6></div>' +
+        '<div class="fw-card-body">';
       d.decoded.forEach(l => {
         h += '<div class="small py-1 border-bottom"><span class="fw-badge fw-badge-info me-2">' +
           esc(l.how) + '</span><span class="font-monospace">' + esc(l.value) + '</span></div>';
       });
-      h += '</div>';
+      h += '</div></div>';
     }
 
     // --- the carve-outs -------------------------------------------------
     (d.types || []).forEach((t, i) => {
       const rec = t.recommended || {};
       const prev = rec.preview || {};
-      h += '<div class="fw-card p-3 mb-2">' +
-        '<div class="d-flex justify-content-between align-items-start mb-1">' +
-        '<div><strong>' + esc(t.label) + '</strong>' +
-        '<div class="small text-muted">' + esc(t.group || '') + '</div></div>' +
+      h += '<div class="fw-card">' +
+        '<div class="fw-card-header">' +
+        '<h6 class="fw-card-title">' + esc(t.label) +
+        (t.group ? ' <span class="text-muted small fw-normal">' + esc(t.group) + '</span>' : '') + '</h6>' +
         '<span class="fw-badge ' + (i === 0 ? 'fw-badge-success' : 'fw-badge-secondary') + '">' +
         (i === 0 ? 'recommended' : 'alternative') + '</span></div>' +
+        '<div class="fw-card-body">' +
         '<div class="small mb-2">' + esc(t.why) + '</div>';
 
       if (t.subject && t.subject.value) {
@@ -175,7 +180,7 @@
       if (t.explain && t.explain.summary) {
         h += '<div class="small text-muted mt-1">' + esc(t.explain.summary) + '</div>';
       }
-      h += '</div>';
+      h += '</div></div>';
     });
 
     // --- why there is no Save button ------------------------------------

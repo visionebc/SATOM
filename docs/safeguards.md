@@ -9577,3 +9577,77 @@ ls -d /tmp/fmw-test-* | wc -l               # must not grow across runs
 Verified 2026-08-17: 20 tests rc=0, **12/12 mutations kill** (measured by rc,
 only rc==1 counts, restored in `finally`, post-restore baseline 0), dry-run
 plan balanced to ±0.06% over 263 files, 2841 orphaned temp roots swept.
+
+## §99 — a class that matches no rule cannot fail (`tests/test_tool_modal_chrome.py`)
+
+Reported by the user twice on 2026-08-17: *"Certificate inspector /
+False-positive explainer / Transaction tracer tienen todavia el formato
+viejo"*. The first review of it called the divergence a style drift. It was
+not: **`fw-btn-primary` matches no selector in any stylesheet the product
+loads.** The real class is `btn-fw-primary` — the word order is reversed, and
+the two are indistinguishable at a glance in a diff.
+
+`fortiweb.css` already carried the note for the previous instance of this exact
+bug: *".btn-fw-secondary was used by 5 templates but never defined, so it fell
+back to an unstyled .btn"*. The product has now made the mistake twice, in the
+same class family, so it gets a guard instead of a third comment.
+
+**Why nothing caught it.** The round that shipped the three tools verified
+"0 dark-theme tokens" and was telling the truth. Neither that check nor any
+other asked whether the classes it *did* use resolved to a rule. A `<button>`
+with a class nobody defined renders as the browser's native grey bevel, works
+perfectly, and raises nothing.
+
+### What the guard checks, and where each expectation comes from
+
+Nothing in it is a typed list of blessed names:
+
+- **Defined classes** are read from every `.css` under `app/static/css` plus
+  the vendored `bootstrap.min.css` — the stylesheets `base.html` actually
+  links. That is what lets `fw-bold` / `fw-normal` / `fw-semibold` pass (they
+  are Bootstrap utilities) while `fw-btn-primary` fails, with no allowlist.
+- **Element ids** are read from the JavaScript itself (`id="…"` attributes,
+  `$('…')` and `getElementById('…')` calls). An id is not a class and must not
+  be checked against CSS; deriving the set means a fourth tool with a fourth
+  id prefix does not need an exception carved into the guard.
+- **House chrome** (`modal-header py-2`) is read from `net_calc.js` /
+  `regex_lab.js`, the two tools that predate these three and share the menu. If
+  the house density changes, the guard says so instead of silently disagreeing.
+- **Card structure** is counted: an `fw-card` must have an `fw-card-body`
+  (a `p-0` body is how `settings/index.html` handles a flush list-group), and
+  every `fw-card-header` must carry `fw-card-title`.
+- **`btn-fw-*` must be accompanied by Bootstrap's `.btn`**, which supplies the
+  padding, radius and cursor that `btn-fw-*` does not set.
+
+### Two defects the verification found in itself
+
+1. **The extractor reported correct markup as broken.** A naive
+   `\bfw-[a-z-]+\b` sweep matched `data-fw-certinspect-open` — an *attribute
+   name*, not a class — and failed three files that were right. Tokens are now
+   taken from inside `class="…"` attributes plus whole-string literals (the
+   severity→badge maps concatenate those in at render time).
+2. **`assert re.search(r"\bbtn\b", cls)` answers itself.** `-` is a non-word
+   character, so `\bbtn\b` matches *inside* `btn-fw-outline`: the check for
+   "does this button also carry `.btn`" passed for a button that did not. Found
+   by mutation, not by reading. It is token equality now.
+
+### The debt this came out of, frozen rather than hidden
+
+The reversed spelling is **not** confined to the three tools: 108 occurrences
+survive across 19 older templates, and those buttons are unstyled today.
+Cleaning them is a separate, user-authorised change. The guard freezes the
+count and prints it on every run, because a budget nobody sees reads as zero.
+
+### Verification recipe
+
+```
+runuser -u satom -- venv/bin/python -m pytest tests/test_tool_modal_chrome.py -q
+python3 /var/tmp/mut_chrome.py          # 17 mutations, 17 must bite
+```
+
+Markup nesting is checked separately by driving the three modules under a
+minimal DOM with a stubbed `fetch` and parsing every string they emit — the
+source-level checks above cannot see an `fw-card-body` that is opened and never
+closed. Static token counts are useless for this: they double-count mutually
+exclusive branches (the error and success paths of `legCard`), which is why
+`txn_trace.js` shows two more `</div>` than `<div>` while being correct.

@@ -20,6 +20,27 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Fixed
 
+- **Ten buttons in the three new diagnostic tools were unstyled.** `fortiweb.css`
+  defines `.btn-fw-primary` / `.btn-fw-outline` / `.btn-fw-secondary`; the
+  certificate inspector, false-positive explainer and transaction tracer were
+  written with the word order reversed — `fw-btn-primary` — which matches no
+  selector in any stylesheet the product loads, so those buttons fell back to
+  the browser's native grey bevelled `<button>` inside a flat white modal. The
+  same round also substituted `fw-card p-3` for the real `fw-card-header` /
+  `fw-card-body` sub-structure (16px instead of 20px, and no header tint or
+  bottom border at all), titled its modals with `h5` where the two older tools
+  in the same Tools menu use `h6`, sized every form control full-size next to
+  `btn-sm` buttons, and built its tabs out of `<a href="#">` instead of
+  `<button>`. Opening Network Calculator and then Certificate inspector from
+  the same dropdown showed two different header heights and two different form
+  densities. Nothing failed: the pages rendered, the handlers fired, and the
+  round's own check ("0 dark-theme tokens") was true and did not verify that
+  the classes it used resolved to a rule. `tests/test_tool_modal_chrome.py`
+  (31 guards, safeguards §99) now resolves every `fw-*` / `btn-fw-*` class the
+  tool JavaScript emits against the stylesheets the product actually links,
+  and freezes the 108 pre-existing occurrences of the reversed spelling in
+  older templates so the count cannot grow.
+
 - **The suite leaked one temp directory per pytest process.**
   `tests/conftest.py` creates its temp root with `tempfile.mkdtemp()` at import
   time and nothing removed it — 2841 orphaned `/tmp/fmw-test-*` directories had

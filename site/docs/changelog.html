@@ -61,6 +61,7 @@
     <aside class="toc">
       <div class="toc-title">On this page</div>
       <a href="#unreleased">[Unreleased]</a>
+      <a href="#1101-2026-08-17">[1.10.1] - 2026-08-17</a>
       <a href="#1100-2026-08-17">[1.10.0] - 2026-08-17</a>
       <a href="#193-2026-08-10">[1.9.3] - 2026-08-10</a>
       <a href="#192-2026-08-09">[1.9.2] - 2026-08-09</a>
@@ -93,6 +94,7 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h2 id="1101-2026-08-17">[1.10.1] - 2026-08-17</h2>
 <h3 id="added">Added</h3>
 <ul>
 <li><strong>Sharded test runner</strong> — <code>scripts/run_test_shards.sh</code> splits the suite
@@ -104,6 +106,12 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   concurrency guard parses <code>/proc/&lt;pid&gt;/cmdline</code> as argv instead of
   substring-matching it, because <code>pgrep -f pytest</code> returns any process that
   merely <em>mentions</em> the word.</li>
+</ul>
+<h3 id="changed">Changed</h3>
+<ul>
+<li><strong><code>SQLAlchemy</code> is pinned to <code>2.0.52</code></strong> in <code>requirements.txt</code> (previously
+  unpinned, so an offline bundle built on two different days could ship two
+  different ORM versions).</li>
 </ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
@@ -151,6 +159,22 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   accumulated. An inode leak rather than a byte leak, but unbounded, and
   sharding multiplies it by the shard count. Cleanup is now registered with
   <code>atexit</code> at import time.</p>
+</li>
+<li>
+<p><strong>The PEM guard had never looked at a JavaScript file.</strong>
+  <code>tests/test_no_pem_literals.py</code> sweeps the source tree for literal
+  <code>-----BEGIN … PRIVATE KEY-----</code> headers, because the publisher aborts the
+  public mirror if it finds one in <em>any</em> blob of <em>any</em> commit. Its <code>SUFFIXES</code>
+  set listed <code>.py</code>, <code>.sh</code>, <code>.yaml</code>, <code>.json</code>, <code>.html</code>, <code>.md</code>, <code>.txt</code> and
+  <code>.conf</code> — but not <code>.js</code>, so the guard had been passing vacuously over the
+  entire JavaScript tree. The certificate inspector's textarea placeholder
+  carried the header literally, and it reached a version cut. The placeholder
+  is now assembled at runtime (<code>'-'.repeat(5) + 'BEGIN PRIVATE KEY' + …</code>), the
+  rendered markup is byte-identical, and <code>SUFFIXES</code> gains <code>.js</code>, <code>.mjs</code>, <code>.ts</code>
+  and <code>.css</code>. The lesson generalises past this one file: a guard whose scope
+  is narrower than the scope of the system that actually decides — here the
+  publisher, which reads every blob in history — is decorative, and every gap
+  between the two scopes is a literal waiting to ship.</p>
 </li>
 </ul>
 <h2 id="1100-2026-08-17">[1.10.0] - 2026-08-17</h2>
@@ -742,7 +766,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   breaks the suite in the commit that adds it.</p>
 </li>
 </ul>
-<h3 id="changed">Changed</h3>
+<h3 id="changed_1">Changed</h3>
 <ul>
 <li><strong>Pointing at a row in the bookmarks sidebar now lights it in the reader's
   own banner colour</strong> instead of the flat grey it used to take, washed to a
@@ -1577,7 +1601,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   sign-in. Just-in-time users get the global default instead, which is why that
   default is now <code>readonly</code> and why the approval gate exists.</li>
 </ul>
-<h3 id="changed_1">Changed</h3>
+<h3 id="changed_2">Changed</h3>
 <ul>
 <li><strong>One SATOM mark on every surface — the emblem the product already had.</strong>
   The console, the repo site and the product site each drew something different:
@@ -2122,7 +2146,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   contain it. And it is not a way around ADOM scoping — a FortiWeb session that
   guesses a FortiADC row's number still gets nothing.</p>
 <h2 id="190-2026-08-08">[1.9.0] - 2026-08-08</h2>
-<h3 id="changed_2">Changed</h3>
+<h3 id="changed_3">Changed</h3>
 <ul>
 <li>
 <p><strong>The required scope is ticked, not demanded.</strong> An Allow Method or
@@ -2391,7 +2415,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
 <li>Errors now render in place of the reply instead of an alert box, and the
   composer keeps what was typed when an external-provider preview is declined.</li>
 </ul>
-<h3 id="changed_3">Changed</h3>
+<h3 id="changed_4">Changed</h3>
 <ul>
 <li>
 <p><code>deploy/satom.service</code> raises the gunicorn worker timeout to 600s. It was
@@ -2750,7 +2774,7 @@ that it carries the defect.</p>
   manual went from 23 sections to 32 and now says where to read what changed
   in a version — it had never mentioned the changelog.</li>
 </ul>
-<h3 id="changed_4">Changed</h3>
+<h3 id="changed_5">Changed</h3>
 <ul>
 <li><strong>The release notes are a rail and a panel, not a wall of cards.</strong> Versions
   on the left, that version's changes on the right, newest first, opening on
@@ -3037,7 +3061,7 @@ that it carries the defect.</p>
   mode was previously told where each one stops but not what it costs, which
   is the half of the decision that matters.</li>
 </ul>
-<h3 id="changed_5">Changed</h3>
+<h3 id="changed_6">Changed</h3>
 <ul>
 <li><strong>Analysis moved into the Monitoring submenu.</strong> It was a bare Fleet item
   written out five times in <code>base.html</code>, once per ADOM block — the exact drift
@@ -3284,7 +3308,7 @@ that it carries the defect.</p>
   count nodes is <code>unknown</code>, never <code>standalone</code>. Split-brain is its own badge.</p>
 </li>
 </ul>
-<h3 id="changed_6">Changed</h3>
+<h3 id="changed_7">Changed</h3>
 <ul>
 <li>The HA pill on both pages uses the product's own <code>fw-badge</code> set instead of a
   local palette, so cluster state reads like every other status in the console.</li>
@@ -3421,7 +3445,7 @@ that it carries the defect.</p>
   states that their terms are not superseded.</p>
 </li>
 </ul>
-<h3 id="changed_7">Changed</h3>
+<h3 id="changed_8">Changed</h3>
 <ul>
 <li>
 <p><strong>Collection moved from Monitoring to Administrator.</strong> The other six
@@ -4180,7 +4204,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   reported back in <code>source</code>, and the UI prints which one it drew: an hourly
   average and a five-minute reading are not the same claim about the device.</li>
 </ul>
-<h3 id="changed_8">Changed</h3>
+<h3 id="changed_9">Changed</h3>
 <ul>
 <li><strong>The last <code>fortinet</code> identifiers are gone from the platform itself.</strong> The
   database, the PostgreSQL role, the Linux service account and the PostgreSQL
@@ -4651,7 +4675,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
 <li>Public site: <code>site/safeguards.html</code> (linked from the nav and footer of every
   page) and the matching notes on <code>site/install.html</code>.</li>
 </ul>
-<h3 id="changed_9">Changed</h3>
+<h3 id="changed_10">Changed</h3>
 <ul>
 <li>In-app <strong>Documentation</strong> index now curates a title, order and description for
   all 18 manuals; half of them previously fell through to an auto-generated

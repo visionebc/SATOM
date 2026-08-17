@@ -22,6 +22,16 @@
   const SEV = { crit: 'fw-badge-danger', warn: 'fw-badge-warning', info: 'fw-badge-info', ok: 'fw-badge-success' };
   function sevClass(s) { return SEV[s] || 'fw-badge-secondary'; }
 
+  // Built from parts at runtime, never written as one literal: a PEM
+  // private-key header anywhere in a source file aborts the public-mirror
+  // publish. The release scanner cannot tell a UI placeholder from a real
+  // key, and must not learn to — a scanner with an exception is a scanner a
+  // real key walks past. tests/test_no_pem_literals.py has enforced this
+  // over .js since 2026-08-17. The concatenation renders to exactly the same
+  // bytes, so the placeholder the user sees is unchanged: do NOT "simplify"
+  // it back into a single string.
+  const KEY_PEM_PLACEHOLDER = '-'.repeat(5) + 'BEGIN PRIVATE KEY' + '-'.repeat(5);
+
   const MODAL_ID = 'fw-certinspect';
   let built = false;
 
@@ -55,7 +65,7 @@
       '<input id="fw-ci-host" class="form-control" placeholder="shop.example.com">' +
       '<label class="form-label small text-muted mb-1 mt-2">Private key (optional)</label>' +
       '<textarea id="fw-ci-key" class="form-control font-monospace" rows="3" ' +
-      'placeholder="' + '-'.repeat(5) + 'BEGIN PRIVATE KEY' + '-'.repeat(5) + '"></textarea>' +
+      'placeholder="' + KEY_PEM_PLACEHOLDER + '"></textarea>' +
       '<div class="form-text">Checked in-process against the leaf. Never stored, never logged.</div>' +
       '</div></div>' +
       '<div class="mt-2"><button class="fw-btn fw-btn-primary" id="fw-ci-run">' +

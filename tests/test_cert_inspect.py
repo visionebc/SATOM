@@ -27,6 +27,13 @@ SVC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
 JS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                   "app", "static", "js", "cert_inspect.js")
 
+# Built at runtime, never a literal: a PEM private-key header in a source
+# file aborts the publish (tests/test_no_pem_literals.py). The scanner
+# cannot tell a fixture from a real key, and must not learn to.
+_DASH = "-" * 5
+BAD_KEY_PEM = (f"{_DASH}BEGIN PRIVATE KEY{_DASH}\nnope\n"
+               f"{_DASH}END PRIVATE KEY{_DASH}")
+
 
 # --------------------------------------------------------------------------- #
 #  Real certificate fixtures                                                   #
@@ -261,7 +268,7 @@ def test_absent_key_is_not_checked_and_not_a_finding(pki):
 
 def test_unparseable_key_reports_why_without_claiming_mismatch(pki):
     res = ci.analyse(ci.split_pem(pki["leaf"]), source="chain",
-                     key_pem="-" * 5 + "BEGIN PRIVATE KEY" + "-" * 5 + "\nnope\n" + "-" * 5 + "END PRIVATE KEY" + "-" * 5)
+                     key_pem=BAD_KEY_PEM)
     assert "key_mismatch" not in codes(res)
     assert "key_unchecked" in codes(res)
 

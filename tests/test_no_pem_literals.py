@@ -19,7 +19,14 @@ import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 TREES = ("app", "deploy", "tests", "scripts", "installers")
-SUFFIXES = {".py", ".sh", ".yaml", ".yml", ".json", ".html", ".md", ".txt", ".conf"}
+# ".js" was absent until 2026-08-17, so the sweep ran vacuously over the whole
+# front-end tree: a literal header sat in app/static/js/cert_inspect.js through
+# a release cut with this guard green the entire time. A suffix that matches no
+# file costs nothing; a suffix that is missing costs an aborted publish, so
+# ".mjs", ".ts" and ".css" are listed ahead of need rather than after the next
+# incident. Never narrow this set to make the guard pass.
+SUFFIXES = {".py", ".sh", ".yaml", ".yml", ".json", ".html", ".md", ".txt",
+            ".conf", ".js", ".mjs", ".ts", ".css"}
 
 # Matches the literal header only.  Split across a concatenation so this file
 # does not trip its own rule.

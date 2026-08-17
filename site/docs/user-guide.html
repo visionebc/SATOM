@@ -98,6 +98,9 @@
       <a href="#35-integrations-netbox-change-tickets-and-your-own-python">35. Integrations: NetBox, change tickets and your own Python</a>
       <a href="#36-putting-any-appliance-under-change-control">36. Putting any appliance under change control</a>
       <a href="#37-the-tools-menu-certificate-inspector-false-positive-explainer-tracer">37. The Tools menu: certificate inspector, false-positive explainer, tracer</a>
+      <a href="#38-bookmarks-the-panel-you-file-yourself">38. Bookmarks: the panel you file yourself</a>
+      <a href="#39-concept-map-where-does-x-live">39. Concept Map: where does X live?</a>
+      <a href="#40-upgrade-flow-a-maintenance-window-as-one-workflow">40. Upgrade Flow: a maintenance window as one workflow</a>
     </aside>
     <div class="doc-body mdx">
 <h1 id="satom-user-guide">SATOM — User Guide</h1>
@@ -148,6 +151,9 @@ codebase is assumed. For architecture and internals see the
 <li><a href="#35-integrations-netbox-change-tickets-and-your-own-python">Integrations: NetBox, change tickets and your own Python</a></li>
 <li><a href="#36-putting-any-appliance-under-change-control">Putting any appliance under change control</a></li>
 <li><a href="#37-the-tools-menu-certificate-inspector-false-positive-explainer-tracer">The Tools menu: certificate inspector, false-positive explainer, tracer</a></li>
+<li><a href="#38-bookmarks-the-panel-you-file-yourself">Bookmarks: the panel you file yourself</a></li>
+<li><a href="#39-concept-map-where-does-x-live">Concept Map: where does X live?</a></li>
+<li><a href="#40-upgrade-flow-a-maintenance-window-as-one-workflow">Upgrade Flow: a maintenance window as one workflow</a></li>
 </ol>
 <hr>
 <h2 id="1-signing-in-accounts">1. Signing in &amp; accounts</h2>
@@ -2219,10 +2225,59 @@ deletes its bindings, and says so.</p>
 <p>The assignment picker spans both FortiWeb and FortiADC appliances — the catalog
 is a single <strong>global</strong> one, not per-ADOM.</p>
 <h2 id="26-settings-tab-by-tab">26. Settings, tab by tab</h2>
-<p><code>Settings</code> is one page with <strong>22 tabs</strong>. Twenty of them are admin-only
-(<code>user_manage</code>); the last two — <strong>Security</strong> and <strong>Change Password</strong> — are
-self-service and are the only ones a non-admin sees. Throughout this manual a
-setting is addressed as <code>Settings → &lt;Tab&gt;</code>.</p>
+<p><code>Settings</code> is one page with a <strong>grouped sidebar</strong>: <strong>8 groups, 24 panels</strong>.
+Seven of the groups (22 panels) are admin-only (<code>user_manage</code>); the eighth —
+<strong>My Account</strong>, holding <strong>Security</strong> and <strong>Change Password</strong> — is self-service
+and is the only group a non-admin sees. A group with nothing you may see is not
+rendered at all, so the menu never offers a section that is not there.</p>
+<table>
+<thead>
+<tr>
+<th>Group</th>
+<th>Panels</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>System</strong></td>
+<td>General · Git · SoT &amp; Backup · AI Advisor</td>
+</tr>
+<tr>
+<td><strong>Access &amp; Identity</strong></td>
+<td>Users · Profiles · Authentication · Access Control</td>
+</tr>
+<tr>
+<td><strong>Certificates &amp; Trust</strong></td>
+<td>Certificate Manager · Node TLS · Trust store</td>
+</tr>
+<tr>
+<td><strong>Monitoring &amp; Alerts</strong></td>
+<td>Email &amp; Alerts · Thresholds</td>
+</tr>
+<tr>
+<td><strong>Network &amp; DNS</strong></td>
+<td>DNS Lookup · DNS Records</td>
+</tr>
+<tr>
+<td><strong>Fleet &amp; Devices</strong></td>
+<td>Hypervisors · ADOMs · Policy Links · Clone / Migrate</td>
+</tr>
+<tr>
+<td><strong>User Interface</strong></td>
+<td>Appearance · Languages · FAZ Menu</td>
+</tr>
+<tr>
+<td><strong>My Account</strong></td>
+<td>Security · Change Password</td>
+</tr>
+</tbody>
+</table>
+<p>The <strong>AI Advisor</strong> panel additionally needs <code>advisor.configure</code>; an admin
+without it does not see the entry.</p>
+<p>Regrouping the strip into a menu did <strong>not</strong> rename the panels' targets
+(<code>#tab-auth</code> and its siblings), so every deep link, every saved URL hash and
+every <code>§26.x</code> reference in this manual still lands exactly where it did.
+Throughout this manual a setting is addressed as <code>Settings → &lt;Panel&gt;</code>.</p>
 <p>Six tabs are documented where the feature they configure is documented, because
 the setting is meaningless without it. They are not repeated here:</p>
 <table>
@@ -2650,6 +2705,75 @@ everything under it; turning a single <strong>item</strong> off hides just that 
 entries disappear from the sidebar and dashboard <strong>and are not reachable by URL</strong>.
 It applies to every user of that ADOM, and it changes only the GUI menu — the
 devices and the configuration harvest are unaffected.</p>
+<h3 id="2612b-languages-which-of-the-five-this-install-offers">26.12b Languages — which of the five this install offers</h3>
+<p>SATOM speaks five languages. English is the <strong>source</strong> language: the action
+profiles, the CLI help and the docs are authored in it, and every translation
+derives from it directly, never through a chain.</p>
+<table>
+<thead>
+<tr>
+<th>Code</th>
+<th>Language</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>en</code></td>
+<td>English <em>(source)</em></td>
+</tr>
+<tr>
+<td><code>es</code></td>
+<td>Español</td>
+</tr>
+<tr>
+<td><code>de</code></td>
+<td>Deutsch</td>
+</tr>
+<tr>
+<td><code>fr</code></td>
+<td>Français</td>
+</tr>
+<tr>
+<td><code>it</code></td>
+<td>Italiano</td>
+</tr>
+</tbody>
+</table>
+<p>This panel answers a <strong>different question</strong> from that list: not "which
+languages does the product speak" — that is the same on every install — but
+"which of them may a user pick <strong>here</strong>". A site with no French operators does
+not want French in the profile picker, and an install part-way through a
+translation pass may want to hold a language back until its catalogue is worth
+reading.</p>
+<p>Tick a language to offer it. Untick it to withdraw it, and it disappears from
+the profile picker, from the change-document language question, and from
+browser language negotiation — pages render in another language instead.
+Withdrawn languages stay <strong>listed on this page</strong>: a form that hid what it
+switched off would make the switch one-way.</p>
+<p>Three rules are enforced in the service rather than in the form, so a replayed
+POST meets them too:</p>
+<ul>
+<li><strong>The source language is always offered.</strong> <code>en</code> renders ticked and disabled,
+  and is added back regardless of what is posted. An install able to switch it
+  off could lock every user out of a readable page from a checkbox, with no way
+  back in.</li>
+<li><strong>Withdrawing never rewrites anybody's answer.</strong> A user who chose French
+  keeps that stored preference exactly as they wrote it; it simply stops being
+  honoured while French is withdrawn, and their profile page <strong>says so</strong>.
+  Deleting the row would answer a question on their behalf, silently, and
+  re-enabling would not bring it back.</li>
+<li><strong>Unset or unreadable means everything.</strong> An install that never opened this
+  page — and a row somebody hand-edited into nonsense — offers the whole
+  registry. Offering fewer languages is a change an operator makes on purpose,
+  never one a broken row makes for them.</li>
+</ul>
+<p>Two columns are reports, not settings. <strong>Change documents</strong> says whether a
+<em>complete</em> change document can actually be produced in that language; declaring
+a language never claims text exists in it. <strong>Chosen by</strong> counts the users whose
+stored preference is that language — read it before withdrawing one.</p>
+<p>What this gate does not touch is the catalogues. Text keeps being authored and
+translated for every language in the registry, so a language switched back on
+is complete the moment it reappears instead of starting from empty.</p>
 <h3 id="2613-security-and-change-password-self-service-for-every-account">26.13 Security and Change Password — self-service, for every account</h3>
 <p>The two tabs any signed-in user gets.</p>
 <ul>
@@ -3848,6 +3972,217 @@ refused in every mode and that refusal is not configurable. Names are resolved
 once and the <strong>address</strong> is dialled, with the hostname carried separately as
 SNI and <code>Host</code>, so a name cannot answer differently between the check and the
 connection.</p>
+<hr>
+<h2 id="38-bookmarks-the-panel-you-file-yourself">38. Bookmarks: the panel you file yourself</h2>
+<p>The sidebar is organised the way the <strong>product</strong> is organised. <code>Bookmarks</code>
+(<code>/bookmarks/panel</code>) is organised the way <strong>you</strong> work. Every signed-in account
+has one; there is no permission to grant, and nothing here is admin-only.</p>
+<h3 id="381-the-four-kinds">38.1 The four kinds</h3>
+<table>
+<thead>
+<tr>
+<th>Kind</th>
+<th>What it stores</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>appliance</strong></td>
+<td>A device in the inventory. Left unlabelled it shows the device's <strong>live name</strong>, so a rename in the inventory reaches your panel by itself; typing a label overrides it. Retiring the device removes the bookmark rather than leaving a tile that resolves to nothing.</td>
+</tr>
+<tr>
+<td><strong>link</strong></td>
+<td>Any URL — a wiki page, a ticket queue, another console.</td>
+</tr>
+<tr>
+<td><strong>view</strong></td>
+<td>A saved <strong>filter</strong>, not the rows it matched the day you saved it. Opening it re-runs the search, so a view of "policies in monitor mode" is still right tomorrow. Storing the rows would be the same staleness trap as copying a classification.</td>
+</tr>
+<tr>
+<td><strong>folder</strong></td>
+<td>The only grouping you create by hand (§38.3).</td>
+</tr>
+</tbody>
+</table>
+<p>Add a device from its own page or from <code>Bookmarks → Devices</code>; <strong>Adopt</strong> takes
+an existing team bookmark and files it on your own panel, so you can move it
+without touching what everybody else sees.</p>
+<h3 id="382-personal-team-and-whose-permissions-decide">38.2 Personal, team, and whose permissions decide</h3>
+<p>There are two scopes: <strong>personal</strong> and <strong>team</strong>. "Team" here means <em>everyone
+who operates this SATOM</em> — there is deliberately no roster to maintain.</p>
+<p><strong>Sharing a bookmark is not a way to hand somebody a device.</strong> The list you see
+is filtered by <strong>your</strong> permissions, never the sharer's: the ADOM stamp filter
+first, and then — for device bookmarks — the same visibility rule the inventory
+itself uses. A colleague who shares a FortiADC you may not operate has shared
+you nothing.</p>
+<p>Two consequences worth knowing before you file a hundred devices:</p>
+<ul>
+<li>A device that enters maintenance drops off your panel and <strong>comes back where
+  you filed it</strong>. Filtering a row out never deletes its placement, so one
+  operator flipping a maintenance switch cannot wipe the team's filing.</li>
+<li>Team bookmarks keep their <strong>author</strong>, including after sharing. An entry that
+  changes what every operator sees without a traceable origin is an
+  unattributable change to the console.</li>
+</ul>
+<p><strong>Favourite</strong> pins an entry to the top of your own panel; <strong>Hide</strong> removes it
+from your view without deleting it for anyone else. Both are per-user.</p>
+<h3 id="383-grouping-is-computed-not-stored">38.3 Grouping is computed, not stored</h3>
+<p>The panel groups by any of seven modes: <strong>folder</strong>, <strong>zone</strong>, <strong>line</strong>,
+<strong>department</strong>, <strong>segment</strong>, <strong>kind</strong> (the product) and <strong>tag</strong>.</p>
+<p>Only <strong>folder</strong> is stored. The other six are recomputed from the live inventory
+on every render — which is why re-zoning a device, moving it to another
+department or re-tagging it <strong>re-files its bookmark with no migration and no
+write</strong>. Change the inventory; the panel is already right.</p>
+<p>Two buckets exist so that two different facts never merge into one: a bookmark
+that is not a device has no classification at all, and a device nobody has
+classified yet is a different situation. They are shown separately rather than
+both as "ungrouped".</p>
+<hr>
+<h2 id="39-concept-map-where-does-x-live">39. Concept Map: where does X live?</h2>
+<p>The sidebar answers <em>"what can I do here?"</em> by grouping pages under the product
+they belong to. It never answers <em>"where does X live?"</em> — which is the question
+an operator actually asks. <code>Concept Map</code> (<code>/map</code>) is that answer: every
+navigable page in the console, tagged with the concepts it serves, searchable
+as free text. Type "certificate", "rollback" or "who changed it" and land on
+the page instead of on a manual.</p>
+<p>Pages are clustered under <strong>ten concepts</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Concept</th>
+<th>Covers</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Fleet &amp; Discovery</strong></td>
+<td>Which devices exist, how they are wired, and how to find an object across all of them.</td>
+</tr>
+<tr>
+<td><strong>Monitoring &amp; Telemetry</strong></td>
+<td>Is it healthy right now, what did it look like an hour ago, and who gets told when it is not.</td>
+</tr>
+<tr>
+<td><strong>Web Application Firewall</strong></td>
+<td>FortiWeb protection: policies, signatures, exceptions and the attacks they actually stopped.</td>
+</tr>
+<tr>
+<td><strong>Application Delivery</strong></td>
+<td>FortiADC load balancing — virtual servers, pools and the ADC signature sets.</td>
+</tr>
+<tr>
+<td><strong>Device Configuration</strong></td>
+<td>Reading and writing what is actually on a box, and the object model behind it.</td>
+</tr>
+<tr>
+<td><strong>Automation &amp; Change</strong></td>
+<td>Turning an intention into a reviewed, scheduled, audited change on many devices at once.</td>
+</tr>
+<tr>
+<td><strong>Backup, Firmware &amp; Recovery</strong></td>
+<td>The copies you fall back to, the versions you move between, and the second node that takes over.</td>
+</tr>
+<tr>
+<td><strong>Identity &amp; Access</strong></td>
+<td>Who may do what, proven by certificates and recorded in the audit trail.</td>
+</tr>
+<tr>
+<td><strong>Platform &amp; Administration</strong></td>
+<td>SATOM itself: settings, its own database, its updates and its reports.</td>
+</tr>
+<tr>
+<td><strong>Developer &amp; Extensibility</strong></td>
+<td>Raw API access, tokens, scripting and custom views for people extending the product.</td>
+</tr>
+</tbody>
+</table>
+<p>Three rules keep the map honest, and each is enforced by a test rather than by
+discipline:</p>
+<ol>
+<li><strong>The URL map is the authority on what exists.</strong> Every parameterless page in
+   the console is either <strong>on the map</strong> (83 today) or <strong>excluded with a written
+   reason</strong> (106 today — JSON feeds, downloads, redirects and fragments that
+   are not pages). A page added without an entry fails the suite in the same
+   commit that adds it, so the map can never be quietly missing something.</li>
+<li><strong>Nothing here is a second source of truth.</strong> Paths are generated from the
+   route table and the permission is read off the page itself — never re-typed
+   into the map. A hand-copied permission column is how a map ends up
+   advertising a page that 403s.</li>
+<li><strong>You only see what you may open.</strong> The map is built for the account looking
+   at it.</li>
+</ol>
+<p>The concept keys are stable and appear in the URL (<code>/map/?c=waf</code>), so a cluster
+you use daily can itself be bookmarked (§38).</p>
+<hr>
+<h2 id="40-upgrade-flow-a-maintenance-window-as-one-workflow">40. Upgrade Flow: a maintenance window as one workflow</h2>
+<p>Every piece of a windowed firmware upgrade already existed in SATOM, and every
+piece was per-device: the pre-flight lived on one appliance's page, the change
+request could cite one run, and the customer-impact export came off that one
+change. An engineer upgrading sixty FortiWeb walked that path sixty times and
+still finished holding a change document whose evidence covered one box.</p>
+<p><code>Upgrade Flow</code> (<code>/upgrade-flow</code>) is the staged front for the whole window. It
+needs the <strong>backup</strong> permission, because stage 1 takes a configuration backup
+of every device it touches.</p>
+<h3 id="401-the-four-stages">40.1 The four stages</h3>
+<table>
+<thead>
+<tr>
+<th>Stage</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>1 · Pre-upgrade (bulk)</strong></td>
+<td>Runs the pre-flight against every selected device and <strong>persists one record per device</strong> — version, partitions, health, backup.</td>
+</tr>
+<tr>
+<td><strong>2 · Change request</strong></td>
+<td>Raises <strong>one</strong> change of type <code>upgrade</code> citing <strong>all</strong> of those runs, so the change carries evidence for the whole window.</td>
+</tr>
+<tr>
+<td><strong>3 · Customer impact</strong></td>
+<td>The consolidated XLSX/CSV export off that change's <strong>frozen, merged</strong> inventory — not a live re-read at export time.</td>
+</tr>
+<tr>
+<td><strong>4 · Execution</strong></td>
+<td>The approved change's one-shot action, or manual. Progress is polled live.</td>
+</tr>
+</tbody>
+</table>
+<p>The page <strong>owns no workflow of its own</strong>. Stage 1 calls the same pre-flight
+service an individual appliance page calls; stage 2 posts to the ordinary
+change-request form; stages 3 and 4 link into that change. This is deliberate:
+a second implementation of "upgrade prep" is exactly the defect this feature
+was built to remove.</p>
+<h3 id="402-two-limits-that-refuse-rather-than-truncate">40.2 Two limits that refuse rather than truncate</h3>
+<table>
+<thead>
+<tr>
+<th>Limit</th>
+<th>Value</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Devices in one sweep</td>
+<td><strong>40</strong></td>
+<td>The sweep is sequential and each device takes a configuration backup. This is a request-timeout guard, not an opinion about your fleet.</td>
+</tr>
+<tr>
+<td>Waves in one selection</td>
+<td><strong>12</strong></td>
+<td>Stage 2 can split a selection into batched waves.</td>
+</tr>
+</tbody>
+</table>
+<p>Both <strong>refuse, naming the number</strong>, rather than quietly doing less. A sweep
+that silently pre-flights the first 40 of 60 boxes and reports success is how
+nineteen devices enter a maintenance window with no baseline; a wave that
+silently disappeared takes its appliances out of every window without anybody
+being told. If you are over a limit, split the window — the tool will not do it
+behind your back.</p>
     </div>
   </div>
 </section>

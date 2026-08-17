@@ -9190,6 +9190,74 @@ conditional on the role again, and letting an unmeasurable audit roll a healthy
 update back. One guard was <strong>rejected as weak on the first pass</strong> — the cwd-leak
 test ran from the app root, so the <code>chdir</code> it was checking was a no-op and the
 test proved nothing; it now starts from a different directory.</p>
+<h2 id="97-a-manual-goes-stale-without-anything-failing-teststest_user_guide_featurespy">§97 — a manual goes stale without anything failing (<code>tests/test_user_guide_features.py</code>)</h2>
+<p><strong>What went wrong.</strong> <code>docs/user-guide.md</code> §26 opened with "<code>Settings</code> is one
+page with <strong>22 tabs</strong>" for weeks after Settings became a grouped sidebar of 8
+groups and 24 panels. Nothing failed: the page rendered, the suite passed, the
+sentence simply stopped being true — on a document that is <strong>published
+publicly</strong>. In the same sweep, three shipped features (Bookmarks, Concept Map,
+Upgrade Flow) and one whole settings panel (Languages) had <strong>no entry at all</strong>,
+so the only way to discover them was to notice them in the sidebar.</p>
+<p><strong>The rule.</strong> Every claim the manual makes about a countable, enumerable thing
+is derived from the artefact that defines it, never from a list typed into the
+guard:</p>
+<table>
+<thead>
+<tr>
+<th>Claim</th>
+<th>Derived from</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Settings groups and panels</td>
+<td><code>nav_groups</code> parsed out of <code>app/templates/settings/index.html</code></td>
+</tr>
+<tr>
+<td>Offered languages</td>
+<td><code>app.services.langs.SUPPORTED</code> / <code>DEFAULT</code></td>
+</tr>
+<tr>
+<td>Bookmark kinds and scopes</td>
+<td><code>app.models_bookmarks.KINDS</code> / <code>SCOPES</code></td>
+</tr>
+<tr>
+<td>Bookmark grouping modes</td>
+<td><code>app.services.bookmarks.GROUP_MODES</code></td>
+</tr>
+<tr>
+<td>Concept clusters, page and exclusion counts</td>
+<td><code>app.services.concept_map.CONCEPTS</code> / <code>PAGES</code> / <code>EXCLUDED</code></td>
+</tr>
+<tr>
+<td>Upgrade Flow limits</td>
+<td><code>app.views.upgrade_flow.MAX_SWEEP</code> / <code>MAX_WAVES</code></td>
+</tr>
+</tbody>
+</table>
+<p>Adding a group, a language, a bookmark kind, a concept or a page therefore
+breaks the suite <strong>in the commit that adds it</strong> — the only moment anybody knows
+what the new thing does.</p>
+<p><strong>Two rules that cost a rewrite each.</strong></p>
+<ol>
+<li><strong>Every assertion is scoped to the section that must carry it.</strong> "language",
+   "bookmark" and "wave" all appear elsewhere in a 3 500-line manual, so an
+   unscoped search passes with the section deleted. <code>section()</code> and
+   <code>subsection()</code> do the scoping, and two tests guard <em>them</em> — an unscoped
+   helper would make every assertion above vacuous.</li>
+<li><strong>The parser is guarded too.</strong> A <code>_nav_groups()</code> that silently returned <code>[]</code>
+   would turn every group and panel test into a no-op that reports green. The
+   mutation <code>GROUPS = _nav_groups() and []</code> must fail the suite; it does.</li>
+</ol>
+<p><strong>Found while deriving, and worth keeping:</strong> the comment above <code>GROUP_MODES</code>
+says "the other <strong>seven</strong> are recomputed" and the tuple holds <strong>six</strong> derived
+modes. The manual documents the tuple; the guard pins the number. A comment is
+not an artefact.</p>
+<p><strong>Verification.</strong> 28 mutations, 28 bite (<code>/var/tmp/mut_manual.py</code>, measured by
+<strong>rc</strong> — only <code>rc==1</code> is a failure, restores in <code>finally</code>, baseline re-measured
+after the last restore). One of the 28 was rejected as a bad mutation first
+(the anchor did not match the file's line wrapping) rather than counted as a
+survivor.</p>
     </div>
   </div>
 </section>

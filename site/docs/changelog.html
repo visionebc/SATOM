@@ -61,6 +61,7 @@
     <aside class="toc">
       <div class="toc-title">On this page</div>
       <a href="#unreleased">[Unreleased]</a>
+      <a href="#1100-2026-08-17">[1.10.0] - 2026-08-17</a>
       <a href="#193-2026-08-10">[1.9.3] - 2026-08-10</a>
       <a href="#192-2026-08-09">[1.9.2] - 2026-08-09</a>
       <a href="#191-2026-08-09">[1.9.1] - 2026-08-09</a>
@@ -92,6 +93,7 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h2 id="1100-2026-08-17">[1.10.0] - 2026-08-17</h2>
 <h3 id="security">Security</h3>
 <ul>
 <li><strong>A saved link bookmark can no longer carry a <code>javascript:</code> URL.</strong> The only
@@ -658,6 +660,26 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   plus the configured gap. Nothing about approval, execution, the change
   document or the customer-impact export needed a wave-shaped variant, and
   giving them one would have re-created the two-implementations defect below.</p>
+</li>
+<li>
+<p><strong>The manual describes the console you are actually looking at.</strong> §26 opened
+  with "one page with <strong>22 tabs</strong>"; Settings has been a grouped sidebar (8
+  groups, 24 panels) for weeks. Nothing failed — the page rendered, the suite
+  passed, and a publicly published document simply described a screen the
+  reader did not have in front of them. Three shipped features had no manual
+  entry at all, so the only way to learn they existed was to notice them in
+  the sidebar: <strong>§38 Bookmarks</strong> (the four kinds, personal vs team, and the two
+  rules that decide what you see — the <em>reader's</em> permissions filter the list,
+  and filtering a row out never destroys its placement), <strong>§39 Concept Map</strong>
+  (ten clusters, 83 mapped pages and 106 excluded with a written reason) and
+  <strong>§40 Upgrade Flow</strong> (the four stages of a maintenance window as one
+  workflow, and the two limits that refuse naming the number rather than
+  quietly doing less). Plus <strong>§26.12b Languages</strong>, a whole settings panel with
+  no entry. <code>tests/test_user_guide_features.py</code> derives every assertion from
+  the artefact — the groups and panels are parsed out of the template that
+  renders the menu, the languages from <code>langs.SUPPORTED</code>, the limits from
+  <code>views.upgrade_flow</code> — so adding a group, a language, a kind or a page
+  breaks the suite in the commit that adds it.</p>
 </li>
 </ul>
 <h3 id="changed">Changed</h3>

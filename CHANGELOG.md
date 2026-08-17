@@ -6,6 +6,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [1.10.0] - 2026-08-17
+
 ### Security
 
 - **A saved link bookmark can no longer carry a `javascript:` URL.** The only
@@ -562,6 +564,25 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   plus the configured gap. Nothing about approval, execution, the change
   document or the customer-impact export needed a wave-shaped variant, and
   giving them one would have re-created the two-implementations defect below.
+
+- **The manual describes the console you are actually looking at.** §26 opened
+  with "one page with **22 tabs**"; Settings has been a grouped sidebar (8
+  groups, 24 panels) for weeks. Nothing failed — the page rendered, the suite
+  passed, and a publicly published document simply described a screen the
+  reader did not have in front of them. Three shipped features had no manual
+  entry at all, so the only way to learn they existed was to notice them in
+  the sidebar: **§38 Bookmarks** (the four kinds, personal vs team, and the two
+  rules that decide what you see — the *reader's* permissions filter the list,
+  and filtering a row out never destroys its placement), **§39 Concept Map**
+  (ten clusters, 83 mapped pages and 106 excluded with a written reason) and
+  **§40 Upgrade Flow** (the four stages of a maintenance window as one
+  workflow, and the two limits that refuse naming the number rather than
+  quietly doing less). Plus **§26.12b Languages**, a whole settings panel with
+  no entry. `tests/test_user_guide_features.py` derives every assertion from
+  the artefact — the groups and panels are parsed out of the template that
+  renders the menu, the languages from `langs.SUPPORTED`, the limits from
+  `views.upgrade_flow` — so adding a group, a language, a kind or a page
+  breaks the suite in the commit that adds it.
 
 ### Changed
 

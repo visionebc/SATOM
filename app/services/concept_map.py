@@ -232,6 +232,24 @@ PAGES: tuple[dict, ...] = (
     _p("registry.search", "Registry Search", "config",
        "registry search endpoint find urn api path",
        "Find an endpoint in the registry by name or path."),
+    _p("registry.reconcile", "Registry Reconcile (FortiWeb)", "config",
+       "reconcile registry drift sweep dead endpoint retire confirm apply "
+       "fortiweb missing stale",
+       "Compare the registry against what the sweep actually reached, and "
+       "retire the endpoints no appliance answers."),
+    _p("registry.api_versions", "API Versions (FortiWeb)", "config",
+       "api version firmware line matrix preflight field divergence 7.6 8.0 "
+       "fortiweb unmeasured",
+       "Which fields each firmware line really carries — the same API "
+       "version is not the same set of fields."),
+    _p("adc_api.reconcile", "Registry Reconcile (FortiADC)", "adc",
+       "reconcile registry drift sweep dead endpoint retire confirm apply "
+       "fortiadc missing stale",
+       "The FortiADC registry against what the sweep reached."),
+    _p("adc_api.api_versions", "API Versions (FortiADC)", "adc",
+       "api version firmware line matrix preflight field divergence fortiadc "
+       "unmeasured",
+       "Which fields each FortiADC firmware line really carries."),
     _p("structure.index", "Object Structure", "config",
        "structure tree dependency hierarchy object relationships coverage",
        "The dependency tree of FortiWeb objects and its registry coverage."),
@@ -388,7 +406,11 @@ EXCLUDED: dict[str, str] = {
     "analysis.freshness": "json feed", "analysis.orphans": "json feed",
     "analysis.subelements": "json feed", "analysis.wpp_matrix": "json feed",
     "architecture.topology_data": "json feed", "architecture.map_data": "json feed",
-    "architecture.picker": "html fragment", "cert_manager.renewals_durability": "json feed",
+    "architecture.picker": "html fragment",
+    "bookmarks.panel": "html fragment", "bookmarks.devices": "json feed",
+    # The three helper tools are API-only blueprints; their UI is rendered by
+    # a page that is already on the map, so these two are feeds, not pages.
+    "cert_inspect.targets": "json feed", "txn_trace.context": "json feed", "cert_manager.renewals_durability": "json feed",
     "database.report_column_values": "json feed", "database.table": "sub-view of database.index",
     "device_provision.data": "json feed", "dns_tool.records_list": "json feed",
     "dns_tool.records_schema": "json feed", "jobs.index": "json feed",

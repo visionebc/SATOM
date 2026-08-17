@@ -12,6 +12,7 @@ from ..auth.decorators import require_permission
 from sqlalchemy.exc import IntegrityError
 from ..models import (
     Appliance, ApplianceInterface, AuditLog, db, Permission,
+    INTERFACE_ROLES, clean_interface_role,
     visible_appliances, visible_appliance_or_404,
 )
 from ..models_backup import ConfigBackup
@@ -68,13 +69,28 @@ def _clean_hw_type(raw: str) -> str:
 
 def _rebuild_interfaces(appliance) -> None:
     """Replace-all the appliance's documented interfaces from the posted form
-    arrays (if_name[]/if_type[]/if_connected[]/if_ip[]/if_notes[]). Rows whose
-    name is blank are skipped."""
+    arrays (if_name[]/if_type[]/if_role[]/if_segment[]/if_connected[]/if_ip[]/
+    if_notes[]). Rows whose name is blank are skipped.
+
+    The parallel-array read is index-based, so a column the browser did NOT
+    post (an older cached page, a client that only knows the pre-role form)
+    simply yields short lists and every missing cell degrades to the column
+    default — it must never shift a value onto the wrong row."""
     names = request.form.getlist("if_name")
     types = request.form.getlist("if_type")
+    roles = request.form.getlist("if_role")
+    segments = request.form.getlist("if_segment")
     conns = request.form.getlist("if_connected")
     ips = request.form.getlist("if_ip")
     notes = request.form.getlist("if_notes")
+
+    def cell(arr, i, limit=None):
+        if i >= len(arr):
+            return None
+        val = (arr[i] or "").strip()
+        if not val:
+            return None
+        return val[:limit] if limit else val
 
     ApplianceInterface.query.filter_by(appliance_id=appliance.id).delete()
     order = 0
@@ -85,15 +101,27 @@ def _rebuild_interfaces(appliance) -> None:
         db.session.add(ApplianceInterface(
             appliance_id=appliance.id,
             name=name[:64],
-            if_type=(types[i].strip()[:64] if i < len(types) and types[i].strip() else None),
-            connected_to=(conns[i].strip()[:256] if i < len(conns) and conns[i].strip() else None),
-            ip_address=(ips[i].strip()[:64] if i < len(ips) and ips[i].strip() else None),
-            notes=(notes[i].strip() if i < len(notes) and notes[i].strip() else None),
+            if_type=cell(types, i, 64),
+            role=clean_interface_role(roles[i] if i < len(roles) else ""),
+            segment=cell(segments, i, 128),
+            connected_to=cell(conns, i, 256),
+            ip_address=cell(ips, i, 64),
+            notes=cell(notes, i),
             sort_order=order,
         ))
         order += 1
 
 bp = Blueprint('appliances', __name__, url_prefix='/appliances')
+
+
+@bp.context_processor
+def _inject_interface_roles():
+    """Expose the interface-role vocabulary to every appliances template.
+
+    One source: the tuple in ``models``. Passing it per-render was the other
+    option and it is how a page ends up offering a role the save path rejects —
+    whichever render_template call nobody remembered to update."""
+    return {"interface_roles": INTERFACE_ROLES}
 
 
 @bp.route('/')
@@ -220,6 +248,15 @@ def create():
         flash(f'Appliance name {name!r} already exists.', 'danger')
         return redirect(url_for('appliances.index'))
     log_action('appliance.create', target=name)
+    # Interfaces declared in the Add dialog. AFTER the commit on purpose: the
+    # rows carry appliance_id, so they cannot be written before the appliance
+    # has an id, and a failure here must not cost the operator the device row.
+    try:
+        _rebuild_interfaces(appliance)
+        db.session.commit()
+    except Exception as exc:  # noqa: BLE001 — inventory must survive
+        db.session.rollback()
+        log_exception(exc, context='appliance.create.interfaces')
     prov = _provision_monitoring(appliance)
     # Report BOTH halves. A device with collectors but no threshold probes is
     # graphed and unalerted, and that difference is invisible on every page.

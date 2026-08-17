@@ -1407,6 +1407,15 @@ def create_app(config_override: object | None = None) -> Flask:
                 ('firmware_checked_at', 'TIMESTAMP'),
                 ('maintenance', 'BOOLEAN DEFAULT FALSE'),
             ],
+            # Interface PURPOSE (2026-08-17). Additive with a default of
+            # 'unspecified' so every port documented before the field reads as
+            # NOT DECLARED — which is the truth. Backfilling a guess (e.g.
+            # "the port holding the management IP must be management") would
+            # hand the clone/migrate gate a declaration no human ever made.
+            'appliance_interfaces': [
+                ('role', "VARCHAR(32) DEFAULT 'unspecified'"),
+                ('segment', 'VARCHAR(128)'),
+            ],
             'managed_certificate': [
                 ('superseded_at', 'TIMESTAMP'),
                 ('revoked_at', 'TIMESTAMP'),

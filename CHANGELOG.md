@@ -6,6 +6,70 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added
+
+- **Interfaces are declared with a PURPOSE at device registration.**
+  `ApplianceInterface` gains `role` (a controlled vocabulary: management,
+  front-side traffic, back-side traffic, one-arm, inline pair, HA sync, HA
+  reserved, mirror, unused, other) and `segment` (free-text network, e.g.
+  "DMZ / VLAN 20"). Both are editable on the appliance edit page and, new,
+  in the **Add Appliance** dialog — the registration form collected no
+  interfaces at all before. Existing ports read as **Not declared**, which is
+  the truth: a role cannot be back-filled from the device, because the device
+  has no field that says what a port is *for*. Rediscovery keeps refreshing
+  name, media type and IP and never touches the role or the segment.
+
+- **Clone/migrate now checks which interface the copy will be bound to.**
+  A new pre-flight row resolves every `system/interface` binding the planned
+  tree carries (`interface` on the VIP and the vserver row, plus the policy's
+  `data-capture-port` / `block-port` — the field list is derived from
+  `fortiweb_field_schema.REF_ENDPOINTS`, not restated) against the
+  destination's live port inventory, and a **selector** lets the operator
+  re-bind each source port to a destination port. Three outcomes, previously
+  one: the port is **missing** at the destination → block; the port exists but
+  neither side declared what it is for → warn; roles (or segments) disagree →
+  warn naming both. The chosen mapping is applied to the payload that is
+  actually written (`clone.set_interface`), per port name, on `create` items
+  only, and it is forwarded by `migrate_to` as well as `clone_to`.
+
+- **Chassis grouping — several appliance rows that are one physical device.**
+  A FortiWeb in ADOM mode partitions its config, not its hardware, and the
+  auth token carries exactly one ADOM with no per-request override, so a
+  multi-ADOM device can only be registered as one row per ADOM.
+  `models.chassis_key` / `chassis_siblings` derive the grouping from
+  (kind, host, port) — never stored, so it cannot go stale. Consequences
+  wired up: **capacity headroom counts the whole chassis** (three ADOM rows
+  were getting three independent budgets against one CPU, and each reported
+  room) and says so in its message; **interface roles resolve chassis-wide**,
+  with a row's own declaration winning over a sibling's; and clone/migrate
+  **warns when source and destination are the same box** — a "migration"
+  between two ADOMs of one chassis does not move the policy off the hardware,
+  the ports and the outage domain.
+
+  Measured live on fortiweb09 (FortiWeb-KVM 7.6.8, `adom-admin enable`, three
+  ADOMs): `server-policy/policy` differs per ADOM, while `system/interface`
+  and `system/vip` are identical from all four. That asymmetry is the whole
+  basis for the split above.
+
+### Fixed
+
+- **A device in ADOM mode with no ADOM pinned reports an EMPTY policy list and
+  no error.** With `adom-admin` enabled, `server-policy/policy` returns `[]`
+  for a token that carries no ADOM — the same shape as a device with no
+  policies. Any appliance row left at `vdom = NULL` on such a device shows an
+  empty workspace and flags nothing. Found by enabling ADOM mode on
+  fortiweb09; the row is now pinned to `root`. (No code change guards this
+  yet — see the known-gaps note in `docs/safeguards.md` §101.)
+
+### Known gaps
+
+- `system/vlan` does not exist over REST on FortiWeb 7.6.8 (`-20001`, "The
+  REST API has invalid URL"), and `BaseClient.list_with_error` reports that
+  500 as an **empty list with no error** — an unsupported endpoint is
+  indistinguishable from an empty one. VLAN interfaces must be created over
+  the CLI. Not fixed here; it is a client-layer change with a wide blast
+  radius.
+
 ## [1.10.1] - 2026-08-17
 
 ### Added

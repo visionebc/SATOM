@@ -86,6 +86,8 @@
         <table class="table table-sm align-middle mb-1" id="ifTable">
           <thead><tr>
             <th style="min-width:110px;">{{ _('Interface') }}</th>
+            <th style="min-width:190px;">{{ _('Role (what it is for)') }}</th>
+            <th style="min-width:150px;">{{ _('Network / segment') }}</th>
             <th style="min-width:120px;">{{ _('Type') }}</th>
             <th style="min-width:200px;">{{ _('Connected to') }}</th>
             <th style="min-width:120px;">IP</th>
@@ -96,6 +98,10 @@
             {% for i in appliance.interfaces %}
             <tr>
               <td><input type="text" name="if_name" class="form-control form-control-sm" value="{{ i.name }}" placeholder="{{ _('port1') }}"></td>
+              <td><select name="if_role" class="form-select form-select-sm">
+                {% for key, label in interface_roles %}<option value="{{ key }}"{% if (i.role or 'unspecified') == key %} selected{% endif %}>{{ label }}</option>{% endfor %}
+              </select></td>
+              <td><input type="text" name="if_segment" class="form-control form-control-sm" value="{{ i.segment or '' }}" placeholder="{{ _('DMZ / VLAN 20') }}"></td>
               <td><input type="text" name="if_type" class="form-control form-control-sm" value="{{ i.if_type or '' }}" placeholder="{{ _('10G SFP+') }}"></td>
               <td><input type="text" name="if_connected" class="form-control form-control-sm" value="{{ i.connected_to or '' }}" placeholder="{{ _('Core-SW-A / Gi1/0/24') }}"></td>
               <td><input type="text" name="if_ip" class="form-control form-control-sm" value="{{ i.ip_address or '' }}" placeholder="192.0.2.1"></td>
@@ -107,6 +113,7 @@
         </table>
       </div>
       <div class="form-text">{{ _('Rows with an empty interface name are ignored. Saving replaces all interfaces for this appliance.') }}</div>
+      <div class="form-text"><i class="bi bi-info-circle me-1"></i>{{ _('The ROLE is what clone/migrate checks at the destination. Discovery can read a port\'s name, media and address off the device — it cannot read what the port is FOR, because the appliance does not model that. Left as') }} <em>{{ _('Not declared') }}</em>{{ _(', a clone onto this device can only verify that a port with the same NAME exists.') }}</div>
     </div>
 
     <div class="col-12 d-flex gap-2">
@@ -120,6 +127,13 @@
 
 {% block scripts %}
 <script nonce="{{ csp_nonce }}">
+// Rendered FROM the server vocabulary, never re-typed here: a hand-copied list
+// is how the added-by-JS row and the server-rendered row start disagreeing
+// about which roles exist, and only one of the two is validated on save.
+var IF_ROLES = {{ interface_roles | tojson }};
+var IF_ROLE_OPTIONS = IF_ROLES.map(function (r) {
+  return '<option value="' + r[0] + '">' + r[1] + '</option>';
+}).join('');
 function toggleHA(scope) {
   const cb = document.getElementById(scope + '_is_cluster');
   const on = !!(cb && cb.checked);
@@ -136,6 +150,8 @@ document.addEventListener('DOMContentLoaded', function () { toggleHA('edit'); })
     const tr = document.createElement('tr');
     tr.innerHTML =
       '<td><input type="text" name="if_name" class="form-control form-control-sm" placeholder="port1"></td>' +
+      '<td><select name="if_role" class="form-select form-select-sm">' + IF_ROLE_OPTIONS + '</select></td>' +
+      '<td><input type="text" name="if_segment" class="form-control form-control-sm" placeholder="DMZ / VLAN 20"></td>' +
       '<td><input type="text" name="if_type" class="form-control form-control-sm" placeholder="10G SFP+"></td>' +
       '<td><input type="text" name="if_connected" class="form-control form-control-sm" placeholder="Core-SW-A / Gi1/0/24"></td>' +
       '<td><input type="text" name="if_ip" class="form-control form-control-sm" placeholder="192.0.2.1"></td>' +

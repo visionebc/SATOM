@@ -195,7 +195,16 @@ def apply_inventory(appliance) -> dict:
 
     Hybrid policy: add new interfaces and refresh auto-derived fields
     (type, IP) plus model + HW/VM. NEVER deletes interfaces and NEVER overwrites
-    operator-entered fields (``connected_to``, ``notes``) or the datasheet.
+    operator-entered fields (``role``, ``segment``, ``connected_to``, ``notes``)
+    or the datasheet.
+
+    ``role`` in particular is not merely "not overwritten" — it is
+    UNDISCOVERABLE. The appliance exposes a port's name, media type and
+    address; it has no field that says what the port is FOR. A newly-discovered
+    port therefore lands as ``unspecified`` and stays there until a human says
+    otherwise. Deriving it (e.g. "the port holding the management IP is the
+    management port") would manufacture a declaration and the clone/migrate
+    gate would then report agreement nobody asserted.
     Must run inside a Flask app context (uses the DB session).
     """
     from ..extensions import db

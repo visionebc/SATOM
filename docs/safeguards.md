@@ -9688,3 +9688,112 @@ search forms, becomes noise, and the next person `xfail`s it.
 `finally`, post-restore baseline 0). Live render through the authenticated test
 client: `GET /registry/versions` 200 with `name="csrf_token"` inside the
 rebuild form.
+
+## §101 — a port name is not a network (`tests/test_interface_binding.py`, `tests/test_chassis_grouping.py`)
+
+**The defect this exists for is a SUCCESS, not a crash.**
+
+`interface` is an ordinary payload field. `fortiweb_ops.sanitize_payload`
+only strips read-only keys, so it survives. `registry/dependencies.py` has no
+node for `system/interface`, and `objedit._NO_REF_CREATE` forbids creating
+one, so the clone planner never walks it. The destination FortiWeb accepts
+`interface: port3` for any `port3` it has — and two boxes almost always both
+have a `port3`. They very often do not mean the same network by it.
+
+So the dangerous outcome was never the failed clone. It was the clone that
+**worked**, and left a policy answering on the wrong segment.
+
+### The three levels, and why they are three
+
+| destination state | level | why |
+|---|---|---|
+| the port does not exist | **block** | loud, recoverable, and the operator is told which ports DO exist |
+| the port exists, purpose undeclared on either side | **warn** | a matching NAME proves the create will succeed, nothing more |
+| roles (or segments) declared and different | **warn**, naming both | the clone will succeed; that is the problem |
+| roles declared and equal | ok | the only case that earned the word |
+
+Two more distinctions the guards pin, because collapsing either one is easy
+and invisible:
+
+- **`None` vs `[]` from the destination.** `_live_interfaces` returns `None`
+  when the device did not answer and `[]` when it answered and has no ports.
+  The first must warn ("not measured"), the second must block. Returning `[]`
+  for both turns an unreachable device into a wall of false blocks, and a
+  wall of false blocks is a checklist operators click through.
+- **"nothing to check" vs "checked and fine".** Both are level `ok`. Only one
+  of them measured anything, so they must not share wording — a row reading
+  "Interfaces resolve on fwb2" after looking at zero bindings asserts
+  something the gate never earned.
+
+### Derived, never restated
+
+The set of payload fields that name an interface comes from
+`fortiweb_field_schema.REF_ENDPOINTS` (`clone.interface_fields()`), the role
+vocabulary comes from `models.INTERFACE_ROLES`, and both templates render
+their `<option>` list from the server. A hand-kept copy of any of the three
+fails **silently**: a field dropped from the copy is simply never checked.
+
+### `unspecified` is not `other`
+
+"Never declared" and "declared, none of these fit" are different facts, and
+the gate branches on the difference. `unspecified` is the column default and
+the FIRST option in the form — a form whose first option is a real role turns
+every hurried save into an assertion nobody made. It is also deliberately
+absent from `INTERFACE_TRAFFIC_ROLES`.
+
+Rediscovery must never write a role. It reads name, media type and address
+off the device; the device models no purpose, so a discovered role would be
+manufactured. The guard strips docstrings and comments before asserting,
+because the docstring that EXPLAINS the guard names `role`.
+
+### Chassis: several rows, one box
+
+Measured live on fortiweb09 (FortiWeb-KVM 7.6.8) after enabling `adom-admin`
+and creating three ADOMs:
+
+- `server-policy/policy` **differs** per ADOM — the rows are not duplicates.
+- `system/interface` and `system/vip` are **identical** from all four ADOMs —
+  the hardware and the network are not partitioned.
+
+`clients/fortiweb._auth_token` bakes one ADOM into the token and there is no
+per-request override, so a multi-ADOM device can only be one row per ADOM.
+Everything that reasoned per ROW was answering a hardware question with a
+count of rows. `models.chassis_key` derives the identity from
+(kind, host, port) and is never stored — two rows that dial the same address
+and port ARE the same box, and a stored group id can only be staler than
+that. It returns `None` for a row with no host and for a cluster container
+(a VIP-mode node 0 carries the shared VIP; grouping on it would call a
+two-box HA pair one chassis, the opposite of the truth), and an unresolvable
+grouping **narrows to this row alone** — never widens.
+
+### Two traps this work walked into, both worth remembering
+
+1. **Moving a seam breaks the tests that used it.** Making `headroom` count
+   the chassis via a NEW query helper bypassed `current_count`, which
+   `tests/test_capacity_plan.py` monkeypatches — two unit tests started
+   reaching the database. `chassis_count` now SUMS `current_count`, and the
+   row count travels ON the `Headroom` (`rows`) so `check_headroom` never
+   takes a second measurement the caller may have stubbed.
+2. **Four of this section's own guards were written as substring greps and
+   did not bite.** `assert "_NEEDS_TARGET" in route_source` stayed green when
+   the interface half of the rule was deleted, because the token still
+   appeared in the destination lookup; `assert "h.rows" in fn` stayed green
+   when the row count was dropped on the way in. All four were replaced with
+   executed tests (`clean_iface_map` was extracted from the route precisely
+   so it could be called). Mutation score: **25/25** on the interface half,
+   **16/16** on the chassis half, measured by rc with only `rc == 1` counted
+   as a kill.
+
+### Known gap, deliberately not closed here
+
+With `adom-admin` enabled, a token carrying **no** ADOM gets `[]` from
+`server-policy/policy` and no error — identical in shape to a device with no
+policies. An appliance row left at `vdom = NULL` against such a device shows
+an empty workspace and flags nothing. fortiweb09's row is pinned to `root`;
+there is no guard yet that detects the condition, and adding one means a live
+probe of `system/global` on every appliance read.
+
+Relatedly: `system/vlan` returns HTTP 500 `-20001` on 7.6.8, and
+`BaseClient.list_with_error` reports that as an empty list with no error —
+an unsupported endpoint reads exactly like an empty one. Create VLANs over
+the CLI.

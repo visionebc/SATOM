@@ -20,6 +20,20 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Fixed
 
+- **Three POST buttons could never be submitted.** The Rebuild button on
+  `/registry/versions`, Revoke on the section-template catalog and "Scan
+  devices" on the certificate manager were plain `<form method="post">`
+  blocks with no `csrf_token` hidden input, so Flask-WTF's `CSRFProtect`
+  rejected every submission and the app's `CSRFError` handler flashed *"Your
+  session expired or the form was stale — please try again."* The message
+  blames the operator's session; the session was fine and the form was never
+  submittable. The `fetch()` shim in `main.js` injects `X-CSRFToken` on every
+  same-origin state-changing call, which is why JSON callers never hit this —
+  a native form submit does not go through `fetch()`. New guard
+  `tests/test_form_csrf.py` re-parses every template and resolves each
+  `<form>` block itself, so a tokenless POST form breaks the suite in the
+  commit that adds it (safeguards §100).
+
 - **Ten buttons in the three new diagnostic tools were unstyled.** `fortiweb.css`
   defines `.btn-fw-primary` / `.btn-fw-outline` / `.btn-fw-secondary`; the
   certificate inspector, false-positive explainer and transaction tracer were

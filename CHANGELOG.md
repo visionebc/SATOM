@@ -6,6 +6,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [1.10.1] - 2026-08-17
+
 ### Added
 
 - **Sharded test runner** — `scripts/run_test_shards.sh` splits the suite
@@ -17,6 +19,12 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   concurrency guard parses `/proc/<pid>/cmdline` as argv instead of
   substring-matching it, because `pgrep -f pytest` returns any process that
   merely *mentions* the word.
+
+### Changed
+
+- **`SQLAlchemy` is pinned to `2.0.52`** in `requirements.txt` (previously
+  unpinned, so an offline bundle built on two different days could ship two
+  different ORM versions).
 
 ### Fixed
 
@@ -61,6 +69,21 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   accumulated. An inode leak rather than a byte leak, but unbounded, and
   sharding multiplies it by the shard count. Cleanup is now registered with
   `atexit` at import time.
+
+- **The PEM guard had never looked at a JavaScript file.**
+  `tests/test_no_pem_literals.py` sweeps the source tree for literal
+  `-----BEGIN … PRIVATE KEY-----` headers, because the publisher aborts the
+  public mirror if it finds one in *any* blob of *any* commit. Its `SUFFIXES`
+  set listed `.py`, `.sh`, `.yaml`, `.json`, `.html`, `.md`, `.txt` and
+  `.conf` — but not `.js`, so the guard had been passing vacuously over the
+  entire JavaScript tree. The certificate inspector's textarea placeholder
+  carried the header literally, and it reached a version cut. The placeholder
+  is now assembled at runtime (`'-'.repeat(5) + 'BEGIN PRIVATE KEY' + …`), the
+  rendered markup is byte-identical, and `SUFFIXES` gains `.js`, `.mjs`, `.ts`
+  and `.css`. The lesson generalises past this one file: a guard whose scope
+  is narrower than the scope of the system that actually decides — here the
+  publisher, which reads every blob in history — is decorative, and every gap
+  between the two scopes is a literal waiting to ship.
 
 ## [1.10.0] - 2026-08-17
 

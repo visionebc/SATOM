@@ -5,8 +5,8 @@
 <meta charset="UTF-8">
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Version 1.6.0 — SATOM</title>
-<meta name="description" content="Released on 2026-08-07 — Added · Changed · Removed · Fixed · 23 entries.">
+<title>Version 1.10.1 — SATOM</title>
+<meta name="description" content="Released on 2026-08-17 — Added · Changed · Fixed · 6 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -45,8 +45,8 @@
 
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
-  <h1>Version 1.6.0 <span class="rel-badge">superseded</span></h1>
-  <p class="sub">Released on 2026-08-07 — Added · Changed · Removed · Fixed · 23 entries.</p>
+  <h1>Version 1.10.1 <span class="rel-badge rel-now">current release</span></h1>
+  <p class="sub">Released on 2026-08-17 — Added · Changed · Fixed · 6 entries.</p>
 </header>
 
 <section class="wrap">
@@ -62,7 +62,7 @@
         <span class="rel-nav-meta">unreleased · Changes · 0 entries</span>
         <ul class="rel-leads"></ul>
       </a>
-      <a class="rel-nav-item" href="v1.10.1.html" data-rel-version="1.10.1">
+      <a class="rel-nav-item is-active" href="v1.10.1.html" data-rel-version="1.10.1">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 1.10.1</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
         <span class="rel-nav-meta">2026-08-17 · Added · Changed · Fixed · 6 entries</span>
         <ul class="rel-leads"><li>Sharded test runner</li><li>SQLAlchemy is pinned to 2.0.52</li><li>Three POST buttons could never be submitted</li><li class="rel-more">… and 3 more</li></ul>
@@ -107,7 +107,7 @@
         <span class="rel-nav-meta">2026-08-07 · Added · Fixed · 16 entries</span>
         <ul class="rel-leads"><li>Sealed recovery custody</li><li>The seal passphrase is created at INSTALL, not at cluster join</li><li>Recovery custody for the two secrets no backup carries</li><li class="rel-more">… and 13 more</li></ul>
       </a>
-      <a class="rel-nav-item is-active" href="v1.6.0.html" data-rel-version="1.6.0">
+      <a class="rel-nav-item" href="v1.6.0.html" data-rel-version="1.6.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 1.6.0</span></span>
         <span class="rel-nav-meta">2026-08-07 · Added · Changed · Removed · Fixed · 23 entries</span>
         <ul class="rel-leads"><li>FortiADC virtual servers</li><li>FortiAuthenticator identity inventory</li><li>FortiAnalyzer</li><li class="rel-more">… and 20 more</li></ul>
@@ -197,164 +197,87 @@
       <div class="mdx">
 <h3 id="added">Added</h3>
 <ul>
-<li>Monitoring is provisioned from <strong>one seam</strong>. Saving an appliance now creates
-  both its scrape targets and its threshold probes; until now <code>ensure_baseline</code>
-  was reachable only from <em>Discover</em>, so a device added through the form had
-  metrics and no thresholds and nothing said so.</li>
-<li><strong>FortiADC virtual servers</strong> (<code>vservers</code> collector). FortiADC has no
-  <code>monitor/</code> namespace — every guessed endpoint 404s — so the runtime surface
-  was censused from the appliance's own GUI bundle and verified live on 8.0.3.
-  <code>status_history/vs_status</code> carries the whole vdom in ONE call, so 500 virtual
-  servers cost one round trip. Interfaces extended to FortiADC.</li>
-<li><strong>FortiAuthenticator identity inventory</strong> (<code>identity</code> collector) — accounts,
-  groups, tokens, certificates, RADIUS/TACACS+ clients. Counted via Tastypie
-  <code>meta.total_count</code>, so a 50 000-user directory costs the same as an empty one.</li>
-<li><strong>FortiAnalyzer</strong> (<code>faz</code> collector) — log volume, storage, alerts, incidents,
-  registered devices and task queue. Counters only; no log body is ever
-  fetched. FortiAnalyzer previously had <strong>no collectors at all</strong>.</li>
-<li>
-<p><strong>Dashboard variables</strong> with two drill-down boards. One board answers for
-  every device in the fleet instead of one board per device, and the service
-  picker is <em>chained</em> to the device picker so it offers only what exists on the
-  selected appliance.</p>
-</li>
-<li>
-<p><strong>Search on the published manual.</strong> The hub carries a client-side index of
-  every published document and <strong>every h2/h3 heading in it</strong> — 573 headings
-  across 27 documents — so a result deep-links to the subsection rather than
-  dropping the reader at the top of a two-thousand-line page. The index is
-  derived from the same render that produces the pages, not from a second
-  parse, and is inlined rather than fetched: the site is published to a static
-  host we do not configure, and the publication leak scan only sees what the
-  build returns.</p>
-</li>
-<li><strong>Search across every release.</strong> The release notes index all 226 changelog
-  entries, and each result is labelled with the version it shipped in and
-  links into that release's own page. The version rail filters to the releases
-  that actually contain a hit, so the left side answers "which versions is
-  this in?" without reading the results.</li>
-<li><strong>Nine sections of the user guide that had no coverage at all</strong> — Studio
-  (custom views, plugins, Lua), High availability, AppIDs, a tab-by-tab
-  Settings reference, log collection and offline backup import, system
-  provisioning profiles and baselines, the template library and section
-  catalog, the endpoint registry and API explorer, and release notes. The
-  manual went from 23 sections to 32 and now says where to read what changed
-  in a version — it had never mentioned the changelog.</li>
+<li><strong>Sharded test runner</strong> — <code>scripts/run_test_shards.sh</code> splits the suite
+  across 2-4 parallel shards (by file, never within a file) and
+  <code>scripts/test_shard_plan.py</code> builds the partition, weighing files either by
+  a static AST proxy or by measured <code>--durations=0</code> seconds from a previous
+  run. Aggregation is by exit code only, and rc 4 (usage error) and rc 5 (no
+  tests collected) are reported as errors rather than read as passes. The
+  concurrency guard parses <code>/proc/&lt;pid&gt;/cmdline</code> as argv instead of
+  substring-matching it, because <code>pgrep -f pytest</code> returns any process that
+  merely <em>mentions</em> the word.</li>
 </ul>
 <h3 id="changed">Changed</h3>
 <ul>
-<li><strong>The release notes are a rail and a panel, not a wall of cards.</strong> Versions
-  on the left, that version's changes on the right, newest first, opening on
-  the shipped version because "what is running on my node" is the question the
-  page is opened with. Each version page carries the whole rail, so "when did
-  this change?" stops being a scroll through the changelog.</li>
-<li><strong>The manual and the release notes read at 80% of the screen</strong> above
-  1400px. Only above: 80% of a 1280px screen is 1024px, which is <em>narrower</em>
-  than the 1120px it replaces, so widening unconditionally would have made the
-  manual harder to read on the machines most operators use. Marketing pages
-  stay narrow deliberately.</li>
-</ul>
-<h3 id="removed">Removed</h3>
-<ul>
-<li><strong>Lua Studio is no longer reachable from the FortiAuthenticator ADOM.</strong> It
-  was in the ADOM's blueprint set, but <code>LuaScript.TARGETS</code> is FortiWeb and
-  FortiADC — the unit is an identity store with no scripting object anywhere in
-  its API, so the page listed zero targets and zero devices. A page that can
-  only fail is worse than one that is not offered.</li>
+<li><strong><code>SQLAlchemy</code> is pinned to <code>2.0.52</code></strong> in <code>requirements.txt</code> (previously
+  unpinned, so an offline bundle built on two different days could ship two
+  different ORM versions).</li>
 </ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
-<li><strong>The publication redaction rule was a roster, not a shape.</strong> It enumerated
-  the appliances that existed the day it was written, so every unit onboarded
-  afterwards silently stopped being redacted — and the leak scanner, which
-  carries its own copy of the same list, could not catch what the redactor had
-  missed. Twelve appliance names were live on the public site. The rule now
-  matches a product prefix followed by digits, so the next device is covered
-  the day it is racked; bare ADOM keys (<code>fadc</code>, <code>faz</code>) and URL segments like
-  <code>/fadc/api/</code> still pass through untouched, because the product has to remain
-  nameable.</li>
 <li>
-<p><strong>A reference-appliance roster was hardcoded in the field-catalog
-  harvester.</strong> <code>SOURCES</code> named two boxes of this estate, so a checkout carried
-  someone else's device names and a run elsewhere would have harvested from
-  hosts that do not exist. It reads <code>SATOM_FIELD_CATALOG_SOURCES</code> now, with no
-  default and a refusal that names the variable — the same rule the Firecrawl
-  endpoint in that file already followed.</p>
+<p><strong>Three POST buttons could never be submitted.</strong> The Rebuild button on
+  <code>/registry/versions</code>, Revoke on the section-template catalog and "Scan
+  devices" on the certificate manager were plain <code>&lt;form method="post"&gt;</code>
+  blocks with no <code>csrf_token</code> hidden input, so Flask-WTF's <code>CSRFProtect</code>
+  rejected every submission and the app's <code>CSRFError</code> handler flashed <em>"Your
+  session expired or the form was stale — please try again."</em> The message
+  blames the operator's session; the session was fine and the form was never
+  submittable. The <code>fetch()</code> shim in <code>main.js</code> injects <code>X-CSRFToken</code> on every
+  same-origin state-changing call, which is why JSON callers never hit this —
+  a native form submit does not go through <code>fetch()</code>. New guard
+  <code>tests/test_form_csrf.py</code> re-parses every template and resolves each
+  <code>&lt;form&gt;</code> block itself, so a tokenless POST form breaks the suite in the
+  commit that adds it (safeguards §100).</p>
 </li>
 <li>
-<p>Dashboard variable values were escaped with <code>re.escape</code>, which escapes a
-  hyphen as <code>\-</code>. RE2 — the engine VictoriaMetrics uses — rejects that as an
-  invalid escape and answered <strong>HTTP 422</strong>. Every device and policy name in
-  this fleet contains a hyphen, so the common case was broken and the rare one
-  worked. Found end-to-end against the live store; a unit test on the escaper
-  alone could not see it, because the output is only invalid to the engine.</p>
+<p><strong>Ten buttons in the three new diagnostic tools were unstyled.</strong> <code>fortiweb.css</code>
+  defines <code>.btn-fw-primary</code> / <code>.btn-fw-outline</code> / <code>.btn-fw-secondary</code>; the
+  certificate inspector, false-positive explainer and transaction tracer were
+  written with the word order reversed — <code>fw-btn-primary</code> — which matches no
+  selector in any stylesheet the product loads, so those buttons fell back to
+  the browser's native grey bevelled <code>&lt;button&gt;</code> inside a flat white modal. The
+  same round also substituted <code>fw-card p-3</code> for the real <code>fw-card-header</code> /
+  <code>fw-card-body</code> sub-structure (16px instead of 20px, and no header tint or
+  bottom border at all), titled its modals with <code>h5</code> where the two older tools
+  in the same Tools menu use <code>h6</code>, sized every form control full-size next to
+  <code>btn-sm</code> buttons, and built its tabs out of <code>&lt;a href="#"&gt;</code> instead of
+  <code>&lt;button&gt;</code>. Opening Network Calculator and then Certificate inspector from
+  the same dropdown showed two different header heights and two different form
+  densities. Nothing failed: the pages rendered, the handlers fired, and the
+  round's own check ("0 dark-theme tokens") was true and did not verify that
+  the classes it used resolved to a rule. <code>tests/test_tool_modal_chrome.py</code>
+  (31 guards, safeguards §99) now resolves every <code>fw-*</code> / <code>btn-fw-*</code> class the
+  tool JavaScript emits against the stylesheets the product actually links,
+  and freezes the 108 pre-existing occurrences of the reversed spelling in
+  older templates so the count cannot grow.</p>
 </li>
 <li>
-<p><strong>Entering the FortiAuthenticator ADOM landed on the FortiWeb home.</strong>
-  <code>_home_for()</code> had branches for FortiADC and FortiAnalyzer and then a
-  placeholder check; FortiAuthenticator stopped being a placeholder and fell
-  through to <code>fortiweb_home</code>. Every route into the ADOM — the product picker,
-  the sidebar, the device rail — silently opened the wrong product and then
-  pinned the session to it. <code>/fac/</code> was reachable only by typing the URL.</p>
-</li>
-<li><strong>The Global home page hardcoded two ADOMs.</strong> It shipped a stat-card for
-  FortiWeb and FortiADC and nothing else, and its fleet table could render only
-  those two kinds — so FortiAuthenticator and FortiAnalyzer units were
-  invisible on the one console meant to see everything. Cards and table now
-  come from the ADOM registry, so the next product appears without touching
-  this page; devices whose kind matches no active ADOM are listed too, because
-  Global is the only console that can see them.</li>
-<li><strong>An ADOM with registered appliances could be deleted.</strong> The guard was a
-  hardcoded set of three keys. An appliance's <code>kind</code> IS an ADOM key, so
-  deleting the row silently un-managed every device stamped with it: the boxes
-  stay in the table, no console can reach them, and nothing raises. The guard is
-  derived now — the three core keys plus any ADOM owning at least one
-  appliance, recomputed per check, so onboarding the first unit of a product
-  protects it immediately. The refusal also says which of the two reasons it
-  is, and how many appliances are in the way.</li>
-<li>The FortiAuthenticator ADOM had no top-bar search icon and no device-rail
-  link, though <code>search</code> was already in its blueprint set.</li>
-<li><strong>Table-of-contents entries were escaped twice</strong> — the sidebar of every
-  manual page rendered <code>Backups &amp;amp;amp; restore</code>, which a reader sees as a
-  literal entity. markdown's toc tokens arrive already HTML-escaped and were
-  escaped again on the way out. It only shows on a heading containing
-  <code>&amp; &lt; &gt; "</code>, which is why it survived until a search index inherited it.</li>
-<li><strong>A guard that counts workspaces was tied to the sentence, not the number.</strong>
-  It matched the exact string <code>The app hosts N workspaces</code>, so inserting one
-  adverb while rewriting the ADOM section made it stop guarding rather than
-  fail. It is anchored on the claim now (<code>&lt;number-word&gt; workspaces</code>) and checks
-  <strong>every</strong> occurrence — the count is stated twice, and only one of the two was
-  ever covered.</li>
-</ul>
-<h3 id="notes">Notes</h3>
-<ul>
-<li><strong>Service Monitor was NOT retired</strong>, though its four kinds are each covered
-  1:1 by a collector that does the same work in one call instead of N. The
-  alert engine has no reference to the metrics store and Collection has no
-  grading layer, so retiring it today would delete the "every backend behind
-  this policy is down" signal with nothing to replace it. Prerequisite: alert
-  rules evaluated over the store. See <code>docs/safeguards.md</code> §25c.</li>
-<li>
-<p>The FortiAnalyzer collector is <strong>unverified against live hardware</strong> (none
-  reachable since July 2026). Payload shapes are read defensively and an
-  unrecognised shape yields nothing rather than a plausible wrong number.</p>
+<p><strong>The suite leaked one temp directory per pytest process.</strong>
+  <code>tests/conftest.py</code> creates its temp root with <code>tempfile.mkdtemp()</code> at import
+  time and nothing removed it — 2841 orphaned <code>/tmp/fmw-test-*</code> directories had
+  accumulated. An inode leak rather than a byte leak, but unbounded, and
+  sharding multiplies it by the shard count. Cleanup is now registered with
+  <code>atexit</code> at import time.</p>
 </li>
 <li>
-<p><strong>The <code>adoms</code> table beats <code>branding.py</code>, and one ADOM proves it.</strong> The
-  FortiAuthenticator entry seeds <code>cap_firmware</code>/<code>cap_naming</code>/<code>cap_regex</code> False
-  and carried a comment asserting they <em>stay</em> False; the live row has all three
-  on, set by an admin through Settings → ADOMs on 2026-08-05. The seed is
-  insert-only by design, so operator edits win — the comment was describing an
-  intent the registry had already overridden. The comment now says these are
-  seed defaults and points at the table. <strong>The row was left alone:</strong> overriding
-  an operator's own edit through the mechanism that promises to respect it
-  would be the actual bug. Live effect is narrow — <code>/naming/</code> and <code>/regex-lab/</code>
-  still redirect out of the FAC workspace (the blueprint gate, not the
-  capability, controls reachability); only the firmware library opens, and §17.2
-  now says so.</p>
+<p><strong>The PEM guard had never looked at a JavaScript file.</strong>
+  <code>tests/test_no_pem_literals.py</code> sweeps the source tree for literal
+  <code>-----BEGIN … PRIVATE KEY-----</code> headers, because the publisher aborts the
+  public mirror if it finds one in <em>any</em> blob of <em>any</em> commit. Its <code>SUFFIXES</code>
+  set listed <code>.py</code>, <code>.sh</code>, <code>.yaml</code>, <code>.json</code>, <code>.html</code>, <code>.md</code>, <code>.txt</code> and
+  <code>.conf</code> — but not <code>.js</code>, so the guard had been passing vacuously over the
+  entire JavaScript tree. The certificate inspector's textarea placeholder
+  carried the header literally, and it reached a version cut. The placeholder
+  is now assembled at runtime (<code>'-'.repeat(5) + 'BEGIN PRIVATE KEY' + …</code>), the
+  rendered markup is byte-identical, and <code>SUFFIXES</code> gains <code>.js</code>, <code>.mjs</code>, <code>.ts</code>
+  and <code>.css</code>. The lesson generalises past this one file: a guard whose scope
+  is narrower than the scope of the system that actually decides — here the
+  publisher, which reads every blob in history — is decorative, and every gap
+  between the two scopes is a literal waiting to ship.</p>
 </li>
 </ul>
-<p class="rel-prevnext"><a href="v1.7.0.html">← Version 1.7.0</a> · <a href="v1.5.0.html">Version 1.5.0 →</a></p>
+<p class="rel-prevnext"><a href="unreleased.html">← Unreleased — the next release</a> · <a href="v1.10.0.html">Version 1.10.0 →</a></p>
       </div>
       <div class="callout" style="margin-top:24px;">
         <span class="cico">🗒️</span>

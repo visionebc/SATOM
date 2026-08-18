@@ -42,15 +42,15 @@
   <div class="col-md-6"><div class="card shadow-sm">
     <div class="card-header fw-card-header">{{ _('Quick Actions') }}</div>
     <div class="card-body d-grid gap-2">
+      {# the row that owns the chassis verbs; None when nothing is linkable #}
+      {% set bk_owner = appliance if owns_device_scope(appliance) else device_scope_owner(appliance) %}
       {% if appliance.kind == 'fortiadc' %}
       <a href="{{ url_for('adc.use_device', id=appliance.id) }}" class="btn fw-btn-primary">{{ _('Browse Virtual Servers') }}</a>
-      {% if owns_device_scope(appliance) %}<a href="{{ url_for('backups.list_backups', id=appliance.id) }}" class="btn fw-btn-secondary">{{ _('View Backups') }}</a>
-      {% elif device_scope_owner(appliance) %}<a href="{{ url_for('backups.list_backups', id=device_scope_owner(appliance).id) }}" class="btn fw-btn-secondary" title="{{ _('One backup covers every ADOM of this appliance') }}">{{ _('View Backups') }} <span class="fw-tag ms-1">{{ device_scope_owner(appliance).name }}</span></a>{% endif %}
+      {% if bk_owner %}<a href="{{ url_for('backups.list_backups', id=bk_owner.id) }}" class="btn fw-btn-secondary"{% if bk_owner.id != appliance.id %} title="{{ _('One backup covers every ADOM of this appliance') }}"{% endif %}>{{ _('View Backups') }}{% if bk_owner.id != appliance.id %} <span class="fw-tag ms-1">{{ bk_owner.name }}</span>{% endif %}</a>{% endif %}
       <a href="{{ url_for('adc_api.index') }}" class="btn fw-btn-secondary">{{ _('API Console') }}</a>
       {% else %}
       <a href="{{ url_for('workspace.appliance', appliance_id=appliance.id) }}" class="btn fw-btn-primary">{{ _('Browse Server Policies') }}</a>
-      {% if owns_device_scope(appliance) %}<a href="{{ url_for('backups.list_backups', id=appliance.id) }}" class="btn fw-btn-secondary">{{ _('View Backups') }}</a>
-      {% elif device_scope_owner(appliance) %}<a href="{{ url_for('backups.list_backups', id=device_scope_owner(appliance).id) }}" class="btn fw-btn-secondary" title="{{ _('One backup covers every ADOM of this appliance') }}">{{ _('View Backups') }} <span class="fw-tag ms-1">{{ device_scope_owner(appliance).name }}</span></a>{% endif %}
+      {% if bk_owner %}<a href="{{ url_for('backups.list_backups', id=bk_owner.id) }}" class="btn fw-btn-secondary"{% if bk_owner.id != appliance.id %} title="{{ _('One backup covers every ADOM of this appliance') }}"{% endif %}>{{ _('View Backups') }}{% if bk_owner.id != appliance.id %} <span class="fw-tag ms-1">{{ bk_owner.name }}</span>{% endif %}</a>{% endif %}
       <a href="{{ url_for('analysis.dashboard', id=appliance.id) }}" class="btn fw-btn-secondary">{{ _('Analysis / FortiView') }}</a>
       {% endif %}
     </div>

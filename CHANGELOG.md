@@ -106,6 +106,15 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Fixed
 
+- The *View Backups* link is emitted once, not once per branch. Splitting it
+  into an owns-the-chassis case and a points-at-the-owner case duplicated the
+  dead `fw-btn-*` spelling and pushed the frozen budget that keeps that debt
+  from growing. The owner is resolved before the markup, so one anchor covers
+  both cases and the rendered page is byte-for-byte what it was.
+- §39 of the user guide states the live page and exclusion counts again.
+  Both numbers are hand-typed prose about a generated map; the map grew and
+  the prose did not, so the manual under-reported what the console contains.
+
 - The XML DTD read is parsed with a tolerant decoder. The firmware's two-byte
   buffer over-run put an invalid UTF-8 byte inside the JSON body, so `.json()`
   raised and a **working** endpoint read as a dead one; the junk is trimmed

@@ -9877,7 +9877,7 @@ per-appliance-only mode is a settings decision that has not been made.
 
 ## 9o. Device-wide verbs belong to the chassis, not to each ADOM row
 
-`tests/test_device_adom_scope.py` — 34 guards, **26/26 mutations kill**,
+`tests/test_device_adom_scope.py` — 35 guards, **28/28 mutations kill**,
 measured by return code with only `rc == 1` counted.
 
 A FortiWeb in ADOM mode partitions its CONFIG, not its hardware. The auth
@@ -9982,4 +9982,22 @@ host/port. `GET /appliances/<adom_id>/upgrade` must be **302** to
 `data-adom-toggle` (the root row) and one `data-adom-of` per other ADOM, and
 must contain `/appliances/<root_id>/upgrade` and **no**
 `/appliances/<adom_id>/upgrade`.
+
+### The pointer has to point at the right row, not merely exist
+
+Guard 35 (`test_the_vault_link_on_an_adom_row_carries_the_OWNER_id`) came out
+of a mutation that **survived the other 34**: building the detail page's
+*View Backups* link from `appliance.id` instead of the owner's. `/backups/<id>`
+**redirects** rather than 404s, so the wrong id does not fail — it opens
+another ADOM's vault silently. The roster guard counts pointer links; counting
+is not the same as following one. The guard asserts the child page renders
+**exactly one** vault anchor, that its href carries the OWNER id, that the chip
+names whose vault it is, and that the device row and a chassis-less device both
+still link at themselves.
+
+The link is emitted **once**, from an owner resolved before the markup. The
+two-branch spelling it replaced duplicated the dead `fw-btn-*` class and moved
+the frozen budget in §99 — a formatting choice is not allowed to spend a debt
+ceiling.
+
 

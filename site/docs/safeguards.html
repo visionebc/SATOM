@@ -9641,7 +9641,7 @@ under one name — that is exactly the drift a clone is meant to carry — so th
 fallback is a guess. It is surfaced in the checklist text and not blocked; a
 per-appliance-only mode is a settings decision that has not been made.</p>
 <h2 id="9o-device-wide-verbs-belong-to-the-chassis-not-to-each-adom-row">9o. Device-wide verbs belong to the chassis, not to each ADOM row</h2>
-<p><code>tests/test_device_adom_scope.py</code> — 34 guards, <strong>26/26 mutations kill</strong>,
+<p><code>tests/test_device_adom_scope.py</code> — 35 guards, <strong>28/28 mutations kill</strong>,
 measured by return code with only <code>rc == 1</code> counted.</p>
 <p>A FortiWeb in ADOM mode partitions its CONFIG, not its hardware. The auth
 token carries exactly one ADOM and there is no per-request override, so a
@@ -9734,6 +9734,20 @@ host/port. <code>GET /appliances/&lt;adom_id&gt;/upgrade</code> must be <strong>
 <code>data-adom-toggle</code> (the root row) and one <code>data-adom-of</code> per other ADOM, and
 must contain <code>/appliances/&lt;root_id&gt;/upgrade</code> and <strong>no</strong>
 <code>/appliances/&lt;adom_id&gt;/upgrade</code>.</p>
+<h3 id="the-pointer-has-to-point-at-the-right-row-not-merely-exist">The pointer has to point at the right row, not merely exist</h3>
+<p>Guard 35 (<code>test_the_vault_link_on_an_adom_row_carries_the_OWNER_id</code>) came out
+of a mutation that <strong>survived the other 34</strong>: building the detail page's
+<em>View Backups</em> link from <code>appliance.id</code> instead of the owner's. <code>/backups/&lt;id&gt;</code>
+<strong>redirects</strong> rather than 404s, so the wrong id does not fail — it opens
+another ADOM's vault silently. The roster guard counts pointer links; counting
+is not the same as following one. The guard asserts the child page renders
+<strong>exactly one</strong> vault anchor, that its href carries the OWNER id, that the chip
+names whose vault it is, and that the device row and a chassis-less device both
+still link at themselves.</p>
+<p>The link is emitted <strong>once</strong>, from an owner resolved before the markup. The
+two-branch spelling it replaced duplicated the dead <code>fw-btn-*</code> class and moved
+the frozen budget in §99 — a formatting choice is not allowed to spend a debt
+ceiling.</p>
     </div>
   </div>
 </section>

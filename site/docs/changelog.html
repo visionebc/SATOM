@@ -201,10 +201,22 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
 </ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
-<li>The XML DTD read is parsed with a tolerant decoder. The firmware's two-byte
+<li>The <em>View Backups</em> link is emitted once, not once per branch. Splitting it
+  into an owns-the-chassis case and a points-at-the-owner case duplicated the
+  dead <code>fw-btn-*</code> spelling and pushed the frozen budget that keeps that debt
+  from growing. The owner is resolved before the markup, so one anchor covers
+  both cases and the rendered page is byte-for-byte what it was.</li>
+<li>
+<p>§39 of the user guide states the live page and exclusion counts again.
+  Both numbers are hand-typed prose about a generated map; the map grew and
+  the prose did not, so the manual under-reported what the console contains.</p>
+</li>
+<li>
+<p>The XML DTD read is parsed with a tolerant decoder. The firmware's two-byte
   buffer over-run put an invalid UTF-8 byte inside the JSON body, so <code>.json()</code>
   raised and a <strong>working</strong> endpoint read as a dead one; the junk is trimmed
-  without touching a legitimate trailing newline.</li>
+  without touching a legitimate trailing newline.</p>
+</li>
 <li>The OpenAPI read no longer doubles every line break: <code>htmlArray</code> elements
   already carry their newline, and for YAML that is not cosmetic — the file
   round-trips, parses, and is not the same document.</li>

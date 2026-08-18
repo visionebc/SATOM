@@ -526,6 +526,33 @@ def create_app(config_override: object | None = None) -> Flask:
         from .models import appliance_name_parts as _p
         return _p(appl) if appl is not None else ("", "")
 
+    # Device-wide verbs (firmware, backup vault, console) belong to the
+    # chassis, not to one ADOM of it. The template asks these two, never
+    # re-derives them: a page that decides on its own which row is "the
+    # device" is a page that can disagree with the route that enforces it.
+    @app.template_global()
+    def owns_device_scope(appl):
+        from .models import owns_device_scope as _o
+        return bool(appl is not None and _o(appl))
+
+    @app.template_global()
+    def device_scope_owner(appl):
+        """The sibling that DOES carry those verbs, for a pointer link.
+
+        ``None`` when *appl* already owns them, and also when the owning row
+        is in maintenance and this user may not see it — linking to a row the
+        next click 404s on is worse than showing no link at all."""
+        if appl is None:
+            return None
+        from flask_login import current_user
+        from .models import chassis_device_row, can_view_maintenance
+        owner = chassis_device_row(appl)
+        if owner is None or owner.id == appl.id:
+            return None
+        if getattr(owner, "maintenance", False) and not can_view_maintenance(current_user):
+            return None
+        return owner
+
     @app.context_processor
     def _inject_branding():
         from flask import session

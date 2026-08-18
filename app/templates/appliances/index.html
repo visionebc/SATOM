@@ -88,30 +88,13 @@
   </button>
 </div>
 
-<!-- Appliances Table -->
-<div class="fw-table-wrapper">
-  <table class="fw-table" id="appliancesTable">
-    <thead>
-      <tr>
-        <th>{{ _('Name') }}</th>
-        <th>{{ _('Kind') }}</th>
-        <th>{{ _('Host') }}</th>
-        <th>{{ _('Port') }}</th>
-        <th>VDOM</th>
-        <th>{{ _('Tags') }}</th>
-        <th>{{ _('Status') }}</th>
-        <th class="actions-col">{{ _('Actions') }}</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% if appliances %}
-        {% for a in appliances %}
-        <tr data-kind="{{ a.kind }}">
-          <td>
-            <a href="{{ url_for('appliances.detail', id=a.id) }}" class="fw-appliance-name" style="font-size:14px;text-decoration:none;">{{ a.name }}</a>
-            {% if a.is_cluster %}<span class="fw-badge fw-badge-secondary ms-1" title="HA cluster ({{ a.ha_mode or 'per_node' }})"><i class="bi bi-diagram-3 me-1"></i>HA · {{ a.members|length }}</span>{% endif %}
-            {% if a.maintenance %}<span class="fw-badge ms-1" style="background:rgba(251,191,36,.15);color:#fbbf24;border:1px solid rgba(251,191,36,.35);" title="{{ _('Maintenance mode - hidden from operators') }}"><i class="bi bi-tools me-1"></i>{{ _('Maintenance') }}</span>{% endif %}
-          </td>
+{# ---------------------------------------------------------------------------
+   One author for the middle columns and for the action bar, because a device
+   row and its ADOM rows must differ in EXACTLY one thing: the verbs that act
+   on the hardware. Copying the cell markup per row type is how those two drift
+   until an ADOM row quietly offers a firmware push.
+   --------------------------------------------------------------------------- #}
+{% macro appliance_cells(a) %}
           <td>
             <span class="fw-badge fw-badge-secondary mono" title="{{ a.kind_tooltip }}">{{ a.kind_badge }}</span>
           </td>
@@ -133,6 +116,8 @@
               <span class="fw-loading-spinner" style="width:10px;height:10px;"></span>
             </span>
           </td>
+{% endmacro %}
+{% macro appliance_actions(a, device_scope, owner) %}
           <td class="actions-col">
             <button class="btn btn-sm btn-outline-secondary btn-sm-icon me-1"
                     title="{{ _('Test Connection') }}"
@@ -142,12 +127,17 @@
             {% if a.kind == 'fortiweb' %}
             <a href="{{ url_for('appliances.inspector', id=a.id) }}" class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" title="{{ _('Policy Inspector') }}"><i class="bi bi-diagram-2"></i></a>
             <a href="{{ url_for('appliances.rediscover', id=a.id) }}" class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" title="{{ 'Rediscovery' if has_snapshot(a.id) else 'Discovery' }}"><i class="bi {{ 'bi-arrow-repeat' if has_snapshot(a.id) else 'bi-binoculars' }}"></i></a>
+            {% if device_scope %}
             <a href="{{ url_for('appliances.console', id=a.id) }}" class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" title="{{ _('Console') }}"><i class="bi bi-terminal"></i></a>
             {% if current_user.can('backup') %}
             <a href="{{ url_for('appliances.upgrade_prep', id=a.id) }}" class="btn btn-sm btn-outline-secondary btn-sm-icon me-1" title="{{ _('Upgrade Preparation') }}"><i class="bi bi-clipboard-check"></i></a>
             {% endif %}
             {% if current_user.can('config_write') %}
             <a href="{{ url_for('appliances.upgrade', id=a.id) }}" class="btn btn-sm btn-outline-warning btn-sm-icon me-1" title="{{ _('Upgrade Firmware') }}"><i class="bi bi-cloud-arrow-up"></i></a>
+            {% endif %}
+            {% elif owner %}
+            <a href="{{ url_for('appliances.detail', id=owner.id) }}" class="btn btn-sm btn-outline-secondary btn-sm-icon me-1 fw-adom-owner-link"
+               title="{{ _('Firmware, the backup vault and the console act on the whole appliance — they live on') }} {{ owner.name }}"><i class="bi bi-hdd-network"></i></a>
             {% endif %}
             {% endif %}
             <button class="btn btn-sm btn-outline-primary btn-sm-icon me-1"
@@ -166,9 +156,58 @@
               </button>
             </form>
           </td>
+{% endmacro %}
+
+<!-- Appliances Table -->
+<div class="fw-table-wrapper">
+  <table class="fw-table" id="appliancesTable">
+    <thead>
+      <tr>
+        <th>{{ _('Name') }}</th>
+        <th>{{ _('Kind') }}</th>
+        <th>{{ _('Host') }}</th>
+        <th>{{ _('Port') }}</th>
+        <th>VDOM</th>
+        <th>{{ _('Tags') }}</th>
+        <th>{{ _('Status') }}</th>
+        <th class="actions-col">{{ _('Actions') }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if groups %}
+        {% for g in groups %}
+        {% set dev = g.device %}
+        {% set dev_parts = appliance_name_parts(dev) %}
+        <tr data-kind="{{ dev.kind }}"{% if g.adoms %} data-adom-parent="{{ dev.id }}"{% endif %}>
+          <td>
+            {% if g.adoms %}
+            <button type="button" class="fw-adom-toggle" data-adom-toggle="{{ dev.id }}"
+                    aria-expanded="false"
+                    title="{{ _('Show the other ADOMs of this appliance') }}"><i class="bi bi-chevron-right"></i></button>
+            {% endif %}
+            <a href="{{ url_for('appliances.detail', id=dev.id) }}" class="fw-appliance-name" style="font-size:14px;text-decoration:none;">{{ dev_parts[0] }}</a>
+            {% if dev_parts[1] %}<span class="fw-tag ms-1" title="{{ _('Administrative domain this row administers') }}">{{ dev_parts[1] }}</span>{% endif %}
+            {% if g.adoms %}<span class="fw-badge fw-badge-secondary ms-1" title="{{ _('One physical appliance, one row per ADOM') }}"><i class="bi bi-diagram-2 me-1"></i>{{ _('ADOM') }} · {{ g.adoms|length + 1 }}</span>{% endif %}
+            {% if dev.is_cluster %}<span class="fw-badge fw-badge-secondary ms-1" title="HA cluster ({{ dev.ha_mode or 'per_node' }})"><i class="bi bi-diagram-3 me-1"></i>HA · {{ dev.members|length }}</span>{% endif %}
+            {% if dev.maintenance %}<span class="fw-badge ms-1" style="background:rgba(251,191,36,.15);color:#fbbf24;border:1px solid rgba(251,191,36,.35);" title="{{ _('Maintenance mode - hidden from operators') }}"><i class="bi bi-tools me-1"></i>{{ _('Maintenance') }}</span>{% endif %}
+          </td>
+          {{ appliance_cells(dev) }}
+          {{ appliance_actions(dev, owns_device_scope(dev), device_scope_owner(dev)) }}
         </tr>
-        {% if a.is_cluster %}{% for m in a.cluster_members() %}
-        <tr class="fw-member-row" data-kind="{{ m.kind }}" data-member-of="{{ a.id }}" style="background:rgba(148,163,184,0.04);">
+        {% for m in g.adoms %}
+        {% set m_parts = appliance_name_parts(m) %}
+        <tr class="fw-adom-row" data-kind="{{ m.kind }}" data-adom-of="{{ dev.id }}" style="display:none;">
+          <td class="fw-adom-cell">
+            <i class="bi bi-arrow-return-right text-muted me-1"></i>
+            <a href="{{ url_for('appliances.detail', id=m.id) }}" style="text-decoration:none;font-size:13px;">{{ m_parts[1] or m_parts[0] }}</a>
+            {% if m.maintenance %}<span class="fw-badge ms-1" style="background:rgba(251,191,36,.15);color:#fbbf24;border:1px solid rgba(251,191,36,.35);" title="{{ _('Maintenance mode - hidden from operators') }}"><i class="bi bi-tools me-1"></i>{{ _('Maintenance') }}</span>{% endif %}
+          </td>
+          {{ appliance_cells(m) }}
+          {{ appliance_actions(m, owns_device_scope(m), device_scope_owner(m)) }}
+        </tr>
+        {% endfor %}
+        {% if dev.is_cluster %}{% for m in dev.cluster_members() %}
+        <tr class="fw-member-row" data-kind="{{ m.kind }}" data-member-of="{{ dev.id }}" style="background:rgba(148,163,184,0.04);">
           <td style="padding-left:28px;"><i class="bi bi-arrow-return-right text-muted me-1"></i><a href="{{ url_for('appliances.detail', id=m.id) }}" style="text-decoration:none;font-size:13px;">{{ m.name }}</a>
             {% if m.ha_role_hint %}<span class="fw-tag ms-1">{{ m.ha_role_hint }}</span>{% endif %}</td>
           <td><span class="fw-badge fw-badge-secondary mono" title="{{ m.kind_tooltip }}">{{ m.kind_badge }}</span></td>
@@ -503,17 +542,43 @@ function toggleHA(scope) {
   const vipOn = on && mode && mode.value === 'vip';
   document.querySelectorAll('.ha-vip-' + scope).forEach(function (el) { el.classList.toggle('d-none', !vipOn); });
 }
-function filterTable(query) {
-  const q       = query.toLowerCase();
-  const kind    = document.getElementById('kindFilter').value.toLowerCase();
-  const rows    = document.querySelectorAll('#appliancesTable tbody tr');
-  rows.forEach(function (row) {
-    const text   = row.textContent.toLowerCase();
+// ADOM rows: collapsed by default, and the STORE HOLDS THE OPEN SET.
+// A stored closed-set would have to be seeded per chassis on first sight, and
+// any chassis it had never seen would open itself — with one row per ADOM on a
+// 60-device fleet the only usable default is "folded".
+var ADOM_OPEN_KEY = 'satom.appliances.adom.open';
+function adomOpenSet() {
+  try { return new Set(JSON.parse(localStorage.getItem(ADOM_OPEN_KEY) || '[]')); }
+  catch (e) { return new Set(); }
+}
+function adomSaveOpen(set) {
+  try { localStorage.setItem(ADOM_OPEN_KEY, JSON.stringify(Array.from(set))); }
+  catch (e) { /* private mode: the page still works, it just forgets */ }
+}
+function applyRowVisibility() {
+  const searchEl = document.getElementById('tableSearch');
+  const q        = (searchEl ? searchEl.value : '').toLowerCase();
+  // The kind filter is only rendered when this ADOM manages >1 platform.
+  const kindEl   = document.getElementById('kindFilter');
+  const kind     = kindEl ? kindEl.value.toLowerCase() : '';
+  const open     = adomOpenSet();
+  document.querySelectorAll('#appliancesTable tbody tr').forEach(function (row) {
+    const text    = row.textContent.toLowerCase();
     const rowKind = (row.dataset.kind || '').toLowerCase();
-    const show   = text.includes(q) && (kind === '' || rowKind.includes(kind));
-    row.style.display = show ? '' : 'none';
+    const match   = text.includes(q) && (kind === '' || rowKind.includes(kind));
+    const parent  = row.getAttribute('data-adom-of');
+    // A search REACHES a folded ADOM. A row that matches and stays hidden
+    // reads as "no such device", which is the one answer the box must not give.
+    const folded  = parent && q === '' && !open.has(parent);
+    row.style.display = (match && !folded) ? '' : 'none';
+  });
+  document.querySelectorAll('[data-adom-toggle]').forEach(function (btn) {
+    const on = open.has(btn.getAttribute('data-adom-toggle'));
+    btn.setAttribute('aria-expanded', on ? 'true' : 'false');
+    btn.classList.toggle('is-open', on);
   });
 }
+function filterTable() { applyRowVisibility(); }
 
 function openEditModal(appliance) {
   document.getElementById('edit-name').value     = appliance.name || '';
@@ -579,9 +644,19 @@ document.addEventListener('DOMContentLoaded', function () {
     el.addEventListener('click', function () { API.openModal('modalAddAppliance'); });
   });
   var search = document.getElementById('tableSearch');
-  if (search) search.addEventListener('input', function () { filterTable(this.value); });
+  if (search) search.addEventListener('input', applyRowVisibility);
   var kindFilter = document.getElementById('kindFilter');
-  if (kindFilter) kindFilter.addEventListener('change', function () { filterTable(document.getElementById('tableSearch').value); });
+  if (kindFilter) kindFilter.addEventListener('change', applyRowVisibility);
+  document.querySelectorAll('[data-adom-toggle]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var key = this.getAttribute('data-adom-toggle');
+      var set = adomOpenSet();
+      if (set.has(key)) { set.delete(key); } else { set.add(key); }
+      adomSaveOpen(set);
+      applyRowVisibility();
+    });
+  });
+  applyRowVisibility();
   var refresh = document.querySelector('[data-js="refresh-page"]');
   if (refresh) refresh.addEventListener('click', function () { window.location.reload(); });
   document.querySelectorAll('button[data-test-id]').forEach(function (el) {

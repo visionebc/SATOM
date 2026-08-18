@@ -121,6 +121,16 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   fortiweb09; the row is now pinned to `root`. (No code change guards this
   yet — see the known-gaps note in `docs/safeguards.md` §101.)
 
+- **The roster's header tiles counted ROWS, not appliances.** A FortiWeb
+  in ADOM mode is registered one row per ADOM, so a fleet of ten boxes
+  read as thirteen devices — and Online / Offline summed over the same
+  inflated set, so two tiles describing one fleet could never agree. A
+  chassis now votes once, folded on exactly the key the list groups it by;
+  HA cluster members still count separately, because they are separate
+  boxes with their own power supply. A fifth tile reports how many ADOMs
+  those appliances carry, counted PER APPLIANCE: `root` on two chassis is
+  two administrative domains with two credentials, not one name.
+
 ### Known gaps
 
 - `system/vlan` does not exist over REST on FortiWeb 7.6.8 (`-20001`, "The

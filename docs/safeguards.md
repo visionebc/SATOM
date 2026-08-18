@@ -9877,7 +9877,7 @@ per-appliance-only mode is a settings decision that has not been made.
 
 ## 9o. Device-wide verbs belong to the chassis, not to each ADOM row
 
-`tests/test_device_adom_scope.py` — 24 guards, **16/16 mutations kill**,
+`tests/test_device_adom_scope.py` — 34 guards, **26/26 mutations kill**,
 measured by return code with only `rc == 1` counted.
 
 A FortiWeb in ADOM mode partitions its CONFIG, not its hardware. The auth
@@ -9945,6 +9945,33 @@ Grouping is done over the CURRENT PAGE only. A chassis split across a page
 boundary degrades to a row that stands alone and still names its ADOM — never
 to a row that silently offers a device-wide verb it does not own, because that
 answer comes from the route, not from the layout.
+
+### The header tiles count DEVICES, and one of them counts ADOMs
+
+`models.chassis_tally()` — the same fold as the tree, one author, called by
+`views/appliances.index`. Before it, "Total Appliances" printed **13** for a
+fleet of **10** boxes: the tile counted registered credentials while the tree
+six pixels below it folded them. A number under a device icon that disagrees
+with the list under it is not a rounding difference — one of the two is
+telling the operator the fleet is a size it is not.
+
+* **ADOMs are counted as `(chassis, ADOM)` pairs, never as distinct names.**
+  `root` on one box and `root` on another are two administrative domains,
+  administered by two credentials on two chassis; deduplicating by name would
+  report half the partitions the fleet has.
+* **`root` counts.** It is the domain the device itself administers and the
+  one the chassis-verb owner is registered in — the tree badge already reads
+  `ADOM · 4` for a box with three extra rows, and a tile printing 3 next to it
+  would contradict it.
+* **A keyless row (an HA container, which has no host to dial) stays its own
+  device.** Bucketing them together merges unrelated clusters into one.
+* **Online / Offline exclude the ADOM rows.** Four ADOM rows probe one box, so
+  counting every status pill made those two tiles add up to the ROW count
+  while the tile beside them counted devices. Cluster MEMBERS still vote:
+  those are separate boxes with their own power supply.
+* The tiles are **fleet-wide** — the search box filters the table, never the
+  stats. The tally query pulls six columns, not ORM objects: the list is
+  paginated precisely so a 1000-device roster is never materialised.
 
 ### Recipe to re-verify
 

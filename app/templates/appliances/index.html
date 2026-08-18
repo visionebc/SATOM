@@ -26,18 +26,33 @@
   </div>
 </div>
 
-<!-- Stats row -->
-<div class="row g-3 mb-4">
-  <div class="col-md-3 col-sm-6">
+{# ---------------------------------------------------------------------------
+   Every tile here counts APPLIANCES, never rows. A FortiWeb in ADOM mode is
+   one row per ADOM (models.chassis_key), so the old "Total Appliances" tile
+   read 13 for a fleet of 10 boxes -- and the tree right below it, which folds
+   those rows, said 10. The ADOM tile is the number that total used to hide.
+   Five tiles: one auto-width row on xl, three per row on md, two on a phone.
+   --------------------------------------------------------------------------- #}
+<div class="row row-cols-2 row-cols-md-3 row-cols-xl-5 g-3 mb-4">
+  <div class="col">
     <div class="fw-stat-card">
       <div class="fw-stat-icon fw-stat-icon-primary"><i class="bi bi-server"></i></div>
       <div>
-        <div class="fw-stat-value">{{ total_count if total_count is defined else (appliances|length if appliances else 0) }}</div>
-        <div class="fw-stat-label">{{ _('Total Appliances') }}</div>
+        <div class="fw-stat-value">{{ device_count if device_count is defined else (appliances|length if appliances else 0) }}</div>
+        <div class="fw-stat-label" title="{{ _('Physical appliances. The ADOM rows of one appliance are folded into it.') }}">{{ _('Devices') }}</div>
       </div>
     </div>
   </div>
-  <div class="col-md-3 col-sm-6">
+  <div class="col">
+    <div class="fw-stat-card">
+      <div class="fw-stat-icon fw-stat-icon-primary"><i class="bi bi-diagram-2"></i></div>
+      <div>
+        <div class="fw-stat-value">{{ adom_count if adom_count is defined else 0 }}</div>
+        <div class="fw-stat-label" title="{{ _('Administrative domains registered, counted per appliance: two appliances partitioned into root are two ADOMs, not one.') }}">{{ _('ADOMs') }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col">
     <div class="fw-stat-card">
       <div class="fw-stat-icon fw-stat-icon-success"><i class="bi bi-check-circle"></i></div>
       <div>
@@ -46,7 +61,7 @@
       </div>
     </div>
   </div>
-  <div class="col-md-3 col-sm-6">
+  <div class="col">
     <div class="fw-stat-card">
       <div class="fw-stat-icon fw-stat-icon-danger"><i class="bi bi-x-circle"></i></div>
       <div>
@@ -55,7 +70,7 @@
       </div>
     </div>
   </div>
-  <div class="col-md-3 col-sm-6">
+  <div class="col">
     <div class="fw-stat-card">
       <div class="fw-stat-icon fw-stat-icon-info"><i class="bi bi-tag"></i></div>
       <div>
@@ -624,7 +639,12 @@ document.addEventListener('DOMContentLoaded', function () {
 // Update stats after status polling
 document.addEventListener('DOMContentLoaded', function () {
   function updateStats() {
-    const statuses = document.querySelectorAll('[data-status-id]');
+    // One appliance, one vote. An ADOM row probes the SAME box as its
+    // device row, so counting every status pill made Online/Offline add up to
+    // the ROW count while the tile beside them counts devices -- two numbers
+    // about the same fleet that could never agree. Cluster members stay in:
+    // those are separate boxes with their own power supply.
+    const statuses = document.querySelectorAll('tr:not(.fw-adom-row) [data-status-id]');
     let online = 0, offline = 0;
     statuses.forEach(function (el) {
       if (el.classList.contains('fw-status-online')) online++;

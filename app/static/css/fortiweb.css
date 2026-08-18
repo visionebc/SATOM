@@ -2170,14 +2170,30 @@ a.bm-dev:hover { background: var(--fw-accent-light); color: var(--fw-accent); }
    Light chrome only: this product has no dark theme, and the
    status colours come from .fw-badge-* (see safeguards 9m).
    ============================================================ */
+.fw-adom-toggle,
+.fw-adom-none {
+  /* One shared box so the name column starts at the same x whether or not
+     the appliance has extra ADOMs. Fixed width, not glyph width: the
+     chevron and the placeholder are different glyphs. */
+  display: inline-block;
+  width: 14px;
+  padding: 0;
+  margin-right: 6px;
+  line-height: 1;
+  text-align: center;
+  vertical-align: baseline;
+}
 .fw-adom-toggle {
   border: 0;
   background: transparent;
   color: var(--fw-text-secondary);
-  padding: 0 4px 0 0;
-  margin-right: 2px;
-  line-height: 1;
   cursor: pointer;
+}
+/* Placeholder only. Not a button: there is nothing to expand here. */
+.fw-adom-none {
+  color: var(--fw-text-muted, #9AA4B8);
+  cursor: default;
+  user-select: none;
 }
 .fw-adom-toggle:hover { color: var(--fw-accent); }
 .fw-adom-toggle i {

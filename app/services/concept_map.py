@@ -377,6 +377,11 @@ PAGES: tuple[dict, ...] = (
     _p("fac_api.index", "FortiAuthenticator API", "dev",
        "fac api console rest fortiauthenticator raw call",
        "Raw API console scoped to FortiAuthenticator."),
+    _p("artifacts.index", "WAF Artifacts", "waf",
+       "artifact xml schema xsd dtd wsdl openapi grpc idl json lua script file "
+       "upload capture push clone migrate content -7694",
+       "The file content FortiWeb keeps out of its own configuration, so a "
+       "clone can carry it."),
     _p("lua_studio.index", "Lua Studio", "dev",
        "lua script studio code automation custom logic editor",
        "Author and run Lua automation scripts."),
@@ -450,6 +455,12 @@ EXCLUDED: dict[str, str] = {
     "change_requests.new": "create form of change_requests.index",
     "database.report_new": "create form of database.index",
     "lua_studio.new": "create form of lua_studio.index",
+    # Verbs of artifacts.index, all reached from its own forms.
+    "artifacts.upload": "form action of artifacts.index",
+    "artifacts.capture": "form action of artifacts.index",
+    "artifacts.push": "form action of artifacts.index",
+    "artifacts.blob": "file download from artifacts.index",
+    "artifacts.api_list": "JSON feed of artifacts.index",
     "plugins.new": "create form of plugins.index",
     "provisioning.new": "create form of provisioning.index",
     "provisioning.baseline_new": "create form of provisioning.baselines",

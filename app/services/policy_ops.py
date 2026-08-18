@@ -57,10 +57,102 @@ def delete_policy(ops, policy: str, *, dry_run: bool):
     return ops.delete(EP_POLICY, policy, dry_run=dry_run)
 
 
+def _artifact_kind(item, artifacts: dict | None) -> str:
+    """The artifact kind this plan item is, or ``""``.
+
+    Sub-rows are excluded on purpose: a DTD's ``file-list`` child is ordinary
+    configuration and must keep going through the normal cmdb write. Only the
+    NAMED parent object is the one whose bytes live outside the config."""
+    if not (artifacts or {}).get("enabled"):
+        return ""
+    if getattr(item, "kind", "") != "object":
+        return ""
+    from . import waf_artifacts as wa
+    return wa.kind_for_urn(getattr(item, "urn", ""))
+
+
+def _resolve_artifacts(items, artifacts: dict | None, *, dry_run: bool):
+    """Fetch the bytes for every file-backed object the plan will create.
+
+    Returns ``({(kind, mkey): blob}, [missing…])`` and REWRITES the status of
+    every unresolvable item to ``no-content`` so ``apply_clone`` skips it.
+
+    Skipping is the deliberate choice over creating the object anyway. The
+    empty shell is not a smaller version of the artifact — it is an object that
+    makes the destination LOOK configured while the validation it names is off,
+    and the firmware only complains (``-7694``) if a rule is bound to it in the
+    same apply. A skip instead fails the referencing rule with ``-651``, which
+    is loud, and leaves a ``~`` in the plan text naming exactly what is absent.
+
+    On a REAL apply this refuses outright unless the operator accepted the
+    consequence; on a dry run it never refuses, because a preview that cannot
+    be produced is a preview that cannot warn."""
+    ctx = artifacts or {}
+    blobs: dict[tuple[str, str], bytes] = {}
+    missing: list[dict] = []
+    if not ctx.get("enabled"):
+        return blobs, missing
+    from . import waf_artifacts as wa
+    for it in items:
+        kind = _artifact_kind(it, ctx)
+        if not kind or it.status != "create":
+            continue
+        blob, origin, reason = wa.content_for(
+            kind, it.mkey, src_client=ctx.get("src_client"),
+            src_vdom=ctx.get("src_vdom", ""),
+            source_appliance_id=ctx.get("source_appliance_id"),
+            # Capture only on a real apply: a dry run must not mutate SATOM's
+            # own state either.
+            capture=(not dry_run), by=ctx.get("by", ""))
+        if blob is None:
+            missing.append({"kind": kind, "label": wa.label(kind),
+                            "name": it.mkey, "reason": reason})
+            it.status = "no-content"
+            it.note = ("content unavailable — %s. Skipped: creating the object "
+                       "would leave an EMPTY %s at the destination."
+                       % (reason or "SATOM holds no copy", wa.label(kind)))
+        else:
+            blobs[(kind, it.mkey)] = blob
+            it.note = "content from %s (%d bytes)" % (origin, len(blob))
+    if missing and not dry_run and not ctx.get("accept_missing"):
+        names = ", ".join('%s "%s"' % (m["label"], m["name"]) for m in missing[:6])
+        raise RuntimeError(
+            "no content available for %d file-backed object(s): %s%s — FortiWeb "
+            "stores only their NAME, so the copy would be created EMPTY and the "
+            "protection they enforce would be OFF at the destination. Upload "
+            "them to the SATOM artifact library, or accept the alert to clone "
+            "with those objects SKIPPED."
+            % (len(missing), names, "…" if len(missing) > 6 else ""))
+    return blobs, missing
+
+
+def _push_artifact(ops, item, kind: str, blob: bytes, ctx: dict) -> None:
+    """Create one file-backed object WITH its content, and audit it.
+
+    The upload endpoint is not under ``/cmdb/`` and takes multipart, so it
+    cannot go through ``FortiWebOps.create``; the audit row is written by hand
+    rather than skipped, because "an object appeared on the device and nothing
+    recorded it" is exactly the hole every other write path was built to close.
+    """
+    from . import waf_artifacts as wa
+    from .audit import log_action
+    ok, err = wa.push(ops.client, kind, item.mkey, blob,
+                      vdom=str(ctx.get("dst_vdom") or ""))
+    if not ok:
+        raise RuntimeError("upload failed: %s" % err)
+    try:
+        log_action("artifact.push", "%s %s -> %s (%d bytes)"
+                   % (wa.label(kind), item.mkey,
+                      getattr(ops.appliance, "name", "?"), len(blob)))
+    except Exception:  # noqa: BLE001 — the write landed; auditing must not undo it
+        pass
+
+
 def clone_policy(planner, ops, policy: str, *, new_name: str, dry_run: bool,
                  disable: bool = True, vip_ip: str = "", copy_wpp: bool = True,
                  wpp_new_name: str = "", wpp_suffix: str = "",
-                 iface_map: dict[str, str] | None = None) -> list[clone.CloneItem]:
+                 iface_map: dict[str, str] | None = None,
+                 artifacts: dict | None = None) -> list[clone.CloneItem]:
     """Plan the full policy tree on the source and create the missing objects on
     the ``ops`` device (same box or another). The new root is left DISABLED.
 
@@ -82,7 +174,14 @@ def clone_policy(planner, ops, policy: str, *, new_name: str, dry_run: bool,
       both boxes far more often than it means the same network on both, and
       the REST create SUCCEEDS either way. Without a map the source names are
       carried over verbatim (the pre-flight gate is what refuses that when the
-      name is absent at the destination)."""
+      name is absent at the destination).
+    * ``artifacts`` — context for the FILE-BACKED objects (XML Schema, DTD,
+      WSDL, OpenAPI, gRPC IDL, JSON Schema, Lua scripting). Their content is
+      not part of the configuration, so the generic ``create`` produces an
+      object that exists and is EMPTY, and the rule bound to it answers
+      ``-7694``. Keys: ``enabled``, ``src_client``, ``src_vdom``,
+      ``source_appliance_id``, ``accept_missing``, ``by``. Absent/disabled
+      keeps the legacy behaviour."""
     items = planner.plan(clone.ROOT_SERVER_POLICY, policy, new_name=new_name,
                          follow_wpp=copy_wpp, wpp_new_name=wpp_new_name,
                          wpp_suffix=wpp_suffix)
@@ -113,9 +212,19 @@ def clone_policy(planner, ops, policy: str, *, new_name: str, dry_run: bool,
     if iface_map:
         clone.set_interface(items, {str(k): str(v) for k, v in iface_map.items()
                                     if k and v and k != v})
+    # File-backed objects. Resolved BEFORE the first write, not lazily inside
+    # ``_write``: whether the copy can be complete is a property of the whole
+    # plan, and discovering it halfway through means the operator has already
+    # been committed to a partial apply by the time anyone can tell them.
+    art_blobs, art_missing = _resolve_artifacts(items, artifacts, dry_run=dry_run)
 
     def _write(item: clone.CloneItem) -> None:
         from . import objform
+        kind = _artifact_kind(item, artifacts)
+        if kind:
+            _push_artifact(ops, item, kind, art_blobs[(kind, item.mkey)],
+                           artifacts or {})
+            return
         ep = objform.rest_path(item.urn)
         mkey = item.parent_mkey if item.kind == "subrow" else None
         res = ops.create(ep, {"data": item.payload}, mkey=mkey, dry_run=False)
@@ -143,7 +252,13 @@ def clone_summary(items: list[clone.CloneItem]) -> dict[str, int]:
         "failed": failed,
         "exists": counts.get("exists", 0),
         "skipped": counts.get("exists", 0) + counts.get("cert", 0)
-        + counts.get("no-endpoint", 0) + counts.get("empty", 0),
+        + counts.get("no-endpoint", 0) + counts.get("empty", 0)
+        + counts.get("no-content", 0),
+        # Broken out of ``skipped`` as its own number because every other thing
+        # in that bucket is inert — an object already there, a cert that never
+        # travels — while this one means the destination is missing protection
+        # the source had. A caller that only reads ``skipped`` cannot tell.
+        "no_content": counts.get("no-content", 0),
         "to_create": counts.get("create", 0),
         "total": len(items),
     }
@@ -170,18 +285,40 @@ def migrate_policy(dst_planner, dst_ops, src_ops, policy: str, *,
                    new_name: str, dry_run: bool, vip_ip: str = "",
                    copy_wpp: bool = True, wpp_new_name: str = "",
                    wpp_suffix: str = "",
-                   iface_map: dict[str, str] | None = None) -> dict:
+                   iface_map: dict[str, str] | None = None,
+                   artifacts: dict | None = None) -> dict:
     """Clone the policy tree onto the destination, then — ONLY on a clean clone
     and a real apply — disable the SOURCE policy (rollback-friendly; the source
     is kept). A failed clone leaves the source LIVE and untouched."""
     items = clone_policy(dst_planner, dst_ops, policy, new_name=new_name,
                          dry_run=dry_run, disable=True, vip_ip=vip_ip,
                          copy_wpp=copy_wpp, wpp_new_name=wpp_new_name,
-                         wpp_suffix=wpp_suffix, iface_map=iface_map)
+                         wpp_suffix=wpp_suffix, iface_map=iface_map,
+                         artifacts=artifacts)
     summary = clone_summary(items)
     clone_ok = summary["failed"] == 0 and (dry_run or summary["created"] > 0
                                            or summary["exists"] > 0)
     source_disabled = False
+    # ACCEPTING a missing artifact authorises an incomplete COPY. It does not
+    # authorise taking the original out of service: the destination now lacks a
+    # schema/DTD/IDL the source enforces, so the two are not equivalent and
+    # "migrate" would be claiming a swap that did not happen. The clone is kept
+    # (nothing is rolled back) and the cutover becomes a deliberate manual step.
+    # Note this is NOT covered by the failed==0 test above: the referencing rule
+    # only fails when it is itself in the plan, and it is not when the
+    # destination already has it.
+    if summary.get("no_content") and clone_ok and not dry_run:
+        return {
+            "ok": True,
+            "summary": summary,
+            "items": items,
+            "source_disabled": False,
+            "source_kept_reason":
+                "%d file-backed object(s) had no content and were skipped — the "
+                "copy does not enforce what the source does, so the source was "
+                "left ENABLED. Disable it by hand once the files are in place."
+                % summary["no_content"],
+        }
     if clone_ok and not dry_run:
         res = set_status(src_ops, policy, enable=False, dry_run=False)
         source_disabled = bool(getattr(res, "ok", False))
@@ -211,6 +348,31 @@ def _planner(src_appl, dst_appl):
     return clone.ClonePlanner(src_reader, dst_reader)
 
 
+def _artifact_ctx(source_appl, dest_appl, opts: dict) -> dict:
+    """Everything :func:`clone_policy` needs to make a file-backed object real.
+
+    The SOURCE client is built here (not reused from the planner) because it is
+    used for a read the planner never makes: the private, non-``/cmdb/`` file
+    endpoints. ``accept_missing`` comes from the operator's acknowledgement of
+    the pre-flight alert and is re-read from ``opts`` on every apply — the
+    checklist they saw could be minutes old, so the decision has to travel with
+    the request rather than be remembered server-side."""
+    from ..clients.fortiweb import FortiWebClient
+    try:
+        src_client = FortiWebClient(source_appl)
+    except Exception:  # noqa: BLE001 — an unbuildable client is "cannot read"
+        src_client = None
+    return {
+        "enabled": True,
+        "src_client": src_client,
+        "src_vdom": str(getattr(source_appl, "vdom", "") or ""),
+        "dst_vdom": str(getattr(dest_appl or source_appl, "vdom", "") or ""),
+        "source_appliance_id": getattr(source_appl, "id", None),
+        "accept_missing": bool(opts.get("accept_missing_artifacts")),
+        "by": str(opts.get("by") or ""),
+    }
+
+
 def perform_one(action: str, *, source_appl, dest_appl=None, policy: str,
                 new_name: str = "", dry_run: bool,
                 opts: dict | None = None) -> dict:
@@ -233,6 +395,7 @@ def perform_one(action: str, *, source_appl, dest_appl=None, policy: str,
     iface_map = opts.get("iface_map") or {}
     if not isinstance(iface_map, dict):
         iface_map = {}
+    art_ctx = _artifact_ctx(source_appl, dest_appl, opts)
     rec = {"policy": policy, "action": action, "ok": False, "error": "",
            "detail": {}}
     try:
@@ -298,14 +461,16 @@ def perform_one(action: str, *, source_appl, dest_appl=None, policy: str,
             items = clone_policy(planner, _ops(source_appl), policy,
                                  new_name=new_name, dry_run=dry_run,
                                  vip_ip=vip_ip, copy_wpp=copy_wpp,
-                                 wpp_new_name=wpp_new_name, wpp_suffix=wpp_suffix)
+                                 wpp_new_name=wpp_new_name, wpp_suffix=wpp_suffix,
+                                 artifacts=art_ctx)
             summary = clone_summary(items)
             rec["ok"] = summary["failed"] == 0 and (dry_run or summary["created"] > 0)
             report = clone.outcome(items)
             rec["detail"] = {"summary": summary, "plan": clone.render_plan(items),
                              "new_name": new_name, "vip_ip": vip_ip,
                              "copy_wpp": copy_wpp, "wpp_new_name": wpp_new_name,
-                             "clone": report}
+                             "clone": report,
+                             "no_content": report["skipped_no_content"]}
             if summary["failed"]:
                 rec["error"] = _failed_msg(report)
             elif not dry_run and summary["created"] == 0:
@@ -316,7 +481,7 @@ def perform_one(action: str, *, source_appl, dest_appl=None, policy: str,
                                  new_name=new_name or policy, dry_run=dry_run,
                                  vip_ip=vip_ip, copy_wpp=copy_wpp,
                                  wpp_new_name=wpp_new_name, wpp_suffix=wpp_suffix,
-                                 iface_map=iface_map)
+                                 iface_map=iface_map, artifacts=art_ctx)
             summary = clone_summary(items)
             rec["ok"] = summary["failed"] == 0 and (dry_run or summary["created"] > 0
                                                     or summary["exists"] > 0)
@@ -325,7 +490,8 @@ def perform_one(action: str, *, source_appl, dest_appl=None, policy: str,
                              "dest": dest_appl.name, "new_name": new_name or policy,
                              "vip_ip": vip_ip, "copy_wpp": copy_wpp,
                              "wpp_new_name": wpp_new_name, "clone": report,
-                             "iface_map": dict(iface_map)}
+                             "iface_map": dict(iface_map),
+                             "no_content": report["skipped_no_content"]}
             if summary["failed"]:
                 rec["error"] = "%s on %s" % (_failed_msg(report), dest_appl.name)
         elif action == "migrate_to":
@@ -334,7 +500,7 @@ def perform_one(action: str, *, source_appl, dest_appl=None, policy: str,
                                  policy, new_name=new_name or policy, dry_run=dry_run,
                                  vip_ip=vip_ip, copy_wpp=copy_wpp,
                                  wpp_new_name=wpp_new_name, wpp_suffix=wpp_suffix,
-                                 iface_map=iface_map)
+                                 iface_map=iface_map, artifacts=art_ctx)
             rec["ok"] = out["ok"]
             report = clone.outcome(out["items"])
             rec["detail"] = {"summary": out["summary"],
@@ -343,8 +509,10 @@ def perform_one(action: str, *, source_appl, dest_appl=None, policy: str,
                              "vip_ip": vip_ip, "copy_wpp": copy_wpp,
                              "wpp_new_name": wpp_new_name,
                              "source_disabled": out["source_disabled"],
+                             "source_kept_reason": out.get("source_kept_reason", ""),
                              "clone": report,
-                             "iface_map": dict(iface_map)}
+                             "iface_map": dict(iface_map),
+                             "no_content": report["skipped_no_content"]}
             if not out["ok"]:
                 rec["error"] = ("%s — source left live" % _failed_msg(report)
                                 if report["failed"] else "clone failed — source left live")
@@ -583,6 +751,73 @@ def _iface_gate(refs, *, cross_box, dest_name, dest_ifaces, src_roles, dst_roles
     return ({"key": "iface", "level": "ok",
              "label": "Interfaces resolve on %s" % dest_name,
              "detail": "; ".join(bits)}, suggest)
+
+
+def _artifact_gate(rows, *, dest_name, accepted: bool):
+    """FILE-BACKED objects decision for the clone/migrate pre-flight.
+
+    ``rows`` is :func:`waf_artifacts.resolve_for_plan` output. Returns
+    ``(check, suggest)``.
+
+    Never blocks — by explicit product decision, the operator is shown the
+    consequence and chooses. What it must not do is understate it. The missing
+    piece is not "a file": it is the schema/DTD/IDL a validation rule enforces,
+    so a copy without it is a copy running with that protection OFF. The wording
+    below says that, and the level stays ``warn`` after acceptance rather than
+    flipping to ``ok`` — an accepted risk is still a risk, and a checklist that
+    turns green when someone ticks a box has stopped describing the device."""
+    suggest = {"artifacts": rows, "artifacts_need_ack": False}
+    if not rows:
+        return ({"key": "artifacts", "level": "ok",
+                 "label": "No file-backed objects in the tree",
+                 "detail": "nothing in this policy carries an uploaded schema, "
+                           "DTD, WSDL, OpenAPI, gRPC IDL or Lua script"}, suggest)
+    todo = [r for r in rows if r["status"] == "create"]
+    if not todo:
+        return ({"key": "artifacts", "level": "ok",
+                 "label": "%d file-backed object(s) already on %s"
+                          % (len(rows), dest_name),
+                 "detail": "%s — not copied, and their content is whatever the "
+                           "destination already holds (SATOM cannot read those "
+                           "bytes back to compare)"
+                           % ", ".join('%s "%s"' % (r["label"], r["name"]) for r in rows)},
+                suggest)
+    missing = [r for r in todo if not r["resolved"]]
+    warned = [r for r in todo if r.get("name_warning")]
+    if not missing:
+        bits = ["%s \"%s\" (%s)" % (r["label"], r["name"], r["origin"]) for r in todo]
+        chk = {"key": "artifacts", "level": "ok",
+               "label": "%d file-backed object(s) will be copied WITH content"
+                        % len(todo),
+               "detail": "; ".join(bits)}
+        if warned:
+            chk = {"key": "artifacts", "level": "warn",
+                   "label": "File content available — but a name looks wrong",
+                   "detail": "; ".join(r["name_warning"] for r in warned)}
+        return (chk, suggest)
+
+    suggest["artifacts_need_ack"] = True
+    suggest["artifacts_missing"] = missing
+    bits = []
+    for r in missing:
+        why = ("FortiWeb has no read endpoint for this type — only a copy SATOM "
+               "already holds can be pushed" if not r["readable"]
+               else (r.get("reason") or "no content available"))
+        bits.append('%s "%s": %s' % (r["label"], r["name"], why))
+    head = ("ACCEPTED — %d file-backed object(s) will be SKIPPED"
+            if accepted else
+            "%d file-backed object(s) have NO CONTENT available")
+    return ({"key": "artifacts", "level": "warn", "label": head % len(missing),
+             "detail": "; ".join(bits)
+                       + " — the device stores only the NAME, so these cannot be "
+                         "cloned as configuration. They will be SKIPPED (not "
+                         "created empty: an empty object makes %s look configured "
+                         "while the validation it names is off). The rule that "
+                         "references one will fail with -651, and a migrate will "
+                         "NOT disable the source. Fix it by uploading the file "
+                         "under Artifacts, or accept and clone without it."
+                         % dest_name},
+            suggest)
 
 
 def _source_gate(pol, src_name, *, live_ok, src_err, root_present, issues):
@@ -829,6 +1064,27 @@ def preflight(action: str, *, source_appl, dest_appl=None, policies: list[str],
                     else None))
         checks.append(iface_chk)
         suggest.update(iface_suggest)
+        # 7b) FILE-BACKED objects — read off the PLANNED tree for the same
+        #     reason as the interfaces above. This one costs a device read per
+        #     artifact (the private file endpoints), which is why it runs on the
+        #     plan's handful of objects and not on the whole cached composite.
+        try:
+            from . import waf_artifacts as _wa
+            art_rows = _wa.resolve_for_plan(
+                items if (live_ok and items) else [],
+                src_client=src_reader.client,
+                src_vdom=str(getattr(source_appl, "vdom", "") or ""),
+                source_appliance_id=source_appl.id)
+        except Exception as exc:  # noqa: BLE001 — a checklist never crashes
+            art_rows = []
+            add("artifacts", "warn", "File-backed objects could NOT be checked",
+                "%s: %s — this is 'not measured', not 'fine'" % (type(exc).__name__, exc))
+        else:
+            art_chk, art_suggest = _artifact_gate(
+                art_rows, dest_name=dest.name,
+                accepted=bool(opts.get("accept_missing_artifacts")))
+            checks.append(art_chk)
+            suggest.update(art_suggest)
         # 8) capacity at the destination
         try:
             from . import capacity

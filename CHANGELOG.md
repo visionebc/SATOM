@@ -8,6 +8,33 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Added
 
+- **SATOM keeps the file-backed WAF objects FortiWeb will not give back.**
+  Seven API-Protection types (XML Schema, XML DTD, WSDL, OpenAPI, gRPC IDL,
+  JSON Schema and Lua scripting) store only their NAME in the configuration,
+  so the tree clone alone created them EMPTY at the destination — and a
+  validation rule bound to an empty object answers `-7694`. Worse, when the
+  rule already existed on the target, the shell landed silently and the policy
+  ran with that protection off. New **WAF Artifacts** page (`/artifacts`) and
+  a content-addressed store under `data/artifacts/` (same split, directory and
+  replication path as the SoT store — the standby datasync and the system
+  backup bundles already carry it). Three verbs: **upload** (an operator hands
+  SATOM the file — the only way XML Schema, WSDL and gRPC IDL can ever enter
+  the store, because no FortiWeb will read them back and they are absent from
+  the device's own `full-config` backup), **capture** (read it live off a
+  device; available for the four readable types) and **push** (write a stored
+  copy onto an appliance).
+- **Clone and migrate now copy the CONTENT, not just the name.** Every
+  file-backed object in a plan is resolved before the first write — source
+  device first, SATOM's store second — and uploaded through the per-type
+  multipart endpoint, which is not under `/cmdb/` and uses a different field
+  name per type. Verified end to end against two live appliances: the copy
+  lands with its bytes and the rule that references it links with `200`.
+- **A pre-flight ALERT the operator accepts or rejects.** When no content can
+  be obtained, the checklist raises a `warn` (never a block) naming the object
+  and the consequence, and Apply stays disabled until the operator ticks
+  *"clone anyway"*. The check stays `warn` after acceptance — a checklist that
+  turns green because someone ticked a box has stopped describing the device.
+
 - **Interfaces are declared with a PURPOSE at device registration.**
   `ApplianceInterface` gains `role` (a controlled vocabulary: management,
   front-side traffic, back-side traffic, one-arm, inline pair, HA sync, HA
@@ -51,8 +78,26 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   and `system/vip` are identical from all four. That asymmetry is the whole
   basis for the split above.
 
+### Changed
+
+- An unresolvable file-backed object is **SKIPPED, not created empty**: it is
+  marked `no-content` (`~` in the plan text, its own bucket in the clone
+  report) and the referencing rule then fails loudly with `-651` instead of
+  landing a shell that makes the destination look configured.
+- **A migrate no longer disables the source when anything was skipped.**
+  Accepting a missing artifact authorises an incomplete COPY, not an
+  unprotected cutover; `failed == 0` does not cover this, because the
+  referencing rule only fails when it is itself in the plan.
+
 ### Fixed
 
+- The XML DTD read is parsed with a tolerant decoder. The firmware's two-byte
+  buffer over-run put an invalid UTF-8 byte inside the JSON body, so `.json()`
+  raised and a **working** endpoint read as a dead one; the junk is trimmed
+  without touching a legitimate trailing newline.
+- The OpenAPI read no longer doubles every line break: `htmlArray` elements
+  already carry their newline, and for YAML that is not cosmetic — the file
+  round-trips, parses, and is not the same document.
 - **A device in ADOM mode with no ADOM pinned reports an EMPTY policy list and
   no error.** With `adom-admin` enabled, `server-policy/policy` returns `[]`
   for a token that carries no ADOM — the same shape as a device with no

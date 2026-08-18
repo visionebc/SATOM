@@ -675,8 +675,24 @@
               {# Server Objects sub-menu (GUI-faithful) — each group collapsible; leaf → object list #}
               <div class="fw-so-nav">
                 {% for group in server_objects_nav %}
+                {# An entry owns EVERY logical of its tabs: matching on the default
+                   one alone leaves the sidebar dead (and the group collapsed) while
+                   the operator is sitting on a non-default tab. #}
+                {% set _grp_logicals = [] %}
+                {% for _it in group.items %}{% for _l in _it.logicals %}{% set _ = _grp_logicals.append(_l) %}{% endfor %}{% endfor %}
                 {% set _grp_active = current_appliance and (request.endpoint == 'server_objects.overview')
-                                     and (request.args.get('type') in group.items|map(attribute='logical')|list) %}
+                                     and (request.args.get('type') in _grp_logicals) %}
+                {% if group.flat %}
+                {# Protected Hostnames / Service / Traffic Mirror / X-Forwarded-For /
+                   IP Group are FLAT entries in FortiWeb's own menu — a collapsible
+                   wrapping one child of the same name is chrome FortiWeb doesn't have. #}
+                {% set item = group.items[0] %}
+                <a class="fw-nav-item fw-so-nav-flat {{ 'active' if request.endpoint == 'server_objects.overview' and request.args.get('type') in item.logicals else '' }}"
+                   href="{{ url_for('server_objects.overview', id=current_appliance.id, type=item.logical) }}">
+                  <i class="bi {{ item.icon }} fw-nav-icon"></i><span>{{ item.label }}</span>
+                  {% if item.read_only %}<i class="bi bi-eye fw-so-nav-ro" title="{{ _('Read-only (predefined)') }}"></i>{% endif %}
+                </a>
+                {% else %}
                 <details class="fw-so-nav-group" {{ 'open' if _grp_active }}>
                   <summary class="fw-so-nav-head">
                     <i class="bi {{ group.icon }} fw-so-nav-gicon"></i><span>{{ group.label }}</span>
@@ -684,7 +700,7 @@
                   </summary>
                   <div class="fw-so-nav-items">
                     {% for item in group.items %}
-                    <a class="fw-nav-item fw-so-nav-item {{ 'active' if request.endpoint == 'server_objects.overview' and request.args.get('type') == item.logical else '' }}"
+                    <a class="fw-nav-item fw-so-nav-item {{ 'active' if request.endpoint == 'server_objects.overview' and request.args.get('type') in item.logicals else '' }}"
                        href="{{ url_for('server_objects.overview', id=current_appliance.id, type=item.logical) }}">
                       <i class="bi {{ item.icon }} fw-nav-icon"></i><span>{{ item.label }}</span>
                       {% if item.read_only %}<i class="bi bi-eye fw-so-nav-ro" title="{{ _('Read-only (predefined)') }}"></i>{% endif %}
@@ -692,6 +708,7 @@
                     {% endfor %}
                   </div>
                 </details>
+                {% endif %}
                 {% endfor %}
               </div>
               {% endif %}

@@ -106,7 +106,11 @@ _LABEL: dict[str, str] = {
     "snmp_community": "SNMP Community", "system_snmp_community": "SNMP Community",
     "snmp_user": "SNMP v3 User", "replacemsg": "Replacement Messages",
     "certificate": "Local Certificate", "certificate_local": "Local Certificate",
-    "certificate_intermediate": "Intermediate CA", "certificate_ca": "CA Certificate",
+    # certificate.intermediate is the phantom (500/-20001 on every FortiWeb);
+    # the collection that exists is certificate.intermediate-certificate.
+    "system_certificate_intermediate_certificate": "Intermediate CA",
+    "certificate_intermediate_group": "Intermediate CA Group",
+    "certificate_ca": "CA Certificate",
     "certificate_letsencrypt": "Let's Encrypt", "certificate_sni": "SNI Certificate",
     # Network
     "interface": "Interface", "static_route": "Static Route", "route": "Static Route",

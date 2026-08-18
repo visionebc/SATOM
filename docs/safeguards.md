@@ -10001,3 +10001,107 @@ the frozen budget in §99 — a formatting choice is not allowed to spend a debt
 ceiling.
 
 
+
+## §102 — a menu is a claim about the appliance, and a curated menu drifts in silence (`tests/test_server_objects_menu.py`)
+
+The Server Objects menu is a **claim**: *this is what the FortiWeb has, arranged
+the way the FortiWeb arranges it*. Nothing fails when that claim stops being
+true. The page renders, the sidebar links, the object lists come back — and the
+operator simply never sees what was never modelled. That is how this port ran
+for months with:
+
+* **10 Certificate entries against FortiWeb's 12** — and the count coincided
+  only by accident: three of the ten (*CA Group*, *TSL CA*, *Intermediate CA
+  Group*) are **tabs inside another page**, not menu entries, so six real
+  entries were missing while three impostors padded the total;
+* **`Intermediate CA` pointing at `system/certificate.intermediate`**, a
+  collection that answers **HTTP 500 / errcode -20001 on every FortiWeb
+  measured** (fw09, fw11 — 7.6.8). The shipped `data/api_matrix/fortiweb.json`
+  already recorded `verdict: "absent"` for it. The page had never worked on any
+  firmware, and nothing said so;
+* **`Virtual IP` listed as a Server Object**, which FortiWeb files under
+  *Network* (`/ng2/network/virtual-ip`);
+* six sibling collections with **no route into the UI at all**:
+  `certificate.multi-local`, `certificate.offline-sni`, `certificate.crl-group`,
+  `certificate.server-certificate-verify`, the three `certificate.xml-*`
+  tables, plus `traffic-mirror`, `allow-list`, the two `global-white` groups
+  and the two `url-replacer` tables.
+
+### A GUI page is not a REST collection
+
+FortiWeb renders sibling collections as **tabs of one page**: `Local` is
+*Local | Multi-certificate*, `CA` is *CA | TSL CA | CA Group*, `Certificate
+Verify` is *Certificate Verify | Server Certificate Verify*. One sidebar entry,
+one tab strip. Modelling each tab as its own sidebar row inflates the menu
+**and** hides the tabs nobody thought to model — the two failures are the same
+failure. Hence `ServerObjectPage` (one entry) owning one or more
+`ServerObjectTab` (one collection each); a single-tab page behaves exactly like
+the flat leaf it replaces, so `?type=` bookmarks survive.
+
+### Where the expectations come from (two oracles, no memory)
+
+| oracle | what it is | what it settles |
+|---|---|---|
+| the appliance's own Angular bundle `main.<hash>.js` (fw11, 7.6.8, 2.9 MB) | the menu the box literally renders, plus the route table `{key:{paths:[…]}}` | entries, order, which pages have tabs and which routes those tabs are |
+| the 7.6 admin guide swept with firecrawl (**554 pages**, self-hosted LXC 247) | the documented `Server Objects > …` GUI paths | corroborates every entry and the tab **labels** (`Local > Multi-certificate`, `Certificate Verify > Server Certificate Verify`, `Service > Custom`) |
+
+Both agree on entries and labels ⇒ **[Seguro]**. Tab **order** comes from the
+route-table declaration order alone (the bundle does not spell the tab strip out
+separately) ⇒ **[Probable]**, and it is pinned by the guard so a change is a
+decision rather than a drift.
+
+Every one of the 40 collections was then GET-probed live on fw11: **all 40 →
+HTTP 200**; the phantom → **500**.
+
+### Method note that outlives this round
+
+`?action=schema` **does not exist on 7.6.8** — it answers 200 with an empty
+`results` for *everything*, so it cannot tell "collection absent" from
+"collection empty". What discriminates is a **plain GET**: a real-but-empty
+collection is `200` with zero rows, a malformed/absent URN is `500 / -20001`.
+(This sharpens the older note that an invented collection answers 200 with zero
+rows — that holds for an invented name of *valid shape*, e.g.
+`certificate.multi-local-cert`; a URN the parser rejects outright gives 500.)
+
+### What the guards pin (31 tests)
+
+1. the nine top-level entries **in order**;
+2. **Certificates == 12 entries**, in GUI order, with their exact labels;
+3. every page's **tabs**: logicals, labels and order (one parametrised case per
+   group, so a diff names the group that drifted);
+4. the phantom is in **no** tab — and is in `_PHANTOM_COLLECTIONS` too, so the
+   Configuration section's "everything else" list cannot resurrect it;
+5. `vip` is **not** a Server Object **and IS** reachable from the Network menu —
+   the second half matters: `system/vip` categorises as `Other`, so removing it
+   from Server Objects without giving it a home would have deleted the only
+   route to it in the whole UI;
+6. `find()`/`type_for()` resolve a **non-default** tab (a bookmark to
+   `?type=system_certificate_multi_local` used to 404);
+7. `page.logicals` covers every tab, and the **sidebar template matches on it**
+   — equality against the default logical leaves the sidebar dead and the group
+   collapsed while the operator is standing on the tab;
+8. the Configuration browse lists **every** tab (containment, not equality: the
+   section legitimately appends the remaining registry objects);
+9. flat entries are exactly the six FortiWeb renders flat;
+10. no logical and no collection appears twice.
+
+### Recipe to re-verify
+
+```
+runuser -u satom -- bash -c 'cd /opt/satom && set -a && . ./.env && set +a && \
+  ./venv/bin/python -m pytest tests/test_server_objects_menu.py -q'
+```
+
+Re-extract the oracle when a firmware changes:
+
+```
+curl -sk https://<fw>/main.<hash>.js -o /tmp/fw_main.js
+python3 scripts/extract_gui_menu.py /tmp/fw_main.js "Server Objects"   # entries + order
+python3 scripts/extract_gui_menu.py /tmp/fw_main.js --routes /root/system/  # tabs
+```
+
+**20 mutations, 20 bite** — including the three that live between the halves and
+that no data test can see: the sidebar reverted to `== item.logical`, the tab
+strip removed from `overview.html`, and the view resolving the page instead of
+the tab (which renders the DEFAULT tab's objects under the requested tab's
+name).

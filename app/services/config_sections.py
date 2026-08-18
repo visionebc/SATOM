@@ -207,6 +207,14 @@ _SECTION_MENUS: dict[str, tuple[tuple[str, str, tuple[tuple[str, str, bool, str]
             ("interface_2", "Interface", False, "bi-ethernet"),
             ("v_zone", "V-Zone", False, "bi-bounding-box"),
         )),
+        # FortiWeb files Virtual IP under Network (/ng2/network/virtual-ip),
+        # second entry, NOT under Server Objects where this port used to show
+        # it. It has to land somewhere: system/vip categorises as "Other", so
+        # dropping it from Server Objects without this group would leave the
+        # collection unreachable from the whole UI.
+        ("Virtual IP", "bi-geo", (
+            ("vip", "Virtual IP", False, "bi-geo"),
+        )),
         ("DNS", "bi-globe", (
             ("dns", "DNS", False, "bi-globe"),
         )),
@@ -462,15 +470,21 @@ def _server_objects_menu() -> list[ConfigGroup]:
 
     groups: list[ConfigGroup] = []
     for g in _so.server_objects_menu():
-        items = tuple(
-            ConfigObjectType(
-                logical=it.logical, label=it.label, urn=it.urn,
-                collection=it.collection, read_only=it.read_only,
-                has_children=it.has_children, icon=it.icon,
-            )
-            for it in g.items
-        )
-        groups.append(ConfigGroup(g.label, g.icon, items))
+        items: list[ConfigObjectType] = []
+        for page in g.items:
+            # This browse is a FLAT list of collections, not FortiWeb's sidebar:
+            # keeping only a page's default tab would drop Multi-certificate,
+            # Offline SNI, CRL Group, the XML Certificate tabs… from the
+            # Configuration → Server Objects section entirely.
+            for tab in page.tabs:
+                label = (tab.label if tab.label == page.label
+                         else "%s — %s" % (page.label, tab.label))
+                items.append(ConfigObjectType(
+                    logical=tab.logical, label=label, urn=tab.urn,
+                    collection=tab.collection, read_only=tab.read_only,
+                    has_children=tab.has_children, icon=tab.icon,
+                ))
+        groups.append(ConfigGroup(g.label, g.icon, tuple(items)))
     return groups
 
 
@@ -490,7 +504,14 @@ def _is_subrow(coll: str) -> bool:
 # while a sibling endpoint is the real one) -- never surfaced as a browse leaf.
 # system/network.interface is a dead alias of the real system/interface (verified
 # live on fw1: 0 vs 3 rows).
-_PHANTOM_COLLECTIONS = frozenset({"system/network.interface"})
+# system/certificate.intermediate is a dead alias of the real
+# system/certificate.intermediate-certificate: HTTP 500 / errcode -20001 on
+# every FortiWeb measured (fw09, fw11 — 7.6.8), and the shipped api_matrix
+# already records verdict "absent" for it.
+_PHANTOM_COLLECTIONS = frozenset({
+    "system/network.interface",
+    "system/certificate.intermediate",
+})
 
 
 def _remaining_types(section_key: str, shown_colls: set[str]) -> list[ConfigObjectType]:

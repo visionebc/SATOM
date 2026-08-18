@@ -8,7 +8,8 @@
   <a href="{{ url_for('server_objects.index') }}">{{ _('Server Objects') }}</a>
   <span class="separator">/</span>
   <span>{{ appliance.name }}</span>
-  {% if selected %}<span class="separator">/</span><span>{{ selected.label }}</span>{% endif %}
+  {% if page %}<span class="separator">/</span><span>{{ page.label }}</span>{% endif %}
+  {% if page and page.tabbed %}<span class="separator">/</span><span>{{ selected.label }}</span>{% endif %}
 </div>
 {% endblock %}
 
@@ -36,6 +37,24 @@
         <p class="text-muted">{{ _('Expand') }} <strong>{{ _('Server Objects') }}</strong> {{ _('in the left menu — Server, Service, Certificates, SSL Ciphers, IP Group…') }}</p>
       </div>
     {% else %}
+      {# FortiWeb renders sibling collections as TABS of one page (Local |
+         Multi-certificate, CA | TSL CA | CA Group…). One sidebar entry, one
+         tab strip — modelling each tab as its own sidebar row is what used to
+         inflate Certificates while hiding the tabs nobody had modelled. #}
+      {% if page and page.tabbed %}
+      <ul class="nav nav-tabs mb-3">
+        {% for t in page.tabs %}
+        <li class="nav-item">
+          <a class="nav-link {{ 'active' if t.logical == selected.logical else '' }}"
+             href="{{ url_for('server_objects.overview', id=appliance.id, type=t.logical) }}">
+            <i class="bi {{ t.icon }} me-1"></i>{{ t.label }}
+            {% if t.read_only %}<i class="bi bi-eye ms-1 text-muted" title="{{ _('Read-only (predefined)') }}"></i>{% endif %}
+          </a>
+        </li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+
       <div class="d-flex justify-content-between align-items-center mb-2">
         <div>
           <h4 class="mb-0"><i class="bi {{ selected.icon }} me-2 text-accent"></i>{{ selected.label }}</h4>

@@ -14,6 +14,40 @@ public so users can see exactly how releases are produced and vetted.
   └──────────────────┘   └───────────────────────────────┘   └──────────────┘
 ```
 
+## Stage 0 — the promotion order
+
+Publication is the **last** hop of a chain. Each hop reaches a wider audience
+than the one before it and nothing downstream can be un-published, so each has
+a gate that must be green before the next one runs.
+
+| # | Hop | What it is | Gate before moving on |
+|---|---|---|---|
+| 1 | **Primary node** | the only node where code is written | targeted tests for the zone touched; every new guard mutation-tested; service restarted if Python or templates changed; `/healthz` 200 |
+| 2 | **Standby node** | pulls straight from the primary — no remote involved | converged to the primary's HEAD; unit up; `/healthz` 200 on the app port and through the TLS edge; zero failed units |
+| 3 | **The suite** | the full run, on the primary | exit code 0 |
+| 4 | **Dev remote** | the private repository, full history | derived pages regenerated (below); push accepted |
+| 5 | **Documentation site** | its web root **is** a checkout of the repository | `git fetch && git reset --hard origin/<branch>`; there is no build step, the pull *is* the deploy |
+| 6 | **Public mirror** | sanitised history, release artefacts | stages 1–4 of this document |
+| 7 | **Product site** | a separate repository, deployed with `rsync --delete` | the checkout diffed against the live node first |
+
+Two hops carry a trap worth stating outright.
+
+**Step 2 is a pull, not a push.** The standby fetches from the primary's
+checkout over a restricted, read-only SSH key (`engineering.md` §2). Wiring it
+that way is what makes the sentence *"validated on both nodes before it reaches
+the remote"* true; with the standby following the remote instead, the code
+cannot exist on it until after the push, and the promise is unachievable no
+matter how carefully it is followed.
+
+**Step 7 deploys with `--delete`, onto a node that is edited by hand.** A file
+that exists only on the live node is destroyed by the next deploy — published
+today, `404` tomorrow. Before running it, diff both sides (ignoring the asset
+cache-busting stamp) and list the downloads directory on each. When the node is
+**ahead**, the correct repair is to bring the checkout forward; never publish
+over it to make the two agree.
+
+---
+
 ## Stage 1 — Sanitization
 The full internal history is rewritten into a clean mirror with
 `git-filter-repo`:

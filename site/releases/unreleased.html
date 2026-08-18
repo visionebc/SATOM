@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Added · Changed · Fixed · 16 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Added · Changed · Fixed · 17 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Added · Changed · Fixed · 16 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Added · Changed · Fixed · 17 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,8 +59,8 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Added · Changed · Fixed · 16 entries</span>
-        <ul class="rel-leads"><li>The appliance roster folds the ADOMs of one chassis under their device, and device-wide verbs live on the root row only</li><li>SATOM keeps the file-backed WAF objects FortiWeb will not give back</li><li>Clone and migrate now copy the CONTENT, not just the name</li><li class="rel-more">… and 13 more</li></ul>
+        <span class="rel-nav-meta">unreleased · Added · Changed · Fixed · 17 entries</span>
+        <ul class="rel-leads"><li>The appliance roster folds the ADOMs of one chassis under their device, and device-wide verbs live on the root row only</li><li>SATOM keeps the file-backed WAF objects FortiWeb will not give back</li><li>Clone and migrate now copy the CONTENT, not just the name</li><li class="rel-more">… and 14 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v1.10.1.html" data-rel-version="1.10.1">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 1.10.1</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
@@ -291,6 +291,22 @@
   basis for the split above.</p>
 <h3 id="changed">Changed</h3>
 <ul>
+<li><strong>The manual documents how a change is promoted and how it is tested.</strong>
+  <code>docs/engineering.md</code> §2 gains the two-node code path — the standby fetches
+  from the <strong>primary</strong> over a restricted, read-only SSH key instead of from the
+  remote, which is what makes "validated on both nodes before it reaches the
+  remote" achievable at all — including why <code>origin</code> must be reassigned rather
+  than added (<code>self_update.py</code> hardcodes the remote name), why the HA rsync key
+  must not be reused for it (it authenticates as root), and the euid wrapper
+  that lets one keypair serve both the reconciler and the privileged runner.
+  §10 now states the testing policy: targeted runs by zone, mutation testing as
+  the substitute for breadth, judging by exit code (<code>rc == 1</code>, never a grep for
+  <code>failed</code>), one pytest per checkout, and what a suite run on the standby does
+  and does not prove — it exercises SQLite in a tmpdir, so it measures the disk,
+  not the deployment. <code>docs/release-pipeline.md</code> gains <strong>Stage 0</strong>, the ordered
+  promotion chain with the gate at each hop, and <code>docs/git-backup-and-outage.md</code>
+  is corrected: a standby wired to the primary keeps converging during a remote
+  outage.</li>
 <li>An unresolvable file-backed object is <strong>SKIPPED, not created empty</strong>: it is
   marked <code>no-content</code> (<code>~</code> in the plan text, its own bucket in the clone
   report) and the referencing rule then fails loudly with <code>-651</code> instead of

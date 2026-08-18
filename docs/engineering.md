@@ -96,6 +96,64 @@ the background-job workers and the scheduler sidecar run them headless.
   `FORTINET_HOST_CONCURRENCY`) so 4×8 gunicorn + sidecar can't flood a
   management plane. Connect timeout is capped at 10s.
 
+### Two-node HA: where the code comes from
+
+The pair is **primary + standby**, and the asymmetry is deliberate: the primary
+is the only node where work is created, the standby only ever receives it.
+
+```
+   PRIMARY  ── code: the standby FETCHES ssh://<app-user>@<primary>/opt/satom ──▶  STANDBY
+      │      ── data: satom-ha-datasync rsync of data/, every 5 min ──────────▶
+      │
+      └── push ──▶  dev remote  ──▶  documentation site  ──▶  sanitised public mirror
+```
+
+- **Code travels primary → standby directly.** The standby's `origin` is the
+  primary's checkout over SSH, not the remote; the remote survives there as a
+  second remote for fallback, and stays `origin` on any node that has no
+  primary to follow. This is what makes "validated on both nodes *before* it
+  reaches the remote" achievable at all — a standby that follows the remote
+  cannot hold the code until after the push.
+- **`origin` is reassigned, never merely added.**
+  `app/services/self_update.py` fetches with the remote name **hardcoded**
+  (`git fetch origin <branch>`), so a second remote called `primary` would
+  exist and never be consulted: the reconciler would keep reporting
+  `behind = 0` while looking somewhere else entirely.
+- **Do not reuse the HA rsync key.** `satom-ha-datasync` authenticates to the
+  primary **as root**; handing that key to the app user would turn a
+  compromise of the standby's web worker into root on the primary. The git
+  path gets its own keypair, authorised on the primary for the **app user**
+  (which owns the checkout, so there is no `safe.directory` to work around)
+  and pinned to one command:
+
+  ```
+  from="<standby>",restrict,command="git-upload-pack '/opt/satom'" ssh-ed25519 …
+  ```
+
+  Read-only, no shell, no forwarding. **Verify the read-only half on the
+  primary, not on the client:** a rejected push still prints an optimistic
+  `* [new branch] …` line locally — the proof is that the ref does not exist
+  on the primary.
+- **One keypair, two owners.** OpenSSH refuses a private key whose owner is
+  not the running euid, and the two consumers run as different users: the
+  reconciler as the app user, the privileged update runner as root. A single
+  mode-`0640` copy fails for one of them. A `GIT_SSH` wrapper branches on euid
+  and selects the copy owned by that user — two copies of one key, **one**
+  line in `authorized_keys`.
+- **The wiring survives updates:** the remote is repository-level
+  configuration, and the update runner runs `git reset --hard` but never
+  `git clean`.
+- **Consequence to design around:** with the reconciler in AUTO the standby
+  follows the primary's HEAD **continuously** (~60 s from commit to converged).
+  The primary stops being a place to park a half-finished commit.
+- **Data does not travel over git.** `satom-ha-datasync` rsyncs `data/`
+  (live harvest, SoT and artifact blobs, the config-backup vault). Never rsync
+  the checkout itself: it leaves the standby's worktree dirty and fights its
+  own `reset --hard`.
+
+The full ordered chain from a commit to the public site, and the gate that has
+to be green at each hop, is [release-pipeline.md](release-pipeline.md).
+
 ## 3. Products (ADOMs) and request scoping
 
 Three products share one app: `global` (`/`), `fortiweb` (`/web/…`),
@@ -310,20 +368,86 @@ Grouped tour of `app/services/` (~80 modules):
 ## 10. Testing
 
 - **Run:** `TMPDIR=$PWD/data/tmp venv/bin/python -m pytest -q` (create the
-  tmp dir first). 700+ tests / 100+ files; no device, network, or display
-  needed — clients are duck-typed fakes.
+  tmp dir first). ~7 700 tests across 270 files; no device, network, or
+  display needed — clients are duck-typed fakes.
 - **Coverage style:** service-level unit tests + Flask test-client
   integration tests (blueprints, permissions, CSRF exemptions in TESTING
   mode) + anti-drift guards (registry backing, product separation, typed
   projection schema, section catalogs, template locks).
-- **Judging a run under `pct exec`/CI:** trust the **exit code** — the final
-  pytest summary line does not always reach the log buffer.
+- **In-process smoke pattern:** `create_app()` + test client with
+  `session['product']` and `_user_id` set (product gate redirects otherwise).
+
+### Scope a run to the zone you changed
+
+The full suite is **~45 minutes** on the primary (measured end to end), and it
+is a deliberate act — not the reflex after every edit. Select the files by
+name and run those:
+
+```bash
+ls tests/ | grep -iE '<modules you touched>'
+TMPDIR=$PWD/data/tmp venv/bin/python -m pytest tests/test_a.py tests/test_b.py -q
+```
+
+That is seconds to a couple of minutes. Reserve the full run for a release cut
+and for a change whose blast radius you cannot name. What the full run catches
+and a targeted one does not is **cross-breakage between concurrent authors** on
+the same checkout; if you skip it, treat a cross-break as a thing to fix on
+top, not as a reason to widen the default.
+
+### Mutation is what replaces the breadth you skipped
+
+**A guard that does not bite is decoration, not verification.** For every new
+guard: undo the fix — or break the invariant — that it claims to protect,
+re-run *that* guard, confirm it fails, restore the tree. A guard that survives
+its own mutation gets rewritten or deleted.
+
+- **Judge by the exit code, and only `rc == 1` is a test failure** (`rc == 4`
+  is a usage error, `rc == 5` collected nothing). The final pytest summary
+  line does not always reach the log buffer under `pct exec`/CI or with `-q`,
+  so a harness that greps the output for `failed` reports **false survivors** —
+  it has happened twice here, once because the grep was case-sensitive and
+  pytest prints `FAILED`. Count tests with `--collect-only -q`.
+- **Assert on code with its comments stripped.** A guard that forbids a
+  substring will happily match the comment *explaining the guard*, and pass
+  against a tree that has the defect. Bound the window by the next function,
+  not by a character count.
+- **Never two pytest processes on one checkout.** They contend, and editing
+  the tree under a running suite invalidates both results. Kill by PID
+  (`pgrep -af 'venv/bin/python -m py[t]est'`) — never `pkill -f pytest`, which
+  matches the shell that launched it and kills your own session. Clear
+  `__pycache__` before relaunching.
 - **Local pitfalls:** stale root-owned `/tmp/pytest-of-root` dirs break runs
   executed as the service user (hence the TMPDIR convention); smoke tests
   through HTTP must use the HTTPS edge URL (Secure cookies) and carry the
   CSRF token from a rendered page's `meta[name=csrf-token]`.
-- **In-process smoke pattern:** `create_app()` + test client with
-  `session['product']` and `_user_id` set (product gate redirects otherwise).
+
+### What a run on the standby does and does not prove
+
+`conftest.py` builds a **SQLite database in a tmpdir**. It never touches the
+node's PostgreSQL, its read-only replica role, its metrics store or its standby
+wiring — so the suite executed there is the same code, on the same Python,
+against the same fakes as on the primary. **It measures the disk, not the
+deployment.**
+
+That matters because the two nodes need not have the same storage. Measured
+with 300 × 4 KiB `fdatasync`:
+
+| node | per fsync | 300 fsyncs |
+|---|---|---|
+| primary, SSD-backed | 0.7 ms | 0.21 s |
+| standby, spinning disk | 54 ms | 16.4 s |
+
+77×, which turns a 45-minute suite into roughly **29 hours** with the process
+parked in `D` state on `jbd2_log_wait_commit` instead of computing anything. If
+you genuinely need the suite on such a node, move `TMPDIR` to tmpfs (~900 MB
+per run) rather than waiting it out.
+
+**The standby's own gate is different, and it is fast:** it converged to the
+primary's HEAD, the unit starts, `/healthz` answers `200` on the app port *and*
+through the TLS edge, and `systemctl list-units --failed` is empty. That
+exercises precisely what only the standby can fail at — the update path, the
+migrations against its own database, the packaging — none of which the suite
+would have covered anyway.
 
 ## 11. Background jobs framework
 

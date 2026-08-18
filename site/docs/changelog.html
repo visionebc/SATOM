@@ -190,6 +190,22 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   basis for the split above.</p>
 <h3 id="changed">Changed</h3>
 <ul>
+<li><strong>The manual documents how a change is promoted and how it is tested.</strong>
+  <code>docs/engineering.md</code> §2 gains the two-node code path — the standby fetches
+  from the <strong>primary</strong> over a restricted, read-only SSH key instead of from the
+  remote, which is what makes "validated on both nodes before it reaches the
+  remote" achievable at all — including why <code>origin</code> must be reassigned rather
+  than added (<code>self_update.py</code> hardcodes the remote name), why the HA rsync key
+  must not be reused for it (it authenticates as root), and the euid wrapper
+  that lets one keypair serve both the reconciler and the privileged runner.
+  §10 now states the testing policy: targeted runs by zone, mutation testing as
+  the substitute for breadth, judging by exit code (<code>rc == 1</code>, never a grep for
+  <code>failed</code>), one pytest per checkout, and what a suite run on the standby does
+  and does not prove — it exercises SQLite in a tmpdir, so it measures the disk,
+  not the deployment. <code>docs/release-pipeline.md</code> gains <strong>Stage 0</strong>, the ordered
+  promotion chain with the gate at each hop, and <code>docs/git-backup-and-outage.md</code>
+  is corrected: a standby wired to the primary keeps converging during a remote
+  outage.</li>
 <li>An unresolvable file-backed object is <strong>SKIPPED, not created empty</strong>: it is
   marked <code>no-content</code> (<code>~</code> in the plan text, its own bucket in the clone
   report) and the referencing rule then fails loudly with <code>-651</code> instead of

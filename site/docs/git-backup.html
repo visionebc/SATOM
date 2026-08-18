@@ -100,7 +100,7 @@ appliance pushes to {backup-server}, the HA rsync — is unaffected.</p>
 </tr>
 <tr>
 <td>Reconciler (AUTO)</td>
-<td>cannot fetch → drift is not reconciled</td>
+<td>on a node whose <code>origin</code> is the remote: cannot fetch → drift is not reconciled. A standby whose <code>origin</code> is the <strong>primary</strong> keeps converging normally</td>
 </tr>
 <tr>
 <td>Sync Prod</td>
@@ -113,7 +113,10 @@ appliance pushes to {backup-server}, the HA rsync — is unaffected.</p>
 </tbody>
 </table>
 <p><strong>No data is lost during the outage.</strong> The commits pile up locally and push
-themselves when the remote returns.</p>
+themselves when the remote returns. And because the standby fetches from the
+primary rather than from the remote (<code>engineering.md</code> §2), an outage stops
+<em>publication</em>, not <em>replication</em>: code committed on the primary still reaches
+the standby while the remote is down.</p>
 <h2 id="the-dangerous-part-is-the-return-not-the-outage">The dangerous part is the return, not the outage</h2>
 <p><code>deploy/self_update_runner.py</code> rewrites the checkout with:</p>
 <pre><code>git reset --hard origin/&lt;branch&gt;
@@ -186,9 +189,12 @@ objects and old packs), so retention is cheap — default 7 per node.</p>
 </tr>
 </tbody>
 </table>
-<p>{backup-server} is a <strong>separate failure domain on purpose</strong>: Gitea and the standby both
-live on {hypervisor}, so a {hypervisor} outage takes copies 2 and 3 offline together. {backup-server}
-is on {hypervisor}, the primary on {hypervisor}.</p>
+<p>{backup-server} is a <strong>separate failure domain on purpose</strong> — but verify that it
+actually is one before trusting the count. If the remote and the standby share a
+hypervisor, a single host outage takes copies 2 and 3 with it and the off-rack
+copy is the only one left; if the off-rack target shares hardware with the
+primary, the count is two, not four. Place it on hardware that neither node
+depends on.</p>
 <blockquote>
 <p><code>reports/</code> and <code>.git</code> are deliberately <strong>not</strong> in the HA rsync. The standby has
 its own git checkout; rsyncing <code>reports/</code> over it would leave its worktree dirty

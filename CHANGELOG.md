@@ -95,6 +95,22 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Changed
 
+- **The manual documents how a change is promoted and how it is tested.**
+  `docs/engineering.md` §2 gains the two-node code path — the standby fetches
+  from the **primary** over a restricted, read-only SSH key instead of from the
+  remote, which is what makes "validated on both nodes before it reaches the
+  remote" achievable at all — including why `origin` must be reassigned rather
+  than added (`self_update.py` hardcodes the remote name), why the HA rsync key
+  must not be reused for it (it authenticates as root), and the euid wrapper
+  that lets one keypair serve both the reconciler and the privileged runner.
+  §10 now states the testing policy: targeted runs by zone, mutation testing as
+  the substitute for breadth, judging by exit code (`rc == 1`, never a grep for
+  `failed`), one pytest per checkout, and what a suite run on the standby does
+  and does not prove — it exercises SQLite in a tmpdir, so it measures the disk,
+  not the deployment. `docs/release-pipeline.md` gains **Stage 0**, the ordered
+  promotion chain with the gate at each hop, and `docs/git-backup-and-outage.md`
+  is corrected: a standby wired to the primary keeps converging during a remote
+  outage.
 - An unresolvable file-backed object is **SKIPPED, not created empty**: it is
   marked `no-content` (`~` in the plan text, its own bucket in the clone
   report) and the referencing rule then fails loudly with `-651` instead of

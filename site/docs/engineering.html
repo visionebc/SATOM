@@ -168,6 +168,56 @@ the background-job workers and the scheduler sidecar run them headless.</p>
   <code>FORTINET_HOST_CONCURRENCY</code>) so 4×8 gunicorn + sidecar can't flood a
   management plane. Connect timeout is capped at 10s.</li>
 </ul>
+<h3 id="two-node-ha-where-the-code-comes-from">Two-node HA: where the code comes from</h3>
+<p>The pair is <strong>primary + standby</strong>, and the asymmetry is deliberate: the primary
+is the only node where work is created, the standby only ever receives it.</p>
+<pre><code>   PRIMARY  ── code: the standby FETCHES ssh://&lt;app-user&gt;@&lt;primary&gt;/opt/satom ──▶  STANDBY
+      │      ── data: satom-ha-datasync rsync of data/, every 5 min ──────────▶
+      │
+      └── push ──▶  dev remote  ──▶  documentation site  ──▶  sanitised public mirror
+</code></pre>
+<ul>
+<li><strong>Code travels primary → standby directly.</strong> The standby's <code>origin</code> is the
+  primary's checkout over SSH, not the remote; the remote survives there as a
+  second remote for fallback, and stays <code>origin</code> on any node that has no
+  primary to follow. This is what makes "validated on both nodes <em>before</em> it
+  reaches the remote" achievable at all — a standby that follows the remote
+  cannot hold the code until after the push.</li>
+<li><strong><code>origin</code> is reassigned, never merely added.</strong>
+  <code>app/services/self_update.py</code> fetches with the remote name <strong>hardcoded</strong>
+  (<code>git fetch origin &lt;branch&gt;</code>), so a second remote called <code>primary</code> would
+  exist and never be consulted: the reconciler would keep reporting
+  <code>behind = 0</code> while looking somewhere else entirely.</li>
+<li><strong>Do not reuse the HA rsync key.</strong> <code>satom-ha-datasync</code> authenticates to the
+  primary <strong>as root</strong>; handing that key to the app user would turn a
+  compromise of the standby's web worker into root on the primary. The git
+  path gets its own keypair, authorised on the primary for the <strong>app user</strong>
+  (which owns the checkout, so there is no <code>safe.directory</code> to work around)
+  and pinned to one command:</li>
+</ul>
+<p><code>from="&lt;standby&gt;",restrict,command="git-upload-pack '/opt/satom'" ssh-ed25519 …</code></p>
+<p>Read-only, no shell, no forwarding. <strong>Verify the read-only half on the
+  primary, not on the client:</strong> a rejected push still prints an optimistic
+  <code>* [new branch] …</code> line locally — the proof is that the ref does not exist
+  on the primary.
+- <strong>One keypair, two owners.</strong> OpenSSH refuses a private key whose owner is
+  not the running euid, and the two consumers run as different users: the
+  reconciler as the app user, the privileged update runner as root. A single
+  mode-<code>0640</code> copy fails for one of them. A <code>GIT_SSH</code> wrapper branches on euid
+  and selects the copy owned by that user — two copies of one key, <strong>one</strong>
+  line in <code>authorized_keys</code>.
+- <strong>The wiring survives updates:</strong> the remote is repository-level
+  configuration, and the update runner runs <code>git reset --hard</code> but never
+  <code>git clean</code>.
+- <strong>Consequence to design around:</strong> with the reconciler in AUTO the standby
+  follows the primary's HEAD <strong>continuously</strong> (~60 s from commit to converged).
+  The primary stops being a place to park a half-finished commit.
+- <strong>Data does not travel over git.</strong> <code>satom-ha-datasync</code> rsyncs <code>data/</code>
+  (live harvest, SoT and artifact blobs, the config-backup vault). Never rsync
+  the checkout itself: it leaves the standby's worktree dirty and fights its
+  own <code>reset --hard</code>.</p>
+<p>The full ordered chain from a commit to the public site, and the gate that has
+to be green at each hop, is <a href="release-pipeline.html">release-pipeline.md</a>.</p>
 <h2 id="3-products-adoms-and-request-scoping">3. Products (ADOMs) and request scoping</h2>
 <p>Three products share one app: <code>global</code> (<code>/</code>), <code>fortiweb</code> (<code>/web/…</code>),
 <code>fortiadc</code> (<code>/adc/…</code>).</p>
@@ -374,21 +424,92 @@ importing a concrete client in views.</p>
 <h2 id="10-testing">10. Testing</h2>
 <ul>
 <li><strong>Run:</strong> <code>TMPDIR=$PWD/data/tmp venv/bin/python -m pytest -q</code> (create the
-  tmp dir first). 700+ tests / 100+ files; no device, network, or display
-  needed — clients are duck-typed fakes.</li>
+  tmp dir first). ~7 700 tests across 270 files; no device, network, or
+  display needed — clients are duck-typed fakes.</li>
 <li><strong>Coverage style:</strong> service-level unit tests + Flask test-client
   integration tests (blueprints, permissions, CSRF exemptions in TESTING
   mode) + anti-drift guards (registry backing, product separation, typed
   projection schema, section catalogs, template locks).</li>
-<li><strong>Judging a run under <code>pct exec</code>/CI:</strong> trust the <strong>exit code</strong> — the final
-  pytest summary line does not always reach the log buffer.</li>
+<li><strong>In-process smoke pattern:</strong> <code>create_app()</code> + test client with
+  <code>session['product']</code> and <code>_user_id</code> set (product gate redirects otherwise).</li>
+</ul>
+<h3 id="scope-a-run-to-the-zone-you-changed">Scope a run to the zone you changed</h3>
+<p>The full suite is <strong>~45 minutes</strong> on the primary (measured end to end), and it
+is a deliberate act — not the reflex after every edit. Select the files by
+name and run those:</p>
+<pre><code class="language-bash">ls tests/ | grep -iE '&lt;modules you touched&gt;'
+TMPDIR=$PWD/data/tmp venv/bin/python -m pytest tests/test_a.py tests/test_b.py -q
+</code></pre>
+<p>That is seconds to a couple of minutes. Reserve the full run for a release cut
+and for a change whose blast radius you cannot name. What the full run catches
+and a targeted one does not is <strong>cross-breakage between concurrent authors</strong> on
+the same checkout; if you skip it, treat a cross-break as a thing to fix on
+top, not as a reason to widen the default.</p>
+<h3 id="mutation-is-what-replaces-the-breadth-you-skipped">Mutation is what replaces the breadth you skipped</h3>
+<p><strong>A guard that does not bite is decoration, not verification.</strong> For every new
+guard: undo the fix — or break the invariant — that it claims to protect,
+re-run <em>that</em> guard, confirm it fails, restore the tree. A guard that survives
+its own mutation gets rewritten or deleted.</p>
+<ul>
+<li><strong>Judge by the exit code, and only <code>rc == 1</code> is a test failure</strong> (<code>rc == 4</code>
+  is a usage error, <code>rc == 5</code> collected nothing). The final pytest summary
+  line does not always reach the log buffer under <code>pct exec</code>/CI or with <code>-q</code>,
+  so a harness that greps the output for <code>failed</code> reports <strong>false survivors</strong> —
+  it has happened twice here, once because the grep was case-sensitive and
+  pytest prints <code>FAILED</code>. Count tests with <code>--collect-only -q</code>.</li>
+<li><strong>Assert on code with its comments stripped.</strong> A guard that forbids a
+  substring will happily match the comment <em>explaining the guard</em>, and pass
+  against a tree that has the defect. Bound the window by the next function,
+  not by a character count.</li>
+<li><strong>Never two pytest processes on one checkout.</strong> They contend, and editing
+  the tree under a running suite invalidates both results. Kill by PID
+  (<code>pgrep -af 'venv/bin/python -m py[t]est'</code>) — never <code>pkill -f pytest</code>, which
+  matches the shell that launched it and kills your own session. Clear
+  <code>__pycache__</code> before relaunching.</li>
 <li><strong>Local pitfalls:</strong> stale root-owned <code>/tmp/pytest-of-root</code> dirs break runs
   executed as the service user (hence the TMPDIR convention); smoke tests
   through HTTP must use the HTTPS edge URL (Secure cookies) and carry the
   CSRF token from a rendered page's <code>meta[name=csrf-token]</code>.</li>
-<li><strong>In-process smoke pattern:</strong> <code>create_app()</code> + test client with
-  <code>session['product']</code> and <code>_user_id</code> set (product gate redirects otherwise).</li>
 </ul>
+<h3 id="what-a-run-on-the-standby-does-and-does-not-prove">What a run on the standby does and does not prove</h3>
+<p><code>conftest.py</code> builds a <strong>SQLite database in a tmpdir</strong>. It never touches the
+node's PostgreSQL, its read-only replica role, its metrics store or its standby
+wiring — so the suite executed there is the same code, on the same Python,
+against the same fakes as on the primary. <strong>It measures the disk, not the
+deployment.</strong></p>
+<p>That matters because the two nodes need not have the same storage. Measured
+with 300 × 4 KiB <code>fdatasync</code>:</p>
+<table>
+<thead>
+<tr>
+<th>node</th>
+<th>per fsync</th>
+<th>300 fsyncs</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>primary, SSD-backed</td>
+<td>0.7 ms</td>
+<td>0.21 s</td>
+</tr>
+<tr>
+<td>standby, spinning disk</td>
+<td>54 ms</td>
+<td>16.4 s</td>
+</tr>
+</tbody>
+</table>
+<p>77×, which turns a 45-minute suite into roughly <strong>29 hours</strong> with the process
+parked in <code>D</code> state on <code>jbd2_log_wait_commit</code> instead of computing anything. If
+you genuinely need the suite on such a node, move <code>TMPDIR</code> to tmpfs (~900 MB
+per run) rather than waiting it out.</p>
+<p><strong>The standby's own gate is different, and it is fast:</strong> it converged to the
+primary's HEAD, the unit starts, <code>/healthz</code> answers <code>200</code> on the app port <em>and</em>
+through the TLS edge, and <code>systemctl list-units --failed</code> is empty. That
+exercises precisely what only the standby can fail at — the update path, the
+migrations against its own database, the packaging — none of which the suite
+would have covered anyway.</p>
 <h2 id="11-background-jobs-framework">11. Background jobs framework</h2>
 <p><code>services/jobs.py</code> — file-backed jobs (<code>data/jobs/*.json</code>), multi-worker
 safe:</p>

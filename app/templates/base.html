@@ -618,7 +618,7 @@
       {% set _sc_key = (request.view_args.get('section_key') if (_sc_cfg and request.view_args) else None) %}
       {% set _waf_sc = ['application_delivery','api_protection','bot_mitigation','dos_protection','ip_protection'] %}
       {% set _g_lb   = request.blueprint in ['workspace','server_objects'] %}
-      {% set _g_waf  = request.blueprint in ['web_protection','exceptions','attack_search'] or (_sc_cfg and _sc_key in _waf_sc) %}
+      {% set _g_waf  = request.blueprint in ['web_protection','exceptions','attack_search','artifacts'] or (_sc_cfg and _sc_key in _waf_sc) %}
       {% set _g_cfg  = _sc_cfg and _sc_key not in _waf_sc %}
       {% set _g_ops  = request.blueprint in ['backups','logs','import_backup'] %}
       {% set _g_api  = request.blueprint in ['registry','api_explorer','structure'] %}
@@ -717,6 +717,8 @@
             <i class="bi bi-search fw-nav-icon"></i><span>{{ _('Search Attack ID') }}</span></a>
           <a class="fw-nav-item" href="{{ url_for('exceptions.index') }}">
             <i class="bi bi-slash-circle fw-nav-icon"></i><span>Exceptions &amp; Signature</span></a>
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'artifacts' else '' }}" href="{{ url_for('artifacts.index') }}">
+            <i class="bi bi-file-earmark-lock fw-nav-icon"></i><span>{{ _('WAF Artifacts') }}</span></a>
           {% if current_appliance %}
           <a class="fw-nav-item {{ 'active' if _wp_active == '__profile__' else '' }}"
              href="{{ url_for('web_protection.overview', id=current_appliance.id) }}">

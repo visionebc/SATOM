@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Added · Fixed · 5 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Added · Changed · Fixed · 12 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Added · Fixed · 5 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Added · Changed · Fixed · 12 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,8 +59,8 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Added · Fixed · 5 entries</span>
-        <ul class="rel-leads"><li>Interfaces are declared with a PURPOSE at device registration</li><li>Clone/migrate now checks which interface the copy will be bound to</li><li>Chassis grouping — several appliance rows that are one physical device</li><li class="rel-more">… and 2 more</li></ul>
+        <span class="rel-nav-meta">unreleased · Added · Changed · Fixed · 12 entries</span>
+        <ul class="rel-leads"><li>SATOM keeps the file-backed WAF objects FortiWeb will not give back</li><li>Clone and migrate now copy the CONTENT, not just the name</li><li>A pre-flight ALERT the operator accepts or rejects</li><li class="rel-more">… and 9 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v1.10.1.html" data-rel-version="1.10.1">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 1.10.1</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
@@ -197,6 +197,34 @@
       <div class="mdx">
 <h3 id="added">Added</h3>
 <ul>
+<li><strong>SATOM keeps the file-backed WAF objects FortiWeb will not give back.</strong>
+  Seven API-Protection types (XML Schema, XML DTD, WSDL, OpenAPI, gRPC IDL,
+  JSON Schema and Lua scripting) store only their NAME in the configuration,
+  so the tree clone alone created them EMPTY at the destination — and a
+  validation rule bound to an empty object answers <code>-7694</code>. Worse, when the
+  rule already existed on the target, the shell landed silently and the policy
+  ran with that protection off. New <strong>WAF Artifacts</strong> page (<code>/artifacts</code>) and
+  a content-addressed store under <code>data/artifacts/</code> (same split, directory and
+  replication path as the SoT store — the standby datasync and the system
+  backup bundles already carry it). Three verbs: <strong>upload</strong> (an operator hands
+  SATOM the file — the only way XML Schema, WSDL and gRPC IDL can ever enter
+  the store, because no FortiWeb will read them back and they are absent from
+  the device's own <code>full-config</code> backup), <strong>capture</strong> (read it live off a
+  device; available for the four readable types) and <strong>push</strong> (write a stored
+  copy onto an appliance).</li>
+<li><strong>Clone and migrate now copy the CONTENT, not just the name.</strong> Every
+  file-backed object in a plan is resolved before the first write — source
+  device first, SATOM's store second — and uploaded through the per-type
+  multipart endpoint, which is not under <code>/cmdb/</code> and uses a different field
+  name per type. Verified end to end against two live appliances: the copy
+  lands with its bytes and the rule that references it links with <code>200</code>.</li>
+<li>
+<p><strong>A pre-flight ALERT the operator accepts or rejects.</strong> When no content can
+  be obtained, the checklist raises a <code>warn</code> (never a block) naming the object
+  and the consequence, and Apply stays disabled until the operator ticks
+  <em>"clone anyway"</em>. The check stays <code>warn</code> after acceptance — a checklist that
+  turns green because someone ticked a box has stopped describing the device.</p>
+</li>
 <li>
 <p><strong>Interfaces are declared with a PURPOSE at device registration.</strong>
   <code>ApplianceInterface</code> gains <code>role</code> (a controlled vocabulary: management,
@@ -243,8 +271,26 @@
   ADOMs): <code>server-policy/policy</code> differs per ADOM, while <code>system/interface</code>
   and <code>system/vip</code> are identical from all four. That asymmetry is the whole
   basis for the split above.</p>
+<h3 id="changed">Changed</h3>
+<ul>
+<li>An unresolvable file-backed object is <strong>SKIPPED, not created empty</strong>: it is
+  marked <code>no-content</code> (<code>~</code> in the plan text, its own bucket in the clone
+  report) and the referencing rule then fails loudly with <code>-651</code> instead of
+  landing a shell that makes the destination look configured.</li>
+<li><strong>A migrate no longer disables the source when anything was skipped.</strong>
+  Accepting a missing artifact authorises an incomplete COPY, not an
+  unprotected cutover; <code>failed == 0</code> does not cover this, because the
+  referencing rule only fails when it is itself in the plan.</li>
+</ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
+<li>The XML DTD read is parsed with a tolerant decoder. The firmware's two-byte
+  buffer over-run put an invalid UTF-8 byte inside the JSON body, so <code>.json()</code>
+  raised and a <strong>working</strong> endpoint read as a dead one; the junk is trimmed
+  without touching a legitimate trailing newline.</li>
+<li>The OpenAPI read no longer doubles every line break: <code>htmlArray</code> elements
+  already carry their newline, and for YAML that is not cosmetic — the file
+  round-trips, parses, and is not the same document.</li>
 <li><strong>A device in ADOM mode with no ADOM pinned reports an EMPTY policy list and
   no error.</strong> With <code>adom-admin</code> enabled, <code>server-policy/policy</code> returns <code>[]</code>
   for a token that carries no ADOM — the same shape as a device with no

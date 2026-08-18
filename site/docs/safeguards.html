@@ -9558,6 +9558,88 @@ probe of <code>system/global</code> on every appliance read.</p>
 <code>BaseClient.list_with_error</code> reports that as an empty list with no error —
 an unsupported endpoint reads exactly like an empty one. Create VLANs over
 the CLI.</p>
+<h2 id="9n-file-backed-waf-objects-content-is-not-configuration">9n. File-backed WAF objects: content is not configuration</h2>
+<p><code>tests/test_waf_artifacts.py</code> — 38 guards, <strong>22/22 mutations kill</strong>, measured
+by return code with only <code>rc == 1</code> counted.</p>
+<p>Seven API-Protection types keep only a NAME in the cmdb. Measured on 7.6.8,
+in both directions, on two live appliances:</p>
+<table>
+<thead>
+<tr>
+<th>linked to <code>waf/xml-validation.rule</code></th>
+<th>device answer</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>a file uploaded WITH content</td>
+<td><code>200</code>, <code>schema-file_val</code> resolves</td>
+</tr>
+<tr>
+<td>a cmdb object created from <code>{"name": …}</code></td>
+<td><code>500 errcode -7694</code></td>
+</tr>
+<tr>
+<td>a name that does not exist</td>
+<td><code>500 errcode -651</code></td>
+</tr>
+</tbody>
+</table>
+<p>So <code>-7694</code> means precisely <em>"the object is there and it is empty"</em> — the state
+the generic planner used to create. The dangerous case is not that error: it is
+the destination that already has the referencing rule, where the shell lands
+and the policy runs with that validation off and nothing says so.</p>
+<p><strong>Writing works for all seven</strong> with the same <code>Authorization</code> header SATOM
+already sends — no browser, no cookie, no <code>X-CSRFTOKEN</code> (measured with and
+without: both <code>200</code>). The upload endpoints are NOT under <code>/cmdb/</code> and the
+multipart FIELD NAME differs per type; a wrong field name is answered with
+<code>-3000 Internal error</code>, which reads like a firmware fault rather than a request
+fault. That table is pinned per-kind by a guard, not asserted as a shape.</p>
+<p><strong>Reading works for four.</strong> XML Schema, WSDL and gRPC IDL answer <code>-20005</code> on
+every shape, expose <code>can_view: 0</code>, have no <code>*-view</code> GUI component, and are
+absent from <code>execute backup full-config</code> while certificates in the same backup
+travel whole. <code>can_view</code> is NOT the predictor and must not be used as one:
+scripting objects report <code>can_view: 0</code> and read back byte-identical.</p>
+<h3 id="the-four-invariants-worth-the-guards">The four invariants worth the guards</h3>
+<ol>
+<li><strong>Skip, never shell.</strong> An unresolvable object becomes <code>no-content</code>;
+   <code>apply_clone</code> skips it and the referencing rule fails with <code>-651</code>.</li>
+<li><strong>Refuse before the first write.</strong> The real apply raises unless the operator
+   accepted; the raise happens after planning and before <code>apply_clone</code>, so a
+   refusal writes nothing (verified live against {device}: inventory
+   byte-identical before and after).</li>
+<li><strong>A dry run never refuses</strong> — a preview that cannot be produced is a preview
+   that cannot warn.</li>
+<li><strong>A migrate keeps the source enabled when anything was skipped.</strong>
+   <code>failed == 0</code> does NOT cover this: the referencing rule only fails when it
+   is itself in the plan, and it is not when the destination already has it.</li>
+</ol>
+<h3 id="two-defects-only-a-live-device-showed">Two defects only a live device showed</h3>
+<ul>
+<li><code>httpx</code>'s <code>.json()</code> raised <code>UnicodeDecodeError</code> on the XML DTD read, because
+  the documented two-byte buffer over-run puts a raw invalid byte inside the
+  JSON string. A working endpoint read as a dead one. Decoded with replacement
+  and <code>strict=False</code>, then trimmed — and the trim keeps a legitimate trailing
+  newline, because eating it makes every round-trip lossy in a way the FIRST
+  hop still looks perfect after.</li>
+<li><code>htmlArray</code> elements already end with their newline, so joining on <code>"\n"</code>
+  doubled every line break. The YAML still parsed; it was not the same file.</li>
+</ul>
+<h3 id="recipe-to-re-verify">Recipe to re-verify</h3>
+<p>Read all seven off a source (<code>waf_artifacts.fetch</code>) — expect 4 blobs and 3
+<code>cannot be read back</code>. Then, against a destination that does NOT have the
+object: clone with no stored copy and no acceptance → <code>RuntimeError</code>, and the
+destination inventory unchanged. Upload the file, clone again → the object
+lands and the rule create succeeds in the same apply (which by itself proves
+the content was real: a shell would have failed <code>-7694</code>). Delete the store row
+and the destination object, clone WITH acceptance → <code>no_content == 1</code>, the
+object absent at the destination, and the rule failing <code>-651</code>.</p>
+<h3 id="known-gap">Known gap</h3>
+<p><code>resolve()</code> falls back to <em>another appliance's</em> stored copy under the same
+name, reported by name. Two appliances can legitimately hold different content
+under one name — that is exactly the drift a clone is meant to carry — so this
+fallback is a guess. It is surfaced in the checklist text and not blocked; a
+per-appliance-only mode is a settings decision that has not been made.</p>
     </div>
   </div>
 </section>

@@ -266,6 +266,15 @@ def _parse_action(appliance_id):
         if bad is not None:
             return _err('interface name %r is not a valid port name' % bad)
         opts['iface_map'] = iface_map
+        # The operator's acknowledgement that a file-backed object (XML schema,
+        # DTD, WSDL, OpenAPI, gRPC IDL, Lua script) whose CONTENT SATOM cannot
+        # obtain may be skipped. Read from the REQUEST every time, never cached
+        # server-side: the checklist the browser is showing could be minutes old
+        # and describe a different set of missing files than the one this apply
+        # would skip. The engine re-derives the missing set itself and refuses
+        # unless this is set, so a stale tick can only ever authorise less than
+        # the operator saw — never more.
+        opts['accept_missing_artifacts'] = bool(body.get('accept_missing_artifacts'))
     return appl, action, policies, new_name, dest, opts, None
 
 

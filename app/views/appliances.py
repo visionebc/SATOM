@@ -193,7 +193,17 @@ def index():
 
     # Fleet-wide stats (independent of the current page / search filter).
     from sqlalchemy import func
-    total_count = visible_appliances().filter(Appliance.parent_id.is_(None)).count()
+    from ..models import chassis_tally
+    # Six columns, not whole ORM objects: this counts the FLEET, and the list
+    # above is paginated precisely so a 1000-device roster is never
+    # materialised per request. Counting rows in SQL was not an option that
+    # stays honest -- the fold rule lives in chassis_key, and a second
+    # implementation of it in SQL is a rule that can drift from the tree.
+    tally_rows = (visible_appliances(db.session.query(
+                      Appliance.id, Appliance.kind, Appliance.host,
+                      Appliance.port, Appliance.is_cluster, Appliance.vdom))
+                  .filter(Appliance.parent_id.is_(None)).all())
+    device_count, adom_count = chassis_tally(tally_rows)
     kinds_count = (visible_appliances(db.session.query(func.count(func.distinct(Appliance.kind))))
                    .filter(Appliance.parent_id.is_(None)).scalar() or 0)
 
@@ -202,7 +212,8 @@ def index():
                            appliances=pagination.items,
                            groups=_chassis_groups(pagination.items),
                            pagination=pagination, q=q,
-                           total_count=total_count, kinds_count=kinds_count,
+                           device_count=device_count, adom_count=adom_count,
+                           kinds_count=kinds_count,
                            kind_options=product_scope.creatable_kinds(),
                            default_kind=store.general().get('default_kind', ''),
                            classification=store.all_classification(),

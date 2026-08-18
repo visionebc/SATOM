@@ -69,15 +69,21 @@ def overview(id):
     appliance = visible_appliance_or_404(id)
     menu = so.server_objects_menu()
 
+    page = None
     selected = None
     rows: list[dict] = []
     error = None
     freshness = None
     logical = (request.args.get('type') or '').strip()
     if logical:
-        selected = so.type_for(logical)
-        if selected is None:
+        # ``?type=`` names a TAB (one REST collection); its PAGE is what the
+        # sidebar/breadcrumb show and what the tab strip is drawn from. Looking
+        # the page up alone would render the DEFAULT tab's objects under the
+        # requested tab's name.
+        hit = so.find(logical)
+        if hit is None:
             abort(404)
+        page, selected = hit
         # DB-first: serve the object list from the local source of truth; the
         # device is touched only on an explicit refresh (server_objects.refresh).
         from ..services import read_layer
@@ -89,6 +95,7 @@ def overview(id):
         'server_objects/overview.html',
         appliance=appliance,
         menu=menu,
+        page=page,
         selected=selected,
         rows=rows,
         error=error,

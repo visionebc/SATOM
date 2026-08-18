@@ -6,6 +6,40 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Server Objects is the FortiWeb menu again — entries, order and the tabs
+  inside them.** The curated menu had drifted from the appliance and nothing
+  failed, because a menu that is missing an entry still renders. Measured
+  against two independent oracles (the appliance's own Angular bundle on
+  FortiWeb 7.6.8, and a 554-page sweep of the 7.6 admin guide):
+  **Certificates has TWELVE entries, not the ten SATOM showed** — and the near
+  miss in the count hid the real shape, because three of those ten (*CA Group*,
+  *TSL CA*, *Intermediate CA Group*) are **tabs inside another page**, not menu
+  entries. Six entries were missing outright (*XML Certificate*, *URL
+  Certificate*, *Sign CA*, *Certificate Verify*, *Public Key Pinning*, plus
+  *Multi-certificate* and *Offline SNI* as tabs), and so were *Traffic Mirror*,
+  *Global Allow List*, *Policy Based Allow List* and *URL Replacer* elsewhere
+  in the section. A GUI page and a REST collection are not the same unit:
+  FortiWeb renders siblings as **tabs of one page**, so the menu now models
+  pages (one sidebar row) owning tabs (one collection each), and the object
+  list grew a tab strip. **No new REST endpoint was needed — all 40 collections
+  were already in the registry**; every one answers HTTP 200 live on 7.6.8.
+
+- **`Intermediate CA` pointed at a collection that does not exist.**
+  `system/certificate.intermediate` answers **HTTP 500 / errcode -20001** on
+  every FortiWeb measured (fw09, fw11), while the shipped API matrix already
+  recorded it as `absent`; the collection that exists is
+  `system/certificate.intermediate-certificate`. That page had never worked on
+  any firmware. The phantom is also suppressed in the generic Configuration
+  browse, so it cannot come back through the "everything else" list.
+
+- **`Virtual IP` moved to Network, where FortiWeb files it**
+  (`/ng2/network/virtual-ip`) — and it was given a home on the way:
+  `system/vip` categorises as `Other`, so dropping it from Server Objects
+  without adding it to the Network menu would have left the collection
+  unreachable from the entire UI.
+
 ### Added
 
 - **The appliance roster folds the ADOMs of one chassis under their device,

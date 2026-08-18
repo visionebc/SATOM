@@ -590,6 +590,31 @@ def is_multi_adom_chassis(appl) -> bool:
     return len(chassis_siblings(appl, include_self=False)) > 0
 
 
+def appliance_name_parts(appl) -> tuple[str, str]:
+    """Split a device row into the parts a menu should stack: (device, adom).
+
+    A FortiWeb in ADOM mode is one row per ADOM (see chassis_key above), and
+    operators name those rows ``<device>@<adom>`` BY HAND -- nothing in this
+    codebase composes or enforces that string. So the ADOM half is read from
+    ``vdom``, the field the auth token actually carries, and the suffix is
+    stripped only when it matches that field exactly. A row named
+    ``fortiweb09@adom_dev`` whose vdom is ``adom_prod`` therefore keeps its
+    whole name: trusting the text after '@' would print a domain this row is
+    not administering, which is worse than printing a long name.
+
+    Returns ``(name, "")`` when there is no ADOM, so a single-ADOM device
+    renders exactly as it did before.
+    """
+    name = (getattr(appl, "name", "") or "").strip()
+    adom = (getattr(appl, "vdom", "") or "").strip()
+    if not adom:
+        return name, ""
+    suffix = "@" + adom
+    if len(name) > len(suffix) and name.lower().endswith(suffix.lower()):
+        return name[:-len(suffix)].rstrip(), adom
+    return name, adom
+
+
 # ---------------------------------------------------------------------------
 # ApplianceInterface — documented physical port and what it connects to.
 # Manual documentation (not pulled from the device); rebuilt replace-all when

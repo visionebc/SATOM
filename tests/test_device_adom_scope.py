@@ -348,3 +348,128 @@ def test_the_fold_chrome_is_light():
     block = css[css.index(".fw-adom-toggle"):]
     for leak in ("#080d1a", "backdrop-filter", "rgba(30,41,59"):
         assert leak not in block, leak
+
+
+# --------------------------------------------------------------------------- #
+#  The roster cards count DEVICES, and one of them counts ADOMs                 #
+# --------------------------------------------------------------------------- #
+def _stat_tiles(html):
+    """[(value, label)] for the stat row, in render order."""
+    return re.findall(
+        r'fw-stat-value[^>]*>([^<]*)</div>\s*<div class="fw-stat-label"[^>]*>([^<]*)<',
+        html)
+
+
+def test_the_tally_folds_the_adom_rows_of_one_appliance(app):
+    """fortiweb09 is registered four times because the auth token carries one
+    ADOM. It is still ONE box, and the card sits under a device icon."""
+    from app.models import Appliance, chassis_tally
+
+    _chassis(app)
+    with app.app_context():
+        rows = Appliance.query.filter(Appliance.parent_id.is_(None)).all()
+    assert len(rows) == 5
+    assert chassis_tally(rows) == (2, 4)
+
+
+def test_root_is_an_adom_like_the_tree_badge_says(app):
+    """The row that owns the chassis verbs is registered in ``root``, and the
+    tree badge next to it already reads "ADOM \u00b7 4". A tally that skipped
+    root would print 3 beside a badge that says 4."""
+    from app.models import Appliance, chassis_tally
+
+    _chassis(app)
+    with app.app_context():
+        rows = Appliance.query.filter(Appliance.vdom.is_not(None)).all()
+    assert chassis_tally(rows)[1] == 4
+
+
+def test_two_appliances_partitioned_into_root_are_two_adoms(app):
+    """Deduplicating ADOMs by NAME reports half the partitions the fleet has:
+    ``root`` on one box and ``root`` on another are two domains, administered
+    by two credentials, on two chassis."""
+    from app.models import Appliance, chassis_tally
+
+    _mk(app, "fortiweb09", vdom="root", host="192.0.2.14")
+    _mk(app, "fortiweb10", vdom="root", host="192.0.2.15")
+    with app.app_context():
+        rows = Appliance.query.all()
+    assert chassis_tally(rows) == (2, 2)
+
+
+def test_a_row_with_no_adom_is_not_counted_as_one(app):
+    """A device registered before ADOMs were turned on has no partition to
+    count — an empty ``vdom`` is not the name of an administrative domain."""
+    from app.models import Appliance, chassis_tally
+
+    _mk(app, "fortiweb10", vdom=None, host="192.0.2.15")
+    _mk(app, "fortiadc02", vdom="", host="192.0.2.76", kind="fortiadc")
+    with app.app_context():
+        rows = Appliance.query.all()
+    assert chassis_tally(rows) == (2, 0)
+
+
+def test_two_cluster_containers_are_two_devices():
+    """An HA container has no host of its own, so it has no chassis key.
+    Bucketing every keyless row together would merge unrelated clusters into
+    one device."""
+    from app.models import chassis_tally
+
+    rows = [_Row(1, "clusterA", host="", is_cluster=True),
+            _Row(2, "clusterB", host="", is_cluster=True)]
+    assert chassis_tally(rows) == (2, 0)
+
+
+def test_the_same_box_on_another_port_is_another_device():
+    """The fold key is (kind, host, port) — the same rule the tree groups by.
+    Widening it to the host alone would fold two appliances behind one NAT."""
+    from app.models import chassis_tally
+
+    rows = [_Row(1, "a", vdom="root", port=443),
+            _Row(2, "b", vdom="root", port=8443)]
+    assert chassis_tally(rows) == (2, 2)
+
+
+def test_the_index_cards_report_devices_and_adoms(app, client):
+    """End to end: the page, not the helper. The count the operator reads has
+    to survive the view and the template, and it has to agree with the tree
+    directly below it."""
+    _chassis(app)
+    login(client, admin_user_id(app))
+    html = client.get("/appliances/").get_data(as_text=True)
+    tiles = _stat_tiles(html)
+    assert [t[1] for t in tiles][:2] == ["Devices", "ADOMs"]
+    assert tiles[0][0] == "2", tiles
+    assert tiles[1][0] == "4", tiles
+    # The tree says the same thing one element down.
+    assert "ADOM \u00b7 4" in html or "ADOM &#183; 4" in html or "ADOM · 4" in html
+
+
+def test_the_index_cards_are_fleet_wide_not_page_wide(app, client):
+    """The tiles are stats about the FLEET; the table under them is paginated
+    and filtered. A search must not silently redefine what the fleet is."""
+    _chassis(app)
+    login(client, admin_user_id(app))
+    html = client.get("/appliances/?q=fortiweb10").get_data(as_text=True)
+    tiles = _stat_tiles(html)
+    assert tiles[0][0] == "2", tiles
+    assert tiles[1][0] == "4", tiles
+
+
+def test_online_counts_an_appliance_once():
+    """Four ADOM rows probe one box. Counting every status pill made Online
+    add up to the ROW count while the tile beside it counts devices — two
+    numbers about the same fleet that can never agree."""
+    src = io.open(INDEX_TPL, encoding="utf-8").read()
+    m = re.search(r"const statuses\s*=\s*([^;]+);", src)
+    assert m, "the status roll-up moved; re-pin it"
+    assert "fw-adom-row" in m.group(1)
+
+
+def test_the_five_tiles_fit_one_row():
+    """A fifth tile in a hardcoded col-md-3 grid wraps alone onto a second
+    line. The row has to declare how many tiles it carries."""
+    src = io.open(INDEX_TPL, encoding="utf-8").read()
+    block = src[:src.index("fw-toolbar")]
+    assert "row-cols-xl-5" in block
+    assert "col-md-3 col-sm-6" not in block

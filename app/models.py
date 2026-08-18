@@ -636,6 +636,39 @@ def owns_device_scope(appl) -> bool:
     return owner is None or owner.id == getattr(appl, "id", None)
 
 
+def chassis_tally(rows) -> tuple[int, int]:
+    """Count PHYSICAL devices and registered ADOMs across *rows*.
+
+    ``len(rows)`` answers "how many credentials are registered", which is not
+    the number an operator reads off a card labelled with a device icon: a
+    FortiWeb in ADOM mode is one row per ADOM (see :func:`chassis_key`), so a
+    fleet of two boxes reported five. Folding by chassis key is the same rule
+    the roster tree groups by, so the card and the tree cannot disagree.
+
+    ADOMs are counted as ``(chassis, ADOM)`` PAIRS, never as distinct names:
+    two appliances each partitioned into ``root`` are two administrative
+    domains, and deduplicating by name would report half the partitions the
+    fleet has. ``root`` counts, because it is the domain the device itself
+    administers and the row that owns the chassis verbs
+    (:func:`chassis_device_row`) is registered in it — the tree's own badge
+    already reads "ADOM \u00b7 4" for a box with three extra rows.
+
+    A row with no chassis of its own (an HA cluster container, which has no
+    host to dial) stays distinct: each is one device, and folding them into a
+    shared "no host" bucket would merge unrelated clusters into one.
+    """
+    devices, adoms = set(), set()
+    for row in rows:
+        key = chassis_key(row)
+        if key is None:
+            key = "row:%s" % (getattr(row, "id", None) or id(row))
+        devices.add(key)
+        adom = (getattr(row, "vdom", "") or "").strip().lower()
+        if adom:
+            adoms.add((key, adom))
+    return len(devices), len(adoms)
+
+
 def appliance_name_parts(appl) -> tuple[str, str]:
     """Split a device row into the parts a menu should stack: (device, adom).
 

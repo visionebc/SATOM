@@ -519,6 +519,13 @@ def create_app(config_override: object | None = None) -> Flask:
             _v = 0
         return url_for('static', filename=filename) + ('?v=%d' % _v)
 
+    # Device menu label: (device, adom). One definition, because two authors
+    # of the same split is how a name and its ADOM drift apart.
+    @app.template_global()
+    def appliance_name_parts(appl):
+        from .models import appliance_name_parts as _p
+        return _p(appl) if appl is not None else ("", "")
+
     @app.context_processor
     def _inject_branding():
         from flask import session
@@ -1701,6 +1708,10 @@ def create_app(config_override: object | None = None) -> Flask:
             # Without this import create_all() never makes the tables and
             # the first render of the side panel 500s.
             from . import models_bookmarks  # noqa: F401
+            # WAF artifact store index (the bytes FortiWeb will not give
+            # back). Without this import create_all() never makes the
+            # table and the first clone of a file-backed object 500s.
+            from . import models_artifacts  # noqa: F401
             db.create_all()
             _ensure_columns()
             # After the additive pass: a column that already existed may be
@@ -1862,6 +1873,7 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.appids", "bp"),
         ("app.views.advisor", "bp"),
         ("app.views.bookmarks", "bp"),
+        ("app.views.artifacts", "bp"),
     ]
 
     # FortiWeb-scoped areas live under the /web ADOM prefix (2026-07-07).

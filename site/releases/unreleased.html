@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Added · Changed · Fixed · 12 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Added · Changed · Fixed · 14 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Added · Changed · Fixed · 12 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Added · Changed · Fixed · 14 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,8 +59,8 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Added · Changed · Fixed · 12 entries</span>
-        <ul class="rel-leads"><li>SATOM keeps the file-backed WAF objects FortiWeb will not give back</li><li>Clone and migrate now copy the CONTENT, not just the name</li><li>A pre-flight ALERT the operator accepts or rejects</li><li class="rel-more">… and 9 more</li></ul>
+        <span class="rel-nav-meta">unreleased · Added · Changed · Fixed · 14 entries</span>
+        <ul class="rel-leads"><li>The appliance roster folds the ADOMs of one chassis under their device, and device-wide verbs live on the root row only</li><li>SATOM keeps the file-backed WAF objects FortiWeb will not give back</li><li>Clone and migrate now copy the CONTENT, not just the name</li><li class="rel-more">… and 11 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v1.10.1.html" data-rel-version="1.10.1">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 1.10.1</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
@@ -197,7 +197,24 @@
       <div class="mdx">
 <h3 id="added">Added</h3>
 <ul>
-<li><strong>SATOM keeps the file-backed WAF objects FortiWeb will not give back.</strong>
+<li>
+<p><strong>The appliance roster folds the ADOMs of one chassis under their device,
+  and device-wide verbs live on the root row only.</strong> A FortiWeb in ADOM mode
+  can only be registered one row per ADOM (the auth token carries exactly
+  one), so the list printed one physical appliance as N devices — each of them
+  offering firmware, the CLI console and the config-backup vault. Those act on
+  the BOX: one flash partition, one boot image, and one <code>execute backup</code> that
+  contains every ADOM, so "restore <code>@adom_dev</code>" would in fact have restored
+  the other ADOMs too, with nothing on the page saying so. The other ADOMs now
+  render as folded children of the device row (the fold remembers what you
+  OPENED, and a search still reaches inside it), and those verbs are offered
+  — and enforced on the route, not just hidden — on the row whose ADOM is
+  <code>root</code>. <strong>Classification (zone / line / department), policies, discovery and
+  each row's own credential stay per-ADOM</strong>, which is the reason they are
+  separate rows at all. A device registered once is unaffected.</p>
+</li>
+<li>
+<p><strong>SATOM keeps the file-backed WAF objects FortiWeb will not give back.</strong>
   Seven API-Protection types (XML Schema, XML DTD, WSDL, OpenAPI, gRPC IDL,
   JSON Schema and Lua scripting) store only their NAME in the configuration,
   so the tree clone alone created them EMPTY at the destination — and a
@@ -211,7 +228,8 @@
   the store, because no FortiWeb will read them back and they are absent from
   the device's own <code>full-config</code> backup), <strong>capture</strong> (read it live off a
   device; available for the four readable types) and <strong>push</strong> (write a stored
-  copy onto an appliance).</li>
+  copy onto an appliance).</p>
+</li>
 <li><strong>Clone and migrate now copy the CONTENT, not just the name.</strong> Every
   file-backed object in a plan is resolved before the first write — source
   device first, SATOM's store second — and uploaded through the per-type
@@ -291,13 +309,26 @@
 <li>The OpenAPI read no longer doubles every line break: <code>htmlArray</code> elements
   already carry their newline, and for YAML that is not cosmetic — the file
   round-trips, parses, and is not the same document.</li>
-<li><strong>A device in ADOM mode with no ADOM pinned reports an EMPTY policy list and
+<li>
+<p><strong>A device in ADOM mode with no ADOM pinned reports an EMPTY policy list and
   no error.</strong> With <code>adom-admin</code> enabled, <code>server-policy/policy</code> returns <code>[]</code>
   for a token that carries no ADOM — the same shape as a device with no
   policies. Any appliance row left at <code>vdom = NULL</code> on such a device shows an
   empty workspace and flags nothing. Found by enabling ADOM mode on
   {device}; the row is now pinned to <code>root</code>. (No code change guards this
-  yet — see the known-gaps note in <code>docs/safeguards.md</code> §101.)</li>
+  yet — see the known-gaps note in <code>docs/safeguards.md</code> §101.)</p>
+</li>
+<li>
+<p><strong>The roster's header tiles counted ROWS, not appliances.</strong> A FortiWeb
+  in ADOM mode is registered one row per ADOM, so a fleet of ten boxes
+  read as thirteen devices — and Online / Offline summed over the same
+  inflated set, so two tiles describing one fleet could never agree. A
+  chassis now votes once, folded on exactly the key the list groups it by;
+  HA cluster members still count separately, because they are separate
+  boxes with their own power supply. A fifth tile reports how many ADOMs
+  those appliances carry, counted PER APPLIANCE: <code>root</code> on two chassis is
+  two administrative domains with two credentials, not one name.</p>
+</li>
 </ul>
 <h3 id="known-gaps">Known gaps</h3>
 <ul>

@@ -9640,6 +9640,100 @@ name, reported by name. Two appliances can legitimately hold different content
 under one name — that is exactly the drift a clone is meant to carry — so this
 fallback is a guess. It is surfaced in the checklist text and not blocked; a
 per-appliance-only mode is a settings decision that has not been made.</p>
+<h2 id="9o-device-wide-verbs-belong-to-the-chassis-not-to-each-adom-row">9o. Device-wide verbs belong to the chassis, not to each ADOM row</h2>
+<p><code>tests/test_device_adom_scope.py</code> — 34 guards, <strong>26/26 mutations kill</strong>,
+measured by return code with only <code>rc == 1</code> counted.</p>
+<p>A FortiWeb in ADOM mode partitions its CONFIG, not its hardware. The auth
+token carries exactly one ADOM and there is no per-request override, so a
+multi-ADOM device can only be registered <strong>one row per ADOM</strong> (§101 /
+<code>test_chassis_grouping</code>). Three rows, one CPU, one flash partition, one boot
+image — and one <code>execute backup</code>, which emits every ADOM (measured 2026-08-18:
+a full-config pulled through an ADOM credential still contains the whole
+tree).</p>
+<p>So the roster used to offer, per chassis:</p>
+<ul>
+<li>the same firmware upgrade <strong>N times</strong>, and</li>
+<li>a <strong>Restore</strong> on <code>@adom_dev</code> that would in fact have restored <code>root</code> and
+  <code>@adom_prod</code> with it, with nothing on the page saying so.</li>
+</ul>
+<h3 id="who-owns-the-verbs">Who owns the verbs</h3>
+<p><code>models.chassis_device_row()</code> — one author, as with <code>chassis_key</code>. Preference
+is the sibling whose <code>vdom</code> is <code>root</code> <strong>or empty</strong> (a pre-ADOM registration is
+a device, not a partition). When no sibling is in root — a chassis onboarded
+only as <code>adom_a</code>/<code>adom_b</code> — the <strong>first row by name</strong> carries them: a box
+whose root credential nobody typed must still be upgradable, and picking
+deterministically is what keeps the button in the same place between renders.
+A device registered ONCE always owns its own verbs; the gate collapses
+duplicates, it never takes a verb away from a device that has one row to
+offer it on.</p>
+<h3 id="the-gate-is-on-the-route">The gate is on the route</h3>
+<p><code>auth.decorators.require_device_scope</code>, on 20 endpoints (console, upgrade,
+upgrade-prep, downgrade, the whole restore family, the backup vault). The
+templates ask the same question through the <code>owns_device_scope</code> /
+<code>device_scope_owner</code> template globals, but <strong>hiding the button is not the
+gate</strong> — that is precisely how <code>visible_appliance_or_404</code> shipped a by-id hole
+that the list had already closed (§ the ADOM roster). A browser is redirected
+to the owning row with a flash that NAMES it; a JSON caller gets <strong>409</strong>,
+because a 302 to an HTML page renders as a parse error in the console's
+<code>fetch</code> and reads as "the app broke" rather than "wrong row".</p>
+<h3 id="what-stays-per-adom-on-purpose">What stays per-ADOM, on purpose</h3>
+<p>Classification (zone / line / department), Policy Inspector, Discovery, the
+row's own credential, edit and delete. Two ADOMs of one box can legitimately
+serve different zones — that is the reason they are separate rows at all. A
+guard pins that the edit form still offers all three catalogs on an ADOM row.</p>
+<h3 id="the-fold">The fold</h3>
+<p>The roster nests the other ADOMs under the device row and starts them
+<strong>folded</strong> (<code>_chassis_groups</code> in <code>views/appliances.py</code>). Two things that look
+like detail and are not:</p>
+<ol>
+<li><strong>The store holds the OPEN set</strong> (<code>satom.appliances.adom.open</code>), never the
+   closed one — a closed-set store has to be seeded per chassis on first
+   sight, so any chassis it had not seen would open itself. Same reasoning as
+   the probe cards, and the same trap: reusing a key that once held a
+   closed set reads it back as an open set and expands exactly the rows the
+   operator folded.</li>
+<li><strong>A search reaches a folded row.</strong> A row that matches the query and stays
+   hidden reads as "no such device", which is the one answer a search box must
+   not give. The fold is therefore suppressed while the query is non-empty.</li>
+</ol>
+<p>Grouping is done over the CURRENT PAGE only. A chassis split across a page
+boundary degrades to a row that stands alone and still names its ADOM — never
+to a row that silently offers a device-wide verb it does not own, because that
+answer comes from the route, not from the layout.</p>
+<h3 id="the-header-tiles-count-devices-and-one-of-them-counts-adoms">The header tiles count DEVICES, and one of them counts ADOMs</h3>
+<p><code>models.chassis_tally()</code> — the same fold as the tree, one author, called by
+<code>views/appliances.index</code>. Before it, "Total Appliances" printed <strong>13</strong> for a
+fleet of <strong>10</strong> boxes: the tile counted registered credentials while the tree
+six pixels below it folded them. A number under a device icon that disagrees
+with the list under it is not a rounding difference — one of the two is
+telling the operator the fleet is a size it is not.</p>
+<ul>
+<li><strong>ADOMs are counted as <code>(chassis, ADOM)</code> pairs, never as distinct names.</strong>
+  <code>root</code> on one box and <code>root</code> on another are two administrative domains,
+  administered by two credentials on two chassis; deduplicating by name would
+  report half the partitions the fleet has.</li>
+<li><strong><code>root</code> counts.</strong> It is the domain the device itself administers and the
+  one the chassis-verb owner is registered in — the tree badge already reads
+  <code>ADOM · 4</code> for a box with three extra rows, and a tile printing 3 next to it
+  would contradict it.</li>
+<li><strong>A keyless row (an HA container, which has no host to dial) stays its own
+  device.</strong> Bucketing them together merges unrelated clusters into one.</li>
+<li><strong>Online / Offline exclude the ADOM rows.</strong> Four ADOM rows probe one box, so
+  counting every status pill made those two tiles add up to the ROW count
+  while the tile beside them counted devices. Cluster MEMBERS still vote:
+  those are separate boxes with their own power supply.</li>
+<li>The tiles are <strong>fleet-wide</strong> — the search box filters the table, never the
+  stats. The tally query pulls six columns, not ORM objects: the list is
+  paginated precisely so a 1000-device roster is never materialised.</li>
+</ul>
+<h3 id="recipe-to-re-verify_1">Recipe to re-verify</h3>
+<p>Register <code>{device}</code> (<code>vdom=root</code>) plus <code>{device}@adom_prod</code> on the same
+host/port. <code>GET /appliances/&lt;adom_id&gt;/upgrade</code> must be <strong>302</strong> to
+<code>/appliances/&lt;root_id&gt;</code>; <code>POST .../console/run</code> with a JSON body must be
+<strong>409</strong> carrying <code>device_appliance_id</code>. <code>GET /appliances/</code> must show one
+<code>data-adom-toggle</code> (the root row) and one <code>data-adom-of</code> per other ADOM, and
+must contain <code>/appliances/&lt;root_id&gt;/upgrade</code> and <strong>no</strong>
+<code>/appliances/&lt;adom_id&gt;/upgrade</code>.</p>
     </div>
   </div>
 </section>

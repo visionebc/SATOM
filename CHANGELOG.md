@@ -8,6 +8,21 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Added
 
+- **The appliance roster folds the ADOMs of one chassis under their device,
+  and device-wide verbs live on the root row only.** A FortiWeb in ADOM mode
+  can only be registered one row per ADOM (the auth token carries exactly
+  one), so the list printed one physical appliance as N devices — each of them
+  offering firmware, the CLI console and the config-backup vault. Those act on
+  the BOX: one flash partition, one boot image, and one `execute backup` that
+  contains every ADOM, so "restore `@adom_dev`" would in fact have restored
+  the other ADOMs too, with nothing on the page saying so. The other ADOMs now
+  render as folded children of the device row (the fold remembers what you
+  OPENED, and a search still reaches inside it), and those verbs are offered
+  — and enforced on the route, not just hidden — on the row whose ADOM is
+  `root`. **Classification (zone / line / department), policies, discovery and
+  each row's own credential stay per-ADOM**, which is the reason they are
+  separate rows at all. A device registered once is unaffected.
+
 - **SATOM keeps the file-backed WAF objects FortiWeb will not give back.**
   Seven API-Protection types (XML Schema, XML DTD, WSDL, OpenAPI, gRPC IDL,
   JSON Schema and Lua scripting) store only their NAME in the configuration,

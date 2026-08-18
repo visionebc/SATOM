@@ -8,7 +8,7 @@ from flask import (
     send_file, abort, current_app,
 )
 from flask_login import login_required, current_user
-from ..auth.decorators import require_permission
+from ..auth.decorators import require_permission, require_device_scope
 from sqlalchemy.exc import IntegrityError
 from ..models import (
     Appliance, ApplianceInterface, AuditLog, db, Permission,
@@ -124,6 +124,50 @@ def _inject_interface_roles():
     return {"interface_roles": INTERFACE_ROLES}
 
 
+def _chassis_groups(rows):
+    """Fold a page of appliance rows into (device, [its other ADOMs]).
+
+    One physical FortiWeb in ADOM mode is several rows (the auth token carries
+    exactly one ADOM), and a flat list prints it as several devices — which is
+    what made the roster read as a fleet three times its size. The device row
+    anchors the group and the rest render nested under it.
+
+    Grouped over the CURRENT PAGE only, deliberately: pulling siblings from
+    other pages would print the same row twice, and the guard that matters
+    (``require_device_scope``) is on the route, not on this layout. A chassis
+    split across a page boundary therefore degrades to a row that stands alone
+    and still says which ADOM it is — never to a row that silently offers a
+    device-wide verb it does not own.
+    """
+    from ..models import chassis_key, chassis_device_row
+    groups, by_key = [], {}
+    for row in rows:
+        key = chassis_key(row)
+        if key is None:                       # standalone / HA node 0
+            groups.append({'device': row, 'adoms': []})
+            continue
+        group = by_key.get(key)
+        if group is None:
+            group = {'device': row, 'adoms': []}
+            by_key[key] = group
+            groups.append(group)
+        else:
+            group['adoms'].append(row)
+    for group in groups:
+        if not group['adoms']:
+            continue
+        members = [group['device']] + group['adoms']
+        owner = chassis_device_row(group['device'])
+        # Anchor on the row that OWNS the device verbs, not on whichever row
+        # the name sort happened to put first: the buttons and the parent row
+        # must be the same row, or the tree points at a dead end.
+        anchor = next((m for m in members
+                       if owner is not None and m.id == owner.id), members[0])
+        group['device'] = anchor
+        group['adoms'] = [m for m in members if m.id != anchor.id]
+    return groups
+
+
 @bp.route('/')
 @login_required
 def index():
@@ -156,6 +200,7 @@ def index():
     from ..services import rediscovery
     return render_template('appliances/index.html',
                            appliances=pagination.items,
+                           groups=_chassis_groups(pagination.items),
                            pagination=pagination, q=q,
                            total_count=total_count, kinds_count=kinds_count,
                            kind_options=product_scope.creatable_kinds(),
@@ -593,6 +638,7 @@ def rediscover_status(id):
 @bp.route('/<int:id>/console')
 @login_required
 @require_permission('appliances.view')
+@require_device_scope
 def console(id):
     appliance = _managed_or_404(id)
     if appliance is None:
@@ -609,6 +655,7 @@ def console(id):
 @bp.route('/<int:id>/console/run', methods=['POST'])
 @login_required
 @require_permission('appliances.apply')
+@require_device_scope
 def console_run(id):
     appliance = _managed_or_404(id)
     if appliance is None:
@@ -633,6 +680,7 @@ def console_run(id):
 @bp.route('/<int:id>/upgrade/prep')
 @login_required
 @require_permission(Permission.BACKUP)
+@require_device_scope
 def upgrade_prep(id):
     appliance = _managed_or_404(id)
     if appliance is None:
@@ -645,6 +693,7 @@ def upgrade_prep(id):
 @bp.route('/<int:id>/upgrade/prep/run', methods=['POST'])
 @login_required
 @require_permission(Permission.BACKUP)
+@require_device_scope
 def upgrade_prep_run(id):
     appliance = _managed_or_404(id)
     if appliance is None:
@@ -810,6 +859,7 @@ def _selected_compatible_image(appliance, image_id):
 @bp.route('/<int:id>/upgrade')
 @login_required
 @require_permission(Permission.CONFIG_WRITE)
+@require_device_scope
 def upgrade(id):
     appliance, _ = _fortiweb_or_404(id)
     if appliance is None:
@@ -833,6 +883,7 @@ def upgrade(id):
 @bp.route('/<int:id>/upgrade', methods=['POST'])
 @login_required
 @require_permission(Permission.CONFIG_WRITE)
+@require_device_scope
 def upgrade_push(id):
     appliance, _ = _fortiweb_or_404(id)
     if appliance is None:
@@ -910,6 +961,7 @@ def upgrade_push(id):
 @bp.route('/<int:id>/upgrade/schedule', methods=['POST'])
 @login_required
 @require_permission(Permission.CONFIG_WRITE)
+@require_device_scope
 def upgrade_schedule(id):
     """Record a one-shot scheduled firmware upgrade carrying the chosen stored
     image. The dedicated scheduler sidecar fires it at the set time. NOTE: the
@@ -1348,6 +1400,7 @@ def _downgrade_context(appliance):
 @bp.route('/<int:id>/downgrade')
 @login_required
 @require_permission(Permission.CONFIG_WRITE)
+@require_device_scope
 def downgrade(id):
     appliance, _ = _fortiweb_or_404(id)
     if appliance is None:
@@ -1361,6 +1414,7 @@ def downgrade(id):
 @bp.route('/<int:id>/downgrade', methods=['POST'])
 @login_required
 @require_permission(Permission.CONFIG_WRITE)
+@require_device_scope
 def downgrade_push(id):
     appliance, _ = _fortiweb_or_404(id)
     if appliance is None:
@@ -1444,6 +1498,7 @@ def _restore_context(appliance):
 @bp.route('/<int:id>/restore')
 @login_required
 @require_permission(Permission.USER_MANAGE)
+@require_device_scope
 def restore(id):
     appliance = _managed_or_404(id)
     if appliance is None:
@@ -1456,6 +1511,7 @@ def restore(id):
 @bp.route('/<int:id>/restore/upload', methods=['POST'])
 @login_required
 @require_permission(Permission.USER_MANAGE)
+@require_device_scope
 def restore_upload(id):
     appliance = _managed_or_404(id)
     if appliance is None:
@@ -1488,6 +1544,7 @@ def restore_upload(id):
 @bp.route('/<int:id>/restore/fetch', methods=['POST'])
 @login_required
 @require_permission(Permission.USER_MANAGE)
+@require_device_scope
 def restore_fetch(id):
     """Pull a fresh backup off the device into the vault (best-effort)."""
     appliance = _managed_or_404(id)
@@ -1509,6 +1566,7 @@ def restore_fetch(id):
 @bp.route('/<int:id>/restore/<int:backup_id>/download')
 @login_required
 @require_permission(Permission.USER_MANAGE)
+@require_device_scope
 def restore_download(id, backup_id):
     cb = ConfigBackup.query.filter_by(id=backup_id, appliance_id=id).first()
     if cb is None or not cb.stored_path or not os.path.exists(cb.stored_path):
@@ -1519,6 +1577,7 @@ def restore_download(id, backup_id):
 @bp.route('/<int:id>/restore/<int:backup_id>/delete', methods=['POST'])
 @login_required
 @require_permission(Permission.USER_MANAGE)
+@require_device_scope
 def restore_delete(id, backup_id):
     from ..services import backup as backup_svc
     cb = ConfigBackup.query.filter_by(id=backup_id, appliance_id=id).first()
@@ -1534,6 +1593,7 @@ def restore_delete(id, backup_id):
 @bp.route('/<int:id>/restore/run', methods=['POST'])
 @login_required
 @require_permission(Permission.USER_MANAGE)
+@require_device_scope
 def restore_run(id):
     appliance = _managed_or_404(id)
     if appliance is None:

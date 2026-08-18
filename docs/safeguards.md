@@ -9874,3 +9874,85 @@ name, reported by name. Two appliances can legitimately hold different content
 under one name — that is exactly the drift a clone is meant to carry — so this
 fallback is a guess. It is surfaced in the checklist text and not blocked; a
 per-appliance-only mode is a settings decision that has not been made.
+
+## 9o. Device-wide verbs belong to the chassis, not to each ADOM row
+
+`tests/test_device_adom_scope.py` — 24 guards, **16/16 mutations kill**,
+measured by return code with only `rc == 1` counted.
+
+A FortiWeb in ADOM mode partitions its CONFIG, not its hardware. The auth
+token carries exactly one ADOM and there is no per-request override, so a
+multi-ADOM device can only be registered **one row per ADOM** (§101 /
+`test_chassis_grouping`). Three rows, one CPU, one flash partition, one boot
+image — and one `execute backup`, which emits every ADOM (measured 2026-08-18:
+a full-config pulled through an ADOM credential still contains the whole
+tree).
+
+So the roster used to offer, per chassis:
+
+* the same firmware upgrade **N times**, and
+* a **Restore** on `@adom_dev` that would in fact have restored `root` and
+  `@adom_prod` with it, with nothing on the page saying so.
+
+### Who owns the verbs
+
+`models.chassis_device_row()` — one author, as with `chassis_key`. Preference
+is the sibling whose `vdom` is `root` **or empty** (a pre-ADOM registration is
+a device, not a partition). When no sibling is in root — a chassis onboarded
+only as `adom_a`/`adom_b` — the **first row by name** carries them: a box
+whose root credential nobody typed must still be upgradable, and picking
+deterministically is what keeps the button in the same place between renders.
+A device registered ONCE always owns its own verbs; the gate collapses
+duplicates, it never takes a verb away from a device that has one row to
+offer it on.
+
+### The gate is on the route
+
+`auth.decorators.require_device_scope`, on 20 endpoints (console, upgrade,
+upgrade-prep, downgrade, the whole restore family, the backup vault). The
+templates ask the same question through the `owns_device_scope` /
+`device_scope_owner` template globals, but **hiding the button is not the
+gate** — that is precisely how `visible_appliance_or_404` shipped a by-id hole
+that the list had already closed (§ the ADOM roster). A browser is redirected
+to the owning row with a flash that NAMES it; a JSON caller gets **409**,
+because a 302 to an HTML page renders as a parse error in the console's
+`fetch` and reads as "the app broke" rather than "wrong row".
+
+### What stays per-ADOM, on purpose
+
+Classification (zone / line / department), Policy Inspector, Discovery, the
+row's own credential, edit and delete. Two ADOMs of one box can legitimately
+serve different zones — that is the reason they are separate rows at all. A
+guard pins that the edit form still offers all three catalogs on an ADOM row.
+
+### The fold
+
+The roster nests the other ADOMs under the device row and starts them
+**folded** (`_chassis_groups` in `views/appliances.py`). Two things that look
+like detail and are not:
+
+1. **The store holds the OPEN set** (`satom.appliances.adom.open`), never the
+   closed one — a closed-set store has to be seeded per chassis on first
+   sight, so any chassis it had not seen would open itself. Same reasoning as
+   the probe cards, and the same trap: reusing a key that once held a
+   closed set reads it back as an open set and expands exactly the rows the
+   operator folded.
+2. **A search reaches a folded row.** A row that matches the query and stays
+   hidden reads as "no such device", which is the one answer a search box must
+   not give. The fold is therefore suppressed while the query is non-empty.
+
+Grouping is done over the CURRENT PAGE only. A chassis split across a page
+boundary degrades to a row that stands alone and still names its ADOM — never
+to a row that silently offers a device-wide verb it does not own, because that
+answer comes from the route, not from the layout.
+
+### Recipe to re-verify
+
+Register `fortiweb09` (`vdom=root`) plus `fortiweb09@adom_prod` on the same
+host/port. `GET /appliances/<adom_id>/upgrade` must be **302** to
+`/appliances/<root_id>`; `POST .../console/run` with a JSON body must be
+**409** carrying `device_appliance_id`. `GET /appliances/` must show one
+`data-adom-toggle` (the root row) and one `data-adom-of` per other ADOM, and
+must contain `/appliances/<root_id>/upgrade` and **no**
+`/appliances/<adom_id>/upgrade`.
+

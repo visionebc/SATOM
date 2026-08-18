@@ -60,6 +60,7 @@
   <div class="doc">
     <aside class="toc">
       <div class="toc-title">On this page</div>
+      <a href="#stage-0-the-promotion-order">Stage 0 — the promotion order</a>
       <a href="#stage-1-sanitization">Stage 1 — Sanitization</a>
       <a href="#stage-2-secret-scan">Stage 2 — Secret scan</a>
       <a href="#stage-3-internal-ai-vulnerability-audit">Stage 3 — Internal AI vulnerability audit</a>
@@ -80,6 +81,78 @@ public so users can see exactly how releases are produced and vetted.</p>
   │ (full history)   │   │ 3. Internal AI vuln audit      │   │ GitHub Pages │
   └──────────────────┘   └───────────────────────────────┘   └──────────────┘
 </code></pre>
+<h2 id="stage-0-the-promotion-order">Stage 0 — the promotion order</h2>
+<p>Publication is the <strong>last</strong> hop of a chain. Each hop reaches a wider audience
+than the one before it and nothing downstream can be un-published, so each has
+a gate that must be green before the next one runs.</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Hop</th>
+<th>What it is</th>
+<th>Gate before moving on</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><strong>Primary node</strong></td>
+<td>the only node where code is written</td>
+<td>targeted tests for the zone touched; every new guard mutation-tested; service restarted if Python or templates changed; <code>/healthz</code> 200</td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>Standby node</strong></td>
+<td>pulls straight from the primary — no remote involved</td>
+<td>converged to the primary's HEAD; unit up; <code>/healthz</code> 200 on the app port and through the TLS edge; zero failed units</td>
+</tr>
+<tr>
+<td>3</td>
+<td><strong>The suite</strong></td>
+<td>the full run, on the primary</td>
+<td>exit code 0</td>
+</tr>
+<tr>
+<td>4</td>
+<td><strong>Dev remote</strong></td>
+<td>the private repository, full history</td>
+<td>derived pages regenerated (below); push accepted</td>
+</tr>
+<tr>
+<td>5</td>
+<td><strong>Documentation site</strong></td>
+<td>its web root <strong>is</strong> a checkout of the repository</td>
+<td><code>git fetch &amp;&amp; git reset --hard origin/&lt;branch&gt;</code>; there is no build step, the pull <em>is</em> the deploy</td>
+</tr>
+<tr>
+<td>6</td>
+<td><strong>Public mirror</strong></td>
+<td>sanitised history, release artefacts</td>
+<td>stages 1–4 of this document</td>
+</tr>
+<tr>
+<td>7</td>
+<td><strong>Product site</strong></td>
+<td>a separate repository, deployed with <code>rsync --delete</code></td>
+<td>the checkout diffed against the live node first</td>
+</tr>
+</tbody>
+</table>
+<p>Two hops carry a trap worth stating outright.</p>
+<p><strong>Step 2 is a pull, not a push.</strong> The standby fetches from the primary's
+checkout over a restricted, read-only SSH key (<code>engineering.md</code> §2). Wiring it
+that way is what makes the sentence <em>"validated on both nodes before it reaches
+the remote"</em> true; with the standby following the remote instead, the code
+cannot exist on it until after the push, and the promise is unachievable no
+matter how carefully it is followed.</p>
+<p><strong>Step 7 deploys with <code>--delete</code>, onto a node that is edited by hand.</strong> A file
+that exists only on the live node is destroyed by the next deploy — published
+today, <code>404</code> tomorrow. Before running it, diff both sides (ignoring the asset
+cache-busting stamp) and list the downloads directory on each. When the node is
+<strong>ahead</strong>, the correct repair is to bring the checkout forward; never publish
+over it to make the two agree.</p>
+<hr>
 <h2 id="stage-1-sanitization">Stage 1 — Sanitization</h2>
 <p>The full internal history is rewritten into a clean mirror with
 <code>git-filter-repo</code>:

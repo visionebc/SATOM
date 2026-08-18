@@ -199,6 +199,8 @@
             <button type="button" class="fw-adom-toggle" data-adom-toggle="{{ dev.id }}"
                     aria-expanded="false"
                     title="{{ _('Show the other ADOMs of this appliance') }}"><i class="bi bi-chevron-right"></i></button>
+            {% else %}
+            <span class="fw-adom-none" aria-hidden="true">-</span>
             {% endif %}
             <a href="{{ url_for('appliances.detail', id=dev.id) }}" class="fw-appliance-name" style="font-size:14px;text-decoration:none;">{{ dev_parts[0] }}</a>
             {% if dev_parts[1] %}<span class="fw-tag ms-1" title="{{ _('Administrative domain this row administers') }}">{{ dev_parts[1] }}</span>{% endif %}

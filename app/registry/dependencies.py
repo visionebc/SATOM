@@ -77,6 +77,28 @@ def _n(
     return DepNode(fortiweb, urn, via, note, tuple(children))
 
 
+# What a CERTIFICATE VERIFY object points at. Both verify collections carry the
+# same fields (`ca` / `crl` / `ocsp` + a firmware-specific toggle), read off
+# `set ?` on fortiweb12 (7.6.8). The two targets were settled by BINDING, not by
+# name: on a live `certificate.verify`, `set ca <a ca-group>` and
+# `set crl <a crl-group>` are ACCEPTED. So `ca` names a CA GROUP, not a CA --
+# wiring it to `certificate.ca` would leave the group empty, which is a verify
+# policy that trusts nothing while reporting success.
+#
+# The groups are REST-creatable (POST -> 200) so they travel; their member rows
+# travel through the generic by-parent path. What the members NAME is a file
+# upload (`cmdb/system/certificate.ca` answers -7721 even for a valid public
+# root PEM), so those are audited at the destination like `certificate.local`.
+_CERT_VERIFY_REFS: tuple = (
+    _n("CA Group", "cmdb/system/certificate.ca-group", "ca",
+       "verify -> the CA group whose CAs sign the accepted certificates",
+       children=[_n("CA Group Members", "cmdb/system/certificate.ca-group/members")]),
+    _n("CRL Group", "cmdb/system/certificate.crl-group", "crl",
+       "verify -> the CRL group checked for revocation",
+       children=[_n("CRL Group Members", "cmdb/system/certificate.crl-group/members")]),
+)
+
+
 # An IP List member may select an IP GROUP instead of a literal IP (the member's
 # ``ip-group`` field, used when group-type=ip-group). That group is a SEPARATE
 # object the clone must carry FIRST, or the member POST -651s on the dangling
@@ -598,7 +620,28 @@ SERVER_POLICY: DepNode = _n(
                # SHARED health check and certificate (certificate/certificate-verify).
                _n("Real Servers (members)", "cmdb/server-policy/server-pool/pserver-list",
                   note="by-parent rows: ip/domain/port/weight, per-server TLS, "
-                       "health + certificate refs"),
+                       "health + certificate refs",
+                  children=[
+                      # Where the two verify edges ACTUALLY live. They are NOT
+                      # interchangeable: on a live appliance `certificate-verify`
+                      # accepts a `certificate.verify` and rejects a
+                      # `certificate.server-certificate-verify`, and
+                      # `server-certificate-verify-policy` accepts exactly the
+                      # opposite. Wiring either to the other's collection would
+                      # carry an object the row cannot name.
+                      _n("Certificate Verify (real server)",
+                         "cmdb/system/certificate.verify", "certificate-verify",
+                         "System · Certificates · Certificate Verify — real server "
+                         "-> how the client certificate this server is offered "
+                         "gets verified",
+                         children=_CERT_VERIFY_REFS),
+                      _n("Server Certificate Verify",
+                         "cmdb/system/certificate.server-certificate-verify",
+                         "server-certificate-verify-policy",
+                         "System · Certificates · Certificate Verify — real server "
+                         "-> how the BACK-END server's own certificate gets verified",
+                         children=_CERT_VERIFY_REFS),
+                  ]),
            ]),
         _n("Persistence Policy", "cmdb/server-policy/persistence-policy", "persistence-policy",
            "Server Objects"),
@@ -626,8 +669,23 @@ SERVER_POLICY: DepNode = _n(
            "Server Objects · custom service (predefined ones are built-in, not cloned)"),
         _n("Local Certificate", "cmdb/system/certificate.local",
            "certificate / ssl-certificate", "System · Certificates"),
-        _n("Certificate Verify (CA)", "cmdb/system/certificate.local", "certificate-verify",
-           "System · Certificates"),
+        # 1.5.0: this node used to be `certificate.local` reached `via` a
+        # `certificate-verify` field on the SERVER POLICY, and both halves were
+        # wrong in a way that hid the other. A Certificate Verify is its own
+        # object -- settled by BINDING on fortiweb12 (7.6.8), the only test that
+        # distinguishes a datasource from a name that merely looks similar:
+        # `set certificate-verify <a real local certificate>` is REJECTED, and
+        # the same field accepts a `certificate.verify`. And the field is not a
+        # policy field at all (absent from `set ?` on `server-policy policy`,
+        # gated or not) -- it lives on the REAL SERVER row, so hung here the
+        # edge never fired and the wrong collection never got contradicted.
+        # The policy's own client-verify edge is `ssl-client-verify`, which
+        # accepts a `certificate.verify` and rejects a
+        # `certificate.server-certificate-verify`.
+        _n("Certificate Verify", "cmdb/system/certificate.verify", "ssl-client-verify",
+           "System · Certificates · Certificate Verify — policy -> how client "
+           "certificates are verified",
+           children=_CERT_VERIFY_REFS),
         _n("Let's Encrypt Certificate", "cmdb/system/certificate.letsencrypt", "lets-certificate",
            "System · Certificates · ACME",
            children=[_n("SAN List", "cmdb/system/certificate.letsencrypt/san-list")]),

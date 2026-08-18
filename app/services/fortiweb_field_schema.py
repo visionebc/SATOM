@@ -407,14 +407,24 @@ KIND_SPECS: dict = {
         "refs": {
             "health": "server-policy/health",
             "certificate": "system/certificate.local",
-            "certificate-verify": "system/certificate.local",
+            # NOT certificate.local. Settled by binding on fortiweb12 (7.6.8):
+            # `set certificate-verify <a real local certificate>` is REJECTED and
+            # the field accepts a `certificate.verify`. Rendering this select from
+            # the certificate list offered the operator only names the device will
+            # refuse, and answers the mute -651 this map exists to prevent.
+            "certificate-verify": "system/certificate.verify",
+            # Gated by the row's `server-certificate-verify` toggle; accepts the
+            # OTHER verify collection and rejects `certificate.verify`.
+            "server-certificate-verify-policy":
+                "system/certificate.server-certificate-verify",
         },
         "toggles": {"backup-server", "health-check-inherit", "ssl", "http2"},
         "labels": {
             "server-type": "Server Type", "status": "Status",
             "ssl": "SSL to Back-end", "http2": "HTTP/2",
             "certificate": "Client Certificate",
-            "certificate-verify": "Server Certificate Verify (CA)",
+            "certificate-verify": "Certificate Verify",
+            "server-certificate-verify-policy": "Server Certificate Verify",
             "health": "Health Check",
         },
     },

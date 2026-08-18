@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+{% block title %}{{ _('WAF Artifacts') }}{% endblock %}
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-file-earmark-lock me-2 text-accent"></i>{{ _('WAF Artifacts') }}</h1>
+    <p class="fw-page-sub">
+      {{ _('API Protection objects whose CONTENT is not part of the configuration. FortiWeb keeps only their name, so a clone that copies configuration alone creates them EMPTY — and a validation rule bound to an empty object answers') }}
+      <code>-7694</code>. {{ _('Three of the seven types cannot be read back from any FortiWeb, and are absent from the device\'s own full-config backup, so the copy SATOM keeps here is the only one that can ever reach another appliance.') }}
+    </p>
+  </div>
+</div>
+
+<div class="fw-card">
+  <div class="fw-card-body d-flex align-items-center gap-4 flex-wrap">
+    <div><div class="fw-semibold" style="font-size:20px">{{ stats.objects }}</div>
+         <div class="text-secondary" style="font-size:12.5px">{{ _('objects held') }}</div></div>
+    <div><div class="fw-semibold" style="font-size:20px">{{ stats.versions }}</div>
+         <div class="text-secondary" style="font-size:12.5px">{{ _('versions') }}</div></div>
+    <div><div class="fw-semibold" style="font-size:20px">{{ '%.1f'|format(stats.bytes / 1024) }} KB</div>
+         <div class="text-secondary" style="font-size:12.5px">{{ _('in') }} <code>data/artifacts</code></div></div>
+    <div class="text-secondary flex-grow-1" style="font-size:12.5px;min-width:280px">
+      {{ _('Blobs live under') }} <code>data/</code> {{ _('so the standby datasync and the system-backup bundles already carry them — no separate backup to remember.') }}
+    </div>
+  </div>
+</div>
+
+<div class="fw-card">
+  <div class="fw-card-header"><h2 class="fw-card-title">{{ _('Object types') }}</h2></div>
+  <div class="fw-table-wrapper">
+    <table class="fw-table">
+      <thead><tr>
+        <th>{{ _('Type') }}</th><th>{{ _('cmdb object') }}</th>
+        <th>{{ _('Readable from a device?') }}</th>
+      </tr></thead>
+      <tbody>
+      {% for key, spec in kinds.items() %}
+        <tr>
+          <td><a href="{{ url_for('artifacts.index', kind=key) }}">{{ spec.label }}</a></td>
+          <td><code style="font-size:12px">{{ spec.urn }}</code></td>
+          <td>
+            {% if key in unreadable %}
+              <span class="fw-badge fw-badge-danger">{{ _('no') }}</span>
+              <span class="text-secondary" style="font-size:12px">{{ _('— upload only; the device answers') }} <code>-20005</code></span>
+            {% else %}
+              <span class="fw-badge fw-badge-success">{{ _('yes') }}</span>
+              <span class="text-secondary" style="font-size:12px">{{ _('— can be captured off a source device') }}</span>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="fw-card">
+  <div class="fw-card-header"><h2 class="fw-card-title">{{ _('Add an artifact') }}</h2></div>
+  <div class="fw-card-body">
+    <div class="row g-4">
+      <div class="col-lg-6">
+        <form method="post" action="{{ url_for('artifacts.upload') }}" enctype="multipart/form-data">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="fw-semibold mb-2">{{ _('Upload a file') }}</div>
+          <p class="text-secondary" style="font-size:12.5px">{{ _('The only way XML Schema, WSDL and gRPC IDL can ever enter the store.') }}</p>
+          <div class="mb-2">
+            <label class="fw-fld-label">{{ _('Type') }}</label>
+            <select class="form-select form-select-sm" name="kind" required>
+              {% for key, spec in kinds.items() %}
+                <option value="{{ key }}" {{ 'selected' if key == active_kind }}>{{ spec.label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-2">
+            <label class="fw-fld-label">{{ _('Object name (mkey on the device)') }}</label>
+            <input class="form-control form-control-sm" name="name" required
+                   placeholder="xsd-order">
+            <div class="form-text" style="font-size:11.5px">{{ _('For OpenAPI the name IS the filename and the device validates its extension —') }} <code>.json</code> / <code>.yaml</code>.</div>
+          </div>
+          <div class="mb-2">
+            <label class="fw-fld-label">{{ _('Belongs to') }}</label>
+            <select class="form-select form-select-sm" name="appliance_id">
+              <option value="">{{ _('Library-wide (any appliance may use it)') }}</option>
+              {% for a in appliances %}<option value="{{ a.id }}">{{ a.name }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="mb-2">
+            <label class="fw-fld-label">{{ _('File') }}</label>
+            <input class="form-control form-control-sm" type="file" name="file" required>
+          </div>
+          <div class="mb-3">
+            <label class="fw-fld-label">{{ _('Note') }}</label>
+            <input class="form-control form-control-sm" name="note" placeholder="{{ _('where this came from') }}">
+          </div>
+          <button class="btn btn-fw-primary btn-sm"><i class="bi bi-upload me-1"></i>{{ _('Store') }}</button>
+        </form>
+      </div>
+      <div class="col-lg-6">
+        <form method="post" action="{{ url_for('artifacts.capture') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="fw-semibold mb-2">{{ _('Capture from an appliance') }}</div>
+          <p class="text-secondary" style="font-size:12.5px">{{ _('Reads the object off the device and keeps a copy. Read-only on the appliance. Available for XML DTD, OpenAPI, JSON Schema and Lua scripting only.') }}</p>
+          <div class="mb-2">
+            <label class="fw-fld-label">{{ _('Type') }}</label>
+            <select class="form-select form-select-sm" name="kind" required>
+              {% for key, spec in kinds.items() if key not in unreadable %}
+                <option value="{{ key }}">{{ spec.label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-2">
+            <label class="fw-fld-label">{{ _('Object name') }}</label>
+            <input class="form-control form-control-sm" name="name" required>
+          </div>
+          <div class="mb-3">
+            <label class="fw-fld-label">{{ _('Appliance') }}</label>
+            <select class="form-select form-select-sm" name="appliance_id" required>
+              {% for a in appliances %}<option value="{{ a.id }}">{{ a.name }}</option>{% endfor %}
+            </select>
+          </div>
+          <button class="btn btn-fw-outline btn-sm"><i class="bi bi-download me-1"></i>{{ _('Capture') }}</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="fw-card">
+  <div class="fw-card-header">
+    <h2 class="fw-card-title">{{ _('Stored artifacts') }}{% if active_kind %} — {{ kinds[active_kind].label }}{% endif %}</h2>
+    {% if active_kind %}<a class="btn btn-fw-outline btn-sm" href="{{ url_for('artifacts.index') }}">{{ _('Show all') }}</a>{% endif %}
+  </div>
+  {% if rows %}
+  <div class="fw-table-wrapper">
+    <table class="fw-table">
+      <thead><tr>
+        <th>{{ _('Name') }}</th><th>{{ _('Type') }}</th><th>{{ _('Belongs to') }}</th>
+        <th>{{ _('Bytes') }}</th><th>{{ _('sha256') }}</th><th>{{ _('Origin') }}</th>
+        <th>{{ _('Captured') }}</th><th>{{ _('Push to') }}</th>
+      </tr></thead>
+      <tbody>
+      {% for r in rows %}
+        <tr>
+          <td class="font-monospace"><a href="{{ url_for('artifacts.blob', row_id=r.id) }}">{{ r.name }}</a></td>
+          <td style="font-size:12.5px">{{ kinds[r.kind].label if r.kind in kinds else r.kind }}</td>
+          <td style="font-size:12.5px">{{ r.appliance or _('library-wide') }}</td>
+          <td>{{ r.size }}</td>
+          <td class="font-monospace" style="font-size:12px">{{ r.short_sha }}</td>
+          <td><span class="fw-badge {{ 'fw-badge-info' if r.source == 'captured' else 'fw-badge-secondary' }}">{{ r.source }}</span></td>
+          <td style="font-size:12px">{{ r.created_at }}</td>
+          <td>
+            <form method="post" action="{{ url_for('artifacts.push') }}" class="d-flex gap-1">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="id" value="{{ r.id }}">
+              <select class="form-select form-select-sm" name="appliance_id" style="max-width:170px" required>
+                {% for a in appliances %}<option value="{{ a.id }}">{{ a.name }}</option>{% endfor %}
+              </select>
+              <button class="btn btn-fw-outline btn-sm">{{ _('Push') }}</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="fw-card-body text-secondary">
+    {{ _('Nothing stored yet. Until an artifact is here, a clone that needs it will raise an alert and — if you accept it — skip the object rather than create an empty one.') }}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

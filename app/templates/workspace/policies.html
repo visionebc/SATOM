@@ -290,6 +290,33 @@
           </div>
           <div class="form-text" id="actionIfaceHint" style="font-size:12px;"></div>
         </div>
+        {# File-backed objects (XML schema / DTD / WSDL / OpenAPI / gRPC IDL /
+           JSON schema / Lua script). FortiWeb keeps only their NAME in the
+           configuration, so the tree clone alone produces an EMPTY object. #}
+        <div id="actionFieldArtifacts" class="mb-3 d-none">
+          <label class="fw-fld-label">{{ _('File-backed objects (content, not configuration)') }}</label>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-1" id="actionArtTable">
+              <thead><tr>
+                <th>{{ _('Object') }}</th>
+                <th>{{ _('Type') }}</th>
+                <th>{{ _('Content') }}</th>
+              </tr></thead>
+              <tbody id="actionArtBody"></tbody>
+            </table>
+          </div>
+          <div id="actionArtAckBox" class="fw-card d-none"
+               style="border-left:3px solid #7A5700;padding:8px 10px;">
+            <div class="form-check mb-0">
+              <input class="form-check-input" type="checkbox" id="actionArtAccept">
+              <label class="form-check-label" for="actionArtAccept" style="font-size:12.5px;">
+                {{ _('Clone anyway — SKIP the objects whose file content is unavailable.') }}
+                <span class="text-muted">{{ _('The copy will not enforce the validation the source does; a rule that references one will fail (-651), and a migrate will NOT disable the source.') }}</span>
+              </label>
+            </div>
+          </div>
+          <div class="form-text" id="actionArtHint" style="font-size:12px;"></div>
+        </div>
         <div id="actionBulkIpNote" class="mb-3 d-none">
           <span class="fw-badge fw-badge-secondary">{{ _('Bulk') }}</span>
           <span class="text-muted" style="font-size:12.5px;">{{ _('Each copy\'s VIP gets a') }} <strong>{{ _('dummy IP') }}</strong> automatically, per the admin rules:
@@ -592,6 +619,14 @@
     document.getElementById('actionFieldIface').classList.add('d-none');
     document.getElementById('actionIfaceBody').innerHTML = '';
     document.getElementById('actionIfaceHint').textContent = '';
+    // Artifact acknowledgement resets with the dialog. Carrying it over would
+    // let a tick made for ONE policy's missing schema silently authorise a
+    // different policy's — the acceptance is per run, not a preference.
+    artState = { need: false, accepted: false };
+    document.getElementById('actionArtAccept').checked = false;
+    document.getElementById('actionFieldArtifacts').classList.add('d-none');
+    document.getElementById('actionArtBody').innerHTML = '';
+    document.getElementById('actionArtHint').textContent = '';
     document.getElementById('actionBulkIpNote').classList.toggle('d-none', !(isClone && !single));
     // WPP options: admin defaults, editable only after "Override admin defaults".
     document.getElementById('actionFieldWppOpts').classList.toggle('d-none', !isClone);
@@ -675,6 +710,57 @@
     runChecklist();
   });
 
+  // Whether the run needs the operator to accept skipping file content, and
+  // whether they did. `need` comes from the SERVER's checklist every time.
+  var artState = { need: false, accepted: false };
+
+  function renderArtifacts(rows, need) {
+    var box = document.getElementById('actionFieldArtifacts');
+    rows = rows || [];
+    if (!rows.length) {
+      box.classList.add('d-none');
+      document.getElementById('actionArtBody').innerHTML = '';
+      return;
+    }
+    box.classList.remove('d-none');
+    document.getElementById('actionArtBody').innerHTML = rows.map(function (r) {
+      var badge, detail;
+      if (r.status !== 'create') {
+        badge = '<span class="fw-badge fw-badge-secondary">on destination</span>';
+        detail = 'not copied — the destination keeps its own content';
+      } else if (r.resolved) {
+        badge = '<span class="fw-badge fw-badge-success">will be copied</span>';
+        detail = r.origin + (r.size ? ' · ' + r.size + ' bytes' : '');
+      } else {
+        badge = '<span class="fw-badge fw-badge-danger">no content</span>';
+        detail = r.reason || 'SATOM holds no copy';
+      }
+      return '<tr><td class="font-monospace">' + esc(r.name)
+        + (r.name_warning ? '<div style="font-size:11.5px;color:#7A5700;">'
+             + esc(r.name_warning) + '</div>' : '')
+        + '</td><td style="font-size:12px;">' + esc(r.label)
+        + (r.readable ? '' : '<div class="text-muted" style="font-size:11.5px;">not readable from any FortiWeb</div>')
+        + '</td><td>' + badge
+        + '<div class="text-muted" style="font-size:11.5px;">' + esc(detail) + '</div></td></tr>';
+    }).join('');
+    artState.need = !!need;
+    document.getElementById('actionArtAckBox').classList.toggle('d-none', !need);
+    document.getElementById('actionArtHint').textContent = need
+      ? 'FortiWeb stores only the NAME of these objects — their bytes are not in the configuration and three of the seven types cannot be read back from any device. Upload the file under Artifacts to clone it properly.'
+      : 'Content resolved for every file-backed object in this tree.';
+  }
+
+  // Accepting re-runs the checklist so the row the operator is looking at is
+  // the one the server produced WITH the acknowledgement, not a client-side
+  // recolouring of the previous verdict.
+  document.getElementById('actionArtAccept').addEventListener('change', function (e) {
+    artState.accepted = !!e.target.checked;
+    chk.previewDone = false;
+    document.getElementById('actionPreview').classList.add('d-none');
+    updateApply();
+    runChecklist();
+  });
+
   function ifaceMapValue() {
     var out = {};
     Object.keys(ifaceState.chosen).forEach(function (k) {
@@ -699,6 +785,7 @@
       var single = current.policies.length === 1;
       if (single) p.vip_ip = document.getElementById('actionVipIp').value.trim();
       if (NEEDS_DEST[current.action]) p.iface_map = ifaceMapValue();
+      p.accept_missing_artifacts = !!artState.accepted;
       var choice = wppChoiceValue();
       if (choice === 'use_dest') {
         p.copy_wpp = false;
@@ -715,13 +802,22 @@
 
   var chk = { hasBlock: false, previewDone: false };
   function updateApply() {
-    document.getElementById('actionApplyBtn').disabled = !(chk.previewDone && !chk.hasBlock);
+    // An un-acknowledged missing artifact disables Apply exactly like a block
+    // does, even though the CHECK is a warn. The difference is deliberate: the
+    // operator can clear it by ticking the box, which a block can never be.
+    var needsAck = artState.need && !artState.accepted;
+    document.getElementById('actionApplyBtn').disabled =
+      !(chk.previewDone && !chk.hasBlock && !needsAck);
   }
 
   function renderChecklist(data) {
     var LV = { ok: ['#10b981', 'bi-check-circle'], warn: ['#fbbf24', 'bi-exclamation-triangle'],
                choice: ['#fbbf24', 'bi-signpost-split'], block: ['#ef4444', 'bi-x-octagon'] };
     var hasBlock = false, wppDiff = null, ifaceSuggest = null, html = '';
+    // Merged across every selected policy, like the interface map: two
+    // policies can share one schema file, and showing it twice would invite
+    // two separate decisions about one object.
+    var artRows = [], artSeen = {}, artNeed = false;
     (data.policies || []).forEach(function (pr) {
       html += '<div style="margin:6px 0 2px;"><strong>' + esc(pr.policy) + '</strong></div>';
       (pr.checks || []).forEach(function (c) {
@@ -748,8 +844,19 @@
         if (!prev) { ifaceSuggest.interfaces.push(Object.assign({}, r, { fields: (r.fields || []).slice() })); return; }
         (r.fields || []).forEach(function (f) { if (prev.fields.indexOf(f) < 0) prev.fields.push(f); });
       });
+      if (sg.artifacts_need_ack) artNeed = true;
+      (sg.artifacts || []).forEach(function (r) {
+        var k = r.kind + ' ' + r.name;
+        // "create" wins over an already-present duplicate: if ANY selected
+        // policy still needs the object created, the row must show that.
+        if (!artSeen[k]) { artSeen[k] = r; artRows.push(r); return; }
+        if (r.status === 'create' && artSeen[k].status !== 'create') {
+          artRows[artRows.indexOf(artSeen[k])] = r; artSeen[k] = r;
+        }
+      });
     });
     renderIfaceMap(ifaceSuggest);
+    renderArtifacts(artRows, artNeed);
     document.getElementById('actionChecklistBody').innerHTML = html || '<span class="text-muted">No checks.</span>';
     chk.hasBlock = hasBlock;
     // Prefill the VIP suggestion (single) from the admin dummy-IP rules.

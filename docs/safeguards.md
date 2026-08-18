@@ -9797,3 +9797,80 @@ Relatedly: `system/vlan` returns HTTP 500 `-20001` on 7.6.8, and
 `BaseClient.list_with_error` reports that as an empty list with no error —
 an unsupported endpoint reads exactly like an empty one. Create VLANs over
 the CLI.
+
+
+## 9n. File-backed WAF objects: content is not configuration
+
+`tests/test_waf_artifacts.py` — 38 guards, **22/22 mutations kill**, measured
+by return code with only `rc == 1` counted.
+
+Seven API-Protection types keep only a NAME in the cmdb. Measured on 7.6.8,
+in both directions, on two live appliances:
+
+| linked to `waf/xml-validation.rule` | device answer |
+|---|---|
+| a file uploaded WITH content | `200`, `schema-file_val` resolves |
+| a cmdb object created from `{"name": …}` | `500 errcode -7694` |
+| a name that does not exist | `500 errcode -651` |
+
+So `-7694` means precisely *"the object is there and it is empty"* — the state
+the generic planner used to create. The dangerous case is not that error: it is
+the destination that already has the referencing rule, where the shell lands
+and the policy runs with that validation off and nothing says so.
+
+**Writing works for all seven** with the same `Authorization` header SATOM
+already sends — no browser, no cookie, no `X-CSRFTOKEN` (measured with and
+without: both `200`). The upload endpoints are NOT under `/cmdb/` and the
+multipart FIELD NAME differs per type; a wrong field name is answered with
+`-3000 Internal error`, which reads like a firmware fault rather than a request
+fault. That table is pinned per-kind by a guard, not asserted as a shape.
+
+**Reading works for four.** XML Schema, WSDL and gRPC IDL answer `-20005` on
+every shape, expose `can_view: 0`, have no `*-view` GUI component, and are
+absent from `execute backup full-config` while certificates in the same backup
+travel whole. `can_view` is NOT the predictor and must not be used as one:
+scripting objects report `can_view: 0` and read back byte-identical.
+
+### The four invariants worth the guards
+
+1. **Skip, never shell.** An unresolvable object becomes `no-content`;
+   `apply_clone` skips it and the referencing rule fails with `-651`.
+2. **Refuse before the first write.** The real apply raises unless the operator
+   accepted; the raise happens after planning and before `apply_clone`, so a
+   refusal writes nothing (verified live against fortiweb10: inventory
+   byte-identical before and after).
+3. **A dry run never refuses** — a preview that cannot be produced is a preview
+   that cannot warn.
+4. **A migrate keeps the source enabled when anything was skipped.**
+   `failed == 0` does NOT cover this: the referencing rule only fails when it
+   is itself in the plan, and it is not when the destination already has it.
+
+### Two defects only a live device showed
+
+* `httpx`'s `.json()` raised `UnicodeDecodeError` on the XML DTD read, because
+  the documented two-byte buffer over-run puts a raw invalid byte inside the
+  JSON string. A working endpoint read as a dead one. Decoded with replacement
+  and `strict=False`, then trimmed — and the trim keeps a legitimate trailing
+  newline, because eating it makes every round-trip lossy in a way the FIRST
+  hop still looks perfect after.
+* `htmlArray` elements already end with their newline, so joining on `"\n"`
+  doubled every line break. The YAML still parsed; it was not the same file.
+
+### Recipe to re-verify
+
+Read all seven off a source (`waf_artifacts.fetch`) — expect 4 blobs and 3
+`cannot be read back`. Then, against a destination that does NOT have the
+object: clone with no stored copy and no acceptance → `RuntimeError`, and the
+destination inventory unchanged. Upload the file, clone again → the object
+lands and the rule create succeeds in the same apply (which by itself proves
+the content was real: a shell would have failed `-7694`). Delete the store row
+and the destination object, clone WITH acceptance → `no_content == 1`, the
+object absent at the destination, and the rule failing `-651`.
+
+### Known gap
+
+`resolve()` falls back to *another appliance's* stored copy under the same
+name, reported by name. Two appliances can legitimately hold different content
+under one name — that is exactly the drift a clone is meant to carry — so this
+fallback is a guess. It is surfaced in the checklist text and not blocked; a
+per-appliance-only mode is a settings decision that has not been made.

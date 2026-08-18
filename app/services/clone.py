@@ -922,7 +922,13 @@ def summarize(items: list[CloneItem]) -> dict[str, int]:
 
 
 def render_plan(items: list[CloneItem]) -> str:
-    marks = {"create": "+", "exists": "=", "cert": "lock", "no-endpoint": "!", "empty": "."}
+    # "no-content": a file-backed object (schema/DTD/WSDL/OpenAPI/IDL/Lua)
+    # whose BYTES could not be obtained, deliberately skipped instead of being
+    # created as an empty shell. It gets its own mark because "~" next to a
+    # name the operator expected to see created is the only place the plan text
+    # can say "this one is not really there".
+    marks = {"create": "+", "exists": "=", "cert": "lock", "no-endpoint": "!",
+             "empty": ".", "no-content": "~"}
     lines: list[str] = []
     for it in items:
         indent = "  " * it.depth
@@ -1003,6 +1009,11 @@ def outcome(items: list[CloneItem]) -> dict:
         "planned_create": [r for r in rows if r["status"] == "create"],
         "created": created,
         "failed": [r for r in rows if (r["result"] or "").startswith("error")],
+        # Its own bucket, NOT folded into ``failed``: the operator authorised
+        # these skips, so calling them failures would misreport a decision as a
+        # defect — and NOT folded into the silent statuses either, because the
+        # destination is now missing protection the source had.
+        "skipped_no_content": [r for r in rows if r["status"] == "no-content"],
         "verified_missing": [r for r in created if r.get("verified") == "missing"],
         "unverifiable": [r for r in created if r.get("verified") == "unverifiable"],
     }

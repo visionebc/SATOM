@@ -317,6 +317,32 @@ def test_the_detail_page_says_why_the_buttons_are_missing(app, client):
     assert "/appliances/%d/upgrade" % ids["root"] in root_html
 
 
+def test_the_vault_link_on_an_adom_row_carries_the_OWNER_id(app, client):
+    """The buttons that stay are only useful if they point somewhere true.
+    `/backups/<id>` redirects, so a link built with the ADOM row's own id does
+    not 404 — it quietly opens the wrong vault. One anchor, owner's id, and
+    the chip that names whose vault it is."""
+    ids = _chassis(app)
+    login(client, admin_user_id(app))
+
+    child = client.get("/appliances/%d" % ids["dev"]).get_data(as_text=True)
+    hrefs = re.findall(r'<a href="([^"]+)"[^>]*>[^<]*View Backups', child)
+    assert len(hrefs) == 1, "the ADOM row renders %d vault links" % len(hrefs)
+    assert hrefs[0].endswith("/backups/%d" % ids["root"]), hrefs[0]
+    assert not hrefs[0].endswith("/backups/%d" % ids["dev"])
+    assert "fortiweb09</span>" in child, "the chip must name whose vault it is"
+
+    owner = client.get("/appliances/%d" % ids["root"]).get_data(as_text=True)
+    own = re.findall(r'<a href="([^"]+)"[^>]*>[^<]*View Backups', owner)
+    assert len(own) == 1, "the device row renders %d vault links" % len(own)
+    assert own[0].endswith("/backups/%d" % ids["root"]), own[0]
+    assert "One backup covers every ADOM" not in own[0]
+
+    alone = client.get("/appliances/%d" % ids["other"]).get_data(as_text=True)
+    solo = re.findall(r'<a href="([^"]+)"[^>]*>[^<]*View Backups', alone)
+    assert len(solo) == 1 and solo[0].endswith("/backups/%d" % ids["other"])
+
+
 # --------------------------------------------------------------------------- #
 #  The fold, in the page's own JS                                               #
 # --------------------------------------------------------------------------- #

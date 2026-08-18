@@ -15,7 +15,7 @@ from flask import (Blueprint, render_template, request, jsonify, flash,
                    redirect, url_for, Response, current_app)
 from flask_login import login_required, current_user
 
-from ..auth.decorators import require_permission
+from ..auth.decorators import require_permission, require_device_scope
 from ..models import Appliance, Permission
 from ..models import visible_appliances, visible_appliance_or_404
 from ..models_backup import ConfigBackup
@@ -32,15 +32,21 @@ bp = Blueprint('backups', __name__, url_prefix='/backups')
 @require_permission(Permission.BACKUP)
 def index():
     from ..services import device_context as _dc
+    from ..models import chassis_device_row
     _cur = _dc.current_appliance()
     if _cur is None:
         return redirect(url_for('architecture.index'))
-    return redirect(url_for('backups.list_backups', id=_cur.id))
+    # One vault per BOX: a FortiWeb backup carries every ADOM. Land on the row
+    # that owns it rather than on the ADOM row the sidebar happens to be on,
+    # so the menu entry opens the page instead of bouncing off its own gate.
+    _owner = chassis_device_row(_cur) or _cur
+    return redirect(url_for('backups.list_backups', id=_owner.id))
 
 
 @bp.route('/<int:id>')
 @login_required
 @require_permission(Permission.BACKUP)
+@require_device_scope
 def list_backups(id):
     appliance = visible_appliance_or_404(id)
     backups = (ConfigBackup.query
@@ -97,6 +103,7 @@ def _run_backup_job(app, job_id, appliance_id, user_id, created_by, link,
 @bp.route('/<int:id>/create', methods=['POST'])
 @login_required
 @require_permission(Permission.BACKUP)
+@require_device_scope
 def create_backup(id):
     appliance = visible_appliance_or_404(id)
     method = (request.form.get('method') or 'auto').lower()
@@ -127,6 +134,7 @@ def create_backup(id):
 @bp.route('/<int:id>/upload', methods=['POST'])
 @login_required
 @require_permission(Permission.BACKUP)
+@require_device_scope
 def upload_backup(id):
     """Reliable path: upload a .conf into the vault (device-side create can -901)."""
     appliance = visible_appliance_or_404(id)
@@ -157,6 +165,7 @@ def upload_backup(id):
 @bp.route('/<int:id>/download/<int:backup_id>')
 @login_required
 @require_permission(Permission.BACKUP)
+@require_device_scope
 def download_backup(id, backup_id):
     cb = ConfigBackup.query.filter_by(id=backup_id, appliance_id=id).first_or_404()
     try:
@@ -172,6 +181,7 @@ def download_backup(id, backup_id):
 @bp.route('/<int:id>/delete/<int:backup_id>', methods=['POST'])
 @login_required
 @require_permission(Permission.BACKUP)
+@require_device_scope
 def delete_backup(id, backup_id):
     cb = ConfigBackup.query.filter_by(id=backup_id, appliance_id=id).first_or_404()
     meta = cb.filename

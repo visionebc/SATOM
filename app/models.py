@@ -590,6 +590,52 @@ def is_multi_adom_chassis(appl) -> bool:
     return len(chassis_siblings(appl, include_self=False)) > 0
 
 
+#: ADOM names that mean "this row administers the BOX, not a partition of it".
+#: A FortiWeb always has ``root``; a row with no vdom at all is a device that
+#: was registered before ADOMs were turned on, which is the same thing.
+DEVICE_SCOPE_ADOMS: frozenset[str] = frozenset({"", "root"})
+
+
+def chassis_device_row(appl):
+    """The ONE row of this chassis that speaks for the HARDWARE.
+
+    Firmware, the config-backup vault and the CLI console act on the box:
+    a FortiWeb in ADOM mode has one flash partition, one boot image and one
+    ``execute backup`` that contains EVERY ADOM (verified 2026-08-18 — a full
+    backup pulled from an ADOM row still emits the whole tree). Offering those
+    verbs once per ADOM row therefore offers the same action three times, and
+    an operator who "restored adom_dev" would have restored the other two.
+
+    Preference is ``root`` (or no ADOM at all), because that is the domain the
+    device itself calls global. When NO sibling is registered in root — a
+    chassis onboarded only as ``adom_a``/``adom_b`` — the first row by name
+    carries it instead: a device whose root credential nobody typed must still
+    be upgradable, and picking deterministically is what keeps the button in
+    the same place between two renders.
+
+    Returns ``appl`` itself for anything that is not a shared chassis (a
+    standalone device, an HA cluster node 0), so single-ADOM devices behave
+    exactly as they did before this existed.
+    """
+    siblings = chassis_siblings(appl)
+    if not siblings:
+        return appl
+    for row in siblings:
+        if (getattr(row, "vdom", "") or "").strip().lower() in DEVICE_SCOPE_ADOMS:
+            return row
+    return siblings[0]
+
+
+def owns_device_scope(appl) -> bool:
+    """True when *appl* is the row that may run device-wide actions.
+
+    Always True for a device that is registered once — the gate exists to
+    collapse duplicates, never to take a verb away from a device that has only
+    one row to offer it on."""
+    owner = chassis_device_row(appl)
+    return owner is None or owner.id == getattr(appl, "id", None)
+
+
 def appliance_name_parts(appl) -> tuple[str, str]:
     """Split a device row into the parts a menu should stack: (device, adom).
 

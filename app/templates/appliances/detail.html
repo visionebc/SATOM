@@ -44,11 +44,13 @@
     <div class="card-body d-grid gap-2">
       {% if appliance.kind == 'fortiadc' %}
       <a href="{{ url_for('adc.use_device', id=appliance.id) }}" class="btn fw-btn-primary">{{ _('Browse Virtual Servers') }}</a>
-      <a href="{{ url_for('backups.list_backups', id=appliance.id) }}" class="btn fw-btn-secondary">{{ _('View Backups') }}</a>
+      {% if owns_device_scope(appliance) %}<a href="{{ url_for('backups.list_backups', id=appliance.id) }}" class="btn fw-btn-secondary">{{ _('View Backups') }}</a>
+      {% elif device_scope_owner(appliance) %}<a href="{{ url_for('backups.list_backups', id=device_scope_owner(appliance).id) }}" class="btn fw-btn-secondary" title="{{ _('One backup covers every ADOM of this appliance') }}">{{ _('View Backups') }} <span class="fw-tag ms-1">{{ device_scope_owner(appliance).name }}</span></a>{% endif %}
       <a href="{{ url_for('adc_api.index') }}" class="btn fw-btn-secondary">{{ _('API Console') }}</a>
       {% else %}
       <a href="{{ url_for('workspace.appliance', appliance_id=appliance.id) }}" class="btn fw-btn-primary">{{ _('Browse Server Policies') }}</a>
-      <a href="{{ url_for('backups.list_backups', id=appliance.id) }}" class="btn fw-btn-secondary">{{ _('View Backups') }}</a>
+      {% if owns_device_scope(appliance) %}<a href="{{ url_for('backups.list_backups', id=appliance.id) }}" class="btn fw-btn-secondary">{{ _('View Backups') }}</a>
+      {% elif device_scope_owner(appliance) %}<a href="{{ url_for('backups.list_backups', id=device_scope_owner(appliance).id) }}" class="btn fw-btn-secondary" title="{{ _('One backup covers every ADOM of this appliance') }}">{{ _('View Backups') }} <span class="fw-tag ms-1">{{ device_scope_owner(appliance).name }}</span></a>{% endif %}
       <a href="{{ url_for('analysis.dashboard', id=appliance.id) }}" class="btn fw-btn-secondary">{{ _('Analysis / FortiView') }}</a>
       {% endif %}
     </div>
@@ -103,6 +105,11 @@
     <div class="d-flex flex-wrap gap-2">
       <a href="{{ url_for('appliances.inspector', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm"><i class="bi bi-diagram-2 me-1"></i>{{ 'VS Inspector' if appliance.kind == 'fortiadc' else 'Policy Inspector' }}</a>
       <a href="{{ url_for('appliances.rediscover', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm">{% if has_snapshot(appliance.id) %}<i class="bi bi-arrow-repeat me-1"></i>Rediscovery{% else %}<i class="bi bi-binoculars me-1"></i>Discovery{% endif %}</a>
+      {# Everything below acts on the BOX, not on one ADOM: one flash
+         partition, one boot image, one backup that contains every ADOM. The
+         same answer gates the routes (auth.decorators.require_device_scope) —
+         hiding a button that the URL still honours is decoration. #}
+      {% if owns_device_scope(appliance) %}
       <a href="{{ url_for('appliances.console', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm"><i class="bi bi-terminal me-1"></i>{{ _('Console') }}</a>
       {% if current_user.can('backup') %}
       <a href="{{ url_for('appliances.upgrade_prep', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm"><i class="bi bi-clipboard-check me-1"></i>{{ _('Upgrade Prep') }}</a>
@@ -117,7 +124,18 @@
       <a href="{{ url_for('appliances.restore', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm text-danger" title="{{ _('Manage this appliance\'s configuration-backup vault and restore a saved config (admin only)') }}"><i class="bi bi-arrow-counterclockwise me-1"></i>{{ _('Restore') }}</a>
       <a href="{{ url_for('appliances.flash_reports', appliance_id=appliance.id) }}" class="btn fw-btn-secondary btn-sm" title="Before/after firmware upgrade & boot-partition reports for this appliance"><i class="bi bi-clipboard-data me-1"></i>{{ _('Firmware Reports') }}</a>
       {% endif %}
+      {% endif %}
     </div>
+    {% if not owns_device_scope(appliance) %}
+    {% set _owner = device_scope_owner(appliance) %}
+    <div class="form-text mt-2">
+      <i class="bi bi-hdd-network me-1"></i>{{ _('Console, firmware and the backup vault act on the whole appliance, not on ADOM') }}
+      <b>{{ appliance.vdom or 'this one' }}</b>.
+      {% if _owner %}{{ _('They live on') }} <a href="{{ url_for('appliances.detail', id=_owner.id) }}">{{ _owner.name }}</a>{% if _owner.vdom %} <span class="fw-tag">{{ _owner.vdom }}</span>{% endif %}.
+      {% else %}{{ _('The row that carries them is not visible to you.') }}{% endif %}
+      {{ _('Classification, policies and this row\'s credential stay per-ADOM.') }}
+    </div>
+    {% endif %}
     {% if appliance.kind == 'fortiadc' %}
     <div class="form-text mt-2">{{ _('Firmware') }} <b>{{ _('Upgrade') }}</b> {{ _('and') }} <b>{{ _('Boot Partition') }}</b> stay FortiWeb-only: FortiADC 8.0.3 exposes no REST firmware/partition endpoint (only <code>/api/platform/version</code> and <code>/reboot</code>), and a CLI flash needs an external file server. <b>{{ _('Restore') }}</b> {{ _('manages the config-backup vault (pull over SSH, upload, download); applying a config back to the box is done from the FortiADC GUI/CLI.') }}</div>
     {% endif %}

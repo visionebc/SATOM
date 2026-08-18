@@ -2160,3 +2160,33 @@ a.bm-dev:hover { background: var(--fw-accent-light); color: var(--fw-accent); }
   opacity: .65;
   flex-shrink: 0;
 }
+
+/* ============================================================
+   Appliance roster — the ADOMs of one chassis, folded under it.
+   2026-08-18. One physical FortiWeb in ADOM mode is one ROW per
+   ADOM (the auth token carries exactly one), so a flat list
+   printed the same box three times. The device anchors the
+   group; its other ADOMs read as children and start folded.
+   Light chrome only: this product has no dark theme, and the
+   status colours come from .fw-badge-* (see safeguards 9m).
+   ============================================================ */
+.fw-adom-toggle {
+  border: 0;
+  background: transparent;
+  color: var(--fw-text-secondary);
+  padding: 0 4px 0 0;
+  margin-right: 2px;
+  line-height: 1;
+  cursor: pointer;
+}
+.fw-adom-toggle:hover { color: var(--fw-accent); }
+.fw-adom-toggle i {
+  display: inline-block;
+  transition: transform .12s ease-out;
+}
+.fw-adom-toggle.is-open i { transform: rotate(90deg); }
+.fw-adom-row { background: rgba(148, 163, 184, 0.06); }
+.fw-adom-cell { padding-left: 28px; }
+/* The pointer to the row that DOES carry firmware/backup/console. Muted, so
+   it never reads as one of those verbs sitting on an ADOM row. */
+.fw-adom-owner-link { opacity: .75; }

@@ -10105,3 +10105,105 @@ that no data test can see: the sidebar reverted to `== item.logical`, the tab
 strip removed from `overview.html`, and the view resolving the page instead of
 the tab (which renders the DEFAULT tab's objects under the requested tab's
 name).
+
+## §103 — where a credential LIVES is configuration, and the default must stay untouched (`tests/test_secret_backend.py`)
+
+`services/secret_backend.py` adds a second place a secret can live: an external
+KV v2 vault (OpenBao / HashiCorp Vault). It does **not** replace the local
+Fernet column. The whole guard set exists to pin one property:
+
+> An install that never opens Settings → Vault must behave **exactly** as it did
+> before this module existed.
+
+### Why a vault at all
+
+Fernet encrypts at rest, but `FERNET_KEY` lives in `/opt/satom/.env` on the same
+host as the database it decrypts. Whoever reads that disk reads every appliance
+password. This is not hypothetical: three world-readable `.env` copies were
+found on 248 on 2026-08-19 (`.env.bak-dupkeys-20260627`,
+`backups/.env.pre-csrf-20260627`, `backups/.env.pre-fernet-restore`).
+
+### The three modes, and what each actually costs
+
+| mode | writes | reads | closes the `.env` exposure? |
+|---|---|---|---|
+| `local` (**default**) | Fernet only | Fernet | no — and nothing is contacted |
+| `mirror` | both | vault first, local fallback | **no** — the local copy still exists |
+| `vault` | vault only (local column gets a sentinel) | vault, **raises** on failure | yes |
+
+`mirror` is a stepping stone, not a destination. Saying otherwise is the
+comfortable answer and the wrong one.
+
+### The failure modes the guards pin
+
+1. **Degrading to a sentinel is worse than raising.** In `vault` mode the local
+   column holds a Fernet token of the literal `__stored-in-vault__`. A read path
+   that "fell back" would send that string to an appliance as a password — a
+   failed login that looks like a wrong credential, not like an outage.
+2. **A write that returns 200 and stores nothing.** Migration reads every secret
+   back and compares before counting it; a guard monkeypatches `write` into a
+   no-op and asserts the migration reports `failed`, not `ok`.
+3. **The path IS the name.** An appliance row whose `name` is not set yet would
+   write to `appliances/` — one shared path that every unnamed row overwrites.
+   Refused, with a guard.
+4. **One login per secret.** A fleet sweep over 100 appliances must not open 100
+   sessions. The token is cached; the guard counts logins across 5 reads and
+   requires exactly 1. Only the *token* is cached — never a secret value, or the
+   vault's audit log stops being true about who read what.
+5. **A cached token outliving its credential.** The cache is keyed on a
+   fingerprint of (addr, auth, role_id, secret_id). Without it, saving a new
+   AppRole keeps serving the old token until its TTL runs out, so the new
+   configuration *looks* like it works while the old one does the work.
+6. **Blank means keep.** Secret inputs re-render blank, so a blank `secret_id`
+   must preserve the stored one — the same convention as the git token and SFTP
+   password fields on this page.
+7. **Enabled ≠ on the path.** `enabled=true` with `mode=local` still contacts
+   nothing. A guard installs an exploding transport and asserts silence.
+8. **Sealed is not healthy.** A sealed vault answers `sys/health` fine and can
+   answer for no secret at all; `health()` reports it as not-ok.
+9. **Authenticated is not authorised.** `health()` also reaches the mount — a
+   token with the wrong policy logs in cleanly and then fails every real read.
+
+### Recipe to re-verify
+
+```
+runuser -u satom -- bash -c 'cd /opt/satom && set -a && . ./.env && set +a && \
+  ./venv/bin/python -m pytest tests/test_secret_backend.py -q'
+```
+
+The tests talk to no vault: `secret_backend._request` is replaced by an
+in-memory KV v2 double that **counts calls**, because half of the defects above
+are only visible in the number of requests, not in the result.
+
+### Two mutations survived the first pass, and both times the GUARD was wrong
+
+Worth writing down, because both are guards that could not express their own
+defect — the failure mode that makes a green suite meaningless.
+
+1. **The token fingerprint.** The first version of the guard changed the AppRole
+   by calling `save()`, which also calls `invalidate_token()`. So the cache was
+   cleared by the *save*, not by the fingerprint, and removing the fingerprint
+   changed nothing. The real case is a **sibling gunicorn worker**: `save()`
+   only clears the cache of the process that handled the POST; the other three
+   keep serving a token minted from the old credential until its TTL runs out.
+   The guard now writes the new credential straight into `app_settings`
+   (bypassing `save()`), which is exactly what those workers see.
+
+2. **The mode validation had two authors.** `save()` refuses an unknown mode and
+   `config()` normalises one on read — so a single assertion on `config()` could
+   not tell them apart, and deleting the validation in `save()` broke nothing.
+   They are not redundant, they answer different questions (rejecting bad input
+   vs. surviving a row written by an older version or by hand), so both stayed
+   and each got its own guard: one reads the **raw `app_settings` row** after a
+   save, the other **corrupts the row directly** and asserts the read normalises.
+
+**13 mutations, 13 bite** after the fix (12 in the first pass — 10 bit — plus the
+new `config()`-side one that splitting the rule made possible).
+
+### Method note that outlives this round
+
+The harness measures **the rc of pytest**, and only `rc == 1` counts as a
+failure (`rc == 4` is a usage error, and a rc read from the end of a pipe is the
+rc of `tail`). It also runs against a **copy** of the tree in `/opt/satom-mut`,
+never against the live one — several sessions work on this repo in parallel and
+a mutation left behind in `/opt/satom` is a credential bug in production.

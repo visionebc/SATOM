@@ -320,11 +320,37 @@ class Appliance(db.Model):
 
     @property
     def password(self) -> str:
+        # Where this credential lives is CONFIGURATION, not code: by default
+        # it is the local Fernet column below and nothing else is contacted.
+        # See ``services.secret_backend`` for the three modes.
+        from .services import secret_backend
+        vaulted = secret_backend.get_appliance_password(self.name)
+        if vaulted is not None:
+            return vaulted
         return _fernet().decrypt(self.password_enc.encode()).decode()
 
     @password.setter
     def password(self, plaintext: str) -> None:
-        self.password_enc = _fernet().encrypt(plaintext.encode()).decode()
+        from .services import secret_backend
+        stored = False
+        try:
+            stored = secret_backend.put_appliance_password(self, plaintext)
+        except Exception:
+            # In ``vault`` mode a failed write must not fall through to a local
+            # write: the operator would believe the secret moved when it did not.
+            if secret_backend.authoritative():
+                raise
+            import logging as _logging
+            _logging.getLogger(__name__).warning(
+                "vault: could not mirror the password for %r, keeping the "
+                "local copy", self.name, exc_info=True)
+        if stored and secret_backend.authoritative():
+            # The vault owns it. The column keeps a readable marker rather than
+            # a stale password — a stale one still opens sessions.
+            self.password_enc = _fernet().encrypt(
+                secret_backend.VAULT_SENTINEL.encode()).decode()
+        else:
+            self.password_enc = _fernet().encrypt(plaintext.encode()).decode()
 
     def set_password(self, plaintext: str) -> None:
         self.password = plaintext

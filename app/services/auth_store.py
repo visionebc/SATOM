@@ -112,6 +112,29 @@ def _to_int(val, fallback: int) -> int:
         return fallback
 
 
+def _store_secret(path: str, field: str, key: str, value: str,
+                  extra: dict | None = None) -> None:
+    """Write a secret to whichever stores are configured.
+
+    The local column is written UNLESS the vault is the only store — keeping a
+    second copy there is what makes ``mirror`` safe to roll back from, and what
+    makes ``local`` (the default) keep working with no vault at all.
+    """
+    from . import secret_backend
+    stored = False
+    try:
+        stored = secret_backend.put_field(path, field, value, extra=extra)
+    except Exception:
+        if secret_backend.authoritative():
+            raise
+        log.warning("vault: could not mirror %s/%s, keeping the local copy",
+                    path, field, exc_info=True)
+    if stored and secret_backend.authoritative():
+        AppSetting.set(key, encryption.encrypt(secret_backend.VAULT_SENTINEL))
+    else:
+        AppSetting.set(key, encryption.encrypt(value))
+
+
 def _dec(token: str) -> str:
     if not token:
         return ""
@@ -275,9 +298,26 @@ def config(*, reveal_secrets: bool = False) -> dict:
         },
     }
     if reveal_secrets:
-        cfg["ldap"]["bind_password"] = _dec(AppSetting.get(K_L_BINDPW))
-        cfg["radius"]["secret"] = _dec(AppSetting.get(K_R_SECRET))
+        cfg["ldap"]["bind_password"] = _vault_first(
+            "auth/ldap", "bind_password", K_L_BINDPW)
+        cfg["radius"]["secret"] = _vault_first(
+            "auth/fortiauthenticator", "shared_secret", K_R_SECRET)
     return cfg
+
+
+def _vault_first(path: str, field: str, key: str) -> str:
+    """The vault's copy when it is on the path, the local Fernet one otherwise.
+
+    Same contract as ``Appliance.password``: ``None`` from the backend means
+    "not the vault's business", and in vault-only mode a failed read raises
+    instead of degrading to "" — an empty RADIUS shared secret does not fail
+    open, it fails every login with a misleading reason.
+    """
+    from . import secret_backend
+    vaulted = secret_backend.get_field(path, field)
+    if vaulted is not None:
+        return vaulted
+    return _dec(AppSetting.get(key))
 
 
 def _resolved_ldap_cfg(kind: str = "", reveal: bool = True) -> dict:
@@ -400,7 +440,10 @@ def save_config(form) -> None:
             AppSetting.set(K_R_SYNC_GROUP, rows[0]["group"] if rows else "")
         new_secret = form.get("radius_secret", "")
         if new_secret:
-            AppSetting.set(K_R_SECRET, encryption.encrypt(new_secret))
+            _store_secret("auth/fortiauthenticator", "shared_secret",
+                          K_R_SECRET, new_secret,
+                          extra={"host": _get(K_R_HOST), "port": _get(K_R_PORT),
+                                 "nas_id": _get(K_R_NASID), "protocol": "radius"})
 
 
 # ---- test connection ------------------------------------------------------

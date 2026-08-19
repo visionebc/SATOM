@@ -6,6 +6,32 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added
+
+- **A credential can now live in an external vault — and by default it still
+  does not.** New Settings → Vault tab (`services/secret_backend.py`) points the
+  product at an OpenBao or HashiCorp Vault KV v2 mount for appliance passwords,
+  the LDAP/AD bind password and the FortiAuthenticator shared secret. Storing
+  them in SATOM itself is **unchanged and remains the default**: an install that
+  never opens this tab contacts nothing and behaves exactly as before. The
+  reason to add the option is that `FERNET_KEY` lives on the same host as the
+  database it decrypts, so whoever reads that disk reads every appliance
+  password; a vault moves the key material off the node. Three modes, and the
+  page says plainly what each one costs: `local` (Fernet only), `mirror` (both;
+  vault-first reads with local fallback — safe to roll back from, but the local
+  copy still exists so the exposure is **not** yet closed), and `vault` (the
+  vault is the only copy — the mode that closes it, and the mode in which a
+  vault outage makes credentials unavailable). In `vault` mode a failed read
+  **raises**: returning the local sentinel would hand the literal
+  `__stored-in-vault__` to an appliance as a password, which fails a login while
+  looking like a wrong credential rather than an outage. Migration is dry-run by
+  default and reads every secret back before counting it, because a write that
+  returns 200 and stores nothing is invisible to a caller that only checks the
+  status code. Only the auth token is cached, never a secret value — a fleet
+  sweep must not open one session per appliance, and the vault's audit log has
+  to stay truthful about who read what. Guarded by
+  `tests/test_secret_backend.py` (30 tests, safeguards §103).
+
 ### Fixed
 
 - **A policy with a Lua script could not be cloned — the reference field holds a

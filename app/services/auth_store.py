@@ -317,7 +317,15 @@ def _vault_first(path: str, field: str, key: str) -> str:
     vaulted = secret_backend.get_field(path, field)
     if vaulted is not None:
         return vaulted
-    return _dec(AppSetting.get(key))
+    local = _dec(AppSetting.get(key))
+    if local == secret_backend.VAULT_SENTINEL:
+        # See ``Appliance.password``: the marker is not a secret, and sending it
+        # as one turns "the vault is unreachable from here" into "the shared
+        # secret is wrong".
+        raise RuntimeError(
+            "the vault owns %s/%s and this process could not read it "
+            "(vault mode is not active here)" % (path, field))
+    return local
 
 
 def _resolved_ldap_cfg(kind: str = "", reveal: bool = True) -> dict:

@@ -10032,6 +10032,37 @@ vhost bug. There is a guard that reads <code>install-satom.sh</code> and fails i
 <code>chmod</code> is not next to the <code>git clone</code>.</p>
 <p><strong>Mutations: 5, all bite</strong> (never narrows, narrows to 644, the writer stops
 hardening, <code>git_info</code> stops hardening, the installer line removed).</p>
+<h2 id="106-the-sentinel-is-not-a-credential-teststest_vault_sentinel_never_sentpy">§106 — the sentinel is not a credential (<code>tests/test_vault_sentinel_never_sent.py</code>)</h2>
+<p><strong>Why this exists — because it happened.</strong> Within minutes of removing the local
+copies (§104), the whole fleet sweep went to HTTP 401 and <code>satom_scrape_up</code>
+dropped from 1 to 0. The credentials were fine and the vault was fine. What had
+happened is that <code>satom-scheduler</code> is a <strong>separate long-lived process</strong>, still
+running the code it had loaded on 17 August — from before <code>secret_backend</code>
+existed. Its <code>Appliance.password</code> only knew how to read the local column, and
+the local column now held <code>__stored-in-vault__</code>. So the scheduler sent the
+literal marker to every appliance as a password.</p>
+<p>The tell was the <em>absence</em> of evidence: not one line in the vault's audit log
+for the failing sweeps. Nobody was asking the vault anything.</p>
+<p><strong>The rule.</strong> When the local column holds the sentinel and the vault did not
+answer in THIS process, there is nothing to send: both read paths
+(<code>Appliance.password</code> and <code>auth_store._vault_first</code>) now <strong>raise</strong>. Returning
+the marker turns <em>"this process cannot reach the vault"</em> into <em>"the password is
+wrong"</em> — the two most different diagnoses possible, wearing the same 401. The
+error names the appliance, because a failure that does not say which one sends
+the operator to check all nine.</p>
+<p><strong>Two operational consequences worth writing down:</strong></p>
+<ul>
+<li>After changing the secret backend, restart <strong>every</strong> SATOM process, not just
+  <code>satom.service</code>: <code>satom-scheduler</code> fires the scheduled actions and holds its
+  own interpreter.</li>
+<li>In <code>mirror</code> this class of bug is invisible — the stale process reads the local
+  copy and everything works. It only surfaces the moment the scrub runs, which
+  is exactly when it is most expensive. That is an argument for running the
+  scrub during a window where the sweep is watched, not for skipping it.</li>
+</ul>
+<p><strong>Mutations: 5, all bite</strong> (the sentinel returned as a password, the error not
+naming the appliance, the comparison inverted so normal passwords raise, and
+both halves of the same pair in <code>auth_store</code>).</p>
     </div>
   </div>
 </section>

@@ -2614,3 +2614,21 @@ def migrate_vault():
         log_action('settings.vault_migrate',
                    detail=f"copied={result['copied']} failed={result['failed']}")
     return jsonify(result)
+
+
+@bp.route('/vault/scrub', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def scrub_vault():
+    """Remove the local copies once the vault owns them. Dry-run by default.
+
+    Separate from the migration on purpose: copying is reversible and this is
+    not. Each secret is compared against its vault copy first, so a row the
+    vault does not actually hold keeps its local password and is reported.
+    """
+    apply = request.form.get('apply') == '1'
+    result = secret_backend.scrub_local_copies(dry_run=not apply)
+    if apply:
+        log_action('settings.vault_scrub',
+                   detail=f"scrubbed={result['scrubbed']} failed={result['failed']}")
+    return jsonify(result)

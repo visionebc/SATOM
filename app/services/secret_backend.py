@@ -560,3 +560,128 @@ def migrate_local_to_vault(dry_run: bool = True) -> dict:
             note("setting", label, "failed", str(exc))
 
     return out
+
+
+def scrub_local_copies(dry_run: bool = True) -> dict:
+    """Replace every vault-backed local copy with the sentinel.
+
+    This is the step that actually closes the ``.env`` exposure. Changing the
+    mode only decides where the NEXT write goes; until this runs, the Fernet
+    copy is still in the database and the key that decrypts it is still on the
+    same disk, so nothing has moved.
+
+    ``migrate_local_to_vault`` deliberately does not do this. Copying and
+    destroying are different decisions, and only one of them is reversible.
+
+    Refused unless the vault is authoritative. In ``mirror`` the local copy IS
+    the documented fallback: removing it would silently turn the mode an
+    operator chose for its safety net into vault-only.
+
+    Every secret is READ BACK FROM THE VAULT and compared against the local
+    plaintext before that plaintext is overwritten. A vault copy that is
+    missing or different means the local one is the last working copy, so the
+    row is left alone and reported as failed. Destroying the last copy of a
+    credential is the one failure here that no later step can undo.
+    """
+    from ..models import Appliance
+    from ..extensions import db
+
+    out = {"dry_run": bool(dry_run), "scrubbed": 0, "failed": 0, "skipped": 0,
+           "items": [], "ok": True}
+
+    def note(kind, name, status, detail=""):
+        out["items"].append({"kind": kind, "name": name, "status": status,
+                             "detail": detail})
+        if status == "scrubbed":
+            out["scrubbed"] += 1
+        elif status == "skipped":
+            out["skipped"] += 1
+        else:
+            out["failed"] += 1
+            out["ok"] = False
+
+    if not authoritative():
+        out["ok"] = False
+        out["error"] = (
+            "The vault is not the authoritative store. Set the mode to "
+            "\u201cStore in the vault only\u201d before removing local copies.")
+        return out
+
+    for row in Appliance.query.order_by(Appliance.name).all():
+        name = (row.name or "").strip()
+        if not name:
+            note("appliance", "(unnamed)", "skipped", "row has no name")
+            continue
+        try:
+            local = encryption.decrypt(row.password_enc) if row.password_enc else ""
+        except Exception as exc:  # noqa: BLE001
+            note("appliance", name, "failed", "local copy undecryptable: %s" % exc)
+            continue
+        if not local:
+            note("appliance", name, "skipped", "no local password stored")
+            continue
+        if local == VAULT_SENTINEL:
+            note("appliance", name, "skipped", "already vault-owned")
+            continue
+        try:
+            remote = (read(appliance_path(name)) or {}).get("password") or ""
+        except VaultError as exc:
+            note("appliance", name, "failed", "vault unreadable: %s" % exc)
+            continue
+        if not remote:
+            note("appliance", name, "failed",
+                 "no copy in the vault - the local one is the last one")
+            continue
+        if remote != local:
+            note("appliance", name, "failed",
+                 "the vault copy differs from the local one")
+            continue
+        if dry_run:
+            note("appliance", name, "scrubbed", "would remove the local copy")
+            continue
+        row.password_enc = encryption.encrypt(VAULT_SENTINEL)
+        db.session.add(row)
+        db.session.commit()
+        note("appliance", name, "scrubbed", "local copy replaced by the sentinel")
+
+    for label, key, path, field in (
+        ("FortiAuthenticator shared secret", "auth.radius.secret_enc",
+         "auth/fortiauthenticator", "shared_secret"),
+        ("LDAP/AD bind password", "auth.ldap.bind_password_enc",
+         "auth/ldap", "bind_password"),
+    ):
+        raw = AppSetting.get(key)
+        if not raw:
+            note("setting", label, "skipped", "not configured")
+            continue
+        try:
+            local = encryption.decrypt(raw)
+        except Exception as exc:  # noqa: BLE001
+            note("setting", label, "failed", "local copy undecryptable: %s" % exc)
+            continue
+        if local == VAULT_SENTINEL:
+            note("setting", label, "skipped", "already vault-owned")
+            continue
+        if not local:
+            note("setting", label, "skipped", "not configured")
+            continue
+        try:
+            remote = (read(path) or {}).get(field) or ""
+        except VaultError as exc:
+            note("setting", label, "failed", "vault unreadable: %s" % exc)
+            continue
+        if not remote:
+            note("setting", label, "failed",
+                 "no copy in the vault - the local one is the last one")
+            continue
+        if remote != local:
+            note("setting", label, "failed",
+                 "the vault copy differs from the local one")
+            continue
+        if dry_run:
+            note("setting", label, "scrubbed", "would remove the local copy")
+            continue
+        AppSetting.set(key, encryption.encrypt(VAULT_SENTINEL))
+        note("setting", label, "scrubbed", "local copy replaced by the sentinel")
+
+    return out

@@ -9748,6 +9748,290 @@ still link at themselves.</p>
 two-branch spelling it replaced duplicated the dead <code>fw-btn-*</code> class and moved
 the frozen budget in §99 — a formatting choice is not allowed to spend a debt
 ceiling.</p>
+<h2 id="102-a-menu-is-a-claim-about-the-appliance-and-a-curated-menu-drifts-in-silence-teststest_server_objects_menupy">§102 — a menu is a claim about the appliance, and a curated menu drifts in silence (<code>tests/test_server_objects_menu.py</code>)</h2>
+<p>The Server Objects menu is a <strong>claim</strong>: <em>this is what the FortiWeb has, arranged
+the way the FortiWeb arranges it</em>. Nothing fails when that claim stops being
+true. The page renders, the sidebar links, the object lists come back — and the
+operator simply never sees what was never modelled. That is how this port ran
+for months with:</p>
+<ul>
+<li><strong>10 Certificate entries against FortiWeb's 12</strong> — and the count coincided
+  only by accident: three of the ten (<em>CA Group</em>, <em>TSL CA</em>, <em>Intermediate CA
+  Group</em>) are <strong>tabs inside another page</strong>, not menu entries, so six real
+  entries were missing while three impostors padded the total;</li>
+<li><strong><code>Intermediate CA</code> pointing at <code>system/certificate.intermediate</code></strong>, a
+  collection that answers <strong>HTTP 500 / errcode -20001 on every FortiWeb
+  measured</strong> ({device}, {device} — 7.6.8). The shipped <code>data/api_matrix/fortiweb.json</code>
+  already recorded <code>verdict: "absent"</code> for it. The page had never worked on any
+  firmware, and nothing said so;</li>
+<li><strong><code>Virtual IP</code> listed as a Server Object</strong>, which FortiWeb files under
+  <em>Network</em> (<code>/ng2/network/virtual-ip</code>);</li>
+<li>six sibling collections with <strong>no route into the UI at all</strong>:
+  <code>certificate.multi-local</code>, <code>certificate.offline-sni</code>, <code>certificate.crl-group</code>,
+  <code>certificate.server-certificate-verify</code>, the three <code>certificate.xml-*</code>
+  tables, plus <code>traffic-mirror</code>, <code>allow-list</code>, the two <code>global-white</code> groups
+  and the two <code>url-replacer</code> tables.</li>
+</ul>
+<h3 id="a-gui-page-is-not-a-rest-collection">A GUI page is not a REST collection</h3>
+<p>FortiWeb renders sibling collections as <strong>tabs of one page</strong>: <code>Local</code> is
+<em>Local | Multi-certificate</em>, <code>CA</code> is <em>CA | TSL CA | CA Group</em>, <code>Certificate
+Verify</code> is <em>Certificate Verify | Server Certificate Verify</em>. One sidebar entry,
+one tab strip. Modelling each tab as its own sidebar row inflates the menu
+<strong>and</strong> hides the tabs nobody thought to model — the two failures are the same
+failure. Hence <code>ServerObjectPage</code> (one entry) owning one or more
+<code>ServerObjectTab</code> (one collection each); a single-tab page behaves exactly like
+the flat leaf it replaces, so <code>?type=</code> bookmarks survive.</p>
+<h3 id="where-the-expectations-come-from-two-oracles-no-memory">Where the expectations come from (two oracles, no memory)</h3>
+<table>
+<thead>
+<tr>
+<th>oracle</th>
+<th>what it is</th>
+<th>what it settles</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>the appliance's own Angular bundle <code>main.&lt;hash&gt;.js</code> ({device}, 7.6.8, 2.9 MB)</td>
+<td>the menu the box literally renders, plus the route table <code>{key:{paths:[…]}}</code></td>
+<td>entries, order, which pages have tabs and which routes those tabs are</td>
+</tr>
+<tr>
+<td>the 7.6 admin guide swept with firecrawl (<strong>554 pages</strong>, self-hosted LXC 247)</td>
+<td>the documented <code>Server Objects &gt; …</code> GUI paths</td>
+<td>corroborates every entry and the tab <strong>labels</strong> (<code>Local &gt; Multi-certificate</code>, <code>Certificate Verify &gt; Server Certificate Verify</code>, <code>Service &gt; Custom</code>)</td>
+</tr>
+</tbody>
+</table>
+<p>Both agree on entries and labels ⇒ <strong>[Seguro]</strong>. Tab <strong>order</strong> comes from the
+route-table declaration order alone (the bundle does not spell the tab strip out
+separately) ⇒ <strong>[Probable]</strong>, and it is pinned by the guard so a change is a
+decision rather than a drift.</p>
+<p>Every one of the 40 collections was then GET-probed live on {device}: <strong>all 40 →
+HTTP 200</strong>; the phantom → <strong>500</strong>.</p>
+<h3 id="method-note-that-outlives-this-round">Method note that outlives this round</h3>
+<p><code>?action=schema</code> <strong>does not exist on 7.6.8</strong> — it answers 200 with an empty
+<code>results</code> for <em>everything</em>, so it cannot tell "collection absent" from
+"collection empty". What discriminates is a <strong>plain GET</strong>: a real-but-empty
+collection is <code>200</code> with zero rows, a malformed/absent URN is <code>500 / -20001</code>.
+(This sharpens the older note that an invented collection answers 200 with zero
+rows — that holds for an invented name of <em>valid shape</em>, e.g.
+<code>certificate.multi-local-cert</code>; a URN the parser rejects outright gives 500.)</p>
+<h3 id="what-the-guards-pin-31-tests">What the guards pin (31 tests)</h3>
+<ol>
+<li>the nine top-level entries <strong>in order</strong>;</li>
+<li><strong>Certificates == 12 entries</strong>, in GUI order, with their exact labels;</li>
+<li>every page's <strong>tabs</strong>: logicals, labels and order (one parametrised case per
+   group, so a diff names the group that drifted);</li>
+<li>the phantom is in <strong>no</strong> tab — and is in <code>_PHANTOM_COLLECTIONS</code> too, so the
+   Configuration section's "everything else" list cannot resurrect it;</li>
+<li><code>vip</code> is <strong>not</strong> a Server Object <strong>and IS</strong> reachable from the Network menu —
+   the second half matters: <code>system/vip</code> categorises as <code>Other</code>, so removing it
+   from Server Objects without giving it a home would have deleted the only
+   route to it in the whole UI;</li>
+<li><code>find()</code>/<code>type_for()</code> resolve a <strong>non-default</strong> tab (a bookmark to
+   <code>?type=system_certificate_multi_local</code> used to 404);</li>
+<li><code>page.logicals</code> covers every tab, and the <strong>sidebar template matches on it</strong>
+   — equality against the default logical leaves the sidebar dead and the group
+   collapsed while the operator is standing on the tab;</li>
+<li>the Configuration browse lists <strong>every</strong> tab (containment, not equality: the
+   section legitimately appends the remaining registry objects);</li>
+<li>flat entries are exactly the six FortiWeb renders flat;</li>
+<li>no logical and no collection appears twice.</li>
+</ol>
+<h3 id="recipe-to-re-verify_2">Recipe to re-verify</h3>
+<pre><code>runuser -u satom -- bash -c 'cd /opt/satom &amp;&amp; set -a &amp;&amp; . ./.env &amp;&amp; set +a &amp;&amp; \
+  ./venv/bin/python -m pytest tests/test_server_objects_menu.py -q'
+</code></pre>
+<p>Re-extract the oracle when a firmware changes:</p>
+<pre><code>curl -sk https://&lt;fw&gt;/main.&lt;hash&gt;.js -o /tmp/fw_main.js
+python3 scripts/extract_gui_menu.py /tmp/fw_main.js &quot;Server Objects&quot;   # entries + order
+python3 scripts/extract_gui_menu.py /tmp/fw_main.js --routes /root/system/  # tabs
+</code></pre>
+<p><strong>20 mutations, 20 bite</strong> — including the three that live between the halves and
+that no data test can see: the sidebar reverted to <code>== item.logical</code>, the tab
+strip removed from <code>overview.html</code>, and the view resolving the page instead of
+the tab (which renders the DEFAULT tab's objects under the requested tab's
+name).</p>
+<h2 id="103-where-a-credential-lives-is-configuration-and-the-default-must-stay-untouched-teststest_secret_backendpy">§103 — where a credential LIVES is configuration, and the default must stay untouched (<code>tests/test_secret_backend.py</code>)</h2>
+<p><code>services/secret_backend.py</code> adds a second place a secret can live: an external
+KV v2 vault (OpenBao / HashiCorp Vault). It does <strong>not</strong> replace the local
+Fernet column. The whole guard set exists to pin one property:</p>
+<blockquote>
+<p>An install that never opens Settings → Vault must behave <strong>exactly</strong> as it did
+before this module existed.</p>
+</blockquote>
+<h3 id="why-a-vault-at-all">Why a vault at all</h3>
+<p>Fernet encrypts at rest, but <code>FERNET_KEY</code> lives in <code>/opt/satom/.env</code> on the same
+host as the database it decrypts. Whoever reads that disk reads every appliance
+password. This is not hypothetical: three world-readable <code>.env</code> copies were
+found on 248 on 2026-08-19 (<code>.env.bak-dupkeys-20260627</code>,
+<code>backups/.env.pre-csrf-20260627</code>, <code>backups/.env.pre-fernet-restore</code>).</p>
+<h3 id="the-three-modes-and-what-each-actually-costs">The three modes, and what each actually costs</h3>
+<table>
+<thead>
+<tr>
+<th>mode</th>
+<th>writes</th>
+<th>reads</th>
+<th>closes the <code>.env</code> exposure?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>local</code> (<strong>default</strong>)</td>
+<td>Fernet only</td>
+<td>Fernet</td>
+<td>no — and nothing is contacted</td>
+</tr>
+<tr>
+<td><code>mirror</code></td>
+<td>both</td>
+<td>vault first, local fallback</td>
+<td><strong>no</strong> — the local copy still exists</td>
+</tr>
+<tr>
+<td><code>vault</code></td>
+<td>vault only (local column gets a sentinel)</td>
+<td>vault, <strong>raises</strong> on failure</td>
+<td>yes</td>
+</tr>
+</tbody>
+</table>
+<p><code>mirror</code> is a stepping stone, not a destination. Saying otherwise is the
+comfortable answer and the wrong one.</p>
+<h3 id="the-failure-modes-the-guards-pin">The failure modes the guards pin</h3>
+<ol>
+<li><strong>Degrading to a sentinel is worse than raising.</strong> In <code>vault</code> mode the local
+   column holds a Fernet token of the literal <code>__stored-in-vault__</code>. A read path
+   that "fell back" would send that string to an appliance as a password — a
+   failed login that looks like a wrong credential, not like an outage.</li>
+<li><strong>A write that returns 200 and stores nothing.</strong> Migration reads every secret
+   back and compares before counting it; a guard monkeypatches <code>write</code> into a
+   no-op and asserts the migration reports <code>failed</code>, not <code>ok</code>.</li>
+<li><strong>The path IS the name.</strong> An appliance row whose <code>name</code> is not set yet would
+   write to <code>appliances/</code> — one shared path that every unnamed row overwrites.
+   Refused, with a guard.</li>
+<li><strong>One login per secret.</strong> A fleet sweep over 100 appliances must not open 100
+   sessions. The token is cached; the guard counts logins across 5 reads and
+   requires exactly 1. Only the <em>token</em> is cached — never a secret value, or the
+   vault's audit log stops being true about who read what.</li>
+<li><strong>A cached token outliving its credential.</strong> The cache is keyed on a
+   fingerprint of (addr, auth, role_id, secret_id). Without it, saving a new
+   AppRole keeps serving the old token until its TTL runs out, so the new
+   configuration <em>looks</em> like it works while the old one does the work.</li>
+<li><strong>Blank means keep.</strong> Secret inputs re-render blank, so a blank <code>secret_id</code>
+   must preserve the stored one — the same convention as the git token and SFTP
+   password fields on this page.</li>
+<li><strong>Enabled ≠ on the path.</strong> <code>enabled=true</code> with <code>mode=local</code> still contacts
+   nothing. A guard installs an exploding transport and asserts silence.</li>
+<li><strong>Sealed is not healthy.</strong> A sealed vault answers <code>sys/health</code> fine and can
+   answer for no secret at all; <code>health()</code> reports it as not-ok.</li>
+<li><strong>Authenticated is not authorised.</strong> <code>health()</code> also reaches the mount — a
+   token with the wrong policy logs in cleanly and then fails every real read.</li>
+</ol>
+<h3 id="recipe-to-re-verify_3">Recipe to re-verify</h3>
+<pre><code>runuser -u satom -- bash -c 'cd /opt/satom &amp;&amp; set -a &amp;&amp; . ./.env &amp;&amp; set +a &amp;&amp; \
+  ./venv/bin/python -m pytest tests/test_secret_backend.py -q'
+</code></pre>
+<p>The tests talk to no vault: <code>secret_backend._request</code> is replaced by an
+in-memory KV v2 double that <strong>counts calls</strong>, because half of the defects above
+are only visible in the number of requests, not in the result.</p>
+<h3 id="two-mutations-survived-the-first-pass-and-both-times-the-guard-was-wrong">Two mutations survived the first pass, and both times the GUARD was wrong</h3>
+<p>Worth writing down, because both are guards that could not express their own
+defect — the failure mode that makes a green suite meaningless.</p>
+<ol>
+<li>
+<p><strong>The token fingerprint.</strong> The first version of the guard changed the AppRole
+   by calling <code>save()</code>, which also calls <code>invalidate_token()</code>. So the cache was
+   cleared by the <em>save</em>, not by the fingerprint, and removing the fingerprint
+   changed nothing. The real case is a <strong>sibling gunicorn worker</strong>: <code>save()</code>
+   only clears the cache of the process that handled the POST; the other three
+   keep serving a token minted from the old credential until its TTL runs out.
+   The guard now writes the new credential straight into <code>app_settings</code>
+   (bypassing <code>save()</code>), which is exactly what those workers see.</p>
+</li>
+<li>
+<p><strong>The mode validation had two authors.</strong> <code>save()</code> refuses an unknown mode and
+   <code>config()</code> normalises one on read — so a single assertion on <code>config()</code> could
+   not tell them apart, and deleting the validation in <code>save()</code> broke nothing.
+   They are not redundant, they answer different questions (rejecting bad input
+   vs. surviving a row written by an older version or by hand), so both stayed
+   and each got its own guard: one reads the <strong>raw <code>app_settings</code> row</strong> after a
+   save, the other <strong>corrupts the row directly</strong> and asserts the read normalises.</p>
+</li>
+</ol>
+<p><strong>13 mutations, 13 bite</strong> after the fix (12 in the first pass — 10 bit — plus the
+new <code>config()</code>-side one that splitting the rule made possible).</p>
+<h3 id="method-note-that-outlives-this-round_1">Method note that outlives this round</h3>
+<p>The harness measures <strong>the rc of pytest</strong>, and only <code>rc == 1</code> counts as a
+failure (<code>rc == 4</code> is a usage error, and a rc read from the end of a pipe is the
+rc of <code>tail</code>). It also runs against a <strong>copy</strong> of the tree in <code>/opt/satom-mut</code>,
+never against the live one — several sessions work on this repo in parallel and
+a mutation left behind in <code>/opt/satom</code> is a credential bug in production.</p>
+<h2 id="104-moving-a-secret-is-not-removing-the-old-one-teststest_vault_scrubpy">§104 — moving a secret is not removing the old one (<code>tests/test_vault_scrub.py</code>)</h2>
+<p><strong>Why this exists.</strong> §103 added the vault and three modes. Switching the mode to
+<code>vault</code> decides where the <em>next</em> write goes and nothing else: every credential
+already in the database keeps its Fernet copy, and the key that decrypts it
+keeps sitting in <code>.env</code> on the same disk. So the page could truthfully report
+<code>vault only</code> while the exposure the whole feature exists to close was still
+wide open — and nothing anywhere would have failed.</p>
+<p><code>migrate_local_to_vault</code> deliberately does not delete anything (copying is
+reversible; deleting is not), which left the last step unimplemented rather than
+wrong. <code>scrub_local_copies</code> is that step.</p>
+<p><strong>The rules the guards pin.</strong></p>
+<ol>
+<li><strong>Refused unless the vault is authoritative.</strong> In <code>mirror</code> the local copy IS
+   the documented fallback — removing it silently converts a mode the operator
+   chose for its safety net into vault-only. Refused with <code>enabled=False</code> too:
+   the mode alone does not put the vault on the path.</li>
+<li><strong>Read back before destroying.</strong> Each secret is fetched FROM THE VAULT and
+   compared with the local plaintext before that plaintext is overwritten. A
+   vault copy that is missing, empty, different, or unreachable means the local
+   one is the last working copy: the row is left alone and reported <code>failed</code>.
+   Destroying the last copy of a credential is the one failure here that no
+   later step can undo.</li>
+<li><strong>"Missing" and "differs" are separate messages.</strong> They have different
+   remediations, and the guard asserts the <em>detail</em>, not just the status —
+   otherwise either branch could vanish and the other would silently cover for
+   it. (Two mutations survived the first pass for exactly this reason: the
+   mutations were fine, the guards were too coarse.)</li>
+<li><strong>Dry run is the default</strong>, in the service signature AND in the route: a POST
+   that forgets <code>apply=1</code> must not destroy anything.</li>
+<li><strong>One bad row does not stop the good ones</strong>, and a second run is a no-op.</li>
+<li><strong>The claim itself is a test.</strong> <code>test_after_the_scrub_the_fernet_key_alone_recovers_nothing</code>
+   decrypts the column the way a thief with the disk and <code>.env</code> would, and
+   asserts the sentinel comes out instead of the password. That is the entire
+   feature, written as an assertion.</li>
+</ol>
+<p><strong>Mutations: 12, all bite</strong> (refusal removed, differing copy accepted, missing
+copy accepted, dry-run destroys, sentinel reprocessed, "scrubbed" reported
+without writing, a down vault reported as <code>skipped</code>, the default flipped to
+apply, the directory-secret write removed, the route always applying, the
+admin-permission decorator removed).</p>
+<h2 id="105-git-writes-the-push-token-in-mode-644-teststest_git_config_permspy">§105 — git writes the push token in mode 644 (<code>tests/test_git_config_perms.py</code>)</h2>
+<p><strong>Why this exists.</strong> This product keeps its push credential embedded in the
+origin URL, so <code>.git/config</code> <strong>is</strong> a secret file — and git creates it 644.
+On the live node it had been world-readable since 8 August and nothing had
+failed, because nothing can fail: an over-permissive mode is not an error, it
+is a fact nobody reads.</p>
+<p>git has no setting for this, so the mode has to be re-asserted by code.
+<code>_harden_git_config()</code> narrows it to 600, and is called from <strong>two</strong> places for
+one reason each:</p>
+<ul>
+<li><code>git_configure()</code> — the writer. <code>remote set-url</code> has just put the token there.</li>
+<li><code>git_info()</code> — a repository the installer cloned (<code>git clone $GIT_URL</code>) never
+  passes through the writer, so the very first <code>.git/config</code> the product ever
+  creates would otherwise stay exposed for its whole life.</li>
+</ul>
+<p>It never raises: a repo owned by another account is a fact to leave alone, not
+a reason to fail the page that noticed it.</p>
+<p><strong>The installer is patched too, and that is the load-bearing half</strong>: without it
+every new installation re-introduces the defect, exactly like the <code>Host $host</code>
+vhost bug. There is a guard that reads <code>install-satom.sh</code> and fails if the
+<code>chmod</code> is not next to the <code>git clone</code>.</p>
+<p><strong>Mutations: 5, all bite</strong> (never narrows, narrows to 644, the writer stops
+hardening, <code>git_info</code> stops hardening, the installer line removed).</p>
     </div>
   </div>
 </section>

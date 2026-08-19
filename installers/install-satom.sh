@@ -1087,6 +1087,9 @@ else
         ask GIT_URL "URL del repo de producción [${GIT_URL_DEFAULT}]: "
         GIT_URL="${GIT_URL:-$GIT_URL_DEFAULT}"
         git clone --depth 1 --branch main "$GIT_URL" "$APP_DIR" >>"$INSTALL_LOG" 2>&1 || die "git clone falló"
+        # $GIT_URL puede llevar el token embebido y git escribe el config
+        # en 644: la credencial de push quedaria legible por todo el sistema.
+        chmod 600 "$APP_DIR/.git/config" 2>/dev/null || true
         ok "Código clonado de $GIT_URL"
     fi
 fi

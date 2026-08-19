@@ -756,6 +756,55 @@ SERVER_POLICY: DepNode = _n(
            "ssl-ciphers-group", "Server Policy · SSL"),
         _n("SSL Ciphers Group (custom)", "cmdb/server-policy/ssl-ciphers.custom",
            "ssl-ciphers-group", "Server Policy · SSL · custom cipher group"),
+        # ── Advanced SSL Settings ────────────────────────────────────────────
+        # GATED, and the gate is the whole reason these four were missing for as
+        # long as they were. On 7.6.8 the fields that name them DO NOT EXIST on a
+        # policy whose `ssl` is `disable`: `set hpkp-header ?` answers "Parsing
+        # error at 'hpkp-header'", not an empty datasource. Measured on
+        # fortiweb12 by flipping `set ssl enable` inside a live edit context and
+        # re-running `set ?` — eleven fields appear that were absent one command
+        # earlier. An HTTP policy therefore carries no such reference, so no
+        # amount of cloning HTTP policies could ever contradict their absence.
+        #
+        # HTTPS Header Insertion -> the HPKP profile. FLAT: `config ?` inside the
+        # object is a parse error, so it has no sub-table, and it names nothing —
+        # the pins are base64 SPKI fingerprints, plain strings, not certificate
+        # names. (`pin-sha256` IS space-separated with a trailing space, exactly
+        # like `scripting-list`; it is deliberately NOT in `_LIST_REF_FIELDS`,
+        # because that table is for fields naming OBJECTS and these name none.)
+        _n("HPKP Profile", "cmdb/system/certificate.hpkp", "hpkp-header",
+           "System · Certificates · HTTPS header insertion (HPKP)"),
+        # URL Certificate group — the empty-shell trap in its purest form.
+        # `set ?` on the group answers a parse error: it has NO scalar fields at
+        # all. `config ?` completes to exactly one sub-table, `list`, whose rows
+        # are (url, require). Carried without its rows the group arrives field
+        # for field complete and totally inert, and nothing reports the gap.
+        _n("URL Certificate Group", "cmdb/system/certificate.urlcert", "urlcert-group",
+           "System · Certificates · URL-based client certificate group",
+           children=[_n("URL Certificate List",
+                        "cmdb/system/certificate.urlcert/list")]),
+        # `certificate-group` is gated TWICE — it needs `ssl enable` AND
+        # `multi-certificate enable` (measured: setting the group alone answers
+        # 200 and reads back EMPTY, and enabling the switch alone answers -56).
+        # Its datasource is `certificate.multi-local`, NOT `certificate.local`
+        # and not the SNI group. The object is flat (comment + rsa-cert +
+        # ecc-cert + dsa-cert) and each of those three is its own `<datasource>`
+        # onto `system certificate.local`, so a group that travels alone lands
+        # naming up to three certificates the destination has never seen.
+        _n("Multi-Certificate Group", "cmdb/system/certificate.multi-local",
+           "certificate-group",
+           "System · Certificates · multi-certificate (RSA/ECC/DSA)",
+           children=[_n("Local Certificate (RSA/ECC/DSA)",
+                        "cmdb/system/certificate.local",
+                        "rsa-cert / ecc-cert / dsa-cert",
+                        note="key material — reported, copied over SSH, never over REST")]),
+        # ADFS reuses the SAME collection as `ssl-client-verify`, settled by
+        # BINDING rather than by the similarity of the field name: both answer
+        # `<datasource>  SSL client certificate verify` on a live appliance.
+        _n("ADFS Certificate Verify", "cmdb/system/certificate.verify",
+           "adfs-certificate-ssl-client-verify",
+           "System · Certificates · Certificate Verify — ADFS client certificates",
+           children=_CERT_VERIFY_REFS),
         _n("SNI Policy", "cmdb/system/certificate.sni",
            "sni-policy / sni-certificate / certificate-sni", "System · Certificates",
            children=[_n("SNI Members", "cmdb/system/certificate.sni/members")]),

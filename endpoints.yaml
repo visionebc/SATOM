@@ -93,6 +93,10 @@ system_certificate_offline_sni:                 /api/v2.0/cmdb/system/certificat
 system_certificate_server_certificate_verify:   /api/v2.0/cmdb/system/certificate.server-certificate-verify
 system_certificate_sign_ca:                     /api/v2.0/cmdb/system/certificate.sign-ca
 system_certificate_urlcert:                     /api/v2.0/cmdb/system/certificate.urlcert
+system_certificate_urlcert_item:                /api/v2.0/cmdb/system/certificate.urlcert/list
+certificate_ca_group_item:                      /api/v2.0/cmdb/system/certificate.ca-group/members
+system_certificate_crl_group_item:              /api/v2.0/cmdb/system/certificate.crl-group/members
+certificate_intermediate_group_item:            /api/v2.0/cmdb/system/certificate.intermediate-certificate-group/members
 system_certificate_verify:                      /api/v2.0/cmdb/system/certificate.verify
 system_conf_sync:                               /api/v2.0/cmdb/system/conf-sync
 system_console:                                 /api/v2.0/cmdb/system/console

@@ -10281,3 +10281,40 @@ vhost bug. There is a guard that reads `install-satom.sh` and fails if the
 
 **Mutations: 5, all bite** (never narrows, narrows to 644, the writer stops
 hardening, `git_info` stops hardening, the installer line removed).
+
+
+## §106 — the sentinel is not a credential (`tests/test_vault_sentinel_never_sent.py`)
+
+**Why this exists — because it happened.** Within minutes of removing the local
+copies (§104), the whole fleet sweep went to HTTP 401 and `satom_scrape_up`
+dropped from 1 to 0. The credentials were fine and the vault was fine. What had
+happened is that `satom-scheduler` is a **separate long-lived process**, still
+running the code it had loaded on 17 August — from before `secret_backend`
+existed. Its `Appliance.password` only knew how to read the local column, and
+the local column now held `__stored-in-vault__`. So the scheduler sent the
+literal marker to every appliance as a password.
+
+The tell was the *absence* of evidence: not one line in the vault's audit log
+for the failing sweeps. Nobody was asking the vault anything.
+
+**The rule.** When the local column holds the sentinel and the vault did not
+answer in THIS process, there is nothing to send: both read paths
+(`Appliance.password` and `auth_store._vault_first`) now **raise**. Returning
+the marker turns *"this process cannot reach the vault"* into *"the password is
+wrong"* — the two most different diagnoses possible, wearing the same 401. The
+error names the appliance, because a failure that does not say which one sends
+the operator to check all nine.
+
+**Two operational consequences worth writing down:**
+
+- After changing the secret backend, restart **every** SATOM process, not just
+  `satom.service`: `satom-scheduler` fires the scheduled actions and holds its
+  own interpreter.
+- In `mirror` this class of bug is invisible — the stale process reads the local
+  copy and everything works. It only surfaces the moment the scrub runs, which
+  is exactly when it is most expensive. That is an argument for running the
+  scrub during a window where the sweep is watched, not for skipping it.
+
+**Mutations: 5, all bite** (the sentinel returned as a password, the error not
+naming the appliance, the comparison inverted so normal passwords raise, and
+both halves of the same pair in `auth_store`).

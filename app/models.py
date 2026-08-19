@@ -327,7 +327,19 @@ class Appliance(db.Model):
         vaulted = secret_backend.get_appliance_password(self.name)
         if vaulted is not None:
             return vaulted
-        return _fernet().decrypt(self.password_enc.encode()).decode()
+        local = _fernet().decrypt(self.password_enc.encode()).decode()
+        if local == secret_backend.VAULT_SENTINEL:
+            # The column says the vault owns this credential and the vault did
+            # not answer, so there is nothing here to send. Returning the marker
+            # would put the literal "__stored-in-vault__" in a login form: the
+            # appliance replies 401 and the operator reads "wrong password"
+            # instead of "this process cannot reach the vault". That is not a
+            # hypothetical — a scheduler still running pre-vault code did
+            # exactly this the day the local copies were removed.
+            raise RuntimeError(
+                "the vault owns the password for %r and this process could not "
+                "read it (vault mode is not active here)" % (self.name or "?"))
+        return local
 
     @password.setter
     def password(self, plaintext: str) -> None:

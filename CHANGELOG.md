@@ -8,6 +8,29 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Fixed
 
+- **A policy with a Lua script could not be cloned — the reference field holds a
+  LIST, not a name.** Measured on FortiWeb 7.6.8: a policy with one script reads
+  `scripting-list = "HTTP_CUSTOM_REPLY "` and with two,
+  `"HTTP_CUSTOM_REPLY SSL_COMMANDS "` — a space separator **and a trailing
+  space**. `clone.referenced_names` took the whole value as one name, so the
+  source read answered `-3 The entry is not found`, the item's payload came back
+  empty and `validate_completeness` **refused the entire clone** with *"source
+  tree incomplete"*. The ONE-script case failed too, not just the multi-script
+  one — which is why having the script on the destination never helped: with the
+  name wrong, the destination was never consulted. The split is declared **per
+  field** (`_LIST_REF_FIELDS`), not applied globally: a space is a legal
+  character in a FortiWeb object name nearly everywhere (a health check, a URL
+  access policy, a WPP and an SNI policy all accept `"zz probe space"`, and one
+  named `"zztrail "` keeps its trailing space and can only be deleted with it),
+  so a global split or strip would turn one legal name into two that do not
+  exist — the same block, moved. It is unambiguous here because the scripting
+  collection refuses a name containing a space (`-2004`). The same parser feeds
+  the **deep-capture SoT snapshots**, which had silently been omitting the
+  script from every snapshot of a policy that binds one, and the **file-backed
+  content read**: with the trimmed name the source returns the Lua source
+  (2 559 bytes measured), with the trailing space it returns nothing, so a
+  script created at the destination would have been an empty shell.
+
 - **Server Objects is the FortiWeb menu again — entries, order and the tabs
   inside them.** The curated menu had drifted from the appliance and nothing
   failed, because a menu that is missing an entry still renders. Measured

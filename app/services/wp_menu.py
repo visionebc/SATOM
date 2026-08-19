@@ -355,9 +355,21 @@ def _collection(urn: str) -> str:
     return urn.strip("/")
 
 
-@lru_cache(maxsize=1)
-def menu() -> tuple[WpGroup, ...]:
-    """The resolved menu (missing logicals dropped, empty items/groups dropped)."""
+@lru_cache(maxsize=8)
+def menu(hidden: frozenset[str] = frozenset()) -> tuple[WpGroup, ...]:
+    """The resolved menu (missing logicals dropped, empty items/groups dropped).
+
+    ``hidden`` names registry logicals the appliance's ``system
+    feature-visibility`` keeps out of FortiWeb's own left menu (see
+    :mod:`app.services.feature_visibility`) — on a stock 7.6.8 unit that is
+    ``padding_oracle``, whose feature ships ``disable``. It defaults to EMPTY so
+    only the sidebar gates: ``item_for``/``tab_for`` back the PAGE, which keeps
+    serving a gated item because feature-visibility hides a menu on FortiWeb, it
+    does not make the objects unreachable.
+
+    Cached per distinct ``hidden`` set (hence maxsize > 1): the argument is a
+    frozenset precisely so it can be a cache key.
+    """
     idx = _registry_index()
     groups: list[WpGroup] = []
     for glabel, gicon, items in _TREE:
@@ -365,6 +377,8 @@ def menu() -> tuple[WpGroup, ...]:
         for key, label, icon, special, tabs in items:
             out_tabs: list[WpTab] = []
             for tlabel, logical, cols in tabs:
+                if logical in hidden:
+                    continue
                 ep = idx.get(logical)
                 if not ep:
                     continue

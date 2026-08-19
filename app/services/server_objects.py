@@ -276,12 +276,19 @@ def _has_children(urn: str) -> bool:
 # --------------------------------------------------------------------------- #
 #  Menu construction                                                           #
 # --------------------------------------------------------------------------- #
-def server_objects_menu() -> list[ServerObjectGroup]:
+def server_objects_menu(hidden: frozenset[str] = frozenset()) -> list[ServerObjectGroup]:
     """The ordered Server Objects menu (groups → pages → tabs) for this registry.
 
     Only tabs whose logical name resolves in the current registry are kept; a
     page with no surviving tab is dropped, and so is a group with no surviving
     page — so the menu reflects what the firmware actually ships.
+
+    ``hidden`` additionally drops tabs the appliance's ``system
+    feature-visibility`` keeps out of FortiWeb's own menu (Traffic Mirror is the
+    one that lands here — see :mod:`app.services.feature_visibility`). It
+    defaults to EMPTY: only the sidebar gates, because ``find()`` and the
+    Server Objects page must keep serving a gated type — disabling a feature
+    hides FortiWeb's menu entry, it does not make the objects unreachable.
     """
     eps = _endpoint_index()
     groups: list[ServerObjectGroup] = []
@@ -291,6 +298,8 @@ def server_objects_menu() -> list[ServerObjectGroup]:
             tabs: list[ServerObjectTab] = []
             for spec in tabspec:
                 logical, tlabel, read_only = spec[0], spec[1], spec[2]
+                if logical in hidden:
+                    continue  # feature disabled → FortiWeb hides this entry
                 ticon = spec[3] if len(spec) > 3 else picon
                 ep = eps.get(logical)
                 if ep is None:

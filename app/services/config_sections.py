@@ -430,6 +430,33 @@ _SECTION_MENUS: dict[str, tuple[tuple[str, str, tuple[tuple[str, str, bool, str]
 
 
 # --------------------------------------------------------------------------- #
+#  The protection areas promoted OUT of the admin "Configuration" submenu and   #
+#  into the sidebar's own WAF group. ONE definition, three consumers: the nav   #
+#  builder in app/__init__.py renders it, the same builder subtracts these keys #
+#  from the Configuration submenu so nothing appears twice, and base.html asks  #
+#  which keys keep the WAF group open. Those three used to carry three separate #
+#  hand-written copies of the 5-key list, so promoting an area meant editing    #
+#  all three and a miss showed the area twice (or left the group collapsed on   #
+#  its own page). Machine Learning and Tracking were exactly that miss: they    #
+#  are siblings of the other five in FortiWeb's menu (7.6.4 files ML Based      #
+#  Anomaly Detection inside the Web Protection chapter) and sat in the generic  #
+#  Configuration bucket next to System/Network/Log & Report until 2026-08-19.   #
+# --------------------------------------------------------------------------- #
+WAF_AREAS: tuple[tuple[str, str, str], ...] = (
+    ("application_delivery", "Application Delivery", "bi-rocket-takeoff"),
+    ("api_protection", "API Protection", "bi-plug"),
+    ("bot_mitigation", "Bot Mitigation", "bi-robot"),
+    ("dos_protection", "DoS Protection", "bi-shield-fill-exclamation"),
+    ("ip_protection", "IP Protection", "bi-signpost-split"),
+    ("machine_learning", "Machine Learning", "bi-cpu"),
+    ("tracking", "Tracking", "bi-binoculars"),
+)
+
+#: Just the keys of :data:`WAF_AREAS`, in order (template + nav-builder use).
+WAF_AREA_KEYS: tuple[str, ...] = tuple(k for k, _l, _i in WAF_AREAS)
+
+
+# --------------------------------------------------------------------------- #
 #  Registry resolution (same approach as server_objects)                       #
 # --------------------------------------------------------------------------- #
 def _endpoint_index() -> dict[str, dict]:
@@ -462,7 +489,7 @@ def _has_children(urn: str) -> bool:
 # --------------------------------------------------------------------------- #
 #  Menu construction                                                           #
 # --------------------------------------------------------------------------- #
-def _server_objects_menu() -> list[ConfigGroup]:
+def _server_objects_menu(hidden: frozenset[str] = frozenset()) -> list[ConfigGroup]:
     """The Server Objects section menu, reused VERBATIM from
     :mod:`app.services.server_objects` so the live Configuration → Server Objects
     browser and the dedicated Server Objects page share ONE menu (no drift)."""
@@ -477,6 +504,8 @@ def _server_objects_menu() -> list[ConfigGroup]:
             # Offline SNI, CRL Group, the XML Certificate tabs… from the
             # Configuration → Server Objects section entirely.
             for tab in page.tabs:
+                if tab.logical in hidden:
+                    continue
                 label = (tab.label if tab.label == page.label
                          else "%s — %s" % (page.label, tab.label))
                 items.append(ConfigObjectType(
@@ -484,7 +513,11 @@ def _server_objects_menu() -> list[ConfigGroup]:
                     collection=tab.collection, read_only=tab.read_only,
                     has_children=tab.has_children, icon=tab.icon,
                 ))
-        groups.append(ConfigGroup(g.label, g.icon, tuple(items)))
+        # An emptied group is dropped, not rendered headless: with `hidden` a
+        # group can lose every tab (Traffic Mirror is a single-leaf group), and
+        # a summary that expands to nothing reads as a broken link.
+        if items:
+            groups.append(ConfigGroup(g.label, g.icon, tuple(items)))
     return groups
 
 
@@ -514,7 +547,8 @@ _PHANTOM_COLLECTIONS = frozenset({
 })
 
 
-def _remaining_types(section_key: str, shown_colls: set[str]) -> list[ConfigObjectType]:
+def _remaining_types(section_key: str, shown_colls: set[str],
+                     hidden: frozenset[str] = frozenset()) -> list[ConfigObjectType]:
     """Every TOP-LEVEL cmdb object the registry files under this section that the
     curated menu doesn't already show — so the section browses EVERYTHING the
     FortiWeb has (empty types included), not just the hand-picked subset.
@@ -532,6 +566,16 @@ def _remaining_types(section_key: str, shown_colls: set[str]) -> list[ConfigObje
     extra: list[ConfigObjectType] = []
     seen = set(shown_colls)
     for o in catalog:
+        # A hidden leaf also drops out of `shown_colls`, so without this the
+        # trailing bucket would hand the very same object straight back and the
+        # gate would achieve nothing. Matching on the LOGICAL is enough here and
+        # was measured to be: no gated collection is reachable under a second,
+        # non-gated logical in this registry (0 hits, 2026-08-19), and
+        # tests/test_feature_visibility.py guards that premise — a collection
+        # match "just in case" would be code defending against a case that
+        # cannot arise, with no test able to tell whether it works.
+        if o.get("logical") in hidden:
+            continue  # feature disabled -> hidden from the "everything else" bucket
         urn = o.get("urn") or o.get("path") or ""
         if "/cmdb/" not in urn:
             continue  # non-cmdb (live-status / maintenance) -> not browsable here
@@ -557,11 +601,15 @@ def _remaining_types(section_key: str, shown_colls: set[str]) -> list[ConfigObje
     return extra
 
 
-def _curated_groups(section_key: str) -> list[ConfigGroup]:
+def _curated_groups(section_key: str,
+                    hidden: frozenset[str] = frozenset()) -> list[ConfigGroup]:
     """The hand-curated, GUI-faithful groups for a section (may be empty). Only
-    types whose logical name resolves in the current registry are kept."""
+    types whose logical name resolves in the current registry are kept, and —
+    when ``hidden`` is given — only those FortiWeb's own menu would show (see
+    :mod:`app.services.feature_visibility`). A group left with no leaf drops
+    out, exactly as it already does for a firmware missing every type."""
     if section_key == "server_objects":
-        return _server_objects_menu()
+        return _server_objects_menu(hidden)
     spec = _SECTION_MENUS.get(section_key)
     if not spec:
         return []
@@ -570,6 +618,8 @@ def _curated_groups(section_key: str) -> list[ConfigGroup]:
     for glabel, gicon, items in spec:
         leaves: list[ConfigObjectType] = []
         for logical, label, read_only, icon in items:
+            if logical in hidden:
+                continue  # feature disabled on this appliance -> FortiWeb hides it
             ep = eps.get(logical)
             if ep is None:
                 continue  # not in this firmware's registry -> drop
@@ -588,7 +638,8 @@ def _curated_groups(section_key: str) -> list[ConfigGroup]:
     return groups
 
 
-def section_menu(section_key: str, complete: bool = True) -> list[ConfigGroup]:
+def section_menu(section_key: str, complete: bool = True,
+                 hidden: frozenset[str] = frozenset()) -> list[ConfigGroup]:
     """The ordered GUI menu (groups -> object types) for one config section.
 
     The curated, GUI-faithful groups come FIRST (good labels/ordering); then —
@@ -599,12 +650,19 @@ def section_menu(section_key: str, complete: bool = True) -> list[ConfigGroup]:
     subset. By-parent sub-rows are excluded (reached by drilling into the parent).
 
     Returns ``[]`` for a section with no curated menu (e.g. read-only Monitor),
-    so the page falls back to the static catalog exactly as before."""
-    groups = _curated_groups(section_key)
+    so the page falls back to the static catalog exactly as before.
+
+    ``hidden`` is a set of registry logicals to leave out — the appliance's
+    ``system feature-visibility`` says FortiWeb's own menu does not show them
+    (:mod:`app.services.feature_visibility`). It defaults to EMPTY, so every
+    caller that is not the sidebar keeps the full menu: the section page must go
+    on serving a gated type, since disabling a feature hides FortiWeb's menu
+    entry without making the objects unreachable over CLI/REST."""
+    groups = _curated_groups(section_key, hidden)
     has_curated = section_key == "server_objects" or section_key in _SECTION_MENUS
     if complete and has_curated:
         shown = {_norm_coll(it.collection) for g in groups for it in g.items}
-        extra = _remaining_types(section_key, shown)
+        extra = _remaining_types(section_key, shown, hidden)
         if extra:
             groups = list(groups) + [
                 ConfigGroup("Other Objects", "bi-three-dots", tuple(extra))

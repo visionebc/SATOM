@@ -451,6 +451,9 @@ http_flood:        /api/v2.0/cmdb/waf/http-request-flood-prevention
 http_access_limit: /api/v2.0/cmdb/waf/http-access-limit
 
 # ──── IP Protection ────
+ftp_protection_profile:      /api/v2.0/cmdb/waf/ftp-protection-profile
+ftp_file_security:           /api/v2.0/cmdb/waf/ftp-file-security
+ftp_command_restriction_rule: /api/v2.0/cmdb/waf/ftp-command-restriction-rule
 ip_list:             /api/v2.0/cmdb/waf/ip-list
 geo_block:           /api/v2.0/cmdb/waf/geo-block-list
 ip_intel:            /api/v2.0/cmdb/waf/ip-intelligence

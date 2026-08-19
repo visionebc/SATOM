@@ -259,6 +259,11 @@ def clone_summary(items: list[clone.CloneItem]) -> dict[str, int]:
         # travels — while this one means the destination is missing protection
         # the source had. A caller that only reads ``skipped`` cannot tell.
         "no_content": counts.get("no-content", 0),
+        # Same reasoning as ``no_content``, one class further out: this object
+        # is not inert either. It EXISTS on the source and the API cannot carry
+        # it, so the destination is left naming something it may not have. Left
+        # inside ``skipped`` it would read as a thing the clone chose not to do.
+        "no_rest": counts.get("no-rest", 0),
         "to_create": counts.get("create", 0),
         "total": len(items),
     }

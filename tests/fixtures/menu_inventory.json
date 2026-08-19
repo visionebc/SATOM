@@ -1,0 +1,408 @@
+{
+ "sections": {
+  "api_protection": {
+   "API Gateway": [
+    "api_policy",
+    "api_policy_rule",
+    "api_user_group",
+    "api_user"
+   ],
+   "GraphQL Protection": [
+    "graphql_validation_policy",
+    "graphql_validation_rule"
+   ],
+   "JSON Protection": [
+    "json_protection_policy",
+    "json_protection_rule",
+    "json_schema",
+    "json_schema_group"
+   ],
+   "ML-Based API Protection": [
+    "api_learning_policy",
+    "api_learning_rule"
+   ],
+   "Mobile API Protection": [
+    "mobile_api_protection_policy",
+    "mobile_api_protection_rule"
+   ],
+   "OpenAPI Validation": [
+    "openapi_policy",
+    "openapi_file"
+   ],
+   "XML Protection": [
+    "xml_protection_policy",
+    "xml_protection_rule",
+    "xml_protection_xml_schema",
+    "xml_protection_wsdl",
+    "xml_protection_dtd",
+    "xml_protection_exempted_url"
+   ]
+  },
+  "application_delivery": {
+   "Caching": [
+    "web_cache_policy",
+    "waf_web_cache_rule"
+   ],
+   "Compression": [
+    "compression_policy",
+    "compression_exclusion_url"
+   ],
+   "Site Publish": [
+    "site_publish_policy",
+    "site_publish_rule",
+    "site_publish_auth_server_pool",
+    "site_publish_form_delegation",
+    "site_publish_saml_pool"
+   ],
+   "URL Rewriting": [
+    "url_rewriting_policy",
+    "url_rewriting_rule"
+   ],
+   "Waiting Room": [
+    "waiting_room_policy"
+   ]
+  },
+  "bot_mitigation": {
+   "Advanced Bot Protection": [
+    "advanced_bot_protection"
+   ],
+   "Biometrics Based Detection": [
+    "bot_biometric_based_detection"
+   ],
+   "Bot Deception": [
+    "bot_deception"
+   ],
+   "Bot Mitigation Exception": [
+    "bot_detection"
+   ],
+   "Bot Mitigation Policy": [
+    "bot_mitigation_policy_2"
+   ],
+   "Known Bots": [
+    "bot_known_bots"
+   ],
+   "Known Good Bots": [
+    "bot_allow_list"
+   ],
+   "Threshold Based Detection": [
+    "bot_threshold_based_detection"
+   ]
+  },
+  "dos_protection": {
+   "Application": [
+    "http_access_limit",
+    "http_flood",
+    "ddos_http_flood_prevention",
+    "ddos_malicious_ip"
+   ],
+   "DoS Protection Policy": [
+    "dos_policy"
+   ],
+   "Network": [
+    "tcp_flood",
+    "ddos_http_access_limit",
+    "ddos_tcp_flood_prevention"
+   ]
+  },
+  "ip_protection": {
+   "Geo IP": [
+    "geo_block",
+    "geo_ip_exception"
+   ],
+   "IP List": [
+    "ip_list"
+   ],
+   "IP Reputation": [
+    "ip_intel",
+    "ip_intelligence_exception",
+    "ip_intelligence_ignore_xff"
+   ]
+  },
+  "log_report": {
+   "Log Policies": [
+    "syslog_policy",
+    "fortianalyzer_policy",
+    "log_email_policy",
+    "log_siem_policy",
+    "log_siem_message_policy",
+    "log_ftp_policy"
+   ],
+   "Log Settings": [
+    "log_disk",
+    "log_memory",
+    "log_syslog",
+    "log_fortiguard",
+    "fortianalyzer"
+   ],
+   "Log Types": [
+    "attack_log",
+    "event_log",
+    "traffic_log"
+   ],
+   "Sensitive Data": [
+    "sensitive",
+    "log_custom_sensitive_rule"
+   ],
+   "Triggers & Reports": [
+    "trigger_policy",
+    "log_reports"
+   ]
+  },
+  "machine_learning": {
+   "API Learning": [
+    "api_learning_policy",
+    "api_learning_rule"
+   ],
+   "Machine Learning": [
+    "ml_policy",
+    "ml_anomaly_detection",
+    "bot_detection_policy"
+   ],
+   "URL Replacer": [
+    "url_replacer_policy",
+    "url_replacer_rule"
+   ]
+  },
+  "network": {
+   "DNS": [
+    "dns"
+   ],
+   "Interfaces": [
+    "interface_2",
+    "v_zone"
+   ],
+   "Network Settings": [
+    "network_option",
+    "system_ip_detection",
+    "system_fail_open",
+    "system_wccp"
+   ],
+   "Routing": [
+    "route",
+    "route_policy",
+    "router_setting"
+   ],
+   "Virtual IP": [
+    "vip"
+   ]
+  },
+  "server_objects": {
+   "Certificates": [
+    "certificate",
+    "system_certificate_multi_local",
+    "certificate_letsencrypt",
+    "xml_server_certificate",
+    "xml_client_certificate",
+    "xml_client_certificate_group",
+    "system_certificate_urlcert",
+    "certificate_sni",
+    "system_certificate_offline_sni",
+    "certificate_ca",
+    "certificate_tsl_ca",
+    "certificate_ca_group",
+    "system_certificate_sign_ca",
+    "system_certificate_intermediate_certificate",
+    "certificate_intermediate_group",
+    "certificate_crl",
+    "system_certificate_crl_group",
+    "system_certificate_verify",
+    "system_certificate_server_certificate_verify",
+    "certificate_ocsp_stapling",
+    "system_certificate_hpkp"
+   ],
+   "Global": [
+    "global_allow_list_predefined",
+    "global_allow_list_custom",
+    "allow_list",
+    "data_type_custom",
+    "url_replacer_rule",
+    "url_replacer_policy"
+   ],
+   "IP Group": [
+    "ip_group"
+   ],
+   "Protected Hostnames": [
+    "allow_host"
+   ],
+   "SSL Ciphers": [
+    "ssl_cyphers",
+    "ssl_cyphers_custom"
+   ],
+   "Server": [
+    "vserver",
+    "server_pool",
+    "server_pool_health_check",
+    "server_pool_persistence",
+    "http_content_routing"
+   ],
+   "Service": [
+    "services_predefined",
+    "services_custom"
+   ],
+   "Traffic Mirror": [
+    "traffic_mirror_profile"
+   ],
+   "X-Forwarded-For": [
+    "x_forwarded_for"
+   ]
+  },
+  "system": {
+   "Administrators": [
+    "system_admin",
+    "accprofile",
+    "system_password_policy",
+    "system_sso_admin",
+    "system_saml",
+    "system_recaptcha_api"
+   ],
+   "Advanced & Hardware": [
+    "system_raid",
+    "system_fips_cc",
+    "system_nethsm",
+    "system_hsm_partition",
+    "system_cpumem_monitor",
+    "system_captcha",
+    "system_captcha_puzzle"
+   ],
+   "Automation": [
+    "system_automation_trigger",
+    "system_automation_stitch",
+    "system_automation_script",
+    "system_automation_email"
+   ],
+   "Firewall": [
+    "system_firewall_address",
+    "system_firewall_service",
+    "system_firewall_firewall_policy",
+    "system_firewall_snat_policy",
+    "system_firewall_dnat_policy",
+    "system_firewall_admin_policy",
+    "system_firewall_fwmark_policy"
+   ],
+   "FortiGuard & Updates": [
+    "system_fortiguard",
+    "system_autoupdate_schedule",
+    "system_autoupdate_override",
+    "system_autoupdate_tunneling",
+    "antivirus"
+   ],
+   "High Availability": [
+    "system_ha",
+    "system_ha_node"
+   ],
+   "Integration": [
+    "system_fortisandbox",
+    "system_fortigate_integration",
+    "system_central_management",
+    "system_sdn_connector",
+    "system_csf",
+    "system_icapserver",
+    "system_eventhub",
+    "system_endpoint_control_fctems",
+    "system_manager",
+    "system_conf_sync"
+   ],
+   "Replacement Messages": [
+    "replacemsg",
+    "replacemsg_admin",
+    "replacemsg_image"
+   ],
+   "SNMP": [
+    "system_snmp_sysinfo",
+    "system_snmp_community",
+    "snmp_user"
+   ],
+   "Settings": [
+    "global",
+    "system_settings",
+    "feature_visibility",
+    "advanced",
+    "system_console",
+    "system_decoding_enhancement",
+    "system_encryption_method"
+   ],
+   "Time & Maintenance": [
+    "ntp",
+    "backup",
+    "system_object_tagging",
+    "system_external_resource"
+   ]
+  },
+  "tracking": {
+   "Custom Tracking": [
+    "waf_custom_tracking_policy"
+   ],
+   "Session": [
+    "session_management"
+   ],
+   "Threat Scoring": [
+    "threat_score_profile",
+    "server_policy_pattern_threat_weight"
+   ],
+   "User Tracking": [
+    "user_tracking_policy",
+    "user_tracking_rule",
+    "user_auth"
+   ]
+  },
+  "user_authentication": {
+   "Local & OAuth": [
+    "user_local",
+    "user_oauth_user_server",
+    "user_oauth_user_request",
+    "user_recaptcha_user"
+   ],
+   "Remote Auth Servers": [
+    "user_ldap",
+    "user_radius",
+    "user_tacacs_user",
+    "user_kerberos_user",
+    "user_saml_user",
+    "user_ntlm_user",
+    "user_pki_user"
+   ],
+   "User Groups": [
+    "user_group",
+    "admin_user_group"
+   ]
+  }
+ },
+ "wp": {
+  "Access": [
+   "URL Access",
+   "Allow Method",
+   "CORS Protection"
+  ],
+  "Advanced Protection": [
+   "Custom Policy",
+   "Padding Oracle Protection",
+   "CSRF Protection",
+   "HTTP Header Security",
+   "Man in the Browser Protection",
+   "URL Encryption",
+   "Link Cloaking",
+   "SQL/XSS Syntax Based Detection"
+  ],
+  "Cookie Security": [
+   "Cookie Security"
+  ],
+  "Data Loss Prevention": [
+   "Data Loss Prevention"
+  ],
+  "Input Validation": [
+   "Parameter Validation",
+   "Hidden Fields",
+   "File Security",
+   "Web Shell Detection"
+  ],
+  "Known Attacks": [
+   "Signatures",
+   "Custom Signature"
+  ],
+  "Protocol": [
+   "HTTP",
+   "WebSocket",
+   "gRPC"
+  ]
+ }
+}

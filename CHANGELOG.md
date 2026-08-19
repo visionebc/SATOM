@@ -8,6 +8,22 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Added
 
+- **The step that actually removes the local copy.** Settings → Vault gained a
+  *Remove the local copies* card (`scrub_local_copies`, route
+  `/settings/vault/scrub`). Until it runs, switching to `vault` only changes
+  where the NEXT write goes: every credential already stored keeps its Fernet
+  copy, and the key that decrypts it keeps sitting on the same disk — so the
+  page could say `vault only` while nothing had actually moved. The scrub
+  replaces each local copy with the sentinel, and it is deliberately separate
+  from the migration because copying is reversible and this is not. It is
+  refused unless the vault is the authoritative store (in `mirror` the local
+  copy is the documented fallback), it is **dry-run by default**, and every
+  secret is read back FROM THE VAULT and compared with the local plaintext
+  before that plaintext is destroyed — a vault copy that is missing, different
+  or unreachable means the local one is the last working copy, so the row is
+  kept and reported as failed. Guards in `tests/test_vault_scrub.py`
+  (safeguards §104).
+
 - **A credential can now live in an external vault — and by default it still
   does not.** New Settings → Vault tab (`services/secret_backend.py`) points the
   product at an OpenBao or HashiCorp Vault KV v2 mount for appliance passwords,
@@ -33,6 +49,16 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   `tests/test_secret_backend.py` (30 tests, safeguards §103).
 
 ### Fixed
+
+- **`.git/config` was world-readable, and it holds the push token.** This
+  product embeds its Gitea credential in the origin URL, so that file is a
+  secret file — and git creates it in mode 644, which is not an error and
+  therefore never surfaced. `_harden_git_config()` now narrows it to 600 from
+  the writer (`git_configure`, right after `remote set-url`) and from
+  `git_info`, because a repository the installer cloned never passes through
+  the writer. `installers/install-satom.sh` chmods it straight after
+  `git clone` as well: without that, every new installation re-introduces the
+  defect. Guards in `tests/test_git_config_perms.py` (safeguards §105).
 
 - **A policy with a Lua script could not be cloned — the reference field holds a
   LIST, not a name.** Measured on FortiWeb 7.6.8: a policy with one script reads

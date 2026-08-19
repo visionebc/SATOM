@@ -86,9 +86,68 @@ def test_a_verify_object_names_GROUPS_not_leaf_certificates(via, urn):
     assert {c.via: c.urn for c in _CERT_VERIFY_REFS}[via] == urn
 
 
-def test_both_groups_carry_their_member_subtable():
-    for node in _CERT_VERIFY_REFS:
+def test_every_group_ref_carries_its_member_subtable():
+    # Scoped by what a node IS, not by "all of them". The verify chain also
+    # carries a ref that is NOT a group (the OCSP responder), and the lazy fix
+    # for that — weakening this to "any node that happens to have children" —
+    # is exactly how a real group would later lose its members in silence.
+    groups = [n for n in _CERT_VERIFY_REFS if n.urn.endswith("-group")]
+    assert len(groups) == 2, [n.urn for n in _CERT_VERIFY_REFS]
+    for node in groups:
         assert any(g.urn == node.urn + "/members" for g in node.children), node.urn
+
+
+# --------------------------------------------------------------------------- #
+#  The OCSP chain. Unmodelled until 2026-08-19, and the omission was silent:    #
+#  a migrated verify object simply stopped checking revocation in real time.    #
+# --------------------------------------------------------------------------- #
+OCSP_RESPONDER = "cmdb/system/certificate.ocsp-responder"
+OCSP_SIGNER = "cmdb/system/certificate.ocsp-signing-certs"
+
+
+def test_verify_ocsp_names_the_responder_and_not_its_signer():
+    """Settled by BINDING on fw12 (7.6.8), not by name: `set ocsp <an
+    ocsp-responder>` is ACCEPTED on a live verify object, while an
+    `ocsp-signing-certs` name and a name that exists nowhere are both REJECTED
+    with the SAME message — so a guard that only checked "it is rejected" would
+    not have separated them."""
+    assert {c.via: c.urn for c in _CERT_VERIFY_REFS}["ocsp"] == OCSP_RESPONDER
+    assert {c.urn for c in _CERT_VERIFY_REFS} .isdisjoint({OCSP_SIGNER})
+
+
+def test_the_responder_signer_is_the_LEAF_table_not_the_lookalike_group():
+    """The registry also carries `certificate.ocsp-signing-certs-group`. The
+    appliance settles it: `set ocsp-signing-certs ?` enumerates its <datasource>
+    as `system certificate.ocsp-signing-certs`. Pointing this at the -group
+    would repeat, inverted, the `ca`-names-a-GROUP mistake this file records."""
+    resp = [n for n in _CERT_VERIFY_REFS if n.urn == OCSP_RESPONDER][0]
+    kids = {c.via: c.urn for c in resp.children}
+    assert kids["ocsp-signing-certs"] == OCSP_SIGNER
+    assert not kids["ocsp-signing-certs"].endswith("-group")
+
+
+def test_the_signer_is_never_written_over_rest():
+    """A cmdb POST to the signer table answers 200, creates the row and DISCARDS
+    the PEM. Unlike `certificate.ca` (-7721, which stops the caller), leaving
+    this out of the material set does not fail loudly — it creates an empty
+    shell and calls the clone a success."""
+    from app.services import clone
+    assert OCSP_SIGNER in clone._CERT_URNS
+
+
+def test_the_responder_itself_is_NOT_exempt_from_the_completeness_gate():
+    """The responder is configuration, not material: it travels over REST and a
+    responder that came back empty is a REAL gap. Exempting it alongside its
+    signer would report a vanished responder as fine."""
+    from app.services import clone
+    assert OCSP_RESPONDER not in clone._CERT_URNS
+
+
+def test_the_signer_has_an_ssh_door_to_travel_through():
+    """Marking it 'not over REST' without a CLI path would only move the silence
+    one step: reported as SSH-only, with no SSH way to carry it."""
+    from app.services import cert_import
+    assert cert_import.spec_for("system/certificate.ocsp-signing-certs") is not None
 
 
 def test_the_verify_chain_hangs_off_every_verify_node():

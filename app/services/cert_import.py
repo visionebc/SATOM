@@ -25,6 +25,18 @@ editor's own form supplies, so those pages keep the normal New button:
 
 Reading the error code alone would have swept those into the blocked set.
 
+**And reading it alone also MISSED one.** ``system/certificate.ocsp-signing-certs``
+is in this list without ever having answered -7721: measured on fw12
+(2026-08-19), a cmdb POST carrying a valid PEM answers **HTTP 200**, creates the
+row and DISCARDS the certificate. It is worse than a refusal in every way that
+matters -- a -7721 stops the caller, a 200 is reported as success -- and it is
+invisible on the read back too, because REST prints ``certificate: ""`` for the
+empty shell and for a populated entry alike. Only the CLI (``show``) returns the
+bytes. Presence over REST is therefore NOT evidence of material in this table.
+
+The lesson generalises past this one row: a sweep that classifies by error code
+can only ever find the collections that produce an error.
+
 **One list, both consumers.** :mod:`app.views.objedit` hides the +create-new
 affordance on reference dropdowns for these collections, and
 :mod:`app.views.server_objects` swaps the page's New button for Generate/Import.
@@ -76,6 +88,9 @@ SSH_ONLY_SPECS: dict[str, CertImportSpec] = {
         CertImportSpec("system/certificate.xml-client-certificate",
                        "xml-client-certificate", "XML Client Certificate",
                        key_field="secret-key", key_label="Secret key"),
+        # NOT found by the errcode sweep above -- see the module docstring.
+        CertImportSpec("system/certificate.ocsp-signing-certs",
+                       "ocsp-signing-certs", "OCSP Signing Certificate"),
     )
 }
 

@@ -99,6 +99,41 @@ def _n(
 # crl` (read back through `get`, never `show`) and `certificate.
 # intermediate-certificate`. So material travels over SSH, exactly like
 # `certificate.local` does through :mod:`app.services.cert_ssh`.
+#
+# The third field, `ocsp`, was left unmodelled until 2026-08-19 and the omission
+# was SILENT: a verify object migrated or audited here simply lost its real-time
+# revocation check, and nothing said so. The write-up that justified leaving it
+# out claimed the collection "could not be determined" -- that was wrong about
+# the METHOD, not about the device. The probe had run at the CLI's top level on
+# an ADOM-enabled box, where `config system certificate <anything>` answers
+# "Parsing error at 'system'" and lists NOTHING. Inside `config vdom` / `edit
+# <adom>` there are THREE ocsp tables, and binding picks exactly one: on a live
+# `certificate.verify`, `set ocsp <an ocsp-responder>` is ACCEPTED while both
+# `set ocsp <an ocsp-signing-certs>` and a name that exists nowhere are
+# REJECTED. `server-certificate-verify` accepts the same responder.
+#
+# A `?` at the CLI root is NOT evidence of absence on an ADOM-enabled appliance.
+#
+# The responder's own signer is the trap. `set ocsp-signing-certs ?` enumerates
+# its <datasource> as `system certificate.ocsp-signing-certs` -- the LEAF table.
+# The registry also carries `certificate.ocsp-signing-certs-group`, and reading
+# the two by NAME would repeat exactly the mistake this file records above about
+# `ca` naming a GROUP: here it is the other way round, and the table that LOOKS
+# like the right answer refuses `set` outright.
+#
+# That leaf is MATERIAL, and it is the WORST of the material tables because it
+# does not refuse. `certificate.ca` answers -7721 and stops the caller; a cmdb
+# POST to `certificate.ocsp-signing-certs` carrying a valid PEM answers **200**,
+# creates the row and DISCARDS the certificate -- and REST then prints
+# `certificate: ""` for the empty shell and for a real entry alike, so the read
+# back cannot tell them apart either. It is therefore modelled as a node (so the
+# operator is TOLD it exists) and listed in `clone._CERT_URNS` (so the clone
+# reports it "SSH-only, not cloned over REST" instead of REST-creating a shell
+# that reports success). `cert_import.SSH_ONLY_SPECS` carries the CLI door.
+#
+# Why the 2026-08-19 sweep of all 37 writable tabs missed it: that sweep
+# classified by ERRCODE -7721. A collection that answers 200 could never appear
+# in its results, whatever it did with the body.
 _CERT_VERIFY_REFS: tuple = (
     _n("CA Group", "cmdb/system/certificate.ca-group", "ca",
        "verify -> the CA group whose CAs sign the accepted certificates",
@@ -106,6 +141,13 @@ _CERT_VERIFY_REFS: tuple = (
     _n("CRL Group", "cmdb/system/certificate.crl-group", "crl",
        "verify -> the CRL group checked for revocation",
        children=[_n("CRL Group Members", "cmdb/system/certificate.crl-group/members")]),
+    _n("OCSP Responder", "cmdb/system/certificate.ocsp-responder", "ocsp",
+       "verify -> the OCSP responder asked for revocation in real time",
+       children=[_n("OCSP Signing Certificate",
+                    "cmdb/system/certificate.ocsp-signing-certs",
+                    "ocsp-signing-certs",
+                    "responder -> the certificate whose signature validates its "
+                    "responses; MATERIAL, travels over SSH, never over REST")]),
 )
 
 

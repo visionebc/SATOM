@@ -14,6 +14,8 @@ the DESTINATION:
     - ``create``      → missing ⇒ will be created.
     - ``cert``        → a certificate ⇒ SSH-only, never carried over REST.
     - ``no-endpoint`` → urn has no writable registry endpoint ⇒ reported, kept.
+    - ``no-rest`` → the collection itself is unreachable over REST (-20001) ⇒
+      reported and NAMED, never written, never a blocking gap.
     - ``empty``       → not found on the source.
 
 ``apply_clone`` creates the ``create`` items via a caller-supplied ``write``
@@ -53,6 +55,45 @@ _WPP_OFFLINE = "cmdb/waf/web-protection-profile.offline-protection"
 # call the clone a success. See `registry.dependencies._CERT_VERIFY_REFS`.
 _CERT_URNS = {"cmdb/system/certificate.local", "cmdb/system/certificate.sni",
               "cmdb/system/certificate.ocsp-signing-certs"}
+
+# ── Collections the REST API does not expose ────────────────────────────────
+#
+# A THIRD class, after ordinary configuration and key material. These
+# collections EXIST — the CLI lists them and a policy field resolves to them as
+# a live ``<datasource>`` — but REST, the only transport the clone writes over,
+# answers ``-20001 "The REST API has invalid URL."`` for them. Neither end can
+# be read, so neither end can be compared and nothing can be written.
+#
+# Getting the class wrong goes BOTH ways, which is why it is a status and not a
+# suppression:
+#
+#   * Undeclared, the reference is invisible: the policy is copied naming a
+#     profile the destination has never seen and the appliance refuses it with a
+#     bare ``-651`` that names nothing.
+#   * Declared as an ORDINARY node the source read is empty, which the
+#     classifier below reads as "not found on source" and turns into a BLOCKING
+#     gap — a false statement about an object that is there, and one that would
+#     make every FTP policy unclonable.
+#
+# Measured on fortiweb12 (7.6.8), every leg:
+#   GET cmdb/waf/ftp-protection-profile              -> 500 / -20001
+#   CLI `config waf ftp-protection-profile`          -> listed by `config waf ?`
+#                                                       yet refuses to be entered
+#   CLI `set ftp-protection-profile ?` on an FTP policy
+#                                                    -> `<datasource>  ftp
+#                                                       application protection
+#                                                       profile`
+_REST_UNREACHABLE: dict[str, str] = {
+    "cmdb/waf/ftp-protection-profile":
+        "the CLI resolves this reference but REST answers -20001 for its "
+        "collection on 7.6.8 — it cannot be read on the source, compared, or "
+        "written to the destination",
+}
+
+# Both classes whose empty payload is EXPECTED rather than a gap, in ONE place.
+# Two suppressions covering one hole would mean neither could be shown to be
+# load-bearing.
+_EXEMPT_FROM_GAPS: frozenset = frozenset(_CERT_URNS) | frozenset(_REST_UNREACHABLE)
 
 # The VIP address object — the one payload a clone rewrites when the copy must
 # come up on a dummy IP (bulk clones, or the IP the operator typed).
@@ -181,7 +222,7 @@ class CloneItem:
     kind: str               # "object" | "subrow"
     depth: int
     payload: dict
-    status: str = "create"  # create | exists | cert | no-endpoint | empty
+    status: str = "create"  # create | exists | cert | no-endpoint | no-rest | empty
     note: str = ""
     applied: bool = False
     result: str = ""
@@ -526,6 +567,12 @@ class ClonePlanner:
         for it in items:
             if it.urn in _CERT_URNS:
                 it.status, it.note = "cert", "Certificate — SSH-only, not cloned over REST"
+            elif it.urn in _REST_UNREACHABLE:
+                # Ordered ABOVE the empty-payload branch on purpose. The read did
+                # come back empty and it always will; the reason is known here
+                # and nowhere else, and the generic branch would turn it into a
+                # blocking gap that misstates a real object as missing.
+                it.status, it.note = "no-rest", _REST_UNREACHABLE[it.urn]
             elif not it.payload:
                 it.status, it.note = "empty", "not found on source"
             elif it.logical is None:
@@ -560,11 +607,12 @@ def validate_completeness(items: list["CloneItem"]) -> list[dict]:
     # service.custom [empty]; the empty one is not a gap). Only a name that
     # resolved NOWHERE is a real missing object.
     resolved = {it.mkey for it in items
-                if it.kind == "object" and it.payload and it.urn not in _CERT_URNS}
+                if it.kind == "object" and it.payload
+                and it.urn not in _EXEMPT_FROM_GAPS}
     issues: list[dict] = []
     seen: set[str] = set()
     for it in items:
-        if it.kind != "object" or it.urn in _CERT_URNS:
+        if it.kind != "object" or it.urn in _EXEMPT_FROM_GAPS:
             continue
         if it.payload or it.mkey in resolved or it.mkey in seen:
             continue
@@ -943,6 +991,11 @@ _STATUS_LABELS = {
     "exists": "already exists (skipped)",
     "cert": "certificate (SSH, skipped)",
     "no-endpoint": "no REST endpoint (skipped)",
+    # Deliberately NOT folded into `no-endpoint`: that one means the registry has
+    # no writable endpoint for a reachable collection. This one means the API
+    # cannot reach the collection at all, and the operator has to create the
+    # object at the destination by hand or the policy is refused with -651.
+    "no-rest": "REST cannot carry this object (must exist on the destination)",
     "empty": "empty on source (skipped)",
 }
 
@@ -961,6 +1014,7 @@ def render_plan(items: list[CloneItem]) -> str:
     # name the operator expected to see created is the only place the plan text
     # can say "this one is not really there".
     marks = {"create": "+", "exists": "=", "cert": "lock", "no-endpoint": "!",
+             "no-rest": "!",
              "empty": ".", "no-content": "~"}
     lines: list[str] = []
     for it in items:

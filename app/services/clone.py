@@ -46,7 +46,13 @@ _WPP_INLINE = WEB_PROTECTION_PROFILE.urn  # cmdb/waf/web-protection-profile.inli
 _WPP_OFFLINE = "cmdb/waf/web-protection-profile.offline-protection"
 
 # Certificates can't move over REST (SSH-only) — flagged, never copied.
-_CERT_URNS = {"cmdb/system/certificate.local", "cmdb/system/certificate.sni"}
+# Objects whose payload is key/certificate MATERIAL: reported, never written
+# over REST. `certificate.ocsp-signing-certs` belongs here for a reason the
+# other two do not need -- a cmdb POST to it answers 200 and silently drops the
+# PEM, so omitting it would not fail loudly, it would create an empty shell and
+# call the clone a success. See `registry.dependencies._CERT_VERIFY_REFS`.
+_CERT_URNS = {"cmdb/system/certificate.local", "cmdb/system/certificate.sni",
+              "cmdb/system/certificate.ocsp-signing-certs"}
 
 # The VIP address object — the one payload a clone rewrites when the copy must
 # come up on a dummy IP (bulk clones, or the IP the operator typed).

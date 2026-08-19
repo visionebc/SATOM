@@ -616,7 +616,12 @@
       {# Active top-level nav section (server-rendered .open = no flash on reload). 2026-07-05 #}
       {% set _sc_cfg = request.endpoint == 'section_config.section' %}
       {% set _sc_key = (request.view_args.get('section_key') if (_sc_cfg and request.view_args) else None) %}
-      {% set _waf_sc = ['application_delivery','api_protection','bot_mitigation','dos_protection','ip_protection'] %}
+      {# The promoted WAF areas come from config_sections.WAF_AREAS via the
+         context processor. This used to be a hand-copied literal list — the
+         THIRD copy of the same 5 keys — so promoting an area (Machine Learning,
+         Tracking) meant editing three places and a miss left the WAF group
+         collapsed on the very page the operator had just opened. #}
+      {% set _waf_sc = waf_section_keys or [] %}
       {% set _g_lb   = request.blueprint in ['workspace','server_objects'] %}
       {% set _g_waf  = request.blueprint in ['web_protection','exceptions','attack_search','artifacts'] or (_sc_cfg and _sc_key in _waf_sc) %}
       {% set _g_cfg  = _sc_cfg and _sc_key not in _waf_sc %}

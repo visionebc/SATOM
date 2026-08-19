@@ -571,70 +571,10 @@ def create_app(config_override: object | None = None) -> Flask:
                 _bg = _store.banner_bg(prod['key'])
         except Exception:
             _bg = '#162940'
-        # FortiWeb config sections for the sidebar (live browsers only). Sourced
-        # from the catalog so it stays in sync; server_objects (own page) and the
-        # read-only Monitor have no menu → excluded.
-        try:
-            from .services import config_catalog as _cc
-            from .services import config_sections as _cs
-            # These 5 WAF protection areas were promoted to the top-level
-            # WAF group in the sidebar, so exclude them here to avoid showing
-            # them twice (WAF group + admin Configuration submenu).
-            _promoted = {'application_delivery', 'api_protection',
-                         'bot_mitigation', 'dos_protection', 'ip_protection'}
-            # server_objects has its OWN dedicated collapsible sidebar item
-            # (fw-so-parent), so it is excluded here to avoid a duplicate tree.
-            _cfg_skip = _promoted | {'server_objects'}
-            # Each section carries its GUI-faithful curated menu (groups → object
-            # types) so the sidebar expands it into a collapsible tree, exactly
-            # like Server Objects. complete=False = curated groups only (no giant
-            # "everything else" bucket — that stays on the section page).
-            _cfg_nav = [
-                {'key': s.key, 'label': s.label, 'emoji': s.emoji,
-                 'menu': _cs.section_menu(s.key, complete=False)}
-                for s in _cc.CONFIG_SECTIONS
-                if _cs.has_menu(s.key) and s.key not in _cfg_skip
-            ]
-        except Exception:
-            _cfg_nav = []
-        # Server Objects menu (groups → object types) for the sidebar submenu.
-        # The GUI-faithful menu lives in services.server_objects; each leaf links
-        # to server_objects.overview(?type=…) under the selected device.
-        try:
-            from .services import server_objects as _so
-            _so_nav = _so.server_objects_menu()
-        except Exception:
-            _so_nav = []
-        # Web Protection menu (FortiWeb 7.6 GUI mirror: groups → items) for the
-        # sidebar submenu — the SAME tree the in-page card used, now collapsible
-        # under the sidebar "Web Protection" item. Each leaf links to
-        # web_protection.menu_page under the selected device.
-        try:
-            from .services import wp_menu as _wp
-            _wp_nav = _wp.menu()
-        except Exception:
-            _wp_nav = []
-        # The 5 WAF protection areas promoted to the sidebar WAF group: each the
-        # FortiWeb GUI menu (services.config_sections, GUI-faithful) rendered as
-        # a collapsible accordion (like Web Protection / Server Objects). Each
-        # leaf links into section_config with ?type=<logical>. complete=False =
-        # curated GUI groups only (the "everything else" bucket stays on the page).
-        try:
-            from .services import config_sections as _cs2
-            _WAF_AREAS = (
-                ('application_delivery', 'Application Delivery', 'bi-rocket-takeoff'),
-                ('api_protection', 'API Protection', 'bi-plug'),
-                ('bot_mitigation', 'Bot Mitigation', 'bi-robot'),
-                ('dos_protection', 'DoS Protection', 'bi-shield-fill-exclamation'),
-                ('ip_protection', 'IP Protection', 'bi-signpost-split'),
-            )
-            _waf_nav = [
-                {'key': _k, 'label': _lbl, 'icon': _ic,
-                 'menu': _cs2.section_menu(_k, complete=False)}
-                for _k, _lbl, _ic in _WAF_AREAS
-            ]
-        except Exception:
-            _waf_nav = []
+        # The selected appliance drives BOTH the device-scoped nav leaves and the
+        # feature-visibility gate below, so it is resolved before the menus are
+        # built (it used to be resolved after them, when nothing upstream needed
+        # it). One resolution, one query — not one per consumer.
         try:
             from .services import device_context as _dc
             _cur_appl = _dc.current_appliance()
@@ -659,6 +599,88 @@ def create_app(config_override: object | None = None) -> Flask:
                         _cur_appl = _cands[0]
         except Exception:
             _cur_appl = None
+        # FortiWeb hides a whole menu branch for every `system feature-visibility`
+        # toggle left `disable` (all 19 are disable on a stock 7.6.8 unit). Mirror
+        # that here so the sidebar cannot offer pages the appliance's own GUI does
+        # not have. Unknown device / unsynced cache → EMPTY set → the menu is
+        # exactly what it was before gating existed.
+        try:
+            from .services import feature_visibility as _fv
+            _fv_hidden = _fv.hidden_logicals(getattr(_cur_appl, 'id', None))
+        except Exception:
+            _fv_hidden = frozenset()
+        # FortiWeb config sections for the sidebar (live browsers only). Sourced
+        # from the catalog so it stays in sync; server_objects (own page) and the
+        # read-only Monitor have no menu → excluded.
+        try:
+            from .services import config_catalog as _cc
+            from .services import config_sections as _cs
+            # The WAF protection areas promoted to the top-level WAF group in
+            # the sidebar are excluded here so they don't show twice (WAF group
+            # + admin Configuration submenu). ONE source — config_sections
+            # .WAF_AREAS — feeds this exclusion, the WAF group below and the
+            # template's "keep the group open" test; the three used to carry
+            # three hand-copied lists.
+            _promoted = set(_cs.WAF_AREA_KEYS)
+            # server_objects has its OWN dedicated collapsible sidebar item
+            # (fw-so-parent), so it is excluded here to avoid a duplicate tree.
+            _cfg_skip = _promoted | {'server_objects'}
+            # Each section carries its GUI-faithful curated menu (groups → object
+            # types) so the sidebar expands it into a collapsible tree, exactly
+            # like Server Objects. complete=False = curated groups only (no giant
+            # "everything else" bucket — that stays on the section page).
+            _cfg_nav = [
+                {'key': s.key, 'label': s.label, 'emoji': s.emoji,
+                 'menu': _cs.section_menu(s.key, complete=False,
+                                          hidden=_fv_hidden)}
+                for s in _cc.CONFIG_SECTIONS
+                if _cs.has_menu(s.key) and s.key not in _cfg_skip
+            ]
+        except Exception:
+            _cfg_nav = []
+        # Server Objects menu (groups → object types) for the sidebar submenu.
+        # The GUI-faithful menu lives in services.server_objects; each leaf links
+        # to server_objects.overview(?type=…) under the selected device.
+        try:
+            from .services import server_objects as _so
+            # Traffic Mirror is feature-gated on FortiWeb (system
+            # feature-visibility → traffic-mirror), so this menu takes the gate
+            # too; a page left with no tab drops, and so does an emptied group.
+            _so_nav = _so.server_objects_menu(hidden=_fv_hidden)
+        except Exception:
+            _so_nav = []
+        # Web Protection menu (FortiWeb 7.6 GUI mirror: groups → items) for the
+        # sidebar submenu — the SAME tree the in-page card used, now collapsible
+        # under the sidebar "Web Protection" item. Each leaf links to
+        # web_protection.menu_page under the selected device.
+        try:
+            from .services import wp_menu as _wp
+            # Padding Oracle Protection is feature-gated on FortiWeb
+            # (feature-visibility → padding-oracle, `disable` out of the box).
+            _wp_nav = _wp.menu(_fv_hidden)
+        except Exception:
+            _wp_nav = []
+        # The WAF protection areas promoted to the sidebar WAF group: each the
+        # FortiWeb GUI menu (services.config_sections, GUI-faithful) rendered as
+        # a collapsible accordion (like Web Protection / Server Objects). Each
+        # leaf links into section_config with ?type=<logical>. complete=False =
+        # curated GUI groups only (the "everything else" bucket stays on the page).
+        # The area list is config_sections.WAF_AREAS — the SAME object that drives
+        # _promoted above and waf_section_keys below.
+        try:
+            from .services import config_sections as _cs2
+            _waf_nav = [
+                {'key': _k, 'label': _lbl, 'icon': _ic,
+                 'menu': _cs2.section_menu(_k, complete=False, hidden=_fv_hidden)}
+                for _k, _lbl, _ic in _cs2.WAF_AREAS
+            ]
+        except Exception:
+            _waf_nav = []
+        try:
+            from .services import config_sections as _cs3
+            _waf_keys = list(_cs3.WAF_AREA_KEYS)
+        except Exception:
+            _waf_keys = []
         try:
             from flask_login import current_user as _cu
             from .models import Template as _Tpl
@@ -757,6 +779,8 @@ def create_app(config_override: object | None = None) -> Flask:
             'server_objects_nav': _so_nav,
             'web_protection_nav': _wp_nav,
             'waf_sections_nav': _waf_nav,
+            'waf_section_keys': _waf_keys,
+            'hidden_features': sorted(_fv_hidden),
             'pending_template_count': _pending,
             'open_report_count': _open_reports,
             'bug_reports_notify': _bug_notify,

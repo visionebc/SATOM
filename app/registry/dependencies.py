@@ -86,9 +86,19 @@ def _n(
 # policy that trusts nothing while reporting success.
 #
 # The groups are REST-creatable (POST -> 200) so they travel; their member rows
-# travel through the generic by-parent path. What the members NAME is a file
-# upload (`cmdb/system/certificate.ca` answers -7721 even for a valid public
-# root PEM), so those are audited at the destination like `certificate.local`.
+# travel through the generic by-parent path, and the field they use is `name`
+# (measured on a real row: POST .../members {"name": ...} -> id/type/name/...).
+#
+# What the members NAME is MATERIAL, and REST refuses it -- `cmdb/system/
+# certificate.ca` answers -7721 even for a valid public root PEM. That refusal
+# used to be written up here as "a file upload", which is wrong about the
+# OBJECT rather than about REST: measured on fortiweb12 (7.6.8), the CLI
+# imports a CA cleanly with `config system certificate ca ; edit "x" ;
+# set certificate "-----BEGIN..."` -- the field is `certificate`, not `ca` --
+# and the object is visible over REST afterwards. Same story for `certificate.
+# crl` (read back through `get`, never `show`) and `certificate.
+# intermediate-certificate`. So material travels over SSH, exactly like
+# `certificate.local` does through :mod:`app.services.cert_ssh`.
 _CERT_VERIFY_REFS: tuple = (
     _n("CA Group", "cmdb/system/certificate.ca-group", "ca",
        "verify -> the CA group whose CAs sign the accepted certificates",
@@ -689,8 +699,17 @@ SERVER_POLICY: DepNode = _n(
         _n("Let's Encrypt Certificate", "cmdb/system/certificate.letsencrypt", "lets-certificate",
            "System · Certificates · ACME",
            children=[_n("SAN List", "cmdb/system/certificate.letsencrypt/san-list")]),
+        # The members node is not decoration. Without it the group travelled as
+        # an EMPTY SHELL -- the object was created at the destination, its rows
+        # never were, and nothing reported the gap. A chain group with no
+        # members serves a leaf certificate with no intermediates, which fails
+        # verification on exactly the clients that do not cache the issuer.
+        # Path verified on 7.6.8 with the discriminator this registry uses
+        # everywhere: a real collection answers 200, an invented one 500/-20001.
         _n("Intermediate CA Group", "cmdb/system/certificate.intermediate-certificate-group",
-           "intermediate-certificate-group", "System · Certificates"),
+           "intermediate-certificate-group", "System · Certificates",
+           children=[_n("Intermediate CA Group Members",
+                        "cmdb/system/certificate.intermediate-certificate-group/members")]),
         _n("SSL Ciphers Group", "cmdb/server-policy/ssl-ciphers.predefined",
            "ssl-ciphers-group", "Server Policy · SSL"),
         _n("SSL Ciphers Group (custom)", "cmdb/server-policy/ssl-ciphers.custom",

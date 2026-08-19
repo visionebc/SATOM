@@ -118,3 +118,51 @@ def test_the_new_collections_are_reachable_by_the_options_endpoint():
     # looks exactly like a collection with no rows.
     assert "system/certificate.verify" in ALL_REF_ENDPOINTS
     assert "system/certificate.server-certificate-verify" in ALL_REF_ENDPOINTS
+
+
+# --------------------------------------------------------------------------- #
+#  Certificate MATERIAL (1.6.0 of the standalone clone; same map defect here)   #
+# --------------------------------------------------------------------------- #
+INTER_GROUP = "cmdb/system/certificate.intermediate-certificate-group"
+
+
+def _all_nodes():
+    out, stack = [], [SERVER_POLICY]
+    while stack:
+        n = stack.pop()
+        out.append(n)
+        stack.extend(n.children)
+    return out
+
+
+def test_every_intermediate_ca_group_node_carries_its_members():
+    """A chain group with no members node travels as an EMPTY SHELL.
+
+    Nothing fails when it does: the group object is created at the destination
+    and reported created, its member rows are never walked, and the copy serves
+    a leaf certificate with no intermediates -- which fails verification on
+    exactly the clients that do not already cache the issuer. EVERY node, not
+    the first: the group appears in the policy tree and again under the SNI
+    member row, and fixing one leaves the other shipping an empty group.
+    """
+    nodes = [n for n in _all_nodes() if n.urn == INTER_GROUP]
+    assert nodes, "the intermediate CA group left the map"
+    for n in nodes:
+        assert any(c.urn == INTER_GROUP + "/members" for c in n.children), \
+            "intermediate CA group node has no members sub-table"
+
+
+def test_the_map_does_not_claim_a_CA_cannot_be_carried():
+    """The -7721 refusal is REST's, not the object's.
+
+    Measured on fortiweb12 (7.6.8): the CLI imports a CA with
+    `config system certificate ca ; edit "x" ; set certificate "-----BEGIN..."`
+    and the object then reads back over REST. A comment asserting the opposite
+    is not cosmetic -- it is the sentence a future reader uses to decide that a
+    BLOCK is unavoidable, which is exactly what happened in the clone tool.
+    """
+    import inspect
+    from app.registry import dependencies
+
+    src = inspect.getsource(dependencies)
+    assert "is a file upload" not in src

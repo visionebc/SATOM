@@ -74,6 +74,21 @@ REF_ENDPOINTS: dict[str, str] = {
     "sni-certificate": "system/certificate.sni",
     "ssl-client-verify": "system/certificate.verify",
     "hpkp-header": "system/certificate.hpkp",
+    # `adfs-certificate-service` names a SERVICE, not a certificate. From
+    # the 7.6 CLI reference: "Select the pre-defined service TLSCLIENTPORT
+    # if FortiWeb uses service port 49443". fw12 does carry TLSCLIENTPORT
+    # among service.predefined's six rows.
+    "adfs-certificate-service": "server-policy/service.custom|server-policy/service.predefined",
+    # The FTP half of a server policy. Gated on `protocol FTP`, which is
+    # immutable after creation, which is why it stayed invisible.
+    "ftp-protection-profile": "waf/ftp-protection-profile",
+    # Targets taken from the CLI reference's own links, NOT inferred from
+    # the field names: `ftp-file-check` -> ftp-file-security and
+    # `ftp-geo-ip` -> geo-block-list are not what a reader would guess.
+    "ftp-file-check": "waf/ftp-file-security",
+    "ftp-geo-ip": "waf/geo-block-list",
+    "ftp-ip-check": "waf/ip-list",
+    "ftp-restriction-command-type": "waf/ftp-command-restriction-rule",
     "allow-hosts": "server-policy/allow-hosts",
     "allow-list": "server-policy/allow-list",
     "ztna-profile": "server-policy/ztna-profile",

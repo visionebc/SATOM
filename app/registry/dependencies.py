@@ -715,9 +715,16 @@ SERVER_POLICY: DepNode = _n(
         _n("Protected Hostnames (Allow Hosts)", "cmdb/server-policy/allow-hosts",
            "allow-hosts / http-protected-hostname", "Server Objects",
            children=[_n("Host List", "cmdb/server-policy/allow-hosts/host-list")]),
-        _n("Service", "cmdb/server-policy/service.predefined", "service",
+        # `adfs-certificate-service` rides these same two nodes: it names a
+        # SERVICE despite the name. Inert on 7.6.8 in BOTH directions and
+        # that is measured: the CLI has no such field even with `ssl
+        # enable`, and REST accepts a PUT with 200 and reads the field back
+        # as "" — the silent-discard trap.
+        _n("Service", "cmdb/server-policy/service.predefined",
+           "service / adfs-certificate-service",
            "Server Objects · predefined -> fallback service.custom"),
-        _n("Custom Service", "cmdb/server-policy/service.custom", "service",
+        _n("Custom Service", "cmdb/server-policy/service.custom",
+           "service / adfs-certificate-service",
            "Server Objects · custom service (predefined ones are built-in, not cloned)"),
         _n("Local Certificate", "cmdb/system/certificate.local",
            "certificate / ssl-certificate", "System · Certificates"),
@@ -846,6 +853,32 @@ SERVER_POLICY: DepNode = _n(
         _n("Replacement Message Group", "cmdb/system/replacemsg", "replacemsg",
            "System · block/error page set (SHARED; pages are a global catalog, "
            "not per-policy — not expanded)"),
+        # ── FTP Protection Profile ───────────────────────────────────────
+        # Invisible until now for the same reason the Advanced SSL block
+        # was: the field is GATED, this time on `protocol`. Measured on
+        # fortiweb12 (7.6.8): on a policy whose `protocol` is HTTP the CLI
+        # answers "Parsing error at 'ftp-protection-profile'"; on one whose
+        # `protocol` is FTP it answers "<datasource>  ftp application
+        # protection profile". `protocol` is immutable after creation
+        # ("attribute after created. Command fail. Permission denied."), so
+        # it cannot be flipped on an existing policy to find out, and a lab
+        # of HTTP policies can never produce the reference.
+        #
+        # The collection is NOT reachable over REST on this firmware — see
+        # `_REST_UNREACHABLE` in services/clone.py. The node exists so the
+        # reference is NAMED, not so it can be copied.
+        _n("FTP Protection Profile", "cmdb/waf/ftp-protection-profile",
+           "ftp-protection-profile",
+           "FTP Security · gated on `protocol FTP`",
+           children=[
+               _n("FTP File Security", "cmdb/waf/ftp-file-security",
+                  "ftp-file-check"),
+               _n("Geo IP Block List", "cmdb/waf/geo-block-list", "ftp-geo-ip"),
+               _n("IP List", "cmdb/waf/ip-list", "ftp-ip-check"),
+               _n("FTP Command Restriction",
+                  "cmdb/waf/ftp-command-restriction-rule",
+                  "ftp-restriction-command-type"),
+           ]),
         _n("Web Protection Profile", "cmdb/waf/web-protection-profile.inline-protection",
            "web-protection-profile",
            "Web Protection · -> Web Protection Profile tree (its own root below)"),

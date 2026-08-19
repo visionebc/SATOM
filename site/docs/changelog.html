@@ -142,6 +142,19 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
 <h3 id="fixed">Fixed</h3>
 <ul>
 <li>
+<p><strong>A stale process could send <code>__stored-in-vault__</code> to an appliance as a
+  password.</strong> Both vault read paths now raise when the local column holds the
+  sentinel and the vault did not answer in that process. This is not
+  hypothetical: <code>satom-scheduler</code> is a separate long-lived process, and the one
+  still running pre-vault code sent the marker to the whole fleet the moment the
+  local copies were removed — every collector returned 401 and
+  <code>satom_scrape_up</code> fell to 0, with not one line in the vault audit log to
+  explain it. Returning the marker turns "this process cannot reach the vault"
+  into "the password is wrong". <strong>Restart every SATOM process after changing the
+  secret backend, not just <code>satom.service</code>.</strong> Guards in
+  <code>tests/test_vault_sentinel_never_sent.py</code> (safeguards §106).</p>
+</li>
+<li>
 <p><strong><code>.git/config</code> was world-readable, and it holds the push token.</strong> This
   product embeds its Gitea credential in the origin URL, so that file is a
   secret file — and git creates it in mode 644, which is not an error and

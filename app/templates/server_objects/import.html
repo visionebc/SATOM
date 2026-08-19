@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}Import {{ spec.label }} — {{ appliance.name }}{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('server_objects.index') }}">{{ _('Server Objects') }}</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('server_objects.overview', id=appliance.id, type=selected.logical) }}">{{ selected.label }}</a>
+  <span class="separator">/</span>
+  <span>{{ _('Import') }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-upload me-2 text-accent"></i>{{ _('Import') }} {{ spec.label }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      <strong>{{ appliance.name }}</strong> · <code>{{ spec.collection }}</code>
+    </p>
+  </div>
+  <a href="{{ url_for('server_objects.overview', id=appliance.id, type=selected.logical) }}"
+     class="btn btn-secondary btn-sm">
+    <i class="bi bi-chevron-left me-1"></i>{{ _('Back') }}
+  </a>
+</div>
+
+<div class="alert alert-info py-2" style="font-size:12.5px;">
+  <i class="bi bi-shield-lock me-1"></i>
+  {{ _('The REST API cannot carry certificate material — a cmdb create answers') }}
+  <code>-7721</code>{{ _(', valid PEM or not. This form uploads over the certificate-only SSH door, which can emit nothing but a') }}
+  <code>config system certificate {{ spec.cli_table }}</code> {{ _('block.') }}
+  {% if not spec.key_field %}
+  {{ _('This table holds public material only, so it asks for no private key.') }}
+  {% endif %}
+</div>
+
+{% if error %}
+<div class="alert alert-danger" style="font-size:13px;">
+  <i class="bi bi-exclamation-triangle me-1"></i>{{ error }}
+</div>
+{% endif %}
+
+{% if summary %}
+<div class="fw-card mb-3">
+  <div class="fw-card-body" style="font-size:12.5px;">
+    <div><strong>{{ _('Subject') }}:</strong> <code>{{ summary.subject }}</code></div>
+    <div><strong>{{ _('Issuer') }}:</strong> <code>{{ summary.issuer }}</code></div>
+    <div><strong>{{ _('Expires') }}:</strong> {{ summary.not_after }}</div>
+    {% if summary.blocks and summary.blocks > 1 %}
+    <div class="text-warning mt-1">
+      <i class="bi bi-diagram-2 me-1"></i>
+      {{ summary.blocks }} {{ _('PEM blocks pasted — FortiWeb wants the LEAF here and its issuers in Intermediate CA.') }}
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+<div class="fw-card" style="max-width:860px;">
+  <div class="fw-card-body">
+    <form method="POST"
+          action="{{ url_for('server_objects.import_object', id=appliance.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="type" value="{{ selected.logical }}">
+
+      <div class="mb-3">
+        <label class="fw-form-label">{{ _('Name on the appliance') }}</label>
+        <input class="form-control fw-form-control" name="name" required
+               value="{{ form.name }}" placeholder="wildcard-visionebc-mx">
+        <div class="form-text" style="font-size:11.5px;">
+          {{ _("Letters, digits, '.', '-', '_' — 63 characters at most.") }}
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <label class="fw-form-label">{{ _('Certificate (PEM)') }}</label>
+        <textarea class="form-control fw-form-control" name="cert_pem" rows="9" required
+                  style="font-family:monospace;font-size:11.5px;"
+                  placeholder="-----BEGIN CERTIFICATE-----&#10;…&#10;-----END CERTIFICATE-----">{{ form.cert_pem }}</textarea>
+      </div>
+
+      {% if spec.key_field %}
+      <div class="mb-3">
+        <label class="fw-form-label">{{ spec.key_label }} (PEM)</label>
+        <textarea class="form-control fw-form-control" name="key_pem" rows="7" required
+                  style="font-family:monospace;font-size:11.5px;"
+                  placeholder="-----BEGIN PRIVATE KEY-----&#10;…&#10;-----END PRIVATE KEY-----">{{ form.key_pem }}</textarea>
+        <div class="form-text" style="font-size:11.5px;">
+          {{ _('The pair is verified here before anything is sent — a key that does not belong to the certificate is refused, not uploaded.') }}
+        </div>
+      </div>
+      {% if spec.passphrase_field %}
+      <div class="mb-3" style="max-width:340px;">
+        <label class="fw-form-label">{{ _('Key passphrase (only if encrypted)') }}</label>
+        <input type="password" class="form-control fw-form-control" name="passphrase"
+               autocomplete="new-password">
+      </div>
+      {% endif %}
+      {% endif %}
+
+      <button type="submit" class="btn btn-fw-primary btn-sm">
+        <i class="bi bi-upload me-1"></i>{{ _('Import to') }} {{ appliance.name }}
+      </button>
+    </form>
+  </div>
+</div>
+{% endblock %}

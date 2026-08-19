@@ -217,6 +217,28 @@ def _is_named_ref(node: DepNode) -> bool:
     return bool(node.via) and "=" not in node.via
 
 
+#: Reference fields whose value is a SPACE-SEPARATED LIST of object names
+#: rather than one name. Declared PER FIELD, and only for fields measured to be
+#: lists, for the same reason the sub-row key table is per table: a space is a
+#: LEGAL character in a FortiWeb object name nearly everywhere (a health check,
+#: a URL access policy, a WPP and an SNI policy all accept ``"zz probe space"``,
+#: and one named ``"zztrail "`` keeps its trailing space and can only be deleted
+#: WITH it — all measured on 7.6.8). Splitting every reference would turn one
+#: legal name into two that do not exist, which is this same failure moved
+#: elsewhere. The split is unambiguous HERE because the scripting collection
+#: REFUSES a name containing a space (``-2004 Invalid name.``).
+#:
+#: Measured on FortiWeb 7.6.8: a policy with ONE script reads
+#: ``scripting-list = "zzprobe-lua "`` and with two,
+#: ``"zzprobe-lua zzprobe-lua2 "`` — a separator AND a trailing space. Read as a
+#: single name the mkey carries that trailing space, the source read answers
+#: ``-3 The entry is not found``, the payload comes back empty and
+#: :func:`validate_completeness` REFUSES the clone. So the ONE-script case failed
+#: too, not just the multi-script one — which is why "the script is on both
+#: boxes" never helped: the destination was never consulted.
+_LIST_REF_FIELDS = {"scripting-list"}
+
+
 def referenced_names(obj: dict, via: str) -> list[str]:
     """Names referenced by ``obj`` through the ``via`` edge (handles ``a / b``)."""
     names: list[str] = []
@@ -225,8 +247,13 @@ def referenced_names(obj: dict, via: str) -> list[str]:
         if not token or "=" in token or " " in token:
             continue
         val = unwrap(attr(obj, token, token.replace("-", "_")))
-        if isinstance(val, str) and val and val not in _EMPTY_REFS and val not in names:
-            names.append(val)
+        if not isinstance(val, str) or not val:
+            continue
+        # A DECLARED list field is split; every other field is taken VERBATIM,
+        # trailing space included, because that space may be part of the name.
+        for name in (val.split() if token in _LIST_REF_FIELDS else [val]):
+            if name and name not in _EMPTY_REFS and name not in names:
+                names.append(name)
     return names
 
 

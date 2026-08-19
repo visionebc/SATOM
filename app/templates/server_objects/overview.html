@@ -63,12 +63,43 @@
           {% if selected.read_only %}<span class="fw-badge fw-badge-secondary ms-1">{{ _('read-only') }}</span>{% endif %}
         </div>
         {% if not selected.read_only %}
-        <a class="btn btn-fw-primary btn-sm"
-           href="{{ url_for('objedit.edit', appliance_id=appliance.id, collection=selected.collection, title=selected.label, create=1) }}">
-          <i class="bi bi-plus-lg me-1"></i>New {{ selected.label }}
-        </a>
+          {% if import_spec %}
+          {# A cmdb POST to this collection answers -7721 even with a valid PEM,
+             so "New …" here could never work. The two actions that DO work are
+             FortiWeb's own: Generate (CSR → ADCS/ACME → deploy) and Import. #}
+          <div class="d-flex gap-2">
+            {% if can_generate %}
+            <a class="btn btn-fw-primary btn-sm"
+               href="{{ url_for('cert_manager.new') }}?appliance_id={{ appliance.id }}">
+              <i class="bi bi-magic me-1"></i>{{ _('Generate') }}
+            </a>
+            {% endif %}
+            <a class="btn btn-secondary btn-sm"
+               href="{{ url_for('server_objects.import_object', id=appliance.id, type=selected.logical) }}">
+              <i class="bi bi-upload me-1"></i>{{ _('Import') }}
+            </a>
+          </div>
+          {% else %}
+          <a class="btn btn-fw-primary btn-sm"
+             href="{{ url_for('objedit.edit', appliance_id=appliance.id, collection=selected.collection, title=selected.label, create=1) }}">
+            <i class="bi bi-plus-lg me-1"></i>New {{ selected.label }}
+          </a>
+          {% endif %}
         {% endif %}
       </div>
+
+      {% if import_spec %}
+      <div class="alert alert-info py-2" style="font-size:12.5px;">
+        <i class="bi bi-info-circle me-1"></i>
+        {{ _('A') }} <strong>{{ import_spec.label }}</strong>
+        {{ _('is file material: the REST API cannot create one, so it is uploaded over SSH.') }}
+        {% if can_generate %}
+        {{ _('Prefer') }} <strong>{{ _('Generate') }}</strong>
+        {{ _('— the key is minted here, signed by your ADCS/ACME and tracked for renewal. Or let the appliance run ACME itself under') }}
+        <a href="{{ url_for('server_objects.overview', id=appliance.id, type='certificate_letsencrypt') }}">{{ _("Let's Encrypt") }}</a>{{ _(", where the key never leaves the box — and SATOM cannot renew or clone it.") }}
+        {% endif %}
+      </div>
+      {% endif %}
 
       {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
 

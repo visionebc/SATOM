@@ -1,0 +1,450 @@
+"""Certificate material: the six collections REST cannot create, and their cure.
+
+NOTHING FAILS when a UI offers an action that cannot work. The button renders,
+the operator clicks, the device answers an opaque HTTP 500, and the reasonable
+reading is "the appliance is broken". That is how ``system/certificate.local``
+offered a "New Local" button for four releases while the very same collection was
+already blacklisted, one layer down, in ``objedit._NO_REF_CREATE`` — two lists,
+two authors, one of them wrong.
+
+So the guards below pin THREE things, and the third is the one that matters:
+
+1. the SET is right — the six that answer ``-7721`` to a cmdb POST *carrying a
+   valid PEM* (measured on fw12 / 7.6.8, 2026-08-19);
+2. the SET is not too wide — ``tsl-ca`` (created with ``type=url`` +
+   ``distribute-url``) and ``letsencrypt`` (created with ``domain``) answer an
+   error to a name-only POST too, and sweeping them in by error code alone would
+   have taken two working pages away;
+3. **both consumers read the same list.** A guard that only checked the dropdown
+   would have passed happily through the whole four-release defect.
+"""
+from __future__ import annotations
+
+import pytest
+
+from app.services import cert_import
+from app.services import cert_ssh
+from tests.conftest import login, admin_user_id
+
+
+# The six, transcribed from the live sweep. Written out rather than derived from
+# the module under test — a guard that recomputes its expectation from the code
+# it guards agrees with any change, including a wrong one.
+SSH_ONLY = {
+    "system/certificate.local",
+    "system/certificate.ca",
+    "system/certificate.intermediate-certificate",
+    "system/certificate.sign-ca",
+    "system/certificate.xml-server-certificate",
+    "system/certificate.xml-client-certificate",
+}
+
+# Rejected a name-only POST as well, but for an ordinary reason — these must stay
+# creatable through the normal editor.
+REST_CREATABLE_LOOKALIKES = [
+    "system/certificate.tsl-ca",              # -7721, but takes type=url + distribute-url
+    "system/certificate.letsencrypt",         # -361, but takes domain
+    "system/certificate.ocsp-stapling",       # -56 required field
+    "system/certificate.hpkp",                # -56 required field
+    "server-policy/service.custom",           # -56 required field
+    "server-policy/http-content-routing-policy",   # -56 required field
+    "server-policy/pattern.custom-data-type",      # -56 required field
+    "system/certificate.ca-group",            # plain create, verified 200
+    "system/certificate.crl",                 # plain create, verified 200
+    "system/certificate.verify",              # plain create, verified 200
+]
+
+
+def _make_appliance(app):
+    from app.models import Appliance, db
+    with app.app_context():
+        a = Appliance(name="fw1", kind="fortiweb", host="192.0.2.99",
+                      port=443, username="admin", verify_ssl=False)
+        a.password = "secret"
+        db.session.add(a)
+        db.session.commit()
+        return a.id
+
+
+# --------------------------------------------------------------------------- #
+#  1. the set                                                                  #
+# --------------------------------------------------------------------------- #
+def test_ssh_only_set_is_exactly_the_six():
+    assert set(cert_import.SSH_ONLY_COLLECTIONS) == SSH_ONLY
+
+
+@pytest.mark.parametrize("coll", sorted(SSH_ONLY))
+def test_rest_cannot_create_the_six(coll):
+    assert cert_import.rest_can_create(coll) is False
+    assert cert_import.spec_for(coll) is not None
+
+
+@pytest.mark.parametrize("coll", REST_CREATABLE_LOOKALIKES)
+def test_lookalikes_keep_their_rest_create(coll):
+    """A -7721/-361/-56 in a log is NOT evidence of file material."""
+    assert cert_import.rest_can_create(coll) is True
+    assert cert_import.spec_for(coll) is None
+
+
+def test_generate_is_offered_for_local_only():
+    """Generate promises a lifecycle (CSR → sign → deploy → renew → swap) that
+    the Certificate Manager only has for ``certificate.local``. Offering it on a
+    CA page would advertise a renewal that never comes."""
+    assert cert_import.can_generate("system/certificate.local") is True
+    for coll in sorted(SSH_ONLY - {"system/certificate.local"}):
+        assert cert_import.can_generate(coll) is False
+
+
+# --------------------------------------------------------------------------- #
+#  2. the CLI shape, per collection                                            #
+# --------------------------------------------------------------------------- #
+def test_key_field_names_are_per_table():
+    """``xml-client-certificate`` calls its key ``secret-key``; the two CA tables
+    have no key at all. Read from ``set ?`` on fw12, not assumed uniform."""
+    s = cert_import.SSH_ONLY_SPECS
+    assert s["system/certificate.local"].key_field == "private-key"
+    assert s["system/certificate.sign-ca"].key_field == "private-key"
+    assert s["system/certificate.xml-server-certificate"].key_field == "private-key"
+    assert s["system/certificate.xml-client-certificate"].key_field == "secret-key"
+    assert s["system/certificate.ca"].key_field is None
+    assert s["system/certificate.intermediate-certificate"].key_field is None
+
+
+def test_cli_table_is_the_collection_suffix():
+    for coll, spec in cert_import.SSH_ONLY_SPECS.items():
+        assert coll == "system/certificate." + spec.cli_table
+
+
+class _FakeSSH(cert_ssh.FortiWebCertSSH):
+    """Captures the block instead of sending it (no device, no paramiko)."""
+
+    def __init__(self):  # noqa: D107 — deliberately skips the parent's connect
+        self.sent = []
+
+    def _send_block(self, block, *, quiet=1.2, maxt=30.0):  # noqa: D102
+        self.sent.append(block)
+        return "ok"
+
+
+CERT = "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----"
+KEY = "-----BEGIN PRIVATE KEY-----\nBBBB\n-----END PRIVATE KEY-----"
+
+
+def test_block_targets_the_right_table_and_key_field():
+    ssh = _FakeSSH()
+    ssh.import_certificate(
+        cert_import.SSH_ONLY_SPECS["system/certificate.xml-client-certificate"],
+        "x1", CERT, KEY)
+    block = ssh.sent[0]
+    assert "config system certificate xml-client-certificate" in block
+    assert 'set secret-key "' in block
+    assert "set private-key" not in block   # the wrong name for THIS table
+
+
+def test_keyless_table_refuses_a_key_instead_of_dropping_it():
+    """Silently discarding the key would upload a keyless object and report
+    success — the "created but empty" failure this whole path exists to avoid."""
+    ssh = _FakeSSH()
+    with pytest.raises(cert_ssh.CertWriteViolation):
+        ssh.import_certificate(cert_import.SSH_ONLY_SPECS["system/certificate.ca"],
+                               "ca1", CERT, KEY)
+    assert ssh.sent == []
+
+
+def test_keyless_table_sends_certificate_only():
+    ssh = _FakeSSH()
+    ssh.import_certificate(cert_import.SSH_ONLY_SPECS["system/certificate.ca"],
+                           "ca1", CERT)
+    block = ssh.sent[0]
+    assert "config system certificate ca\n" in block
+    assert 'set certificate "' in block
+    assert "set private-key" not in block and "set secret-key" not in block
+
+
+def test_passphrase_refused_where_the_table_has_none():
+    ssh = _FakeSSH()
+    with pytest.raises(cert_ssh.CertWriteViolation):
+        ssh.import_certificate(
+            cert_import.SSH_ONLY_SPECS["system/certificate.xml-client-certificate"],
+            "x1", CERT, KEY, "hunter2")
+
+
+def test_passphrase_goes_in_before_the_certificate():
+    """FortiWeb needs the password set before the encrypted material lands."""
+    ssh = _FakeSSH()
+    ssh.import_certificate(cert_import.SSH_ONLY_SPECS["system/certificate.local"],
+                           "c1", CERT, KEY, "hunter2")
+    block = ssh.sent[0]
+    assert block.count('set passwd "') == 1      # once, not "once early AND once late"
+    assert block.index('set passwd "') < block.index('set certificate "')
+
+
+def test_injection_guard_still_bites_on_every_value():
+    ssh = _FakeSSH()
+    spec = cert_import.SSH_ONLY_SPECS["system/certificate.local"]
+    with pytest.raises(cert_ssh.CertWriteViolation):
+        ssh.import_certificate(spec, "c1", CERT, KEY, 'a" \n end \n config system admin')
+    with pytest.raises(cert_ssh.CertWriteViolation):
+        ssh.import_certificate(spec, "bad name!", CERT, KEY)
+    assert ssh.sent == []
+
+
+def test_import_into_refuses_a_rest_creatable_collection():
+    """The SSH door is opened by COLLECTION, so a caller cannot widen it by
+    passing a different string."""
+    with pytest.raises(cert_ssh.CertWriteViolation):
+        cert_ssh.import_into(object(), "system/certificate.ca-group", "g1", CERT)
+
+
+def test_local_shim_still_targets_local():
+    ssh = _FakeSSH()
+    ssh.import_local_certificate("c1", CERT, KEY)
+    assert "config system certificate local" in ssh.sent[0]
+    assert 'set private-key "' in ssh.sent[0]
+
+
+# --------------------------------------------------------------------------- #
+#  3. BOTH consumers read the same list                                        #
+# --------------------------------------------------------------------------- #
+def test_ref_dropdown_blacklist_is_derived_not_transcribed():
+    from app.views import objedit
+
+    assert SSH_ONLY <= objedit._NO_REF_CREATE
+    assert "system/interface" in objedit._NO_REF_CREATE
+
+
+@pytest.mark.parametrize("coll", sorted(SSH_ONLY))
+def test_create_object_endpoint_refuses_and_names_the_cure(client, app, coll):
+    """Hiding the button is not enough — this endpoint is reachable on its own."""
+    aid = _make_appliance(app)
+    login(client, admin_user_id(app))
+    r = client.post(f"/objedit/{aid}/create-object",
+                    json={"collection": coll, "mkey": "zz1"})
+    assert r.status_code == 400, r.status_code
+    body = r.get_json()
+    assert body["ok"] is False
+    assert "Import" in body["error"]          # the cure is named, not just a refusal
+    assert "SSH" in body["error"]
+
+
+def test_create_object_endpoint_still_serves_a_lookalike(client, app):
+    """The refusal must not spill onto a collection REST can create."""
+    aid = _make_appliance(app)
+    login(client, admin_user_id(app))
+    r = client.post(f"/objedit/{aid}/create-object",
+                    json={"collection": "system/certificate.ca-group", "mkey": "zz1"})
+    assert r.status_code == 200, r.get_data(as_text=True)[:200]
+
+
+# --------------------------------------------------------------------------- #
+#  4. the page                                                                 #
+# --------------------------------------------------------------------------- #
+def test_local_page_offers_generate_and_import_not_new(client, app):
+    aid = _make_appliance(app)
+    login(client, admin_user_id(app))
+    h = client.get(f"/server-objects/{aid}?type=certificate").get_data(as_text=True)
+    assert f"/server-objects/{aid}/import?type=certificate" in h
+    assert "/cert-manager/new" in h
+    assert "New Local" not in h
+    assert "create=1" not in h
+
+
+def test_ca_page_offers_import_but_not_generate(client, app):
+    aid = _make_appliance(app)
+    login(client, admin_user_id(app))
+    h = client.get(f"/server-objects/{aid}?type=certificate_ca").get_data(as_text=True)
+    assert f"/server-objects/{aid}/import?type=certificate_ca" in h
+    assert "/cert-manager/new" not in h
+    assert "New CA" not in h
+
+
+def test_ordinary_page_keeps_its_new_button(client, app):
+    aid = _make_appliance(app)
+    login(client, admin_user_id(app))
+    h = client.get(f"/server-objects/{aid}?type=ip_group").get_data(as_text=True)
+    assert "New IP Group" in h
+    assert "/import?type=ip_group" not in h
+
+
+def test_letsencrypt_page_keeps_its_new_button(client, app):
+    """The regression this whole set exists to prevent, in the other direction:
+    the appliance's own ACME entry is REST-creatable and must not be blocked."""
+    aid = _make_appliance(app)
+    login(client, admin_user_id(app))
+    h = client.get(f"/server-objects/{aid}?type=certificate_letsencrypt").get_data(as_text=True)
+    assert "create=1" in h
+    assert "/import?type=certificate_letsencrypt" not in h
+
+
+def test_import_form_hides_the_key_box_for_a_keyless_table(client, app):
+    aid = _make_appliance(app)
+    login(client, admin_user_id(app))
+    h = client.get(f"/server-objects/{aid}/import?type=certificate_ca").get_data(as_text=True)
+    assert 'name="cert_pem"' in h
+    assert 'name="key_pem"' not in h
+
+
+def test_import_form_shows_key_and_passphrase_for_local(client, app):
+    aid = _make_appliance(app)
+    login(client, admin_user_id(app))
+    h = client.get(f"/server-objects/{aid}/import?type=certificate").get_data(as_text=True)
+    assert 'name="key_pem"' in h
+    assert 'name="passphrase"' in h
+
+
+def test_import_form_uses_the_tables_own_key_label(client, app):
+    aid = _make_appliance(app)
+    login(client, admin_user_id(app))
+    h = client.get(f"/server-objects/{aid}/import?type=xml_client_certificate").get_data(as_text=True)
+    assert "Secret key" in h
+    assert 'name="passphrase"' not in h    # this table has no passwd field
+
+
+def test_import_route_404s_for_a_rest_creatable_type(client, app):
+    aid = _make_appliance(app)
+    login(client, admin_user_id(app))
+    r = client.get(f"/server-objects/{aid}/import?type=ip_group")
+    assert r.status_code == 404
+
+
+def test_import_requires_config_write(client, app):
+    from tests.conftest import make_user
+    aid = _make_appliance(app)
+    uid = make_user(app, username="ro", role="readonly")
+    login(client, uid)
+    r = client.get(f"/server-objects/{aid}/import?type=certificate")
+    assert r.status_code in (302, 403), r.status_code
+
+
+# --------------------------------------------------------------------------- #
+#  5. the pair is proven BEFORE the device is touched                          #
+# --------------------------------------------------------------------------- #
+def _selfsigned(cn="a.example.com"):
+    import datetime
+    from cryptography import x509
+    from cryptography.x509.oid import NameOID
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, cn)])
+    now = datetime.datetime.now(datetime.timezone.utc)
+    cert = (x509.CertificateBuilder()
+            .subject_name(name).issuer_name(name)
+            .public_key(key.public_key())
+            .serial_number(x509.random_serial_number())
+            .not_valid_before(now - datetime.timedelta(days=1))
+            .not_valid_after(now + datetime.timedelta(days=30))
+            .sign(key, hashes.SHA256()))
+    return (cert.public_bytes(serialization.Encoding.PEM).decode(),
+            key.private_bytes(serialization.Encoding.PEM,
+                              serialization.PrivateFormat.PKCS8,
+                              serialization.NoEncryption()).decode())
+
+
+def test_mismatched_pair_is_refused_before_any_upload():
+    """FortiWeb ACCEPTS a mismatched pair and only fails later, at handshake
+    time, on a policy that used to work."""
+    from app.views.server_objects import _validate_pair
+
+    cert_a, _ = _selfsigned("a.example.com")
+    _, key_b = _selfsigned("b.example.com")
+    with pytest.raises(ValueError) as e:
+        _validate_pair(cert_a, key_b, "")
+    assert "does NOT belong" in str(e.value)
+
+
+def test_matching_pair_validates():
+    from app.views.server_objects import _validate_pair
+
+    cert, key = _selfsigned()
+    out = _validate_pair(cert, key, "")
+    assert out["key_matches"] is True
+    assert "a.example.com" in out["subject"]
+
+
+def _stub_device(monkeypatch, listed):
+    """SSH import always 'succeeds'; the device lists back ``listed``."""
+    from app.services import cert_ssh as cs
+    from app.models import Appliance
+
+    monkeypatch.setattr(cs, "import_into", lambda *a, **k: "ok")
+
+    class _C:
+        def _safe_list(self, path):
+            return [{"name": n} for n in listed]
+
+    monkeypatch.setattr(Appliance, "build_client", lambda self: _C())
+
+
+def test_import_is_not_done_until_the_device_lists_it_back(client, app, monkeypatch):
+    """A CLI block with an empty value does NOT raise — it creates an entry with
+    no material and reports success. Believing the SSH return code is how a
+    keyless certificate gets declared installed."""
+    aid = _make_appliance(app)
+    login(client, admin_user_id(app))
+    cert, key = _selfsigned()
+    _stub_device(monkeypatch, listed=[])          # nothing came back
+    r = client.post(f"/server-objects/{aid}/import",
+                    data={"type": "certificate", "name": "c1",
+                          "cert_pem": cert, "key_pem": key})
+    assert r.status_code == 200                   # form re-rendered, not a redirect
+    assert "NOT imported" in r.get_data(as_text=True)
+
+
+def test_import_redirects_once_the_device_confirms(client, app, monkeypatch):
+    aid = _make_appliance(app)
+    login(client, admin_user_id(app))
+    cert, key = _selfsigned()
+    _stub_device(monkeypatch, listed=["c1"])
+    r = client.post(f"/server-objects/{aid}/import",
+                    data={"type": "certificate", "name": "c1",
+                          "cert_pem": cert, "key_pem": key})
+    assert r.status_code == 302, r.get_data(as_text=True)[:400]
+    assert "type=certificate" in r.headers["Location"]
+
+
+def test_missing_key_is_named_not_left_to_a_pem_parse_error(client, app, monkeypatch):
+    """Without the explicit check the request still fails — down in the PEM
+    validator, as "private key is not PEM (missing BEGIN/END markers)". That
+    reads like the operator pasted something malformed, not like they left a
+    required box empty."""
+    aid = _make_appliance(app)
+    login(client, admin_user_id(app))
+    cert, _ = _selfsigned()
+    _stub_device(monkeypatch, listed=["c1"])
+    r = client.post(f"/server-objects/{aid}/import",
+                    data={"type": "certificate", "name": "c1",
+                          "cert_pem": cert, "key_pem": ""})
+    assert r.status_code == 200
+    h = r.get_data(as_text=True)
+    assert "needs its private key" in h
+    assert "BEGIN/END" not in h
+
+
+def test_import_refuses_a_mismatched_pair_without_touching_the_device(client, app, monkeypatch):
+    aid = _make_appliance(app)
+    login(client, admin_user_id(app))
+    cert_a, _ = _selfsigned("a.example.com")
+    _, key_b = _selfsigned("b.example.com")
+    calls = []
+    from app.services import cert_ssh as cs
+    monkeypatch.setattr(cs, "import_into", lambda *a, **k: calls.append(a) or "ok")
+    r = client.post(f"/server-objects/{aid}/import",
+                    data={"type": "certificate", "name": "c1",
+                          "cert_pem": cert_a, "key_pem": key_b})
+    assert r.status_code == 200
+    assert "does NOT belong" in r.get_data(as_text=True)
+    assert calls == []                            # the box was never opened
+
+
+def test_fullchain_paste_is_counted_not_silently_uploaded():
+    """FortiWeb wants the LEAF in `certificate` and the issuers in Intermediate
+    CA — the form has to be able to say how many blocks were pasted."""
+    from app.views.server_objects import _pem_blocks
+
+    a, _ = _selfsigned("leaf.example.com")
+    b, _ = _selfsigned("issuer.example.com")
+    assert len(_pem_blocks(a + "\n" + b, "CERTIFICATE")) == 2
+    assert len(_pem_blocks(a, "CERTIFICATE")) == 1
+    assert _pem_blocks("not a pem", "CERTIFICATE") == []

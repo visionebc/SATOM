@@ -23,7 +23,7 @@ from ..models import visible_appliances, visible_appliance_or_404
 from ..clients.fortiweb import FortiWebClient
 from ..services.fortiweb_ops import FortiWebOps, sanitize_payload
 from ..services.fortiweb_field_schema import ALL_REF_ENDPOINTS, CREATE_FIELDS
-from ..services import objform, config_catalog
+from ..services import objform, config_catalog, cert_import
 from ..services.templates import save_template
 
 bp = Blueprint('objedit', __name__, url_prefix='/objedit')
@@ -128,9 +128,15 @@ def _read_rows(client, sub_coll, parent):
 
 
 # Collections that must NOT offer "＋ Create new" from a reference dropdown:
-# interfaces are hardware-bound, and a Local Certificate's key material can only
-# be uploaded over SSH (REST cmdb can't carry a PEM) — a name-only create fails.
-_NO_REF_CREATE = {'system/interface', 'system/certificate.local'}
+# interfaces are hardware-bound, and certificate material can only be uploaded
+# over SSH (REST cmdb can't carry a PEM) — a name-only create fails.
+#
+# The certificate half is DERIVED from app.services.cert_import, not listed here.
+# It used to be a literal set holding `system/certificate.local` alone, and that
+# is exactly how the defect survived: the same collection stayed forbidden in
+# this dropdown while its own Server Objects page went on offering "New Local",
+# and the other FIVE SSH-only collections were forbidden in neither.
+_NO_REF_CREATE = {'system/interface'} | set(cert_import.SSH_ONLY_COLLECTIONS)
 
 
 def _enable_ref_actions(groups):
@@ -535,6 +541,16 @@ def create_object(appliance_id):
         return jsonify(ok=False, error='endpoint not allowed'), 400
     if not name:
         return jsonify(ok=False, error='name required'), 400
+    # Six certificate collections cannot be created by cmdb AT ALL — a POST
+    # answers -7721 "This certificate is invalid." even carrying a valid PEM.
+    # Hiding the button is not enough: this endpoint is reachable on its own, and
+    # letting it through would spend a write attempt to earn an opaque 500 that
+    # reads like a broken device. Name the cure instead.
+    spec = cert_import.spec_for(coll)
+    if spec is not None:
+        return jsonify(ok=False, error=(
+            "%s material cannot be created over the REST API — import it over SSH "
+            "(Server Objects → %s → Import)" % (spec.label, spec.label))), 400
     # CREATE_FIELDS-declared required extras (a custom Service's port, a VIP's
     # IP): reject here with the real reason instead of letting the device
     # answer an opaque HTTP 500 (errcode -56 "Empty value isn't allowed.").

@@ -77,6 +77,32 @@ def _authed_remote(clean: str, token: str) -> str | None:
     return f"{m.group(1)}{token}@{m.group(2)}"
 
 
+def _harden_git_config(root: Path) -> None:
+    """Make ``.git/config`` owner-only when it can hold a token.
+
+    The remote URL is where this repo keeps its push credential, and git
+    writes that file with the default 644 — so the token that authenticates
+    every push is readable by every account on the box. git has no setting
+    for this, so the mode has to be re-asserted by whoever writes it.
+
+    Called from the writer AND from ``git_info`` because a repository cloned
+    by the installer (``git clone $GIT_URL``) never passes through the writer:
+    the very first .git/config the product ever creates is the exposed one.
+
+    Never raises. A repo owned by another account is a fact to leave alone,
+    not a reason to fail the page that happened to notice it.
+    """
+    path = root / ".git" / "config"
+    try:
+        if not path.is_file():
+            return
+        mode = path.stat().st_mode & 0o777
+        if mode & 0o077:
+            path.chmod(0o600)
+    except OSError:
+        pass
+
+
 def _git_token() -> str:
     """Extract the token from the current origin remote URL (if embedded)."""
     root = _repo_root()
@@ -100,6 +126,7 @@ def _local(iso: str) -> str:
 def git_info() -> dict:
     """Snapshot of the repo for the Settings → Git tab."""
     root = _repo_root()
+    _harden_git_config(root)
 
     def out(*args, default="—") -> str:
         return _git_out(root, *args, default=default)
@@ -220,6 +247,8 @@ def git_configure(remote_url: str, token: str, branch: str) -> str:
 
     if final_url:
         _run_git(root, ("remote", "set-url", "origin", final_url), lines, (token,) if token else ())
+        # set-url rewrote .git/config, and the URL it just wrote holds the token.
+        _harden_git_config(root)
     if branch:
         current = _git_out(root, "rev-parse", "--abbrev-ref", "HEAD")
         if current != branch:

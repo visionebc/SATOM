@@ -10207,3 +10207,77 @@ failure (`rc == 4` is a usage error, and a rc read from the end of a pipe is the
 rc of `tail`). It also runs against a **copy** of the tree in `/opt/satom-mut`,
 never against the live one — several sessions work on this repo in parallel and
 a mutation left behind in `/opt/satom` is a credential bug in production.
+
+
+## §104 — moving a secret is not removing the old one (`tests/test_vault_scrub.py`)
+
+**Why this exists.** §103 added the vault and three modes. Switching the mode to
+`vault` decides where the *next* write goes and nothing else: every credential
+already in the database keeps its Fernet copy, and the key that decrypts it
+keeps sitting in `.env` on the same disk. So the page could truthfully report
+`vault only` while the exposure the whole feature exists to close was still
+wide open — and nothing anywhere would have failed.
+
+`migrate_local_to_vault` deliberately does not delete anything (copying is
+reversible; deleting is not), which left the last step unimplemented rather than
+wrong. `scrub_local_copies` is that step.
+
+**The rules the guards pin.**
+
+1. **Refused unless the vault is authoritative.** In `mirror` the local copy IS
+   the documented fallback — removing it silently converts a mode the operator
+   chose for its safety net into vault-only. Refused with `enabled=False` too:
+   the mode alone does not put the vault on the path.
+2. **Read back before destroying.** Each secret is fetched FROM THE VAULT and
+   compared with the local plaintext before that plaintext is overwritten. A
+   vault copy that is missing, empty, different, or unreachable means the local
+   one is the last working copy: the row is left alone and reported `failed`.
+   Destroying the last copy of a credential is the one failure here that no
+   later step can undo.
+3. **"Missing" and "differs" are separate messages.** They have different
+   remediations, and the guard asserts the *detail*, not just the status —
+   otherwise either branch could vanish and the other would silently cover for
+   it. (Two mutations survived the first pass for exactly this reason: the
+   mutations were fine, the guards were too coarse.)
+4. **Dry run is the default**, in the service signature AND in the route: a POST
+   that forgets `apply=1` must not destroy anything.
+5. **One bad row does not stop the good ones**, and a second run is a no-op.
+6. **The claim itself is a test.** `test_after_the_scrub_the_fernet_key_alone_recovers_nothing`
+   decrypts the column the way a thief with the disk and `.env` would, and
+   asserts the sentinel comes out instead of the password. That is the entire
+   feature, written as an assertion.
+
+**Mutations: 12, all bite** (refusal removed, differing copy accepted, missing
+copy accepted, dry-run destroys, sentinel reprocessed, "scrubbed" reported
+without writing, a down vault reported as `skipped`, the default flipped to
+apply, the directory-secret write removed, the route always applying, the
+admin-permission decorator removed).
+
+
+## §105 — git writes the push token in mode 644 (`tests/test_git_config_perms.py`)
+
+**Why this exists.** This product keeps its push credential embedded in the
+origin URL, so `.git/config` **is** a secret file — and git creates it 644.
+On the live node it had been world-readable since 8 August and nothing had
+failed, because nothing can fail: an over-permissive mode is not an error, it
+is a fact nobody reads.
+
+git has no setting for this, so the mode has to be re-asserted by code.
+`_harden_git_config()` narrows it to 600, and is called from **two** places for
+one reason each:
+
+- `git_configure()` — the writer. `remote set-url` has just put the token there.
+- `git_info()` — a repository the installer cloned (`git clone $GIT_URL`) never
+  passes through the writer, so the very first `.git/config` the product ever
+  creates would otherwise stay exposed for its whole life.
+
+It never raises: a repo owned by another account is a fact to leave alone, not
+a reason to fail the page that noticed it.
+
+**The installer is patched too, and that is the load-bearing half**: without it
+every new installation re-introduces the defect, exactly like the `Host $host`
+vhost bug. There is a guard that reads `install-satom.sh` and fails if the
+`chmod` is not next to the `git clone`.
+
+**Mutations: 5, all bite** (never narrows, narrows to 644, the writer stops
+hardening, `git_info` stops hardening, the installer line removed).

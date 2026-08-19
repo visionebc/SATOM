@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Added · Changed · Fixed · 17 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Added · Fixed · Changed · 24 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Added · Changed · Fixed · 17 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Added · Fixed · Changed · 24 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,8 +59,8 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Added · Changed · Fixed · 17 entries</span>
-        <ul class="rel-leads"><li>The appliance roster folds the ADOMs of one chassis under their device, and device-wide verbs live on the root row only</li><li>SATOM keeps the file-backed WAF objects FortiWeb will not give back</li><li>Clone and migrate now copy the CONTENT, not just the name</li><li class="rel-more">… and 14 more</li></ul>
+        <span class="rel-nav-meta">unreleased · Added · Fixed · Changed · 24 entries</span>
+        <ul class="rel-leads"><li>The step that actually removes the local copy</li><li>A credential can now live in an external vault — and by default it still does not</li><li>.git/config was world-readable, and it holds the push token</li><li class="rel-more">… and 21 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v1.10.1.html" data-rel-version="1.10.1">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 1.10.1</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
@@ -198,6 +198,124 @@
 <h3 id="added">Added</h3>
 <ul>
 <li>
+<p><strong>The step that actually removes the local copy.</strong> Settings → Vault gained a
+  <em>Remove the local copies</em> card (<code>scrub_local_copies</code>, route
+  <code>/settings/vault/scrub</code>). Until it runs, switching to <code>vault</code> only changes
+  where the NEXT write goes: every credential already stored keeps its Fernet
+  copy, and the key that decrypts it keeps sitting on the same disk — so the
+  page could say <code>vault only</code> while nothing had actually moved. The scrub
+  replaces each local copy with the sentinel, and it is deliberately separate
+  from the migration because copying is reversible and this is not. It is
+  refused unless the vault is the authoritative store (in <code>mirror</code> the local
+  copy is the documented fallback), it is <strong>dry-run by default</strong>, and every
+  secret is read back FROM THE VAULT and compared with the local plaintext
+  before that plaintext is destroyed — a vault copy that is missing, different
+  or unreachable means the local one is the last working copy, so the row is
+  kept and reported as failed. Guards in <code>tests/test_vault_scrub.py</code>
+  (safeguards §104).</p>
+</li>
+<li>
+<p><strong>A credential can now live in an external vault — and by default it still
+  does not.</strong> New Settings → Vault tab (<code>services/secret_backend.py</code>) points the
+  product at an OpenBao or HashiCorp Vault KV v2 mount for appliance passwords,
+  the LDAP/AD bind password and the FortiAuthenticator shared secret. Storing
+  them in SATOM itself is <strong>unchanged and remains the default</strong>: an install that
+  never opens this tab contacts nothing and behaves exactly as before. The
+  reason to add the option is that <code>FERNET_KEY</code> lives on the same host as the
+  database it decrypts, so whoever reads that disk reads every appliance
+  password; a vault moves the key material off the node. Three modes, and the
+  page says plainly what each one costs: <code>local</code> (Fernet only), <code>mirror</code> (both;
+  vault-first reads with local fallback — safe to roll back from, but the local
+  copy still exists so the exposure is <strong>not</strong> yet closed), and <code>vault</code> (the
+  vault is the only copy — the mode that closes it, and the mode in which a
+  vault outage makes credentials unavailable). In <code>vault</code> mode a failed read
+  <strong>raises</strong>: returning the local sentinel would hand the literal
+  <code>__stored-in-vault__</code> to an appliance as a password, which fails a login while
+  looking like a wrong credential rather than an outage. Migration is dry-run by
+  default and reads every secret back before counting it, because a write that
+  returns 200 and stores nothing is invisible to a caller that only checks the
+  status code. Only the auth token is cached, never a secret value — a fleet
+  sweep must not open one session per appliance, and the vault's audit log has
+  to stay truthful about who read what. Guarded by
+  <code>tests/test_secret_backend.py</code> (30 tests, safeguards §103).</p>
+</li>
+</ul>
+<h3 id="fixed">Fixed</h3>
+<ul>
+<li>
+<p><strong><code>.git/config</code> was world-readable, and it holds the push token.</strong> This
+  product embeds its Gitea credential in the origin URL, so that file is a
+  secret file — and git creates it in mode 644, which is not an error and
+  therefore never surfaced. <code>_harden_git_config()</code> now narrows it to 600 from
+  the writer (<code>git_configure</code>, right after <code>remote set-url</code>) and from
+  <code>git_info</code>, because a repository the installer cloned never passes through
+  the writer. <code>installers/install-satom.sh</code> chmods it straight after
+  <code>git clone</code> as well: without that, every new installation re-introduces the
+  defect. Guards in <code>tests/test_git_config_perms.py</code> (safeguards §105).</p>
+</li>
+<li>
+<p><strong>A policy with a Lua script could not be cloned — the reference field holds a
+  LIST, not a name.</strong> Measured on FortiWeb 7.6.8: a policy with one script reads
+  <code>scripting-list = "HTTP_CUSTOM_REPLY "</code> and with two,
+  <code>"HTTP_CUSTOM_REPLY SSL_COMMANDS "</code> — a space separator <strong>and a trailing
+  space</strong>. <code>clone.referenced_names</code> took the whole value as one name, so the
+  source read answered <code>-3 The entry is not found</code>, the item's payload came back
+  empty and <code>validate_completeness</code> <strong>refused the entire clone</strong> with <em>"source
+  tree incomplete"</em>. The ONE-script case failed too, not just the multi-script
+  one — which is why having the script on the destination never helped: with the
+  name wrong, the destination was never consulted. The split is declared <strong>per
+  field</strong> (<code>_LIST_REF_FIELDS</code>), not applied globally: a space is a legal
+  character in a FortiWeb object name nearly everywhere (a health check, a URL
+  access policy, a WPP and an SNI policy all accept <code>"zz probe space"</code>, and one
+  named <code>"zztrail "</code> keeps its trailing space and can only be deleted with it),
+  so a global split or strip would turn one legal name into two that do not
+  exist — the same block, moved. It is unambiguous here because the scripting
+  collection refuses a name containing a space (<code>-2004</code>). The same parser feeds
+  the <strong>deep-capture SoT snapshots</strong>, which had silently been omitting the
+  script from every snapshot of a policy that binds one, and the <strong>file-backed
+  content read</strong>: with the trimmed name the source returns the Lua source
+  (2 559 bytes measured), with the trailing space it returns nothing, so a
+  script created at the destination would have been an empty shell.</p>
+</li>
+<li>
+<p><strong>Server Objects is the FortiWeb menu again — entries, order and the tabs
+  inside them.</strong> The curated menu had drifted from the appliance and nothing
+  failed, because a menu that is missing an entry still renders. Measured
+  against two independent oracles (the appliance's own Angular bundle on
+  FortiWeb 7.6.8, and a 554-page sweep of the 7.6 admin guide):
+  <strong>Certificates has TWELVE entries, not the ten SATOM showed</strong> — and the near
+  miss in the count hid the real shape, because three of those ten (<em>CA Group</em>,
+  <em>TSL CA</em>, <em>Intermediate CA Group</em>) are <strong>tabs inside another page</strong>, not menu
+  entries. Six entries were missing outright (<em>XML Certificate</em>, <em>URL
+  Certificate</em>, <em>Sign CA</em>, <em>Certificate Verify</em>, <em>Public Key Pinning</em>, plus
+  <em>Multi-certificate</em> and <em>Offline SNI</em> as tabs), and so were <em>Traffic Mirror</em>,
+  <em>Global Allow List</em>, <em>Policy Based Allow List</em> and <em>URL Replacer</em> elsewhere
+  in the section. A GUI page and a REST collection are not the same unit:
+  FortiWeb renders siblings as <strong>tabs of one page</strong>, so the menu now models
+  pages (one sidebar row) owning tabs (one collection each), and the object
+  list grew a tab strip. <strong>No new REST endpoint was needed — all 40 collections
+  were already in the registry</strong>; every one answers HTTP 200 live on 7.6.8.</p>
+</li>
+<li>
+<p><strong><code>Intermediate CA</code> pointed at a collection that does not exist.</strong>
+  <code>system/certificate.intermediate</code> answers <strong>HTTP 500 / errcode -20001</strong> on
+  every FortiWeb measured ({device}, {device}), while the shipped API matrix already
+  recorded it as <code>absent</code>; the collection that exists is
+  <code>system/certificate.intermediate-certificate</code>. That page had never worked on
+  any firmware. The phantom is also suppressed in the generic Configuration
+  browse, so it cannot come back through the "everything else" list.</p>
+</li>
+<li>
+<p><strong><code>Virtual IP</code> moved to Network, where FortiWeb files it</strong>
+  (<code>/ng2/network/virtual-ip</code>) — and it was given a home on the way:
+  <code>system/vip</code> categorises as <code>Other</code>, so dropping it from Server Objects
+  without adding it to the Network menu would have left the collection
+  unreachable from the entire UI.</p>
+</li>
+</ul>
+<h3 id="added_1">Added</h3>
+<ul>
+<li>
 <p><strong>The appliance roster folds the ADOMs of one chassis under their device,
   and device-wide verbs live on the root row only.</strong> A FortiWeb in ADOM mode
   can only be registered one row per ADOM (the auth token carries exactly
@@ -316,7 +434,7 @@
   unprotected cutover; <code>failed == 0</code> does not cover this, because the
   referencing rule only fails when it is itself in the plan.</li>
 </ul>
-<h3 id="fixed">Fixed</h3>
+<h3 id="fixed_1">Fixed</h3>
 <ul>
 <li>The <em>View Backups</em> link is emitted once, not once per branch. Splitting it
   into an owns-the-chassis case and a points-at-the-owner case duplicated the

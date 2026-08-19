@@ -832,6 +832,24 @@
               <div id="vault-migrate-result" class="mt-2 small"></div>
             </div>
           </div>
+
+          <div class="fw-card mt-3">
+            <div class="fw-card-header">
+              <i class="bi bi-eraser me-1"></i>{{ _('Remove the local copies') }}
+            </div>
+            <div class="p-3">
+              <p class="text-muted" style="font-size:13px;">
+                {{ _('Until this runs the encrypted copy is still in this database and the key that decrypts it is still on this host, so switching the mode has not moved anything yet. Each credential is read back from the vault and compared before its local copy is replaced by a marker: anything the vault does not actually hold keeps its local copy and is reported as failed. Requires the “Vault only” mode, and it cannot be undone.') }}
+              </p>
+              <button type="button" class="btn btn-fw-secondary" id="vault-scrub-dry">
+                <i class="bi bi-search me-1"></i>{{ _('Dry run') }}
+              </button>
+              <button type="button" class="btn btn-fw-primary ms-1" id="vault-scrub-apply">
+                <i class="bi bi-eraser-fill me-1"></i>{{ _('Remove local copies') }}
+              </button>
+              <div id="vault-scrub-result" class="mt-2 small"></div>
+            </div>
+          </div>
         </div>
 
       </div>
@@ -5097,6 +5115,46 @@ document.addEventListener('DOMContentLoaded', function() {
   if (app) {
     app.addEventListener('click', function () {
       if (window.confirm('Copy every stored credential into the vault?')) { migrate(true); }
+    });
+  }
+
+  function scrub(apply) {
+    var box = document.getElementById('vault-scrub-result');
+    box.className = 'mt-2 small text-muted';
+    box.textContent = apply ? 'Removing…' : 'Checking…';
+    var fd = new FormData();
+    if (apply) { fd.append('apply', '1'); }
+    post("{{ url_for('settings.scrub_vault') }}", fd)
+      .then(function (d) {
+        if (d.error) {
+          box.className = 'mt-2 small text-danger';
+          box.textContent = '✗ ' + d.error;
+          return;
+        }
+        var rows = (d.items || []).map(function (i) {
+          var cls = i.status === 'failed' ? 'text-danger'
+                  : (i.status === 'skipped' ? 'text-muted' : 'text-success');
+          return '<div class="' + cls + '"><code>' + i.name + '</code> — '
+               + i.status + (i.detail ? ' (' + i.detail + ')' : '') + '</div>';
+        }).join('');
+        box.className = 'mt-2 small';
+        box.innerHTML = '<div class="' + (d.ok ? 'text-success' : 'text-danger') + '">'
+          + (d.dry_run ? 'Dry run: ' : 'Applied: ')
+          + d.scrubbed + ' scrubbed, ' + d.skipped + ' skipped, ' + d.failed + ' failed'
+          + '</div>' + rows;
+      })
+      .catch(function (e) {
+        box.className = 'mt-2 small text-danger';
+        box.textContent = '✗ ' + e;
+      });
+  }
+
+  var sdry = document.getElementById('vault-scrub-dry');
+  var sapp = document.getElementById('vault-scrub-apply');
+  if (sdry) { sdry.addEventListener('click', function () { scrub(false); }); }
+  if (sapp) {
+    sapp.addEventListener('click', function () {
+      if (window.confirm('Remove every local copy that the vault already holds? This cannot be undone.')) { scrub(true); }
     });
   }
 })();

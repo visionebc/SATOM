@@ -43,7 +43,8 @@
     {'t': 'tab-users',       'icon': 'bi-people',           'label': _('Users')},
     {'t': 'tab-profiles',    'icon': 'bi-person-badge',     'label': _('Profiles')},
     {'t': 'tab-auth',        'icon': 'bi-shield-lock',      'label': _('Authentication')},
-    {'t': 'tab-access',      'icon': 'bi-shield-lock',      'label': _('Access Control')}]},
+    {'t': 'tab-access',      'icon': 'bi-shield-lock',      'label': _('Access Control')},
+    {'t': 'tab-vault',       'icon': 'bi-safe',             'label': _('Vault')}]},
   {'key': 'certs', 'label': _('Certificates & Trust'), 'icon': 'bi-award', 'admin': true, 'items': [
     {'t': 'tab-certmgr',     'icon': 'bi-award',            'label': _('Certificate Manager')},
     {'t': 'tab-nodetls',     'icon': 'bi-shield-lock-fill', 'label': _('Node TLS')},
@@ -661,6 +662,180 @@
   <div class="tab-pane fade" id="tab-profiles">
     {% set counts = profiles_counts %}
     {% include 'profiles/_panel.html' %}
+  </div>
+  {% endif %}
+
+
+  {% if is_admin %}
+  <!-- VAULT TAB -->
+  {# Este panel ANADE un sitio donde puede vivir una credencial. No quita el
+     local: 'local' sigue siendo el default y una instalacion que nunca abra
+     esta pagina se comporta exactamente igual que antes. #}
+  <div class="tab-pane fade" id="tab-vault">
+    <form method="post" action="{{ url_for('settings.save_vault') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="row g-3">
+
+        <div class="col-lg-7">
+          <div class="fw-card">
+            <div class="fw-card-header">
+              <i class="bi bi-safe me-1"></i>{{ _('External secret store (Vault)') }}
+            </div>
+            <div class="p-3">
+              <p class="text-muted" style="font-size:13px;">
+                {{ _('By default every credential this product holds — appliance passwords, the directory bind password, the FortiAuthenticator shared secret — is encrypted with the local key and kept in this database. That works on its own and needs nothing configured here.') }}
+                {{ _('The reason to add a vault is that the local key file sits on the same host as the database it decrypts: whoever reads that disk reads every password. An external vault moves the key material off this node.') }}
+                {{ _('OpenBao and HashiCorp Vault are both supported (same KV v2 API).') }}
+              </p>
+
+              <div class="form-check form-switch mb-3">
+                <input class="form-check-input" type="checkbox" id="vault-enabled" name="enabled"
+                       value="1" {% if vault_config.enabled %}checked{% endif %}>
+                <label class="form-check-label" for="vault-enabled">
+                  <strong>{{ _('Use an external vault') }}</strong>
+                </label>
+              </div>
+
+              <div class="mb-3">
+                <label class="form-label">{{ _('Where new secrets are written') }}</label>
+                {% for value, label in vault_modes %}
+                <div class="form-check">
+                  <input class="form-check-input" type="radio" name="mode" id="vault-mode-{{ value }}"
+                         value="{{ value }}" {% if vault_config.mode == value %}checked{% endif %}>
+                  <label class="form-check-label" for="vault-mode-{{ value }}">{{ _(label) }}</label>
+                </div>
+                {% endfor %}
+                <div class="small text-muted mt-2">
+                  {{ _('“Both” is the migration mode: nothing breaks if the vault is down. It does not yet close the exposure, because the local copy still exists. “Vault only” is the mode that closes it — and the mode in which a vault outage makes credentials unavailable.') }}
+                </div>
+              </div>
+
+              <div class="row g-2 mb-2">
+                <div class="col-8">
+                  <label class="form-label">{{ _('Vault address') }}</label>
+                  <input type="url" name="addr" class="form-control fw-form-control font-monospace"
+                         value="{{ vault_config.addr }}" placeholder="https://vault.example.com:8200">
+                </div>
+                <div class="col-4">
+                  <label class="form-label">{{ _('KV v2 mount') }}</label>
+                  <input type="text" name="mount" class="form-control fw-form-control font-monospace"
+                         value="{{ vault_config.mount }}" placeholder="satom">
+                </div>
+              </div>
+
+              <div class="row g-2 mb-2">
+                <div class="col-6">
+                  <label class="form-label">{{ _('Authentication') }}</label>
+                  <select name="auth" class="form-select fw-form-control">
+                    <option value="approle" {% if vault_config.auth == 'approle' %}selected{% endif %}>AppRole</option>
+                    <option value="token" {% if vault_config.auth == 'token' %}selected{% endif %}>{{ _('Static token') }}</option>
+                  </select>
+                </div>
+                <div class="col-6">
+                  <label class="form-label">{{ _('Namespace') }} <span class="text-muted">({{ _('optional') }})</span></label>
+                  <input type="text" name="namespace" class="form-control fw-form-control font-monospace"
+                         value="{{ vault_config.namespace }}">
+                </div>
+              </div>
+
+              <div class="row g-2 mb-2">
+                <div class="col-6">
+                  <label class="form-label">{{ _('AppRole role_id') }}</label>
+                  <input type="text" name="role_id" class="form-control fw-form-control font-monospace"
+                         value="{{ vault_config.role_id }}">
+                </div>
+                <div class="col-6">
+                  <label class="form-label">{{ _('AppRole secret_id') }}</label>
+                  <input type="password" name="secret_id" class="form-control fw-form-control"
+                         autocomplete="new-password"
+                         placeholder="{{ _('Leave blank to keep current') if vault_config.has_secret_id else '' }}">
+                </div>
+              </div>
+
+              <div class="mb-2">
+                <label class="form-label">{{ _('Static token') }}</label>
+                <input type="password" name="token" class="form-control fw-form-control"
+                       autocomplete="new-password"
+                       placeholder="{{ _('Leave blank to keep current') if vault_config.has_token else _('Only used when Authentication is “Static token”') }}">
+              </div>
+
+              <div class="row g-2 mb-2">
+                <div class="col-4">
+                  <label class="form-label">{{ _('Timeout (s)') }}</label>
+                  <input type="number" name="timeout" min="1" max="120"
+                         class="form-control fw-form-control" value="{{ vault_config.timeout }}">
+                </div>
+                <div class="col-8 d-flex align-items-end">
+                  <div class="form-check form-switch mb-2">
+                    <input class="form-check-input" type="checkbox" id="vault-verify" name="verify_tls"
+                           value="1" {% if vault_config.verify_tls %}checked{% endif %}>
+                    <label class="form-check-label" for="vault-verify">{{ _('Verify the vault TLS certificate') }}</label>
+                  </div>
+                </div>
+              </div>
+
+              <div class="mb-3">
+                <label class="form-label">{{ _('CA certificate') }} <span class="text-muted">({{ _('PEM, or a path on this node') }})</span></label>
+                <textarea name="ca_cert" rows="3"
+                          class="form-control fw-form-control font-monospace" style="font-size:12px;"
+                          placeholder="-----BEGIN CERTIFICATE-----">{{ vault_config.ca_cert }}</textarea>
+                <div class="small text-muted mt-1">
+                  {{ _('Leave blank to use the system trust store. Turning verification off is not a substitute: every appliance password crosses this connection.') }}
+                </div>
+              </div>
+
+              <button type="submit" class="btn btn-fw-primary">
+                <i class="bi bi-save me-1"></i>{{ _('Save') }}
+              </button>
+              <button type="button" class="btn btn-fw-secondary ms-1" id="vault-test-btn">
+                <i class="bi bi-plug me-1"></i>{{ _('Test connection') }}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-lg-5">
+          <div class="fw-card mb-3">
+            <div class="fw-card-header">
+              <i class="bi bi-activity me-1"></i>{{ _('Status') }}
+            </div>
+            <div class="p-3">
+              <div class="mb-2">
+                <span class="fw-badge {{ 'fw-badge-success' if vault_config.enabled else 'fw-badge-secondary' }}">
+                  {{ _('enabled') if vault_config.enabled else _('disabled') }}
+                </span>
+                <span class="fw-badge fw-badge-info ms-1">{{ vault_config.mode }}</span>
+                <span class="fw-badge {{ 'fw-badge-success' if vault_config.configured else 'fw-badge-warning' }} ms-1">
+                  {{ _('configured') if vault_config.configured else _('incomplete') }}
+                </span>
+              </div>
+              <div id="vault-test-result" class="small text-muted">
+                {{ _('Press “Test connection” to check reachability, authentication and mount access.') }}
+              </div>
+            </div>
+          </div>
+
+          <div class="fw-card">
+            <div class="fw-card-header">
+              <i class="bi bi-arrow-left-right me-1"></i>{{ _('Migrate existing credentials') }}
+            </div>
+            <div class="p-3">
+              <p class="text-muted" style="font-size:13px;">
+                {{ _('Copies the credentials already stored here into the vault, reading each one back to confirm it landed. The local copies are left untouched, so this is safe to run before you decide to trust the vault, and safe to run twice.') }}
+              </p>
+              <button type="button" class="btn btn-fw-secondary" id="vault-migrate-dry">
+                <i class="bi bi-search me-1"></i>{{ _('Dry run') }}
+              </button>
+              <button type="button" class="btn btn-fw-primary ms-1" id="vault-migrate-apply">
+                <i class="bi bi-play-fill me-1"></i>{{ _('Copy to vault') }}
+              </button>
+              <div id="vault-migrate-result" class="mt-2 small"></div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </form>
   </div>
   {% endif %}
 
@@ -4850,4 +5025,81 @@ document.addEventListener('DOMContentLoaded', function() {
   loadAll();
 })();
 </script>
+
+<script>
+// Vault tab — test + migrate. Un fallo se PINTA como fallo: una tabla vacia y
+// una migracion que no copio nada se ven igual y significan lo contrario.
+(function () {
+  var testBtn = document.getElementById('vault-test-btn');
+  var out = document.getElementById('vault-test-result');
+  var csrf = document.querySelector('input[name="csrf_token"]');
+
+  function post(url, body) {
+    return fetch(url, {
+      method: 'POST',
+      headers: {'X-CSRFToken': csrf ? csrf.value : ''},
+      body: body
+    }).then(function (r) { return r.json(); });
+  }
+
+  if (testBtn) {
+    testBtn.addEventListener('click', function () {
+      out.className = 'small text-muted';
+      out.textContent = 'Testing…';
+      post("{{ url_for('settings.test_vault') }}", new FormData())
+        .then(function (d) {
+          out.className = 'small ' + (d.ok ? 'text-success' : 'text-danger');
+          var extra = (d.policies && d.policies.length)
+            ? ' Policies: ' + d.policies.join(', ') + '.' : '';
+          out.textContent = (d.ok ? '✓ ' : '✗ ') + (d.detail || '') + extra;
+        })
+        .catch(function (e) {
+          out.className = 'small text-danger';
+          out.textContent = '✗ ' + e;
+        });
+    });
+  }
+
+  function migrate(apply) {
+    var box = document.getElementById('vault-migrate-result');
+    box.className = 'mt-2 small text-muted';
+    box.textContent = apply ? 'Copying…' : 'Checking…';
+    var fd = new FormData();
+    if (apply) { fd.append('apply', '1'); }
+    post("{{ url_for('settings.migrate_vault') }}", fd)
+      .then(function (d) {
+        if (d.error) {
+          box.className = 'mt-2 small text-danger';
+          box.textContent = '✗ ' + d.error;
+          return;
+        }
+        var rows = (d.items || []).map(function (i) {
+          var cls = i.status === 'failed' ? 'text-danger'
+                  : (i.status === 'skipped' ? 'text-muted' : 'text-success');
+          return '<div class="' + cls + '"><code>' + i.name + '</code> — '
+               + i.status + (i.detail ? ' (' + i.detail + ')' : '') + '</div>';
+        }).join('');
+        box.className = 'mt-2 small';
+        box.innerHTML = '<div class="' + (d.ok ? 'text-success' : 'text-danger') + '">'
+          + (d.dry_run ? 'Dry run: ' : 'Applied: ')
+          + d.copied + ' copied, ' + d.skipped + ' skipped, ' + d.failed + ' failed'
+          + '</div>' + rows;
+      })
+      .catch(function (e) {
+        box.className = 'mt-2 small text-danger';
+        box.textContent = '✗ ' + e;
+      });
+  }
+
+  var dry = document.getElementById('vault-migrate-dry');
+  var app = document.getElementById('vault-migrate-apply');
+  if (dry) { dry.addEventListener('click', function () { migrate(false); }); }
+  if (app) {
+    app.addEventListener('click', function () {
+      if (window.confirm('Copy every stored credential into the vault?')) { migrate(true); }
+    });
+  }
+})();
+</script>
+
 {% endblock %}

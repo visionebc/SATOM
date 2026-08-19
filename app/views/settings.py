@@ -32,6 +32,7 @@ from ..services import naming, settings_store as store
 from ..services import lang_policy, langs as lang_registry
 from ..services import email_service as email
 from ..services import auth_store
+from ..services import secret_backend
 from ..services import twofa
 from ..services import git_service
 from ..services import user_settings_store as user_store
@@ -204,6 +205,9 @@ def index():
         lang_source=lang_registry.DEFAULT,
         faz_menu_groups=(faz_menu.menu() if _is_admin() else []),
         faz_menu_hidden=(sorted(faz_menu.hidden_keys()) if _is_admin() else []),
+        vault_config=(secret_backend.config() if _is_admin() else None),
+        vault_modes=[(m, secret_backend.MODE_LABELS[m])
+                     for m in secret_backend.MODES],
         is_admin=_is_admin(),
     )
 
@@ -2555,3 +2559,58 @@ def ai_test():
     except _AiProviderError as exc:
         return jsonify(ok=False, error=str(exc)), 502
     return jsonify(ok=True, reply=result.text[:200])
+
+
+# ── Vault (external secret store) ─────────────────────────
+# This tab ADDS a place a credential can live. It never removes the local one:
+# ``local`` stays the default and every install that ignores this page keeps
+# behaving exactly as before. See ``services.secret_backend``.
+
+@bp.route('/vault', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def save_vault():
+    form = request.form.to_dict()
+    form['enabled'] = bool(request.form.get('enabled'))
+    form['verify_tls'] = bool(request.form.get('verify_tls'))
+    try:
+        cfg = secret_backend.save(form)
+    except ValueError as exc:
+        flash(str(exc), 'danger')
+        return redirect(url_for('settings.index') + '#tab-vault')
+    except Exception as exc:  # noqa: BLE001
+        flash(f'Failed to save vault settings: {exc}', 'danger')
+        return redirect(url_for('settings.index') + '#tab-vault')
+    log_action('settings.vault',
+               detail=f"enabled={cfg['enabled']} mode={cfg['mode']!r} addr={cfg['addr']!r}")
+    if cfg['enabled'] and cfg['mode'] == secret_backend.MODE_VAULT:
+        flash('Vault saved. The vault is now the ONLY store for new secrets — '
+              'existing local copies are untouched until you migrate.', 'warning')
+    else:
+        flash('Vault settings saved.', 'success')
+    return redirect(url_for('settings.index') + '#tab-vault')
+
+
+@bp.route('/vault/test', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def test_vault():
+    return jsonify(secret_backend.health())
+
+
+@bp.route('/vault/migrate', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def migrate_vault():
+    """Copy the local credentials into the vault. Dry-run by default.
+
+    Dry-run is the default because the honest failure here is silent: a
+    migration that copies 9 of 10 appliances and reports success leaves one
+    appliance unreachable the next time the vault becomes authoritative.
+    """
+    apply = request.form.get('apply') == '1'
+    result = secret_backend.migrate_local_to_vault(dry_run=not apply)
+    if apply:
+        log_action('settings.vault_migrate',
+                   detail=f"copied={result['copied']} failed={result['failed']}")
+    return jsonify(result)

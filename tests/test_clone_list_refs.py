@@ -177,17 +177,28 @@ def test_the_policy_payload_keeps_the_list_verbatim():
 # --------------------------------------------------------------------------- #
 #  Premise guard for the OTHER consumer of a reference field                    #
 # --------------------------------------------------------------------------- #
-def test_deep_rename_never_meets_a_list_field_today():
-    """``deep_rename`` re-points a reference by WHOLE-VALUE lookup, which cannot
-    re-point one name inside a list. That is correct only while the same-device
-    deep clone is scoped to the WPP tree, which owns no list field. If someone
-    scopes it to the Server Policy root, this fails — and the list-aware
-    re-point has to be written THEN, with a device measurement, instead of
-    being guessed now against a case that cannot happen."""
+def test_the_scope_that_made_the_whole_value_lookup_safe():
+    """This guard used to say the whole-value lookup was fine BECAUSE the
+    same-device deep clone is scoped to the WPP tree, which owns no list field.
+    That premise is still true and is worth pinning — a scope change is what
+    would have made the old bug reachable — but it is no longer what keeps the
+    plan correct. ``clone.repoint_value`` is (see
+    ``tests/test_clone_repoint_lists.py``), so this now records the scope as a
+    FACT rather than as a load-bearing excuse."""
     wpp_fields = set(clone.via_field_index(clone.ROOT_WPP))
-    assert not (clone._LIST_REF_FIELDS & wpp_fields), (
-        "deep_rename would now silently leave a list reference pointing at the "
-        "ORIGINAL object: %s" % sorted(clone._LIST_REF_FIELDS & wpp_fields))
+    assert not (clone._LIST_REF_FIELDS & wpp_fields), sorted(
+        clone._LIST_REF_FIELDS & wpp_fields)
+
+
+def test_the_server_policy_scope_DOES_carry_a_list_field():
+    """The other half, and the reason the re-point had to be written: widening
+    the deep clone to the Server Policy root puts a list field in front of
+    ``deep_rename``. Without :func:`clone.repoint_value` that widening is a
+    silent isolation leak; with it, it is just a wider scope."""
+    sp_fields = set(clone.via_field_index(clone.ROOT_SERVER_POLICY))
+    assert clone._LIST_REF_FIELDS & sp_fields, (
+        "no list field under the Server Policy root any more — if that is real, "
+        "the re-point has lost its only caller and should be re-justified")
 
 
 # --------------------------------------------------------------------------- #

@@ -58,9 +58,11 @@
   </div>
 </div>
 
+{% include "sentinel/_diagrams.html" %}
+
 {# ── layers ─────────────────────────────────────────────────────────────── #}
 <div class="fw-card mb-3">
-  <div class="fw-card-header"><strong>2 · The layers a window is resolved against</strong></div>
+  <div class="fw-card-header"><strong>3 · The layers a window is resolved against</strong></div>
   <div class="fw-card-body">
     <p class="small text-muted">
       One ranged query per series against the node's local metrics store, over loopback.
@@ -90,7 +92,7 @@
 
 {# ── baseline ───────────────────────────────────────────────────────────── #}
 <div class="fw-card mb-3">
-  <div class="fw-card-header"><strong>3 · Behavioural baseline — median and MAD, per hour of week</strong></div>
+  <div class="fw-card-header"><strong>4 · Behavioural baseline — median and MAD, per hour of week</strong></div>
   <div class="fw-card-body">
     <p class="small">
       A security baseline is trained on data that <em>contains attacks</em>. With mean + standard
@@ -114,7 +116,7 @@
 
 {# ── scoring ────────────────────────────────────────────────────────────── #}
 <div class="fw-card mb-3">
-  <div class="fw-card-header"><strong>4 · Scoring — the live weight table</strong></div>
+  <div class="fw-card-header"><strong>5 · Scoring — the live weight table</strong></div>
   <div class="fw-card-body">
     <p class="small text-muted">
       Rendered from <code>scoring.WEIGHTS</code>. Each factor applies at most once per incident —
@@ -165,7 +167,7 @@
 
 {# ── http + vuln ────────────────────────────────────────────────────────── #}
 <div class="fw-card mb-3">
-  <div class="fw-card-header"><strong>5 · HTTP outcomes and vulnerability intelligence</strong></div>
+  <div class="fw-card-header"><strong>6 · HTTP outcomes and vulnerability intelligence</strong></div>
   <div class="fw-card-body">
     <p class="small">
       <strong>An HTTP status is not a vulnerability</strong>, and nothing here pretends otherwise.
@@ -206,10 +208,13 @@
 
 {# ── response ───────────────────────────────────────────────────────────── #}
 <div class="fw-card mb-3">
-  <div class="fw-card-header"><strong>6 · Response — the closed catalog and the gate order</strong></div>
+  <div class="fw-card-header"><strong>7 · Response — the closed catalog and the gate order</strong></div>
   <div class="fw-card-body">
-    <div class="alert alert-danger small">
-      <strong>{{ verified[0] }}/{{ verified[1] }} transports verified.</strong>
+    <div class="alert {{ 'alert-success' if verified[0] == verified[1] else 'alert-danger' }} small">
+      <strong>{{ verified[0] }}/{{ verified[1] }} mechanisms verified.</strong>
+      {% if handoffs %}Of those, {{ handoffs|join(', ') }}
+      {{ 'is a hand-off' if handoffs|length == 1 else 'are hand-offs' }}: drafted here,
+      applied by a person in the exception flow, never written to an appliance by this engine.{% endif %}
       Nothing in this catalog can execute until its mechanism has been run and re-read on a live
       appliance of this product. A live sweep on 2026-08-20 found 22 of 237 documented FortiWeb
       routes answer <code>-20001 "invalid URL"</code> — written from a manual, never validated
@@ -222,25 +227,27 @@
         <tr>
           <td class="small"><code>{{ c.key }}</code><br>{{ c.label }}</td>
           <td class="small">{{ c.mechanism }}</td>
-          <td class="small">level {{ c.max_level }}{% if c.requires_ttl %}<div><span class="fw-badge fw-badge-secondary">TTL required</span></div>{% endif %}</td>
+          <td class="small">level {{ c.max_level }}
+            {% if c.requires_ttl %}<div><span class="fw-badge fw-badge-secondary">TTL required</span></div>{% endif %}
+            {% if c.handoff %}<div><span class="fw-badge fw-badge-info">hand-off</span></div>
+            {% elif c.verified %}<div><span class="fw-badge fw-badge-success">verified</span></div>
+            {% else %}<div><span class="fw-badge fw-badge-danger">unverified</span></div>{% endif %}
+          </td>
           <td class="small">{{ c.blast }}</td>
         </tr>
       {% endfor %}
       </tbody>
     </table>
     <h6 class="small">Gate order, and why it is this order</h6>
+    <p class="small text-muted mb-2">
+      Rendered from <code>actions.GATE_ORDER</code> — the same tuple the tests
+      assert a full pass through <code>evaluate()</code> emits, in this order.
+      Drawn as a ladder in <a href="#diagrams">§2.3</a>.
+    </p>
     <ol class="small mb-3">
-      <li><strong>Global kill switch</strong> — one setting disables everything, everywhere.</li>
-      <li><strong>Protected network</strong> — checked before anything about confidence, so that a
-          correlation bug concluding our own monitoring host is an attacker is structurally unable
-          to act on it.</li>
-      <li><strong>Trusted source / maintenance window</strong> — authorised activity.</li>
-      <li><strong>Policy exists, is enabled, and its level permits acting.</strong></li>
-      <li><strong>Score meets that action's own floor.</strong></li>
-      <li><strong>Reversibility and TTL</strong> — every blocking action must expire on its own.</li>
-      <li><strong>Circuit breaker</strong> — a fleet-wide hourly ceiling, so a correlation bug during
-          a flood exhausts a budget rather than a firewall.</li>
-      <li><strong>Mechanism verified</strong> — proved on a real device.</li>
+      {% for key, label, why in gate_order %}
+      <li><strong>{{ label }}</strong> <code class="text-muted">{{ key }}</code> — {{ why }}</li>
+      {% endfor %}
     </ol>
     <p class="small mb-0">
       Each gate returns a <em>reason</em>, and the reasons are shown on the incident.
@@ -252,7 +259,7 @@
 
 {# ── ai ─────────────────────────────────────────────────────────────────── #}
 <div class="fw-card mb-3">
-  <div class="fw-card-header"><strong>7 · The AI wall</strong></div>
+  <div class="fw-card-header"><strong>8 · The AI wall</strong></div>
   <div class="fw-card-body">
     <p class="small">
       The model is a pure function: <code>incident → opinion</code>. It has no tools, no network
@@ -281,7 +288,7 @@
 
 {# ── false positives ────────────────────────────────────────────────────── #}
 <div class="fw-card mb-3">
-  <div class="fw-card-header"><strong>8 · False positives are a first-class outcome</strong></div>
+  <div class="fw-card-header"><strong>9 · False positives are a first-class outcome</strong></div>
   <div class="fw-card-body">
     <p class="small">
       <code>false_positive</code> is a terminal state of its own, not a flavour of <code>closed</code>.
@@ -303,7 +310,7 @@
 
 {# ── families ───────────────────────────────────────────────────────────── #}
 <div class="fw-card mb-3">
-  <div class="fw-card-header"><strong>9 · Attack families</strong></div>
+  <div class="fw-card-header"><strong>10 · Attack families</strong></div>
   <div class="fw-card-body">
     <p class="small text-muted">
       Derived from the device's own type / subclass text, matched across several fields because
@@ -319,7 +326,7 @@
 
 {# ── settings ───────────────────────────────────────────────────────────── #}
 <div class="fw-card mb-3">
-  <div class="fw-card-header"><strong>10 · Every setting, and what it changes</strong></div>
+  <div class="fw-card-header"><strong>11 · Every setting, and what it changes</strong></div>
   <div class="fw-card-body">
     <p class="small text-muted">
       Rendered from <code>config.SPEC</code> — the same list the Settings form is generated from, so
@@ -345,7 +352,7 @@
 
 {# ── operating it ───────────────────────────────────────────────────────── #}
 <div class="fw-card">
-  <div class="fw-card-header"><strong>11 · Running it — the scheduled actions</strong></div>
+  <div class="fw-card-header"><strong>12 · Running it — the scheduled actions</strong></div>
   <div class="fw-card-body">
     <table class="table table-sm align-middle mb-3">
       <thead><tr><th style="width:220px;">Action</th><th style="width:140px;">Cadence</th><th>What it does</th></tr></thead>

@@ -605,30 +605,33 @@ def test_protected_source_can_never_be_blocked(app):
         assert verdict["allowed"] is False and verdict["reason"] == "source is protected"
 
 
-def test_unverified_mechanism_blocks_execution(app):
-    """Every other gate passes and the action is STILL refused, because this
-    transport has never been proved against a real appliance.
+def test_a_handoff_is_refused_by_name_not_by_level(app):
+    """Replaces `test_unverified_mechanism_blocks_execution`, which said of
+    itself: the day the catalog is fully verified this assertion has no subject
+    left, and that is the day to delete it rather than weaken it. That day is
+    today — all four mechanisms have been captured from a live appliance.
 
-    Updated 2026-08-20: this used to assert it of ``block_ip``. That transport
-    has since been captured from fortiweb12 and the gate correctly lets it
-    through, so the guard moved to one that is still a specification. It has to
-    keep testing SOMETHING unverified — the day the catalog is fully verified
-    this assertion has no subject left, and that is the day to delete it rather
-    than to weaken it.
+    What still needs a guard is the other way an action can be un-executable:
+    `tune_signature` writes nothing to a device at any level, and the refusal
+    has to say so instead of pointing at a number somebody might raise.
     """
     with app.app_context():
         actions.ensure_policies()
-        pol = SentinelPolicy.query.filter_by(action_type="raise_protection").first()
+        pol = SentinelPolicy.query.filter_by(action_type="tune_signature").first()
         pol.enabled = True
-        pol.level = SentinelPolicy.LEVEL_SEMI_AUTO
+        pol.level = SentinelPolicy.LEVEL_AUTONOMOUS
         pol.min_confidence = 0
         config.set_value("response_enabled", True)
         db.session.commit()
-        verdict = actions.evaluate(_incident(), "raise_protection")
+        verdict = actions.evaluate(_incident(), "tune_signature")
         assert verdict["allowed"] is False
-        assert verdict["reason"] == "mechanism unverified"
-        assert all(c["ok"] for c in verdict["checks"]
-                   if c["check"] != "mechanism_verified")
+        assert verdict["reason"] == "hand-off, not executable"
+        gate = [c for c in verdict["checks"]
+                if c["check"] == "executable_mechanism"][0]
+        assert gate["ok"] is False and "exception flow" in gate["detail"]
+        assert not any(c["check"] == "level" for c in verdict["checks"]), \
+            ("the level gate ran first, so the console would say 'level too "
+             "low' — true, and useless, because no level would help")
 
 
 def test_only_proved_transports_are_marked_verified(app):
@@ -638,15 +641,20 @@ def test_only_proved_transports_are_marked_verified(app):
     number, which is the point: the count cannot drift upward by accident, and
     a claim of verification always has a person behind it.
 
-    As of 2026-08-20: 1 of 4. ``block_ip`` was captured from fortiweb12 end to
-    end (create, add member, re-read, delete member, delete list, zero residue).
-    ``rate_limit_ip`` was REMOVED rather than counted — the route its mechanism
-    named answers ``-20001 invalid URL`` on this firmware.
+    As of 2026-08-20: 4 of 4. ``block_ip``, ``block_country`` and
+    ``raise_protection`` were each captured from fortiweb12 end to end, with
+    every object created removed again and zero residue. ``tune_signature`` is
+    a HAND-OFF — it writes nothing to an appliance, so it carries no transport
+    and gate ``executable_mechanism`` refuses it. ``rate_limit_ip`` was REMOVED
+    rather than counted: the route its mechanism named answers ``-20001
+    invalid URL`` on this firmware.
     """
-    assert actions.verified_count() == (1, 4)
+    assert actions.verified_count() == (4, 4)
+    assert actions.handoff_keys() == ["tune_signature"]
     from app.services.sentinel import transports
     assert set(transports.TRANSPORTS) == {
-        k for k, spec in actions.CATALOG.items() if spec.verified}, \
+        k for k, spec in actions.CATALOG.items()
+        if spec.verified and not spec.handoff}, \
         "a catalog entry claims verification with no executable transport " \
         "behind it, or a transport exists for an entry still marked unproved"
 

@@ -185,14 +185,23 @@ def queue(incident, action_type="block_ip", **params):
 # --------------------------------------------------------------------------- #
 #  1. The catalog now tells the truth about what can be executed                #
 # --------------------------------------------------------------------------- #
-def test_block_ip_is_the_only_verified_action(app):
+def test_every_verified_action_names_its_evidence(app):
+    """Updated 2026-08-20: this asserted `verified == ["block_ip"]`, which was
+    the honest state until block_country and raise_protection were captured
+    from fortiweb12 the same way. The invariant kept is the one that matters —
+    a mechanism may only claim verification with provenance behind it, and a
+    device-writing claim must have a transport that can carry it out."""
     with app.app_context():
-        verified = [k for k, s in actions.CATALOG.items() if s.verified]
-        assert verified == ["block_ip"], (
-            "only mechanisms actually run against a device may be marked "
-            "verified; %s claims to be" % verified)
-        assert actions.CATALOG["block_ip"].provenance, \
-            "a verified action without provenance is an unsourced claim"
+        verified = {k for k, s in actions.CATALOG.items() if s.verified}
+        assert "block_ip" in verified
+        for key in verified:
+            spec = actions.CATALOG[key]
+            assert spec.provenance, (
+                "%s is marked verified with no provenance — an unsourced "
+                "claim is how a catalog drifts back into documentation" % key)
+            assert (key in transports.TRANSPORTS) is not spec.handoff, (
+                "%s claims a device write with no transport, or has a "
+                "transport while claiming to be a hand-off" % key)
 
 
 def test_rate_limit_ip_was_withdrawn_not_left_unverified(app):
@@ -319,7 +328,10 @@ def test_drain_is_inert_while_the_kill_switch_is_off(app, monkeypatch):
         assert dev.calls == [], "the disarmed engine still talked to a device"
 
 
-def test_unverified_action_cannot_execute(app, monkeypatch):
+def test_country_block_stays_a_recommendation_however_it_is_configured(app, monkeypatch):
+    """It has a verified transport now, and it still may not execute: the
+    catalog ceiling caps the effective level below semi-automatic whatever an
+    operator sets. One mis-attributed address would take a market offline."""
     with app.app_context():
         dev = FakeDevice()
         arm(monkeypatch, dev)
@@ -328,6 +340,7 @@ def test_unverified_action_cannot_execute(app, monkeypatch):
         responder.drain()
         assert a.status in (SentinelAction.STATUS_REJECTED,
                             SentinelAction.STATUS_FAILED)
+        assert a.detail and "level" in a.detail.lower()
         assert dev.members == []
 
 

@@ -356,15 +356,26 @@ def arm():
     if device not in _visible_names():
         abort(403)
     ap = Appliance.query.filter_by(name=device).first_or_404()
+    # Which bridge to bind. Never both from one submit: arming address blocking
+    # is a decision about one attacker, arming country blocking is a decision
+    # about a market, and a single button that did both would make the larger
+    # one a side effect of asking for the smaller.
+    mechanism = (request.form.get("mechanism") or "ip").strip()
+    if mechanism not in ("ip", "geo"):
+        abort(400)
+    arm_fn = (s["transports"].arm_geo_policy if mechanism == "geo"
+              else s["transports"].arm_policy)
     try:
-        out = s["transports"].arm_policy(client_for(ap), policy)
+        out = arm_fn(client_for(ap), policy)
     except Exception as exc:
         flash(f"Could not arm {policy} on {device}: {exc}", "danger")
         return redirect(url_for("sentinel.context"))
     detail = "; ".join(f"{st['name']}: {st['detail']}" for st in out["steps"])
     audit.log_action("sentinel.arm",
-                     f"{device}/{policy} armed={out['ok']} :: {detail}")
-    flash(f"{'Armed' if out['ok'] else 'Could not arm'} {policy} on {device}. "
+                     f"{device}/{policy} mechanism={mechanism} "
+                     f"armed={out['ok']} :: {detail}")
+    flash(f"{'Armed' if out['ok'] else 'Could not arm'} {policy} on {device} "
+          f"({'country blocking' if mechanism == 'geo' else 'address blocking'}). "
           f"{detail}", "success" if out["ok"] else "danger")
     return redirect(url_for("sentinel.context"))
 
@@ -570,6 +581,7 @@ def policies():
                                    (3, "3 — Autonomous")],
                            armed=bool(s["config"].get("response_enabled")),
                            verified=s["actions"].verified_count(),
+                           handoffs=s["actions"].handoff_keys(),
                            recent=[a.to_dict() for a in
                                    SentinelAction.query.order_by(
                                        SentinelAction.created_at.desc())
@@ -634,4 +646,9 @@ def docs():
                "recommend": SentinelIncident.BAND_RECOMMEND,
                "semi_auto": SentinelIncident.BAND_SEMI_AUTO},
         verified=s["actions"].verified_count(),
+        # The decision diagram iterates this rather than restating it. A
+        # picture drawn NEXT TO a decision chain is the easiest thing here to
+        # leave behind: nothing fails when the two disagree.
+        gate_order=s["actions"].GATE_ORDER,
+        handoffs=s["actions"].handoff_keys(),
         health=_health())

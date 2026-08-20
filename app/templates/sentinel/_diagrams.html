@@ -1,0 +1,309 @@
+{#
+   Sentinel — the flow diagrams.
+
+   Inline SVG on purpose: no chart library, no external fetch, no JavaScript.
+   These render inside an offline bundle, inside a print, and inside a browser
+   with scripting disabled — which is the state a console is most likely to be
+   read in during an incident.
+
+   Palette is the product's own light theme (fw-* tokens). The dark
+   glassmorphism used elsewhere in this fleet is NOT this product's chrome; a
+   slate panel on a white page is a grey slab. Accent #EF5424 marks T0 and the
+   points where a decision is refused.
+
+   Diagram 3 is generated from actions.GATE_ORDER. A drawing of a decision
+   chain is the easiest thing in a repository to leave behind: nothing fails
+   when the picture and the code disagree, and the person reading the picture
+   is the one who finds out.
+#}
+<div class="fw-card mb-3" id="diagrams">
+  <div class="fw-card-header"><strong>2 · Flow diagrams</strong></div>
+  <div class="fw-card-body">
+
+    <h6 class="small mb-1">2.1 · Reference architecture — what talks to what</h6>
+    <p class="small text-muted mb-2">
+      Two paths leave the collectors. The upper one is deterministic and always
+      runs; the lower one is the model, and everything it produces lands in a
+      field named <code>ai_*</code>. The only component holding credentials that
+      can <em>change</em> an appliance is the response runner, and it is a
+      separate systemd unit — not the web worker, and not the sweep.
+    </p>
+    <svg viewBox="0 0 1000 470" width="100%" role="img"
+         aria-label="Sentinel reference architecture"
+         style="background:#FFFFFF;border:1px solid #E3E5E8;border-radius:4px;">
+      <defs>
+        <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7"
+                markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#3D4550"/>
+        </marker>
+        <marker id="arR" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7"
+                markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#EF5424"/>
+        </marker>
+      </defs>
+      <g font-size="12" font-family="inherit" fill="#1F2329">
+
+        <!-- sources -->
+        <rect x="12" y="20" width="196" height="150" rx="4" fill="#F4F5F7" stroke="#C9CDD4"/>
+        <text x="22" y="40" font-size="11" fill="#6B7280">SOURCES (read-only)</text>
+        <text x="22" y="62">FortiWeb attack log</text>
+        <text x="22" y="78" font-size="11" fill="#6B7280">GUI session — no REST route</text>
+        <text x="22" y="100">FortiWeb traffic log</text>
+        <text x="22" y="116" font-size="11" fill="#6B7280">HTTP status classes</text>
+        <text x="22" y="138">Fleet metric collectors</text>
+        <text x="22" y="158">Proxmox / hypervisor</text>
+
+        <!-- collectors -->
+        <rect x="236" y="60" width="150" height="70" rx="4" fill="#FFFFFF" stroke="#3D4550"/>
+        <text x="248" y="84" font-weight="600">Collectors</text>
+        <text x="248" y="102" font-size="11" fill="#6B7280">dedup by content</text>
+        <text x="248" y="118" font-size="11" fill="#6B7280">every 3 minutes</text>
+        <line x1="210" y1="95" x2="234" y2="95" stroke="#3D4550" marker-end="url(#ar)"/>
+
+        <!-- hot path -->
+        <rect x="414" y="18" width="572" height="118" rx="4" fill="#F1F7F2" stroke="#15692A"/>
+        <text x="426" y="38" font-size="11" fill="#15692A" font-weight="600">
+          HOT PATH — deterministic, reproducible, always runs</text>
+        {% set hot = [("normalize","one shape"),("enrich","context"),
+                      ("correlate","T-60s…T+5m"),("baseline","median/MAD"),
+                      ("score","integer"),("incident","absorb")] %}
+        {% for name, sub in hot %}
+        <rect x="{{ 424 + loop.index0 * 93 }}" y="52" width="84" height="46" rx="3"
+              fill="#FFFFFF" stroke="#15692A"/>
+        <text x="{{ 466 + loop.index0 * 93 }}" y="72" text-anchor="middle" font-size="11">{{ name }}</text>
+        <text x="{{ 466 + loop.index0 * 93 }}" y="88" text-anchor="middle" font-size="10"
+              fill="#6B7280">{{ sub }}</text>
+        {% if not loop.last %}
+        <line x1="{{ 509 + loop.index0 * 93 }}" y1="75" x2="{{ 515 + loop.index0 * 93 }}"
+              y2="75" stroke="#15692A" marker-end="url(#ar)"/>
+        {% endif %}
+        {% endfor %}
+        <text x="426" y="122" font-size="11" fill="#6B7280">
+          No model, no network of its own, no credential that can write to a device.</text>
+        <line x1="388" y1="95" x2="412" y2="60" stroke="#3D4550" marker-end="url(#ar)"/>
+
+        <!-- stores -->
+        <rect x="414" y="156" width="270" height="74" rx="4" fill="#FFFFFF" stroke="#3D4550"/>
+        <text x="426" y="176" font-weight="600">PostgreSQL — 14 sentinel_* tables</text>
+        <text x="426" y="194" font-size="11" fill="#6B7280">events · incidents · evidence · actions</text>
+        <text x="426" y="212" font-size="11" fill="#6B7280">policies · trust · windows · CVE mirror</text>
+        <rect x="700" y="156" width="286" height="74" rx="4" fill="#FFFFFF" stroke="#3D4550"/>
+        <text x="712" y="176" font-weight="600">VictoriaMetrics — 127.0.0.1:8428</text>
+        <text x="712" y="194" font-size="11" fill="#6B7280">396 days raw · loopback only</text>
+        <text x="712" y="212" font-size="11" fill="#6B7280">the baseline and the evidence windows</text>
+        <line x1="560" y1="138" x2="560" y2="154" stroke="#3D4550" marker-end="url(#ar)"/>
+        <line x1="840" y1="138" x2="840" y2="154" stroke="#3D4550" marker-end="url(#ar)"/>
+
+        <!-- cold path -->
+        <rect x="414" y="252" width="572" height="86" rx="4" fill="#F5F2FA" stroke="#4C2A85"/>
+        <text x="426" y="272" font-size="11" fill="#4C2A85" font-weight="600">
+          COLD PATH — the model, asynchronous and optional</text>
+        <text x="426" y="292">incident → local LLM → JSON opinion (closed enum) → incident.ai_json</text>
+        <text x="426" y="310" font-size="11" fill="#6B7280">
+          no tools · no credentials · cannot change a score, a gate or a device</text>
+        <text x="426" y="328" font-size="11" fill="#6B7280">
+          model down ⇒ detection, scoring, evidence and gating all continue</text>
+        <line x1="560" y1="232" x2="560" y2="250" stroke="#4C2A85" marker-end="url(#ar)"/>
+
+        <!-- console + runner -->
+        <rect x="12" y="252" width="196" height="86" rx="4" fill="#FFFFFF" stroke="#3D4550"/>
+        <text x="22" y="272" font-weight="600">Console /sentinel</text>
+        <text x="22" y="292" font-size="11" fill="#6B7280">web worker: may only</text>
+        <text x="22" y="308" font-size="11" fill="#6B7280">move a row to “queued”</text>
+        <text x="22" y="328" font-size="11" fill="#6B7280">never touches an appliance</text>
+        <line x1="412" y1="196" x2="212" y2="270" stroke="#3D4550" marker-end="url(#ar)"/>
+
+        <rect x="12" y="360" width="472" height="94" rx="4" fill="#FDF3F0" stroke="#EF5424"/>
+        <text x="24" y="380" font-size="11" fill="#EF5424" font-weight="600">
+          RESPONSE RUNNER — satom-responder.timer, every 60 s</text>
+        <text x="24" y="400">re-evaluate gates → preflight → apply → re-read → judge → expire</text>
+        <text x="24" y="420" font-size="11" fill="#6B7280">
+          the ONLY component with a credential that writes enforcement</text>
+        <text x="24" y="438" font-size="11" fill="#6B7280">
+          own systemd unit: startable, stoppable and auditable on its own</text>
+        <line x1="110" y1="340" x2="110" y2="358" stroke="#EF5424" marker-end="url(#arR)"/>
+
+        <rect x="512" y="360" width="220" height="94" rx="4" fill="#FFFFFF" stroke="#EF5424"/>
+        <text x="524" y="380" font-weight="600">FortiWeb</text>
+        <text x="524" y="400" font-size="11" fill="#6B7280">ip-list member (block-period)</text>
+        <text x="524" y="418" font-size="11" fill="#6B7280">geo country-list member</text>
+        <text x="524" y="436" font-size="11" fill="#6B7280">policy → protection profile</text>
+        <line x1="486" y1="407" x2="510" y2="407" stroke="#EF5424" marker-end="url(#arR)"/>
+
+        <rect x="760" y="360" width="226" height="94" rx="4" fill="#F4F5F7" stroke="#C9CDD4"/>
+        <text x="772" y="380" font-weight="600">CVE mirror sync</text>
+        <text x="772" y="400" font-size="11" fill="#6B7280">the only outbound connection</text>
+        <text x="772" y="418" font-size="11" fill="#6B7280">separate switch, off by default</text>
+        <text x="772" y="436" font-size="11" fill="#6B7280">batch — never per incident</text>
+      </g>
+    </svg>
+
+    <h6 class="small mb-1 mt-4">2.2 · Processing — one attack-log row to one proposal</h6>
+    <p class="small text-muted mb-2">
+      Each stage takes what the one before it produced and adds exactly one
+      kind of fact. The two dashed taps are reads of the metrics store: an
+      incident's evidence is not what the log said, it is what the log said
+      <em>compared against</em> what this hour of this weekday normally looks
+      like.
+    </p>
+    <svg viewBox="0 0 1000 250" width="100%" role="img"
+         aria-label="Sentinel processing pipeline"
+         style="background:#FFFFFF;border:1px solid #E3E5E8;border-radius:4px;">
+      <g font-size="11" font-family="inherit" fill="#1F2329">
+        {% set steps = [
+          ("COLLECT", "attack log rows"),
+          ("NORMALIZE", "one event shape"),
+          ("ENRICH", "trust · window · asset"),
+          ("STORE", "sentinel_event"),
+          ("CORRELATE", "5 layers, T-60s…T+5m"),
+          ("BASELINE", "deviation vs median/MAD"),
+          ("SCORE", "weights → 0…100"),
+          ("INCIDENT", "absorb or open"),
+          ("PROPOSE", "closed catalog only")] %}
+        {% for name, sub in steps %}
+        <rect x="{{ 12 + loop.index0 * 110 }}" y="70" width="98" height="56" rx="3"
+              fill="{{ '#FDF3F0' if name == 'PROPOSE' else '#FFFFFF' }}"
+              stroke="{{ '#EF5424' if name == 'PROPOSE' else '#3D4550' }}"/>
+        <text x="{{ 61 + loop.index0 * 110 }}" y="92" text-anchor="middle"
+              font-size="11" font-weight="600">{{ name }}</text>
+        <text x="{{ 61 + loop.index0 * 110 }}" y="110" text-anchor="middle"
+              font-size="10" fill="#6B7280">{{ sub }}</text>
+        {% if not loop.last %}
+        <line x1="{{ 111 + loop.index0 * 110 }}" y1="98" x2="{{ 120 + loop.index0 * 110 }}"
+              y2="98" stroke="#3D4550" marker-end="url(#ar)"/>
+        {% endif %}
+        {% endfor %}
+
+        <rect x="12" y="18" width="318" height="34" rx="3" fill="#F4F5F7" stroke="#C9CDD4"/>
+        <text x="24" y="39" font-size="11">
+          appliance reads only — devices in maintenance are skipped</text>
+
+        <rect x="452" y="176" width="318" height="56" rx="3" fill="#F4F5F7" stroke="#C9CDD4"/>
+        <text x="464" y="196" font-size="11" font-weight="600">VictoriaMetrics (read)</text>
+        <text x="464" y="214" font-size="10" fill="#6B7280">
+          traffic · HTTP classes · appliance CPU/RAM · VM · host · backend</text>
+        <line x1="510" y1="174" x2="510" y2="130" stroke="#6B7280"
+              stroke-dasharray="4 3" marker-end="url(#ar)"/>
+        <line x1="620" y1="174" x2="620" y2="130" stroke="#6B7280"
+              stroke-dasharray="4 3" marker-end="url(#ar)"/>
+
+        <text x="12" y="160" font-size="10" fill="#6B7280">
+          A layer that could not be measured stays “unknown”. It never becomes “no impact” —
+          the two look identical on a page and mean opposite things.</text>
+      </g>
+    </svg>
+
+    <h6 class="small mb-1 mt-4">2.3 · Decision — every gate, in the order the engine applies them</h6>
+    <p class="small text-muted mb-2">
+      Generated from <code>actions.GATE_ORDER</code>, which is the same tuple the
+      test suite asserts a full pass through <code>evaluate()</code> emits. Any
+      gate that refuses returns a <em>reason</em>, and the reason is what the
+      console prints: “Sentinel did nothing” is not an acceptable state for this
+      page to be in.
+    </p>
+    <svg viewBox="0 0 1000 {{ 96 + gate_order|length * 44 }}" width="100%" role="img"
+         aria-label="Sentinel decision gate chain"
+         style="background:#FFFFFF;border:1px solid #E3E5E8;border-radius:4px;">
+      <g font-size="12" font-family="inherit" fill="#1F2329">
+        <rect x="300" y="14" width="240" height="30" rx="3" fill="#F1F7F2" stroke="#15692A"/>
+        <text x="420" y="34" text-anchor="middle" font-size="11" font-weight="600">
+          proposed action + live incident</text>
+        {% for key, label, why in gate_order %}
+        {% set y = 58 + loop.index0 * 44 %}
+        <line x1="420" y1="{{ y - 14 }}" x2="420" y2="{{ y - 2 }}" stroke="#3D4550"
+              marker-end="url(#ar)"/>
+        <rect x="180" y="{{ y }}" width="480" height="32" rx="3" fill="#FFFFFF" stroke="#3D4550"/>
+        <text x="192" y="{{ y + 21 }}" font-size="11" font-weight="600">{{ loop.index }}. {{ label }}</text>
+        <text x="470" y="{{ y + 21 }}" font-size="10" fill="#6B7280">{{ key }}</text>
+        <line x1="662" y1="{{ y + 16 }}" x2="700" y2="{{ y + 16 }}" stroke="#EF5424"
+              marker-end="url(#arR)"/>
+        <text x="706" y="{{ y + 20 }}" font-size="10" fill="#8B1C2A">refuse — {{ why|truncate(74, true, '…') }}</text>
+        {% endfor %}
+        {% set yend = 58 + gate_order|length * 44 %}
+        <line x1="420" y1="{{ yend - 12 }}" x2="420" y2="{{ yend }}" stroke="#15692A"
+              marker-end="url(#ar)"/>
+        <rect x="300" y="{{ yend + 2 }}" width="240" height="30" rx="3" fill="#FDF3F0" stroke="#EF5424"/>
+        <text x="420" y="{{ yend + 22 }}" text-anchor="middle" font-size="11" font-weight="600">
+          queued for the response runner</text>
+      </g>
+    </svg>
+    <p class="small text-muted mt-2 mb-0">
+      The chain is re-run <strong>at execution time</strong>, not only at
+      approval. An action approved at 12:00 and executed at 12:03 is executed
+      under 12:03's state: a kill switch thrown in between, a trust entry added,
+      a maintenance window opened — each is somebody deciding “not this”.
+    </p>
+
+    <h6 class="small mb-1 mt-4">2.4 · Autonomous response, verification and rollback</h6>
+    <p class="small text-muted mb-2">
+      Applied is not effective. A rule that is present on the appliance and
+      changes nothing is the case that has to escalate, and it is invisible to a
+      check that only confirms the write succeeded.
+    </p>
+    <svg viewBox="0 0 1000 430" width="100%" role="img"
+         aria-label="Sentinel response, verification and rollback"
+         style="background:#FFFFFF;border:1px solid #E3E5E8;border-radius:4px;">
+      <g font-size="12" font-family="inherit" fill="#1F2329">
+        <rect x="16" y="18" width="150" height="36" rx="3" fill="#F4F5F7" stroke="#C9CDD4"/>
+        <text x="91" y="41" text-anchor="middle" font-size="11">queued</text>
+        <line x1="168" y1="36" x2="196" y2="36" stroke="#3D4550" marker-end="url(#ar)"/>
+
+        <rect x="198" y="18" width="190" height="36" rx="3" fill="#FFFFFF" stroke="#3D4550"/>
+        <text x="293" y="41" text-anchor="middle" font-size="11">gates re-evaluated (2.3)</text>
+        <line x1="390" y1="36" x2="418" y2="36" stroke="#3D4550" marker-end="url(#ar)"/>
+
+        <rect x="420" y="18" width="230" height="36" rx="3" fill="#FFFFFF" stroke="#3D4550"/>
+        <text x="535" y="41" text-anchor="middle" font-size="11">preflight — ask the DEVICE</text>
+        <line x1="652" y1="36" x2="680" y2="36" stroke="#3D4550" marker-end="url(#ar)"/>
+
+        <rect x="682" y="18" width="300" height="36" rx="3" fill="#FDF3F0" stroke="#EF5424"/>
+        <text x="832" y="41" text-anchor="middle" font-size="11">apply — the one write</text>
+
+        <text x="420" y="76" font-size="10" fill="#8B1C2A">
+          “the profile does not reference the Sentinel list” → refuse. A member added to an
+          unreferenced list returns 200, counts up, and blocks nothing.</text>
+
+        <line x1="832" y1="56" x2="832" y2="96" stroke="#3D4550" marker-end="url(#ar)"/>
+        <rect x="682" y="98" width="300" height="40" rx="3" fill="#FFFFFF" stroke="#3D4550"/>
+        <text x="832" y="123" text-anchor="middle" font-size="11">
+          re-read the device — never trust the 200</text>
+
+        <line x1="832" y1="140" x2="832" y2="176" stroke="#3D4550" marker-end="url(#ar)"/>
+        <rect x="682" y="178" width="300" height="52" rx="3" fill="#FFFFFF" stroke="#3D4550"/>
+        <text x="832" y="199" text-anchor="middle" font-size="11">wait the effect window</text>
+        <text x="832" y="217" text-anchor="middle" font-size="10" fill="#6B7280">
+          compare source volume before vs after</text>
+
+        <line x1="832" y1="232" x2="832" y2="266" stroke="#3D4550" marker-end="url(#ar)"/>
+        <rect x="560" y="268" width="140" height="52" rx="3" fill="#F1F7F2" stroke="#15692A"/>
+        <text x="630" y="290" text-anchor="middle" font-size="11">effective</text>
+        <text x="630" y="308" text-anchor="middle" font-size="10" fill="#15692A">incident → mitigated</text>
+
+        <rect x="716" y="268" width="140" height="52" rx="3" fill="#FDF6E7" stroke="#7A5700"/>
+        <text x="786" y="290" text-anchor="middle" font-size="11">unknown</text>
+        <text x="786" y="308" text-anchor="middle" font-size="10" fill="#7A5700">no prior data — never “success”</text>
+
+        <rect x="872" y="268" width="140" height="52" rx="3" fill="#FBEFF1" stroke="#8B1C2A"/>
+        <text x="942" y="290" text-anchor="middle" font-size="11">ineffective</text>
+        <text x="942" y="308" text-anchor="middle" font-size="10" fill="#8B1C2A">escalate — never retry</text>
+
+        <!-- rollback lane -->
+        <rect x="16" y="268" width="500" height="140" rx="4" fill="#F4F5F7" stroke="#C9CDD4"/>
+        <text x="28" y="290" font-size="11" font-weight="600">ROLLBACK — two independent timers</text>
+        <rect x="30" y="302" width="220" height="44" rx="3" fill="#FFFFFF" stroke="#EF5424"/>
+        <text x="140" y="322" text-anchor="middle" font-size="11">appliance: block-period</text>
+        <text x="140" y="338" text-anchor="middle" font-size="10" fill="#6B7280">lifts even if SATOM is dead</text>
+        <rect x="266" y="302" width="234" height="44" rx="3" fill="#FFFFFF" stroke="#3D4550"/>
+        <text x="383" y="322" text-anchor="middle" font-size="11">Sentinel TTL: delete the member</text>
+        <text x="383" y="338" text-anchor="middle" font-size="10" fill="#6B7280">runs even with the kill switch off</text>
+        <text x="28" y="368" font-size="10" fill="#6B7280">
+          Redundant on purpose. Expiry is the PRIMARY rollback: an undo that has to succeed later</text>
+        <text x="28" y="384" font-size="10" fill="#6B7280">
+          is not a rollback. And disarming must stop new blocks without stranding live ones —</text>
+        <text x="28" y="400" font-size="10" fill="#6B7280">
+          a safety control that caused the outage would be the wrong kind of safe.</text>
+      </g>
+    </svg>
+
+  </div>
+</div>

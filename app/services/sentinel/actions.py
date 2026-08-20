@@ -80,6 +80,14 @@ class ActionSpec:
     blast: str              # what it can affect if the correlation is wrong
     verified: bool = False  # proved against a live appliance?
     provenance: str = ""
+    #: True when the action writes NOTHING to an appliance and instead hands
+    #: the incident to an existing human-driven flow. Kept distinct from
+    #: ``verified`` because the two answer different questions: "does the
+    #: mechanism work?" and "does this engine execute it?". Collapsing them
+    #: would either park a working hand-off behind an appliance test it will
+    #: never take, or let the runner try to execute something that has no
+    #: device write to perform.
+    handoff: bool = False
 
 
 CATALOG: dict[str, ActionSpec] = {
@@ -101,20 +109,39 @@ CATALOG: dict[str, ActionSpec] = {
     "raise_protection": ActionSpec(
         "raise_protection", "Raise protection profile",
         "Move the policy to a hardened Web Protection Profile.",
-        mechanism="PUT the policy's web-protection-profile to a pre-approved "
-                  "hardened profile — NOT YET VERIFIED. Requires the hardened "
-                  "profile to exist on the device beforehand; creating one "
-                  "mid-incident is how a policy ends up bound to an empty "
-                  "profile (the ca-group defect this product already hit).",
+        mechanism="PUT cmdb/server-policy/policy?mkey=<policy> "
+                  "{web-protection-profile: <approved profile>}. The PREVIOUS "
+                  "value is read off the device first and carried in the "
+                  "handle: this action has no device-side timer to fall back "
+                  "on, so the undo is a write, and a write needs the old value "
+                  "rather than a default. Rollback REFUSES an empty binding — "
+                  "unbinding the profile would strip protection from every "
+                  "client of the policy. The target must already exist on the "
+                  "appliance and be listed in Settings -> Sentinel -> hardened "
+                  "profiles; creating one mid-incident is how a policy ends up "
+                  "bound to an empty profile (the ca-group defect this product "
+                  "already shipped once).",
         reversible=True, requires_ttl=False,
         max_level=SentinelPolicy.LEVEL_SEMI_AUTO,
-        blast="EVERY client of the affected policy"),
+        blast="EVERY client of the affected policy",
+        verified=True, provenance=transports.PROVENANCE_WPP),
     "block_country": ActionSpec(
         "block_country", "Block source country",
         "GeoIP block for the source's country on the affected policy.",
-        mechanism="FortiWeb GeoIP block list — NOT YET VERIFIED.",
+        mechanism="POST cmdb/waf/geo-block-list/country-list?mkey="
+                  "satom-sentinel-geo {country-name: <name>}; undone by DELETE "
+                  "with &sub_mkey=<id>. The child collection is country-list, "
+                  "NOT members, and the appliance takes a FULL COUNTRY NAME - "
+                  "'AD' answers errcode -7950. The list carries "
+                  "action=block-period, so the appliance expires it too. Same "
+                  "precondition as block_ip and re-read the same way: the "
+                  "policy's profile must already reference the geo list "
+                  "(geo-block-list-policy). Verified against a live appliance "
+                  "and STILL capped at recommend - a verified mechanism is not "
+                  "an argument for autonomy when the blast radius is a country.",
         reversible=True, requires_ttl=True,
         max_level=SentinelPolicy.LEVEL_RECOMMEND,
+        verified=True, provenance=transports.PROVENANCE_GEO,
         blast="EVERY client in an entire country — never autonomous, at any "
               "confidence. A single mis-attributed source address would take "
               "a market offline."),
@@ -122,13 +149,64 @@ CATALOG: dict[str, ActionSpec] = {
         "tune_signature", "Propose a signature carve-out",
         "Hand the incident to the existing false-positive carve-out flow.",
         mechanism="Hands off to app.services.attack_carveout, which builds the "
-                  "exception from the entry AS THE DEVICE REPORTED IT. Never "
-                  "auto-applied: an exception authored from correlated data is "
-                  "an exception authored from something a client influenced.",
+                  "exception from the entry AS THE DEVICE REPORTED IT. Writes "
+                  "NOTHING to an appliance from here: the draft lands in the "
+                  "existing exception flow and a person applies it there. "
+                  "Never auto-applied - an exception authored from correlated "
+                  "data is an exception authored from something a client "
+                  "influenced, and the whole point of an exception is that it "
+                  "stops the WAF from acting.",
         reversible=True, requires_ttl=False,
         max_level=SentinelPolicy.LEVEL_RECOMMEND,
-        blast="one signature on one profile"),
+        blast="one signature on one profile",
+        handoff=True, verified=True,
+        provenance="no appliance write: the draft is built by "
+                   "app.services.attack_carveout (already shipped, already "
+                   "used by the FP triage flow) and applied by a person"),
 }
+
+#: The gate chain, in the order :func:`evaluate` applies it. ``(key, label,
+#: why)``. Order is not cosmetic — each entry is placed where it is for a
+#: reason recorded in the third field, and moving one changes what the engine
+#: refuses. Rendered by the documentation page; asserted by the test suite.
+GATE_ORDER: tuple = (
+    ("catalog", "Known action",
+     "An action type outside the catalog has no blast radius, no ceiling and "
+     "no undo. There is nothing to reason about."),
+    ("kill_switch", "Response armed",
+     "One switch an operator can reach without reading anything else. Checked "
+     "early so that disarming is felt immediately."),
+    ("protected_network", "Not our own network",
+     "Before trust, deliberately. Our own address space must stay unblockable "
+     "even if somebody empties the trust list."),
+    ("trusted_source", "Source not trusted",
+     "An authorised scanner produces a log byte-for-byte identical to an "
+     "intruder's. Only context separates them."),
+    ("maintenance_window", "Not inside a window",
+     "Work we scheduled must not be answered by a firewall rule."),
+    ("policy_exists", "A policy covers this action",
+     "No row means nobody has decided anything about this action here."),
+    ("policy_enabled", "That policy is enabled",
+     "Disabling a policy has to stop the thing, not merely hide it."),
+    ("executable_mechanism", "Not a hand-off",
+     "Some actions are drafted here and applied by a person elsewhere. Those "
+     "are refused here so the refusal names where the work happens."),
+    ("level", "Autonomy reaches semi-automatic",
+     "Below it the action is a proposal for a person, which is a valid "
+     "outcome and not a failure."),
+    ("confidence", "Score meets this action's floor",
+     "The floor belongs to the action, not to the engine: a country block "
+     "does not get to borrow an address block's threshold."),
+    ("ttl", "It expires on its own",
+     "The primary rollback is expiry. An undo that has to succeed later is "
+     "not a rollback."),
+    ("circuit_breaker", "Hourly budget remains",
+     "A correlation bug during a flood must exhaust a budget rather than a "
+     "firewall."),
+    ("mechanism_verified", "Mechanism captured from a live appliance",
+     "22 of 237 documented routes on this product answer 'invalid URL'. A "
+     "mechanism read from a manual is a specification, not a transport."),
+)
 
 #: Recommendation the policy engine derives from the score band, per family.
 #: Data, not branches, so the documentation page can render it and the tests
@@ -263,6 +341,16 @@ def evaluate(incident, action_type: str) -> dict:
                  "policy is disabled" if not policy.enabled else "policy enabled"):
         return _deny(checks, "policy disabled")
 
+    # A hand-off has no device write to perform, so "execute" is not a thing
+    # this engine can do with it. Denying here — with the reason naming where
+    # the work actually happens — beats letting the runner reach a transport
+    # lookup and report "no verified transport", which reads like a defect.
+    if not check("executable_mechanism", not spec.handoff,
+                 "this action is a hand-off, not a device write: Sentinel "
+                 "drafts it and a person applies it from the exception flow"
+                 if spec.handoff else "the mechanism is a device write"):
+        return _deny(checks, "hand-off, not executable", level=0)
+
     level = min(int(policy.level or 0), spec.max_level)
     if not check("level", level >= SentinelPolicy.LEVEL_SEMI_AUTO,
                  f"effective level {level} — proposal only"
@@ -378,6 +466,7 @@ def catalog_rows() -> list:
              "mechanism": s.mechanism, "reversible": s.reversible,
              "requires_ttl": s.requires_ttl, "max_level": s.max_level,
              "blast": s.blast, "verified": s.verified,
+             "handoff": s.handoff,
              "provenance": s.provenance}
             for s in CATALOG.values()]
 
@@ -407,3 +496,12 @@ def verified_count() -> tuple:
     """
     total = len(CATALOG)
     return sum(1 for s in CATALOG.values() if s.verified), total
+
+
+def handoff_keys() -> list:
+    """Actions that are drafted here and applied by a person elsewhere.
+
+    The console needs this to avoid telling an operator that a verified
+    mechanism is available for execution when it is, on purpose, not.
+    """
+    return sorted(k for k, s in CATALOG.items() if s.handoff)

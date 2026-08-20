@@ -136,8 +136,15 @@ def test_policies_page_leads_with_what_it_cannot_do(admin):
     r = admin.get("/sentinel/policies")
     assert r.status_code == 200
     body = r.get_data(as_text=True)
-    assert "1/4 action transports have been verified" in body
+    from app.services.sentinel import actions
+    have, total = actions.verified_count()
+    assert f"{have}/{total} action mechanisms have been verified" in body, \
+        "the banner states a count the engine does not agree with"
     assert "invalid URL" in body      # the provenance of that caution
+    for key in actions.handoff_keys():
+        assert key in body, \
+            ("a hand-off is not listed as one, so an operator reads a verified "
+             "mechanism as an executable one")
 
 
 def test_docs_page_renders_from_live_code(admin):

@@ -150,3 +150,50 @@ def test_widen_plan_is_importable_without_an_app_context():
     """It is pure; needing a context would make it untestable with data."""
     md = _md(Column("product", String(32)))
     assert widen_plan(md.sorted_tables, {"t": {"product": 16}})
+
+
+# --------------------------------------------------------------------------
+# SATOM-DEEP-LOGICAL-NAME
+#
+# `deep_capture` failed every night on fortiweb12 with
+# StringDataRightTruncation: logical_name is a PATH down the object tree, so it
+# grows with depth, and a depth-6 XML-protection branch went past 128. The row
+# was not merely dropped — the flush aborted, session.commit() raised
+# PendingRollbackError, and the entire deep snapshot for that appliance was
+# lost. The string below is the one the appliance actually produced.
+# --------------------------------------------------------------------------
+
+OBSERVED_DEEP_PATH = (
+    "server_policy/webprotection_profile_inline/xml_protection_policy/"
+    "input-rule-list/xml_protection_rule/xml_protection_dtd/file-list")
+
+
+def test_logical_name_holds_the_deepest_path_the_fleet_has_produced():
+    from app.models_cache import DeviceObject
+
+    width = DeviceObject.__table__.c.logical_name.type.length
+    assert width >= len(OBSERVED_DEEP_PATH), (
+        "logical_name is VARCHAR(%s) and a real FortiWeb 7.6.8 branch needs "
+        "%s. This does not drop one row: the flush aborts and the whole deep "
+        "snapshot for that appliance is lost."
+        % (width, len(OBSERVED_DEEP_PATH)))
+    assert width >= 2 * len(OBSERVED_DEEP_PATH) or width >= 512, (
+        "no headroom left — the next level of nesting brings the failure back")
+
+
+def test_logical_name_is_never_truncated_to_fit():
+    """Truncating is not the alternative to widening.
+
+    logical_name is half of the identity key (appliance_id, logical_name,
+    mkey), so a shortened path merges two different branches into one row —
+    which is worse than a loud failure, because it looks like data.
+    """
+    import inspect
+
+    from app.services import device_store
+
+    src = inspect.getsource(device_store)
+    src = "\n".join(l for l in src.splitlines() if not l.strip().startswith("#"))
+    assert "logical_name=" in src or "logical_name" in src
+    assert "logical_name[:" not in src and "logical_name)[:" not in src, \
+        "a slice on logical_name would collide two branches into one row"

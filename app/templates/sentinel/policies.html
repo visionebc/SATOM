@@ -21,8 +21,12 @@
   Change it in Settings → Sentinel → Response &amp; safety.
 </div>
 
-<div class="alert alert-danger small">
-  <strong>{{ verified[0] }}/{{ verified[1] }} action transports have been verified against a live appliance.</strong>
+<div class="alert {{ 'alert-success' if verified[0] == verified[1] else 'alert-danger' }} small">
+  <strong>{{ verified[0] }}/{{ verified[1] }} action mechanisms have been verified against a live appliance.</strong>
+  {% if handoffs %}{{ handoffs|join(', ') }}
+  {{ 'is a hand-off' if handoffs|length == 1 else 'are hand-offs' }} — drafted here and applied by a
+  person in the exception flow, never written to an appliance by this engine, and refused by the
+  <code>executable_mechanism</code> gate if anything tries.{% endif %}
   Until an action's mechanism has been executed and re-read on a real device of this product, the
   policy engine refuses it at the last gate — however confident the score and however permissive the
   policy. This is not caution for its own sake: a live sweep of this product's own configuration

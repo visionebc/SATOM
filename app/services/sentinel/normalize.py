@@ -189,7 +189,9 @@ def from_attack_log(appliance, row: dict) -> "SentinelEvent":
         src_port=_int(row, "src_port"),
         dst_ip=_text(row, "dst", "dst_ip"),
         dst_port=_int(row, "dst_port"),
-        country=_text(row, "srccountry", "src_country")[:8],
+        # Kept VERBATIM. This is the string the geo block list has to be
+        # handed back later, so any tidying here is a block that fails at 3am.
+        country=_text(row, "srccountry", "src_country")[:64],
         http_method=_text(row, "http_method", "method")[:16],
         uri=_text(row, "http_url", "url", "http_uri"),
         http_status=_int(row, "http_status", "status", "http_response_code"),

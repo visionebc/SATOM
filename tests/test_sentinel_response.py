@@ -152,9 +152,17 @@ def mk_incident(**kw) -> SentinelIncident:
     return inc
 
 
-def arm(monkeypatch, device: FakeDevice):
-    """Point the responder's client factory at the fake, and arm the engine."""
+def arm(monkeypatch, device: FakeDevice, role="primary"):
+    """Point the responder's client factory at the fake, and arm the engine.
+
+    ``role`` is explicit because the runner refuses on anything that is not the
+    primary. Under pytest the database is SQLite, so the real probe answers
+    "unknown" — correctly, since a process on SQLite is not talking to the
+    production database at all — and every test would be skipped by the guard
+    rather than exercising the path it is about.
+    """
     monkeypatch.setattr(responder, "_client", lambda d: (device, ""))
+    monkeypatch.setattr(responder, "_node_role", lambda: role)
     config.set_value("response_enabled", True)
 
 
@@ -615,3 +623,71 @@ def test_a_closed_action_may_be_proposed_again(app):
         db.session.commit()
         assert second.id != first.id, \
             "the source came back after the TTL and Sentinel could not respond"
+
+
+# --------------------------------------------------------------------------- #
+#  The runner acts from one node only                                           #
+# --------------------------------------------------------------------------- #
+def test_tick_refuses_on_the_standby(app, monkeypatch):
+    """Two nodes applying and expiring against the same appliance would race —
+    one deleting the member the other had just written — and the winner would
+    depend on tick order. The read-only replica is not the guard: relying on it
+    turns a design error into a database error inside the component that writes
+    to firewalls, and it evaporates the moment the standby is promoted."""
+    with app.app_context():
+        dev = FakeDevice()
+        arm(monkeypatch, dev, role="standby")
+        enable_policy()
+        a = queue(mk_incident())
+        out = responder.tick()
+        assert out["skipped"] == "standby"
+        assert "standby" in out["reason"] and "race" in out["reason"]
+        assert out["expired"] == [] and out["applied"] == []
+        assert a.status == SentinelAction.STATUS_QUEUED
+        assert dev.calls == [], "the standby talked to an appliance"
+
+
+def test_a_run_without_the_production_environment_says_so(app, monkeypatch):
+    """`python -m app.cli_sentinel` binds the config at import time, before
+    wsgi loads the .env — so a run without the environment already present
+    falls back to the SQLite development database. Every query then succeeds
+    against an empty file: nothing to apply, nothing to expire, and a
+    clean-looking pass while a real block sits on a firewall. The refusal has
+    to name THAT, not the symptom."""
+    with app.app_context():
+        dev = FakeDevice()
+        arm(monkeypatch, dev, role="unknown")
+        out = responder.tick()
+        assert out["skipped"] == "unknown"
+        assert "SQLITE" in out["reason"], out["reason"]
+        assert "satom-responder.service" in out["reason"], \
+            "the refusal does not tell the operator how to run it correctly"
+
+
+def test_the_guard_is_not_satisfied_by_the_read_only_replica(app):
+    """A structural guard: nothing in the runner may rely on the database
+    refusing the write. That would be a design error surfacing as a database
+    error, at 3am, in the one component that changes firewalls."""
+    import inspect
+
+    src = inspect.getsource(responder)
+    body = src[src.index("def tick("):]
+    body = "\n".join(l for l in body.splitlines() if not l.strip().startswith("#"))
+    assert "_node_role()" in body, \
+        "tick() no longer asks which node it is running on"
+    assert body.index("_node_role()") < body.index("expire_due()"), \
+        "the role is checked after work has already been done"
+
+
+def test_a_role_that_cannot_be_determined_is_never_primary(app):
+    """The REAL probe, not a monkeypatched one.
+
+    Under pytest the database is SQLite, so pg_is_in_recovery() raises — the
+    same shape as a node whose database is unreachable. A fallback of
+    "primary" there would mean the runner writes enforcement rules from a node
+    that cannot say what it is, which is precisely the case the guard exists
+    for. This test exists because a mutation flipping that fallback survived a
+    suite that only ever patched the function out.
+    """
+    with app.app_context():
+        assert responder._node_role() != "primary"

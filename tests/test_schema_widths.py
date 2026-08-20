@@ -197,3 +197,26 @@ def test_logical_name_is_never_truncated_to_fit():
     assert "logical_name=" in src or "logical_name" in src
     assert "logical_name[:" not in src and "logical_name)[:" not in src, \
         "a slice on logical_name would collide two branches into one row"
+
+
+# --------------------------------------------------------------------------
+# SATOM-DOTENV-CWD
+# --------------------------------------------------------------------------
+
+def test_wsgi_loads_the_dotenv_beside_itself_not_the_cwd():
+    """A bare load_dotenv() searches from the CURRENT DIRECTORY.
+
+    `runuser -u satom -- python -m app.cli_sentinel ...` moves to the user's
+    home first, so a CWD-relative search finds nothing and the app falls back
+    to SQLite — an empty database that answers every query successfully. In
+    the response runner that is a tick reporting a clean pass while a real
+    block stays on a firewall.
+    """
+    from pathlib import Path as _P
+
+    src = (_P(__file__).resolve().parents[1] / "wsgi.py").read_text()
+    src = "\n".join(l for l in src.splitlines() if not l.strip().startswith("#"))
+    assert "load_dotenv()" not in src, \
+        "wsgi.py loads whatever .env the working directory happens to reach"
+    assert "load_dotenv(" in src and "__file__" in src, \
+        "the dotenv path must be derived from wsgi.py's own location"

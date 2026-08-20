@@ -556,6 +556,17 @@ preflights, applies, expires and judges. A bug in a view — a double submit, a
 crawler, a stray retry — can therefore at worst enqueue a request the runner
 refuses on its own merits.
 
+**It acts from one node only.** `tick()` reads
+`pg_is_in_recovery()` and refuses on anything that is not the primary — with
+`unknown` counted as not-primary, because a node that cannot say what it is
+must not be the one writing enforcement rules. The read-only replica is *not*
+the guard: leaning on it would turn a design error into a database error inside
+the component that changes firewalls, and it would disappear the moment a
+standby were promoted. A refusal that turns out to be a process bound to SQLite
+(the config binds at import, before wsgi loads the `.env`, so a run from a bare
+shell falls back to the development database) says so in those words, because
+that tick would otherwise find nothing to expire and look like a clean pass.
+
 **Expiry runs even when the kill switch is off.** This is the one asymmetry and
 it is deliberate: disarming must stop *new* blocks, but if it also stopped
 expiry, throwing the kill switch mid-incident would strand every live block

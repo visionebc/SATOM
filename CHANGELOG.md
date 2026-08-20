@@ -60,6 +60,32 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Fixed
 
+- **The response runner had no role guard.** Found by reading the standby after
+  the rest of this round had shipped: the timer is present there and disabled,
+  which was correct only because nobody had enabled it — nothing in the code
+  said so. Two nodes applying and expiring against the same appliance would
+  race, one deleting the member the other had just written, and the winner
+  would depend on tick order. The read-only replica is not the guard either:
+  relying on it turns a design error into a database error at 3am inside the
+  one component that changes firewalls, and it evaporates the moment a standby
+  is promoted. `tick()` now refuses on anything that is not the primary, and
+  `unknown` counts as not-primary — a node that cannot say what it is must not
+  be the one writing enforcement.
+- **A run without the production environment now refuses instead of reporting
+  a clean pass.** `python -m app.cli_sentinel` binds the config at import time,
+  before wsgi loads the `.env`, so a run from a bare shell (systemd passes it
+  via `EnvironmentFile`; `runuser` does not) falls back to the SQLite
+  development database. Every query then succeeds against an empty file: no
+  actions to apply, no TTLs to expire, and a clean-looking tick while a real
+  block sits on a firewall. The refusal names *that*, and says which unit to
+  use instead. `wsgi.py` additionally loads the `.env` beside itself rather
+  than whichever one the working directory happens to reach.
+- **`satom get system health` did not know about the response runner.** TTL
+  expiry happens in that timer's tick, so a node where it is off can hold a
+  block nothing will ever lift — and the one output an operator reads to answer
+  "is this node healthy?" was silent about it. It is not in `RESTARTABLE`: like
+  the update runner, it is the component that writes to appliances, and a CLI
+  verb that restarts it re-enters the privilege boundary sideways.
 - **`sentinel_event.country` was `VARCHAR(8)`.** FortiWeb reports `srccountry`
   as a full name, so a source in the United States was recorded as `United S` —
   mislabelled on the page, and stripped of the one value the geo block list

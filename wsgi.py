@@ -3,10 +3,21 @@ from __future__ import annotations
 
 import os
 
-# Load .env if python-dotenv is available (optional dev convenience)
+# Load the .env that sits NEXT TO THIS FILE — never "whatever the current
+# directory happens to be". A bare load_dotenv() searches upward from the CWD,
+# so `runuser -u satom -- python -m app.cli_sentinel ...` (runuser moves to the
+# user's home first) loads nothing and the app falls back to SQLite: an empty
+# database that answers every query successfully. For the response runner that
+# is a tick which finds no TTL to expire and reports a clean pass while a real
+# block stays on a firewall.
+#
+# systemd's EnvironmentFile still wins — load_dotenv does not override
+# variables already present in the environment.
 try:
+    from pathlib import Path as _Path
+
     from dotenv import load_dotenv  # type: ignore[import]
-    load_dotenv()
+    load_dotenv(_Path(__file__).resolve().with_name(".env"))
 except ImportError:
     pass
 

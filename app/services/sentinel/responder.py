@@ -43,6 +43,37 @@ from . import actions, config, transports
 from .. import audit
 
 
+def _node_role() -> str:
+    """``primary`` | ``standby`` | ``unknown``. ``unknown`` is NOT primary: a
+    node that cannot say what it is must not be the one writing enforcement."""
+    try:
+        from ..self_update import node_role
+        return node_role() or "unknown"
+    except Exception:                                       # pragma: no cover
+        return "unknown"
+
+
+def _why_not_primary(role: str) -> str:
+    """The refusal, naming the cause rather than the symptom."""
+    if role == "standby":
+        return ("this node is the standby — the response runner only ever "
+                "acts from the primary, or two nodes race on the same rule")
+    try:
+        from ...models import db
+        uri = str(db.engine.url)
+    except Exception:                                       # pragma: no cover
+        uri = ""
+    if uri.startswith("sqlite"):
+        return ("this process is bound to SQLITE, not the production "
+                "database: the environment was not loaded, so every query "
+                "would succeed against an empty file and a live block would "
+                "never be expired. Run it through satom-responder.service, "
+                "which passes /opt/satom/.env as its EnvironmentFile.")
+    return (f"this node reports role '{role}' — it cannot prove it is the "
+            f"primary, and a node that cannot say what it is must not be the "
+            f"one writing enforcement rules")
+
+
 def _client(device: str):
     """A live client for the device named on the action, or (None, reason)."""
     if not device:
@@ -289,7 +320,19 @@ def tick() -> dict:
     If applying ran first, a pass that hits the circuit breaker could refuse a
     new block while an expired one it was about to lift still counted against
     the ceiling.
+
+    Refuses outright on a standby. Two nodes applying and expiring against the
+    same appliance would race — one deleting the member the other had just
+    written — and which one won would depend on tick order. The read-only
+    replica is not the guard: relying on it turns a design error into a
+    database error inside the component that writes to firewalls, and it
+    disappears the moment the standby is promoted.
     """
+    role = _node_role()
+    if role != "primary":
+        return {"expired": [], "applied": [], "judged": [], "skipped": role,
+                "reason": _why_not_primary(role),
+                "armed": bool(config.get("response_enabled"))}
     expired = expire_due()
     applied = drain()
     judged = verify_effect()

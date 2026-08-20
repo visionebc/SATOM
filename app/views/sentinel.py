@@ -20,10 +20,18 @@ a console that adds round-trips then becomes part of the outage. The one
 exception (``/run`` and ``/vuln/sync``) is an explicit operator action, is a
 POST, and says so.
 
-**Nothing here executes an action against a device.** Sentinel's response
-engine ships as proposals only, and this blueprint has no route that could
-change appliance configuration even if a policy were armed. The approve button
-records approval; there is deliberately no executor behind it yet.
+**Nothing here executes a response against a device — still true, and now a
+division of labour rather than an absence.** Approving an action moves its row
+to ``queued``; ``satom-responder.timer`` picks it up in a separate process,
+re-runs every gate against the state at that moment, asks the appliance whether
+it can even enforce, and only then writes. A bug in this blueprint — a double
+submit, a crawler, a stray retry — can at worst enqueue a request that the
+runner will refuse on its own merits.
+
+The one route here that does reach a device is ``/arm``, and it is not a
+response to anything: it binds Sentinel's IP list to a policy's protection
+profile because a person decided that policy may be enforced on. That decision
+belongs in the audit log as theirs, never as a side effect of an attack.
 """
 from __future__ import annotations
 
@@ -45,10 +53,12 @@ bp = Blueprint("sentinel", __name__, url_prefix="/sentinel")
 
 def _svc():
     from ..services.sentinel import (actions, ai, baseline, config, correlate,
-                                     incident, pipeline, scoring, vuln)
+                                     incident, pipeline, responder, scoring,
+                                     transports, vuln)
     return dict(actions=actions, ai=ai, baseline=baseline, config=config,
                 correlate=correlate, incident=incident, pipeline=pipeline,
-                scoring=scoring, vuln=vuln)
+                responder=responder, scoring=scoring, transports=transports,
+                vuln=vuln)
 
 
 def _visible_names() -> set:
@@ -286,11 +296,10 @@ def incident_close(iid):
 def incident_action(iid):
     """Record an operator's approval of a proposed action.
 
-    Deliberately stops at ``approved``. There is no executor: no entry in the
-    action catalog has had its transport verified against a live appliance of
-    this product, and this repo has 22 documented FortiWeb routes that answer
-    ``-20001 invalid URL`` as the standing reminder of what happens when a
-    mechanism is trusted from a manual instead of from a device.
+    Approval ENQUEUES. It is not a promise that execution follows: the runner
+    re-evaluates every gate at the moment it acts, so consent given at 12:00
+    does not survive a kill switch thrown at 12:01. An approval is consent to a
+    decision made under the state the approver could actually see.
     """
     s = _svc()
     inc = SentinelIncident.query.get_or_404(iid)
@@ -301,12 +310,19 @@ def incident_action(iid):
     action = s["actions"].propose(inc, action_type, by=f"user:{_who()}",
                                   rationale=request.form.get("note", ""))
     if verdict["allowed"]:
-        action.status = SentinelAction.STATUS_APPROVED
         action.approved_by = _who()
-        msg = (f"{action_type} approved and recorded. NOT executed: no "
-               f"transport for this action has been verified against a live "
-               f"appliance yet.")
-        level = "warning"
+        if s["transports"].get(action_type) is None:
+            action.status = SentinelAction.STATUS_APPROVED
+            msg = (f"{action_type} approved and recorded, but NOT queued: its "
+                   f"mechanism has never been run against a live appliance of "
+                   f"this product, so there is nothing to execute.")
+            level = "warning"
+        else:
+            action.status = SentinelAction.STATUS_QUEUED
+            msg = (f"{action_type} approved and queued. The runner re-checks "
+                   f"every gate and asks the appliance whether it can enforce "
+                   f"before writing anything.")
+            level = "success"
     else:
         action.status = SentinelAction.STATUS_REJECTED
         msg = f"{action_type} refused by the policy engine: {verdict['reason']}."
@@ -316,6 +332,41 @@ def incident_action(iid):
     db.session.commit()
     flash(msg, level)
     return redirect(url_for("sentinel.incident_view", iid=iid))
+
+
+@bp.route("/arm", methods=["POST"])
+@login_required
+@require_permission("config_write")
+def arm():
+    """Bind Sentinel's IP list to a policy's web protection profile.
+
+    Kept away from every response path deliberately. Until this has run, a
+    block on that policy would add a member to a list nothing references:
+    accepted by the appliance, green in our own records, and protecting
+    nothing. The runner refuses to act rather than produce that, and it will
+    not repair it either — an agent that binds its own enforcement point is an
+    agent that can widen its own authority.
+    """
+    from ..clients import client_for
+    from ..models import Appliance
+    from ..services import audit
+    s = _svc()
+    device = (request.form.get("device") or "").strip()
+    policy = (request.form.get("policy") or "").strip()
+    if device not in _visible_names():
+        abort(403)
+    ap = Appliance.query.filter_by(name=device).first_or_404()
+    try:
+        out = s["transports"].arm_policy(client_for(ap), policy)
+    except Exception as exc:
+        flash(f"Could not arm {policy} on {device}: {exc}", "danger")
+        return redirect(url_for("sentinel.context"))
+    detail = "; ".join(f"{st['name']}: {st['detail']}" for st in out["steps"])
+    audit.log_action("sentinel.arm",
+                     f"{device}/{policy} armed={out['ok']} :: {detail}")
+    flash(f"{'Armed' if out['ok'] else 'Could not arm'} {policy} on {device}. "
+          f"{detail}", "success" if out["ok"] else "danger")
+    return redirect(url_for("sentinel.context"))
 
 
 # --------------------------------------------------------------------------- #
@@ -328,6 +379,7 @@ def context():
     appliances = visible_appliances().all()
     from ..services import hypervisors
     topo = {t.appliance_id: t.to_dict() for t in SentinelTopology.query.all()}
+    sentinel_list = s["transports"].SENTINEL_LIST
     return render_template(
         "sentinel/context.html",
         trusted=[t.to_dict() for t in
@@ -337,7 +389,7 @@ def context():
         windows=[w.to_dict() for w in
                  SentinelMaintenanceWindow.query.order_by(
                      SentinelMaintenanceWindow.starts_at.desc()).all()],
-        appliances=appliances, topology=topo,
+        appliances=appliances, topology=topo, sentinel_list=sentinel_list,
         hypervisors=hypervisors.configured_targets(),
         mirror=s["vuln"].mirror_health(),
         recent_cves=[v.to_dict() for v in

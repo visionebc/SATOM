@@ -114,6 +114,22 @@ SPEC: list[dict] = [
      "min": 1, "max": 100,
      "help": "Fleet-wide ceiling across all action types. A correlation bug "
              "during a flood must exhaust a budget, not a firewall."},
+    {"key": "effect_window_minutes", "kind": "int", "default": 5,
+     "group": "response", "label": "Wait before judging effectiveness (minutes)",
+     "min": 1, "max": 120,
+     "help": "How long after an action Sentinel compares attack volume from "
+             "that source against the same span before it. Applied is not "
+             "effective: a rule that is present on the device and changes "
+             "nothing is the case that must escalate, and it is invisible to a "
+             "check that only confirms the write succeeded."},
+    {"key": "device_block_period_s", "kind": "int", "default": 600,
+     "group": "response", "label": "Device-side block period (seconds)",
+     "min": 30, "max": 3600,
+     "help": "Written onto the Sentinel IP list as action=block-period, so the "
+             "APPLIANCE lifts the block by itself. This is the rollback that "
+             "still works when Sentinel is down — which is exactly when a "
+             "stuck block would otherwise never be lifted. Sentinel's own TTL "
+             "deletes the member as well; the two are deliberately redundant."},
     {"key": "protect_cidrs", "kind": "text",
      "default": "10.0.0.0/8\n172.16.0.0/12\n192.168.0.0/16\n127.0.0.0/8",
      "group": "response", "label": "Never-block networks (one CIDR per line)",

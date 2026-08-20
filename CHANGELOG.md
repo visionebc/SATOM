@@ -8,6 +8,37 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Added
 
+- **Sentinel phase 7 — a response that can actually execute, for exactly one
+  action.** `block_ip`'s transport was captured from a live FortiWeb 7.6.8
+  (create list, add member, re-read, delete member, delete list, zero residue),
+  so it is now marked verified and the last gate lets it through. Execution
+  runs in a separate unit (`satom-responder.timer`, once a minute) which
+  re-evaluates every gate at the moment it acts and asks the appliance whether
+  it can enforce before writing. Applied is proved by re-reading the object,
+  never by the 200. Effectiveness is judged separately: an action that landed
+  and changed nothing takes its incident back out of `mitigated` and is never
+  retried. Expiry runs even with the kill switch off, so disarming cannot
+  strand a live block, and the IP list carries a device-side block period so
+  the appliance lifts it even if Sentinel is down.
+- **Sentinel phase 8 — autonomy, shipped disarmed.** A policy at level 3 skips
+  the approval step for a decision the gates already permitted; it can never
+  raise a ceiling, widen an action or extend a TTL, and the effective level is
+  still capped by the catalog (`block_country` stays at *recommend* whatever an
+  operator sets). Proposals are deduplicated per incident and action, so one
+  decision stays one row across sweeps.
+- Sentinel Context page gained **response arming**: binding Sentinel's IP list
+  to a policy's protection profile, as an explicit human action recorded in the
+  audit log. The response runner will not do this for itself.
+
+### Removed
+
+- **Sentinel action `rate_limit_ip`.** Probing fortiweb12 showed the route its
+  mechanism named (`waf/http-access-limit`) answers `-20001 invalid URL` on
+  this firmware. FortiWeb's flood-prevention rules apply to every client of a
+  profile, not to one address, so the entry promised a blast radius of one
+  source that no available mechanism can deliver. Orphaned policy rows are
+  pruned unless actions reference them.
+
 - **SATOM Sentinel — security correlation and (proposed) autonomous response.**
   A new module at `/sentinel` that correlates FortiWeb attack signatures, HTTP
   response outcomes, appliance counters, VM and hypervisor metrics and

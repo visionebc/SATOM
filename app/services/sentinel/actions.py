@@ -2,10 +2,24 @@
 
 Status of this module in THIS release
 -------------------------------------
-It **proposes**. It does not execute. Every entry in :data:`CATALOG` carries
-``verified=False``, meaning: the mechanism named here has NOT yet been proved
-against a live appliance of this product. Nothing in this file opens a
-connection to a device, and there is a guard test asserting that.
+It **decides**. It never executes: nothing in this file opens a connection to a
+device, and there is a guard test asserting that. Execution lives in
+``responder.py``, which runs as a separate systemd unit.
+
+:data:`CATALOG` entries carry ``verified``, meaning: the mechanism named here
+has been proved against a live appliance of this product, by running it. As of
+2026-08-20 exactly ONE has — ``block_ip`` (see ``transports.PROVENANCE``). The
+rest remain specifications and the last gate refuses them, which is the honest
+state and is shown as such on the console.
+
+``rate_limit_ip`` was REMOVED rather than left unverified. Probing fortiweb12
+showed ``waf/http-access-limit`` — the route its mechanism named — answers
+``-20001 invalid URL``; it does not exist on this firmware. What FortiWeb
+actually offers is flood-prevention rules whose thresholds apply to EVERY
+client of a profile, not to one address. Keeping the entry would have promised
+a blast radius of one source while the only available mechanism has a blast
+radius of every client. An action that cannot be built is not a roadmap item on
+a live console — it is a lie with a button next to it.
 
 That is not caution theatre. This product measured, on 2026-08-20, that **22 of
 237 documented FortiWeb configuration routes answer ``-20001 "invalid URL"``**
@@ -49,7 +63,7 @@ from datetime import datetime, timedelta
 
 from ...models import db
 from ...models_sentinel import SentinelAction, SentinelPolicy
-from . import config, enrich
+from . import config, enrich, transports
 
 
 @dataclass(frozen=True)
@@ -71,22 +85,19 @@ class ActionSpec:
 CATALOG: dict[str, ActionSpec] = {
     "block_ip": ActionSpec(
         "block_ip", "Block source IP",
-        "Add the source to the IP list bound to the affected server policy.",
-        mechanism="FortiWeb IP List (blacklist) member on the policy's "
-                  "protection profile — NOT YET VERIFIED against a live "
-                  "appliance; the route and payload must be captured from a "
-                  "device before this becomes executable.",
+        "Add the source to the Sentinel IP list bound to the affected policy.",
+        mechanism="POST cmdb/waf/ip-list/members?mkey=satom-sentinel-block with "
+                  "{type: black-ip, ip: <src>}; undone by DELETE with "
+                  "&sub_mkey=<member id>. The list carries action=block-period, "
+                  "so THE APPLIANCE expires the block on its own — that expiry "
+                  "survives Sentinel being dead. PRECONDITION, re-read from the "
+                  "device before every apply: the policy's web protection "
+                  "profile must already reference the list. Sentinel never "
+                  "binds its own enforcement point during an incident.",
         reversible=True, requires_ttl=True,
         max_level=SentinelPolicy.LEVEL_AUTONOMOUS,
-        blast="one source address on one policy"),
-    "rate_limit_ip": ActionSpec(
-        "rate_limit_ip", "Rate-limit source IP",
-        "Constrain the source's request rate rather than dropping it.",
-        mechanism="FortiWeb HTTP access limit / period-block — NOT YET "
-                  "VERIFIED against a live appliance.",
-        reversible=True, requires_ttl=True,
-        max_level=SentinelPolicy.LEVEL_AUTONOMOUS,
-        blast="one source address on one policy"),
+        blast="one source address on one policy",
+        verified=True, provenance=transports.PROVENANCE),
     "raise_protection": ActionSpec(
         "raise_protection", "Raise protection profile",
         "Move the policy to a hardened Web Protection Profile.",
@@ -125,7 +136,7 @@ CATALOG: dict[str, ActionSpec] = {
 BAND_RECOMMENDATION: dict[str, str] = {
     "observe": "observe",
     "investigate": "investigate",
-    "recommend": "rate_limit_ip",
+    "recommend": "investigate",
     "semi_auto": "block_ip",
 }
 
@@ -152,6 +163,29 @@ def ensure_policies() -> int:
     return created
 
 
+def prune_policies() -> list:
+    """Drop policy rows whose action left the catalog.
+
+    Removing ``rate_limit_ip`` from the catalog does not remove the row an
+    earlier release created, and that row stays visible, editable, and armable
+    on the policies page — a switch wired to nothing. Rows that still have
+    actions attached are KEPT, because deleting them would take the audit trail
+    of what Sentinel once proposed with them.
+    """
+    from ...models_sentinel import SentinelAction as _A
+    removed = []
+    for row in SentinelPolicy.query.all():
+        if row.action_type in CATALOG:
+            continue
+        if _A.query.filter_by(action_type=row.action_type).count():
+            continue
+        removed.append(row.action_type)
+        db.session.delete(row)
+    if removed:
+        db.session.commit()
+    return removed
+
+
 def recent_action_count(minutes: int = 60) -> int:
     since = datetime.utcnow() - timedelta(minutes=minutes)
     return (SentinelAction.query
@@ -173,9 +207,6 @@ def recommend(incident) -> str:
         return "investigate"
     if incident.waf_blocked and not incident.passed_count:
         return "observe"
-    if incident.attack_family in ("scanner", "bot") and \
-            incident.score < incident.BAND_SEMI_AUTO:
-        return "rate_limit_ip"
     return BAND_RECOMMENDATION.get(incident.band, "observe")
 
 
@@ -275,15 +306,49 @@ def _deny(checks: list, reason: str, level: int = 0) -> dict:
             "checks": checks, "ttl_minutes": 0}
 
 
+#: Statuses in which an action is still "live" — proposed, awaiting a human,
+#: queued for the runner, or in force. A second row for the same incident and
+#: action while one of these exists is a duplicate, not a new decision.
+LIVE_STATUSES = (SentinelAction.STATUS_PROPOSED, SentinelAction.STATUS_APPROVED,
+                 SentinelAction.STATUS_QUEUED, SentinelAction.STATUS_APPLIED)
+
+
+def existing_live(incident, action_type: str):
+    """The live action for this (incident, action), if any."""
+    return (SentinelAction.query
+            .filter(SentinelAction.incident_id == incident.id,
+                    SentinelAction.action_type == action_type,
+                    SentinelAction.status.in_(LIVE_STATUSES))
+            .order_by(SentinelAction.id.desc()).first())
+
+
 def propose(incident, action_type: str, *, params: dict | None = None,
-            by: str = "policy_engine", rationale: str = "") -> "SentinelAction":
-    """Record a PROPOSED action. Never executes anything.
+            by: str = "policy_engine", rationale: str = "",
+            autoqueue: bool = False) -> "SentinelAction":
+    """Record a PROPOSED action, or return the live one that already exists.
 
     The proposal is written whether or not the gates would allow execution,
     because "Sentinel wanted to do X and was refused because Y" is exactly the
-    record an operator needs when tuning autonomy — and it is invisible if
-    only permitted actions are stored.
+    record an operator needs when tuning autonomy — and it is invisible if only
+    permitted actions are stored.
+
+    It is written ONCE. The sweep runs every three minutes and re-proposes for
+    every open incident; without the live-row check, a single incident that
+    stays open for an hour accumulates twenty identical proposals. That was
+    harmless while nothing executed. With a runner draining the queue it is
+    twenty writes to a firewall for one decision, so the deduplication is not
+    tidying — it is the difference between one block and a loop.
+
+    ``autoqueue`` is level 3. It moves the row straight to ``queued`` with no
+    human in between, and ONLY when :func:`evaluate` returns an effective level
+    of ``LEVEL_AUTONOMOUS``. Note what it does not do: it does not raise the
+    level, widen the action, or extend a TTL. Autonomy here means "skip the
+    approval step for a decision that was already permitted", never "permit
+    more".
     """
+    live = existing_live(incident, action_type)
+    if live is not None:
+        return live
     verdict = evaluate(incident, action_type)
     spec = CATALOG.get(action_type)
     ttl = verdict.get("ttl_minutes") or 0
@@ -297,6 +362,12 @@ def propose(incident, action_type: str, *, params: dict | None = None,
         rationale=rationale or (spec.summary if spec else ""))
     action.params = dict(params or {}, src_ip=incident.src_ip,
                          device=incident.device, policy=incident.policy)
+    if (autoqueue and verdict.get("allowed")
+            and int(verdict.get("level") or 0) >= SentinelPolicy.LEVEL_AUTONOMOUS):
+        action.status = SentinelAction.STATUS_QUEUED
+        action.proposed_by = "policy_engine:autonomous"
+        action.detail = (f"queued autonomously: {verdict.get('reason')} "
+                         f"(level {verdict.get('level')})")
     db.session.add(action)
     return action
 
@@ -313,6 +384,7 @@ def catalog_rows() -> list:
 
 def policy_rows() -> list:
     ensure_policies()
+    prune_policies()
     rows = SentinelPolicy.query.order_by(SentinelPolicy.action_type).all()
     out = []
     for p in rows:

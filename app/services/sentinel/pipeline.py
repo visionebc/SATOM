@@ -98,7 +98,12 @@ def score_open_incidents(max_incidents: int = 50) -> list:
             inc.similar = incident.similar(inc)
             proposal = actions.recommend(inc)
             if proposal in actions.CATALOG:
-                actions.propose(inc, proposal,
+                # autoqueue is level 3 and is refused by evaluate() unless the
+                # operator raised this action to it. Passing it unconditionally
+                # is correct: the decision lives in the policy row, not here,
+                # and duplicating that condition in two places is how the two
+                # come to disagree.
+                actions.propose(inc, proposal, autoqueue=True,
                                 rationale=f"score {inc.score} → band {inc.band}")
             db.session.commit()
             out.append({"ref": inc.ref, "score": inc.score, "band": inc.band,

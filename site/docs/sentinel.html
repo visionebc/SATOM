@@ -338,14 +338,61 @@ console becomes the log it was built to replace.</p>
 </ul>
 <hr>
 <h2 id="8-response">8. Response</h2>
-<p>Ships as <strong>proposals</strong>. Every entry in the catalog carries <code>verified=False</code>,
-and the last gate refuses any action whose transport has not been executed and
-re-read on a live appliance of this product.</p>
-<p>That is not caution theatre. A live sweep of this product's own configuration
-surface on 2026-08-20 found <strong>22 of 237 documented FortiWeb routes answer
-<code>-20001 "invalid URL"</code></strong> — written from the reference manual and never
-validated against a device. A blocking rule built the same way fails at the
-moment it is most needed, or succeeds against the wrong object.</p>
+<p><strong>One action can execute: <code>block_ip</code>.</strong> Its transport was captured from
+{device} (FortiWeb 7.6.8) on 2026-08-20 by running it — create list, add
+member, re-read, delete member, delete list, zero residue. The other three
+entries remain specifications and the last gate refuses them, which the console
+states as <code>1/4 action transports have been verified</code> rather than implying an
+armed engine.</p>
+<p>That distinction is not caution theatre. A sweep of this product's own
+configuration surface on 2026-08-20 found <strong>22 of 237 documented FortiWeb
+routes answer <code>-20001 "invalid URL"</code></strong> — written from the reference manual,
+never validated against a device. This module's own first draft was one of
+them: it named <code>waf/http-access-limit</code> as the mechanism for <code>rate_limit_ip</code>,
+and that route does not exist on this firmware.</p>
+<h3 id="rate_limit_ip-was-withdrawn-not-left-pending"><code>rate_limit_ip</code> was withdrawn, not left pending</h3>
+<p>FortiWeb has no per-address rate limit. What it offers is flood-prevention
+rules whose thresholds apply to <strong>every client of a profile</strong>. Keeping the
+entry would have advertised a blast radius of one source while the only
+available mechanism has a blast radius of every client. An action that cannot
+be built is not a roadmap item on a live console — it is a lie with a button
+next to it. The orphan policy row an earlier release created is pruned, unless
+actions reference it, in which case it stays so its audit trail survives.</p>
+<h3 id="the-chain-and-the-precondition-that-decides-everything">The chain, and the precondition that decides everything</h3>
+<p>A server policy does not name an IP list. It names a profile, and the profile
+names the list:</p>
+<pre><code>server-policy/policy .web-protection-profile
+  -&gt; waf/web-protection-profile.inline-protection .ip-list-policy
+       -&gt; waf/ip-list
+            -&gt; waf/ip-list/members?mkey=&lt;list&gt;
+</code></pre>
+<p>So <strong>adding a member to a list no profile references blocks nothing.</strong> The POST
+returns 200, <code>sz_members</code> counts up, and the console would show a green
+"applied" badge while the attacker carried on. That is the <code>ca-group</code> defect
+this product already shipped once — an object created, valid, and bound to
+nothing — one level further up.</p>
+<p>Therefore the transport <strong>re-reads the profile off the device before every
+apply</strong> and refuses with an actionable reason if the reference is absent. And
+the incident path never creates or binds anything: arming a policy is a
+separate, human-triggered operation on the Context page. An agent that binds
+its own enforcement point is an agent that can widen its own authority.</p>
+<h3 id="applied-is-proved-by-re-reading-never-by-the-status-code">Applied is proved by re-reading, never by the status code</h3>
+<p><code>policy.scripting.text</code> on this product answers <strong>200</strong> with
+<code>"Scripting doesn't contain any event."</code> A 200 is a receipt, not an outcome. So
+every write is followed by a read of the object it claimed to change, and a
+device that accepts a member and stores nothing is recorded as a <strong>failure</strong>.</p>
+<h3 id="two-separate-verdicts-applied-and-effective">Two separate verdicts: applied, and effective</h3>
+<p><code>applied</code> means the rule is on the appliance, re-read from it. <code>effective</code>
+means the attack volume from that source actually fell. They fail differently,
+and a rule that is present and useless is exactly the case that must escalate —
+invisible to a check that only confirms the write. An action judged
+<code>ineffective</code> moves its incident back out of <code>mitigated</code> (an incident marked
+mitigated on an action that changed nothing is making a false claim) and is
+<strong>never retried</strong>. Retrying the thing that just did not work, harder, is how an
+automation turns a bad minute into a bad hour.</p>
+<p>With no events in the window before the action there is nothing to compare
+against, and the verdict is <code>unknown</code> — never <code>success</code>. "We do not know" must
+not render as a win.</p>
 <h3 id="gate-order-and-why-it-is-this-order">Gate order, and why it is this order</h3>
 <ol>
 <li><strong>Global kill switch</strong> — one setting disables everything, everywhere.</li>
@@ -361,6 +408,16 @@ moment it is most needed, or succeeds against the wrong object.</p>
    during a flood exhausts a budget rather than a firewall.</li>
 <li><strong>Mechanism verified.</strong></li>
 </ol>
+<p>Then, at execution time and in a different process, two more:</p>
+<ol start="9">
+<li><strong>Every gate again.</strong> An action approved at 12:00 executes under 12:03's
+   state. In between somebody may have thrown the kill switch, opened a
+   maintenance window, or added the source to the trust list — each of which is
+   a person deciding <em>not this</em>. Trusting the verdict recorded at enqueue time
+   carries out a decision the world has since reversed.</li>
+<li><strong>Transport preflight</strong> — the appliance itself is asked whether it can
+    enforce, before anything is written.</li>
+</ol>
 <p>Every gate returns a <strong>reason</strong>, and the reasons are shown on the incident.
 "Sentinel did nothing" is not an acceptable console state; "did nothing because
 the source is inside {ip}/8" is. Refused proposals are recorded too —
@@ -370,7 +427,30 @@ needed to tune autonomy, and it is invisible if only permitted actions are kept.
 is a second operation that can fail, attempted at the moment the first already
 has. Expiry needs nothing to work.</p>
 <p><code>block_country</code> is capped at <em>recommend</em> forever: one mis-attributed source
-address would take an entire market offline.</p>
+address would take an entire market offline. An operator may set its policy to
+autonomous; the engine still caps the effective level at the catalog ceiling.
+Level 3 means <em>skip the approval step for a decision that was already
+permitted</em> — never <em>permit more</em>.</p>
+<h3 id="where-execution-lives">Where execution lives</h3>
+<p>The web tier can only move an action row to <code>queued</code>. <code>satom-responder.timer</code>
+runs <code>satom-responder.service</code> once a minute, which re-checks the gates,
+preflights, applies, expires and judges. A bug in a view — a double submit, a
+crawler, a stray retry — can therefore at worst enqueue a request the runner
+refuses on its own merits.</p>
+<p><strong>Expiry runs even when the kill switch is off.</strong> This is the one asymmetry and
+it is deliberate: disarming must stop <em>new</em> blocks, but if it also stopped
+expiry, throwing the kill switch mid-incident would strand every live block
+permanently — the safety control would cause the outage. Stopping is not
+freezing.</p>
+<p>TTL is enforced <strong>twice</strong>. The Sentinel IP list carries
+<code>action=block-period</code>, so the appliance lifts the block by itself; Sentinel
+also deletes the member when its own TTL comes due. The device-side expiry is
+the one that matters, because it survives Sentinel being dead — precisely the
+moment a stuck block would otherwise never be lifted.</p>
+<p>One decision produces one row. The sweep re-proposes for every open incident
+every three minutes; without deduplication on the live statuses, an incident
+open for an hour would accumulate twenty identical proposals — harmless while
+nothing executed, twenty firewall writes for one decision once something does.</p>
 <hr>
 <h2 id="9-the-ai-wall">9. The AI wall</h2>
 <p><code>reason(incident) -&gt; opinion</code>. The model receives a finished incident that

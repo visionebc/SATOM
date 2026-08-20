@@ -28,6 +28,7 @@ with in-memory fakes — no Flask, no network.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any, Callable, Iterable, Protocol
 from urllib.parse import quote
@@ -901,6 +902,52 @@ def resolve_shared(items: list[CloneItem], refs: dict, *, root_mkey: str,
     return created
 
 
+def repoint_value(field: str, value: str,
+                  colls: Iterable[str],
+                  by_coll: dict[str, dict[str, str]]) -> str | None:
+    """``value`` with every renamed name replaced, or ``None`` if nothing moved.
+
+    A DECLARED list field (:data:`_LIST_REF_FIELDS`) is re-pointed name BY NAME,
+    using the same split :func:`referenced_names` uses to decide what to COPY.
+    The two halves must agree on what a field holds: reading ``"a b "`` as two
+    names and then re-pointing it WHOLE matches nothing, so the plan copies both
+    scripts, renames both copies, and leaves the copied policy naming the
+    ORIGINALS — exactly the sharing :func:`deep_rename` exists to end, and
+    silent, because every other line of the plan looks right.
+
+    Separators are preserved verbatim (FortiWeb returns ``"a b "``, with the
+    trailing space), so a name that was not renamed survives byte for byte.
+
+    Every other field is matched WHOLE, trailing space included, because there
+    the space may be part of the name itself.
+    """
+    # Materialised: ``_renamed`` walks it once PER NAME, and a generator would
+    # be exhausted after the first one — silently re-pointing only the head of
+    # every list.
+    colls = tuple(colls)
+
+    def _renamed(name: str) -> str | None:
+        for coll in colls:
+            new = by_coll.get(coll, {}).get(name)
+            if new:
+                return new
+        return None
+
+    if field not in _LIST_REF_FIELDS:
+        return _renamed(value)
+
+    parts = re.split(r"(\s+)", value)
+    hit = False
+    for i, part in enumerate(parts):
+        if not part or part.isspace():
+            continue
+        new = _renamed(part)
+        if new:
+            parts[i] = new
+            hit = True
+    return "".join(parts) if hit else None
+
+
 def deep_rename(items: list[CloneItem], suffix: str,
                 created: set[tuple[str, str]], *,
                 exists: Callable[[str, str], bool] | None = None,
@@ -961,12 +1008,11 @@ def deep_rename(items: list[CloneItem], suffix: str,
         for k, v in it.payload.items():
             if not isinstance(v, str) or not v:
                 continue
-            for coll in index.get(k, ()):
-                new = by_coll.get(coll, {}).get(v)
-                if new:
-                    patched = patched if patched is not None else dict(it.payload)
-                    patched[k] = new
-                    break
+            new = repoint_value(k, v, index.get(k, ()), by_coll)
+            if new is None:
+                continue
+            patched = patched if patched is not None else dict(it.payload)
+            patched[k] = new
         if patched is not None:
             it.payload = patched
     return renames

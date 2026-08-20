@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Added · Fixed · Changed · 25 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Added · Fixed · Changed · 28 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Added · Fixed · Changed · 25 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Added · Fixed · Changed · 28 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,8 +59,8 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Added · Fixed · Changed · 25 entries</span>
-        <ul class="rel-leads"><li>The step that actually removes the local copy</li><li>A credential can now live in an external vault — and by default it still does not</li><li>A stale process could send __stored-in-vault__ to an appliance as a password</li><li class="rel-more">… and 22 more</li></ul>
+        <span class="rel-nav-meta">unreleased · Added · Fixed · Changed · 28 entries</span>
+        <ul class="rel-leads"><li>SATOM Sentinel — security correlation and (proposed) autonomous response</li><li>http_status and infra collectors</li><li>HypervisorClient.vm_metrics() / node_metrics()</li><li class="rel-more">… and 25 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v1.10.1.html" data-rel-version="1.10.1">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 1.10.1</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
@@ -197,6 +197,62 @@
       <div class="mdx">
 <h3 id="added">Added</h3>
 <ul>
+<li><strong>SATOM Sentinel — security correlation and (proposed) autonomous response.</strong>
+  A new module at <code>/sentinel</code> that correlates FortiWeb attack signatures, HTTP
+  response outcomes, appliance counters, VM and hypervisor metrics and
+  vulnerability intelligence into single incidents, each of which explains
+  itself from measured evidence. 14 tables (<code>sentinel_*</code>), a services package
+  (<code>app/services/sentinel/</code>), four pages (console, incident, context,
+  documentation), a response-policy page, a Settings section and three
+  scheduled actions (<code>sentinel_sweep</code>, <code>sentinel_baseline</code>,
+  <code>sentinel_vuln_sync</code>). Full write-up: <code>docs/sentinel-architecture.md</code>.</li>
+</ul>
+<p>The decisions worth knowing before reading the code:</p>
+<ul>
+<li><strong>The language model is not in the deciding path.</strong> It reads a finished
+    incident and writes prose plus a recommendation from a closed enum; it has
+    no tools, no network of its own, no credentials, and cannot change a score.
+    The number that gates a firewall change has to be reproducible during a
+    post-mortem, and a sampled one is not. With every AI component down, the
+    pipeline still detects, scores, explains and gates — it loses the narrative.</li>
+<li><strong>Baselines are median + MAD per hour-of-week, not mean + sigma.</strong> A
+    security baseline is trained on data containing attacks; with a mean, each
+    flood raises the centre so the next one scores as <em>less</em> anomalous. Flat
+    series cannot produce an infinite deviation, and immature buckets never
+    fire.</li>
+<li><strong>Negative scoring factors are half the value.</strong> A wall of attacks the
+    appliance blocked does not page anyone; an exploit aimed at software the
+    backend does not run is noise; and an authorised scanner produces a
+    byte-identical log to an intruder, so context outweighs any single positive.</li>
+<li><strong>An unmeasured layer reports <code>unknown</code>, never "no impact".</strong> Those drive
+    opposite operator decisions. <code>None</code> survives from the correlator to the page.</li>
+<li><strong>Vulnerability enrichment never leaves the node.</strong> A live per-incident
+    lookup would hand a third party a real-time map of the fleet's attack
+    surface. The mirror sync is a separate, off-by-default switch, and a test
+    asserts the incident path opens no socket. EPSS and CISA KEV outrank CVSS.</li>
+<li>
+<p><strong>Response ships as proposals only.</strong> All five catalog entries are marked
+    unverified and the last gate refuses them, because a live sweep on
+    2026-08-20 found 22 of 237 documented FortiWeb routes answer <code>-20001
+    "invalid URL"</code> — written from the manual, never validated on a device.
+    TTL is the rollback; <code>block_country</code> can never be autonomous.</p>
+</li>
+<li>
+<p><strong><code>http_status</code> and <code>infra</code> collectors</strong> joined the fleet collection
+  registry, so their cadence is edited on the same page as every other
+  collector. <code>http_status</code> counts response classes from the <strong>traffic log</strong> —
+  <code>policy_status</code> was probed live against {device} (7.6.8) and carries no
+  response-class counters at all, so an earlier draft reading <code>http_2xx</code> from
+  it would have published a flat line of zeros indistinguishable from a quiet
+  service.</p>
+</li>
+<li>
+<p><strong><code>HypervisorClient.vm_metrics()</code> / <code>node_metrics()</code></strong> — telemetry as an
+  optional provider capability, implemented for Proxmox. A backend that cannot
+  answer raises and the caller reports the layer as unknown. Cumulative
+  counters are published as counters so the store derives rates and survives
+  the reset a VM restart causes.</p>
+</li>
 <li>
 <p><strong>The step that actually removes the local copy.</strong> Settings → Vault gained a
   <em>Remove the local copies</em> card (<code>scrub_local_copies</code>, route

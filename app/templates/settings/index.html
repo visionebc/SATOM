@@ -51,7 +51,8 @@
     {'t': 'tab-catrust',     'icon': 'bi-patch-check-fill', 'label': _('Trust store')}]},
   {'key': 'monitoring', 'label': _('Monitoring & Alerts'), 'icon': 'bi-activity', 'admin': true, 'items': [
     {'t': 'tab-email',       'icon': 'bi-envelope',         'label': 'Email & Alerts'},
-    {'t': 'tab-thresholds',  'icon': 'bi-sliders',          'label': _('Thresholds')}]},
+    {'t': 'tab-thresholds',  'icon': 'bi-sliders',          'label': _('Thresholds')},
+    {'t': 'tab-sentinel',    'icon': 'bi-shield-exclamation', 'label': _('Sentinel')}]},
   {'key': 'network', 'label': _('Network & DNS'), 'icon': 'bi-globe2', 'admin': true, 'items': [
     {'t': 'tab-dnstool',     'icon': 'bi-globe2',           'label': _('DNS Lookup')},
     {'t': 'tab-dnsrecords',  'icon': 'bi-pencil-square',    'label': _('DNS Records')}]},
@@ -1286,6 +1287,10 @@
     </div>
   </div>
   <!-- AUTHENTICATION TAB -->
+  <div class="tab-pane fade" id="tab-sentinel">
+    {% include "settings/_sentinel.html" %}
+  </div>
+
   <div class="tab-pane fade" id="tab-thresholds">
     {% if is_admin %}{% include 'settings/_thresholds.html' %}{% endif %}
   </div>

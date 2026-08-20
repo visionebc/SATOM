@@ -157,6 +157,41 @@ class HypervisorClient:
     def vm_status(self, ref: VmRef) -> dict[str, Any]:
         raise NotImplementedError
 
+    # -- telemetry (optional capability) ---------------------------------
+    def vm_metrics(self, ref: VmRef) -> dict[str, Any]:
+        """Instantaneous resource use of ONE machine.
+
+        Optional: a backend that cannot answer raises, and the caller reports
+        the layer as *unknown* rather than as healthy. That distinction is the
+        reason this is a separate method from :meth:`vm_status` — status is
+        "is it running", metrics is "what is it doing", and a backend may
+        honestly support the first without the second.
+
+        Contract of the returned dict (every key optional, all SI units):
+        ``cpu_pct`` ``mem_pct`` ``mem_bytes`` ``mem_total_bytes``
+        ``disk_read_bytes`` ``disk_write_bytes`` (CUMULATIVE counters)
+        ``net_in_bytes`` ``net_out_bytes`` (CUMULATIVE counters)
+        ``uptime_s`` ``status``.
+
+        Cumulative counters are returned as counters, NOT as rates. A provider
+        that computed its own rate would have to remember a previous sample,
+        and a remembered sample that survives a VM restart produces a negative
+        delta the first time — which becomes a nonsense spike exactly when
+        someone is reading the graph during an incident. Rates are derived at
+        query time by the time-series store, which handles counter resets.
+        """
+        raise NotImplementedError
+
+    def node_metrics(self, node: str = "") -> dict[str, Any]:
+        """Instantaneous resource use of ONE hypervisor host.
+
+        Same contract as :meth:`vm_metrics`, plus ``node``. The host layer is
+        what separates "the appliance is overloaded" from "the appliance is
+        starved because a neighbour on the same host is overloaded" — two
+        incidents with opposite remediations.
+        """
+        raise NotImplementedError
+
     # -- helpers --------------------------------------------------------
     def _ssl_context(self) -> ssl.SSLContext | bool | str:
         """httpx ``verify=`` value. False only when the operator asked for it.

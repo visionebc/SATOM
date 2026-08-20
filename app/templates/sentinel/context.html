@@ -1,0 +1,246 @@
+{% extends "base.html" %}
+{% block title %}Sentinel context — trust, windows, topology{% endblock %}
+
+{#
+   The operator's levers over false positives, in one place.
+
+   These four cards are not "settings". They are the inputs that let identical
+   attack evidence produce opposite verdicts: an authorised scanner inside its
+   own window looks byte-for-byte like an intrusion in the log, and only what
+   is recorded here separates them.
+#}
+{% block content %}
+<div class="fw-page-header">
+  <h4 class="mb-1"><i class="bi bi-sliders me-2"></i>Sentinel context</h4>
+  <p class="text-muted mb-0" style="font-size:13px;">
+    Trusted sources, maintenance windows, the VM/host topology map and the local CVE mirror.
+    Together these are what stop a correct detection from becoming a wrong conclusion.
+  </p>
+</div>
+
+{# ── trusted sources ────────────────────────────────────────────────────── #}
+<div class="fw-card mb-3">
+  <div class="fw-card-header"><strong><i class="bi bi-person-check me-1"></i>Trusted sources</strong></div>
+  <div class="fw-card-body">
+    <p class="small text-muted">
+      Every entry expires. An authorisation granted in March is not an authorisation in September,
+      and a trust list without an end date is a permanent blind spot nobody remembers creating.
+      Trust lowers an incident's score and forbids blocking — it never suppresses detection.
+    </p>
+    <table class="table table-sm align-middle">
+      <thead><tr><th>CIDR</th><th>Kind</th><th>Label</th><th>Expires</th><th>State</th><th></th></tr></thead>
+      <tbody>
+      {% for t in trusted %}
+        <tr class="{{ '' if t.active else 'text-muted' }}">
+          <td class="font-monospace small">{{ t.cidr }}</td>
+          <td class="small">{{ t.kind }}</td>
+          <td class="small">{{ t.label }}<div class="text-muted" style="font-size:11px;">{{ t.note }}</div></td>
+          <td class="small">{{ t.expires_at or '—' }}</td>
+          <td>{% if t.active %}<span class="fw-badge fw-badge-success">active</span>
+              {% else %}<span class="fw-badge fw-badge-secondary">expired — no longer trusted</span>{% endif %}</td>
+          <td class="text-end">
+            <form method="post" action="{{ url_for('sentinel.trusted_delete', tid=t.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn btn-fw-outline btn-sm">Remove</button>
+            </form>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="6" class="small text-muted">No trusted sources. Every scanner will be scored as hostile.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <form method="post" action="{{ url_for('sentinel.trusted_add') }}" class="row g-2 align-items-end">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="col-md-2"><label class="form-label small">CIDR</label>
+        <input class="form-control form-control-sm" name="cidr" placeholder="192.0.2.60/32" required></div>
+      <div class="col-md-2"><label class="form-label small">Kind</label>
+        <select class="form-select form-select-sm" name="kind">
+          {% for k in kinds %}<option value="{{ k }}">{{ k }}</option>{% endfor %}
+        </select></div>
+      <div class="col-md-3"><label class="form-label small">Label</label>
+        <input class="form-control form-control-sm" name="label" placeholder="pentest LXC 213"></div>
+      <div class="col-md-3"><label class="form-label small">Expires (ISO, blank = 30 days)</label>
+        <input class="form-control form-control-sm" name="expires_at" placeholder="2026-09-30T00:00"></div>
+      <div class="col-md-2"><button class="btn btn-fw-primary btn-sm w-100">Add</button></div>
+    </form>
+  </div>
+</div>
+
+{# ── maintenance windows ────────────────────────────────────────────────── #}
+<div class="fw-card mb-3">
+  <div class="fw-card-header"><strong><i class="bi bi-calendar-event me-1"></i>Maintenance windows</strong></div>
+  <div class="fw-card-body">
+    <p class="small text-muted">
+      A window suppresses <em>actions</em> and freezes <em>baseline learning</em>.
+      It never suppresses detection: if an authorised pentest saturates the appliance, that is an
+      incident regardless of intent — and hiding it would hide the one result the pentest was run to produce.
+    </p>
+    <table class="table table-sm align-middle">
+      <thead><tr><th>Label</th><th>Scope</th><th>From</th><th>To</th><th>Effects</th><th></th></tr></thead>
+      <tbody>
+      {% for w in windows %}
+        <tr>
+          <td class="small">{{ w.label }}<div class="text-muted" style="font-size:11px;">{{ w.note }}</div></td>
+          <td class="small">{{ w.scope_device or 'all devices' }}</td>
+          <td class="small font-monospace">{{ w.starts_at }}</td>
+          <td class="small font-monospace">{{ w.ends_at }}</td>
+          <td class="small">
+            {% if w.suppress_actions %}<span class="fw-badge fw-badge-secondary">no actions</span>{% endif %}
+            {% if w.freeze_baseline %}<span class="fw-badge fw-badge-secondary">baseline frozen</span>{% endif %}
+          </td>
+          <td class="text-end">
+            <form method="post" action="{{ url_for('sentinel.window_delete', wid=w.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn btn-fw-outline btn-sm">Remove</button>
+            </form>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="6" class="small text-muted">None.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <form method="post" action="{{ url_for('sentinel.window_add') }}" class="row g-2 align-items-end">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="col-md-3"><label class="form-label small">Label</label>
+        <input class="form-control form-control-sm" name="label" placeholder="Q3 authorised pentest"></div>
+      <div class="col-md-2"><label class="form-label small">Device (blank = all)</label>
+        <input class="form-control form-control-sm" name="scope_device"></div>
+      <div class="col-md-2"><label class="form-label small">Start (ISO)</label>
+        <input class="form-control form-control-sm" name="starts_at" placeholder="2026-08-25T22:00" required></div>
+      <div class="col-md-2"><label class="form-label small">End (ISO)</label>
+        <input class="form-control form-control-sm" name="ends_at" placeholder="2026-08-26T06:00" required></div>
+      <div class="col-md-2 small">
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="suppress_actions" checked>
+          <label class="form-check-label">Suppress actions</label></div>
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="freeze_baseline" checked>
+          <label class="form-check-label">Freeze baseline</label></div>
+      </div>
+      <div class="col-md-1"><button class="btn btn-fw-primary btn-sm w-100">Add</button></div>
+    </form>
+  </div>
+</div>
+
+{# ── topology ───────────────────────────────────────────────────────────── #}
+<div class="fw-card mb-3">
+  <div class="fw-card-header"><strong><i class="bi bi-hdd-stack me-1"></i>Topology — appliance ↔ VM ↔ host ↔ backend</strong></div>
+  <div class="fw-card-body">
+    <p class="small text-muted">
+      This map is the join that makes cross-layer correlation possible. Without a complete row the
+      VM and hypervisor layers are reported as <strong>unknown</strong> on every incident for that
+      device — never as healthy. Backends are one per line as <code>name|cpe</code>; the CPE is what
+      lets an incident answer “does this CVE affect what this target actually runs”.
+    </p>
+    {% if not hypervisors %}
+      <div class="alert alert-warning small">
+        No hypervisor target is configured, so the VM and host layers cannot be collected at all.
+        Add one under Settings → Provisioning first.
+      </div>
+    {% endif %}
+    <table class="table table-sm align-middle">
+      <thead><tr><th>Appliance</th><th>Hypervisor</th><th>VM id</th><th>Node</th><th>Backends</th><th>State</th><th></th></tr></thead>
+      <tbody>
+      {% for a in appliances %}
+        {% set t = topology.get(a.id) %}
+        <tr>
+          <td class="small font-monospace">{{ a.name }}
+            <form id="topo-{{ a.id }}" method="post" action="{{ url_for('sentinel.topology_save') }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="appliance_id" value="{{ a.id }}">
+            </form>
+          </td>
+          <td><select class="form-select form-select-sm" name="hypervisor_target_id" form="topo-{{ a.id }}">
+              <option value="">—</option>
+              {% for h in hypervisors %}
+                <option value="{{ h.id }}" {{ 'selected' if t and t.hypervisor_target_id == h.id }}>{{ h.name }}</option>
+              {% endfor %}
+            </select></td>
+          <td><input class="form-control form-control-sm" name="vm_id" form="topo-{{ a.id }}"
+                     value="{{ t.vm_id if t else '' }}" placeholder="352" style="width:90px;"></td>
+          <td><input class="form-control form-control-sm" name="node" form="topo-{{ a.id }}"
+                     value="{{ t.node if t else '' }}" placeholder="hypervisor06" style="width:120px;"></td>
+          <td><textarea class="form-control form-control-sm" name="backends" form="topo-{{ a.id }}" rows="1"
+                        placeholder="web-cluster-2|cpe:2.3:a:apache:http_server">{% if t %}{% for b in t.backends %}{{ b.name }}|{{ b.cpe }}
+{% endfor %}{% endif %}</textarea></td>
+          <td>{% if t and t.complete %}<span class="fw-badge fw-badge-success">complete</span>
+              {% else %}<span class="fw-badge fw-badge-warning">VM/host layers unknown</span>{% endif %}</td>
+          <td class="text-end"><button class="btn btn-fw-outline btn-sm" form="topo-{{ a.id }}">Save</button></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{# ── CVE mirror ─────────────────────────────────────────────────────────── #}
+<div class="fw-card">
+  <div class="fw-card-header d-flex justify-content-between align-items-center">
+    <strong><i class="bi bi-bug me-1"></i>Local CVE mirror</strong>
+    <form method="post" action="{{ url_for('sentinel.vuln_sync') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn btn-fw-outline btn-sm" {{ '' if mirror.sync_enabled else 'disabled' }}>
+        <i class="bi bi-cloud-download me-1"></i>Sync now</button>
+    </form>
+  </div>
+  <div class="fw-card-body">
+    <p class="small text-muted">
+      Incident enrichment reads <strong>this table and nothing else</strong>. A live per-incident
+      lookup would tell the vendor, in real time, exactly which CVEs and signatures this fleet is
+      seeing — a map of the attack surface, exported as a side effect of defending it.
+      The scheduled sync is the only component allowed out, and it has its own switch.
+    </p>
+    <div class="d-flex flex-wrap gap-4 small mb-3">
+      <span>CVEs mirrored: <strong>{{ mirror.total }}</strong></span>
+      <span>On the CISA KEV list: <strong>{{ mirror.kev }}</strong></span>
+      <span>Signature→CVE fallback mappings: <strong>{{ mirror.mappings }}</strong></span>
+      <span>Last refresh: <strong>{{ mirror.newest or 'never' }}</strong>
+        {% if mirror.stale %}<span class="fw-badge fw-badge-warning">stale</span>{% endif %}</span>
+      <span>Outbound sync: <strong>{{ 'enabled' if mirror.sync_enabled else 'disabled' }}</strong></span>
+    </div>
+
+    {% if recent_cves %}
+    <table class="table table-sm align-middle mb-3">
+      <thead><tr><th>CVE</th><th>CVSS</th><th>EPSS</th><th>Exploited</th><th>Affects</th><th>Fetched</th></tr></thead>
+      <tbody>
+      {% for v in recent_cves %}
+        <tr>
+          <td class="small font-monospace">{{ v.cve }}</td>
+          <td class="small">{{ v.cvss or '—' }}</td>
+          <td class="small">{{ v.epss or '—' }}</td>
+          <td class="small">
+            {% if v.in_kev %}<span class="fw-badge fw-badge-danger">KEV</span>
+            {% elif v.exploit_available %}<span class="fw-badge fw-badge-warning">public exploit</span>
+            {% else %}<span class="text-muted">—</span>{% endif %}
+          </td>
+          <td class="small font-monospace" style="max-width:280px; overflow:hidden; text-overflow:ellipsis;">
+            {{ v.affected_cpe|join(', ') or '—' }}</td>
+          <td class="small">{{ v.fetched_at }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+
+    <h6 class="small">Add a CVE by hand</h6>
+    <p class="small text-muted">The path that works with no internet access at all.</p>
+    <form method="post" action="{{ url_for('sentinel.vuln_manual') }}" class="row g-2 align-items-end">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="col-md-2"><label class="form-label small">CVE</label>
+        <input class="form-control form-control-sm" name="cve" placeholder="CVE-2024-1234" required></div>
+      <div class="col-md-1"><label class="form-label small">CVSS</label>
+        <input class="form-control form-control-sm" name="cvss" placeholder="9.8"></div>
+      <div class="col-md-1"><label class="form-label small">EPSS</label>
+        <input class="form-control form-control-sm" name="epss" placeholder="0.87"></div>
+      <div class="col-md-1 small"><div class="form-check">
+        <input class="form-check-input" type="checkbox" name="in_kev">
+        <label class="form-check-label">KEV</label></div></div>
+      <div class="col-md-3"><label class="form-label small">Affected CPE (one per line)</label>
+        <textarea class="form-control form-control-sm" name="affected_cpe" rows="1"></textarea></div>
+      <div class="col-md-3"><label class="form-label small">Summary</label>
+        <input class="form-control form-control-sm" name="summary"></div>
+      <div class="col-md-1"><button class="btn btn-fw-primary btn-sm w-100">Save</button></div>
+    </form>
+  </div>
+</div>
+{% endblock %}

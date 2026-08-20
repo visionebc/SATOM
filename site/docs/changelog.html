@@ -96,6 +96,62 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
 <h2 id="unreleased">[Unreleased]</h2>
 <h3 id="added">Added</h3>
 <ul>
+<li><strong>SATOM Sentinel — security correlation and (proposed) autonomous response.</strong>
+  A new module at <code>/sentinel</code> that correlates FortiWeb attack signatures, HTTP
+  response outcomes, appliance counters, VM and hypervisor metrics and
+  vulnerability intelligence into single incidents, each of which explains
+  itself from measured evidence. 14 tables (<code>sentinel_*</code>), a services package
+  (<code>app/services/sentinel/</code>), four pages (console, incident, context,
+  documentation), a response-policy page, a Settings section and three
+  scheduled actions (<code>sentinel_sweep</code>, <code>sentinel_baseline</code>,
+  <code>sentinel_vuln_sync</code>). Full write-up: <code>docs/sentinel-architecture.md</code>.</li>
+</ul>
+<p>The decisions worth knowing before reading the code:</p>
+<ul>
+<li><strong>The language model is not in the deciding path.</strong> It reads a finished
+    incident and writes prose plus a recommendation from a closed enum; it has
+    no tools, no network of its own, no credentials, and cannot change a score.
+    The number that gates a firewall change has to be reproducible during a
+    post-mortem, and a sampled one is not. With every AI component down, the
+    pipeline still detects, scores, explains and gates — it loses the narrative.</li>
+<li><strong>Baselines are median + MAD per hour-of-week, not mean + sigma.</strong> A
+    security baseline is trained on data containing attacks; with a mean, each
+    flood raises the centre so the next one scores as <em>less</em> anomalous. Flat
+    series cannot produce an infinite deviation, and immature buckets never
+    fire.</li>
+<li><strong>Negative scoring factors are half the value.</strong> A wall of attacks the
+    appliance blocked does not page anyone; an exploit aimed at software the
+    backend does not run is noise; and an authorised scanner produces a
+    byte-identical log to an intruder, so context outweighs any single positive.</li>
+<li><strong>An unmeasured layer reports <code>unknown</code>, never "no impact".</strong> Those drive
+    opposite operator decisions. <code>None</code> survives from the correlator to the page.</li>
+<li><strong>Vulnerability enrichment never leaves the node.</strong> A live per-incident
+    lookup would hand a third party a real-time map of the fleet's attack
+    surface. The mirror sync is a separate, off-by-default switch, and a test
+    asserts the incident path opens no socket. EPSS and CISA KEV outrank CVSS.</li>
+<li>
+<p><strong>Response ships as proposals only.</strong> All five catalog entries are marked
+    unverified and the last gate refuses them, because a live sweep on
+    2026-08-20 found 22 of 237 documented FortiWeb routes answer <code>-20001
+    "invalid URL"</code> — written from the manual, never validated on a device.
+    TTL is the rollback; <code>block_country</code> can never be autonomous.</p>
+</li>
+<li>
+<p><strong><code>http_status</code> and <code>infra</code> collectors</strong> joined the fleet collection
+  registry, so their cadence is edited on the same page as every other
+  collector. <code>http_status</code> counts response classes from the <strong>traffic log</strong> —
+  <code>policy_status</code> was probed live against {device} (7.6.8) and carries no
+  response-class counters at all, so an earlier draft reading <code>http_2xx</code> from
+  it would have published a flat line of zeros indistinguishable from a quiet
+  service.</p>
+</li>
+<li>
+<p><strong><code>HypervisorClient.vm_metrics()</code> / <code>node_metrics()</code></strong> — telemetry as an
+  optional provider capability, implemented for Proxmox. A backend that cannot
+  answer raises and the caller reports the layer as unknown. Cumulative
+  counters are published as counters so the store derives rates and survives
+  the reset a VM restart causes.</p>
+</li>
 <li>
 <p><strong>The step that actually removes the local copy.</strong> Settings → Vault gained a
   <em>Remove the local copies</em> card (<code>scrub_local_copies</code>, route

@@ -123,6 +123,13 @@ PUBLIC_DOCS: list[tuple[str, str, str, str, str]] = [
      "aggregated collection, the time-series store, selector dashboards, "
      "reports, and the content-addressed source-of-truth store that replaced "
      "the git-committed history."),
+    ("sentinel-architecture.md", "sentinel", "Sentinel — security correlation",
+     "\U0001f6e1️",
+     "Correlating attack signatures, HTTP outcomes, appliance internals, VM "
+     "and hypervisor metrics and vulnerability intelligence into incidents "
+     "that explain themselves: the deterministic hot path, why the language "
+     "model sits outside it, robust baselines, the local CVE mirror, and the "
+     "gate order that stands between a score and a firewall change."),
     ("alerting.md", "alerting", "Alerting & notification delivery", "\U0001f4e2",
      "What happens after a health check finds something: the two delivery "
      "paths, the per-sink severity floor and family mask, the signed webhook "
@@ -171,8 +178,9 @@ GROUPS: list[tuple[str, str, list[str]]] = [
      ["install", "cli", "privilege-model", "safeguards", "metrics-architecture",
       "alerting", "provisioning-hypervisors", "git-backup",
       "offline-update-packages"]),
-    ("Security", "Certificates, transport encryption and trust between nodes.",
-     ["encryption", "acme", "ai-advisor"]),
+    ("Security", "Certificates, transport encryption, trust between nodes, and "
+     "what the fleet is being attacked with.",
+     ["encryption", "acme", "sentinel", "ai-advisor"]),
     ("Build & integrate", "For developers extending the platform or driving it from outside.",
      ["api", "device-api", "fortiauthenticator", "engineering",
       "source-of-truth", "release-pipeline",

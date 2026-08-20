@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ipaddress
+import logging
 import os
 from datetime import datetime
 
@@ -1763,6 +1764,20 @@ def create_app(config_override: object | None = None) -> Flask:
             # back). Without this import create_all() never makes the
             # table and the first clone of a file-backed object 500s.
             from . import models_artifacts  # noqa: F401
+            # SATOM Sentinel — security correlation, incidents, response
+            # policy and the local vulnerability mirror. Without this import
+            # create_all() never makes the tables and the first render of
+            # /sentinel 500s.
+            from . import models_sentinel  # noqa: F401
+            # Sentinel's two collectors (http_status, infra) join the
+            # fleet collection registry here so the scheduler sidecar — which
+            # never imports a view — provisions and runs them like any other.
+            try:
+                from .services.sentinel import collectors as _sn_collectors
+                _sn_collectors.register()
+            except Exception:  # noqa: BLE001 — never block app start on this
+                logging.getLogger(__name__).warning(
+                    "Sentinel collectors could not be registered", exc_info=True)
             db.create_all()
             _ensure_columns()
             # After the additive pass: a column that already existed may be
@@ -1925,6 +1940,7 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.advisor", "bp"),
         ("app.views.bookmarks", "bp"),
         ("app.views.artifacts", "bp"),
+        ("app.views.sentinel", "bp"),
     ]
 
     # FortiWeb-scoped areas live under the /web ADOM prefix (2026-07-07).

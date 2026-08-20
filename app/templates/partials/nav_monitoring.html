@@ -36,6 +36,15 @@
       </div>
     </div>
 
+    {# Sentinel sits at the TOP of Monitoring on purpose: it is the only
+       entry here that answers "what is happening right now" rather than
+       displaying one measurement. Global ADOM only — the console spans
+       every product's devices, and a per-ADOM copy would show a partial
+       picture under a name that promises the whole one. #}
+    {% if product.key == 'global' %}
+    <a class="fw-nav-item {{ 'active' if request.blueprint == 'sentinel' else '' }}" href="{{ url_for('sentinel.index', _adom=product.key) }}">
+      <i class="bi bi-shield-exclamation fw-nav-icon"></i><span>{{ _('Sentinel') }}</span></a>
+    {% endif %}
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'metrics' else '' }}" href="{{ url_for('metrics.index', _adom=product.key) }}">
       <i class="bi bi-bar-chart-line fw-nav-icon"></i><span>{{ _('Metrics') }}</span></a>
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'analysis' else '' }}" href="{{ url_for('analysis.index', _adom=product.key) }}">

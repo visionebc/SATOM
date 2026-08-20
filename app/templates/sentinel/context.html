@@ -260,9 +260,12 @@
       authority.
     </p>
     <p class="small text-muted mb-3">
-      Arming writes <code>ip-list-policy = {{ sentinel_list }}</code> onto the
-      named policy's profile, creating the list if needed with a device-side
-      block period. It reaches the appliance, so it is a deliberate POST and it
+      Arming writes <code>ip-list-policy = {{ sentinel_list }}</code> (or, for
+      country blocking, <code>geo-block-list-policy</code>) onto the named
+      policy's profile, creating the list if needed with a device-side block
+      period. The two are armed separately on purpose — a country block affects
+      every client in a market, and it stays a <em>recommendation</em> at any
+      confidence even once armed. It reaches the appliance, so it is a deliberate POST and it
       is recorded in the audit log as <em>your</em> decision. It is safe to
       re-run: it is idempotent and it verifies by reading the profile back.
     </p>
@@ -273,14 +276,21 @@
           {% for a in appliances %}<option value="{{ a.name }}">{{ a.name }}</option>{% endfor %}
         </select>
       </div>
-      <div class="col-md-4">
+      <div class="col-md-3">
         <label class="form-label small mb-1">Server policy</label>
         <input name="policy" class="form-control form-control-sm"
                placeholder="pol-root-shop" required>
       </div>
-      <div class="col-md-4">
+      <div class="col-md-3">
+        <label class="form-label small mb-1">Mechanism</label>
+        <select name="mechanism" class="form-select form-select-sm">
+          <option value="ip">Address blocking (one source)</option>
+          <option value="geo">Country blocking (a whole market)</option>
+        </select>
+      </div>
+      <div class="col-md-2">
         <button class="btn btn-sm btn-outline-primary">
-          <i class="bi bi-shield-check me-1"></i>Arm this policy
+          <i class="bi bi-shield-check me-1"></i>Arm
         </button>
       </div>
     </form>

@@ -6,6 +6,66 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-08-20
+
+### Added
+
+- **Sentinel: the remaining device transports, captured rather than specified.**
+  `block_country` and `raise_protection` were run against a live FortiWeb 7.6.8
+  and read back, so the catalog is now 4/4 — with one of the four labelled a
+  *hand-off* rather than counted as executable. Both captures corrected the
+  design rather than confirming it:
+  - the geo child collection is **`country-list`, not `members`**, and its key
+    is **`country-name` carrying a full country name**; `{"country": "AD"}`
+    answers `errcode -7950`. The source country is therefore stored verbatim as
+    the device reported it, and the transport refuses a short code with a
+    reason instead of guessing an expansion;
+  - **a wrong child path is not an error on this appliance.** `GET
+    waf/geo-block-list/members` answers **200 with the parent object**, so a
+    verification that trusted the status code would confirm a write against an
+    endpoint incapable of holding it. `_child_rows()` treats anything that is
+    not a list as no rows;
+  - **`raise_protection` has no device-side timer**, unlike a blocked address.
+    Its undo is a write, so the previous profile is read off the device first
+    and carried in the handle, and rollback **refuses an empty binding** —
+    unbinding a profile would strip protection from every client of the policy,
+    which is worse than the state being undone.
+- **Gate `executable_mechanism`.** `tune_signature` writes nothing to an
+  appliance; it drafts a carve-out that a person applies in the existing
+  exception flow. It is refused by name, ahead of the autonomy gate, so the
+  console says where the work happens instead of "level too low" — which was
+  true and useless, because no level would have helped.
+- **`actions.GATE_ORDER`** publishes the thirteen gates as data, and
+  `/sentinel/docs` §2 renders **four flow diagrams** — reference architecture,
+  processing pipeline, the decision ladder, and the response / verification /
+  rollback loop — as inline SVG. No chart library and no JavaScript, so they
+  render in an offline bundle and in a print. The ladder is generated from
+  `GATE_ORDER`, and a test asserts that a full pass through `evaluate()` emits
+  exactly those names in exactly that order. The same four diagrams are in
+  `docs/sentinel-architecture.md` §2.
+- **Country blocking is armed separately from address blocking** on the Context
+  page. One button doing both would make the larger decision a side effect of
+  asking for the smaller.
+- Setting **`sentinel.hardened_profiles`** — the only profiles
+  `raise_protection` may move a policy onto. Empty by default, which means that
+  action can never run: the profile bound to a policy is the security posture
+  of every client behind it, and Sentinel must not be the one choosing it.
+- The three Sentinel scheduled actions joined `satom execute seed actions` and
+  `satom diagnose install`, so a fresh install is armed and a missing sweep is
+  reported. Without the sweep the module has every table, page and gate, opens
+  no incident, and looks exactly like a quiet week.
+- `satom-responder.timer` and `satom-responder.service` are installed and
+  enabled by the installer. Expiry of a live block lives in that tick: a node
+  without it can hold a block that nothing will ever lift.
+
+### Fixed
+
+- **`sentinel_event.country` was `VARCHAR(8)`.** FortiWeb reports `srccountry`
+  as a full name, so a source in the United States was recorded as `United S` —
+  mislabelled on the page, and stripped of the one value the geo block list
+  accepts. Widened to 64 on both the event and the incident; the existing
+  boot-time widener applies it in place.
+
 ### Added
 
 - **Sentinel phase 7 — a response that can actually execute, for exactly one

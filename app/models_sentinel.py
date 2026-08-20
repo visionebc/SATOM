@@ -143,7 +143,11 @@ class SentinelEvent(db.Model):
     src_port = db.Column(db.Integer)
     dst_ip = db.Column(db.String(64), default="")
     dst_port = db.Column(db.Integer)
-    country = db.Column(db.String(8), default="")
+    # 64, not 8: FortiWeb reports srccountry as a FULL NAME, and the geo block
+    # list refuses anything else (errcode -7950). A short column would both
+    # mis-label the source on the page and destroy the one value the block
+    # mechanism accepts.
+    country = db.Column(db.String(64), default="")
     asn = db.Column(db.Integer)
     http_method = db.Column(db.String(16), default="")
     uri = db.Column(db.Text, default="")
@@ -326,7 +330,7 @@ class SentinelIncident(db.Model):
     device = db.Column(db.String(120), default="", index=True)
     policy = db.Column(db.String(160), default="")
     src_ip = db.Column(db.String(64), default="", index=True)
-    src_country = db.Column(db.String(8), default="")
+    src_country = db.Column(db.String(64), default="")
     src_asn = db.Column(db.Integer)
     src_trusted = db.Column(db.Boolean, default=False)
     attack_family = db.Column(db.String(40), default="", index=True)

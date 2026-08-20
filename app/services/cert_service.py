@@ -711,6 +711,33 @@ def shared_cert_status() -> dict:
     return out
 
 
+def _shared_slot_not_after(crt_p: Path, key_p: Path) -> str | None:
+    """``not_after`` of the certificate currently in the shared slot, or ``None``
+    if the slot is empty or unreadable.
+
+    Read from the CERTIFICATE, never from ``meta.json``: meta describes the slot
+    and can be stale or hand-edited, while the cert is the thing a peer would
+    actually end up serving.
+    """
+    if not (crt_p.exists() and key_p.exists()):
+        return None
+    try:
+        return validate_pem(crt_p.read_bytes(), key_p.read_bytes())["not_after"]
+    except Exception:  # noqa: BLE001 — an unreadable slot is "no opinion"
+        return None
+
+
+def _expires_before(a: str | None, b: str | None) -> bool:
+    """``a`` expires strictly before ``b``. Unparseable either side ⇒ False, so a
+    date we cannot read never blocks a publish."""
+    if not a or not b:
+        return False
+    try:
+        return datetime.fromisoformat(a) < datetime.fromisoformat(b)
+    except (TypeError, ValueError):
+        return False
+
+
 def publish_shared_cert(by: str = "publish") -> dict:
     """Copy the cert this node SERVES into data/pki-shared/ so the peer gets it.
 
@@ -737,6 +764,31 @@ def publish_shared_cert(by: str = "publish") -> dict:
         return _refuse("the served cert/key pair does not validate: %s" % exc)
 
     crt_p, key_p, meta_p = _shared_paths()
+
+    # NEVER replace a NEWER certificate in the slot with an older one.
+    #
+    # The nightly pass runs publish-then-install on EVERY node, standby
+    # included, and that order is fatal on the standby without this guard:
+    # publish overwrites the slot with the cert this node still serves, and
+    # install then finds the slot identical to what it serves and adopts
+    # nothing. The node the whole mechanism exists for was the one node it could
+    # never update — and it looked healthy, because the datasync restores the
+    # primary's copy minutes later, long after a once-a-day pass has finished.
+    #
+    # Measured on satom-node-2, 2026-08-20: slot 2026-10-15, served 2026-09-02,
+    # `satom execute cert renew` reported "already up to date (identical cert)".
+    #
+    # The guard is a freshness rule rather than a role check on purpose: a
+    # role-gated publish would be wrong the moment the roles are swapped, and
+    # "do not overwrite something newer" is true on every node in every role.
+    slot_na = _shared_slot_not_after(crt_p, key_p)
+    if _expires_before(info.get("not_after"), slot_na):
+        return _refuse(
+            "the shared slot already holds a NEWER certificate (expires %s; the "
+            "one served here expires %s). Publishing would push the pair "
+            "backwards and stop this node adopting the newer one."
+            % (slot_na, info.get("not_after")))
+
     try:
         SHARED_DIR.mkdir(parents=True, exist_ok=True)
         try:

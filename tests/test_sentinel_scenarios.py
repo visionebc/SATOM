@@ -606,24 +606,49 @@ def test_protected_source_can_never_be_blocked(app):
 
 
 def test_unverified_mechanism_blocks_execution(app):
-    """Every gate passes and the action is STILL refused, because the transport
-    has never been proved against a real appliance."""
+    """Every other gate passes and the action is STILL refused, because this
+    transport has never been proved against a real appliance.
+
+    Updated 2026-08-20: this used to assert it of ``block_ip``. That transport
+    has since been captured from fortiweb12 and the gate correctly lets it
+    through, so the guard moved to one that is still a specification. It has to
+    keep testing SOMETHING unverified — the day the catalog is fully verified
+    this assertion has no subject left, and that is the day to delete it rather
+    than to weaken it.
+    """
     with app.app_context():
         actions.ensure_policies()
-        _armed_policy()
+        pol = SentinelPolicy.query.filter_by(action_type="raise_protection").first()
+        pol.enabled = True
+        pol.level = SentinelPolicy.LEVEL_SEMI_AUTO
+        pol.min_confidence = 0
         config.set_value("response_enabled", True)
         db.session.commit()
-        verdict = actions.evaluate(_incident(), "block_ip")
+        verdict = actions.evaluate(_incident(), "raise_protection")
         assert verdict["allowed"] is False
         assert verdict["reason"] == "mechanism unverified"
         assert all(c["ok"] for c in verdict["checks"]
                    if c["check"] != "mechanism_verified")
 
 
-def test_no_catalog_action_is_marked_verified_yet(app):
-    """The honest state of this release. When someone validates a transport
-    against fw12/fw13 they must ALSO update this test — which is the point."""
-    assert actions.verified_count() == (0, len(actions.CATALOG))
+def test_only_proved_transports_are_marked_verified(app):
+    """The honest state of this release, and it must be re-stated by hand.
+
+    Whoever validates the next transport against fw12/fw13 has to change this
+    number, which is the point: the count cannot drift upward by accident, and
+    a claim of verification always has a person behind it.
+
+    As of 2026-08-20: 1 of 4. ``block_ip`` was captured from fortiweb12 end to
+    end (create, add member, re-read, delete member, delete list, zero residue).
+    ``rate_limit_ip`` was REMOVED rather than counted — the route its mechanism
+    named answers ``-20001 invalid URL`` on this firmware.
+    """
+    assert actions.verified_count() == (1, 4)
+    from app.services.sentinel import transports
+    assert set(transports.TRANSPORTS) == {
+        k for k, spec in actions.CATALOG.items() if spec.verified}, \
+        "a catalog entry claims verification with no executable transport " \
+        "behind it, or a transport exists for an entry still marked unproved"
 
 
 def test_block_country_can_never_be_autonomous(app):
@@ -634,7 +659,7 @@ def test_block_country_can_never_be_autonomous(app):
 
 def test_every_blocking_action_requires_a_ttl(app):
     """TTL is the rollback. An action that never expires has none."""
-    for key in ("block_ip", "rate_limit_ip", "block_country"):
+    for key in ("block_ip", "block_country"):
         assert actions.CATALOG[key].requires_ttl is True
         assert actions.CATALOG[key].reversible is True
 

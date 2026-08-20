@@ -96,7 +96,40 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
 <h2 id="unreleased">[Unreleased]</h2>
 <h3 id="added">Added</h3>
 <ul>
-<li><strong>SATOM Sentinel — security correlation and (proposed) autonomous response.</strong>
+<li><strong>Sentinel phase 7 — a response that can actually execute, for exactly one
+  action.</strong> <code>block_ip</code>'s transport was captured from a live FortiWeb 7.6.8
+  (create list, add member, re-read, delete member, delete list, zero residue),
+  so it is now marked verified and the last gate lets it through. Execution
+  runs in a separate unit (<code>satom-responder.timer</code>, once a minute) which
+  re-evaluates every gate at the moment it acts and asks the appliance whether
+  it can enforce before writing. Applied is proved by re-reading the object,
+  never by the 200. Effectiveness is judged separately: an action that landed
+  and changed nothing takes its incident back out of <code>mitigated</code> and is never
+  retried. Expiry runs even with the kill switch off, so disarming cannot
+  strand a live block, and the IP list carries a device-side block period so
+  the appliance lifts it even if Sentinel is down.</li>
+<li><strong>Sentinel phase 8 — autonomy, shipped disarmed.</strong> A policy at level 3 skips
+  the approval step for a decision the gates already permitted; it can never
+  raise a ceiling, widen an action or extend a TTL, and the effective level is
+  still capped by the catalog (<code>block_country</code> stays at <em>recommend</em> whatever an
+  operator sets). Proposals are deduplicated per incident and action, so one
+  decision stays one row across sweeps.</li>
+<li>Sentinel Context page gained <strong>response arming</strong>: binding Sentinel's IP list
+  to a policy's protection profile, as an explicit human action recorded in the
+  audit log. The response runner will not do this for itself.</li>
+</ul>
+<h3 id="removed">Removed</h3>
+<ul>
+<li>
+<p><strong>Sentinel action <code>rate_limit_ip</code>.</strong> Probing {device} showed the route its
+  mechanism named (<code>waf/http-access-limit</code>) answers <code>-20001 invalid URL</code> on
+  this firmware. FortiWeb's flood-prevention rules apply to every client of a
+  profile, not to one address, so the entry promised a blast radius of one
+  source that no available mechanism can deliver. Orphaned policy rows are
+  pruned unless actions reference them.</p>
+</li>
+<li>
+<p><strong>SATOM Sentinel — security correlation and (proposed) autonomous response.</strong>
   A new module at <code>/sentinel</code> that correlates FortiWeb attack signatures, HTTP
   response outcomes, appliance counters, VM and hypervisor metrics and
   vulnerability intelligence into single incidents, each of which explains
@@ -104,7 +137,8 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   (<code>app/services/sentinel/</code>), four pages (console, incident, context,
   documentation), a response-policy page, a Settings section and three
   scheduled actions (<code>sentinel_sweep</code>, <code>sentinel_baseline</code>,
-  <code>sentinel_vuln_sync</code>). Full write-up: <code>docs/sentinel-architecture.md</code>.</li>
+  <code>sentinel_vuln_sync</code>). Full write-up: <code>docs/sentinel-architecture.md</code>.</p>
+</li>
 </ul>
 <p>The decisions worth knowing before reading the code:</p>
 <ul>
@@ -1986,7 +2020,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   block and every path are unchanged, so the <code>§</code> citations from <code>README.md</code>,
   <code>cli.md</code>, <code>safeguards.md</code> and this changelog still land where they did.</li>
 </ul>
-<h3 id="removed">Removed</h3>
+<h3 id="removed_1">Removed</h3>
 <ul>
 <li><strong>The appearance preset named after the vendor.</strong> <code>LOGIN_BG_PRESETS</code> shipped
   an entry keyed <code>fortinet</code>, labelled "Fortinet", in the vendor's corporate red
@@ -3146,7 +3180,7 @@ that it carries the defect.</p>
   manual harder to read on the machines most operators use. Marketing pages
   stay narrow deliberately.</li>
 </ul>
-<h3 id="removed_1">Removed</h3>
+<h3 id="removed_2">Removed</h3>
 <ul>
 <li><strong>Lua Studio is no longer reachable from the FortiAuthenticator ADOM.</strong> It
   was in the ADOM's blueprint set, but <code>LuaScript.TARGETS</code> is FortiWeb and

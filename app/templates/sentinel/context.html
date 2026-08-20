@@ -243,4 +243,48 @@
     </form>
   </div>
 </div>
+
+<div class="fw-card mt-3">
+  <div class="fw-card-header">
+    <strong><i class="bi bi-shield-lock me-1"></i>Response arming — which policies Sentinel may enforce on</strong>
+  </div>
+  <div class="fw-card-body">
+    <p class="small text-muted mb-2">
+      A FortiWeb server policy does not name an IP list. It names a web
+      protection profile, and the <em>profile</em> names the list. Until that
+      reference exists, adding a source to Sentinel's list is accepted by the
+      appliance, counts up on the device, and <strong>blocks nothing</strong>.
+      The response runner refuses to act in that state rather than report a
+      block it did not achieve — and it will not create the reference itself,
+      because an agent that binds its own enforcement point can widen its own
+      authority.
+    </p>
+    <p class="small text-muted mb-3">
+      Arming writes <code>ip-list-policy = {{ sentinel_list }}</code> onto the
+      named policy's profile, creating the list if needed with a device-side
+      block period. It reaches the appliance, so it is a deliberate POST and it
+      is recorded in the audit log as <em>your</em> decision. It is safe to
+      re-run: it is idempotent and it verifies by reading the profile back.
+    </p>
+    <form method="post" action="{{ url_for('sentinel.arm') }}" class="row g-2 align-items-end">
+      <div class="col-md-4">
+        <label class="form-label small mb-1">Appliance</label>
+        <select name="device" class="form-select form-select-sm" required>
+          {% for a in appliances %}<option value="{{ a.name }}">{{ a.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label small mb-1">Server policy</label>
+        <input name="policy" class="form-control form-control-sm"
+               placeholder="pol-root-shop" required>
+      </div>
+      <div class="col-md-4">
+        <button class="btn btn-sm btn-outline-primary">
+          <i class="bi bi-shield-check me-1"></i>Arm this policy
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
 {% endblock %}

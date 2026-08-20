@@ -136,7 +136,7 @@ def test_policies_page_leads_with_what_it_cannot_do(admin):
     r = admin.get("/sentinel/policies")
     assert r.status_code == 200
     body = r.get_data(as_text=True)
-    assert "0/5 action transports have been verified" in body
+    assert "1/4 action transports have been verified" in body
     assert "invalid URL" in body      # the provenance of that caution
 
 

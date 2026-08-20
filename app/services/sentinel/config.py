@@ -130,6 +130,13 @@ SPEC: list[dict] = [
              "still works when Sentinel is down — which is exactly when a "
              "stuck block would otherwise never be lifted. Sentinel's own TTL "
              "deletes the member as well; the two are deliberately redundant."},
+    {"key": "hardened_profiles", "kind": "text", "default": "",
+     "group": "response", "label": "Hardened web protection profiles (one per line)",
+     "help": "The ONLY profiles raise_protection may move a policy onto. Empty "
+             "means that action can never run, which is the correct default: "
+             "the profile bound to a policy is the security posture of every "
+             "client behind it, and Sentinel must not be the one choosing it. "
+             "Each name must already exist on the appliance."},
     {"key": "protect_cidrs", "kind": "text",
      "default": "10.0.0.0/8\n172.16.0.0/12\n192.168.0.0/16\n127.0.0.0/8",
      "group": "response", "label": "Never-block networks (one CIDR per line)",

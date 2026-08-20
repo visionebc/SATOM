@@ -61,18 +61,19 @@
     <aside class="toc">
       <div class="toc-title">On this page</div>
       <a href="#1-two-paths-and-why-the-model-is-not-in-the-middle">1. Two paths, and why the model is not in the middle</a>
-      <a href="#2-correlation">2. Correlation</a>
-      <a href="#3-behavioural-baseline-median-and-mad-per-hour-of-week">3. Behavioural baseline — median and MAD, per hour of week</a>
-      <a href="#4-http-outcomes">4. HTTP outcomes</a>
-      <a href="#5-vulnerability-intelligence">5. Vulnerability intelligence</a>
-      <a href="#6-scoring">6. Scoring</a>
-      <a href="#7-incidents">7. Incidents</a>
-      <a href="#8-response">8. Response</a>
-      <a href="#9-the-ai-wall">9. The AI wall</a>
-      <a href="#10-data-model">10. Data model</a>
-      <a href="#11-collection">11. Collection</a>
-      <a href="#12-running-it">12. Running it</a>
-      <a href="#13-verification">13. Verification</a>
+      <a href="#2-flow-diagrams">2. Flow diagrams</a>
+      <a href="#3-correlation">3. Correlation</a>
+      <a href="#4-behavioural-baseline-median-and-mad-per-hour-of-week">4. Behavioural baseline — median and MAD, per hour of week</a>
+      <a href="#5-http-outcomes">5. HTTP outcomes</a>
+      <a href="#6-vulnerability-intelligence">6. Vulnerability intelligence</a>
+      <a href="#7-scoring">7. Scoring</a>
+      <a href="#8-incidents">8. Incidents</a>
+      <a href="#9-response">9. Response</a>
+      <a href="#10-the-ai-wall">10. The AI wall</a>
+      <a href="#11-data-model">11. Data model</a>
+      <a href="#12-collection">12. Collection</a>
+      <a href="#13-running-it">13. Running it</a>
+      <a href="#14-verification">14. Verification</a>
     </aside>
     <div class="doc-body mdx">
 <h1 id="satom-sentinel-security-correlation-and-autonomous-response">SATOM Sentinel — security correlation and autonomous response</h1>
@@ -114,7 +115,106 @@ when the hot path must still work.</p>
 <p><strong>What survives an AI outage:</strong> detection, correlation, scoring, evidence,
 gating, history. <strong>What is lost:</strong> the narrative. That asymmetry is the design.</p>
 <hr>
-<h2 id="2-correlation">2. Correlation</h2>
+<hr>
+<h2 id="2-flow-diagrams">2. Flow diagrams</h2>
+<p>The same four drawings are rendered as scalable SVG on <code>/sentinel/docs</code> §2, and
+the decision ladder there is <strong>generated from <code>actions.GATE_ORDER</code></strong> rather than
+drawn beside it. A picture of a decision chain is the easiest artefact in a
+repository to leave behind: nothing fails when it and the code disagree, and the
+person reading the picture is the one who finds out.</p>
+<h3 id="21-reference-architecture">2.1 Reference architecture</h3>
+<pre><code> SOURCES (read-only)          ┌──────────────────────────────────────────────┐
+ ┌───────────────────┐        │ HOT PATH — deterministic, always runs        │
+ │ FortiWeb attack   │        │                                              │
+ │   log (GUI sess.) │        │ normalize → enrich → correlate → baseline    │
+ │ FortiWeb traffic  │  ┌───┐ │            → score → incident                │
+ │   log (HTTP class)│─►│col│►│                                              │
+ │ fleet metrics     │  │lec│ │ no model · no credential that writes         │
+ │ Proxmox / ESXi    │  │tor│ └───────────────┬──────────────────┬───────────┘
+ └───────────────────┘  └───┘                 │                  │
+                                              ▼                  ▼
+                              ┌───────────────────────┐  ┌────────────────────┐
+                              │ PostgreSQL            │  │ VictoriaMetrics    │
+                              │ 14 sentinel_* tables  │  │ 127.0.0.1:8428     │
+                              │ events · incidents ·  │  │ 396 days raw       │
+                              │ evidence · actions ·  │  │ loopback only      │
+                              │ policies · trust ·    │  │ baselines and the  │
+                              │ windows · CVE mirror  │  │ evidence windows   │
+                              └───────────┬───────────┘  └────────────────────┘
+                                          │
+                 ┌────────────────────────┴───────────────────────┐
+                 ▼                                                ▼
+   ┌───────────────────────────┐              ┌────────────────────────────────┐
+   │ CONSOLE /sentinel         │              │ COLD PATH — the model          │
+   │ web worker may only move  │              │ incident → local LLM → JSON    │
+   │ a row to &quot;queued&quot;; it     │              │ opinion (closed enum)          │
+   │ never touches an appliance│              │ no tools · no credentials      │
+   └────────────┬──────────────┘              └────────────────────────────────┘
+                ▼
+   ┌──────────────────────────────────────┐        ┌────────────────────────┐
+   │ RESPONSE RUNNER                      │        │ FortiWeb               │
+   │ satom-responder.timer, every 60 s    │───────►│ ip-list member         │
+   │ gates → preflight → apply → re-read  │        │ geo country-list member│
+   │       → judge → expire               │        │ policy → profile       │
+   │ the ONLY component with a credential │        └────────────────────────┘
+   │ that writes enforcement              │
+   └──────────────────────────────────────┘
+</code></pre>
+<h3 id="22-processing-one-attack-log-row-to-one-proposal">2.2 Processing — one attack-log row to one proposal</h3>
+<pre><code>COLLECT ─► NORMALIZE ─► ENRICH ─► STORE ─► CORRELATE ─► BASELINE ─► SCORE
+  rows      one shape    trust     event    5 layers     vs median   0…100
+                         window             T-60s…T+5m   and MAD
+                         asset                  ▲            ▲
+                                                └── reads ───┘
+                                                 VictoriaMetrics
+                                                      │
+                                    ─► INCIDENT ─► PROPOSE (closed catalog)
+                                       absorb or     never executed here
+                                       open new
+</code></pre>
+<p>A layer that could not be measured stays <strong><code>unknown</code></strong>. It never becomes
+"no impact": on a page the two look identical and they mean opposite things.</p>
+<h3 id="23-decision-the-gate-chain">2.3 Decision — the gate chain</h3>
+<pre><code>                    proposed action + live incident
+                                  │
+   1 catalog ─────────────────────┼──► refuse: no blast radius, no ceiling, no undo
+   2 kill_switch ─────────────────┼──► refuse: response engine disarmed
+   3 protected_network ───────────┼──► refuse: our own address space
+   4 trusted_source ──────────────┼──► refuse: authorised activity
+   5 maintenance_window ──────────┼──► refuse: work we scheduled
+   6 policy_exists ───────────────┼──► refuse: nobody decided anything here
+   7 policy_enabled ──────────────┼──► refuse: disabled means stopped
+   8 level ───────────────────────┼──► refuse: proposal for a person (valid outcome)
+   9 confidence ──────────────────┼──► refuse: below THIS action's own floor
+  10 ttl ─────────────────────────┼──► refuse: it would not expire on its own
+  11 circuit_breaker ─────────────┼──► refuse: hourly budget spent
+  12 executable_mechanism ────────┼──► refuse: hand-off — a person applies it
+  13 mechanism_verified ──────────┼──► refuse: specification, not a transport
+                                  ▼
+                    queued for the response runner
+                                  │
+              ... and all thirteen again, at execution time,
+                  in a different process, under that moment's state
+</code></pre>
+<h3 id="24-response-verification-and-rollback">2.4 Response, verification and rollback</h3>
+<pre><code> queued ─► gates re-evaluated ─► preflight (ask the DEVICE) ─► apply ─► re-read
+                                          │                              │
+                          &quot;the profile does not reference the            ▼
+                           Sentinel list&quot; ⇒ refuse. A member      wait the effect
+                           on an unreferenced list returns 200,   window, compare
+                           counts up, and blocks nothing.         source volume
+                                                                        │
+                        ┌───────────────┬────────────────┬──────────────┘
+                        ▼               ▼                ▼
+                   effective        unknown         ineffective
+                   → mitigated    no prior data     escalate — and
+                                  → never &quot;success&quot;  never retry
+
+ ROLLBACK — two independent timers, redundant on purpose
+   appliance  : action=block-period   lifts even if SATOM is dead
+   Sentinel   : TTL deletes the member, and runs even with the kill switch off
+</code></pre>
+<h2 id="3-correlation">3. Correlation</h2>
 <p>The unit of correlation is the <strong>topology</strong>, not the log. <code>sentinel_topology</code>
 binds <code>appliance ↔ hypervisor target ↔ VM id ↔ node ↔ backends</code>, and with that
 row in place resolving a window is a label join against the node's local
@@ -142,7 +242,7 @@ drive opposite operator decisions, and collapsing them is precisely how a
 saturated hypervisor reads as a quiet one. <code>None</code> survives from the correlator
 through the score into the incident's impact flags and onto the page.</p>
 <hr>
-<h2 id="3-behavioural-baseline-median-and-mad-per-hour-of-week">3. Behavioural baseline — median and MAD, per hour of week</h2>
+<h2 id="4-behavioural-baseline-median-and-mad-per-hour-of-week">4. Behavioural baseline — median and MAD, per hour of week</h2>
 <p>A security baseline is trained on data that <em>contains attacks</em>. With mean plus
 standard deviation, one 8,500 req/s flood raises the centre and inflates the
 spread, so the <strong>next identical flood scores as less anomalous than the first</strong>
@@ -174,7 +274,7 @@ whose entire safety argument is reproducibility. Median/MAD costs one nightly
 pass over a store that already holds 396 days raw, and every number it emits
 can be recomputed by hand.</p>
 <hr>
-<h2 id="4-http-outcomes">4. HTTP outcomes</h2>
+<h2 id="5-http-outcomes">5. HTTP outcomes</h2>
 <p><strong>An HTTP status is not a vulnerability</strong>, and nothing here pretends otherwise.
 A 500 is a symptom that may come from an RCE, from a backend saturated by
 volume, or from an ordinary bug. What the status carries is the <em>outcome</em> of
@@ -236,7 +336,7 @@ row to read them from. The collector therefore accepts several spellings and
 not invent a value.</p>
 </blockquote>
 <hr>
-<h2 id="5-vulnerability-intelligence">5. Vulnerability intelligence</h2>
+<h2 id="6-vulnerability-intelligence">6. Vulnerability intelligence</h2>
 <p>Keyed on the signature, and <strong>first on the CVE the device itself attached to
 the entry</strong> (<code>signature_cve_id</code> on a FortiWeb attack-log row). That is the
 vendor's own statement about its own signature and is better evidence than any
@@ -265,7 +365,7 @@ intelligence" and "talk to the internet" stay two different decisions.
 A mirror older than the configured horizon still enriches — old intelligence
 beats none — and every incident it touches says it is stale.</p>
 <hr>
-<h2 id="6-scoring">6. Scoring</h2>
+<h2 id="7-scoring">7. Scoring</h2>
 <p>Deterministic arithmetic over measured evidence. The AI layer may disagree with
 the result in prose; that disagreement is displayed, not resolved in the
 model's favour.</p>
@@ -310,7 +410,7 @@ make the number usable:</p>
 <p>Bands: <code>&lt; 40</code> observe · <code>40–69</code> investigate · <code>70–84</code> recommend · <code>85+</code>
 eligible for a pre-authorised action.</p>
 <hr>
-<h2 id="7-incidents">7. Incidents</h2>
+<h2 id="8-incidents">8. Incidents</h2>
 <p>Identity is <code>(device, source, attack family)</code>, not a timestamp. While its
 window is live an incident <strong>absorbs</strong> matching events instead of opening a
 sibling. Without that a 60-second flood produces thousands of incidents and the
@@ -337,13 +437,47 @@ console becomes the log it was built to replace.</p>
   attack.</li>
 </ul>
 <hr>
-<h2 id="8-response">8. Response</h2>
-<p><strong>One action can execute: <code>block_ip</code>.</strong> Its transport was captured from
-{device} (FortiWeb 7.6.8) on 2026-08-20 by running it — create list, add
-member, re-read, delete member, delete list, zero residue. The other three
-entries remain specifications and the last gate refuses them, which the console
-states as <code>1/4 action transports have been verified</code> rather than implying an
-armed engine.</p>
+<h2 id="9-response">9. Response</h2>
+<p><strong>Three mechanisms execute, one is a hand-off.</strong> Every one of them was
+captured from {device} (FortiWeb 7.6.8) on 2026-08-20 by running it against
+the appliance and reading the result back — not from the reference manual.</p>
+<table>
+<thead>
+<tr>
+<th>action</th>
+<th>mechanism</th>
+<th>captured</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>block_ip</code></td>
+<td><code>POST waf/ip-list/members?mkey=…</code> <code>{type: black-ip, ip}</code></td>
+<td>create list, add member, re-read (<code>sz_members</code> 0→1), delete member, delete list, zero residue</td>
+</tr>
+<tr>
+<td><code>block_country</code></td>
+<td><code>POST waf/geo-block-list/country-list?mkey=…</code> <code>{country-name}</code></td>
+<td>create list, add <code>Andorra</code> → id 1, re-read row present, delete, delete list, zero residue</td>
+</tr>
+<tr>
+<td><code>raise_protection</code></td>
+<td><code>PUT server-policy/policy?mkey=…</code> <code>{web-protection-profile}</code></td>
+<td>read the original off <code>pol-root-wiki</code>, PUT a hardened profile, re-read matched, PUT the <strong>captured original</strong> back, re-read matched</td>
+</tr>
+<tr>
+<td><code>tune_signature</code></td>
+<td>hands the incident to <code>app.services.attack_carveout</code></td>
+<td><strong>no appliance write</strong> — the draft lands in the existing exception flow and a person applies it</td>
+</tr>
+</tbody>
+</table>
+<p>The hand-off is labelled as one rather than counted among the unverified,
+because the two answer different questions: <em>does the mechanism work</em> and <em>does
+this engine execute it</em>. Collapsing them would either park a working hand-off
+behind an appliance test it will never take, or let the runner try to perform a
+device write that does not exist. Gate 12 refuses it by name, and the refusal
+says where the work actually happens.</p>
 <p>That distinction is not caution theatre. A sweep of this product's own
 configuration surface on 2026-08-20 found <strong>22 of 237 documented FortiWeb
 routes answer <code>-20001 "invalid URL"</code></strong> — written from the reference manual,
@@ -376,6 +510,31 @@ apply</strong> and refuses with an actionable reason if the reference is absent.
 the incident path never creates or binds anything: arming a policy is a
 separate, human-triggered operation on the Context page. An agent that binds
 its own enforcement point is an agent that can widen its own authority.</p>
+<h3 id="two-traps-the-geo-capture-exposed">Two traps the geo capture exposed</h3>
+<p><strong>A wrong child path is not an error.</strong> <code>GET waf/geo-block-list/members?mkey=X</code>
+answers <strong>HTTP 200 with the parent object</strong> — the list record itself, complete
+and successful-looking — instead of 404. Code that checked only the status code
+would "verify" a write against an endpoint incapable of holding it. The real
+child collection is <code>country-list</code>, and <code>_child_rows()</code> treats anything that is
+not a list as no rows.</p>
+<p><strong>This appliance does not take ISO country codes.</strong> The member key is
+<code>country-name</code> and it wants a full name: <code>{"country": "Andorra"}</code> and
+<code>{"country": "AD"}</code> both answer <code>errcode -7950 "The country name is empty or
+wrong."</code> So the source country is stored <strong>verbatim</strong> as the device reported it
+(<code>srccountry</code>, in a 64-character column — it was 8, which both mislabelled the
+source as <code>United S</code> and destroyed the only value the block mechanism accepts),
+and the transport refuses a value that is three characters or shorter with a
+reason instead of guessing an expansion. Sentinel does not invent the string it
+is about to hand back to a firewall.</p>
+<p><strong><code>raise_protection</code> has no device-side timer.</strong> A blocked address expires by
+itself because the list carries <code>block-period</code>; a profile binding does not. So
+its undo is a <em>write</em>, the previous profile is read off the device before the
+change and carried in the handle, and rollback <strong>refuses an empty binding</strong> —
+unbinding the profile would strip protection from every client of that policy,
+which is worse than the state being undone. The target must be named by a
+person in Settings → Sentinel → <em>Hardened web protection profiles</em> and must
+already exist on the appliance. Sentinel does not author protection profiles,
+and it does not choose which one your clients sit behind.</p>
 <h3 id="applied-is-proved-by-re-reading-never-by-the-status-code">Applied is proved by re-reading, never by the status code</h3>
 <p><code>policy.scripting.text</code> on this product answers <strong>200</strong> with
 <code>"Scripting doesn't contain any event."</code> A 200 is a receipt, not an outcome. So
@@ -394,30 +553,41 @@ automation turns a bad minute into a bad hour.</p>
 against, and the verdict is <code>unknown</code> — never <code>success</code>. "We do not know" must
 not render as a win.</p>
 <h3 id="gate-order-and-why-it-is-this-order">Gate order, and why it is this order</h3>
+<p>Thirteen checks, in this order, from <code>actions.GATE_ORDER</code> — the tuple the test
+suite asserts a full pass through <code>evaluate()</code> emits:</p>
 <ol>
-<li><strong>Global kill switch</strong> — one setting disables everything, everywhere.</li>
-<li><strong>Protected network</strong> — before anything about confidence, so a correlation
-   bug concluding our own monitoring host is an attacker is <em>structurally</em>
-   unable to act on it. An unparseable address counts as protected: cannot
-   parse ⇒ cannot prove it is safe to block.</li>
-<li><strong>Trusted source / maintenance window.</strong></li>
-<li><strong>Policy exists, is enabled, and its level permits acting.</strong></li>
-<li><strong>Score meets that action's own floor.</strong></li>
-<li><strong>Reversibility and TTL.</strong></li>
-<li><strong>Circuit breaker</strong> — a fleet-wide hourly ceiling, so a correlation bug
-   during a flood exhausts a budget rather than a firewall.</li>
-<li><strong>Mechanism verified.</strong></li>
+<li><strong><code>catalog</code></strong> — an action type outside the catalog has no blast radius, no
+   ceiling and no undo. There is nothing to reason about.</li>
+<li><strong><code>kill_switch</code></strong> — one setting disables everything, everywhere.</li>
+<li><strong><code>protected_network</code></strong> — <em>before</em> trust, so our own address space stays
+   unblockable even if somebody empties the trust list. An unparseable address
+   counts as protected: cannot parse ⇒ cannot prove it is safe to block.</li>
+<li><strong><code>trusted_source</code></strong> — an authorised scanner produces a log byte-for-byte
+   identical to an intruder's. Only context separates them.</li>
+<li><strong><code>maintenance_window</code></strong> — work we scheduled must not be answered by a
+   firewall rule.</li>
+<li><strong><code>policy_exists</code></strong> — no row means nobody decided anything here.</li>
+<li><strong><code>policy_enabled</code></strong> — disabling has to stop the thing, not hide it.</li>
+<li><strong><code>level</code></strong> — below semi-automatic the action is a proposal for a person,
+   which is a valid outcome and not a failure.</li>
+<li><strong><code>confidence</code></strong> — the floor belongs to the action: a country block does not
+   borrow an address block's threshold.</li>
+<li><strong><code>ttl</code></strong> — the primary rollback is expiry.</li>
+<li><strong><code>circuit_breaker</code></strong> — a fleet-wide hourly ceiling, so a correlation bug
+    during a flood exhausts a budget rather than a firewall.</li>
+<li><strong><code>executable_mechanism</code></strong> — a hand-off is drafted here and applied
+    elsewhere; refusing it here lets the refusal name where.</li>
+<li><strong><code>mechanism_verified</code></strong> — 22 of 237 documented routes on this product
+    answer <code>invalid URL</code>. A mechanism read from a manual is a specification.</li>
 </ol>
-<p>Then, at execution time and in a different process, two more:</p>
-<ol start="9">
-<li><strong>Every gate again.</strong> An action approved at 12:00 executes under 12:03's
-   state. In between somebody may have thrown the kill switch, opened a
-   maintenance window, or added the source to the trust list — each of which is
-   a person deciding <em>not this</em>. Trusting the verdict recorded at enqueue time
-   carries out a decision the world has since reversed.</li>
-<li><strong>Transport preflight</strong> — the appliance itself is asked whether it can
-    enforce, before anything is written.</li>
-</ol>
+<p>Then, at execution time and in a different process, both again:</p>
+<p><strong>Every gate re-run.</strong> An action approved at 12:00 executes under 12:03's
+state. In between somebody may have thrown the kill switch, opened a
+maintenance window, or added the source to the trust list — each of which is a
+person deciding <em>not this</em>. Trusting the verdict recorded at enqueue time
+carries out a decision the world has since reversed.</p>
+<p><strong>Transport preflight</strong> — the appliance itself is asked whether it can enforce,
+before anything is written.</p>
 <p>Every gate returns a <strong>reason</strong>, and the reasons are shown on the incident.
 "Sentinel did nothing" is not an acceptable console state; "did nothing because
 the source is inside {ip}/8" is. Refused proposals are recorded too —
@@ -452,7 +622,7 @@ every three minutes; without deduplication on the live statuses, an incident
 open for an hour would accumulate twenty identical proposals — harmless while
 nothing executed, twenty firewall writes for one decision once something does.</p>
 <hr>
-<h2 id="9-the-ai-wall">9. The AI wall</h2>
+<h2 id="10-the-ai-wall">10. The AI wall</h2>
 <p><code>reason(incident) -&gt; opinion</code>. The model receives a finished incident that
 already has a score and evidence, and returns prose plus a recommendation drawn
 from a <strong>closed enum</strong>. It has no tools, no network access of its own, no
@@ -472,7 +642,7 @@ this model shown when it said that?</em></p>
   stands</strong>.</li>
 </ul>
 <hr>
-<h2 id="10-data-model">10. Data model</h2>
+<h2 id="11-data-model">11. Data model</h2>
 <table>
 <thead>
 <tr>
@@ -544,7 +714,7 @@ binding approved templates to a zone/line/department permutation
 combo share nothing but a word.</p>
 </blockquote>
 <hr>
-<h2 id="11-collection">11. Collection</h2>
+<h2 id="12-collection">12. Collection</h2>
 <p>Sentinel adds two collectors to the existing fleet registry, so their cadence
 is edited on the <strong>same page</strong> as every other collector — a second collection
 settings page is how two cadence models drift apart.</p>
@@ -580,7 +750,7 @@ reports the layer as <em>unknown</em>. Proxmox is implemented (<code>cpu</code> 
 fraction 0–1 and is scaled — forwarding it unscaled would put <code>0.88</code> on an axis
 labelled <code>%</code>, and 0.88% reads as an idle machine at the moment it saturates).</p>
 <hr>
-<h2 id="12-running-it">12. Running it</h2>
+<h2 id="13-running-it">13. Running it</h2>
 <table>
 <thead>
 <tr>
@@ -610,6 +780,38 @@ labelled <code>%</code>, and 0.88% reads as an idle machine at the moment it sat
 <p>Three actions rather than one, because folding them together would mean an
 operator who wants nightly baselines also gets a daily outbound call — exactly
 the coupling the separate switch exists to prevent.</p>
+<p>All three are part of <code>satom execute seed actions</code>, so a fresh install gets
+them and <code>satom diagnose install</code> reports their absence rather than leaving a
+module that has every table, page and gate and silently never opens an
+incident.</p>
+<p>Two systemd units carry the rest:</p>
+<table>
+<thead>
+<tr>
+<th>unit</th>
+<th>cadence</th>
+<th>what it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>satom-responder.timer</code></td>
+<td>every 60 s</td>
+<td>applies queued actions, judges effectiveness, <strong>expires TTLs</strong></td>
+</tr>
+<tr>
+<td><code>satom-metrics.service</code></td>
+<td>continuous</td>
+<td>the local VictoriaMetrics the baselines read</td>
+</tr>
+</tbody>
+</table>
+<p><code>satom-responder.timer</code> is <strong>not optional once anything has been armed</strong>. It is
+inert while the kill switch is off — a tick with nothing to do prints
+<code>{"expired": [], "applied": [], "judged": [], "armed": false}</code> — but expiry
+lives in that tick, so a node without it can hold a live block that nothing
+will ever lift. The console reports its absence rather than leaving it for
+someone to discover when a block never comes off.</p>
 <p>A sweep that <strong>ran</strong> is <code>ok</code> even when devices errored; failures ride in the
 log. An action that goes permanently red because one appliance is unreachable
 teaches operators to ignore the colour, which is worse than the outage. Every
@@ -624,12 +826,21 @@ graph rather than the same flat line.</p>
    buckets are usable; behavioural factors mean nothing before that.</li>
 <li>Register scanners and monitors as trusted sources, <strong>with expiry dates</strong>.</li>
 <li>Populate the CVE mirror — sync if outbound is permitted, otherwise by hand.</li>
-<li>Leave the response engine disarmed until the incident stream has been
-   reviewed by a human for long enough to trust it, and until at least one
-   action transport has been verified on a real device.</li>
+<li>If you intend to enforce, arm the specific policies under
+   <strong>Sentinel → Context</strong> — separately for address blocking and for country
+   blocking, because those are decisions about one attacker and about a whole
+   market. For <code>raise_protection</code>, name the permitted hardened profiles in
+   <strong>Settings → Sentinel</strong>; with that field empty the action can never run,
+   which is the correct default.</li>
+<li>Enable <code>satom-responder.timer</code>. Without it nothing expires.</li>
+<li>Leave the response engine disarmed (Settings → Sentinel → <em>Response engine
+   armed</em>) until the incident stream has been reviewed by a human for long
+   enough to trust it. The roadmap gate for level 3 is thirty days of
+   supervised level-2 operation without an incorrect action — a date, not an
+   opinion, and not something a release can shorten.</li>
 </ol>
 <hr>
-<h2 id="13-verification">13. Verification</h2>
+<h2 id="14-verification">14. Verification</h2>
 <ul>
 <li><code>tests/test_sentinel_scenarios.py</code> — the ten scenarios from the design brief
   as reproducible fixtures, plus the claims they rest on.</li>

@@ -45,6 +45,11 @@ MIN_ACTIONS = {
     # they open the console, which is the same shape of gap as an unarmed
     # backup: full capability, zero delivery.
     "monitor_report": "period summary (daily / weekly / monthly)",
+    # Sentinel: without the sweep the module has every table, page and gate and
+    # never opens an incident, which reads on the console exactly like "quiet".
+    "sentinel_sweep": "Sentinel correlation sweep (hot path)",
+    "sentinel_baseline": "Sentinel median/MAD baselines (nightly)",
+    "sentinel_vuln_sync": "Sentinel CVE mirror refresh (daily, gated)",
 }
 
 

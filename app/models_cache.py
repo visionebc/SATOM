@@ -59,7 +59,14 @@ class DeviceObject(db.Model):
                           nullable=True, index=True)
     layer = db.Column(db.String(16), nullable=False, default="config")
     section = db.Column(db.String(64), nullable=False, index=True)
-    logical_name = db.Column(db.String(128), nullable=False)   # registry logical name / sub-path
+    # 512, not 128: this is a PATH down the object tree, so it grows with
+    # depth. A depth-6 XML-protection branch on FortiWeb 7.6.8 exceeded 128 and
+    # took the WHOLE deep snapshot with it — the flush aborts, the commit
+    # raises PendingRollbackError, and nothing is stored for that appliance.
+    # Truncating is not the alternative: this value is half of the identity key
+    # (appliance_id, logical_name, mkey), so a shortened path merges two
+    # different branches into one row.
+    logical_name = db.Column(db.String(512), nullable=False)   # registry logical name / sub-path
     urn = db.Column(db.String(256), nullable=True)
     mkey = db.Column(db.String(256), nullable=True)            # object name / row id
     subtable = db.Column(db.String(128), nullable=True)        # parent field this row came from

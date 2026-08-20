@@ -35,6 +35,10 @@ UNITS = {
     # every healthy node is the same permanent-warning pattern already
     # removed twice from this output.
     "metrics": "satom-metrics.service",
+    # The response runner. Listed because TTL expiry happens in its tick: a
+    # node without it can hold a live block that nothing will ever lift, and
+    # the health output must not be silent about that.
+    "responder": "satom-responder.timer",
     "datasync": "satom-ha-datasync.timer",
     "nginx": "nginx.service",
     "postgres": "postgresql.service",

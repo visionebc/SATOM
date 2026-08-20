@@ -33,7 +33,7 @@ from .render import Result
 # Units an operator may enable/disable. Timers and paths only: these are the
 # switches that silently strand automation when they are off, which is exactly
 # the class of fault this CLI is for.
-TOGGLEABLE = ("updater", "alerts", "cert-renew", "datasync")
+TOGGLEABLE = ("updater", "alerts", "cert-renew", "datasync", "responder")
 
 SEED_PLAN = [
     ("device_sync", "Hourly fleet sync (source of truth)", "interval",
@@ -59,6 +59,24 @@ SEED_PLAN = [
     ("monitor_report", "Monthly monitoring report", "monthly",
      {"day": 1, "time": "02:20"},
      {"period": "monthly", "email": True, "push_server": True, "keep": 36}, "global"),
+    # Sentinel. The sweep is the hot path and shares the three-minute cadence of
+    # the probe sweep on purpose: an incident whose evidence window is measured
+    # in seconds cannot be assembled by a job that runs hourly. It is read-only
+    # against the box and NEVER writes appliance configuration — enforcement is
+    # a separate systemd unit (satom-responder.timer) with its own credentials.
+    ("sentinel_sweep", "Sentinel — correlate and score", "interval",
+     {"every": 3, "unit": "minutes"}, {}, "global"),
+    # Baselines run at 03:10, AFTER the nightly SoT push (02:45) and the period
+    # reports (02:00-02:20): they read the metrics store, and a rebuild racing
+    # the backup window costs I/O for no reason. Touches no appliance.
+    ("sentinel_baseline", "Sentinel — recompute behavioural baselines", "daily",
+     {"time": "03:10"}, {}, "global"),
+    # The CVE mirror is seeded ARMED but refuses to run while
+    # sentinel.vuln_sync_enabled is off (it is the only outbound connection in
+    # the module). Seeding it anyway is deliberate: without the row, an operator
+    # who turns the switch on would get silence instead of a mirror.
+    ("sentinel_vuln_sync", "Sentinel — refresh the local CVE mirror", "daily",
+     {"time": "03:30"}, {}, "global"),
 ]
 
 

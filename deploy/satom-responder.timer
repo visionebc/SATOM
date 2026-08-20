@@ -1,0 +1,14 @@
+[Unit]
+Description=Run the SATOM Sentinel response runner every minute
+# Expiry of a live block lives in this tick. If the timer is off, TTLs do not
+# come due — so its absence is reported on the Sentinel console rather than
+# being left for somebody to notice when a block never lifts.
+
+[Timer]
+OnBootSec=90s
+OnUnitActiveSec=60s
+AccuracySec=10s
+Unit=satom-responder.service
+
+[Install]
+WantedBy=timers.target

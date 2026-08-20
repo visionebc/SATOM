@@ -1624,7 +1624,8 @@ for unit in satom.service satom-scheduler.service \
             satom-cert-renew.service satom-cert-renew.timer \
             satom-reconciler.service \
             satom-alerts.service satom-alerts.timer \
-            satom-integrations.path satom-integrations.service; do
+            satom-integrations.path satom-integrations.service \
+            satom-responder.service satom-responder.timer; do
     [ -f "$APP_DIR/deploy/$unit" ] && cp "$APP_DIR/deploy/$unit" /etc/systemd/system/
 done
 # gunicorn SOLO en loopback: nginx termina TLS en ${WEB_PORT}
@@ -1632,7 +1633,8 @@ sed -i 's#--bind 0\.0\.0\.0:8000#--bind 127.0.0.1:8000#' /etc/systemd/system/sat
 
 # Degradar a la cuenta de servicio todo lo que no necesite root.
 for unit in satom.service satom-scheduler.service satom-reconciler.service \
-            satom-alerts.service satom-cert-renew.service; do
+            satom-alerts.service satom-cert-renew.service \
+            satom-responder.service; do
     f="/etc/systemd/system/$unit"
     [ -f "$f" ] || continue
     if grep -qE '^User=' "$f"; then
@@ -1713,6 +1715,12 @@ systemctl enable --now satom-cert-renew.timer >>"$INSTALL_LOG" 2>&1 || true
 # Ambos timers llevan guarda de rol interna (primary-only), así que se
 # habilitan en los dos nodos: tras un promote el nodo nuevo ya está listo.
 systemctl enable --now satom-alerts.timer >>"$INSTALL_LOG" 2>&1 || true
+# Sentinel response runner. Enabled even though the response engine ships
+# DISARMED, because this timer is also what makes a TTL come due: a node that
+# can apply a block with nothing scheduled to lift it is strictly worse than a
+# node that cannot apply at all. Drain is a no-op while sentinel.response_enabled
+# is off; expiry deliberately is not.
+systemctl enable --now satom-responder.timer >>"$INSTALL_LOG" 2>&1 || true
 # satom-git-publish.timer retirado 2026-08-05 (SoT local, services.sot_store)
 systemctl enable --now satom-reconciler.service >>"$INSTALL_LOG" 2>&1 || true
 [ "$MODE" = "cluster" ] && systemctl enable --now satom-ha-datasync.timer >>"$INSTALL_LOG" 2>&1

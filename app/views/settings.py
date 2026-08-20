@@ -132,6 +132,11 @@ def index():
     return render_template(
         'settings/index.html',
         settings=store.general(),
+        # Sentinel's form is generated from the SAME catalog its
+        # accessors read through, so a knob cannot exist in one and
+        # be missing from the other (the metrics.vm_url lesson).
+        sentinel_settings=_sentinel_form(),
+        sentinel_health=_sentinel_health(),
         platform_options=product_scope.device_products(),
         platform_labels=dict(product_scope.device_products()),
         log_levels_all=store.LOG_LEVELS_ALL,
@@ -2632,3 +2637,86 @@ def scrub_vault():
         log_action('settings.vault_scrub',
                    detail=f"scrubbed={result['scrubbed']} failed={result['failed']}")
     return jsonify(result)
+
+
+# --------------------------------------------------------------------------- #
+#  Sentinel                                                                     #
+# --------------------------------------------------------------------------- #
+def _sentinel_form():
+    """The Sentinel settings render model, or [] if the module is absent.
+
+    A missing module must not 500 the whole Settings page: this view already
+    carries two dozen unrelated sections, and one optional feature taking all
+    of them down is the failure mode the AI tab was deliberately restructured
+    to avoid.
+    """
+    try:
+        from ..services.sentinel import config as sn_config
+        return sn_config.form_groups()
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def _sentinel_health():
+    try:
+        from ..views.sentinel import _health
+        return _health()
+    except Exception:  # noqa: BLE001
+        return None
+
+
+@bp.route('/sentinel', methods=['POST'])
+@login_required
+@require_permission('config_write')
+def save_sentinel():
+    """Persist the Sentinel settings posted by the generic form.
+
+    Every value goes through ``config.set_value``, which coerces and CLAMPS
+    against the same spec the form was rendered from — a hand-typed 9999 for a
+    percentage is corrected here rather than becoming a threshold that can
+    never fire.
+    """
+    from ..services import audit
+    from ..services.sentinel import config as sn_config
+
+    changed, clamped = [], []
+    for spec in sn_config.SPEC:
+        key = spec['key']
+        if spec['kind'] == 'bool':
+            # A checkbox that is OFF sends nothing. Without the companion
+            # __present marker an unchecked switch is indistinguishable from
+            # "this field was not on the form", and the setting could be turned
+            # on but never off.
+            if not request.form.get(key + '__present'):
+                continue
+            value = bool(request.form.get(key))
+        elif spec['kind'] == 'secret':
+            value = request.form.get(key, '')
+            if not value:
+                continue          # blank means "keep what is stored"
+        else:
+            if key not in request.form:
+                continue
+            value = request.form.get(key)
+        before = sn_config.get(key)
+        sn_config.set_value(key, value)
+        after = sn_config.get(key)
+        if after != before:
+            changed.append(key)
+        if spec['kind'] in ('int', 'float') and str(after) != str(value).strip():
+            clamped.append(f"{key} -> {after}")
+
+    errors = sn_config.protect_errors()
+    audit.log_action('sentinel.settings', target='settings',
+                     detail=', '.join(changed) or 'no change')
+    if changed:
+        flash(f'Sentinel settings saved: {len(changed)} changed.', 'success')
+    else:
+        flash('Sentinel settings unchanged.', 'info')
+    if clamped:
+        flash('Clamped to their allowed range: ' + ', '.join(clamped),
+              'warning')
+    if errors:
+        flash('These never-block entries are not valid CIDRs and protect '
+              'nothing: ' + ', '.join(errors), 'danger')
+    return redirect(url_for('settings.index') + '#tab-sentinel')

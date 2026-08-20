@@ -1,0 +1,479 @@
+{% extends "base.html" %}
+{% block title %}{{ inc.ref }} — Sentinel{% endblock %}
+
+{#
+   ONE incident.
+
+   The layout follows the argument, top to bottom: what happened → what the
+   evidence measured → what every layer did in the same window → what a model
+   thinks (clearly labelled as opinion) → what may be done about it and which
+   gate refused.
+
+   Two things this page must never do, both learned the hard way in this repo:
+   * render a failed chart query as an empty chart — an empty canvas and a
+     broken query look identical and mean opposite things;
+   * render an unmeasured layer as "no impact".
+#}
+{% block content %}
+<div class="fw-page-header d-flex justify-content-between align-items-start flex-wrap gap-2">
+  <div>
+    <h4 class="mb-1">
+      <i class="bi bi-shield-exclamation me-2"></i>{{ inc.ref }}
+      {% set cls = 'fw-badge-danger' if incident.band == 'semi_auto' else 'fw-badge-warning' if incident.band == 'recommend' else 'fw-badge-info' if incident.band == 'investigate' else 'fw-badge-secondary' %}
+      <span class="fw-badge {{ cls }}">{{ incident.score }}/100 · {{ incident.band }}</span>
+      <span class="fw-badge fw-badge-secondary">{{ incident.status }}</span>
+    </h4>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      {{ incident.attack_family }} from <code>{{ incident.src_ip }}</code>
+      {% if incident.src_country %}({{ incident.src_country }}){% endif %}
+      against <strong>{{ incident.device }}</strong>{% if incident.policy %} / {{ incident.policy }}{% endif %} ·
+      opened {{ incident.opened_at }} · {{ incident.event_count }} event(s)
+    </p>
+  </div>
+  <div class="d-flex gap-2">
+    <form method="post" action="{{ url_for('sentinel.incident_rescore', iid=inc.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn btn-fw-outline btn-sm"><i class="bi bi-arrow-repeat me-1"></i>Re-correlate</button>
+    </form>
+    <form method="post" action="{{ url_for('sentinel.incident_reason', iid=inc.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn btn-fw-outline btn-sm"><i class="bi bi-robot me-1"></i>Ask the model</button>
+    </form>
+    <a class="btn btn-fw-outline btn-sm" href="{{ url_for('sentinel.index') }}">Back</a>
+  </div>
+</div>
+
+{# ── score breakdown ────────────────────────────────────────────────────── #}
+<div class="row g-3 mb-3">
+  <div class="col-lg-5">
+    <div class="fw-card h-100">
+      <div class="fw-card-header"><strong><i class="bi bi-calculator me-1"></i>How this score was reached</strong></div>
+      <div class="fw-card-body">
+        <p class="small text-muted">
+          Computed deterministically from measured evidence. No model touched this number.
+        </p>
+        <table class="table table-sm mb-2">
+          <tbody>
+          {% for f in incident.score_factors %}
+            <tr>
+              <td style="width:52px;" class="text-end">
+                <span class="fw-badge {{ 'fw-badge-danger' if f.points > 0 else 'fw-badge-success' }}">
+                  {{ '+' if f.points > 0 else '' }}{{ f.points }}</span>
+              </td>
+              <td class="small">
+                <code>{{ f.factor }}</code>
+                {% if f.detail %}<div class="text-muted" style="font-size:11.5px;">{{ f.detail }}</div>{% endif %}
+              </td>
+            </tr>
+          {% else %}
+            <tr><td class="small text-muted">No factors applied — nothing measurable in this window.</td></tr>
+          {% endfor %}
+          </tbody>
+          <tfoot><tr>
+            <td class="text-end"><strong>{{ incident.score }}</strong></td>
+            <td class="small text-muted">clamped to 0–100</td>
+          </tr></tfoot>
+        </table>
+        <div class="d-flex flex-wrap gap-2">
+          {% for layer, value in incident.impact.items() %}
+            {% if value == 'unknown' %}
+              <span class="fw-badge fw-badge-secondary" title="not measured — this is NOT 'no impact'">{{ layer }}: unknown</span>
+            {% elif value %}
+              <span class="fw-badge fw-badge-danger">{{ layer }}: impacted</span>
+            {% else %}
+              <span class="fw-badge fw-badge-success">{{ layer }}: clear</span>
+            {% endif %}
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-7">
+    <div class="fw-card h-100">
+      <div class="fw-card-header"><strong><i class="bi bi-clipboard-data me-1"></i>Evidence</strong></div>
+      <div class="fw-card-body">
+        <p class="small text-muted">
+          Every row carries the value <em>and</em> the baseline it is judged against —
+          "CPU is high" is an assertion, "CPU 91% against a Tuesday-12h median of 22%" can be argued with.
+        </p>
+        <table class="table table-sm align-middle mb-0">
+          <thead><tr><th style="width:110px;">Layer</th><th>Claim</th><th style="width:110px;">Weight</th></tr></thead>
+          <tbody>
+          {% for e in evidence %}
+            <tr>
+              <td><span class="fw-badge fw-badge-secondary">{{ e.layer }}</span></td>
+              <td class="small">
+                {{ e.claim }}
+                {% if e.detail and e.detail.cve %}
+                  <div class="text-muted" style="font-size:11.5px;">{{ e.detail.summary|truncate(200) }}</div>
+                {% endif %}
+              </td>
+              <td class="small">
+                {% if e.weight_hint == 'supports' %}<span class="fw-badge fw-badge-danger">supports</span>
+                {% elif e.weight_hint == 'undermines' %}<span class="fw-badge fw-badge-success">undermines</span>
+                {% else %}<span class="fw-badge fw-badge-secondary">context</span>{% endif %}
+              </td>
+            </tr>
+          {% else %}
+            <tr><td colspan="3" class="small text-muted">No evidence yet — press “Re-correlate”.</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── time-aligned charts ────────────────────────────────────────────────── #}
+<div class="fw-card mb-3">
+  <div class="fw-card-header"><strong><i class="bi bi-activity me-1"></i>Every layer, same time axis</strong></div>
+  <div class="fw-card-body">
+    <p class="small text-muted mb-2">
+      One window, one X axis, one T0 marker. The ORDER in which layers move after T0 is the
+      evidence of causality — the same readings with no ordering are coincidences.
+    </p>
+    <div id="sn-charts-state" class="small"></div>
+    <div id="sn-chain" class="mb-2"></div>
+    <div id="sn-charts"></div>
+  </div>
+</div>
+
+{# ── AI opinion ─────────────────────────────────────────────────────────── #}
+<div class="row g-3 mb-3">
+  <div class="col-lg-7">
+    <div class="fw-card h-100">
+      <div class="fw-card-header">
+        <strong><i class="bi bi-robot me-1"></i>Model assessment</strong>
+        <span class="fw-badge fw-badge-warning ms-2">opinion, not measurement</span>
+      </div>
+      <div class="fw-card-body">
+        {% set a = incident.ai %}
+        {% if not a %}
+          <div class="small text-muted">No model has been asked about this incident.</div>
+        {% elif not a.ok %}
+          <div class="alert alert-warning small mb-0">
+            The model did not answer: <code>{{ a.error }}</code>.
+            The incident keeps its deterministic score, its evidence and its policy decision —
+            nothing here depends on a model being reachable.
+          </div>
+        {% else %}
+          <div class="mb-2">
+            <span class="fw-badge fw-badge-info">{{ a.assessment or 'no assessment' }}</span>
+            {% if a.confidence_opinion is not none %}
+              <span class="fw-badge fw-badge-secondary">model confidence {{ (a.confidence_opinion * 100)|round|int }}%</span>
+            {% endif %}
+            <span class="text-muted small">{{ a.model }} · prompt {{ a.prompt_hash }} · {{ a.at }}</span>
+          </div>
+          <p class="small">{{ a.summary }}</p>
+          {% if a.reasoning %}
+            <ul class="small mb-2">{% for r in a.reasoning %}<li>{{ r }}</li>{% endfor %}</ul>
+          {% endif %}
+          {% if a.unknowns %}
+            <div class="small text-muted"><strong>Model could not determine:</strong>
+              {{ a.unknowns|join('; ') }}</div>
+          {% endif %}
+          {% if a.rejected %}
+            <div class="alert alert-warning small mt-2 mb-0">
+              Rejected out-of-schema output: <code>{{ a.rejected }}</code>.
+              The model may only recommend from a closed list.
+            </div>
+          {% endif %}
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-5">
+    <div class="fw-card h-100">
+      <div class="fw-card-header"><strong><i class="bi bi-clock-history me-1"></i>Timeline</strong></div>
+      <div class="fw-card-body" style="max-height:340px; overflow:auto;">
+        <ul class="list-unstyled small mb-0">
+        {% for t in timeline %}
+          <li class="mb-2">
+            <span class="text-muted font-monospace" style="font-size:11px;">{{ t.ts }}</span>
+            <span class="fw-badge fw-badge-secondary">{{ t.kind }}</span>
+            <div>{{ t.text }}</div>
+          </li>
+        {% else %}
+          <li class="text-muted">Empty.</li>
+        {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── response ───────────────────────────────────────────────────────────── #}
+<div class="fw-card mb-3">
+  <div class="fw-card-header d-flex justify-content-between align-items-center">
+    <strong><i class="bi bi-shield-check me-1"></i>Response</strong>
+    {% if disagreement.differs %}
+      <span class="fw-badge fw-badge-warning">
+        model says “{{ disagreement.model }}”, policy engine says “{{ disagreement.policy }}” — the policy engine stands
+      </span>
+    {% endif %}
+  </div>
+  <div class="fw-card-body">
+    <p class="small text-muted">
+      Deterministic recommendation: <strong>{{ recommendation }}</strong>.
+      Each action below shows every gate it must pass and which one refused it —
+      “Sentinel did nothing” is not an acceptable console state.
+    </p>
+    <div class="accordion" id="sn-gates">
+    {% for key, g in gates.items() %}
+      <div class="accordion-item">
+        <h2 class="accordion-header">
+          <button class="accordion-button collapsed py-2" type="button" data-bs-toggle="collapse" data-bs-target="#gate-{{ key }}">
+            <span class="me-2"><code>{{ key }}</code></span>
+            {% if g.allowed %}<span class="fw-badge fw-badge-warning">executable</span>
+            {% else %}<span class="fw-badge fw-badge-secondary">refused — {{ g.reason }}</span>{% endif %}
+          </button>
+        </h2>
+        <div id="gate-{{ key }}" class="accordion-collapse collapse" data-bs-parent="#sn-gates">
+          <div class="accordion-body py-2">
+            <table class="table table-sm mb-2">
+              <tbody>
+              {% for c in g.checks %}
+                <tr>
+                  <td style="width:24px;">{% if c.ok %}<i class="bi bi-check-circle text-success"></i>{% else %}<i class="bi bi-x-circle text-danger"></i>{% endif %}</td>
+                  <td style="width:170px;" class="small"><code>{{ c.check }}</code></td>
+                  <td class="small">{{ c.detail }}</td>
+                </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+            <form method="post" action="{{ url_for('sentinel.incident_action', iid=inc.id) }}" class="d-flex gap-2 align-items-center">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="action_type" value="{{ key }}">
+              <input class="form-control form-control-sm" name="note" placeholder="Why (recorded in the audit trail)">
+              <button class="btn btn-fw-outline btn-sm">Record decision</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    {% endfor %}
+    </div>
+
+    {% if actions_taken %}
+    <table class="table table-sm mt-3 mb-0">
+      <thead><tr><th>Action</th><th>Status</th><th>By</th><th>Expires</th><th>Detail</th></tr></thead>
+      <tbody>
+      {% for a in actions_taken %}
+        <tr>
+          <td class="small"><code>{{ a.action_type }}</code></td>
+          <td class="small"><span class="fw-badge fw-badge-secondary">{{ a.status }}</span></td>
+          <td class="small">{{ a.approved_by or a.proposed_by }}</td>
+          <td class="small">{{ a.expires_at or '—' }}</td>
+          <td class="small">{{ a.detail }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+</div>
+
+{# ── history + close ────────────────────────────────────────────────────── #}
+<div class="row g-3">
+  <div class="col-lg-6">
+    <div class="fw-card h-100">
+      <div class="fw-card-header"><strong><i class="bi bi-diagram-3 me-1"></i>Seen before?</strong></div>
+      <div class="fw-card-body">
+        {% if incident.similar %}
+        <p class="small text-muted">Matched on structure (family, source, target) — not on model prose.</p>
+        <ul class="small mb-0">
+        {% for s in incident.similar %}
+          <li><a href="{{ url_for('sentinel.incident_view', iid=s.id) }}">{{ s.ref }}</a>
+            — similarity {{ s.similarity }}, {{ s.status }}{% if s.fp_reason %} ({{ s.fp_reason }}){% endif %},
+            score {{ s.score }}, {{ s.opened_at }}</li>
+        {% endfor %}
+        </ul>
+        {% else %}
+        <div class="small text-muted">No prior incident matches this pattern — this signature is new here.</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-6">
+    <div class="fw-card h-100">
+      <div class="fw-card-header"><strong><i class="bi bi-check2-square me-1"></i>Close</strong></div>
+      <div class="fw-card-body">
+        <form method="post" action="{{ url_for('sentinel.incident_close', iid=inc.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="mb-2">
+            <label class="form-label small">Outcome</label>
+            <select class="form-select form-select-sm" name="status" id="sn-status">
+              <option value="closed">closed — handled</option>
+              <option value="mitigated">mitigated — an action worked</option>
+              <option value="false_positive">false positive</option>
+            </select>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small">Why it was a false positive</label>
+            <select class="form-select form-select-sm" name="fp_reason">
+              <option value="">—</option>
+              {% for key, label in fp_reasons %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
+            </select>
+            <div class="form-text" style="font-size:11.5px;">
+              Required for a false positive. A dismissal with no cause is a silent vote to keep
+              generating the same alert forever.
+            </div>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small">Note</label>
+            <textarea class="form-control form-control-sm" name="note" rows="2"></textarea>
+          </div>
+          <button class="btn btn-fw-primary btn-sm">Close incident</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── events ─────────────────────────────────────────────────────────────── #}
+<div class="fw-card mt-3">
+  <div class="fw-card-header"><strong><i class="bi bi-list-columns me-1"></i>Events ({{ events|length }})</strong></div>
+  <div class="fw-card-body" style="max-height:420px; overflow:auto;">
+    <table class="table table-sm table-hover align-middle mb-0">
+      <thead><tr><th>Time</th><th>Signature</th><th>URI</th><th>Status</th><th>Action</th></tr></thead>
+      <tbody>
+      {% for e in events %}
+        <tr>
+          <td class="small font-monospace">{{ e.ts }}</td>
+          <td class="small">{{ e.signature }} <span class="text-muted">({{ e.severity }})</span></td>
+          <td class="small font-monospace" style="max-width:340px; overflow:hidden; text-overflow:ellipsis;">{{ e.http_method }} {{ e.uri }}</td>
+          <td class="small">
+            {% if e.http_status %}
+              <span class="fw-badge {{ 'fw-badge-danger' if 200 <= e.http_status < 300 and not e.blocked else 'fw-badge-secondary' }}">{{ e.http_status }}</span>
+            {% else %}<span class="text-muted">—</span>{% endif %}
+          </td>
+          <td class="small">
+            {% if e.blocked %}<span class="fw-badge fw-badge-success">{{ e.action }}</span>
+            {% else %}<span class="fw-badge fw-badge-danger" title="not stopped">{{ e.action or 'none' }}</span>{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+/* Time-aligned layer charts.
+ *
+ * Rules this code keeps, each of them a scar:
+ *  - a FAILED query is drawn as an explicit error card, never as an empty
+ *    chart: on a canvas the two are identical and mean opposite things;
+ *  - a layer with no usable baseline says so rather than showing a bare line
+ *    that implies it was judged;
+ *  - every chart shares one X domain and one T0 marker, because the whole
+ *    point is comparing WHEN each layer moved.
+ */
+(function () {
+  const host = document.getElementById('sn-charts');
+  const state = document.getElementById('sn-charts-state');
+  const chain = document.getElementById('sn-chain');
+  const url = "{{ url_for('sentinel.incident_charts', iid=inc.id) }}";
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g,
+      c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  }
+
+  state.innerHTML = '<span class="text-muted">Loading layer series…</span>';
+
+  fetch(url, {headers: {'X-Requested-With': 'fetch'}})
+    .then(r => r.json())
+    .then(d => {
+      if (!d.store_ok) {
+        state.innerHTML = '<div class="alert alert-danger small mb-2">' +
+          '<strong>Metrics store unreachable</strong> — no layer could be read. ' +
+          'This is <em>not</em> a quiet window: ' + esc(d.store_detail) + '</div>';
+        return;
+      }
+      let notes = '';
+      if (d.layers_unknown && d.layers_unknown.length) {
+        notes = '<div class="alert alert-warning small mb-2">Layers not evaluated: <code>' +
+          esc(d.layers_unknown.join(', ')) + '</code> — no topology mapping for this device. ' +
+          'Unknown, not healthy. Map it under <a href="{{ url_for('sentinel.context') }}">Context</a>.</div>';
+      }
+      state.innerHTML = notes +
+        '<div class="text-muted mb-2">Window ' + esc(d.start) + ' → ' + esc(d.end) +
+        ', T0 ' + esc(d.t0) + '</div>';
+
+      if (d.chain && d.chain.length > 1) {
+        chain.innerHTML = '<div class="small"><strong>Causal order after T0:</strong> ' +
+          d.chain.map(c => esc(c.label) + ' <span class="text-muted">(+' + esc(c.lag_s) +
+                            's, ' + esc(c.ratio) + '×)</span>').join(' &rarr; ') + '</div>';
+      }
+
+      const series = (d.series || []).filter(s => (s.points || []).length);
+      if (!series.length) {
+        host.innerHTML = '<div class="alert alert-secondary small mb-0">' +
+          'The store answered, and held no samples for this window. ' +
+          'That is a real answer: nothing was being collected for these series then.</div>';
+        return;
+      }
+
+      const t0 = Date.parse(d.t0 + 'Z') / 1000;
+      let min = Infinity, max = -Infinity;
+      series.forEach(s => s.points.forEach(p => {
+        if (p[0] < min) min = p[0];
+        if (p[0] > max) max = p[0];
+      }));
+      const span = Math.max(1, max - min);
+
+      host.innerHTML = series.map((s, i) => {
+        const w = 900, h = 74, pad = 4;
+        let vmin = Infinity, vmax = -Infinity;
+        s.points.forEach(p => { if (p[1] < vmin) vmin = p[1]; if (p[1] > vmax) vmax = p[1]; });
+        if (s.median != null) { vmin = Math.min(vmin, s.median); vmax = Math.max(vmax, s.median); }
+        const vspan = Math.max(1e-9, vmax - vmin);
+        const x = t => pad + (t - min) / span * (w - 2 * pad);
+        const y = v => h - pad - (v - vmin) / vspan * (h - 2 * pad);
+        const path = s.points.map((p, j) => (j ? 'L' : 'M') + x(p[0]).toFixed(1) +
+                                            ' ' + y(p[1]).toFixed(1)).join(' ');
+        const t0x = x(t0).toFixed(1);
+        const baseY = s.median != null ? y(s.median).toFixed(1) : null;
+        /* .fw-badge-* is the palette calibrated against white; raw pastels
+           here would repeat the 1.4:1 contrast bug of 2026-07-28. */
+        const badge = s.anomalous ? 'fw-badge-danger'
+                    : (s.usable ? 'fw-badge-success' : 'fw-badge-secondary');
+        const verdict = s.anomalous
+          ? (s.ratio ? s.ratio.toFixed(1) + '× baseline' : 'anomalous')
+          : (s.usable ? 'within baseline'
+                      : 'no usable baseline (' + esc(s.state) + ') — not judged');
+        return '' +
+          '<div class="mb-2">' +
+            '<div class="d-flex justify-content-between align-items-center small">' +
+              '<span><strong>' + esc(s.label) + '</strong> ' +
+                '<span class="text-muted">' + esc(s.layer) + ' · ' + esc(s.metric) + '</span></span>' +
+              '<span><span class="fw-badge ' + badge + '">' + esc(verdict) + '</span> ' +
+                (s.peak != null ? '<span class="text-muted">peak ' + esc(s.peak) + esc(s.unit) + '</span>' : '') +
+                (s.lag_s != null ? ' <span class="text-muted">+' + esc(s.lag_s) + 's</span>' : '') +
+              '</span>' +
+            '</div>' +
+            '<svg viewBox="0 0 ' + w + ' ' + h + '" width="100%" height="' + h + '" ' +
+                 'style="background:#FFFFFF;border:1px solid #E2E5E9;border-radius:4px;">' +
+              (baseY ? '<line x1="0" y1="' + baseY + '" x2="' + w + '" y2="' + baseY +
+                       '" stroke="#8B9199" stroke-width="1" stroke-dasharray="4 3"/>' : '') +
+              '<line x1="' + t0x + '" y1="0" x2="' + t0x + '" y2="' + h +
+                    '" stroke="#EF5424" stroke-width="1.5"/>' +
+              '<path d="' + path + '" fill="none" stroke="#1F3B57" stroke-width="1.6"/>' +
+            '</svg>' +
+          '</div>';
+      }).join('');
+    })
+    .catch(e => {
+      /* An error here is reported AS an error. Leaving the "Loading…" text in
+         place would be the same lie as an empty chart. */
+      state.innerHTML = '<div class="alert alert-danger small mb-0">' +
+        'Could not load layer series: ' + esc(e) + '</div>';
+    });
+})();
+</script>
+{% endblock %}

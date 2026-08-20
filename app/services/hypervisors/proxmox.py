@@ -380,6 +380,60 @@ class ProxmoxClient(HypervisorClient):
         return {"status": d.get("status"), "uptime": d.get("uptime"),
                 "name": d.get("name"), "raw": d}
 
+    # -- telemetry -------------------------------------------------------
+    def vm_metrics(self, ref: VmRef) -> dict[str, Any]:
+        """One machine's live counters from ``status/current``.
+
+        ``cpu`` arrives as a FRACTION of the machine's total allocation
+        (0.0-1.0), not a percentage — a provider that forwarded it unscaled
+        would put 0.88 on a chart whose axis says "%", and 0.88% reads as an
+        idle machine at the exact moment it is saturating.
+        """
+        d = self._call(
+            "GET",
+            f"/nodes/{ref.node}/qemu/{ref.identifier}/status/current") or {}
+        mem, maxmem = _f(d.get("mem")), _f(d.get("maxmem"))
+        return {
+            "status": d.get("status"),
+            "cpu_pct": (_f(d.get("cpu")) or 0.0) * 100.0
+                       if d.get("cpu") is not None else None,
+            "mem_bytes": mem, "mem_total_bytes": maxmem,
+            "mem_pct": (mem / maxmem * 100.0) if (mem and maxmem) else None,
+            "disk_read_bytes": _f(d.get("diskread")),
+            "disk_write_bytes": _f(d.get("diskwrite")),
+            "net_in_bytes": _f(d.get("netin")),
+            "net_out_bytes": _f(d.get("netout")),
+            "uptime_s": _f(d.get("uptime")),
+            "raw": d,
+        }
+
+    def node_metrics(self, node: str = "") -> dict[str, Any]:
+        """One host's live counters from ``/nodes/<node>/status``.
+
+        Read from the node's OWN status endpoint rather than from the cluster
+        ``/nodes`` list: that list is refreshed on pvestatd's cycle and drops
+        the memory figures entirely, so a host layer built on it would be both
+        stale and half-blind.
+        """
+        node = node or self._first_node()
+        d = self._call("GET", f"/nodes/{node}/status") or {}
+        mem = (d.get("memory") or {})
+        used, total = _f(mem.get("used")), _f(mem.get("total"))
+        root = (d.get("rootfs") or {})
+        r_used, r_total = _f(root.get("used")), _f(root.get("total"))
+        loadavg = d.get("loadavg") or []
+        return {
+            "node": node,
+            "cpu_pct": (_f(d.get("cpu")) or 0.0) * 100.0
+                       if d.get("cpu") is not None else None,
+            "mem_bytes": used, "mem_total_bytes": total,
+            "mem_pct": (used / total * 100.0) if (used and total) else None,
+            "disk_pct": (r_used / r_total * 100.0) if (r_used and r_total) else None,
+            "load1": _f(loadavg[0]) if loadavg else None,
+            "uptime_s": _f(d.get("uptime")),
+            "raw": d,
+        }
+
     # -- image staging ---------------------------------------------------
     def upload_image(self, node: str, storage: str, filename: str,
                      fh: Any, *, timeout: int = 3600) -> str:
@@ -413,3 +467,16 @@ class ProxmoxClient(HypervisorClient):
                 "endpoint": f"/nodes/{ref.node}/qemu/{ref.identifier}/termproxy",
                 "note": "POST to open a serial session; requires serial0 on "
                         "the VM (SATOM always attaches one)."}
+
+
+def _f(value):
+    """Proxmox sends numbers as strings often enough that a bare float() call
+    is a runtime error waiting for a firmware release. Returns None rather
+    than 0.0 for an unparseable value: a missing reading and a reading of
+    zero are different facts, and a chart cannot tell them apart afterwards."""
+    if value in (None, ""):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None

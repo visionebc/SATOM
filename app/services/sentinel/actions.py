@@ -1,0 +1,337 @@
+"""The closed action catalog and the policy engine that gates it.
+
+Status of this module in THIS release
+-------------------------------------
+It **proposes**. It does not execute. Every entry in :data:`CATALOG` carries
+``verified=False``, meaning: the mechanism named here has NOT yet been proved
+against a live appliance of this product. Nothing in this file opens a
+connection to a device, and there is a guard test asserting that.
+
+That is not caution theatre. This product measured, on 2026-08-20, that **22 of
+237 documented FortiWeb configuration routes answer ``-20001 "invalid URL"``**
+and that none of them had ever been captured by a device sync — they were
+written from the reference manual and never validated. A blocking action built
+the same way would fail at the moment it is most needed, or worse, succeed
+against the wrong object. So the catalog ships as a specification with its
+provenance stated, and each entry becomes executable only when someone has run
+it against fw12/fw13 and recorded the transport — the same discipline
+``REBOOT_TRANSPORT`` already applies in ``scheduled_actions``.
+
+The gate order, and why it is this order
+----------------------------------------
+:func:`evaluate` checks, in sequence:
+
+1. **Global kill switch** — one setting disables every action everywhere.
+2. **Protected network** — the source is inside our own ranges. Checked before
+   anything about confidence: a correlation bug that concludes the monitoring
+   host is an attacker must be structurally unable to act on it.
+3. **Trusted source / maintenance window** — authorised activity.
+4. **Per-action policy** exists, is enabled, and its level permits acting.
+5. **Confidence** meets that action's own floor.
+6. **Reversibility and TTL** — every blocking action must expire on its own.
+7. **Circuit breaker** — fleet-wide hourly ceiling.
+8. **Catalog verification** — the mechanism has been proved on a real device.
+
+Each check returns a REASON, not just a boolean, and the reasons are shown on
+the incident. "Sentinel did nothing" is not an acceptable console state; "did
+nothing because the source is inside 10.0.0.0/8" is.
+
+TTL is the rollback
+-------------------
+Every blocking action expires. An undo that must itself succeed is not a
+rollback — it is a second operation that can fail, attempted at the moment the
+first already has. Expiry needs nothing to work.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+
+from ...models import db
+from ...models_sentinel import SentinelAction, SentinelPolicy
+from . import config, enrich
+
+
+@dataclass(frozen=True)
+class ActionSpec:
+    """One executable response — its mechanism, its limits, its provenance."""
+
+    key: str
+    label: str
+    summary: str
+    mechanism: str          # HOW it would be applied, and on what evidence
+    reversible: bool
+    requires_ttl: bool
+    max_level: int          # the highest autonomy this action may EVER reach
+    blast: str              # what it can affect if the correlation is wrong
+    verified: bool = False  # proved against a live appliance?
+    provenance: str = ""
+
+
+CATALOG: dict[str, ActionSpec] = {
+    "block_ip": ActionSpec(
+        "block_ip", "Block source IP",
+        "Add the source to the IP list bound to the affected server policy.",
+        mechanism="FortiWeb IP List (blacklist) member on the policy's "
+                  "protection profile — NOT YET VERIFIED against a live "
+                  "appliance; the route and payload must be captured from a "
+                  "device before this becomes executable.",
+        reversible=True, requires_ttl=True,
+        max_level=SentinelPolicy.LEVEL_AUTONOMOUS,
+        blast="one source address on one policy"),
+    "rate_limit_ip": ActionSpec(
+        "rate_limit_ip", "Rate-limit source IP",
+        "Constrain the source's request rate rather than dropping it.",
+        mechanism="FortiWeb HTTP access limit / period-block — NOT YET "
+                  "VERIFIED against a live appliance.",
+        reversible=True, requires_ttl=True,
+        max_level=SentinelPolicy.LEVEL_AUTONOMOUS,
+        blast="one source address on one policy"),
+    "raise_protection": ActionSpec(
+        "raise_protection", "Raise protection profile",
+        "Move the policy to a hardened Web Protection Profile.",
+        mechanism="PUT the policy's web-protection-profile to a pre-approved "
+                  "hardened profile — NOT YET VERIFIED. Requires the hardened "
+                  "profile to exist on the device beforehand; creating one "
+                  "mid-incident is how a policy ends up bound to an empty "
+                  "profile (the ca-group defect this product already hit).",
+        reversible=True, requires_ttl=False,
+        max_level=SentinelPolicy.LEVEL_SEMI_AUTO,
+        blast="EVERY client of the affected policy"),
+    "block_country": ActionSpec(
+        "block_country", "Block source country",
+        "GeoIP block for the source's country on the affected policy.",
+        mechanism="FortiWeb GeoIP block list — NOT YET VERIFIED.",
+        reversible=True, requires_ttl=True,
+        max_level=SentinelPolicy.LEVEL_RECOMMEND,
+        blast="EVERY client in an entire country — never autonomous, at any "
+              "confidence. A single mis-attributed source address would take "
+              "a market offline."),
+    "tune_signature": ActionSpec(
+        "tune_signature", "Propose a signature carve-out",
+        "Hand the incident to the existing false-positive carve-out flow.",
+        mechanism="Hands off to app.services.attack_carveout, which builds the "
+                  "exception from the entry AS THE DEVICE REPORTED IT. Never "
+                  "auto-applied: an exception authored from correlated data is "
+                  "an exception authored from something a client influenced.",
+        reversible=True, requires_ttl=False,
+        max_level=SentinelPolicy.LEVEL_RECOMMEND,
+        blast="one signature on one profile"),
+}
+
+#: Recommendation the policy engine derives from the score band, per family.
+#: Data, not branches, so the documentation page can render it and the tests
+#: can assert on it without re-implementing the mapping.
+BAND_RECOMMENDATION: dict[str, str] = {
+    "observe": "observe",
+    "investigate": "investigate",
+    "recommend": "rate_limit_ip",
+    "semi_auto": "block_ip",
+}
+
+
+def ensure_policies() -> int:
+    """Create a default (disabled, observe-only) policy row per catalog entry.
+
+    Idempotent. Defaults are the SAFE end of every knob: an installation that
+    has never been configured cannot act, and adding an action to the catalog
+    cannot silently arm it in an existing installation.
+    """
+    created = 0
+    for key, spec in CATALOG.items():
+        if SentinelPolicy.query.filter_by(action_type=key).first():
+            continue
+        db.session.add(SentinelPolicy(
+            action_type=key, level=SentinelPolicy.LEVEL_OBSERVE,
+            min_confidence=85, ttl_minutes=30, max_ttl_minutes=240,
+            max_per_hour=3, enabled=False,
+            note=f"auto-created; mechanism {'verified' if spec.verified else 'NOT verified'}"))
+        created += 1
+    if created:
+        db.session.commit()
+    return created
+
+
+def recent_action_count(minutes: int = 60) -> int:
+    since = datetime.utcnow() - timedelta(minutes=minutes)
+    return (SentinelAction.query
+            .filter(SentinelAction.created_at >= since,
+                    SentinelAction.status.in_([SentinelAction.STATUS_APPLIED,
+                                               SentinelAction.STATUS_QUEUED]))
+            .count())
+
+
+def recommend(incident) -> str:
+    """What the DETERMINISTIC engine proposes for this incident.
+
+    Independent of any model opinion, and computed from the band plus the two
+    context facts that override it: a trusted source is never answered with a
+    block, and an incident whose requests were all stopped by the appliance
+    needs no further action — the appliance already took it.
+    """
+    if incident.src_trusted:
+        return "investigate"
+    if incident.waf_blocked and not incident.passed_count:
+        return "observe"
+    if incident.attack_family in ("scanner", "bot") and \
+            incident.score < incident.BAND_SEMI_AUTO:
+        return "rate_limit_ip"
+    return BAND_RECOMMENDATION.get(incident.band, "observe")
+
+
+def evaluate(incident, action_type: str) -> dict:
+    """May this action be taken for this incident, and at what level?
+
+    Returns ``{allowed, level, reason, checks}``. ``checks`` is the ordered
+    audit of every gate with its verdict — so the console can show WHY an
+    action was refused instead of leaving an operator to guess.
+    """
+    checks: list = []
+
+    def check(name: str, ok: bool, detail: str) -> bool:
+        checks.append({"check": name, "ok": bool(ok), "detail": detail})
+        return bool(ok)
+
+    spec = CATALOG.get(action_type)
+    if not check("catalog", spec is not None,
+                 f"'{action_type}' is not in the action catalog"
+                 if spec is None else f"{spec.label}"):
+        return _deny(checks, "unknown action")
+
+    if not check("kill_switch", bool(config.get("response_enabled")),
+                 "sentinel.response_enabled is OFF — Sentinel may propose "
+                 "actions and may not execute any"
+                 if not config.get("response_enabled") else "response engine armed"):
+        return _deny(checks, "response engine disarmed", level=SentinelPolicy.LEVEL_RECOMMEND)
+
+    src = incident.src_ip or ""
+    protected = enrich.is_protected(src)
+    if not check("protected_network", not protected,
+                 f"source {src} is inside a protected network — no blocking "
+                 f"action may target it" if protected
+                 else f"source {src} is outside every protected network"):
+        return _deny(checks, "source is protected")
+
+    if not check("trusted_source", not incident.src_trusted,
+                 "source is a registered trusted source" if incident.src_trusted
+                 else "source is not on the trust list"):
+        return _deny(checks, "trusted source")
+
+    suppressed = enrich.actions_suppressed(device=incident.device or "")
+    if not check("maintenance_window", not suppressed,
+                 "a maintenance window is suppressing actions" if suppressed
+                 else "no active maintenance window"):
+        return _deny(checks, "maintenance window")
+
+    policy = SentinelPolicy.query.filter_by(action_type=action_type).first()
+    if not check("policy_exists", policy is not None,
+                 "no policy row for this action" if policy is None
+                 else f"policy level {policy.level}"):
+        return _deny(checks, "no policy")
+    if not check("policy_enabled", bool(policy.enabled),
+                 "policy is disabled" if not policy.enabled else "policy enabled"):
+        return _deny(checks, "policy disabled")
+
+    level = min(int(policy.level or 0), spec.max_level)
+    if not check("level", level >= SentinelPolicy.LEVEL_SEMI_AUTO,
+                 f"effective level {level} — proposal only"
+                 if level < SentinelPolicy.LEVEL_SEMI_AUTO
+                 else f"effective level {level}"):
+        return _deny(checks, "level too low", level=level)
+
+    score = int(incident.score or 0)
+    if not check("confidence", score >= int(policy.min_confidence or 0),
+                 f"score {score} is below this action's floor of "
+                 f"{policy.min_confidence}" if score < (policy.min_confidence or 0)
+                 else f"score {score} meets the floor of {policy.min_confidence}"):
+        return _deny(checks, "below confidence floor", level=level)
+
+    ttl_ok = (not spec.requires_ttl) or (0 < int(policy.ttl_minutes or 0)
+                                         <= int(policy.max_ttl_minutes or 0))
+    if not check("ttl", ttl_ok,
+                 "this action must expire on its own and has no valid TTL"
+                 if not ttl_ok else f"expires after {policy.ttl_minutes} min"):
+        return _deny(checks, "no valid TTL", level=level)
+
+    used = recent_action_count(60)
+    ceiling = int(config.get("max_actions_per_hour"))
+    if not check("circuit_breaker", used < ceiling,
+                 f"{used}/{ceiling} actions already taken this hour"):
+        return _deny(checks, "circuit breaker open", level=level)
+
+    if not check("mechanism_verified", spec.verified,
+                 "the mechanism for this action has NOT been verified against "
+                 "a live appliance of this product — it is a specification, "
+                 "not yet an executable transport" if not spec.verified
+                 else spec.provenance):
+        return _deny(checks, "mechanism unverified", level=level)
+
+    return {"allowed": True, "level": level, "reason": "all gates passed",
+            "checks": checks, "ttl_minutes": int(policy.ttl_minutes or 0)}
+
+
+def _deny(checks: list, reason: str, level: int = 0) -> dict:
+    return {"allowed": False, "level": level, "reason": reason,
+            "checks": checks, "ttl_minutes": 0}
+
+
+def propose(incident, action_type: str, *, params: dict | None = None,
+            by: str = "policy_engine", rationale: str = "") -> "SentinelAction":
+    """Record a PROPOSED action. Never executes anything.
+
+    The proposal is written whether or not the gates would allow execution,
+    because "Sentinel wanted to do X and was refused because Y" is exactly the
+    record an operator needs when tuning autonomy — and it is invisible if
+    only permitted actions are stored.
+    """
+    verdict = evaluate(incident, action_type)
+    spec = CATALOG.get(action_type)
+    ttl = verdict.get("ttl_minutes") or 0
+    action = SentinelAction(
+        incident_id=incident.id,
+        correlation_id=f"{incident.ref}:{action_type}",
+        action_type=action_type, level=verdict.get("level", 0),
+        status=SentinelAction.STATUS_PROPOSED, proposed_by=by,
+        expires_at=(datetime.utcnow() + timedelta(minutes=ttl)) if ttl else None,
+        detail=verdict["reason"],
+        rationale=rationale or (spec.summary if spec else ""))
+    action.params = dict(params or {}, src_ip=incident.src_ip,
+                         device=incident.device, policy=incident.policy)
+    db.session.add(action)
+    return action
+
+
+def catalog_rows() -> list:
+    """The catalog, for the documentation page and the Settings console."""
+    return [{"key": s.key, "label": s.label, "summary": s.summary,
+             "mechanism": s.mechanism, "reversible": s.reversible,
+             "requires_ttl": s.requires_ttl, "max_level": s.max_level,
+             "blast": s.blast, "verified": s.verified,
+             "provenance": s.provenance}
+            for s in CATALOG.values()]
+
+
+def policy_rows() -> list:
+    ensure_policies()
+    rows = SentinelPolicy.query.order_by(SentinelPolicy.action_type).all()
+    out = []
+    for p in rows:
+        spec = CATALOG.get(p.action_type)
+        d = p.to_dict()
+        d["label"] = spec.label if spec else p.action_type
+        d["max_level"] = spec.max_level if spec else 0
+        d["verified"] = spec.verified if spec else False
+        d["blast"] = spec.blast if spec else ""
+        out.append(d)
+    return out
+
+
+def verified_count() -> tuple:
+    """(verified, total) — the honest headline for the console.
+
+    An installation whose catalog is 0/5 verified must be told so on the page,
+    not in a docstring. A response engine that cannot execute anything is a
+    fine state; a response engine that LOOKS armed and cannot execute is not.
+    """
+    total = len(CATALOG)
+    return sum(1 for s in CATALOG.values() if s.verified), total

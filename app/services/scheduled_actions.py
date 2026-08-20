@@ -201,6 +201,36 @@ ADMIN_ACTIONS: list[ActionSpec] = [
                 "at its own operator-set interval. Read-only against the box.",
     ),
     ActionSpec(
+        "sentinel_sweep", "Sentinel — correlate and score", "admin",
+        needs_targets=False,
+        summary="The Sentinel hot path: read new attack-log entries from every "
+                "live FortiWeb, deduplicate by content, route them into "
+                "incidents, re-correlate every open incident against the "
+                "metrics store, score deterministically, propose actions and "
+                "expire TTLs. Reads devices (GUI-session attack log); devices "
+                "in maintenance are skipped. Schedule EVERY 3 MINUTES. Never "
+                "writes appliance configuration.",
+    ),
+    ActionSpec(
+        "sentinel_baseline", "Sentinel — recompute behavioural baselines",
+        "admin", needs_targets=False,
+        summary="Rebuild the median/MAD profile of every series, per "
+                "hour-of-week, from the node's own metrics store. Touches NO "
+                "appliance, so it is safe at any hour. Samples inside a frozen "
+                "maintenance window are dropped rather than learned. Schedule "
+                "NIGHTLY.",
+    ),
+    ActionSpec(
+        "sentinel_vuln_sync", "Sentinel — refresh the local CVE mirror",
+        "admin", needs_targets=False,
+        summary="Refresh sentinel_vuln from the configured source plus the "
+                "CISA KEV feed. THE ONLY Sentinel component that opens an "
+                "outbound connection, and it refuses to run unless "
+                "sentinel.vuln_sync_enabled is on — a live per-incident lookup "
+                "would hand a third party a real-time map of this fleet's "
+                "attack surface. Schedule DAILY.",
+    ),
+    ActionSpec(
         "monitor_report", "Monitoring report — period summary", "admin",
         needs_targets=False,
         summary="Build and store the daily/weekly/monthly monitoring summary "
@@ -414,6 +444,73 @@ def _do_metrics_scrape(params: dict, dry_run: bool = False) -> dict:
             "log": ""}
 
 
+def _do_sentinel_sweep(params: dict, dry_run: bool = False) -> dict:
+    """Run the Sentinel hot path.
+
+    Same ``ok`` contract as every other sweep in this product: ok = THE SWEEP
+    RAN. Per-device failures ride in the log, not in the action's colour — an
+    action that goes permanently red because one appliance is unreachable
+    teaches operators to ignore the colour, which is worse than the outage.
+    """
+    from .sentinel import config as sn_config
+    from .sentinel import pipeline
+    if dry_run:
+        return {"ok": True,
+                "summary": ("[dry-run] Sentinel is %s; would read attack logs "
+                            "from every live FortiWeb and re-score open "
+                            "incidents."
+                            % ("ENABLED" if sn_config.get("enabled")
+                               else "DISABLED (sweep would return immediately)")),
+                "log": ""}
+    res = pipeline.sweep()
+    if res.get("skipped"):
+        return {"ok": True, "summary": "Sentinel is disabled in Settings — "
+                                       "nothing collected.", "log": ""}
+    log = "\n".join(
+        "%s: read=%s new=%s dup=%s %s %s"
+        % (r["device"], r["read"], r["new"], r["duplicate"], r["status"],
+           r["detail"])
+        for r in res["devices"])
+    return {"ok": True, "summary": res["detail"], "log": log[:4000]}
+
+
+def _do_sentinel_baseline(params: dict, dry_run: bool = False) -> dict:
+    """Recompute behavioural baselines. Reads the local store only."""
+    from .sentinel import baseline, pipeline
+    if dry_run:
+        cov = baseline.coverage()
+        return {"ok": True,
+                "summary": ("[dry-run] would recompute from the metrics store; "
+                            "currently %d/%d buckets usable"
+                            % (cov["usable"], cov["total"])),
+                "log": ""}
+    res = pipeline.recompute_baselines()
+    return {"ok": True, "summary": res["detail"],
+            "log": "\n".join(res.get("errors") or [])[:4000]}
+
+
+def _do_sentinel_vuln_sync(params: dict, dry_run: bool = False) -> dict:
+    """Refresh the CVE mirror. Refuses unless its own switch is on.
+
+    A refusal is reported as ``ok`` with the reason: the action DID run and the
+    configured answer is "do not go out". Marking that a failure would put a
+    permanent red row in the history of every installation that deliberately
+    keeps this node offline.
+    """
+    from .sentinel import vuln
+    if dry_run:
+        health = vuln.mirror_health()
+        return {"ok": True,
+                "summary": ("[dry-run] outbound sync %s; mirror holds %d CVE(s)"
+                            % ("ENABLED" if health["sync_enabled"] else "OFF",
+                               health["total"])),
+                "log": ""}
+    res = vuln.sync()
+    return {"ok": True,
+            "summary": res.get("detail") or res.get("reason", ""),
+            "log": "\n".join(res.get("errors") or [])[:4000]}
+
+
 def _do_deep_monitor(params: dict, dry_run: bool = False) -> dict:
     """Sweep the deep monitors (Monitoring -> Deep monitors). No writes."""
     from . import deep_monitor as dm
@@ -547,6 +644,12 @@ def run_action(spec, appliance, params: dict | None, dry_run: bool = False) -> d
             return _do_deep_monitor(params, dry_run)
         if key == "metrics_scrape":
             return _do_metrics_scrape(params, dry_run)
+        if key == "sentinel_sweep":
+            return _do_sentinel_sweep(params, dry_run)
+        if key == "sentinel_baseline":
+            return _do_sentinel_baseline(params, dry_run)
+        if key == "sentinel_vuln_sync":
+            return _do_sentinel_vuln_sync(params, dry_run)
         if key == "monitor_report":
             return _do_monitor_report(params, dry_run)
         if key == "upgrade_prep":

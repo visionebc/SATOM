@@ -8,6 +8,59 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Added
 
+- **SATOM Sentinel — security correlation and (proposed) autonomous response.**
+  A new module at `/sentinel` that correlates FortiWeb attack signatures, HTTP
+  response outcomes, appliance counters, VM and hypervisor metrics and
+  vulnerability intelligence into single incidents, each of which explains
+  itself from measured evidence. 14 tables (`sentinel_*`), a services package
+  (`app/services/sentinel/`), four pages (console, incident, context,
+  documentation), a response-policy page, a Settings section and three
+  scheduled actions (`sentinel_sweep`, `sentinel_baseline`,
+  `sentinel_vuln_sync`). Full write-up: `docs/sentinel-architecture.md`.
+
+  The decisions worth knowing before reading the code:
+
+  - **The language model is not in the deciding path.** It reads a finished
+    incident and writes prose plus a recommendation from a closed enum; it has
+    no tools, no network of its own, no credentials, and cannot change a score.
+    The number that gates a firewall change has to be reproducible during a
+    post-mortem, and a sampled one is not. With every AI component down, the
+    pipeline still detects, scores, explains and gates — it loses the narrative.
+  - **Baselines are median + MAD per hour-of-week, not mean + sigma.** A
+    security baseline is trained on data containing attacks; with a mean, each
+    flood raises the centre so the next one scores as *less* anomalous. Flat
+    series cannot produce an infinite deviation, and immature buckets never
+    fire.
+  - **Negative scoring factors are half the value.** A wall of attacks the
+    appliance blocked does not page anyone; an exploit aimed at software the
+    backend does not run is noise; and an authorised scanner produces a
+    byte-identical log to an intruder, so context outweighs any single positive.
+  - **An unmeasured layer reports `unknown`, never "no impact".** Those drive
+    opposite operator decisions. `None` survives from the correlator to the page.
+  - **Vulnerability enrichment never leaves the node.** A live per-incident
+    lookup would hand a third party a real-time map of the fleet's attack
+    surface. The mirror sync is a separate, off-by-default switch, and a test
+    asserts the incident path opens no socket. EPSS and CISA KEV outrank CVSS.
+  - **Response ships as proposals only.** All five catalog entries are marked
+    unverified and the last gate refuses them, because a live sweep on
+    2026-08-20 found 22 of 237 documented FortiWeb routes answer `-20001
+    "invalid URL"` — written from the manual, never validated on a device.
+    TTL is the rollback; `block_country` can never be autonomous.
+
+- **`http_status` and `infra` collectors** joined the fleet collection
+  registry, so their cadence is edited on the same page as every other
+  collector. `http_status` counts response classes from the **traffic log** —
+  `policy_status` was probed live against fortiweb12 (7.6.8) and carries no
+  response-class counters at all, so an earlier draft reading `http_2xx` from
+  it would have published a flat line of zeros indistinguishable from a quiet
+  service.
+
+- **`HypervisorClient.vm_metrics()` / `node_metrics()`** — telemetry as an
+  optional provider capability, implemented for Proxmox. A backend that cannot
+  answer raises and the caller reports the layer as unknown. Cumulative
+  counters are published as counters so the store derives rates and survives
+  the reset a VM restart causes.
+
 - **The step that actually removes the local copy.** Settings → Vault gained a
   *Remove the local copies* card (`scrub_local_copies`, route
   `/settings/vault/scrub`). Until it runs, switching to `vault` only changes

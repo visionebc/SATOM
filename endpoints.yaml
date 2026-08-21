@@ -494,6 +494,7 @@ log_ftp_policy:            /api/v2.0/cmdb/log/ftp-policy
 log_reports:               /api/v2.0/cmdb/log/reports
 log_siem_message_policy:   /api/v2.0/cmdb/log/siem-message-policy
 log_siem_policy:           /api/v2.0/cmdb/log/siem-policy
+log_siem_policy_server_list: /api/v2.0/cmdb/log/siem-policy/siem-server-list
 
 # ──── Other ────
 session_data_by_policy:           /api/v2.0/fortiview/sessions.data_json

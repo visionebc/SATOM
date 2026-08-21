@@ -38,6 +38,8 @@ from ..registry.dependencies import (
     SERVER_POLICY,
     WEB_PROTECTION_PROFILE,
     dep_node_for_urn,
+    field_ref_edges,
+    when_holds,
 )
 from ..registry.loader import load_registry
 from .fortiweb_ops import sanitize_payload as clean_for_write
@@ -430,8 +432,12 @@ class ClonePlanner:
         obj = self._fetch(node.urn, mkey)
 
         # 1) referenced named objects FIRST (deepest-first: deps before dependents)
-        for child in node.children:
-            if _is_named_ref(child):
+        #    The declared children, then the cross-cutting FIELD edges this
+        #    object actually carries. Same pass, and BEFORE the object itself: a
+        #    `trigger` is a dependency like any other, and the appliance rejects
+        #    the object outright when the policy it names is absent.
+        for child in list(node.children) + field_ref_edges(obj):
+            if _is_named_ref(child) and when_holds(child, obj):
                 if not self._follow_wpp and child.urn in _WPP_URNS:
                     continue  # "don't copy the WPP" — prune the whole subtree
                 for ref in referenced_names(obj, child.via):
@@ -455,8 +461,8 @@ class ClonePlanner:
             if _is_named_ref(child) or not child.urn:
                 continue
             for row in subtable_rows(self.src, child.urn, self._lg(child.urn), mkey) or []:
-                for g in child.children:
-                    if _is_named_ref(g):
+                for g in list(child.children) + field_ref_edges(row):
+                    if _is_named_ref(g) and when_holds(g, row):
                         if not self._follow_wpp and g.urn in _WPP_URNS:
                             continue  # content-routing rows can name a WPP too
                         for ref in referenced_names(row, g.via):

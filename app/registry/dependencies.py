@@ -64,6 +64,16 @@ class DepNode:
     via: str = ""
     note: str = ""
     children: tuple["DepNode", ...] = ()
+    #: ``(field, value)`` — follow this edge ONLY when the object/row carrying it
+    #: has ``field == value``. Needed where ONE name field addresses TWO
+    #: collections chosen by a sibling discriminator (measured:
+    #: ``custom-access.rule/custom-signature`` — ``custom-signature-name`` names a
+    #: custom-protection-GROUP or a custom-protection-RULE depending on
+    #: ``custom-signature-type``). Declaring both edges unconditionally is not a
+    #: cheaper equivalent: the wrong collection answers with no object, which the
+    #: classifier reads as "referenced on the source but not found live" and
+    #: BLOCKS — a false block on every row using the other type.
+    when: tuple[str, str] = ()
 
 
 def _n(
@@ -72,9 +82,103 @@ def _n(
     via: str = "",
     note: str = "",
     children: Iterable["DepNode"] = (),
+    when: tuple = (),
 ) -> DepNode:
     """Terse constructor used to keep the big literal trees readable."""
-    return DepNode(fortiweb, urn, via, note, tuple(children))
+    return DepNode(fortiweb, urn, via, note, tuple(children), tuple(when))
+
+
+# --------------------------------------------------------------------------- #
+#  CROSS-CUTTING reference FIELDS (not tree positions)                          #
+# --------------------------------------------------------------------------- #
+# `trigger` and `recaptcha-server` are fields that recur across MANY collections
+# rather than properties of one place in the tree. Measured on fortiweb12 (7.6.8)
+# by reading every object collection this tree declares: `trigger` is carried by
+# 10 of them — INCLUDING `server-policy/policy` itself — and `recaptcha-server`
+# by 3. The 7.6.8 CLI reference confirms the semantics do not vary by host
+# collection: every one of those pages spells `set trigger "<trigger-policy_name>"`
+# and links the SAME log trigger-policy page.
+#
+# WHY FIELD-DRIVEN AND NOT A LIST OF PARENTS: only 51 of the 130 object
+# collections had any row on the lab appliance, so 79 could not be inspected at
+# all. Attaching these edges to the measured parents would leave the identical
+# defect latent everywhere nobody happened to have something configured.
+#
+# The failure was reproduced end to end, not argued: the payload the planner
+# builds for a custom-protection-rule whose `trigger` names a policy the
+# destination lacks is REJECTED (HTTP 500, no errcode, no message); the same
+# payload minus `trigger` is accepted (HTTP 200).
+_TRIGGER_POLICY_REF: DepNode = _n(
+    "Trigger Policy", "cmdb/log/trigger-policy", "trigger",
+    note="log trigger -> email/syslog/FortiAnalyzer/SIEM notification policies",
+    children=[
+        # Field name and collection name diverge on exactly one of these four:
+        # the field is `analyzer-policy`, the collection is
+        # `log/fortianalyzer-policy`. `cmdb/log/analyzer-policy` answers -20001.
+        # A notification policy without its SERVER list is a shell: it clones,
+        # it reports success, and it notifies nobody. The three server lists
+        # below were settled by CREATING a parent on 7.6.8 and reading the child
+        # path (all three answer with a list); `email-policy` is deliberately a
+        # LEAF because the same probe on `mail-server-list` came back non-list,
+        # and an unverified sub-table path does not 404 on FortiWeb — it echoes
+        # the parent, which would then be POSTed back into itself.
+        _n("Email Policy", "cmdb/log/email-policy", "email-policy",
+           note="server list name unverified on 7.6.8 — left a leaf on purpose"),
+        _n("Syslog Policy", "cmdb/log/syslog-policy", "syslog-policy",
+           children=[_n("Syslog Servers",
+                        "cmdb/log/syslog-policy/syslog-server-list")]),
+        _n("FortiAnalyzer Policy", "cmdb/log/fortianalyzer-policy", "analyzer-policy",
+           children=[_n("FortiAnalyzer Servers",
+                        "cmdb/log/fortianalyzer-policy/fortianalyzer-server-list")]),
+        _n("SIEM Policy", "cmdb/log/siem-policy", "siem-policy",
+           children=[_n("SIEM Servers", "cmdb/log/siem-policy/siem-server-list")]),
+    ],
+)
+
+_RECAPTCHA_REF: DepNode = _n(
+    "reCAPTCHA User", "cmdb/user/recaptcha-user", "recaptcha-server",
+    note="bot-confirmation reCAPTCHA server",
+)
+
+#: field -> shared ref node, followed when a live object (or sub-row) carries
+#: that field. Deliberately tiny: a field earns a place only once its target
+#: collection has been READ on a real appliance (both answer 200 on 7.6.8).
+#: Guessing a target is worse than omitting it — an unverified collection
+#: answers 200/zero-rows, not 404, so the reference would be reported as
+#: missing-on-the-source and block the apply.
+FIELD_REFS: dict = {
+    "trigger": _TRIGGER_POLICY_REF,
+    "recaptcha-server": _RECAPTCHA_REF,
+}
+
+
+def when_holds(node: "DepNode", row: dict) -> bool:
+    """Does this conditional edge apply to ``row``?
+
+    Unconditional edges always apply; a conditional one only on an EXACT match.
+    Deliberately not lenient: a row whose discriminator is missing or unknown is
+    left alone rather than guessed at, because a guess sends the name to the
+    wrong collection, where it reads back empty and blocks the apply on a
+    reference that was never broken.
+    """
+    if not node.when:
+        return True
+    field, value = node.when
+    return row.get(field, row.get(field.replace("-", "_"))) == value
+
+
+def field_ref_edges(obj: dict) -> list:
+    """The cross-cutting reference edges ``obj`` actually carries.
+
+    Skipping objects without the field is a cheap PRE-FILTER, not a correctness
+    gate: ``referenced_names`` is the single place that decides what counts as a
+    name and already drops the empty ones, so an edge returned for a blank field
+    is a no-op iteration and never a phantom object in the plan.
+    """
+    if not isinstance(obj, dict):
+        return []
+    return [ref for field, ref in FIELD_REFS.items()
+            if isinstance(obj.get(field, obj.get(field.replace("-", "_"))), str)]
 
 
 # What a CERTIFICATE VERIFY object points at. Both verify collections carry the
@@ -185,8 +289,51 @@ _BOT_EXCEPTION_REF: DepNode = _n(
 # the rule itself and would be POSTed back as a bogus filter. ``subtable_rows``
 # in services/clone.py drops that echo, and tests/test_clone_subtables.py pins
 # both halves. Keep these names in sync with endpoints.yaml.
+# The Custom Signature subtree, factored out because TWO places reach it: the
+# Signatures node of a Web Protection Profile (via the signature object's
+# `custom-protection-group` field) and the Custom Signature FILTER of a Custom
+# Access Rule (via `custom-signature-name`). Two literal copies would be two
+# authors of one shape, and the one nobody looks at goes stale.
+#
+# Sub-tables measured on 7.6.8, not assumed: a custom-protection-GROUP has
+# `type-list` and nothing else (`max-alert-interval` is a scalar); a
+# custom-protection-RULE has `meet-condition` and nothing else. `threat-weight`
+# and `severity` are SCALARS on the rule and travel inside its own body — there
+# is no threat-weight object to carry.
+_CUSTOM_SIG_RULE_CHILDREN: tuple = (
+    _n("Match Conditions", "cmdb/waf/custom-protection-rule/meet-condition"),
+)
+_CUSTOM_SIG_GROUP_CHILDREN: tuple = (
+    _n("Custom Signature Rules", "cmdb/waf/custom-protection-group/type-list",
+       children=[_n("Custom Signature Rule", "cmdb/waf/custom-protection-rule",
+                    "custom-protection-rule",
+                    children=_CUSTOM_SIG_RULE_CHILDREN)]),
+)
+
+# The Custom Signature FILTER row addresses ONE of two collections through ONE
+# name field. Measured on fortiweb12 (7.6.8) on a row built for the purpose:
+#   custom-signature-enable  enable|disable
+#   custom-signature-type    custom-signature-group | custom-signature
+#   custom-signature-name    <the referenced name>   <- validated by the box: a
+#                            name that does not exist is REJECTED (HTTP 500), a
+#                            real one accepted — a true reference, not free
+#                            text, so a dangling one breaks the row.
+# Hence `when=`: without the discriminator the group-typed rows would be looked
+# up in the rule collection (and vice versa), come back empty, and BLOCK.
+_CUSTOM_SIGNATURE_FILTER_REFS: tuple = (
+    _n("Custom Signature Group (filter)", "cmdb/waf/custom-protection-group",
+       "custom-signature-name", note="filter row, type=custom-signature-group",
+       children=_CUSTOM_SIG_GROUP_CHILDREN,
+       when=("custom-signature-type", "custom-signature-group")),
+    _n("Custom Signature (filter)", "cmdb/waf/custom-protection-rule",
+       "custom-signature-name", note="filter row, type=custom-signature",
+       children=_CUSTOM_SIG_RULE_CHILDREN,
+       when=("custom-signature-type", "custom-signature")),
+)
+
 _CUSTOM_ACCESS_RULE_FILTERS: tuple[DepNode, ...] = tuple(
-    _n(label, "cmdb/waf/custom-access.rule/" + coll)
+    _n(label, "cmdb/waf/custom-access.rule/" + coll,
+       children=(_CUSTOM_SIGNATURE_FILTER_REFS if coll == "custom-signature" else ()))
     for label, coll in (
         ("Source IP Filter", "source-ip-filter"),
         ("Geo Filter", "geo-filter"),
@@ -247,15 +394,7 @@ WEB_PROTECTION_PROFILE: DepNode = _n(
                _n("Score Grades", "cmdb/waf/signature/score_grade_list"),
                _n("Custom Protection Group", "cmdb/waf/custom-protection-group",
                   "custom-protection-group",
-                  children=[
-                      _n("Custom Signature Rules", "cmdb/waf/custom-protection-group/type-list",
-                         children=[
-                             _n("Custom Signature Rule", "cmdb/waf/custom-protection-rule",
-                                "custom-protection-rule",
-                                children=[_n("Match Conditions",
-                                             "cmdb/waf/custom-protection-rule/meet-condition")]),
-                         ]),
-                  ]),
+                  children=_CUSTOM_SIG_GROUP_CHILDREN),
            ]),
         _n("HTTP Protocol Constraints", "cmdb/waf/http-protocol-parameter-restriction",
            "http-protocol-parameter-restriction", "Standard Protection",

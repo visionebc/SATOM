@@ -29,7 +29,7 @@ with in-memory fakes — no Flask, no network.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable, Protocol
 from urllib.parse import quote
 
@@ -225,7 +225,7 @@ class CloneItem:
     kind: str               # "object" | "subrow"
     depth: int
     payload: dict
-    status: str = "create"  # create | exists | cert | no-endpoint | no-rest | empty
+    status: str = "create"  # create | update | exists | cert | no-endpoint | no-rest | empty
     note: str = ""
     applied: bool = False
     result: str = ""
@@ -238,6 +238,13 @@ class CloneItem:
     scope_reason: str = ""
     #: Set by :func:`deep_rename` — the source object this copy was derived from.
     renamed_from: str = ""
+    #: Set ONLY on an ``update`` item: the DESTINATION row that already owns this
+    #: row's unique key, and THAT row's id. The write is addressed by the
+    #: destination's id — a PUT carrying the source row's own id would address
+    #: some unrelated row of the destination table, and it would look like a
+    #: successful reconcile.
+    dst_row_key: str = ""
+    dst_row: dict = field(default_factory=dict)
 
     @property
     def will_create(self) -> bool:
@@ -251,6 +258,7 @@ class CloneItem:
             "result": self.result, "verified": self.verified,
             "factory": bool(self.factory), "scope": self.scope,
             "scope_reason": self.scope_reason, "renamed_from": self.renamed_from,
+            "dst_row_key": self.dst_row_key,
         }
 
 
@@ -336,6 +344,122 @@ def _subrow_in(payload, rows) -> bool:
         if all(str(clean_src.get(k, "")) == str(cr.get(k, "")) for k in keys):
             return True
     return False
+
+
+# --------------------------------------------------------------------------- #
+#  Rows the destination already owns (unique-key collisions)                    #
+# --------------------------------------------------------------------------- #
+# A by-parent row used to be classified by asking "is this EXACT row already at
+# the destination?" (:func:`_subrow_in`). The appliance does not ask that. It
+# enforces uniqueness on a NATURAL KEY — a SUBSET of the row — so a destination
+# row carrying the same key with different content is ABSENT to the tool and
+# PRESENT to the box: the plan says create, the box refuses it as a duplicate,
+# and the destination keeps serving the old value.
+#
+# Measured on FortiWeb 7.6.8 (build 1128), fortiweb12, not inferred:
+#
+#   certificate.sni/members   {domain: D, local-cert: C}  -> 200
+#                             {domain: D}                 -> -5 duplicate
+#                             {domain: D, local-cert: C}  -> -5 duplicate
+#                             {domain: D2, local-cert: C} -> 200
+#     => the key is `domain` ALONE. The certificate is NOT part of it, which is
+#        exactly why "the host is already listed but is served no certificate"
+#        was unreachable through a create.
+#
+#   ip-group/members          POST {ip: X} twice -> -6014 "The IP has already
+#                             existed in the table."
+#     => the key is `ip`, and note the errcode: a duplicate refusal is NOT one
+#        code across tables, so nothing here may be built on matching -5.
+#
+# Only MEASURED tables appear. A sub-table with no entry keeps the previous
+# behaviour EXACTLY — being wrong in the old way beats guessing a key and
+# silently overwriting a row that was never a conflict.
+_SUBROW_KEYS: dict = {
+    "system/certificate.sni/members": ("domain",),
+    "server-policy/ip-group/members": ("ip",),
+}
+
+
+def _bare_urn(urn: str) -> str:
+    """A urn without its ``cmdb/`` prefix, so a lookup never misses on shape."""
+    u = str(urn or "")
+    return u[5:] if u.startswith("cmdb/") else u
+
+
+def subrow_key_fields(urn: str) -> tuple:
+    """The MEASURED unique-key fields of a by-parent sub-table, or ``()``."""
+    return _SUBROW_KEYS.get(_bare_urn(urn), ())
+
+
+def subrow_diff(payload: Any, row: Any) -> list:
+    """``[(field, destination_value, source_value)]`` for a keyed collision.
+
+    Only fields the SOURCE row carries are compared: a destination row
+    legitimately carries defaults the source never named, and reporting those as
+    differences would bury the one line that matters under twenty that do not."""
+    if not isinstance(payload, dict) or not isinstance(row, dict):
+        return []
+    s, d = clean_for_write(payload), clean_for_write(row)
+    return [(k, str(d.get(k, "")), str(s.get(k, "")))
+            for k in _content_keys(payload)
+            if str(s.get(k, "")) != str(d.get(k, ""))]
+
+
+def subrow_update_payload(payload: Any, dst_row: Any, urn: str) -> dict:
+    """The body that reconciles ONE destination row — the MINIMUM EDIT.
+
+    Built from the DESTINATION row, with the source's **non-empty** fields laid
+    over it. The empty ones are deliberately NOT carried, and that is the whole
+    decision here: a blank on the source means "this box does not use this
+    field", not "delete whatever the other box has". Carrying blanks would let a
+    reconcile silently clear a destination field that :func:`subrow_diff` never
+    listed — a change with no line in the plan, which is the exact failure this
+    port exists to end.
+
+    Consequence, stated plainly: a reconciled row is NOT a byte-for-byte copy of
+    the source row. It is the destination's row carrying everything the source
+    NAMES. A row that must match exactly has to be deleted and re-created, and
+    the cloner never deletes.
+
+    ONE author on purpose: the writer and its guard read this same function, so
+    they cannot drift apart the way two hand-written merges would."""
+    if not isinstance(payload, dict):
+        return {}
+    dst = clean_for_write(dst_row) if isinstance(dst_row, dict) else {}
+    body = dict(dst)
+    s = clean_for_write(payload)
+    for k in _content_keys(payload):
+        body[k] = s[k]
+    for k in subrow_key_fields(urn):
+        if str(s.get(k, "")) != "":
+            body[k] = s[k]
+    row_id = _row_key(dst) if dst else ""
+    if row_id:
+        body["id"] = row_id
+    return body
+
+
+def subrow_conflict(payload: Any, rows: Iterable[dict], urn: str) -> dict:
+    """The destination row that OWNS this row's unique key WHILE DIFFERING.
+
+    ``{}`` when the table has no measured key, when nothing collides, or when the
+    colliding row is IDENTICAL (that is :func:`_subrow_in`'s "exists", not a
+    conflict). An empty key value never collides: a blank is not an identity."""
+    keys = subrow_key_fields(urn)
+    if not keys or not isinstance(payload, dict):
+        return {}
+    s = clean_for_write(payload)
+    want = [str(s.get(k, "")) for k in keys]
+    if not all(want):
+        return {}
+    for r in rows or []:
+        if not isinstance(r, dict):
+            continue
+        cr = clean_for_write(r)
+        if [str(cr.get(k, "")) for k in keys] != want:
+            continue
+        return dict(r) if subrow_diff(payload, r) else {}
+    return {}
 
 
 def scoped_rows(reader: Any, urn: str, logical: str | None, parent_mkey: str) -> list[dict]:
@@ -508,6 +632,17 @@ class ClonePlanner:
             return True
         return _subrow_in(it.payload, rows)
 
+    def _subrow_owner_at_dst(self, it: "CloneItem") -> dict:
+        """The destination row that already OWNS this row's unique key.
+
+        Read from the SAME cached destination rows the content match uses: two
+        reads of one table could disagree, and the disagreement would decide
+        between a create and an update."""
+        rows = self._dst_subrows(it.urn, it.logical, it.parent_mkey)
+        if not rows:
+            return {}
+        return subrow_conflict(it.payload, rows, it.urn)
+
     def collect(self, root: DepNode, mkey: str, *, new_name: str = "",
                 follow_wpp: bool = True) -> list[CloneItem]:
         """Walk the source tree and return every object + sub-table row WITH ITS
@@ -592,7 +727,27 @@ class ClonePlanner:
                     if self._subrow_exists_at_dst(it):
                         it.status, it.note = "exists", "row already present under the existing parent"
                     else:
-                        it.status, it.note = "create", "missing under an existing parent \u2014 recreating"
+                        # A row that is not there BY CONTENT may still be there
+                        # BY KEY. Planning a create for it is planning a
+                        # duplicate refusal — the defect this branch ends.
+                        owner = self._subrow_owner_at_dst(it)
+                        if owner:
+                            it.status = "update"
+                            it.dst_row = owner
+                            it.dst_row_key = _row_key(owner)
+                            diff = subrow_diff(it.payload, owner)
+                            it.note = (
+                                "the destination already has this %s — %s"
+                                % (" / ".join(
+                                    "%s=%s" % (k, str(clean_for_write(it.payload)
+                                                      .get(k, "")))
+                                    for k in subrow_key_fields(it.urn)),
+                                   "; ".join("%s: %s -> %s"
+                                             % (f, d or "(blank)", s or "(blank)")
+                                             for f, d, s in diff[:4])
+                                   or "content differs"))
+                        else:
+                            it.status, it.note = "create", "missing under an existing parent \u2014 recreating"
                 else:
                     it.status, it.note = "empty", "parent object is not being created"
             else:
@@ -644,19 +799,26 @@ def apply_clone(
     dry_run: bool = True,
     on_log: OnLog = _NOOP,
 ) -> list[CloneItem]:
-    """Create every ``create`` item via ``write`` (skipping the rest)."""
+    """Write every ``create`` and ``update`` item via ``write`` (skipping the rest).
+
+    An ``update`` is a WRITE and is never folded into "already there": the whole
+    point of that status is that the destination is serving a different value,
+    so a run that reported it as skipped would claim nothing was written while a
+    write is planned."""
     for it in items:
-        if it.status != "create":
+        if it.status not in ("create", "update"):
             it.result = it.status
             continue
+        verb = "update" if it.status == "update" else "create"
         if dry_run:
             it.result = "dry-run"
-            on_log("[dry] create %s (%s)" % (it.label, it.mkey))
+            on_log("[dry] %s %s (%s)" % (verb, it.label, it.mkey))
             continue
         try:
             write(it)
-            it.applied, it.result = True, "created"
-            on_log("created %s (%s)" % (it.label, it.mkey))
+            it.applied = True
+            it.result = "updated" if verb == "update" else "created"
+            on_log("%sd %s (%s)" % (verb, it.label, it.mkey))
         except Exception as e:  # noqa: BLE001 — best-effort, keep going
             it.result = "error: %s: %s" % (type(e).__name__, e)
             on_log("error %s: %s" % (it.label, it.result))
@@ -796,6 +958,107 @@ def rename_wpp(items: list[CloneItem], new_name: str) -> str:
 #  Same-device deep clone                                                       #
 # --------------------------------------------------------------------------- #
 _VIA_INDEX: dict[str, set[str]] | None = None
+
+
+# --------------------------------------------------------------------------- #
+#  Which profile the copy lands on, and whether to leave it alone               #
+# --------------------------------------------------------------------------- #
+def wpp_landing_name(policy_row: dict, wpp_new_name: str = "") -> str:
+    """The profile name the copy would LAND ON at the destination.
+
+    NOT the source's name when a rename is in play: with ``wpp_new_name`` filled
+    in the copy lands on the new name, and a collision check asking about the
+    source's name would answer a question nobody asked.
+
+    ``''`` when the policy has no profile. FortiWeb writes that as the literal
+    string ``disable`` — not a blank — so a truthiness test on the field alone
+    would treat "no profile" as a profile NAMED ``disable`` and then report the
+    destination as missing an object that exists nowhere."""
+    new = (wpp_new_name or "").strip()
+    if new:
+        return new
+    cur = str((policy_row or {}).get("web-protection-profile") or "").strip()
+    return "" if cur in ("", "disable") else cur
+
+
+def wpp_reuse_name(landing: str, dst_names: Iterable[str], enabled: bool) -> str:
+    """The profile to LEAVE ALONE: non-empty when the subtree must be pruned.
+
+    "Create it if the destination lacks it, and do not touch one it already
+    has." The second half is the point, and it is NOT what the plain subtree
+    copy does: an existing profile is classified ``exists`` and its OBJECT is
+    left alone, but its ~40 sub-tables are still classified one by one, so a
+    signature list or a constraint the destination's profile does NOT have gets
+    ADDED to it. That is a live production profile — possibly shared with other
+    policies — being edited by the clone of a different one. Pruning is the only
+    way to promise it is untouched."""
+    if not enabled or not landing:
+        return ""
+    return landing if landing in set(dst_names) else ""
+
+
+def dst_wpp_names(reader) -> set:
+    """Every inline web protection profile the DESTINATION has, by name.
+
+    Read through the CLIENT's CHECKED lister and not through
+    :class:`ClientReader`, and that is the POINT of this function rather than a
+    detail. ``ClientReader.get_raw`` says so on the tin — it never raises — so a
+    failed read comes back as the EMPTY set, and an empty set here does not mean
+    "the destination has no profiles", it means **every profile is missing**: in
+    "only if missing" that silently UN-PRUNES a subtree the operator asked not to
+    touch. A safety read that fails must not look like a safe answer.
+
+    :meth:`FortiWebClient.cmdb_names_checked` already separates ``ok`` /
+    ``absent`` / ``error`` and documents that only ``ok`` licenses a caller to
+    reject a value for not being in the list — so it is reused rather than
+    re-derived. Two authors of one fact is how they drift.
+
+    An EMPTY list under ``ok`` is a legal answer, just a rare one (a factory
+    FortiWeb ships several). It is the UNREADABLE case that raises."""
+    client = getattr(reader, "client", reader)
+    names, status, err = client.cmdb_names_checked(
+        _WPP_INLINE[5:] if _WPP_INLINE.startswith("cmdb/") else _WPP_INLINE)
+    if status != "ok":
+        raise RuntimeError(
+            "the destination's web protection profile list came back %s (%s) — "
+            "an unreadable list cannot be treated as an empty one"
+            % (status, err or "no detail"))
+    return {str(n) for n in names if n}
+
+
+def repoint_wpp(items: list[CloneItem], dst_name: str) -> list[str]:
+    """Point the copy at a Web Protection Profile the DESTINATION already owns.
+
+    Distinct from :func:`rename_wpp`, and the difference is the whole feature:
+    ``rename_wpp`` renames a profile that IS being copied, so it can find the
+    object in the plan and follow it. Here nothing is being copied — the plan
+    was built with ``follow_wpp=False`` — so the only thing left naming the
+    source's profile is the FIELD on the policy, and rewriting that field is the
+    entire job. Returns the source names that were replaced.
+
+    Two refusals live HERE and not at the call site, so a second caller cannot
+    forget them:
+
+      * An EMPTY ``dst_name`` is a no-op, never a blank write. Writing ``""``
+        into ``web-protection-profile`` does not mean "no profile" to a FortiWeb
+        policy — it means an unparsable one.
+      * A plan that still CARRIES a profile object is left alone and reported.
+        Repointing then would create the source's profile at the destination and
+        then not use it — an orphan that looks like a successful copy."""
+    dst_name = (dst_name or "").strip()
+    if not dst_name:
+        return []
+    if any(it.urn in _WPP_URNS and it.kind == "object" for it in items):
+        return []
+    replaced: list[str] = []
+    for it in items:
+        if it.kind not in ("object", "subrow") or not isinstance(it.payload, dict):
+            continue
+        old = it.payload.get("web-protection-profile")
+        if isinstance(old, str) and old.strip() and old != dst_name:
+            it.payload = dict(it.payload, **{"web-protection-profile": dst_name})
+            replaced.append(old)
+    return replaced
 
 
 def via_field_index(root: DepNode | None = None) -> dict[str, set[str]]:
@@ -1040,6 +1303,9 @@ def wants_by_logical(items: list[CloneItem]) -> dict[str, int]:
 # --------------------------------------------------------------------------- #
 _STATUS_LABELS = {
     "create": "to create",
+    # Its OWN slot, never folded into "already exists": the destination holds a
+    # row with this unique key and DIFFERENT content, so this is a write.
+    "update": "to update in place (destination owns the key)",
     "exists": "already exists (skipped)",
     "cert": "certificate (SSH, skipped)",
     "no-endpoint": "no REST endpoint (skipped)",
@@ -1065,7 +1331,8 @@ def render_plan(items: list[CloneItem]) -> str:
     # created as an empty shell. It gets its own mark because "~" next to a
     # name the operator expected to see created is the only place the plan text
     # can say "this one is not really there".
-    marks = {"create": "+", "exists": "=", "cert": "lock", "no-endpoint": "!",
+    marks = {"create": "+", "update": "~>", "exists": "=", "cert": "lock",
+             "no-endpoint": "!",
              "no-rest": "!",
              "empty": ".", "no-content": "~"}
     lines: list[str] = []
@@ -1146,6 +1413,11 @@ def outcome(items: list[CloneItem]) -> dict:
         "counts": summarize(items),
         "items": rows,
         "planned_create": [r for r in rows if r["status"] == "create"],
+        # Enumerated in its own bucket so the report can show, per row, the value
+        # the destination serves TODAY next to the source's: "a duplicate" says
+        # nothing about which of the two is on the wire.
+        "planned_update": [r for r in rows if r["status"] == "update"],
+        "updated": [r for r in rows if r["applied"] and r["status"] == "update"],
         "created": created,
         "failed": [r for r in rows if (r["result"] or "").startswith("error")],
         # Its own bucket, NOT folded into ``failed``: the operator authorised

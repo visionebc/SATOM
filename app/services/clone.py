@@ -56,7 +56,26 @@ _WPP_OFFLINE = "cmdb/waf/web-protection-profile.offline-protection"
 # other two do not need -- a cmdb POST to it answers 200 and silently drops the
 # PEM, so omitting it would not fail loudly, it would create an empty shell and
 # call the clone a success. See `registry.dependencies._CERT_VERIFY_REFS`.
-_CERT_URNS = {"cmdb/system/certificate.local", "cmdb/system/certificate.sni",
+#
+# ``certificate.sni`` is NOT in this set, and putting it here was a defect that
+# stopped an SNI policy from being cloned AT ALL. An SNI policy is a hostname
+# table — configuration, not secrets. Measured on fortiweb12 (7.6.8) with this
+# project's own client, every leg:
+#
+#   POST cmdb/system/certificate.sni          {"name": …}        -> 200
+#   GET  the object back    -> {"name": …, "sz_members": 1}  — no PEM field
+#   POST …/members?mkey=…   {"domain": …, "local-cert": …}   -> 200
+#   GET  the row back       -> domain / local-cert / inter-group /
+#                              lets-certificate / verify — no PEM field
+#
+# Classified as key material it took the whole subtree with it: the object read
+# ``cert`` ("SSH-only, not cloned over REST") and every member row then read
+# ``empty`` ("parent object is not being created"), so the copied policy landed
+# naming an SNI table the destination had never seen. What its ROWS name IS
+# material — the local certificate — and that edge is declared on the member
+# node (``registry.dependencies._SNI_MEMBER_REFS``) so it is reported and
+# mappable instead of being silently absent.
+_CERT_URNS = {"cmdb/system/certificate.local",
               "cmdb/system/certificate.ocsp-signing-certs"}
 
 # ── Collections the REST API does not expose ────────────────────────────────
@@ -799,17 +818,23 @@ def apply_clone(
     dry_run: bool = True,
     on_log: OnLog = _NOOP,
 ) -> list[CloneItem]:
-    """Write every ``create`` and ``update`` item via ``write`` (skipping the rest).
+    """Write every ``create``, ``update`` and ``obj-update`` item (skip the rest).
 
     An ``update`` is a WRITE and is never folded into "already there": the whole
     point of that status is that the destination is serving a different value,
     so a run that reported it as skipped would claim nothing was written while a
-    write is planned."""
+    write is planned.
+
+    ``obj-update`` is the same statement about an OBJECT rather than a row — an
+    existing destination object whose own fields the operator accepted from the
+    source. It is a separate status and not an ``update`` because the two are
+    addressed differently on the wire (``?mkey=`` alone versus ``?mkey=`` plus
+    ``?sub_mkey=``), and sending one as the other addresses nothing."""
     for it in items:
-        if it.status not in ("create", "update"):
+        if it.status not in ("create", "update", "obj-update"):
             it.result = it.status
             continue
-        verb = "update" if it.status == "update" else "create"
+        verb = "update" if it.status in ("update", "obj-update") else "create"
         if dry_run:
             it.result = "dry-run"
             on_log("[dry] %s %s (%s)" % (verb, it.label, it.mkey))
@@ -1306,6 +1331,10 @@ _STATUS_LABELS = {
     # Its OWN slot, never folded into "already exists": the destination holds a
     # row with this unique key and DIFFERENT content, so this is a write.
     "update": "to update in place (destination owns the key)",
+    # An EXISTING destination object whose own fields the operator accepted
+    # from the source. Its own slot for the same reason `update` has one: it
+    # is a write into something the destination is already serving.
+    "obj-update": "to retune in place (operator accepted the source's values)",
     "exists": "already exists (skipped)",
     "cert": "certificate (SSH, skipped)",
     "no-endpoint": "no REST endpoint (skipped)",

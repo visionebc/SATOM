@@ -39,6 +39,37 @@ _PROMPT_LINE = re.compile(r"^[\w.\-]+ (?:\(\S+\) )?# ?$")
 _READ_VERBS = frozenset({"get", "show", "diagnose", "diag"})
 
 
+# ── The ONE exec command this console may send, and why it is not a verb ────
+#
+# Backend reachability needs ``execute ping`` from the DESTINATION appliance —
+# the only vantage whose route to a real server decides whether a cloned policy
+# serves anything. ``execute`` is NOT added to ``_READ_VERBS`` for it: that verb
+# also spells ``execute reboot``, ``execute factoryreset`` and
+# ``execute formatlogdisk``, so opening it would trade a diagnostic for the
+# ability to wipe an appliance from a web form.
+#
+# What is allowed is the whole COMMAND, matched end to end, with the target
+# constrained to a hostname / IPv4 / IPv6. There is no ``execute`` prefix to
+# extend and nothing to chain onto: ``;``/``&``/``|`` cannot appear in a match.
+_PROBE_COMMAND_RE = re.compile(
+    r"^execute ping (?P<target>[A-Za-z0-9][A-Za-z0-9._:\-]{0,252})$")
+
+# ``execute ping`` cannot be read the way every other command here is read.
+# :meth:`FortiWebReadonlySSH._read` returns when the output goes QUIET, and a
+# ping prints its header and then says nothing at all while it pings. Measured
+# on fortiweb13 (7.6.8): a quiet-based read came back after 2.3 s holding only
+# ``PING 198.51.100.1 (198.51.100.1): 56 data bytes`` — and the NEXT command in the
+# same session came back EMPTY, because the first ping was still writing into
+# the channel. Parsed, that reads "no answer", so every backend would have been
+# reported unknown and the session would have desynchronised behind it.
+#
+# So a probe is read until it TERMINATES: a statistics line, a resolution
+# failure, a refusal, or the prompt coming back.
+_PROBE_DONE_RE = re.compile(
+    r"packet loss|unknown host|cannot resolve|Name or service not known|"
+    r"Parsing error|Command fail|Unknown action", re.I)
+
+
 class FortiSSHError(Exception):
     """SSH connect/auth/exec failure."""
 
@@ -115,6 +146,23 @@ def assert_readonly(command: str) -> str:
                     f"'{verb}' is not a read-only command — only "
                     f"{', '.join(sorted(_READ_VERBS))} are allowed in the console"
                 )
+    return cmd
+
+
+def assert_probe_command(command: str) -> str:
+    """Return ``command`` if it is EXACTLY a permitted reachability probe.
+
+    A SECOND gate, deliberately not a relaxation of :func:`assert_readonly`.
+    That one answers "is this a pure read?" and the answer for anything spelled
+    ``execute`` is no — which stays true. This one answers a much narrower
+    question with a whole-command match, so it cannot be widened by accident the
+    way a verb allowlist can.
+    """
+    cmd = (command or "").strip()
+    if "\n" in cmd or not _PROBE_COMMAND_RE.match(cmd) or ".." in cmd:
+        raise ReadOnlyViolation(
+            "only 'execute ping <host>' may be sent as a reachability probe; "
+            "refused %r" % ((command or "")[:80],))
     return cmd
 
 
@@ -256,6 +304,48 @@ class FortiWebReadonlySSH:
             raise FortiSSHError("SSH session is not connected")
         self._shell.send(command + "\n")
         return clean_output(self._read(quiet, maxt), command)
+
+    def _read_until(self, done, maxt: float) -> str:
+        """Read until ``done`` matches, the prompt returns, or ``maxt`` elapses.
+
+        Bounded by wall clock, never by silence: silence is the normal state of
+        a command that is waiting on the network, and treating it as completion
+        both truncates this answer and leaves the next command reading this
+        one's output.
+        """
+        buf = ""
+        start = time.time()
+        sh = self._shell
+        while time.time() - start < maxt:
+            if sh.recv_ready():
+                buf += sh.recv(16384).decode("utf-8", "replace")
+                if done.search(buf):
+                    # let the trailing statistics/prompt lines land
+                    time.sleep(0.4)
+                    while sh.recv_ready():
+                        buf += sh.recv(16384).decode("utf-8", "replace")
+                    break
+                tail = _ANSI.sub("", buf).replace("\r", "").split("\n")[-1]
+                if _PROMPT_LINE.match(tail.strip()) and len(buf.strip()) > len(tail):
+                    break
+            else:
+                time.sleep(0.1)
+        return buf
+
+    def run_probe(self, command: str, *, maxt: float = 45.0) -> str:
+        """Send a reachability probe (``execute ping <host>``) and return output.
+
+        Separate from :meth:`run_readonly` because it is validated by a separate
+        gate. ``maxt`` is generous on purpose: a ping to an unreachable host
+        answers only when it times out, and cutting the read short produces
+        output the parser reads as "no answer" — indistinguishable from a probe
+        this session never managed to run.
+        """
+        command = assert_probe_command(command)
+        if not self._shell:
+            raise FortiSSHError("SSH session is not connected")
+        self._shell.send(command + "\n")
+        return clean_output(self._read_until(_PROBE_DONE_RE, maxt), command)
 
     def run_battery(self, commands: list[str]) -> dict[str, str]:
         """Run a list of read commands → {command: output} (each validated)."""

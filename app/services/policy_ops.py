@@ -71,6 +71,83 @@ def _artifact_kind(item, artifacts: dict | None) -> str:
     return wa.kind_for_urn(getattr(item, "urn", ""))
 
 
+def _resolve_certificates(items, certs: dict | None, *, dry_run: bool):
+    """Carry the certificate MATERIAL of every ``cert`` item over the CLI.
+
+    Returns ``(rows, blocking)``. ``rows`` is one record per certificate the
+    plan names; ``blocking`` is the subset the operator asked for and this could
+    not deliver.
+
+    WHY THIS RUNS BEFORE THE FIRST WRITE, like the artifact resolver above it:
+    a certificate is a DEPENDENCY. An object that names one the destination
+    lacks is refused with ``-651``, so discovering the failure through the write
+    loop means the operator has already been committed to a partial apply — and
+    on a MIGRATE it would mean discovering it after the source was disabled.
+
+    WHY AN ALREADY-PRESENT NAME IS LEFT ALONE: overwriting a certificate the
+    destination is already serving with is a change to live traffic that nobody
+    asked for, and the two may legitimately differ (a per-site certificate
+    issued locally). The copy names it and the destination has it; that is the
+    whole requirement.
+
+    A private key read here lives in :mod:`cert_carry` for the length of one
+    transfer. Nothing about it reaches ``rows`` except whether it was found.
+    """
+    from . import clone as _clone
+    rows: list[dict] = []
+    if not certs or not certs.get("enabled"):
+        return rows, []
+    from . import cert_carry
+    src_appl, dst_appl = certs.get("src_appliance"), certs.get("dst_appliance")
+    wanted = [it for it in items
+              if it.urn in _clone._CERT_URNS and it.kind == "object" and it.mkey]
+    seen: set = set()
+    present: dict = {}
+    for it in wanted:
+        key = (it.urn, it.mkey)
+        if key in seen:
+            continue
+        seen.add(key)
+        row = {"collection": it.urn, "name": it.mkey, "label": it.label,
+               "action": "", "ok": False, "reason": ""}
+        if src_appl is None or dst_appl is None:
+            row.update(action="not carried",
+                       reason="no source/destination appliance for a CLI transfer")
+            rows.append(row)
+            continue
+        if src_appl.id == dst_appl.id:
+            row.update(action="same device", ok=True,
+                       reason="source and destination are the same appliance")
+            rows.append(row)
+            continue
+        # Ask the destination ONCE per collection, not once per certificate.
+        if it.urn not in present:
+            try:
+                present[it.urn] = set(cert_carry.names_at(dst_appl, it.urn))
+            except Exception as exc:  # noqa: BLE001
+                present[it.urn] = None
+                row["reason"] = "could not list the destination's %s: %s" % (
+                    it.urn.rsplit(".", 1)[-1], exc)
+        have = present.get(it.urn)
+        if have is not None and it.mkey in have:
+            row.update(action="already at the destination", ok=True)
+            rows.append(row)
+            continue
+        if dry_run:
+            row.update(action="would carry", ok=True,
+                       reason="dry run — nothing was read or written")
+            rows.append(row)
+            continue
+        res = cert_carry.carry(src_appl, dst_appl, it.urn, it.mkey)
+        row.update(action="carried" if res["carried"] else "not carried",
+                   ok=bool(res["carried"]), reason=res["reason"])
+        it.note = ("material carried over SSH" if res["carried"]
+                   else "material NOT carried: %s" % (res["reason"] or "unknown"))
+        it.result = row["action"]
+        rows.append(row)
+    return rows, [r for r in rows if not r["ok"]]
+
+
 def _resolve_artifacts(items, artifacts: dict | None, *, dry_run: bool):
     """Fetch the bytes for every file-backed object the plan will create.
 
@@ -155,7 +232,9 @@ def clone_policy(planner, ops, policy: str, *, new_name: str, dry_run: bool,
                  artifacts: dict | None = None,
                  reconcile_rows: bool = True,
                  dst_wpp: str = "",
-                 wpp_only_if_missing: bool = False) -> list[clone.CloneItem]:
+                 wpp_only_if_missing: bool = False,
+                 certs: dict | None = None,
+                 wpp_decisions: dict | None = None) -> list[clone.CloneItem]:
     """Plan the full policy tree on the source and create the missing objects on
     the ``ops`` device (same box or another). The new root is left DISABLED.
 
@@ -257,6 +336,30 @@ def clone_policy(planner, ops, policy: str, *, new_name: str, dry_run: bool,
                          wpp_suffix=wpp_suffix)
     if dst_wpp:
         clone.repoint_wpp(items, dst_wpp)
+    # NEW, COMPARE AND DECIDE. Applied to the PLAN, before completeness, the VIP
+    # rewrite and every gate below — an item the operator declined must not
+    # exist by the time anything counts, renders or verifies it.
+    if wpp_decisions:
+        from . import wpp_decide
+        clone_decisions = wpp_decide.apply_decisions(
+            items, wpp_decisions.get("accepted") or (),
+            wpp_decisions.get("shown") or ())
+        wpp_decisions["applied"] = clone_decisions
+        if clone_decisions.get("retuned"):
+            # The DESTINATION row, fetched now, so the write is the minimal
+            # edit rather than a bare source body. Without it the PUT carries
+            # only what the source named, and every destination field the
+            # source left blank depends on the appliance's merge behaviour
+            # instead of on this plan.
+            wpp = next((it for it in items
+                        if it.urn in clone._WPP_URNS
+                        and it.status == "obj-update"), None)
+            if wpp is not None:
+                try:
+                    rows = planner.dst.get_raw(wpp.urn, wpp.mkey)
+                    wpp.dst_row = rows[0] if rows else {}
+                except Exception:  # noqa: BLE001
+                    wpp.dst_row = {}
     if not dry_run:
         # HARD BLOCK: never write a partial tree. A referenced object that came
         # back empty from the source (renamed/deleted/unreadable) would leave the
@@ -290,6 +393,26 @@ def clone_policy(planner, ops, policy: str, *, new_name: str, dry_run: bool,
     # been committed to a partial apply by the time anyone can tell them.
     art_blobs, art_missing = _resolve_artifacts(items, artifacts, dry_run=dry_run)
 
+    # Certificate MATERIAL, over the CLI, before the first write — see
+    # :func:`_resolve_certificates` for why the order is the whole point.
+    cert_rows, cert_blocking = _resolve_certificates(items, certs, dry_run=dry_run)
+    if cert_blocking and not dry_run:
+        raise RuntimeError(
+            "certificate material could not be carried for %s. Every object "
+            "that names one of these would be refused by the destination "
+            "(-651), so nothing was written: %s"
+            % (", ".join('"%s"' % r["name"] for r in cert_blocking[:6])
+               + ("…" if len(cert_blocking) > 6 else ""),
+               "; ".join(r["reason"] or "no reason given"
+                         for r in cert_blocking[:3])))
+    # Reported back through the caller's OWN context dict rather than a module
+    # global. A global would be shared by every concurrent clone in the process,
+    # so the moment anything runs two of these at once each would read the
+    # other's certificates — and the report would be wrong in a way that looks
+    # exactly like a correct one.
+    if isinstance(certs, dict):
+        certs["rows"] = cert_rows
+
     # Keyed collisions. The plan has ALREADY enumerated them (each one carries
     # the destination row and the field-by-field diff in its note), so this
     # block is only the operator's own choice coming back — and refusing is the
@@ -322,7 +445,15 @@ def clone_policy(planner, ops, policy: str, *, new_name: str, dry_run: bool,
             return
         ep = objform.rest_path(item.urn)
         mkey = item.parent_mkey if item.kind == "subrow" else None
-        if item.status == "update":
+        if item.status == "obj-update":
+            # An OBJECT, so it is addressed by ``?mkey=`` and nothing else. Sent
+            # through the sub-row branch below it would carry an empty
+            # ``sub_mkey`` and address no row at all — a write that answers
+            # cleanly and changes nothing.
+            from . import wpp_decide
+            body = wpp_decide.object_update_payload(item.payload, item.dst_row)
+            res = ops.update(ep, item.mkey, {"data": body}, dry_run=False)
+        elif item.status == "update":
             # PUT addressed by the DESTINATION row's id, carrying the source
             # fields MERGED onto the destination row. A bare source payload
             # would blank every destination field the source never named.
@@ -362,7 +493,12 @@ def clone_policy(planner, ops, policy: str, *, new_name: str, dry_run: bool,
 def clone_summary(items: list[clone.CloneItem]) -> dict[str, int]:
     """Roll a planned/applied clone up to ``{created, exists, failed, skipped,
     total}`` for the job result + audit line."""
-    updated = sum(1 for it in items if it.applied and it.status == "update")
+    updated = sum(1 for it in items if it.applied
+                  and it.status in ("update", "obj-update"))
+    # ``obj-update`` counts as a planned update. Measured on a real dry run
+    # before this line existed: accepting a profile retune moved one item out of
+    # ``exists`` and into NO counter at all — a plan that describes a write and
+    # a summary that mentions it nowhere.
     created = sum(1 for it in items if it.applied) - updated
     failed = sum(1 for it in items if (it.result or "").startswith("error"))
     counts = clone.summarize(items)
@@ -372,7 +508,7 @@ def clone_summary(items: list[clone.CloneItem]) -> dict[str, int]:
         # EDIT of a row the destination already served, and an operator reading
         # only ``created`` would be told a row was made that was not.
         "updated": updated,
-        "to_update": counts.get("update", 0),
+        "to_update": counts.get("update", 0) + counts.get("obj-update", 0),
         "failed": failed,
         "exists": counts.get("exists", 0),
         "skipped": counts.get("exists", 0) + counts.get("cert", 0)
@@ -417,7 +553,9 @@ def migrate_policy(dst_planner, dst_ops, src_ops, policy: str, *,
                    iface_map: dict[str, str] | None = None,
                    artifacts: dict | None = None,
                    reconcile_rows: bool = True, dst_wpp: str = "",
-                   wpp_only_if_missing: bool = False) -> dict:
+                   wpp_only_if_missing: bool = False,
+                   certs: dict | None = None,
+                   wpp_decisions: dict | None = None) -> dict:
     """Clone the policy tree onto the destination, then — ONLY on a clean clone
     and a real apply — disable the SOURCE policy (rollback-friendly; the source
     is kept). A failed clone leaves the source LIVE and untouched."""
@@ -427,7 +565,8 @@ def migrate_policy(dst_planner, dst_ops, src_ops, policy: str, *,
                          wpp_suffix=wpp_suffix, iface_map=iface_map,
                          artifacts=artifacts, reconcile_rows=reconcile_rows,
                          dst_wpp=dst_wpp,
-                         wpp_only_if_missing=wpp_only_if_missing)
+                         wpp_only_if_missing=wpp_only_if_missing, certs=certs,
+                         wpp_decisions=wpp_decisions)
     summary = clone_summary(items)
     clone_ok = summary["failed"] == 0 and (dry_run or summary["created"] > 0
                                            or summary["updated"] > 0
@@ -507,6 +646,78 @@ def _artifact_ctx(source_appl, dest_appl, opts: dict) -> dict:
     }
 
 
+def probe_backends_after(dest_appl, policies, *, use_ssh: bool = False,
+                         tcp_timeout: float = 3.0) -> dict:
+    """Reachability of the policies' real servers, read back from ``dest_appl``.
+
+    A clone can be perfect and still serve nothing, because the real servers sit
+    on a network the NEW appliance cannot reach. That is a different question
+    from "did the configuration arrive?", and it is answered from two vantages
+    that are never merged: the destination appliance over ``execute ping`` (SSH,
+    opt-in) and THIS node over TCP to the member's real port.
+
+    NEVER raises and never contributes to the clone's own verdict. A backend
+    that does not answer is a finding about the network, not a failed write, and
+    letting it flip ``ok`` would make an operator roll back a copy that landed
+    perfectly. On any failure the whole section reports ``not probed``, which is
+    a third answer on purpose — folding "we could not tell" into either
+    "reachable" or "down" is the exact mistake this module exists to avoid.
+    """
+    from . import backend_probe as _bp
+    out = {"ran": False, "reason": "", "rows": [], "summary": {},
+           "vantages": {"appliance": bool(use_ssh), "local": True}}
+    if dest_appl is None:
+        out["reason"] = "no destination appliance"
+        return out
+    try:
+        from ..clients.fortiweb import FortiWebClient
+        targets = _bp.dst_pool_targets(FortiWebClient(dest_appl), policies)
+    except Exception as exc:  # noqa: BLE001
+        out["reason"] = "could not read the destination's pools: %s" % exc
+        return out
+    sess = None
+    if use_ssh:
+        try:
+            from . import ssh_ops
+            sess = ssh_ops.FortiWebReadonlySSH(dest_appl, timeout=20.0).connect()
+        except Exception as exc:  # noqa: BLE001
+            # The appliance vantage is lost, not the whole section: the local
+            # TCP probe still distinguishes "port shut" from "host gone".
+            sess = None
+            out["vantages"]["appliance"] = False
+            out["reason"] = "no SSH vantage: %s" % exc
+    try:
+        rows = _bp.probe_targets(targets, ssh_session=sess,
+                                 tcp_timeout=tcp_timeout)
+    except Exception as exc:  # noqa: BLE001
+        out["reason"] = "the probe failed: %s" % exc
+        return out
+    finally:
+        if sess is not None:
+            try:
+                sess.close()
+            except Exception:  # noqa: BLE001
+                pass
+    out["ran"] = True
+    out["rows"] = rows
+    out["summary"] = _bp.summarise(rows)
+    return out
+
+
+def _cert_ctx(source_appl, dest_appl, opts: dict) -> dict:
+    """Context for carrying certificate MATERIAL over the CLI.
+
+    OFF unless the operator asked. This is the one option in the dialog that
+    moves a PRIVATE KEY: the clone's default posture is that key material is
+    reported and never carried, and reversing that silently would be a change to
+    what a run does that nobody chose.
+    """
+    return {"enabled": bool(opts.get("copy_cert_material")),
+            "src_appliance": source_appl,
+            "dst_appliance": dest_appl or source_appl,
+            "rows": []}
+
+
 def perform_one(action: str, *, source_appl, dest_appl=None, policy: str,
                 new_name: str = "", dry_run: bool,
                 opts: dict | None = None) -> dict:
@@ -535,6 +746,30 @@ def perform_one(action: str, *, source_appl, dest_appl=None, policy: str,
     # reason `reconcile_rows` is: the bulk job calls this function per policy.
     dst_wpp = str(opts.get("dst_wpp") or "")
     wpp_only_if_missing = bool(opts.get("wpp_only_if_missing", False))
+    # Backend reachability. OFF by default, and not out of timidity: a bulk run
+    # is N policies times their members times a connect timeout, all of it wall
+    # clock the operator did not ask for, and the probe sends live traffic to
+    # third-party hosts. ``probe_ssh`` is a second, narrower opt-in because only
+    # it needs credentials on the destination.
+    probe_backends = bool(opts.get("probe_backends", False))
+    probe_ssh = bool(opts.get("probe_ssh", False))
+    cert_ctx = _cert_ctx(source_appl, dest_appl, opts)
+    # "New, compare and decide": the operator's answer to the comparison the
+    # checklist showed. ``{"accepted": [key…], "shown": [key…]}``. Read HERE,
+    # once, like every other knob — the bulk job calls this same function per
+    # policy, so one read is true of a 60-policy run and of the dialog alike.
+    wpp_decisions = opts.get("wpp_decisions") or None
+    if wpp_decisions is not None and not isinstance(wpp_decisions, dict):
+        wpp_decisions = None
+    if wpp_decisions and (dst_wpp or wpp_only_if_missing):
+        # Refused BEFORE any device is read: three profile policies that
+        # contradict each other are a fact about the call, and resolving it by
+        # talking to a box is a round trip per policy in a bulk run.
+        rec = {"policy": policy, "action": action, "ok": False, "detail": {},
+               "error": ("cannot compare-and-decide a profile while also "
+                         "reusing the destination's or skipping an existing "
+                         "one — the three are alternatives, not layers")}
+        return rec
     # {source port: destination port}. Only cross-box actions can carry one —
     # a same-box clone shares the chassis, so a rewrite there would move the
     # copy to a different network than the original for no stated reason.
@@ -610,7 +845,8 @@ def perform_one(action: str, *, source_appl, dest_appl=None, policy: str,
                                  wpp_new_name=wpp_new_name, wpp_suffix=wpp_suffix,
                                  artifacts=art_ctx, reconcile_rows=reconcile_rows,
                                  dst_wpp=dst_wpp,
-                                 wpp_only_if_missing=wpp_only_if_missing)
+                                 wpp_only_if_missing=wpp_only_if_missing,
+                                 certs=cert_ctx, wpp_decisions=wpp_decisions)
             summary = clone_summary(items)
             rec["ok"] = summary["failed"] == 0 and (
                 dry_run or summary["created"] > 0 or summary["updated"] > 0)
@@ -624,6 +860,10 @@ def perform_one(action: str, *, source_appl, dest_appl=None, policy: str,
                 rec["error"] = _failed_msg(report)
             elif not dry_run and summary["created"] == 0:
                 rec["ok"], rec["error"] = False, 'nothing to create — "%s" exists' % new_name
+            rec["detail"]["certificates"] = cert_ctx.get("rows") or []
+            if probe_backends and not dry_run:
+                rec["detail"]["backends"] = probe_backends_after(
+                    source_appl, [new_name or policy], use_ssh=probe_ssh)
         elif action == "clone_to":
             planner = _planner(source_appl, dest_appl)
             items = clone_policy(planner, _ops(dest_appl), policy,
@@ -633,7 +873,8 @@ def perform_one(action: str, *, source_appl, dest_appl=None, policy: str,
                                  iface_map=iface_map, artifacts=art_ctx,
                                  reconcile_rows=reconcile_rows,
                                  dst_wpp=dst_wpp,
-                                 wpp_only_if_missing=wpp_only_if_missing)
+                                 wpp_only_if_missing=wpp_only_if_missing,
+                                 certs=cert_ctx, wpp_decisions=wpp_decisions)
             summary = clone_summary(items)
             rec["ok"] = summary["failed"] == 0 and (dry_run or summary["created"] > 0
                                                     or summary["updated"] > 0
@@ -647,6 +888,10 @@ def perform_one(action: str, *, source_appl, dest_appl=None, policy: str,
                              "no_content": report["skipped_no_content"]}
             if summary["failed"]:
                 rec["error"] = "%s on %s" % (_failed_msg(report), dest_appl.name)
+            rec["detail"]["certificates"] = cert_ctx.get("rows") or []
+            if probe_backends and not dry_run:
+                rec["detail"]["backends"] = probe_backends_after(
+                    dest_appl, [new_name or policy], use_ssh=probe_ssh)
         elif action == "migrate_to":
             planner = _planner(source_appl, dest_appl)
             out = migrate_policy(planner, _ops(dest_appl), _ops(source_appl),
@@ -656,7 +901,8 @@ def perform_one(action: str, *, source_appl, dest_appl=None, policy: str,
                                  iface_map=iface_map, artifacts=art_ctx,
                                  reconcile_rows=reconcile_rows,
                                  dst_wpp=dst_wpp,
-                                 wpp_only_if_missing=wpp_only_if_missing)
+                                 wpp_only_if_missing=wpp_only_if_missing,
+                                 certs=cert_ctx, wpp_decisions=wpp_decisions)
             rec["ok"] = out["ok"]
             report = clone.outcome(out["items"])
             rec["detail"] = {"summary": out["summary"],
@@ -672,6 +918,10 @@ def perform_one(action: str, *, source_appl, dest_appl=None, policy: str,
             if not out["ok"]:
                 rec["error"] = ("%s — source left live" % _failed_msg(report)
                                 if report["failed"] else "clone failed — source left live")
+            rec["detail"]["certificates"] = cert_ctx.get("rows") or []
+            if probe_backends and not dry_run:
+                rec["detail"]["backends"] = probe_backends_after(
+                    dest_appl, [new_name or policy], use_ssh=probe_ssh)
         else:
             rec["error"] = "unknown action %r" % action
     except Exception as exc:  # noqa: BLE001 — one policy's failure never sinks the run
@@ -1268,6 +1518,45 @@ def preflight(action: str, *, source_appl, dest_appl=None, policies: list[str],
     }
 
 
+def wpp_compare(action: str, *, source_appl, dest_appl=None,
+                policies: list[str], new_name: str = "",
+                opts: dict | None = None) -> dict:
+    """PHASE ONE of "new, compare and decide": what would change inside the
+    destination's existing profile, per policy. Read-only.
+
+    Runs synchronously inside the request, which is what makes the whole feature
+    possible without a persisted plan: the operator answers, and the answer
+    travels back in ``opts["wpp_decisions"]`` like every other knob. The apply
+    RE-PLANS and matches the answer by stable KEYS, so nothing depends on the
+    two plans being the same list.
+
+    Returns ``{policy: {offers: [...], profile: name, error: str}}``.
+    """
+    from . import wpp_decide
+
+    opts = dict(opts or {})
+    opts.pop("wpp_decisions", None)   # phase one never applies a decision
+    out: dict = {}
+    for pol in policies:
+        entry = {"offers": [], "profile": "", "error": ""}
+        try:
+            planner = _planner(source_appl, dest_appl or source_appl)
+            items = planner.plan(clone.ROOT_SERVER_POLICY, pol,
+                                 new_name=_name_for(action, pol, new_name,
+                                                    policies),
+                                 follow_wpp=True,
+                                 wpp_new_name=str(opts.get("wpp_new_name") or ""),
+                                 wpp_suffix=str(opts.get("wpp_suffix") or ""))
+            wpp = next((it for it in items if it.urn in clone._WPP_URNS
+                        and it.kind == "object"), None)
+            entry["profile"] = wpp.mkey if wpp else ""
+            entry["offers"] = wpp_decide.offers(items, planner.dst)
+        except Exception as exc:  # noqa: BLE001 — one policy never sinks the set
+            entry["error"] = "%s: %s" % (type(exc).__name__, exc)
+        out[pol] = entry
+    return out
+
+
 def action_label(action: str) -> str:
     return {
         "enable": "Enable", "disable": "Disable", "delete": "Delete",
@@ -1276,17 +1565,97 @@ def action_label(action: str) -> str:
     }.get(action, action)
 
 
+#: The most concurrent readers a preview will open against one appliance.
+#: The operator picks the number; this is the ceiling.
+MAX_ANALYSE_WORKERS = 10
+
+#: Where the appliance actually saturates. MEASURED on fortiweb12 (7.6.8) with
+#: 40 identical GETs, not estimated:
+#:
+#:     workers   1      2      4      8     10     16
+#:     seconds   3.85   1.90   1.61   1.61  1.56   1.54
+#:
+#: Two workers halve the time; beyond four there is nothing left to win. The
+#: number is published so a UI can say so next to the box — offering "10"
+#: without it reads as "ten times faster", which is the one thing it is not.
+ANALYSE_SATURATION = 4
+
+
+def analyse_workers(opts: dict | None) -> int:
+    """How many readers a preview may run, clamped to [1, MAX].
+
+    Defaults to 1, and 1 is not "a pool of one": the sequential path below
+    returns before any pool is built. A pool of one is a different execution
+    model wearing the old default's name.
+    """
+    try:
+        want = int((opts or {}).get("analyse_workers") or 1)
+    except (TypeError, ValueError):
+        return 1
+    return max(1, min(MAX_ANALYSE_WORKERS, want))
+
+
 def preview(action: str, *, source_appl, dest_appl=None, policies: list[str],
             new_name: str = "", opts: dict | None = None) -> list[dict]:
     """Synchronous dry-run across the selected policies (read-only). For
     clone/migrate this reads the source device (and validates the destination)
-    but writes nothing."""
-    return [
-        perform_one(action, source_appl=source_appl, dest_appl=dest_appl,
-                    policy=p, new_name=_name_for(action, p, new_name, policies),
+    but writes nothing.
+
+    ``opts["analyse_workers"]`` runs the policies concurrently. It is safe HERE
+    and nowhere else in this module, because a preview is READS ONLY:
+
+      * The apply path stays strictly sequential and MUST. Policies share
+        objects — a profile, a certificate, a service — so two applies creating
+        the same object at the same instant hand the loser a duplicate error
+        that depends on the clock. A correct plan would report a failure that
+        cannot be reproduced. :func:`start_policy_job` therefore never reads
+        this option, and a test holds that.
+      * Each :func:`perform_one` builds its OWN clients, so nothing is shared
+        across threads except the appliance rows, which are re-read inside each
+        worker's own application context.
+
+    Results come back in the order the policies were GIVEN, never the order
+    they finished. A list in completion order would silently re-label every row
+    against the selection the operator is looking at.
+    """
+    workers = analyse_workers(opts)
+    if workers <= 1 or len(policies) < 2:
+        return [
+            perform_one(action, source_appl=source_appl, dest_appl=dest_appl,
+                        policy=p, new_name=_name_for(action, p, new_name, policies),
+                        dry_run=True, opts=opts)
+            for p in policies
+        ]
+
+    from concurrent.futures import ThreadPoolExecutor
+    from flask import current_app
+
+    app = current_app._get_current_object()
+    src_id = source_appl.id
+    dst_id = dest_appl.id if dest_appl is not None else None
+
+    def _one(pol: str) -> dict:
+        # A fresh app context and a fresh row per thread. Handing the caller's
+        # ORM instances to another thread is how a lazy attribute read turns
+        # into a session error halfway down a preview.
+        with app.app_context():
+            from ..models import Appliance
+            from ..models import db as _db
+            src = _db.session.get(Appliance, src_id)
+            dst = _db.session.get(Appliance, dst_id) if dst_id else None
+            try:
+                return perform_one(
+                    action, source_appl=src, dest_appl=dst, policy=pol,
+                    new_name=_name_for(action, pol, new_name, policies),
                     dry_run=True, opts=opts)
-        for p in policies
-    ]
+            except Exception as exc:  # noqa: BLE001 — one policy never sinks the run
+                return {"policy": pol, "action": action, "ok": False,
+                        "error": "%s: %s" % (type(exc).__name__, exc),
+                        "detail": {}}
+
+    with ThreadPoolExecutor(max_workers=workers,
+                            thread_name_prefix="analyse") as pool:
+        return list(pool.map(_one, policies))
 
 
 def _name_for(action: str, policy: str, new_name: str, policies: list[str]) -> str:
@@ -1298,6 +1667,51 @@ def _name_for(action: str, policy: str, new_name: str, policies: list[str]) -> s
             return new_name
         return "%s-copy" % policy
     return new_name or policy
+
+
+def wpp_dedup_key(planner_src, policy: str, wpp_new_name: str = "") -> tuple:
+    """``(source profile, landing profile)`` for one policy, or ``()``.
+
+    The pair — not the landing name alone. Two policies that land on the same
+    destination NAME from DIFFERENT source profiles are not a repeat: the second
+    walk would carry rows the first never had, and skipping it would silently
+    drop them. That case is reachable today through ``wpp_new_name``.
+
+    Costs ONE GET of the source policy (~13 ms measured on 7.6.8) against a
+    profile walk that costs seconds.
+    """
+    try:
+        rows = planner_src.get_raw(clone.ROOT_SERVER_POLICY.urn, policy)
+    except Exception:  # noqa: BLE001 — an unreadable source is "cannot dedup"
+        # Returning () here and falling through to an empty ``rows`` reach the
+        # SAME verdict (no row -> no profile name -> no key), so a mutation that
+        # swaps one for the other is inert rather than a gap. The early return
+        # stays because it states the intent at the point where it is decided.
+        return ()
+    row = rows[0] if rows else {}
+    src_wpp = str(row.get("web-protection-profile") or "").strip()
+    if not src_wpp:
+        return ()
+    landing = clone.wpp_landing_name(row, wpp_new_name)
+    return (src_wpp, str(landing or "").strip())
+
+
+def dedup_opts(opts: dict, key: tuple, carried: set) -> dict:
+    """The options for ONE policy of a bulk run, given what the run already did.
+
+    A repeat of a profile already carried by THIS run gets
+    ``wpp_only_if_missing`` — it REUSES that path rather than adding a second
+    way to prune, so there is one tested implementation of "leave an existing
+    profile alone" and not two that can disagree.
+
+    Everything else is passed through UNCHANGED, and the caller's dict is never
+    mutated: a job's options belong to the job, and editing them in place would
+    make policy N's answer depend on policy N-1 for every knob, not just this
+    one.
+    """
+    if not key or key not in (carried or ()):
+        return opts
+    return dict(opts, wpp_only_if_missing=True)
 
 
 def start_policy_job(flask_app, *, action: str, source_appl, dest_appl=None,
@@ -1335,14 +1749,37 @@ def start_policy_job(flask_app, *, action: str, source_appl, dest_appl=None,
             dst = Appliance.query.get(dest_id) if dest_id else None
             results = []
             total = len(policies)
+            # PROFILES ONCE PER RUN. Several policies routinely share one Web
+            # Protection Profile, and walking its ~40 sub-tables again for the
+            # second policy is the slow half of a plan spent to reach the same
+            # verdict — measured last round at 123 planned objects against 12.
+            #
+            # This lives in the BULK loop and nowhere else: it is the only thing
+            # in the clone that is inherently CROSS-policy. Everything else the
+            # dialog and the job share rides in ``opts``, read once by
+            # ``perform_one``, so a knob threaded there is true of both.
+            #
+            # It REUSES ``wpp_only_if_missing`` rather than adding a second way
+            # to prune. That path is already tested, already refuses its own
+            # contradictions, and creates the profile when it is genuinely
+            # absent — so a first policy that failed to carry it does not leave
+            # the rest of the run quietly skipping it.
+            carried_wpp: set = set()
+            dedup_ok = bool(opts.get("copy_wpp", True)) and not opts.get("dst_wpp")
             for i, pol in enumerate(policies):
                 jobs.checkpoint(job_id)   # cooperative Stop, between policies
                 jobs.set_progress(job_id, int(i * 100 / max(1, total)),
                                   "%s — %s (%d/%d)" % (action_label(action), pol, i + 1, total))
+                key = (wpp_dedup_key(_planner(src, dst or src).src, pol,
+                                     str(opts.get("wpp_new_name") or ""))
+                       if dedup_ok and action in _CLONE_ACTIONS else ())
+                pol_opts = dedup_opts(opts, key, carried_wpp)
                 rec = perform_one(
                     action, source_appl=src, dest_appl=dst, policy=pol,
                     new_name=_name_for(action, pol, new_name, policies),
-                    dry_run=False, opts=opts)
+                    dry_run=False, opts=pol_opts)
+                if key and rec.get("ok"):
+                    carried_wpp.add(key)
                 results.append(rec)
                 # Clear, per-object audit line for THIS policy.
                 log_action(

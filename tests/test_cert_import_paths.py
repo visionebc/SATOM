@@ -136,10 +136,28 @@ def test_cli_table_is_the_collection_suffix():
 
 
 class _FakeSSH(cert_ssh.FortiWebCertSSH):
-    """Captures the block instead of sending it (no device, no paramiko)."""
+    """Captures what would be sent (no device, no paramiko).
 
-    def __init__(self):  # noqa: D107 — deliberately skips the parent's connect
+    ``lines`` holds the single commands — the SCOPE descent lives there now.
+    ``config system certificate <table>`` left the import block when the scope
+    turned out to differ per appliance (top level on a box without ADOMs,
+    inside ``config vdom``/``edit <adom>`` on one with them, both measured on
+    7.6.8). Asserting the table only inside the block would now pass for a
+    session that never entered it.
+    """
+
+    def __init__(self, refuse_top=False):  # noqa: D107 — skips parent connect
         self.sent = []
+        self.lines = []
+        self._refuse_top = refuse_top
+        self.appliance = type("A", (), {"vdom": "root"})()
+
+    def _line(self, cmd, *, quiet=1.0, maxt=25.0):  # noqa: D102
+        self.lines.append(cmd)
+        if self._refuse_top and cmd.startswith("config system certificate") \
+                and "config vdom" not in self.lines:
+            return "Parsing error at 'system'. err=1"
+        return ""
 
     def _send_block(self, block, *, quiet=1.2, maxt=30.0):  # noqa: D102
         self.sent.append(block)
@@ -156,7 +174,7 @@ def test_block_targets_the_right_table_and_key_field():
         cert_import.SSH_ONLY_SPECS["system/certificate.xml-client-certificate"],
         "x1", CERT, KEY)
     block = ssh.sent[0]
-    assert "config system certificate xml-client-certificate" in block
+    assert "config system certificate xml-client-certificate" in ssh.lines
     assert 'set secret-key "' in block
     assert "set private-key" not in block   # the wrong name for THIS table
 
@@ -176,7 +194,7 @@ def test_keyless_table_sends_certificate_only():
     ssh.import_certificate(cert_import.SSH_ONLY_SPECS["system/certificate.ca"],
                            "ca1", CERT)
     block = ssh.sent[0]
-    assert "config system certificate ca\n" in block
+    assert "config system certificate ca" in ssh.lines
     assert 'set certificate "' in block
     assert "set private-key" not in block and "set secret-key" not in block
 
@@ -187,6 +205,39 @@ def test_passphrase_refused_where_the_table_has_none():
         ssh.import_certificate(
             cert_import.SSH_ONLY_SPECS["system/certificate.xml-client-certificate"],
             "x1", CERT, KEY, "hunter2")
+
+
+def test_the_table_is_entered_at_the_top_level_when_the_box_allows_it():
+    """A box without ADOMs must behave exactly as it did before the scope fix."""
+    ssh = _FakeSSH()
+    ssh.import_certificate(cert_import.SSH_ONLY_SPECS["system/certificate.local"],
+                           "c1", CERT, KEY)
+    assert ssh.lines[0] == "config system certificate local"
+    assert "config vdom" not in ssh.lines
+
+
+def test_a_box_that_refuses_the_top_level_is_entered_through_its_vdom():
+    """Measured: fortiweb12 (ADOMs on) answers "Parsing error at 'system'" to
+    that command at the top level. Before the fix the whole block — PEM and
+    PRIVATE KEY included — was then interpreted at whatever prompt was current.
+    """
+    ssh = _FakeSSH(refuse_top=True)
+    ssh.import_certificate(cert_import.SSH_ONLY_SPECS["system/certificate.local"],
+                           "c1", CERT, KEY)
+    assert ssh.lines[:4] == ["config system certificate local", "config vdom",
+                             "edit root", "config system certificate local"]
+    # and it climbs back out of all THREE levels, not one — a session left
+    # inside config vdom reads every later command in the wrong scope.
+    assert ssh.lines.count("end") == 3
+    assert ssh._scope == "", "leave_table must reset the scope it recorded"
+
+
+def test_the_block_no_longer_carries_the_scope_line():
+    """Two authors of the scope is how one of them goes stale."""
+    ssh = _FakeSSH()
+    ssh.import_certificate(cert_import.SSH_ONLY_SPECS["system/certificate.local"],
+                           "c1", CERT, KEY)
+    assert "config system certificate" not in ssh.sent[0]
 
 
 def test_passphrase_goes_in_before_the_certificate():
@@ -219,7 +270,7 @@ def test_import_into_refuses_a_rest_creatable_collection():
 def test_local_shim_still_targets_local():
     ssh = _FakeSSH()
     ssh.import_local_certificate("c1", CERT, KEY)
-    assert "config system certificate local" in ssh.sent[0]
+    assert "config system certificate local" in ssh.lines
     assert 'set private-key "' in ssh.sent[0]
 
 

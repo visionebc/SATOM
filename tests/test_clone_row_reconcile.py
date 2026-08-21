@@ -29,11 +29,13 @@ import pytest
 from app.services import clone, policy_ops
 from app.registry.dependencies import DepNode
 
-# The vehicle is the IP GROUP, not the SNI policy: the product classifies
-# certificate.sni as key material (_CERT_URNS), so an SNI policy never
-# travels over REST at all today and its keyed collision is unreachable. That is
-# a SEPARATE gap against the standalone (which carries SNI as plain
-# configuration since 1.2.0) and it is reported, not silently worked around.
+# The vehicle is the IP GROUP, not the SNI policy. When these tests were
+# written the product classified certificate.sni as key material (_CERT_URNS),
+# so an SNI policy never travelled over REST at all and its keyed collision was
+# unreachable. THAT GAP IS NOW CLOSED (see tests/test_clone_sni.py) — the
+# vehicle stays the IP group anyway, because the two tables answer DIFFERENT
+# duplicate codes (-6014 vs -5) and keeping the reconcile guards on the one
+# whose key is `ip` proves the mechanism is not built on recognising either.
 SNI = "cmdb/server-policy/ip-group"
 MEM = SNI + "/members"
 POOL = "cmdb/server-policy/server-pool"

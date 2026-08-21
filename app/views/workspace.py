@@ -275,6 +275,37 @@ def _parse_action(appliance_id):
         # unless this is set, so a stale tick can only ever authorise less than
         # the operator saw — never more.
         opts['accept_missing_artifacts'] = bool(body.get('accept_missing_artifacts'))
+        # ── knobs that were engine-only until now ────────────────────────────
+        # These existed in `policy_ops` and were never parsed here, so nothing
+        # a browser sent could reach them. An option the engine honours and the
+        # HTTP layer drops is worse than an absent one: the service reads its
+        # own default and the run looks like it obeyed.
+        rec_rows = body.get('reconcile_rows')
+        opts['reconcile_rows'] = True if rec_rows is None else bool(rec_rows)
+        opts['dst_wpp'] = (body.get('dst_wpp') or '').strip()
+        opts['wpp_only_if_missing'] = bool(body.get('wpp_only_if_missing'))
+        # Carrying certificate MATERIAL moves a PRIVATE KEY over the CLI. Off
+        # unless asked, explicitly, on this request — never remembered.
+        opts['copy_cert_material'] = bool(body.get('copy_cert_material'))
+        # Reachability of the copied policy's real servers, after the write.
+        opts['probe_backends'] = bool(body.get('probe_backends'))
+        opts['probe_ssh'] = bool(body.get('probe_ssh'))
+        # Concurrent READERS for a preview. The apply is sequential and never
+        # reads this — policies share objects, so parallel applies produce
+        # clock-dependent duplicate errors.
+        try:
+            opts['analyse_workers'] = int(body.get('analyse_workers') or 1)
+        except (TypeError, ValueError):
+            opts['analyse_workers'] = 1
+        # "New, compare and decide": the operator's answer to the comparison.
+        # BOTH lists are kept — an apply whose re-plan offers something that was
+        # never shown is refused, and only `shown` can tell that from a decline.
+        dec = body.get('wpp_decisions')
+        if isinstance(dec, dict):
+            opts['wpp_decisions'] = {
+                'accepted': [str(k) for k in (dec.get('accepted') or []) if k],
+                'shown': [str(k) for k in (dec.get('shown') or []) if k],
+            }
     return appl, action, policies, new_name, dest, opts, None
 
 
@@ -294,6 +325,41 @@ def policy_action_preview(appliance_id):
         return json_error(exc, 'Preview failed', context='workspace.policy_action_preview')
     return jsonify(ok=True, action=action, label=policy_ops.action_label(action),
                    dest=(dest.name if dest else ''), results=results)
+
+
+@bp.route('/<int:appliance_id>/policy-action/wpp-compare', methods=['POST'])
+@login_required
+@require_permission('config_write')
+def policy_action_wpp_compare(appliance_id):
+    """PHASE ONE of "new, compare and decide" (read-only).
+
+    Returns, per policy, every change this run would make INSIDE a Web
+    Protection Profile the destination ALREADY HAS — the profile's own fields
+    first, then each row. Nothing is pre-selected: this is the one profile
+    policy that edits a live object, possibly one other policies share, so the
+    default answer is no.
+
+    The operator's reply comes back on the APPLY as
+    ``opts["wpp_decisions"] = {"accepted": [key…], "shown": [key…]}``. Both
+    lists, not just the accepted one: an apply whose re-plan offers something
+    the operator was never shown is REFUSED rather than guessed at, and only
+    ``shown`` can tell those two apart.
+    """
+    appl, action, policies, new_name, dest, opts, err = _parse_action(appliance_id)
+    if err:
+        return err
+    if action not in policy_ops._CLONE_ACTIONS:
+        return jsonify(ok=False,
+                       error='compare applies to clone/migrate only'), 400
+    try:
+        data = policy_ops.wpp_compare(action, source_appl=appl, dest_appl=dest,
+                                      policies=policies, new_name=new_name,
+                                      opts=opts)
+    except Exception as exc:  # noqa: BLE001
+        return json_error(exc, 'Compare failed',
+                          context='workspace.policy_action_wpp_compare')
+    return jsonify(ok=True, action=action, dest=(dest.name if dest else ''),
+                   policies=data)
 
 
 @bp.route('/<int:appliance_id>/policy-action/checklist', methods=['POST'])

@@ -276,6 +276,77 @@ _CERT_VERIFY_REFS: tuple = (
 )
 
 
+# The ACME certificate object and the intermediate-CA group were LITERALS inside
+# the policy's child list until the SNI member rows turned out to name the very
+# same two collections. Two copies of one shape is how they drift: the day one
+# gains a sub-table and the other does not, half the tree lands an empty shell
+# and nothing reports it. ``DepNode`` is frozen, so ONE node is reused by every
+# parent that points at it (the pattern ``_IP_GROUP_REF`` already sets).
+_LETSENCRYPT_REF: DepNode = _n(
+    "Let's Encrypt Certificate", "cmdb/system/certificate.letsencrypt",
+    "lets-certificate", "System · Certificates · ACME",
+    children=[_n("SAN List", "cmdb/system/certificate.letsencrypt/san-list")])
+
+# The chain group is named by TWO DIFFERENT FIELDS: a server policy spells it
+# ``intermediate-certificate-group`` and an SNI member row spells it
+# ``inter-group`` (both measured on fortiweb12, 7.6.8). ``DepNode`` is frozen and
+# ``via`` is part of it, so ONE node cannot serve both — but the part that must
+# never drift is the SUB-TABLE, not the field name. A chain group carried
+# without its members lands as an empty shell: it serves a leaf certificate with
+# no intermediates, which fails verification on exactly the clients that do not
+# cache the issuer, and nothing reports the gap. So the CHILDREN are declared
+# once and the two spellings differ only in their edge.
+_INTER_GROUP_CHILDREN: tuple = (
+    _n("Intermediate CA Group Members",
+       "cmdb/system/certificate.intermediate-certificate-group/members"),
+)
+
+
+def _inter_group_ref(via: str) -> DepNode:
+    """The intermediate-CA group reached through ``via``, sub-table included."""
+    return _n("Intermediate CA Group",
+              "cmdb/system/certificate.intermediate-certificate-group",
+              via, "System · Certificates",
+              children=_INTER_GROUP_CHILDREN)
+
+
+_INTER_GROUP_REF: DepNode = _inter_group_ref("intermediate-certificate-group")
+
+# What an SNI MEMBER row names. Read off a real row created on fortiweb12
+# (7.6.8) — not guessed from the field names, because two of them look like
+# certificates and are not:
+#
+#   {"seq": 1, "domain": "probe.lab.example.net",
+#    "local-cert": "wildcard-visionebc-mx", "inter-group": "",
+#    "lets-certificate": "", "verify": "", "multi-local-cert": "disable",
+#    "multi-local-cert-group": "", "certificate-type": "disable",
+#    "domain-type": "plain"}
+#
+# The certificate field is ``local-cert``. It is NOT ``certificate`` — the
+# spelling the standalone tool asserted in a comment for two releases while
+# every SNI certificate went un-audited and un-carried.
+#
+# NOT declared here, each for a measured reason:
+#   ``domain-type`` / ``certificate-type`` / ``multi-local-cert`` are enums.
+#   ``multi-local-cert-group`` names a ``certificate.multi-local`` group, which
+#     is already reachable from the policy's own ``certificate-group`` edge;
+#     declaring it twice would give one collection two parents in one tree.
+#   ``verify`` is a ``certificate.verify`` — see ``_CERT_VERIFY_REFS``; it is
+#     left off until the binding is measured on an SNI row rather than assumed
+#     from the policy field of the same name.
+_SNI_MEMBER_REFS: tuple = (
+    _n("SNI Local Certificate", "cmdb/system/certificate.local", "local-cert",
+       note="SNI member -> the certificate served for that host; MATERIAL, "
+            "reported and copied over SSH, never over REST"),
+    # ``inter-group`` here, ``intermediate-certificate-group`` on a policy — one
+    # collection, two spellings, one sub-table declaration.
+    _inter_group_ref("inter-group"),
+    # ``lets-certificate`` is spelled the same on both, so the node itself is
+    # shared rather than rebuilt.
+    _LETSENCRYPT_REF,
+)
+
+
 # An IP List member may select an IP GROUP instead of a literal IP (the member's
 # ``ip-group`` field, used when group-type=ip-group). That group is a SEPARATE
 # object the clone must carry FIRST, or the member POST -651s on the dangling
@@ -933,9 +1004,7 @@ SERVER_POLICY: DepNode = _n(
            "System · Certificates · Certificate Verify — policy -> how client "
            "certificates are verified",
            children=_CERT_VERIFY_REFS),
-        _n("Let's Encrypt Certificate", "cmdb/system/certificate.letsencrypt", "lets-certificate",
-           "System · Certificates · ACME",
-           children=[_n("SAN List", "cmdb/system/certificate.letsencrypt/san-list")]),
+        _LETSENCRYPT_REF,
         # The members node is not decoration. Without it the group travelled as
         # an EMPTY SHELL -- the object was created at the destination, its rows
         # never were, and nothing reported the gap. A chain group with no
@@ -943,10 +1012,7 @@ SERVER_POLICY: DepNode = _n(
         # verification on exactly the clients that do not cache the issuer.
         # Path verified on 7.6.8 with the discriminator this registry uses
         # everywhere: a real collection answers 200, an invented one 500/-20001.
-        _n("Intermediate CA Group", "cmdb/system/certificate.intermediate-certificate-group",
-           "intermediate-certificate-group", "System · Certificates",
-           children=[_n("Intermediate CA Group Members",
-                        "cmdb/system/certificate.intermediate-certificate-group/members")]),
+        _INTER_GROUP_REF,
         _n("SSL Ciphers Group", "cmdb/server-policy/ssl-ciphers.predefined",
            "ssl-ciphers-group", "Server Policy · SSL"),
         _n("SSL Ciphers Group (custom)", "cmdb/server-policy/ssl-ciphers.custom",
@@ -1000,9 +1066,16 @@ SERVER_POLICY: DepNode = _n(
            "adfs-certificate-ssl-client-verify",
            "System · Certificates · Certificate Verify — ADFS client certificates",
            children=_CERT_VERIFY_REFS),
+        # An SNI policy is a hostname table, and it is NOT key material — see
+        # ``clone._CERT_URNS`` for the measurement that took it out of that set.
+        # Its member rows name up to three separate collections, which is why
+        # the members node is no longer a leaf: carried without them the policy
+        # lands as a name with no hosts, and carried with them but without their
+        # references it lands naming certificates the destination never saw.
         _n("SNI Policy", "cmdb/system/certificate.sni",
            "sni-policy / sni-certificate / certificate-sni", "System · Certificates",
-           children=[_n("SNI Members", "cmdb/system/certificate.sni/members")]),
+           children=[_n("SNI Members", "cmdb/system/certificate.sni/members",
+                        children=_SNI_MEMBER_REFS)]),
         _n("Content Routing", "cmdb/server-policy/policy/http-content-routing-list",
            "deployment-mode = http-content-routing", "Server Policy",
            children=[

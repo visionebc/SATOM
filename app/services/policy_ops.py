@@ -152,7 +152,10 @@ def clone_policy(planner, ops, policy: str, *, new_name: str, dry_run: bool,
                  disable: bool = True, vip_ip: str = "", copy_wpp: bool = True,
                  wpp_new_name: str = "", wpp_suffix: str = "",
                  iface_map: dict[str, str] | None = None,
-                 artifacts: dict | None = None) -> list[clone.CloneItem]:
+                 artifacts: dict | None = None,
+                 reconcile_rows: bool = True,
+                 dst_wpp: str = "",
+                 wpp_only_if_missing: bool = False) -> list[clone.CloneItem]:
     """Plan the full policy tree on the source and create the missing objects on
     the ``ops`` device (same box or another). The new root is left DISABLED.
 
@@ -181,10 +184,79 @@ def clone_policy(planner, ops, policy: str, *, new_name: str, dry_run: bool,
       object that exists and is EMPTY, and the rule bound to it answers
       ``-7694``. Keys: ``enabled``, ``src_client``, ``src_vdom``,
       ``source_appliance_id``, ``accept_missing``, ``by``. Absent/disabled
-      keeps the legacy behaviour."""
+      keeps the legacy behaviour.
+    * ``reconcile_rows`` — update, in place, the destination rows that already
+      own a unique key this clone carries while serving different content.
+      Turning it OFF does NOT skip those rows: it REFUSES the apply. A skipped
+      row would leave the destination serving the old value under a green run,
+      which is the failure the reconcile exists to end.
+    * ``dst_wpp`` — the copy is pointed at a profile the DESTINATION already
+      owns, under ITS name. For the case the destination has an equivalent
+      profile under a DIFFERENT name; nothing of the source's profile is copied.
+    * ``wpp_only_if_missing`` — create the profile when the destination lacks it
+      and PRUNE the whole subtree when it already has one. Not the same as
+      leaving the subtree on: an existing profile's object is already left
+      alone, but its ~40 sub-tables are not, so today a clone can add a
+      signature list to a live profile that other policies share.
+
+    The three profile behaviours are mutually exclusive by construction and the
+    refusals live in this function, not only in the caller: a second caller
+    cannot forget what it never had to remember."""
+    # Contradictory arguments are a fact about the CALL, so they are answered
+    # FIRST — before any device read. Reaching a knowable refusal by way of a
+    # round trip to an appliance is a round trip spent to learn nothing, and on
+    # the bulk path it is one per policy.
+    dst_wpp = (dst_wpp or "").strip()
+    if dst_wpp and wpp_only_if_missing:
+        raise RuntimeError(
+            'cannot both reuse the destination profile "%s" and "create the '
+            'profile only if it is missing" — the first copies no profile at '
+            "all, so there is nothing for the second to decide about." % dst_wpp)
+    if dst_wpp and (wpp_new_name or "").strip():
+        raise RuntimeError(
+            'cannot both reuse the destination profile "%s" and rename a copied '
+            'one to "%s" — nothing would be copied for the rename to apply.'
+            % (dst_wpp, wpp_new_name.strip()))
+    wpp_reused = ""
+    if dst_wpp:
+        # The name must exist AT THE DESTINATION before anything is planned
+        # around it. Left unchecked, the policy create answers -651 halfway
+        # through a run that has already written pools, servers and certificates.
+        try:
+            have = clone.dst_wpp_names(planner.dst)
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError(
+                "could not read the destination's web protection profiles to "
+                "confirm %r: %s" % (dst_wpp, exc)) from exc
+        if dst_wpp not in have:
+            raise RuntimeError(
+                'the destination has no web protection profile named "%s" '
+                "(it has: %s)" % (dst_wpp, ", ".join(sorted(have)[:8]) or "none"))
+        copy_wpp = False        # nothing to follow — that IS the choice
+    elif copy_wpp and wpp_only_if_missing:
+        # Decided BEFORE the walk, not after: the ~40 sub-tables of a profile
+        # are the slow half of a plan, and a decision taken afterwards would
+        # have paid for every read it then throws away. It costs one extra GET
+        # of the source policy (~13 ms measured on 7.6.8) plus one collection
+        # read of the destination's profiles — against a walk that costs seconds.
+        src_rows = planner.src.get_raw(clone.ROOT_SERVER_POLICY.urn, policy)
+        landing = clone.wpp_landing_name(
+            src_rows[0] if src_rows else {}, wpp_new_name)
+        try:
+            have = clone.dst_wpp_names(planner.dst)
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError(
+                "could not read the destination's web protection profiles, so "
+                '"create the profile only if it is missing" cannot be honoured '
+                "for %r: %s" % (policy, exc)) from exc
+        wpp_reused = clone.wpp_reuse_name(landing, have, True)
+        if wpp_reused:
+            copy_wpp = False
     items = planner.plan(clone.ROOT_SERVER_POLICY, policy, new_name=new_name,
                          follow_wpp=copy_wpp, wpp_new_name=wpp_new_name,
                          wpp_suffix=wpp_suffix)
+    if dst_wpp:
+        clone.repoint_wpp(items, dst_wpp)
     if not dry_run:
         # HARD BLOCK: never write a partial tree. A referenced object that came
         # back empty from the source (renamed/deleted/unreadable) would leave the
@@ -218,6 +290,29 @@ def clone_policy(planner, ops, policy: str, *, new_name: str, dry_run: bool,
     # been committed to a partial apply by the time anyone can tell them.
     art_blobs, art_missing = _resolve_artifacts(items, artifacts, dry_run=dry_run)
 
+    # Keyed collisions. The plan has ALREADY enumerated them (each one carries
+    # the destination row and the field-by-field diff in its note), so this
+    # block is only the operator's own choice coming back — and refusing is the
+    # honest end: creating them is refused by the appliance, so the clone cannot
+    # deliver them either way, and only the refusal says so.
+    conflicts = [it for it in items if it.status == "update"]
+    if conflicts and not reconcile_rows:
+        names = "; ".join(
+            "%s under %s" % (it.label, it.parent_mkey or "?") for it in conflicts[:6])
+        if dry_run:
+            for it in conflicts:
+                it.status, it.note = "empty", (
+                    "row reconciliation is OFF — the destination owns this key "
+                    "and a real apply would be REFUSED (%s)" % it.note)
+        else:
+            raise RuntimeError(
+                "%d destination row(s) already hold a unique key this clone "
+                "carries, with different content, and row reconciliation is "
+                "OFF: %s%s. Creating them is refused by the appliance (a "
+                "duplicate error), so the clone cannot deliver them. Turn row "
+                "reconciliation on, or fix those rows by hand."
+                % (len(conflicts), names, "…" if len(conflicts) > 6 else ""))
+
     def _write(item: clone.CloneItem) -> None:
         from . import objform
         kind = _artifact_kind(item, artifacts)
@@ -227,7 +322,30 @@ def clone_policy(planner, ops, policy: str, *, new_name: str, dry_run: bool,
             return
         ep = objform.rest_path(item.urn)
         mkey = item.parent_mkey if item.kind == "subrow" else None
-        res = ops.create(ep, {"data": item.payload}, mkey=mkey, dry_run=False)
+        if item.status == "update":
+            # PUT addressed by the DESTINATION row's id, carrying the source
+            # fields MERGED onto the destination row. A bare source payload
+            # would blank every destination field the source never named.
+            if item.kind != "subrow" or not item.dst_row_key:
+                # Not an internal slip: a destination row that carries no
+                # addressable id cannot be reconciled AND cannot be created
+                # (the appliance refuses the duplicate), so the clone cannot
+                # deliver it either way. Naming the row is the only useful
+                # thing left — a generic failure would send the operator
+                # looking for a device fault that is not there.
+                raise RuntimeError(
+                    'the destination row that owns this key under "%s" has no '
+                    "addressable row id, so it can be neither updated nor "
+                    "created — fix it on the destination by hand"
+                    % (item.parent_mkey or item.label))
+            body = clone.subrow_update_payload(item.payload, item.dst_row, item.urn)
+            # The id in the URL is the id IN THE BODY, read from the same place:
+            # addressing one row and describing another is a silent cross-write,
+            # and it would look like a successful reconcile.
+            res = ops.update(ep, mkey, {"data": body}, dry_run=False,
+                             sub_mkey=str(body.get("id") or item.dst_row_key))
+        else:
+            res = ops.create(ep, {"data": item.payload}, mkey=mkey, dry_run=False)
         if not res.ok:
             raise RuntimeError(res.get("error") or "write failed")
 
@@ -244,11 +362,17 @@ def clone_policy(planner, ops, policy: str, *, new_name: str, dry_run: bool,
 def clone_summary(items: list[clone.CloneItem]) -> dict[str, int]:
     """Roll a planned/applied clone up to ``{created, exists, failed, skipped,
     total}`` for the job result + audit line."""
-    created = sum(1 for it in items if it.applied)
+    updated = sum(1 for it in items if it.applied and it.status == "update")
+    created = sum(1 for it in items if it.applied) - updated
     failed = sum(1 for it in items if (it.result or "").startswith("error"))
     counts = clone.summarize(items)
     return {
         "created": created,
+        # Its own number, never folded into ``created``: a reconciled row is an
+        # EDIT of a row the destination already served, and an operator reading
+        # only ``created`` would be told a row was made that was not.
+        "updated": updated,
+        "to_update": counts.get("update", 0),
         "failed": failed,
         "exists": counts.get("exists", 0),
         "skipped": counts.get("exists", 0) + counts.get("cert", 0)
@@ -291,7 +415,9 @@ def migrate_policy(dst_planner, dst_ops, src_ops, policy: str, *,
                    copy_wpp: bool = True, wpp_new_name: str = "",
                    wpp_suffix: str = "",
                    iface_map: dict[str, str] | None = None,
-                   artifacts: dict | None = None) -> dict:
+                   artifacts: dict | None = None,
+                   reconcile_rows: bool = True, dst_wpp: str = "",
+                   wpp_only_if_missing: bool = False) -> dict:
     """Clone the policy tree onto the destination, then — ONLY on a clean clone
     and a real apply — disable the SOURCE policy (rollback-friendly; the source
     is kept). A failed clone leaves the source LIVE and untouched."""
@@ -299,9 +425,12 @@ def migrate_policy(dst_planner, dst_ops, src_ops, policy: str, *,
                          dry_run=dry_run, disable=True, vip_ip=vip_ip,
                          copy_wpp=copy_wpp, wpp_new_name=wpp_new_name,
                          wpp_suffix=wpp_suffix, iface_map=iface_map,
-                         artifacts=artifacts)
+                         artifacts=artifacts, reconcile_rows=reconcile_rows,
+                         dst_wpp=dst_wpp,
+                         wpp_only_if_missing=wpp_only_if_missing)
     summary = clone_summary(items)
     clone_ok = summary["failed"] == 0 and (dry_run or summary["created"] > 0
+                                           or summary["updated"] > 0
                                            or summary["exists"] > 0)
     source_disabled = False
     # ACCEPTING a missing artifact authorises an incomplete COPY. It does not
@@ -384,8 +513,15 @@ def perform_one(action: str, *, source_appl, dest_appl=None, policy: str,
     """Execute (or preview) ONE action against ONE policy with real appliances.
 
     ``opts`` carries the clone/migrate knobs from the dialog: ``vip_ip``
-    (explicit IPv4 | ``"auto"`` | '' = keep), ``copy_wpp`` (bool) and
-    ``wpp_new_name`` (copy the WPP under a new name).
+    (explicit IPv4 | ``"auto"`` | '' = keep), ``copy_wpp`` (bool),
+    ``wpp_new_name`` (copy the WPP under a new name) and ``reconcile_rows``
+    (update destination rows that collide on their unique key; ON by default —
+    OFF makes a colliding run REFUSE rather than silently leave the destination
+    serving the old value).
+
+    Read ONCE here on purpose: the bulk job calls this same function per policy,
+    so a knob threaded here is true of a 60-policy run and of a single-policy
+    dialog at the same time. Two separate reads would be two defaults.
 
     Returns a normalised ``{policy, action, ok, error, detail}`` record; never
     raises (a device/logic failure is captured in ``ok``/``error``)."""
@@ -394,6 +530,11 @@ def perform_one(action: str, *, source_appl, dest_appl=None, policy: str,
     copy_wpp = bool(opts.get("copy_wpp", True))
     wpp_new_name = str(opts.get("wpp_new_name") or "")
     wpp_suffix = str(opts.get("wpp_suffix") or "")
+    reconcile_rows = bool(opts.get("reconcile_rows", True))
+    # The two non-interactive profile policies. Read HERE, once, for the same
+    # reason `reconcile_rows` is: the bulk job calls this function per policy.
+    dst_wpp = str(opts.get("dst_wpp") or "")
+    wpp_only_if_missing = bool(opts.get("wpp_only_if_missing", False))
     # {source port: destination port}. Only cross-box actions can carry one —
     # a same-box clone shares the chassis, so a rewrite there would move the
     # copy to a different network than the original for no stated reason.
@@ -467,9 +608,12 @@ def perform_one(action: str, *, source_appl, dest_appl=None, policy: str,
                                  new_name=new_name, dry_run=dry_run,
                                  vip_ip=vip_ip, copy_wpp=copy_wpp,
                                  wpp_new_name=wpp_new_name, wpp_suffix=wpp_suffix,
-                                 artifacts=art_ctx)
+                                 artifacts=art_ctx, reconcile_rows=reconcile_rows,
+                                 dst_wpp=dst_wpp,
+                                 wpp_only_if_missing=wpp_only_if_missing)
             summary = clone_summary(items)
-            rec["ok"] = summary["failed"] == 0 and (dry_run or summary["created"] > 0)
+            rec["ok"] = summary["failed"] == 0 and (
+                dry_run or summary["created"] > 0 or summary["updated"] > 0)
             report = clone.outcome(items)
             rec["detail"] = {"summary": summary, "plan": clone.render_plan(items),
                              "new_name": new_name, "vip_ip": vip_ip,
@@ -486,9 +630,13 @@ def perform_one(action: str, *, source_appl, dest_appl=None, policy: str,
                                  new_name=new_name or policy, dry_run=dry_run,
                                  vip_ip=vip_ip, copy_wpp=copy_wpp,
                                  wpp_new_name=wpp_new_name, wpp_suffix=wpp_suffix,
-                                 iface_map=iface_map, artifacts=art_ctx)
+                                 iface_map=iface_map, artifacts=art_ctx,
+                                 reconcile_rows=reconcile_rows,
+                                 dst_wpp=dst_wpp,
+                                 wpp_only_if_missing=wpp_only_if_missing)
             summary = clone_summary(items)
             rec["ok"] = summary["failed"] == 0 and (dry_run or summary["created"] > 0
+                                                    or summary["updated"] > 0
                                                     or summary["exists"] > 0)
             report = clone.outcome(items)
             rec["detail"] = {"summary": summary, "plan": clone.render_plan(items),
@@ -505,7 +653,10 @@ def perform_one(action: str, *, source_appl, dest_appl=None, policy: str,
                                  policy, new_name=new_name or policy, dry_run=dry_run,
                                  vip_ip=vip_ip, copy_wpp=copy_wpp,
                                  wpp_new_name=wpp_new_name, wpp_suffix=wpp_suffix,
-                                 iface_map=iface_map, artifacts=art_ctx)
+                                 iface_map=iface_map, artifacts=art_ctx,
+                                 reconcile_rows=reconcile_rows,
+                                 dst_wpp=dst_wpp,
+                                 wpp_only_if_missing=wpp_only_if_missing)
             rec["ok"] = out["ok"]
             report = clone.outcome(out["items"])
             rec["detail"] = {"summary": out["summary"],

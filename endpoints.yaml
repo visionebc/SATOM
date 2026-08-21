@@ -388,6 +388,9 @@ client_side_protection_policy:                   /api/v2.0/cmdb/waf/client-side-
 dlp_policy:                                      /api/v2.0/cmdb/waf/dlp.policy
 graphql_validation_policy:                       /api/v2.0/cmdb/waf/graphql-validation.policy
 waiting_room_policy:                             /api/v2.0/cmdb/waf/waiting-room-policy
+custom_response_policy:                          /api/v2.0/cmdb/waf/custom-response.custom-response-policy
+custom_response_policy_rule:                     /api/v2.0/cmdb/waf/custom-response.custom-response-policy/rule
+custom_response_rule:                            /api/v2.0/cmdb/waf/custom-response.custom-response-rule
 ip_intelligence_exception:                       /api/v2.0/cmdb/waf/ip-intelligence-exception
 ip_intelligence_exception_item:                  /api/v2.0/cmdb/waf/ip-intelligence-exception/exception-list
 ip_intelligence_ignore_xff:                      /api/v2.0/cmdb/waf/ip-intelligence-ignore-x-forwarded-for

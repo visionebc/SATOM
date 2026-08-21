@@ -140,6 +140,26 @@ _RECAPTCHA_REF: DepNode = _n(
     note="bot-confirmation reCAPTCHA server",
 )
 
+# The SAME trigger-policy subtree, reached through a DIFFERENT field name.
+# A Web Protection Profile does NOT carry `trigger`; it carries
+# `quarantined-ip-trigger` — measured on 7.6.8, where
+# `set quarantined-ip-trigger ?` answers `<datasource>  choose Email or syslog
+# policy`, and the CLI reference links that field to `log trigger-policy`.
+# FIELD_REFS matches the field name EXACTLY, so the `trigger` edge could never
+# fire here and the WPP payload rode out naming a policy nothing created. That
+# is not a partial copy: POSTing the planner's own payload to a clean
+# destination answers -651 and the WHOLE profile fails, taking `redirect-url`
+# and every other setting on it down with the dangling reference.
+#
+# Children are SHARED with `_TRIGGER_POLICY_REF` (DepNode is frozen). A second
+# literal copy would be a second author of one shape, and the two would drift
+# the first time only one of them was corrected.
+_QUARANTINED_IP_TRIGGER_REF: DepNode = _n(
+    "Quarantined IP Trigger", "cmdb/log/trigger-policy", "quarantined-ip-trigger",
+    note="WPP quarantined-IP notification -> the same log trigger-policy",
+    children=_TRIGGER_POLICY_REF.children,
+)
+
 #: field -> shared ref node, followed when a live object (or sub-row) carries
 #: that field. Deliberately tiny: a field earns a place only once its target
 #: collection has been READ on a real appliance (both answer 200 on 7.6.8).
@@ -149,6 +169,7 @@ _RECAPTCHA_REF: DepNode = _n(
 FIELD_REFS: dict = {
     "trigger": _TRIGGER_POLICY_REF,
     "recaptcha-server": _RECAPTCHA_REF,
+    "quarantined-ip-trigger": _QUARANTINED_IP_TRIGGER_REF,
 }
 
 
@@ -780,6 +801,34 @@ WEB_PROTECTION_PROFILE: DepNode = _n(
                                      children=[_n("Match Condition",
                                                   "cmdb/waf/user-tracking.rule/match-condition")])])]),
         _n("Waiting Room", "cmdb/waf/waiting-room-policy", "waiting-room-policy", "Tracking"),
+        # The WPP's `custom-response` field — the page the client is served
+        # INSTEAD of being bounced to `redirect-url`. UNDOCUMENTED on the 7.6.8
+        # CLI reference page for this profile, so the appliance is the only
+        # authority: `set custom-response ?` answers `<datasource>`. The table
+        # is TWO-LEVEL (`config waf custom-response custom-response-policy`),
+        # hence the dot in the REST path; every single-level spelling answers
+        # -20001.
+        #
+        # THE POLICY HAS NO SCALAR FIELDS AT ALL — `name` plus the read-only
+        # `sz_rule` counter, and its entire meaning lives in the `rule`
+        # sub-table (the same shape as certificate.urlcert). Declared without
+        # that sub-table it would land complete and completely inert. `rule` was
+        # settled by CREATING a parent and reading the child path: it answers a
+        # LIST, while `rule-list`/`rule_list` echo the PARENT object back —
+        # which is what an unverified child path does on FortiWeb instead of
+        # 404ing, and would re-POST the policy inside itself.
+        _n("Custom Response", "cmdb/waf/custom-response.custom-response-policy",
+           "custom-response", "Custom Response · served in place of redirect-url",
+           children=[
+               _n("Response Rules",
+                  "cmdb/waf/custom-response.custom-response-policy/rule",
+                  children=[
+                      _n("Custom Response Rule",
+                         "cmdb/waf/custom-response.custom-response-rule",
+                         "custom-response-rule-name",
+                         note="the response body: url + content (leaf on 7.6.8)"),
+                  ]),
+           ]),
         _n("Threat Score Profile", "cmdb/server-policy/pattern.threat-score-profile",
            "threat-score-profile", "Tracking"),
     ],

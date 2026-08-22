@@ -6,7 +6,7 @@
   <div class="fw-card">
     <div class="fw-card-header"><h2 class="fw-card-title">{{ _('AI Advisor') }}</h2></div>
     <div class="fw-card-body">
-      <p class="text-secondary" style="font-size:13px">{{ _('The advisor never writes to SATOM or an appliance directly — see') }} <a href="{{ docs_url() }}/docs/ai-advisor.html" target="_blank" rel="noopener">{{ _('docs/ai-advisor.md') }}</a>{{ _('. Local Ollama traffic never leaves the LAN. Every message sent to an external provider is logged (') }}<a href="{{ url_for('audit.index') }}">{{ _('Audit log') }}</a>, action <code>advisor.send</code>), redacted of
+      <p class="text-secondary" style="font-size:13px">{{ _('The advisor never writes to SATOM or an appliance directly — see') }} <a href="{{ docs_url('ai-advisor') }}" target="_blank" rel="noopener">{{ _('docs/ai-advisor.md') }}</a>{{ _('. Local Ollama traffic never leaves the LAN. Every message sent to an external provider is logged (') }}<a href="{{ url_for('audit.index') }}">{{ _('Audit log') }}</a>, action <code>advisor.send</code>), redacted of
         known internal identifiers first, and requires "Allow external providers" below in addition to the
         provider itself being configured.</p>
       <div class="d-flex flex-wrap gap-4 mb-2">

@@ -4,7 +4,7 @@
 <div class="fw-page-header">
   <div>
     <h1 class="fw-page-title"><i class="bi bi-stars me-2 text-accent"></i>{{ _('AI Advisor') }}</h1>
-    <p class="fw-page-sub">{{ _('A read-only chat assistant for WAF false-positive triage, Lua drafting, and searching device configuration reports. It never changes SATOM or an appliance directly — a proposed change becomes a draft you review and apply yourself.') }} <a href="{{ docs_url() }}/docs/ai-advisor.html" target="_blank" rel="noopener">{{ _('How this works') }}</a>.</p>
+    <p class="fw-page-sub">{{ _('A read-only chat assistant for WAF false-positive triage, Lua drafting, and searching device configuration reports. It never changes SATOM or an appliance directly — a proposed change becomes a draft you review and apply yourself.') }} <a href="{{ docs_url('ai-advisor') }}" target="_blank" rel="noopener">{{ _('How this works') }}</a>.</p>
   </div>
   <div class="d-flex gap-2">
     {% if current_user.can('advisor.configure') %}

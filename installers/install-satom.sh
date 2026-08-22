@@ -43,7 +43,7 @@
 # ============================================================================
 set -euo pipefail
 
-VERSION="1.11.0"
+VERSION="1.12.0"
 APP_DIR="/opt/satom"
 ACME_WEBROOT="/var/www/acme"
 LEGO_VERSION="5.2.2"
@@ -486,7 +486,7 @@ preflight() {
     local opt_mb var_mb ram_mb
     opt_mb=$(pf_free_mb /opt); var_mb=$(pf_free_mb /var)
     if [ "${opt_mb:-0}" -lt 4000 ]; then pf_bad "Sólo ${opt_mb} MB libres en /opt — el código + venv + reportes necesitan bastante más (mínimo operable 4 GB, recomendado 15 GB)"
-    elif [ "${opt_mb:-0}" -lt 15000 ]; then pf_warn "/opt tiene ${opt_mb} MB libres; se recomiendan 15 GB (crece con backups y reportes)"
+    elif [ "${opt_mb:-0}" -lt 15000 ]; then pf_warn "/opt tiene ${opt_mb} MB libres; 15 GB es el SUELO, no un dimensionado. Calcula el tamaño real para tu flota con docs/sizing.md (~110 equipos por nodo; el disco lo domina el indice de configuracion, ~0,45 MB por server policy)"
     else ok "/opt: ${opt_mb} MB libres"; fi
     if [ "${var_mb:-0}" -lt 2000 ]; then pf_warn "/var tiene sólo ${var_mb} MB libres (ahí viven Postgres y los logs)"
     else ok "/var: ${var_mb} MB libres"; fi

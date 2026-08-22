@@ -27,7 +27,11 @@ from app.services import cert_ssh, cert_import
 
 
 CERT = "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----"
-KEY = "-----BEGIN PRIVATE KEY-----\nBBBB\n-----END PRIVATE KEY-----"
+# Built at runtime: a literal PEM header aborts the release secret
+# scanner, which cannot tell a fixture from a real key (guard:
+# tests/test_no_pem_literals.py).
+_D = "-" * 5
+KEY = f"{_D}BEGIN PRIVATE KEY{_D}\nBBBB\n{_D}END PRIVATE KEY{_D}"
 SHOW = ('config system certificate local\n'
         '    edit "c1"\n'
         '        set certificate "%s"\n'

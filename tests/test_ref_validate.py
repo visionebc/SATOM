@@ -83,10 +83,76 @@ VERIFIED_2026_08_09 = {
 # than none -- it would populate the dropdown from the wrong collection AND make
 # the validator reject values FortiWeb accepts.
 DELIBERATELY_UNMAPPED = {
-    'custom-response', 'grpc-policy', 'mitb-protection', 'ftp-protection-profile',
-    'adfs-certificate-service', 'certificate-group', 'urlcert-group',
-    'traffic-mirror-type',
+    'custom-response', 'grpc-policy', 'mitb-protection',
+    'certificate-group', 'urlcert-group', 'traffic-mirror-type',
 }
+
+# Proven later, against the same firmware, and moved OUT of the set above.
+# `adfs-certificate-service` names a SERVICE, not a certificate: the 7.6 CLI
+# reference says "Select the pre-defined service TLSCLIENTPORT if FortiWeb uses
+# service port 49443", and fortiweb12 does carry TLSCLIENTPORT among
+# service.predefined's six rows. Both halves of the pair are readable over
+# REST, so the dropdown populates and the validator can tell `ok` from `absent`.
+VERIFIED_2026_08_22 = {
+    'adfs-certificate-service':
+        'server-policy/service.custom|server-policy/service.predefined',
+}
+
+# `ftp-protection-profile` and `adfs-certificate-service` left the set above
+# once their collections were proven (7.6 CLI reference + fortiweb12). The FTP
+# one carries a sting the others do not, and the next three tests are its
+# guard.
+VERIFIED_2026_08_22 = {
+    'ftp-protection-profile': 'waf/ftp-protection-profile',
+}
+
+
+def test_a_collection_rest_refuses_is_never_turned_into_a_rejection():
+    """The trap the map alone walks into.
+
+    `waf/ftp-protection-profile` is resolved by the CLI and REFUSED by REST with
+    errcode -20001 on 7.6.8 — and -20001 is exactly what `cmdb_names_checked`
+    reports as `absent`. `absent` is one of the two states that license a
+    rejection, so mapping the field (which the dependency tree needs) would make
+    every valid FTP policy save come back as "this firmware has no
+    waf/ftp-protection-profile collection". The device would have accepted it.
+    """
+    ep = REF_ENDPOINTS['ftp-protection-profile']
+    client = FakeClient({ep: ([], 'absent', '')})
+    problems, unverified = ref_validate.validate(
+        client, {'ftp-protection-profile': 'ftpp-root'})
+    assert problems == [], problems
+    assert [u['field'] for u in unverified] == ['ftp-protection-profile']
+    assert '-20001' in unverified[0]['error']
+    # ...and it costs no read at all: the answer is known before we ask.
+    assert client.reads == []
+
+
+def test_the_exemption_is_not_extended_to_readable_collections():
+    """One unreadable collection must not excuse the field next to it."""
+    ep = REF_ENDPOINTS['ftp-file-check']
+    client = FakeClient({ep: (['known-one'], 'ok', '')})
+    problems, _unverified = ref_validate.validate(
+        client, {'ftp-file-check': 'not-there'})
+    assert [p['field'] for p in problems] == ['ftp-file-check']
+
+
+def test_a_pair_endpoint_is_exempt_only_if_BOTH_halves_are_unreadable():
+    """`a|b` is answerable while either half answers; exempting it on the
+    strength of one would silently drop a check that works."""
+    from app.services import fortiweb_field_schema as fs
+    assert ref_validate._rest_unreadable(
+        'waf/ftp-protection-profile|server-policy/service.custom') == ''
+    assert ref_validate._rest_unreadable('waf/ftp-protection-profile')
+    assert set(fs.REST_UNREADABLE) == {'waf/ftp-protection-profile'}
+
+
+def test_the_clone_and_the_validator_read_ONE_table():
+    """Two authors for this fact is how the clone ends up skipping a collection
+    the validator still rejects on."""
+    from app.services.clone import _REST_UNREACHABLE
+    from app.services.fortiweb_field_schema import REST_UNREADABLE
+    assert {p.split('cmdb/', 1)[-1] for p in _REST_UNREACHABLE} == set(REST_UNREADABLE)
 
 
 def test_the_field_that_caused_1129_is_mapped():
@@ -96,6 +162,11 @@ def test_the_field_that_caused_1129_is_mapped():
 
 @pytest.mark.parametrize('key,endpoint', sorted(VERIFIED_2026_08_09.items()))
 def test_each_verified_reference_field_keeps_its_collection(key, endpoint):
+    assert REF_ENDPOINTS.get(key) == endpoint
+
+
+@pytest.mark.parametrize('key,endpoint', sorted(VERIFIED_2026_08_22.items()))
+def test_each_later_verified_reference_field_keeps_its_collection(key, endpoint):
     assert REF_ENDPOINTS.get(key) == endpoint
 
 

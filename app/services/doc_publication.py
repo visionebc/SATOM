@@ -98,6 +98,11 @@ PUBLIC_DOCS: list[tuple[str, str, str, str, str]] = [
      "Day-to-day operation, screen by screen — the manual for someone using the web interface."),
     ("INSTALL.md", "install", "Installation & deployment", "\U0001f4e6",
      "Requirements, package lists per distribution, the preflight, clustering, hardening and uninstall."),
+    ("sizing.md", "sizing", "Sizing a node — the formula", "\U0001f4d0",
+     "How big the node has to be for the fleet you are pointing it at: the "
+     "device-I/O ceiling that sets the device count, the disk and RAM formulas "
+     "with the constants they were measured from, the tiers, and the free-space "
+     "floor."),
     ("cli.md", "cli", "Operator console (satom CLI)", "⌨️",
      "The command-line tool for a node whose web interface is down: diagnose, control, rebuild — and the sudo rule to request."),
     ("theming.md", "theming", "Theming the console", "\U0001f3a8",
@@ -175,7 +180,8 @@ GROUPS: list[tuple[str, str, list[str]]] = [
     ("Start here", "New to the platform — read these in order.",
      ["readme", "management-overview", "overview", "user-guide", "theming"]),
     ("Deploy & operate", "Getting it running, keeping it running, getting it back.",
-     ["install", "cli", "privilege-model", "safeguards", "metrics-architecture",
+     ["install", "sizing", "cli", "privilege-model", "safeguards",
+      "metrics-architecture",
       "alerting", "provisioning-hypervisors", "git-backup",
       "offline-update-packages"]),
     ("Security", "Certificates, transport encryption, trust between nodes, and "

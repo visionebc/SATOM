@@ -352,7 +352,19 @@ def test_store_read_failure_is_not_reported_as_a_missing_file(monkeypatch):
     """"No copy held" and "the store could not be read" lead to opposite
     actions. Collapsing them tells an operator to upload a file they already
     uploaded, which is how a broken index gets diagnosed as a missing artifact.
-    Called with no Flask app context, which is exactly how the ORM fails."""
+
+    The failure is INDUCED, not borrowed from the environment. This test used to
+    rely on running with no Flask app context -- true when the file runs alone,
+    false in the full suite the moment any earlier module leaves a context
+    pushed, and then the store reads fine, ``err`` is "" and the test fails on
+    an entirely healthy code path. Raising from ``latest`` reproduces the real
+    shape (the ORM blowing up inside ``resolve``'s try) without depending on
+    what ran before it.
+    """
+    def _boom(*_a, **_k):
+        raise RuntimeError("Working outside of application context.")
+    monkeypatch.setattr(wa, "latest", _boom)
+
     blob, origin, err = wa.resolve("xml_schema", "xsd-order", 7)
     assert blob is None and origin == ""
     assert "could not be read" in err

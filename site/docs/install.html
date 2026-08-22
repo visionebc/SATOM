@@ -80,12 +80,15 @@ to undo it.</p>
 <hr>
 <h2 id="1-requirements">1. Requirements</h2>
 <h3 id="11-minimum-hardware-per-node">1.1 Minimum hardware (per node)</h3>
+<p>This table is a <strong>floor</strong> — what the installer needs to finish and what a lab
+node can live on. It is NOT a sizing recommendation, and treating it as one is
+how a node ends up with a full disk and a database in a crash loop:</p>
 <table>
 <thead>
 <tr>
 <th>Resource</th>
 <th>Minimum</th>
-<th>Recommended</th>
+<th>Recommended (lab / PoC)</th>
 </tr>
 </thead>
 <tbody>
@@ -102,10 +105,63 @@ to undo it.</p>
 <tr>
 <td>Disk</td>
 <td>15 GB</td>
-<td>30 GB (grows with backups/reports)</td>
+<td>20 GB</td>
 </tr>
 </tbody>
 </table>
+<p><strong>Size the node for your fleet with <a href="sizing.html"><code>sizing.md</code></a></strong>, which gives a
+formula per resource and the measured constants behind it. The short version:</p>
+<table>
+<thead>
+<tr>
+<th>Tier</th>
+<th>Devices</th>
+<th>Policies/device</th>
+<th>vCPU</th>
+<th>RAM</th>
+<th>Disk</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Lab / PoC</td>
+<td>≤ 10</td>
+<td>≤ 100</td>
+<td>2</td>
+<td>4 GB</td>
+<td>20 GB</td>
+</tr>
+<tr>
+<td>Small</td>
+<td>≤ 25</td>
+<td>≤ 250</td>
+<td>4</td>
+<td>4 GB</td>
+<td>30 GB</td>
+</tr>
+<tr>
+<td>Medium</td>
+<td>≤ 60</td>
+<td>≤ 250</td>
+<td>4</td>
+<td>8 GB</td>
+<td>40 GB</td>
+</tr>
+<tr>
+<td>Large</td>
+<td>≤ 110</td>
+<td>≤ 750</td>
+<td>8</td>
+<td>8 GB</td>
+<td>120 GB</td>
+</tr>
+</tbody>
+</table>
+<p>Past ~110 devices a single node cannot finish its 3-minute collection window;
+split the fleet across installations rather than growing the node
+(<code>sizing.md</code> §2.1 and §3.1). Whatever tier you pick, keep
+<strong><code>max(15 % of the volume, 3 GB)</code> free</strong> — the margin PostgreSQL needs for a
+checkpoint it cannot defer, and a bundle build needs before it prunes.</p>
 <h3 id="12-software">1.2 Software</h3>
 <ul>
 <li>A distribution with <strong>systemd as PID 1</strong> (Alpine/musl is not supported).

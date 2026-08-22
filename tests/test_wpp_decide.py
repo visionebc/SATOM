@@ -197,12 +197,19 @@ def _keys(items, urn=None):
 def test_an_unticked_offer_is_REMOVED_from_the_plan_not_skipped():
     """An item left in saying ``create`` describes a write that will not happen,
     and every counter, report and verification reads the plan."""
+    # ⚠ CORRECTED IN 1.12.0. This test used to accept ``r1`` while DECLINING
+    # its parent ``sig1``, and then assert that r1 survived. That is a write
+    # addressed with ``?mkey=sig1`` against an object the same decision had
+    # just removed from the plan — ``-651`` on the appliance. The old
+    # expectation pinned the defect; the orphan case now has its own test.
+    # Here the parent is ACCEPTED, so the only question left is the one this
+    # test is actually about: an unticked row is removed, not skipped.
     items = _plan(rows=(("r1", "create"), ("r2", "create")))
     shown = [wpp_decide.item_key(it) for it in items
              if it.status in ("create", "update") and it.urn != "cmdb/server-policy/policy"]
-    keep = next(k for k in shown if k.endswith("r1|sig1|subrow"))
-    res = wpp_decide.apply_decisions(items, [keep], shown)
-    assert res["kept"] == 1 and res["dropped"] == 2   # r2 and the Signatures obj
+    keep = [k for k in shown if k.endswith("r1|sig1|subrow") or "|sig1||object" in k]
+    res = wpp_decide.apply_decisions(items, keep, shown)
+    assert res["kept"] == 2 and res["dropped"] == 1   # r2 only
     assert [it.mkey for it in items if it.urn == SIGLIST] == ["r1"]
 
 
@@ -261,7 +268,10 @@ def test_nothing_happens_when_the_profile_is_being_created():
     items = _plan(wpp_status="create")
     n = len(items)
     res = wpp_decide.apply_decisions(items, [], [])
-    assert res == {"kept": 0, "dropped": 0, "retuned": False}
+    assert (res["kept"], res["dropped"], res["retuned"]) == (0, 0, False)
+    # Nothing was decided, so nothing may have been reverted or cascaded
+    # either — an empty outcome has to be empty on every axis it reports.
+    assert res["reverted"] == [] and res["cascaded"] == []
     assert len(items) == n
 
 
@@ -374,3 +384,205 @@ def test_a_dry_run_writes_nothing_but_still_reports_the_retune():
     wpp = next(it for it in items if it.urn == WPP)
     assert written == [] and wpp.result == "dry-run"
     assert "obj-update" in clone.summarize(items)
+
+
+# --------------------------------------------------------------------------- #
+#  6. honouring a decline in the fields that NAME it (1.12.0)                    #
+# --------------------------------------------------------------------------- #
+#
+# ⚠ Dropping the declined item was only HALF of "decline", and the missing half
+# was the half that writes. The profile that NAMED the declined section was
+# still written with the SOURCE's value for that field, so the destination
+# ended up naming a sub-policy it does not have — and this firmware answers
+# that by seating a default of its own. The operator who asked to keep the
+# destination's original got neither tree.
+
+
+def _shown_keys(items):
+    keys = [wpp_decide.item_key(it) for it in items
+            if it.status in ("create", "update")]
+    keys.append(wpp_decide.item_key(next(it for it in items if it.urn == WPP)))
+    return keys
+
+
+def _dst(signature_rule="dst-sig"):
+    return FakeDst({(WPP, "wpp1"): [{"name": "wpp1",
+                                     "signature-rule": signature_rule,
+                                     "url-access-policy": "dst-uap"}]})
+
+
+def test_names_one_of_matches_a_scalar_reference_by_value():
+    assert wpp_decide._names_one_of({"signature-rule": "sig1"}, {"sig1"}) \
+        == ["signature-rule"]
+
+
+def test_names_one_of_ignores_the_row_id_a_blank_and_a_list():
+    # ``id`` is auto-assigned per box: one that happens to equal a declined
+    # object's name is not a reference to it. A blank names nothing, and a list
+    # field is re-pointed name by name elsewhere.
+    hit = wpp_decide._names_one_of(
+        {"id": "sig1", "blank": "", "refs": ["sig1"], "real": "sig1"}, {"sig1"})
+    assert hit == ["real"]
+
+
+def test_names_one_of_with_nothing_declined_matches_nothing():
+    assert wpp_decide._names_one_of({"signature-rule": "sig1"}, set()) == []
+
+
+def test_declining_a_section_puts_the_naming_field_back_to_the_destination():
+    items = _plan()
+    shown = _shown_keys(items)
+    wpp_key = wpp_decide.item_key(next(it for it in items if it.urn == WPP))
+    # the retune is ACCEPTED; only the signature object is declined.
+    accepted = [k for k in shown if k != wpp_decide.item_key(
+        next(it for it in items if it.urn == SIG))]
+    res = wpp_decide.apply_decisions(items, accepted, shown,
+                                     dst_reader=_dst())
+    assert wpp_key in accepted
+    wpp = next(it for it in items if it.urn == WPP)
+    assert wpp.status == "obj-update"
+    assert wpp.payload["signature-rule"] == "dst-sig", \
+        "the declined section is still named by the profile that will be written"
+    assert any(r["field"] == "signature-rule" and r["destination"] == "dst-sig"
+               for r in res["reverted"])
+
+
+def test_the_reverted_field_is_not_in_the_write_body_either():
+    items = _plan()
+    shown = _shown_keys(items)
+    accepted = [k for k in shown if k != wpp_decide.item_key(
+        next(it for it in items if it.urn == SIG))]
+    wpp_decide.apply_decisions(items, accepted, shown, dst_reader=_dst())
+    wpp = next(it for it in items if it.urn == WPP)
+    body = wpp_decide.object_update_payload(wpp.payload, wpp.dst_row)
+    assert body["signature-rule"] == "dst-sig"
+
+
+def test_a_revert_never_writes_the_source_value_when_the_destination_is_blank():
+    # Restoring a blank is not a third outcome invented here: the destination
+    # genuinely holds nothing, and ``object_update_payload`` drops empty source
+    # fields, so the destination keeps what it has. What must NEVER survive is
+    # the SOURCE's name for a section that is not being created.
+    items = _plan()
+    shown = _shown_keys(items)
+    accepted = [k for k in shown if k != wpp_decide.item_key(
+        next(it for it in items if it.urn == SIG))]
+    wpp_decide.apply_decisions(items, accepted, shown,
+                               dst_reader=_dst(signature_rule=""))
+    wpp = next(it for it in items if it.urn == WPP)
+    body = wpp_decide.object_update_payload(wpp.payload, wpp.dst_row)
+    assert body.get("signature-rule", "") != "sig1"
+
+
+def test_accepting_everything_reverts_nothing():
+    items = _plan()
+    shown = _shown_keys(items)
+    res = wpp_decide.apply_decisions(items, shown, shown, dst_reader=_dst())
+    assert res["reverted"] == [] and res["cascaded"] == []
+    wpp = next(it for it in items if it.urn == WPP)
+    assert wpp.payload["signature-rule"] == "sig1"
+
+
+def test_a_declined_retune_is_not_reverted_because_it_is_never_written():
+    # The profile itself was declined, so it drops to ``exists`` and no body is
+    # sent. Reverting a field on an item nobody writes would report a repair
+    # that did not happen.
+    items = _plan()
+    shown = _shown_keys(items)
+    res = wpp_decide.apply_decisions(items, [], shown, dst_reader=_dst())
+    wpp = next(it for it in items if it.urn == WPP)
+    assert wpp.status == "exists" and res["reverted"] == []
+
+
+# --------------------------------------------------------------------------- #
+#  7. the cascade: a CREATE has no original to keep                             #
+# --------------------------------------------------------------------------- #
+
+
+def _plan_with_dependent_create():
+    """``uap1`` is a CREATE that names the signature object. Declining ``sig1``
+    leaves nothing for ``uap1`` to name."""
+    items = _plan()
+    uap = _it("URL Access Policy", "cmdb/waf/url-access.url-access-policy",
+              "uap1", "", "object", 2, {"name": "uap1",
+                                        "signature-rule": "sig1"}, "create")
+    items.insert(2, uap)
+    return items
+
+
+def test_a_create_that_names_a_declined_section_is_dropped_not_blanked():
+    items = _plan_with_dependent_create()
+    shown = _shown_keys(items)
+    accepted = [k for k in shown if k != wpp_decide.item_key(
+        next(it for it in items if it.urn == SIG))]
+    res = wpp_decide.apply_decisions(items, accepted, shown, dst_reader=_dst())
+    assert not any(it.mkey == "uap1" for it in items), \
+        "it would have been written naming an object that will not exist (-651)"
+    assert any(c["mkey"] == "uap1" for c in res["cascaded"])
+
+
+def test_a_cascaded_drop_is_counted_as_a_drop():
+    items = _plan_with_dependent_create()
+    shown = _shown_keys(items)
+    accepted = [k for k in shown if k != wpp_decide.item_key(
+        next(it for it in items if it.urn == SIG))]
+    before = len([it for it in items if it.status == "create"])
+    res = wpp_decide.apply_decisions(items, accepted, shown, dst_reader=_dst())
+    after = len([it for it in items if it.status == "create"])
+    assert res["dropped"] == before - after
+
+
+def test_the_cascade_is_transitive():
+    # uap1 names sig1; a third object names uap1. Declining sig1 must reach it.
+    items = _plan_with_dependent_create()
+    third = _it("Custom Response", "cmdb/waf/http-custom-response", "cr1", "",
+                "object", 2, {"name": "cr1", "url-access-policy": "uap1"},
+                "create")
+    items.insert(3, third)
+    shown = _shown_keys(items)
+    accepted = [k for k in shown if k != wpp_decide.item_key(
+        next(it for it in items if it.urn == SIG))]
+    res = wpp_decide.apply_decisions(items, accepted, shown, dst_reader=_dst())
+    assert not any(it.mkey == "cr1" for it in items)
+    # ``r1`` is in there by the OTHER route: its parent ``sig1`` was declined,
+    # so the row has no object left to be addressed through.
+    assert {c["mkey"] for c in res["cascaded"]} == {"uap1", "cr1", "r1"}
+
+
+def test_an_accepted_row_under_a_declined_parent_is_dropped_too():
+    # ⚠ A row does not NAME its parent in a field — it is addressed by
+    # ``parent_mkey``. Matching only payload values let an accepted row survive
+    # a declined parent and be written with ``?mkey=`` pointing at an object
+    # that will not exist.
+    items = _plan()
+    shown = _shown_keys(items)
+    sig_key = wpp_decide.item_key(next(it for it in items if it.urn == SIG))
+    accepted = [k for k in shown if k != sig_key]       # r1 IS accepted
+    res = wpp_decide.apply_decisions(items, accepted, shown, dst_reader=_dst())
+    assert not any(it.mkey == "r1" for it in items)
+    assert any(c["mkey"] == "r1" and "parent" in c["why"]
+               for c in res["cascaded"])
+
+
+def test_a_row_of_a_DIFFERENT_collection_sharing_the_parent_name_survives():
+    # Parenthood is the pair (collection, key). Two unrelated objects that
+    # share a name must not drag each other's rows out of the plan.
+    items = _plan()
+    other = _it("Elsewhere · row", "cmdb/waf/url-access.url-access-policy/rule",
+                "x1", "sig1", "subrow", 3, {"id": "x1"}, "create")
+    items.insert(3, other)
+    shown = _shown_keys(items)
+    sig_key = wpp_decide.item_key(next(it for it in items if it.urn == SIG))
+    accepted = [k for k in shown if k != sig_key]
+    wpp_decide.apply_decisions(items, accepted, shown, dst_reader=_dst())
+    assert any(it.mkey == "x1" for it in items)
+
+
+def test_nothing_outside_the_profile_subtree_is_ever_touched():
+    items = _plan_with_dependent_create()
+    shown = _shown_keys(items)
+    res = wpp_decide.apply_decisions(items, [], shown, dst_reader=_dst())
+    assert any(it.mkey == "pol1" and it.status == "create" for it in items), \
+        "the policy itself was never offered, so it may not change"
+    assert any(it.mkey == "rmg1" for it in items)
+    assert all(c["mkey"] != "pol1" for c in res["cascaded"])

@@ -8,7 +8,7 @@ and no alert existed anywhere in the product:
 
     grep -rn "disk\\|load\\|mem" app/services/infra_health.py  ->  0 grading
 
-The consequence is on record. On 2026-07-28 satom-node-1 filled to **95 %**
+The consequence is on record. On 2026-07-28 a primary node filled to **95 %**
 disk in six minutes (a load generator writing 7.9 GB of curl bodies to a log).
 Every unit stayed active, ``/healthz`` stayed 200, the badge stayed green and
 the mailbox stayed empty. It was found by a human looking at ``df``. At the

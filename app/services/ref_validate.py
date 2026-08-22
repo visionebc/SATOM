@@ -31,6 +31,14 @@ because all three answer with zero names and they mean opposite things:
                the authority -- it will still answer -651 if the value is wrong.
                The caller surfaces the unverified fields as a warning.
 
+And one collection-level exception, which is the same reasoning one level up:
+a few collections are resolved by the CLI but REFUSED by REST with -20001, and
+-20001 is what the client reads as ``absent``. For those the device's ``absent``
+is an artefact of the transport, not a statement about the firmware -- so they
+are never a rejection, only an ``unverified`` warning. The set is
+:data:`fortiweb_field_schema.REST_UNREADABLE`, shared with the clone so the two
+cannot drift.
+
 Scope
 -----
 Applied at the OPERATOR-facing edit endpoints, not inside ``FortiWebOps``.
@@ -40,7 +48,8 @@ half-built tree that is correct by the time it lands.
 """
 from __future__ import annotations
 
-from .fortiweb_field_schema import KIND_SPECS, REF_ENDPOINTS
+from .fortiweb_field_schema import (KIND_SPECS, REF_ENDPOINTS,
+                                    REST_UNREADABLE)
 
 # A value that clears the field. FortiWeb accepts an empty string for any
 # optional reference, so "not set" is never validated.
@@ -101,6 +110,21 @@ def _tokens(value):
     return [p for p in parts if p]
 
 
+
+def _rest_unreadable(endpoint: str) -> str:
+    """Why this endpoint cannot be checked over REST, or '' when it can.
+
+    An endpoint is only exempt when EVERY collection behind it is unreadable:
+    a pair like ``service.custom|service.predefined`` is answerable as long as
+    one half answers, and exempting it on the strength of the other would drop
+    a check that works.
+    """
+    parts = [c.strip() for c in (endpoint or '').split('|') if c.strip()]
+    if not parts:
+        return ''
+    whys = [REST_UNREADABLE.get(c, '') for c in parts]
+    return whys[0] if all(whys) else ''
+
 def validate(client, fields: dict, kind: str = '') -> tuple[list, list]:
     """(problems, unverified) for the reference fields inside ``fields``.
 
@@ -122,6 +146,11 @@ def validate(client, fields: dict, kind: str = '') -> tuple[list, list]:
             continue
         names = _tokens(value)
         if not names:
+            continue
+        unreadable = _rest_unreadable(endpoint)
+        if unreadable:
+            unverified.append({'field': key, 'endpoint': endpoint,
+                               'error': unreadable})
             continue
         if endpoint not in cache:
             cache[endpoint] = client.cmdb_names_checked(endpoint)

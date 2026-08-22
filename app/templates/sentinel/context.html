@@ -270,6 +270,7 @@
       re-run: it is idempotent and it verifies by reading the profile back.
     </p>
     <form method="post" action="{{ url_for('sentinel.arm') }}" class="row g-2 align-items-end">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="col-md-4">
         <label class="form-label small mb-1">Appliance</label>
         <select name="device" class="form-select form-select-sm" required>

@@ -87,7 +87,7 @@
         <label class="fw-form-label">{{ spec.key_label }} (PEM)</label>
         <textarea class="form-control fw-form-control" name="key_pem" rows="7" required
                   style="font-family:monospace;font-size:11.5px;"
-                  placeholder="-----BEGIN PRIVATE KEY-----&#10;…&#10;-----END PRIVATE KEY-----">{{ form.key_pem }}</textarea>
+                  {% set d = "-" * 5 %}placeholder="{{ d }}BEGIN PRIVATE KEY{{ d }}&#10;…&#10;{{ d }}END PRIVATE KEY{{ d }}">{{ form.key_pem }}</textarea>
         <div class="form-text" style="font-size:11.5px;">
           {{ _('The pair is verified here before anything is sent — a key that does not belong to the certificate is refused, not uploaded.') }}
         </div>

@@ -6,6 +6,167 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [1.12.0] - 2026-08-22
+
+Four rounds of clone work landed after 1.11.0 with an empty `[Unreleased]`
+block. This release documents all of it, and repairs the one defect that
+auditing it uncovered: **a declined section was only half declined, and the
+missing half was the half that writes.**
+
+### Added
+
+- **An SNI policy is cloned at all.** `clone._CERT_URNS` held
+  `system/certificate.sni`, so the object was classified `cert` — "SSH-only,
+  not cloned over REST" — and every member row under it then fell to `empty`
+  ("parent object is not being created"). The copy landed naming an SNI table
+  the destination had never seen. Measured with this project's own client on
+  FortiWeb 7.6.8: the object is `name` + `sz_members` and the row is
+  `domain` / `local-cert` / `inter-group` / `lets-certificate` / `verify` —
+  **no PEM anywhere**, `POST` 200 for both. ⚠ One collection, **two
+  spellings**: the row calls the chain group `inter-group`, the policy calls it
+  `intermediate-certificate-group`, so the *children* are shared and the node
+  is not.
+- **Backend reachability, from two vantages that are never merged** — the
+  destination appliance over `execute ping`, and this node over TCP to the real
+  port. `unknown` stays its own bucket: folding it into "reachable" signs off a
+  real outage, folding it into "down" manufactures a false one. Off by default.
+  ⚠ `execute` is **not** added to the read-verb allowlist (that verb also
+  spells `reboot` and `factoryreset`); the probe carries a whole-command gate
+  of its own.
+- **Certificate material carried over SSH, inside the clone.** `show` inside
+  the entry prints the certificate *and* the private key; `get` prints neither,
+  and REST prints neither for either field. Carried **before the first write**,
+  because a certificate is a dependency and a `-651` halfway through an apply
+  means the operator is already committed. A name the destination already holds
+  is left alone; the private key never reaches a plan, a report or a log.
+- **New, compare and decide** — the third profile policy. The planner had
+  always compared sub-table *rows*; it never compared the profile **object**,
+  so a profile whose ~40 lists matched but whose own switches differed read as
+  identical and was not. ⚠ The slice runs **backwards**: the plan is post-order,
+  so a profile's descendants are the contiguous run *before* it that is deeper
+  than it (measured: 111 items backwards, 1 forwards). Nothing is pre-ticked.
+- **Rows the destination already owns are reconciled, not re-created.** The
+  appliance enforces uniqueness on a **natural key** — a subset of the row — so
+  a destination row with the same key and different content was absent to the
+  planner and present to the box: the plan said `create`, the box refused the
+  duplicate, and the destination kept serving the old value.
+- **Reuse a destination profile (`dst_wpp`), and create a profile only if it is
+  missing (`wpp_only_if_missing`)**, both reaching the single-policy dialog and
+  the bulk job from the same function. Profiles are deduplicated **once per
+  bulk run**, keyed on the *pair* (source profile, landing profile).
+- **`trigger` and the Custom Signature filter edge.** A `trigger` names a
+  `log/trigger-policy` and nothing ever created it; on a destination lacking
+  the policy the appliance rejected the **whole object** (HTTP 500, no errcode).
+  Keyed by **field**, not by tree position — `trigger` is carried by 10 object
+  collections, and only 51 of 130 had any row on the lab appliance, so keying on
+  measured parents would have left the defect latent in the other 79.
+- **The two datasource fields beside `redirect-url` on a Web Protection
+  Profile** — `custom-response` and `quarantined-ip-trigger`. Reported as "the
+  redirect URL is not being cloned"; `redirect-url` is a string and always
+  travelled. A dangling reference made the destination answer `-651` to the
+  **whole profile**, so every setting was lost with it.
+- **Parallel pre-flight analysis.** Measured in vivo: 10 policies,
+  **51.45 s → 20.99 s (2.45×)** at 4 workers, with an identical plan footprint.
+- **A sizing formula, and the requirements built on it**
+  ([`sizing.md`](docs/sizing.md)). Every requirements table in this manual used
+  to state a *floor* — what the installer needs to finish — and nothing said how
+  big a node must be for the fleet pointed at it. The new document gives one
+  formula per resource with the constants measured on a running node, and the
+  headline is that **the ceiling is device I/O, not storage**: a node spends
+  **0.82 s per device per 3-minute window**, so `D_max = (W × u) / t_dev` puts
+  **~110 devices** on one installation at a 50 % duty cycle. Storage is
+  arithmetic on measured constants — **1.08 bytes per stored sample**
+  (1,571,997 samples in 1.70 MB), **1.66 KB per config-object row** (35,330
+  rows / 56 MB), ~**0.45 MB per server policy**, ~**70 KB per retained
+  source-of-truth version** — and the surprise is that the **config index
+  outgrows the metrics store roughly 2:1**, because the store costs ~1,500×
+  less per data point. `INSTALL.md` §1.1 now says it is a floor and links the
+  tiers; the user guide says it where the intervals that move it are edited.
+- **The alert engine states the machine's condition when it cannot raise a
+  finding about it.** Every finding is recorded and dispatched *through the
+  database*, so the one condition the engine can never report is the one that
+  takes the database down with it. Measured: a node filled its disk, PostgreSQL
+  spent five hours in crash → recovery → PANIC unable to write a checkpoint,
+  `satom-alerts` failed every fifteen minutes with a connection trace, and the
+  words "filesystem full" appeared nowhere — while `/healthz` answered 200
+  throughout. Disk thresholds existed (warn 80 %, crit 92 %) and were useless
+  for exactly that reason. The wrapper now prints `df` / `free` /
+  `/proc/loadavg` to the journal on failure: no database, no network, nothing
+  that can be down at the same moment. It is a legible failure, not a fix —
+  free space still has to be watched from outside the node.
+
+### Fixed
+
+- ⚠ **A decline is now honoured in the fields that NAME the declined section.**
+  Declining a section removed the item from the plan and stopped there — while
+  the profile that **named** it was still written with the **source's** value
+  for that field. The destination ended up naming a sub-policy that box does
+  not have, and this firmware answers such a write by seating a default of its
+  own. The operator who asked to keep the destination's original got **neither
+  tree**. Two repairs, because only one of the two situations has an original
+  to keep: an item that already **exists** at the destination has the field put
+  back to the value the destination reads *today* (never to a blank — on this
+  firmware an empty reference field is not "no profile", it is an unparsable
+  one); an item that is itself a **create** has nothing to keep, so it is
+  dropped too, **transitively**, and named in the report.
+- ⚠ **An accepted row whose parent object was declined is dropped too.** A row
+  does not *name* its parent in a field — it is addressed by `parent_mkey` — so
+  matching payload values alone let it survive and be written with `?mkey=`
+  pointing at an object that was never going to exist. Parenthood is matched on
+  the **pair** (collection, key), so two unrelated objects sharing a name cannot
+  drag each other's rows out of the plan. A test that asserted the old
+  behaviour was correcting the record, not the code: it had pinned the defect.
+- **The destination row is fetched by the call that decides**, not after it. A
+  revert with no destination snapshot has nothing to revert *to*.
+- ⚠ **Entering the certificate table is refused at the top level on an
+  ADOM-enabled appliance** and accepted on one without. The existing import sent
+  its whole block — PEM and private key included — starting with that line, so
+  on half a fleet everything after the first rejected line was interpreted at
+  whatever prompt happened to be current. One scope primitive now, three
+  callers.
+- **Three options never reached the engine from HTTP.** `dst_wpp`,
+  `wpp_only_if_missing` and `reconcile_rows` were not parsed in `_parse_action`,
+  so nothing a browser sent could reach them. An option the engine honours and
+  the HTTP layer drops is worse than an absent one: the service reads its own
+  default and the run looks like it obeyed.
+- **Subtree membership is matched by identity, not by `==`.** `CloneItem` is a
+  dataclass, so two rows carrying equal fields compare equal and a value test
+  could pull an item outside the profile subtree into a decision nobody was
+  asked about.
+- ⚠ **The pre-write reference check refused saves the appliance would have
+  accepted.** `waf/ftp-protection-profile` is resolved by the CLI and refused by
+  REST with errcode **-20001** on 7.6.8 — and -20001 is precisely what the
+  client classifies as `absent`, one of the two states that license a rejection.
+  Every valid FTP server-policy save came back as *"this firmware has no
+  waf/ftp-protection-profile collection"*. The mapping itself is correct and the
+  dependency tree needs it, so the fix is that a collection REST cannot read is
+  now an `unverified` warning and never a refusal, from **one** table
+  (`fortiweb_field_schema.REST_UNREADABLE`) that the clone derives its own from
+  — the two can no longer disagree about which collections are readable.
+- ⚠ **Sentinel's `arm` form carried no CSRF token**, so the one form in the
+  product that arms an automatic blocking response was rejected on submit with
+  *"your session expired or the form was stale"*. Every other form on the page
+  had one.
+- **Literal PEM private-key headers** in a template placeholder and two test
+  fixtures. The release publisher's secret scanner aborts on these and cannot
+  tell a fixture from a real key; the headers are now built at runtime.
+- **Five Sentinel endpoints were on neither the concept map nor its exclusion
+  list**, so the map's own guarantee — every page is mapped or excluded with a
+  written reason — was false, and Sentinel was unreachable from search.
+- **Internal node names in shipped source** (four files, prose only).
+- **A guard that passed alone and failed in the suite.** The store-read-failure
+  test induced its failure by running with no Flask application context, which
+  is true when the file runs by itself and false the moment an earlier module
+  leaves one pushed — then the store reads fine and the test fails on a healthy
+  code path. It now raises from the ORM call itself.
+
+### Documentation
+
+- The settings intro claimed **24 panels in 8 groups**; the live shape is
+  **26**, and the two missing were **Vault** and **Sentinel**. The concept-map
+  section claimed 84 mapped / 111 excluded pages against a live 88 / 112.
+  Both are guarded, both had drifted since the pages were added.
+
 ## [1.11.0] - 2026-08-20
 
 ### Added

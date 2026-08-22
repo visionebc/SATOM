@@ -185,12 +185,83 @@ def object_update_payload(src_payload: dict, dst_row: dict) -> dict:
     return out
 
 
+def _names_one_of(payload, names: Iterable[str]) -> list:
+    """The fields of ``payload`` whose value is exactly one of ``names``.
+
+    Only scalar, non-empty fields are looked at (:func:`clone._content_keys`),
+    which is precisely what a FortiWeb reference field is: the NAME of another
+    object written into a field of this one. Matching BY VALUE and not against a
+    hand-kept table of field names is deliberate — the field naming a Custom
+    Response is not called what the field naming a signature set is called, and
+    a table of those names would be a second author for a fact the payload
+    already states. ``id`` and lists are excluded by contract: an auto-assigned
+    row id that happens to equal a declined object's name is not a reference,
+    and a list field is re-pointed name by name elsewhere.
+    """
+    from .clone import _content_keys
+
+    wanted = set(names or ())
+    if not isinstance(payload, dict) or not wanted:
+        return []
+    return [k for k in _content_keys(payload)
+            if str(payload.get(k, "")) in wanted]
+
+
+def keep_original_fields(items: list, declined: Iterable[str]) -> list:
+    """Un-write every field on a KEPT item that NAMES a declined section.
+
+    Returns ``[(label, field, kept_value)]`` in plan order.
+
+    ⚠ THIS IS THE HALF OF "DECLINE" THAT NOTHING DID, and its absence is why a
+    decline could look like it had been ignored. Declining a section removed the
+    object from the plan — but the profile that NAMES it was still written with
+    the SOURCE's value for that field, so the destination ended up naming a
+    sub-policy that box does not have. A FortiWeb answers such a write by
+    seating a default of its own, so the operator who asked to keep the
+    destination's original got NEITHER tree: not the destination's setting, and
+    not the source's.
+
+    The field is restored to what the destination reads TODAY (``dst_row``) and
+    never to a blank. A blank is a third outcome nobody chose, and on this
+    firmware an empty reference field is not "no profile" — it is an unparsable
+    one.
+
+    Narrow on purpose: only names declined inside THIS profile subtree are
+    matched. Anything wider would revert fields nobody was asked about.
+    """
+    # No early-out for an empty ``declined``. :func:`_names_one_of` already
+    # answers "nothing was declined" with an empty list for every item, and a
+    # second guard over the same hole makes BOTH unprovable — removing either
+    # breaks nothing, which is indistinguishable from a guard that never worked.
+    wanted = set(declined or ())
+    out: list = []
+    for it in items:
+        if it.status not in ("obj-update", "update"):
+            continue
+        if not isinstance(it.payload, dict):
+            continue
+        hit = _names_one_of(it.payload, wanted)
+        if not hit:
+            continue
+        dst = it.dst_row if isinstance(it.dst_row, dict) else {}
+        payload = dict(it.payload)
+        for k in hit:
+            keep = str(dst.get(k, ""))
+            payload[k] = keep
+            out.append((it.label, k, keep))
+        it.payload = payload
+        it.note = ((it.note + " · ") if it.note else "") + (
+            "keeping the destination's own %s (the section it names was "
+            "declined)" % ", ".join(hit))
+    return out
+
+
 class StaleDecision(RuntimeError):
     """The re-planned run offers something the decision set never covered."""
 
 
 def apply_decisions(items: list, accepted: Iterable[str],
-                    shown: Iterable[str]) -> dict:
+                    shown: Iterable[str], dst_reader=None) -> dict:
     """Keep the accepted offers, DROP the rest, refuse anything never shown.
 
     ``accepted`` and ``shown`` both come from the operator's answer. The
@@ -206,6 +277,12 @@ def apply_decisions(items: list, accepted: Iterable[str],
     The one exception: a profile OBJECT whose fields were declined is degraded
     to ``exists`` and KEPT. The rows beneath it are addressed through it, so
     removing it would take them with it.
+
+    ``dst_reader`` is what the destination's own values are read back from when
+    a decline has to be honoured in a field (see :func:`keep_original_fields`)
+    and when an accepted retune needs the minimal-edit body. One reader, fetched
+    once, here — because the revert and the write must not disagree about what
+    the destination currently holds.
     """
     from .clone import _WPP_URNS
 
@@ -213,8 +290,14 @@ def apply_decisions(items: list, accepted: Iterable[str],
     wpp = next((it for it in items
                 if it.urn in _WPP_URNS and it.kind == "object"), None)
     if wpp is None or wpp.status != "exists":
-        return {"kept": 0, "dropped": 0, "retuned": False}
+        return {"kept": 0, "dropped": 0, "retuned": False,
+                "reverted": [], "cascaded": []}
     block = wpp_subtree(items, wpp)
+    # Membership by IDENTITY, never by ``==``: ``CloneItem`` is a dataclass, so
+    # two rows that happen to carry equal fields compare equal, and a value
+    # test would pull an item outside the profile subtree into a decision
+    # nobody was asked about.
+    scope = {id(it) for it in block}
     unknown = [it for it in block
                if it is not wpp and it.status in ("create", "update")
                and item_key(it) not in shown]
@@ -227,12 +310,13 @@ def apply_decisions(items: list, accepted: Iterable[str],
                "…" if len(unknown) > 4 else ""))
     kept = dropped = 0
     keep: list = []
+    declined_items: list = []
     for it in items:
         # NOT also `or it is wpp`: at this point the profile object is still
         # ``exists``, so the status branch below already keeps it, and its own
         # status is only rewritten AFTER this loop. A second guard for the same
         # case would make neither of them demonstrable.
-        if it not in block or it.status not in ("create", "update"):
+        if id(it) not in scope or it.status not in ("create", "update"):
             keep.append(it)
             continue
         if item_key(it) in accepted:
@@ -240,13 +324,90 @@ def apply_decisions(items: list, accepted: Iterable[str],
             keep.append(it)
         else:
             dropped += 1
+            declined_items.append(it)
     retuned = item_key(wpp) in accepted
     if retuned:
         wpp.status = "obj-update"
         wpp.note = "the operator accepted the source's values for this profile"
+        # The DESTINATION row, fetched HERE and once, so the minimal-edit body
+        # and any field this decline has to put back read the same snapshot.
+        if dst_reader is not None and not wpp.dst_row:
+            try:
+                rows = dst_reader.get_raw(wpp.urn, wpp.mkey)
+                wpp.dst_row = rows[0] if rows else {}
+            except Exception:  # noqa: BLE001 — an unreadable destination
+                wpp.dst_row = {}   # reverts to blank-safe, never to the source
     else:
         wpp.status = "exists"
         wpp.note = ("left as the destination has it — the operator declined "
                     "its fields")
+
+    # -- honouring the decline in the fields that NAME it ---------------------
+    # A declined section is not merely an item struck from a list: everything
+    # still in the plan that NAMED it has to stop naming it, or half the
+    # decline is honoured and the missing half is the half that WRITES.
+    #
+    # Two repairs, because a surviving item is in one of two situations and
+    # only one of them has an original to keep:
+    #
+    #   * it EXISTS at the destination (an accepted retune, or a keyed row being
+    #     reconciled) -> the field goes back to the destination's own value.
+    #   * it is itself a CREATE -> there is no destination value to keep, and
+    #     writing it would name an object that is not going to exist (-651). It
+    #     is dropped too, TRANSITIVELY, and named in the report. Never written,
+    #     and never silently blanked.
+    #
+    # ⚠ A CREATE reaches a declined object by TWO different routes, and only one
+    # of them is visible in a payload. A sub-table row does not NAME its parent
+    # in a field — it is addressed by ``parent_mkey``, so a row whose parent
+    # object was declined matches nothing in ``_names_one_of`` and would sail
+    # through as accepted. It would then be written with ``?mkey=`` pointing at
+    # an object that is not going to exist. Both routes are followed here.
+    declined_names = {str(it.mkey) for it in declined_items
+                      if it.kind == "object" and str(it.mkey or "")}
+    # Parenthood is matched on the PAIR (collection, key), never on the key
+    # alone: a row's own urn is its parent's urn plus the child table, so two
+    # unrelated objects that share a name in different collections cannot drag
+    # each other's rows out of the plan.
+    declined_parents = {(str(it.urn), str(it.mkey)) for it in declined_items
+                        if it.kind == "object" and str(it.mkey or "")}
+    cascaded: list = []
+    while declined_names:
+        more = []
+        for it in keep:
+            if id(it) not in scope or it.status != "create":
+                continue
+            named = _names_one_of(it.payload, declined_names)
+            orphan = (it.kind == "subrow"
+                      and any(str(it.urn).startswith(u + "/")
+                              and str(it.parent_mkey or "") == m
+                              for u, m in declined_parents))
+            if named or orphan:
+                more.append((it, named, orphan))
+        if not more:
+            break
+        gone = {id(it) for it, _n, _o in more}
+        for it, named, orphan in more:
+            if named:
+                why = ("it names %s, which you declined"
+                       % ", ".join(sorted({str(it.payload.get(k, ""))
+                                           for k in named})))
+            else:
+                why = ("its parent %s was declined and will not exist"
+                       % str(it.parent_mkey or ""))
+            it.note = ("not created: %s — the destination keeps what it has"
+                       % why)
+            cascaded.append(it)
+            if it.kind == "object" and str(it.mkey or ""):
+                declined_names.add(str(it.mkey))
+                declined_parents.add((str(it.urn), str(it.mkey)))
+        keep = [it for it in keep if id(it) not in gone]
+
     items[:] = keep
-    return {"kept": kept, "dropped": dropped, "retuned": retuned}
+    reverted = keep_original_fields(items, declined_names)
+    return {"kept": kept, "dropped": dropped + len(cascaded),
+            "retuned": retuned,
+            "cascaded": [{"label": it.label, "mkey": str(it.mkey or ""),
+                          "why": it.note} for it in cascaded],
+            "reverted": [{"label": l, "field": f, "destination": v}
+                         for l, f, v in reverted]}

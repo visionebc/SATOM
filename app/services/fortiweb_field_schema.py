@@ -81,6 +81,9 @@ REF_ENDPOINTS: dict[str, str] = {
     "adfs-certificate-service": "server-policy/service.custom|server-policy/service.predefined",
     # The FTP half of a server policy. Gated on `protocol FTP`, which is
     # immutable after creation, which is why it stayed invisible.
+    # Its collection is KNOWN but NOT readable over REST — see
+    # :data:`REST_UNREADABLE` below, which is what stops the pre-write check
+    # turning that into a refusal of every valid FTP policy save.
     "ftp-protection-profile": "waf/ftp-protection-profile",
     # Targets taken from the CLI reference's own links, NOT inferred from
     # the field names: `ftp-file-check` -> ftp-file-security and
@@ -171,6 +174,29 @@ REF_ENDPOINTS: dict[str, str] = {
 # Most objects are created with just a name (then refined via ✎); a few need a
 # couple of fields up front (system/vip → IP+interface, a custom Service → port),
 # collected by the create modal (CREATE_FIELDS below).
+# --------------------------------------------------------------------------- #
+#  Collections the CLI resolves but REST will not serve                        #
+# --------------------------------------------------------------------------- #
+# Measured on fortiweb12 (7.6.8): `GET cmdb/waf/ftp-protection-profile` answers
+# HTTP 500 / errcode -20001, while `set ftp-protection-profile ?` on an FTP
+# policy resolves the datasource happily. -20001 is one of the client's
+# `_ABSENT_ERRCODES`, so `cmdb_names_checked` reports `absent` — and `absent` is
+# one of the two states that LICENSE A REJECTION. Mapping the field is right
+# (the dependency tree needs it, tests/test_clone_ftp_refs.py); what would be
+# wrong is letting the pre-write check read `absent` here as "this firmware has
+# no such collection" and refuse a save FortiWeb would have accepted.
+#
+# ONE author for the fact: `clone._REST_UNREACHABLE` is derived from this dict
+# and `ref_validate` reads it, so a collection can never be unreadable for the
+# clone and readable for the validator.
+REST_UNREADABLE: dict[str, str] = {
+    "waf/ftp-protection-profile":
+        "the CLI resolves this reference but REST answers -20001 for its "
+        "collection on 7.6.8 — it cannot be read on the source, compared, or "
+        "written to the destination",
+}
+
+
 REF_CREATE = {
     "web-protection-profile", "server-pool", "vserver", "health",
     "persistence", "certificate", "ftp-protection-profile",

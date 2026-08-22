@@ -70,7 +70,7 @@ def _meminfo() -> dict:
 # HYPERVISOR's. Dividing the host's load average by the container's core count
 # mixes a host numerator with a container denominator: on 2026-08-11 hypervisor06 sat
 # at load 6.6 -- 27% of its 24 cores, healthy -- and this function reported
-# "220% of 3 cores" on satom-node-2 and "165% of 4 cores" on satom-node-1 in
+# "220% of 3 cores" on a standby and "165% of 4 cores" on a primary in
 # the same second, while every process in both containers was at 0.0% CPU.
 # Two containers cannot share an uptime and a load average to the decimal; that
 # they did is the proof. /proc/meminfo IS virtualised, which is why memory was

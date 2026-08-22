@@ -42,6 +42,8 @@ from ..registry.dependencies import (
     when_holds,
 )
 from ..registry.loader import load_registry
+from .fortiweb_field_schema import (
+    REST_UNREADABLE as _REST_UNREADABLE)
 from .fortiweb_ops import sanitize_payload as clean_for_write
 from . import clone_scope, objform
 
@@ -105,11 +107,11 @@ _CERT_URNS = {"cmdb/system/certificate.local",
 #                                                    -> `<datasource>  ftp
 #                                                       application protection
 #                                                       profile`
+# Derived, never re-typed: the same dict answers for the validator
+# (`ref_validate`), so a collection cannot be unreachable for the clone and
+# readable for the pre-write check.
 _REST_UNREACHABLE: dict[str, str] = {
-    "cmdb/waf/ftp-protection-profile":
-        "the CLI resolves this reference but REST answers -20001 for its "
-        "collection on 7.6.8 — it cannot be read on the source, compared, or "
-        "written to the destination",
+    "cmdb/" + coll: why for coll, why in _REST_UNREADABLE.items()
 }
 
 # Both classes whose empty payload is EXPECTED rather than a gap, in ONE place.

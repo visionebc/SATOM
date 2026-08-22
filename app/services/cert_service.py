@@ -775,7 +775,7 @@ def publish_shared_cert(by: str = "publish") -> dict:
     # never update — and it looked healthy, because the datasync restores the
     # primary's copy minutes later, long after a once-a-day pass has finished.
     #
-    # Measured on satom-node-2, 2026-08-20: slot 2026-10-15, served 2026-09-02,
+    # Measured on a standby node, 2026-08-20: slot 2026-10-15, served 2026-09-02,
     # `satom execute cert renew` reported "already up to date (identical cert)".
     #
     # The guard is a freshness rule rather than a role check on purpose: a

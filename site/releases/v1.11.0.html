@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Version 1.11.0 — SATOM</title>
-<meta name="description" content="Released on 2026-08-20 — Added · Fixed · Removed · Changed · 40 entries.">
+<meta name="description" content="Released on 2026-08-20 — Added · Fixed · Removed · Changed · 43 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -45,8 +45,8 @@
 
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
-  <h1>Version 1.11.0 <span class="rel-badge rel-now">current release</span></h1>
-  <p class="sub">Released on 2026-08-20 — Added · Fixed · Removed · Changed · 40 entries.</p>
+  <h1>Version 1.11.0 <span class="rel-badge">superseded</span></h1>
+  <p class="sub">Released on 2026-08-20 — Added · Fixed · Removed · Changed · 43 entries.</p>
 </header>
 
 <section class="wrap">
@@ -62,10 +62,15 @@
         <span class="rel-nav-meta">unreleased · Changes · 0 entries</span>
         <ul class="rel-leads"></ul>
       </a>
+      <a class="rel-nav-item" href="v1.12.0.html" data-rel-version="1.12.0">
+        <span class="rel-nav-head"><span class="rel-nav-v">Version 1.12.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
+        <span class="rel-nav-meta">2026-08-22 · Added · Fixed · 24 entries</span>
+        <ul class="rel-leads"><li>An SNI policy is cloned at all</li><li>Backend reachability, from two vantages that are never merged</li><li>Certificate material carried over SSH, inside the clone</li><li class="rel-more">… and 21 more</li></ul>
+      </a>
       <a class="rel-nav-item is-active" href="v1.11.0.html" data-rel-version="1.11.0">
-        <span class="rel-nav-head"><span class="rel-nav-v">Version 1.11.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
-        <span class="rel-nav-meta">2026-08-20 · Added · Fixed · Removed · Changed · 40 entries</span>
-        <ul class="rel-leads"><li>Sentinel: the remaining device transports, captured rather than specified</li><li>Gate executable_mechanism</li><li>actions.GATE_ORDER</li><li class="rel-more">… and 37 more</li></ul>
+        <span class="rel-nav-head"><span class="rel-nav-v">Version 1.11.0</span></span>
+        <span class="rel-nav-meta">2026-08-20 · Added · Fixed · Removed · Changed · 43 entries</span>
+        <ul class="rel-leads"><li>Sentinel: the remaining device transports, captured rather than specified</li><li>Gate executable_mechanism</li><li>actions.GATE_ORDER</li><li class="rel-more">… and 40 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v1.10.1.html" data-rel-version="1.10.1">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 1.10.1</span></span>
@@ -252,6 +257,32 @@
 </ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
+<li><strong>The response runner had no role guard.</strong> Found by reading the standby after
+  the rest of this round had shipped: the timer is present there and disabled,
+  which was correct only because nobody had enabled it — nothing in the code
+  said so. Two nodes applying and expiring against the same appliance would
+  race, one deleting the member the other had just written, and the winner
+  would depend on tick order. The read-only replica is not the guard either:
+  relying on it turns a design error into a database error at 3am inside the
+  one component that changes firewalls, and it evaporates the moment a standby
+  is promoted. <code>tick()</code> now refuses on anything that is not the primary, and
+  <code>unknown</code> counts as not-primary — a node that cannot say what it is must not
+  be the one writing enforcement.</li>
+<li><strong>A run without the production environment now refuses instead of reporting
+  a clean pass.</strong> <code>python -m app.cli_sentinel</code> binds the config at import time,
+  before wsgi loads the <code>.env</code>, so a run from a bare shell (systemd passes it
+  via <code>EnvironmentFile</code>; <code>runuser</code> does not) falls back to the SQLite
+  development database. Every query then succeeds against an empty file: no
+  actions to apply, no TTLs to expire, and a clean-looking tick while a real
+  block sits on a firewall. The refusal names <em>that</em>, and says which unit to
+  use instead. <code>wsgi.py</code> additionally loads the <code>.env</code> beside itself rather
+  than whichever one the working directory happens to reach.</li>
+<li><strong><code>satom get system health</code> did not know about the response runner.</strong> TTL
+  expiry happens in that timer's tick, so a node where it is off can hold a
+  block nothing will ever lift — and the one output an operator reads to answer
+  "is this node healthy?" was silent about it. It is not in <code>RESTARTABLE</code>: like
+  the update runner, it is the component that writes to appliances, and a CLI
+  verb that restarts it re-enters the privilege boundary sideways.</li>
 <li><strong><code>sentinel_event.country</code> was <code>VARCHAR(8)</code>.</strong> FortiWeb reports <code>srccountry</code>
   as a full name, so a source in the United States was recorded as <code>United S</code> —
   mislabelled on the page, and stripped of the one value the geo block list
@@ -651,7 +682,7 @@
   the CLI. Not fixed here; it is a client-layer change with a wide blast
   radius.</li>
 </ul>
-<p class="rel-prevnext"><a href="unreleased.html">← Unreleased — the next release</a> · <a href="v1.10.1.html">Version 1.10.1 →</a></p>
+<p class="rel-prevnext"><a href="v1.12.0.html">← Version 1.12.0</a> · <a href="v1.10.1.html">Version 1.10.1 →</a></p>
       </div>
       <div class="callout" style="margin-top:24px;">
         <span class="cico">🗒️</span>

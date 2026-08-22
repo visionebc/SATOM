@@ -237,6 +237,131 @@ What the guided dialog does for you:
   If a sub-table does not exist on the destination's firmware it contributes
   nothing rather than being invented.
 
+### 6.1 Choosing what happens to the Web Protection Profile
+
+A policy's WAF profile is the biggest thing a clone can bring with it, so it is
+the one decision the dialog always asks about. There are three answers:
+
+| Choice | What lands on the destination |
+|---|---|
+| **Copy the profile subtree** | the profile and all of its sub-tables are recreated. The default for a destination that does not have the profile. |
+| **Create it only if it is missing** | an existing profile with that name is left **completely** alone — object *and* sub-tables. |
+| **New, compare and decide** | you are shown every change this run would make **inside** the existing profile, and you tick the ones you want. |
+
+> ⚠ **"Leave the subtree on" is not the same as "only if it is missing".**
+> With the subtree on, an existing profile *object* is left alone but its ~40
+> sub-tables are still classified one at a time — so a signature list the
+> destination profile lacks gets **added to a live, possibly shared, profile**.
+> If that is not what you want, pick *only if it is missing*.
+
+**Reuse a profile the destination already owns.** Instead of copying anything,
+you can point the cloned policy at a profile that is already on the destination.
+The subtree is pruned *and* the policy's profile field is rewritten — pruning
+alone would leave the copy naming the source's profile, which the appliance
+answers with `-651`.
+
+### 6.2 New, compare and decide — and what a "no" actually does
+
+This is the only clone mode that **edits a live object on purpose**, so nothing
+is ever pre-ticked and the pre-flight says **WARN**, never *ok*.
+
+You are shown two kinds of offer:
+
+- the profile's **own fields** that differ from the destination's ("retune"),
+  each listed as `field: destination -> source`;
+- each **row** the run would add or change inside the profile's sub-tables.
+
+Every box you leave unticked is a **"keep the destination's own"**, and since
+1.12.0 that answer is carried through completely:
+
+1. the declined item is **removed from the plan**, not skipped at write time —
+   an item left in saying `create` describes a write that will not happen, and
+   every count, report and verification reads the plan;
+2. **every field still being written that NAMED the declined section is put
+   back to the destination's own value.** This is the half that used to be
+   missing. Without it the profile was still written carrying the *source's*
+   name for a section that was not being created, the destination ended up
+   naming something it does not have, and the appliance seated a default of its
+   own — so a "keep the original" produced neither the original nor the source;
+3. anything that was **itself going to be created** and can no longer stand —
+   an object naming the declined section, or a row whose parent object you
+   declined — is **dropped too**, transitively, and listed in the result under
+   *cascaded* with the reason. It is never written and never silently blanked.
+
+The run report names all three outcomes, so you can check the answer you gave
+against what the run actually did:
+
+- **reverted** — `label · field · the destination value that was kept`
+- **cascaded** — `label · why it could no longer be created`
+- **dropped / kept / retuned** — the counts
+
+> **If the source changes between comparing and applying, the apply refuses.**
+> The comparison and the apply are two requests, and the apply **re-plans**.
+> Offers are matched by a stable key built from what identifies the object on
+> the appliance — collection, key, parent, kind — never by position. If the new
+> plan offers something your answer never covered, SATOM stops and asks you to
+> re-run the comparison. "Never shown, so skip it" would write nothing you saw
+> and call the run green; "never shown, so take it" would write something you
+> never saw at all.
+
+### 6.3 Certificates, SNI and backends
+
+- **SNI policies are cloned.** The policy and its member rows travel over REST;
+  no key material is involved (an SNI row names a certificate, it does not
+  contain one).
+- **Certificate key material can be carried over SSH**, as part of the clone,
+  when you enable it. It is fetched **before the first write**, because a
+  certificate is a dependency: a failure halfway through an apply would leave
+  you committed — on a *migrate*, after the source has already been disabled.
+  A failure here **blocks** and writes nothing. A certificate name the
+  destination already holds is **left alone**: overwriting one that is already
+  serving traffic is a change to live traffic that nobody asked for. A
+  certificate read without its private key cannot be carried — copying the
+  public half alone would create a certificate the destination can never serve
+  with.
+- **Backend reachability (optional, off by default).** Two independent checks
+  that are never merged into one verdict: the destination appliance pings the
+  backend itself, and this node opens a TCP connection to the real port.
+  `unknown` is reported as `unknown` — it is not folded into either answer. It
+  is off by default because a bulk run means one timeout per policy per member,
+  and because it sends traffic to third-party hosts.
+
+### 6.4 Rows the destination already owns
+
+The appliance enforces uniqueness on a **natural key** — a *subset* of a row,
+not the whole row. So a destination row with the same key but different content
+used to be invisible to the planner and present to the box: the plan said
+*create*, the appliance refused the duplicate, and the destination went on
+serving the old value under a green run.
+
+Such a row is now planned as **update** and written as the **minimum edit** —
+the destination's row with the source's **non-empty** fields laid over it,
+addressed by the *destination's* row id. A blank on the source means "this box
+does not use this field", not "erase what the other box has".
+
+> Consequence, stated plainly: a reconciled row is **not** a byte-for-byte copy
+> of the source row. It is the destination's row carrying everything the source
+> names. A row that must match exactly has to be deleted and re-created, and the
+> cloner never deletes.
+
+Turning reconciliation **off** does not silently skip those rows — it
+**refuses the apply**. A skipped row leaves the destination serving the old
+value under a run that looked successful.
+
+### 6.5 Bulk runs
+
+Bulk and the single-policy dialog go through the **same** function, so every
+option described above is true of a 60-policy run and of one dialog.
+
+- **Profiles are handled once per run**, keyed on the *pair* (source profile,
+  landing profile). Two policies landing on the same profile *name* from
+  different source profiles are not a repetition, and skipping the second would
+  drop rows in silence.
+- **Pre-flight analysis runs in parallel.** Measured on a live appliance: 10
+  policies, **51.45 s → 20.99 s** at 4 workers, with an identical plan
+  footprint and the selection order preserved. The worker count is yours to
+  set; the ceiling exists because the appliance saturates.
+
 ## 7. Server Objects & the generic object editor
 
 FortiWeb ADOM → **Server Objects** mirrors the appliance's Server Objects
@@ -953,6 +1078,13 @@ three-minute reading are not the same claim about the appliance.
 ### 14.7 Collection — the metrics store
 
 Monitoring → **Collection** (needs config-write).
+
+> **How many devices fits on this node, and how much disk will that take?**
+> Both questions have a formula, built from constants measured on a running
+> node: **[Sizing a node](sizing.html)**. The short version is that the ceiling
+> is device I/O, not storage — a node spends about **0.82 s per device** in each
+> 3-minute window, which puts ~110 devices on one installation — and that the
+> intervals and top-N values on THIS page are the two dials that move it.
 
 A probe asks one question. That is the right shape for *"is this one thing
 still working"* and the wrong shape for a fleet: at scale it becomes one API
@@ -1839,8 +1971,8 @@ is a single **global** one, not per-ADOM.
 
 ## 26. Settings, tab by tab
 
-`Settings` is one page with a **grouped sidebar**: **8 groups, 24 panels**.
-Seven of the groups (22 panels) are admin-only (`user_manage`); the eighth —
+`Settings` is one page with a **grouped sidebar**: **8 groups, 26 panels**.
+Seven of the groups (24 panels) are admin-only (`user_manage`); the eighth —
 **My Account**, holding **Security** and **Change Password** — is self-service
 and is the only group a non-admin sees. A group with nothing you may see is not
 rendered at all, so the menu never offers a section that is not there.
@@ -1848,9 +1980,9 @@ rendered at all, so the menu never offers a section that is not there.
 | Group | Panels |
 |---|---|
 | **System** | General · Git · SoT & Backup · AI Advisor |
-| **Access & Identity** | Users · Profiles · Authentication · Access Control |
+| **Access & Identity** | Users · Profiles · Authentication · Access Control · Vault |
 | **Certificates & Trust** | Certificate Manager · Node TLS · Trust store |
-| **Monitoring & Alerts** | Email & Alerts · Thresholds |
+| **Monitoring & Alerts** | Email & Alerts · Thresholds · Sentinel |
 | **Network & DNS** | DNS Lookup · DNS Records |
 | **Fleet & Devices** | Hypervisors · ADOMs · Policy Links · Clone / Migrate |
 | **User Interface** | Appearance · Languages · FAZ Menu |
@@ -3418,8 +3550,8 @@ Three rules keep the map honest, and each is enforced by a test rather than by
 discipline:
 
 1. **The URL map is the authority on what exists.** Every parameterless page in
-   the console is either **on the map** (84 today) or **excluded with a written
-   reason** (111 today — JSON feeds, downloads, redirects and fragments that
+   the console is either **on the map** (88 today) or **excluded with a written
+   reason** (112 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.
 2. **Nothing here is a second source of truth.** Paths are generated from the

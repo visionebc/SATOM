@@ -341,25 +341,16 @@ def clone_policy(planner, ops, policy: str, *, new_name: str, dry_run: bool,
     # exist by the time anything counts, renders or verifies it.
     if wpp_decisions:
         from . import wpp_decide
+        # ``planner.dst`` goes IN, and the destination row is fetched inside —
+        # by the same call that decides. Fetching it out here afterwards (as
+        # this did until 1.12.0) is too late for the other thing that needs it:
+        # a declined section has to be put back to the destination's own value
+        # in every field that named it, and a revert with no destination
+        # snapshot has nothing to revert TO.
         clone_decisions = wpp_decide.apply_decisions(
             items, wpp_decisions.get("accepted") or (),
-            wpp_decisions.get("shown") or ())
+            wpp_decisions.get("shown") or (), dst_reader=planner.dst)
         wpp_decisions["applied"] = clone_decisions
-        if clone_decisions.get("retuned"):
-            # The DESTINATION row, fetched now, so the write is the minimal
-            # edit rather than a bare source body. Without it the PUT carries
-            # only what the source named, and every destination field the
-            # source left blank depends on the appliance's merge behaviour
-            # instead of on this plan.
-            wpp = next((it for it in items
-                        if it.urn in clone._WPP_URNS
-                        and it.status == "obj-update"), None)
-            if wpp is not None:
-                try:
-                    rows = planner.dst.get_raw(wpp.urn, wpp.mkey)
-                    wpp.dst_row = rows[0] if rows else {}
-                except Exception:  # noqa: BLE001
-                    wpp.dst_row = {}
     if not dry_run:
         # HARD BLOCK: never write a partial tree. A referenced object that came
         # back empty from the source (renamed/deleted/unreadable) would leave the

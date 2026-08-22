@@ -134,6 +134,26 @@ PAGES: tuple[dict, ...] = (
     _p("product.select", "ADOM Selector", "fleet",
        "adom product switch change context fortiweb fortiadc scope",
        "Choose which product scope this session works in."),
+    _p("sentinel.index", "Sentinel — Incidents", "monitoring",
+       "sentinel incident attack detection anomaly correlation score band "
+       "respond breach suspicious spike who attacked",
+       "Correlated incidents across every signal Sentinel collects, scored and "
+       "banded by how far it is allowed to act on its own."),
+    _p("sentinel.context", "Sentinel Context", "monitoring",
+       "sentinel context trusted source maintenance window topology false "
+       "positive scanner whitelist suppress",
+       "What Sentinel must NOT call an attack: trusted sources, maintenance "
+       "windows and the topology it scores against."),
+    _p("sentinel.docs", "Sentinel Architecture", "monitoring",
+       "sentinel architecture how it works weights scoring bands action "
+       "catalog reference explain",
+       "How Sentinel decides — rendered from the live weights and action "
+       "catalog, not from a transcription."),
+    _p("sentinel.policies", "Sentinel Response Policies", "automation",
+       "sentinel policy response action arm automatic block gate approval "
+       "semi-auto band",
+       "Which responses Sentinel may take by itself, which need a human, and "
+       "the gates in front of the ones that can block traffic."),
     _p("appliances.index", "Appliances", "fleet",
        "devices inventory appliance host add register credentials ip serial model",
        "The device inventory — every managed box and how SATOM reaches it."),
@@ -427,6 +447,7 @@ EXCLUDED: dict[str, str] = {
     "deep_monitor.data": "json feed", "monitor_reports.data": "json feed",
     "monitor_reports.preview": "json feed", "monitoring.satom_data": "json feed",
     "service_monitor.data": "json feed", "notifications.unread": "json feed",
+    "sentinel.data": "json feed",
     "search.results": "sub-view of search.index",
     "settings.ai_state": "json feed", "settings.preview_alerts": "json feed",
     "settings.git_info": "json feed", "settings.hypervisor_state": "json feed",

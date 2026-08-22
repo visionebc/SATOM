@@ -57,7 +57,7 @@ Six, and they are not interchangeable:
 ``host``
     The machine the manager runs on. Everything here is NEW: before
     2026-08-06 nothing in this product measured its own disk, memory or load.
-    satom-node-1 reached 95 % disk on 2026-07-28 and no signal existed to say
+    the primary node reached 95 % disk on 2026-07-28 and no signal existed to say
     so — it was found by hand.
 """
 from __future__ import annotations

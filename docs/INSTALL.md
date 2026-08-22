@@ -14,11 +14,32 @@ to undo it.
 ## 1. Requirements
 
 ### 1.1 Minimum hardware (per node)
-| Resource | Minimum | Recommended |
+
+This table is a **floor** — what the installer needs to finish and what a lab
+node can live on. It is NOT a sizing recommendation, and treating it as one is
+how a node ends up with a full disk and a database in a crash loop:
+
+| Resource | Minimum | Recommended (lab / PoC) |
 |---|---|---|
 | CPU | 2 vCPU | 4 vCPU |
 | RAM | 2 GB | 4 GB |
-| Disk | 15 GB | 30 GB (grows with backups/reports) |
+| Disk | 15 GB | 20 GB |
+
+**Size the node for your fleet with [`sizing.md`](sizing.html)**, which gives a
+formula per resource and the measured constants behind it. The short version:
+
+| Tier | Devices | Policies/device | vCPU | RAM | Disk |
+|---|---|---|---|---|---|
+| Lab / PoC | ≤ 10 | ≤ 100 | 2 | 4 GB | 20 GB |
+| Small | ≤ 25 | ≤ 250 | 4 | 4 GB | 30 GB |
+| Medium | ≤ 60 | ≤ 250 | 4 | 8 GB | 40 GB |
+| Large | ≤ 110 | ≤ 750 | 8 | 8 GB | 120 GB |
+
+Past ~110 devices a single node cannot finish its 3-minute collection window;
+split the fleet across installations rather than growing the node
+(`sizing.md` §2.1 and §3.1). Whatever tier you pick, keep
+**`max(15 % of the volume, 3 GB)` free** — the margin PostgreSQL needs for a
+checkpoint it cannot defer, and a bundle build needs before it prunes.
 
 ### 1.2 Software
 - A distribution with **systemd as PID 1** (Alpine/musl is not supported).

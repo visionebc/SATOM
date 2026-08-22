@@ -61,6 +61,7 @@
     <aside class="toc">
       <div class="toc-title">On this page</div>
       <a href="#unreleased">[Unreleased]</a>
+      <a href="#1120-2026-08-22">[1.12.0] - 2026-08-22</a>
       <a href="#1110-2026-08-20">[1.11.0] - 2026-08-20</a>
       <a href="#1101-2026-08-17">[1.10.1] - 2026-08-17</a>
       <a href="#1100-2026-08-17">[1.10.0] - 2026-08-17</a>
@@ -95,8 +96,167 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
-<h2 id="1110-2026-08-20">[1.11.0] - 2026-08-20</h2>
+<h2 id="1120-2026-08-22">[1.12.0] - 2026-08-22</h2>
+<p>Four rounds of clone work landed after 1.11.0 with an empty <code>[Unreleased]</code>
+block. This release documents all of it, and repairs the one defect that
+auditing it uncovered: <strong>a declined section was only half declined, and the
+missing half was the half that writes.</strong></p>
 <h3 id="added">Added</h3>
+<ul>
+<li><strong>An SNI policy is cloned at all.</strong> <code>clone._CERT_URNS</code> held
+  <code>system/certificate.sni</code>, so the object was classified <code>cert</code> — "SSH-only,
+  not cloned over REST" — and every member row under it then fell to <code>empty</code>
+  ("parent object is not being created"). The copy landed naming an SNI table
+  the destination had never seen. Measured with this project's own client on
+  FortiWeb 7.6.8: the object is <code>name</code> + <code>sz_members</code> and the row is
+  <code>domain</code> / <code>local-cert</code> / <code>inter-group</code> / <code>lets-certificate</code> / <code>verify</code> —
+  <strong>no PEM anywhere</strong>, <code>POST</code> 200 for both. ⚠ One collection, <strong>two
+  spellings</strong>: the row calls the chain group <code>inter-group</code>, the policy calls it
+  <code>intermediate-certificate-group</code>, so the <em>children</em> are shared and the node
+  is not.</li>
+<li><strong>Backend reachability, from two vantages that are never merged</strong> — the
+  destination appliance over <code>execute ping</code>, and this node over TCP to the real
+  port. <code>unknown</code> stays its own bucket: folding it into "reachable" signs off a
+  real outage, folding it into "down" manufactures a false one. Off by default.
+  ⚠ <code>execute</code> is <strong>not</strong> added to the read-verb allowlist (that verb also
+  spells <code>reboot</code> and <code>factoryreset</code>); the probe carries a whole-command gate
+  of its own.</li>
+<li><strong>Certificate material carried over SSH, inside the clone.</strong> <code>show</code> inside
+  the entry prints the certificate <em>and</em> the private key; <code>get</code> prints neither,
+  and REST prints neither for either field. Carried <strong>before the first write</strong>,
+  because a certificate is a dependency and a <code>-651</code> halfway through an apply
+  means the operator is already committed. A name the destination already holds
+  is left alone; the private key never reaches a plan, a report or a log.</li>
+<li><strong>New, compare and decide</strong> — the third profile policy. The planner had
+  always compared sub-table <em>rows</em>; it never compared the profile <strong>object</strong>,
+  so a profile whose ~40 lists matched but whose own switches differed read as
+  identical and was not. ⚠ The slice runs <strong>backwards</strong>: the plan is post-order,
+  so a profile's descendants are the contiguous run <em>before</em> it that is deeper
+  than it (measured: 111 items backwards, 1 forwards). Nothing is pre-ticked.</li>
+<li><strong>Rows the destination already owns are reconciled, not re-created.</strong> The
+  appliance enforces uniqueness on a <strong>natural key</strong> — a subset of the row — so
+  a destination row with the same key and different content was absent to the
+  planner and present to the box: the plan said <code>create</code>, the box refused the
+  duplicate, and the destination kept serving the old value.</li>
+<li><strong>Reuse a destination profile (<code>dst_wpp</code>), and create a profile only if it is
+  missing (<code>wpp_only_if_missing</code>)</strong>, both reaching the single-policy dialog and
+  the bulk job from the same function. Profiles are deduplicated <strong>once per
+  bulk run</strong>, keyed on the <em>pair</em> (source profile, landing profile).</li>
+<li><strong><code>trigger</code> and the Custom Signature filter edge.</strong> A <code>trigger</code> names a
+  <code>log/trigger-policy</code> and nothing ever created it; on a destination lacking
+  the policy the appliance rejected the <strong>whole object</strong> (HTTP 500, no errcode).
+  Keyed by <strong>field</strong>, not by tree position — <code>trigger</code> is carried by 10 object
+  collections, and only 51 of 130 had any row on the lab appliance, so keying on
+  measured parents would have left the defect latent in the other 79.</li>
+<li><strong>The two datasource fields beside <code>redirect-url</code> on a Web Protection
+  Profile</strong> — <code>custom-response</code> and <code>quarantined-ip-trigger</code>. Reported as "the
+  redirect URL is not being cloned"; <code>redirect-url</code> is a string and always
+  travelled. A dangling reference made the destination answer <code>-651</code> to the
+  <strong>whole profile</strong>, so every setting was lost with it.</li>
+<li><strong>Parallel pre-flight analysis.</strong> Measured in vivo: 10 policies,
+  <strong>51.45 s → 20.99 s (2.45×)</strong> at 4 workers, with an identical plan footprint.</li>
+<li><strong>A sizing formula, and the requirements built on it</strong>
+  (<a href="sizing.html"><code>sizing.md</code></a>). Every requirements table in this manual used
+  to state a <em>floor</em> — what the installer needs to finish — and nothing said how
+  big a node must be for the fleet pointed at it. The new document gives one
+  formula per resource with the constants measured on a running node, and the
+  headline is that <strong>the ceiling is device I/O, not storage</strong>: a node spends
+  <strong>0.82 s per device per 3-minute window</strong>, so <code>D_max = (W × u) / t_dev</code> puts
+  <strong>~110 devices</strong> on one installation at a 50 % duty cycle. Storage is
+  arithmetic on measured constants — <strong>1.08 bytes per stored sample</strong>
+  (1,571,997 samples in 1.70 MB), <strong>1.66 KB per config-object row</strong> (35,330
+  rows / 56 MB), ~<strong>0.45 MB per server policy</strong>, ~<strong>70 KB per retained
+  source-of-truth version</strong> — and the surprise is that the <strong>config index
+  outgrows the metrics store roughly 2:1</strong>, because the store costs ~1,500×
+  less per data point. <code>INSTALL.md</code> §1.1 now says it is a floor and links the
+  tiers; the user guide says it where the intervals that move it are edited.</li>
+<li><strong>The alert engine states the machine's condition when it cannot raise a
+  finding about it.</strong> Every finding is recorded and dispatched <em>through the
+  database</em>, so the one condition the engine can never report is the one that
+  takes the database down with it. Measured: a node filled its disk, PostgreSQL
+  spent five hours in crash → recovery → PANIC unable to write a checkpoint,
+  <code>satom-alerts</code> failed every fifteen minutes with a connection trace, and the
+  words "filesystem full" appeared nowhere — while <code>/healthz</code> answered 200
+  throughout. Disk thresholds existed (warn 80 %, crit 92 %) and were useless
+  for exactly that reason. The wrapper now prints <code>df</code> / <code>free</code> /
+  <code>/proc/loadavg</code> to the journal on failure: no database, no network, nothing
+  that can be down at the same moment. It is a legible failure, not a fix —
+  free space still has to be watched from outside the node.</li>
+</ul>
+<h3 id="fixed">Fixed</h3>
+<ul>
+<li>⚠ <strong>A decline is now honoured in the fields that NAME the declined section.</strong>
+  Declining a section removed the item from the plan and stopped there — while
+  the profile that <strong>named</strong> it was still written with the <strong>source's</strong> value
+  for that field. The destination ended up naming a sub-policy that box does
+  not have, and this firmware answers such a write by seating a default of its
+  own. The operator who asked to keep the destination's original got <strong>neither
+  tree</strong>. Two repairs, because only one of the two situations has an original
+  to keep: an item that already <strong>exists</strong> at the destination has the field put
+  back to the value the destination reads <em>today</em> (never to a blank — on this
+  firmware an empty reference field is not "no profile", it is an unparsable
+  one); an item that is itself a <strong>create</strong> has nothing to keep, so it is
+  dropped too, <strong>transitively</strong>, and named in the report.</li>
+<li>⚠ <strong>An accepted row whose parent object was declined is dropped too.</strong> A row
+  does not <em>name</em> its parent in a field — it is addressed by <code>parent_mkey</code> — so
+  matching payload values alone let it survive and be written with <code>?mkey=</code>
+  pointing at an object that was never going to exist. Parenthood is matched on
+  the <strong>pair</strong> (collection, key), so two unrelated objects sharing a name cannot
+  drag each other's rows out of the plan. A test that asserted the old
+  behaviour was correcting the record, not the code: it had pinned the defect.</li>
+<li><strong>The destination row is fetched by the call that decides</strong>, not after it. A
+  revert with no destination snapshot has nothing to revert <em>to</em>.</li>
+<li>⚠ <strong>Entering the certificate table is refused at the top level on an
+  ADOM-enabled appliance</strong> and accepted on one without. The existing import sent
+  its whole block — PEM and private key included — starting with that line, so
+  on half a fleet everything after the first rejected line was interpreted at
+  whatever prompt happened to be current. One scope primitive now, three
+  callers.</li>
+<li><strong>Three options never reached the engine from HTTP.</strong> <code>dst_wpp</code>,
+  <code>wpp_only_if_missing</code> and <code>reconcile_rows</code> were not parsed in <code>_parse_action</code>,
+  so nothing a browser sent could reach them. An option the engine honours and
+  the HTTP layer drops is worse than an absent one: the service reads its own
+  default and the run looks like it obeyed.</li>
+<li><strong>Subtree membership is matched by identity, not by <code>==</code>.</strong> <code>CloneItem</code> is a
+  dataclass, so two rows carrying equal fields compare equal and a value test
+  could pull an item outside the profile subtree into a decision nobody was
+  asked about.</li>
+<li>⚠ <strong>The pre-write reference check refused saves the appliance would have
+  accepted.</strong> <code>waf/ftp-protection-profile</code> is resolved by the CLI and refused by
+  REST with errcode <strong>-20001</strong> on 7.6.8 — and -20001 is precisely what the
+  client classifies as <code>absent</code>, one of the two states that license a rejection.
+  Every valid FTP server-policy save came back as <em>"this firmware has no
+  waf/ftp-protection-profile collection"</em>. The mapping itself is correct and the
+  dependency tree needs it, so the fix is that a collection REST cannot read is
+  now an <code>unverified</code> warning and never a refusal, from <strong>one</strong> table
+  (<code>fortiweb_field_schema.REST_UNREADABLE</code>) that the clone derives its own from
+  — the two can no longer disagree about which collections are readable.</li>
+<li>⚠ <strong>Sentinel's <code>arm</code> form carried no CSRF token</strong>, so the one form in the
+  product that arms an automatic blocking response was rejected on submit with
+  <em>"your session expired or the form was stale"</em>. Every other form on the page
+  had one.</li>
+<li><strong>Literal PEM private-key headers</strong> in a template placeholder and two test
+  fixtures. The release publisher's secret scanner aborts on these and cannot
+  tell a fixture from a real key; the headers are now built at runtime.</li>
+<li><strong>Five Sentinel endpoints were on neither the concept map nor its exclusion
+  list</strong>, so the map's own guarantee — every page is mapped or excluded with a
+  written reason — was false, and Sentinel was unreachable from search.</li>
+<li><strong>Internal node names in shipped source</strong> (four files, prose only).</li>
+<li><strong>A guard that passed alone and failed in the suite.</strong> The store-read-failure
+  test induced its failure by running with no Flask application context, which
+  is true when the file runs by itself and false the moment an earlier module
+  leaves one pushed — then the store reads fine and the test fails on a healthy
+  code path. It now raises from the ORM call itself.</li>
+</ul>
+<h3 id="documentation">Documentation</h3>
+<ul>
+<li>The settings intro claimed <strong>24 panels in 8 groups</strong>; the live shape is
+  <strong>26</strong>, and the two missing were <strong>Vault</strong> and <strong>Sentinel</strong>. The concept-map
+  section claimed 84 mapped / 111 excluded pages against a live 88 / 112.
+  Both are guarded, both had drifted since the pages were added.</li>
+</ul>
+<h2 id="1110-2026-08-20">[1.11.0] - 2026-08-20</h2>
+<h3 id="added_1">Added</h3>
 <ul>
 <li><strong>Sentinel: the remaining device transports, captured rather than specified.</strong>
   <code>block_country</code> and <code>raise_protection</code> were run against a live FortiWeb 7.6.8
@@ -146,7 +306,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   enabled by the installer. Expiry of a live block lives in that tick: a node
   without it can hold a block that nothing will ever lift.</li>
 </ul>
-<h3 id="fixed">Fixed</h3>
+<h3 id="fixed_1">Fixed</h3>
 <ul>
 <li><strong>The response runner had no role guard.</strong> Found by reading the standby after
   the rest of this round had shipped: the timer is present there and disabled,
@@ -180,7 +340,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   accepts. Widened to 64 on both the event and the incident; the existing
   boot-time widener applies it in place.</li>
 </ul>
-<h3 id="added_1">Added</h3>
+<h3 id="added_2">Added</h3>
 <ul>
 <li><strong>Sentinel phase 7 — a response that can actually execute, for exactly one
   action.</strong> <code>block_ip</code>'s transport was captured from a live FortiWeb 7.6.8
@@ -315,7 +475,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   <code>tests/test_secret_backend.py</code> (30 tests, safeguards §103).</p>
 </li>
 </ul>
-<h3 id="fixed_1">Fixed</h3>
+<h3 id="fixed_2">Fixed</h3>
 <ul>
 <li>
 <p><strong>A stale process could send <code>__stored-in-vault__</code> to an appliance as a
@@ -401,7 +561,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   unreachable from the entire UI.</p>
 </li>
 </ul>
-<h3 id="added_2">Added</h3>
+<h3 id="added_3">Added</h3>
 <ul>
 <li>
 <p><strong>The appliance roster folds the ADOMs of one chassis under their device,
@@ -522,7 +682,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   unprotected cutover; <code>failed == 0</code> does not cover this, because the
   referencing rule only fails when it is itself in the plan.</li>
 </ul>
-<h3 id="fixed_2">Fixed</h3>
+<h3 id="fixed_3">Fixed</h3>
 <ul>
 <li>The <em>View Backups</em> link is emitted once, not once per branch. Splitting it
   into an owns-the-chassis case and a points-at-the-owner case duplicated the
@@ -574,7 +734,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   radius.</li>
 </ul>
 <h2 id="1101-2026-08-17">[1.10.1] - 2026-08-17</h2>
-<h3 id="added_3">Added</h3>
+<h3 id="added_4">Added</h3>
 <ul>
 <li><strong>Sharded test runner</strong> — <code>scripts/run_test_shards.sh</code> splits the suite
   across 2-4 parallel shards (by file, never within a file) and
@@ -592,7 +752,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   unpinned, so an offline bundle built on two different days could ship two
   different ORM versions).</li>
 </ul>
-<h3 id="fixed_3">Fixed</h3>
+<h3 id="fixed_4">Fixed</h3>
 <ul>
 <li>
 <p><strong>Three POST buttons could never be submitted.</strong> The Rebuild button on
@@ -679,7 +839,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   only at write time trusts every row the process did not write. A refused link
   keeps its row and states why rather than silently losing its <code>href</code>, which
   would read as a UI bug and leave the bad URL in place.</p>
-<h3 id="added_4">Added</h3>
+<h3 id="added_5">Added</h3>
 <ul>
 <li><strong>Three tools that know something a browser tab does not: a certificate
   inspector, a false-positive explainer and a three-leg transaction tracer.</strong>
@@ -1377,7 +1537,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   approval gate, and carries any existing ticket reference so a re-request
   updates a ticket instead of opening a second one for the same window.</li>
 </ul>
-<h3 id="fixed_4">Fixed</h3>
+<h3 id="fixed_5">Fixed</h3>
 <ul>
 <li>
 <p><strong>A standby that serves traffic is now restarted by an update, instead of
@@ -1742,7 +1902,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
 </li>
 </ul>
 <h2 id="193-2026-08-10">[1.9.3] - 2026-08-10</h2>
-<h3 id="added_5">Added</h3>
+<h3 id="added_6">Added</h3>
 <ul>
 <li><strong>The interface itself is translated — Spanish, German, French and Italian,
   chosen from your profile.</strong> Until now only the change <em>document</em> could change
@@ -2255,7 +2415,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   survived three project renames in the first place.</p>
 </li>
 </ul>
-<h3 id="fixed_5">Fixed</h3>
+<h3 id="fixed_6">Fixed</h3>
 <ul>
 <li><strong>The translation layer had never produced a single translation.</strong> It read
   <code>.content</code> off the provider result, whose field is <code>.text</code>, through a
@@ -2498,7 +2658,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   configured platform.</li>
 </ul>
 <h2 id="192-2026-08-09">[1.9.2] - 2026-08-09</h2>
-<h3 id="fixed_6">Fixed</h3>
+<h3 id="fixed_7">Fixed</h3>
 <ul>
 <li><strong>The object editor no longer offers a free text box for a field that only
   accepts the name of an existing object.</strong> Twenty reference fields — eighteen
@@ -2512,7 +2672,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   could not be proven were deliberately left unmapped — a wrong mapping would
   populate the dropdown from the wrong collection and reject valid values.</li>
 </ul>
-<h3 id="added_6">Added</h3>
+<h3 id="added_7">Added</h3>
 <ul>
 <li><strong>Reference fields are checked against the appliance before the write.</strong> Every
   operator-facing save and create resolves each submitted field to the cmdb
@@ -2525,7 +2685,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   blocks a save; the affected fields come back as <code>unverified_refs</code>.</li>
 </ul>
 <h2 id="191-2026-08-09">[1.9.1] - 2026-08-09</h2>
-<h3 id="fixed_7">Fixed</h3>
+<h3 id="fixed_8">Fixed</h3>
 <ul>
 <li><strong>A migrated Custom Access Rule now carries the conditions it matches on.</strong>
   A rule was declared in the dependency map as a leaf, so a clone or a
@@ -2585,7 +2745,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   such a duplicate visible at all.</p>
 </li>
 </ul>
-<h3 id="added_7">Added</h3>
+<h3 id="added_8">Added</h3>
 <ul>
 <li>
 <p><strong>The clone says what it cannot copy, before it writes.</strong> Three things are
@@ -2660,7 +2820,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   single cost chip every other analysis on the page uses.</p>
 </li>
 </ul>
-<h3 id="fixed_8">Fixed</h3>
+<h3 id="fixed_9">Fixed</h3>
 <ul>
 <li>
 <p><strong>A carve-out on a shared profile reported failure for a change it had
@@ -2753,7 +2913,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   it from. A device that cannot be read answers <em>unknown</em>, never <em>no one</em>.
   Enforced hardest at the push, which is where the leak physically happens.</li>
 </ul>
-<h3 id="added_8">Added</h3>
+<h3 id="added_9">Added</h3>
 <ul>
 <li>
 <p><strong>The results table shows the Web Protection Profile behind each policy, and
@@ -2847,7 +3007,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   operator to another screen to push it.</li>
 </ul>
 <h2 id="180-2026-08-07">[1.8.0] - 2026-08-07</h2>
-<h3 id="fixed_9">Fixed</h3>
+<h3 id="fixed_10">Fixed</h3>
 <ul>
 <li>
 <p><strong>The AI Advisor's replies were saved and never shown.</strong> After Send, the
@@ -2873,7 +3033,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   wiring the peer status poll.</p>
 </li>
 </ul>
-<h3 id="added_9">Added</h3>
+<h3 id="added_10">Added</h3>
 <ul>
 <li><strong>The chat streams, shows that it is working, and can be stopped.</strong> The
   reply now appears as it is generated, with an animated indicator, a live
@@ -3026,7 +3186,7 @@ durability problem solved. Anyone who sealed on 1.7.0 should re-run
 <code>satom execute seal recovery</code> on the primary and confirm the check reports the
 envelope as reachable. 1.7.0 stays published; this entry is the public record
 that it carries the defect.</p>
-<h3 id="fixed_10">Fixed</h3>
+<h3 id="fixed_11">Fixed</h3>
 <ul>
 <li><strong>The sealed recovery envelope was unreachable by every mechanism that
   carries it.</strong> <code>satom execute seal recovery</code> runs as root and wrote
@@ -3050,7 +3210,7 @@ that it carries the defect.</p>
   <code>reset theme</code> — the anti-lockout command. A guard now walks the AST of
   every CLI module rather than the two known call sites.</li>
 </ul>
-<h3 id="added_10">Added</h3>
+<h3 id="added_11">Added</h3>
 <ul>
 <li><strong>The operator manual now documents recovery custody.</strong> 1.7.0 shipped two CLI
   verbs, a diagnostic and a passphrase the operator must store outside the fleet,
@@ -3070,7 +3230,7 @@ that it carries the defect.</p>
   deleting it everywhere.</li>
 </ul>
 <h2 id="170-2026-08-07">[1.7.0] - 2026-08-07</h2>
-<h3 id="added_11">Added</h3>
+<h3 id="added_12">Added</h3>
 <ul>
 <li><code>tests/test_no_pem_literals.py</code> - no source file may carry a literal PEM
   private-key header. The publisher scans every blob of the sanitised mirror
@@ -3136,7 +3296,7 @@ that it carries the defect.</p>
   <code>advisor.configure</code>. See <code>docs/ai-advisor.md</code>.</p>
 </li>
 </ul>
-<h3 id="fixed_11">Fixed</h3>
+<h3 id="fixed_12">Fixed</h3>
 <ul>
 <li><strong>Nine probes answered "I could not tell" with a value that means "fine".</strong>
   Scoping resolved to the Global console and showed every product; a malformed
@@ -3207,7 +3367,7 @@ that it carries the defect.</p>
   frozen into an old bundle.</li>
 </ul>
 <h2 id="160-2026-08-07">[1.6.0] - 2026-08-07</h2>
-<h3 id="added_12">Added</h3>
+<h3 id="added_13">Added</h3>
 <ul>
 <li>Monitoring is provisioned from <strong>one seam</strong>. Saving an appliance now creates
   both its scrape targets and its threshold probes; until now <code>ensure_baseline</code>
@@ -3274,7 +3434,7 @@ that it carries the defect.</p>
   its API, so the page listed zero targets and zero devices. A page that can
   only fail is worse than one that is not offered.</li>
 </ul>
-<h3 id="fixed_12">Fixed</h3>
+<h3 id="fixed_13">Fixed</h3>
 <ul>
 <li><strong>The publication redaction rule was a roster, not a shape.</strong> It enumerated
   the appliances that existed the day it was written, so every unit onboarded
@@ -3367,7 +3527,7 @@ that it carries the defect.</p>
 </li>
 </ul>
 <h2 id="150-2026-08-06">[1.5.0] - 2026-08-06</h2>
-<h3 id="added_13">Added</h3>
+<h3 id="added_14">Added</h3>
 <ul>
 <li><strong>Settings &gt; Thresholds</strong> — a 22nd tab, and the first place in this product
   where a limit can be stated once instead of once per probe. Six scopes: the
@@ -3561,7 +3721,7 @@ that it carries the defect.</p>
   column holding anything else was left alone.</li>
 <li>Alert bodies now name the Thresholds scope that governs the finding.</li>
 </ul>
-<h3 id="fixed_13">Fixed</h3>
+<h3 id="fixed_14">Fixed</h3>
 <ul>
 <li><strong><code>satom diagnose code</code> now sees the artifact gunicorn actually caches.</strong> It
   compared the newest <code>.py</code> against each process start time, so a change that
@@ -3761,7 +3921,7 @@ that it carries the defect.</p>
   shadowing the tracked templates under <code>app/templates/backups/</code>.</li>
 </ul>
 <h2 id="141-2026-08-05">[1.4.1] - 2026-08-05</h2>
-<h3 id="fixed_14">Fixed</h3>
+<h3 id="fixed_15">Fixed</h3>
 <ul>
 <li>
 <p><strong>The installation page was answering a question about the appliances.</strong>
@@ -3796,7 +3956,7 @@ that it carries the defect.</p>
   column, which nothing else writes and which was empty on the whole fleet.</li>
 </ul>
 <h2 id="140-2026-08-05">[1.4.0] - 2026-08-05</h2>
-<h3 id="added_14">Added</h3>
+<h3 id="added_15">Added</h3>
 <ul>
 <li>
 <p><strong>SATOM health and Device health are two pages.</strong> Fleet health carried the
@@ -4068,7 +4228,7 @@ that it carries the defect.</p>
   [SATOM-LICENSE-TAGS]</p>
 </li>
 </ul>
-<h3 id="fixed_15">Fixed</h3>
+<h3 id="fixed_16">Fixed</h3>
 <ul>
 <li>
 <p><strong>A missing systemd unit is no longer reported as a failed one.</strong>
@@ -4435,7 +4595,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   published copy.</li>
 </ul>
 <h2 id="13-2026-08-02">[1.3] - 2026-08-02</h2>
-<h3 id="added_15">Added</h3>
+<h3 id="added_16">Added</h3>
 <ul>
 <li><strong>The manual is reachable from the sign-in screen.</strong> The login page offered a
   link to the API manual and nothing else. The person who cannot get in is
@@ -4813,7 +4973,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   does not render where it matters. The vendored copy was already in the tree
   and unused.</li>
 </ul>
-<h3 id="fixed_16">Fixed</h3>
+<h3 id="fixed_17">Fixed</h3>
 <ul>
 <li><strong><code>/docs/api</code> was public and served the document unredacted.</strong> The route
   needed no session and rendered <code>docs/api_v1.md</code> verbatim, so a management
@@ -5111,7 +5271,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   <code>Appliance</code>; the column is <code>maintenance</code>.</li>
 </ul>
 <h2 id="122-2026-07-27">[1.2.2] - 2026-07-27</h2>
-<h3 id="fixed_17">Fixed</h3>
+<h3 id="fixed_18">Fixed</h3>
 <ul>
 <li><strong><code>app/services/cert_service.py</code> did not parse.</strong> An <code>import os</code> had been
   placed above <code>from __future__ import annotations</code>, which is a hard
@@ -5122,7 +5282,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   Certificate Manager endpoints raised on import, and the cert alert degraded
   to reporting the import error instead of the certificate's real state.</li>
 </ul>
-<h3 id="added_16">Added</h3>
+<h3 id="added_17">Added</h3>
 <ul>
 <li><strong><code>tests/test_every_module_imports.py</code></strong> — every shipped module under <code>app/</code>
   and <code>deploy/</code> must compile, and the modules that callers import <em>lazily</em>
@@ -5134,7 +5294,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
 <h2 id="121-2026-07-27">[1.2.1] - 2026-07-27</h2>
 <p>Documentation release. No application code changed; the offline bundles were
 rebuilt so that the shipped tree matches the documentation set.</p>
-<h3 id="added_17">Added</h3>
+<h3 id="added_18">Added</h3>
 <ul>
 <li><strong><code>docs/safeguards.md</code></strong> — single catalog of every protection in the product:
   what it prevents, where it lives, and <strong>how to verify it is armed</strong>. Covers
@@ -5162,7 +5322,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
 <li><strong>Rule recorded in <code>docs/overview.md</code></strong>: a new safeguard lands in
   <code>docs/safeguards.md</code> in the same commit that introduces it.</li>
 </ul>
-<h3 id="fixed_18">Fixed</h3>
+<h3 id="fixed_19">Fixed</h3>
 <ul>
 <li>Offline bundle checksums used an absolute path, so <code>sha256sum -c</code> failed in
   the directory the file was downloaded to. Now basename-only, as the RHEL
@@ -5200,7 +5360,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
   with <code>from=</code>, <code>restrict</code> and a forced command that can only serve
   <code>rsync --sender</code> over the data directory.</li>
 </ul>
-<h3 id="added_18">Added</h3>
+<h3 id="added_19">Added</h3>
 <ul>
 <li><strong>ACME / Let's Encrypt certificate issuance</strong> with a DNS-provider catalog
   (30 providers seeded as data, editable by the operator) and per-provider
@@ -5226,7 +5386,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
   Manager</strong>. Vendor names (FortiWeb, FortiADC, FortiAnalyzer) are untouched:
   the product manages those appliances and has to name them.</li>
 </ul>
-<h3 id="fixed_19">Fixed</h3>
+<h3 id="fixed_20">Fixed</h3>
 <ul>
 <li><strong>Scheduler and git-publish were silently dead</strong> after the privilege drop:
   both guard scripts used <code>runuser</code>, which only works as root. The scheduler
@@ -5268,7 +5428,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
   server (appliance-side push config points at it), and <code>FM_*</code> env var names.</li>
 </ul>
 <h2 id="10-2026-07-14">[1.0] - 2026-07-14</h2>
-<h3 id="added_19">Added</h3>
+<h3 id="added_20">Added</h3>
 <ul>
 <li><strong>DNS Records management (IPAM/DDI)</strong>: "+DNS Records" CRUD in the DNS &amp; LB
   lookup tool, backed by pluggable providers (EfficientIP SOLIDserver,
@@ -5286,20 +5446,20 @@ rebuilt so that the shipped tree matches the documentation set.</p>
   bundles), generic package-manager support, public site (GitHub Pages),
   package registry artifacts.</li>
 </ul>
-<h3 id="fixed_20">Fixed</h3>
+<h3 id="fixed_21">Fixed</h3>
 <ul>
 <li>Upgrade-event timestamps now render in local time (<code>| localtime</code>) instead
   of raw UTC.</li>
 </ul>
 <h2 id="09-2026-07-13">[0.9] - 2026-07-13</h2>
-<h3 id="added_20">Added</h3>
+<h3 id="added_21">Added</h3>
 <ul>
 <li><strong>Node TLS + node-to-node encryption</strong>: internal CA, per-node leaf certs,
   mutually-authenticated Postgres replication, HTTPS peer probes, and
   "encryption in transit" monitoring cards (every badge backed by a live probe).</li>
 </ul>
 <h2 id="08-2026-07-12">[0.8] - 2026-07-12</h2>
-<h3 id="added_21">Added</h3>
+<h3 id="added_22">Added</h3>
 <ul>
 <li><strong>FortiAnalyzer</strong> integration (JSON-RPC, dual dialect) as a full ADOM, with
   its endpoints in the DB registry and a git source-of-truth harvest.</li>

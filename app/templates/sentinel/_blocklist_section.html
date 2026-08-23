@@ -1,0 +1,253 @@
+{#
+   The border blocklist, as ONE section.
+
+   Rendered by two surfaces from this one file: the standalone page
+   (/sentinel/blocklist) and the Admin Console pane
+   Settings -> Sentinel -> Border blocklist.  `sn_inline` is the only
+   difference, and every form posts `return_to` so a control pressed inside
+   the Admin Console comes back to it.
+
+   What this page is NOT: a firewall.  SATOM has no FortiGate client and no
+   credential that could write one.  This is a list; the operator pre-creates
+   the deny policy that reads it.  Same rule that already governs FortiWeb --
+   Sentinel never binds its own enforcement point during an incident.
+
+   The one property this path gives up, said out loud on the page rather than
+   only in the docs: block_ip on FortiWeb uses action=block-period, so THE
+   APPLIANCE expires it and that expiry survives Sentinel being dead.  A feed
+   has none.  The list is therefore rendered from the database on every fetch
+   (so a stopped publisher cannot serve an expired entry), but a border that
+   cannot REACH us keeps its last copy and those entries freeze.
+#}
+{% set sn_inline = sn_inline | default(false) %}
+{% set rt = 'pane' if sn_inline else 'page' %}
+<div class="fw-page-header">
+  <h4 class="mb-1"><i class="bi bi-list-columns me-2"></i>Border blocklist</h4>
+  <p class="text-muted mb-0" style="font-size:13px;">
+    The list SATOM publishes for a border firewall to read, and the point where an
+    address is released from it. Every entry expires; nothing here is ever written
+    to a FortiGate by this product.
+  </p>
+</div>
+
+{# ── feed state ─────────────────────────────────────────────────────────── #}
+<div class="fw-card mb-3">
+  <div class="fw-card-header"><strong><i class="bi bi-broadcast me-1"></i>Feed</strong></div>
+  <div class="fw-card-body">
+    <div class="row g-3 mb-2">
+      <div class="col-md-3">
+        <div class="small text-muted">Published</div>
+        {% if feed.enabled and feed.has_token %}
+          <span class="fw-badge fw-badge-success">serving</span>
+        {% elif not feed.enabled %}
+          <span class="fw-badge fw-badge-secondary">off — endpoint answers 404</span>
+        {% else %}
+          <span class="fw-badge fw-badge-warning">no token — nothing is served</span>
+        {% endif %}
+      </div>
+      <div class="col-md-3">
+        <div class="small text-muted">Live entries</div>
+        <strong>{{ feed.live }}</strong> <span class="text-muted small">/ {{ feed.capacity }}</span>
+        {% if feed.full %}<span class="fw-badge fw-badge-danger ms-1">at ceiling</span>{% endif %}
+      </div>
+      <div class="col-md-3">
+        <div class="small text-muted">Default TTL</div>
+        <strong>{{ feed.ttl_hours }}h</strong>
+        <span class="text-muted small">(ceiling {{ max_ttl }}h)</span>
+      </div>
+      <div class="col-md-3">
+        <div class="small text-muted">Next expiry</div>
+        <span class="small font-monospace">{{ feed.next_expiry or '—' }}</span>
+      </div>
+    </div>
+
+    {% if feed.protect_errors %}
+      <div class="alert alert-danger py-2 small mb-2">
+        <strong>Nothing can be listed.</strong> The never-block list has line(s) that do not
+        parse ({{ feed.protect_errors | join(', ') }}), so the protection policy cannot be
+        evaluated — and the permissive reading of a broken protection list is “protect
+        nothing”, which is exactly backwards. Fix <code>protect_cidrs</code> first.
+      </div>
+    {% endif %}
+    {% if not feed.require_edge %}
+      <div class="alert alert-warning py-2 small mb-2">
+        Border corroboration is <strong>not required</strong>. Addresses can be listed without
+        the border ever having confirmed them as real peers — which behind a CDN means
+        listing the CDN and cutting every client behind it.
+      </div>
+    {% endif %}
+
+    {% if feed_path %}
+      <div class="small text-muted mb-1">Feed URL — this is a credential, not just an address:</div>
+      <pre class="small mb-2" style="white-space:pre-wrap;word-break:break-all;">https://&lt;this-node&gt;{{ feed_path }}</pre>
+    {% else %}
+      <p class="small text-muted mb-2">No token set, so there is no URL. Generate one below.</p>
+    {% endif %}
+
+    <div class="d-flex gap-2 flex-wrap">
+      <form method="post" action="{{ url_for('sentinel.blocklist_rotate_token') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="return_to" value="{{ rt }}">
+        <button class="btn btn-fw-outline btn-sm">{{ 'Rotate token' if feed.has_token else 'Generate token' }}</button>
+      </form>
+      <form method="post" action="{{ url_for('sentinel.blocklist_publish') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="return_to" value="{{ rt }}">
+        <button class="btn btn-fw-outline btn-sm">Expire due &amp; push audit mirror</button>
+      </form>
+      <a class="btn btn-fw-outline btn-sm"
+         href="{{ url_for('settings.index') }}#tab-sentinel">Feed settings</a>
+    </div>
+    <p class="small text-muted mt-2 mb-0">
+      “Expire &amp; push” does <em>not</em> make the feed current — the feed is rendered from the
+      database on every fetch and filtered by expiry, so there is no cached file in the serving
+      path that could go stale. That button writes the audit copy.
+    </p>
+  </div>
+</div>
+
+{# ── audit mirror ───────────────────────────────────────────────────────── #}
+<div class="fw-card mb-3">
+  <div class="fw-card-header"><strong><i class="bi bi-git me-1"></i>Audit mirror</strong></div>
+  <div class="fw-card-body">
+    {% if feed.mirror.configured %}
+      <table class="table table-sm mb-0">
+        <tbody>
+          <tr><td class="small text-muted" style="width:160px;">Remote</td>
+              <td class="small font-monospace">{{ feed.mirror.remote }}</td></tr>
+          <tr><td class="small text-muted">Branch</td><td class="small">{{ feed.mirror.branch }}</td></tr>
+          <tr><td class="small text-muted">Working copy</td>
+              <td class="small font-monospace">{{ feed.mirror.dir }}
+                {% if not feed.mirror.cloned %}<span class="fw-badge fw-badge-warning ms-1">not initialised yet</span>{% endif %}</td></tr>
+          <tr><td class="small text-muted">Automatic</td>
+              <td class="small">{{ 'on every scheduled publish' if feed.mirror.auto else 'only when the button is pressed' }}</td></tr>
+          <tr><td class="small text-muted">Last commit</td>
+              <td class="small font-monospace">{{ feed.mirror.head or '—' }}</td></tr>
+        </tbody>
+      </table>
+    {% else %}
+      <p class="small text-muted mb-0">
+        No mirror repository configured, so there is no committed history of who was blocked
+        and when. It must be a <strong>separate</strong> repository: SATOM's own source repo is
+        mirrored to a public host by the release tooling, and a blocklist committed into it
+        would disclose which addresses attacked which customer.
+      </p>
+    {% endif %}
+  </div>
+</div>
+
+{# ── list one address ───────────────────────────────────────────────────── #}
+<div class="fw-card mb-3">
+  <div class="fw-card-header"><strong><i class="bi bi-plus-square me-1"></i>List an address</strong></div>
+  <div class="fw-card-body">
+    <p class="small text-muted">
+      Choosing the protected appliance runs a live border lookup against the FortiAnalyzer it is
+      mapped to, and that answer is what authorises the entry. With no appliance there is nothing
+      to ask, so the veto refuses — which is the correct refusal, not a missing feature.
+    </p>
+    <form method="post" action="{{ url_for('sentinel.blocklist_add') }}" class="row g-2 align-items-end">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="return_to" value="{{ rt }}">
+      <div class="col-md-2"><label class="form-label small">Address</label>
+        <input class="form-control form-control-sm" name="ip" placeholder="203.0.113.9" required></div>
+      <div class="col-md-2"><label class="form-label small">Protected appliance</label>
+        <select class="form-select form-select-sm" name="appliance_id">
+          <option value="0">— none —</option>
+          {% for a in appliances %}<option value="{{ a.id }}">{{ a.name }}</option>{% endfor %}
+        </select></div>
+      <div class="col-md-2"><label class="form-label small">TTL hours (blank = {{ feed.ttl_hours }})</label>
+        <input class="form-control form-control-sm" name="hours" placeholder="{{ feed.ttl_hours }}"></div>
+      <div class="col-md-3"><label class="form-label small">Reason</label>
+        <input class="form-control form-control-sm" name="reason" placeholder="sustained SQLi, ticket 4412"></div>
+      <div class="col-md-3"><button class="btn btn-fw-primary btn-sm w-100">List</button></div>
+      <div class="col-12">
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" id="bl-override" name="override" value="1">
+          <label class="form-check-label small" for="bl-override">
+            Accept the risk and list even if the border did not confirm this address
+            <span class="text-muted">— it may be a shared egress, and every client behind it loses access</span>
+          </label>
+        </div>
+      </div>
+      <div class="col-12">
+        <input class="form-control form-control-sm" name="override_reason"
+               placeholder="Why the border veto is being set aside (required when the box above is ticked)">
+      </div>
+    </form>
+  </div>
+</div>
+
+{# ── the entries ────────────────────────────────────────────────────────── #}
+<div class="fw-card mb-3">
+  <div class="fw-card-header"><strong><i class="bi bi-shield-slash me-1"></i>Entries</strong>
+    <span class="text-muted small ms-2">released and expired rows are kept on purpose</span></div>
+  <div class="fw-card-body">
+    <table class="table table-sm align-middle">
+      <thead><tr>
+        <th>Address</th><th>State</th><th>Border</th><th>Reason</th>
+        <th>Listed</th><th>Expires</th><th></th>
+      </tr></thead>
+      <tbody>
+      {% for e in entries %}
+        <tr class="{{ '' if e.live else 'text-muted' }}">
+          <td class="font-monospace small">{{ e.ip }}</td>
+          <td>
+            {% if e.live %}<span class="fw-badge fw-badge-danger">blocked · {{ e.hours_left }}h left</span>
+            {% elif e.status == 'released' %}<span class="fw-badge fw-badge-secondary">released</span>
+            {% else %}<span class="fw-badge fw-badge-secondary">expired</span>{% endif %}
+          </td>
+          <td class="small">
+            {% if e.override_by %}
+              <span class="fw-badge fw-badge-warning">veto overridden</span>
+              <div style="font-size:11px;">by {{ e.override_by }} — {{ e.override_reason }}</div>
+            {% elif e.edge_verdict == 'corroborated' %}
+              <span class="fw-badge fw-badge-success">{{ e.edge_hits }} hit(s)</span>
+              <div class="text-muted" style="font-size:11px;">{{ e.edge_scope }}</div>
+            {% else %}
+              <span class="fw-badge fw-badge-secondary">{{ e.edge_verdict or 'not recorded' }}</span>
+            {% endif %}
+          </td>
+          <td class="small">{{ e.reason }}
+            {% if e.incident_id %}<div style="font-size:11px;">
+              <a href="{{ url_for('sentinel.incident_view', iid=e.incident_id) }}">incident #{{ e.incident_id }}</a>
+            </div>{% endif %}
+            {% if e.release_reason %}<div class="text-muted" style="font-size:11px;">
+              released by {{ e.released_by }}: {{ e.release_reason }}</div>{% endif %}
+          </td>
+          <td class="small font-monospace">{{ e.created_at }}<div class="text-muted" style="font-size:11px;">{{ e.created_by }}</div></td>
+          <td class="small font-monospace">{{ e.expires_at }}</td>
+          <td class="text-end">
+            {% if e.live %}
+            <form method="post" action="{{ url_for('sentinel.blocklist_release', eid=e.id) }}" class="d-flex gap-1">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="return_to" value="{{ rt }}">
+              <input class="form-control form-control-sm" name="reason" placeholder="false positive?" style="width:150px;">
+              <button class="btn btn-fw-outline btn-sm">Release</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="7" class="small text-muted">
+          Nothing has ever been listed. The feed serves an empty list, which is a valid answer
+          and not a failure.
+        </td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{# ── what the border actually receives ──────────────────────────────────── #}
+<div class="fw-card mb-3">
+  <div class="fw-card-header"><strong><i class="bi bi-file-text me-1"></i>What the border receives right now</strong></div>
+  <div class="fw-card-body">
+    <p class="small text-muted">
+      Rendered from the database at the moment this page was drawn — the same code path the
+      endpoint uses. <code>generated_at</code> and <code>stale_after</code> are in the body on
+      purpose: a consumer holding a cached copy cannot otherwise tell a current list from a
+      frozen one, and a frozen list is a permanent block nobody decided to make.
+    </p>
+    <pre class="small mb-0" style="max-height:280px;overflow:auto;">{{ preview }}</pre>
+  </div>
+</div>

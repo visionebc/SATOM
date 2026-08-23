@@ -433,6 +433,123 @@ SPEC: list[dict] = [
              "assumption. Enter the collector's UTC offset in minutes (+60 "
              "for UTC+1, -360 for UTC-6). Use the Test lookup button on the "
              "Context page to confirm before trusting it. Default 0."},
+
+    # ── border blocklist (the published feed) ────────────────────────────────
+    {"key": "feed_enabled", "kind": "bool", "default": False,
+     "group": "blocklist", "label": "Publish the border blocklist feed",
+     "help": "Serves the live list at /sentinel/feed/<token>/blocklist.txt. "
+             "OFF, the endpoint answers 404 and entries are still recorded.",
+     "hint": "Master switch for the HTTP feed a FortiGate external connector "
+             "reads. OFF by default because turning it on makes a URL that "
+             "answers WITHOUT a login session — the token is the only thing "
+             "in front of it, and the body names addresses that attacked "
+             "specific customers. With it off, everything else still works: "
+             "entries are created, expire and are audited, and the page shows "
+             "the list. The border simply is not being told. Note what this "
+             "switch does NOT do: it never writes to a FortiGate. SATOM has "
+             "no FortiGate client and gets none — the operator pre-creates the "
+             "deny policy that references the feed, exactly as they "
+             "pre-create the FortiWeb IP list that block_ip appends to."},
+    {"key": "feed_token", "kind": "secret", "default": "", "group": "blocklist",
+     "label": "Feed token",
+     "help": "The whole authentication of the feed URL. Rotating it breaks "
+             "every connector already configured, on purpose.",
+     "hint": "A random string that forms part of the feed path. It is the "
+             "ONLY thing standing between an anonymous request and this "
+             "fleet's blocklist, because a threat-feed connector cannot log "
+             "in. An UNSET token does not mean 'no authentication' — it means "
+             "the feed refuses everything, including a request that also "
+             "omits the token (secrets.compare_digest('','') is True, so the "
+             "emptiness check is the guard, not the comparison). Rotate from "
+             "the Blocklist page; there is deliberately no grace period and "
+             "no second valid token, because a rotation that keeps the old "
+             "one working has revoked nothing and leaves you no way to find "
+             "which connectors still hold it."},
+    {"key": "feed_ttl_hours", "kind": "int", "default": 24, "group": "blocklist",
+     "label": "Default entry TTL (hours)", "min": 1, "max": 720,
+     "help": "How long a new entry lives when the caller does not say. Hard "
+             "ceiling 720h (30 days) regardless of this value.",
+     "hint": "Every entry carries an expiry and there is no way to create one "
+             "without it — this is the default applied when a caller does not "
+             "name a duration. It matters MORE here than on FortiWeb: "
+             "block_ip uses action=block-period, so THE APPLIANCE expires that "
+             "block and the expiry survives Sentinel being dead. A feed has no "
+             "device-side timer. The list is therefore rendered from the "
+             "database on every fetch and filtered by expires_at, so a stopped "
+             "publisher cannot serve a stale entry — but if SATOM is "
+             "UNREACHABLE the border keeps its last successful fetch and those "
+             "entries freeze rather than expire. Short TTLs bound that "
+             "failure; long ones are a decision to accept it. Ceiling 720 "
+             "hours, enforced in code (blocklist.MAX_TTL_HOURS) and not "
+             "raisable from this form."},
+    {"key": "feed_max_entries", "kind": "int", "default": 500,
+     "group": "blocklist", "label": "Maximum live entries", "min": 1,
+     "max": 10000,
+     "help": "At the ceiling a new entry is REFUSED. Nothing is ever evicted "
+             "to make room.",
+     "hint": "Upper bound on addresses the feed may carry at once. When it is "
+             "reached the next listing is refused with that reason, and the "
+             "oldest entry is NOT dropped to make space: evicting a row that "
+             "is still inside its TTL silently unblocks an address, and the "
+             "only telemetry would be traffic resuming. Sized for what a "
+             "border policy can hold and for what a person can review — a "
+             "list nobody reads is a list nobody releases from. Raise it "
+             "deliberately, or release entries."},
+    {"key": "feed_stale_minutes", "kind": "int", "default": 30,
+     "group": "blocklist", "label": "Consider a fetched copy stale after "
+                                    "(minutes)", "min": 1, "max": 1440,
+     "help": "Written into every rendered feed as stale_after, and used by the "
+             "console to flag a frozen feed.",
+     "hint": "How long a copy of this feed may be trusted after it was "
+             "generated. It is stamped into the file header next to "
+             "generated_at, because a consumer holding a cached list cannot "
+             "otherwise distinguish a current feed from a frozen one — and a "
+             "frozen list is a permanent block nobody decided to make. Set it "
+             "near the connector's own refresh interval: shorter and every "
+             "normal fetch looks stale, much longer and a genuinely dead "
+             "publisher goes unnoticed for exactly that long."},
+    {"key": "feed_git_remote", "kind": "str", "default": "",
+     "group": "blocklist", "label": "Audit mirror repository (git URL)",
+     "help": "A SEPARATE repository. Never this product's own source repo — "
+             "that one is published publicly.",
+     "hint": "Optional git remote that receives a commit of the rendered list "
+             "on every publish, so the history of who was blocked and when is "
+             "a diff rather than a log line. It must NOT be SATOM's own source "
+             "repository: that repository is mirrored to a public host by the "
+             "release tooling, so a blocklist committed into it would disclose "
+             "which addresses attacked which customer to anyone reading the "
+             "mirror. The working copy lives outside data/ as well, because "
+             "the standby's rsync --delete datasync would wipe a git working "
+             "tree mid-commit. Empty = no mirror; the feed itself is "
+             "unaffected either way, since it is served from the database."},
+    {"key": "feed_git_branch", "kind": "str", "default": "main",
+     "group": "blocklist", "label": "Mirror branch",
+     "help": "Branch pushed to in the mirror repository.",
+     "hint": "Branch the mirror commit is pushed to (HEAD:<branch>). Default "
+             "main. Only read when a mirror remote is set; a wrong value "
+             "fails the push and is reported in the mirror log on the "
+             "Blocklist page — it never blocks a listing or a release, "
+             "because the mirror is the audit copy and the feed is the "
+             "enforcement path."},
+    {"key": "feed_git_token", "kind": "secret", "default": "",
+     "group": "blocklist", "label": "Mirror push credential",
+     "help": "Injected into the remote URL for the push and redacted from "
+             "every log line this product renders.",
+     "hint": "Token for the mirror remote, stored encrypted like every other "
+             "SATOM secret. It is spliced into the HTTPS remote at push time "
+             "and stripped from every string the mirror returns, so the "
+             "command log the page shows cannot leak it. Leave empty for an "
+             "SSH remote or an unauthenticated one."},
+    {"key": "feed_git_auto", "kind": "bool", "default": False,
+     "group": "blocklist", "label": "Mirror automatically on every publish",
+     "help": "OFF = the mirror only runs when someone presses the button.",
+     "hint": "When on, the scheduled sentinel_feed_publish run commits and "
+             "pushes the rendered list every time it runs. Off by default "
+             "because an automatic push into a repository somebody later "
+             "points at the wrong remote is how operational data escapes, and "
+             "that decision should be made once, deliberately, rather than "
+             "inherited from a default. With it off the mirror still works "
+             "from the Publish now button."},
 ]
 
 #: The explanatory text for everything in the section that is NOT a setting —
@@ -463,6 +580,14 @@ UI_HINTS: dict[str, str] = {
         "address the border never saw. There is no negative weight here on "
         "purpose: silence at the border is a fact about addressing, not about "
         "hostility, and an attack behind a CDN is still an attack.",
+    "group.blocklist":
+        "The list SATOM publishes for a border firewall to read, and nothing "
+        "else: there is no FortiGate client in this product and no credential "
+        "that could write one. The operator pre-creates the deny policy that "
+        "references the feed; Sentinel only decides which addresses are in it, "
+        "and every entry carries a mandatory expiry. Read the TTL hint before "
+        "raising it — a feed has no device-side timer, so this is the one "
+        "response path whose expiry depends on SATOM still answering.",
     "group.ai":
         "Optional narrative on top of a finished incident. The model explains; "
         "it never scores, never decides and never reaches a device. Every "
@@ -513,6 +638,7 @@ GROUPS = [
     ("baseline", "Behavioural baseline"),
     ("vuln", "Vulnerability intelligence"),
     ("edge", "Border corroboration"),
+    ("blocklist", "Border blocklist feed"),
     ("ai", "AI reasoning"),
     ("response", "Response & safety"),
 ]

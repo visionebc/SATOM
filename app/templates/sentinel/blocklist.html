@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Sentinel border blocklist{% endblock %}
+
+{#
+   The published list and its release point, on its own URL.  The document
+   itself is sentinel/_blocklist_section.html, which the Admin Console pane
+   renders from the same file.  This page is the wrapper and nothing else.
+#}
+{% block content %}
+{% include "sentinel/_blocklist_section.html" %}
+{% endblock %}

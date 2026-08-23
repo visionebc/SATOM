@@ -193,6 +193,113 @@ class SentinelEdgeMap(db.Model):
         }
 
 
+class SentinelBlockEntry(db.Model):
+    """One address on the published border blocklist, with its expiry.
+
+    This table IS the feed. The endpoint renders from it on every request and
+    filters by :attr:`expires_at`, so there is no cached artefact in the
+    serving path that could go stale — a stopped publisher costs accurate
+    bookkeeping (rows still reading ``active``), never an address served past
+    its TTL. The file on disk and the git mirror are audit copies of that
+    render, deliberately downstream of it.
+
+    ``expires_at`` is NOT NULL and there is no code path that creates a row
+    without one. On FortiWeb the equivalent action leans on
+    ``action=block-period`` — the appliance expires the block itself and that
+    expiry survives Sentinel being dead. A feed has no device-side timer, so
+    the expiry has to be a property of the data rather than of a job.
+
+    ``incident_id`` is ``SET NULL`` on delete, NOT cascade, and the difference
+    matters: cascading would make deleting an old incident silently unblock an
+    address that is still inside its TTL. The block outlives the record of why
+    it was made; losing the reason is a documentation problem, losing the
+    block is a security one.
+
+    A released entry is kept, not deleted. "Why was this customer blocked last
+    Tuesday" is the question that actually gets asked, and a list whose false
+    positives vanish without trace cannot be reviewed for the pattern that
+    produced them.
+    """
+
+    __tablename__ = "sentinel_block_entry"
+
+    ACTIVE = "active"
+    RELEASED = "released"
+    EXPIRED = "expired"
+
+    id = db.Column(db.Integer, primary_key=True)
+    #: The literal address. Single hosts only — a prefix in a border blocklist
+    #: is a different decision with a different blast radius, and nothing in
+    #: this pipeline produces evidence about a network.
+    ip = db.Column(db.String(60), nullable=False, index=True)
+    status = db.Column(db.String(16), default=ACTIVE, index=True)
+    incident_id = db.Column(db.Integer,
+                            db.ForeignKey("sentinel_incident.id",
+                                          ondelete="SET NULL"), index=True)
+    appliance_id = db.Column(db.Integer)
+    source = db.Column(db.String(24), default="manual")  # incident|manual
+    reason = db.Column(db.Text, default="")
+    detail = db.Column(db.Text, default="")
+    created_by = db.Column(db.String(80), default="")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    expires_at = db.Column(db.DateTime, nullable=False, index=True)
+    released_at = db.Column(db.DateTime)
+    released_by = db.Column(db.String(80), default="")
+    release_reason = db.Column(db.String(400), default="")
+
+    #: The border verdict AS IT STOOD when the entry was created, not a live
+    #: re-read. An entry defended by a lookup nobody kept is an entry whose
+    #: justification cannot be reviewed — and re-querying at review time
+    #: answers a different question (is it corroborated NOW) than the one that
+    #: authorised the listing.
+    edge_verdict = db.Column(db.String(24), default="")
+    edge_scope = db.Column(db.String(300), default="")
+    edge_hits = db.Column(db.Integer, default=0)
+
+    #: Set only when a person listed an address the border veto refused. Kept
+    #: as two columns rather than a flag: an override with no written reason
+    #: is an override nobody can review, and the service refuses to create one.
+    override_by = db.Column(db.String(80), default="")
+    override_reason = db.Column(db.String(400), default="")
+
+    incident = db.relationship("SentinelIncident")
+
+    @property
+    def live(self) -> bool:
+        return (self.status == self.ACTIVE and self.expires_at is not None
+                and self.expires_at > datetime.utcnow())
+
+    @property
+    def hours_left(self) -> float:
+        if not self.expires_at:
+            return 0.0
+        delta = (self.expires_at - datetime.utcnow()).total_seconds() / 3600.0
+        return round(max(0.0, delta), 1)
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id, "ip": self.ip, "status": self.status,
+            "live": self.live, "hours_left": self.hours_left,
+            "incident_id": self.incident_id or 0,
+            "appliance_id": self.appliance_id or 0,
+            "source": self.source or "", "reason": self.reason or "",
+            "detail": self.detail or "", "created_by": self.created_by or "",
+            "created_at": self.created_at.isoformat(timespec="seconds")
+                          if self.created_at else "",
+            "expires_at": self.expires_at.isoformat(timespec="seconds")
+                          if self.expires_at else "",
+            "released_at": self.released_at.isoformat(timespec="seconds")
+                           if self.released_at else "",
+            "released_by": self.released_by or "",
+            "release_reason": self.release_reason or "",
+            "edge_verdict": self.edge_verdict or "",
+            "edge_scope": self.edge_scope or "",
+            "edge_hits": int(self.edge_hits or 0),
+            "override_by": self.override_by or "",
+            "override_reason": self.override_reason or "",
+        }
+
+
 # --------------------------------------------------------------------------- #
 #  Raw — normalised security events                                             #
 # --------------------------------------------------------------------------- #
@@ -853,7 +960,8 @@ class SentinelSignatureCve(db.Model):
 
 
 __all__ = [
-    "SentinelTopology", "SentinelEvent", "SentinelBaseline", "SentinelAnomaly",
+    "SentinelTopology", "SentinelEdgeMap", "SentinelBlockEntry",
+    "SentinelEvent", "SentinelBaseline", "SentinelAnomaly",
     "SentinelIncident", "SentinelIncidentEvent", "SentinelEvidence",
     "SentinelPolicy", "SentinelAction", "SentinelActionResult",
     "SentinelTrustedSource", "SentinelMaintenanceWindow", "SentinelVuln",

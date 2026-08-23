@@ -145,6 +145,45 @@ CATALOG: dict[str, ActionSpec] = {
         blast="EVERY client in an entire country — never autonomous, at any "
               "confidence. A single mis-attributed source address would take "
               "a market offline."),
+    "block_edge_ip": ActionSpec(
+        "block_edge_ip", "List source on the border blocklist",
+        "Add the source to the blocklist SATOM publishes for the border "
+        "firewall to read.",
+        mechanism="Writes a sentinel_block_entry row with a mandatory expiry. "
+                  "NOTHING is sent to a FortiGate: this product has no "
+                  "FortiGate client and no credential that could write one. "
+                  "The border reads /sentinel/feed/<token>/blocklist.txt, "
+                  "which is rendered from the database on every request and "
+                  "filtered by expires_at, and applies it through a deny "
+                  "policy THE OPERATOR pre-created — same rule as block_ip, "
+                  "which appends to an IP list somebody else bound to the "
+                  "profile. PRECONDITION, checked on every apply and not "
+                  "cached: edge.blockable() must accept the address. FortiWeb "
+                  "reports the CDN's address when a policy does not read "
+                  "X-Forwarded-For and the true client's when it does, and "
+                  "nothing in the attack log distinguishes them — listing the "
+                  "first kind removes every client behind a shared egress.",
+        reversible=True, requires_ttl=True,
+        max_level=SentinelPolicy.LEVEL_RECOMMEND,
+        blast="EVERY FortiGate and VDOM whose connector reads this feed, and "
+              "so every service behind them — not one policy on one "
+              "appliance. If the address turns out to be a shared egress, "
+              "every legitimate client behind it loses access to everything "
+              "the border fronts, not just the attacked application.",
+        handoff=True, verified=False,
+        provenance="No appliance write from here, so there is no transport and "
+                   "the runner refuses this action BY NAME rather than "
+                   "attempting it — the listing is made by a person, from the "
+                   "Blocklist page or the button on the incident, and that "
+                   "route runs the same edge.blockable() veto and the same "
+                   "mandatory TTL. HALF proved: the local half (row, expiry, "
+                   "veto, render, release, mirror) is exercised by "
+                   "tests/test_sentinel_blocklist.py against this code; the "
+                   "consuming half is NOT — no FortiGate in this fleet has "
+                   "been pointed at the feed, so 'the border enforced it' is a "
+                   "specification here, not an observation. Capped at "
+                   "recommend for the blast radius regardless of that ever "
+                   "changing."),
     "tune_signature": ActionSpec(
         "tune_signature", "Propose a signature carve-out",
         "Hand the incident to the existing false-positive carve-out flow.",

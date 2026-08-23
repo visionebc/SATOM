@@ -10376,6 +10376,83 @@ client behind it.</p>
 <li>Both surfaces admit the mechanism is unverified and explain why the border
   can disagree with the WAF.</li>
 </ul>
+<h2 id="114-the-published-blocklist-the-ttl-that-left-the-appliance-teststest_sentinel_blocklistpy">§114 — The published blocklist: the TTL that left the appliance (<code>tests/test_sentinel_blocklist.py</code>)</h2>
+<p><strong>What breaks without it.</strong> This is the first response path in the product
+whose enforcement point is outside it, and that moves one safety property.
+<code>block_ip</code> on FortiWeb uses <code>action=block-period</code>: <strong>the appliance expires the
+block and that expiry survives Sentinel being dead.</strong> A published list has no
+device-side timer. Build it the obvious way — a job that rewrites a file — and
+a stopped scheduler turns every block permanent, silently, with the page still
+saying <code>active</code>.</p>
+<p>The design answer is that the endpoint renders <strong>from the database on every
+request</strong> and filters by <code>expires_at</code>, so expiry is a property of the data
+rather than of a job. That property is worth exactly as much as the guard that
+holds it in place.</p>
+<p><strong>The guards.</strong> 50 tests, 37 mutations, all 37 bite.</p>
+<ul>
+<li><code>live_entries()</code> reads <code>expires_at</code>, never <code>status</code>. The mutation that makes
+  it trust the flag is the one that would turn a stopped scheduler into
+  permanent blocks; a fixture reproduces "expiry passed, nothing ran" and
+  asserts the address is absent from the render.</li>
+<li><code>expires_at</code> is <code>NOT NULL</code> <strong>at the column</strong>, asserted against the model —
+  application-side defaults are not the guarantee here.</li>
+<li><code>incident_id</code> is <code>ondelete="SET NULL"</code>. Cascade would make deleting an old
+  incident silently unblock a live address.</li>
+<li>The TTL ceiling is enforced in code, not by a form <code>max</code>.</li>
+<li>Re-listing an address <strong>extends and never shortens</strong>: an automated burst
+  arriving with the default TTL must not cut short a longer block an operator
+  set deliberately. It also must not create a second row.</li>
+<li>At the entry ceiling a listing is <strong>refused</strong>; the guard asserts the two
+  existing live entries are still there, because eviction is the plausible
+  implementation and its only telemetry is traffic resuming.</li>
+<li>Every refusal is asserted <strong>by what it says</strong>, not by the boolean. "Does not
+  parse", "inside a protected network" and "not a public unicast host" send an
+  operator to three different places.</li>
+<li><strong>A live defect this caught:</strong> <code>is_global</code> alone does not exclude multicast —
+  <code>ipaddress.ip_address("224.0.0.1").is_global</code> is <code>True</code>. The first version of
+  the guard accepted it while its own docstring claimed otherwise. Each class
+  (multicast, reserved, loopback, link-local, unspecified) is now named
+  separately so a future edit cannot drop one silently.</li>
+<li>An unparseable <code>protect_cidrs</code> line stops <strong>everything</strong> from being listed.
+  The permissive reading of a broken protection list is "protect nothing", and
+  it is silent — the bad line is simply dropped and every address sails
+  through. Same argument as the access gate answering 503.</li>
+<li>The border veto fails closed, the override needs a <strong>written reason</strong>, and
+  the override relaxes the border veto <strong>only</strong> — the protected-network guard
+  survives it, because there is no judgement available about our own
+  infrastructure.</li>
+<li>An <strong>unset</strong> feed token matches nothing, including an empty candidate:
+  <code>compare_digest("", "")</code> is <code>True</code>, so the emptiness check is the guard and
+  the mutation that removes it serves the fleet's blocklist to anonymous
+  requests.</li>
+<li>The feed answers <strong>404</strong> for a wrong token (403 would confirm the feed
+  exists to a scanner), 404 while the switch is off, and carries <code>no-store</code>.</li>
+<li>The serving route is asserted against the <strong>source</strong> to contain no <code>open(</code>,
+  <code>read_text</code>, <code>send_file</code> or reference to the mirror file. A cached artefact
+  anywhere in that path cannot expire, and no behavioural test can see the
+  difference until the publisher stops.</li>
+<li>Rotating the token revokes the old URL in the same request.</li>
+<li>Release keeps the row. The mutation that deletes it passes every behavioural
+  check — the address does leave the feed — and destroys the only record of
+  how often this list is wrong.</li>
+<li>The mirror is off by default, has <strong>no default remote</strong>, and its working
+  copy is neither inside the source tree nor under <code>data/</code> (the standby's
+  <code>rsync --delete</code> would wipe a git working copy mid-commit). The guard runs
+  <code>_uncommented()</code> first: the prose explaining it has to name the repository it
+  forbids, so a raw substring check matched its own comment — the tenth
+  recurrence of that defect here.</li>
+<li>A mirror that cannot reach its remote never blocks a listing, and the push
+  credential is redacted from every string returned to the page.</li>
+<li><code>block_edge_ip</code> is capped at <strong>recommend</strong>, <code>verified=False</code>, <code>handoff=True</code>,
+  and has <strong>no transport</strong> — the runner must refuse it by name rather than look
+  for a device write that cannot exist.</li>
+<li>The pane deploys every key <code>blocklist_context()</code> returns, the menu offers the
+  sixth Sentinel entry, and every POST form in the section carries <code>return_to</code>
+  — read from template <strong>source</strong>, because the entries table draws one Release
+  form per row and an empty database renders none of them.</li>
+<li>The scheduled job exists <strong>and is dispatched</strong>: a catalog entry with no
+  dispatch branch is an action that runs nothing and reports success.</li>
+</ul>
     </div>
   </div>
 </section>

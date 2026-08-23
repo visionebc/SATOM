@@ -10661,3 +10661,83 @@ client behind it.
 - Both surfaces admit the mechanism is unverified and explain why the border
   can disagree with the WAF.
 
+
+## §114 — The published blocklist: the TTL that left the appliance (`tests/test_sentinel_blocklist.py`)
+
+**What breaks without it.** This is the first response path in the product
+whose enforcement point is outside it, and that moves one safety property.
+`block_ip` on FortiWeb uses `action=block-period`: **the appliance expires the
+block and that expiry survives Sentinel being dead.** A published list has no
+device-side timer. Build it the obvious way — a job that rewrites a file — and
+a stopped scheduler turns every block permanent, silently, with the page still
+saying `active`.
+
+The design answer is that the endpoint renders **from the database on every
+request** and filters by `expires_at`, so expiry is a property of the data
+rather than of a job. That property is worth exactly as much as the guard that
+holds it in place.
+
+**The guards.** 50 tests, 37 mutations, all 37 bite.
+
+- `live_entries()` reads `expires_at`, never `status`. The mutation that makes
+  it trust the flag is the one that would turn a stopped scheduler into
+  permanent blocks; a fixture reproduces "expiry passed, nothing ran" and
+  asserts the address is absent from the render.
+- `expires_at` is `NOT NULL` **at the column**, asserted against the model —
+  application-side defaults are not the guarantee here.
+- `incident_id` is `ondelete="SET NULL"`. Cascade would make deleting an old
+  incident silently unblock a live address.
+- The TTL ceiling is enforced in code, not by a form `max`.
+- Re-listing an address **extends and never shortens**: an automated burst
+  arriving with the default TTL must not cut short a longer block an operator
+  set deliberately. It also must not create a second row.
+- At the entry ceiling a listing is **refused**; the guard asserts the two
+  existing live entries are still there, because eviction is the plausible
+  implementation and its only telemetry is traffic resuming.
+- Every refusal is asserted **by what it says**, not by the boolean. "Does not
+  parse", "inside a protected network" and "not a public unicast host" send an
+  operator to three different places.
+- **A live defect this caught:** `is_global` alone does not exclude multicast —
+  `ipaddress.ip_address("224.0.0.1").is_global` is `True`. The first version of
+  the guard accepted it while its own docstring claimed otherwise. Each class
+  (multicast, reserved, loopback, link-local, unspecified) is now named
+  separately so a future edit cannot drop one silently.
+- An unparseable `protect_cidrs` line stops **everything** from being listed.
+  The permissive reading of a broken protection list is "protect nothing", and
+  it is silent — the bad line is simply dropped and every address sails
+  through. Same argument as the access gate answering 503.
+- The border veto fails closed, the override needs a **written reason**, and
+  the override relaxes the border veto **only** — the protected-network guard
+  survives it, because there is no judgement available about our own
+  infrastructure.
+- An **unset** feed token matches nothing, including an empty candidate:
+  `compare_digest("", "")` is `True`, so the emptiness check is the guard and
+  the mutation that removes it serves the fleet's blocklist to anonymous
+  requests.
+- The feed answers **404** for a wrong token (403 would confirm the feed
+  exists to a scanner), 404 while the switch is off, and carries `no-store`.
+- The serving route is asserted against the **source** to contain no `open(`,
+  `read_text`, `send_file` or reference to the mirror file. A cached artefact
+  anywhere in that path cannot expire, and no behavioural test can see the
+  difference until the publisher stops.
+- Rotating the token revokes the old URL in the same request.
+- Release keeps the row. The mutation that deletes it passes every behavioural
+  check — the address does leave the feed — and destroys the only record of
+  how often this list is wrong.
+- The mirror is off by default, has **no default remote**, and its working
+  copy is neither inside the source tree nor under `data/` (the standby's
+  `rsync --delete` would wipe a git working copy mid-commit). The guard runs
+  `_uncommented()` first: the prose explaining it has to name the repository it
+  forbids, so a raw substring check matched its own comment — the tenth
+  recurrence of that defect here.
+- A mirror that cannot reach its remote never blocks a listing, and the push
+  credential is redacted from every string returned to the page.
+- `block_edge_ip` is capped at **recommend**, `verified=False`, `handoff=True`,
+  and has **no transport** — the runner must refuse it by name rather than look
+  for a device write that cannot exist.
+- The pane deploys every key `blocklist_context()` returns, the menu offers the
+  sixth Sentinel entry, and every POST form in the section carries `return_to`
+  — read from template **source**, because the entries table draws one Release
+  form per row and an empty database renders none of them.
+- The scheduled job exists **and is dispatched**: a catalog entry with no
+  dispatch branch is an action that runs nothing and reports success.

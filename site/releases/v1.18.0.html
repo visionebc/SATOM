@@ -5,8 +5,8 @@
 <meta charset="UTF-8">
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Version 0.8 — SATOM</title>
-<meta name="description" content="Released on 2026-07-12 — Added · 3 entries.">
+<title>Version 1.18.0 — SATOM</title>
+<meta name="description" content="Released on 2026-08-23 — Added · Fixed · 6 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -45,8 +45,8 @@
 
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
-  <h1>Version 0.8 <span class="rel-badge">superseded</span></h1>
-  <p class="sub">Released on 2026-07-12 — Added · 3 entries.</p>
+  <h1>Version 1.18.0 <span class="rel-badge">superseded</span></h1>
+  <p class="sub">Released on 2026-08-23 — Added · Fixed · 6 entries.</p>
 </header>
 
 <section class="wrap">
@@ -67,7 +67,7 @@
         <span class="rel-nav-meta">2026-08-23 · Added · Changed · Fixed · Security · 14 entries</span>
         <ul class="rel-leads"><li>The border blocklist — a list SATOM publishes, never a write it performs</li><li>A release point, and it keeps the record</li><li>Optional git audit mirror</li><li class="rel-more">… and 11 more</li></ul>
       </a>
-      <a class="rel-nav-item" href="v1.18.0.html" data-rel-version="1.18.0">
+      <a class="rel-nav-item is-active" href="v1.18.0.html" data-rel-version="1.18.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 1.18.0</span></span>
         <span class="rel-nav-meta">2026-08-23 · Added · Fixed · 6 entries</span>
         <ul class="rel-leads"><li>Border corroboration — Sentinel can ask the firewall in front whether a source is a real peer</li><li>The mechanism is unverified and the console says so</li><li class="rel-more">… and 4 more</li></ul>
@@ -242,7 +242,7 @@
         <span class="rel-nav-meta">2026-07-13 · Added · 1 entry</span>
         <ul class="rel-leads"><li>Node TLS + node-to-node encryption</li></ul>
       </a>
-      <a class="rel-nav-item is-active" href="v0.8.html" data-rel-version="0.8">
+      <a class="rel-nav-item" href="v0.8.html" data-rel-version="0.8">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 0.8</span></span>
         <span class="rel-nav-meta">2026-07-12 · Added · 3 entries</span>
         <ul class="rel-leads"><li>FortiAnalyzer</li><li>FortiADC</li><li>Backup coverage page</li></ul>
@@ -252,14 +252,76 @@
       <div class="mdx">
 <h3 id="added">Added</h3>
 <ul>
-<li><strong>FortiAnalyzer</strong> integration (JSON-RPC, dual dialect) as a full ADOM, with
-  its endpoints in the DB registry and a git source-of-truth harvest.</li>
-<li><strong>FortiADC</strong> configuration added to the git source of truth (hourly sync +
-  nightly inspect), matching FortiWeb.</li>
-<li><strong>Backup coverage page</strong>, external backup server (SFTP) with firmware SoT,
-  library update indicator + per-package pip upgrade/rollback.</li>
+<li><strong>Border corroboration — Sentinel can ask the firewall in front whether a
+  source is a real peer.</strong> A new operator-entered map (Sentinel → Context →
+  <em>Border map</em>) ties each protected appliance to a FortiAnalyzer, an ADOM, a
+  FortiGate and a VDOM; the correlator then asks that collector whether the
+  border logged the same source in the same window. Every field is typed by
+  the operator — nothing is inferred from a hostname or discovered from an
+  ADOM listing, because a wrong guess here does not fail, it points the
+  lookup at somebody else's traffic and the answer still looks like an answer.</li>
 </ul>
-<p class="rel-prevnext"><a href="v0.9.html">← Version 0.9</a></p>
+<p>The answer does two different jobs:</p>
+<ul>
+<li><strong>Evidence.</strong> <code>edge_corroboration</code> (+12) when the border independently
+    logged the source, and <code>edge_multi_target</code> (+10) when it saw that source
+    reach more distinct destinations than the configured scanning floor. Both
+    are independent of the appliance — every other positive factor in the
+    table is ultimately derived from the same WAF's view of the same traffic.
+    This matters most where it is needed most: an installation with no
+    hypervisor access loses up to 18 points it can never recover
+    (<code>vm_anomaly</code> + <code>host_anomaly</code>), and a FortiGate is the thing such an
+    installation usually <em>does</em> have.</li>
+<li><strong>A veto.</strong> FortiWeb reports the true client when the policy reads
+    <code>X-Forwarded-For</code> and the CDN's own address when it does not, and nothing
+    in the attack log distinguishes them. In the first case a border block is
+    inert; in the second it removes <strong>every</strong> client behind that egress. So
+    an address the border never confirmed cannot enter a border blocklist
+    while <em>Require border corroboration</em> is on — which is the shipped
+    default.</li>
+</ul>
+<p>There is deliberately <strong>no negative weight</strong> in this layer. Silence at the
+  border is a fact about addressing, not about hostility, and subtracting for
+  it would systematically under-score exactly the customers who run a CDN.</p>
+<ul>
+<li>
+<p>Seven settings under a new <strong>Border corroboration</strong> group, each with the
+  long-form <code>?</code> explanation the rest of the page carries. Two of them are the
+  ones that fail silently and so are called out here: <strong>Collector clock offset
+  from UTC</strong> (a mismatch returns zero rows forever, which is byte-identical to
+  a source the border never saw) and <strong>Require border corroboration</strong> (the
+  veto).</p>
+</li>
+<li>
+<p>A <strong>Test lookup</strong> button on every mapped appliance, which runs one read
+  against the live collector and shows the raw device refusal. This exists
+  because the failure mode of this whole layer is silence: a wrong ADOM, a
+  wrong device name, a clock offset and a genuinely absent source all return
+  zero rows, and only one of the four is an answer.</p>
+</li>
+</ul>
+<h3 id="fixed">Fixed</h3>
+<ul>
+<li>The Admin Console pane for Sentinel → Context re-listed the section's
+  context keys by hand, so a key added to the single shared builder reached
+  the standalone page and not the pane. A guard now derives the required key
+  set from <code>context_context()</code> itself and fails when the pane does not deploy
+  all of it.</li>
+</ul>
+<h3 id="notes">Notes</h3>
+<ul>
+<li><strong>The mechanism is unverified and the console says so.</strong> There is no live
+  FortiAnalyzer in the development fleet to prove the <code>logsearch</code> route
+  against (<code>{device}</code> is retired on a <code>.invalid</code> host), so it ships as a
+  specification with its provenance stated — the same contract
+  <code>actions.CATALOG</code> already applies to response actions. Every failure path
+  degrades to <em>border layer not evaluated</em>, never to <em>the border says no</em>.</li>
+<li>This module never writes to a FortiAnalyzer or a FortiGate. A guard asserts
+  the absence of <code>set</code> / <code>update</code> / <code>delete</code>, and that the one <code>add</code> verb
+  (which is how FortiAnalyzer <em>creates a search task</em>) targets only the
+  logsearch route.</li>
+</ul>
+<p class="rel-prevnext"><a href="v1.19.0.html">← Version 1.19.0</a> · <a href="v1.17.1.html">Version 1.17.1 →</a></p>
       </div>
       <div class="callout" style="margin-top:24px;">
         <span class="cico">🗒️</span>

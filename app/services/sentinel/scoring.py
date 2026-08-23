@@ -60,6 +60,17 @@ WEIGHTS: dict[str, int] = {
     "vm_anomaly": 10,
     "host_anomaly": 8,
     "causal_chain": 8,          # layers moved in a plausible order after T0
+    # ── positive: corroboration at the border ────────────────────────────
+    # The firewall in front logged the same source in the same window. Worth
+    # more than a single internal layer because it is INDEPENDENT: every other
+    # positive factor above is ultimately derived from the same appliance's
+    # view of the same traffic. It also matters most where it is needed most —
+    # an installation with no hypervisor access loses up to 18 points it can
+    # never recover, and this is the layer such an installation usually DOES
+    # have. There is no matching negative: see edge.py, silence at the border
+    # is a fact about addressing, not about hostility.
+    "edge_corroboration": 12,
+    "edge_multi_target": 10,    # the border saw it reach many destinations
     # ── positive: vulnerability intelligence ─────────────────────────────
     "exploit_available": 15,
     "target_vulnerable": 15,
@@ -141,6 +152,17 @@ def score_context(ctx) -> dict:
         add("causal_chain",
             " → ".join(f"{r.label} (+{r.lag_s:g}s)" for r in chain[:5]))
 
+    # ── corroboration at the border ──────────────────────────────────────
+    edge = ctx.edge or {}
+    if edge.get("corroborated"):
+        add("edge_corroboration",
+            f"the border logged {edge.get('hits')} entry/entries from this "
+            f"source in the window ({edge.get('scope') or 'mapped collector'})")
+        if edge.get("multi_target"):
+            add("edge_multi_target",
+                f"the same source reached {edge.get('distinct_dst')} distinct "
+                f"destination(s) at the border in the window")
+
     # ── vulnerability intelligence ───────────────────────────────────────
     v = ctx.vuln or {}
     if v.get("enabled") and v.get("cves"):
@@ -204,6 +226,15 @@ def _notes(ctx, factors) -> list:
     if not ctx.store_ok:
         notes.append("metrics store unreachable — every behavioural factor is "
                      "absent from this score, not zero")
+    edge = getattr(ctx, "edge", None) or {}
+    if edge.get("enabled") and not edge.get("checked"):
+        notes.append("border layer not evaluated (" +
+                     (edge.get("error") or edge.get("reason") or "no answer") +
+                     ") — this is not the same as the border reporting nothing")
+    elif edge.get("checked") and not edge.get("corroborated"):
+        notes.append("the border never logged this address as a source; it is "
+                     "most likely a client behind a proxy or CDN, so a border "
+                     "blocklist entry would not act on the attacker")
     v = ctx.vuln or {}
     if v.get("stale"):
         notes.append("vulnerability mirror is stale; exploit data may be out of date")
@@ -249,6 +280,10 @@ def explain() -> list:
         "vm_anomaly": "Virtual machine metrics deviate",
         "host_anomaly": "Hypervisor host metrics deviate",
         "causal_chain": "Two or more layers moved in order after T0",
+        "edge_corroboration": "The firewall in front independently logged this "
+                              "source in the window",
+        "edge_multi_target": "The border saw this source reach many distinct "
+                             "destinations (scanning)",
         "exploit_available": "A resolved CVE is exploited in the wild (KEV) or "
                              "has a public exploit",
         "target_vulnerable": "A resolved CVE affects the product this target runs",

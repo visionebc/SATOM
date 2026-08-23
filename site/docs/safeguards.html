@@ -10289,6 +10289,93 @@ honoured only once the device it was meant to spare has already been read. The
 guard now records progress and collection in one ordered trace.</p>
 <p><strong>Verification (1.17.0).</strong> 21 mutations, 21 bite, measured by return code with
 a green baseline required — only <code>rc==1</code> counts as a failure.</p>
+<h2 id="112-a-button-outside-the-tab-list-teststest_pane_buttonspy">§112 — a button outside the tab list (<code>tests/test_pane_buttons.py</code>)</h2>
+<p><strong>What it guards.</strong> No element may be rendered with <code>data-bs-toggle="tab"</code>
+unless it has a <code>.nav</code> / <code>.list-group</code> / <code>[role="tablist"]</code> ancestor, and every
+<code>data-fw-pane</code> button must name a pane that exists, a menu entry that can be
+constructed, a fallback URL and <code>type="button"</code>.</p>
+<p><strong>Why it is not obvious.</strong> Bootstrap 5.3's <code>Tab</code> constructor does</p>
+<pre><code class="language-js">this._parent = this._element.closest('.list-group, .nav, [role=&quot;tablist&quot;]')
+if (!this._parent) { return }
+</code></pre>
+<p>and the element still matches the click data-api, so <code>show()</code> runs anyway and
+throws <code>Illegal invocation</code> from inside Bootstrap. Server-side <strong>nothing is
+wrong</strong>: the pane exists, the markup is valid, the route is 200. The failure is
+a button that does nothing — indistinguishable from a button nobody pressed,
+which is why two of them shipped and an operator, not a test, found them.</p>
+<p><strong>Why the check is on the rendered page, not the template.</strong> The toggle and its
+<code>&lt;aside class="nav" role="tablist"&gt;</code> live in different files and meet only at
+include time. A template scanner cannot see an ancestor it never parses. The
+guard walks the rendered DOM with an ancestor stack.</p>
+<p><strong>The traps.</strong></p>
+<ul>
+<li><em>A scanner that reads nothing passes everything.</em> Pointing the scan at an
+  empty string left the orphan check green. There is a census test: the
+  settings menu is itself a tab list full of toggles, so a working scan cannot
+  come back empty.</li>
+<li><em>Reading an attribute is not using it.</em> The first version asserted that
+  <code>data-fw-pane-href</code> appeared in the script — satisfied by the
+  <code>getAttribute()</code> line alone, so deleting the navigation survived. The assert
+  now matches the assignment to <code>window.location.href</code>.</li>
+<li><em>The prose answers the assert (tenth time).</em> <code>fw_pane_link.js</code> documents the
+  selectors it depends on, so substring asserts match the comment that explains
+  them. <code>_uncommented()</code> strips comments before asserting.</li>
+</ul>
+<p><strong>Recipe.</strong> With the app's real CSP served over http (<code>/tmp/csp_server.py</code>,
+nonce copied from the render), chromium clicks each button and reports the
+active pane. Before: both inert, two <code>Illegal invocation</code> errors. After: both
+switch panes, menu highlight follows, <code>js errors: []</code>.</p>
+<p><strong>Verification (1.17.1).</strong> 12 mutations, 12 bite, measured by return code with a
+green baseline required — only <code>rc==1</code> counts as a failure.</p>
+<h2 id="113-the-border-layer-unknown-is-not-no-and-the-reason-is-the-answer-teststest_sentinel_edgepy">§113 — The border layer: unknown is not no, and the reason is the answer (<code>tests/test_sentinel_edge.py</code>)</h2>
+<p><strong>What breaks without it.</strong> This layer's two jobs fail in opposite directions.
+As evidence it must score only an answer that came back — a timeout, a wrong
+ADOM and a retired collector all return zero rows, and if any of them ever
+scores, the number that gates a firewall change is being paid for by a
+failure. As a veto it must refuse by default — an address the border never
+confirmed may be a shared egress, and blocking one removes every legitimate
+client behind it.</p>
+<p><strong>The guards.</strong> 30 tests, 25 mutations, all 25 bite.</p>
+<ul>
+<li>Every <code>edge_*</code> setting is in the catalog, in the <code>edge</code> group, with a real
+  hint; the group renders and has its own <code>?</code> prose.</li>
+<li><code>edge_require</code> defaults to <strong>True</strong>. Shipping it False would mean every
+  fresh installation is willing to list an address it never confirmed.</li>
+<li>Both factors are positive, and <strong>no</strong> <code>edge_*</code> weight is negative.</li>
+<li><code>explain()</code> gives each factor real prose — checked as <em>the row is not the
+  key echoed back</em>, because <code>explain()</code> builds its rows FROM <code>WEIGHTS</code> and
+  falls back to <code>labels.get(k, k)</code>. The first version of this assertion
+  derived its expectation from the thing under test and therefore always
+  passed; the mutation that renames the label survived it.</li>
+<li>Nothing that failed to confirm scores: blank, errored, completed-and-empty,
+  and absent-entirely all produce zero <code>edge_*</code> points.</li>
+<li>The notes distinguish <em>not evaluated</em> from <em>looked and found nothing</em>.</li>
+<li>Every veto branch refuses <strong>and says which branch refused</strong>. Two mutations
+  survived the first pass because each payload also tripped a later branch —
+  the veto still refused, with a vaguer explanation. Asserting only the
+  boolean let a deleted branch pass.</li>
+<li>Only rows where the address is the <strong>source</strong> corroborate it; a row where it
+  is the destination proves the opposite of the question.</li>
+<li>An unset FortiGate produces an <strong>empty</strong> device selector, not an entry with
+  an empty <code>devid</code> — the latter asks for a device called <code>""</code>, returns
+  nothing, and would veto every block on that appliance forever.</li>
+<li>The clock offset is actually applied.</li>
+<li>No <code>set</code> / <code>update</code> / <code>delete</code> reaches a device, and the one <code>add</code> targets
+  only the logsearch route. Precision matters: a guard that simply banned
+  <code>add</code> would fail against the correct implementation, and written loosely
+  enough to pass it would stop catching anything.</li>
+<li><strong>New, and it caught a live defect:</strong> every key <code>context_context()</code> returns
+  must be deployed in the Admin Console pane's <code>{% with %}</code>. The single shared
+  builder is defeated by a hand-written key list in the pane; adding a key and
+  forgetting the pane 500s Settings today, and a key read inside an <code>{% if %}</code>
+  would instead render a pane that quietly disagrees with the page.</li>
+<li>Every POST form in the section carries <code>return_to</code>, read from the template
+  <strong>source</strong> rather than from rendered HTML: three of those tables draw one
+  form per row, so on an empty database a render-based check sees zero forms
+  and reports clean.</li>
+<li>Both surfaces admit the mechanism is unverified and explain why the border
+  can disagree with the WAF.</li>
+</ul>
     </div>
   </div>
 </section>

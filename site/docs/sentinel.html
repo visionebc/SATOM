@@ -70,6 +70,7 @@
       <a href="#8-incidents">8. Incidents</a>
       <a href="#9-response">9. Response</a>
       <a href="#9b-operating-modes-four-names-over-the-same-knobs">9b. Operating modes — four names over the same knobs</a>
+      <a href="#9c-border-corroboration-the-layer-the-waf-cannot-supply">9c. Border corroboration — the layer the WAF cannot supply</a>
       <a href="#10-the-ai-wall">10. The AI wall</a>
       <a href="#11-data-model">11. Data model</a>
       <a href="#12-collection">12. Collection</a>
@@ -719,6 +720,106 @@ that reaches one. The containment against an over-eager mode is not the mode:
 it is the never-block list, the per-action TTL, the device-side block period
 and the fact that an unverified mechanism executes nothing at all.</p>
 <hr>
+<h2 id="9c-border-corroboration-the-layer-the-waf-cannot-supply">9c. Border corroboration — the layer the WAF cannot supply</h2>
+<p>The question this layer answers is not "was this bad?" but "<strong>is this address
+a real peer?</strong>", and the WAF structurally cannot answer it.</p>
+<p>FortiWeb reports the source of an attack. Which source depends on whether the
+policy reads <code>X-Forwarded-For</code>:</p>
+<table>
+<thead>
+<tr>
+<th>policy</th>
+<th>what the attack log carries</th>
+<th>what the FortiGate saw</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>reads XFF</td>
+<td>the TRUE client</td>
+<td>the CDN</td>
+</tr>
+<tr>
+<td>does not</td>
+<td>the CDN's own address</td>
+<td>the CDN</td>
+</tr>
+</tbody>
+</table>
+<p>Both produce a plausible IPv4 address, and nothing in the log distinguishes
+them. The border can, because a firewall only logs addresses that actually
+opened a connection to it.</p>
+<h3 id="the-map-is-operator-entered-all-of-it">The map is operator-entered, all of it</h3>
+<p><code>sentinel_edge_map</code> ties one protected appliance to <strong>analyzer, ADOM,
+FortiGate and VDOM</strong>. None of it is inferred. A guessed ADOM does not fail —
+it queries somebody else's traffic and returns an answer-shaped result. An
+empty <code>fortigate</code> means every device in the ADOM and an empty <code>vdom</code> means
+every VDOM on it; both are legitimate (a single-VDOM firewall, a
+single-customer collector) and both are printed in the scope line so the
+operator can see how wide the question actually was.</p>
+<p>Same contract as <code>sentinel_topology</code>: with no complete row the border layer is
+<strong>not evaluated</strong>, never <em>clean</em>.</p>
+<h3 id="two-factors-no-penalty">Two factors, no penalty</h3>
+<table>
+<thead>
+<tr>
+<th>factor</th>
+<th>points</th>
+<th>when</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>edge_corroboration</code></td>
+<td>+12</td>
+<td>the border logged this source in the window</td>
+</tr>
+<tr>
+<td><code>edge_multi_target</code></td>
+<td>+10</td>
+<td>it reached ≥ <em>scanning floor</em> distinct destinations</td>
+</tr>
+</tbody>
+</table>
+<p><code>edge_corroboration</code> outweighs <code>host_anomaly</code> on purpose: it is the only
+<strong>independent</strong> positive factor in the table. Everything else derives from the
+same appliance's view of the same traffic.</p>
+<p>There is no negative weight and there must never be one. An attack behind a
+CDN is still an attack; the border's silence is a fact about addressing. A
+penalty here would under-score every CDN customer, invisibly — the incident
+would still look complete.</p>
+<h3 id="the-veto-and-why-it-was-built-before-the-blocklist">The veto, and why it was built before the blocklist</h3>
+<p><code>edge.blockable()</code> decides whether an address may enter a border blocklist.
+With <em>Require border corroboration</em> on (the default) it refuses unless the
+lookup <strong>completed and found rows</strong>, and it names which branch refused:
+disabled, unmapped, failed, not consulted, or confirmed absent. Those send an
+operator to different places, so the reason is asserted by the guards, not
+just the boolean.</p>
+<p>Refusing is the safe direction. Listing an unconfirmed address is inert at
+best and, when that address is a shared egress, removes every legitimate
+client behind it.</p>
+<h3 id="the-silence-problem-and-the-button-that-solves-it">The silence problem, and the button that solves it</h3>
+<p>A wrong ADOM, a wrong device name, a collector on a different clock and a
+source the border genuinely never saw <strong>all return zero rows</strong>. Only the last
+is an answer. Three defences:</p>
+<ol>
+<li><code>edge_tz_offset_min</code> is a <strong>setting</strong>, not an assumption — an hour of skew
+   would otherwise be a permanent silent veto on every block.</li>
+<li><code>edge_slack_minutes</code> absorbs ordinary clock skew without widening the
+   window enough to dilute the destination count.</li>
+<li><strong>Test lookup</strong> runs one live read and shows the raw device refusal, so the
+   first operator with a real collector sees the cause instead of a feature
+   that is quietly inert. That silence is how <code>metrics.vm_url</code> stayed
+   unconfigurable in this product for months.</li>
+</ol>
+<h3 id="provenance">Provenance</h3>
+<p><code>edge.MECHANISM</code> names the JSON-RPC route. As of 2026-08-23 it has <strong>not</strong>
+been proved against a live FortiAnalyzer — there is none in the development
+fleet — so it ships as a specification and the console says so, exactly as
+<code>actions.CATALOG</code> does for unverified response actions. The module is
+<strong>read-only</strong>: a guard asserts no <code>set</code> / <code>update</code> / <code>delete</code>, and that the
+one <code>add</code> (FortiAnalyzer's verb for <em>create a search task</em>) targets only
+<code>logsearch</code>.</p>
 <h2 id="10-the-ai-wall">10. The AI wall</h2>
 <p><code>reason(incident) -&gt; opinion</code>. The model receives a finished incident that
 already has a score and evidence, and returns prose plus a recommendation drawn

@@ -2504,6 +2504,31 @@ for them among the tabs is a dead end:
 - **PostgreSQL SSL policy** — saved from the Node TLS tab (§26.8).
 - **ACME provider registry** — saved from the Certificate Manager tab (§10).
 
+
+### Sentinel → Context → Border map
+
+Ties each protected appliance to the collector that sees its border:
+**analyzer, ADOM, FortiGate, VDOM**, all typed by you. Leave *FortiGate* empty
+to search every device in the ADOM and *VDOM* empty to search every VDOM on
+it; the scope line shows how wide the question ended up.
+
+With a complete row, an incident gains a border verdict: the firewall in front
+either logged that source in the same window or it did not. A confirmed source
+adds points; an unconfirmed one adds none and **blocks** the address from
+entering a border blocklist, because FortiWeb may be reporting a client behind
+a CDN — blocking that at the border is useless, and blocking the CDN itself
+removes every client behind it.
+
+Without a row the border layer reads **not evaluated**, which is not the same
+as clean.
+
+Use **Test lookup** before trusting a verdict. A wrong ADOM, a wrong device
+name and a collector on a different clock all return zero rows, which looks
+exactly like a source the border never saw — the button shows the raw device
+answer so you can tell which one you have. If the collector runs on anything
+other than UTC, set *Collector clock offset* in Settings → Sentinel → Border
+corroboration first.
+
 ## 27. Operations: log collection and importing a backup
 
 The FortiWeb ADOM's **Operations** group has three entries. §11 documents the

@@ -56,6 +56,9 @@
      (the body block re-executes every visit); after bootstrap.bundle, which
      it upgrades the native title= tooltip with. #}
   <script src="{{ asset('js/fw_hints.js') }}"></script>
+  {# Buttons that reveal a pane from OUTSIDE the tab list. Same reason as
+     above for living in <head>: one delegated listener, registered once. #}
+  <script src="{{ asset('js/fw_pane_link.js') }}"></script>
   <script src="{{ asset('js/jobs.js') }}"></script>
   <script src="{{ asset('js/objedit_drawer.js') }}"></script>
 

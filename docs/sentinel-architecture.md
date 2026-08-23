@@ -641,6 +641,90 @@ and the fact that an unverified mechanism executes nothing at all.
 
 ---
 
+## 9c. Border corroboration — the layer the WAF cannot supply
+
+The question this layer answers is not "was this bad?" but "**is this address
+a real peer?**", and the WAF structurally cannot answer it.
+
+FortiWeb reports the source of an attack. Which source depends on whether the
+policy reads `X-Forwarded-For`:
+
+| policy | what the attack log carries | what the FortiGate saw |
+|---|---|---|
+| reads XFF | the TRUE client | the CDN |
+| does not | the CDN's own address | the CDN |
+
+Both produce a plausible IPv4 address, and nothing in the log distinguishes
+them. The border can, because a firewall only logs addresses that actually
+opened a connection to it.
+
+### The map is operator-entered, all of it
+
+`sentinel_edge_map` ties one protected appliance to **analyzer, ADOM,
+FortiGate and VDOM**. None of it is inferred. A guessed ADOM does not fail —
+it queries somebody else's traffic and returns an answer-shaped result. An
+empty `fortigate` means every device in the ADOM and an empty `vdom` means
+every VDOM on it; both are legitimate (a single-VDOM firewall, a
+single-customer collector) and both are printed in the scope line so the
+operator can see how wide the question actually was.
+
+Same contract as `sentinel_topology`: with no complete row the border layer is
+**not evaluated**, never *clean*.
+
+### Two factors, no penalty
+
+| factor | points | when |
+|---|---|---|
+| `edge_corroboration` | +12 | the border logged this source in the window |
+| `edge_multi_target` | +10 | it reached ≥ *scanning floor* distinct destinations |
+
+`edge_corroboration` outweighs `host_anomaly` on purpose: it is the only
+**independent** positive factor in the table. Everything else derives from the
+same appliance's view of the same traffic.
+
+There is no negative weight and there must never be one. An attack behind a
+CDN is still an attack; the border's silence is a fact about addressing. A
+penalty here would under-score every CDN customer, invisibly — the incident
+would still look complete.
+
+### The veto, and why it was built before the blocklist
+
+`edge.blockable()` decides whether an address may enter a border blocklist.
+With *Require border corroboration* on (the default) it refuses unless the
+lookup **completed and found rows**, and it names which branch refused:
+disabled, unmapped, failed, not consulted, or confirmed absent. Those send an
+operator to different places, so the reason is asserted by the guards, not
+just the boolean.
+
+Refusing is the safe direction. Listing an unconfirmed address is inert at
+best and, when that address is a shared egress, removes every legitimate
+client behind it.
+
+### The silence problem, and the button that solves it
+
+A wrong ADOM, a wrong device name, a collector on a different clock and a
+source the border genuinely never saw **all return zero rows**. Only the last
+is an answer. Three defences:
+
+1. `edge_tz_offset_min` is a **setting**, not an assumption — an hour of skew
+   would otherwise be a permanent silent veto on every block.
+2. `edge_slack_minutes` absorbs ordinary clock skew without widening the
+   window enough to dilute the destination count.
+3. **Test lookup** runs one live read and shows the raw device refusal, so the
+   first operator with a real collector sees the cause instead of a feature
+   that is quietly inert. That silence is how `metrics.vm_url` stayed
+   unconfigurable in this product for months.
+
+### Provenance
+
+`edge.MECHANISM` names the JSON-RPC route. As of 2026-08-23 it has **not**
+been proved against a live FortiAnalyzer — there is none in the development
+fleet — so it ships as a specification and the console says so, exactly as
+`actions.CATALOG` does for unverified response actions. The module is
+**read-only**: a guard asserts no `set` / `update` / `delete`, and that the
+one `add` (FortiAnalyzer's verb for *create a search task*) targets only
+`logsearch`.
+
 ## 10. The AI wall
 
 `reason(incident) -> opinion`. The model receives a finished incident that

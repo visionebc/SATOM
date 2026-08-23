@@ -1245,7 +1245,14 @@
             sentinel_list=sentinel_context.sentinel_list,
             hypervisors=sentinel_context.hypervisors,
             mirror=sentinel_context.mirror,
-            recent_cves=sentinel_context.recent_cves %}
+            recent_cves=sentinel_context.recent_cves,
+            edge_maps=sentinel_context.edge_maps,
+            analyzers=sentinel_context.analyzers,
+            edge_logtypes=sentinel_context.edge_logtypes,
+            edge_enabled=sentinel_context.edge_enabled,
+            edge_require=sentinel_context.edge_require,
+            edge_mechanism=sentinel_context.edge_mechanism,
+            edge_probe=sentinel_context.edge_probe %}
       {% include "sentinel/_context_section.html" %}
     {% endwith %}
   </div>

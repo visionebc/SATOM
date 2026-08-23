@@ -335,6 +335,104 @@ SPEC: list[dict] = [
              "this page: a silently discarded protection line is precisely how "
              "a 'safe' list stops protecting, so check for the parse-error "
              "notice after editing."},
+    # ── border corroboration ─────────────────────────────────────────────────
+    {"key": "edge_enabled", "kind": "bool", "default": True, "group": "edge",
+     "label": "Border corroboration enabled",
+     "help": "Ask the FortiAnalyzer whether the border independently logged "
+             "the source. Inert until an appliance is mapped in Sentinel -> "
+             "Context -> Border map.",
+     "hint": "Master switch for the border layer. ON, each correlated window "
+             "asks the mapped FortiAnalyzer whether the FortiGate in front "
+             "logged that source address in the same window, and the answer "
+             "becomes evidence (edge_corroboration, edge_multi_target) and a "
+             "veto on border blocklist entries. It defaults ON, unlike the "
+             "vulnerability mirror, because the GATE here is the map: with no "
+             "row in Sentinel -> Context -> Border map nothing is queried and "
+             "nothing changes. Requiring a second switch would only create a "
+             "state where a filled-in map produces silence. Turn it off to "
+             "stop querying a collector that is down without unpicking the "
+             "map. OFF, every incident reports the border layer as not "
+             "evaluated - never as clean."},
+    {"key": "edge_require", "kind": "bool", "default": True, "group": "edge",
+     "label": "Require border corroboration before listing an address",
+     "help": "An address the border never logged as a source may not enter a "
+             "border blocklist. Off = accept that an entry may be a shared "
+             "egress.",
+     "hint": "The veto, and the reason this layer was built before the "
+             "blocklist. FortiWeb reports the TRUE client when the policy "
+             "reads X-Forwarded-For, and the CDN's own address when it does "
+             "not - and nothing in the attack log tells the two apart. In the "
+             "first case a border block is inert (that address never reached "
+             "the firewall); in the second it removes EVERY client behind "
+             "that egress. ON, an address the border did not confirm never "
+             "reaches the feed, and the refusal is recorded with its reason. "
+             "OFF is a deliberate decision to accept that blast radius - "
+             "which an operator may make and this engine may not. Read by "
+             "edge.blockable()."},
+    {"key": "edge_scan_dst", "kind": "int", "default": 10, "group": "edge",
+     "label": "Distinct border destinations that count as scanning",
+     "min": 2, "max": 1000,
+     "help": "Distinct destination addresses this source reached at the "
+             "border, above which the incident gains edge_multi_target.",
+     "hint": "How many DISTINCT destination addresses the source touched at "
+             "the border before the window is called scanning rather than a "
+             "single conversation. This is the strongest thing the border can "
+             "say that the WAF cannot: one IP delivering a SQLi burst to one "
+             "site is ambiguous, the same IP simultaneously reaching forty "
+             "unrelated hosts is not. Too low and any client with several "
+             "backends scores it; too high and a deliberate low-and-slow "
+             "sweep never does. Default 10, range 2-1000. Feeds the "
+             "edge_multi_target factor (+10)."},
+    {"key": "edge_max_rows", "kind": "int", "default": 200, "group": "edge",
+     "label": "Border log rows per lookup", "min": 10, "max": 2000,
+     "help": "Upper bound on rows fetched from the collector for one window. "
+             "Real load on a production FortiAnalyzer.",
+     "hint": "Ceiling on rows pulled from the collector for ONE window. The "
+             "summary only needs enough rows to count distinct destinations, "
+             "so raising this buys precision on the scanning threshold and "
+             "nothing else, at real cost against a production FortiAnalyzer "
+             "that is also serving reports. Note the interaction: if a source "
+             "reached more distinct destinations than this cap, the count is "
+             "truncated and edge_multi_target can miss. Default 200, range "
+             "10-2000."},
+    {"key": "edge_timeout_s", "kind": "float", "default": 20.0, "group": "edge",
+     "label": "Border lookup timeout (seconds)", "min": 5.0, "max": 120.0,
+     "hint": "How long one logsearch may take before the lookup is abandoned. "
+             "A timeout is reported as an ERROR, which means the border layer "
+             "reads as not evaluated and - with the veto on - no address is "
+             "listed. That is the intended direction: a slow collector must "
+             "not become a source of authorisations. Set it too high and a "
+             "wedged FortiAnalyzer stretches every sweep; too low and a busy "
+             "one is never usable. Default 20 s, range 5-120."},
+    {"key": "edge_slack_minutes", "kind": "int", "default": 2, "group": "edge",
+     "label": "Extra minutes searched either side of the window",
+     "min": 0, "max": 120,
+     "help": "Widens the border search beyond the correlation window to "
+             "absorb clock skew between the appliances.",
+     "hint": "Padding added to BOTH ends of the correlation window when "
+             "searching the border. Two devices that disagree by thirty "
+             "seconds will otherwise report a source as absent purely because "
+             "the session was logged just outside the window - and 'absent' "
+             "here vetoes a block, so skew turns into a silent policy. This "
+             "is for SKEW, not for timezones: an hours-wide mismatch belongs "
+             "in the offset below, because widening by an hour also dilutes "
+             "the destination count that edge_multi_target reads. Default "
+             "2 minutes, range 0-120."},
+    {"key": "edge_tz_offset_min", "kind": "int", "default": 0, "group": "edge",
+     "label": "Collector clock offset from UTC (minutes)",
+     "min": -900, "max": 900,
+     "help": "Minutes to add to UTC to get the FortiAnalyzer's wall clock. "
+             "Wrong here = every lookup returns nothing, forever.",
+     "hint": "Sentinel stores event timestamps as naive UTC; a "
+             "FortiAnalyzer answers in its own configured timezone. If they "
+             "disagree the search window lands on the wrong hour and the "
+             "collector returns zero rows - which is byte-identical to a "
+             "source the border genuinely never saw, so the failure is a "
+             "PERMANENT silent veto on every block rather than an error "
+             "anyone sees. That is why it is a setting and not an "
+             "assumption. Enter the collector's UTC offset in minutes (+60 "
+             "for UTC+1, -360 for UTC-6). Use the Test lookup button on the "
+             "Context page to confirm before trusting it. Default 0."},
 ]
 
 #: The explanatory text for everything in the section that is NOT a setting —
@@ -357,6 +455,14 @@ UI_HINTS: dict[str, str] = {
         "mirror. Two switches on purpose: one to use the mirror, one to let a "
         "scheduled job go and fill it. The second is the only outbound path in "
         "all of Sentinel.",
+    "group.edge":
+        "What the firewall in front of the appliance says about the source. "
+        "It answers a question the WAF structurally cannot - whether that "
+        "address ever opened a connection to the border at all - and the "
+        "answer does two jobs: it adds evidence, and it VETOES listing an "
+        "address the border never saw. There is no negative weight here on "
+        "purpose: silence at the border is a fact about addressing, not about "
+        "hostility, and an attack behind a CDN is still an attack.",
     "group.ai":
         "Optional narrative on top of a finished incident. The model explains; "
         "it never scores, never decides and never reaches a device. Every "
@@ -406,6 +512,7 @@ GROUPS = [
     ("detection", "Detection & correlation"),
     ("baseline", "Behavioural baseline"),
     ("vuln", "Vulnerability intelligence"),
+    ("edge", "Border corroboration"),
     ("ai", "AI reasoning"),
     ("response", "Response & safety"),
 ]

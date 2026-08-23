@@ -134,6 +134,7 @@ class WindowContext:
     source: dict = field(default_factory=dict)
     http: dict = field(default_factory=dict)
     vuln: dict = field(default_factory=dict)
+    edge: dict = field(default_factory=dict)
     store_ok: bool = True
     store_detail: str = ""
 
@@ -198,6 +199,7 @@ class WindowContext:
             "readings": [r.to_dict() for r in self.readings],
             "layers_unknown": self.layers_unknown,
             "source": self.source, "http": self.http, "vuln": self.vuln,
+            "edge": self.edge,
             "store_ok": self.store_ok, "store_detail": self.store_detail,
             "chain": [{"layer": r.layer, "label": r.label, "lag_s": r.lag_s,
                        "ratio": round(r.ratio, 2)} for r in self.causal_chain],
@@ -402,6 +404,20 @@ def build(device: str, src_ip: str, attack_family: str, t0: datetime, *,
     from . import vuln as vuln_mod
     ctx.vuln = vuln_mod.enrich_cves(cve_ids,
                                     cpe_hints=enrich.cpe_hints(topo))
+
+    # The border is the only layer resolved by CALLING a device rather than by
+    # reading the local store, so it is last and it is wrapped: a collector
+    # that hangs or refuses must degrade this window to "border not evaluated"
+    # and leave every other layer intact. edge.lookup() already returns its
+    # failures as data; this guard exists for the paths it cannot own — a
+    # missing table on a half-migrated node, an import error, an app context
+    # that has no database at all.
+    from . import edge as edge_mod
+    try:
+        ctx.edge = edge_mod.lookup(src_ip, appliance_id=appliance_id or 0,
+                                   t0=t0, pre_s=pre, post_s=post)
+    except Exception as exc:  # noqa: BLE001
+        ctx.edge = edge_mod.blank(f"{type(exc).__name__}: {exc}"[:200])
     return ctx
 
 

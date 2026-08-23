@@ -154,6 +154,163 @@ def test_the_group_holding_the_selected_section_is_marked(app, client):
     assert active in holder, "%s is selected but the anchor is on group %r" % (active, anchor)
 
 
+# ------------------------------------------------------------ group order --
+
+def _group_chunk(nav, key):
+    """The rendered slice of ONE group, ending where the next group opens."""
+    parts = nav.split('data-set-group="%s"' % key, 1)
+    assert len(parts) == 2, "there is no %r group in the menu" % key
+    return parts[1].split('data-set-group="', 1)[0]
+
+
+def test_sentinel_is_a_group_of_its_own(app, client):
+    """Sentinel left Monitoring & Alerts.
+
+    It is not one knob beside the SMTP settings: it is a pipeline with its own
+    incidents console and its own architecture. Filed as a single entry under
+    an unrelated group, two of its three surfaces had no menu entry at all —
+    reachable only from a button inside the third.
+    """
+    login(client, admin_user_id(app))
+    _, nav, _ = _page(client)
+    groups = dict(_groups(nav))
+    assert "sentinel" in groups, "Sentinel is not a group of its own"
+    assert groups["sentinel"] == SN_ENTRIES, groups["sentinel"]
+    assert "tab-sentinel" not in groups.get("monitoring", []), \
+        "Sentinel is still filed under Monitoring & Alerts"
+
+
+#: The five entries, in the order the menu draws them: the three CONFIGURATION
+#: surfaces, then the reference document, then the live console. Asserted as a
+#: LIST because here the position is part of the answer — Context and Response
+#: policy were added to this group precisely so they would stop being reachable
+#: only from a button inside the console, and filing them after it would
+#: recreate that reading order in the menu.
+SN_ENTRIES = ["tab-sentinel", "tab-sentinel-context", "tab-sentinel-policy",
+              "tab-sentinel-docs", "tab-sentinel-console"]
+
+
+def test_the_sentinel_group_offers_all_five_surfaces(app, client):
+    """Settings, Context, Response policy, Architecture, Incidents console.
+
+    They were links to /sentinel/... until the operator asked for them to be
+    shown "there, in that screen, like the Sentinel settings". Context and
+    Response policy were the worst of the set: neither had a menu entry at
+    all, and the only way to either was a button drawn at the top of the
+    incidents console — so removing those buttons without adding these entries
+    would have removed the function, not a duplicate.
+    """
+    login(client, admin_user_id(app))
+    _, nav, _ = _page(client)
+    chunk = _group_chunk(nav, "sentinel")
+    for target in SN_ENTRIES:
+        assert 'data-bs-target="#%s"' % target in chunk, "no %s entry" % target
+    with app.test_request_context():
+        from flask import url_for
+        leaving = (url_for("sentinel.docs"), url_for("sentinel.index"),
+                   url_for("sentinel.context"), url_for("sentinel.policies"))
+    for href in leaving:
+        assert 'href="%s"' % href not in chunk, (
+            "the Sentinel menu still navigates to %s instead of switching a "
+            "pane" % href
+        )
+
+
+def test_no_sentinel_entry_leaves_the_console(app, client):
+    """The leaving arrow marks a row that replaces the whole page.
+
+    None of Sentinel's five rows does that any more, so none may carry it: an
+    arrow on a row that only swaps a pane warns of a page change that does not
+    happen, and an operator who trusts it saves their edits first for nothing.
+    The branch that draws it stays in the menu for the next entry that really
+    does leave — this asserts only that Sentinel is not one.
+    """
+    login(client, admin_user_id(app))
+    _, nav, _ = _page(client)
+    chunk = _group_chunk(nav, "sentinel")
+    assert chunk.count("fw-set-nav-out") == 0, \
+        "a Sentinel entry is still marked as leaving the console"
+
+
+def test_sentinel_is_the_last_group(app, client):
+    """The operator asked for Sentinel at the bottom, below Monitoring."""
+    login(client, admin_user_id(app))
+    _, nav, _ = _page(client)
+    keys = [k for k, _ts in _groups(nav)]
+    assert keys[-1] == "sentinel", \
+        "Sentinel is not the last group — the order is %s" % keys
+
+
+def test_monitoring_and_alerts_sits_just_above_sentinel(app, client):
+    """It was moved to the bottom for the same reason and kept that position
+    when Sentinel went below it: alert plumbing is configured once and then
+    left alone, unlike the groups above it."""
+    login(client, admin_user_id(app))
+    _, nav, _ = _page(client)
+    keys = [k for k, _ts in _groups(nav)]
+    assert keys[-2:] == ["monitoring", "sentinel"], \
+        "the two configure-once groups are not at the bottom — order is %s" % keys
+
+
+# ------------------------------------------------------- one menu, one file --
+
+def test_the_menu_is_defined_in_exactly_one_template(app):
+    """The menu is included, never copied.
+
+    Nothing fails when a second copy appears: both render, and the operator
+    gets a different menu depending on which URL they arrived by. That is how
+    the horizontal strip this menu replaced ended up with two entries for one
+    pane. The literal therefore lives in ONE file and every surface includes
+    it.
+    """
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parents[1] / "app" / "templates"
+    holders = sorted(p.relative_to(root).as_posix()
+                     for p in root.rglob("*.html")
+                     if "set nav_groups" in p.read_text())
+    assert holders == ["settings/_nav.html"], (
+        "the menu literal is defined in %s — it must live only in "
+        "settings/_nav.html" % holders
+    )
+    includers = sorted(p.relative_to(root).as_posix()
+                       for p in root.rglob("*.html")
+                       if 'include "settings/_nav.html"' in p.read_text())
+    assert includers == ["settings/index.html", "settings/sentinel.html"], includers
+
+
+def test_a_standalone_settings_page_keeps_the_submenu(app, client):
+    """/settings/sentinel is reached by deep link and by the save redirect.
+
+    It used to render bare: the whole Admin Console submenu vanished, and the
+    only way back was the browser's Back button. Nothing failed — the page was
+    correct, it just stopped being part of the console.
+    """
+    login(client, admin_user_id(app))
+    html = client.get("/settings/sentinel").get_data(as_text=True)
+    assert ASIDE_OPEN in html, "the standalone Sentinel page has no submenu"
+    nav = html.split(ASIDE_OPEN, 1)[1].split("</aside>", 1)[0]
+    console_keys = [k for k, _ts in _groups(_page(client)[1])]
+    assert [k for k, _ts in _groups(nav)] == console_keys, \
+        "the standalone page draws a DIFFERENT menu from the console"
+
+
+def test_the_standalone_menu_navigates_instead_of_switching_panes(app, client):
+    """There are no panes on that page. A tab button there is a row that
+    highlights on hover and then does nothing — a dead control the menu cannot
+    report."""
+    login(client, admin_user_id(app))
+    html = client.get("/settings/sentinel").get_data(as_text=True)
+    nav = html.split(ASIDE_OPEN, 1)[1].split("</aside>", 1)[0]
+    assert 'data-bs-toggle="tab"' not in nav, \
+        "the standalone menu still renders tab buttons for panes that are not there"
+    assert 'href="/settings/#tab-users"' in nav, \
+        "the standalone menu does not link back into the console"
+    assert nav.count('class="nav-link active"') == 1, \
+        "the standalone page does not mark exactly one entry as the one shown"
+    assert '#tab-sentinel"' in nav.split('class="nav-link active"', 1)[1][:200], \
+        "the entry marked active is not Sentinel"
+
+
 # -------------------------------------------------------------- identifiers --
 
 def test_the_targets_are_identifiers_and_are_never_translated(app, client):
@@ -348,7 +505,13 @@ def test_a_long_badge_wraps_instead_of_leaving_the_card():
 
 SCRIPT_HEAD = "(function () {"
 SCRIPT_ANCHOR = "var KEY = 'satom.settingsnav.open.v1'"
-SCRIPT_END = "// --- activate the tab named in the URL hash"
+# The menu script now ships INSIDE settings/_nav.html, so the slice ends at
+# that partial's own </script>. Anchoring on whatever line happened to follow
+# it in the console page made the slice unbounded the moment the menu moved:
+# it then swallowed the whole page's JavaScript and every rule below became a
+# statement about unrelated code (one of them promptly failed on a .push() in
+# the Sentinel demo lab).
+SCRIPT_END = "</script>"
 
 
 def _strip_comments(code):
@@ -390,7 +553,7 @@ def _menu_script(html):
     head = html.rfind(SCRIPT_HEAD, 0, at)
     assert head != -1, "the menu script is no longer wrapped in an IIFE"
     end = html.find(SCRIPT_END, at)
-    assert end != -1, "the URL-hash restore that followed the menu script is gone"
+    assert end != -1, "the menu script tag is never closed"
     code = _strip_comments(html[head:end])
     assert code.count("{") == code.count("}"), "the slice does not hold whole blocks"
     return code
@@ -494,3 +657,228 @@ def test_a_store_from_the_multi_open_version_restores_one_group(app, client):
     assert "break" in loop, "the restore keeps opening groups after the first hit"
     assert "selectGroup(" in loop, \
         "the restore opens a group without folding the rest or rewriting the store"
+
+
+# ------------------------------------------------- Sentinel's inline panes --
+
+SN_SECTIONS = {
+    "tab-sentinel-docs": ("sentinel/_docs_section.html", 'id="diagrams"'),
+    "tab-sentinel-console": ("sentinel/_console_section.html",
+                             "Behavioural baseline"),
+    "tab-sentinel-context": ("sentinel/_context_section.html",
+                             "Trusted sources"),
+    "tab-sentinel-policy": ("sentinel/_policy_section.html",
+                            "Operating mode"),
+}
+
+
+def _post_forms(body):
+    """Every POST form in a rendered fragment, as its own string.
+
+    Split on the opening tag and cut at the matching close, so an assertion
+    about "this form" cannot be satisfied by an attribute belonging to the
+    next one — which is precisely how a count-based check passes while one
+    form has lost its redirect.
+    """
+    out = []
+    for chunk in body.split("<form ")[1:]:
+        form = chunk.split("</form>", 1)[0]
+        if 'method="post"' in form.split(">", 1)[0].lower() or "csrf_token" in form:
+            out.append(form)
+    return out
+
+
+def _pane_body(panes, target):
+    """The rendered body of ONE pane, ending where the next pane opens.
+
+    Sliced rather than searched whole-page: both sections also exist at their
+    own URLs, and this page includes three Sentinel partials, so a whole-page
+    search answers "is this pane filled?" with content from a different one.
+    """
+    parts = panes.split('id="%s">' % target, 1)
+    assert len(parts) == 2, "there is no %r pane" % target
+    return parts[1].split('<div class="tab-pane', 1)[0]
+
+
+def test_the_sentinel_panes_render_their_sections_inline(app, client):
+    """The operator asked for Architecture and the Incidents console to be
+    shown in the Settings screen, the way the Sentinel settings are.
+
+    An empty pane is the failure this catches and the menu cannot: the entry
+    is there, it highlights, it switches — and shows nothing. That is exactly
+    what a context the view forgot to pass produces, because a missing name in
+    Jinja renders as the empty string rather than raising.
+    """
+    login(client, admin_user_id(app))
+    _, _, panes = _page(client)
+    for target, (_tpl, marker) in SN_SECTIONS.items():
+        body = _pane_body(panes, target)
+        assert marker in body, (
+            "the %s pane rendered without %r — its section is empty"
+            % (target, marker)
+        )
+
+
+def test_each_section_lives_in_one_file_and_is_included_twice(app):
+    """One file per section, two surfaces including it.
+
+    A hand-copied second surface is a second place for numbers that are
+    generated from live tables to be read wrongly — and nothing fails when the
+    copies disagree; the operator simply gets a different answer depending on
+    which URL they arrived by.
+    """
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parents[1] / "app" / "templates"
+    for target, (tpl, _marker) in SN_SECTIONS.items():
+        includers = sorted(p.relative_to(root).as_posix()
+                           for p in root.rglob("*.html")
+                           if 'include "%s"' % tpl in p.read_text())
+        assert len(includers) == 2 and "settings/index.html" in includers, (
+            "%s is included by %s; it must be the console pane plus its own "
+            "standalone page" % (tpl, includers)
+        )
+
+
+def test_the_console_pane_controls_stay_inside_the_console(app, client):
+    """Every control the pane draws must keep the operator where they are.
+
+    This is the whole point of rendering the console inline: a filter, a sweep
+    or a baseline rebuild that jumps to /sentinel/ takes the Admin Console away
+    from under an operator who was told the section lived here. None of the
+    three fails when it regresses — each one works perfectly, somewhere else.
+    """
+    login(client, admin_user_id(app))
+    _, _, panes = _page(client)
+    body = _pane_body(panes, "tab-sentinel-console")
+    assert 'href="/sentinel/?status=' not in body, \
+        "the status filter still jumps to the standalone console"
+    assert 'href="/settings/?sn_status=' in body, \
+        "the status filter does not reload the console it is drawn in"
+    assert body.count('name="return_to" value="pane"') == 2, (
+        "the sweep and the baseline rebuild do not both come back to the pane"
+    )
+    assert 'data-bs-target="#tab-sentinel-policy"' in body, \
+        "the Response policy button still loads a page instead of the pane"
+
+
+def test_the_console_no_longer_duplicates_two_menu_entries(app, client):
+    """Architecture and Context are gone from the console's header.
+
+    The operator asked for them to go, and the reason they could go is that
+    both became entries in the Sentinel menu in the same change. That order
+    matters: this assertion is only safe next to the one above it, which holds
+    that the menu offers all five surfaces. Removed on their own, these two
+    buttons were the ONLY way to either page, and Context is not decoration —
+    a trusted source is worth -35 points, the largest single weight in the
+    scoring table, and without it Sentinel scores an authorised scan exactly
+    as it scores an intrusion.
+    """
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parents[1] / "app" / "templates"
+           / "sentinel" / "_console_section.html").read_text()
+    # Asserted on the SOURCE, and with comments stripped, because the file
+    # explains in prose why these two controls left: an assertion that reads
+    # the explanation of a rule as a violation of it is the trap this repo has
+    # now fallen into nine times.
+    from tests.test_csp_nonce import _uncommented
+    code = _uncommented(src)
+    for gone, what in (("sentinel.docs", "the Architecture button"),
+                       ("sentinel.context", "the Context button")):
+        assert gone not in code, \
+            "%s is still drawn in the incidents console" % what
+    login(client, admin_user_id(app))
+    _, _, panes = _page(client)
+    body = _pane_body(panes, "tab-sentinel-console")
+    assert 'href="/sentinel/context"' not in body, \
+        "the rendered console still links out to the Context page"
+
+
+def test_the_standalone_console_still_navigates(app, client):
+    """/sentinel/ is the operational page and has no panes.
+
+    Drawing the pane-switching variants there would give the operator buttons
+    that highlight and do nothing — the same dead control the standalone
+    Settings menu exists to avoid.
+    """
+    login(client, admin_user_id(app))
+    html = client.get("/sentinel/").get_data(as_text=True)
+    assert 'data-bs-target="#tab-sentinel-policy"' not in html, \
+        "the standalone console draws a tab button for a pane that is not there"
+    assert 'href="/sentinel/policies"' in html, "no Response policy link"
+    assert 'href="/sentinel/?status=all"' in html, \
+        "the standalone console's filter no longer reloads itself"
+    assert 'name="return_to" value="page"' in html
+
+
+SN_PARTIALS = ("sentinel/_context_section.html",
+               "sentinel/_policy_section.html",
+               "sentinel/_console_section.html")
+
+
+def test_every_post_form_in_a_shared_section_carries_the_return_marker(app):
+    """Asserted on the SOURCE, because most of these forms are drawn per row.
+
+    Delete a trusted source, delete a maintenance window, save a topology row,
+    save one action's policy: each exists once per record, so a fixture with
+    an empty table renders none of them and a render-only check calls the
+    section clean while half its forms have no redirect at all. The operator
+    finds out by pressing Remove on a trust entry and landing on a different
+    page — a bug that only appears once there is something to remove.
+    """
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parents[1] / "app" / "templates"
+    from tests.test_csp_nonce import _uncommented
+    for rel in SN_PARTIALS:
+        src = _uncommented((root / rel).read_text())
+        forms = _post_forms(src)
+        assert forms, "%s declares no POST form" % rel
+        for form in forms:
+            assert 'name="return_to"' in form, (
+                "a form in %s has no return_to: %s" % (rel, form[:220])
+            )
+
+
+def test_every_sentinel_pane_post_comes_back_to_its_own_pane(app, client):
+    """A form inside a pane must return to THAT pane, not to a page.
+
+    Four sections, four anchors, and nothing fails when one of them keeps the
+    old redirect: the POST succeeds, the data is saved, and the operator is
+    simply somewhere else. Counted per pane rather than page-wide because a
+    page-wide count is satisfied by one section carrying all the markers.
+    """
+    login(client, admin_user_id(app))
+    _, _, panes = _page(client)
+    for target in ("tab-sentinel-context", "tab-sentinel-policy",
+                   "tab-sentinel-console"):
+        body = _pane_body(panes, target)
+        forms = _post_forms(body)
+        assert forms, "%s draws no POST form at all" % target
+        # EVERY form, not a count. A floor ("at least five") is satisfied
+        # while one form quietly keeps the old redirect, and most of these
+        # sections draw a form per ROW, so an exact number would assert
+        # something about the fixture's data instead of about the contract.
+        for i, form in enumerate(forms):
+            assert 'name="return_to" value="pane"' in form, (
+                "form %d of %d in %s does not come back to the pane: %s"
+                % (i + 1, len(forms), target, form[:200])
+            )
+        assert 'name="return_to" value="page"' not in body, (
+            "%s carries a form that returns to the standalone page" % target
+        )
+
+
+def test_a_pane_post_comes_back_to_the_pane(app):
+    """The redirect target is decided by the posted surface, not by the route.
+
+    Asserted on the helper directly: firing the real sweep would reach an
+    appliance, which is the one thing this console promises not to do on a
+    render.
+    """
+    from app.views.sentinel import _back_to_console
+    with app.test_request_context("/sentinel/run", method="POST",
+                                  data={"return_to": "pane"}):
+        assert _back_to_console().headers["Location"].endswith(
+            "#tab-sentinel-console")
+    with app.test_request_context("/sentinel/run", method="POST", data={}):
+        assert _back_to_console().headers["Location"].rstrip("/").endswith(
+            "/sentinel")

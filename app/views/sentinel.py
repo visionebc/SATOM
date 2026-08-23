@@ -12,13 +12,19 @@ Four pages, and the split between them is the product's argument made visible:
 * ``/sentinel/docs`` — the architecture, rendered FROM the live weight table,
   the live action catalog and the live settings spec. Not a copy of them.
 
+Every one of them is drawn from a partial that the Admin Console also renders
+as a pane (Settings → Sentinel), so the two surfaces cannot disagree.
+
 Two rules the routes keep
 -------------------------
 **A render never touches an appliance.** Every read is DB or loopback metrics
 store. During an incident the device is by hypothesis already under load, and
 a console that adds round-trips then becomes part of the outage. The one
 exception (``/run`` and ``/vuln/sync``) is an explicit operator action, is a
-POST, and says so.
+POST, and says so. ``/run`` does not even do it in the request any more: it
+starts a JOB over the devices the operator picked, because a synchronous
+fleet sweep holds a gunicorn worker for as long as the slowest appliance
+takes and reports no progress at all while it does.
 
 **Nothing here executes a response against a device — still true, and now a
 division of labour rather than an absence.** Approving an action moves its row
@@ -111,12 +117,23 @@ def _health() -> dict:
     }
 
 
-@bp.route("/")
-@login_required
-def index():
+def console_context(status: str = "live", health: dict = None) -> dict:
+    """Everything ``sentinel/_console_section.html`` needs — for BOTH surfaces.
+
+    The section is rendered twice from that one file: on this blueprint's own
+    page and inside the Admin Console pane Settings -> Sentinel -> Incidents
+    console. It is therefore built ONCE, here. A second builder in the settings
+    view would let the pane and the page disagree about the very incident list
+    and health tiles the section exists to show — and neither would fail; they
+    would simply answer differently depending on which URL the operator
+    arrived by.
+
+    ``health`` is taken as an argument rather than always recomputed because
+    the caller may already hold it: :func:`_health` reaches the metrics store,
+    and the Admin Console renders three Sentinel sections in one response.
+    """
     s = _svc()
     names = _visible_names()
-    status = request.args.get("status", "live")
     q = SentinelIncident.query
     if status == "live":
         q = q.filter(SentinelIncident.status.in_([SentinelIncident.STATUS_OPEN,
@@ -126,15 +143,23 @@ def index():
     rows = [i for i in q.order_by(SentinelIncident.score.desc(),
                                   SentinelIncident.opened_at.desc())
             .limit(300).all() if not names or i.device in names or not i.device]
+    return {
+        "incidents": [i.to_dict() for i in rows],
+        "stats": s["incident"].stats(days=7),
+        "health": _health() if health is None else health,
+        "status": status,
+        "sweep_targets": sweep_targets(),
+        "bands": {"observe": SentinelIncident.BAND_OBSERVE,
+                  "recommend": SentinelIncident.BAND_RECOMMEND,
+                  "semi_auto": SentinelIncident.BAND_SEMI_AUTO}}
+
+
+@bp.route("/")
+@login_required
+def index():
     return render_template(
         "sentinel/index.html",
-        incidents=[i.to_dict() for i in rows],
-        stats=s["incident"].stats(days=7),
-        health=_health(),
-        status=status,
-        bands={"observe": SentinelIncident.BAND_OBSERVE,
-               "recommend": SentinelIncident.BAND_RECOMMEND,
-               "semi_auto": SentinelIncident.BAND_SEMI_AUTO})
+        **console_context(request.args.get("status", "live")))
 
 
 @bp.route("/data")
@@ -151,20 +176,112 @@ def data():
                     "health": _health()})
 
 
+def _back_to(pane: str, endpoint: str):
+    """Where a Sentinel POST returns to: the surface it was fired from.
+
+    The pane posts ``return_to=pane``; anything else (the standalone page, a
+    bookmark, a script) keeps the historical redirect. Same contract as the
+    Sentinel settings form — an operator who never left the Admin Console must
+    not be moved out of it by pressing a button inside it.
+
+    One helper for all four sections rather than four near-copies: the pane
+    anchor and the fallback endpoint are the only things that differ, and a
+    copy per section is how one of them would keep the old redirect after the
+    contract changed — silently, since every copy still works.
+    """
+    if request.form.get("return_to") == "pane":
+        return redirect(url_for("settings.index") + "#" + pane)
+    return redirect(url_for(endpoint))
+
+
+def _back_to_console():
+    return _back_to("tab-sentinel-console", "sentinel.index")
+
+
+def _back_to_context():
+    return _back_to("tab-sentinel-context", "sentinel.context")
+
+
+def _back_to_policies():
+    return _back_to("tab-sentinel-policy", "sentinel.policies")
+
+
+def sweep_targets() -> list:
+    """The devices a sweep may read, as rows the picker renders.
+
+    ``eligible`` is why the modal can show a device it will not run: a host in
+    maintenance or pointed at ``.invalid`` is deliberately skipped by the
+    pipeline, and hiding it would make the omission look like the device does
+    not exist. FortiADC is absent for a reason that is not an oversight —
+    what a sweep ingests is the FortiWeb attack log, and there is no such log
+    on an ADC. Listing them would offer a selection that could only ever
+    return nothing.
+    """
+    from ..models import Appliance
+    names = _visible_names()
+    rows = (Appliance.query.filter(Appliance.kind == "fortiweb")
+            .order_by(Appliance.name).all())
+    out = []
+    for a in rows:
+        if names and a.name not in names:
+            continue
+        reason = ""
+        if getattr(a, "maintenance", False):
+            reason = "in maintenance — the sweep skips it"
+        elif str(getattr(a, "host", "") or "").endswith(".invalid"):
+            reason = "host is .invalid — retired, never contacted"
+        out.append({"id": a.id, "name": a.name,
+                    "host": getattr(a, "host", "") or "",
+                    "eligible": not reason, "reason": reason})
+    return out
+
+
 @bp.route("/run", methods=["POST"])
 @login_required
 @require_permission("config_write")
 def run_now():
-    """Run one sweep on demand. The only route here that reads a device."""
-    s = _svc()
-    result = s["pipeline"].sweep()
-    if result.get("skipped"):
+    """Start a sweep as a JOB, over the devices the operator picked.
+
+    It used to run the whole fleet synchronously inside this request. That is
+    the defect, not the missing picker: one gunicorn worker was held for as
+    long as the slowest appliance took, with no progress anywhere, and at the
+    fleet this product is sized for (ninety appliances) the request is gone
+    long before the sweep is. The work now goes to the shared job ledger, so
+    it survives the page, reports progress per device and can be stopped at a
+    safe checkpoint.
+
+    An empty selection means EVERY eligible device — the historical behaviour,
+    kept because that is what the button did before and a button that quietly
+    changed meaning is worse than one that asks.
+    """
+    from flask import current_app
+    from ..services.sentinel import sweep_job
+    if not _svc()["config"].get("enabled"):
         flash("Sentinel is disabled in Settings — nothing was collected.",
               "warning")
-    else:
-        flash(f"Sweep finished: {result['detail']}",
-              "success" if not result["errors"] else "warning")
-    return redirect(url_for("sentinel.index"))
+        return _back_to_console()
+    wanted = [n for n in request.form.getlist("device") if n]
+    known = {r["name"]: r for r in sweep_targets()}
+    unknown = [n for n in wanted if n not in known]
+    if unknown:
+        # Not silently dropped: a name the operator picked and this node does
+        # not know is a stale page or a hand-built POST, and running "the rest
+        # of them" would report a sweep of a selection nobody made.
+        abort(400)
+    skipped = [n for n in wanted if not known[n]["eligible"]]
+    names = [n for n in wanted if known[n]["eligible"]]
+    if wanted and not names:
+        flash("Every device you picked is in maintenance or retired — a sweep "
+              "would skip all of them, so none was started.", "warning")
+        return _back_to_console()
+    job = sweep_job.start(current_app._get_current_object(), names, by=_who())
+    flash(f"Sweep started as job {job['id']} over "
+          f"{len(names) or len([r for r in known.values() if r['eligible']])} "
+          f"device(s). Progress is in the Jobs dock; this page does not wait "
+          f"for it."
+          + (f" Skipped as ineligible: {', '.join(skipped)}." if skipped else ""),
+          "success")
+    return _back_to_console()
 
 
 @bp.route("/baselines/recompute", methods=["POST"])
@@ -178,7 +295,7 @@ def recompute():
     if result.get("errors"):
         flash(f"{len(result['errors'])} series could not be read: "
               + "; ".join(result["errors"][:3]), "warning")
-    return redirect(url_for("sentinel.index"))
+    return _back_to_console()
 
 
 # --------------------------------------------------------------------------- #
@@ -369,7 +486,7 @@ def arm():
         out = arm_fn(client_for(ap), policy)
     except Exception as exc:
         flash(f"Could not arm {policy} on {device}: {exc}", "danger")
-        return redirect(url_for("sentinel.context"))
+        return _back_to_context()
     detail = "; ".join(f"{st['name']}: {st['detail']}" for st in out["steps"])
     audit.log_action("sentinel.arm",
                      f"{device}/{policy} mechanism={mechanism} "
@@ -377,22 +494,25 @@ def arm():
     flash(f"{'Armed' if out['ok'] else 'Could not arm'} {policy} on {device} "
           f"({'country blocking' if mechanism == 'geo' else 'address blocking'}). "
           f"{detail}", "success" if out["ok"] else "danger")
-    return redirect(url_for("sentinel.context"))
+    return _back_to_context()
 
 
 # --------------------------------------------------------------------------- #
 #  Context — trust, windows, topology, mirror                                   #
 # --------------------------------------------------------------------------- #
-@bp.route("/context")
-@login_required
-def context():
+def context_context() -> dict:
+    """Everything ``sentinel/_context_section.html`` needs — for BOTH surfaces.
+
+    Same argument as :func:`console_context` and :func:`docs_context`: the
+    section is drawn on its own page and inside the Admin Console pane
+    Settings → Sentinel → Context, from one file, so its context is built in
+    one place. Two builders would let the pane and the page disagree about the
+    trust list — the single largest weight in the scoring table — and neither
+    would fail.
+    """
     s = _svc()
-    appliances = visible_appliances().all()
     from ..services import hypervisors
-    topo = {t.appliance_id: t.to_dict() for t in SentinelTopology.query.all()}
-    sentinel_list = s["transports"].SENTINEL_LIST
-    return render_template(
-        "sentinel/context.html",
+    return dict(
         trusted=[t.to_dict() for t in
                  SentinelTrustedSource.query.order_by(
                      SentinelTrustedSource.cidr).all()],
@@ -400,12 +520,21 @@ def context():
         windows=[w.to_dict() for w in
                  SentinelMaintenanceWindow.query.order_by(
                      SentinelMaintenanceWindow.starts_at.desc()).all()],
-        appliances=appliances, topology=topo, sentinel_list=sentinel_list,
+        appliances=visible_appliances().all(),
+        topology={t.appliance_id: t.to_dict()
+                  for t in SentinelTopology.query.all()},
+        sentinel_list=s["transports"].SENTINEL_LIST,
         hypervisors=hypervisors.configured_targets(),
         mirror=s["vuln"].mirror_health(),
         recent_cves=[v.to_dict() for v in
                      SentinelVuln.query.order_by(
                          SentinelVuln.fetched_at.desc()).limit(25).all()])
+
+
+@bp.route("/context")
+@login_required
+def context():
+    return render_template("sentinel/context.html", **context_context())
 
 
 @bp.route("/context/trusted", methods=["POST"])
@@ -418,7 +547,7 @@ def trusted_add():
         ipaddress.ip_network(cidr, strict=False)
     except ValueError:
         flash(f"{cidr!r} is not a valid CIDR.", "danger")
-        return redirect(url_for("sentinel.context"))
+        return _back_to_context()
     expires = (request.form.get("expires_at") or "").strip()
     when = None
     if expires:
@@ -426,7 +555,7 @@ def trusted_add():
             when = datetime.fromisoformat(expires)
         except ValueError:
             flash("Expiry must be an ISO date/time.", "danger")
-            return redirect(url_for("sentinel.context"))
+            return _back_to_context()
     if when is None:
         # Not a silent default: an authorisation with no end date is a blind
         # spot nobody remembers creating, so the form supplies one and says so.
@@ -440,7 +569,7 @@ def trusted_add():
         suppress_actions=True, expires_at=when, created_by=_who()))
     db.session.commit()
     flash(f"{cidr} trusted until {when:%Y-%m-%d %H:%M} UTC.", "success")
-    return redirect(url_for("sentinel.context"))
+    return _back_to_context()
 
 
 @bp.route("/context/trusted/<int:tid>/delete", methods=["POST"])
@@ -451,7 +580,7 @@ def trusted_delete(tid):
     db.session.delete(row)
     db.session.commit()
     flash("Trusted source removed.", "success")
-    return redirect(url_for("sentinel.context"))
+    return _back_to_context()
 
 
 @bp.route("/context/window", methods=["POST"])
@@ -463,10 +592,10 @@ def window_add():
         ends = datetime.fromisoformat(request.form["ends_at"])
     except (KeyError, ValueError):
         flash("Both start and end must be ISO date/times.", "danger")
-        return redirect(url_for("sentinel.context"))
+        return _back_to_context()
     if ends <= starts:
         flash("A maintenance window must end after it starts.", "danger")
-        return redirect(url_for("sentinel.context"))
+        return _back_to_context()
     db.session.add(SentinelMaintenanceWindow(
         label=request.form.get("label", "")[:120],
         scope_device=request.form.get("scope_device", "")[:120],
@@ -477,7 +606,7 @@ def window_add():
     db.session.commit()
     flash("Maintenance window saved. Detection continues inside it — only "
           "actions and baseline learning are affected.", "success")
-    return redirect(url_for("sentinel.context"))
+    return _back_to_context()
 
 
 @bp.route("/context/window/<int:wid>/delete", methods=["POST"])
@@ -488,7 +617,7 @@ def window_delete(wid):
     db.session.delete(row)
     db.session.commit()
     flash("Maintenance window removed.", "success")
-    return redirect(url_for("sentinel.context"))
+    return _back_to_context()
 
 
 @bp.route("/context/topology", methods=["POST"])
@@ -525,7 +654,7 @@ def topology_save():
           "Topology saved but INCOMPLETE — the VM and host layers stay "
           "unknown until hypervisor, VM id and node are all set.",
           "success" if row.complete else "warning")
-    return redirect(url_for("sentinel.context"))
+    return _back_to_context()
 
 
 @bp.route("/vuln/sync", methods=["POST"])
@@ -537,7 +666,7 @@ def vuln_sync():
     result = s["vuln"].sync()
     flash(result.get("detail") or result.get("reason", ""),
           "success" if result.get("ok") else "warning")
-    return redirect(url_for("sentinel.context"))
+    return _back_to_context()
 
 
 @bp.route("/vuln/manual", methods=["POST"])
@@ -559,33 +688,80 @@ def vuln_manual():
             source="manual")
     except ValueError as exc:
         flash(str(exc), "danger")
-        return redirect(url_for("sentinel.context"))
+        return _back_to_context()
     db.session.commit()
     flash(f"{row.cve} stored in the local mirror.", "success")
-    return redirect(url_for("sentinel.context"))
+    return _back_to_context()
 
 
 # --------------------------------------------------------------------------- #
 #  Response policy                                                              #
 # --------------------------------------------------------------------------- #
+def policies_context() -> dict:
+    """Everything ``sentinel/_policy_section.html`` needs — for BOTH surfaces.
+
+    ``modes`` and ``mode_current`` are computed here, and both come from
+    :mod:`app.services.sentinel.modes`, which derives them from the live
+    values on every call. A cached or stored mode would be a claim that
+    outlives the configuration it describes.
+    """
+    s = _svc()
+    from ..services.sentinel import modes as sn_modes
+    return dict(policies=s["actions"].policy_rows(),
+                catalog=s["actions"].catalog_rows(),
+                levels=[(0, "0 — Observe"), (1, "1 — Recommend"),
+                        (2, "2 — Semi-automatic"),
+                        (3, "3 — Autonomous")],
+                armed=bool(s["config"].get("response_enabled")),
+                verified=s["actions"].verified_count(),
+                handoffs=s["actions"].handoff_keys(),
+                modes=sn_modes.rows(),
+                mode_current=sn_modes.current(),
+                recent=[a.to_dict() for a in
+                        SentinelAction.query.order_by(
+                            SentinelAction.created_at.desc()).limit(50).all()])
+
+
 @bp.route("/policies")
 @login_required
 @require_permission("config_write")
 def policies():
-    s = _svc()
-    return render_template("sentinel/policies.html",
-                           policies=s["actions"].policy_rows(),
-                           catalog=s["actions"].catalog_rows(),
-                           levels=[(0, "0 — Observe"), (1, "1 — Recommend"),
-                                   (2, "2 — Semi-automatic"),
-                                   (3, "3 — Autonomous")],
-                           armed=bool(s["config"].get("response_enabled")),
-                           verified=s["actions"].verified_count(),
-                           handoffs=s["actions"].handoff_keys(),
-                           recent=[a.to_dict() for a in
-                                   SentinelAction.query.order_by(
-                                       SentinelAction.created_at.desc())
-                                   .limit(50).all()])
+    return render_template("sentinel/policies.html", **policies_context())
+
+
+@bp.route("/policies/mode", methods=["POST"])
+@login_required
+@require_permission("config_write")
+def mode_apply():
+    """Apply one named operating mode.
+
+    The mode is not stored anywhere: this route writes the preset's VALUES,
+    and the posture is re-derived from those values on the next render. That
+    is what keeps the label honest — a knob edited by hand afterwards moves
+    the page to Custom without anything having to notice.
+
+    Audited with the full before → after list rather than the mode name.
+    "Someone selected Ultra high" is not an answer to "why did this appliance
+    start blocking on its own"; the eleven values that changed are.
+    """
+    from ..services import audit
+    from ..services.sentinel import modes as sn_modes
+    try:
+        result = sn_modes.apply(request.form.get("mode", ""))
+    except KeyError:
+        abort(400)
+    detail = "; ".join(f"{c['key']}: {c['before']} -> {c['after']}"
+                       for c in result["changed"]) or "no change"
+    audit.log_action("sentinel.mode", target="sentinel",
+                     detail=f"{result['mode']} :: {detail}")
+    if result["changed"]:
+        flash(f"Operating mode {result['label']}: {len(result['changed'])} "
+              f"value(s) changed. They are ordinary settings from now on — "
+              f"edit any of them and the mode reads Custom.", "success")
+    else:
+        flash(f"Already configured exactly as {result['label']}; nothing "
+              f"changed.", "info")
+    return _back_to_policies()
 
 
 @bp.route("/policies/<action_type>", methods=["POST"])
@@ -613,7 +789,7 @@ def policy_save(action_type):
               f"{spec.blast}", "warning")
     else:
         flash(f"{action_type} policy saved.", "success")
-    return redirect(url_for("sentinel.policies"))
+    return _back_to_policies()
 
 
 # --------------------------------------------------------------------------- #
@@ -629,9 +805,19 @@ def docs():
     releases in this repo: nothing fails when a document goes stale, the
     sentence simply stops being true.
     """
+    return render_template("sentinel/docs.html", **docs_context())
+
+
+def docs_context(health: dict = None) -> dict:
+    """Everything ``sentinel/_docs_section.html`` needs — for BOTH surfaces.
+
+    Same argument as :func:`console_context`: the document is drawn on its own
+    page and inside the Admin Console pane, from one file, so its context is
+    built in one place. Everything below is read from the LIVE tables the
+    document describes, never transcribed.
+    """
     s = _svc()
-    return render_template(
-        "sentinel/docs.html",
+    return dict(
         weights=s["scoring"].explain(),
         catalog=s["actions"].catalog_rows(),
         settings=s["config"].form_groups(),
@@ -651,4 +837,4 @@ def docs():
         # leave behind: nothing fails when the two disagree.
         gate_order=s["actions"].GATE_ORDER,
         handoffs=s["actions"].handoff_keys(),
-        health=_health())
+        health=_health() if health is None else health)

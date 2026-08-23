@@ -46,7 +46,10 @@ from app.views.upgrade_flow import MAX_SWEEP, MAX_WAVES
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 GUIDE = ROOT / "docs" / "user-guide.md"
-SETTINGS_TPL = ROOT / "app" / "templates" / "settings" / "index.html"
+# The menu literal lives in the PARTIAL every settings surface
+# includes, not in the console page: reading index.html here would
+# have stopped finding it the moment the menu was single-sourced.
+SETTINGS_TPL = ROOT / "app" / "templates" / "settings" / "_nav.html"
 
 TEXT = GUIDE.read_text()
 
@@ -84,7 +87,7 @@ def _nav_groups() -> list[dict]:
     """
     src = SETTINGS_TPL.read_text()
     m = re.search(r"\{%\s*set nav_groups\s*=\s*(\[.*?\])\s*%\}", src, re.S)
-    assert m, "nav_groups literal not found in settings/index.html"
+    assert m, "nav_groups literal not found in settings/_nav.html"
     body = m.group(1)
     # `_('...')` is a call, not a literal; unwrap it so the list can be eval'd.
     body = re.sub(r"_\(\s*('([^']*)'|\"([^\"]*)\")\s*\)", r"\1", body)
@@ -128,16 +131,109 @@ def test_settings_intro_no_longer_claims_a_flat_tab_strip():
     )
 
 
+def _s26_table() -> str:
+    """The `| Group | Panels |` table alone.
+
+    Scoped, not the whole intro: the prose above the table legitimately names
+    groups and panels while EXPLAINING them ("Sentinel is its own group…",
+    "Architecture, Incidents console"). Asserted against the intro as a whole,
+    a deleted table row keeps passing on the strength of the sentence that
+    describes it — which is how a reader ends up with a table that no longer
+    lists a group the same page just told them about.
+    """
+    head = S26.split("### ")[0]
+    rows = [ln for ln in head.splitlines()
+            if ln.startswith("|") and ln.count("|") >= 3
+            and not set(ln) <= set("|- ")]
+    assert len(rows) >= len(GROUPS), (
+        f"§26 has {len(rows)} table rows for {len(GROUPS)} groups"
+    )
+    return "\n".join(rows)
+
+
+S26_TABLE = _s26_table()
+
+
 @pytest.mark.parametrize("group", [g["label"] for g in GROUPS])
 def test_every_settings_group_is_named_in_the_intro(group):
-    head = S26.split("### ")[0]
-    assert f"**{group}**" in head, f"group {group!r} missing from the §26 table"
+    assert f"**{group}**" in S26_TABLE, \
+        f"group {group!r} missing from the §26 table"
 
 
 @pytest.mark.parametrize("panel", sorted({it["label"] for it in PANELS}))
 def test_every_settings_panel_is_named_in_the_intro(panel):
+    assert panel in S26_TABLE, f"panel {panel!r} missing from the §26 table"
+
+
+def test_the_table_lists_the_groups_in_the_order_the_menu_draws_them():
+    """The reader counts down the table to find a group on screen.
+
+    Nothing fails when the two orders drift: every row is still present and
+    every panel still filed correctly, so the guards above stay green while the
+    manual describes a menu nobody has. Position carries the instruction here —
+    the operator asked for the configure-once groups at the BOTTOM, and a table
+    that lists them third is a different answer to the request that made them.
+    """
+    labels = [g["label"] for g in GROUPS]
+    order = []
+    for ln in S26_TABLE.splitlines():
+        for label in labels:
+            if "**%s**" % label in ln and label not in order:
+                order.append(label)
+    assert order == labels, (
+        "the §26 table lists the groups as %s; the menu draws them as %s"
+        % (order, labels)
+    )
+
+
+@pytest.mark.parametrize("group", [g["key"] for g in GROUPS])
+def test_each_group_row_lists_that_group_s_own_panels(group):
+    """A panel named SOMEWHERE in the table is not the same as a panel named
+    in its own row: the table is read row by row, and a panel filed under the
+    wrong group sends the reader to a menu entry that is not there."""
+    g = next(x for x in GROUPS if x["key"] == group)
+    row = next((ln for ln in S26_TABLE.splitlines()
+                if f'**{g["label"]}**' in ln), None)
+    assert row, f'no row for group {g["label"]!r}'
+    for it in g["items"]:
+        assert it["label"] in row, (
+            f'panel {it["label"]!r} is not in the {g["label"]!r} row'
+        )
+
+
+def test_the_intro_describes_sentinel_s_entries_the_way_the_menu_draws_them():
+    """Derived from the menu literal, not from a sentence typed in here.
+
+    Every entry in the Sentinel group is a pane (`t`), so the manual may not
+    still tell the reader that two of them are "links out" drawn with a
+    leaving arrow. Nothing fails when it does: the page renders, the guards
+    above stay green because every row and label is still correct, and the
+    reader saves their work before clicking a control that was never going to
+    take the console away.
+    """
     head = S26.split("### ")[0]
-    assert panel in head, f"panel {panel!r} missing from the §26 table"
+    sentinel = next(g for g in GROUPS if g["key"] == "sentinel")
+    leaves = [it for it in sentinel["items"] if "ep" in it]
+    if not leaves:
+        assert "links out" not in head, (
+            "§26 says Sentinel's entries are links out of the console; every "
+            "one of them is a pane"
+        )
+        assert "leaving arrow" not in head, (
+            "§26 says a Sentinel entry carries the leaving arrow; none does"
+        )
+        # The COUNT is derived from the menu literal too. Spelling it into
+        # this guard is how the sentence would go on saying "three" after a
+        # fourth and a fifth entry joined the group -- the same silent-staleness
+        # the rest of this file exists to catch, committed by the catcher.
+        words = {2: "two", 3: "three", 4: "four", 5: "five", 6: "six",
+                 7: "seven", 8: "eight"}
+        n = len(sentinel["items"])
+        phrase = "all %s of its entries are panes" % words.get(n, n)
+        assert phrase in head, (
+            "§26 does not tell the reader that Sentinel's %d entries all "
+            "render inside the console (looked for %r)" % (n, phrase)
+        )
 
 
 def test_intro_says_the_panel_targets_did_not_change():

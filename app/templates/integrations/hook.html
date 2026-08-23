@@ -129,7 +129,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
 (function () {
   var btn = document.getElementById('dry-run');
   var out = document.getElementById('dry-result');

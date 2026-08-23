@@ -251,7 +251,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
 (function () {
   var btn = document.getElementById('nb-test');
   var out = document.getElementById('nb-test-result');

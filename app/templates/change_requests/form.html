@@ -252,7 +252,7 @@
   </div>
 </form>
 
-<style>
+<style nonce="{{ csp_nonce }}">
 /* Light chrome only: this product has no dark theme (safeguards §9m). Every
    colour below comes from the --fw-* variables, never from a slate palette. */
 .fw-step-num{display:inline-flex;align-items:center;justify-content:center;
@@ -278,7 +278,7 @@
 .fw-auto-chip.is-on{display:inline-block;}
 </style>
 
-<script>
+<script nonce="{{ csp_nonce }}">
 (function () {
   var DRAFTS = {{ drafts|tojson }};
   var LABELS = {{ action_labels|tojson }};

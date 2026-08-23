@@ -52,6 +52,10 @@
      with public internet is a chart that does not render where it matters.
      The vendored copy (4.4.4) was already in static/vendor and unused. #}
   <script src="/static/vendor/chart/chart.umd.min.js"></script>
+  {# The "?" beside a control. In <head> so its Turbo listeners register ONCE
+     (the body block re-executes every visit); after bootstrap.bundle, which
+     it upgrades the native title= tooltip with. #}
+  <script src="{{ asset('js/fw_hints.js') }}"></script>
   <script src="{{ asset('js/jobs.js') }}"></script>
   <script src="{{ asset('js/objedit_drawer.js') }}"></script>
 

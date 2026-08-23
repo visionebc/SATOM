@@ -2367,10 +2367,10 @@ deletes its bindings, and says so.</p>
 <p>The assignment picker spans both FortiWeb and FortiADC appliances — the catalog
 is a single <strong>global</strong> one, not per-ADOM.</p>
 <h2 id="26-settings-tab-by-tab">26. Settings, tab by tab</h2>
-<p><code>Settings</code> is one page with a <strong>grouped sidebar</strong>: <strong>8 groups, 26 panels</strong>.
-Seven of the groups (24 panels) are admin-only (<code>user_manage</code>); the eighth —
-<strong>My Account</strong>, holding <strong>Security</strong> and <strong>Change Password</strong> — is self-service
-and is the only group a non-admin sees. A group with nothing you may see is not
+<p><code>Settings</code> is one page with a <strong>grouped sidebar</strong>: <strong>9 groups, 30 panels</strong>.
+Eight of the groups (28 panels) are admin-only (<code>user_manage</code>); the remaining
+one — <strong>My Account</strong>, holding <strong>Security</strong> and <strong>Change Password</strong> — is
+self-service and is the only group a non-admin sees. A group with nothing you may see is not
 rendered at all, so the menu never offers a section that is not there.</p>
 <table>
 <thead>
@@ -2393,10 +2393,6 @@ rendered at all, so the menu never offers a section that is not there.</p>
 <td>Certificate Manager · Node TLS · Trust store</td>
 </tr>
 <tr>
-<td><strong>Monitoring &amp; Alerts</strong></td>
-<td>Email &amp; Alerts · Thresholds · Sentinel</td>
-</tr>
-<tr>
 <td><strong>Network &amp; DNS</strong></td>
 <td>DNS Lookup · DNS Records</td>
 </tr>
@@ -2412,16 +2408,66 @@ rendered at all, so the menu never offers a section that is not there.</p>
 <td><strong>My Account</strong></td>
 <td>Security · Change Password</td>
 </tr>
+<tr>
+<td><strong>Monitoring &amp; Alerts</strong></td>
+<td>Email &amp; Alerts · Thresholds</td>
+</tr>
+<tr>
+<td><strong>Sentinel</strong></td>
+<td>Settings · Context · Response policy · Architecture · Incidents console</td>
+</tr>
 </tbody>
 </table>
 <p>The <strong>AI Advisor</strong> panel additionally needs <code>advisor.configure</code>; an admin
 without it does not see the entry.</p>
+<p><strong>Sentinel is its own group, and all five of its entries are panes.</strong>
+They are ordered by what they are, not by when they arrived: the three
+configuration surfaces first, then the reference document, then the live
+console.</p>
+<p><strong>Settings</strong> holds the whole section inline — the pipeline stage by stage, the
+live weight table, the ten runnable demonstrations and the form.
+<strong>Context</strong> is trusted sources, maintenance windows, the appliance ↔ VM ↔ host
+topology map and the local CVE mirror; it looks like reference data and is not,
+because a trusted source is worth <strong>−35 points</strong>, the largest single weight in
+the whole scoring table, and it is the only thing that tells an authorised scan
+apart from an intrusion — the two produce a byte-for-byte identical attack log.
+<strong>Response policy</strong> is per-action autonomy and the four operating modes that
+preset it — <em>Alert only</em>, <em>Alert and block</em>, <em>High</em>, <em>Ultra high</em>, plus
+<em>Custom</em>, which is what the page reads the moment any of their values is
+edited by hand. A mode is a named set of values for knobs that already
+existed and nothing in the engine ever asks which one is active, so the name
+cannot describe behaviour the table below it does not have. <strong>Architecture</strong> renders the same document served at
+<code>/sentinel/docs</code>, and <strong>Incidents console</strong> the same live console served at
+<code>/sentinel/</code> — health tiles, the seven-day figures and the incident table
+included.</p>
+<p>Nothing in the group leaves the Admin Console, so none of the five is marked as
+doing so: every form returns to the pane it was fired from, and the status
+filter reloads Settings rather than jumping to <code>/sentinel/</code>. Opening one
+incident does leave, because an incident is a page of its own.</p>
+<p>The incidents console no longer carries its own <strong>Architecture</strong> and
+<strong>Context</strong> buttons. They were removed at the same moment those two became menu
+entries, and only for that reason: until then the Context button was the <em>only</em>
+way to reach the page, so deleting it on its own would have removed the
+function rather than a duplicate.</p>
+<p>Both standalone URLs are still there and unchanged — they are what the top
+navigation, the manual's links and the concept map use — and each is rendered
+from the <em>same</em> file as its pane, so the two surfaces cannot drift apart. The
+two configure-once groups sit at the bottom, in this order:
+<strong>Monitoring &amp; Alerts</strong>, then <strong>Sentinel</strong> <strong>last</strong>.</p>
+<p>The menu itself is defined <strong>once</strong>, in <code>app/templates/settings/_nav.html</code>, and
+every Settings surface includes that one file — the console and the standalone
+<code>/settings/sentinel</code> page alike. So the submenu no longer disappears when a deep
+link or a save redirect lands you on a standalone page, and an entry added or
+renamed changes on every surface at the same moment. On a standalone page the
+entries <strong>navigate back into the console</strong> (<code>/settings/#tab-users</code>) instead of
+switching a pane, because the panes are not on that page: a tab button there
+would be a row that highlights and then does nothing.</p>
 <p>Regrouping the strip into a menu did <strong>not</strong> rename the panels' targets
 (<code>#tab-auth</code> and its siblings), so every deep link, every saved URL hash and
 every <code>§26.x</code> reference in this manual still lands exactly where it did.
 Throughout this manual a setting is addressed as <code>Settings → &lt;Panel&gt;</code>.</p>
-<p>Six tabs are documented where the feature they configure is documented, because
-the setting is meaningless without it. They are not repeated here:</p>
+<p>Seven tabs are documented where the feature they configure is documented,
+because the setting is meaningless without it. They are not repeated here:</p>
 <table>
 <thead>
 <tr>
@@ -2453,6 +2499,10 @@ the setting is meaningless without it. They are not repeated here:</p>
 <tr>
 <td><strong>Appearance</strong></td>
 <td>§19 — themes, tokens, logo and favicon</td>
+</tr>
+<tr>
+<td><strong>Sentinel</strong></td>
+<td><code>Settings → Sentinel → Settings</code> — every knob next to the pipeline it configures, the live scoring weights, and ten demonstrations runnable against the real engine, all <strong>rendered in the pane itself</strong>. The same section is also served standalone at <code>/settings/sentinel</code> — with the Admin Console submenu still beside it — which is where deep links and the save redirect from outside the console land. <strong>Context</strong>, <strong>Response policy</strong>, <strong>Architecture</strong> and <strong>Incidents console</strong> are panes beside it, rendered from the same files as <code>/sentinel/context</code>, <code>/sentinel/policies</code>, <code>/sentinel/docs</code> and <code>/sentinel/</code>. The incidents console's own Architecture and Context buttons went away in the same change that made those two menu entries — a duplicate control, not a door. Every element of that pane — each knob, each group heading, each of the four health chips and each link out — carries a <strong>?</strong>; hovering it (or focusing it, or tapping it) opens the explanation of what the control does, where the code reads it and what breaks at either extreme. That text lives in the same catalog the form is generated from, so it cannot drift from the control it describes.</td>
 </tr>
 </tbody>
 </table>
@@ -4242,7 +4292,7 @@ the page instead of on a manual.</p>
 discipline:</p>
 <ol>
 <li><strong>The URL map is the authority on what exists.</strong> Every parameterless page in
-   the console is either <strong>on the map</strong> (88 today) or <strong>excluded with a written
+   the console is either <strong>on the map</strong> (89 today) or <strong>excluded with a written
    reason</strong> (112 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.</li>

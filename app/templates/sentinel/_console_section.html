@@ -1,0 +1,323 @@
+{#
+   The Sentinel console, as ONE section.
+
+   Rendered by two surfaces from this one file: the standalone page
+   (/sentinel/, which the top navigation, the incident links and the sweep
+   redirect use) and the Admin Console pane Settings → Sentinel → Incidents
+   console.
+
+   `sn_inline` is what the two surfaces differ by, and every use of it below
+   answers the same question: a control drawn inside the Admin Console must not
+   silently take the operator out of it.
+
+     * the status filter reloads the console page it is on — Settings with the
+       pane re-selected — instead of jumping to /sentinel/;
+     * every POST form carries `return_to`, so the sweep and the baseline
+       rebuild come back to the surface they were fired from.
+
+   The Architecture and Context buttons are GONE, at the operator's request:
+   both are entries in the Sentinel menu now, so a second way in from the top
+   of this page was a duplicate of a control one row to the left.  Removing
+   the button did not remove the function -- Context is a pane and a page, and
+   it stays reachable from both.  (Removing the FUNCTION would have been the
+   damaging half: `trusted_source` is -35 points, the largest single weight in
+   the scoring table, and without it Sentinel scores your own authorised scans
+   as hostile.)
+
+   What still LEAVES, on both surfaces: an incident.  It is a page in its own
+   right and it is drawn as a link.
+#}
+{% set sn_inline = sn_inline | default(false) %}
+{% set sn_targets = sweep_targets | default([]) %}
+<div class="fw-page-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+  <div>
+    <h4 class="mb-1"><i class="bi bi-shield-exclamation me-2"></i>Sentinel</h4>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      Correlates attack signatures, HTTP outcomes, appliance counters, VM and hypervisor metrics
+      and vulnerability intelligence into one incident — and explains every number it shows.
+    </p>
+  </div>
+  <div class="d-flex gap-2">
+    <button type="button" class="btn btn-fw-primary btn-sm" data-bs-toggle="modal"
+            data-bs-target="#sn-sweep-modal">
+      <i class="bi bi-play-fill me-1"></i>Run sweep now</button>
+  </div>
+</div>
+
+{# ── the sweep picker ───────────────────────────────────────────────────────
+   A sweep is fleet-wide, and the button used to start one over every device
+   with no way to say otherwise and no way to watch it.  Two separate defects
+   were behind that, and the modal only fixes the smaller one: the work now
+   goes to the JOB ledger, so it survives this page, reports per device and
+   can be stopped.
+
+   Only FortiWeb appliances are listed, and that is not an omission.  What a
+   sweep ingests is the FortiWeb attack log; a FortiADC has none, so offering
+   one here would be offering a selection that can only ever return nothing.
+   Ineligible devices (maintenance, retired `.invalid` hosts) ARE listed, with
+   the reason and unselectable: the pipeline skips them deliberately, and a
+   device missing from the list looks like a device that does not exist. #}
+<div class="modal fade" id="sn-sweep-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <form method="post" action="{{ url_for('sentinel.run_now') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="return_to" value="{{ 'pane' if sn_inline else 'page' }}">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="bi bi-play-fill me-2"></i>Run a sweep</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <p class="small text-muted">
+            A sweep reads each appliance's attack log, normalises and de-duplicates it, routes new
+            events to incidents, re-scores every live incident and expires actions whose TTL has
+            passed. It runs as a <strong>job</strong>: this page does not wait for it, progress
+            appears in the Jobs dock, and it can be stopped between devices.
+            Selecting nothing sweeps every eligible device.
+          </p>
+          <div class="d-flex gap-2 mb-2">
+            <button type="button" class="btn btn-fw-outline btn-sm" data-sn-pick="all">Select all</button>
+            <button type="button" class="btn btn-fw-outline btn-sm" data-sn-pick="none">Select none</button>
+          </div>
+          <table class="table table-sm align-middle mb-0">
+            <thead><tr><th style="width:36px;"></th><th>Appliance</th><th>Host</th><th>State</th></tr></thead>
+            <tbody>
+            {% for d in sn_targets %}
+              <tr class="{{ '' if d.eligible else 'text-muted' }}">
+                <td><input class="form-check-input" type="checkbox" name="device" value="{{ d.name }}"
+                           data-sn-device {{ '' if d.eligible else 'disabled' }}></td>
+                <td class="small font-monospace">{{ d.name }}</td>
+                <td class="small font-monospace">{{ d.host }}</td>
+                <td class="small">
+                  {% if d.eligible %}<span class="fw-badge fw-badge-success">eligible</span>
+                  {% else %}<span class="fw-badge fw-badge-secondary">skipped</span>
+                    <span class="text-muted">{{ d.reason }}</span>{% endif %}
+                </td>
+              </tr>
+            {% else %}
+              <tr><td colspan="4" class="small text-muted">
+                No FortiWeb appliance is registered, so there is nothing to sweep.</td></tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-fw-outline btn-sm" data-bs-dismiss="modal">Cancel</button>
+          <button class="btn btn-fw-primary btn-sm"><i class="bi bi-play-fill me-1"></i>Start sweep</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+<script nonce="{{ csp_nonce }}">
+// The nonce is not decoration: this app serves a script-src-elem policy that
+// names a per-response nonce, so an inline script element without it is
+// dropped by the browser -- silently, with a 200 on the route, valid markup
+// and a green test suite.  That is exactly how the Admin Console menu spent a
+// release unable to open.  tests/test_csp_nonce.py enforces it.
+//
+// Bound with a marker rather than blindly, because a body script block is
+// re-executed on every Turbo visit: without the guard each navigation would
+// add another pair of listeners and one click would then toggle the boxes
+// once per visit made -- an even number of times looks like a button that
+// does nothing at all.
+(function () {
+  var modal = document.getElementById('sn-sweep-modal');
+  if (!modal || modal.getAttribute('data-sn-bound')) return;
+  modal.setAttribute('data-sn-bound', '1');
+  modal.addEventListener('click', function (ev) {
+    var btn = ev.target.closest ? ev.target.closest('[data-sn-pick]') : null;
+    if (!btn) return;
+    var want = btn.getAttribute('data-sn-pick') === 'all';
+    modal.querySelectorAll('input[data-sn-device]').forEach(function (box) {
+      // A disabled box is an ineligible device.  "Select all" must not tick
+      // it: the form would carry a name the route refuses, and the operator
+      // would be told their selection was rejected for asking for what the
+      // button offered.
+      if (!box.disabled) { box.checked = want; }
+    });
+  });
+})();
+</script>
+
+{# ── pipeline honesty row ───────────────────────────────────────────────── #}
+<div class="row g-3 mb-3">
+  <div class="col-md-3">
+    <div class="fw-card h-100"><div class="fw-card-body">
+      <div class="fw-stat-label">Pipeline</div>
+      {% if not health.enabled %}
+        <div class="fw-stat-value text-danger">disabled</div>
+        <div class="small text-muted">Sentinel is switched off in Settings — no incidents are being created.</div>
+      {% elif health.last_sweep_age_s is none %}
+        <div class="fw-stat-value text-warning">never run</div>
+        <div class="small text-muted">No heartbeat in the metrics store yet. Run a sweep, or schedule <code>sentinel_sweep</code>.</div>
+      {% else %}
+        <div class="fw-stat-value">{{ health.last_sweep_age_s }}s ago</div>
+        <div class="small text-muted">Last sweep heartbeat. Absence here means the pipeline stopped, not that it found nothing.</div>
+      {% endif %}
+    </div></div>
+  </div>
+  <div class="col-md-3">
+    <div class="fw-card h-100"><div class="fw-card-body">
+      <div class="fw-stat-label">Behavioural baseline</div>
+      <div class="fw-stat-value">{{ health.baseline.usable }}<span class="text-muted" style="font-size:14px;">/{{ health.baseline.total }}</span></div>
+      <div class="small text-muted">
+        buckets usable ({{ health.baseline.pct_usable }}%). {{ health.baseline.learning }} still learning —
+        an immature bucket never fires.
+      </div>
+      <form method="post" action="{{ url_for('sentinel.recompute') }}" class="mt-2">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="return_to" value="{{ 'pane' if sn_inline else 'page' }}">
+        <button class="btn btn-fw-outline btn-sm">Recompute from the store</button>
+      </form>
+    </div></div>
+  </div>
+  <div class="col-md-3">
+    <div class="fw-card h-100"><div class="fw-card-body">
+      <div class="fw-stat-label">CVE mirror (local)</div>
+      <div class="fw-stat-value">{{ health.vuln.total }}</div>
+      <div class="small text-muted">
+        {{ health.vuln.kev }} on the CISA KEV list.
+        {% if health.vuln.stale %}<span class="fw-badge fw-badge-warning">STALE</span>
+          Older than {{ health.vuln.stale_days }} days — still used, and every incident says so.
+        {% else %}Refreshed {{ health.vuln.newest }}.{% endif %}
+      </div>
+      <div class="small text-muted mt-1">Outbound sync {{ 'enabled' if health.vuln.sync_enabled else 'OFF — the incident path never leaves this node' }}.</div>
+    </div></div>
+  </div>
+  <div class="col-md-3">
+    <div class="fw-card h-100"><div class="fw-card-body">
+      <div class="fw-stat-label">Response engine</div>
+      {% if not health.response_armed %}
+        <div class="fw-stat-value">proposals only</div>
+      {% else %}
+        <div class="fw-stat-value text-warning">armed</div>
+      {% endif %}
+      <div class="small text-muted">
+        {{ health.catalog_verified }}/{{ health.catalog_total }} action transports verified against a live appliance.
+        {% if health.catalog_verified == 0 %}Nothing can execute — by design, until each mechanism is proved on a device.{% endif %}
+      </div>
+      {%- if sn_inline %}
+      <button type="button" class="btn btn-fw-outline btn-sm mt-2"
+              data-bs-toggle="tab" data-bs-target="#tab-sentinel-policy">Response policy</button>
+      {%- else %}
+      <a class="btn btn-fw-outline btn-sm mt-2" href="{{ url_for('sentinel.policies') }}">Response policy</a>
+      {%- endif %}
+    </div></div>
+  </div>
+</div>
+
+{% if not health.store.up %}
+<div class="alert alert-danger small">
+  <strong>Metrics store unreachable</strong> ({{ health.store.detail }}).
+  Behavioural factors are <em>absent</em> from every score computed right now — not zero.
+  Incidents will still be created from attack events alone.
+</div>
+{% endif %}
+{% if health.protect_errors %}
+<div class="alert alert-warning small">
+  <strong>Never-block list has unparseable entries</strong>: <code>{{ health.protect_errors|join(', ') }}</code>.
+  Those lines protect nothing. Fix them in Settings → Sentinel.
+</div>
+{% endif %}
+
+{# ── incident stats ─────────────────────────────────────────────────────── #}
+<div class="fw-card mb-3">
+  <div class="fw-card-header d-flex justify-content-between align-items-center">
+    <strong><i class="bi bi-graph-up me-1"></i>Last 7 days</strong>
+    <div class="btn-group btn-group-sm">
+      {% for key, label in [('live','Live'), ('closed','Closed'), ('false_positive','False positives'), ('all','All')] %}
+      <a class="btn {{ 'btn-fw-primary' if status == key else 'btn-fw-outline' }}"
+         href="{{ (url_for('settings.index', sn_status=key) ~ '#tab-sentinel-console')
+                  if sn_inline else url_for('sentinel.index', status=key) }}">{{ label }}</a>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="fw-card-body py-2">
+    <div class="d-flex flex-wrap gap-4 small align-items-center">
+      <span>Incidents: <strong>{{ stats.total }}</strong></span>
+      <span>Open: <strong>{{ stats.open }}</strong></span>
+      <span>Closed: <strong>{{ stats.closed }}</strong></span>
+      <span>False positives: <strong>{{ stats.false_positives }}</strong>
+        {% if stats.false_positive_rate is not none %}
+          <span class="text-muted">({{ stats.false_positive_rate }}% of closed — open ones are excluded so the rate cannot improve by falling behind)</span>
+        {% else %}<span class="text-muted">(no closed incidents yet)</span>{% endif %}
+      </span>
+      <span>Highest score: <strong>{{ stats.max_score }}</strong></span>
+    </div>
+    {% if stats.by_family %}
+    <div class="mt-2 d-flex flex-wrap gap-2">
+      {% for family, n in stats.by_family.items() %}
+        <span class="fw-badge fw-badge-secondary">{{ family }} · {{ n }}</span>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{# ── incidents ──────────────────────────────────────────────────────────── #}
+<div class="fw-card">
+  <div class="fw-card-header"><strong><i class="bi bi-list-ul me-1"></i>Incidents</strong></div>
+  <div class="fw-card-body">
+    {% if not incidents %}
+      <div class="alert alert-secondary small mb-0">
+        No incidents in this view.
+        {% if health.enabled and health.last_sweep_age_s is none %}
+          The pipeline has not run yet — this is "not looking", not "nothing found".
+        {% endif %}
+      </div>
+    {% else %}
+    <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle mb-0">
+      <thead><tr>
+        <th style="width:130px;">Reference</th><th style="width:90px;">Score</th>
+        <th>Source</th><th>Target</th><th>Family</th>
+        <th>Events</th><th>Impact</th><th>Status</th><th></th>
+      </tr></thead>
+      <tbody>
+      {% for i in incidents %}
+        <tr>
+          <td class="font-monospace small">
+            <a href="{{ url_for('sentinel.incident_view', iid=i.id) }}">{{ i.ref }}</a>
+            <div class="text-muted" style="font-size:11px;">{{ i.opened_at }}</div>
+          </td>
+          <td>
+            {% set cls = 'fw-badge-danger' if i.band == 'semi_auto' else 'fw-badge-warning' if i.band == 'recommend' else 'fw-badge-info' if i.band == 'investigate' else 'fw-badge-secondary' %}
+            <span class="fw-badge {{ cls }}">{{ i.score }}</span>
+            <div class="text-muted" style="font-size:11px;">{{ i.band }}</div>
+          </td>
+          <td class="small font-monospace">
+            {{ i.src_ip }}{% if i.src_country %} <span class="text-muted">{{ i.src_country }}</span>{% endif %}
+            {% if i.src_trusted %}<span class="fw-badge fw-badge-success">trusted</span>{% endif %}
+          </td>
+          <td class="small">{{ i.device }}{% if i.policy %} <span class="text-muted">/ {{ i.policy }}</span>{% endif %}</td>
+          <td class="small">{{ i.attack_family }} <span class="text-muted">({{ i.severity }})</span></td>
+          <td class="small">
+            {{ i.event_count }}
+            {% if i.blocked_count %}<span class="fw-badge fw-badge-success" title="stopped by the appliance">{{ i.blocked_count }} blocked</span>{% endif %}
+            {% if i.passed_count %}<span class="fw-badge fw-badge-danger" title="NOT stopped">{{ i.passed_count }} through</span>{% endif %}
+          </td>
+          <td class="small">
+            {% for layer, value in i.impact.items() %}
+              {% if value == 'unknown' %}
+                <span class="fw-badge fw-badge-secondary" title="not measured — no topology mapping or no usable baseline. This is NOT 'no impact'.">{{ layer }} ?</span>
+              {% elif value %}
+                <span class="fw-badge fw-badge-danger">{{ layer }}</span>
+              {% endif %}
+            {% endfor %}
+          </td>
+          <td class="small">
+            <span class="fw-badge {{ 'fw-badge-info' if i.status in ('open','verifying') else 'fw-badge-secondary' }}">{{ i.status }}</span>
+            {% if i.fp_reason %}<div class="text-muted" style="font-size:11px;">{{ i.fp_reason }}</div>{% endif %}
+          </td>
+          <td class="text-end">
+            <a class="btn btn-fw-outline btn-sm" href="{{ url_for('sentinel.incident_view', iid=i.id) }}">Open</a>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% endif %}
+  </div>
+</div>

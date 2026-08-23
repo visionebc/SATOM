@@ -1,0 +1,233 @@
+{#
+   Sentinel response policy, as ONE section.
+
+   Rendered by two surfaces from this one file: the standalone page
+   (/sentinel/policies) and the Admin Console pane Settings -> Sentinel ->
+   Response policy.  `sn_inline` is the only difference, and every use of it
+   answers the same question the rest of this group answers: a control drawn
+   inside the Admin Console must not silently take the operator out of it.
+
+   The MODES card at the top is the operator's request, and what it is NOT is
+   the important part: there is no mode engine.  A mode is a named set of
+   values for the knobs already on this page and in Settings -> Sentinel, and
+   nothing in the product ever asks which mode is active -- every gate goes on
+   reading the knob it always read.  The card therefore cannot make the engine
+   behave differently from what the table below it shows, and the live mode is
+   DERIVED from those values on every render: edit one by hand and the posture
+   reads Custom immediately, with the differing keys named.
+#}
+{% set sn_inline = sn_inline | default(false) %}
+<div class="fw-page-header">
+  <h4 class="mb-1"><i class="bi bi-shield-lock me-2"></i>Response policy</h4>
+  <p class="text-muted mb-0" style="font-size:13px;">
+    What Sentinel is allowed to do, per action. Every default is the safe end of every knob.
+  </p>
+</div>
+
+<div class="alert {{ 'alert-warning' if armed else 'alert-secondary' }} small">
+  <strong>Global kill switch:</strong>
+  {{ 'ARMED — per-action policies apply.' if armed else 'OFF — Sentinel may propose actions and may execute none, whatever these policies say.' }}
+  Change it in Settings → Sentinel → Response &amp; safety.
+</div>
+
+<div class="alert {{ 'alert-success' if verified[0] == verified[1] else 'alert-danger' }} small">
+  <strong>{{ verified[0] }}/{{ verified[1] }} action mechanisms have been verified against a live appliance.</strong>
+  {% if handoffs %}{{ handoffs|join(', ') }}
+  {{ 'is a hand-off' if handoffs|length == 1 else 'are hand-offs' }} — drafted here and applied by a
+  person in the exception flow, never written to an appliance by this engine, and refused by the
+  <code>executable_mechanism</code> gate if anything tries.{% endif %}
+  Until an action's mechanism has been executed and re-read on a real device of this product, the
+  policy engine refuses it at the last gate — however confident the score and however permissive the
+  policy. This is not caution for its own sake: a live sweep of this product's own configuration
+  surface on 2026-08-20 found <strong>22 of 237 documented FortiWeb routes answer
+  <code>-20001 "invalid URL"</code></strong>, having been written from the reference manual and never
+  validated. A blocking rule built that way fails at the moment it is most needed.
+</div>
+
+{# ── operating modes ────────────────────────────────────────────────────── #}
+<div class="fw-card mb-3" id="modes">
+  <div class="fw-card-header d-flex justify-content-between align-items-center">
+    <strong><i class="bi bi-speedometer2 me-1"></i>Operating mode</strong>
+    <span class="fw-badge {{ 'fw-badge-info' if mode_current.key != 'custom' else 'fw-badge-secondary' }}">
+      {{ mode_current.label }}</span>
+  </div>
+  <div class="fw-card-body">
+    <p class="small text-muted">
+      A mode is a <strong>named set of values</strong> for the settings on this page and in
+      Settings&nbsp;&rarr;&nbsp;Sentinel — nothing more. No gate anywhere asks which mode is
+      active, so the name cannot describe a behaviour the knobs below do not have. The live mode is
+      worked out from those values every time this page is drawn: change one by hand and it reads
+      <em>Custom</em> at once, with the differing keys named. A label that survived a hand edit
+      would be a claim about a posture that is no longer configured.
+    </p>
+    <p class="small text-muted">
+      What a mode never touches, in either direction: <code>ai_enabled</code>,
+      <code>vuln_sync_enabled</code> and the API key — whether this fleet's data leaves the node is
+      consent, not sensitivity — and <code>protect_cidrs</code> and the hardened-profile list, which
+      are the containment. Choosing “Ultra high” does not widen what may be blocked; it raises how
+      readily it is proposed. The never-block list and the TTL are what stop it.
+    </p>
+
+    {% if mode_current.key == 'custom' %}
+    <div class="alert alert-secondary small">
+      <strong>Custom.</strong> {{ mode_current.summary }}
+      {% for m in modes %}{% if m.differs and m.differs|length <= 3 %}
+        <div class="mt-1">{{ m.label }} is {{ m.differs|length }} value(s) away:
+          <code>{{ m.differs|join('</code>, <code>')|safe }}</code>.</div>
+      {% endif %}{% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="row g-3">
+      {% for m in modes %}
+      <div class="col-lg-3 col-md-6">
+        <div class="fw-card h-100 {{ 'border-accent' if m.active }}">
+          <div class="fw-card-body">
+            <div class="d-flex justify-content-between align-items-start mb-1">
+              <strong class="small">{{ m.label }}</strong>
+              {% if m.active %}<span class="fw-badge fw-badge-info">active</span>{% endif %}
+            </div>
+            <p class="small text-muted mb-2">{{ m.summary }}</p>
+            <p class="small mb-2"><strong>Risk:</strong> <span class="text-muted">{{ m.risk }}</span></p>
+            <table class="table table-sm mb-2" style="font-size:11px;">
+              <tbody>
+              {% for s in m.settings %}
+                <tr><td class="text-muted">{{ s.label }}</td>
+                    <td class="text-end font-monospace">{{ s.value }}</td></tr>
+              {% endfor %}
+              {% for l in m.levels %}
+                <tr><td class="text-muted"><code>{{ l.action_type }}</code></td>
+                    <td class="text-end font-monospace">level {{ l.level }}{% if l.capped %}
+                      <span class="fw-badge fw-badge-warning">capped from {{ l.want }}</span>{% endif %}</td></tr>
+              {% endfor %}
+              </tbody>
+            </table>
+            {% if not m.active %}
+            <form method="post" action="{{ url_for('sentinel.mode_apply') }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="return_to" value="{{ 'pane' if sn_inline else 'page' }}">
+              <input type="hidden" name="mode" value="{{ m.key }}">
+              <button class="btn btn-fw-outline btn-sm w-100">Apply {{ m.label }}</button>
+            </form>
+            {% else %}
+            <div class="small text-muted">These are the live values.</div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    <p class="small text-muted mt-3 mb-0">
+      Applying a mode writes those values through the same coercion and the same ceilings a typed
+      form goes through — <code>block_country</code> stays capped at <em>recommend</em> in every
+      mode, including Ultra high, because one mis-attributed source address would take a market
+      offline. Nothing executes at all while
+      {{ verified[0] }}/{{ verified[1] }} mechanisms are verified and the kill switch is
+      {{ 'armed' if armed else 'off' }}.
+    </p>
+  </div>
+</div>
+
+<div class="fw-card mb-3">
+  <div class="fw-card-header"><strong><i class="bi bi-list-check me-1"></i>Actions</strong></div>
+  <div class="fw-card-body">
+    <table class="table table-sm align-middle">
+      <thead><tr>
+        <th>Action</th><th style="width:150px;">Level</th><th style="width:100px;">Min score</th>
+        <th style="width:110px;">TTL (min)</th><th style="width:110px;">Max TTL</th>
+        <th style="width:80px;">Enabled</th><th>Blast radius</th><th></th>
+      </tr></thead>
+      <tbody>
+      {% for p in policies %}
+        <tr>
+          <td class="small">
+            <strong>{{ p.label }}</strong><br><code>{{ p.action_type }}</code>
+            {% if not p.verified %}<div><span class="fw-badge fw-badge-warning">transport unverified</span></div>{% endif %}
+            <form id="pol-{{ p.action_type }}" method="post"
+                  action="{{ url_for('sentinel.policy_save', action_type=p.action_type) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="return_to" value="{{ 'pane' if sn_inline else 'page' }}">
+            </form>
+          </td>
+          <td>
+            <select class="form-select form-select-sm" name="level" form="pol-{{ p.action_type }}">
+              {% for value, label in levels %}
+                {% if value <= p.max_level %}
+                  <option value="{{ value }}" {{ 'selected' if p.level == value }}>{{ label }}</option>
+                {% endif %}
+              {% endfor %}
+            </select>
+            {% if p.max_level < 3 %}
+              <div class="text-muted" style="font-size:11px;">capped at {{ p.max_level }}</div>
+            {% endif %}
+          </td>
+          <td><input class="form-control form-control-sm" type="number" min="0" max="100"
+                     name="min_confidence" form="pol-{{ p.action_type }}" value="{{ p.min_confidence }}"></td>
+          <td><input class="form-control form-control-sm" type="number" min="0"
+                     name="ttl_minutes" form="pol-{{ p.action_type }}" value="{{ p.ttl_minutes }}"></td>
+          <td><input class="form-control form-control-sm" type="number" min="0"
+                     name="max_ttl_minutes" form="pol-{{ p.action_type }}" value="{{ p.max_ttl_minutes }}"></td>
+          <td class="text-center"><input class="form-check-input" type="checkbox" name="enabled"
+                     form="pol-{{ p.action_type }}" {{ 'checked' if p.enabled }}></td>
+          <td class="small text-muted">{{ p.blast }}</td>
+          <td class="text-end"><button class="btn btn-fw-outline btn-sm" form="pol-{{ p.action_type }}">Save</button></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <p class="small text-muted mb-0">
+      Every blocking action must expire on its own. TTL <em>is</em> the rollback: an undo that must
+      itself succeed is not one — it is a second operation that can fail, attempted at the moment
+      the first already has.
+    </p>
+  </div>
+</div>
+
+<div class="fw-card mb-3">
+  <div class="fw-card-header"><strong><i class="bi bi-info-circle me-1"></i>What each action would actually do</strong></div>
+  <div class="fw-card-body">
+    <table class="table table-sm align-middle mb-0">
+      <thead><tr><th>Action</th><th>Mechanism and its provenance</th><th style="width:110px;">Reversible</th></tr></thead>
+      <tbody>
+      {% for c in catalog %}
+        <tr>
+          <td class="small"><code>{{ c.key }}</code><br>{{ c.label }}</td>
+          <td class="small">{{ c.mechanism }}{% if c.provenance %}<div class="text-muted">{{ c.provenance }}</div>{% endif %}</td>
+          <td class="small">
+            {% if c.reversible %}<span class="fw-badge fw-badge-success">yes</span>{% endif %}
+            {% if c.requires_ttl %}<span class="fw-badge fw-badge-secondary">TTL required</span>{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="fw-card">
+  <div class="fw-card-header"><strong><i class="bi bi-clock-history me-1"></i>Recent decisions</strong></div>
+  <div class="fw-card-body">
+    <p class="small text-muted">
+      Refused proposals are recorded too — “Sentinel wanted to do X and was refused because Y” is
+      exactly the record needed to tune autonomy, and it is invisible if only permitted actions are kept.
+    </p>
+    <table class="table table-sm align-middle mb-0">
+      <thead><tr><th>When</th><th>Action</th><th>Status</th><th>By</th><th>Expires</th><th>Reason</th></tr></thead>
+      <tbody>
+      {% for a in recent %}
+        <tr>
+          <td class="small font-monospace">{{ a.created_at }}</td>
+          <td class="small"><code>{{ a.action_type }}</code>
+            {% if a.incident_id %}<a href="{{ url_for('sentinel.incident_view', iid=a.incident_id) }}">#{{ a.incident_id }}</a>{% endif %}</td>
+          <td class="small"><span class="fw-badge fw-badge-secondary">{{ a.status }}</span></td>
+          <td class="small">{{ a.approved_by or a.proposed_by }}</td>
+          <td class="small">{{ a.expires_at or '—' }}</td>
+          <td class="small">{{ a.detail }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="6" class="small text-muted">Nothing proposed yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>

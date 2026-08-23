@@ -9,12 +9,24 @@
    Grouped by concern, and the ordering is the safety argument: detection knobs
    first, the response kill switch last, because that is the order in which an
    operator should think about turning any of this on.
+
+   Every control carries a "?" whose text comes from the SAME catalog the
+   control does (``config.SPEC[*].hint``) or, for the parts that are not
+   settings, from ``config.UI_HINTS``. Writing the prose in this template
+   instead would put the explanation and the thing it explains in two files
+   that nothing keeps in agreement — and a stale explanation of a switch that
+   arms a firewall is worse than no explanation at all.
 #}
+{% from "partials/_hint.html" import hint %}
+{% set ui_hints = sentinel_ui_hints or {} %}
 <div class="fw-card">
   <div class="fw-card-header d-flex justify-content-between align-items-center">
     <h2 class="fw-card-title">{{ _('Sentinel — security correlation') }}</h2>
-    <a class="btn btn-fw-outline btn-sm" href="{{ url_for('sentinel.docs') }}">
-      <i class="bi bi-book me-1"></i>{{ _('Architecture') }}</a>
+    <span class="d-inline-flex align-items-center">
+      <a class="btn btn-fw-outline btn-sm" href="{{ url_for('sentinel.docs') }}">
+        <i class="bi bi-book me-1"></i>{{ _('Architecture') }}</a>
+      {{ hint(ui_hints['link.architecture'], _('About the architecture document')) }}
+    </span>
   </div>
   <div class="fw-card-body">
     <p class="text-secondary" style="font-size:13px">
@@ -31,19 +43,27 @@
       <span>Pipeline:
         {% if not sentinel_health.enabled %}<span class="fw-badge fw-badge-danger">disabled</span>
         {% elif sentinel_health.last_sweep_age_s is none %}<span class="fw-badge fw-badge-warning">never run</span>
-        {% else %}<span class="fw-badge fw-badge-success">{{ sentinel_health.last_sweep_age_s }}s ago</span>{% endif %}</span>
-      <span>Baseline usable: <strong>{{ sentinel_health.baseline.usable }}/{{ sentinel_health.baseline.total }}</strong></span>
+        {% else %}<span class="fw-badge fw-badge-success">{{ sentinel_health.last_sweep_age_s }}s ago</span>{% endif %}
+        {{ hint(ui_hints['health.pipeline'], _('About the pipeline indicator')) }}</span>
+      <span>Baseline usable: <strong>{{ sentinel_health.baseline.usable }}/{{ sentinel_health.baseline.total }}</strong>
+        {{ hint(ui_hints['health.baseline'], _('About baseline coverage')) }}</span>
       <span>CVE mirror: <strong>{{ sentinel_health.vuln.total }}</strong>
-        {% if sentinel_health.vuln.stale %}<span class="fw-badge fw-badge-warning">stale</span>{% endif %}</span>
+        {% if sentinel_health.vuln.stale %}<span class="fw-badge fw-badge-warning">stale</span>{% endif %}
+        {{ hint(ui_hints['health.vuln'], _('About the CVE mirror indicator')) }}</span>
       <span>Action transports verified:
-        <strong>{{ sentinel_health.catalog_verified }}/{{ sentinel_health.catalog_total }}</strong></span>
+        <strong>{{ sentinel_health.catalog_verified }}/{{ sentinel_health.catalog_total }}</strong>
+        {{ hint(ui_hints['health.catalog'], _('About verified action transports')) }}</span>
     </div>
     {% endif %}
 
     <form method="post" action="{{ url_for('settings.save_sentinel') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      {# Where the form was RENDERED decides where the save lands.  Bouncing an
+         operator who opened the pane onto the standalone page is exactly the
+         indirection this section was flattened to remove. #}
+      <input type="hidden" name="return_to" value="{{ 'pane' if sentinel_inline else 'page' }}">
       {% for gkey, glabel, rows in sentinel_settings %}
-        <h6 class="mt-3 mb-2">{{ glabel }}</h6>
+        <h6 class="mt-3 mb-2">{{ glabel }}{{ hint(ui_hints['group.' ~ gkey], _('About this group')) }}</h6>
         <div class="row g-3">
         {% for r in rows %}
           <div class="col-md-6">
@@ -56,25 +76,25 @@
                 <input class="form-check-input" type="checkbox" role="switch"
                        id="sn-{{ r.key }}" name="{{ r.key }}" value="1"
                        {{ 'checked' if r.value }}>
-                <label class="form-check-label" for="sn-{{ r.key }}">{{ r.label }}</label>
+                <label class="form-check-label" for="sn-{{ r.key }}">{{ r.label }}</label>{{ hint(r.hint, r.label) }}
               </div>
             {% elif r.kind == 'choice' %}
-              <label class="form-label small" for="sn-{{ r.key }}">{{ r.label }}</label>
+              <label class="form-label small" for="sn-{{ r.key }}">{{ r.label }}</label>{{ hint(r.hint, r.label) }}
               <select class="form-select form-select-sm" id="sn-{{ r.key }}" name="{{ r.key }}">
                 {% for c in r.choices %}
                   <option value="{{ c }}" {{ 'selected' if r.value == c }}>{{ c }}</option>
                 {% endfor %}
               </select>
             {% elif r.kind == 'text' %}
-              <label class="form-label small" for="sn-{{ r.key }}">{{ r.label }}</label>
+              <label class="form-label small" for="sn-{{ r.key }}">{{ r.label }}</label>{{ hint(r.hint, r.label) }}
               <textarea class="form-control form-control-sm" id="sn-{{ r.key }}"
                         name="{{ r.key }}" rows="4">{{ r.value }}</textarea>
             {% elif r.kind == 'secret' %}
-              <label class="form-label small" for="sn-{{ r.key }}">{{ r.label }}</label>
+              <label class="form-label small" for="sn-{{ r.key }}">{{ r.label }}</label>{{ hint(r.hint, r.label) }}
               <input class="form-control form-control-sm" type="password" id="sn-{{ r.key }}"
                      name="{{ r.key }}" placeholder="{{ 'stored — leave blank to keep' if r.value else 'not set' }}">
             {% else %}
-              <label class="form-label small" for="sn-{{ r.key }}">{{ r.label }}</label>
+              <label class="form-label small" for="sn-{{ r.key }}">{{ r.label }}</label>{{ hint(r.hint, r.label) }}
               <input class="form-control form-control-sm"
                      type="{{ 'number' if r.kind in ('int','float') else 'text' }}"
                      {% if r.kind == 'float' %}step="0.1"{% endif %}
@@ -91,10 +111,16 @@
 
       <div class="mt-3 d-flex gap-2">
         <button class="btn btn-fw-primary btn-sm">{{ _('Save Sentinel settings') }}</button>
-        <a class="btn btn-fw-outline btn-sm" href="{{ url_for('sentinel.policies') }}">
-          {{ _('Per-action response policy') }}</a>
-        <a class="btn btn-fw-outline btn-sm" href="{{ url_for('sentinel.context') }}">
-          {{ _('Trusted sources, windows, topology') }}</a>
+        <span class="d-inline-flex align-items-center">
+          <a class="btn btn-fw-outline btn-sm" href="{{ url_for('sentinel.policies') }}">
+            {{ _('Per-action response policy') }}</a>
+          {{ hint(ui_hints['link.policies'], _('About per-action response policy')) }}
+        </span>
+        <span class="d-inline-flex align-items-center">
+          <a class="btn btn-fw-outline btn-sm" href="{{ url_for('sentinel.context') }}">
+            {{ _('Trusted sources, windows, topology') }}</a>
+          {{ hint(ui_hints['link.context'], _('About trusted sources, windows and topology')) }}
+        </span>
       </div>
     </form>
 

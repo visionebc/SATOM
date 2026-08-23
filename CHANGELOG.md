@@ -6,6 +6,277 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [1.17.0] - 2026-08-23
+
+Sentinel's four surfaces are now panes of the Admin Console, autonomy has four
+named modes, and the on-demand sweep is a job over the devices you pick.
+
+### Added
+
+- **Context and Response policy are panes of the Admin Console**
+  (`Settings → Sentinel → Context` / `Response policy`), each rendered from the
+  same partial as its standalone URL. `/sentinel/context` and
+  `/sentinel/policies` are unchanged and still reachable. Sentinel's menu group
+  now offers five entries, ordered by what they are: the three configuration
+  surfaces, then the architecture document, then the live console.
+- **Four operating modes** — *Alert only*, *Alert and block*, *High*,
+  *Ultra high* — on the Response policy section. A mode is a **named set of
+  values** for knobs that already existed: no gate anywhere asks which mode is
+  active, so the label cannot describe behaviour the table below it does not
+  have. The live mode is **derived on every render**; edit any of its values by
+  hand and the page reads *Custom* at once, naming the keys that differ.
+  No mode touches consent (`ai_enabled`, `vuln_sync_enabled`, the API key) or
+  containment (`protect_cidrs`, the hardened-profile list): those are not
+  sensitivity settings. `block_country` stays capped at *recommend* in every
+  mode, Ultra high included.
+- **A device picker for `Run sweep now`.** FortiWeb appliances only — a sweep
+  ingests the FortiWeb attack log and a FortiADC has none. Devices the
+  pipeline skips (maintenance, retired `.invalid` hosts) are listed with the
+  reason rather than hidden. Selecting nothing sweeps every eligible device,
+  which is what the button always did.
+
+### Changed
+
+- **The on-demand sweep runs as a job**, not inside the request. It used to
+  hold one gunicorn worker for as long as the slowest appliance took, with no
+  progress reported and no way to stop it; it now reports per device, survives
+  the page and stops at a safe checkpoint between devices. The scheduled
+  `sentinel_sweep` action is unaffected — `sweep()` with no argument still
+  reads every eligible device.
+- **The incidents console no longer draws its own Architecture and Context
+  buttons.** Both became menu entries in this same release, which is the only
+  reason they could go: until now the Context button was the *only* way to
+  reach that page.
+
+### Fixed
+
+- Every POST form in the Context, Response policy and incidents-console
+  sections carries the return marker, so a save or a delete fired inside the
+  Admin Console comes back to the pane it was fired from. The per-row forms
+  (remove a trusted source, remove a window, save a topology row) were the ones
+  a render-only check could not see.
+
+
+## [1.16.1] - 2026-08-23
+
+The Admin Console menu could not be opened. Eleven inline blocks were being
+dropped by the browser, silently.
+
+### Fixed
+
+- **The Admin Console side menu expands again.** The accordion script moved
+  into the shared `settings/_nav.html` partial in 1.14.0 and lost the
+  `nonce="{{ csp_nonce }}"` attribute on the way. The app serves
+  `script-src-elem 'self' 'nonce-...'`, so the browser refused to execute it:
+  the markup was correct, the route returned 200, every test passed, and not
+  one group on any Settings surface could be opened. Measured in chromium
+  against the live policy: **0 of 9 groups opened; with the identical page and
+  no policy, 9 of 9.**
+- **Ten more inline blocks were in the same state** and had never run in a
+  browser — the Vault tab's test/migrate script, the incident page's
+  time-aligned layer charts, the integrations hook and index pages, the change
+  request document and form, both upgrade-flow pages, and the inline `<style>`
+  of the change-request form and the concept map (`style-src-elem` names a
+  nonce too, so those styles never applied).
+
+### Added
+
+- **`tests/test_csp_nonce.py` (safeguards §108)** — every inline script and
+  style in every template must carry the nonce; the rendered Settings surfaces
+  must ship none the browser would drop; the policy itself must still require
+  a nonce, or the whole guard would be vacuous. The scan blanks comments before
+  reading, because prose about this rule necessarily spells the markup it
+  forbids, and it asserts a census of the files it walked — a scan pointed at
+  the wrong directory reads nothing and passes everything.
+
+## [1.16.0] - 2026-08-23
+
+Every control in the Sentinel settings section explains itself, on hover.
+
+### Added
+
+- **A "?" beside every element of `Settings → Sentinel → Settings`** — all 25
+  knobs, the five group headings, the four health chips and the three links
+  out. Hovering (or focusing, or tapping) one opens a panel of prose that says
+  what the control actually does, where the code reads it, and what breaks at
+  each extreme. Seven settings previously had no explanation anywhere at all —
+  the correlation windows, the severity floor, the mirror source and the three
+  AI endpoint fields.
+- **`config.SPEC[*].hint` and `config.UI_HINTS`** — the explanations live in
+  the same catalog the form is generated from, next to the knob each one
+  describes. The catalog docstring already argued this for the FORM; nothing
+  fails when prose and control drift apart, and a stale explanation of a
+  switch that arms a firewall is worse than no explanation.
+- **`app/templates/partials/_hint.html`** — one macro, importable anywhere. The
+  text goes in `title`, so with JavaScript unavailable the browser still shows
+  its native tooltip; a component whose only job is to explain must not go
+  silent when a script fails to load. `type="button"` because these sit inside
+  the settings form, and a default `<button>` would have saved the page every
+  time someone read a hint.
+- **`app/static/js/fw_hints.js`** — upgrades those to Bootstrap tooltips,
+  with the container pinned to `<body>`. `.fw-card` is `overflow: hidden`, and
+  a panel parented inside it is clipped — measured headless, a 132px
+  explanation in a 123px card paints 58px — while still looking like a working
+  tooltip. Bootstrap 5 already defaults to `<body>`, so the pin is a lock
+  against a future default, not a fix for today's. Loaded in `<head>`, so its
+  Turbo listeners
+  register once, and it disposes every tooltip on `turbo:before-render` —
+  Popper's panels are not part of Turbo's body swap, so without that each
+  visit strands its own and a hover pops up help for a control that is gone.
+- **`tests/test_sentinel_hints.py`** (13 tests, safeguards §107) — a knob added
+  to `SPEC` without a hint fails here, as does a hint that never reaches the
+  HTML on **either** surface. 16 mutations, all biting.
+
+### Fixed
+
+- Two of those guards read `fw_hints.js` for `container: 'body'` and
+  `turbo:before-render` and were answered by the file's own header comment,
+  which names both — they passed against code that said the opposite. Guards
+  now strip comments before asserting. Eighth occurrence of this failure in
+  this repo; the helper is now shared.
+
+
+## [1.15.0] - 2026-08-23
+
+Sentinel's Architecture and Incidents console are rendered in the Admin
+Console, beside its settings.
+
+### Added
+
+- **`Settings → Sentinel → Architecture`** and **`Settings → Sentinel →
+  Incidents console`** are now **panes**, not links out. Both render the same
+  content their standalone URLs serve — the architecture document generated
+  from the live weight table, action catalog and settings spec; and the live
+  console with its four health tiles, the seven-day figures and the incident
+  table. Two of the three entries in a group about one subject used to take
+  the whole page away, and the way back was the browser.
+- **`app/templates/sentinel/_docs_section.html`** and
+  **`app/templates/sentinel/_console_section.html`** — one file per section,
+  included by its pane and by its own page. The same arrangement the Sentinel
+  settings section already used: a hand-copied second surface is a second
+  place for numbers generated from live tables to be read wrongly, and nothing
+  fails when two copies disagree.
+- **`sentinel.console_context()` / `sentinel.docs_context()`** — one context
+  builder per section, shared by both surfaces, so the pane and the page
+  cannot answer differently.
+
+### Changed
+
+- **Controls inside the panes stay inside the console.** The sweep and the
+  baseline rebuild carry `return_to` and come back to the pane they were fired
+  from; the status filter reloads Settings (`?sn_status=`) instead of jumping
+  to `/sentinel/`; the Architecture button switches the sibling pane. A
+  control that works perfectly *somewhere else* is the failure this removes.
+  Opening one incident still leaves, because an incident is a page of its own.
+- **No entry in the Sentinel group carries the leaving arrow** — none of them
+  leaves. The marker's branch stays in the menu for the next entry that really
+  does: an arrow on a row that only swaps a pane warns of a page change that
+  never happens.
+- The incident table is wrapped in a scroller. Nine columns do not fit the
+  Admin Console's single, narrower column, and a table cut off at the edge
+  reports nothing.
+- `/settings/` builds the metrics-store health **once** and hands it to all
+  three Sentinel sections, rather than asking three times for an answer that
+  cannot have changed between them.
+- §26 of the manual describes the three panes, and a new guard derived from
+  the menu literal fails if it goes back to calling two of them links out.
+
+## [1.14.0] - 2026-08-23
+
+The Admin Console menu is defined once and included everywhere.
+
+### Added
+
+- **`app/templates/settings/_nav.html` — the menu, in one file.** The group
+  list, the render loop and the accordion script now live together in a single
+  partial that every Settings surface includes. Copying the markup into a page
+  is how the horizontal strip this menu replaced ended up with two entries for
+  one pane, and nothing fails when two copies disagree: the operator simply
+  gets a different menu depending on which URL they arrived by. A guard asserts
+  the literal exists in exactly one template and names the files that include
+  it.
+- **The standalone `/settings/sentinel` page keeps the submenu.** It is reached
+  by deep link and by the save redirect from outside the console, and it used
+  to render bare — the whole Admin Console menu gone, the browser's Back button
+  the only way home. It now includes the same menu in `links` mode: the entries
+  navigate back into the console (`/settings/#tab-users`) instead of switching
+  panes that are not on that page, and the entry being shown is marked. A tab
+  button there would be a row that highlights on hover and then does nothing.
+
+### Changed
+
+- **Sentinel is the last group in the menu**, below *Monitoring & Alerts*
+  (operator's request). The two configure-once groups now sit together at the
+  bottom, under the groups opened every day.
+- The accordion script moved out of the console page and into the menu partial.
+  Left behind, it would have made every standalone Settings page render a menu
+  whose groups cannot be opened — and the groups are collapsed by default, so
+  that is a menu with nothing in it.
+- §26 of the manual documents the single-source menu and the standalone
+  behaviour, and a new guard asserts its group table lists the groups **in the
+  order the menu draws them**: every previous guard stayed green while the two
+  orders drifted, because each row was still present and still correct.
+
+### Fixed
+
+- `tests/test_settings_nav_groups.py` sliced the menu script by anchoring on
+  the line that happened to follow it in the console page. With the script in
+  its own partial that anchor made the slice unbounded — it swallowed the whole
+  page's JavaScript, and every rule about the accordion became a statement
+  about unrelated code (one promptly tripped on a `.push()` in the Sentinel
+  demo lab). It now ends at the partial's own `</script>`.
+
+## [1.13.0] - 2026-08-23
+
+Settings → Sentinel is now a full section, not a form in a pane.
+
+### Added
+
+- **`/settings/sentinel` — the whole Sentinel section.** The pane held the
+  form and nothing else, so "what will this thing actually DO?" was answered
+  only by the architecture page's prose. The section answers it in escalating
+  commitment before showing a single knob: the pipeline drawn stage by stage
+  (CSS-only animation, honours `prefers-reduced-motion`), the score bands and
+  the weight table rendered from the live `WEIGHTS` dict, and then the form —
+  the same catalog-generated form as before, in one place only.
+- **A demo lab: ten scenarios runnable against the live engine.** The same ten
+  scenarios the test suite asserts on every commit, pushed through the real
+  `score_context`, the real band thresholds and the real policy gates when
+  the button is pressed. Only the events and metric readings are staged; the
+  gate audit reads the installation's live kill switch, policy rows and hourly
+  budget. Nothing is written and no device is touched — both halves of that
+  sentence are asserted by `tests/test_sentinel_settings_page.py`, along
+  with each scenario's published band, so a weight tune that moves a scenario
+  breaks the build in the commit that tunes it instead of on the Settings page.
+- **Sentinel is its own group in the Admin Console menu**, holding three
+  entries: **Settings** (the section itself), **Architecture** and **Incidents
+  console**. It used to be one entry under *Monitoring & Alerts*, which left
+  two of its three surfaces reachable only from a button inside the third.
+  The two page entries are drawn as links with a leaving arrow, because a row
+  that replaces the whole page must not look identical to one that swaps a
+  pane.
+- **The Settings pane at `#tab-sentinel` renders the whole section inline** —
+  pipeline, weights, demo lab and form — instead of a doorway card whose only
+  control opened another URL. Both surfaces render
+  `settings/_sentinel_section.html`, so there is still exactly one form: a
+  hand-copied second one would put a second `id="sn-enabled"` on the page and
+  point every `<label for>` at the wrong input.
+
+### Changed
+
+- **Monitoring & Alerts moved to the bottom of the Settings menu** (operator's
+  request): the alert plumbing is configured once and then left alone, unlike
+  the groups above it. Nothing was renamed — every `#tab-*` deep link still
+  lands where it did.
+- Saving Sentinel settings returns **where the form was rendered**: the pane
+  posts `return_to=pane` and comes back to `/settings/#tab-sentinel`; anything
+  else (a deep link, a bookmark, a script) still lands on
+  `/settings/sentinel#config`. Being moved out of the console by pressing Save
+  is the indirection the inline section exists to remove.
+- Concept Map gained the section (89 pages); user guide §26/§39 and the
+  Sentinel architecture document updated to match.
+
+
 ## [1.12.0] - 2026-08-22
 
 Four rounds of clone work landed after 1.11.0 with an empty `[Unreleased]`

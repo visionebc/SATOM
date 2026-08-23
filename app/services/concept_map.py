@@ -154,6 +154,12 @@ PAGES: tuple[dict, ...] = (
        "semi-auto band",
        "Which responses Sentinel may take by itself, which need a human, and "
        "the gates in front of the ones that can block traffic."),
+    _p("settings.sentinel_section", "Sentinel Settings", "monitoring",
+       "sentinel settings configure knobs demo scenario simulation pipeline "
+       "weights score bands kill switch arm response tune thresholds example",
+       "The whole Sentinel section: every knob, the pipeline stage by stage, "
+       "the live scoring weights, and ten demonstrations runnable against "
+       "the real engine."),
     _p("appliances.index", "Appliances", "fleet",
        "devices inventory appliance host add register credentials ip serial model",
        "The device inventory — every managed box and how SATOM reaches it."),

@@ -129,14 +129,32 @@ def _acme_creds_state() -> dict:
 def index():
     from ..services import product_scope
     scheme = naming.effective_scheme(store.naming_overrides())
+    # Built before the render so the metrics-store health it contains is
+    # computed ONCE and handed to all three Sentinel sections. Three
+    # independent calls would triple this page's round-trips to the store for
+    # an answer that cannot have changed between them.
+    sentinel_ctx = _sentinel_view_context()
     return render_template(
         'settings/index.html',
         settings=store.general(),
         # Sentinel's form is generated from the SAME catalog its
         # accessors read through, so a knob cannot exist in one and
         # be missing from the other (the metrics.vm_url lesson).
-        sentinel_settings=_sentinel_form(),
-        sentinel_health=_sentinel_health(),
+        # The Sentinel section is rendered INLINE in its pane (the operator
+        # asked for it not to bounce to another page), so the pane needs the
+        # same context the standalone page builds -- from the same builder,
+        # or the two surfaces disagree about the numbers they exist to show.
+        **sentinel_ctx,
+        sentinel_inline=True,
+        # Architecture and the incidents console, rendered in their own panes
+        # from the SAME partials their standalone pages use.
+        sentinel_docs=_sentinel_docs_context(sentinel_ctx.get('health')),
+        sentinel_console=_sentinel_console_context(sentinel_ctx.get('health')),
+        # Context and Response policy, the other two Sentinel surfaces. Both
+        # were pages reachable only from a button at the top of the incidents
+        # console; the operator asked for them here.
+        sentinel_context=_sentinel_context_context(sentinel_ctx.get('health')),
+        sentinel_policy=_sentinel_policy_context(sentinel_ctx.get('health')),
         platform_options=product_scope.device_products(),
         platform_labels=dict(product_scope.device_products()),
         log_levels_all=store.LOG_LEVELS_ALL,
@@ -2657,12 +2675,121 @@ def _sentinel_form():
         return []
 
 
+def _sentinel_ui_hints() -> dict:
+    """The "?" text for the parts of the section that are NOT settings.
+
+    Same degradation posture as :func:`_sentinel_form`: an empty dict renders
+    a section with no question marks, never a page-wide 500. The macro emits
+    nothing for empty text, so a missing key is a missing icon rather than a
+    bare "?" that explains nothing when clicked.
+    """
+    try:
+        from ..services.sentinel import config as sn_config
+        return dict(sn_config.UI_HINTS)
+    except Exception:  # noqa: BLE001
+        return {}
+
+
 def _sentinel_health():
     try:
         from ..views.sentinel import _health
         return _health()
     except Exception:  # noqa: BLE001
         return None
+
+
+def _sentinel_view_context() -> dict:
+    """Everything the Sentinel section renders, for BOTH of its surfaces.
+
+    The section is drawn twice from one template -- inline in the Admin
+    Console pane and on its own URL -- so it is built once here. Two builders
+    would let the pane and the page disagree about the very weights and bands
+    the section exists to explain, and both would keep rendering.
+
+    Same failure posture as :func:`_sentinel_form`: a broken optional module
+    yields an empty section, never a 500 on a page carrying two dozen
+    unrelated ones.
+    """
+    try:
+        from ..models_sentinel import SentinelIncident
+        from ..services.sentinel import actions as sn_actions
+        from ..services.sentinel import demo as sn_demo
+        from ..services.sentinel import scoring as sn_scoring
+        scenarios = sn_demo.catalog()
+        weights = sn_scoring.explain()
+        gate_order = sn_actions.GATE_ORDER
+        bands = {'observe': SentinelIncident.BAND_OBSERVE,
+                 'recommend': SentinelIncident.BAND_RECOMMEND,
+                 'semi_auto': SentinelIncident.BAND_SEMI_AUTO}
+    except Exception:  # noqa: BLE001
+        scenarios, weights, gate_order = [], [], ()
+        bands = {'observe': 40, 'recommend': 70, 'semi_auto': 85}
+    health = _sentinel_health()
+    return {'sentinel_settings': _sentinel_form(),
+            'sentinel_ui_hints': _sentinel_ui_hints(),
+            'sentinel_health': health,
+            'health': health,
+            'scenarios': scenarios,
+            'weights': weights,
+            'gate_order': gate_order,
+            'bands': bands}
+
+
+def _sentinel_section_context(builder, health) -> dict:
+    """One Sentinel section's context, NAMESPACED, for the Admin Console.
+
+    Namespaced because the two sections want names this page already owns:
+    ``settings`` is read eighty-odd times in settings/index.html, and
+    ``catalog``, ``status`` and ``health`` are all taken too. A collision would
+    not fail — the section would render the WRONG object, quietly, which is
+    precisely the failure a template cannot report. The pane unpacks this dict
+    with ``{% with %}``, so the aliases exist only inside the include.
+
+    Same degradation posture as :func:`_sentinel_form`: a broken optional
+    module yields an empty section, never a 500 on a page carrying two dozen
+    unrelated ones.
+    """
+    try:
+        return builder(health)
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _sentinel_docs_context(health) -> dict:
+    from ..views.sentinel import docs_context
+    return _sentinel_section_context(docs_context, health)
+
+
+def _sentinel_console_context(health) -> dict:
+    """The incidents list, filtered by ``?sn_status=``.
+
+    The filter is namespaced too: this page has its own ``status`` arguments,
+    and it is the SETTINGS url the pane's filter buttons reload — jumping to
+    /sentinel/ from a menu entry that had just promised to keep the operator
+    inside the console is the thing this whole change removes.
+    """
+    from ..views.sentinel import console_context
+    want = request.args.get('sn_status', 'live')
+    return _sentinel_section_context(
+        lambda h: console_context(want, h), health)
+
+
+def _sentinel_context_context(health) -> dict:
+    """Trusted sources, maintenance windows, topology and the CVE mirror.
+
+    Takes ``health`` it does not use, so that all four Sentinel sections are
+    built through one signature: a builder with a different shape is the one
+    that gets called wrongly when a fifth is added.
+    """
+    from ..views.sentinel import context_context
+    return _sentinel_section_context(lambda _h: context_context(), health)
+
+
+def _sentinel_policy_context(health) -> dict:
+    """Per-action autonomy, and the operating modes that preset it."""
+    from ..views.sentinel import policies_context
+    return _sentinel_section_context(lambda _h: policies_context(), health)
+
 
 
 @bp.route('/sentinel', methods=['POST'])
@@ -2719,4 +2846,55 @@ def save_sentinel():
     if errors:
         flash('These never-block entries are not valid CIDRs and protect '
               'nothing: ' + ', '.join(errors), 'danger')
-    return redirect(url_for('settings.index') + '#tab-sentinel')
+    # Back where the form was: the pane posts `return_to=pane`, and an
+    # operator who never left the Admin Console must not be moved out of it
+    # by saving. Anything else (a deep link, a bookmark, a script) lands on
+    # the standalone section, which is the historical behaviour.
+    if request.form.get('return_to') == 'pane':
+        return redirect(url_for('settings.index') + '#tab-sentinel')
+    return redirect(url_for('settings.sentinel_section') + '#config')
+
+
+@bp.route('/sentinel', methods=['GET'])
+@login_required
+def sentinel_section():
+    """Settings → Sentinel as a full section, not a pane.
+
+    The pane held the form and nothing else, so "what will this thing DO?"
+    was answered only by prose on another page. This page answers it in
+    escalating commitment: the pipeline drawn, the live weight table, and ten
+    scenarios runnable against the real engine — then the form. Same failure
+    posture as the pane (:func:`_sentinel_form`): a broken optional module
+    renders an empty section rather than a 500.
+    """
+    return render_template('settings/sentinel.html',
+                           sentinel_inline=False,
+                           # The Admin Console submenu comes with the page: it
+                           # is the SAME settings/_nav.html the console renders,
+                           # in `links` mode because this page has no panes to
+                           # switch. is_admin is what decides which groups the
+                           # menu offers at all -- without it the menu would
+                           # silently shrink to My Account on a page only an
+                           # operator with config rights ever reaches.
+                           is_admin=_is_admin(),
+                           nav_mode='links',
+                           nav_active='tab-sentinel',
+                           **_sentinel_view_context())
+
+
+@bp.route('/sentinel/demo/<slug>')
+@login_required
+def sentinel_demo(slug):
+    """One scenario through the LIVE Sentinel engine, as JSON.
+
+    A GET on purpose: nothing mutates. The events live and die in the
+    request, the scorer is pure arithmetic, and the gate audit only READS
+    (policy rows, the hourly budget, the protected-network list). Keeping it
+    idempotent is what makes "press it as many times as you like" an honest
+    sentence on the page.
+    """
+    from ..services.sentinel import demo as sn_demo
+    try:
+        return jsonify(sn_demo.run(slug))
+    except KeyError:
+        abort(404)

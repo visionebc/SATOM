@@ -1,0 +1,283 @@
+{#
+   THE Admin Console menu.  One definition, every Settings surface.
+
+   This file is the single source: the console (settings/index.html) and every
+   standalone Settings page (settings/sentinel.html) include it, so an entry
+   added, renamed, re-icon'd or re-grouped here changes on all of them at once.
+   Copying the markup into a page instead is how the horizontal strip that
+   preceded this menu ended up with two entries pointing at one pane -- and
+   nothing fails when two copies disagree: the operator simply gets a different
+   menu depending on which URL they arrived by.
+
+   Contract (all optional, all defaulted):
+     nav_mode    'panes'  -- entries switch a tab in THIS page (the console)
+                 'links'  -- entries navigate back to the console (a standalone
+                             Settings page, where the panes do not exist and a
+                             tab button would be a control that does nothing)
+     nav_active  the tab target ('tab-sentinel') or endpoint ('sentinel.docs')
+                 the caller is currently showing; it is drawn selected and its
+                 group is the one the server renders expanded
+     is_admin    whether admin-only groups are offered at all
+
+   The tab TARGET is the identity of a section: the panes, the in-page links
+   (#tab-auth), the URL-hash restore and tests/test_theme.py all key off it.
+   Targets are therefore literal and NEVER translated -- only `label` goes
+   through the translation call.  (An identifier is not copy -- safeguards §68.)
+
+   An item with `ep` instead of `t` is a link to a PAGE and is drawn with the
+   leaving arrow.  No entry uses it today: Sentinel's Architecture, Incidents
+   console, Context and Response policy all became PANES at the operator's
+   request, so all five of its entries stay inside the console.  The branch is
+   kept because the arrow is the only thing that distinguishes a row which
+   replaces the whole page from one which does not, and the next entry that
+   leaves must carry it.
+
+   Sentinel is a group of its own -- a pipeline with its own incidents console
+   and architecture, not one knob under Monitoring -- and it sits LAST at the
+   operator's request, below Monitoring & Alerts.
+
+   Its five entries are ordered by what they are, not by when they were added:
+   the three CONFIGURATION surfaces first (Settings, Context, Response policy
+   -- and Context is configuration, however little it looks like it: it is the
+   -35-point trusted-source weight, the largest single number in the scoring
+   table), then the reference document, then the live console.  Interleaving
+   the live console among the knobs is what made Response policy reachable
+   only from a button inside a health tile.
+
+   NO Jinja comment may appear inside the list literal below: it lives inside a
+   set-tag, and tests/test_user_guide_features.py parses that same text with
+   ast.literal_eval to check the manual against it.  (Nor may one be typed into
+   an HTML comment: an HTML comment is still Jinja source, and a stray set-tag
+   inside one is a template that never compiles -- it cost this page a 500.)
+#}
+{% set nav_mode = nav_mode | default('panes') %}
+{% set nav_is_admin = is_admin | default(false) %}
+{% set nav_active = nav_active | default('tab-general' if nav_is_admin else 'tab-security') %}
+{% set nav_groups = [
+  {'key': 'system', 'label': _('System'), 'icon': 'bi-hdd-rack', 'admin': true, 'items': [
+    {'t': 'tab-general',     'icon': 'bi-sliders',          'label': _('General')},
+    {'t': 'tab-git',         'icon': 'bi-git',              'label': _('Git')},
+    {'t': 'tab-sotbackup',   'icon': 'bi-hdd-network',      'label': 'SoT & Backup'},
+    {'t': 'tab-ai',          'icon': 'bi-stars',            'label': _('AI Advisor'),
+     'perm': 'advisor.configure', 'id': 'ai-settings-tab-btn'}]},
+  {'key': 'access', 'label': _('Access & Identity'), 'icon': 'bi-people', 'admin': true, 'items': [
+    {'t': 'tab-users',       'icon': 'bi-people',           'label': _('Users')},
+    {'t': 'tab-profiles',    'icon': 'bi-person-badge',     'label': _('Profiles')},
+    {'t': 'tab-auth',        'icon': 'bi-shield-lock',      'label': _('Authentication')},
+    {'t': 'tab-access',      'icon': 'bi-shield-lock',      'label': _('Access Control')},
+    {'t': 'tab-vault',       'icon': 'bi-safe',             'label': _('Vault')}]},
+  {'key': 'certs', 'label': _('Certificates & Trust'), 'icon': 'bi-award', 'admin': true, 'items': [
+    {'t': 'tab-certmgr',     'icon': 'bi-award',            'label': _('Certificate Manager')},
+    {'t': 'tab-nodetls',     'icon': 'bi-shield-lock-fill', 'label': _('Node TLS')},
+    {'t': 'tab-catrust',     'icon': 'bi-patch-check-fill', 'label': _('Trust store')}]},
+  {'key': 'network', 'label': _('Network & DNS'), 'icon': 'bi-globe2', 'admin': true, 'items': [
+    {'t': 'tab-dnstool',     'icon': 'bi-globe2',           'label': _('DNS Lookup')},
+    {'t': 'tab-dnsrecords',  'icon': 'bi-pencil-square',    'label': _('DNS Records')}]},
+  {'key': 'fleet', 'label': _('Fleet & Devices'), 'icon': 'bi-hdd-stack-fill', 'admin': true, 'items': [
+    {'t': 'tab-hypervisors', 'icon': 'bi-hdd-stack-fill',   'label': _('Hypervisors')},
+    {'t': 'tab-adoms',       'icon': 'bi-grid-1x2',         'label': _('ADOMs')},
+    {'t': 'tab-policylinks', 'icon': 'bi-link-45deg',       'label': _('Policy Links')},
+    {'t': 'tab-clonerules',  'icon': 'bi-files',            'label': _('Clone / Migrate')}]},
+  {'key': 'interface', 'label': _('User Interface'), 'icon': 'bi-palette', 'admin': true, 'items': [
+    {'t': 'tab-appearance',  'icon': 'bi-palette',          'label': _('Appearance')},
+    {'t': 'tab-languages',   'icon': 'bi-translate',        'label': _('Languages')},
+    {'t': 'tab-fazmenu',     'icon': 'bi-list-check',       'label': _('FAZ Menu')}]},
+  {'key': 'account', 'label': _('My Account'), 'icon': 'bi-person-circle', 'admin': false, 'items': [
+    {'t': 'tab-security',    'icon': 'bi-shield-lock',      'label': _('Security')},
+    {'t': 'tab-password',    'icon': 'bi-key',              'label': _('Change Password')}]},
+  {'key': 'monitoring', 'label': _('Monitoring & Alerts'), 'icon': 'bi-activity', 'admin': true, 'items': [
+    {'t': 'tab-email',       'icon': 'bi-envelope',         'label': 'Email & Alerts'},
+    {'t': 'tab-thresholds',  'icon': 'bi-sliders',          'label': _('Thresholds')}]},
+  {'key': 'sentinel', 'label': _('Sentinel'), 'icon': 'bi-shield-exclamation', 'admin': true, 'items': [
+    {'t': 'tab-sentinel',          'icon': 'bi-sliders',          'label': _('Settings')},
+    {'t': 'tab-sentinel-context',  'icon': 'bi-person-check',     'label': _('Context')},
+    {'t': 'tab-sentinel-policy',   'icon': 'bi-shield-lock',      'label': _('Response policy')},
+    {'t': 'tab-sentinel-docs',     'icon': 'bi-diagram-3',        'label': _('Architecture')},
+    {'t': 'tab-sentinel-console',  'icon': 'bi-activity',         'label': _('Incidents console')}]}
+] %}
+  <aside class="nav fw-settings-nav" id="settingsTabs" role="tablist"
+         aria-label="{{ _('Settings sections') }}">
+    {% for g in nav_groups %}
+      {% if nav_is_admin or not g.admin %}
+        {# A group with nothing the caller may see is not rendered at all —
+           an empty accordion header is a promise of a section that is not
+           there. #}
+        {% set vis = [] %}
+        {% for it in g['items'] %}
+          {% if not it.perm or (current_user and current_user.can(it.perm)) %}
+            {% set _ = vis.append(it) %}
+          {% endif %}
+        {% endfor %}
+        {% if vis %}
+        {# The anchor matches on the target OR the endpoint: a standalone page
+           names itself with whichever of the two it is, and a group that holds
+           the current page but renders collapsed hides the selection the
+           operator is looking at. #}
+        {% set holds_active = (vis | selectattr('t', 'equalto', nav_active) | list)
+                            + (vis | selectattr('ep', 'equalto', nav_active) | list) %}
+        {# Collapsed is the DEFAULT, server-side: 9 groups holding 28 sections
+           expand into a wall taller than the viewport, and the operator then
+           has to close what they never opened.  The state is rendered here and
+           not left to the script so the first paint is already the default —
+           a menu that flashes open and then folds looks like a bug. #}
+        <div class="fw-set-nav-group" role="presentation"
+             data-set-group="{{ g.key }}"{% if holds_active %} data-set-anchor="1"{% endif %}>
+          <button type="button" class="fw-set-nav-toggle" aria-expanded="false"
+                  data-set-toggle="{{ g.key }}">
+            <i class="bi {{ g.icon }} fw-set-nav-group-icon"></i>
+            <span class="fw-set-nav-group-label">{{ g.label }}</span>
+            <span class="fw-set-nav-count">{{ vis | length }}</span>
+            <i class="bi bi-chevron-down fw-set-nav-caret"></i>
+          </button>
+          <div class="fw-set-nav-body">
+            {% for it in vis %}
+            {%- if it.ep %}
+            {# An entry that leads OUT of the console.  It is drawn as a link
+               and carries the leaving arrow: a menu row that looks identical to
+               its neighbours but replaces the whole page is the surprise this
+               marker exists to remove. #}
+            <a class="nav-link{{ ' active' if it.ep == nav_active else '' }}" href="{{ url_for(it.ep) }}">
+              <i class="bi {{ it.icon }} fw-set-nav-icon"></i><span>{{ it.label }}</span>
+              <i class="bi bi-box-arrow-up-right fw-set-nav-out" aria-hidden="true"></i>
+            </a>
+            {%- elif nav_mode == 'panes' %}
+            <button class="nav-link{{ ' active' if it.t == nav_active else '' }}" type="button"
+                    data-bs-toggle="tab" data-bs-target="#{{ it.t }}"
+                    {%- if it.id %} id="{{ it.id }}"{% endif %}>
+              <i class="bi {{ it.icon }} fw-set-nav-icon"></i><span>{{ it.label }}</span>
+            </button>
+            {%- else %}
+            {# Standalone Settings page: the panes are not on it, so the same
+               entry has to NAVIGATE.  Rendering the tab button here would give
+               the operator a row that highlights on hover and then does
+               nothing — the failure mode a menu cannot report. #}
+            <a class="nav-link{{ ' active' if it.t == nav_active else '' }}"
+               href="{{ url_for('settings.index') }}#{{ it.t }}">
+              <i class="bi {{ it.icon }} fw-set-nav-icon"></i><span>{{ it.label }}</span>
+            </a>
+            {%- endif %}
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+      {% endif %}
+    {% endfor %}
+  </aside>
+<script nonce="{{ csp_nonce }}">
+// NONCE IS NOT DECORATION.  This app serves
+//   script-src-elem 'self' 'nonce-...'
+// so an inline script element without it is BLOCKED by the browser --
+// silently, with nothing failing server-side and nothing wrong in the
+// markup.  While this block lived in the console's own script block it
+// inherited that page's nonce; moving it into this partial dropped the
+// attribute, and the accordion stopped opening on EVERY Settings surface
+// at once.  Every inline script and style element in this product carries
+// the nonce; tests/test_csp_nonce.py is what enforces it.  (The tags are
+// spelled out in prose here on purpose: writing them literally inside a
+// comment is how this file first answered its own guard.)
+// --- Admin Console lateral menu: one group open at a time ------------------
+// Ships WITH the menu, in the same file, because the menu is included by more
+// than one page: left behind in the console's script block it would have made
+// every standalone Settings page render an accordion that cannot be opened —
+// and the groups are collapsed by default, so that is a menu with nothing in
+// it.
+//
+// The menu is an ACCORDION: opening a group -- or selecting a section inside
+// one -- collapses every other group.  Selecting is the half that is easy to
+// miss: a section can be activated without ever touching a group header (the
+// in-page links "...#tab-auth", the URL-hash restore, the redirect after a
+// save), so a fold driven only from the header handler leaves those paths
+// with several groups expanded -- the wall of entries the collapsed default
+// exists to avoid.  The collapse therefore lives in selectGroup, which every
+// one of those paths goes through, and not in the header handler.
+//
+// The store holds the OPEN group, never the closed ones.  The default is
+// "everything collapsed", and an absent or unreadable store has to render that
+// default; a store of CLOSED groups would expand the whole menu for every
+// operator who has not touched it yet.  The key is NEW (...open.v1) on
+// purpose: the previous key holds sets written with the OPPOSITE meaning, and
+// reading one of those here would open exactly the groups an operator had
+// chosen to collapse.  The stale key is dropped rather than left to rot.
+//
+// The stored value stays a LIST, because stores written by the multi-open
+// version are already out there under this key.  Restoring one of those opens
+// the LAST entry -- the most recent group the operator opened -- and rewrites
+// the store with that one alone.  Opening all of them would paint exactly the
+// state this accordion removes, on the first load after the change, and only
+// for the operators who had used the menu most.
+(function () {
+  var KEY = 'satom.settingsnav.open.v1';
+  var DEAD = 'satom.settingsnav.closed.v1';   // meaning inverted; never read again
+  var nav = document.getElementById('settingsTabs');
+  if (!nav) return;
+  try { localStorage.removeItem(DEAD); } catch (e) {}
+
+  function read() {
+    try {
+      var v = JSON.parse(localStorage.getItem(KEY) || '[]');
+      return Array.isArray(v) ? v : [];
+    } catch (e) { return []; }
+  }
+  function write(list) { try { localStorage.setItem(KEY, JSON.stringify(list)); } catch (e) {} }
+  function allGroups() { return nav.querySelectorAll('.fw-set-nav-group'); }
+  function groupOf(el) { return el && el.closest ? el.closest('.fw-set-nav-group') : null; }
+  function keyOf(g) { return g ? g.getAttribute('data-set-group') : null; }
+  function paint(g, open) {
+    g.classList.toggle('open', open);
+    var btn = g.querySelector('.fw-set-nav-toggle');
+    if (btn) { btn.setAttribute('aria-expanded', open ? 'true' : 'false'); }
+  }
+  function groupNamed(name) {
+    var found = null;
+    Array.prototype.forEach.call(allGroups(), function (g) {
+      if (!found && keyOf(g) === name) { found = g; }
+    });
+    return found;
+  }
+  // Open g, collapse the rest.  Deliberately NOT guarded on "g is already
+  // open": a section can be selected inside the open group while a second
+  // group is still expanded from an earlier click, and returning early there
+  // would leave that one open -- the exact case this exists for.
+  function selectGroup(g) {
+    if (!g) { return; }
+    Array.prototype.forEach.call(allGroups(), function (other) {
+      if (other !== g) { paint(other, false); }
+    });
+    paint(g, true);
+    write([keyOf(g)]);
+  }
+  function closeGroup(g) { paint(g, false); write([]); }
+
+  // Restore.  Only what the operator opened before; everything else stays as
+  // the server drew it.
+  var saved = read();
+  for (var i = saved.length - 1; i >= 0; i--) {
+    var hit = groupNamed(saved[i]);
+    if (hit) { selectGroup(hit); break; }
+  }
+
+  nav.addEventListener('click', function (e) {
+    var head = e.target.closest ? e.target.closest('.fw-set-nav-toggle') : null;
+    if (head) {
+      var g = groupOf(head);
+      if (!g) { return; }
+      if (g.classList.contains('open')) { closeGroup(g); } else { selectGroup(g); }
+      return;
+    }
+    // Selecting a section folds the other groups.  Bootstrap does not fire
+    // shown.bs.tab when the clicked section is ALREADY the active one, so a
+    // handler hung only on that event would ignore the click that re-selects
+    // the current section: from the operator's side, an accordion that
+    // sometimes does not fold.
+    var item = e.target.closest ? e.target.closest('[data-bs-toggle="tab"]') : null;
+    if (item) { selectGroup(groupOf(item)); }
+  });
+
+  // Anything that reveals a section also reveals its group -- and only its
+  // group: the in-page links (href="...#tab-auth"), the URL-hash restore and
+  // the redirects after a save all activate a tab WITHOUT going through
+  // this menu.  Without this the operator lands on a pane whose menu shows no
+  // selection anywhere.
+  nav.addEventListener('shown.bs.tab', function (e) { selectGroup(groupOf(e.target)); }, true);
+})();
+</script>

@@ -49,10 +49,10 @@ from flask_login import current_user, login_required
 
 from ..auth.decorators import require_permission
 from ..models import db, visible_appliances
-from ..models_sentinel import (SentinelAction, SentinelEvent, SentinelIncident,
-                               SentinelMaintenanceWindow, SentinelPolicy,
-                               SentinelTopology, SentinelTrustedSource,
-                               SentinelVuln)
+from ..models_sentinel import (SentinelAction, SentinelEdgeMap, SentinelEvent,
+                               SentinelIncident, SentinelMaintenanceWindow,
+                               SentinelPolicy, SentinelTopology,
+                               SentinelTrustedSource, SentinelVuln)
 
 bp = Blueprint("sentinel", __name__, url_prefix="/sentinel")
 
@@ -525,6 +525,15 @@ def context_context() -> dict:
                   for t in SentinelTopology.query.all()},
         sentinel_list=s["transports"].SENTINEL_LIST,
         hypervisors=hypervisors.configured_targets(),
+        edge_maps={e.appliance_id: e.to_dict()
+                   for e in SentinelEdgeMap.query.all()},
+        analyzers=[a for a in visible_appliances().all()
+                   if a.kind == "fortianalyzer"],
+        edge_logtypes=SentinelEdgeMap.LOGTYPES,
+        edge_enabled=bool(s["config"].get("edge_enabled")),
+        edge_require=bool(s["config"].get("edge_require")),
+        edge_mechanism=_edge().MECHANISM,
+        edge_probe=_EDGE_PROBE_RESULT.pop("result", None),
         mirror=s["vuln"].mirror_health(),
         recent_cves=[v.to_dict() for v in
                      SentinelVuln.query.order_by(
@@ -654,6 +663,109 @@ def topology_save():
           "Topology saved but INCOMPLETE — the VM and host layers stay "
           "unknown until hypervisor, VM id and node are all set.",
           "success" if row.complete else "warning")
+    return _back_to_context()
+
+
+# --------------------------------------------------------------------------- #
+#  Border map — appliance -> FortiAnalyzer / FortiGate / VDOM                   #
+# --------------------------------------------------------------------------- #
+def _edge():
+    from ..services.sentinel import edge
+    return edge
+
+
+#: Where a Test lookup result waits for the redirect that follows it.
+#:
+#: A probe is a READ against a live collector and its result is a page of
+#: evidence, not a flash message — but the POST must still redirect, because a
+#: rendered POST turns every browser refresh into another call against a
+#: production FortiAnalyzer. Flask's session cookie is the wrong carrier: the
+#: row sample can carry customer traffic (source, destination, service), and a
+#: cookie is client-side storage that leaves the server. So it is held here,
+#: in-process, for exactly one render.
+#:
+#: The cost, stated rather than hidden: with more than one gunicorn worker the
+#: redirect can land on a worker that never ran the probe, and the operator
+#: sees the page without the result. That is a visible, retryable nuisance;
+#: putting attack traffic in a cookie is not.
+_EDGE_PROBE_RESULT: dict = {}
+
+
+@bp.route("/context/edge", methods=["POST"])
+@login_required
+@require_permission("config_write")
+def edge_save():
+    """Map a protected appliance to the collector that sees its border.
+
+    Every field is typed by the operator and none is inferred. A guessed ADOM
+    or device name does not fail — it points the lookup at somebody else's
+    traffic and the answer still looks like an answer.
+    """
+    appliance_id = int(request.form.get("appliance_id") or 0)
+    if appliance_id not in {a.id for a in visible_appliances().all()}:
+        abort(404)
+    row = SentinelEdgeMap.query.filter_by(appliance_id=appliance_id).first()
+    if row is None:
+        row = SentinelEdgeMap(appliance_id=appliance_id)
+        db.session.add(row)
+    analyzer = (request.form.get("analyzer_id") or "").strip()
+    row.analyzer_id = int(analyzer) if analyzer.isdigit() else None
+    row.adom = (request.form.get("adom") or "").strip()[:120]
+    row.fortigate = (request.form.get("fortigate") or "").strip()[:120]
+    row.vdom = (request.form.get("vdom") or "").strip()[:120]
+    logtype = (request.form.get("logtype") or "traffic").strip()
+    row.logtype = logtype if logtype in SentinelEdgeMap.LOGTYPES else "traffic"
+    row.note = (request.form.get("note") or "").strip()[:300]
+    db.session.commit()
+    flash("Border map saved." if row.complete else
+          "Border map saved but INCOMPLETE — the border layer stays "
+          "unevaluated until an analyzer and an ADOM are both set.",
+          "success" if row.complete else "warning")
+    return _back_to_context()
+
+
+@bp.route("/context/edge/<int:mid>/delete", methods=["POST"])
+@login_required
+@require_permission("config_write")
+def edge_delete(mid):
+    row = SentinelEdgeMap.query.get_or_404(mid)
+    db.session.delete(row)
+    db.session.commit()
+    flash("Border map removed — that appliance's border layer is now "
+          "unevaluated, which also means no address from it can be listed "
+          "while corroboration is required.", "success")
+    return _back_to_context()
+
+
+@bp.route("/context/edge/<int:mid>/test", methods=["POST"])
+@login_required
+@require_permission("config_write")
+def edge_test(mid):
+    """Run one live lookup and keep the RAW device answer.
+
+    Read-only, and the only route in this module that reaches the collector.
+    """
+    row = SentinelEdgeMap.query.get_or_404(mid)
+    ip = (request.form.get("test_ip") or "").strip()
+    hours = request.form.get("test_hours") or "24"
+    result = _edge().probe(row.appliance_id, ip,
+                           int(hours) if hours.isdigit() else 24)
+    result["tested_ip"] = ip
+    result["tested_appliance_id"] = row.appliance_id
+    _EDGE_PROBE_RESULT["result"] = result
+    if result.get("error"):
+        row.last_error = str(result["error"])[:300]
+        flash(f"Border lookup FAILED: {result['error']}", "danger")
+    elif result.get("checked"):
+        row.last_ok_at = datetime.utcnow()
+        row.last_error = ""
+        flash(f"Border lookup reached {result.get('analyzer')} and returned "
+              f"{result.get('hits')} matching row(s).",
+              "success" if result.get("hits") else "warning")
+    else:
+        flash(result.get("reason") or "Border lookup was not attempted.",
+              "warning")
+    db.session.commit()
     return _back_to_context()
 
 

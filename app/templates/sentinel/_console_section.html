@@ -198,8 +198,13 @@
         {% if health.catalog_verified == 0 %}Nothing can execute — by design, until each mechanism is proved on a device.{% endif %}
       </div>
       {%- if sn_inline %}
+      {# NOT data-bs-toggle="tab": this button is outside the tab list, where
+         Bootstrap refuses to build a Tab and its own click handler then throws.
+         fw_pane_link.js forwards the click to the menu entry that owns the
+         pane, and falls back to the standalone page. #}
       <button type="button" class="btn btn-fw-outline btn-sm mt-2"
-              data-bs-toggle="tab" data-bs-target="#tab-sentinel-policy">Response policy</button>
+              data-fw-pane="#tab-sentinel-policy"
+              data-fw-pane-href="{{ url_for('sentinel.policies') }}">Response policy</button>
       {%- else %}
       <a class="btn btn-fw-outline btn-sm mt-2" href="{{ url_for('sentinel.policies') }}">Response policy</a>
       {%- endif %}

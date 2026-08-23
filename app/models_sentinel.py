@@ -109,6 +109,91 @@ class SentinelTopology(db.Model):
 
 
 # --------------------------------------------------------------------------- #
+#  Edge map — the join that lets the border speak about a source                #
+# --------------------------------------------------------------------------- #
+class SentinelEdgeMap(db.Model):
+    """Protected appliance -> the FortiAnalyzer / FortiGate / VDOM in front.
+
+    Same contract as :class:`SentinelTopology`, for the same reason. Without a
+    row here the border layer is not evaluated, and the incident says exactly
+    that — never that the border saw nothing. Those are opposite facts: one
+    means "we did not look", the other means "this address is not a real peer
+    at the border", and the second one is what vetoes a border blocklist
+    entry. Collapsing them would let an unmapped appliance silently authorise
+    every block it proposes.
+
+    Every field is operator-entered on purpose. Nothing here is inferred from
+    a hostname or guessed from an ADOM listing: a wrong guess does not fail
+    loudly, it points the lookup at a device whose logs belong to somebody
+    else's traffic, and the answer still looks like an answer.
+
+    ``fortigate`` empty means EVERY device in the ADOM, and ``vdom`` empty
+    means every VDOM on that device. Both are legitimate configurations (a
+    single-VDOM firewall, a collector with one customer), which is why neither
+    is required for :attr:`complete` — but both are shown in the scope line so
+    an operator can see how wide the question actually was.
+    """
+
+    __tablename__ = "sentinel_edge_map"
+
+    #: Log types worth searching for a source address. ``traffic`` is the
+    #: default because it is the one every FortiGate writes for every session:
+    #: an address that opened a connection is in the traffic log whether or
+    #: not any security profile had an opinion about it, and existence at the
+    #: border is the whole question this table exists to answer.
+    LOGTYPES = ("traffic", "attack", "event", "webfilter", "ips")
+
+    id = db.Column(db.Integer, primary_key=True)
+    appliance_id = db.Column(db.Integer,
+                             db.ForeignKey("appliances.id", ondelete="CASCADE"),
+                             nullable=False, unique=True, index=True)
+    #: The FortiAnalyzer to ask. Also an appliances row — Sentinel never holds
+    #: a second copy of a device's credentials, and a second copy is how one
+    #: of them ends up stale after a rotation.
+    analyzer_id = db.Column(db.Integer)
+    adom = db.Column(db.String(120), default="root")
+    fortigate = db.Column(db.String(120), default="")   # "" = all devices
+    vdom = db.Column(db.String(120), default="")        # "" = all vdoms
+    logtype = db.Column(db.String(24), default="traffic")
+    note = db.Column(db.String(300), default="")
+    #: Last successful probe, so the Context page can distinguish "configured"
+    #: from "configured and proven". They look identical in a form.
+    last_ok_at = db.Column(db.DateTime)
+    last_error = db.Column(db.String(300), default="")
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow,
+                           onupdate=datetime.utcnow)
+
+    appliance = db.relationship("Appliance", foreign_keys=[appliance_id])
+
+    @property
+    def complete(self) -> bool:
+        """Whether the border layer can be collected for this appliance."""
+        return bool(self.analyzer_id and (self.adom or "").strip())
+
+    @property
+    def scope(self) -> str:
+        return " / ".join([
+            (self.adom or "root"),
+            (self.fortigate or "all devices"),
+            (self.vdom or "all vdoms"),
+        ])
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id, "appliance_id": self.appliance_id,
+            "device": self.appliance.name if self.appliance else "",
+            "analyzer_id": self.analyzer_id or 0,
+            "adom": self.adom or "", "fortigate": self.fortigate or "",
+            "vdom": self.vdom or "", "logtype": self.logtype or "traffic",
+            "complete": self.complete, "scope": self.scope,
+            "note": self.note or "",
+            "last_ok_at": self.last_ok_at.isoformat(timespec="seconds")
+                          if self.last_ok_at else "",
+            "last_error": self.last_error or "",
+        }
+
+
+# --------------------------------------------------------------------------- #
 #  Raw — normalised security events                                             #
 # --------------------------------------------------------------------------- #
 class SentinelEvent(db.Model):

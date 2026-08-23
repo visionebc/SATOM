@@ -6,6 +6,97 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [1.18.0] - 2026-08-23
+
+### Added
+
+- **Border corroboration — Sentinel can ask the firewall in front whether a
+  source is a real peer.** A new operator-entered map (Sentinel → Context →
+  *Border map*) ties each protected appliance to a FortiAnalyzer, an ADOM, a
+  FortiGate and a VDOM; the correlator then asks that collector whether the
+  border logged the same source in the same window. Every field is typed by
+  the operator — nothing is inferred from a hostname or discovered from an
+  ADOM listing, because a wrong guess here does not fail, it points the
+  lookup at somebody else's traffic and the answer still looks like an answer.
+
+  The answer does two different jobs:
+
+  - **Evidence.** `edge_corroboration` (+12) when the border independently
+    logged the source, and `edge_multi_target` (+10) when it saw that source
+    reach more distinct destinations than the configured scanning floor. Both
+    are independent of the appliance — every other positive factor in the
+    table is ultimately derived from the same WAF's view of the same traffic.
+    This matters most where it is needed most: an installation with no
+    hypervisor access loses up to 18 points it can never recover
+    (`vm_anomaly` + `host_anomaly`), and a FortiGate is the thing such an
+    installation usually *does* have.
+  - **A veto.** FortiWeb reports the true client when the policy reads
+    `X-Forwarded-For` and the CDN's own address when it does not, and nothing
+    in the attack log distinguishes them. In the first case a border block is
+    inert; in the second it removes **every** client behind that egress. So
+    an address the border never confirmed cannot enter a border blocklist
+    while *Require border corroboration* is on — which is the shipped
+    default.
+
+  There is deliberately **no negative weight** in this layer. Silence at the
+  border is a fact about addressing, not about hostility, and subtracting for
+  it would systematically under-score exactly the customers who run a CDN.
+
+- Seven settings under a new **Border corroboration** group, each with the
+  long-form `?` explanation the rest of the page carries. Two of them are the
+  ones that fail silently and so are called out here: **Collector clock offset
+  from UTC** (a mismatch returns zero rows forever, which is byte-identical to
+  a source the border never saw) and **Require border corroboration** (the
+  veto).
+
+- A **Test lookup** button on every mapped appliance, which runs one read
+  against the live collector and shows the raw device refusal. This exists
+  because the failure mode of this whole layer is silence: a wrong ADOM, a
+  wrong device name, a clock offset and a genuinely absent source all return
+  zero rows, and only one of the four is an answer.
+
+### Fixed
+
+- The Admin Console pane for Sentinel → Context re-listed the section's
+  context keys by hand, so a key added to the single shared builder reached
+  the standalone page and not the pane. A guard now derives the required key
+  set from `context_context()` itself and fails when the pane does not deploy
+  all of it.
+
+### Notes
+
+- **The mechanism is unverified and the console says so.** There is no live
+  FortiAnalyzer in the development fleet to prove the `logsearch` route
+  against (`faz01` is retired on a `.invalid` host), so it ships as a
+  specification with its provenance stated — the same contract
+  `actions.CATALOG` already applies to response actions. Every failure path
+  degrades to *border layer not evaluated*, never to *the border says no*.
+- This module never writes to a FortiAnalyzer or a FortiGate. A guard asserts
+  the absence of `set` / `update` / `delete`, and that the one `add` verb
+  (which is how FortiAnalyzer *creates a search task*) targets only the
+  logsearch route.
+
+
+## [1.17.1] - 2026-08-23
+
+### Fixed
+
+- **The two buttons that reveal a sibling pane did nothing.** *Response engine
+  → Response policy* (in the Incidents console) and *Architecture → Incidents
+  console* both carried `data-bs-toggle="tab"` while sitting inside a card,
+  outside the tab list. Bootstrap 5.3 resolves a tab list with
+  `closest('.list-group, .nav, [role="tablist"]')` and **returns** when it
+  finds nothing — but the element still matches the click data-api, so its
+  handler runs into `querySelectorAll.call(undefined, …)` and throws
+  `Illegal invocation`. Nothing failed server-side: valid markup, 200 on the
+  route, every render assertion green. The only symptom was a button that did
+  nothing, which looks exactly like a button nobody pressed. Both now forward
+  the click to the menu entry that owns the pane — the trigger Bootstrap can
+  actually construct — which also keeps the menu highlighting the section the
+  operator is looking at. Each carries a fallback URL to its standalone page,
+  so "nothing happens" is not an available outcome. Reported by an operator;
+  measured and re-verified in chromium under the app's real CSP.
+
 ## [1.17.0] - 2026-08-23
 
 Sentinel's four surfaces are now panes of the Admin Console, autonomy has four

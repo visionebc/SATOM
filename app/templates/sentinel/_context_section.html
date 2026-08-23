@@ -186,6 +186,134 @@
   </div>
 </div>
 
+{# ── border map ──────────────────────────────────────── #}
+{# Every form in this card carries return_to, including the per-row ones. A    #}
+{# form drawn once per appliance is invisible to a check that reads rendered   #}
+{# output with an empty table, so the guard reads this file's SOURCE too.      #}
+<div class="fw-card mb-3">
+  <div class="fw-card-header"><strong><i class="bi bi-shield-lock me-1"></i>Border map &mdash; appliance &harr; FortiAnalyzer &harr; FortiGate &harr; VDOM</strong></div>
+  <div class="fw-card-body">
+    <p class="small text-muted">
+      FortiWeb reports the source of an attack, but <em>which</em> source depends on whether the
+      policy reads <code>X-Forwarded-For</code>: the true client, or the CDN in front of it. Nothing
+      in the attack log tells those apart &mdash; the border can, because a firewall only logs
+      addresses that actually opened a connection to it. A confirmed source adds evidence
+      (<code>edge_corroboration</code>, and <code>edge_multi_target</code> when it reached many
+      destinations); an address the border never logged is <strong>vetoed</strong> from any border
+      blocklist, because blocking it is inert at best and removes every client behind a shared
+      egress at worst. Silence at the border never subtracts points: an attack behind a CDN is
+      still an attack.
+    </p>
+    <p class="small text-muted">
+      Without a complete row the border layer is reported as <strong>not evaluated</strong> &mdash;
+      never as clean. <code>FortiGate</code> empty means every device in the ADOM and
+      <code>VDOM</code> empty means every VDOM on it; both are valid, and both widen the question.
+    </p>
+    {% if not edge_enabled %}
+      <div class="alert alert-warning small">
+        Border corroboration is <strong>disabled</strong> in Settings &rarr; Sentinel &rarr; Border
+        corroboration. These maps are saved but nothing is queried.
+      </div>
+    {% endif %}
+    {% if not analyzers %}
+      <div class="alert alert-warning small">
+        No FortiAnalyzer is registered, so nothing can be mapped. Add one under Appliances first
+        &mdash; and note that an analyzer in maintenance, or on a <code>.invalid</code> host, is
+        never probed.
+      </div>
+    {% endif %}
+    <div class="alert alert-secondary small">
+      <strong>Unverified mechanism.</strong> <code>{{ edge_mechanism }}</code>
+      This route has not been proved against a live FortiAnalyzer, so use <em>Test</em> before
+      trusting a verdict: a wrong ADOM, a wrong device name and a clock offset all return zero rows,
+      which looks exactly like a source the border never saw. Nothing here writes to any device.
+    </div>
+    {% if edge_probe %}
+      <div class="alert {{ 'alert-danger' if edge_probe.error else ('alert-success' if edge_probe.hits else 'alert-warning') }} small">
+        <strong>Test lookup &mdash; {{ edge_probe.tested_ip }}</strong>
+        {% if edge_probe.error %}
+          <div class="font-monospace mt-1">{{ edge_probe.error }}</div>
+        {% elif edge_probe.checked %}
+          <div class="mt-1">{{ edge_probe.scope }} &mdash;
+            <strong>{{ edge_probe.hits }}</strong> row(s) with this address as source,
+            {{ edge_probe.distinct_dst }} distinct destination(s),
+            {{ edge_probe.denied }} denied.</div>
+          {% if edge_probe.rows %}
+            <pre class="small mb-0 mt-1">{% for r in edge_probe.rows %}{{ r }}
+{% endfor %}</pre>
+          {% endif %}
+        {% else %}
+          <div class="mt-1">{{ edge_probe.reason }}</div>
+        {% endif %}
+      </div>
+    {% endif %}
+    <table class="table table-sm align-middle">
+      <thead><tr><th>Appliance</th><th>Analyzer</th><th>ADOM</th><th>FortiGate</th><th>VDOM</th><th>Log type</th><th>State</th><th></th></tr></thead>
+      <tbody>
+      {% for a in appliances %}
+        {% set e = edge_maps.get(a.id) %}
+        <tr>
+          <td class="small font-monospace">{{ a.name }}
+            <form id="edge-{{ a.id }}" method="post" action="{{ url_for('sentinel.edge_save') }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="return_to" value="{{ 'pane' if sn_inline else 'page' }}">
+              <input type="hidden" name="appliance_id" value="{{ a.id }}">
+            </form>
+          </td>
+          <td><select class="form-select form-select-sm" name="analyzer_id" form="edge-{{ a.id }}">
+              <option value="">&mdash;</option>
+              {% for an in analyzers %}
+                <option value="{{ an.id }}" {{ 'selected' if e and e.analyzer_id == an.id }}>{{ an.name }}</option>
+              {% endfor %}
+            </select></td>
+          <td><input class="form-control form-control-sm" name="adom" form="edge-{{ a.id }}"
+                     value="{{ e.adom if e else 'root' }}" placeholder="root" style="width:110px;"></td>
+          <td><input class="form-control form-control-sm" name="fortigate" form="edge-{{ a.id }}"
+                     value="{{ e.fortigate if e else '' }}" placeholder="all devices" style="width:140px;"></td>
+          <td><input class="form-control form-control-sm" name="vdom" form="edge-{{ a.id }}"
+                     value="{{ e.vdom if e else '' }}" placeholder="all vdoms" style="width:120px;"></td>
+          <td><select class="form-select form-select-sm" name="logtype" form="edge-{{ a.id }}">
+              {% for lt in edge_logtypes %}
+                <option value="{{ lt }}" {{ 'selected' if e and e.logtype == lt }}>{{ lt }}</option>
+              {% endfor %}
+            </select></td>
+          <td>
+            {% if e and e.complete %}<span class="fw-badge fw-badge-success">mapped</span>
+            {% elif e %}<span class="fw-badge fw-badge-warning">incomplete &mdash; border unevaluated</span>
+            {% else %}<span class="fw-badge fw-badge-secondary">not mapped</span>{% endif %}
+            {% if e and e.last_error %}<div class="small text-danger mt-1">{{ e.last_error }}</div>
+            {% elif e and e.last_ok_at %}<div class="small text-muted mt-1">last ok {{ e.last_ok_at }}</div>{% endif %}
+          </td>
+          <td class="text-end text-nowrap">
+            <button class="btn btn-fw-outline btn-sm" form="edge-{{ a.id }}">Save</button>
+            {% if e %}
+              <form method="post" action="{{ url_for('sentinel.edge_test', mid=e.id) }}" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="return_to" value="{{ 'pane' if sn_inline else 'page' }}">
+                <input class="form-control form-control-sm d-inline-block" name="test_ip"
+                       placeholder="203.0.113.7" style="width:130px;" required>
+                <button class="btn btn-fw-outline btn-sm">Test</button>
+              </form>
+              <form method="post" action="{{ url_for('sentinel.edge_delete', mid=e.id) }}" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="return_to" value="{{ 'pane' if sn_inline else 'page' }}">
+                <button class="btn btn-fw-outline btn-sm text-danger">Remove</button>
+              </form>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <p class="small text-muted mb-0">
+      Border corroboration is currently
+      <strong>{{ 'required' if edge_require else 'NOT required' }}</strong> before an address may
+      enter a border blocklist. With it not required, an entry may be a shared egress &mdash; that
+      is an operator decision, and it is recorded on every action it permits.
+    </p>
+  </div>
+</div>
+
 {# ── CVE mirror ─────────────────────────────────────────────────────────── #}
 <div class="fw-card">
   <div class="fw-card-header d-flex justify-content-between align-items-center">

@@ -43,16 +43,17 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from flask import (Blueprint, abort, flash, jsonify, redirect,
+from flask import (Blueprint, abort, current_app, flash, jsonify, redirect,
                    render_template, request, url_for)
 from flask_login import current_user, login_required
 
 from ..auth.decorators import require_permission
 from ..models import db, visible_appliances
 from ..models_sentinel import (SentinelAction, SentinelEdgeMap, SentinelEvent,
-                               SentinelIncident, SentinelMaintenanceWindow,
-                               SentinelPolicy, SentinelTopology,
-                               SentinelTrustedSource, SentinelVuln)
+                               SentinelEvidence, SentinelIncident,
+                               SentinelMaintenanceWindow, SentinelPolicy,
+                               SentinelTopology, SentinelTrustedSource,
+                               SentinelVuln)
 
 bp = Blueprint("sentinel", __name__, url_prefix="/sentinel")
 
@@ -114,6 +115,11 @@ def _health() -> dict:
         "last_sweep_age_s": (int(datetime.utcnow().timestamp() - last_sweep)
                              if last_sweep else None),
         "protect_errors": s["config"].protect_errors(),
+        # The published list is part of "is Sentinel actually working": it is
+        # the only response path whose enforcement lives outside this product,
+        # so "how many addresses are we currently asking a firewall to block"
+        # is a question the console must be able to answer without navigating.
+        "blocklist": _bl().feed_state(),
     }
 
 
@@ -204,6 +210,10 @@ def _back_to_context():
 
 def _back_to_policies():
     return _back_to("tab-sentinel-policy", "sentinel.policies")
+
+
+def _back_to_blocklist():
+    return _back_to("tab-sentinel-blocklist", "sentinel.blocklist")
 
 
 def sweep_targets() -> list:
@@ -902,6 +912,231 @@ def policy_save(action_type):
     else:
         flash(f"{action_type} policy saved.", "success")
     return _back_to_policies()
+
+
+# --------------------------------------------------------------------------- #
+#  Border blocklist — the list SATOM publishes, and the release point           #
+# --------------------------------------------------------------------------- #
+def _bl():
+    from ..services.sentinel import blocklist
+    return blocklist
+
+
+def blocklist_context() -> dict:
+    """Everything ``sentinel/_blocklist_section.html`` needs — BOTH surfaces.
+
+    ``entries`` deliberately carries released and expired rows alongside live
+    ones. A page that shows only what is currently blocked cannot answer "why
+    was this customer blocked last Tuesday", which is the question that
+    actually gets asked, and it hides the release history that is the only
+    evidence of how often this list is wrong.
+    """
+    bl = _bl()
+    rows = [e.to_dict() for e in bl.all_entries()]
+    return dict(
+        entries=rows,
+        live=[r for r in rows if r["live"]],
+        feed=bl.feed_state(),
+        feed_path=(f"/sentinel/feed/{bl.current_token()}/blocklist.txt"
+                   if bl.current_token() else ""),
+        max_ttl=bl.MAX_TTL_HOURS,
+        preview=bl.render(),
+        appliances=[{"id": a.id, "name": a.name}
+                    for a in visible_appliances().all()],
+    )
+
+
+@bp.route("/blocklist")
+@login_required
+@require_permission("config_write")
+def blocklist():
+    return render_template("sentinel/blocklist.html", **blocklist_context())
+
+
+@bp.route("/blocklist/add", methods=["POST"])
+@login_required
+@require_permission("config_write")
+def blocklist_add():
+    """List one address by hand.
+
+    The border veto runs here exactly as it does on the automated path. A
+    person typing an address is not more informed about whether it is a shared
+    egress than the correlation was — that fact lives at the border, not in
+    the operator's head — so the same question is asked, and setting the
+    answer aside is an explicit, recorded act rather than a different route.
+    """
+    from ..services import audit
+    bl = _bl()
+    ip = (request.form.get("ip") or "").strip()
+    hours = request.form.get("hours") or ""
+    appliance_id = int(request.form.get("appliance_id") or 0)
+    if appliance_id and appliance_id not in {a.id for a in
+                                             visible_appliances().all()}:
+        abort(404)
+    override = request.form.get("override") == "1"
+    edge_result = {}
+    if appliance_id:
+        # The verdict that gates the listing is a verdict taken NOW, against
+        # the collector this appliance is mapped to. Without an appliance
+        # there is nothing to ask, and blockable() refuses on "not mapped" —
+        # which is the correct refusal, not a missing feature.
+        edge_result = _edge().probe(appliance_id, ip, 24)
+    out = bl.add(ip, hours=int(hours) if hours.isdigit() else 0,
+                 reason=(request.form.get("reason") or "").strip(),
+                 actor=_who(), appliance_id=appliance_id, source="manual",
+                 edge=edge_result, override=override,
+                 override_reason=(request.form.get("override_reason")
+                                  or "").strip())
+    if out["ok"]:
+        audit.log_action("sentinel.blocklist.add",
+                         f"{ip} ({out['status']}) by {_who()}: "
+                         f"{out.get('reason', '')[:200]}")
+        flash(f"{ip} — {out['status']}. {out.get('reason', '')}", "success")
+    else:
+        flash(f"{ip} NOT listed: {out.get('reason', '')}"
+              + (" Tick 'accept the risk' and give a reason to list it anyway."
+                 if out.get("overridable") else ""), "danger")
+    return _back_to_blocklist()
+
+
+@bp.route("/blocklist/<int:eid>/release", methods=["POST"])
+@login_required
+@require_permission("config_write")
+def blocklist_release(eid):
+    """The release point. One click, immediate, and it leaves a record.
+
+    Reachable whether or not the feed is enabled, whether or not the mirror
+    works, and whether or not the border is currently answering: an operator
+    who has found a false positive must never be blocked from lifting it by a
+    component that is unrelated to it.
+    """
+    from ..services import audit
+    out = _bl().release(eid, actor=_who(),
+                        reason=(request.form.get("reason") or "").strip())
+    audit.log_action("sentinel.blocklist.release",
+                     f"entry {eid} by {_who()}: {out.get('reason', '')[:200]}")
+    flash(out.get("reason", ""), "success" if out["ok"] else "warning")
+    return _back_to_blocklist()
+
+
+@bp.route("/blocklist/publish", methods=["POST"])
+@login_required
+@require_permission("config_write")
+def blocklist_publish():
+    """Expire what is due and push the audit mirror now.
+
+    Explicitly NOT what makes the feed current — the feed is rendered from the
+    database on every fetch. This button writes the history copy.
+    """
+    out = _bl().publish(actor=_who(), force=True)
+    if out.get("mirrored"):
+        flash(f"Mirror pushed — {out['entries']} live entr(y/ies), "
+              f"{len(out['expired'])} expired.", "success")
+    elif out.get("log"):
+        flash(f"Mirror push FAILED. {out['log'][-400:]}", "danger")
+    else:
+        flash(f"{len(out['expired'])} entr(y/ies) expired. No mirror "
+              f"repository is configured, so nothing was committed — the feed "
+              f"itself is unaffected, it is served from the database.",
+              "warning")
+    return _back_to_blocklist()
+
+
+@bp.route("/blocklist/token", methods=["POST"])
+@login_required
+@require_permission("config_write")
+def blocklist_rotate_token():
+    """New feed token. Every connector already configured stops working."""
+    from ..services import audit
+    _bl().rotate_token()
+    audit.log_action("sentinel.blocklist.token",
+                     f"feed token rotated by {_who()}")
+    flash("Feed token rotated. Every FortiGate connector still holding the "
+          "old URL now fails its fetch — which means it keeps serving its "
+          "last successful copy, frozen, until you paste the new one in.",
+          "warning")
+    return _back_to_blocklist()
+
+
+@bp.route("/incident/<int:iid>/blocklist", methods=["POST"])
+@login_required
+@require_permission("config_write")
+def incident_blocklist(iid):
+    """List an incident's source, from the incident, with its evidence.
+
+    Uses the border verdict ALREADY on the incident rather than running a
+    second lookup: the entry must rest on the same answer that scored it. A
+    fresh query seconds later can disagree, and the disagreeing one would be
+    the one nobody saw.
+    """
+    from ..services import audit
+    s = _svc()
+    bl = _bl()
+    inc = SentinelIncident.query.get_or_404(iid)
+    stored = {}
+    ev = (SentinelEvidence.query
+          .filter_by(incident_id=inc.id, layer="edge")
+          .order_by(SentinelEvidence.id.desc()).first())
+    if ev is not None:
+        stored = ev.detail or {}
+    hours = request.form.get("hours") or ""
+    out = bl.add(inc.src_ip, hours=int(hours) if hours.isdigit() else 0,
+                 reason=f"incident {inc.ref}: {inc.title}"[:600],
+                 actor=_who(), incident_id=inc.id,
+                 appliance_id=getattr(inc, "appliance_id", 0) or 0,
+                 source="incident", edge=stored,
+                 override=request.form.get("override") == "1",
+                 override_reason=(request.form.get("override_reason")
+                                  or "").strip())
+    msg = (f"{inc.src_ip} — {out['status']}. {out.get('reason', '')}"
+           if out["ok"] else
+           f"{inc.src_ip} NOT listed: {out.get('reason', '')}")
+    s["incident"].timeline_add(inc, "action", f"{msg} (by {_who()})")
+    db.session.commit()
+    audit.log_action("sentinel.blocklist.add", f"{inc.src_ip} from {inc.ref} "
+                                               f"by {_who()}: {out['ok']}")
+    flash(msg, "success" if out["ok"] else "danger")
+    return redirect(url_for("sentinel.incident_view", iid=iid))
+
+
+# --------------------------------------------------------------------------- #
+#  The feed itself — unauthenticated by necessity, token-gated in consequence   #
+# --------------------------------------------------------------------------- #
+@bp.route("/feed/<token>/blocklist.txt")
+def blocklist_feed(token):
+    """Serve the live list as plain text. NO login: a firewall cannot log in.
+
+    Deliberate choices, each one load-bearing:
+
+    * **Rendered from the database on this request.** There is no file in
+      this path, so there is nothing that can be stale. A publisher that
+      stopped running cannot cause an expired address to be served.
+    * **404, not 403, on a bad or missing token.** An unauthenticated endpoint
+      that distinguishes "wrong token" from "no such feed" tells a scanner it
+      found something. The operator's diagnostic is the Blocklist page, which
+      shows the exact URL.
+    * **``no-store``.** A blocklist cached by an intermediary is a blocklist
+      that outlives its entries' TTLs, which is the precise failure this whole
+      design exists to avoid.
+    * **The token is in the path, not a header.** A threat-feed connector
+      configures a URL; requiring a custom header would make this unusable by
+      the only consumer it has.
+    """
+    bl = _bl()
+    if not bl.current_token() or not config_enabled():
+        abort(404)
+    if not bl.token_matches(token):
+        abort(404)
+    body = bl.render()
+    resp = current_app.response_class(body, mimetype="text/plain")
+    resp.headers["Cache-Control"] = "no-store, max-age=0"
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    return resp
+
+
+def config_enabled() -> bool:
+    from ..services.sentinel import config as sn_config
+    return bool(sn_config.get("feed_enabled"))
 
 
 # --------------------------------------------------------------------------- #

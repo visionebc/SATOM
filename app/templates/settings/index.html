@@ -1268,6 +1268,22 @@
     {% endwith %}
   </div>
 
+  {# The key list below is DERIVED from views.sentinel.blocklist_context() by
+     tests/test_sentinel_blocklist.py, not maintained by hand. That guard
+     exists because this {% with %} is a SECOND copy of the constructor's
+     output: the Context pane drifted from its constructor exactly this way
+     and took all of /settings/ down with a 500. #}
+  <div class="tab-pane fade" id="tab-sentinel-blocklist">
+    {% with sn_inline=True, entries=sentinel_blocklist.entries,
+            live=sentinel_blocklist.live, feed=sentinel_blocklist.feed,
+            feed_path=sentinel_blocklist.feed_path,
+            max_ttl=sentinel_blocklist.max_ttl,
+            preview=sentinel_blocklist.preview,
+            appliances=sentinel_blocklist.appliances %}
+      {% include "sentinel/_blocklist_section.html" %}
+    {% endwith %}
+  </div>
+
   <div class="tab-pane fade" id="tab-thresholds">
     {% if is_admin %}{% include 'settings/_thresholds.html' %}{% endif %}
   </div>

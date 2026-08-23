@@ -641,16 +641,25 @@ def test_only_proved_transports_are_marked_verified(app):
     number, which is the point: the count cannot drift upward by accident, and
     a claim of verification always has a person behind it.
 
-    As of 2026-08-20: 4 of 4. ``block_ip``, ``block_country`` and
+    As of 2026-08-24: **4 of 5**. ``block_ip``, ``block_country`` and
     ``raise_protection`` were each captured from fortiweb12 end to end, with
     every object created removed again and zero residue. ``tune_signature`` is
     a HAND-OFF — it writes nothing to an appliance, so it carries no transport
     and gate ``executable_mechanism`` refuses it. ``rate_limit_ip`` was REMOVED
     rather than counted: the route its mechanism named answers ``-20001
     invalid URL`` on this firmware.
+
+    ``block_edge_ip`` (1.19.0) is the fifth, and it is the one that moved the
+    denominator without moving the numerator. It is a hand-off too, for a
+    different reason: there is no FortiGate client in this product, so the
+    listing is a local row and a person applies it from the Blocklist page.
+    Its LOCAL half is exercised by ``tests/test_sentinel_blocklist.py``; the
+    consuming half is not, because no FortiGate in this fleet has been pointed
+    at the feed. Marking it verified would claim an observation nobody made,
+    so the headline honestly reads 4/5 rather than 5/5.
     """
-    assert actions.verified_count() == (4, 4)
-    assert actions.handoff_keys() == ["tune_signature"]
+    assert actions.verified_count() == (4, 5)
+    assert actions.handoff_keys() == ["block_edge_ip", "tune_signature"]
     from app.services.sentinel import transports
     assert set(transports.TRANSPORTS) == {
         k for k, spec in actions.CATALOG.items()

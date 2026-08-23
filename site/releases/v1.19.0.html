@@ -5,8 +5,8 @@
 <meta charset="UTF-8">
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Version 0.8 — SATOM</title>
-<meta name="description" content="Released on 2026-07-12 — Added · 3 entries.">
+<title>Version 1.19.0 — SATOM</title>
+<meta name="description" content="Released on 2026-08-23 — Added · Changed · Fixed · Security · 14 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -45,8 +45,8 @@
 
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
-  <h1>Version 0.8 <span class="rel-badge">superseded</span></h1>
-  <p class="sub">Released on 2026-07-12 — Added · 3 entries.</p>
+  <h1>Version 1.19.0 <span class="rel-badge rel-now">current release</span></h1>
+  <p class="sub">Released on 2026-08-23 — Added · Changed · Fixed · Security · 14 entries.</p>
 </header>
 
 <section class="wrap">
@@ -62,7 +62,7 @@
         <span class="rel-nav-meta">unreleased · Changes · 0 entries</span>
         <ul class="rel-leads"></ul>
       </a>
-      <a class="rel-nav-item" href="v1.19.0.html" data-rel-version="1.19.0">
+      <a class="rel-nav-item is-active" href="v1.19.0.html" data-rel-version="1.19.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 1.19.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
         <span class="rel-nav-meta">2026-08-23 · Added · Changed · Fixed · Security · 14 entries</span>
         <ul class="rel-leads"><li>The border blocklist — a list SATOM publishes, never a write it performs</li><li>A release point, and it keeps the record</li><li>Optional git audit mirror</li><li class="rel-more">… and 11 more</li></ul>
@@ -242,7 +242,7 @@
         <span class="rel-nav-meta">2026-07-13 · Added · 1 entry</span>
         <ul class="rel-leads"><li>Node TLS + node-to-node encryption</li></ul>
       </a>
-      <a class="rel-nav-item is-active" href="v0.8.html" data-rel-version="0.8">
+      <a class="rel-nav-item" href="v0.8.html" data-rel-version="0.8">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 0.8</span></span>
         <span class="rel-nav-meta">2026-07-12 · Added · 3 entries</span>
         <ul class="rel-leads"><li>FortiAnalyzer</li><li>FortiADC</li><li>Backup coverage page</li></ul>
@@ -252,14 +252,131 @@
       <div class="mdx">
 <h3 id="added">Added</h3>
 <ul>
-<li><strong>FortiAnalyzer</strong> integration (JSON-RPC, dual dialect) as a full ADOM, with
-  its endpoints in the DB registry and a git source-of-truth harvest.</li>
-<li><strong>FortiADC</strong> configuration added to the git source of truth (hourly sync +
-  nightly inspect), matching FortiWeb.</li>
-<li><strong>Backup coverage page</strong>, external backup server (SFTP) with firmware SoT,
-  library update indicator + per-package pip upgrade/rollback.</li>
+<li><strong>The border blocklist — a list SATOM publishes, never a write it performs.</strong>
+  Sentinel can now put a source address on a text feed a FortiGate reads as an
+  External Connector threat feed (<em>Threat Feed → IP Address</em>). There is still
+  <strong>no FortiGate client in this product and no credential that could write
+  one</strong>: the operator pre-creates the deny policy that references the feed,
+  exactly as they pre-create the FortiWeb IP list <code>block_ip</code> appends to.</li>
 </ul>
-<p class="rel-prevnext"><a href="v0.9.html">← Version 0.9</a></p>
+<p>New table <code>sentinel_block_entry</code>, new page <strong>Sentinel → Border blocklist</strong>
+  (a pane in the Admin Console and a standalone page at <code>/sentinel/blocklist</code>,
+  rendered from one file), a <strong>List on border blocklist</strong> control on every
+  incident, and the endpoint <code>GET /sentinel/feed/&lt;token&gt;/blocklist.txt</code>.</p>
+<p>Nothing reaches the list without passing the border veto shipped in 1.18.0.
+  FortiWeb reports the true client when a policy reads <code>X-Forwarded-For</code> and
+  the CDN's own address when it does not, and nothing in the attack log
+  distinguishes them — listing the second kind removes every legitimate client
+  behind a shared egress. <strong>That is why this shipped after the veto and not
+  with it.</strong></p>
+<ul>
+<li>
+<p><strong>A release point, and it keeps the record.</strong> One click takes an address off
+  the feed immediately, reachable whether or not the feed is enabled, the
+  mirror works or the border is answering. It is not a delete: the row stays
+  with who released it and why, because a list whose false positives vanish
+  without trace cannot be reviewed for the pattern that produced them.
+  <code>sentinel_block_entry.incident_id</code> is <code>SET NULL</code> on delete for the inverse
+  reason — cascade would make deleting an old incident silently unblock an
+  address still inside its TTL.</p>
+</li>
+<li>
+<p><strong>Optional git audit mirror</strong>, off by default and with <strong>no default remote</strong>.
+  It must be a separate repository: SATOM's own source repo is mirrored to a
+  public host by the release tooling, and a blocklist committed there would
+  disclose which addresses attacked which customer. The working copy also
+  lives outside <code>data/</code>, where the standby's <code>rsync --delete</code> datasync would
+  wipe a git working tree mid-commit. The mirror is the audit copy; a mirror
+  that cannot reach its remote never blocks a listing or a release.</p>
+</li>
+<li>
+<p>Action <code>block_edge_ip</code> in the catalog — <code>handoff=True</code>, <code>verified=False</code>,
+  <strong>capped at recommend permanently</strong>. Its blast radius is every FortiGate and
+  VDOM whose connector reads the feed, and so every service behind them: wider
+  than any FortiWeb action in this product. There is no transport, so the
+  runner refuses it <em>by name</em> rather than looking for a device write that
+  cannot exist.</p>
+</li>
+<li>
+<p>Scheduled action <code>sentinel_feed_publish</code> (suggested every 15 minutes) —
+  bookkeeping and history only, see below.</p>
+</li>
+<li>
+<p>Settings group <strong>Border blocklist feed</strong>: <code>feed_enabled</code> (off),
+  <code>feed_token</code>, <code>feed_ttl_hours</code> (24, hard ceiling 720h in code),
+  <code>feed_max_entries</code> (500), <code>feed_stale_minutes</code> (30), <code>feed_git_remote</code>
+  (empty), <code>feed_git_branch</code>, <code>feed_git_token</code>, <code>feed_git_auto</code> (off).</p>
+</li>
+<li>
+<p>The border verdict is now <strong>persisted as evidence</strong> on the incident. It was
+  scored — <code>edge_corroboration</code> is the largest independent positive in the
+  table — but recorded nowhere, so a reviewer asking on what grounds an
+  address was listed had no answer, and the listing route would have had to
+  re-query, which asks a different question than the one that authorised the
+  entry.</p>
+</li>
+</ul>
+<h3 id="changed">Changed</h3>
+<ul>
+<li>
+<p><strong>The published TTL is a property of the data, not of a job.</strong> <code>block_ip</code> on
+  FortiWeb uses <code>action=block-period</code>: the appliance expires the block and
+  that expiry survives Sentinel being dead. A feed has no device-side timer,
+  and the obvious implementation — a job rewriting a file — would move the TTL
+  onto SATOM staying alive, turning every block permanent the moment the
+  scheduler stops. So the feed is <strong>rendered from the database on every
+  request</strong> and filtered by <code>expires_at</code>; there is no file in the serving
+  path. The residual regression is stated rather than hidden: a border that
+  cannot <em>reach</em> this node keeps its last fetch and those entries freeze, so
+  every rendered body carries <code>generated_at</code> and <code>stale_after</code> in its header
+  and the console reports staleness.</p>
+</li>
+<li>
+<p>The Sentinel menu now has <strong>six</strong> entries; <em>Border blocklist</em> sits last of
+  the four configuration surfaces because it is the one read by something
+  outside this product.</p>
+</li>
+</ul>
+<h3 id="fixed">Fixed</h3>
+<ul>
+<li><code>not_listable()</code> accepted <strong>multicast</strong> addresses. <code>ipaddress</code> answers
+  <code>is_global == True</code> for <code>224.0.0.1</code>, because that property asks "outside the
+  private ranges", not "a host something could have connected from" — so a
+  guard whose docstring claimed to exclude multicast, reserved and
+  unspecified space did not. Each class is now named separately so a future
+  edit cannot drop one silently. Found by mutation, with the guards green.</li>
+</ul>
+<h3 id="security">Security</h3>
+<ul>
+<li>
+<p>The feed answers <strong>without a login</strong>, because a threat-feed connector cannot
+  log in. Consequences, all deliberate and all guarded: an <strong>unset</strong> token
+  matches nothing including an empty candidate (<code>compare_digest("", "")</code> is
+  <code>True</code>, so the emptiness check is the guard); a wrong token and a
+  non-existent feed are both <strong>404</strong>, since distinguishing them tells a scanner
+  it found something; <code>Cache-Control: no-store</code>, because a cached blocklist
+  outlives its entries' TTLs; and rotating the token has no grace period and
+  no second valid token.</p>
+</li>
+<li>
+<p>Nothing is listed while <code>sentinel.protect_cidrs</code> contains a line that does
+  not parse. An unreadable never-block list is not an empty one, and the
+  permissive reading of a broken protection list is <em>protect nothing</em> — the
+  same argument that makes the access gate answer 503 rather than serve.</p>
+</li>
+<li>
+<p>At the entry ceiling a listing is <strong>refused, never evicted</strong>: dropping the
+  oldest live row silently unblocks an address still inside its TTL, and the
+  only telemetry would be traffic resuming.</p>
+</li>
+<li>
+<p>An operator may set the border veto aside, but only as a recorded act with a
+  <strong>written reason</strong> — and the override relaxes the border veto only. The
+  never-block list is not overridable: there is no judgement available about
+  our own infrastructure.</p>
+</li>
+</ul>
+<p class="rel-prevnext"><a href="unreleased.html">← Unreleased — the next release</a> · <a href="v1.18.0.html">Version 1.18.0 →</a></p>
       </div>
       <div class="callout" style="margin-top:24px;">
         <span class="cico">🗒️</span>

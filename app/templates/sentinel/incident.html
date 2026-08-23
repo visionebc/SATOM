@@ -255,6 +255,49 @@
     {% endfor %}
     </div>
 
+    {# The border blocklist is a separate control on purpose.
+
+       It is not one of the gated actions above and must not look like one:
+       nothing here is written to a device, so there is no transport, no
+       preflight and no runner -- block_edge_ip is a hand-off in the catalog
+       and the runner refuses it BY NAME.  The listing is made here, by a
+       person, and it goes through the same edge.blockable() veto and the same
+       mandatory TTL as every other entry.  Blast radius is wider than any
+       FortiWeb action in this product: every FortiGate and VDOM whose
+       connector reads the feed, so every service behind them. #}
+    <div class="fw-card mt-3">
+      <div class="fw-card-header"><strong><i class="bi bi-list-columns me-1"></i>Border blocklist</strong></div>
+      <div class="fw-card-body">
+        <p class="small text-muted mb-2">
+          Adds <code>{{ inc.src_ip }}</code> to the list SATOM publishes for the border
+          firewall to read. Nothing is written to a FortiGate — the operator's deny policy
+          reads the feed. The border verdict recorded on this incident is what authorises
+          it; if the border never logged this address the listing is refused, because behind
+          a CDN that address is a shared egress and blocking it there removes every client
+          behind it. Release is one click on the
+          <a href="{{ url_for('sentinel.blocklist') }}">Border blocklist</a> page.
+        </p>
+        <form method="post" action="{{ url_for('sentinel.incident_blocklist', iid=inc.id) }}"
+              class="row g-2 align-items-end">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="col-md-3"><label class="form-label small">TTL hours (blank = default)</label>
+            <input class="form-control form-control-sm" name="hours" placeholder=""></div>
+          <div class="col-md-3">
+            <button class="btn btn-fw-outline btn-sm w-100">List on border blocklist</button></div>
+          <div class="col-md-6">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="inc-bl-override"
+                     name="override" value="1">
+              <label class="form-check-label small" for="inc-bl-override">
+                Accept the risk if the border did not confirm it</label>
+            </div>
+            <input class="form-control form-control-sm mt-1" name="override_reason"
+                   placeholder="Reason (required with the box above)">
+          </div>
+        </form>
+      </div>
+    </div>
+
     {% if actions_taken %}
     <table class="table table-sm mt-3 mb-0">
       <thead><tr><th>Action</th><th>Status</th><th>By</th><th>Expires</th><th>Detail</th></tr></thead>

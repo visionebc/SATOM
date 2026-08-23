@@ -180,18 +180,25 @@ def test_sentinel_is_a_group_of_its_own(app, client):
         "Sentinel is still filed under Monitoring & Alerts"
 
 
-#: The five entries, in the order the menu draws them: the three CONFIGURATION
+#: The six entries, in the order the menu draws them: the four CONFIGURATION
 #: surfaces, then the reference document, then the live console. Asserted as a
 #: LIST because here the position is part of the answer — Context and Response
 #: policy were added to this group precisely so they would stop being reachable
 #: only from a button inside the console, and filing them after it would
 #: recreate that reading order in the menu.
+#:
+#: Border blocklist (1.19.0) is last of the four configuration surfaces
+#: because it is the only one READ by something outside this product: a
+#: FortiGate fetches it. It is configuration, not a live view, so it belongs
+#: before the document and not next to the console.
 SN_ENTRIES = ["tab-sentinel", "tab-sentinel-context", "tab-sentinel-policy",
-              "tab-sentinel-docs", "tab-sentinel-console"]
+              "tab-sentinel-blocklist", "tab-sentinel-docs",
+              "tab-sentinel-console"]
 
 
-def test_the_sentinel_group_offers_all_five_surfaces(app, client):
-    """Settings, Context, Response policy, Architecture, Incidents console.
+def test_the_sentinel_group_offers_all_six_surfaces(app, client):
+    """Settings, Context, Response policy, Border blocklist, Architecture,
+    Incidents console.
 
     They were links to /sentinel/... until the operator asked for them to be
     shown "there, in that screen, like the Sentinel settings". Context and
@@ -772,7 +779,7 @@ def test_the_console_no_longer_duplicates_two_menu_entries(app, client):
     The operator asked for them to go, and the reason they could go is that
     both became entries in the Sentinel menu in the same change. That order
     matters: this assertion is only safe next to the one above it, which holds
-    that the menu offers all five surfaces. Removed on their own, these two
+    that the menu offers all six surfaces. Removed on their own, these two
     buttons were the ONLY way to either page, and Context is not decoration —
     a trusted source is worth -35 points, the largest single weight in the
     scoring table, and without it Sentinel scores an authorised scan exactly

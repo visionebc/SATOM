@@ -5,8 +5,8 @@
 <meta charset="UTF-8">
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Version 0.8 — SATOM</title>
-<meta name="description" content="Released on 2026-07-12 — Added · 3 entries.">
+<title>Version 1.17.1 — SATOM</title>
+<meta name="description" content="Released on 2026-08-23 — Fixed · 1 entry.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -45,8 +45,8 @@
 
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
-  <h1>Version 0.8 <span class="rel-badge">superseded</span></h1>
-  <p class="sub">Released on 2026-07-12 — Added · 3 entries.</p>
+  <h1>Version 1.17.1 <span class="rel-badge">superseded</span></h1>
+  <p class="sub">Released on 2026-08-23 — Fixed · 1 entry.</p>
 </header>
 
 <section class="wrap">
@@ -72,7 +72,7 @@
         <span class="rel-nav-meta">2026-08-23 · Added · Fixed · 6 entries</span>
         <ul class="rel-leads"><li>Border corroboration — Sentinel can ask the firewall in front whether a source is a real peer</li><li>The mechanism is unverified and the console says so</li><li class="rel-more">… and 4 more</li></ul>
       </a>
-      <a class="rel-nav-item" href="v1.17.1.html" data-rel-version="1.17.1">
+      <a class="rel-nav-item is-active" href="v1.17.1.html" data-rel-version="1.17.1">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 1.17.1</span></span>
         <span class="rel-nav-meta">2026-08-23 · Fixed · 1 entry</span>
         <ul class="rel-leads"><li>The two buttons that reveal a sibling pane did nothing</li></ul>
@@ -242,7 +242,7 @@
         <span class="rel-nav-meta">2026-07-13 · Added · 1 entry</span>
         <ul class="rel-leads"><li>Node TLS + node-to-node encryption</li></ul>
       </a>
-      <a class="rel-nav-item is-active" href="v0.8.html" data-rel-version="0.8">
+      <a class="rel-nav-item" href="v0.8.html" data-rel-version="0.8">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 0.8</span></span>
         <span class="rel-nav-meta">2026-07-12 · Added · 3 entries</span>
         <ul class="rel-leads"><li>FortiAnalyzer</li><li>FortiADC</li><li>Backup coverage page</li></ul>
@@ -250,16 +250,25 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
-<h3 id="added">Added</h3>
+<h3 id="fixed">Fixed</h3>
 <ul>
-<li><strong>FortiAnalyzer</strong> integration (JSON-RPC, dual dialect) as a full ADOM, with
-  its endpoints in the DB registry and a git source-of-truth harvest.</li>
-<li><strong>FortiADC</strong> configuration added to the git source of truth (hourly sync +
-  nightly inspect), matching FortiWeb.</li>
-<li><strong>Backup coverage page</strong>, external backup server (SFTP) with firmware SoT,
-  library update indicator + per-package pip upgrade/rollback.</li>
+<li><strong>The two buttons that reveal a sibling pane did nothing.</strong> <em>Response engine
+  → Response policy</em> (in the Incidents console) and <em>Architecture → Incidents
+  console</em> both carried <code>data-bs-toggle="tab"</code> while sitting inside a card,
+  outside the tab list. Bootstrap 5.3 resolves a tab list with
+  <code>closest('.list-group, .nav, [role="tablist"]')</code> and <strong>returns</strong> when it
+  finds nothing — but the element still matches the click data-api, so its
+  handler runs into <code>querySelectorAll.call(undefined, …)</code> and throws
+  <code>Illegal invocation</code>. Nothing failed server-side: valid markup, 200 on the
+  route, every render assertion green. The only symptom was a button that did
+  nothing, which looks exactly like a button nobody pressed. Both now forward
+  the click to the menu entry that owns the pane — the trigger Bootstrap can
+  actually construct — which also keeps the menu highlighting the section the
+  operator is looking at. Each carries a fallback URL to its standalone page,
+  so "nothing happens" is not an available outcome. Reported by an operator;
+  measured and re-verified in chromium under the app's real CSP.</li>
 </ul>
-<p class="rel-prevnext"><a href="v0.9.html">← Version 0.9</a></p>
+<p class="rel-prevnext"><a href="v1.18.0.html">← Version 1.18.0</a> · <a href="v1.17.0.html">Version 1.17.0 →</a></p>
       </div>
       <div class="callout" style="margin-top:24px;">
         <span class="cico">🗒️</span>

@@ -231,6 +231,18 @@ ADMIN_ACTIONS: list[ActionSpec] = [
                 "attack surface. Schedule DAILY.",
     ),
     ActionSpec(
+        "sentinel_feed_publish", "Sentinel — expire blocklist entries and "
+        "mirror the list", "admin", needs_targets=False,
+        summary="Flip blocklist rows whose TTL has passed to 'expired' and, "
+                "when a mirror repository is configured, commit and push the "
+                "rendered list as the audit copy. It does NOT make the feed "
+                "current: the endpoint renders from the database and filters "
+                "by expiry on every request, so a scheduler that stops costs "
+                "accurate bookkeeping, never an address served past its TTL. "
+                "Touches NO appliance and opens no connection unless a mirror "
+                "remote is set. Schedule EVERY 15 MINUTES.",
+    ),
+    ActionSpec(
         "monitor_report", "Monitoring report — period summary", "admin",
         needs_targets=False,
         summary="Build and store the daily/weekly/monthly monitoring summary "
@@ -511,6 +523,37 @@ def _do_sentinel_vuln_sync(params: dict, dry_run: bool = False) -> dict:
             "log": "\n".join(res.get("errors") or [])[:4000]}
 
 
+def _do_sentinel_feed_publish(params: dict, dry_run: bool = False) -> dict:
+    """Expire due blocklist entries and, if configured, push the audit mirror.
+
+    Explicitly NOT what makes the feed current. The endpoint renders from the
+    database on every request and filters by ``expires_at``, so this job never
+    stands between an expiry and the border — that ordering is deliberate: a
+    published blocklist has no device-side timer, and making the TTL depend on
+    a scheduled job would mean a stopped scheduler turns every block
+    permanent. What this job does is bookkeeping (rows still reading
+    ``active`` after their expiry) and history (the git mirror).
+    """
+    from .sentinel import blocklist
+    if dry_run:
+        state = blocklist.feed_state()
+        return {"ok": True,
+                "summary": ("[dry-run] %d live entr(y/ies); feed is %s; "
+                            "mirror %s"
+                            % (state["live"],
+                               "published" if state["enabled"] else "off",
+                               "configured" if state["mirror"]["configured"]
+                               else "not configured")),
+                "log": ""}
+    res = blocklist.publish(actor="scheduler")
+    bits = ["%d live" % res["entries"]]
+    if res["expired"]:
+        bits.append("%d expired (%s)" % (len(res["expired"]),
+                                         ", ".join(res["expired"][:5])))
+    bits.append("mirror pushed" if res["mirrored"] else "mirror not pushed")
+    return {"ok": True, "summary": "; ".join(bits), "log": res["log"][:4000]}
+
+
 def _do_deep_monitor(params: dict, dry_run: bool = False) -> dict:
     """Sweep the deep monitors (Monitoring -> Deep monitors). No writes."""
     from . import deep_monitor as dm
@@ -650,6 +693,8 @@ def run_action(spec, appliance, params: dict | None, dry_run: bool = False) -> d
             return _do_sentinel_baseline(params, dry_run)
         if key == "sentinel_vuln_sync":
             return _do_sentinel_vuln_sync(params, dry_run)
+        if key == "sentinel_feed_publish":
+            return _do_sentinel_feed_publish(params, dry_run)
         if key == "monitor_report":
             return _do_monitor_report(params, dry_run)
         if key == "upgrade_prep":

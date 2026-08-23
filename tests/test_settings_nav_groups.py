@@ -757,8 +757,13 @@ def test_the_console_pane_controls_stay_inside_the_console(app, client):
     assert body.count('name="return_to" value="pane"') == 2, (
         "the sweep and the baseline rebuild do not both come back to the pane"
     )
-    assert 'data-bs-target="#tab-sentinel-policy"' in body, \
+    # NOT data-bs-toggle="tab": outside the tab list Bootstrap builds no Tab
+    # and its own click handler throws, so that variant is the inert button
+    # this assertion used to require. See safeguards.md §112.
+    assert 'data-fw-pane="#tab-sentinel-policy"' in body, \
         "the Response policy button still loads a page instead of the pane"
+    assert 'data-bs-toggle="tab"' not in body, \
+        "a tab toggle outside the tab list is inert"
 
 
 def test_the_console_no_longer_duplicates_two_menu_entries(app, client):
@@ -804,6 +809,8 @@ def test_the_standalone_console_still_navigates(app, client):
     html = client.get("/sentinel/").get_data(as_text=True)
     assert 'data-bs-target="#tab-sentinel-policy"' not in html, \
         "the standalone console draws a tab button for a pane that is not there"
+    assert 'data-fw-pane=' not in html, \
+        "the standalone console draws a pane-switching button with no pane"
     assert 'href="/sentinel/policies"' in html, "no Response policy link"
     assert 'href="/sentinel/?status=all"' in html, \
         "the standalone console's filter no longer reloads itself"

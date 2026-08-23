@@ -10561,3 +10561,103 @@ guard now records progress and collection in one ordered trace.
 
 **Verification (1.17.0).** 21 mutations, 21 bite, measured by return code with
 a green baseline required — only `rc==1` counts as a failure.
+
+
+## §112 — a button outside the tab list (`tests/test_pane_buttons.py`)
+
+**What it guards.** No element may be rendered with `data-bs-toggle="tab"`
+unless it has a `.nav` / `.list-group` / `[role="tablist"]` ancestor, and every
+`data-fw-pane` button must name a pane that exists, a menu entry that can be
+constructed, a fallback URL and `type="button"`.
+
+**Why it is not obvious.** Bootstrap 5.3's `Tab` constructor does
+
+```js
+this._parent = this._element.closest('.list-group, .nav, [role="tablist"]')
+if (!this._parent) { return }
+```
+
+and the element still matches the click data-api, so `show()` runs anyway and
+throws `Illegal invocation` from inside Bootstrap. Server-side **nothing is
+wrong**: the pane exists, the markup is valid, the route is 200. The failure is
+a button that does nothing — indistinguishable from a button nobody pressed,
+which is why two of them shipped and an operator, not a test, found them.
+
+**Why the check is on the rendered page, not the template.** The toggle and its
+`<aside class="nav" role="tablist">` live in different files and meet only at
+include time. A template scanner cannot see an ancestor it never parses. The
+guard walks the rendered DOM with an ancestor stack.
+
+**The traps.**
+
+* *A scanner that reads nothing passes everything.* Pointing the scan at an
+  empty string left the orphan check green. There is a census test: the
+  settings menu is itself a tab list full of toggles, so a working scan cannot
+  come back empty.
+* *Reading an attribute is not using it.* The first version asserted that
+  `data-fw-pane-href` appeared in the script — satisfied by the
+  `getAttribute()` line alone, so deleting the navigation survived. The assert
+  now matches the assignment to `window.location.href`.
+* *The prose answers the assert (tenth time).* `fw_pane_link.js` documents the
+  selectors it depends on, so substring asserts match the comment that explains
+  them. `_uncommented()` strips comments before asserting.
+
+**Recipe.** With the app's real CSP served over http (`/tmp/csp_server.py`,
+nonce copied from the render), chromium clicks each button and reports the
+active pane. Before: both inert, two `Illegal invocation` errors. After: both
+switch panes, menu highlight follows, `js errors: []`.
+
+**Verification (1.17.1).** 12 mutations, 12 bite, measured by return code with a
+green baseline required — only `rc==1` counts as a failure.
+
+## §113 — The border layer: unknown is not no, and the reason is the answer (`tests/test_sentinel_edge.py`)
+
+**What breaks without it.** This layer's two jobs fail in opposite directions.
+As evidence it must score only an answer that came back — a timeout, a wrong
+ADOM and a retired collector all return zero rows, and if any of them ever
+scores, the number that gates a firewall change is being paid for by a
+failure. As a veto it must refuse by default — an address the border never
+confirmed may be a shared egress, and blocking one removes every legitimate
+client behind it.
+
+**The guards.** 30 tests, 25 mutations, all 25 bite.
+
+- Every `edge_*` setting is in the catalog, in the `edge` group, with a real
+  hint; the group renders and has its own `?` prose.
+- `edge_require` defaults to **True**. Shipping it False would mean every
+  fresh installation is willing to list an address it never confirmed.
+- Both factors are positive, and **no** `edge_*` weight is negative.
+- `explain()` gives each factor real prose — checked as *the row is not the
+  key echoed back*, because `explain()` builds its rows FROM `WEIGHTS` and
+  falls back to `labels.get(k, k)`. The first version of this assertion
+  derived its expectation from the thing under test and therefore always
+  passed; the mutation that renames the label survived it.
+- Nothing that failed to confirm scores: blank, errored, completed-and-empty,
+  and absent-entirely all produce zero `edge_*` points.
+- The notes distinguish *not evaluated* from *looked and found nothing*.
+- Every veto branch refuses **and says which branch refused**. Two mutations
+  survived the first pass because each payload also tripped a later branch —
+  the veto still refused, with a vaguer explanation. Asserting only the
+  boolean let a deleted branch pass.
+- Only rows where the address is the **source** corroborate it; a row where it
+  is the destination proves the opposite of the question.
+- An unset FortiGate produces an **empty** device selector, not an entry with
+  an empty `devid` — the latter asks for a device called `""`, returns
+  nothing, and would veto every block on that appliance forever.
+- The clock offset is actually applied.
+- No `set` / `update` / `delete` reaches a device, and the one `add` targets
+  only the logsearch route. Precision matters: a guard that simply banned
+  `add` would fail against the correct implementation, and written loosely
+  enough to pass it would stop catching anything.
+- **New, and it caught a live defect:** every key `context_context()` returns
+  must be deployed in the Admin Console pane's `{% with %}`. The single shared
+  builder is defeated by a hand-written key list in the pane; adding a key and
+  forgetting the pane 500s Settings today, and a key read inside an `{% if %}`
+  would instead render a pane that quietly disagrees with the page.
+- Every POST form in the section carries `return_to`, read from the template
+  **source** rather than from rendered HTML: three of those tables draw one
+  form per row, so on an empty database a render-based check sees zero forms
+  and reports clean.
+- Both surfaces admit the mechanism is unverified and explain why the border
+  can disagree with the WAF.
+

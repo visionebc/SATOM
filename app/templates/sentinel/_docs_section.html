@@ -24,8 +24,10 @@
     </p>
   </div>
   {%- if sn_inline %}
+  {# See fw_pane_link.js: a tab toggle outside the tab list is inert. #}
   <button type="button" class="btn btn-fw-outline btn-sm"
-          data-bs-toggle="tab" data-bs-target="#tab-sentinel-console">
+          data-fw-pane="#tab-sentinel-console"
+          data-fw-pane-href="{{ url_for('sentinel.index') }}">
     <i class="bi bi-activity me-1"></i>Incidents console</button>
   {%- else %}
   <a class="btn btn-fw-outline btn-sm" href="{{ url_for('sentinel.index') }}">Back to console</a>

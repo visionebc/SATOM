@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Settings — Sentinel{% endblock %}
+
+{#
+   Settings → Sentinel on its own URL.
+
+   Two things are shared rather than copied, and both for the same reason:
+   nothing fails when two copies of a thing disagree, so there is only ever
+   one of each.
+
+     * the SECTION lives in settings/_sentinel_section.html and is also
+       rendered inline by the Admin Console pane;
+     * the MENU lives in settings/_nav.html and is the same menu the console
+       draws.  A deep link, or the save redirect, used to land the operator on
+       a bare page with the whole Admin Console submenu gone; here it is
+       still there, in `links` mode because this page has no panes to switch.
+#}
+
+{% block content %}
+<div class="fw-page-header d-flex justify-content-between align-items-start">
+  <div>
+    <h4 class="mb-1"><i class="bi bi-shield-exclamation me-2"></i>Settings — Sentinel</h4>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      Everything Sentinel is configured by lives on this page — with the pipeline it drives,
+      the arithmetic it scores with, and demonstrations you can run against the live engine.
+    </p>
+  </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-fw-outline btn-sm" href="{{ url_for('settings.index') }}#tab-sentinel">
+      <i class="bi bi-arrow-left me-1"></i>{{ _('Settings') }}</a>
+    <a class="btn btn-fw-outline btn-sm" href="{{ url_for('sentinel.index') }}">
+      <i class="bi bi-activity me-1"></i>{{ _('Incidents console') }}</a>
+    <a class="btn btn-fw-outline btn-sm" href="{{ url_for('sentinel.docs') }}">
+      <i class="bi bi-book me-1"></i>{{ _('Architecture') }}</a>
+  </div>
+</div>
+
+<div class="fw-settings-layout">
+  {% include "settings/_nav.html" %}
+  <div class="fw-settings-main">
+    {% include "settings/_sentinel_section.html" %}
+  </div>
+</div>
+{% endblock %}

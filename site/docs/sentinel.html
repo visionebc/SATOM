@@ -69,6 +69,7 @@
       <a href="#7-scoring">7. Scoring</a>
       <a href="#8-incidents">8. Incidents</a>
       <a href="#9-response">9. Response</a>
+      <a href="#9b-operating-modes-four-names-over-the-same-knobs">9b. Operating modes — four names over the same knobs</a>
       <a href="#10-the-ai-wall">10. The AI wall</a>
       <a href="#11-data-model">11. Data model</a>
       <a href="#12-collection">12. Collection</a>
@@ -632,6 +633,92 @@ every three minutes; without deduplication on the live statuses, an incident
 open for an hour would accumulate twenty identical proposals — harmless while
 nothing executed, twenty firewall writes for one decision once something does.</p>
 <hr>
+<h2 id="9b-operating-modes-four-names-over-the-same-knobs">9b. Operating modes — four names over the same knobs</h2>
+<p>The operator asked for named postures: <em>alert only</em>, <em>alert and block</em>, <em>high</em>,
+<em>ultra high</em>. What was built is a <strong>preset</strong>, and the distance between those
+two words is the whole design.</p>
+<p><strong>There is no mode engine.</strong> No gate, no scorer and no runner asks which mode
+is active. A mode writes values for settings and policy rows that already
+existed, and every one of them goes through the same coercion, the same clamp
+and the same catalog ceiling a typed form goes through. A mode is therefore
+incapable of producing a configuration an operator could not have typed — and,
+more importantly, incapable of making the engine behave differently from what
+the Response policy table shows.</p>
+<p>The alternative — a <code>mode</code> flag consulted at decision time — would have created
+a second place where autonomy is decided. Two places disagree eventually, and
+the failure is silent in the worst possible direction: a page labelled <em>Alert
+only</em> over a gate reading a flag that says otherwise.</p>
+<p><strong>The mode is derived, never stored.</strong> <code>modes.current()</code> compares the live
+values against each preset and returns the first exact match, or <code>custom</code>. A
+remembered label would survive a hand edit of any knob and go on claiming a
+posture that is no longer configured; the page would render, the badge would be
+there, and it would be wrong. Edit one value and the posture reads <em>Custom</em>
+immediately, with the differing keys named — <code>modes.drift()</code> reports, per mode,
+exactly which knobs stand between here and there.</p>
+<table>
+<thead>
+<tr>
+<th>mode</th>
+<th>kill switch</th>
+<th>severity floor</th>
+<th><code>baseline_k</code></th>
+<th>actions/h</th>
+<th><code>block_ip</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Alert only</td>
+<td><strong>off</strong></td>
+<td>low</td>
+<td>6.0</td>
+<td>6</td>
+<td>observe</td>
+</tr>
+<tr>
+<td>Alert and block</td>
+<td>on</td>
+<td>low</td>
+<td>6.0</td>
+<td>6</td>
+<td>semi-automatic</td>
+</tr>
+<tr>
+<td>High</td>
+<td>on</td>
+<td>low</td>
+<td>4.0</td>
+<td>12</td>
+<td>semi-automatic</td>
+</tr>
+<tr>
+<td>Ultra high</td>
+<td>on</td>
+<td><strong>info</strong></td>
+<td>3.0</td>
+<td>24</td>
+<td><strong>autonomous</strong></td>
+</tr>
+</tbody>
+</table>
+<p><code>raise_protection</code> reaches semi-automatic from <em>High</em> upward; <code>block_country</code>
+stays at <strong>recommend in every mode including Ultra high</strong>, because the catalog
+caps it there and one mis-attributed source address takes a market offline.</p>
+<p><strong>What no mode touches, in either direction:</strong></p>
+<ul>
+<li><code>ai_enabled</code>, <code>vuln_enabled</code>, <code>vuln_sync_enabled</code>, <code>vuln_source</code>,
+  <code>vuln_api_key</code> — <strong>consent</strong>. Whether this fleet's data leaves the node is
+  not a sensitivity setting, and "be more thorough" must never quietly mean
+  "start talking to a vendor".</li>
+<li><code>protect_cidrs</code>, <code>hardened_profiles</code> — <strong>containment</strong>. These are what make
+  Ultra high survivable. A preset able to widen them would be a preset able to
+  remove its own safety rail.</li>
+</ul>
+<p><code>modes.FORBIDDEN</code> names them and <code>tests/test_sentinel_modes.py</code> fails a preset
+that reaches one. The containment against an over-eager mode is not the mode:
+it is the never-block list, the per-action TTL, the device-side block period
+and the fact that an unverified mechanism executes nothing at all.</p>
+<hr>
 <h2 id="10-the-ai-wall">10. The AI wall</h2>
 <p><code>reason(incident) -&gt; opinion</code>. The model receives a finished incident that
 already has a score and evidence, and returns prose plus a recommendation drawn
@@ -761,6 +848,15 @@ fraction 0–1 and is scaled — forwarding it unscaled would put <code>0.88</co
 labelled <code>%</code>, and 0.88% reads as an idle machine at the moment it saturates).</p>
 <hr>
 <h2 id="13-running-it">13. Running it</h2>
+<p><strong>Configuration is a full section: <code>Settings → Sentinel</code> (<code>/settings/sentinel</code>).</strong>
+Every knob sits next to the pipeline it configures, the scoring weights are
+rendered from the live table, and the page carries ten runnable
+demonstrations — the same ten scenarios the test suite asserts on, pushed
+through the real scorer and the real policy gates at the moment the button is
+pressed. Nothing is written and no device is touched; the gate audit reads the
+installation's live kill switch, policy rows and hourly budget, so what it
+shows is what would happen there, that day. Use it to watch a weight change
+move a scenario across a band before trusting it with production traffic.</p>
 <table>
 <thead>
 <tr>
@@ -775,18 +871,21 @@ labelled <code>%</code>, and 0.88% reads as an idle machine at the moment it sat
 <td>every 3 minutes</td>
 <td>reads appliances; skips maintenance</td>
 </tr>
-<tr>
-<td><code>sentinel_baseline</code></td>
-<td>nightly</td>
-<td>reads the local TSDB only — no device</td>
-</tr>
-<tr>
-<td><code>sentinel_vuln_sync</code></td>
-<td>daily</td>
-<td>the only outbound component; inert until switched on</td>
-</tr>
 </tbody>
 </table>
+<p>The <strong>on-demand</strong> sweep is not that action. <code>Run sweep now</code> opens a picker
+of FortiWeb appliances — FortiADC is absent because what a sweep ingests is
+the FortiWeb attack log, and offering a device that has none would be
+offering a selection that can only ever return nothing — and starts a JOB
+in the shared ledger rather than sweeping inside the request. It used to be
+synchronous: one gunicorn worker held for as long as the slowest appliance
+took, no progress anywhere, and a browser that gave up left a sweep running
+that nobody was told about. Devices are still swept one at a time on
+purpose — turning ninety reads into ninety simultaneous sessions is how a
+monitoring tool becomes part of the outage it was watching. Selecting
+nothing means every eligible device, which is what the button always did.</p>
+<p>| <code>sentinel_baseline</code> | nightly | reads the local TSDB only — no device |
+| <code>sentinel_vuln_sync</code> | daily | the only outbound component; inert until switched on |</p>
 <p>Three actions rather than one, because folding them together would mean an
 operator who wants nightly baselines also gets a daily outbound call — exactly
 the coupling the separate switch exists to prevent.</p>

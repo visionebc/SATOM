@@ -362,7 +362,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
 /* Time-aligned layer charts.
  *
  * Rules this code keeps, each of them a scar:

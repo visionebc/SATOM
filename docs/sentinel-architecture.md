@@ -586,6 +586,61 @@ nothing executed, twenty firewall writes for one decision once something does.
 
 ---
 
+## 9b. Operating modes — four names over the same knobs
+
+The operator asked for named postures: *alert only*, *alert and block*, *high*,
+*ultra high*. What was built is a **preset**, and the distance between those
+two words is the whole design.
+
+**There is no mode engine.** No gate, no scorer and no runner asks which mode
+is active. A mode writes values for settings and policy rows that already
+existed, and every one of them goes through the same coercion, the same clamp
+and the same catalog ceiling a typed form goes through. A mode is therefore
+incapable of producing a configuration an operator could not have typed — and,
+more importantly, incapable of making the engine behave differently from what
+the Response policy table shows.
+
+The alternative — a `mode` flag consulted at decision time — would have created
+a second place where autonomy is decided. Two places disagree eventually, and
+the failure is silent in the worst possible direction: a page labelled *Alert
+only* over a gate reading a flag that says otherwise.
+
+**The mode is derived, never stored.** `modes.current()` compares the live
+values against each preset and returns the first exact match, or `custom`. A
+remembered label would survive a hand edit of any knob and go on claiming a
+posture that is no longer configured; the page would render, the badge would be
+there, and it would be wrong. Edit one value and the posture reads *Custom*
+immediately, with the differing keys named — `modes.drift()` reports, per mode,
+exactly which knobs stand between here and there.
+
+| mode | kill switch | severity floor | `baseline_k` | actions/h | `block_ip` |
+|---|---|---|---|---|---|
+| Alert only | **off** | low | 6.0 | 6 | observe |
+| Alert and block | on | low | 6.0 | 6 | semi-automatic |
+| High | on | low | 4.0 | 12 | semi-automatic |
+| Ultra high | on | **info** | 3.0 | 24 | **autonomous** |
+
+`raise_protection` reaches semi-automatic from *High* upward; `block_country`
+stays at **recommend in every mode including Ultra high**, because the catalog
+caps it there and one mis-attributed source address takes a market offline.
+
+**What no mode touches, in either direction:**
+
+* `ai_enabled`, `vuln_enabled`, `vuln_sync_enabled`, `vuln_source`,
+  `vuln_api_key` — **consent**. Whether this fleet's data leaves the node is
+  not a sensitivity setting, and "be more thorough" must never quietly mean
+  "start talking to a vendor".
+* `protect_cidrs`, `hardened_profiles` — **containment**. These are what make
+  Ultra high survivable. A preset able to widen them would be a preset able to
+  remove its own safety rail.
+
+`modes.FORBIDDEN` names them and `tests/test_sentinel_modes.py` fails a preset
+that reaches one. The containment against an over-eager mode is not the mode:
+it is the never-block list, the per-action TTL, the device-side block period
+and the fact that an unverified mechanism executes nothing at all.
+
+---
+
 ## 10. The AI wall
 
 `reason(incident) -> opinion`. The model receives a finished incident that
@@ -667,9 +722,33 @@ labelled `%`, and 0.88% reads as an idle machine at the moment it saturates).
 
 ## 13. Running it
 
+**Configuration is a full section: `Settings → Sentinel` (`/settings/sentinel`).**
+Every knob sits next to the pipeline it configures, the scoring weights are
+rendered from the live table, and the page carries ten runnable
+demonstrations — the same ten scenarios the test suite asserts on, pushed
+through the real scorer and the real policy gates at the moment the button is
+pressed. Nothing is written and no device is touched; the gate audit reads the
+installation's live kill switch, policy rows and hourly budget, so what it
+shows is what would happen there, that day. Use it to watch a weight change
+move a scenario across a band before trusting it with production traffic.
+
+
 | scheduled action | cadence | cost |
 |---|---|---|
 | `sentinel_sweep` | every 3 minutes | reads appliances; skips maintenance |
+
+The **on-demand** sweep is not that action. `Run sweep now` opens a picker
+of FortiWeb appliances — FortiADC is absent because what a sweep ingests is
+the FortiWeb attack log, and offering a device that has none would be
+offering a selection that can only ever return nothing — and starts a JOB
+in the shared ledger rather than sweeping inside the request. It used to be
+synchronous: one gunicorn worker held for as long as the slowest appliance
+took, no progress anywhere, and a browser that gave up left a sweep running
+that nobody was told about. Devices are still swept one at a time on
+purpose — turning ninety reads into ninety simultaneous sessions is how a
+monitoring tool becomes part of the outage it was watching. Selecting
+nothing means every eligible device, which is what the button always did.
+
 | `sentinel_baseline` | nightly | reads the local TSDB only — no device |
 | `sentinel_vuln_sync` | daily | the only outbound component; inert until switched on |
 

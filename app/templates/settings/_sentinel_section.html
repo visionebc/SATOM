@@ -1,0 +1,472 @@
+{# Sentinel, as one section — the pipeline, the arithmetic, the runnable
+   demonstrations, then the form that configures all of it.
+
+   Rendered by TWO surfaces from this one file: inline in the Admin Console
+   pane (Settings → Sentinel → Settings) and on its own URL, which the
+   manual's deep links and the redirect after a save still use. One file,
+   because a hand-copied second surface is a second set of `sn-*` element
+   ids and a second place for the numbers to drift.
+#}
+<style nonce="{{ csp_nonce }}">
+  /* ── pipeline ─────────────────────────────────────────────────────── */
+  .sn-pipe{display:flex;align-items:stretch;overflow-x:auto;padding:4px 0}
+  .sn-stage{flex:1 1 118px;min-width:118px;border:1px solid #E3E5E8;
+            border-radius:6px;padding:9px 11px;background:#FFF;
+            transition:box-shadow .2s,border-color .2s}
+  .sn-stage:hover{border-color:#EF5424;box-shadow:0 1px 6px rgba(0,0,0,.07)}
+  .sn-stage .t{font-weight:600;font-size:12.5px;margin-bottom:2px}
+  .sn-stage .d{font-size:11px;color:#6B7280;line-height:1.35}
+  .sn-stage .k{font-size:10.5px;color:#9AA1AB;font-family:var(--bs-font-monospace,monospace)}
+  .sn-link{flex:0 0 26px;position:relative;align-self:center;height:2px;
+           background:#C9CDD4;margin:0 2px}
+  .sn-link::after{content:"";position:absolute;top:-2px;left:0;width:6px;
+                  height:6px;border-radius:50%;background:#EF5424;opacity:0;
+                  animation:snFlow 2.8s linear infinite}
+  .sn-link:nth-of-type(2)::after{animation-delay:.4s}
+  .sn-link:nth-of-type(4)::after{animation-delay:.8s}
+  .sn-link:nth-of-type(6)::after{animation-delay:1.2s}
+  .sn-link:nth-of-type(8)::after{animation-delay:1.6s}
+  .sn-link:nth-of-type(10)::after{animation-delay:2.0s}
+  .sn-link:nth-of-type(12)::after{animation-delay:2.4s}
+  @keyframes snFlow{0%{transform:translateX(0);opacity:0}
+                    12%{opacity:1}88%{opacity:1}
+                    100%{transform:translateX(20px);opacity:0}}
+  /* ── bands bar ────────────────────────────────────────────────────── */
+  .sn-bands{display:flex;height:22px;border-radius:4px;overflow:hidden;
+            font-size:10.5px;color:#FFF;position:relative}
+  .sn-bands span{display:flex;align-items:center;justify-content:center;
+                 white-space:nowrap;overflow:hidden}
+  .sn-b-observe{background:#7B8794}.sn-b-invest{background:#B58900}
+  .sn-b-reco{background:#D9640E}.sn-b-semi{background:#C0392B}
+  .sn-marker{position:absolute;top:-7px;width:0;height:0;
+             border-left:6px solid transparent;border-right:6px solid transparent;
+             border-top:8px solid #1F2329;left:0;transition:left .7s ease}
+  /* ── demo lab ─────────────────────────────────────────────────────── */
+  .sn-scen{text-align:left;border:1px solid #E3E5E8;border-radius:6px;
+           background:#FFF;padding:10px 12px;width:100%;height:100%;
+           transition:border-color .15s,box-shadow .15s;cursor:pointer}
+  .sn-scen:hover{border-color:#EF5424;box-shadow:0 1px 6px rgba(0,0,0,.08)}
+  .sn-scen.active{border-color:#EF5424;box-shadow:0 0 0 2px rgba(239,84,36,.18)}
+  .sn-scen .t{font-weight:600;font-size:12.5px}
+  .sn-scen .s{font-size:11px;color:#6B7280;line-height:1.35}
+  .sn-reveal{opacity:0;transform:translateY(5px);
+             animation:snIn .35s ease forwards}
+  @keyframes snIn{to{opacity:1;transform:none}}
+  .sn-gate-ok{color:#1E7E34}.sn-gate-no{color:#C0392B}
+  #sn-score-big{font-size:34px;font-weight:700;line-height:1}
+  .sn-fade{transition:opacity .3s}
+  @media (prefers-reduced-motion: reduce){
+    .sn-link::after{animation:none;display:none}
+    .sn-reveal{animation:none;opacity:1;transform:none}
+    .sn-marker{transition:none}
+  }
+</style>
+{# ── health ─────────────────────────────────────────────────────────── #}
+{% if health %}
+<div class="fw-card mb-3">
+  <div class="fw-card-body py-2">
+    <div class="d-flex flex-wrap gap-4 small align-items-center">
+      <span>Pipeline:
+        {% if not health.enabled %}<span class="fw-badge fw-badge-danger">disabled</span>
+        {% elif health.last_sweep_age_s is none %}<span class="fw-badge fw-badge-warning">never run</span>
+        {% else %}<span class="fw-badge fw-badge-success">swept {{ health.last_sweep_age_s }}s ago</span>{% endif %}</span>
+      <span>Response engine:
+        {% if health.response_armed %}<span class="fw-badge fw-badge-danger">ARMED</span>
+        {% else %}<span class="fw-badge fw-badge-secondary">disarmed — proposals only</span>{% endif %}</span>
+      <span>Baseline usable: <strong>{{ health.baseline.usable }}/{{ health.baseline.total }}</strong></span>
+      <span>CVE mirror: <strong>{{ health.vuln.total }}</strong>
+        {% if health.vuln.stale %}<span class="fw-badge fw-badge-warning">stale</span>{% endif %}</span>
+      <span>Action transports verified:
+        <strong>{{ health.catalog_verified }}/{{ health.catalog_total }}</strong></span>
+      <span>AI narrative:
+        {% if health.ai_enabled %}<span class="fw-badge fw-badge-success">on</span>
+        {% else %}<span class="fw-badge fw-badge-secondary">off</span>{% endif %}</span>
+    </div>
+    {% if health.protect_errors %}
+    <div class="small text-danger mt-1">These never-block entries are not valid CIDRs and
+      protect nothing: {{ health.protect_errors|join(', ') }}</div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+{# ── how it works ───────────────────────────────────────────────────── #}
+<div class="fw-card mb-3">
+  <div class="fw-card-header"><strong>1 · {{ _('What Sentinel does, stage by stage') }}</strong></div>
+  <div class="fw-card-body">
+    <p class="small text-secondary mb-2">
+      Every 3 minutes the sweep runs this pipeline left to right. Detection and response are
+      deliberately separate acts: everything up to the policy gates is read-only observation,
+      and the response runner — a separate systemd unit, not this web app — is the only
+      component that can change an appliance, only when armed, and only through the gates.
+    </p>
+    <div class="sn-pipe mb-3">
+      <div class="sn-stage"><div class="t">Collect</div>
+        <div class="d">Attack log, HTTP outcomes, appliance / VM / host metrics. Read-only; devices in maintenance are skipped.</div>
+        <div class="k">ingest_limit</div></div>
+      <div class="sn-link"></div>
+      <div class="sn-stage"><div class="t">Normalize + dedup</div>
+        <div class="d">Entries become events with one identity — content, not arrival time. A page read twice cannot double-count.</div>
+        <div class="k">&nbsp;</div></div>
+      <div class="sn-link"></div>
+      <div class="sn-stage"><div class="t">Route</div>
+        <div class="d">Same device + source + attack family joins the open incident instead of opening a new one.</div>
+        <div class="k">absorb_minutes · min_severity</div></div>
+      <div class="sn-link"></div>
+      <div class="sn-stage"><div class="t">Correlate</div>
+        <div class="d">A window around T0 across every layer: traffic, HTTP classes, appliance, VM, hypervisor — each judged against its own baseline.</div>
+        <div class="k">window_pre_s · window_post_s</div></div>
+      <div class="sn-link"></div>
+      <div class="sn-stage"><div class="t">Score</div>
+        <div class="d">Deterministic arithmetic over the evidence. Context subtracts; every factor is recorded with its points.</div>
+        <div class="k">baseline_k · vuln_enabled</div></div>
+      <div class="sn-link"></div>
+      <div class="sn-stage"><div class="t">Policy gates</div>
+        <div class="d">{{ gate_order|length }} ordered gates decide propose vs execute. Any refusal is recorded with its reason.</div>
+        <div class="k">response_enabled · max_actions_per_hour</div></div>
+      <div class="sn-link"></div>
+      <div class="sn-stage"><div class="t">Respond / propose</div>
+        <div class="d">Executed actions expire on their own (device-side block period). The AI narrative runs last and can change nothing.</div>
+        <div class="k">device_block_period_s · ai_enabled</div></div>
+    </div>
+    <p class="small text-muted mb-0">
+      The full reference — every weight, every gate's reason, the action catalog with verified
+      mechanisms — is on the <a href="{{ url_for('sentinel.docs') }}">architecture page</a>,
+      rendered from the same live tables this page uses.
+    </p>
+  </div>
+</div>
+
+{# ── the score ──────────────────────────────────────────────────────── #}
+<div class="fw-card mb-3">
+  <div class="fw-card-header"><strong>2 · {{ _('The score, and what each band permits') }}</strong></div>
+  <div class="fw-card-body">
+    <div class="row g-4">
+      <div class="col-lg-5">
+        <p class="small text-secondary">
+          The score is plain arithmetic — no model touches it. It gates what Sentinel may do,
+          so it has to be reproducible in the post-mortem that follows the one time it is wrong.
+          What most designs get wrong is that <strong>subtraction is half the value</strong>:
+          a blocked attack, a trusted scanner or a maintenance window pull the score down,
+          because paging a human for a WAF doing its job teaches them to ignore the console.
+        </p>
+        <div class="sn-bands mb-1 mt-3">
+          <span class="sn-b-observe" style="width:{{ bands.observe }}%">observe &lt;{{ bands.observe }}</span>
+          <span class="sn-b-invest" style="width:{{ bands.recommend - bands.observe }}%">investigate</span>
+          <span class="sn-b-reco" style="width:{{ bands.semi_auto - bands.recommend }}%">recommend</span>
+          <span class="sn-b-semi" style="width:{{ 100 - bands.semi_auto }}%">semi-auto ≥{{ bands.semi_auto }}</span>
+        </div>
+        <p class="small text-muted mt-2 mb-0">
+          Below {{ bands.observe }} nothing is asked of anyone. From {{ bands.observe }} an
+          incident is worth a look; from {{ bands.recommend }} Sentinel recommends an action to
+          a person; from {{ bands.semi_auto }} an armed installation may act alone — if, and
+          only if, every gate passes.
+        </p>
+      </div>
+      <div class="col-lg-7">
+        <div class="row g-3">
+          <div class="col-sm-6">
+            <h6 class="small mb-1">Adds points</h6>
+            <table class="table table-sm mb-0"><tbody>
+              {% for w in weights if w.points > 0 %}
+              <tr><td class="small py-1">{{ w.label }}</td>
+                  <td class="text-end small py-1"><strong>+{{ w.points }}</strong></td></tr>
+              {% endfor %}
+            </tbody></table>
+          </div>
+          <div class="col-sm-6">
+            <h6 class="small mb-1">Subtracts points</h6>
+            <table class="table table-sm mb-2"><tbody>
+              {% for w in weights if w.points < 0 %}
+              <tr><td class="small py-1">{{ w.label }}</td>
+                  <td class="text-end small py-1"><strong>{{ w.points }}</strong></td></tr>
+              {% endfor %}
+            </tbody></table>
+            <p class="small text-muted mb-0">Rendered from the live weight table — the same
+              dict the scorer reads, so this list cannot go stale.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── demo lab ───────────────────────────────────────────────────────── #}
+<div class="fw-card mb-3" id="sn-demo"
+     data-url="{{ url_for('settings.sentinel_demo', slug='__SLUG__') }}">
+  <div class="fw-card-header d-flex justify-content-between align-items-center">
+    <strong>3 · {{ _('See it happen — ten scenarios against the live engine') }}</strong>
+    <span class="fw-badge fw-badge-secondary">simulation — nothing is written, no device is touched</span>
+  </div>
+  <div class="fw-card-body">
+    <p class="small text-secondary mb-3">
+      Each card pushes synthetic evidence through the <strong>real</strong> scorer, the real
+      band thresholds and the real policy gates — the same code the sweep runs. Only the
+      events and metric readings are staged; the gate audit at the end reads
+      <em>this installation's</em> kill switch, policy rows and hourly budget at the moment
+      you press the button. These are the same ten scenarios the test suite asserts on every
+      commit.
+    </p>
+    <div class="row g-2 mb-3">
+      {% for s in scenarios %}
+      <div class="col-md-6 col-xl-3 d-flex">
+        <button type="button" class="sn-scen" data-slug="{{ s.slug }}">
+          <div class="t mb-1">{{ loop.index }} · {{ s.title }}</div>
+          <div class="s">{{ s.story }}</div>
+        </button>
+      </div>
+      {% endfor %}
+    </div>
+
+    <div id="sn-result" class="border rounded p-3 d-none" style="background:#FAFBFC;">
+      <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+        <div>
+          <h6 class="mb-1" id="sn-r-title"></h6>
+          <p class="small text-muted mb-2" id="sn-r-story"></p>
+        </div>
+        <div class="text-end">
+          <div id="sn-score-big">0</div>
+          <div><span class="fw-badge" id="sn-r-band"></span></div>
+        </div>
+      </div>
+      <div class="sn-bands mb-1">
+        <span class="sn-b-observe" style="width:{{ bands.observe }}%"></span>
+        <span class="sn-b-invest" style="width:{{ bands.recommend - bands.observe }}%"></span>
+        <span class="sn-b-reco" style="width:{{ bands.semi_auto - bands.recommend }}%"></span>
+        <span class="sn-b-semi" style="width:{{ 100 - bands.semi_auto }}%"></span>
+        <div class="sn-marker" id="sn-r-marker"></div>
+      </div>
+      <div class="row g-3 mt-1">
+        <div class="col-lg-4">
+          <h6 class="small">What the window held</h6>
+          <div class="small" id="sn-r-window"></div>
+          <div id="sn-r-events" class="mt-2"></div>
+        </div>
+        <div class="col-lg-4">
+          <h6 class="small">How it scored</h6>
+          <table class="table table-sm mb-1"><tbody id="sn-r-factors"></tbody></table>
+          <div class="small text-muted" id="sn-r-notes"></div>
+        </div>
+        <div class="col-lg-4">
+          <h6 class="small">What would happen <u>here, now</u></h6>
+          <div class="small mb-2" id="sn-r-reco"></div>
+          <div id="sn-r-gates"></div>
+        </div>
+      </div>
+      <p class="small text-muted mt-2 mb-0" id="sn-r-lesson"></p>
+    </div>
+  </div>
+</div>
+
+{# ── configuration ──────────────────────────────────────────────────── #}
+<div id="config"></div>
+{% include "settings/_sentinel.html" %}
+
+<script nonce="{{ csp_nonce }}">
+(function () {
+  'use strict';
+
+  function snEsc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  function snBandBadge(band) {
+    var cls = {observe: 'fw-badge-secondary', investigate: 'fw-badge-warning',
+               recommend: 'fw-badge-warning', semi_auto: 'fw-badge-danger'};
+    return {cls: cls[band] || 'fw-badge-secondary',
+            label: band.replace('_', '-')};
+  }
+
+  /* Count the big number up to the target. One rAF loop, ~700 ms, and it
+     lands EXACTLY on the target — an animation that stops on 99 when the
+     score is 100 is a wrong number on a security console. */
+  function snCount(el, target, reduced) {
+    if (reduced) { el.textContent = target; return; }
+    var t0 = null;
+    function step(ts) {
+      if (t0 === null) t0 = ts;
+      var p = Math.min((ts - t0) / 700, 1);
+      el.textContent = Math.round(target * (1 - Math.pow(1 - p, 3)));
+      if (p < 1) requestAnimationFrame(step); else el.textContent = target;
+    }
+    requestAnimationFrame(step);
+  }
+
+  function snReveal(el, i, reduced) {
+    if (!reduced) {
+      el.classList.add('sn-reveal');
+      el.style.animationDelay = (i * 90) + 'ms';
+    }
+  }
+
+  function snRenderEvents(data, reduced) {
+    var w = document.getElementById('sn-r-window');
+    var shown = [
+      data.event_count + ' event(s) — ' + data.blocked_count +
+      ' blocked by the appliance, ' + data.passed_count + ' not blocked'
+    ];
+    if (data.http && data.http.total) {
+      var c = data.http.classes || {};
+      shown.push('HTTP outcomes: ' +
+        ['2xx', '3xx', '4xx', '5xx'].map(function (k) {
+          return (c[k] || 0) + '× ' + k;
+        }).join(', ') + ' over ' + data.http.distinct_uris + ' URI(s)');
+    }
+    (data.readings || []).forEach(function (r) {
+      shown.push(r.label + ': peak ' + r.peak + r.unit +
+                 ' vs baseline ' + r.median + r.unit +
+                 (r.anomalous ? ' — anomalous' : ' — quiet'));
+    });
+    if ((data.layers_unknown || []).length) {
+      shown.push('Not judged (no topology / no baseline): ' +
+                 data.layers_unknown.join(', '));
+    }
+    if (data.source && data.source.trusted) {
+      shown.push('Source ' + data.source.ip + ' is a registered ' +
+                 (data.source.trusted_kind || 'trusted') + ' source (' +
+                 (data.source.trusted_label || '') + ')');
+    }
+    if ((data.chain || []).length > 1) {
+      shown.push('Causal chain: ' + data.chain.map(function (l) {
+        return l.label + ' (+' + l.lag_s + 's)';
+      }).join(' → '));
+    }
+    w.innerHTML = '';
+    shown.forEach(function (line, i) {
+      var d = document.createElement('div');
+      d.className = 'mb-1';
+      d.textContent = '· ' + line;   /* textContent — nothing here is HTML */
+      snReveal(d, i, reduced);
+      w.appendChild(d);
+    });
+    var ev = document.getElementById('sn-r-events');
+    ev.innerHTML = '';
+    if ((data.events || []).length) {
+      var t = document.createElement('div');
+      t.className = 'small text-muted';
+      t.textContent = 'First event(s): ' + data.events.slice(0, 3)
+        .map(function (e) {
+          return e.signature + ' → ' + (e.http_status || '?') +
+                 (e.blocked ? ' (blocked)' : ' (not blocked)');
+        }).join('; ');
+      snReveal(t, shown.length, reduced);
+      ev.appendChild(t);
+    }
+  }
+
+  function snRenderFactors(data, reduced) {
+    var body = document.getElementById('sn-r-factors');
+    body.innerHTML = '';
+    var run = 0;
+    (data.factors || []).forEach(function (f, i) {
+      run += f.points;
+      var tr = document.createElement('tr');
+      var pts = (f.points > 0 ? '+' : '') + f.points;
+      tr.innerHTML =
+        '<td class="small py-1" title="' + snEsc(f.detail) + '">' +
+        snEsc(f.factor) + '</td>' +
+        '<td class="text-end small py-1 ' +
+        (f.points < 0 ? 'sn-gate-ok' : '') + '"><strong>' + snEsc(pts) +
+        '</strong></td>' +
+        '<td class="text-end small py-1 text-muted">' + snEsc(run) + '</td>';
+      snReveal(tr, i, reduced);
+      body.appendChild(tr);
+    });
+    if (!(data.factors || []).length) {
+      body.innerHTML = '<tr><td class="small text-muted py-1">No factor fired ' +
+                       '— there is nothing to score.</td></tr>';
+    }
+    var notes = document.getElementById('sn-r-notes');
+    notes.textContent = (data.notes || []).join(' · ');
+  }
+
+  function snRenderDecision(data, reduced) {
+    var reco = document.getElementById('sn-r-reco');
+    reco.innerHTML = 'Deterministic recommendation: <strong>' +
+                     snEsc(data.recommendation) + '</strong>' +
+                     '<div class="text-muted">Gate audit for <code>' +
+                     snEsc(data.audit_action) + '</code> against your live ' +
+                     'policies:</div>';
+    var g = document.getElementById('sn-r-gates');
+    g.innerHTML = '';
+    ((data.gates || {}).checks || []).forEach(function (c, i) {
+      var d = document.createElement('div');
+      d.className = 'small mb-1 ' + (c.ok ? 'sn-gate-ok' : 'sn-gate-no');
+      d.innerHTML = '<i class="bi ' +
+        (c.ok ? 'bi-check-circle' : 'bi-x-circle') + ' me-1"></i>' +
+        snEsc(c.check) + ' — <span class="text-muted">' + snEsc(c.detail) +
+        '</span>';
+      snReveal(d, i, reduced);
+      g.appendChild(d);
+    });
+    var verdict = document.createElement('div');
+    verdict.className = 'small mt-1';
+    var allowed = (data.gates || {}).allowed;
+    verdict.innerHTML = allowed
+      ? '<strong class="sn-gate-no">Every gate passed — an armed installation ' +
+        'would act on this.</strong>'
+      : '<strong>Refused: ' + snEsc((data.gates || {}).reason) + '.</strong> ' +
+        '<span class="text-muted">A refusal with its reason is a result, ' +
+        'not a failure.</span>';
+    snReveal(verdict, ((data.gates || {}).checks || []).length, reduced);
+    g.appendChild(verdict);
+  }
+
+  function snRender(data) {
+    var reduced = window.matchMedia &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var box = document.getElementById('sn-result');
+    box.classList.remove('d-none');
+    document.getElementById('sn-r-title').textContent = data.title;
+    document.getElementById('sn-r-story').textContent = data.story;
+    document.getElementById('sn-r-lesson').textContent = data.lesson;
+    var b = snBandBadge(data.band);
+    var badge = document.getElementById('sn-r-band');
+    badge.className = 'fw-badge ' + b.cls;
+    badge.textContent = b.label;
+    snCount(document.getElementById('sn-score-big'), data.score, reduced);
+    document.getElementById('sn-r-marker').style.left =
+      'calc(' + data.score + '% - 6px)';
+    snRenderEvents(data, reduced);
+    snRenderFactors(data, reduced);
+    snRenderDecision(data, reduced);
+    box.scrollIntoView({behavior: reduced ? 'auto' : 'smooth',
+                        block: 'nearest'});
+  }
+
+  function snRun(btn) {
+    var card = document.getElementById('sn-demo');
+    if (!card) return;
+    var url = card.getAttribute('data-url')
+                  .replace('__SLUG__', btn.getAttribute('data-slug'));
+    Array.prototype.forEach.call(document.querySelectorAll('.sn-scen'),
+      function (b) { b.classList.remove('active'); });
+    btn.classList.add('active');
+    fetch(url, {headers: {'Accept': 'application/json'}})
+      .then(function (r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      })
+      .then(snRender)
+      .catch(function (err) {
+        var box = document.getElementById('sn-result');
+        box.classList.remove('d-none');
+        document.getElementById('sn-r-title').textContent =
+          'The demo endpoint did not answer';
+        document.getElementById('sn-r-story').textContent = String(err);
+      });
+  }
+
+  /* Delegated + window-flagged: Turbo re-executes inline scripts on every
+     visit, and a second direct listener would double-fire. */
+  if (!window.__snDemoWired) {
+    window.__snDemoWired = true;
+    document.addEventListener('click', function (e) {
+      var btn = e.target && e.target.closest && e.target.closest('.sn-scen');
+      if (btn) snRun(btn);
+    });
+  }
+})();
+</script>

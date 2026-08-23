@@ -44,9 +44,55 @@
   (function () {
     var btn = document.querySelector('[data-js="copy-err"]');
     if (!btn) return;
-    btn.addEventListener('click', function (event) {
-      navigator.clipboard&&navigator.clipboard.writeText(this.dataset.errorId);
-      this.textContent='✓';
+    var label = btn.textContent;
+    var timer = null;
+
+    function flash(ok) {
+      if (timer) { clearTimeout(timer); }
+      btn.textContent = ok ? '✓' : '✗';
+      if (!ok) { selectRef(); }
+      timer = setTimeout(function () { btn.textContent = label; }, 2000);
+    }
+
+    // Last resort when no clipboard path works: leave the reference selected
+    // so the operator can copy it by hand. Never claim success.
+    function selectRef() {
+      var node = document.getElementById('fw-err-id');
+      if (!node || !window.getSelection || !document.createRange) { return; }
+      var range = document.createRange();
+      range.selectNodeContents(node);
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+
+    // navigator.clipboard is undefined outside a secure context, which is
+    // exactly how this page gets reached over plain http on the LAN.
+    function legacyCopy(text) {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.top = '-1000px';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+      document.body.removeChild(ta);
+      return ok;
+    }
+
+    btn.addEventListener('click', function () {
+      var text = btn.dataset.errorId;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(
+          function () { flash(true); },
+          function () { flash(legacyCopy(text)); }
+        );
+        return;
+      }
+      flash(legacyCopy(text));
     });
   })();
   </script>

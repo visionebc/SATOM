@@ -195,8 +195,23 @@ def _report(result: dict) -> None:
         pass   # a store hiccup must not fail a sweep that already succeeded
 
 
-def sweep() -> dict:
-    """One full pass of the hot path. The scheduled action calls this."""
+def sweep(devices: list | None = None, on_device=None) -> dict:
+    """One full pass of the hot path. The scheduled action calls this.
+
+    ``devices`` — an optional list of appliance NAMES to restrict the
+    collection to. ``None`` (the default, and what the scheduled action
+    passes) means every eligible device, so the automatic sweep is unchanged
+    by the picker the console grew. A name that is not eligible — in
+    maintenance, or pointed at ``.invalid`` — is dropped here as well as in
+    the caller: the rule that those hosts are never contacted belongs in the
+    sweep, not in whoever calls it. That is the same mistake the deep monitors
+    made when they probed recycled IPs every three minutes.
+
+    ``on_device`` — an optional ``(done, total, name)`` callback, invoked
+    BEFORE each device. It is how the job wrapper reports progress and where
+    it takes its stop checkpoint; the scheduled action passes nothing and is
+    byte-for-byte the sweep it always was.
+    """
     started = time.time()
     if not config.get("enabled"):
         return {"ok": True, "skipped": True, "detail": "sentinel.enabled is off",
@@ -204,8 +219,17 @@ def sweep() -> dict:
                 "errors": 0, "ms": 0}
 
     actions.ensure_policies()
-    devices = _visible_devices()
-    rows = [collect_device(a) for a in devices]
+    eligible = _visible_devices()
+    if devices:
+        wanted = {str(n) for n in devices}
+        eligible = [a for a in eligible if a.name in wanted]
+    rows = []
+    total = len(eligible)
+    for i, a in enumerate(eligible):
+        if on_device is not None:
+            on_device(i, total, a.name)
+        rows.append(collect_device(a))
+    devices_swept = eligible
     new_events = sum(r["new"] for r in rows)
     errors = sum(1 for r in rows if r["status"] == "error")
 
@@ -225,9 +249,9 @@ def sweep() -> dict:
         "expired_actions": expired, "errors": errors,
         "ms": int((time.time() - started) * 1000),
     }
-    result["detail"] = (f"{len(devices)} device(s), {new_events} new event(s), "
-                        f"{len(scored)} incident(s) scored, {errors} device "
-                        f"error(s)")
+    result["detail"] = (f"{len(devices_swept)} device(s), {new_events} new "
+                        f"event(s), {len(scored)} incident(s) scored, {errors} "
+                        f"device error(s)")
     _report(result)
     return result
 

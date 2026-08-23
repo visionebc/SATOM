@@ -53,7 +53,7 @@
   </div>
 </div>
 
-<script>
+<script nonce="{{ csp_nonce }}">
 document.getElementById('cr-doc-copy').addEventListener('click', function () {
   var el = document.getElementById('cr-doc-text');
   navigator.clipboard.writeText(el.textContent).then(function () {

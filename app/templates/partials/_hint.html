@@ -1,0 +1,30 @@
+{# The "?" that carries an explanation, and nothing else.
+
+   ONE definition, imported wherever a control needs explaining, because the
+   alternative — copying six lines of markup per page — is exactly how this
+   product ended up with two spellings of the same chrome before.
+
+   Contract, and each clause is load-bearing:
+
+   * The text goes in ``title``. ``fw_hints.js`` upgrades it to a Bootstrap
+     tooltip; with JS unavailable the browser still shows the native one. A
+     component whose whole purpose is to explain must not go silent when a
+     script fails to load.
+   * ``type="button"`` — these live inside the settings <form>. A default
+     <button> submits it, so a curious operator reading a hint would have
+     saved the page.
+   * A <button>, not a <span>: focusable, so the text is reachable by keyboard
+     and by tap, and announced through ``aria-label`` + the tooltip's own
+     ``aria-describedby``. Hover-only help does not exist on a phone.
+   * ``data-fw-hint`` is the selector fw_hints.js initialises on. It is a
+     marker attribute rather than the class, so restyling can never
+     accidentally unhook the behaviour.
+#}
+{% macro hint(text, label=None) -%}
+  {%- if text -%}
+    <button type="button" class="fw-hint" data-fw-hint
+            data-bs-toggle="tooltip" data-bs-placement="top"
+            title="{{ text }}"
+            aria-label="{{ label or _('Explanation') }}"><i class="bi bi-question-circle" aria-hidden="true"></i></button>
+  {%- endif -%}
+{%- endmacro %}

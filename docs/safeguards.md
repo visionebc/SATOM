@@ -10318,3 +10318,246 @@ the operator to check all nine.
 **Mutations: 5, all bite** (the sentinel returned as a password, the error not
 naming the appliance, the comparison inverted so normal passwords raise, and
 both halves of the same pair in `auth_store`).
+
+## §107 — an unexplained control fails nothing (`tests/test_sentinel_hints.py`)
+
+Nothing breaks when a knob ships without an explanation. The page renders, the
+form saves, every existing test passes — the operator simply has to guess, and
+on the Sentinel settings page the guesses are expensive. `response_enabled`
+reads like a feature toggle and is the switch that lets SATOM change a firewall
+by itself. `vuln_sync_enabled` reads like a convenience and is the only
+outbound path in the whole module. Seven settings had no explanation anywhere
+at all before this round, including both correlation windows and the severity
+floor.
+
+The catalog docstring in `app/services/sentinel/config.py` already makes this
+argument for the FORM — a form generated from the accessor's own catalog cannot
+drift from it. `hint` extends the same rule to the prose: the explanation lives
+in the entry it explains, and a new knob without one fails the guard.
+
+**Two distinct failures are covered, and the second is the one that matters:**
+
+1. a `SPEC` entry with no `hint`, or a `hint` too short to be more than the
+   label with a question mark;
+2. a hint that exists and never reaches the HTML — asserted on **both**
+   surfaces (`/settings/` pane and `/settings/sentinel`), because they render
+   the same partial from one context builder, and a key passed by one view and
+   not the other is exactly how the two came apart before (§72).
+
+**Three render decisions are asserted rather than eyeballed**, because each one
+looks fine while being wrong:
+
+* `container: 'body'` in `fw_hints.js`. `.fw-card` is `overflow: hidden`, and
+  a panel parented inside it is clipped: measured headless, a 132px
+  explanation in a 123px card paints 58px and loses the rest, while still
+  looking like a working tooltip. Bootstrap 5 already defaults to `<body>`, so
+  the guard is not fixing today's default — it freezes the value against a
+  library upgrade that moves the default back to the element's parent
+  (Bootstrap 4's behaviour) or a plausible `container: '.fw-card'`.
+* disposal on `turbo:before-render`. Popper appends its panel to `<body>`,
+  which Turbo's body swap never touches: without disposal every visit strands
+  its tooltips and a hover pops up help for a control that has left the page.
+* `--bs-tooltip-max-width`. Bootstrap's 200px wraps a 400-character
+  explanation into a column about twenty lines tall.
+
+**`type="button"` on the icon is load-bearing**, not style: these buttons sit
+inside the settings `<form>`, so a default `<button>` submits it — reading an
+explanation would have written the settings.
+
+### ⚠ The trap this cost: an assert answered by its own comment (eighth time)
+
+Two of the three guards above initially SURVIVED their mutations. `fw_hints.js`
+explains in its header *why* it needs `container: 'body'` and
+`turbo:before-render` — so `assert "container: 'body'" in js` matched the
+prose and passed against code that said `container: 'parent'`. A third survived
+differently: `assert '--bs-tooltip-max-width' in css` was satisfied by the
+mobile media query further down, a *different* occurrence of the same string.
+
+The fix is `_uncommented()` (strip comments before asserting) and, for the
+width, parsing the declared value out of the `.fw-hint-tip` blocks and
+requiring a real number. Same family as §7f and §36k: **a substring assert is
+only a guard if the substring can appear in exactly one place, and a file that
+documents its own invariants guarantees it cannot.**
+
+### Verifying
+
+```
+runuser -u satom -- venv/bin/python -m pytest tests/test_sentinel_hints.py -q
+```
+
+16 mutations, all biting — flip any `hint(...)` call out of the template,
+delete a `UI_HINTS` key, stop passing `sentinel_ui_hints` from the view, drop
+`type="button"` or `aria-label` from the macro, unhook the script in
+`base.html`, or reverse any of the three render decisions above.
+
+## §108 — an inline block without the nonce is dead code (`tests/test_csp_nonce.py`)
+
+**The failure.** `settings/_nav.html` carried the Admin Console accordion. Its
+`<script>` had no `nonce`, and the app serves
+`script-src-elem 'self' 'nonce-<per-session>'`. The browser dropped it. Nothing
+else changed: the template compiled, `/settings/` returned 200, the menu
+rendered pixel-perfect, the whole directed suite was green — and no group could
+be expanded on any Settings surface. Reported by the operator as *"the submenu
+in admin settings doesn't work, nothing expands"*.
+
+**Why no test could see it.** The header is what blocks. A server-side render
+check reads correct markup. A headless render served without the policy runs
+the script happily — the first probe of this bug passed, twice, for exactly
+that reason. The variable has to be reintroduced deliberately:
+
+```
+# serve the rendered page with the SAME Content-Security-Policy the app sends,
+# nonce copied from the render, then click every group header in chromium
+0 of 9 opened   (policy present)
+9 of 9 opened   (policy absent)
+```
+
+**The sweep mattered more than the fix.** Ten further blocks were in the same
+state and had never executed in a browser: the Vault tab's test/migrate
+script, `sentinel/incident.html`'s layer charts, both integrations pages, both
+change-request pages, both upgrade-flow pages, and two `<style>` blocks
+(`style-src-elem` names a nonce as well). None of them had ever been reported,
+because a control that does nothing looks like a control nobody clicked.
+
+**What the guard asserts.** Every inline script and style in every template
+carries `nonce="{{ csp_nonce }}"`; the rendered `/settings/` and
+`/settings/sentinel` ship nothing the browser would drop; and the policy still
+names a nonce and does not allow `unsafe-inline` — without that last one the
+first two would be true and meaningless.
+
+**Two traps, both already known and both re-encountered.**
+
+1. *Prose answers the guard* (ninth time). The comment explaining this rule
+   spelled the very tags it forbids, so the scan reported its own explanation
+   and the render check failed against a correct tree. The scan blanks Jinja,
+   HTML and JS comments before reading, preserving offsets so line numbers stay
+   true — and the comment in `_nav.html` now describes the tags in words.
+2. *A scan that reads nothing passes everything.* Found by mutation: pointing
+   `TEMPLATES` at a path that does not exist left every assertion green. There
+   is now a census test — more than 100 templates walked, three named files
+   among them.
+
+**Verification.** 5 mutations, 5 bite, measured by return code with a green
+baseline required (only `rc==1` is a failure): the menu script loses its nonce
+· an inline style loses its nonce · the policy starts allowing `unsafe-inline`
+· the template scan reads nothing · the comment stripper stops seeing JS line
+comments. Directed suite (16 files, 514 tests) `rc=0`. Browser re-measured
+after the fix, policy present: **9 of 9**.
+
+---
+
+## §109 — Sentinel's surfaces are panes, and a removed button is not a removed function
+
+The operator asked for two things in one breath: *put Context and Response
+policy in the Sentinel menu*, and *take Architecture and Context off the
+incidents console*. Doing only the second would have been a regression
+disguised as tidying — until this change the button at the top of the console
+was the **only** way to reach `/sentinel/context`, and Context is not
+decoration: `trusted_source` is worth **−35 points**, the largest single weight
+in the whole scoring table in either direction, and it is the only thing that
+tells an authorised scanner apart from an intrusion. The two produce a
+byte-for-byte identical attack log.
+
+So the order is the safeguard: **the entries land in the same commit as the
+buttons leave**, and `tests/test_settings_nav_groups.py` holds both halves next
+to each other so that neither can be reverted alone.
+
+The mechanism is the one 1.15.0 established — one partial per section, two
+surfaces including it:
+
+| section | file | rendered by |
+|---|---|---|
+| Context | `sentinel/_context_section.html` | `/sentinel/context` and `#tab-sentinel-context` |
+| Response policy | `sentinel/_policy_section.html` | `/sentinel/policies` and `#tab-sentinel-policy` |
+
+**The trap this round: a form-per-row is invisible to a render check.** The
+Context section draws a Remove form per trusted source, per maintenance window
+and per appliance. A fixture with empty tables renders none of them, so a
+rendered-output assertion calls the section clean while half its forms carry no
+`return_to` at all — and the operator finds out by pressing Remove on a trust
+entry and being thrown out of the Admin Console. Found by mutation (deleting
+the first `return_to` in the partial left every test green). The guard now
+reads the **template source**, comment-stripped, and requires the marker on
+every POST form; the render check requires it on every form that is actually
+drawn. Both, because each is blind where the other sees.
+
+## §110 — A mode is a preset, and its name is derived
+
+Four named postures over the response engine (*alert only*, *alert and block*,
+*high*, *ultra high*). Two rules carry the whole feature, and both are in
+`tests/test_sentinel_modes.py`.
+
+**1. No mode engine.** Nothing in the product asks which mode is active.
+`modes.apply()` writes values for settings and policy rows that already
+existed, through the same coercion, clamp and catalog ceiling a typed form goes
+through. A `mode` flag consulted at decision time would have been a second
+place where autonomy is decided — and when the two disagreed, the failure would
+have been a page reading *Alert only* over a gate that had been armed.
+
+**2. The mode is DERIVED, never stored.** `modes.current()` compares live
+values against each preset and answers `custom` when none matches exactly. A
+stored label survives a hand edit and goes on claiming a posture that is no
+longer configured: the page renders, the badge is there, and it is a lie the
+product tells on its own. This is the half the operator asked for by name.
+
+Three consequences that had to be asserted rather than assumed:
+
+* **Every preset must name the same keys.** A preset that asks fewer questions
+  matches more configurations, including armed ones that happen to agree on
+  its subset.
+* **Two presets must not store the same configuration.** Compared *after*
+  clamping, not before: two modes differing only above a catalog ceiling write
+  identical rows, the first wins for ever, and the second becomes a button
+  whose only effect is to relabel itself.
+* **A mode may never write consent or containment.** `ai_enabled`,
+  `vuln_sync_enabled` and the API key decide whether this fleet's data leaves
+  the node; `protect_cidrs` and the hardened-profile list are what make Ultra
+  high survivable. `modes.FORBIDDEN` names them and a preset that reaches one
+  fails the suite.
+
+**The clamp had to be tested with a preset that does not ship.** None of the
+four shipped modes asks for more than its catalog ceiling, so the clamp is
+unexercised by them — an assertion phrased as "ultra high does not lift the
+ceiling" is true for a reason that has nothing to do with the clamp, and
+survived deleting it. The guard now drives a deliberately greedy preset. An
+unclamped write would do two things, and the second is the subtle one: store a
+level the catalog refuses, **and** make that mode permanently unrecognisable,
+because the stored value could never equal what the preset asked for. The page
+would read *Custom* for ever with no knob to move.
+
+## §111 — The on-demand sweep is a job, and progress comes before the work
+
+`Run sweep now` ran the entire fleet synchronously inside the request. At five
+appliances that is invisible; at the ninety this product is sized for it holds
+a gunicorn worker for minutes with no progress anywhere, and a browser that
+gives up leaves a sweep running that nobody is told about. It now starts a job
+in the shared ledger, over the devices an operator picked.
+
+* **The device filter lives in `pipeline.sweep`, not only in the route.** The
+  rule that a device in maintenance or on a `.invalid` host is never contacted
+  belongs to the sweep — the deep monitors probed recycled IPs every three
+  minutes precisely because that rule lived in a caller.
+* **`sweep()` with no argument is byte-for-byte what it was.** The scheduled
+  action passes nothing, and an operator's convenience must not narrow the
+  automatic sweep.
+* **An unknown device name is a 400, not a silent drop.** Sweeping "the rest of
+  them" reports a sweep of a selection nobody made.
+* **Ineligible devices are LISTED, unselectable, with the reason.** A device
+  missing from the picker looks like a device that does not exist, and the
+  operator goes looking for it instead of reading why it was skipped.
+* **FortiADC is absent, and that is not an omission.** A sweep ingests the
+  FortiWeb attack log; an ADC has none, so offering one would offer a selection
+  that can only ever return nothing.
+
+**The trap: progress reported after the work looks identical in the counters.**
+`0/2`, `1/2` are the same numbers whether the callback fires before or after
+each device, so a test that reads only the counters passes against the moved
+call — it survived the mutation. The ordering is what matters twice over: the
+read is the slow part, so afterwards the operator sees nothing at all for the
+whole of the first device (slow and stuck become the same picture); and that
+same call site is the job's **stop checkpoint**, so afterwards a Stop is
+honoured only once the device it was meant to spare has already been read. The
+guard now records progress and collection in one ordered trace.
+
+**Verification (1.17.0).** 21 mutations, 21 bite, measured by return code with
+a green baseline required — only `rc==1` counts as a failure.

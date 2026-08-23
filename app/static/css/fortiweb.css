@@ -1822,6 +1822,12 @@ body.fw-entering-page {
 .fw-set-nav-icon { flex: none; width: 16px; text-align: center; font-size: 13px; color: var(--fw-text-secondary); }
 .fw-settings-nav .nav-link:hover .fw-set-nav-icon { color: var(--fw-accent); }
 .fw-settings-nav .nav-link.active .fw-set-nav-icon { color: #FFFFFF; }
+/* A menu row that LEAVES the console carries the arrow, pushed to the far
+   edge so it reads as a property of the row and not as a second icon. */
+.fw-set-nav-out { flex: none; margin-left: auto; font-size: 10px;
+                  color: var(--fw-text-secondary); opacity: .75; }
+.fw-settings-nav a.nav-link { text-decoration: none; }
+.fw-settings-nav a.nav-link:hover .fw-set-nav-out { color: var(--fw-accent); opacity: 1; }
 
 /* Narrow viewports: the menu stops being a column and rides above the
    panes — the same place the tab strip used to occupy. */
@@ -2206,3 +2212,81 @@ a.bm-dev:hover { background: var(--fw-accent-light); color: var(--fw-accent); }
 /* The pointer to the row that DOES carry firmware/backup/console. Muted, so
    it never reads as one of those verbs sitting on an ADOM row. */
 .fw-adom-owner-link { opacity: .75; }
+
+/* ── Inline help: the "?" beside a control ─────────────────────────────────
+   The panel itself is rendered into <body> by fw_hints.js, NOT beside the
+   icon, and that is not a detail: `.fw-card` above is `overflow: hidden`, so
+   a panel positioned inside the card is clipped at its edge — a paragraph cut
+   in half that still looks like a working tooltip. Bootstrap's default
+   200px is far too narrow for a real explanation, so the width is raised on
+   our own class rather than globally: other tooltips (if any ever appear)
+   keep Bootstrap's sizing. */
+.fw-hint {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  margin-left: 5px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--fw-text-secondary);
+  font-size: 12px;
+  line-height: 1;
+  vertical-align: -2px;
+  cursor: help;
+  opacity: .65;
+  transition: color var(--fw-transition), background var(--fw-transition),
+              opacity var(--fw-transition);
+}
+
+.fw-hint:hover,
+.fw-hint:focus-visible {
+  color: var(--fw-accent);
+  background: var(--fw-accent-light);
+  opacity: 1;
+}
+
+/* Focus must stay visible: this control is reachable ONLY by keyboard or tap
+   for anyone who cannot hover, and an invisible focus ring makes the whole
+   explanation unreachable for them. */
+.fw-hint:focus { outline: none; }
+.fw-hint:focus-visible {
+  outline: 2px solid var(--fw-accent);
+  outline-offset: 1px;
+}
+
+/* The icon must not be the event target, or `closest()` checks and the
+   tooltip's own hover tracking see the <i> instead of the button. */
+.fw-hint > i { pointer-events: none; }
+
+.fw-hint-tip { --bs-tooltip-max-width: 380px; --bs-tooltip-opacity: 1; }
+
+.fw-hint-tip .tooltip-inner {
+  max-width: 380px;
+  padding: 10px 13px;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.55;
+  letter-spacing: .1px;
+  background: #1B2A3A;
+  color: #DCE6F2;
+  border-radius: var(--fw-radius-lg);
+  box-shadow: 0 6px 22px rgba(16, 32, 52, .30);
+}
+
+.fw-hint-tip .tooltip-arrow::before { border-top-color: #1B2A3A; }
+.fw-hint-tip.bs-tooltip-bottom .tooltip-arrow::before,
+.fw-hint-tip[data-popper-placement^="bottom"] .tooltip-arrow::before { border-bottom-color: #1B2A3A; }
+.fw-hint-tip[data-popper-placement^="left"]  .tooltip-arrow::before { border-left-color: #1B2A3A; }
+.fw-hint-tip[data-popper-placement^="right"] .tooltip-arrow::before { border-right-color: #1B2A3A; }
+
+/* On a narrow screen a 380px panel anchored to a 16px icon is mostly
+   off-canvas; let it use the width it has. */
+@media (max-width: 575.98px) {
+  .fw-hint-tip { --bs-tooltip-max-width: 92vw; }
+  .fw-hint-tip .tooltip-inner { max-width: 92vw; }
+}

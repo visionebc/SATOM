@@ -155,6 +155,8 @@ def index():
         # console; the operator asked for them here.
         sentinel_context=_sentinel_context_context(sentinel_ctx.get('health')),
         sentinel_policy=_sentinel_policy_context(sentinel_ctx.get('health')),
+        sentinel_blocklist=_sentinel_blocklist_context(
+            sentinel_ctx.get('health')),
         platform_options=product_scope.device_products(),
         platform_labels=dict(product_scope.device_products()),
         log_levels_all=store.LOG_LEVELS_ALL,
@@ -2789,6 +2791,12 @@ def _sentinel_policy_context(health) -> dict:
     """Per-action autonomy, and the operating modes that preset it."""
     from ..views.sentinel import policies_context
     return _sentinel_section_context(lambda _h: policies_context(), health)
+
+
+def _sentinel_blocklist_context(health) -> dict:
+    """The published border list, its feed state and its release point."""
+    from ..views.sentinel import blocklist_context
+    return _sentinel_section_context(lambda _h: blocklist_context(), health)
 
 
 

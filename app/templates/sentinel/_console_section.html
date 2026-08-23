@@ -212,6 +212,31 @@
   </div>
 </div>
 
+{# The published border list gets its own row rather than a fifth chip: it is
+   the only response path whose enforcement point is OUTSIDE this product, so
+   "how many addresses are we currently asking a firewall to block" is not a
+   detail of the response engine above — a person can be blocked by this list
+   while the response engine reads 'proposals only'. #}
+{% if health.blocklist and (health.blocklist.live or health.blocklist.enabled) %}
+<div class="alert {{ 'alert-warning' if health.blocklist.live else 'alert-secondary' }} py-2 small">
+  <strong>Border blocklist:</strong>
+  {{ health.blocklist.live }} live entr(y/ies)
+  {%- if health.blocklist.enabled %}, published at
+    <code>/sentinel/feed/&lt;token&gt;/blocklist.txt</code>
+  {%- else %}, feed OFF — recorded but not served{% endif %}.
+  {% if health.blocklist.next_expiry %}Next expiry {{ health.blocklist.next_expiry }}.{% endif %}
+  A border that cannot reach this node keeps its last fetch, so those entries
+  freeze rather than expire.
+  {%- if sn_inline %}
+  <button type="button" class="btn btn-fw-outline btn-sm ms-2"
+          data-fw-pane="#tab-sentinel-blocklist"
+          data-fw-pane-href="{{ url_for('sentinel.blocklist') }}">Open</button>
+  {%- else %}
+  <a class="btn btn-fw-outline btn-sm ms-2" href="{{ url_for('sentinel.blocklist') }}">Open</a>
+  {%- endif %}
+</div>
+{% endif %}
+
 {% if not health.store.up %}
 <div class="alert alert-danger small">
   <strong>Metrics store unreachable</strong> ({{ health.store.detail }}).

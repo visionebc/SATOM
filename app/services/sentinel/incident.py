@@ -221,6 +221,44 @@ def _evidence_rows(inc: "SentinelIncident", ctx, verdict: dict) -> list:
            f"blocking action may ever target it",
            weight_hint="context")
 
+    # The border verdict, kept as evidence rather than only as points.
+    #
+    # It was scored (edge_corroboration is the largest independent positive in
+    # the table) and it is the gate on any blocklist entry, but until this row
+    # existed it was persisted NOWHERE: the incident recorded that it earned
+    # the points, not what was asked or what came back. Two things needed it.
+    # A reviewer asking "on what grounds was this address listed" had no
+    # answer, and the listing route had to re-query — which asks a different
+    # question (is it corroborated NOW) than the one that authorised the
+    # entry, and the disagreeing answer would be the one nobody saw.
+    edge_ctx = getattr(ctx, "edge", None) or {}
+    if edge_ctx.get("enabled") and edge_ctx.get("mapped"):
+        if edge_ctx.get("error"):
+            claim = (f"border lookup FAILED against {edge_ctx.get('scope')}: "
+                     f"{edge_ctx['error']} — the border was not consulted, "
+                     f"which is not the same as the border seeing nothing")
+            hint = "context"
+        elif not edge_ctx.get("checked"):
+            claim = (f"border not consulted: "
+                     f"{edge_ctx.get('reason') or 'no answer'}")
+            hint = "context"
+        elif edge_ctx.get("corroborated"):
+            claim = (f"the border independently logged "
+                     f"{edge_ctx.get('hits')} entr(y/ies) from this source "
+                     f"({edge_ctx.get('scope')}), reaching "
+                     f"{edge_ctx.get('distinct_dst')} distinct destination(s)")
+            hint = "supports"
+        else:
+            claim = (f"the border logged NOTHING from this source in the "
+                     f"window ({edge_ctx.get('scope')}) — most often a client "
+                     f"behind a proxy or CDN, so a border blocklist entry "
+                     f"would be inert at best and would cut every client "
+                     f"behind a shared egress at worst")
+            hint = "context"
+        ev("edge", claim, value=float(edge_ctx.get("hits") or 0),
+           weight_hint=hint)
+        rows[-1].detail = edge_ctx
+
     v = ctx.vuln or {}
     for item in (v.get("cves") or []):
         bits = [item["cve"]]

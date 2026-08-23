@@ -2367,8 +2367,8 @@ deletes its bindings, and says so.</p>
 <p>The assignment picker spans both FortiWeb and FortiADC appliances — the catalog
 is a single <strong>global</strong> one, not per-ADOM.</p>
 <h2 id="26-settings-tab-by-tab">26. Settings, tab by tab</h2>
-<p><code>Settings</code> is one page with a <strong>grouped sidebar</strong>: <strong>9 groups, 30 panels</strong>.
-Eight of the groups (28 panels) are admin-only (<code>user_manage</code>); the remaining
+<p><code>Settings</code> is one page with a <strong>grouped sidebar</strong>: <strong>9 groups, 31 panels</strong>.
+Eight of the groups (29 panels) are admin-only (<code>user_manage</code>); the remaining
 one — <strong>My Account</strong>, holding <strong>Security</strong> and <strong>Change Password</strong> — is
 self-service and is the only group a non-admin sees. A group with nothing you may see is not
 rendered at all, so the menu never offers a section that is not there.</p>
@@ -2414,16 +2414,17 @@ rendered at all, so the menu never offers a section that is not there.</p>
 </tr>
 <tr>
 <td><strong>Sentinel</strong></td>
-<td>Settings · Context · Response policy · Architecture · Incidents console</td>
+<td>Settings · Context · Response policy · Border blocklist · Architecture · Incidents console</td>
 </tr>
 </tbody>
 </table>
 <p>The <strong>AI Advisor</strong> panel additionally needs <code>advisor.configure</code>; an admin
 without it does not see the entry.</p>
-<p><strong>Sentinel is its own group, and all five of its entries are panes.</strong>
-They are ordered by what they are, not by when they arrived: the three
+<p><strong>Sentinel is its own group, and all six of its entries are panes.</strong>
+They are ordered by what they are, not by when they arrived: the four
 configuration surfaces first, then the reference document, then the live
-console.</p>
+console. The Border blocklist sits last of the four because it is the one
+that is <em>read by something outside this product</em>.</p>
 <p><strong>Settings</strong> holds the whole section inline — the pipeline stage by stage, the
 live weight table, the ten runnable demonstrations and the form.
 <strong>Context</strong> is trusted sources, maintenance windows, the appliance ↔ VM ↔ host
@@ -3012,6 +3013,48 @@ exactly like a source the border never saw — the button shows the raw device
 answer so you can tell which one you have. If the collector runs on anything
 other than UTC, set <em>Collector clock offset</em> in Settings → Sentinel → Border
 corroboration first.</p>
+<h3 id="sentinel-border-blocklist">Sentinel → Border blocklist</h3>
+<p>The list SATOM publishes for a border firewall to read, and the place you take
+an address off it.</p>
+<p><strong>SATOM never writes to a FortiGate.</strong> There is no FortiGate client in this
+product and no credential that could write one. You create the deny policy
+that references the feed, once, before any incident — exactly as you create
+the FortiWeb IP list that <code>block_ip</code> appends to.</p>
+<p><strong>Turning it on.</strong> Press <em>Generate token</em>, then switch on <em>Publish the border
+blocklist feed</em> in Settings → Sentinel → Border blocklist feed. The page then
+shows the URL to paste into the FortiGate's External Connector (<em>Threat Feed →
+IP Address</em>). That URL <strong>is a credential</strong>: the token is the only thing in
+front of it, because a threat-feed connector cannot log in.</p>
+<p><strong>Listing an address.</strong> From an incident (<em>Border blocklist → List on border
+blocklist</em>) or by hand on this page. Either way it must pass the border veto —
+if the firewall in front never logged that address, listing it is refused,
+because behind a CDN it is a shared egress and blocking it removes every
+client behind it. You can set that refusal aside, but only by ticking the box
+<strong>and writing why</strong>; both are recorded on the entry and shown in the table.</p>
+<p><strong>Every entry expires</strong>, and this is the one response path where that matters
+most. On FortiWeb the <em>appliance</em> expires a block, and that expiry survives
+SATOM being dead. A feed has no such timer — so the list is rebuilt from the
+database on every fetch and filtered by expiry, which means a stopped
+publisher can never serve an expired address. What it cannot fix: if the
+FortiGate cannot <em>reach</em> this node it keeps its last successful copy and those
+entries <strong>freeze</strong>. That is why every rendered list carries <code>generated_at</code> and
+<code>stale_after</code> in its header.</p>
+<p><strong>Releasing.</strong> One click on the row. It happens immediately and the address
+leaves on the border's next fetch. The row is kept, with who released it and
+why — <em>"why was this customer blocked last Tuesday"</em> is the question that
+actually gets asked.</p>
+<p><strong>What is refused outright</strong>, no matter what: anything that is not a public
+unicast host (loopback, private, link-local, multicast, reserved), anything
+inside your never-block list, and — while <code>protect_cidrs</code> contains a line that
+does not parse — <em>everything</em>. An unreadable protection list cannot be
+evaluated, and the permissive reading of one is "protect nothing".</p>
+<p><strong>At the entry ceiling</strong> a new listing is refused rather than pushing out the
+oldest: evicting a row that is still inside its TTL would silently unblock an
+address, and the only sign would be traffic resuming.</p>
+<p><strong>The audit mirror</strong> is optional and off by default. Point it at a <strong>separate</strong>
+git repository — never SATOM's own source repo, which is published publicly by
+the release tooling; a blocklist committed there would disclose which
+addresses attacked which customer.</p>
 <h2 id="27-operations-log-collection-and-importing-a-backup">27. Operations: log collection and importing a backup</h2>
 <p>The FortiWeb ADOM's <strong>Operations</strong> group has three entries. §11 documents the
 third one (Device Backups). These are the other two — they look adjacent and they
@@ -4311,8 +4354,8 @@ the page instead of on a manual.</p>
 discipline:</p>
 <ol>
 <li><strong>The URL map is the authority on what exists.</strong> Every parameterless page in
-   the console is either <strong>on the map</strong> (89 today) or <strong>excluded with a written
-   reason</strong> (112 today — JSON feeds, downloads, redirects and fragments that
+   the console is either <strong>on the map</strong> (90 today) or <strong>excluded with a written
+   reason</strong> (113 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.</li>
 <li><strong>Nothing here is a second source of truth.</strong> Paths are generated from the

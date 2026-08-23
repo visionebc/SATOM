@@ -725,6 +725,120 @@ fleet — so it ships as a specification and the console says so, exactly as
 one `add` (FortiAnalyzer's verb for *create a search task*) targets only
 `logsearch`.
 
+## 9d. The border blocklist — a list SATOM publishes, never a write it performs
+
+The corroboration above answers *may this address be listed?* This section is
+what happens after the answer is yes.
+
+SATOM has **no FortiGate client and gets none.** The border is told what to
+block by reading a list; the deny policy that references that list is created
+by the operator, before any incident. It is the same rule that already governs
+FortiWeb — *Sentinel never binds its own enforcement point during an
+incident* — applied to a device this product deliberately never learned to
+write to.
+
+### The property this path gives up, and what replaces it
+
+`block_ip` on FortiWeb uses `action=block-period`. **The appliance expires the
+block itself, and that expiry survives Sentinel being dead.** A published list
+has no device-side timer, so the obvious implementation — a job that rewrites
+a file every few minutes — moves the TTL onto SATOM staying alive. If SATOM
+dies, every block silently becomes permanent.
+
+So the feed is **rendered from the database on every request**, filtered by
+`expires_at`. There is no file in the serving path, therefore nothing in it
+that can go stale, therefore a stopped publisher cannot serve an expired
+address. What remains of the regression is stated rather than hidden: a border
+that cannot *reach* this node keeps its last successful fetch, and those
+entries freeze rather than expire. Every rendered body therefore carries
+`generated_at` and `stale_after` in its header, so the artefact says so even
+when it has been copied away from the product that made it.
+
+| | `block_ip` (FortiWeb) | `block_edge_ip` (border list) |
+|---|---|---|
+| who enforces | the appliance | the operator's own deny policy |
+| what SATOM writes | one IP-list member | one database row |
+| who expires it | **the appliance** | `expires_at`, applied at render time |
+| survives SATOM dying | yes | entries freeze at the last fetch |
+| blast radius | one source on one policy | every FortiGate/VDOM reading the feed |
+| autonomy ceiling | autonomous | **recommend, permanently** |
+
+### The endpoint
+
+`GET /sentinel/feed/<token>/blocklist.txt` — plain text, one address per line,
+`#` comments. No login, because a threat-feed connector cannot log in; the
+token in the path is the entire authentication, and it is a credential pasted
+into a firewall by a person. Consequences that are all load-bearing:
+
+* an **unset** token matches nothing, including a request that also omits it
+  (`compare_digest("", "")` is `True`, so the emptiness check is the guard);
+* a wrong token and a non-existent feed are both **404** — an unauthenticated
+  endpoint that distinguishes them tells a scanner it found something;
+* `Cache-Control: no-store` — a cached blocklist outlives its entries' TTLs,
+  which is the exact failure this design exists to avoid;
+* rotating the token has **no grace period and no second valid token**. A
+  rotation that keeps the old URL working has revoked nothing and leaves no
+  way to find which connectors still hold it.
+
+### What can never be listed
+
+Three checks the border veto cannot answer, applied on every listing:
+
+1. anything that is not a **public unicast host** — loopback, RFC1918,
+   link-local, multicast, reserved, unspecified. (`is_global` alone is not
+   enough: `224.0.0.1.is_global` is `True`, because it asks "outside the
+   private ranges", not "a host something could connect from".)
+2. anything inside `sentinel.protect_cidrs`;
+3. **anything at all, while `protect_cidrs` has a line that does not parse.**
+   An unreadable never-block list is not an empty one, and the permissive
+   reading of a broken protection list is *protect nothing* — the same
+   argument that makes the access gate answer 503 rather than serve.
+
+At `feed_max_entries` a new entry is **refused, never evicted**: dropping the
+oldest live row silently unblocks an address still inside its TTL, and the
+only telemetry would be traffic resuming.
+
+### The release point
+
+One click on the Blocklist page, immediate, reachable whether or not the feed
+is enabled, the mirror works or the border is answering. It is **not a
+delete**: the row is kept with who released it and why. *"Why was this
+customer blocked last Tuesday"* is the question that actually gets asked, and
+a list whose false positives vanish without trace cannot be reviewed for the
+pattern that produced them. `incident_id` is `SET NULL` on delete for the same
+reason inverted — cascading would make deleting an old incident silently
+unblock an address that is still inside its TTL.
+
+An operator may list an address the border refused, but only as an explicit,
+**recorded** act: `override_by` and `override_reason` are two columns, and a
+listing with no written reason is rejected. That escape hatch relaxes the
+border veto only — the never-block list above is not overridable, because
+there is no judgement available about our own infrastructure.
+
+### The audit mirror
+
+Optional, off by default, and pointed at a **separate repository** with no
+default value. It must not be SATOM's own source repo: that one is mirrored to
+a public host by the release tooling, so a blocklist committed into it would
+disclose which addresses attacked which customer. The working copy also lives
+outside `data/`, because the standby's `satom-ha-datasync` runs
+`rsync --delete` over that tree and would wipe a git working copy mid-commit.
+
+The mirror is best-effort by contract: it is the audit copy, the feed is the
+enforcement path, and a mirror that cannot reach its remote never stops a
+listing or a release.
+
+### Provenance
+
+**Half proved.** The local half — row, mandatory expiry, veto, render,
+release, mirror — is exercised by `tests/test_sentinel_blocklist.py` against
+this code. The consuming half is **not**: no FortiGate in this fleet has been
+pointed at the feed, so *"the border enforced it"* is a specification here,
+not an observation. `block_edge_ip` is therefore `verified=False`, and it is
+capped at **recommend** for the blast radius regardless of that ever changing
+— the same reasoning that keeps `block_country` capped after it *was*
+verified.
+
 ## 10. The AI wall
 
 `reason(incident) -> opinion`. The model receives a finished incident that
@@ -761,6 +875,8 @@ this model shown when it said that?*
 | `sentinel_evidence` | one measured claim per row, with its baseline |
 | `sentinel_policy` | what each action type is allowed to do |
 | `sentinel_action` / `sentinel_action_result` | proposals, approvals, verification |
+| `sentinel_edge_map` | appliance ↔ FortiAnalyzer ↔ ADOM ↔ FortiGate ↔ VDOM |
+| `sentinel_block_entry` | the published border blocklist — **`expires_at` NOT NULL**; this table *is* the feed |
 | `sentinel_trusted_source` | authorised scanners/monitors, **with expiry** |
 | `sentinel_maintenance_window` | when surprise is expected |
 | `sentinel_vuln` / `sentinel_signature_cve` | the local CVE mirror and its bridge |

@@ -26,8 +26,8 @@
 
    An item with `ep` instead of `t` is a link to a PAGE and is drawn with the
    leaving arrow.  No entry uses it today: Sentinel's Architecture, Incidents
-   console, Context and Response policy all became PANES at the operator's
-   request, so all five of its entries stay inside the console.  The branch is
+   console, Context, Response policy and the Border blocklist all became PANES
+   at the operator's request, so all six entries stay inside.  The branch is
    kept because the arrow is the only thing that distinguishes a row which
    replaces the whole page from one which does not, and the next entry that
    leaves must carry it.
@@ -36,11 +36,13 @@
    and architecture, not one knob under Monitoring -- and it sits LAST at the
    operator's request, below Monitoring & Alerts.
 
-   Its five entries are ordered by what they are, not by when they were added:
-   the three CONFIGURATION surfaces first (Settings, Context, Response policy
-   -- and Context is configuration, however little it looks like it: it is the
-   -35-point trusted-source weight, the largest single number in the scoring
-   table), then the reference document, then the live console.  Interleaving
+   Its six entries are ordered by what they are, not by when they were added:
+   the four CONFIGURATION surfaces first (Settings, Context, Response policy,
+   Border blocklist -- and Context is configuration, however little it looks
+   like it: it is the -35-point trusted-source weight, the largest single
+   number in the scoring table; the blocklist sits last of the four because it
+   is the one that is READ by something outside this product), then the
+   reference document, then the live console.  Interleaving
    the live console among the knobs is what made Response policy reachable
    only from a button inside a health tile.
 
@@ -92,6 +94,7 @@
     {'t': 'tab-sentinel',          'icon': 'bi-sliders',          'label': _('Settings')},
     {'t': 'tab-sentinel-context',  'icon': 'bi-person-check',     'label': _('Context')},
     {'t': 'tab-sentinel-policy',   'icon': 'bi-shield-lock',      'label': _('Response policy')},
+    {'t': 'tab-sentinel-blocklist','icon': 'bi-list-columns',     'label': _('Border blocklist')},
     {'t': 'tab-sentinel-docs',     'icon': 'bi-diagram-3',        'label': _('Architecture')},
     {'t': 'tab-sentinel-console',  'icon': 'bi-activity',         'label': _('Incidents console')}]}
 ] %}

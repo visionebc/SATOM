@@ -1971,8 +1971,8 @@ is a single **global** one, not per-ADOM.
 
 ## 26. Settings, tab by tab
 
-`Settings` is one page with a **grouped sidebar**: **9 groups, 30 panels**.
-Eight of the groups (28 panels) are admin-only (`user_manage`); the remaining
+`Settings` is one page with a **grouped sidebar**: **9 groups, 31 panels**.
+Eight of the groups (29 panels) are admin-only (`user_manage`); the remaining
 one — **My Account**, holding **Security** and **Change Password** — is
 self-service and is the only group a non-admin sees. A group with nothing you may see is not
 rendered at all, so the menu never offers a section that is not there.
@@ -1987,15 +1987,16 @@ rendered at all, so the menu never offers a section that is not there.
 | **User Interface** | Appearance · Languages · FAZ Menu |
 | **My Account** | Security · Change Password |
 | **Monitoring & Alerts** | Email & Alerts · Thresholds |
-| **Sentinel** | Settings · Context · Response policy · Architecture · Incidents console |
+| **Sentinel** | Settings · Context · Response policy · Border blocklist · Architecture · Incidents console |
 
 The **AI Advisor** panel additionally needs `advisor.configure`; an admin
 without it does not see the entry.
 
-**Sentinel is its own group, and all five of its entries are panes.**
-They are ordered by what they are, not by when they arrived: the three
+**Sentinel is its own group, and all six of its entries are panes.**
+They are ordered by what they are, not by when they arrived: the four
 configuration surfaces first, then the reference document, then the live
-console.
+console. The Border blocklist sits last of the four because it is the one
+that is *read by something outside this product*.
 
 **Settings** holds the whole section inline — the pipeline stage by stage, the
 live weight table, the ten runnable demonstrations and the form.
@@ -2528,6 +2529,58 @@ exactly like a source the border never saw — the button shows the raw device
 answer so you can tell which one you have. If the collector runs on anything
 other than UTC, set *Collector clock offset* in Settings → Sentinel → Border
 corroboration first.
+
+### Sentinel → Border blocklist
+
+The list SATOM publishes for a border firewall to read, and the place you take
+an address off it.
+
+**SATOM never writes to a FortiGate.** There is no FortiGate client in this
+product and no credential that could write one. You create the deny policy
+that references the feed, once, before any incident — exactly as you create
+the FortiWeb IP list that `block_ip` appends to.
+
+**Turning it on.** Press *Generate token*, then switch on *Publish the border
+blocklist feed* in Settings → Sentinel → Border blocklist feed. The page then
+shows the URL to paste into the FortiGate's External Connector (*Threat Feed →
+IP Address*). That URL **is a credential**: the token is the only thing in
+front of it, because a threat-feed connector cannot log in.
+
+**Listing an address.** From an incident (*Border blocklist → List on border
+blocklist*) or by hand on this page. Either way it must pass the border veto —
+if the firewall in front never logged that address, listing it is refused,
+because behind a CDN it is a shared egress and blocking it removes every
+client behind it. You can set that refusal aside, but only by ticking the box
+**and writing why**; both are recorded on the entry and shown in the table.
+
+**Every entry expires**, and this is the one response path where that matters
+most. On FortiWeb the *appliance* expires a block, and that expiry survives
+SATOM being dead. A feed has no such timer — so the list is rebuilt from the
+database on every fetch and filtered by expiry, which means a stopped
+publisher can never serve an expired address. What it cannot fix: if the
+FortiGate cannot *reach* this node it keeps its last successful copy and those
+entries **freeze**. That is why every rendered list carries `generated_at` and
+`stale_after` in its header.
+
+**Releasing.** One click on the row. It happens immediately and the address
+leaves on the border's next fetch. The row is kept, with who released it and
+why — *"why was this customer blocked last Tuesday"* is the question that
+actually gets asked.
+
+**What is refused outright**, no matter what: anything that is not a public
+unicast host (loopback, private, link-local, multicast, reserved), anything
+inside your never-block list, and — while `protect_cidrs` contains a line that
+does not parse — *everything*. An unreadable protection list cannot be
+evaluated, and the permissive reading of one is "protect nothing".
+
+**At the entry ceiling** a new listing is refused rather than pushing out the
+oldest: evicting a row that is still inside its TTL would silently unblock an
+address, and the only sign would be traffic resuming.
+
+**The audit mirror** is optional and off by default. Point it at a **separate**
+git repository — never SATOM's own source repo, which is published publicly by
+the release tooling; a blocklist committed there would disclose which
+addresses attacked which customer.
 
 ## 27. Operations: log collection and importing a backup
 
@@ -3625,8 +3678,8 @@ Three rules keep the map honest, and each is enforced by a test rather than by
 discipline:
 
 1. **The URL map is the authority on what exists.** Every parameterless page in
-   the console is either **on the map** (89 today) or **excluded with a written
-   reason** (112 today — JSON feeds, downloads, redirects and fragments that
+   the console is either **on the map** (90 today) or **excluded with a written
+   reason** (113 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.
 2. **Nothing here is a second source of truth.** Paths are generated from the

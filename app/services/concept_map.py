@@ -154,6 +154,12 @@ PAGES: tuple[dict, ...] = (
        "semi-auto band",
        "Which responses Sentinel may take by itself, which need a human, and "
        "the gates in front of the ones that can block traffic."),
+    _p("sentinel.blocklist", "Sentinel Border Blocklist", "automation",
+       "sentinel blocklist border feed fortigate threat external connector "
+       "block ip release unblock false positive ttl expiry publish mirror",
+       "The list SATOM publishes for a border firewall to read, and the place "
+       "an address is released from it. Nothing here is written to a "
+       "FortiGate — the operator's own deny policy reads the feed."),
     _p("settings.sentinel_section", "Sentinel Settings", "monitoring",
        "sentinel settings configure knobs demo scenario simulation pipeline "
        "weights score bands kill switch arm response tune thresholds example",
@@ -454,6 +460,12 @@ EXCLUDED: dict[str, str] = {
     "monitor_reports.preview": "json feed", "monitoring.satom_data": "json feed",
     "service_monitor.data": "json feed", "notifications.unread": "json feed",
     "sentinel.data": "json feed",
+    "sentinel.blocklist_feed":
+        "machine endpoint — the border blocklist as plain text, fetched by a "
+        "FortiGate threat-feed connector with a token in the path. It answers "
+        "without a session on purpose (a firewall cannot log in), so it is not "
+        "a page a person navigates to and must not be offered as one: the URL "
+        "is a credential. Sentinel.blocklist is the page that shows it.",
     "search.results": "sub-view of search.index",
     "settings.ai_state": "json feed", "settings.preview_alerts": "json feed",
     "settings.git_info": "json feed", "settings.hypervisor_state": "json feed",

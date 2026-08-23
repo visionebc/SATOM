@@ -6,6 +6,120 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [1.19.0] - 2026-08-23
+
+### Added
+
+- **The border blocklist — a list SATOM publishes, never a write it performs.**
+  Sentinel can now put a source address on a text feed a FortiGate reads as an
+  External Connector threat feed (*Threat Feed → IP Address*). There is still
+  **no FortiGate client in this product and no credential that could write
+  one**: the operator pre-creates the deny policy that references the feed,
+  exactly as they pre-create the FortiWeb IP list `block_ip` appends to.
+
+  New table `sentinel_block_entry`, new page **Sentinel → Border blocklist**
+  (a pane in the Admin Console and a standalone page at `/sentinel/blocklist`,
+  rendered from one file), a **List on border blocklist** control on every
+  incident, and the endpoint `GET /sentinel/feed/<token>/blocklist.txt`.
+
+  Nothing reaches the list without passing the border veto shipped in 1.18.0.
+  FortiWeb reports the true client when a policy reads `X-Forwarded-For` and
+  the CDN's own address when it does not, and nothing in the attack log
+  distinguishes them — listing the second kind removes every legitimate client
+  behind a shared egress. **That is why this shipped after the veto and not
+  with it.**
+
+- **A release point, and it keeps the record.** One click takes an address off
+  the feed immediately, reachable whether or not the feed is enabled, the
+  mirror works or the border is answering. It is not a delete: the row stays
+  with who released it and why, because a list whose false positives vanish
+  without trace cannot be reviewed for the pattern that produced them.
+  `sentinel_block_entry.incident_id` is `SET NULL` on delete for the inverse
+  reason — cascade would make deleting an old incident silently unblock an
+  address still inside its TTL.
+
+- **Optional git audit mirror**, off by default and with **no default remote**.
+  It must be a separate repository: SATOM's own source repo is mirrored to a
+  public host by the release tooling, and a blocklist committed there would
+  disclose which addresses attacked which customer. The working copy also
+  lives outside `data/`, where the standby's `rsync --delete` datasync would
+  wipe a git working tree mid-commit. The mirror is the audit copy; a mirror
+  that cannot reach its remote never blocks a listing or a release.
+
+- Action `block_edge_ip` in the catalog — `handoff=True`, `verified=False`,
+  **capped at recommend permanently**. Its blast radius is every FortiGate and
+  VDOM whose connector reads the feed, and so every service behind them: wider
+  than any FortiWeb action in this product. There is no transport, so the
+  runner refuses it *by name* rather than looking for a device write that
+  cannot exist.
+
+- Scheduled action `sentinel_feed_publish` (suggested every 15 minutes) —
+  bookkeeping and history only, see below.
+
+- Settings group **Border blocklist feed**: `feed_enabled` (off),
+  `feed_token`, `feed_ttl_hours` (24, hard ceiling 720h in code),
+  `feed_max_entries` (500), `feed_stale_minutes` (30), `feed_git_remote`
+  (empty), `feed_git_branch`, `feed_git_token`, `feed_git_auto` (off).
+
+- The border verdict is now **persisted as evidence** on the incident. It was
+  scored — `edge_corroboration` is the largest independent positive in the
+  table — but recorded nowhere, so a reviewer asking on what grounds an
+  address was listed had no answer, and the listing route would have had to
+  re-query, which asks a different question than the one that authorised the
+  entry.
+
+### Changed
+
+- **The published TTL is a property of the data, not of a job.** `block_ip` on
+  FortiWeb uses `action=block-period`: the appliance expires the block and
+  that expiry survives Sentinel being dead. A feed has no device-side timer,
+  and the obvious implementation — a job rewriting a file — would move the TTL
+  onto SATOM staying alive, turning every block permanent the moment the
+  scheduler stops. So the feed is **rendered from the database on every
+  request** and filtered by `expires_at`; there is no file in the serving
+  path. The residual regression is stated rather than hidden: a border that
+  cannot *reach* this node keeps its last fetch and those entries freeze, so
+  every rendered body carries `generated_at` and `stale_after` in its header
+  and the console reports staleness.
+
+- The Sentinel menu now has **six** entries; *Border blocklist* sits last of
+  the four configuration surfaces because it is the one read by something
+  outside this product.
+
+### Fixed
+
+- `not_listable()` accepted **multicast** addresses. `ipaddress` answers
+  `is_global == True` for `224.0.0.1`, because that property asks "outside the
+  private ranges", not "a host something could have connected from" — so a
+  guard whose docstring claimed to exclude multicast, reserved and
+  unspecified space did not. Each class is now named separately so a future
+  edit cannot drop one silently. Found by mutation, with the guards green.
+
+### Security
+
+- The feed answers **without a login**, because a threat-feed connector cannot
+  log in. Consequences, all deliberate and all guarded: an **unset** token
+  matches nothing including an empty candidate (`compare_digest("", "")` is
+  `True`, so the emptiness check is the guard); a wrong token and a
+  non-existent feed are both **404**, since distinguishing them tells a scanner
+  it found something; `Cache-Control: no-store`, because a cached blocklist
+  outlives its entries' TTLs; and rotating the token has no grace period and
+  no second valid token.
+
+- Nothing is listed while `sentinel.protect_cidrs` contains a line that does
+  not parse. An unreadable never-block list is not an empty one, and the
+  permissive reading of a broken protection list is *protect nothing* — the
+  same argument that makes the access gate answer 503 rather than serve.
+
+- At the entry ceiling a listing is **refused, never evicted**: dropping the
+  oldest live row silently unblocks an address still inside its TTL, and the
+  only telemetry would be traffic resuming.
+
+- An operator may set the border veto aside, but only as a recorded act with a
+  **written reason** — and the override relaxes the border veto only. The
+  never-block list is not overridable: there is no judgement available about
+  our own infrastructure.
+
 ## [1.18.0] - 2026-08-23
 
 ### Added

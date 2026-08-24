@@ -19,6 +19,7 @@
    (so a stopped publisher cannot serve an expired entry), but a border that
    cannot REACH us keeps its last copy and those entries freeze.
 #}
+{% from "partials/_hint.html" import hint %}
 {% set sn_inline = sn_inline | default(false) %}
 {% set rt = 'pane' if sn_inline else 'page' %}
 <div class="fw-page-header">
@@ -32,7 +33,7 @@
 
 {# ── feed state ─────────────────────────────────────────────────────────── #}
 <div class="fw-card mb-3">
-  <div class="fw-card-header"><strong><i class="bi bi-broadcast me-1"></i>Feed</strong></div>
+  <div class="fw-card-header"><strong><i class="bi bi-broadcast me-1"></i>Feed</strong>{{ hint(sn_hint('blocklist.feed')) }}</div>
   <div class="fw-card-body">
     <div class="row g-3 mb-2">
       <div class="col-md-3">
@@ -108,7 +109,7 @@
 
 {# ── audit mirror ───────────────────────────────────────────────────────── #}
 <div class="fw-card mb-3">
-  <div class="fw-card-header"><strong><i class="bi bi-git me-1"></i>Audit mirror</strong></div>
+  <div class="fw-card-header"><strong><i class="bi bi-git me-1"></i>Audit mirror</strong>{{ hint(sn_hint('blocklist.mirror')) }}</div>
   <div class="fw-card-body">
     {% if feed.mirror.configured %}
       <table class="table table-sm mb-0">
@@ -138,7 +139,7 @@
 
 {# ── list one address ───────────────────────────────────────────────────── #}
 <div class="fw-card mb-3">
-  <div class="fw-card-header"><strong><i class="bi bi-plus-square me-1"></i>List an address</strong></div>
+  <div class="fw-card-header"><strong><i class="bi bi-plus-square me-1"></i>List an address</strong>{{ hint(sn_hint('blocklist.add')) }}</div>
   <div class="fw-card-body">
     <p class="small text-muted">
       Choosing the protected appliance runs a live border lookup against the FortiAnalyzer it is
@@ -179,7 +180,7 @@
 
 {# ── the entries ────────────────────────────────────────────────────────── #}
 <div class="fw-card mb-3">
-  <div class="fw-card-header"><strong><i class="bi bi-shield-slash me-1"></i>Entries</strong>
+  <div class="fw-card-header"><strong><i class="bi bi-shield-slash me-1"></i>Entries</strong>{{ hint(sn_hint('blocklist.entries')) }}
     <span class="text-muted small ms-2">released and expired rows are kept on purpose</span></div>
   <div class="fw-card-body">
     <table class="table table-sm align-middle">
@@ -240,7 +241,7 @@
 
 {# ── what the border actually receives ──────────────────────────────────── #}
 <div class="fw-card mb-3">
-  <div class="fw-card-header"><strong><i class="bi bi-file-text me-1"></i>What the border receives right now</strong></div>
+  <div class="fw-card-header"><strong><i class="bi bi-file-text me-1"></i>What the border receives right now</strong>{{ hint(sn_hint('blocklist.preview')) }}</div>
   <div class="fw-card-body">
     <p class="small text-muted">
       Rendered from the database at the moment this page was drawn — the same code path the

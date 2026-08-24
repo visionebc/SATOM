@@ -17,6 +17,7 @@
    produce a byte-for-byte identical attack log.  Without these levers Sentinel
    scores your own scans as hostile.
 #}
+{% from "partials/_hint.html" import hint %}
 {% set sn_inline = sn_inline | default(false) %}
 <div class="fw-page-header">
   <h4 class="mb-1"><i class="bi bi-sliders me-2"></i>Sentinel context</h4>
@@ -28,7 +29,7 @@
 
 {# ── trusted sources ────────────────────────────────────────────────────── #}
 <div class="fw-card mb-3">
-  <div class="fw-card-header"><strong><i class="bi bi-person-check me-1"></i>Trusted sources</strong></div>
+  <div class="fw-card-header"><strong><i class="bi bi-person-check me-1"></i>Trusted sources</strong>{{ hint(sn_hint('context.trusted')) }}</div>
   <div class="fw-card-body">
     <p class="small text-muted">
       Every entry expires. An authorisation granted in March is not an authorisation in September,
@@ -79,7 +80,7 @@
 
 {# ── maintenance windows ────────────────────────────────────────────────── #}
 <div class="fw-card mb-3">
-  <div class="fw-card-header"><strong><i class="bi bi-calendar-event me-1"></i>Maintenance windows</strong></div>
+  <div class="fw-card-header"><strong><i class="bi bi-calendar-event me-1"></i>Maintenance windows</strong>{{ hint(sn_hint('context.maintenance')) }}</div>
   <div class="fw-card-body">
     <p class="small text-muted">
       A window suppresses <em>actions</em> and freezes <em>baseline learning</em>.
@@ -136,7 +137,7 @@
 
 {# ── topology ───────────────────────────────────────────────────────────── #}
 <div class="fw-card mb-3">
-  <div class="fw-card-header"><strong><i class="bi bi-hdd-stack me-1"></i>Topology — appliance ↔ VM ↔ host ↔ backend</strong></div>
+  <div class="fw-card-header"><strong><i class="bi bi-hdd-stack me-1"></i>Topology — appliance ↔ VM ↔ host ↔ backend</strong>{{ hint(sn_hint('context.topology')) }}</div>
   <div class="fw-card-body">
     <p class="small text-muted">
       This map is the join that makes cross-layer correlation possible. Without a complete row the
@@ -191,7 +192,7 @@
 {# form drawn once per appliance is invisible to a check that reads rendered   #}
 {# output with an empty table, so the guard reads this file's SOURCE too.      #}
 <div class="fw-card mb-3">
-  <div class="fw-card-header"><strong><i class="bi bi-shield-lock me-1"></i>Border map &mdash; appliance &harr; FortiAnalyzer &harr; FortiGate &harr; VDOM</strong></div>
+  <div class="fw-card-header"><strong><i class="bi bi-shield-lock me-1"></i>Border map &mdash; appliance &harr; FortiAnalyzer &harr; FortiGate &harr; VDOM</strong>{{ hint(sn_hint('context.edge')) }}</div>
   <div class="fw-card-body">
     <p class="small text-muted">
       FortiWeb reports the source of an attack, but <em>which</em> source depends on whether the
@@ -317,7 +318,7 @@
 {# ── CVE mirror ─────────────────────────────────────────────────────────── #}
 <div class="fw-card">
   <div class="fw-card-header d-flex justify-content-between align-items-center">
-    <strong><i class="bi bi-bug me-1"></i>Local CVE mirror</strong>
+    <strong><i class="bi bi-bug me-1"></i>Local CVE mirror</strong>{{ hint(sn_hint('context.cve')) }}
     <form method="post" action="{{ url_for('sentinel.vuln_sync') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="return_to" value="{{ 'pane' if sn_inline else 'page' }}">
@@ -364,7 +365,7 @@
     </table>
     {% endif %}
 
-    <h6 class="small">Add a CVE by hand</h6>
+    <h6 class="small">Add a CVE by hand{{ hint(sn_hint('context.manual_cve')) }}</h6>
     <p class="small text-muted">The path that works with no internet access at all.</p>
     <form method="post" action="{{ url_for('sentinel.vuln_manual') }}" class="row g-2 align-items-end">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -389,7 +390,7 @@
 
 <div class="fw-card mt-3">
   <div class="fw-card-header">
-    <strong><i class="bi bi-shield-lock me-1"></i>Response arming — which policies Sentinel may enforce on</strong>
+    <strong><i class="bi bi-shield-lock me-1"></i>Response arming — which policies Sentinel may enforce on</strong>{{ hint(sn_hint('context.arming')) }}
   </div>
   <div class="fw-card-body">
     <p class="small text-muted mb-2">

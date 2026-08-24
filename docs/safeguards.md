@@ -10741,3 +10741,64 @@ holds it in place.
   form per row and an empty database renders none of them.
 - The scheduled job exists **and is dispatched**: a catalog entry with no
   dispatch branch is an action that runs nothing and reports success.
+
+## §115 — The explanation has to be where the number is (`tests/test_sentinel_page_hints.py`)
+
+**What went wrong.** An operator read *"Behavioural baseline — 4416/4720 buckets
+usable (93.6 %). 304 still learning — an immature bucket never fires"* on the
+incidents console and asked what it meant. The sentence that answers that
+question **already existed in this product**, as `UI_HINTS['health.baseline']`,
+and rendered only on Settings → Sentinel. Nothing failed: the console returned
+200, the number was correct, the settings page was correct, and the suite was
+green. The defect lived in the space between two surfaces, which is where every
+defect in this section has lived.
+
+**Why a guard is needed at all.** Nothing fails when a control ships without an
+explanation. The page renders, the form saves, the tests pass — the operator
+simply guesses. On these four pages the guesses are expensive: *proposals only*
+reads like a limitation and is the safe default; a blocklist entry looks
+reversible and freezes at a border that cannot reach this node; a topology row
+that is merely absent costs an incident up to 18 points of evidence and looks
+identical to one that was checked and found clean.
+
+**What the guard fixes.** Three failure modes, and they are not the same one:
+
+1. **A key a template asks for that no catalog answers.** `hint_for()` returns
+   `""` for an unknown key and the macro renders nothing for empty text, so a
+   typo costs a *silently missing icon* on a page that still returns 200. That
+   is a deliberate trade — raising would turn a template typo into a 500 on the
+   incidents console — and it is only defensible because the keys are read out
+   of the template source here and checked against the catalog.
+2. **A catalog key no template draws.** Prose nobody can read; how a hint
+   survives the control it explained.
+3. **A hint that never reaches the HTML on one of the two surfaces.** Asserted
+   against the standalone page *and* against `/settings/`, never against the
+   view function, because the defect lives between them.
+
+**Rules this pins down.**
+
+- The four console health chips **reuse** `UI_HINTS['health.*']`. The guard
+  fails if any of them is ever copied into `PAGE_HINTS` — two authors of one
+  sentence is how the licence footer acquired two spellings.
+- `sn_hint` is an app-wide Jinja global. Mutation 4 (returning `{}` from the
+  context processor) has to bite, because that is the shape of the `/settings/`
+  500 that the edge group shipped.
+- Every hint carries its text in `title`, so it survives `fw_hints.js` not
+  loading, and every hint button is `type="button"` — these sit inside the
+  Settings `<form>`, where a default button saves the page. A curious operator
+  reading a hint must not thereby write every setting on it.
+- No two keys carry the same sentence; no hint is shorter than 120 characters
+  (a hint shorter than its own label is a label with a question mark).
+
+**Verification recipe.** Baseline green first, outcome measured by return code,
+and **only `rc==1` is a failure** — pytest exits 2 on a collection error and 4
+on a usage error, and an earlier harness in this repo read nine of those as
+"bites". 14 mutations, 14 bite. Two of them only bit after the *mutation* was
+fixed: one appended the borrowed sentence instead of replacing it (Python
+concatenates adjacent strings, so the two values were never identical and the
+duplicate guard was right to stay quiet), and one dropped a comma, which is
+`rc=2`, not a kill.
+
+**Deliberately not covered.** Sentinel → Documentation carries no "?" — that
+page *is* the explanation, and annotating prose with prose is the duplication
+this file exists to prevent.

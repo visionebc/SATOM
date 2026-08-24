@@ -16,6 +16,7 @@
    DERIVED from those values on every render: edit one by hand and the posture
    reads Custom immediately, with the differing keys named.
 #}
+{% from "partials/_hint.html" import hint %}
 {% set sn_inline = sn_inline | default(false) %}
 <div class="fw-page-header">
   <h4 class="mb-1"><i class="bi bi-shield-lock me-2"></i>Response policy</h4>
@@ -25,13 +26,13 @@
 </div>
 
 <div class="alert {{ 'alert-warning' if armed else 'alert-secondary' }} small">
-  <strong>Global kill switch:</strong>
+  <strong>Global kill switch:</strong>{{ hint(sn_hint('policy.kill')) }}
   {{ 'ARMED — per-action policies apply.' if armed else 'OFF — Sentinel may propose actions and may execute none, whatever these policies say.' }}
   Change it in Settings → Sentinel → Response &amp; safety.
 </div>
 
 <div class="alert {{ 'alert-success' if verified[0] == verified[1] else 'alert-danger' }} small">
-  <strong>{{ verified[0] }}/{{ verified[1] }} action mechanisms have been verified against a live appliance.</strong>
+  <strong>{{ verified[0] }}/{{ verified[1] }} action mechanisms have been verified against a live appliance.</strong>{{ hint(sn_hint('policy.verified')) }}
   {% if handoffs %}{{ handoffs|join(', ') }}
   {{ 'is a hand-off' if handoffs|length == 1 else 'are hand-offs' }} — drafted here and applied by a
   person in the exception flow, never written to an appliance by this engine, and refused by the
@@ -47,7 +48,7 @@
 {# ── operating modes ────────────────────────────────────────────────────── #}
 <div class="fw-card mb-3" id="modes">
   <div class="fw-card-header d-flex justify-content-between align-items-center">
-    <strong><i class="bi bi-speedometer2 me-1"></i>Operating mode</strong>
+    <strong><i class="bi bi-speedometer2 me-1"></i>Operating mode</strong>{{ hint(sn_hint('policy.modes')) }}
     <span class="fw-badge {{ 'fw-badge-info' if mode_current.key != 'custom' else 'fw-badge-secondary' }}">
       {{ mode_current.label }}</span>
   </div>
@@ -129,7 +130,7 @@
 </div>
 
 <div class="fw-card mb-3">
-  <div class="fw-card-header"><strong><i class="bi bi-list-check me-1"></i>Actions</strong></div>
+  <div class="fw-card-header"><strong><i class="bi bi-list-check me-1"></i>Actions</strong>{{ hint(sn_hint('policy.actions')) }}</div>
   <div class="fw-card-body">
     <table class="table table-sm align-middle">
       <thead><tr>
@@ -184,7 +185,7 @@
 </div>
 
 <div class="fw-card mb-3">
-  <div class="fw-card-header"><strong><i class="bi bi-info-circle me-1"></i>What each action would actually do</strong></div>
+  <div class="fw-card-header"><strong><i class="bi bi-info-circle me-1"></i>What each action would actually do</strong>{{ hint(sn_hint('policy.effects')) }}</div>
   <div class="fw-card-body">
     <table class="table table-sm align-middle mb-0">
       <thead><tr><th>Action</th><th>Mechanism and its provenance</th><th style="width:110px;">Reversible</th></tr></thead>
@@ -205,7 +206,7 @@
 </div>
 
 <div class="fw-card">
-  <div class="fw-card-header"><strong><i class="bi bi-clock-history me-1"></i>Recent decisions</strong></div>
+  <div class="fw-card-header"><strong><i class="bi bi-clock-history me-1"></i>Recent decisions</strong>{{ hint(sn_hint('policy.decisions')) }}</div>
   <div class="fw-card-body">
     <p class="small text-muted">
       Refused proposals are recorded too — “Sentinel wanted to do X and was refused because Y” is

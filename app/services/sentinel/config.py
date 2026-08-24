@@ -631,6 +631,180 @@ UI_HINTS: dict[str, str] = {
         "windows, and hand-entered CVEs.",
 }
 
+
+#: The "?" prose for everything OUTSIDE Settings — the four console chips, the
+#: cards on Context, Response policy and Border blocklist. Same catalog idea as
+#: UI_HINTS above and deliberately in the same file: the section already learned
+#: that prose in two places drifts, and these pages have the additional problem
+#: that each one renders on TWO surfaces (the standalone page and the Settings
+#: pane) through the same partial.
+#:
+#: Keys are namespaced by surface. Where the console shows the same fact the
+#: Settings page shows, the key is NOT redefined here — ``hint_for`` falls
+#: through to ``UI_HINTS``, so the health chips carry the one description that
+#: already existed instead of a second one written today.
+PAGE_HINTS: dict[str, str] = {
+    # ── Incidents console ────────────────────────────────────────────────
+    "console.sweep":
+        "Reads the attack log of the appliances you tick, right now, instead "
+        "of waiting for the scheduled sweep. It only READS: a sweep can create "
+        "incidents and propose actions, it cannot change a device. Appliances "
+        "in maintenance, or whose host ends in .invalid, are offered greyed "
+        "out because a sweep against them would fail rather than find nothing.",
+    "console.response":
+        "Whether the response engine may execute at all. 'proposals only' "
+        "means every action stops at a recommendation a human has to approve — "
+        "which is the shipped default and not a fault. The ratio underneath "
+        "counts action mechanisms proved against a real device; arming the "
+        "engine while it is low arms actions whose delivery path is untested.",
+    "console.blocklist":
+        "Addresses this node is currently asking a border firewall to drop, "
+        "published as a text feed the firewall fetches. It is on its own row "
+        "rather than beside the chips because its enforcement point is OUTSIDE "
+        "this product: an address can be listed here while the response engine "
+        "above reads 'proposals only'. The feed has no device-side timer, so a "
+        "border that cannot reach this node keeps its last copy and those "
+        "entries freeze instead of expiring.",
+    "console.store":
+        "The metrics store answers the behavioural half of every score. While "
+        "it is unreachable those factors are ABSENT, not zero: incidents are "
+        "still created from attack events, and they are scored on less "
+        "evidence than the same events would earn tomorrow.",
+    "console.stats":
+        "Counts over the last seven days, filtered by the buttons beside them. "
+        "'False positives' is the only number here you write yourself — it is "
+        "what you marked, so it measures your triage, not the detector's.",
+    "console.incidents":
+        "One row per correlated incident, not per event: a burst from one "
+        "source against one policy is folded into a single row, and 'Events' "
+        "is how many were folded. The 'blocked' and 'through' badges are the "
+        "APPLIANCE's own verdict on those events — 'through' means the WAF let "
+        "them reach the backend, which is why a modest score with traffic "
+        "through it can matter more than a high one that was all stopped.",
+
+    # ── Context ──────────────────────────────────────────────────────────
+    "context.trusted":
+        "Sources you have decided are yours — scanners, monitoring, an office "
+        "range. Their events are still recorded and still scored; the entry "
+        "here marks the incident 'trusted' so it is not proposed for a "
+        "response. It suppresses a REACTION, never the observation: a trusted "
+        "source that has been compromised still shows up.",
+    "context.maintenance":
+        "Windows in which the appliance was expected to behave oddly. Samples "
+        "inside them are dropped from the nightly baseline recompute rather "
+        "than averaged in — a firmware upgrade teaches the detector that a CPU "
+        "spike at that hour is normal, and it would then stay quiet the next "
+        "time one is not.",
+    "context.topology":
+        "What each appliance runs on. Without a row here the VM and host "
+        "factors cannot be evaluated at all, so an incident loses up to 18 "
+        "points of evidence — and it loses them silently, looking exactly like "
+        "an incident that was checked and found clean.",
+    "context.edge":
+        "Which FortiAnalyzer holds the logs of the firewall in front of each "
+        "appliance, and which device and VDOM to ask. Nothing here is inferred, "
+        "because a wrong ADOM does not fail: it answers about somebody else's "
+        "traffic and the answer still looks like an answer. Use Test lookup "
+        "after any edit — a bad ADOM, a bad device name, a clock offset and an "
+        "address the border never saw all return zero rows.",
+    "context.cve":
+        "The local CVE mirror an incident is enriched from. Zero rows is not a "
+        "failure: it means CVE factors do not apply and no incident will invent "
+        "one. This table is the only thing consulted — a CVE that exists in the "
+        "world and not here contributes nothing.",
+    "context.arming":
+        "Which server policies the response engine is allowed to act on at "
+        "all. A policy absent from this list is out of reach of every action, "
+        "at any score — this is the bound that is checked before the "
+        "per-action rules, not after them. Empty means nothing may be "
+        "enforced on anything, which is a safe state and an easy one to leave "
+        "by accident.",
+    "context.manual_cve":
+        "A CVE typed in by hand, for when the mirror does not have one yet. It "
+        "is scored exactly like a synced row; the difference is that nobody "
+        "revised it afterwards.",
+
+    # ── Response policy ──────────────────────────────────────────────────
+    "policy.kill":
+        "The switch checked last, after every per-action rule below it. While "
+        "it is off nothing on this page can execute, whatever the individual "
+        "rows say — read the rows as what WOULD happen if you armed it.",
+    "policy.verified":
+        "Action mechanisms proved against a live appliance, over the total in "
+        "the catalog. An unverified mechanism is rejected by the runner by "
+        "name, so it cannot execute even when armed. That is a deliberate "
+        "floor, not a to-do list to clear before shipping.",
+    "policy.modes":
+        "For each action: the score band and confidence at which it may be "
+        "proposed, and whether it may run by itself. 'recommend' stops at a "
+        "proposal a human approves; 'auto' does not. Raising a row is the only "
+        "change on this page that can move traffic.",
+    "policy.actions":
+        "The catalog itself — every action this build knows how to take, with "
+        "the device call behind it. An action with no transport can never "
+        "execute regardless of its policy; it exists so an operator can be "
+        "told what SHOULD happen and do it themselves.",
+    "policy.effects":
+        "The exact command each action would send, written out before you arm "
+        "anything. Read it as the contract: if the sentence here is not what "
+        "you want done to a production appliance at 03:00 without you, the "
+        "answer is to leave that row on 'recommend'.",
+    "policy.decisions":
+        "What the engine actually decided recently, including the proposals "
+        "nobody approved. A run of proposals that were never acted on is the "
+        "cheapest evidence you have about whether arming a row would have "
+        "helped or hurt.",
+
+    # ── Border blocklist ─────────────────────────────────────────────────
+    "blocklist.feed":
+        "The list served to a border firewall over HTTP, rendered from the "
+        "database at every request rather than from a file — so an entry past "
+        "its expiry is never served, even if the scheduled job that keeps the "
+        "bookkeeping has stopped. With the feed off, entries are still recorded "
+        "and simply not published. The URL answers WITHOUT a login, and its "
+        "body names addresses that attacked named customers: the token is the "
+        "only thing protecting it.",
+    "blocklist.mirror":
+        "An optional copy of every listing and release pushed to a git "
+        "repository, so the record survives this node. It must NOT be the "
+        "repository this product is published from — a blocklist committed "
+        "there tells the world which addresses attacked which customer.",
+    "blocklist.add":
+        "Lists one address, with a mandatory expiry. The border is asked first: "
+        "if that firewall never saw the address, listing it is either inert or "
+        "catastrophic — the address in the WAF log may be the CDN's, and "
+        "blocking it at the border drops every customer behind it. Overriding "
+        "the veto relaxes only that check, needs a written reason, and never "
+        "touches the never-block list.",
+    "blocklist.entries":
+        "Everything ever listed, not just what is live. Releasing an address "
+        "does not delete its row on purpose: 'why was this customer blocked on "
+        "Tuesday' is the question that actually gets asked, and it is "
+        "unanswerable from a list that only holds the present.",
+    "blocklist.preview":
+        "Byte for byte what a firewall fetching the feed receives at this "
+        "instant, header included. The header carries the generation time and "
+        "the staleness horizon so the border — or you — can tell a quiet list "
+        "from a list nobody is updating any more.",
+}
+
+
+def hint_for(key: str) -> str:
+    """Prose for one explainable thing, from either catalog.
+
+    ``PAGE_HINTS`` first, then ``UI_HINTS``, so a console chip that shows the
+    same fact as a Settings chip reuses the one description instead of growing
+    a second — the failure this section already had twice, once with the pane
+    and once with the site footer.
+
+    An unknown key returns "" and the macro then renders nothing. Deliberate:
+    raising would turn a typo in a template into a 500 on the incidents
+    console, which is a far worse trade than a missing icon. A typo is supposed
+    to be caught by ``tests/test_sentinel_page_hints.py``, which reads the keys
+    out of the templates themselves and fails on any that no catalog answers.
+    """
+    return PAGE_HINTS.get(key) or UI_HINTS.get(key, "")
+
 _BY_KEY = {s["key"]: s for s in SPEC}
 
 GROUPS = [

@@ -6,6 +6,50 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [1.20.0] - 2026-08-24
+
+### Added
+
+- **The "?" reached the pages.** Settings → Sentinel has explained every knob
+  since 1.16; the four operational pages explained nothing. 27 explanations now
+  sit beside the controls they describe — nine on the incidents console, seven
+  on Context, six on Response policy, five on Border blocklist — drawn by the
+  same `partials/_hint.html` macro, so the text is in `title` and survives
+  JavaScript failing to load.
+
+  The prose for the health chips was **not written for this release**. It
+  already existed as `UI_HINTS['health.*']` and rendered only in Settings,
+  which is the actual defect this closes: an operator reading
+  *"4416/4720 buckets usable (93.6 %) — an immature bucket never fires"* on the
+  console had the sentence that explains it one page away and invisible.
+  `hint_for()` falls through to the settings catalog rather than copying it;
+  a guard fails if any `health.*` key is ever duplicated into `PAGE_HINTS`.
+
+### Changed
+
+- `sn_hint` is registered as an **application-wide Jinja global**, not as a key
+  each view adds to its own context. Every Sentinel section renders on two
+  surfaces — a standalone page and an Admin Console pane — from one partial
+  driven by two different view functions, and a context key threaded by one and
+  forgotten by the other is precisely how `/settings/` began answering 500 when
+  the edge group landed in 1.18.0. A global cannot be forgotten by half the
+  callers.
+
+- Sentinel's explanatory prose now lives in **one file** (`sentinel/config.py`,
+  `UI_HINTS` + `PAGE_HINTS`) rather than being spread through templates. Two
+  authors of one sentence is how the licence footer acquired two spellings.
+
+### Notes
+
+- **Sentinel → Documentation was deliberately left alone.** That page is
+  already the explanation; a "?" on prose is a second copy of it.
+- The behavioural baseline still trains on **infrastructure telemetry only**
+  (CPU, memory, sessions, connection rate, RTT, throughput, VM and host). Attack
+  volume and block volume — `satom_sentinel_events_new`, and the
+  blocked/passed split the pipeline already derives per event — are **not**
+  baselined. Adding them changes what fires, so it is proposed rather than
+  shipped here.
+
 ## [1.19.0] - 2026-08-23
 
 ### Added

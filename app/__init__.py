@@ -918,6 +918,24 @@ def create_app(config_override: object | None = None) -> Flask:
         return {"csp_nonce": getattr(g, "csp_nonce", "")}
 
     @app.context_processor
+    def _inject_sentinel_hint():
+        """The "?" prose, reachable from any template without a view passing it.
+
+        A GLOBAL rather than a key each view adds to its own context, and that
+        is the whole point. Every Sentinel section renders on two surfaces --
+        the standalone page and the Settings pane -- through the same partial,
+        driven by two different view functions. A context key threaded by one
+        and forgotten by the other is precisely how ``/settings/`` began
+        answering 500 when the edge group landed, and how the pane and the page
+        drifted before that. A global cannot be forgotten by half the callers.
+
+        Import is local so a broken sentinel module cannot take down every
+        template in the product at start-up.
+        """
+        from app.services.sentinel import config as _sn_config
+        return {"sn_hint": _sn_config.hint_for}
+
+    @app.context_processor
     def _inject_theme():
         """Active UI theme (Settings -> Appearance): the ``:root`` override
         block plus optional brand overrides.

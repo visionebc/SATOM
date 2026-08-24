@@ -27,6 +27,7 @@
    What still LEAVES, on both surfaces: an incident.  It is a page in its own
    right and it is drawn as a link.
 #}
+{% from "partials/_hint.html" import hint %}
 {% set sn_inline = sn_inline | default(false) %}
 {% set sn_targets = sweep_targets | default([]) %}
 <div class="fw-page-header d-flex justify-content-between align-items-center flex-wrap gap-2">
@@ -40,7 +41,7 @@
   <div class="d-flex gap-2">
     <button type="button" class="btn btn-fw-primary btn-sm" data-bs-toggle="modal"
             data-bs-target="#sn-sweep-modal">
-      <i class="bi bi-play-fill me-1"></i>Run sweep now</button>
+      <i class="bi bi-play-fill me-1"></i>Run sweep now</button>{{ hint(sn_hint('console.sweep')) }}
   </div>
 </div>
 
@@ -144,7 +145,7 @@
 <div class="row g-3 mb-3">
   <div class="col-md-3">
     <div class="fw-card h-100"><div class="fw-card-body">
-      <div class="fw-stat-label">Pipeline</div>
+      <div class="fw-stat-label">Pipeline{{ hint(sn_hint('health.pipeline')) }}</div>
       {% if not health.enabled %}
         <div class="fw-stat-value text-danger">disabled</div>
         <div class="small text-muted">Sentinel is switched off in Settings — no incidents are being created.</div>
@@ -159,7 +160,7 @@
   </div>
   <div class="col-md-3">
     <div class="fw-card h-100"><div class="fw-card-body">
-      <div class="fw-stat-label">Behavioural baseline</div>
+      <div class="fw-stat-label">Behavioural baseline{{ hint(sn_hint('health.baseline')) }}</div>
       <div class="fw-stat-value">{{ health.baseline.usable }}<span class="text-muted" style="font-size:14px;">/{{ health.baseline.total }}</span></div>
       <div class="small text-muted">
         buckets usable ({{ health.baseline.pct_usable }}%). {{ health.baseline.learning }} still learning —
@@ -174,7 +175,7 @@
   </div>
   <div class="col-md-3">
     <div class="fw-card h-100"><div class="fw-card-body">
-      <div class="fw-stat-label">CVE mirror (local)</div>
+      <div class="fw-stat-label">CVE mirror (local){{ hint(sn_hint('health.vuln')) }}</div>
       <div class="fw-stat-value">{{ health.vuln.total }}</div>
       <div class="small text-muted">
         {{ health.vuln.kev }} on the CISA KEV list.
@@ -187,7 +188,7 @@
   </div>
   <div class="col-md-3">
     <div class="fw-card h-100"><div class="fw-card-body">
-      <div class="fw-stat-label">Response engine</div>
+      <div class="fw-stat-label">Response engine{{ hint(sn_hint('console.response')) }}</div>
       {% if not health.response_armed %}
         <div class="fw-stat-value">proposals only</div>
       {% else %}
@@ -219,7 +220,7 @@
    while the response engine reads 'proposals only'. #}
 {% if health.blocklist and (health.blocklist.live or health.blocklist.enabled) %}
 <div class="alert {{ 'alert-warning' if health.blocklist.live else 'alert-secondary' }} py-2 small">
-  <strong>Border blocklist:</strong>
+  <strong>Border blocklist:</strong>{{ hint(sn_hint('console.blocklist')) }}
   {{ health.blocklist.live }} live entr(y/ies)
   {%- if health.blocklist.enabled %}, published at
     <code>/sentinel/feed/&lt;token&gt;/blocklist.txt</code>
@@ -239,7 +240,7 @@
 
 {% if not health.store.up %}
 <div class="alert alert-danger small">
-  <strong>Metrics store unreachable</strong> ({{ health.store.detail }}).
+  <strong>Metrics store unreachable</strong>{{ hint(sn_hint('console.store')) }} ({{ health.store.detail }}).
   Behavioural factors are <em>absent</em> from every score computed right now — not zero.
   Incidents will still be created from attack events alone.
 </div>
@@ -254,7 +255,7 @@
 {# ── incident stats ─────────────────────────────────────────────────────── #}
 <div class="fw-card mb-3">
   <div class="fw-card-header d-flex justify-content-between align-items-center">
-    <strong><i class="bi bi-graph-up me-1"></i>Last 7 days</strong>
+    <strong><i class="bi bi-graph-up me-1"></i>Last 7 days</strong>{{ hint(sn_hint('console.stats')) }}
     <div class="btn-group btn-group-sm">
       {% for key, label in [('live','Live'), ('closed','Closed'), ('false_positive','False positives'), ('all','All')] %}
       <a class="btn {{ 'btn-fw-primary' if status == key else 'btn-fw-outline' }}"
@@ -287,7 +288,7 @@
 
 {# ── incidents ──────────────────────────────────────────────────────────── #}
 <div class="fw-card">
-  <div class="fw-card-header"><strong><i class="bi bi-list-ul me-1"></i>Incidents</strong></div>
+  <div class="fw-card-header"><strong><i class="bi bi-list-ul me-1"></i>Incidents</strong>{{ hint(sn_hint('console.incidents')) }}</div>
   <div class="fw-card-body">
     {% if not incidents %}
       <div class="alert alert-secondary small mb-0">

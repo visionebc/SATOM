@@ -1,0 +1,230 @@
+{% extends "base.html" %}
+{% block title %}{{ name }} — {{ _('artifact') }}{% endblock %}
+{% block content %}
+{#
+  Colours are LITERALS from the .fw-badge-* set, which is calibrated against
+  white. The fleet's dark glassmorphism is wrong in this product (see
+  docs/safeguards.md §9m): a translucent slate panel over a #F4F5F7 page is an
+  opaque grey slab, and pastel diff text on a white background is ~1.4:1.
+#}
+<style>
+  .fw-art-editor, .fw-art-view {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12.5px; line-height: 1.5; tab-size: 2;
+  }
+  .fw-art-view {
+    margin: 0; padding: 12px 14px; background: #FFFFFF; color: #1F2933;
+    border: 1px solid #E1E4E8; border-radius: 6px;
+    max-height: 60vh; overflow: auto; white-space: pre;
+  }
+  .fw-art-diff { margin: 0; border: 1px solid #E1E4E8; border-radius: 6px;
+                 max-height: 60vh; overflow: auto; background: #FFFFFF; }
+  .fw-art-diff div { padding: 1px 12px; white-space: pre;
+                     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+                     font-size: 12.5px; line-height: 1.5; color: #1F2933; }
+  .fw-art-diff .add  { background: #E6F4EA; color: #15692A; }
+  .fw-art-diff .del  { background: #FDECEE; color: #8B1C2A; }
+  .fw-art-diff .hunk { background: #EEF2F7; color: #3D4550; font-weight: 600; }
+  .fw-art-diff .meta { background: #F4F5F7; color: #3D4550; }
+  .fw-art-vrow.current { background: #FFF3EC; }
+</style>
+
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-file-earmark-code me-2 text-accent"></i>{{ name }}</h1>
+    <p class="fw-page-sub">
+      {{ label }}
+      {% if not readable %}
+        · <span class="fw-badge fw-badge-danger">{{ _('unreadable from any device') }}</span>
+        {{ _('This content cannot be read back off a FortiWeb and is absent from its full-config backup. The copies below are the only ones that exist.') }}
+      {% else %}
+        · <span class="fw-badge fw-badge-success">{{ _('capturable') }}</span>
+      {% endif %}
+      {% if name_warning %}<br><span class="fw-badge fw-badge-warning">{{ _('name') }}</span> {{ name_warning }}{% endif %}
+    </p>
+  </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-fw-outline btn-sm" href="{{ url_for('artifacts.manage', kind=kind) }}">
+      <i class="bi bi-arrow-left me-1"></i>{{ _('Files') }}</a>
+    <a class="btn btn-fw-outline btn-sm" href="{{ url_for('artifacts.inventory', q=name) }}">
+      <i class="bi bi-clipboard-data me-1"></i>{{ _('Inventory') }}</a>
+  </div>
+</div>
+
+{# ------------------------------------------------------------- used by ---- #}
+<div class="fw-card">
+  <div class="fw-card-header"><h2 class="fw-card-title">{{ _('Used by') }}</h2></div>
+  {% if used_by %}
+  <div class="fw-table-wrapper">
+    <table class="fw-table">
+      <thead><tr><th>{{ _('Appliance') }}</th><th>{{ _('Server policy') }}</th>
+                 <th>{{ _('Observed') }}</th><th>{{ _('Derived from') }}</th></tr></thead>
+      <tbody>
+      {% for u in used_by %}
+        <tr>
+          <td>{{ u.appliance }}</td>
+          <td class="font-monospace">{{ u.policy_mkey }}</td>
+          <td style="font-size:12px">{{ u.seen_at }}
+            {% if u.stale %}<span class="fw-badge fw-badge-warning">{{ _('stale') }}</span>{% endif %}</td>
+          <td style="font-size:12px"><code>{{ u.derived_from }}</code></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="fw-card-body text-secondary" style="font-size:12.5px">
+    {{ _('No server policy observed to name this object. That is NOT the same as unused: it means no dependency walk has recorded an edge to it. Refresh the index from the Inventory page for the appliance you care about before treating this as an orphan.') }}
+  </div>
+  {% endif %}
+</div>
+
+{# ------------------------------------------------------------ versions ---- #}
+<div class="fw-card">
+  <div class="fw-card-header">
+    <h2 class="fw-card-title">{{ _('Versions') }}
+      <span class="text-secondary fw-normal" style="font-size:12.5px">({{ versions|length }})</span></h2>
+    <span class="text-secondary" style="font-size:12px">{{ _('The hash is the identity — an unchanged save writes no bytes and mints no row.') }}</span>
+  </div>
+  <div class="fw-table-wrapper">
+    <table class="fw-table">
+      <thead><tr>
+        <th>{{ _('sha256') }}</th><th>{{ _('Scope') }}</th><th>{{ _('Bytes') }}</th>
+        <th>{{ _('Origin') }}</th><th>{{ _('By') }}</th><th>{{ _('Created') }}</th>
+        <th>{{ _('Last seen') }}</th><th>{{ _('Note') }}</th><th>{{ _('Compare') }}</th>
+        <th>{{ _('Actions') }}</th>
+      </tr></thead>
+      <tbody>
+      {% for v in versions %}
+        <tr class="fw-art-vrow {{ 'current' if v.id == current_id }}">
+          <td class="font-monospace" style="font-size:12px">
+            <a href="{{ url_for('artifacts.object_page', kind=kind, name=name, v=v.id, a=a_id, b=b_id) }}">{{ v.short_sha }}</a>
+          </td>
+          <td style="font-size:12.5px">{{ v.appliance or _('library-wide') }}</td>
+          <td>{{ v.size }}</td>
+          <td><span class="fw-badge {{ 'fw-badge-info' if v.source == 'captured' else 'fw-badge-secondary' }}">{{ v.source }}</span></td>
+          <td style="font-size:12px">{{ v.created_by or '—' }}</td>
+          <td style="font-size:12px">{{ v.created_at }}</td>
+          <td style="font-size:12px">{{ v.last_seen_at }}</td>
+          <td style="font-size:12px">{{ v.note or '' }}</td>
+          <td style="font-size:12px" class="text-nowrap">
+            <a class="btn btn-fw-outline btn-sm" href="{{ url_for('artifacts.object_page', kind=kind, name=name, v=current_id, a=v.id, b=b_id) }}">A</a>
+            <a class="btn btn-fw-outline btn-sm" href="{{ url_for('artifacts.object_page', kind=kind, name=name, v=current_id, a=a_id, b=v.id) }}">B</a>
+          </td>
+          <td class="text-nowrap">
+            <a class="btn btn-fw-outline btn-sm" href="{{ url_for('artifacts.blob', row_id=v.id) }}"><i class="bi bi-download"></i></a>
+            <a class="btn btn-fw-outline btn-sm" target="_blank" href="{{ url_for('artifacts.raw', row_id=v.id) }}"><i class="bi bi-box-arrow-up-right"></i></a>
+            <form method="post" action="{{ url_for('artifacts.delete') }}" class="d-inline"
+                  onsubmit="return confirm('{{ _('Delete this version? The blob survives if another version shares its content.') }}')">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="id" value="{{ v.id }}">
+              <button class="btn btn-fw-danger btn-sm"><i class="bi bi-trash"></i></button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{# ---------------------------------------------------------------- diff ---- #}
+<div class="fw-card">
+  <div class="fw-card-header">
+    <h2 class="fw-card-title">{{ _('Compare') }}</h2>
+    <span class="text-secondary" style="font-size:12.5px">
+      {% if diff_stat.identical %}
+        {{ _('The two selected versions are identical.') }}
+      {% else %}
+        <span style="color:#15692A">+{{ diff_stat.added }}</span>
+        <span style="color:#8B1C2A">−{{ diff_stat.removed }}</span>
+        {{ _('lines') }}
+      {% endif %}
+    </span>
+  </div>
+  <div class="fw-card-body">
+    {% if diff %}
+      <div class="fw-art-diff">
+        {% for line in diff %}<div class="{{ line.cls }}">{{ line.text }}</div>{% endfor %}
+      </div>
+    {% else %}
+      <div class="text-secondary" style="font-size:12.5px">
+        {{ _('Nothing to compare — pick an A and a B from the version table above. With a single stored version, A and B are the same row and the diff is empty by definition.') }}
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+{# -------------------------------------------------------------- content --- #}
+<div class="fw-card">
+  <div class="fw-card-header">
+    <h2 class="fw-card-title">{{ _('Content') }}
+      <span class="text-secondary fw-normal font-monospace" style="font-size:12px">{{ current.short_sha }}</span></h2>
+    <span class="text-secondary" style="font-size:12px">
+      {{ current.size }} {{ _('bytes') }} · {{ current.created_at }}
+      {% if appliance_name %} · {{ appliance_name }}{% else %} · {{ _('library-wide') }}{% endif %}
+    </span>
+  </div>
+  <div class="fw-card-body">
+    {% if not clean_utf8 %}
+      <div class="fw-badge fw-badge-warning mb-2">{{ _('not valid UTF-8') }}</div>
+      <p class="text-secondary" style="font-size:12.5px">{{ _('Shown with replacement characters. Editing is refused: a textarea round-trip would save those replacements as the new version, and the file would still look fine, still push, and no longer be the file.') }}</p>
+    {% endif %}
+    {% if editable %}
+      <form method="post" action="{{ url_for('artifacts.save') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="kind" value="{{ kind }}">
+        <input type="hidden" name="name" value="{{ name }}">
+        <input type="hidden" name="back" value="{{ url_for('artifacts.object_page', kind=kind, name=name) }}">
+        <div class="mb-2">
+          <textarea class="form-control form-control-sm fw-art-editor" name="content"
+                    rows="22" spellcheck="false">{{ content }}</textarea>
+        </div>
+        <div class="row g-2 align-items-end">
+          <div class="col-md-4">
+            <label class="fw-fld-label">{{ _('Save the new version as') }}</label>
+            <select class="form-select form-select-sm" name="appliance_id">
+              <option value="" {{ 'selected' if not current.appliance_id }}>{{ _('Library-wide (any appliance may use it)') }}</option>
+              {% for a in appliances %}
+                <option value="{{ a.id }}" {{ 'selected' if a.id == current.appliance_id }}>{{ a.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-5">
+            <label class="fw-fld-label">{{ _('Note') }}</label>
+            <input class="form-control form-control-sm" name="note" placeholder="{{ _('what changed and why') }}">
+          </div>
+          <div class="col-md-3 d-flex gap-2">
+            <button class="btn btn-fw-primary btn-sm"><i class="bi bi-save me-1"></i>{{ _('Save version') }}</button>
+          </div>
+        </div>
+      </form>
+    {% else %}
+      <div class="fw-badge fw-badge-secondary mb-2">{{ _('read only') }}</div>
+      <p class="text-secondary" style="font-size:12.5px">{{ why_not }}.</p>
+      <pre class="fw-art-view">{{ content }}</pre>
+      <a class="btn btn-fw-outline btn-sm mt-2" href="{{ url_for('artifacts.blob', row_id=current_id) }}">
+        <i class="bi bi-download me-1"></i>{{ _('Download') }}</a>
+    {% endif %}
+  </div>
+</div>
+
+{# ---------------------------------------------------------------- push ---- #}
+<div class="fw-card">
+  <div class="fw-card-header"><h2 class="fw-card-title">{{ _('Push this version to an appliance') }}</h2></div>
+  <div class="fw-card-body">
+    <p class="text-secondary" style="font-size:12.5px">
+      {{ _('Creates the object on the destination WITH its content. This is the only verb on this page that writes to a device.') }}
+    </p>
+    <form method="post" action="{{ url_for('artifacts.push') }}" class="d-flex gap-2 align-items-center">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="id" value="{{ current_id }}">
+      <input type="hidden" name="back" value="object">
+      <select class="form-select form-select-sm" name="appliance_id" style="max-width:240px" required>
+        {% for a in appliances %}<option value="{{ a.id }}">{{ a.name }}</option>{% endfor %}
+      </select>
+      <button class="btn btn-fw-primary btn-sm"><i class="bi bi-upload me-1"></i>{{ _('Push') }}</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

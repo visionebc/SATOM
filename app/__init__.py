@@ -1782,6 +1782,11 @@ def create_app(config_override: object | None = None) -> Flask:
             # back). Without this import create_all() never makes the
             # table and the first clone of a file-backed object 500s.
             from . import models_artifacts  # noqa: F401
+            # The derived policy→artifact index that makes a migration
+            # answerable before a destination is chosen. Without this
+            # import create_all() never makes the two tables and the
+            # first render of /artifacts/inventory 500s.
+            from . import models_artifact_refs  # noqa: F401
             # SATOM Sentinel — security correlation, incidents, response
             # policy and the local vulnerability mirror. Without this import
             # create_all() never makes the tables and the first render of

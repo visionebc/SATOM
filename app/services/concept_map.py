@@ -414,6 +414,16 @@ PAGES: tuple[dict, ...] = (
        "upload capture push clone migrate content -7694",
        "The file content FortiWeb keeps out of its own configuration, so a "
        "clone can carry it."),
+    _p("artifacts.manage", "Artifact uploads & files", "waf",
+       "artifact upload edit author version file manage delete push capture "
+       "schema xsd wsdl openapi grpc idl json lua editor online view",
+       "Get file-backed WAF object content into SATOM, edit it in the browser "
+       "and keep its versions."),
+    _p("artifacts.inventory", "Artifact inventory", "waf",
+       "artifact inventory statistics filter orphan used by policy spo "
+       "coverage migration missing stale where held",
+       "What SATOM holds, where each copy lives, which server policies need "
+       "it, and which policies are blocked on content nobody has."),
     _p("lua_studio.index", "Lua Studio", "dev",
        "lua script studio code automation custom logic editor",
        "Author and run Lua automation scripts."),
@@ -500,6 +510,13 @@ EXCLUDED: dict[str, str] = {
     "artifacts.push": "form action of artifacts.index",
     "artifacts.blob": "file download from artifacts.index",
     "artifacts.api_list": "JSON feed of artifacts.index",
+    "artifacts.object_page": "detail view of artifacts.manage",
+    "artifacts.save": "form action of artifacts.manage",
+    "artifacts.delete": "form action of artifacts.object_page",
+    "artifacts.raw": "inline view from artifacts.object_page",
+    "artifacts.refresh_refs": "form action of artifacts.inventory",
+    "artifacts.api_refs": "JSON feed of artifacts.inventory",
+    "artifacts.api_coverage": "JSON feed of artifacts.inventory",
     "plugins.new": "create form of plugins.index",
     "provisioning.new": "create form of provisioning.index",
     "provisioning.baseline_new": "create form of provisioning.baselines",

@@ -191,6 +191,20 @@ ADMIN_ACTIONS: list[ActionSpec] = [
                 "read-only (HTTP GET + `diagnose system top`).",
     ),
     ActionSpec(
+        "artifact_refs", "WAF artifacts — refresh the policy→artifact index",
+        "admin", needs_targets=False,
+        summary="Walk each FortiWeb's server policies and record which "
+                "file-backed API-Protection objects (XML Schema, WSDL, gRPC "
+                "IDL, OpenAPI, JSON Schema, XML DTD, Lua) each one needs "
+                "(services.artifact_refs). Feeds the 'used by' column and the "
+                "migration coverage report on /artifacts/inventory. Read-only "
+                "against the box — it is the clone planner's SOURCE walk with "
+                "no destination. Bounded per run and oldest-first, so a large "
+                "fleet converges over successive runs; the remainder is "
+                "reported every time. A walk that fails never deletes an "
+                "edge. Daily is plenty.",
+    ),
+    ActionSpec(
         "metrics_scrape", "Fleet metrics — scrape to the local store", "admin",
         needs_targets=False,
         summary="Run every due scrape target (Monitoring → Collection): one "
@@ -434,6 +448,34 @@ def _do_inventory_snapshot(dry_run: bool = False) -> dict:
                        + ", ".join("%s=%s" % (k, v) for k, v in t.items())
                        + (" (%d devices)" % res["appliances"]),
             "log": ""}
+
+
+def _do_artifact_refs(params: dict, dry_run: bool = False) -> dict:
+    """Refresh the derived policy→artifact index across the fleet.
+
+    Same ``ok`` contract as every other sweep here: ok = THE SWEEP RAN. One
+    unreachable appliance is a counted error, not a red action — and, more
+    importantly, its previously observed edges survive, because an outage must
+    never be able to report that a box's policies need no content.
+    """
+    from . import artifact_refs as ar
+    budget = params.get("budget")
+    budget = int(budget) if str(budget).isdigit() else ar.DEFAULT_BUDGET
+    if dry_run:
+        from ..models import Appliance
+        n = Appliance.query.filter_by(kind="fortiweb", maintenance=False).count()
+        return {"ok": True,
+                "summary": ("[dry-run] would walk up to %d polic%s on each of "
+                            "%d FortiWeb(s), oldest-scanned first."
+                            % (budget, "y" if budget == 1 else "ies", n)),
+                "log": ""}
+    res = ar.sweep(budget=budget)
+    return {"ok": True,
+            "summary": ("%(devices)d device(s), %(scanned)d polic(y/ies) walked, "
+                        "%(refs)d artifact edge(s), %(errors)d error(s)" % res)
+                       + (", %d still queued for the next run" % res["remaining"]
+                          if res.get("remaining") else ""),
+            "log": (res.get("log") or "")[:_LOG_MAX]}
 
 
 def _do_metrics_scrape(params: dict, dry_run: bool = False) -> dict:
@@ -687,6 +729,8 @@ def run_action(spec, appliance, params: dict | None, dry_run: bool = False) -> d
             return _do_deep_monitor(params, dry_run)
         if key == "metrics_scrape":
             return _do_metrics_scrape(params, dry_run)
+        if key == "artifact_refs":
+            return _do_artifact_refs(params, dry_run)
         if key == "sentinel_sweep":
             return _do_sentinel_sweep(params, dry_run)
         if key == "sentinel_baseline":

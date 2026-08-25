@@ -17,7 +17,7 @@ Three verbs, and the separation is deliberate:
              that touches a device, and it is a create — so it is behind
              ``config_write`` and audited, unlike the two above.
 
-Three pages, split by the question each answers:
+Four pages, split by the question each answers:
 
 ``/artifacts/``           the catalogue: which object types exist and which of
                           them a device will hand back. Reference, not work.
@@ -28,13 +28,26 @@ Three pages, split by the question each answers:
                           migration answer — which policies could move today and
                           which are blocked on content nobody has a copy of.
 
-The last one is only possible because :mod:`services.artifact_refs` persists
-the *policy → artifact* edge the clone planner used to compute and discard.
+``/artifacts/audit``      the whole picture PER DEVICE, in one place and
+                          exportable: every policy walked (and every walk that
+                          FAILED), every artifact it needs, the profile it
+                          arrives through, whether SATOM holds the bytes, what
+                          is stored for that box, what is orphaned, and where
+                          two boxes hold DIFFERENT content under one name.
+
+The last two are only possible because :mod:`services.artifact_refs` persists
+the *policy → artifact* edge the clone planner used to compute and discard, and
+:mod:`services.artifact_wpp` attributes each edge to the Web Protection Profile
+it travels through.
 """
 from __future__ import annotations
 
-from flask import (Blueprint, abort, flash, jsonify, redirect, render_template,
-                   request, url_for)
+import csv
+import io as _io
+from datetime import datetime
+
+from flask import (Blueprint, Response, abort, flash, jsonify, redirect,
+                   render_template, request, url_for)
 from flask_login import current_user, login_required
 
 from ..auth.decorators import require_permission
@@ -63,15 +76,17 @@ def _appliance_names() -> dict:
 @bp.route("/")
 @login_required
 def index():
-    kind = (request.args.get("kind") or "").strip()
-    rows = wa.history(kind=kind if kind in wa.KINDS else "")
-    by_id = {a.id: a.name for a in _appliances()}
-    for r in rows:
-        r["appliance"] = by_id.get(r["appliance_id"], "") if r["appliance_id"] else ""
-    return render_template("artifacts/index.html", rows=rows,
+    """Reference: the seven types, and how a file reaches a server policy.
+
+    No ``history()`` read any more. The page stopped rendering the stored-object
+    table when the verbs moved to ``/manage``, and a full scan of every artifact
+    version to build a list nothing displays is a cost with no reader.
+    """
+    return render_template("artifacts/index.html",
                            kinds=wa.KINDS, unreadable=wa.UNREADABLE,
                            appliances=_appliances(), stats=wa.stats(),
-                           ref_stats=ar.stats(), active_kind=kind)
+                           ref_stats=ar.stats(),
+                           active_kind=(request.args.get("kind") or "").strip())
 
 
 @bp.route("/upload", methods=["POST"])
@@ -535,3 +550,98 @@ def api_refs():
 def api_coverage(appliance_id: int, policy: str):
     """Machine-readable migration verdict for ONE policy."""
     return jsonify(ok=True, coverage=ar.policy_coverage(appliance_id, policy))
+
+
+@bp.route("/audit")
+@login_required
+def audit():
+    """Everything SATOM knows, per DEVICE — on screen, as JSON, or as CSV.
+
+    Read-only and index-only: no appliance is contacted, so this page is safe to
+    open mid-incident and gives the same answer twice. The price is a blind spot
+    (a policy created since the last sweep is absent), and that sentence ships
+    INSIDE the report — ``device_audit()["caveat"]`` — rather than as template
+    prose, so it survives into the JSON and CSV an auditor keeps.
+
+    The CSV grain is one row per **(device, policy, profile, artifact)**. A
+    per-device summary would be smaller and useless: an auditor's first question
+    is which policy is blocked on which file, and a total cannot be re-derived
+    back into its rows.
+    """
+    appl_f = (request.args.get("appl") or "").strip()
+    verdict_f = (request.args.get("verdict") or "").strip()
+    fmt = (request.args.get("format") or "").strip().lower()
+
+    appliances = _appliances()
+    selected = [a for a in appliances if str(a.id) == appl_f] if appl_f.isdigit() \
+        else appliances
+    report = ar.fleet_audit(selected)
+    names = _appliance_names()
+
+    diverge = ar.content_divergence()
+    for d in diverge:
+        for c in d["copies"]:
+            c["appliance"] = (names.get(c["appliance_id"], "#%s" % c["appliance_id"])
+                              if c["appliance_id"] else "SATOM library (no device)")
+
+    if verdict_f in ("blocked", "at-risk", "borrowed", "ok"):
+        for dev in report:
+            dev["artifacts"] = [a for a in dev["artifacts"]
+                                if a["verdict"] == verdict_f]
+
+    generated = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+
+    if fmt == "json":
+        return jsonify(ok=True, generated_at=generated, devices=report,
+                       divergence=diverge, stale_after_days=ar.STALE_AFTER.days)
+
+    if fmt == "csv":
+        buf = _io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(["generated_at", generated])
+        w.writerow(["note", report[0]["caveat"] if report else ""])
+        w.writerow([])
+        w.writerow(["appliance", "policy", "walk_ok", "walk_error",
+                    "web_protection_profile", "artifact_kind", "artifact_name",
+                    "verdict", "edge_seen_at", "edge_stale"])
+        for dev in report:
+            if not dev["policies"]:
+                # A device with nothing indexed still gets a line. Dropping it
+                # would make an unswept box indistinguishable from a clean one
+                # in the only artefact the auditor keeps.
+                w.writerow([dev["appliance"], "", "", "never swept",
+                            "", "", "", "", "", ""])
+                continue
+            for pol in dev["policies"]:
+                if not pol["artifacts"]:
+                    w.writerow([dev["appliance"], pol["policy"],
+                                "yes" if pol["ok"] else "no", pol["error"],
+                                "", "", "",
+                                "no file-backed object" if pol["ok"]
+                                else "not walked",
+                                pol["scanned_at"], "yes" if pol["stale"] else "no"])
+                    continue
+                for a in pol["artifacts"]:
+                    w.writerow([
+                        dev["appliance"], pol["policy"],
+                        "yes" if pol["ok"] else "no", pol["error"],
+                        # The three states are written as WORDS, never as a
+                        # blank cell: an empty column in a spreadsheet reads as
+                        # "no data", and "" here means the opposite — it means
+                        # the walk positively found no profile in between.
+                        ("(not attributed)" if a["wpp"] is None else
+                         ("(on the policy itself)" if a["wpp"] == "" else a["wpp"])),
+                        a["label"], a["name"], a["verdict"],
+                        a["seen_at"], "yes" if a["stale"] else "no"])
+        data = buf.getvalue()
+        return Response(
+            data, mimetype="text/csv",
+            headers={"Content-Disposition":
+                     'attachment; filename="satom-artifact-audit-%s.csv"'
+                     % generated.replace(":", "").replace("-", "")})
+
+    return render_template(
+        "artifacts/audit.html", report=report, divergence=diverge,
+        appliances=appliances, active_appl=appl_f, active_verdict=verdict_f,
+        generated=generated, stale_days=ar.STALE_AFTER.days,
+        kinds=wa.KINDS, unreadable=wa.UNREADABLE)

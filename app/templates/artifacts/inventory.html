@@ -212,7 +212,11 @@
           <td style="font-size:12px">
             {% if o.used_by %}
               {% for u in o.used_by[:4] %}
-                <div>{{ u.appliance }} / <span class="font-monospace">{{ u.policy_mkey }}</span></div>
+                <div>{{ u.appliance }} / <span class="font-monospace">{{ u.policy_mkey }}</span>
+                  {% if u.wpp is none %}<span class="fw-badge fw-badge-secondary">{{ _('profile not attributed') }}</span>
+                  {% elif u.wpp == '' %}<span class="fw-badge fw-badge-primary">{{ _('policy-level') }}</span>
+                  {% else %}&rarr; <span class="font-monospace">{{ u.wpp }}</span>{% endif %}
+                </div>
               {% endfor %}
               {% if o.used_by|length > 4 %}
                 <div class="text-secondary">+{{ o.used_by|length - 4 }} {{ _('more') }}</div>
@@ -258,7 +262,11 @@
               {% endif %}</td>
           <td style="font-size:12px">
             {% for u in m.used_by[:4] %}
-              <div>{{ u.appliance }} / <span class="font-monospace">{{ u.policy_mkey }}</span></div>
+              <div>{{ u.appliance }} / <span class="font-monospace">{{ u.policy_mkey }}</span>
+                {% if u.wpp is none %}<span class="fw-badge fw-badge-secondary">{{ _('profile not attributed') }}</span>
+                {% elif u.wpp == '' %}<span class="fw-badge fw-badge-primary">{{ _('policy-level') }}</span>
+                {% else %}&rarr; <span class="font-monospace">{{ u.wpp }}</span>{% endif %}
+              </div>
             {% endfor %}
             {% if m.used_by|length > 4 %}<div class="text-secondary">+{{ m.used_by|length - 4 }}</div>{% endif %}
           </td>

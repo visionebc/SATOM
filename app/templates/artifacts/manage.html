@@ -167,7 +167,7 @@
       <thead><tr>
         <th>{{ _('Object') }}</th><th>{{ _('Type') }}</th><th>{{ _('Scope') }}</th>
         <th>{{ _('Versions') }}</th><th>{{ _('Latest') }}</th><th>{{ _('Bytes') }}</th>
-        <th>{{ _('Used by') }}</th><th>{{ _('Actions') }}</th>
+        <th>{{ _('Assigned to') }}</th><th>{{ _('Actions') }}</th>
       </tr></thead>
       <tbody>
       {% for o in objects %}
@@ -183,11 +183,30 @@
           <td class="font-monospace" style="font-size:12px">{{ o.latest.short_sha }}
             <span class="text-secondary">{{ o.latest.created_at }}</span></td>
           <td>{{ o.latest.size }}</td>
+          {# The ASSIGNMENT, spelled out on the page where the file is edited,
+             pushed and deleted. A bare count told the operator that somebody
+             used this file but not WHERE, so the destructive verbs on this same
+             row were one click away from a blind guess. Shown as
+             device / policy -> profile, because the profile is the object a
+             FortiWeb operator actually opens; the policy only names it. #}
           <td style="font-size:12px">
             {% if o.used_by %}
-              <span class="fw-badge fw-badge-success">{{ o.used_by|length }}</span>
+              {% for u in o.used_by[:4] %}
+                <div>{{ u.appliance }} / <span class="font-monospace">{{ u.policy_mkey }}</span>
+                  {% if u.wpp is none %}
+                    <span class="fw-badge fw-badge-secondary" title="{{ _('this edge was derived before profiles were recorded — re-walk the policy') }}">{{ _('profile not attributed') }}</span>
+                  {% elif u.wpp == '' %}
+                    <span class="fw-badge fw-badge-primary" title="{{ _('it hangs off the server policy, not off a profile') }}">{{ _('policy-level') }}</span>
+                  {% else %}
+                    &rarr; <span class="font-monospace">{{ u.wpp }}</span>
+                  {% endif %}
+                </div>
+              {% endfor %}
+              {% if o.used_by|length > 4 %}
+                <div class="text-secondary">+{{ o.used_by|length - 4 }} {{ _('more') }}</div>
+              {% endif %}
             {% else %}
-              <span class="fw-badge fw-badge-secondary">{{ _('none known') }}</span>
+              <span class="fw-badge fw-badge-secondary">{{ _('no known user') }}</span>
             {% endif %}
           </td>
           <td>

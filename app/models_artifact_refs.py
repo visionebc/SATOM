@@ -35,6 +35,15 @@ from datetime import datetime
 from .models import db
 
 
+def _wpp_text(wpp) -> str:
+    """Operator-facing rendering of the three ``wpp_mkey`` states."""
+    if wpp is None:
+        return "not attributed"
+    if wpp == "":
+        return "on the policy itself"
+    return wpp
+
+
 class WafArtifactRef(db.Model):
     """One observed edge: *policy P on appliance A names artifact (kind, name)*.
 
@@ -48,7 +57,7 @@ class WafArtifactRef(db.Model):
     __tablename__ = "waf_artifact_ref"
     __table_args__ = (
         db.UniqueConstraint("appliance_id", "policy_mkey", "kind", "name",
-                            name="uq_waf_artifact_ref_edge"),
+                            "wpp_mkey", name="uq_waf_artifact_ref_edge"),
     )
 
     id = db.Column(db.Integer, primary_key=True)
@@ -59,6 +68,18 @@ class WafArtifactRef(db.Model):
     policy_mkey = db.Column(db.String(255), nullable=False, index=True)
     kind = db.Column(db.String(32), nullable=False, index=True)
     name = db.Column(db.String(255), nullable=False, index=True)
+    #: The Web Protection Profile the artifact travels through, and the reason
+    #: this column is NULLABLE with no default. THREE states, all distinct:
+    #:   ``"wpp-a"``  reached through that profile;
+    #:   ``""``       walked, and it hangs off the SERVER POLICY itself (Lua
+    #:                scripting does exactly this — it never passes a profile);
+    #:   ``NULL``     NOT ATTRIBUTED — the edge predates this column or was
+    #:                donated without a referrer graph.
+    #: A ``DEFAULT ''`` would have back-filled every historical row with case 2,
+    #: printing "bound directly on the policy" for 432 edges nobody attributed.
+    #: That is the same fabricated-certainty failure ``ok=False`` scans exist to
+    #: prevent, one table over.
+    wpp_mkey = db.Column(db.String(255), nullable=True, index=True)
     #: The dependency-map urn the walk classified the object under — kept so a
     #: row stays readable after ``KINDS`` is extended or re-keyed.
     urn = db.Column(db.String(128), nullable=False, default="")
@@ -78,6 +99,8 @@ class WafArtifactRef(db.Model):
             "id": self.id, "appliance_id": self.appliance_id,
             "policy_mkey": self.policy_mkey, "kind": self.kind,
             "name": self.name, "urn": self.urn,
+            "wpp": self.wpp_mkey,
+            "wpp_text": _wpp_text(self.wpp_mkey),
             "derived_from": self.derived_from,
             "seen_at": self.seen_at.isoformat(timespec="seconds")
                        if self.seen_at else "",

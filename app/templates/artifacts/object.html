@@ -58,12 +58,22 @@
   <div class="fw-table-wrapper">
     <table class="fw-table">
       <thead><tr><th>{{ _('Appliance') }}</th><th>{{ _('Server policy') }}</th>
+                 <th>{{ _('Web Protection Profile') }}</th>
                  <th>{{ _('Observed') }}</th><th>{{ _('Derived from') }}</th></tr></thead>
       <tbody>
       {% for u in used_by %}
         <tr>
           <td>{{ u.appliance }}</td>
           <td class="font-monospace">{{ u.policy_mkey }}</td>
+          {# The assignment belongs on the page that EDITS the file, not only on
+             the inventory. The three profile states are words, never a blank
+             cell: '' is a positive finding (it hangs off the policy) and NULL
+             means nobody walked it, and an empty cell reads as neither. #}
+          <td style="font-size:12px">
+            {% if u.wpp is none %}<span class="fw-badge fw-badge-secondary">{{ _('not attributed') }}</span>
+            {% elif u.wpp == '' %}<span class="fw-badge fw-badge-primary">{{ _('on the policy itself') }}</span>
+            {% else %}<span class="font-monospace">{{ u.wpp }}</span>{% endif %}
+          </td>
           <td style="font-size:12px">{{ u.seen_at }}
             {% if u.stale %}<span class="fw-badge fw-badge-warning">{{ _('stale') }}</span>{% endif %}</td>
           <td style="font-size:12px"><code>{{ u.derived_from }}</code></td>

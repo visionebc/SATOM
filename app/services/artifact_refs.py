@@ -60,11 +60,21 @@ def artifacts_of_policy(reader, policy_mkey: str) -> tuple[list[dict], int]:
     ``ok=False`` scan by :func:`derive_policy`, because "the walk failed" must
     reach the database rather than being smoothed into "no artifacts".
     """
+    from . import artifact_wpp as aw
     from . import clone as _clone
 
     planner = _clone.ClonePlanner(reader, reader)
     items = planner.collect(_clone.ROOT_SERVER_POLICY, policy_mkey)
-    return wa.plan_artifacts(items), len(items)
+    arts = wa.plan_artifacts(items)
+    # ``planner._refs`` is the referrer graph the walk just built. Passing it
+    # (never ``{}``) is what lets the attribution distinguish "reaches the
+    # policy without a profile" from "nobody looked" — see services.artifact_wpp.
+    # ``getattr`` and not ``planner._refs``: a planner that exposes no
+    # referrer graph must yield NOT-ATTRIBUTED edges, not an AttributeError and
+    # not a fabricated "policy-level". The default is None for the same reason
+    # ``attribute`` refuses to default it — {} and None mean opposite things.
+    return (aw.expand(aw.attribute(arts, items, getattr(planner, "_refs", None))),
+            len(items))
 
 
 def derive_policy(reader, appliance_id: int, policy_mkey: str,
@@ -98,12 +108,16 @@ def record(appliance_id: int, policy_mkey: str, arts, *,
     from ..models_artifact_refs import WafArtifactRef
 
     now = datetime.utcnow()
-    wanted = {(a["kind"], a["name"]): a for a in (arts or [])}
+    # Keyed by (kind, name, WPP): one artifact reached through two profiles is
+    # two facts. Keying on (kind, name) alone would let the second profile
+    # overwrite the first and the index would under-report exactly the policies
+    # whose content routing makes them hardest to migrate.
+    wanted = {(a["kind"], a["name"], a.get("wpp")): a for a in (arts or [])}
     existing = (WafArtifactRef.query
                 .filter_by(appliance_id=appliance_id, policy_mkey=policy_mkey)
                 .all())
     for row in existing:
-        key = (row.kind, row.name)
+        key = (row.kind, row.name, row.wpp_mkey)
         if key in wanted:
             row.seen_at = now
             row.derived_from = origin
@@ -111,10 +125,11 @@ def record(appliance_id: int, policy_mkey: str, arts, *,
             wanted.pop(key)
         else:
             db.session.delete(row)
-    for (kind, name), a in wanted.items():
+    for (kind, name, wpp), a in wanted.items():
         db.session.add(WafArtifactRef(
             appliance_id=appliance_id, policy_mkey=policy_mkey,
             kind=kind, name=name, urn=(a.get("urn") or "")[:128],
+            wpp_mkey=(wpp[:255] if isinstance(wpp, str) else None),
             derived_from=origin, first_seen_at=now, seen_at=now))
     _touch_scan(appliance_id, policy_mkey, ok=True, error="",
                 refs=len(arts or []), items=items, ms=ms, when=now)
@@ -156,7 +171,8 @@ def _touch_scan(appliance_id: int, policy_mkey: str, *, ok: bool, error: str,
     row.scanned_at = when
 
 
-def record_from_plan(appliance_id: int, policy_mkey: str, items) -> int:
+def record_from_plan(appliance_id: int, policy_mkey: str, items,
+                    refs=None) -> int:
     """Donate what a clone pre-flight already computed, instead of re-walking.
 
     The pre-flight's plan is a walk of the SOURCE with destination
@@ -168,8 +184,14 @@ def record_from_plan(appliance_id: int, policy_mkey: str, items) -> int:
     if not appliance_id or not policy_mkey:
         return 0
     try:
+        from . import artifact_wpp as aw
+
         rows = list(items or [])
-        return record(appliance_id, policy_mkey, wa.plan_artifacts(rows),
+        # ``refs=None`` is passed straight through: a donor that has no
+        # referrer graph must produce NOT-ATTRIBUTED edges, not edges claiming
+        # the artifact hangs off the policy.
+        arts = aw.expand(aw.attribute(wa.plan_artifacts(rows), rows, refs))
+        return record(appliance_id, policy_mkey, arts,
                       origin=ORIGIN_PREFLIGHT, items=len(rows))
     except Exception:  # noqa: BLE001 — indexing must never sink a clone
         from ..models import db
@@ -438,3 +460,213 @@ def stats() -> dict:
         "unheld": len(linked - held),
         "failed_scans": sum(1 for s in scans if not s.ok),
     }
+
+
+# --------------------------------------------------------------------------- #
+#  The audit — everything SATOM knows, per DEVICE                               #
+# --------------------------------------------------------------------------- #
+def content_divergence() -> list[dict]:
+    """Artifact NAMES whose stored content differs between scopes.
+
+    This is the report that makes :func:`services.waf_artifacts.resolve`'s last
+    fallback readable. That fallback answers a missing copy with *"another
+    appliance's stored copy of the same name"* — which is a GUESS, and exactly
+    the drift a clone is supposed to carry rather than erase. Nothing warned
+    about it before: the guess and a correct hit render identically.
+
+    Divergence is judged on the LATEST version per scope. Comparing every
+    version would flag any object that was ever edited, which is normal history
+    and not a conflict.
+    """
+    from ..models_artifacts import WafArtifact
+
+    latest: dict[tuple, tuple] = {}
+    for row in (WafArtifact.query
+                .order_by(WafArtifact.created_at.asc(), WafArtifact.id.asc())
+                .all()):
+        latest[(row.kind, row.name, row.appliance_id)] = (
+            row.sha256, row.size, row.appliance_id, row.created_at)
+    grouped: dict[tuple, list] = {}
+    for (kind, name, _aid), val in latest.items():
+        grouped.setdefault((kind, name), []).append(val)
+    out = []
+    for (kind, name), vals in sorted(grouped.items()):
+        shas = {v[0] for v in vals}
+        if len(shas) < 2:
+            continue
+        out.append({
+            "kind": kind, "label": wa.label(kind), "name": name,
+            "copies": [{"appliance_id": v[2], "sha256": (v[0] or "")[:12],
+                        "size": v[1],
+                        "at": v[3].isoformat(timespec="seconds") if v[3] else ""}
+                       for v in sorted(vals, key=lambda v: (v[2] or 0))],
+        })
+    return out
+
+
+def device_audit(appliance_id: int) -> dict:
+    """Every fact SATOM holds about ONE appliance's file-backed objects.
+
+    Deliberately assembled from the index alone — no device is read. That makes
+    the page reproducible and safe to open during an incident, and it is why
+    ``caveat`` is part of the return value rather than a note in the template:
+    a policy CREATED since the last sweep is not in this table at all, so the
+    page's own blind spot has to travel with its numbers.
+    """
+    from ..models_artifact_refs import WafArtifactRef, WafArtifactScan
+    from ..models_artifacts import WafArtifact
+
+    now = datetime.utcnow()
+    scans = (WafArtifactScan.query.filter_by(appliance_id=appliance_id)
+             .order_by(WafArtifactScan.policy_mkey).all())
+    refs = (WafArtifactRef.query.filter_by(appliance_id=appliance_id)
+            .order_by(WafArtifactRef.policy_mkey, WafArtifactRef.kind,
+                      WafArtifactRef.name).all())
+    stored = [r for r in WafArtifact.query
+              .filter_by(appliance_id=appliance_id)
+              .order_by(WafArtifact.kind, WafArtifact.name).all()]
+
+    held_any = {(r.kind, r.name) for r in WafArtifact.query.all()}
+    held_here = {(r.kind, r.name) for r in stored}
+
+    # --- per referenced artifact -------------------------------------------
+    needed: dict[tuple, dict] = {}
+    for r in refs:
+        key = (r.kind, r.name)
+        rec = needed.get(key)
+        if rec is None:
+            readable = wa.is_readable(r.kind)
+            here = key in held_here
+            anywhere = key in held_any
+            rec = needed[key] = {
+                "kind": r.kind, "label": wa.label(r.kind), "name": r.name,
+                "readable": readable,
+                "held_here": here, "held_anywhere": anywhere,
+                # The verdict, and the only one worth acting on:
+                #   blocked  -> no copy anywhere AND the device will never hand
+                #               it back. The policy cannot be migrated, full stop.
+                #   at-risk  -> no copy, but it is still capturable off the box
+                #               while the box is alive.
+                #   borrowed -> no copy for THIS device; resolve() would fall
+                #               back to some other appliance's bytes. That is a
+                #               guess, not a copy (see content_divergence).
+                #   ok       -> a copy scoped to this device (or library-wide).
+                "verdict": ("ok" if here else
+                            ("borrowed" if anywhere else
+                             ("blocked" if not readable else "at-risk"))),
+                "policies": [], "wpps": [], "stale": True,
+            }
+        if r.policy_mkey not in rec["policies"]:
+            rec["policies"].append(r.policy_mkey)
+        text = r.wpp_mkey
+        if text not in rec["wpps"]:
+            rec["wpps"].append(text)
+        if not is_stale(r.seen_at, now=now):
+            rec["stale"] = False
+    needed_rows = sorted(needed.values(), key=lambda d: (d["kind"], d["name"]))
+
+    # --- per policy ---------------------------------------------------------
+    by_policy: dict[str, dict] = {}
+    for s in scans:
+        by_policy[s.policy_mkey] = {
+            "policy": s.policy_mkey, "ok": bool(s.ok), "error": s.error,
+            "refs": s.refs, "items": s.items, "ms": s.ms,
+            "scanned_at": s.scanned_at.isoformat(timespec="seconds")
+                          if s.scanned_at else "",
+            "stale": is_stale(s.scanned_at, now=now),
+            "artifacts": [], "wpps": [], "blocked": 0, "at_risk": 0,
+        }
+    for r in refs:
+        p = by_policy.setdefault(r.policy_mkey, {
+            "policy": r.policy_mkey, "ok": False,
+            # An edge with no scan row is not a clean policy — it is a policy
+            # whose walk record was lost. Saying so beats rendering a blank.
+            "error": "edges exist but no scan row — re-walk this policy",
+            "refs": 0, "items": 0, "ms": 0, "scanned_at": "", "stale": True,
+            "artifacts": [], "wpps": [], "blocked": 0, "at_risk": 0})
+        v = needed[(r.kind, r.name)]
+        p["artifacts"].append({
+            "kind": r.kind, "label": wa.label(r.kind), "name": r.name,
+            "wpp": r.wpp_mkey, "verdict": v["verdict"],
+            "seen_at": r.seen_at.isoformat(timespec="seconds")
+                       if r.seen_at else "",
+            "stale": is_stale(r.seen_at, now=now)})
+        if r.wpp_mkey not in p["wpps"]:
+            p["wpps"].append(r.wpp_mkey)
+        if v["verdict"] == "blocked":
+            p["blocked"] += 1
+        elif v["verdict"] in ("at-risk", "borrowed"):
+            p["at_risk"] += 1
+    policies = sorted(by_policy.values(),
+                      key=lambda d: (-d["blocked"], -d["at_risk"],
+                                     d["ok"], d["policy"]))
+
+    # --- profiles -----------------------------------------------------------
+    wpps: dict = {}
+    for r in refs:
+        agg = wpps.setdefault(r.wpp_mkey, {"wpp": r.wpp_mkey, "artifacts": 0,
+                                           "policies": set()})
+        agg["artifacts"] += 1
+        agg["policies"].add(r.policy_mkey)
+    wpp_rows = sorted(
+        ({"wpp": k, "artifacts": v["artifacts"],
+          "policies": len(v["policies"])} for k, v in wpps.items()),
+        key=lambda d: (d["wpp"] is None, d["wpp"] or ""))
+
+    linked_here = {(r.kind, r.name) for r in refs}
+    last_scan = max((s.scanned_at for s in scans if s.scanned_at),
+                    default=None)
+    return {
+        "appliance_id": appliance_id,
+        "policies": policies,
+        "artifacts": needed_rows,
+        "wpps": wpp_rows,
+        "stored": [{"kind": o.kind, "label": wa.label(o.kind), "name": o.name,
+                    "sha256": (o.sha256 or "")[:12], "size": o.size,
+                    "source": o.source, "by": o.created_by,
+                    "at": o.created_at.isoformat(timespec="seconds")
+                          if o.created_at else "",
+                    "orphan": (o.kind, o.name) not in linked_here}
+                   for o in stored],
+        "totals": {
+            "policies": len(policies),
+            "walk_ok": sum(1 for p in policies if p["ok"]),
+            "walk_failed": sum(1 for p in policies if not p["ok"]),
+            "stale_scans": sum(1 for p in policies if p["stale"]),
+            "edges": len(refs),
+            "artifacts": len(needed_rows),
+            "blocked": sum(1 for a in needed_rows if a["verdict"] == "blocked"),
+            "at_risk": sum(1 for a in needed_rows if a["verdict"] == "at-risk"),
+            "borrowed": sum(1 for a in needed_rows if a["verdict"] == "borrowed"),
+            "ok": sum(1 for a in needed_rows if a["verdict"] == "ok"),
+            "stored": len(stored),
+            "orphans": sum(1 for o in stored
+                           if (o.kind, o.name) not in linked_here),
+            "unattributed": sum(1 for r in refs if r.wpp_mkey is None),
+            "profiles": sum(1 for w in wpp_rows if w["wpp"]),
+        },
+        "last_scan_at": last_scan.isoformat(timespec="seconds")
+                        if last_scan else "",
+        "caveat": ("Assembled from SATOM's index without reading the device. A "
+                   "server policy created after the last sweep is not in this "
+                   "report at all — re-run the sweep to close that gap."),
+    }
+
+
+def fleet_audit(appliances) -> list[dict]:
+    """:func:`device_audit` for each appliance, worst first.
+
+    Devices with NO index entry are included with zeroed totals on purpose: an
+    audit that lists only the boxes it has data for reads as an audit of the
+    fleet, and the boxes missing from it are the ones nobody has swept.
+    """
+    out = []
+    for appl in appliances or []:
+        rec = device_audit(appl.id)
+        rec["appliance"] = appl.name
+        rec["kind"] = getattr(appl, "kind", "")
+        rec["maintenance"] = bool(getattr(appl, "maintenance", False))
+        out.append(rec)
+    out.sort(key=lambda d: (-d["totals"]["blocked"], -d["totals"]["at_risk"],
+                            -d["totals"]["walk_failed"], d["appliance"]))
+    return out

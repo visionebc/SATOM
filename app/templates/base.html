@@ -746,12 +746,38 @@
             <i class="bi bi-search fw-nav-icon"></i><span>{{ _('Search Attack ID') }}</span></a>
           <a class="fw-nav-item" href="{{ url_for('exceptions.index') }}">
             <i class="bi bi-slash-circle fw-nav-icon"></i><span>Exceptions &amp; Signature</span></a>
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'artifacts' else '' }}" href="{{ url_for('artifacts.index') }}">
-            <i class="bi bi-file-earmark-lock fw-nav-icon"></i><span>{{ _('WAF Artifacts') }}</span></a>
-          <a class="fw-nav-item fw-nav-sub {{ 'active' if request.endpoint == 'artifacts.manage' else '' }}" href="{{ url_for('artifacts.manage') }}">
-            <i class="bi bi-folder-plus fw-nav-icon"></i><span>{{ _('Artifact files') }}</span></a>
-          <a class="fw-nav-item fw-nav-sub {{ 'active' if request.endpoint in ['artifacts.inventory', 'artifacts.object_page'] else '' }}" href="{{ url_for('artifacts.inventory') }}">
-            <i class="bi bi-clipboard-data fw-nav-icon"></i><span>{{ _('Artifact inventory') }}</span></a>
+          {# WAF Artifacts — collapses as a UNIT, the same shape as Server Objects
+             and Web Protection: <details class="fw-so-parent"> whose <summary>
+             IS the parent row, and fw-so-nav-flat leaves inside fw-so-nav.
+             It used to be three sibling <a>s, two of them carrying `fw-nav-sub`
+             — a class that DOES NOT EXIST in fortiweb.css (the sheet defines
+             fw-nav-subitem and fw-nav-subgroup, neither of which matches). With
+             no rule to match, the two children rendered flush with their parent
+             and at the same weight: three top-level entries wearing the word
+             "Artifact", and no group to collapse. Open only when its own
+             blueprint is active, so the accordion still holds. #}
+          <details class="fw-so-parent" {{ 'open' if request.blueprint == 'artifacts' }}>
+            <summary class="fw-nav-item fw-so-parent-head {{ 'active' if request.blueprint == 'artifacts' else '' }}">
+              <i class="bi bi-file-earmark-lock fw-nav-icon"></i><span>{{ _('WAF Artifacts') }}</span>
+              <i class="bi bi-chevron-down fw-so-nav-caret"></i>
+            </summary>
+            <div class="fw-so-parent-body">
+              <div class="fw-so-nav">
+                <a class="fw-nav-item fw-so-nav-flat {{ 'active' if request.endpoint == 'artifacts.index' else '' }}"
+                   href="{{ url_for('artifacts.index') }}">
+                  <i class="bi bi-journal-text fw-nav-icon"></i><span>{{ _('Object types') }}</span></a>
+                <a class="fw-nav-item fw-so-nav-flat {{ 'active' if request.endpoint in ['artifacts.inventory', 'artifacts.object_page'] else '' }}"
+                   href="{{ url_for('artifacts.inventory') }}">
+                  <i class="bi bi-clipboard-data fw-nav-icon"></i><span>{{ _('Inventory') }}</span></a>
+                <a class="fw-nav-item fw-so-nav-flat {{ 'active' if request.endpoint == 'artifacts.manage' else '' }}"
+                   href="{{ url_for('artifacts.manage') }}">
+                  <i class="bi bi-folder-plus fw-nav-icon"></i><span>{{ _('Files') }}</span></a>
+                <a class="fw-nav-item fw-so-nav-flat {{ 'active' if request.endpoint == 'artifacts.audit' else '' }}"
+                   href="{{ url_for('artifacts.audit') }}">
+                  <i class="bi bi-clipboard-check fw-nav-icon"></i><span>{{ _('Device audit') }}</span></a>
+              </div>
+            </div>
+          </details>
           {% if current_appliance %}
           <a class="fw-nav-item {{ 'active' if _wp_active == '__profile__' else '' }}"
              href="{{ url_for('web_protection.overview', id=current_appliance.id) }}">

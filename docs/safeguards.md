@@ -10835,3 +10835,61 @@ A guard that cannot fail is not a guard.
 **Recipe.** `venv/bin/python -m pytest tests/test_artifact_refs.py -q`; then
 the harness at `/tmp/mutate_artifacts.py` (22 mutations, anchor-checked at x1,
 tree restored per mutation).
+
+
+## §117 — The profile is walked, and "unknown" is not "none" (`tests/test_artifact_wpp.py`)
+
+**What breaks silently.** `waf_artifact_ref` gained a `wpp_mkey` column, and
+every way of getting it wrong keeps the page rendering and the column holding a
+plausible string:
+
+* `None` (**nobody attributed this edge**) and `""` (**walked, and it genuinely
+  hangs off the server policy**) are opposite answers. A `DEFAULT ''` on the
+  migration would have collapsed them for 432 historical rows in one statement,
+  with no error;
+* `next(it for it in items if it.urn in _WPP_URNS)` — the shortcut already used
+  elsewhere in `clone.py` for a different purpose — picks ONE profile. A policy
+  with content routing binds several, and the ones it silently drops belong to
+  the most complicated policies on the box;
+* **Lua scripting** (`cmdb/server-policy/scripting`) hangs off the POLICY. Any
+  "the plan has a profile, so this belongs to it" rule prints a profile that has
+  never heard of the script;
+* the referrer graph is not guaranteed acyclic, and an unguarded upward walk
+  **hangs** the sweep. A hang is worse than a failure: nothing times out;
+* `borrowed` rendered as `ok` hides that `waf_artifacts.resolve` would fall back
+  to *another appliance's* bytes for that name.
+
+**The shape of the guards.** They assert the **STATE**, not merely that a value
+is present. A guard demanding "`wpp` is not empty" passes with `""` in place of
+`None` — that is, it passes with the bug installed, and that exact distinction
+IS the defect. Each negative guard is paired with a **positive control**
+(`test_the_profile_is_reported_when_the_artifact_really_travels_through_it`,
+`test_a_donated_plan_WITH_a_graph_records_the_profile`,
+`test_a_readable_missing_artifact_is_AT_RISK`), without which "no profile found"
+is explained by an attribution that never finds anything.
+
+**The nav guard reads the SOURCE.** `fw-nav-sub` has no rule in
+`fortiweb.css`, so the two children it styled rendered flush with their parent
+— and the page still returned 200. Nothing can catch that from a response
+except reading the template, and the guard strips `{# … #}` comments first
+because the comment explaining it names `fw-nav-sub` and would match itself
+(the eighth assertion-matches-its-own-comment in this codebase).
+
+**How to check it.**
+
+```
+venv/bin/python -m pytest tests/test_artifact_wpp.py -q     # 27 guards, rc=0
+venv/bin/python /tmp/mutate.py                              # 19 mutations, all bite
+```
+
+Live proof the attribution is walked rather than assumed — re-derive the fleet
+and split the column:
+
+```
+select coalesce(wpp_mkey,'<NULL>'), count(*) from waf_artifact_ref group by 1;
+select kind, count(*) from waf_artifact_ref where wpp_mkey='' group by 1;
+```
+
+The second must return **`scripting` and nothing else**. Any other kind under
+`''` means the walk lost a profile; a non-zero `<NULL>` count after a full sweep
+means edges were recorded without a referrer graph.

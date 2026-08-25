@@ -1437,6 +1437,14 @@ def create_app(config_override: object | None = None) -> Flask:
         """
         from sqlalchemy import inspect, text
         adds = {
+            # --- artifact -> Web Protection Profile attribution (2026-08-25) ---
+            # NULLABLE, NO DEFAULT, NO BACKFILL. NULL means "nobody attributed
+            # this edge", which is what every row derived before today truly is.
+            # A DEFAULT '' would have silently re-labelled all of them as
+            # "bound on the server policy itself" — a claim the walk never made.
+            'waf_artifact_ref': [
+                ('wpp_mkey', 'VARCHAR(255)'),
+            ],
             'templates': [
                 ('exceptions', 'TEXT'),
                 ('status', "VARCHAR(16) DEFAULT 'pending'"),
@@ -1631,6 +1639,24 @@ def create_app(config_override: object | None = None) -> Flask:
                 db.session.commit()
             except Exception:  # noqa: BLE001
                 db.session.rollback()
+
+        # --- artifact refs: the edge key gains the profile (2026-08-25) ---
+        # One artifact reached through TWO profiles is two rows. Under the old
+        # 4-column unique key the second insert violated the constraint and the
+        # walk lost it, so a content-routing policy under-reported precisely the
+        # profiles that make it hard to migrate. Best-effort; never blocks boot.
+        try:
+            if insp.has_table('waf_artifact_ref'):
+                db.session.execute(text(
+                    'ALTER TABLE waf_artifact_ref '
+                    'DROP CONSTRAINT IF EXISTS uq_waf_artifact_ref_edge'))
+                db.session.execute(text(
+                    'CREATE UNIQUE INDEX IF NOT EXISTS ix_waf_artifact_ref_edge '
+                    'ON waf_artifact_ref '
+                    '(appliance_id, policy_mkey, kind, name, wpp_mkey)'))
+                db.session.commit()
+        except Exception:  # noqa: BLE001 — never block boot on a migration
+            db.session.rollback()
 
         # --- AppID goes GLOBAL (cross-product) 2026-07-09 ---
         # The catalog was keyed (product, app_id) with product='fortiweb'. AppIDs

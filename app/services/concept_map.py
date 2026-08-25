@@ -424,6 +424,14 @@ PAGES: tuple[dict, ...] = (
        "coverage migration missing stale where held",
        "What SATOM holds, where each copy lives, which server policies need "
        "it, and which policies are blocked on content nobody has."),
+    _p("artifacts.audit", "Artifact device audit", "waf",
+       "artifact audit device appliance per device evidence export csv json "
+       "blocked at risk borrowed orphan divergence profile wpp web protection "
+       "profile policy walk failed stale migration readiness inventory all",
+       "Everything SATOM knows about file-backed WAF objects, grouped by "
+       "device and exportable: which policies were walked, which walks failed, "
+       "which artifacts are blocked, and where two boxes hold different "
+       "content under one name."),
     _p("lua_studio.index", "Lua Studio", "dev",
        "lua script studio code automation custom logic editor",
        "Author and run Lua automation scripts."),
@@ -504,12 +512,14 @@ EXCLUDED: dict[str, str] = {
     "change_requests.new": "create form of change_requests.index",
     "database.report_new": "create form of database.index",
     "lua_studio.new": "create form of lua_studio.index",
-    # Verbs of artifacts.index, all reached from its own forms.
-    "artifacts.upload": "form action of artifacts.index",
-    "artifacts.capture": "form action of artifacts.index",
-    "artifacts.push": "form action of artifacts.index",
-    "artifacts.blob": "file download from artifacts.index",
-    "artifacts.api_list": "JSON feed of artifacts.index",
+    # Verbs of artifacts.manage. They used to be reached from artifacts.index
+    # too; that page is reference-only now (one author per verb), so pointing
+    # these reasons at it would have described a form that no longer exists.
+    "artifacts.upload": "form action of artifacts.manage",
+    "artifacts.capture": "form action of artifacts.manage",
+    "artifacts.push": "form action of artifacts.manage",
+    "artifacts.blob": "file download from artifacts.manage",
+    "artifacts.api_list": "JSON feed of artifacts.manage",
     "artifacts.object_page": "detail view of artifacts.manage",
     "artifacts.save": "form action of artifacts.manage",
     "artifacts.delete": "form action of artifacts.object_page",

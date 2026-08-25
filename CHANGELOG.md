@@ -8,6 +8,60 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Added
 
+- **WAF Artifacts is one sub-menu with four pages, not three siblings.** The
+  entries lived flat in the WAF group and two of them carried `fw-nav-sub` — a
+  class with **no rule in `fortiweb.css`** (the sheet defines `fw-nav-subitem`
+  and `fw-nav-subgroup`; neither matches). With nothing to style them the
+  children rendered at their parent's weight: three top-level entries wearing
+  the word *Artifact*, and no group to collapse. They now use the product's own
+  shape — `<details class="fw-so-parent">` with `fw-so-nav-flat` leaves, the
+  same as Server Objects and Web Protection — and open only on their own
+  blueprint so the accordion still holds.
+
+  - **Object types** (`/artifacts/`) — reference and theory: the seven types,
+    why their content is not in the configuration, and the four-link chain a
+    file travels (*policy → profile → rule → file*). The upload/capture forms
+    and the push table that used to sit here moved to **Files**: two authors
+    for one verb is how they drift, and a destructive control has no business
+    on the page an operator opens to look something up.
+  - **Inventory** (`/artifacts/inventory`) — unchanged in purpose, now naming
+    the profile behind every user.
+  - **Files** (`/artifacts/manage`) — every verb, and each row states **which
+    Web Protection Profile it is assigned to** rather than a bare count. A
+    count said somebody used the file but not where, one click from *delete*.
+  - **Device audit** (`/artifacts/audit`) — **new**: everything SATOM knows,
+    grouped by device and exportable as **JSON or CSV**, at one row per
+    *(device, policy, profile, artifact)*.
+
+- **Every artifact reference now names the Web Protection Profile it travels
+  through** (`services/artifact_wpp.py`, column `waf_artifact_ref.wpp_mkey`).
+  A FortiWeb operator does not bind a schema to a policy — they bind it to a
+  rule inside a profile, and the policy names the profile. The attribution is
+  **walked** up the clone planner's own referrer graph, never assumed, and it
+  has **three distinct states**: a profile name; `""` = walked and it hangs off
+  the **server policy itself**; `NULL` = **not attributed**, nobody looked. The
+  column is nullable with no back-fill for exactly that reason — a `DEFAULT ''`
+  would have re-labelled 432 historical edges as a finding the walk never made.
+
+- **Four migration verdicts per artifact, per device.** `ok` (a copy scoped
+  here), `borrowed` (no copy here, but another appliance holds that name — a
+  **guess**, which the new *same name, different content* report exists to
+  qualify), `at-risk` (no copy, still capturable off a live box) and `blocked`
+  (no copy anywhere and no FortiWeb will ever hand this type back — the policy
+  cannot be migrated until someone uploads the file).
+
+### Fixed
+
+- **The shortcut that would have mislabelled every Lua script.** "The plan
+  contains one profile, so every artifact belongs to it" is wrong twice:
+  `cmdb/server-policy/scripting` hangs off the **policy** and never passes a
+  profile, and a policy with content routing can bind **several** profiles.
+  Re-derived live across the fleet: **432 edges, 16 profiles, and the 48
+  `policy-level` edges are all — and only — `scripting`.**
+
+- `/artifacts/` no longer runs a full `history()` scan of every artifact
+  version to build a list the page stopped rendering.
+
 - **Artifacts stopped being a flat store.** The library knew *what* file-backed
   objects it held and *which appliance* they came from, but never *which
   policy needs them* — so the only way to answer "can I migrate this SPO?" was

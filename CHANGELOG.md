@@ -6,6 +6,51 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added
+
+- **Artifacts stopped being a flat store.** The library knew *what* file-backed
+  objects it held and *which appliance* they came from, but never *which
+  policy needs them* — so the only way to answer "can I migrate this SPO?" was
+  to start a clone pre-flight against a chosen destination and read the
+  fallout. Three pages now answer it before the decision:
+
+  - **`/artifacts/manage`** — uploads and file management. Three verbs, kept
+    distinct on purpose: **upload** a file from disk, **author** one in the
+    browser, **capture** one off an appliance. Anything stored here can be
+    **pushed** into a FortiWeb, which is the advantage the appliance itself
+    does not give you.
+  - **`/artifacts/object/<kind>/<name>`** — the object itself: view the
+    content online, edit it in place, every save is a **new version**, and any
+    two versions can be **compared** with a structural diff.
+  - **`/artifacts/inventory`** — statistics, where each object lives, a
+    **"used by"** column naming the policies that reference it, and filters by
+    kind, appliance, orphan and staleness.
+
+- **The policy→artifact index is DERIVED, never typed.** `waf_artifact_ref`
+  records observations — *this policy named this object on this appliance at
+  this time* — produced by the same dependency walk the clone planner already
+  performs, run source-only. A hand-maintained field would go stale the day a
+  rule changed schema and nothing would fail; it would simply become false,
+  and the cost of that falsehood is a migration that ships without a WSDL the
+  destination will never receive.
+
+- **Edges are scoped by (appliance, policy), never by policy name.** The same
+  name on two chassis can point at different schemas; collapsing them
+  manufactures the exact all-clear this index exists to deny.
+
+- **A failed walk never deletes edges; a successful one deletes what it no
+  longer produces.** The first rule makes one unreachable appliance unable to
+  "prove" that none of its policies need anything. The second stops the index
+  from growing forever off one historical reference.
+
+- **"Walked, needs nothing" and "never walked" do not render the same.** The
+  first clears a migration; the second means nobody looked.
+
+- Scheduled action **`artifact_refs`** refreshes the index on a cadence;
+  bounded sweeps report their remainder, because a truncated run otherwise
+  reads exactly like a complete one. The clone pre-flight **donates** its walk
+  instead of re-walking.
+
 ## [1.20.0] - 2026-08-24
 
 ### Added

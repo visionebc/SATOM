@@ -1333,6 +1333,13 @@ def preflight(action: str, *, source_appl, dest_appl=None, policies: list[str],
             else:
                 root_item = next((it for it in items
                                   if it.depth == 0 and it.kind == "object"), None)
+                # The pre-flight has just walked the SOURCE tree. That is
+                # exactly the walk services.artifact_refs would run on a timer,
+                # so donating it here is free freshness for the migration
+                # coverage report — and it can never sink the checklist
+                # (record_from_plan swallows and rolls back its own failures).
+                from . import artifact_refs as _ar
+                _ar.record_from_plan(source_appl.id, pol, items)
         issues = clone.validate_completeness(items) if (live_ok and root_item) else []
         checks.append(_source_gate(
             pol, source_appl.name, live_ok=live_ok, src_err=src_err,

@@ -10802,3 +10802,36 @@ duplicate guard was right to stay quiet), and one dropped a comma, which is
 **Deliberately not covered.** Sentinel → Documentation carries no "?" — that
 page *is* the explanation, and annotating prose with prose is the duplication
 this file exists to prevent.
+
+## §116 — The policy→artifact index: derived, scoped, and outage-immune (`tests/test_artifact_refs.py`)
+
+**What fails silently.** Every failure mode in this feature renders as a page
+that works and a number that looks like a number. Nothing throws.
+
+| break | what the operator sees | what it costs |
+|---|---|---|
+| a failed walk deletes its edges | "this appliance needs no artifacts" | a clean bill of health manufactured out of an outage |
+| a successful walk keeps edges it no longer produces | an artifact looks used forever | dead objects migrate; real orphans stay hidden |
+| edges collapse across appliances | one row for two chassis | the schema of the wrong box travels with the policy |
+| never-walked reads as ready | a green migration verdict | nobody ever looked |
+| a bounded sweep hides its remainder | a complete-looking run | the untouched tail is invisible |
+| a crashed walk is smoothed to "no artifacts" | ready | same as the outage case, one policy at a time |
+| non-UTF-8 content is editable | a textarea round-trip | U+FFFD written over the real bytes; the file still looks fine and is no longer the file |
+| deleting a version unlinks a shared blob | one deletion | a second version silently points at nothing |
+| orphans summed with migration blockers | one total | two different kinds of work read as one |
+
+**31 guards, rc=0. 22 mutations, 22 bite, each killing its own guard**
+(measured by rc; only `rc==1` counts, with a green baseline required).
+
+**The trap that cost the most.** The donation guard was **vacuous on first
+write**: it asserted `record_from_plan(0, "pol-a", []) == 0`, and an EMPTY plan
+returns 0 for the wrong reason — nothing to write. The assertion passed with
+the attribution check deleted. Mutation 12 survived and said so. The guard now
+hands in a **non-empty** plan and carries a **positive control** (the same plan,
+fully attributed, does record) — without that control the two refusals could be
+explained by the plan itself being unrecordable rather than by the check.
+A guard that cannot fail is not a guard.
+
+**Recipe.** `venv/bin/python -m pytest tests/test_artifact_refs.py -q`; then
+the harness at `/tmp/mutate_artifacts.py` (22 mutations, anchor-checked at x1,
+tree restored per mutation).

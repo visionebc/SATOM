@@ -1,0 +1,334 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Artifact inventory') }}{% endblock %}
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-clipboard-data me-2 text-accent"></i>{{ _('Artifact inventory') }}</h1>
+    <p class="fw-page-sub">
+      {{ _('What SATOM holds, where each copy lives, and WHICH SERVER POLICIES need it. The link is derived from the same dependency walk the clone planner runs — never typed by hand, because a hand-typed label goes stale silently and nothing fails when it does. Every edge below carries the moment it was observed; one nobody has re-observed in') }}
+      {{ stale_days }} {{ _('days is shown as stale, not as truth.') }}
+    </p>
+  </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-fw-outline btn-sm" href="{{ url_for('artifacts.manage') }}">
+      <i class="bi bi-folder-plus me-1"></i>{{ _('Uploads &amp; files') }}</a>
+    <a class="btn btn-fw-outline btn-sm" href="{{ url_for('artifacts.index') }}">
+      <i class="bi bi-info-circle me-1"></i>{{ _('Object types') }}</a>
+  </div>
+</div>
+
+{# ------------------------------------------------------------- headline --- #}
+<div class="fw-card">
+  <div class="fw-card-body d-flex align-items-center gap-4 flex-wrap">
+    <div><div class="fw-semibold" style="font-size:20px">{{ stats.objects }}</div>
+         <div class="text-secondary" style="font-size:12.5px">{{ _('objects held') }}</div></div>
+    <div><div class="fw-semibold" style="font-size:20px">{{ stats.versions }}</div>
+         <div class="text-secondary" style="font-size:12.5px">{{ _('versions') }}</div></div>
+    <div><div class="fw-semibold" style="font-size:20px">{{ '%.1f'|format(stats.bytes / 1024) }} KB</div>
+         <div class="text-secondary" style="font-size:12.5px">{{ _('blob bytes') }}</div></div>
+    <div><div class="fw-semibold" style="font-size:20px">{{ ref_stats.edges }}</div>
+         <div class="text-secondary" style="font-size:12.5px">{{ _('policy → artifact edges') }}</div></div>
+    <div><div class="fw-semibold" style="font-size:20px">{{ ref_stats.policies }}</div>
+         <div class="text-secondary" style="font-size:12.5px">{{ _('policies walked') }}</div></div>
+    <div><div class="fw-semibold" style="font-size:20px{{ ';color:#8B1C2A' if ref_stats.unheld }}">{{ ref_stats.unheld }}</div>
+         <div class="text-secondary" style="font-size:12.5px">{{ _('needed, NOT held') }}</div></div>
+    <div><div class="fw-semibold" style="font-size:20px{{ ';color:#7A5700' if ref_stats.orphans }}">{{ ref_stats.orphans }}</div>
+         <div class="text-secondary" style="font-size:12.5px">{{ _('held, no known user') }}</div></div>
+    <div><div class="fw-semibold" style="font-size:20px{{ ';color:#7A5700' if ref_stats.stale_edges }}">{{ ref_stats.stale_edges }}</div>
+         <div class="text-secondary" style="font-size:12.5px">{{ _('stale edges') }}</div></div>
+    <div><div class="fw-semibold" style="font-size:20px{{ ';color:#8B1C2A' if ref_stats.failed_scans }}">{{ ref_stats.failed_scans }}</div>
+         <div class="text-secondary" style="font-size:12.5px">{{ _('walks that FAILED') }}</div></div>
+  </div>
+</div>
+
+{# --------------------------------------------------------------- refresh -- #}
+<div class="fw-card">
+  <div class="fw-card-header"><h2 class="fw-card-title">{{ _('Refresh the index') }}</h2></div>
+  <div class="fw-card-body">
+    <p class="text-secondary" style="font-size:12.5px">
+      {{ _('Walks server policies on one appliance and records which file-backed objects each one needs. Read-only against the device (it is the clone planner\'s source walk with no destination). Bounded per run and oldest-first, so a large fleet converges over successive runs instead of hammering the boxes — the remainder is always reported. The scheduled action') }}
+      <code>artifact_refs</code> {{ _('does the same on a timer. A walk that FAILS never deletes an existing edge: an unreachable appliance must not be able to report that none of its policies need anything.') }}
+    </p>
+    <form method="post" action="{{ url_for('artifacts.refresh_refs') }}" class="d-flex gap-2 align-items-end flex-wrap">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="back" value="{{ request.full_path }}">
+      <div>
+        <label class="fw-fld-label">{{ _('Appliance') }}</label>
+        <select class="form-select form-select-sm" name="appliance_id" style="max-width:220px" required>
+          {% for a in appliances %}
+            <option value="{{ a.id }}" {{ 'selected' if active_appl == a.id|string }}>{{ a.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="fw-fld-label">{{ _('Only this policy (optional)') }}</label>
+        <input class="form-control form-control-sm" name="policy" placeholder="{{ _('server policy mkey') }}" style="max-width:240px">
+      </div>
+      <div>
+        <label class="fw-fld-label">{{ _('Walk budget') }}</label>
+        <input class="form-control form-control-sm" name="budget" value="25" style="max-width:90px">
+      </div>
+      <button class="btn btn-fw-primary btn-sm"><i class="bi bi-arrow-repeat me-1"></i>{{ _('Refresh') }}</button>
+    </form>
+  </div>
+</div>
+
+{# ----------------------------------------------------------- statistics --- #}
+<div class="row g-3">
+  <div class="col-lg-6">
+    <div class="fw-card h-100">
+      <div class="fw-card-header"><h2 class="fw-card-title">{{ _('By object type') }}</h2></div>
+      <div class="fw-table-wrapper">
+        <table class="fw-table">
+          <thead><tr><th>{{ _('Type') }}</th><th>{{ _('Objects') }}</th><th>{{ _('Versions') }}</th>
+                     <th>{{ _('KB') }}</th><th>{{ _('No known user') }}</th>
+                     <th>{{ _('Device can return it?') }}</th></tr></thead>
+          <tbody>
+          {% for key, spec in kinds.items() %}
+            {% set agg = by_kind.get(key) %}
+            <tr>
+              <td><a href="{{ url_for('artifacts.inventory', kind=key) }}">{{ spec.label }}</a></td>
+              <td>{{ agg.objects if agg else 0 }}</td>
+              <td>{{ agg.versions if agg else 0 }}</td>
+              <td>{{ '%.1f'|format((agg.bytes if agg else 0) / 1024) }}</td>
+              <td>{% if agg and agg.orphans %}<span class="fw-badge fw-badge-warning">{{ agg.orphans }}</span>{% else %}0{% endif %}</td>
+              <td>{% if key in unreadable %}
+                    <span class="fw-badge fw-badge-danger">{{ _('no') }}</span>
+                  {% else %}
+                    <span class="fw-badge fw-badge-success">{{ _('yes') }}</span>
+                  {% endif %}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="fw-card h-100">
+      <div class="fw-card-header"><h2 class="fw-card-title">{{ _('Where the copies live') }}</h2></div>
+      {% if by_scope %}
+      <div class="fw-table-wrapper">
+        <table class="fw-table">
+          <thead><tr><th>{{ _('Scope') }}</th><th>{{ _('Objects') }}</th><th>{{ _('KB') }}</th></tr></thead>
+          <tbody>
+          {% for scope, agg in by_scope %}
+            <tr><td>{{ scope }}</td><td>{{ agg.objects }}</td>
+                <td>{{ '%.1f'|format(agg.bytes / 1024) }}</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="fw-card-body text-secondary" style="font-size:12.5px">{{ _('Nothing stored yet.') }}</div>
+      {% endif %}
+      <div class="fw-card-body text-secondary" style="font-size:12px">
+        {{ _('A copy scoped to an appliance is that box\'s own; a library-wide copy is the fallback for any device that needs the name. Both are files under') }}
+        <code>data/artifacts/objects/</code> {{ _('and both ride the standby datasync and the system-backup bundles.') }}
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ------------------------------------------------------------- filters ---- #}
+<div class="fw-card">
+  <div class="fw-card-header">
+    <h2 class="fw-card-title">{{ _('Held artifacts') }}
+      <span class="text-secondary fw-normal" style="font-size:12.5px">({{ rows|length }})</span></h2>
+  </div>
+  <div class="fw-card-body">
+    {#
+      Every filter is resolved on the server and reflected in the query string.
+      A client-side overlay would say "3 results" over whatever subset the page
+      happened to receive, which reads identically to 3 results out of the fleet.
+    #}
+    <form method="get" class="row g-2 align-items-end">
+      <div class="col-md-2">
+        <label class="fw-fld-label">{{ _('Type') }}</label>
+        <select class="form-select form-select-sm" name="kind">
+          <option value="">{{ _('All') }}</option>
+          {% for key, spec in kinds.items() %}
+            <option value="{{ key }}" {{ 'selected' if key == active_kind }}>{{ spec.label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="fw-fld-label">{{ _('Appliance') }}</label>
+        <select class="form-select form-select-sm" name="appl">
+          <option value="">{{ _('Any') }}</option>
+          <option value="library" {{ 'selected' if active_appl == 'library' }}>{{ _('Library-wide only') }}</option>
+          {% for a in appliances %}
+            <option value="{{ a.id }}" {{ 'selected' if active_appl == a.id|string }}>{{ a.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="fw-fld-label">{{ _('Origin') }}</label>
+        <select class="form-select form-select-sm" name="source">
+          <option value="">{{ _('Any') }}</option>
+          <option value="uploaded" {{ 'selected' if active_source == 'uploaded' }}>{{ _('uploaded') }}</option>
+          <option value="captured" {{ 'selected' if active_source == 'captured' }}>{{ _('captured') }}</option>
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="fw-fld-label">{{ _('Usage') }}</label>
+        <select class="form-select form-select-sm" name="usage">
+          <option value="">{{ _('Any') }}</option>
+          <option value="used" {{ 'selected' if active_usage == 'used' }}>{{ _('used by a policy') }}</option>
+          <option value="orphan" {{ 'selected' if active_usage == 'orphan' }}>{{ _('no known user') }}</option>
+          <option value="stale" {{ 'selected' if active_usage == 'stale' }}>{{ _('all edges stale') }}</option>
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="fw-fld-label">{{ _('Name contains') }}</label>
+        <input class="form-control form-control-sm" name="q" value="{{ query }}">
+      </div>
+      <div class="col-md-2 d-flex gap-2">
+        <button class="btn btn-fw-primary btn-sm">{{ _('Filter') }}</button>
+        <a class="btn btn-fw-outline btn-sm" href="{{ url_for('artifacts.inventory') }}">{{ _('Clear') }}</a>
+      </div>
+    </form>
+  </div>
+  {% if rows %}
+  <div class="fw-table-wrapper">
+    <table class="fw-table">
+      <thead><tr>
+        <th>{{ _('Object') }}</th><th>{{ _('Type') }}</th><th>{{ _('Scope') }}</th>
+        <th>{{ _('Versions') }}</th><th>{{ _('Latest') }}</th><th>{{ _('KB') }}</th>
+        <th>{{ _('Origin') }}</th><th>{{ _('Used by') }}</th>
+      </tr></thead>
+      <tbody>
+      {% for o in rows %}
+        <tr>
+          <td class="font-monospace">
+            <a href="{{ url_for('artifacts.object_page', kind=o.kind, name=o.name) }}">{{ o.name }}</a></td>
+          <td style="font-size:12.5px">{{ o.label }}
+            {% if not o.readable %}<span class="fw-badge fw-badge-danger">{{ _('upload only') }}</span>{% endif %}</td>
+          <td style="font-size:12.5px">{{ o.appliance or _('library-wide') }}</td>
+          <td>{{ o.versions }}</td>
+          <td class="font-monospace" style="font-size:12px">{{ o.latest.short_sha }}</td>
+          <td>{{ '%.1f'|format(o.bytes / 1024) }}</td>
+          <td>{% for s in o.sources %}<span class="fw-badge {{ 'fw-badge-info' if s == 'captured' else 'fw-badge-secondary' }}">{{ s }}</span> {% endfor %}</td>
+          <td style="font-size:12px">
+            {% if o.used_by %}
+              {% for u in o.used_by[:4] %}
+                <div>{{ u.appliance }} / <span class="font-monospace">{{ u.policy_mkey }}</span></div>
+              {% endfor %}
+              {% if o.used_by|length > 4 %}
+                <div class="text-secondary">+{{ o.used_by|length - 4 }} {{ _('more') }}</div>
+              {% endif %}
+              {% if o.stale %}<span class="fw-badge fw-badge-warning">{{ _('stale') }}</span>{% endif %}
+            {% else %}
+              <span class="fw-badge fw-badge-secondary">{{ _('no known user') }}</span>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="fw-card-body text-secondary">{{ _('No artifact matches these filters.') }}</div>
+  {% endif %}
+</div>
+
+{# --------------------------------------------------------------- missing -- #}
+{% if missing %}
+<div class="fw-card">
+  <div class="fw-card-header">
+    <h2 class="fw-card-title" style="color:#8B1C2A">{{ _('Needed by a policy and NOT held') }}
+      <span class="fw-normal text-secondary" style="font-size:12.5px">({{ missing|length }})</span></h2>
+  </div>
+  <div class="fw-card-body text-secondary" style="font-size:12.5px">
+    {{ _('These objects are named by a walked policy and SATOM has no copy of their content. For a type the device can return, capture it before the move. For the three it cannot, the bytes exist only on the source appliance in a form nothing can read — the content cannot be recovered, only re-supplied from wherever it was originally authored.') }}
+  </div>
+  <div class="fw-table-wrapper">
+    <table class="fw-table">
+      <thead><tr><th>{{ _('Object') }}</th><th>{{ _('Type') }}</th>
+                 <th>{{ _('Recoverable from the device?') }}</th><th>{{ _('Needed by') }}</th></tr></thead>
+      <tbody>
+      {% for m in missing %}
+        <tr>
+          <td class="font-monospace">{{ m.name }}</td>
+          <td style="font-size:12.5px">{{ m.label }}</td>
+          <td>{% if m.readable %}
+                <span class="fw-badge fw-badge-warning">{{ _('capture it') }}</span>
+              {% else %}
+                <span class="fw-badge fw-badge-danger">{{ _('no — upload only') }}</span>
+              {% endif %}</td>
+          <td style="font-size:12px">
+            {% for u in m.used_by[:4] %}
+              <div>{{ u.appliance }} / <span class="font-monospace">{{ u.policy_mkey }}</span></div>
+            {% endfor %}
+            {% if m.used_by|length > 4 %}<div class="text-secondary">+{{ m.used_by|length - 4 }}</div>{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{# -------------------------------------------------------------- coverage -- #}
+<div class="fw-card">
+  <div class="fw-card-header">
+    <h2 class="fw-card-title">{{ _('Migration coverage by server policy') }}
+      <span class="fw-normal text-secondary" style="font-size:12.5px">({{ coverage|length }})</span></h2>
+    <span class="text-secondary" style="font-size:12px">{{ _('Blocked first.') }}</span>
+  </div>
+  {% if coverage %}
+  <div class="fw-table-wrapper">
+    <table class="fw-table">
+      <thead><tr>
+        <th>{{ _('Appliance') }}</th><th>{{ _('Server policy') }}</th>
+        <th>{{ _('Artifacts needed') }}</th><th>{{ _('Missing') }}</th>
+        <th>{{ _('Unrecoverable') }}</th><th>{{ _('Verdict') }}</th><th>{{ _('Detail') }}</th>
+      </tr></thead>
+      <tbody>
+      {% for c in coverage %}
+        <tr>
+          <td>{{ c.appliance }}</td>
+          <td class="font-monospace">{{ c.policy }}</td>
+          <td>{{ c.total }}</td>
+          <td>{% if c.missing %}<span class="fw-badge fw-badge-danger">{{ c.missing }}</span>{% else %}0{% endif %}</td>
+          <td>{% if c.unrecoverable %}<span class="fw-badge fw-badge-danger">{{ c.unrecoverable }}</span>{% else %}0{% endif %}</td>
+          <td>
+            {% if not c.scanned %}
+              <span class="fw-badge fw-badge-warning">{{ _('walk failed') }}</span>
+            {% elif c.ready and c.total == 0 %}
+              <span class="fw-badge fw-badge-success">{{ _('no file-backed object') }}</span>
+            {% elif c.ready %}
+              <span class="fw-badge fw-badge-success">{{ _('all content held') }}</span>
+            {% else %}
+              <span class="fw-badge fw-badge-danger">{{ _('blocked') }}</span>
+            {% endif %}
+            {% if c.stale %}<span class="fw-badge fw-badge-warning">{{ _('stale') }}</span>{% endif %}
+          </td>
+          <td style="font-size:12px">
+            {% if not c.scanned %}
+              {{ c.scan_error or _('the dependency walk did not complete — nothing here has been verified') }}
+            {% else %}
+              {% for a in c.artifacts %}
+                <div>
+                  {% if a.held %}<span class="fw-badge fw-badge-success">{{ _('held') }}</span>
+                  {% else %}<span class="fw-badge fw-badge-danger">{{ _('missing') }}</span>{% endif %}
+                  <span class="font-monospace">{{ a.name }}</span>
+                  <span class="text-secondary">{{ a.label }}</span>
+                  {% if not a.held %}<span class="text-secondary">— {{ a.reason }}</span>{% endif %}
+                </div>
+              {% endfor %}
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="fw-card-body text-secondary" style="font-size:12.5px">
+    {{ _('No policy has been walked yet. An empty table here means nobody looked — it does NOT mean the fleet carries no file-backed objects. Use "Refresh the index" above.') }}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

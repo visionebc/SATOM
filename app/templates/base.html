@@ -748,6 +748,10 @@
             <i class="bi bi-slash-circle fw-nav-icon"></i><span>Exceptions &amp; Signature</span></a>
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'artifacts' else '' }}" href="{{ url_for('artifacts.index') }}">
             <i class="bi bi-file-earmark-lock fw-nav-icon"></i><span>{{ _('WAF Artifacts') }}</span></a>
+          <a class="fw-nav-item fw-nav-sub {{ 'active' if request.endpoint == 'artifacts.manage' else '' }}" href="{{ url_for('artifacts.manage') }}">
+            <i class="bi bi-folder-plus fw-nav-icon"></i><span>{{ _('Artifact files') }}</span></a>
+          <a class="fw-nav-item fw-nav-sub {{ 'active' if request.endpoint in ['artifacts.inventory', 'artifacts.object_page'] else '' }}" href="{{ url_for('artifacts.inventory') }}">
+            <i class="bi bi-clipboard-data fw-nav-icon"></i><span>{{ _('Artifact inventory') }}</span></a>
           {% if current_appliance %}
           <a class="fw-nav-item {{ 'active' if _wp_active == '__profile__' else '' }}"
              href="{{ url_for('web_protection.overview', id=current_appliance.id) }}">

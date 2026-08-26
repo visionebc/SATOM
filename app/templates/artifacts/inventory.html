@@ -9,146 +9,205 @@
       {{ stale_days }} {{ _('days is shown as stale, not as truth.') }}
     </p>
   </div>
+  {#
+    THREE buttons, not one menu behind one button. The three verbs differ in
+    what they touch — upload reads nothing, capture READS a device, author
+    writes only SATOM — so a single "Add content" dialog put all three side by
+    side and left the operator to notice which column reaches out to a live
+    appliance. Each one names itself in the button and again on hover.
+
+    The two links that stood here went to /artifacts/manage (a second copy of
+    this page, now removed) and to the object-type catalogue, which is in the
+    left rail. A header full of navigation is how the actions get lost.
+  #}
   <div class="d-flex gap-2">
-    <button class="btn btn-fw-primary btn-sm" type="button"
-            data-bs-toggle="modal" data-bs-target="#artAddModal">
-      <i class="bi bi-plus-lg me-1"></i>{{ _('Add content') }}</button>
-    <a class="btn btn-fw-outline btn-sm" href="{{ url_for('artifacts.manage') }}">
-      <i class="bi bi-folder-plus me-1"></i>{{ _('Uploads &amp; files') }}</a>
-    <a class="btn btn-fw-outline btn-sm" href="{{ url_for('artifacts.index') }}">
-      <i class="bi bi-info-circle me-1"></i>{{ _('Object types') }}</a>
+    <button class="btn btn-fw-primary btn-sm" type="button" data-add-verb="upload"
+            data-bs-toggle="modal" data-bs-target="#artUploadModal"
+            title="{{ _('Store a file you supply. Touches no appliance — and it is the ONLY way XML Schema, WSDL and gRPC IDL can ever enter the store.') }}">
+      <i class="bi bi-upload me-1"></i>{{ _('Upload a file') }}</button>
+    <button class="btn btn-fw-outline btn-sm" type="button" data-add-verb="author"
+            data-bs-toggle="modal" data-bs-target="#artAuthorModal"
+            title="{{ _('Type or paste the body here and store it as a version. Touches no appliance.') }}">
+      <i class="bi bi-pencil-square me-1"></i>{{ _('Author content') }}</button>
+    <button class="btn btn-fw-outline btn-sm" type="button" data-add-verb="capture"
+            data-bs-toggle="modal" data-bs-target="#artCaptureModal"
+            title="{{ _('Read the object off this device and keep a copy. Read-only on the appliance, and only for the four kinds it will return.') }}">
+      <i class="bi bi-download me-1"></i>{{ _('Capture from device') }}</button>
   </div>
 </div>
 
-{# ------------------------------------------------------------ add modal --- #}
+{# ----------------------------------------------------------- add dialogs --- #}
 {#
-  The same three verbs the manage page offers, in a dialog, so content can be
-  added without leaving the inventory. They POST to the SAME endpoints — a
-  second set of routes for "the modal version" is how one of the two ends up
-  missing a validation the other has. `back=inventory` is the only difference,
-  and it is resolved server-side by _verb_dest.
+  One dialog per verb. They POST to the SAME endpoints the retired manage page
+  used — a second set of routes for "the modal version" is how one of the two
+  ends up missing a validation the other has. `back=inventory` is the only
+  difference, and it is resolved server-side by _verb_dest.
+
+  The "belongs to" pickers offer this pair and the shared library, and nothing
+  else: switching device is the Architecture map's job. A picker listing the
+  fleet is the same defect as a table listing it, and it is the half three
+  rounds of guards could not see because they stripped <select> first.
 #}
-<div class="modal fade" id="artAddModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+<div class="modal fade" id="artUploadModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-scrollable">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title"><i class="bi bi-plus-lg me-2"></i>{{ _('Add content') }}</h5>
+        <h5 class="modal-title"><i class="bi bi-upload me-2"></i>{{ _('Upload a file') }}</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
       </div>
-      <div class="modal-body">
-        <div class="row g-4">
-
-          <div class="col-lg-4">
-            <form method="post" action="{{ url_for('artifacts.upload') }}" enctype="multipart/form-data">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <input type="hidden" name="back" value="inventory">
-              <div class="fw-semibold mb-2"><i class="bi bi-upload me-1"></i>{{ _('Upload a file') }}</div>
-              <p class="text-secondary" style="font-size:12.5px">{{ _('The only way XML Schema, WSDL and gRPC IDL can ever enter the store.') }}</p>
-              <div class="mb-2">
-                <label class="fw-fld-label">{{ _('Type') }}</label>
-                <select class="form-select form-select-sm" name="kind" required>
-                  {% for key, spec in kinds.items() %}
-                    <option value="{{ key }}" {{ 'selected' if key == active_kind }}>{{ spec.label }}</option>
-                  {% endfor %}
-                </select>
-              </div>
-              <div class="mb-2">
-                <label class="fw-fld-label">{{ _('Object name (mkey on the device)') }}</label>
-                <input class="form-control form-control-sm" name="name" placeholder="xsd-order">
-                <div class="form-text" style="font-size:11.5px">{{ _('Left empty, the uploaded filename is used. For OpenAPI the name IS the filename and the device validates its extension —') }} <code>.json</code> / <code>.yaml</code>.</div>
-              </div>
-              <div class="mb-2">
-                <label class="fw-fld-label">{{ _('Belongs to (device / ADOM)') }}</label>
-                <select class="form-select form-select-sm" name="appliance_id">
-                  <option value="">{{ _('Library-wide (any appliance may use it)') }}</option>
-                  {% for a in appliances %}
-                    <option value="{{ a.id }}">{{ a.host or a.name }} / {{ a.vdom or _('no ADOM') }}</option>
-                  {% endfor %}
-                </select>
-              </div>
-              <div class="mb-2">
-                <label class="fw-fld-label">{{ _('File') }}</label>
-                <input class="form-control form-control-sm" type="file" name="file" required>
-                <div class="form-text" style="font-size:11.5px">{{ _('Maximum') }} {{ max_kb }} KB.</div>
-              </div>
-              <div class="mb-3">
-                <label class="fw-fld-label">{{ _('Note') }}</label>
-                <input class="form-control form-control-sm" name="note" placeholder="{{ _('where this came from') }}">
-              </div>
-              <button class="btn btn-fw-primary btn-sm"><i class="bi bi-upload me-1"></i>{{ _('Store') }}</button>
-            </form>
+      <form method="post" action="{{ url_for('artifacts.upload') }}" enctype="multipart/form-data">
+        <div class="modal-body">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="back" value="inventory">
+          <p class="text-secondary" style="font-size:12.5px">{{ _('The only way XML Schema, WSDL and gRPC IDL can ever enter the store. Touches no appliance.') }}</p>
+          <div class="mb-2">
+            <label class="fw-fld-label">{{ _('Type') }}</label>
+            <select class="form-select form-select-sm" name="kind" required
+                    title="{{ _('Which of the seven file-backed object types this content is') }}">
+              {% for key, spec in kinds.items() %}
+                <option value="{{ key }}" {{ 'selected' if key == active_kind }}>{{ spec.label }}</option>
+              {% endfor %}
+            </select>
           </div>
-
-          <div class="col-lg-4">
-            <form method="post" action="{{ url_for('artifacts.save') }}">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <input type="hidden" name="back" value="{{ back }}">
-              <div class="fw-semibold mb-2"><i class="bi bi-pencil-square me-1"></i>{{ _('Author it here') }}</div>
-              <p class="text-secondary" style="font-size:12.5px">{{ _('Paste or type the body. Saved as a version exactly like an upload — same store, same hash, same push path.') }}</p>
-              <div class="mb-2">
-                <label class="fw-fld-label">{{ _('Type') }}</label>
-                <select class="form-select form-select-sm" name="kind" required>
-                  {% for key, spec in kinds.items() %}
-                    <option value="{{ key }}" {{ 'selected' if key == active_kind }}>{{ spec.label }}</option>
-                  {% endfor %}
-                </select>
-              </div>
-              <div class="mb-2">
-                <label class="fw-fld-label">{{ _('Object name') }}</label>
-                <input class="form-control form-control-sm" name="name" required placeholder="xsd-order">
-              </div>
-              <div class="mb-2">
-                <label class="fw-fld-label">{{ _('Belongs to (device / ADOM)') }}</label>
-                <select class="form-select form-select-sm" name="appliance_id">
-                  <option value="">{{ _('Library-wide (any appliance may use it)') }}</option>
-                  {% for a in appliances %}
-                    <option value="{{ a.id }}">{{ a.host or a.name }} / {{ a.vdom or _('no ADOM') }}</option>
-                  {% endfor %}
-                </select>
-              </div>
-              <div class="mb-3">
-                <label class="fw-fld-label">{{ _('Content') }}</label>
-                <textarea class="form-control form-control-sm" name="content" rows="8"
-                          spellcheck="false" required
-                          style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px"
-                          placeholder="&lt;xs:schema …&gt;"></textarea>
-              </div>
-              <button class="btn btn-fw-primary btn-sm"><i class="bi bi-save me-1"></i>{{ _('Save version') }}</button>
-            </form>
+          <div class="mb-2">
+            <label class="fw-fld-label">{{ _('Object name (mkey on the device)') }}</label>
+            <input class="form-control form-control-sm" name="name" placeholder="xsd-order"
+                   title="{{ _('The mkey FortiWeb will store this under. Left empty, the uploaded filename is used.') }}">
+            <div class="form-text" style="font-size:11.5px">{{ _('Left empty, the uploaded filename is used. For OpenAPI the name IS the filename and the device validates its extension —') }} <code>.json</code> / <code>.yaml</code>.</div>
           </div>
-
-          <div class="col-lg-4">
-            <form method="post" action="{{ url_for('artifacts.capture') }}">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <input type="hidden" name="back" value="inventory">
-              <div class="fw-semibold mb-2"><i class="bi bi-download me-1"></i>{{ _('Capture from an appliance') }}</div>
-              <p class="text-secondary" style="font-size:12.5px">{{ _('Reads the object off the device and keeps a copy. Read-only on the appliance. Available for XML DTD, OpenAPI, JSON Schema and Lua scripting only — the other three answer') }} <code>-20005</code>.</p>
-              <div class="mb-2">
-                <label class="fw-fld-label">{{ _('Type') }}</label>
-                <select class="form-select form-select-sm" name="kind" required>
-                  {% for key, spec in kinds.items() if key not in unreadable %}
-                    <option value="{{ key }}">{{ spec.label }}</option>
-                  {% endfor %}
-                </select>
-              </div>
-              <div class="mb-2">
-                <label class="fw-fld-label">{{ _('Object name') }}</label>
-                <input class="form-control form-control-sm" name="name" required>
-              </div>
-              <div class="mb-3">
-                <label class="fw-fld-label">{{ _('Device / ADOM') }}</label>
-                <select class="form-select form-select-sm" name="appliance_id" required>
-                  {% for a in appliances %}
-                    <option value="{{ a.id }}">{{ a.host or a.name }} / {{ a.vdom or _('no ADOM') }}</option>
-                  {% endfor %}
-                </select>
-              </div>
-              <button class="btn btn-fw-outline btn-sm"><i class="bi bi-download me-1"></i>{{ _('Capture') }}</button>
-            </form>
+          <div class="mb-2">
+            <label class="fw-fld-label">{{ _('Belongs to (device / ADOM)') }}</label>
+            <select class="form-select form-select-sm" name="appliance_id"
+                    title="{{ _('Scoped to this pair, or shared library-wide — a shared copy is ONE file that every device without its own copy reads.') }}">
+              <option value="">{{ _('Library-wide (any appliance may use it)') }}</option>
+              {% for a in appliances %}
+                <option value="{{ a.id }}" title="{{ a.host }}">{{ appliance_name_parts(a)[0] }} / {{ a.vdom or _('no ADOM') }}</option>
+              {% endfor %}
+            </select>
           </div>
-
+          <div class="mb-2">
+            <label class="fw-fld-label">{{ _('File') }}</label>
+            <input class="form-control form-control-sm" type="file" name="file" required>
+            <div class="form-text" style="font-size:11.5px">{{ _('Maximum') }} {{ max_kb }} KB.</div>
+          </div>
+          <div class="mb-1">
+            <label class="fw-fld-label">{{ _('Note') }}</label>
+            <input class="form-control form-control-sm" name="note" placeholder="{{ _('where this came from') }}"
+                   title="{{ _('Recorded on the version. The only place the provenance of an uploaded file survives.') }}">
+          </div>
         </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-fw-outline btn-sm" data-bs-dismiss="modal"
+                  title="{{ _('Close without storing anything') }}">{{ _('Cancel') }}</button>
+          <button class="btn btn-fw-primary btn-sm"
+                  title="{{ _('Store this file as a new version in the SATOM artifact library') }}">
+            <i class="bi bi-upload me-1"></i>{{ _('Store') }}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="artAuthorModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-pencil-square me-2"></i>{{ _('Author content here') }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
       </div>
+      <form method="post" action="{{ url_for('artifacts.save') }}">
+        <div class="modal-body">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="back" value="{{ back }}">
+          <p class="text-secondary" style="font-size:12.5px">{{ _('Paste or type the body. Saved as a version exactly like an upload — same store, same hash, same push path. Touches no appliance.') }}</p>
+          <div class="mb-2">
+            <label class="fw-fld-label">{{ _('Type') }}</label>
+            <select class="form-select form-select-sm" name="kind" required
+                    title="{{ _('Which of the seven file-backed object types this content is') }}">
+              {% for key, spec in kinds.items() %}
+                <option value="{{ key }}" {{ 'selected' if key == active_kind }}>{{ spec.label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-2">
+            <label class="fw-fld-label">{{ _('Object name') }}</label>
+            <input class="form-control form-control-sm" name="name" required placeholder="xsd-order"
+                   title="{{ _('The mkey FortiWeb will store this under') }}">
+          </div>
+          <div class="mb-2">
+            <label class="fw-fld-label">{{ _('Belongs to (device / ADOM)') }}</label>
+            <select class="form-select form-select-sm" name="appliance_id"
+                    title="{{ _('Scoped to this pair, or shared library-wide — a shared copy is ONE file that every device without its own copy reads.') }}">
+              <option value="">{{ _('Library-wide (any appliance may use it)') }}</option>
+              {% for a in appliances %}
+                <option value="{{ a.id }}" title="{{ a.host }}">{{ appliance_name_parts(a)[0] }} / {{ a.vdom or _('no ADOM') }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-1">
+            <label class="fw-fld-label">{{ _('Content') }}</label>
+            <textarea class="form-control form-control-sm" name="content" rows="12"
+                      spellcheck="false" required
+                      style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px"
+                      placeholder="&lt;xs:schema …&gt;"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-fw-outline btn-sm" data-bs-dismiss="modal"
+                  title="{{ _('Close without saving anything') }}">{{ _('Cancel') }}</button>
+          <button class="btn btn-fw-primary btn-sm"
+                  title="{{ _('Store this body as a new version. Identical content mints no version — the store is content-addressed.') }}">
+            <i class="bi bi-save me-1"></i>{{ _('Save version') }}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="artCaptureModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-download me-2"></i>{{ _('Capture from an appliance') }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
+      </div>
+      <form method="post" action="{{ url_for('artifacts.capture') }}">
+        <div class="modal-body">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="back" value="inventory">
+          <p class="text-secondary" style="font-size:12.5px">{{ _('Reads the object off the device and keeps a copy. Read-only on the appliance. Available for XML DTD, OpenAPI, JSON Schema and Lua scripting only — the other three answer') }} <code>-20005</code>.</p>
+          <div class="mb-2">
+            <label class="fw-fld-label">{{ _('Type') }}</label>
+            <select class="form-select form-select-sm" name="kind" required
+                    title="{{ _('Only the four types a FortiWeb will hand back are listed here') }}">
+              {% for key, spec in kinds.items() if key not in unreadable %}
+                <option value="{{ key }}">{{ spec.label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-2">
+            <label class="fw-fld-label">{{ _('Object name') }}</label>
+            <input class="form-control form-control-sm" name="name" required
+                   title="{{ _('The mkey as it exists on the device right now') }}">
+          </div>
+          <div class="mb-1">
+            <label class="fw-fld-label">{{ _('Device / ADOM') }}</label>
+            <select class="form-select form-select-sm" name="appliance_id" required
+                    title="{{ _('The device this capture reaches out to. Only the pair this page stands on — switch device on the Architecture map.') }}">
+              {% for a in appliances %}
+                <option value="{{ a.id }}" title="{{ a.host }}">{{ appliance_name_parts(a)[0] }} / {{ a.vdom or _('no ADOM') }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-fw-outline btn-sm" data-bs-dismiss="modal"
+                  title="{{ _('Close without contacting the appliance') }}">{{ _('Cancel') }}</button>
+          <button class="btn btn-fw-primary btn-sm"
+                  title="{{ _('Contact the appliance now, read this object and store what comes back') }}">
+            <i class="bi bi-download me-1"></i>{{ _('Capture') }}</button>
+        </div>
+      </form>
     </div>
   </div>
 </div>
@@ -165,7 +224,7 @@
     {% if scope_id %}
       <div>
         <span class="fw-badge fw-badge-info">{{ _('scope') }}</span>
-        <strong>{{ scope_appl.device }}</strong> &rarr;
+        <strong title="{{ scope_appl.host }}">{{ scope_appl.device }}</strong> &rarr;
         {% if scope_appl.adom %}<span class="font-monospace">{{ scope_appl.adom }}</span>
         {% else %}<span class="text-secondary">{{ _('no ADOM') }}</span>{% endif %}
         <span class="text-secondary">
@@ -179,7 +238,8 @@
         way to widen back to twelve, and a link is not where a device context
         should be able to change.
       #}
-      <a class="btn btn-fw-outline btn-sm" href="{{ url_for('architecture.index') }}">
+      <a class="btn btn-fw-outline btn-sm" href="{{ url_for('architecture.index') }}"
+         title="{{ _('Go to the Architecture map and stand on a different device or ADOM. Everything on this page follows it.') }}">
         <i class="bi bi-diagram-3 me-1"></i>{{ _('Switch device') }}</a>
     {% endif %}
   </div>
@@ -204,10 +264,60 @@
          <div class="text-secondary" style="font-size:12.5px">{{ _('held, no known user') }}</div></div>
     <div><div class="fw-semibold" data-head="stale_edges" style="font-size:20px{{ ';color:#7A5700' if head.stale_edges }}">{{ head.stale_edges }}</div>
          <div class="text-secondary" style="font-size:12.5px">{{ _('stale edges') }}</div></div>
+    <div><div class="fw-semibold" data-head="empty" style="font-size:20px{{ ';color:#8B1C2A' if head.empty }}">{{ head.empty }}</div>
+         <div class="text-secondary" style="font-size:12.5px">{{ _('held but EMPTY') }}</div></div>
     <div><div class="fw-semibold" data-head="failed_scans" style="font-size:20px{{ ';color:#8B1C2A' if head.failed_scans }}">{{ head.failed_scans }}</div>
          <div class="text-secondary" style="font-size:12.5px">{{ _('walks that FAILED') }}</div></div>
   </div>
 </div>
+
+{# ----------------------------------------------------------------- empty -- #}
+{% if empties %}
+<div class="fw-card" data-empty-warning>
+  <div class="fw-card-header">
+    <h2 class="fw-card-title" style="color:#8B1C2A">{{ _('Held, but EMPTY') }}
+      <span class="fw-normal text-secondary" style="font-size:12.5px">({{ empties|length }})</span></h2>
+  </div>
+  <div class="fw-card-body text-secondary" style="font-size:12.5px">
+    {{ _('SATOM holds a copy of these objects and that copy has no content. That is worse than holding none: an absent copy is reported as absent everywhere, while an empty one answers every "is it held?" check — the table above says held — and is then created, empty, on the destination of the next clone. The device shows the object as configured and the rule bound to it enforces nothing. Fix it by uploading the real file, or delete the empty version so the absence is at least honest.') }}
+    <br><span class="text-secondary">{{ _('Listed over everything this device and ADOM holds — the filters above do not narrow this warning.') }}</span>
+  </div>
+  <div class="fw-table-wrapper">
+    <table class="fw-table" data-empty-table>
+      <thead><tr>
+        <th>{{ _('Object') }}</th><th>{{ _('Type') }}</th>
+        <th>{{ _('Held for') }}</th><th>{{ _('Versions') }}</th>
+        <th>{{ _('Policies here') }}</th><th>{{ _('Actions') }}</th>
+      </tr></thead>
+      <tbody>
+      {% for o in empties %}
+        <tr>
+          <td class="font-monospace">{{ o.name }}</td>
+          <td style="font-size:12.5px">{{ o.label }}</td>
+          <td style="font-size:12.5px">
+            {% if o.appliance_id %}{{ o.scope.device }}{% if o.scope.adom %} / <span class="font-monospace">{{ o.scope.adom }}</span>{% endif %}
+            {% else %}<span class="fw-badge fw-badge-warning" title="{{ _('One shared file. Every pair without its own copy reads this empty one.') }}">{{ _('library-wide') }}</span>{% endif %}
+          </td>
+          <td>{{ o.versions }}</td>
+          <td>
+            {% if o.policies %}<span class="fw-badge fw-badge-danger"
+                 title="{{ _('Server policies of this device and ADOM already read this empty copy. Each one would carry it to a destination as an object that enforces nothing.') }}">{{ o.policies }}</span>
+            {% else %}<span class="text-secondary">0</span>{% endif %}
+          </td>
+          <td class="text-nowrap">
+            <a class="btn btn-fw-outline btn-sm"
+               title="{{ _('Open this object to replace the empty version with the real file, or to delete it') }}"
+               aria-label="{{ _('Open this object') }}"
+               href="{{ url_for('artifacts.object_page', kind=o.kind, name=o.name, v=o.latest.id, back=back) }}">
+              <i class="bi bi-eye"></i></a>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
 
 {# --------------------------------------------------------------- refresh -- #}
 <div class="fw-card">
@@ -227,7 +337,8 @@
       <div>
         <label class="fw-fld-label">{{ _('Appliance') }}</label>
         <input type="hidden" name="appliance_id" value="{{ scope_id }}">
-        <div class="form-control form-control-sm bg-body-secondary" style="max-width:220px">
+        <div class="form-control form-control-sm bg-body-secondary" style="max-width:220px"
+             title="{{ scope_appl.host }}">
           {{ scope_appl.device }}{% if scope_appl.adom %} / <span class="font-monospace">{{ scope_appl.adom }}</span>{% endif %}
         </div>
       </div>
@@ -239,7 +350,9 @@
         <label class="fw-fld-label">{{ _('Walk budget') }}</label>
         <input class="form-control form-control-sm" name="budget" value="25" style="max-width:90px">
       </div>
-      <button class="btn btn-fw-primary btn-sm"><i class="bi bi-arrow-repeat me-1"></i>{{ _('Refresh') }}</button>
+      <button class="btn btn-fw-primary btn-sm"
+              title="{{ _('Walk this device\'s server policies now and re-record which file-backed objects each one needs. Read-only against the appliance.') }}">
+        <i class="bi bi-arrow-repeat me-1"></i>{{ _('Refresh') }}</button>
     </form>
   </div>
 </div>
@@ -368,29 +481,39 @@
         <input class="form-control form-control-sm" name="q" value="{{ query }}">
       </div>
       <div class="col-md-2 d-flex gap-2">
-        <button class="btn btn-fw-primary btn-sm">{{ _('Filter') }}</button>
-        <a class="btn btn-fw-outline btn-sm" href="{{ url_for('artifacts.inventory') }}">{{ _('Clear') }}</a>
+        <button class="btn btn-fw-primary btn-sm"
+                title="{{ _('Apply these filters. They are resolved on the server and reflected in the URL, so the list can be shared or bookmarked.') }}">{{ _('Filter') }}</button>
+        <a class="btn btn-fw-outline btn-sm" href="{{ url_for('artifacts.inventory') }}"
+           title="{{ _('Drop every filter and list everything this device and ADOM holds') }}">{{ _('Clear') }}</a>
       </div>
     </form>
   </div>
   {% if rows %}
   <div class="fw-table-wrapper">
-    {# The anchor exists for the guards: this page carries FOUR tables and a
-       naive grep over the whole document matches the coverage table below,
-       which legitimately prints policy and profile names. #}
+    {# The anchor exists for the guards: this page carries several tables and
+       the "needed and NOT held" one legitimately prints names this pair does
+       NOT hold, so a naive grep over the whole document reports the opposite
+       of what it measured. #}
     <table class="fw-table" data-held-table>
       {#
-        The location columns are the DEVICE and the ADOM, and nothing else.
-        The registered name is unique per ADOM, so a name column answers
-        "which chassis, which ADOM" only for a reader who knows the naming
-        convention — and this page exists to answer exactly that.
+        There is NO "used on (device / ADOM)" column. The page stands on one
+        pair and _narrow() dropped every edge belonging to any other, so that
+        column could only ever repeat the pair already printed in the banner,
+        in the Device cell and in the ADOM cell of the very same row — and its
+        empty state, "no known user", was read as a fact about the fleet when
+        it only ever meant "no policy OF THIS PAIR names it".
+
+        What is left is the COUNT, which is the part that varies and the part
+        that decides whether forking a shared copy is safe. The policy and
+        profile names behind it are one click away on the object page.
       #}
       <thead><tr>
         <th>{{ _('Object') }}</th><th>{{ _('Type') }}</th>
         <th>{{ _('Device') }}</th><th>{{ _('ADOM') }}</th>
         <th>{{ _('Versions') }}</th><th>{{ _('Latest') }}</th><th>{{ _('KB') }}</th>
-        <th>{{ _('Origin') }}</th><th>{{ _('Used on (device / ADOM)') }}</th>
-        <th></th>
+        <th>{{ _('Origin') }}</th>
+        <th title="{{ _('Server policies OF THIS DEVICE AND ADOM that read this copy') }}">{{ _('Policies here') }}</th>
+        <th>{{ _('Actions') }}</th>
       </tr></thead>
       <tbody>
       {% for o in rows %}
@@ -398,8 +521,10 @@
           <td class="font-monospace">
             <a href="{{ url_for('artifacts.object_page', kind=o.kind, name=o.name, v=o.latest.id, back=back) }}">{{ o.name }}</a></td>
           <td style="font-size:12.5px">{{ o.label }}
-            {% if not o.readable %}<span class="fw-badge fw-badge-danger">{{ _('upload only') }}</span>{% endif %}</td>
-          <td style="font-size:12.5px" title="{{ o.scope.name }}">{{ o.scope.device }}</td>
+            {% if not o.readable %}<span class="fw-badge fw-badge-danger">{{ _('upload only') }}</span>{% endif %}
+            {% if o.empty %}<span class="fw-badge fw-badge-danger" data-empty-badge
+                  title="{{ _('The newest stored version has no content. It reads as held everywhere and would be created empty at the destination of a clone.') }}">{{ _('EMPTY') }}</span>{% endif %}</td>
+          <td style="font-size:12.5px" data-device-cell title="{{ o.scope.host }}">{{ o.scope.device }}</td>
           <td style="font-size:12.5px">
             {% if o.scope.adom %}<span class="font-monospace">{{ o.scope.adom }}</span>
             {% elif o.appliance_id %}<span class="text-secondary">{{ _('no ADOM') }}</span>
@@ -408,28 +533,32 @@
           <td class="font-monospace" style="font-size:12px">{{ o.latest.short_sha }}</td>
           <td>{{ '%.1f'|format(o.bytes / 1024) }}</td>
           <td>{% for s in o.sources %}<span class="fw-badge {{ 'fw-badge-info' if s == 'captured' else 'fw-badge-secondary' }}">{{ s }}</span> {% endfor %}</td>
-          <td style="font-size:12px">
-            {% if o.used_on %}
-              {% for s in o.used_on[:4] %}
-                <div>{{ s.device }} / {% if s.adom %}<span class="font-monospace">{{ s.adom }}</span>{% else %}<span class="text-secondary">{{ _('no ADOM') }}</span>{% endif %}
-                  <span class="text-secondary">({{ s.policies }})</span></div>
-              {% endfor %}
-              {% if o.used_on|length > 4 %}
-                <div class="text-secondary">+{{ o.used_on|length - 4 }} {{ _('more') }}</div>
-              {% endif %}
-              {% if o.stale %}<span class="fw-badge fw-badge-warning">{{ _('stale') }}</span>{% endif %}
-              {% if o.shared_with %}<span class="fw-badge fw-badge-warning" title="{{ _('This is one library-wide file. Saving a new version reaches those pairs too unless you fork a copy.') }}">+{{ o.shared_with }} {{ _('other pair(s) read this same copy') }}</span>{% endif %}
+          <td style="font-size:12px" data-policies-cell>
+            {% if o.policies %}
+              <span class="fw-semibold">{{ o.policies }}</span>
+              {% if o.stale %}<span class="fw-badge fw-badge-warning" title="{{ _('Every edge to this object was last observed too long ago to be treated as truth. Refresh the index.') }}">{{ _('stale') }}</span>{% endif %}
             {% else %}
-              <span class="fw-badge fw-badge-secondary">{{ _('no known user') }}</span>
+              <span class="fw-badge fw-badge-secondary" title="{{ _('No WALKED policy of this device and ADOM names it. That is not proof nothing uses it — a policy nobody has walked names nothing.') }}">0</span>
             {% endif %}
+            {% if o.shared_with %}<span class="fw-badge fw-badge-warning" title="{{ _('This is one library-wide file. Saving a new version reaches those pairs too unless you fork a copy.') }}">+{{ o.shared_with }} {{ _('other pair(s) read this same copy') }}</span>{% endif %}
           </td>
           {# The eye opens the file itself — the thing FortiWeb's own GUI cannot
              show — carrying this page's full query string so the object page can
-             offer a Back that lands on the filtered list, not on a reset one. #}
+             offer a Back that lands on the filtered list, not on a reset one.
+             Every action here says what it does on hover: an icon-only control
+             is a guess, and one of these leads to the page that can delete a
+             version. #}
           <td class="text-nowrap">
-            <a class="btn btn-fw-outline btn-sm" data-eye title="{{ _('View the content') }}"
+            <a class="btn btn-fw-outline btn-sm" data-eye
+               title="{{ _('View the stored content, its versions and the policies that use it — the file FortiWeb\'s own GUI will not show you') }}"
+               aria-label="{{ _('View the stored content') }}"
                href="{{ url_for('artifacts.object_page', kind=o.kind, name=o.name, v=o.latest.id, back=back) }}">
               <i class="bi bi-eye"></i></a>
+            <a class="btn btn-fw-outline btn-sm" data-download
+               title="{{ _('Download the latest stored bytes as a file. Reads SATOM only; the appliance is not contacted.') }}"
+               aria-label="{{ _('Download the latest stored bytes') }}"
+               href="{{ url_for('artifacts.blob', row_id=o.latest.id) }}">
+              <i class="bi bi-download"></i></a>
           </td>
         </tr>
       {% endfor %}
@@ -453,9 +582,13 @@
   </div>
   <div class="fw-table-wrapper">
     <table class="fw-table" data-missing-table>
+      {# Same reasoning as the held table: every edge here belongs to the pair
+         this page stands on, so a "needed on" column repeats the banner. The
+         count is what tells an operator whether one policy or twelve are
+         blocked on this name. #}
       <thead><tr><th>{{ _('Object') }}</th><th>{{ _('Type') }}</th>
                  <th>{{ _('Recoverable from the device?') }}</th>
-                 <th>{{ _('Needed on (device / ADOM)') }}</th></tr></thead>
+                 <th title="{{ _('Server policies OF THIS DEVICE AND ADOM blocked on this object') }}">{{ _('Policies blocked') }}</th></tr></thead>
       <tbody>
       {% for m in missing %}
         <tr>
@@ -467,13 +600,7 @@
                 <span class="fw-badge fw-badge-danger">{{ _('no — upload only') }}</span>
               {% endif %}
               {% if m.elsewhere %}<span class="fw-badge fw-badge-info" title="{{ _('Another scope holds a copy under this name. resolve() would fall back to those bytes — the borrowed guess, not a copy of this pair.') }}">{{ _('held elsewhere') }}</span>{% endif %}</td>
-          <td style="font-size:12px">
-            {% for s in m.used_on[:4] %}
-              <div>{{ s.device }} / {% if s.adom %}<span class="font-monospace">{{ s.adom }}</span>{% else %}<span class="text-secondary">{{ _('no ADOM') }}</span>{% endif %}
-                <span class="text-secondary">({{ s.policies }})</span></div>
-            {% endfor %}
-            {% if m.used_on|length > 4 %}<div class="text-secondary">+{{ m.used_on|length - 4 }}</div>{% endif %}
-          </td>
+          <td style="font-size:12px"><span class="fw-semibold">{{ m.policies }}</span></td>
         </tr>
       {% endfor %}
       </tbody>
@@ -482,65 +609,14 @@
 </div>
 {% endif %}
 
-{# -------------------------------------------------------------- coverage -- #}
-<div class="fw-card">
-  <div class="fw-card-header">
-    <h2 class="fw-card-title">{{ _('Migration coverage by server policy') }}
-      <span class="fw-normal text-secondary" style="font-size:12.5px">({{ coverage|length }})</span></h2>
-    <span class="text-secondary" style="font-size:12px">{{ _('Blocked first.') }}</span>
-  </div>
-  {% if coverage %}
-  <div class="fw-table-wrapper">
-    <table class="fw-table">
-      <thead><tr>
-        <th>{{ _('Appliance') }}</th><th>{{ _('Server policy') }}</th>
-        <th>{{ _('Artifacts needed') }}</th><th>{{ _('Missing') }}</th>
-        <th>{{ _('Unrecoverable') }}</th><th>{{ _('Verdict') }}</th><th>{{ _('Detail') }}</th>
-      </tr></thead>
-      <tbody>
-      {% for c in coverage %}
-        <tr>
-          <td>{{ c.appliance }}</td>
-          <td class="font-monospace">{{ c.policy }}</td>
-          <td>{{ c.total }}</td>
-          <td>{% if c.missing %}<span class="fw-badge fw-badge-danger">{{ c.missing }}</span>{% else %}0{% endif %}</td>
-          <td>{% if c.unrecoverable %}<span class="fw-badge fw-badge-danger">{{ c.unrecoverable }}</span>{% else %}0{% endif %}</td>
-          <td>
-            {% if not c.scanned %}
-              <span class="fw-badge fw-badge-warning">{{ _('walk failed') }}</span>
-            {% elif c.ready and c.total == 0 %}
-              <span class="fw-badge fw-badge-success">{{ _('no file-backed object') }}</span>
-            {% elif c.ready %}
-              <span class="fw-badge fw-badge-success">{{ _('all content held') }}</span>
-            {% else %}
-              <span class="fw-badge fw-badge-danger">{{ _('blocked') }}</span>
-            {% endif %}
-            {% if c.stale %}<span class="fw-badge fw-badge-warning">{{ _('stale') }}</span>{% endif %}
-          </td>
-          <td style="font-size:12px">
-            {% if not c.scanned %}
-              {{ c.scan_error or _('the dependency walk did not complete — nothing here has been verified') }}
-            {% else %}
-              {% for a in c.artifacts %}
-                <div>
-                  {% if a.held %}<span class="fw-badge fw-badge-success">{{ _('held') }}</span>
-                  {% else %}<span class="fw-badge fw-badge-danger">{{ _('missing') }}</span>{% endif %}
-                  <span class="font-monospace">{{ a.name }}</span>
-                  <span class="text-secondary">{{ a.label }}</span>
-                  {% if not a.held %}<span class="text-secondary">— {{ a.reason }}</span>{% endif %}
-                </div>
-              {% endfor %}
-            {% endif %}
-          </td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% else %}
-  <div class="fw-card-body text-secondary" style="font-size:12.5px">
-    {{ _('No policy has been walked yet. An empty table here means nobody looked — it does NOT mean the fleet carries no file-backed objects. Use "Refresh the index" above.') }}
-  </div>
-  {% endif %}
-</div>
+{# The migration-coverage table lived here and was removed.
+
+   "Which server policies can move today" is a question asked WHEN MIGRATING,
+   and it is answered where a migration is decided: the clone/migrate
+   pre-flight checklist (its `artifacts` gate lists every file-backed object
+   the run needs and refuses to proceed unacknowledged when one is absent or
+   EMPTY) and, per device and exportable, /artifacts/audit. This page answers
+   "what does this pair hold"; a fleet verdict built on top of that read as the
+   authoritative migration answer while being the least current one — and it
+   cost a blob read per edge on every single render. #}
 {% endblock %}

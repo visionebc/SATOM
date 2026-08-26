@@ -769,9 +769,6 @@
                 <a class="fw-nav-item fw-so-nav-flat {{ 'active' if request.endpoint in ['artifacts.inventory', 'artifacts.object_page'] else '' }}"
                    href="{{ url_for('artifacts.inventory') }}">
                   <i class="bi bi-clipboard-data fw-nav-icon"></i><span>{{ _('Inventory') }}</span></a>
-                <a class="fw-nav-item fw-so-nav-flat {{ 'active' if request.endpoint == 'artifacts.manage' else '' }}"
-                   href="{{ url_for('artifacts.manage') }}">
-                  <i class="bi bi-folder-plus fw-nav-icon"></i><span>{{ _('Files') }}</span></a>
                 <a class="fw-nav-item fw-so-nav-flat {{ 'active' if request.endpoint == 'artifacts.audit' else '' }}"
                    href="{{ url_for('artifacts.audit') }}">
                   <i class="bi bi-clipboard-check fw-nav-icon"></i><span>{{ _('Device audit') }}</span></a>

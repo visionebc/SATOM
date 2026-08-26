@@ -139,6 +139,81 @@ def _used_on(refs: list, scopes: dict) -> list:
     return sorted(seen.values(), key=lambda s: (s["device"], s["adom"]))
 
 
+def _scope_arg() -> str:
+    """The active (device, ADOM) selection, canonically ``appl``.
+
+    ``/artifacts/`` published ``?scope=`` first and those links are already in
+    operators' hands, so it is read here as an alias. ONE reader, because two
+    names for one concept is how a click from the statistics page lands on a
+    page that quietly widened back to the whole fleet.
+    """
+    raw = (request.args.get("appl") or "").strip()
+    return raw or (request.args.get("scope") or "").strip()
+
+
+def _narrow(objects: list, usage: dict, scope_id: int) -> tuple:
+    """The universe ONE (device, ADOM) pair actually reads.
+
+    Applied BEFORE anything is computed, and to both halves at once. Filtering
+    each section as it renders is what shipped and what the operator reported:
+    the row table narrowed while the nine counters, the by-type table and
+    "where the copies live" kept summing the fleet, so a page cut to one ADOM
+    printed 170 objects over a list of 30 and enumerated every other chassis.
+    A section added later inherits this narrowing; it cannot forget to repeat
+    it.
+
+    ``usage`` is keyed ``(kind, name)`` with no scope in the key, so a copy
+    held here whose NAME another chassis also uses arrives carrying that
+    chassis's edges. Dropping them is the difference between "used on
+    192.0.2.13 / adom_prod" and a column naming a box the operator is not on.
+    """
+    scoped_usage = {}
+    for key, refs in usage.items():
+        mine = [r for r in refs if r["appliance_id"] == scope_id]
+        if mine:
+            scoped_usage[key] = mine
+    # A library-wide copy belongs to no pair and IS read by this one: leaving
+    # it out would report "not held" for content resolve() serves here today.
+    scoped = [o for o in objects
+              if o["appliance_id"] == scope_id
+              or (not o["appliance_id"]
+                  and (o["kind"], o["name"]) in scoped_usage)]
+    return scoped, scoped_usage
+
+
+def _headline(objects: list, usage: dict, cov: list) -> dict:
+    """The nine counters, over EXACTLY the rows this page renders.
+
+    Computed from the page's own universe, never from ``wa.stats()`` /
+    ``ar.stats()`` — neither takes a scope, so both always answer for the whole
+    store. A header that disagrees with the tables under it is not cosmetic:
+    the operator cross-reads the two and the bigger number reads as the
+    authoritative one.
+    """
+    edges = [r for refs in usage.values() for r in refs]
+    linked = set(usage)
+    held = {(o["kind"], o["name"]) for o in objects}
+    return {
+        # COPIES, not names: the table under this number lists one row per
+        # (kind, name, scope), so a name held by three ADOMs is three files and
+        # three rows. Counting names printed 78 over a list of 170 — the same
+        # header-contradicts-its-page defect this whole change removes. The set
+        # arithmetic below still works on NAMES, because "needed and not held"
+        # is a question about a name, not about a copy.
+        "objects": len(objects),
+        "versions": sum(o["versions"] for o in objects),
+        "bytes": sum(o["bytes"] for o in objects),
+        "edges": len(edges),
+        "policies": len({(r["appliance_id"], r["policy_mkey"]) for r in edges}),
+        #: Named by a policy of this scope and not held FOR this scope.
+        "unheld": len(linked - held),
+        "orphans": len(held - linked),
+        "stale_edges": sum(1 for r in edges
+                           if ar.is_stale(_parse_iso(r["seen_at"]))),
+        "failed_scans": sum(1 for c in cov if not c.get("scanned", True)),
+    }
+
+
 def _safe_back(raw: str, fallback: str) -> str:
     """A caller-supplied return path, or the fallback.
 
@@ -168,7 +243,7 @@ def index():
     somewhere else.
     """
     appliances = _appliances()
-    raw_scope = (request.args.get("scope") or "").strip()
+    raw_scope = _scope_arg()
     scope_id = None
     if raw_scope.isdigit():
         scope_id = int(raw_scope)
@@ -595,17 +670,38 @@ USAGE_FILTERS = ("", "used", "orphan", "stale")
 @bp.route("/inventory")
 @login_required
 def inventory():
-    """Everything held, with its users, plus the migration answer per policy."""
+    """Everything held BY ONE (device, ADOM), its users, and what blocks a move.
+
+    ``?appl=<id>`` is NOT a filter laid over a fleet page — it is the page's
+    entire universe, applied in :func:`_narrow` before a single figure is
+    computed. ``?scope=`` from /artifacts/ is accepted as an alias so the
+    selection survives the click.
+    """
     kind = (request.args.get("kind") or "").strip()
     source = (request.args.get("source") or "").strip()
     usage_f = (request.args.get("usage") or "").strip()
-    appl_f = (request.args.get("appl") or "").strip()
+    appl_f = _scope_arg()
     query = (request.args.get("q") or "").strip().lower()
 
     names = _appliance_names()
     scopes = _scopes()
+    scope_id = int(appl_f) if appl_f.isdigit() else None
+    if scope_id is not None and scope_id not in scopes:
+        # A scope id that matches nothing is a COMPLAINT, never a silent fall
+        # back to the fleet: that answers a question about one ADOM with
+        # twelve ADOMs' rows. Same rule as /artifacts/.
+        flash("No appliance scope with id %s — showing the whole fleet."
+              % scope_id, "warning")
+        scope_id, appl_f = None, ""
+
     usage = ar.usage_index()
     objects = af.object_index()
+    #: "Some OTHER scope holds this name" is by definition a fact about
+    #: somewhere else, so it is read before the narrowing — the same exception
+    #: services.artifact_stats makes for its ``borrowed`` verdict.
+    held_anywhere = {(o["kind"], o["name"]) for o in objects}
+    if scope_id is not None:
+        objects, usage = _narrow(objects, usage, scope_id)
     for o in objects:
         refs = usage.get((o["kind"], o["name"]), [])
         for r in refs:
@@ -619,6 +715,15 @@ def inventory():
         # which ADOM — off the right-hand edge.
         o["used_on"] = _used_on(refs, scopes)
         o["used_by"] = refs
+        # A library-wide copy is ONE file. How many OTHER pairs read it is the
+        # copy-on-write warning, and it is a fact about this row rather than an
+        # excursion into another device's inventory — so it survives the
+        # narrowing as a count. A scoped copy is served to exactly one pair, so
+        # the question does not arise there.
+        o["shared_with"] = 0
+        if not o["appliance_id"]:
+            o["shared_with"] = max(
+                0, len(af.scope_impact(o["kind"], o["name"], None)["affected"]) - 1)
         o["stale"] = bool(refs) and all(
             ar.is_stale(_parse_iso(r["seen_at"])) for r in refs)
         o["orphan"] = not refs
@@ -635,6 +740,12 @@ def inventory():
             r["appliance"] = names.get(r["appliance_id"], "#%s" % r["appliance_id"])
         missing.append({"kind": k, "label": wa.label(k), "name": n,
                         "readable": wa.is_readable(k), "used_by": refs,
+                        # Held for some OTHER scope. Rendering that as a plain
+                        # "not held" hides that resolve() would fall back to
+                        # another box's bytes — the `borrowed` guess the audit
+                        # page exists to flag — and rendering it as held would
+                        # claim this pair owns a file it does not.
+                        "elsewhere": (k, n) in held_anywhere,
                         "used_on": _used_on(refs, scopes)})
 
     rows = objects
@@ -645,13 +756,9 @@ def inventory():
         rows = [o for o in rows if source in o["sources"]]
     if appl_f == "library":
         rows = [o for o in rows if not o["appliance_id"]]
-    elif appl_f.isdigit():
-        aid = int(appl_f)
-        rows = [o for o in rows
-                if o["appliance_id"] == aid
-                or any(r["appliance_id"] == aid for r in o["used_by"])]
-        missing = [m for m in missing
-                   if any(r["appliance_id"] == aid for r in m["used_by"])]
+    # No per-section filter for a numeric scope: _narrow() already made it the
+    # only universe there is. Re-filtering here is how the other five sections
+    # came to be forgotten.
     if usage_f == "used":
         rows = [o for o in rows if o["used_by"]]
     elif usage_f == "orphan":
@@ -682,14 +789,16 @@ def inventory():
         agg["objects"] += 1
         agg["bytes"] += o["bytes"]
 
-    cov = ar.coverage_fleet(int(appl_f) if appl_f.isdigit() else None)
+    cov = ar.coverage_fleet(scope_id)
     for c in cov:
         c["appliance"] = names.get(c["appliance_id"], "#%s" % c["appliance_id"])
 
     return render_template(
         "artifacts/inventory.html", rows=rows, missing=missing,
         kinds=wa.KINDS, unreadable=wa.UNREADABLE, appliances=_appliances(),
-        stats=wa.stats(), ref_stats=ar.stats(), by_kind=by_kind,
+        head=_headline(objects, usage, cov), by_kind=by_kind,
+        scope_id=scope_id, scope_appl=_scope_of(scopes, scope_id) if scope_id
+        else None,
         by_scope=sorted(by_scope.items()), coverage=cov,
         active_kind=kind, active_source=source, active_usage=usage_f,
         active_appl=appl_f, query=request.args.get("q") or "",

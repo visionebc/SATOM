@@ -61,6 +61,42 @@
   </div>
 </div>
 
+{# ---------------------------------------------------- active scope -------- #}
+{#
+  The counters below are per-ADOM, and per-ADOM counters of a symmetric estate
+  COLLIDE: four ADOMs holding five policies each print the same six numbers.
+  Naming the scope is therefore not decoration -- it is the only thing on the
+  page that separates "narrowed to adom_prod" from "not narrowed at all". The
+  discriminator an operator can actually check is the profile/policy NAMES,
+  which are unique per ADOM, so the banner points at them instead of asking
+  anyone to trust the arithmetic.
+#}
+{% if scope_appl %}
+<div class="fw-card" data-scope-banner="{{ scope_appl.id }}">
+  <div class="fw-card-body d-flex flex-wrap align-items-center gap-3">
+    <span class="fw-badge fw-badge-primary">{{ _('narrowed') }}</span>
+    <div>
+      <div class="fw-semibold">
+        <i class="bi bi-hdd-rack me-1"></i>{{ scope_appl.host }}
+        <i class="bi bi-chevron-right mx-1 text-secondary" style="font-size:11px"></i>
+        <i class="bi bi-diagram-2 me-1"></i>{{ _('ADOM') }} {{ scope_appl.vdom or 'root' }}
+        <span class="text-secondary" style="font-weight:400;font-size:12px">({{ scope_appl.name }})</span>
+      </div>
+      <div class="text-secondary" style="font-size:12.5px">
+        {{ _('Every figure on this page counts THIS ADOM only. A sibling ADOM on the same chassis with the same number of policies reports the same totals — identical numbers are a property of the estate, not a filter that failed. The names in "Profiles that carry files" below belong to this ADOM alone; that is the check.') }}
+      </div>
+    </div>
+  </div>
+</div>
+{% else %}
+<div class="fw-card" data-scope-banner="fleet">
+  <div class="fw-card-body text-secondary" style="font-size:12.5px">
+    <span class="fw-badge fw-badge-secondary">{{ _('whole fleet') }}</span>
+    {{ _('Totals span every FortiWeb ADOM. Each ADOM is counted on its own and only then summed into its chassis, so a profile name present in two ADOMs counts twice — they are two profiles that may bind different files.') }}
+  </div>
+</div>
+{% endif %}
+
 {# ------------------------------------------------------------- headline -- #}
 <div class="row row-cols-2 row-cols-md-3 row-cols-xl-6 g-3 mb-4">
   <div class="col"><div class="fw-stat-card">

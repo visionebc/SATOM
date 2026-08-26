@@ -8,6 +8,41 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Added
 
+- **`/artifacts/` is the statistics page, cut by (device, ADOM).** It answered
+  only "what are the seven types" while every number about them lived one page
+  away. It now leads with the figures and keeps the reference below them: how
+  many **Web Protection Profiles carry files**, how many policies name one, per
+  object type the references / distinct objects / policies / profiles / held /
+  not-held / versions / bytes, the store split by captured vs uploaded vs
+  orphaned, and a per-profile table. A `?scope=<appliance>` selector narrows
+  every figure to one ADOM.
+
+  The scope is **(device, ADOM) and never the chassis**, and that is the whole
+  design rather than a formatting choice. SATOM registers one appliance record
+  per administrative domain, so `192.0.2.13` is four records (`root`,
+  `adom_prod`, `adom_dmz`, `adom_dev`). A profile called `wpp-a` in `adom_prod`
+  and a profile called `wpp-a` in `adom_dev` are different profiles that may
+  bind different files under one name — counted per chassis, one ADOM's
+  uploaded copy would read as coverage for another ADOM's object, and the two
+  files never met. Chassis rollups therefore come from `models.chassis_key`
+  (which the repo already owns, and which correctly refuses to bucket HA
+  cluster containers together), and the profile and object counts are
+  recomputed from `(appliance_id, …)` pairs rather than summed.
+
+  Three things the page refuses to round off:
+
+  - the three attribution states stay apart. A named profile counts towards
+    *profiles with files*; `""` is **policy-level** (Lua scripting hangs off the
+    server policy and passes through no profile at all) and is reported as a
+    finding; `NULL` is **not attributed** and is reported as an unanswered
+    question. Folding either into the first invents a profile that does not
+    mention the file.
+  - an ADOM nobody ever walked renders **"never swept"**, not a row of zeros —
+    zeros read as *walked, and it carries nothing*, which is the false
+    all-clear this subsystem exists to withhold.
+  - a `?scope=` that matches nothing **complains** and says it fell back, rather
+    than silently answering a question about one ADOM with the fleet's numbers.
+
 - **WAF Artifacts is one sub-menu with four pages, not three siblings.** The
   entries lived flat in the WAF group and two of them carried `fw-nav-sub` — a
   class with **no rule in `fortiweb.css`** (the sheet defines `fw-nav-subitem`

@@ -26,6 +26,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
+import re
+
 import pytest
 
 
@@ -164,6 +166,25 @@ def _shared_fixture():
     return prod, dev
 
 
+def _stand_on(client, app, appliance_id):
+    """Log in AND stand on a device.
+
+    The artifact pages take their (device, ADOM) from the session, the way
+    Backups and Server Objects do; a logged-in client with no device chosen is
+    sent to the Architecture map instead of being shown the fleet. ``g`` is
+    cleared because ``current_appliance()`` memoises there and the ``ctx``
+    fixture keeps ONE app context open across every request in a test.
+    """
+    from flask import g
+
+    from tests.conftest import admin_user_id, login
+
+    login(client, admin_user_id(app))
+    with client.session_transaction() as sess:
+        sess["appliance_id"] = appliance_id
+    g.__dict__.pop("_current_appliance", None)
+
+
 def _rows(kind="wsdl", name="sch-s"):
     from app.models_artifacts import WafArtifact
     return WafArtifact.query.filter_by(kind=kind, name=name).all()
@@ -174,9 +195,9 @@ def test_a_save_on_a_shared_copy_without_an_answer_writes_nothing(app, client, c
     defect — "all" would edit devices the operator never named."""
     from tests.conftest import admin_user_id, login
 
-    _shared_fixture()
+    prod, _dev = _shared_fixture()
     before = len(_rows())
-    login(client, admin_user_id(app))
+    _stand_on(client, app, prod.id)
     r = client.post("/artifacts/save",
                     data={"kind": "wsdl", "name": "sch-s",
                           "appliance_id": "", "content": "<changed/>"},
@@ -190,8 +211,8 @@ def test_scope_mode_all_writes_one_new_version_of_the_shared_copy(app, client, c
     from tests.conftest import admin_user_id, login
     from app.services import waf_artifacts as wa
 
-    _shared_fixture()
-    login(client, admin_user_id(app))
+    prod, _dev = _shared_fixture()
+    _stand_on(client, app, prod.id)
     client.post("/artifacts/save",
                 data={"kind": "wsdl", "name": "sch-s", "appliance_id": "",
                       "scope_mode": "all", "content": "<changed/>"},
@@ -209,7 +230,7 @@ def test_scope_mode_only_forks_a_copy_and_leaves_the_shared_one_alone(
     from app.services import waf_artifacts as wa
 
     prod, dev = _shared_fixture()
-    login(client, admin_user_id(app))
+    _stand_on(client, app, prod.id)
     client.post("/artifacts/save",
                 data={"kind": "wsdl", "name": "sch-s", "appliance_id": "",
                       "scope_mode": "only", "only_appliance_id": str(prod.id),
@@ -229,21 +250,50 @@ def test_scope_mode_only_forks_a_copy_and_leaves_the_shared_one_alone(
 
 def test_only_refuses_a_pair_that_does_not_read_this_copy(app, client, ctx):
     """A fork scoped to a box that reads something else is a copy nobody will
-    ever be served — and it silently shadows whatever that box does read."""
-    from tests.conftest import admin_user_id, login
+    ever be served — and it silently shadows whatever that box does read.
 
-    _shared_fixture()
+    The rule is unchanged; where it is ENFORCED moved. ``only`` now forks to
+    the pair the page stands on, so a posted ``only_appliance_id`` is not
+    validated — it is ignored, and the stranger is refused by standing on it.
+    Both halves are asserted here: a field that is ignored quietly is how a
+    control keeps writing to a device nobody named.
+    """
+    prod, _dev = _shared_fixture()
     stranger = _appl("fw6@root", "192.0.2.6", "root")
+
     before = len(_rows())
-    login(client, admin_user_id(app))
+    _stand_on(client, app, stranger.id)
     r = client.post("/artifacts/save",
                     data={"kind": "wsdl", "name": "sch-s", "appliance_id": "",
-                          "scope_mode": "only",
-                          "only_appliance_id": str(stranger.id),
-                          "content": "<nope/>"},
+                          "scope_mode": "only", "content": "<nope/>"},
                     follow_redirects=True)
     assert "Not saved" in r.get_data(as_text=True)
     assert len(_rows()) == before
+
+
+def test_only_ignores_a_destination_named_by_the_form(app, client, ctx):
+    """The other half of the same rule. A field that is ignored QUIETLY is how
+    a control keeps writing to a device nobody named, so the fork is asserted
+    to land on the pair the page stands on — not on the one posted.
+
+    (Separate test on purpose: the fork it creates makes the library copy
+    unshared, so the refusal above could not follow it in one body.)
+    """
+    prod, _dev = _shared_fixture()
+    stranger = _appl("fw7@root", "192.0.2.7", "root")
+
+    _stand_on(client, app, prod.id)
+    client.post("/artifacts/save",
+                data={"kind": "wsdl", "name": "sch-s", "appliance_id": "",
+                      "scope_mode": "only",
+                      "only_appliance_id": str(stranger.id),
+                      "content": "<nope/>"},
+                follow_redirects=True)
+
+    assert [r for r in _rows() if r.appliance_id == stranger.id] == [], (
+        "the form named the fork's destination and got it")
+    assert [r for r in _rows() if r.appliance_id == prod.id], (
+        "the fork did not land on the pair the page stands on")
 
 
 def test_an_unshared_save_still_needs_no_answer(app, client, ctx):
@@ -253,7 +303,7 @@ def test_an_unshared_save_still_needs_no_answer(app, client, ctx):
     from tests.conftest import admin_user_id, login
     from app.services import waf_artifacts as wa
 
-    login(client, admin_user_id(app))
+    _stand_on(client, app, _appl("fwN@prod", "192.0.2.10", "adom_prod").id)
     client.post("/artifacts/save",
                 data={"kind": "wsdl", "name": "sch-new", "appliance_id": "",
                       "content": "<fresh/>"},
@@ -279,7 +329,7 @@ def test_a_row_names_the_device_and_the_adom(app, client, ctx):
 
     prod = _appl("fw7@prod", "192.0.2.7", "adom_prod")
     _put("wsdl", "sch-r", "<x/>", appliance_id=prod.id)
-    login(client, admin_user_id(app))
+    _stand_on(client, app, prod.id)
     table = _held_table(client.get("/artifacts/inventory").get_data(as_text=True))
     assert "192.0.2.7" in table, "the device (chassis) is not on the row"
     assert "adom_prod" in table, "the ADOM is not on the row"
@@ -295,7 +345,7 @@ def test_the_used_on_column_carries_pairs_not_policy_and_profile_names(
     prod = _appl("fw8@prod", "192.0.2.8", "adom_prod")
     _put("wsdl", "sch-u", "<x/>")
     _ref(prod.id, "pol-secret-name", "wsdl", "sch-u", wpp="wpp-secret-name")
-    login(client, admin_user_id(app))
+    _stand_on(client, app, prod.id)
     table = _held_table(client.get("/artifacts/inventory").get_data(as_text=True))
     assert "192.0.2.8" in table and "adom_prod" in table
     assert "pol-secret-name" not in table
@@ -309,7 +359,7 @@ def test_the_eye_link_carries_the_scope_and_the_way_back(app, client, ctx):
 
     prod = _appl("fw9@prod", "192.0.2.9", "adom_prod")
     _put("wsdl", "sch-eye", "<x/>", appliance_id=prod.id)
-    login(client, admin_user_id(app))
+    _stand_on(client, app, prod.id)
     table = _held_table(
         client.get("/artifacts/inventory?kind=wsdl").get_data(as_text=True))
     # The EYE's own anchor, not the row. The object name in the first column
@@ -319,8 +369,13 @@ def test_the_eye_link_carries_the_scope_and_the_way_back(app, client, ctx):
     eye = table[table.rindex("<a ", 0, at):table.index("</a>", at)]
     assert "bi-eye" in eye
     assert "/artifacts/object/wsdl/sch-eye" in eye
-    assert "appl=%d" % prod.id in eye
     assert "back=" in eye
+    #: The scope used to be threaded through this href. It is the session's
+    #: now, so what matters is where the link LANDS, not what it carries.
+    href = re.search(r'href="([^"]+)"', eye).group(1)
+    landed = client.get(href.replace("&amp;", "&"),
+                        follow_redirects=True).get_data(as_text=True)
+    assert "sch-eye" in landed
 
 
 def test_the_add_modal_posts_to_the_three_real_verbs(app, client, ctx):
@@ -329,7 +384,7 @@ def test_the_add_modal_posts_to_the_three_real_verbs(app, client, ctx):
     -7694."""
     from tests.conftest import admin_user_id, login
 
-    login(client, admin_user_id(app))
+    _stand_on(client, app, _appl("fwM@prod", "192.0.2.11", "adom_prod").id)
     html = client.get("/artifacts/inventory").get_data(as_text=True)
     assert 'id="artAddModal"' in html
     assert 'data-bs-target="#artAddModal"' in html
@@ -343,8 +398,8 @@ def test_the_add_modal_posts_to_the_three_real_verbs(app, client, ctx):
 def test_the_object_page_names_every_pair_a_save_would_reach(app, client, ctx):
     from tests.conftest import admin_user_id, login
 
-    _shared_fixture()
-    login(client, admin_user_id(app))
+    prod, _dev = _shared_fixture()
+    _stand_on(client, app, prod.id)
     html = client.get("/artifacts/object/wsdl/sch-s").get_data(as_text=True)
     assert 'data-scope-choice' in html, "no choice offered on a shared copy"
     assert 'value="all"' in html and 'value="only"' in html
@@ -357,7 +412,7 @@ def test_an_unshared_object_page_offers_no_choice(app, client, ctx):
     from tests.conftest import admin_user_id, login
 
     _put("wsdl", "sch-solo", "<x/>")
-    login(client, admin_user_id(app))
+    _stand_on(client, app, _appl("fwS@prod", "192.0.2.12", "adom_prod").id)
     html = client.get("/artifacts/object/wsdl/sch-solo").get_data(as_text=True)
     assert "data-scope-choice" not in html
     assert "data-scope-note" in html
@@ -369,7 +424,7 @@ def test_back_honours_a_local_path_and_refuses_an_offsite_one(app, client, ctx):
     from tests.conftest import admin_user_id, login
 
     _put("wsdl", "sch-back", "<x/>")
-    login(client, admin_user_id(app))
+    _stand_on(client, app, _appl("fwB@prod", "192.0.2.13", "adom_prod").id)
     good = client.get("/artifacts/object/wsdl/sch-back"
                       "?back=%2Fartifacts%2Finventory%3Fkind%3Dwsdl"
                       ).get_data(as_text=True)

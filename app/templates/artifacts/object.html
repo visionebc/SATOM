@@ -250,13 +250,16 @@
                 {{ _('Only one pair — fork a COPY scoped to it. The shared copy is left exactly as it is, and a later edit of it will not reach the fork.') }}
               </label>
             </div>
-            <select class="form-select form-select-sm mt-2" name="only_appliance_id" style="max-width:340px">
-              {% for s in impact.affected_scopes %}
-                <option value="{{ s.appliance_id }}"
-                        {{ 'selected' if s.appliance_id == impact.working }}>
-                  {{ s.device }} / {{ s.adom or _('no ADOM') }}</option>
-              {% endfor %}
-            </select>
+            {# One destination, and it is not a choice: the pair this page
+               stands on. The picker this replaces listed every affected pair,
+               so "only" could fork a copy onto a device the operator was not
+               on — refused by artifacts.save() now, which is why offering it
+               could only mislead. #}
+            <div class="mt-2 font-monospace" style="font-size:12px" data-fork-target>
+              {{ _('The fork is scoped to') }}
+              {{ scope_appl.host or scope_appl.name }} /
+              {{ scope_appl.vdom or _('no ADOM') }}
+            </div>
           </div>
         {% else %}
           <div class="mb-2" style="font-size:12px" data-scope-note>

@@ -492,41 +492,55 @@ def test_the_symmetric_fixture_really_is_symmetric(ctx):
         assert ta[key] == tb[key] and ta[key] > 0, key
 
 
-def test_a_narrowed_page_names_its_device_and_adom(app, client, ctx):
+def _stand_on(client, app, appliance_id):
+    """Log in AND stand on a device — /artifacts/ reads the session, not a
+    query argument. ``g`` is cleared because ``current_appliance()`` memoises
+    there and ``ctx`` holds one app context open for the whole test."""
+    from flask import g
+
     from tests.conftest import admin_user_id, login
 
-    a, b = _two_symmetric_adoms()
     login(client, admin_user_id(app))
-    html = client.get("/artifacts/?scope=%d" % a.id).get_data(as_text=True)
-    # The picker lists every ADOM by design; asserting over the whole document
-    # would match the page's own <select> and pass with the banner deleted.
-    body = _without_select(html)
+    with client.session_transaction() as sess:
+        sess["appliance_id"] = appliance_id
+    g.__dict__.pop("_current_appliance", None)
+
+
+def test_a_narrowed_page_names_its_device_and_adom(app, client, ctx):
+    a, b = _two_symmetric_adoms()
+    _stand_on(client, app, a.id)
+    body = client.get("/artifacts/").get_data(as_text=True)
+    # NO <select> strip. It used to be stripped here "because the picker lists
+    # every ADOM by design" — and that exemption is where the fleet survived
+    # three rounds of narrowing, in the one place the operator kept pointing at.
     assert 'data-scope-banner="%d"' % a.id in body
     assert "192.0.2.1" in body and "adom_prod" in body
 
 
-def test_the_fleet_page_says_so_instead_of_leaving_the_scope_blank(
+def test_with_no_device_chosen_the_statistics_page_sends_you_to_the_map(
         app, client, ctx):
-    """An unlabelled page is not neutral -- it reads as whichever scope the
-    operator last had in mind."""
+    """There is no fleet page left to label.
+
+    This used to assert that an unscoped page SAID it was unscoped, which was
+    the best available while "whole fleet" was a state this page could be in.
+    It is not one any more: the device comes from the session and an empty
+    session means "pick one", not "show everything".
+    """
     from tests.conftest import admin_user_id, login
 
     _two_symmetric_adoms()
     login(client, admin_user_id(app))
-    body = _without_select(client.get("/artifacts/").get_data(as_text=True))
-    assert 'data-scope-banner="fleet"' in body
+    r = client.get("/artifacts/")
+    assert r.status_code == 302 and "/architecture" in r.headers["Location"]
 
 
 def test_a_narrowed_page_prints_no_sibling_adoms_profile_names(
         app, client, ctx):
     """The names are the discriminator the banner points at. If the sibling's
     names leak in, the banner is a lie about what is on the page."""
-    from tests.conftest import admin_user_id, login
-
     a, b = _two_symmetric_adoms()
-    login(client, admin_user_id(app))
-    body = _without_select(
-        client.get("/artifacts/?scope=%d" % a.id).get_data(as_text=True))
+    _stand_on(client, app, a.id)
+    body = client.get("/artifacts/").get_data(as_text=True)
     assert "wpp-prod-crm" in body          # positive control: its own are there
     assert "wpp-dev-crm" not in body
     assert "wpp-dev-shop" not in body

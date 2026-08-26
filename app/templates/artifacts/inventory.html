@@ -172,12 +172,15 @@
           {{ _('Every counter and every table below covers ONLY this pair. A copy held by another chassis is not listed as held here even when a policy of this ADOM names it — it appears under "needed and NOT held", flagged as held elsewhere, because that is what a clone would have to borrow.') }}
         </span>
       </div>
-      <a class="btn btn-fw-outline btn-sm" href="{{ url_for('artifacts.inventory') }}">{{ _('Whole fleet') }}</a>
-    {% else %}
-      <div>
-        <span class="fw-badge fw-badge-secondary">{{ _('whole fleet') }}</span>
-        <span class="text-secondary">{{ _('Every device and every ADOM. Pick an appliance in the filters below to cut this page — counters included — to one (device, ADOM) pair.') }}</span>
-      </div>
+      {#
+        Switching device is the Architecture map's job, exactly as it is for
+        Backups, Server Objects, Web Protection and Exceptions. The button that
+        stood here said "Whole fleet" — a page cut to one pair kept a one-click
+        way to widen back to twelve, and a link is not where a device context
+        should be able to change.
+      #}
+      <a class="btn btn-fw-outline btn-sm" href="{{ url_for('architecture.index') }}">
+        <i class="bi bi-diagram-3 me-1"></i>{{ _('Switch device') }}</a>
     {% endif %}
   </div>
 </div>
@@ -217,13 +220,16 @@
     <form method="post" action="{{ url_for('artifacts.refresh_refs') }}" class="d-flex gap-2 align-items-end flex-wrap">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="back" value="{{ request.full_path }}">
+      {# The walk targets the device the page is on. A picker here offered the
+         fleet, so a walk could be aimed at a box the operator was not looking
+         at and its result would land on this page as though it were this
+         device's. The route refuses an off-scope id either way. #}
       <div>
         <label class="fw-fld-label">{{ _('Appliance') }}</label>
-        <select class="form-select form-select-sm" name="appliance_id" style="max-width:220px" required>
-          {% for a in appliances %}
-            <option value="{{ a.id }}" {{ 'selected' if active_appl == a.id|string }}>{{ a.name }}</option>
-          {% endfor %}
-        </select>
+        <input type="hidden" name="appliance_id" value="{{ scope_id }}">
+        <div class="form-control form-control-sm bg-body-secondary" style="max-width:220px">
+          {{ scope_appl.device }}{% if scope_appl.adom %} / <span class="font-monospace">{{ scope_appl.adom }}</span>{% endif %}
+        </div>
       </div>
       <div>
         <label class="fw-fld-label">{{ _('Only this policy (optional)') }}</label>
@@ -252,7 +258,7 @@
           {% for key, spec in kinds.items() %}
             {% set agg = by_kind.get(key) %}
             <tr>
-              <td><a href="{{ url_for('artifacts.inventory', kind=key, appl=active_appl or None) }}">{{ spec.label }}</a></td>
+              <td><a href="{{ url_for('artifacts.inventory', kind=key) }}">{{ spec.label }}</a></td>
               <td>{{ agg.objects if agg else 0 }}</td>
               <td>{{ agg.versions if agg else 0 }}</td>
               <td>{{ '%.1f'|format((agg.bytes if agg else 0) / 1024) }}</td>
@@ -321,14 +327,23 @@
           {% endfor %}
         </select>
       </div>
+      {#
+        NO appliance picker here. The device and ADOM are the page's universe,
+        not one of its filters, and they come from the session — the device
+        picked on the Architecture map, named in the banner above. The control
+        that used to sit here listed the fleet and defaulted to "Any", which is
+        to say the page shipped with its own way back to the whole fleet; an
+        operator standing on one ADOM kept being shown twelve.
+
+        What remains is the one distinction that exists WITHIN the scope: a
+        copy this pair holds itself versus a shared library-wide copy it reads.
+      #}
       <div class="col-md-2">
-        <label class="fw-fld-label">{{ _('Appliance') }}</label>
-        <select class="form-select form-select-sm" name="appl">
-          <option value="">{{ _('Any') }}</option>
-          <option value="library" {{ 'selected' if active_appl == 'library' }}>{{ _('Library-wide only') }}</option>
-          {% for a in appliances %}
-            <option value="{{ a.id }}" {{ 'selected' if active_appl == a.id|string }}>{{ a.name }}</option>
-          {% endfor %}
+        <label class="fw-fld-label">{{ _('Held') }}</label>
+        <select class="form-select form-select-sm" name="held">
+          <option value="">{{ _('This device and its shared copies') }}</option>
+          <option value="own" {{ 'selected' if active_held == 'own' }}>{{ _('Held by this device only') }}</option>
+          <option value="library" {{ 'selected' if active_held == 'library' }}>{{ _('Shared library copies only') }}</option>
         </select>
       </div>
       <div class="col-md-2">
@@ -381,7 +396,7 @@
       {% for o in rows %}
         <tr>
           <td class="font-monospace">
-            <a href="{{ url_for('artifacts.object_page', kind=o.kind, name=o.name, v=o.latest.id, appl=o.appliance_id or '', back=back) }}">{{ o.name }}</a></td>
+            <a href="{{ url_for('artifacts.object_page', kind=o.kind, name=o.name, v=o.latest.id, back=back) }}">{{ o.name }}</a></td>
           <td style="font-size:12.5px">{{ o.label }}
             {% if not o.readable %}<span class="fw-badge fw-badge-danger">{{ _('upload only') }}</span>{% endif %}</td>
           <td style="font-size:12.5px" title="{{ o.scope.name }}">{{ o.scope.device }}</td>
@@ -413,7 +428,7 @@
              offer a Back that lands on the filtered list, not on a reset one. #}
           <td class="text-nowrap">
             <a class="btn btn-fw-outline btn-sm" data-eye title="{{ _('View the content') }}"
-               href="{{ url_for('artifacts.object_page', kind=o.kind, name=o.name, v=o.latest.id, appl=o.appliance_id or '', back=back) }}">
+               href="{{ url_for('artifacts.object_page', kind=o.kind, name=o.name, v=o.latest.id, back=back) }}">
               <i class="bi bi-eye"></i></a>
           </td>
         </tr>

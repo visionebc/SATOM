@@ -104,13 +104,49 @@ def _fleet():
     return prod, dev, other
 
 
-def _get(client, app, path):
+def _get(client, app, path, on=None):
+    """Fetch a page while STANDING on a device.
+
+    ``?appl=`` is no longer a scope of its own: the page takes its (device,
+    ADOM) from the session, the way every other per-device page in this product
+    does, and a link that carries an id moves the session and re-issues the
+    request. That hop is why ``follow_redirects`` is on — the old links still
+    land where they promised, in one more round trip.
+    """
+    from flask import g
+
     from tests.conftest import admin_user_id, login
 
     login(client, admin_user_id(app))
-    res = client.get(path)
+    if on is not None:
+        with client.session_transaction() as sess:
+            sess["appliance_id"] = on
+        # TEST-HARNESS ONLY. ``current_appliance()`` memoises on ``g``, and
+        # ``ctx`` holds ONE app context open for the whole test — Flask reuses
+        # it instead of pushing a fresh one per request, so without this the
+        # second request in a test renders the FIRST one's device while the
+        # session already holds the new one. In production every request gets
+        # its own app context and ``set_current`` clears this itself; the cache
+        # is only reachable across requests here.
+        g.__dict__.pop("_current_appliance", None)
+    res = client.get(path, follow_redirects=True)
     assert res.status_code == 200, path
     return res.get_data(as_text=True)
+
+
+def _whole_document(html):
+    """No strip. Deliberately.
+
+    Every guard in this module used to remove ``<select>`` before asserting,
+    on the reasoning that "the dropdowns list the whole fleet BY DESIGN". They
+    did, and that reasoning is what kept three rounds of fixes from seeing the
+    half the operator was still looking at: the filters. The pickers are now
+    scoped like the rest of the page, so the assertions read the document as
+    rendered.
+    """
+    assert "<select" in html, "no <select> on the page — a picker guard here " \
+                              "would be vacuous"
+    return html
 
 
 def _head(html, key):
@@ -122,17 +158,6 @@ def _head(html, key):
 def _table(html, anchor):
     start = html.index(anchor)
     return html[start:html.index("</table>", start)]
-
-
-def _without_pickers(html):
-    """The dropdowns list the whole fleet BY DESIGN.
-
-    A grep over the raw document matches them and reports a leak that is a
-    picker — the ninth time in this repo an assertion matched itself.
-    """
-    out = re.sub(r"<select.*?</select>", "[PICKER]", html, flags=re.S)
-    assert "[PICKER]" in out, "no <select> removed — this strip is vacuous"
-    return out
 
 
 # --------------------------------------------------------------------------- #
@@ -173,15 +198,21 @@ def test_the_headline_counts_only_the_selected_pair(app, client, ctx):
     assert _head(scoped, "unheld") == "1"
 
 
-def test_positive_control_the_fleet_page_still_counts_the_fleet(
+def test_positive_control_a_second_chassis_gets_its_own_universe(
         app, client, ctx):
-    """Narrowing must not become "always show one scope"."""
-    _fleet()
-    fleet = _get(client, app, "/artifacts/inventory")
-    assert _head(fleet, "objects") == "5"
-    assert _head(fleet, "edges") == "7"
-    assert _head(fleet, "policies") == "3"
+    """Narrowing must not have become "always show the same scope".
 
+    The fleet-wide reading this control used to assert no longer exists — a
+    page that renders every ADOM while the banner names one is the defect, not
+    a control. What still discriminates is standing somewhere ELSE and getting
+    different numbers and different names.
+    """
+    prod, _dev, other = _fleet()
+    theirs = _get(client, app, "/artifacts/inventory", on=other.id)
+    assert _head(theirs, "objects") == "1"
+    assert _head(theirs, "edges") == "1"
+    assert "sch-other-1" in theirs
+    assert "sch-prod-1" not in theirs
 
 
 def test_the_objects_counter_is_the_number_of_rows_under_it(app, client, ctx):
@@ -193,9 +224,14 @@ def test_the_objects_counter_is_the_number_of_rows_under_it(app, client, ctx):
     """
     a = _appl("fwA@root", "192.0.2.1", "adom_root")
     b = _appl("fwB@root", "192.0.2.2", "adom_root")
+    # One name, two SCOPED copies, plus a shared one this pair also reads: on
+    # a's page that is two files and two rows, and counting distinct NAMES
+    # would print 1 over them.
     _put("wsdl", "sch-same", "<a/>", appliance_id=a.id)
     _put("wsdl", "sch-same", "<b/>", appliance_id=b.id)
-    html = _get(client, app, "/artifacts/inventory")
+    _put("wsdl", "sch-shared", "<lib/>")
+    _ref(a.id, "pol-a", "wsdl", "sch-shared")
+    html = _get(client, app, "/artifacts/inventory", on=a.id)
     rows = _table(html, "data-held-table").count("<tr>") - 1  # minus the head
     assert rows == 2, rows
     assert _head(html, "objects") == "2"
@@ -215,13 +251,15 @@ def test_where_the_copies_live_lists_only_the_selected_pair(app, client, ctx):
     assert OTHER_HOST not in scoped
 
 
-def test_positive_control_where_the_copies_live_spans_the_fleet_unscoped(
-        app, client, ctx):
-    _fleet()
-    fleet = _table(_get(client, app, "/artifacts/inventory"),
-                   "data-scopes-table")
-    for adom in ("adom_prod", "adom_dev", "adom_root"):
-        assert adom in fleet, adom
+def test_positive_control_the_sibling_adom_lists_ITS_pair(app, client, ctx):
+    """The mirror of the guard above: standing on dev, this table names
+    adom_dev and not adom_prod. Without it, a table that had simply stopped
+    rendering would satisfy "adom_dev not in scoped"."""
+    _prod, dev, _other = _fleet()
+    theirs = _table(_get(client, app, "/artifacts/inventory", on=dev.id),
+                    "data-scopes-table")
+    assert "adom_dev" in theirs
+    assert "adom_prod" not in theirs
 
 
 def _by_type_objects(html: str) -> int:
@@ -247,8 +285,9 @@ def test_the_by_type_table_counts_only_the_selected_pair(app, client, ctx):
     scoped = _get(client, app, "/artifacts/inventory?appl=%s" % prod.id)
     assert _by_type_objects(scoped) == 2
     #: Positive control in the same test: narrowing must not have become
-    #: "always show one scope", which would pass the assertion above.
-    assert _by_type_objects(_get(client, app, "/artifacts/inventory")) == 5
+    #: "always show the same scope", which would pass the assertion above.
+    assert _by_type_objects(
+        _get(client, app, "/artifacts/inventory", on=_other.id)) == 1
 
 
 def test_the_used_on_column_names_no_other_pair(app, client, ctx):
@@ -290,10 +329,14 @@ def test_the_missing_table_omits_what_another_scopes_policies_need(
 
 def test_no_other_device_or_adom_survives_anywhere_on_a_scoped_page(
         app, client, ctx):
-    """The whole-document sweep, with the pickers removed because they list the
-    fleet by design."""
+    """The whole-document sweep — INCLUDING the pickers.
+
+    It used to exclude them, and that exemption is exactly where the fleet
+    survived three rounds of narrowing: the tables were clean and the dropdown
+    still offered every ADOM, which is what the operator kept reporting.
+    """
     prod, _dev, _other = _fleet()
-    body = _without_pickers(
+    body = _whole_document(
         _get(client, app, "/artifacts/inventory?appl=%s" % prod.id))
     assert "adom_dev" not in body
     assert "adom_root" not in body
@@ -315,59 +358,81 @@ def test_the_page_names_the_scope_it_is_showing(app, client, ctx):
     assert CHASSIS in banner and "adom_prod" in banner
 
 
-def test_the_unscoped_page_says_so_rather_than_saying_nothing(
-        app, client, ctx):
-    """Blank is not neutral — it is read as whatever scope the reader had in
-    mind."""
+def test_an_unscoped_page_is_not_a_thing_that_can_render(app, client, ctx):
+    """There is no "whole fleet" reading left to label.
+
+    This used to assert that an unscoped page SAID it was unscoped, which was
+    the best that could be done while the fleet page existed. It does not any
+    more: with no device chosen the operator is sent to pick one, so the state
+    that banner described is unreachable.
+    """
+    from tests.conftest import admin_user_id, login
+
     _fleet()
-    html = _get(client, app, "/artifacts/inventory")
-    assert 'data-scope-banner=""' in html
-    assert "whole fleet" in html
+    login(client, admin_user_id(app))
+    r = client.get("/artifacts/inventory")
+    assert r.status_code == 302 and "/architecture" in r.headers["Location"]
 
 
-def test_the_type_links_keep_the_scope(app, client, ctx):
-    """Clicking an object type reset the page to the fleet — the same defect
-    one click later."""
+def test_the_type_links_do_not_need_to_carry_the_scope(app, client, ctx):
+    """Clicking an object type used to reset the page to the fleet, and the fix
+    was to thread ``appl=`` through every link. The scope lives in the session
+    now, so the plain link is the correct one — and it must still land scoped,
+    which is what this asserts rather than the shape of the href."""
     prod, _dev, _other = _fleet()
-    html = _get(client, app, "/artifacts/inventory?appl=%s" % prod.id)
+    html = _get(client, app, "/artifacts/inventory", on=prod.id)
     block = html[html.index("By object type"):html.index("Where the copies live")]
-    links = re.findall(r'href="(/artifacts/inventory\?[^"]+)"', block)
+    links = re.findall(r'href="(/artifacts/inventory[^"]*)"', block)
     assert links, "the by-type table has no links"
-    for href in links:
-        assert "appl=%s" % prod.id in href, href
+    followed = _get(client, app, links[0], on=prod.id)
+    assert 'data-scope-banner="%s"' % prod.id in followed
+    assert "adom_dev" not in followed
 
 
-def test_the_scope_survives_a_link_built_by_the_statistics_page(
+def test_a_link_built_by_the_statistics_page_still_lands_scoped(
         app, client, ctx):
-    """/artifacts/ published ``?scope=`` first and those links exist. Two names
-    for one concept is how a click lands on a page that widened back."""
+    """/artifacts/ published ``?scope=`` first and those links are in
+    operators' hands. They move the session device and re-issue; what they must
+    never do is open a second, disagreeing notion of where the operator is."""
     prod, _dev, _other = _fleet()
     html = _get(client, app, "/artifacts/inventory?scope=%s" % prod.id)
     assert _head(html, "objects") == "2"
     assert 'data-scope-banner="%s"' % prod.id in html
 
 
-def test_the_sidebar_carries_the_scope_between_the_artifact_pages(
+def test_the_scope_survives_the_nav_without_being_threaded_through_it(
         app, client, ctx):
     """"Where I am" has to survive the nav, or the operator re-picks the ADOM
-    on every page and the complaint returns."""
+    on every page and the complaint returns.
+
+    It used to survive by having every sidebar link carry ``appl=``. Threading
+    a context through N links means the N+1st forgets it — and the sidebar's
+    own links had, which is how a click from Statistics to Inventory landed on
+    the fleet. The session carries it now, so the assertion is about where the
+    links LAND, not about their query strings.
+    """
     prod, _dev, _other = _fleet()
-    html = _get(client, app, "/artifacts/inventory?appl=%s" % prod.id)
-    nav = html[html.index("fw-so-nav"):]
-    assert "/artifacts/audit?appl=%s" % prod.id in nav
-    assert "scope=%s" % prod.id in nav
+    _get(client, app, "/artifacts/inventory", on=prod.id)
+    for path in ("/artifacts/", "/artifacts/audit", "/artifacts/manage"):
+        html = client.get(path, follow_redirects=True).get_data(as_text=True)
+        assert "adom_dev" not in html, path
+        assert OTHER_HOST not in html, path
 
 
-def test_an_unknown_scope_complains_instead_of_widening_in_silence(
+def test_an_unknown_scope_complains_instead_of_moving_in_silence(
         app, client, ctx):
-    """Falling back to the fleet answers a question about one ADOM with every
-    ADOM's rows, and looks like a correct answer."""
-    _fleet()
-    html = _get(client, app, "/artifacts/inventory?appl=999999")
-    assert _head(html, "objects") == "5"
+    """An id that matches nothing must not silently do anything at all.
+
+    It used to fall back to the fleet — answering a question about one ADOM
+    with every ADOM's rows, which looks like a correct answer. Now the device
+    the operator is on is kept, and the mismatch is said out loud rather than
+    leaving them somewhere they did not ask to be.
+    """
+    prod, _dev, _other = _fleet()
+    html = _get(client, app, "/artifacts/inventory?appl=999999", on=prod.id)
+    assert _head(html, "objects") == "2"
+    assert 'data-scope-banner="%s"' % prod.id in html
     #: NOT `"999999" in html` — the id is echoed back inside every `back=`
     #: value on the page, so that assertion passes with the complaint deleted.
-    #: It has to be the complaint's own words, and they must not be the
-    #: banner's ("whole fleet" alone is printed by the unscoped banner).
-    assert "showing the whole fleet" in html, \
-        "the page widened to the fleet without saying so"
+    assert "No device with id 999999" in html, \
+        "the page ignored an unknown id without saying so"

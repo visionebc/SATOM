@@ -601,13 +601,26 @@ def resolve_for_plan(items, *, src_client=None, src_vdom: str = "",
     return out
 
 
-def history(kind: str = "", name: str = "", limit: int = 200) -> list[dict]:
+def history(kind: str = "", name: str = "", limit: int = 200,
+            scope_id: int | None = None) -> list[dict]:
+    """Recent versions. ``scope_id`` narrows to what ONE (device, ADOM) reads —
+    its own copies plus the library-wide ones, the same set ``resolve()`` walks.
+
+    The filter is applied in the QUERY, before ``limit``: narrowing the 200 rows
+    that came back would let another pair's versions eat this pair's places and
+    report the remainder as everything there is.
+    """
+    from sqlalchemy import or_
+
     from ..models_artifacts import WafArtifact
     q = WafArtifact.query
     if kind:
         q = q.filter_by(kind=kind)
     if name:
         q = q.filter_by(name=name)
+    if scope_id is not None:
+        q = q.filter(or_(WafArtifact.appliance_id == scope_id,
+                         WafArtifact.appliance_id.is_(None)))
     rows = q.order_by(WafArtifact.created_at.desc(), WafArtifact.id.desc()).limit(limit).all()
     return [r.to_dict() for r in rows]
 

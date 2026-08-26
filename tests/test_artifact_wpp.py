@@ -332,10 +332,55 @@ def test_editing_one_scope_twice_is_history_not_divergence(store):
 
 
 # ── the pages ────────────────────────────────────────────────────────────────
+def _stand_on_id(client, appliance_id):
+    """Put a device in the session and drop the memoised one.
+
+    ``current_appliance()`` caches on ``g``. Most tests here push no app
+    context, so every request gets a fresh one and the cache cannot leak — but
+    the ones that hold a context open (``store``, ``ctx``) would otherwise
+    render the previously-cached device while the session already names
+    another. Guarded rather than assumed, because which fixture is in play is
+    not visible from the call site.
+    """
+    from flask import g, has_app_context
+
+    with client.session_transaction() as sess:
+        sess["appliance_id"] = appliance_id
+    if has_app_context():
+        g.__dict__.pop("_current_appliance", None)
+
+
+def _stand_device(client, app, host="192.0.2.50", vdom="adom_prod"):
+    """Create a device and stand on it.
+
+    The four artifact pages are per-device: they read the session the way
+    Backups and Server Objects do, and with no device chosen they send the
+    operator to the Architecture map. Rendering the fleet there instead was the
+    reported defect.
+    """
+    from app.models import Appliance, db
+
+    with app.app_context():
+        dev = Appliance.query.filter_by(host=host).first()
+        if dev is None:
+            dev = Appliance(name="fw-scope@%s" % vdom, host=host, port=443,
+                            kind="fortiweb", username="admin", vdom=vdom)
+            dev.password = "pw"
+            db.session.add(dev)
+            db.session.commit()
+        dev_id = dev.id
+    _stand_on_id(client, dev_id)
+    return dev_id
+
+
 def test_the_four_artifact_pages_all_answer(app, client):
     from tests.conftest import admin_user_id, login
 
     login(client, admin_user_id(app))
+    # These pages are per-device now: without a device in the session they send
+    # the operator to the Architecture map to pick one, exactly as Backups and
+    # Server Objects do. A 200 here with no device chosen WAS the defect.
+    _stand_device(client, app)
     for url in ("/artifacts/", "/artifacts/inventory", "/artifacts/manage",
                 "/artifacts/audit"):
         assert client.get(url).status_code == 200, url
@@ -345,6 +390,7 @@ def test_the_audit_exports_as_json_and_csv(app, client):
     from tests.conftest import admin_user_id, login
 
     login(client, admin_user_id(app))
+    _stand_device(client, app)
     j = client.get("/artifacts/audit?format=json")
     assert j.status_code == 200 and j.get_json()["ok"] is True
     assert "generated_at" in j.get_json()
@@ -373,6 +419,10 @@ def test_the_csv_writes_the_profile_states_as_words(app, client, store):
     ar.record(dev.id, "pol-lua", [dict(_art(kind="scripting", name="lua-x",
                                        urn=LUA), wpp="")])
     ar.record(dev.id, "pol-old", [dict(_art(), wpp=None)])
+    # The audit covers the device you are ON, so the rows below have to be its
+    # rows: a fleet-wide export from a page whose banner names one device is
+    # the reading this scoping removed.
+    _stand_on_id(client, dev.id)
     body = client.get("/artifacts/audit?format=csv").get_data(as_text=True)
     assert "(on the policy itself)" in body
     assert "(not attributed)" in body

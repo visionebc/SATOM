@@ -74,6 +74,83 @@ def _appliance_names() -> dict:
     return {a.id: a.name for a in Appliance.query.order_by(Appliance.name).all()}
 
 
+#: What a library-wide copy is shown as in the DEVICE column. Never a blank
+#: cell: an empty device on an inventory row reads as "unknown where this
+#: lives", and the opposite is true — it lives everywhere by design.
+LIBRARY_DEVICE = "SATOM library"
+
+
+def _scopes() -> dict:
+    """``{appliance_id: {name, device, adom}}`` — the pair, not the label.
+
+    The registered NAME already differs per ADOM (SATOM requires it unique), so
+    a name column silently answers "which device and which ADOM" only for
+    someone who knows the naming convention. ``host`` is the chassis and
+    ``vdom`` is the ADOM, and one chassis legitimately carries four rows.
+    """
+    out = {}
+    for a in Appliance.query.order_by(Appliance.name).all():
+        out[a.id] = {"name": a.name, "device": a.host or a.name,
+                     "adom": (a.vdom or "").strip()}
+    return out
+
+
+def _scope_of(scopes: dict, appliance_id) -> dict:
+    """The (device, ADOM) pair for a scope id — including the library case."""
+    if not appliance_id:
+        return {"name": "", "device": LIBRARY_DEVICE, "adom": ""}
+    return scopes.get(appliance_id,
+                      {"name": "#%s" % appliance_id,
+                       "device": "#%s" % appliance_id, "adom": ""})
+
+
+def _verb_dest(back: str, kind: str = "") -> str:
+    """Where upload/capture return to. One resolver, three callers.
+
+    The inventory's add-modal posts to the same three verbs the manage page
+    does, so it needs the same round trip; a second copy of this mapping is how
+    one of the two ends up returning to the page the operator did not start on.
+    """
+    back = (back or "").strip()
+    if back == "manage":
+        return url_for("artifacts.manage", kind=kind)
+    if back == "inventory":
+        return url_for("artifacts.inventory", kind=kind)
+    return _safe_back(back, url_for("artifacts.index", kind=kind))
+
+
+def _used_on(refs: list, scopes: dict) -> list:
+    """The DISTINCT (device, ADOM) pairs a set of edges lands on.
+
+    Distinct on the *scope id*, so a device whose four ADOMs each name the
+    object appears four times — which is the fact — while one ADOM's twelve
+    policies appear once, which is what makes the column readable. The policy
+    count rides along, because "used here" and "used here by twelve policies"
+    are different answers to whether it is safe to fork a copy.
+    """
+    seen: dict = {}
+    for r in refs:
+        aid = r.get("appliance_id")
+        row = seen.get(aid)
+        if row is None:
+            row = dict(_scope_of(scopes, aid), appliance_id=aid, policies=0)
+            seen[aid] = row
+        row["policies"] += 1
+    return sorted(seen.values(), key=lambda s: (s["device"], s["adom"]))
+
+
+def _safe_back(raw: str, fallback: str) -> str:
+    """A caller-supplied return path, or the fallback.
+
+    Only a same-site absolute path is honoured. ``//host`` is protocol-relative
+    and would send an operator off this appliance with a link that looks local.
+    """
+    raw = (raw or "").strip()
+    if raw.startswith("/") and not raw.startswith("//"):
+        return raw
+    return fallback
+
+
 @bp.route("/")
 @login_required
 def index():
@@ -130,7 +207,7 @@ def upload():
     fh = request.files.get("file")
     if kind not in wa.KINDS:
         flash("Unknown artifact type %r." % kind, "danger")
-        return redirect(url_for("artifacts.index"))
+        return redirect(_verb_dest(back))
     if not name:
         # An OpenAPI object's name IS its filename, so falling back to the
         # uploaded filename is right for every kind and REQUIRED for that one.
@@ -138,22 +215,22 @@ def upload():
     if not name:
         flash("An object name is required — it is the mkey the device will "
               "store this under.", "danger")
-        return redirect(url_for("artifacts.manage"))
+        return redirect(_verb_dest(back, kind))
     if fh is None or not fh.filename:
         flash("No file selected.", "danger")
-        return redirect(url_for("artifacts.manage"))
+        return redirect(_verb_dest(back, kind))
     blob = fh.read(MAX_BYTES + 1)
     if len(blob) > MAX_BYTES:
         flash("File is larger than %d KB — these objects are schemas, not "
               "archives." % (MAX_BYTES // 1024), "danger")
-        return redirect(url_for("artifacts.manage"))
+        return redirect(_verb_dest(back, kind))
     if not blob:
         # An empty upload is the exact state this whole feature exists to
         # prevent: it would satisfy every "SATOM has a copy" check and still
         # push an empty object the referencing rule rejects with -7694.
         flash("The file is empty. Storing it would let a clone report success "
               "while pushing an object with no content.", "danger")
-        return redirect(url_for("artifacts.manage"))
+        return redirect(_verb_dest(back, kind))
     warn = wa.name_warning(kind, name)
     row, created = wa.put(kind, name, blob,
                           appliance_id=int(appl_id) if appl_id.isdigit() else None,
@@ -167,9 +244,7 @@ def upload():
              "" if created else " — identical to the copy already held",
              (" Warning: " + warn) if warn else ""),
           "warning" if warn else "success")
-    if back == "manage":
-        return redirect(url_for("artifacts.manage", kind=kind))
-    return redirect(url_for("artifacts.index", kind=kind))
+    return redirect(_verb_dest(back, kind))
 
 
 @bp.route("/capture", methods=["POST"])
@@ -183,8 +258,7 @@ def capture():
     appl = Appliance.query.get_or_404(int(request.form.get("appliance_id") or 0))
     if kind not in wa.KINDS or not name:
         abort(400)
-    dest = (url_for("artifacts.manage", kind=kind) if back == "manage"
-            else url_for("artifacts.index", kind=kind))
+    dest = _verb_dest(back, kind)
     if not wa.is_readable(kind):
         flash("%s cannot be read back from any FortiWeb (7.6.8 answers -20005 "
               "on every request shape, and it is absent from the device's own "
@@ -220,9 +294,7 @@ def push():
     from ..models_artifacts import WafArtifact
     row = WafArtifact.query.get_or_404(row_id)
     dest = (url_for("artifacts.object_page", kind=row.kind, name=row.name)
-            if back == "object" else
-            url_for("artifacts.manage", kind=row.kind) if back == "manage"
-            else url_for("artifacts.index", kind=row.kind))
+            if back == "object" else _verb_dest(back, row.kind))
     blob = wa.load(row.sha256)
     if blob is None:
         flash("The stored blob for %s is missing from data/artifacts — the "
@@ -299,6 +371,14 @@ def save():
     save that changes nothing advances ``last_seen_at`` and mints no row. The
     operator is told which of the two happened, because "saved" over an
     unchanged file would suggest a version exists that does not.
+
+    **A save on a SHARED copy is refused without an answer.** One library-wide
+    copy that three ADOMs resolve to is one file: editing it "for prod" edits
+    dev and dmz as well, the two devices keep working, and the divergence only
+    surfaces the next time somebody diffs them. So the impact is computed
+    first, and when more than one (device, ADOM) reads the copy the operator
+    must say ``all`` (a new version everyone gets) or ``only`` (fork a copy
+    scoped to one pair and leave the shared one exactly as it was).
     """
     kind = (request.form.get("kind") or "").strip()
     name = (request.form.get("name") or "").strip()
@@ -306,26 +386,77 @@ def save():
     text = request.form.get("content")
     if text is None:
         abort(400)
+    target = int(appl_id) if appl_id.isdigit() else None
+    back = request.form.get("back") or ""
+
+    impact = af.scope_impact(kind, name, target) if name and kind in wa.KINDS \
+        else {"shared": False, "affected": []}
+    mode = (request.form.get("scope_mode") or "").strip()
+    forked_to = None
+    if impact["shared"]:
+        scopes = _scopes()
+        pairs = ", ".join("%s / %s" % (s["device"], s["adom"] or "no ADOM")
+                          for s in (_scope_of(scopes, a)
+                                    for a in impact["affected"]))
+        if mode not in (af.SCOPE_ALL, af.SCOPE_ONLY):
+            # NOT saved. Picking a default here is the whole defect: "all" would
+            # edit devices the operator never named, and "only" would quietly
+            # stop a fleet-wide fix from reaching the fleet.
+            flash("Not saved — this copy is read by %d device/ADOM pairs (%s). "
+                  "Say whether the change goes to all of them or only to one, "
+                  "in which case SATOM forks a copy scoped to that pair."
+                  % (len(impact["affected"]), pairs), "danger")
+            return redirect(_safe_back(
+                back, url_for("artifacts.object_page", kind=kind, name=name)))
+        if mode == af.SCOPE_ONLY:
+            raw_only = (request.form.get("only_appliance_id") or "").strip()
+            if not raw_only.isdigit() or int(raw_only) not in impact["affected"]:
+                flash("Not saved — \"only this device/ADOM\" needs one of the "
+                      "pairs that actually read this copy (%s)." % pairs,
+                      "danger")
+                return redirect(_safe_back(
+                    back, url_for("artifacts.object_page", kind=kind, name=name)))
+            forked_to = int(raw_only)
+            target = forked_to
+
     row, created, err = af.save_text(
         kind, name, text,
-        appliance_id=int(appl_id) if appl_id.isdigit() else None,
+        appliance_id=target,
         by=getattr(current_user, "username", "") or "",
         note=(request.form.get("note") or "edited in SATOM").strip())
     if err:
         flash(err.capitalize() + ".", "danger")
         return redirect(request.form.get("back") or url_for("artifacts.manage"))
     warn = wa.name_warning(kind, name)
-    log_action("artifact.save", "%s %s (%d bytes, %s, %s)"
+    log_action("artifact.save", "%s %s (%d bytes, %s, %s%s)"
                % (wa.label(kind), name, row.size, row.sha256[:12],
-                  "new version" if created else "unchanged"))
-    flash(("Saved %s \"%s\" as a new version (%s, %d bytes)."
-           % (wa.label(kind), name, row.sha256[:12], row.size)) if created else
-          ("%s \"%s\" is unchanged — the stored copy already has this exact "
-           "content, so no version was created." % (wa.label(kind), name))
-          + ((" Warning: " + warn) if warn else ""),
+                  "new version" if created else "unchanged",
+                  ", forked to appliance #%s" % forked_to if forked_to else ""))
+    if forked_to:
+        fs = _scope_of(_scopes(), forked_to)
+        # The fork is reported as what it IS — a second copy that from now on
+        # shadows the shared one for this pair only. An operator told merely
+        # "saved" would expect the next edit of the shared copy to reach here.
+        msg = ("Forked %s \"%s\" into a copy scoped to %s / %s (%s, %d bytes). "
+               "The shared copy is unchanged, and this pair now reads its own "
+               "— a later edit of the shared copy will NOT reach it."
+               % (wa.label(kind), name, fs["device"], fs["adom"] or "no ADOM",
+                  row.sha256[:12], row.size)) if created else \
+              ("%s \"%s\" already reads identical content on %s / %s — nothing "
+               "was forked." % (wa.label(kind), name, fs["device"],
+                                fs["adom"] or "no ADOM"))
+    else:
+        msg = ("Saved %s \"%s\" as a new version (%s, %d bytes)%s."
+               % (wa.label(kind), name, row.sha256[:12], row.size,
+                  " — it reaches %d device/ADOM pairs"
+                  % len(impact["affected"]) if impact.get("shared") else "")) \
+              if created else \
+              ("%s \"%s\" is unchanged — the stored copy already has this exact "
+               "content, so no version was created." % (wa.label(kind), name))
+    flash(msg + ((" Warning: " + warn) if warn else ""),
           "warning" if warn else "success")
     return redirect(url_for("artifacts.object_page", kind=kind, name=name,
-                            appl=appl_id or ""))
+                            appl=target or "", back=back or None))
 
 
 @bp.route("/delete", methods=["POST"])
@@ -364,10 +495,12 @@ def object_page(kind: str, name: str):
     if not rows:
         abort(404)
     names = _appliance_names()
+    scopes = _scopes()
     vlist = []
     for r in rows:
         d = r.to_dict()
         d["appliance"] = names.get(r.appliance_id, "") if r.appliance_id else ""
+        d["scope"] = _scope_of(scopes, r.appliance_id)
         vlist.append(d)
 
     def _pick(arg, default_row):
@@ -393,7 +526,27 @@ def object_page(kind: str, name: str):
     used = ar.refs_for(kind, name)
     for u in used:
         u["appliance"] = names.get(u["appliance_id"], "#%s" % u["appliance_id"])
+        u["scope"] = _scope_of(scopes, u["appliance_id"])
         u["stale"] = ar.is_stale(_parse_iso(u["seen_at"]))
+
+    # The (device, ADOM) the operator arrived FROM. It decides which box a
+    # "only here" fork is scoped to, so it is read from the URL rather than
+    # guessed from the version list: guessing would silently fork the copy for
+    # whichever device happened to sort first.
+    raw_appl = (request.args.get("appl") or "").strip()
+    working = int(raw_appl) if raw_appl.isdigit() else current.appliance_id
+    impact = af.scope_impact(kind, name, current.appliance_id)
+    impact["scope_label"] = _scope_of(scopes, current.appliance_id)
+    # Each pair carries its own id, so the template never pairs a label with an
+    # id by list POSITION — the fork would then be scoped to whichever device
+    # happened to line up, and nothing would look wrong on screen.
+    impact["affected_scopes"] = [dict(_scope_of(scopes, a), appliance_id=a)
+                                 for a in impact["affected"]]
+    impact["other_scopes"] = [dict(_scope_of(scopes, a), appliance_id=a)
+                              for a in impact["others"]]
+    impact["working"] = working
+    impact["working_scope"] = _scope_of(scopes, working) if working else None
+
     return render_template(
         "artifacts/object.html", kind=kind, name=name, label=wa.label(kind),
         readable=wa.is_readable(kind), versions=vlist, current=current.to_dict(),
@@ -401,6 +554,9 @@ def object_page(kind: str, name: str):
         editable=editable, why_not=why_not, appliances=_appliances(),
         diff=diff, diff_stat=af.diff_stat(diff), a_id=a_row.id, b_id=b_row.id,
         used_by=used, name_warning=wa.name_warning(kind, name),
+        impact=impact, scopes=scopes,
+        back=_safe_back(request.args.get("back"),
+                        url_for("artifacts.inventory", q=name)),
         appliance_name=names.get(current.appliance_id, "")
                        if current.appliance_id else "")
 
@@ -447,6 +603,7 @@ def inventory():
     query = (request.args.get("q") or "").strip().lower()
 
     names = _appliance_names()
+    scopes = _scopes()
     usage = ar.usage_index()
     objects = af.object_index()
     for o in objects:
@@ -454,6 +611,13 @@ def inventory():
         for r in refs:
             r["appliance"] = names.get(r["appliance_id"], "#%s" % r["appliance_id"])
         o["appliance"] = names.get(o["appliance_id"], "") if o["appliance_id"] else ""
+        o["scope"] = _scope_of(scopes, o["appliance_id"])
+        # WHERE it is used, as (device, ADOM) and nothing else. The policy and
+        # profile names are still one click away on the object page; on a
+        # fleet-sized list they are four lines per row of detail nobody scans,
+        # and they pushed the one fact this page is read for — which box and
+        # which ADOM — off the right-hand edge.
+        o["used_on"] = _used_on(refs, scopes)
         o["used_by"] = refs
         o["stale"] = bool(refs) and all(
             ar.is_stale(_parse_iso(r["seen_at"])) for r in refs)
@@ -470,7 +634,8 @@ def inventory():
         for r in refs:
             r["appliance"] = names.get(r["appliance_id"], "#%s" % r["appliance_id"])
         missing.append({"kind": k, "label": wa.label(k), "name": n,
-                        "readable": wa.is_readable(k), "used_by": refs})
+                        "readable": wa.is_readable(k), "used_by": refs,
+                        "used_on": _used_on(refs, scopes)})
 
     rows = objects
     if kind in wa.KINDS:
@@ -509,8 +674,11 @@ def inventory():
 
     by_scope: dict[str, dict] = {}
     for o in objects:
-        key = o["appliance"] or "SATOM library (no device)"
-        agg = by_scope.setdefault(key, {"objects": 0, "bytes": 0})
+        sc = o["scope"]
+        key = "%s | %s" % (sc["device"], sc["adom"])
+        agg = by_scope.setdefault(key, {"objects": 0, "bytes": 0,
+                                        "device": sc["device"],
+                                        "adom": sc["adom"]})
         agg["objects"] += 1
         agg["bytes"] += o["bytes"]
 
@@ -525,7 +693,8 @@ def inventory():
         by_scope=sorted(by_scope.items()), coverage=cov,
         active_kind=kind, active_source=source, active_usage=usage_f,
         active_appl=appl_f, query=request.args.get("q") or "",
-        stale_days=ar.STALE_AFTER.days)
+        stale_days=ar.STALE_AFTER.days, max_kb=MAX_BYTES // 1024,
+        back=request.full_path)
 
 
 @bp.route("/refs/refresh", methods=["POST"])

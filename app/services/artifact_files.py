@@ -123,6 +123,54 @@ def object_index() -> list[dict]:
     return out
 
 
+#: The two answers to "you are editing a copy more than one device reads".
+#: ``all`` writes a new version of the shared copy; ``only`` forks a copy scoped
+#: to one (device, ADOM) and leaves the shared one untouched.
+SCOPE_ALL = "all"
+SCOPE_ONLY = "only"
+
+
+def scope_impact(kind: str, name: str, appliance_id: int | None = None) -> dict:
+    """Which (device, ADOM) a new version of THIS copy would change.
+
+    Grounded in :func:`waf_artifacts.resolve`'s search order — the device's own
+    copy first, the library copy second — rather than in a rule restated here.
+    A device that holds its own copy never reads the library one, so editing the
+    library copy does not touch it; listing it as affected would push the
+    operator into forking a copy to protect a box that was never at risk.
+
+    The inverse error is the one that costs content: a library copy that three
+    ADOMs read is edited "for prod" and silently changes dev and dmz too. That
+    is why ``shared`` is computed BEFORE the write and the write refuses
+    without an answer, instead of being a note under the textarea.
+    """
+    from . import artifact_refs as ar
+    from ..models_artifacts import WafArtifact
+
+    held = {r.appliance_id for r in
+            WafArtifact.query.filter_by(kind=kind, name=name).all()}
+    consumers = sorted({r["appliance_id"] for r in ar.refs_for(kind, name)})
+    if appliance_id is not None:
+        # A scoped copy is served to exactly one (device, ADOM). Other
+        # consumers of the same NAME read their own copy or the library one —
+        # they are listed, but as context, never as collateral.
+        affected = [appliance_id]
+        others = [c for c in consumers if c != appliance_id]
+    else:
+        affected = [c for c in consumers if c not in held]
+        others = [c for c in consumers if c in held]
+    return {
+        "kind": kind, "name": name, "scope": appliance_id,
+        "library": appliance_id is None,
+        "held_scopes": sorted(h for h in held if h is not None),
+        "has_library_copy": None in held,
+        "consumers": consumers,
+        "affected": affected,
+        "others": others,
+        "shared": len(affected) > 1,
+    }
+
+
 def save_text(kind: str, name: str, text: str, *, appliance_id: int | None = None,
               by: str = "", note: str = "") -> tuple[object | None, bool, str]:
     """Store an edited/authored body. ``(row, created, error)``.

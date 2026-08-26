@@ -10893,3 +10893,56 @@ select kind, count(*) from waf_artifact_ref where wpp_mkey='' group by 1;
 The second must return **`scripting` and nothing else**. Any other kind under
 `''` means the walk lost a profile; a non-zero `<NULL>` count after a full sweep
 means edges were recorded without a referrer graph.
+
+## §118 — The statistics are per (device, ADOM), and the empty ones are not zeros (`tests/test_artifact_stats.py`)
+
+Every failure this pins is **silent**: the page renders, the numbers look like
+numbers, and each wrong one is wrong in the direction that clears a migration
+nobody checked.
+
+**The scope is the guard.** SATOM registers one appliance row per ADOM, so
+`192.0.2.13` is four rows. Counting per chassis makes `wpp-a` in `adom_prod`
+look like coverage for the *different* `wpp-a` in `adom_dev`. Every distinct
+count is keyed on `(appliance_id, …)` and the chassis figures are
+**recomputed**, never summed — and the grouping defers to
+`models.chassis_key` rather than to a second `host` comparison written here
+(the helper is explicit that keyless rows, i.e. HA cluster containers, must
+each get their own bucket).
+
+**Three attribution states, never two.** `"wpp-a"` is a profile; `""` is
+policy-level (Lua hangs off the server policy) and is a FINDING; `NULL` is not
+attributed and is an unanswered question. `models.DEVICE_SCOPE_ADOMS` — not
+a local rule — decides that an empty `vdom` renders as `root`.
+
+**Never-swept is not zero.** `swept` is `bool(scans or refs)`, not
+`bool(refs)`: an ADOM that WAS walked and carries nothing is a clean result,
+and filing it with the ones nobody looked at loses the distinction in the
+direction that matters.
+
+**Recipe.** `venv/bin/python -m pytest tests/test_artifact_stats.py -q`
+(20 guards). The mutation harness lives at `mut_stats.py` in the checkout
+during development: 20 mutations, **20 bite**, scored by return code with only
+`rc == 1` counting as a failing suite (`rc == 4` is a usage error and an
+earlier harness in this repo scored those as kills), with a green baseline
+required first.
+
+**Three guards were VACUOUS on the first run and the harness is what found
+them:**
+
+1. `readable_needed == 1 and unreadable_needed == 1` — with one of each,
+   swapping the two counters still passes. The fixture is now **asymmetric**
+   (2 unreadable, 1 readable).
+2. `policies_clean == 1` over a fixture with exactly one scanned policy —
+   `scanned - with_artifacts` and `scanned` are the same set. A second policy
+   that *does* carry an artifact is now present.
+3. The profile count was asserted only on the **fleet total**, which
+   `fleet_stats` recomputes from the raw rows and overwrites — so the
+   per-ADOM counter, which is the number the table actually prints per row, was
+   never asserted at all.
+
+A fourth appeared *because of* fix 2: adding a loaded policy removed the last
+fixture that was swept-with-no-edges, and `swept = bool(refs)` started passing.
+A dedicated third scope (scanned, zero refs) now covers it. Changing a fixture
+can uncover a mutation that was previously killed by accident — re-run the
+whole harness after every fixture edit, never just the mutation you were
+chasing.

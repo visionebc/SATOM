@@ -1,22 +1,27 @@
 {% extends "base.html" %}
-{% block title %}{{ _('WAF Artifacts — object types') }}{% endblock %}
+{% block title %}{{ _('WAF Artifacts — statistics') }}{% endblock %}
 {% block content %}
 {#
-  Subpage 1 of four: REFERENCE, not work.
+  Subpage 1 of four: the NUMBERS, and the reference they need to be read with.
 
-  This page used to also carry the upload/capture forms and a "stored artifacts"
-  table with a Push button — the same three verbs the Files page owns. Two
-  authors for one action is how they drift, and a destructive control sitting on
-  the page an operator opens to LOOK SOMETHING UP is a mis-click waiting for a
-  bad day. The verbs now live in exactly one place; this page explains the
-  model, and every link out of it lands on the page that can act.
+  Every figure is cut by (device, ADOM) and only then rolled up to the chassis.
+  That order matters and is not cosmetic: SATOM registers one appliance record
+  per ADOM, so 192.0.2.13 is four records. A profile called "wpp-a" in adom_prod
+  and a profile called "wpp-a" in adom_dev are different profiles that may bind
+  different files -- collapsing them would print one device that owns a quarter
+  of the objects it really has, and would make one ADOM's uploaded copy look
+  like coverage for another ADOM's identically-named object.
+
+  This page still holds no verb. The upload/capture/push controls live on
+  /artifacts/manage, and a destructive control on the page an operator opens to
+  LOOK SOMETHING UP is a mis-click waiting for a bad day.
 #}
 <div class="fw-page-header">
   <div>
     <h1 class="fw-page-title"><i class="bi bi-file-earmark-lock me-2 text-accent"></i>{{ _('WAF Artifacts') }}</h1>
     <p class="fw-page-sub">
       {{ _('API Protection objects whose CONTENT is not part of the configuration. FortiWeb keeps only their name, so a clone that copies configuration alone creates them EMPTY — and a validation rule bound to an empty object answers') }}
-      <code>-7694</code>. {{ _('Three of the seven types cannot be read back from any FortiWeb, and are absent from the device\'s own full-config backup, so the copy SATOM keeps here is the only one that can ever reach another appliance.') }}
+      <code>-7694</code>. {{ _('Every number below is counted per device AND per ADOM, because that is the scope a FortiWeb actually partitions.') }}
     </p>
   </div>
   <div class="d-flex gap-2 align-items-start">
@@ -29,16 +34,343 @@
   </div>
 </div>
 
+{# --------------------------------------------------------- scope filter -- #}
 <div class="fw-card">
+  <div class="fw-card-body d-flex flex-wrap align-items-center gap-2">
+    <form method="get" class="d-flex flex-wrap align-items-center gap-2 flex-grow-1">
+      <label class="text-secondary" style="font-size:12.5px" for="scope">{{ _('Scope') }}</label>
+      <select class="form-select form-select-sm" id="scope" name="scope" style="max-width:320px" onchange="this.form.submit()">
+        <option value="">{{ _('Whole fleet — every FortiWeb ADOM') }}</option>
+        {% for a in appliances %}
+          <option value="{{ a.id }}" {% if scope_id == a.id %}selected{% endif %}>
+            {{ a.name }} — {{ a.host }} · ADOM {{ a.vdom or 'root' }}</option>
+        {% endfor %}
+      </select>
+      <noscript><button class="btn btn-fw-outline btn-sm" type="submit">{{ _('Apply') }}</button></noscript>
+      {% if scope_id %}
+        <a class="btn btn-fw-outline btn-sm" href="{{ url_for('artifacts.index') }}">{{ _('clear') }}</a>
+      {% endif %}
+    </form>
+    <div class="text-secondary" style="font-size:12.5px">
+      {{ fleet.swept_scopes }} / {{ fleet.scope_count }} {{ _('ADOM scopes swept') }}
+      {% if fleet.swept_scopes < fleet.scope_count %}
+        · <span class="fw-badge fw-badge-warning">{{ _('never swept') }}</span>
+        {{ _('is not the same as "swept and clean" — the unswept rows below carry no numbers, not zero numbers.') }}
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{# ------------------------------------------------------------- headline -- #}
+<div class="row row-cols-2 row-cols-md-3 row-cols-xl-6 g-3 mb-4">
+  <div class="col"><div class="fw-stat-card">
+    <div class="fw-stat-icon fw-stat-icon-primary"><i class="bi bi-shield-check"></i></div>
+    <div>
+      <div class="fw-stat-value">{{ fleet.totals.profiles_with_files }}</div>
+      <div class="fw-stat-label" title="{{ _('Distinct (ADOM, profile) pairs that carry at least one file-backed object. Counted per ADOM: the same profile name in two ADOMs is two profiles.') }}">
+        {{ _('Profiles with files') }}</div>
+    </div>
+  </div></div>
+  <div class="col"><div class="fw-stat-card">
+    <div class="fw-stat-icon fw-stat-icon-primary"><i class="bi bi-diagram-3"></i></div>
+    <div>
+      <div class="fw-stat-value">{{ fleet.totals.policies_with_artifacts }}</div>
+      <div class="fw-stat-label" title="{{ _('Server policies that name at least one artifact. The other walked policies carry none — that is a real answer, not a gap.') }}">
+        {{ _('Policies with files') }}</div>
+    </div>
+  </div></div>
+  <div class="col"><div class="fw-stat-card">
+    <div class="fw-stat-icon fw-stat-icon-info"><i class="bi bi-files"></i></div>
+    <div>
+      <div class="fw-stat-value">{{ fleet.totals.objects }}</div>
+      <div class="fw-stat-label" title="{{ _('Distinct (ADOM, type, name) objects referenced by a walked policy.') }}">
+        {{ _('Objects referenced') }}</div>
+    </div>
+  </div></div>
+  <div class="col"><div class="fw-stat-card">
+    <div class="fw-stat-icon fw-stat-icon-success"><i class="bi bi-hdd"></i></div>
+    <div>
+      <div class="fw-stat-value">{{ fleet.totals.stored_objects }}</div>
+      <div class="fw-stat-label" title="{{ _('Objects SATOM holds bytes for, scoped to a device. Library-wide copies are counted separately below.') }}">
+        {{ _('Objects held') }}</div>
+    </div>
+  </div></div>
+  <div class="col"><div class="fw-stat-card">
+    <div class="fw-stat-icon {% if fleet.totals.blocked %}fw-stat-icon-danger{% else %}fw-stat-icon-success{% endif %}"><i class="bi bi-slash-circle"></i></div>
+    <div>
+      <div class="fw-stat-value">{{ fleet.totals.blocked }}</div>
+      <div class="fw-stat-label" title="{{ _('No copy anywhere AND no FortiWeb will ever hand it back. The policies that name these cannot be migrated at all.') }}">
+        {{ _('Blocked') }}</div>
+    </div>
+  </div></div>
+  <div class="col"><div class="fw-stat-card">
+    <div class="fw-stat-icon {% if fleet.totals['at-risk'] or fleet.totals.borrowed %}fw-stat-icon-danger{% else %}fw-stat-icon-success{% endif %}"><i class="bi bi-exclamation-triangle"></i></div>
+    <div>
+      <div class="fw-stat-value">{{ fleet.totals['at-risk'] + fleet.totals.borrowed }}</div>
+      <div class="fw-stat-label" title="{{ _('At-risk = still capturable off the live box. Borrowed = only another scope holds that name, which is a guess.') }}">
+        {{ _('At risk / borrowed') }}</div>
+    </div>
+  </div></div>
+</div>
+
+<div class="fw-card">
+  <div class="fw-card-body text-secondary" style="font-size:12.5px">
+    <i class="bi bi-info-circle me-1"></i>{{ _(fleet.caveat) }}
+  </div>
+</div>
+
+{# --------------------------------------------------- profiles / attribution #}
+<div class="fw-card">
+  <div class="fw-card-header"><h2 class="fw-card-title">{{ _('How the references are attributed') }}</h2></div>
+  <div class="fw-card-body">
+    <div class="row row-cols-1 row-cols-md-3 g-3">
+      <div class="col">
+        <div class="fw-semibold" style="font-size:22px">{{ fleet.totals.profiles_with_files }}</div>
+        <div class="text-secondary" style="font-size:12.5px">
+          <span class="fw-badge fw-badge-success">{{ _('through a profile') }}</span><br>
+          {{ _('Distinct Web Protection Profiles, per ADOM, that carry at least one file. This is the headline number: it is the count of profiles an operator would have to open on the appliance.') }}</div>
+      </div>
+      <div class="col">
+        <div class="fw-semibold" style="font-size:22px">{{ fleet.totals.policy_level_edges }}</div>
+        <div class="text-secondary" style="font-size:12.5px">
+          <span class="fw-badge fw-badge-primary">{{ _('policy-level') }}</span><br>
+          {{ _('References that hang off the SERVER POLICY itself and pass through no profile at all — Lua scripting does exactly this. Across') }}
+          {{ fleet.totals.policy_level_policies }} {{ _('policies. A FINDING, not a blank: printing a profile name for these would print a profile that does not mention the file.') }}</div>
+      </div>
+      <div class="col">
+        <div class="fw-semibold" style="font-size:22px">{{ fleet.totals.unattributed_edges }}</div>
+        <div class="text-secondary" style="font-size:12.5px">
+          <span class="fw-badge fw-badge-secondary">{{ _('not attributed') }}</span><br>
+          {{ _('Nobody walked these for a profile — they predate the attribution column or were donated without a referrer graph. "No profile" and "no answer" send an operator to opposite places, so they are never merged with the column on the left.') }}</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ------------------------------------------------------- per object type -- #}
+<div class="fw-card">
+  <div class="fw-card-header">
+    <h2 class="fw-card-title">{{ _('By object type') }}</h2>
+    <span class="text-secondary" style="font-size:12.5px">
+      {{ fleet.totals.kinds_present }} {{ _('of') }} {{ kinds|length }} {{ _('types are actually in use') }}</span>
+  </div>
+  <div class="fw-table-wrapper">
+    <table class="fw-table">
+      <thead><tr>
+        <th>{{ _('Type') }}</th>
+        <th class="text-end">{{ _('Refs') }}</th>
+        <th class="text-end">{{ _('Objects') }}</th>
+        <th class="text-end">{{ _('Policies') }}</th>
+        <th class="text-end">{{ _('Profiles') }}</th>
+        <th class="text-end">{{ _('Held') }}</th>
+        <th class="text-end">{{ _('Not held') }}</th>
+        <th class="text-end">{{ _('Versions') }}</th>
+        <th class="text-end">{{ _('Bytes') }}</th>
+        <th>{{ _('Readable from a device?') }}</th>
+        <th></th>
+      </tr></thead>
+      <tbody>
+      {% for row in fleet.by_kind %}
+        <tr>
+          <td>{{ row.label }}<br><code style="font-size:11.5px">{{ kinds[row.kind].urn if row.kind in kinds else row.kind }}</code></td>
+          <td class="text-end">{{ row.edges }}</td>
+          <td class="text-end">{{ row.objects }}</td>
+          <td class="text-end">{{ row.policies }}</td>
+          <td class="text-end">{{ row.profiles }}{% if row.policy_level %}
+            <span class="fw-badge fw-badge-primary" title="{{ _('references bound directly on the policy, through no profile') }}">+{{ row.policy_level }}</span>{% endif %}</td>
+          <td class="text-end">{{ row.held }}</td>
+          <td class="text-end">
+            {% if row.unheld %}<span class="fw-badge {% if row.readable %}fw-badge-warning{% else %}fw-badge-danger{% endif %}">{{ row.unheld }}</span>
+            {% else %}0{% endif %}</td>
+          <td class="text-end">{{ row.versions }}</td>
+          <td class="text-end">{{ '%.1f'|format(row.bytes / 1024) }} KB</td>
+          <td>
+            {% if row.kind in unreadable %}
+              <span class="fw-badge fw-badge-danger">{{ _('no') }}</span>
+              <span class="text-secondary" style="font-size:12px">{{ _('— upload only; the device answers') }} <code>-20005</code></span>
+            {% else %}
+              <span class="fw-badge fw-badge-success">{{ _('yes') }}</span>
+              <span class="text-secondary" style="font-size:12px">{{ _('— capturable off a source device') }}</span>
+            {% endif %}
+          </td>
+          <td><a class="btn btn-fw-outline btn-sm"
+                 href="{{ url_for('artifacts.inventory', kind=row.kind) }}">{{ _('inventory') }}</a></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+      <tfoot><tr class="fw-semibold">
+        <td>{{ _('Total') }}</td>
+        <td class="text-end">{{ fleet.totals.edges }}</td>
+        <td class="text-end">{{ fleet.totals.objects }}</td>
+        <td class="text-end">{{ fleet.totals.policies_with_artifacts }}</td>
+        <td class="text-end">{{ fleet.totals.profiles_with_files }}</td>
+        <td class="text-end">{{ fleet.totals.ok }}</td>
+        <td class="text-end">{{ fleet.totals.objects - fleet.totals.ok }}</td>
+        <td class="text-end">{{ fleet.totals.stored_versions }}</td>
+        <td class="text-end">{{ '%.1f'|format(fleet.totals.stored_bytes / 1024) }} KB</td>
+        <td colspan="2" class="text-secondary" style="font-weight:400;font-size:12px">
+          {{ fleet.totals.unreadable_needed }} {{ _('of the referenced objects are of a type no FortiWeb will read back.') }}</td>
+      </tr></tfoot>
+    </table>
+  </div>
+</div>
+
+{# ------------------------------------------------- per device, per ADOM --- #}
+<div class="fw-card">
+  <div class="fw-card-header">
+    <h2 class="fw-card-title">{{ _('By device and ADOM') }}</h2>
+    <span class="text-secondary" style="font-size:12.5px">
+      {{ fleet.devices|length }} {{ _('chassis') }} · {{ fleet.scope_count }} {{ _('ADOM scopes') }}</span>
+  </div>
+  <div class="fw-card-body text-secondary" style="font-size:12.5px;padding-bottom:0">
+    {{ _('A FortiWeb in ADOM mode is one registered row per ADOM sharing one chassis. The indented rows are ADOMs of the device above them; the device line is their sum, except for the profile and object counts, which are recomputed so one profile name appearing in two ADOMs counts as two profiles rather than one.') }}
+  </div>
+  <div class="fw-table-wrapper">
+    <table class="fw-table">
+      <thead><tr>
+        <th>{{ _('Device / ADOM') }}</th>
+        <th class="text-end">{{ _('Policies walked') }}</th>
+        <th class="text-end">{{ _('Walks failed') }}</th>
+        <th class="text-end">{{ _('Profiles w/ files') }}</th>
+        <th class="text-end">{{ _('Refs') }}</th>
+        <th class="text-end">{{ _('Objects') }}</th>
+        <th class="text-end">{{ _('Held') }}</th>
+        <th class="text-end">{{ _('Blocked') }}</th>
+        <th class="text-end">{{ _('At risk') }}</th>
+        <th class="text-end">{{ _('Borrowed') }}</th>
+        <th class="text-end">{{ _('Orphans') }}</th>
+        <th>{{ _('Last sweep') }}</th>
+      </tr></thead>
+      <tbody>
+      {% for dev in fleet.devices %}
+        <tr class="fw-semibold">
+          <td><i class="bi bi-hdd-rack me-1"></i>{{ dev.host }}
+            <span class="text-secondary" style="font-weight:400;font-size:12px">
+              — {{ dev.adom_count }} {{ _('ADOM(s)') }}, {{ dev.swept_adoms }} {{ _('swept') }}</span></td>
+          <td class="text-end">{{ dev.totals.policies_walked }}</td>
+          <td class="text-end">{% if dev.totals.walk_failed %}<span class="fw-badge fw-badge-danger">{{ dev.totals.walk_failed }}</span>{% else %}0{% endif %}</td>
+          <td class="text-end">{{ dev.totals.profiles_with_files }}</td>
+          <td class="text-end">{{ dev.totals.edges }}</td>
+          <td class="text-end">{{ dev.totals.objects }}</td>
+          <td class="text-end">{{ dev.totals.ok }}</td>
+          <td class="text-end">{% if dev.totals.blocked %}<span class="fw-badge fw-badge-danger">{{ dev.totals.blocked }}</span>{% else %}0{% endif %}</td>
+          <td class="text-end">{% if dev.totals['at-risk'] %}<span class="fw-badge fw-badge-warning">{{ dev.totals['at-risk'] }}</span>{% else %}0{% endif %}</td>
+          <td class="text-end">{% if dev.totals.borrowed %}<span class="fw-badge fw-badge-warning">{{ dev.totals.borrowed }}</span>{% else %}0{% endif %}</td>
+          <td class="text-end">{{ dev.totals.orphans }}</td>
+          <td></td>
+        </tr>
+        {% for s in dev.adoms %}
+        <tr>
+          <td style="padding-left:32px">
+            <i class="bi bi-diagram-2 me-1 text-secondary"></i>
+            <a href="{{ url_for('artifacts.index', scope=s.appliance_id) }}">{{ s.adom }}</a>
+            {% if s.device_scope %}<span class="fw-badge fw-badge-secondary" title="{{ _('the row that administers the box itself, not a partition of it') }}">{{ _('device scope') }}</span>{% endif %}
+            {% if s.maintenance %}<span class="fw-badge fw-badge-warning">{{ _('maintenance') }}</span>{% endif %}
+            <span class="text-secondary" style="font-size:12px">{{ s.appliance }}</span>
+          </td>
+          {% if not s.swept %}
+            {# NEVER a row of zeros. A scope nobody walked has no numbers, and
+               printing 0 would read as "walked, and it carries nothing" -- the
+               exact false all-clear this subsystem exists to withhold. #}
+            <td colspan="10" class="text-secondary" style="font-size:12.5px">
+              <span class="fw-badge fw-badge-secondary">{{ _('never swept') }}</span>
+              {{ _('No walk has ever run against this ADOM, so it contributes nothing to the totals above — and nothing here is a zero.') }}</td>
+            <td>—</td>
+          {% else %}
+          <td class="text-end">{{ s.totals.policies_walked }}</td>
+          <td class="text-end">{% if s.totals.walk_failed %}<span class="fw-badge fw-badge-danger">{{ s.totals.walk_failed }}</span>{% else %}0{% endif %}</td>
+          <td class="text-end">{{ s.totals.profiles_with_files }}{% if s.totals.policy_level_edges %}
+            <span class="fw-badge fw-badge-primary" title="{{ _('references bound directly on a policy') }}">+{{ s.totals.policy_level_edges }}</span>{% endif %}</td>
+          <td class="text-end">{{ s.totals.edges }}</td>
+          <td class="text-end">{{ s.totals.objects }}</td>
+          <td class="text-end">{{ s.totals.ok }}</td>
+          <td class="text-end">{% if s.totals.blocked %}<span class="fw-badge fw-badge-danger">{{ s.totals.blocked }}</span>{% else %}0{% endif %}</td>
+          <td class="text-end">{% if s.totals['at-risk'] %}<span class="fw-badge fw-badge-warning">{{ s.totals['at-risk'] }}</span>{% else %}0{% endif %}</td>
+          <td class="text-end">{% if s.totals.borrowed %}<span class="fw-badge fw-badge-warning">{{ s.totals.borrowed }}</span>{% else %}0{% endif %}</td>
+          <td class="text-end">{{ s.totals.orphans }}</td>
+          <td style="font-size:12px">{{ s.last_scan_at or '—' }}
+            {% if s.totals.stale_edges %}<span class="fw-badge fw-badge-warning" title="{{ _('references not re-observed recently') }}">{{ s.totals.stale_edges }} {{ _('stale') }}</span>{% endif %}</td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{# ------------------------------------------------ profiles, per scope ----- #}
+{% for s in fleet.scopes if s.swept and s.by_profile %}
+  {% if loop.first %}
+<div class="fw-card">
+  <div class="fw-card-header">
+    <h2 class="fw-card-title">{{ _('Profiles that carry files') }}</h2>
+    <span class="text-secondary" style="font-size:12.5px">{{ _('grouped by ADOM — a profile name is only unique within one') }}</span>
+  </div>
+  <div class="fw-table-wrapper">
+    <table class="fw-table">
+      <thead><tr>
+        <th>{{ _('ADOM') }}</th><th>{{ _('Profile') }}</th>
+        <th class="text-end">{{ _('Refs') }}</th>
+        <th class="text-end">{{ _('Objects') }}</th>
+        <th class="text-end">{{ _('Policies') }}</th>
+        <th class="text-end">{{ _('Not held') }}</th>
+        <th>{{ _('Object types') }}</th>
+      </tr></thead>
+      <tbody>
+  {% endif %}
+      {% for p in s.by_profile %}
+        <tr>
+          <td style="font-size:12.5px">{{ s.appliance }}<br>
+            <span class="text-secondary">{{ s.host }} · {{ s.adom }}</span></td>
+          <td>
+            {% if p.state == 'profile' %}<code>{{ p.wpp }}</code>
+            {% elif p.state == 'policy-level' %}
+              <span class="fw-badge fw-badge-primary">{{ _('policy-level') }}</span>
+              <span class="text-secondary" style="font-size:12px">{{ _('bound on the server policy, through no profile') }}</span>
+            {% else %}
+              <span class="fw-badge fw-badge-secondary">{{ _('not attributed') }}</span>
+              <span class="text-secondary" style="font-size:12px">{{ _('nobody walked these for a profile') }}</span>
+            {% endif %}
+          </td>
+          <td class="text-end">{{ p.edges }}</td>
+          <td class="text-end">{{ p.objects }}</td>
+          <td class="text-end">{{ p.policies }}</td>
+          <td class="text-end">{% if p.unheld %}<span class="fw-badge fw-badge-warning">{{ p.unheld }}</span>{% else %}0{% endif %}</td>
+          <td style="font-size:12px">{{ p.kinds|join(', ') }}</td>
+        </tr>
+      {% endfor %}
+  {% if loop.last %}
+      </tbody>
+    </table>
+  </div>
+</div>
+  {% endif %}
+{% endfor %}
+
+{# ------------------------------------------------------------- the store -- #}
+<div class="fw-card">
+  <div class="fw-card-header"><h2 class="fw-card-title">{{ _('What SATOM stores') }}</h2></div>
   <div class="fw-card-body d-flex align-items-center gap-4 flex-wrap">
+    <div><div class="fw-semibold" style="font-size:20px">{{ fleet.totals.stored_objects }}</div>
+         <div class="text-secondary" style="font-size:12.5px">{{ _('objects scoped to a device') }}</div></div>
+    <div><div class="fw-semibold" style="font-size:20px">{{ fleet.library.objects }}</div>
+         <div class="text-secondary" style="font-size:12.5px">{{ _('library-wide objects') }}</div></div>
+    <div><div class="fw-semibold" style="font-size:20px">{{ fleet.totals.captured }}</div>
+         <div class="text-secondary" style="font-size:12.5px">{{ _('versions captured off a device') }}</div></div>
+    <div><div class="fw-semibold" style="font-size:20px">{{ fleet.totals.uploaded }}</div>
+         <div class="text-secondary" style="font-size:12.5px">{{ _('versions uploaded by an operator') }}</div></div>
+    <div><div class="fw-semibold" style="font-size:20px">{{ fleet.totals.orphans }}</div>
+         <div class="text-secondary" style="font-size:12.5px">{{ _('held, named by no walked policy') }}</div></div>
     <div><div class="fw-semibold" style="font-size:20px">{{ stats.objects }}</div>
-         <div class="text-secondary" style="font-size:12.5px">{{ _('objects held') }}</div></div>
-    <div><div class="fw-semibold" style="font-size:20px">{{ stats.versions }}</div>
-         <div class="text-secondary" style="font-size:12.5px">{{ _('versions') }}</div></div>
+         <div class="text-secondary" style="font-size:12.5px">{{ _('objects in the whole store') }}</div></div>
     <div><div class="fw-semibold" style="font-size:20px">{{ '%.1f'|format(stats.bytes / 1024) }} KB</div>
-         <div class="text-secondary" style="font-size:12.5px">{{ _('in') }} <code>data/artifacts</code></div></div>
+         <div class="text-secondary" style="font-size:12.5px">{{ _('compressed blobs in') }} <code>data/artifacts</code></div></div>
     <div class="text-secondary flex-grow-1" style="font-size:12.5px;min-width:280px">
       {{ _('Blobs live under') }} <code>data/</code> {{ _('so the standby datasync and the system-backup bundles already carry them — no separate backup to remember.') }}
+      {% if fleet.totals.library_only %}
+        <br>{{ fleet.totals.library_only }} {{ _('of the borrowed objects do have a library-wide copy, which is the fallback SATOM prefers before it reaches for another device\'s bytes.') }}
+      {% endif %}
     </div>
   </div>
 </div>
@@ -58,19 +390,11 @@
       <a href="{{ url_for('artifacts.audit') }}">{{ _('device audit') }}</a>
       {{ _('groups by device rather than by file — a device is what a migration moves.') }}
     </p>
-    <p>
+    <p class="mb-0">
       <strong>{{ _('One exception, and it is the reason the profile is walked rather than assumed:') }}</strong>
       {{ _('Lua scripting') }} (<code>cmdb/server-policy/scripting</code>)
       {{ _('hangs off the SERVER POLICY itself and never passes through a profile at all. A policy that uses content routing can also bind SEVERAL profiles. Either shortcut — "the plan has one profile, so everything belongs to it" — prints a profile that does not mention the file.') }}
     </p>
-    <p class="mb-0">
-      {{ _('So a recorded reference has three possible profile states, and they are NOT interchangeable:') }}
-    </p>
-    <ul class="mb-0">
-      <li><span class="font-monospace">{{ _('a profile name') }}</span> — {{ _('it arrives through that profile.') }}</li>
-      <li><span class="fw-badge fw-badge-primary">{{ _('policy-level') }}</span> — {{ _('walked, and it genuinely hangs off the policy (the Lua case). This is a FINDING, not a blank.') }}</li>
-      <li><span class="fw-badge fw-badge-secondary">{{ _('not attributed') }}</span> — {{ _('nobody walked it for a profile. Re-walk the policy from the inventory page; until then the field is unknown, not empty.') }}</li>
-    </ul>
   </div>
 </div>
 
@@ -95,47 +419,12 @@
 </div>
 
 <div class="fw-card">
-  <div class="fw-card-header"><h2 class="fw-card-title">{{ _('Object types') }}</h2></div>
-  <div class="fw-table-wrapper">
-    <table class="fw-table">
-      <thead><tr>
-        <th>{{ _('Type') }}</th><th>{{ _('cmdb object') }}</th>
-        <th>{{ _('Readable from a device?') }}</th><th>{{ _('Held') }}</th>
-      </tr></thead>
-      <tbody>
-      {% for key, spec in kinds.items() %}
-        <tr>
-          <td>{{ spec.label }}</td>
-          <td><code style="font-size:12px">{{ spec.urn }}</code></td>
-          <td>
-            {% if key in unreadable %}
-              <span class="fw-badge fw-badge-danger">{{ _('no') }}</span>
-              <span class="text-secondary" style="font-size:12px">{{ _('— upload only; the device answers') }} <code>-20005</code></span>
-            {% else %}
-              <span class="fw-badge fw-badge-success">{{ _('yes') }}</span>
-              <span class="text-secondary" style="font-size:12px">{{ _('— can be captured off a source device') }}</span>
-            {% endif %}
-          </td>
-          {# Links land on the INVENTORY filtered by type, which is the page
-             that can answer "and which of them do we actually hold?". The old
-             link pointed back at this page's own filter, which only narrowed a
-             table that no longer lives here. #}
-          <td><a class="btn btn-fw-outline btn-sm"
-                 href="{{ url_for('artifacts.inventory', kind=key) }}">{{ _('inventory') }}</a></td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</div>
-
-<div class="fw-card">
   <div class="fw-card-header"><h2 class="fw-card-title">{{ _('The four pages') }}</h2></div>
   <div class="fw-table-wrapper">
     <table class="fw-table">
       <tbody>
         <tr><td style="width:200px"><strong>{{ _('Object types') }}</strong></td>
-            <td>{{ _('This page. What the seven types are, why their content is separate, and how a file reaches a policy. Reference only — no control here changes anything.') }}</td></tr>
+            <td>{{ _('This page. Every statistic SATOM can compute, cut by device and ADOM, plus what the seven types are and why their content is separate. Reference only — no control here changes anything.') }}</td></tr>
         <tr><td><a href="{{ url_for('artifacts.inventory') }}"><strong>{{ _('Inventory') }}</strong></a></td>
             <td>{{ _('What is held, where it lives, who uses it and through which profile, plus the per-policy migration verdict. Filterable by type, scope, origin and usage.') }}</td></tr>
         <tr><td><a href="{{ url_for('artifacts.manage') }}"><strong>{{ _('Files') }}</strong></a></td>

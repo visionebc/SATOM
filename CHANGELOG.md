@@ -6,6 +6,50 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`/artifacts/inventory`: the (device, ADOM) selection is the page's
+  universe, not a filter laid over a fleet page.** An operator on one device
+  and one ADOM still saw the fleet, and was right: `?appl=` narrowed the row
+  table and the coverage table and **nothing else**. The nine headline
+  counters came from `wa.stats()` / `ar.stats()`, which take no scope and
+  cannot answer for anything but the whole store; "By object type" and "Where
+  the copies live" were built from the unfiltered index. Measured on the live
+  node, a page cut to one ADOM printed **170 objects over a list of 30** and
+  enumerated all five device/ADOM pairs, including a second chassis (37
+  mentions of a host the operator was not on).
+
+  The narrowing now happens **once, in `_narrow()`, before a single figure is
+  computed**, so a section added later inherits it instead of having to
+  remember to repeat the filter. Two consequences worth naming:
+
+  * the per-row user list is keyed `(kind, name)` with **no scope in the key**,
+    so a copy held here whose *name* another chassis also uses arrived carrying
+    that chassis's edges — dropped;
+  * a copy held for **another** scope is no longer listed as held here. It
+    moves to "needed and NOT held" flagged **held elsewhere**, which is what it
+    is: `resolve()` would fall back to another box's bytes, the `borrowed`
+    guess the device audit exists to surface.
+
+  A library-wide copy the pair reads is still listed — it is served here today
+  — and now carries the count of **other pairs that read the same file**, so
+  the copy-on-write warning survives the narrowing.
+
+- **The selection survives a click.** `/artifacts/` published `?scope=` and the
+  inventory read `?appl=`: two names for one concept, and every cross-page
+  link dropped both, so picking a device on the statistics page and clicking
+  *Inventory* landed on the fleet. Both names are now read by one helper, the
+  four artifact pages and the sidebar carry the active scope, and the by-type
+  links stop resetting it.
+
+- **A scope id that matches nothing complains** instead of silently widening —
+  answering a question about one ADOM with twelve ADOMs' rows looks exactly
+  like a correct answer. The page also states which pair it is showing, or
+  says *whole fleet*: two ADOMs of one chassis legitimately hold the same
+  number of objects, so an unlabelled narrowed page is indistinguishable from
+  one that never narrowed.
+
+
 ### Added
 
 - **`/artifacts/inventory` says WHERE, and a save can no longer change a file

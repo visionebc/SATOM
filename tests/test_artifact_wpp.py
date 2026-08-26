@@ -397,7 +397,9 @@ def test_the_nav_uses_the_products_own_submenu_shape(app):
     nav = re.sub(r"\{#.*?#\}", "", nav, flags=re.S)
 
     assert "fw-nav-sub " not in nav and 'fw-nav-sub"' not in nav
-    assert 'url_for(\'artifacts.index\')' in nav
+    # Open paren on purpose: the nav now passes the active scope through, and
+    # this guard is about the submenu SHAPE, not about an argument list.
+    assert "url_for('artifacts.index'" in nav
     j = nav.find("artifacts.index")
     block = nav[max(0, j - 900):j + 1800]
     assert 'class="fw-so-parent"' in block

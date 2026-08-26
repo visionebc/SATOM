@@ -54,6 +54,7 @@ from ..auth.decorators import require_permission
 from ..models import Appliance
 from ..services import artifact_files as af
 from ..services import artifact_refs as ar
+from ..services import artifact_stats as ast_
 from ..services import waf_artifacts as wa
 from ..services.audit import log_action
 
@@ -76,16 +77,38 @@ def _appliance_names() -> dict:
 @bp.route("/")
 @login_required
 def index():
-    """Reference: the seven types, and how a file reaches a server policy.
+    """Statistics, cut by (device, ADOM) — plus the reference the numbers need.
 
     No ``history()`` read any more. The page stopped rendering the stored-object
     table when the verbs moved to ``/manage``, and a full scan of every artifact
     version to build a list nothing displays is a cost with no reader.
+
+    ``?scope=<appliance_id>`` narrows every figure on the page to ONE ADOM. The
+    filter is applied to the appliance list *before* the statistics are
+    computed, so a narrowed page never sums another ADOM's rows into its
+    totals — and the ``borrowed`` verdict still consults the whole store,
+    because "some other box holds this name" is by definition a fact about
+    somewhere else.
     """
+    appliances = _appliances()
+    raw_scope = (request.args.get("scope") or "").strip()
+    scope_id = None
+    if raw_scope.isdigit():
+        scope_id = int(raw_scope)
+    selected = [a for a in appliances if a.id == scope_id] if scope_id else appliances
+    # A scope id that matches nothing is a COMPLAINT, never a silent fall back
+    # to the whole fleet: that would answer a question about one ADOM with the
+    # numbers of twelve.
+    if scope_id and not selected:
+        flash("No FortiWeb scope with id %s — showing the whole fleet."
+              % scope_id, "warning")
+        selected, scope_id = appliances, None
     return render_template("artifacts/index.html",
                            kinds=wa.KINDS, unreadable=wa.UNREADABLE,
-                           appliances=_appliances(), stats=wa.stats(),
+                           appliances=appliances, stats=wa.stats(),
                            ref_stats=ar.stats(),
+                           fleet=ast_.fleet_stats(selected),
+                           scope_id=scope_id,
                            active_kind=(request.args.get("kind") or "").strip())
 
 

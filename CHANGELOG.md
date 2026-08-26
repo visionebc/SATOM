@@ -6,6 +6,32 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Exceptions — catalog (custom signatures, operator coupling, orphan type)
+
+- **Custom Signature is now a first-class exception type.** `custom_signature_item`,
+  `custom_signature_condition_item` and `custom_signature_group_item` were added to the
+  catalog. Field names and enum tokens were read off a live FortiWeb 7.6.8
+  (`waf/custom-protection-rule`, `waf/custom-protection-group`) and the generated SDK
+  catalog, not from the admin guide's GUI labels — the guide's "Request"/"Response"
+  Direction is the device's lowercase `type`, and storing the label produces a payload
+  the appliance rejects.
+- **`operator` is coupled to the element type.** The picker offered the union of all six
+  operations for every element type, so `HOST` + `INCLUDE` was authorable and savable.
+  `OPERATORS_BY_TARGET` encodes only the mappings the admin guide states outright;
+  anything unlisted stays unconstrained, because forbidding a legitimate carve-out is a
+  worse failure than the one being fixed.
+- **The orphan `disabled_signature_item` is resolved and migrated.** One live row carried
+  an `exc_type` no catalog entry defined: `type_for()` returned `None`, so it rendered
+  unlabelled and skipped validation entirely on the way in. `TYPE_ALIASES` maps it (the
+  guard against recurrence) and the stored row was normalised (the cleanup).
+- **The meet-condition no longer has two names.** `signature_group_rule_condition` carried
+  only a match-target/operator/value fragment and held zero rows; it is aliased onto
+  `custom_signature_condition_item` and removed from the catalog.
+- **Not changed, deliberately:** the three element-type conventions in this catalog
+  (`CLIENT_IP` / `FULL-URL` / `"Client IP"`) were left alone. Every matching subtable on
+  the live appliance was empty, so which convention each endpoint accepts could not be
+  established. Recorded in `UNVERIFIED_SHAPES` rather than normalised on a guess.
+
 ### Removed
 
 - **`/artifacts/manage` — it was a second copy of the inventory.** Same rows,

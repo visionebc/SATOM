@@ -74,8 +74,21 @@ SIGNATURE_TYPES: list[dict] = [
     _t("signature_disable_item", "Disabled Signature", "Signature", CAT_SIGNATURE),
     _t("signature_alert_only_item", "Alert-Only Signature", "Signature", CAT_SIGNATURE),
     _t("signature_subclass_disable_item", "Disabled Sub-Class", "Signature", CAT_SIGNATURE),
+    # --- Custom Signature (Web Protection > Known Attacks > Custom Signature).
+    # Verified against a live FortiWeb 7.6.8 (fortiweb12, 192.0.2.13):
+    #   waf/custom-protection-rule   -> the signature itself
+    #     .../meet-condition         -> its AND-ed condition rules
+    #   waf/custom-protection-group  -> a named bundle of rules (type-list)
+    #   waf/signature.custom-protection-group -> the SCALAR field that binds a
+    #     group into a signature policy; the WPP then names that policy in
+    #     ``signature-rule``. That is the whole "who has this signature" chain
+    #     and it is why a custom signature is NOT reachable from the WPP.
+    _t("custom_signature_item", "Custom Signature", "Custom Signature", CAT_SIGNATURE),
+    _t("custom_signature_condition_item", "Custom Signature Condition",
+       "Custom Signature", CAT_SIGNATURE),
+    _t("custom_signature_group_item", "Custom Signature Group",
+       "Custom Signature", CAT_SIGNATURE),
     _t("signature_class_action", "Class Action Override", "Signature", CAT_SIGNATURE),
-    _t("signature_group_rule_condition", "Custom Rule Meet-Condition", "Signature", CAT_SIGNATURE),
 ]
 
 CATALOG: list[dict] = EXCEPTION_TYPES + SIGNATURE_TYPES
@@ -88,12 +101,18 @@ def catalog(category: str | None = None) -> list[dict]:
     return [t for t in CATALOG if t["category"] == category]
 
 
+def canonical_type(key: str) -> str:
+    """Resolve a stored exc_type through :data:`TYPE_ALIASES`."""
+    k = (key or "").strip()
+    return TYPE_ALIASES.get(k, k)
+
+
 def type_for(key: str) -> dict | None:
-    return _BY_KEY.get(key)
+    return _BY_KEY.get(canonical_type(key))
 
 
 def category_for(key: str) -> str:
-    t = _BY_KEY.get(key)
+    t = _BY_KEY.get(canonical_type(key))
     return t["category"] if t else CAT_EXCEPTION
 
 
@@ -177,14 +196,49 @@ FIELD_SPECS: dict[str, list[dict]] = {
     "signature_disable_item": [_f("signature_id", "Signature ID")],
     "signature_alert_only_item": [_f("signature_id", "Signature ID")],
     "signature_subclass_disable_item": [_f("sub_class_id", "Sub-Class ID")],
+    # Custom Signature — parent object. Field names are the device's own
+    # (read back live); enum tokens come from the generated SDK catalog
+    # (``waf_specs.json``: 23 kinds share the action set, 29 the severity set,
+    # 1 the threat-weight set) rather than from the admin guide's GUI labels.
+    # ``alert``/``Medium``/``moderate`` were additionally confirmed on the wire.
+    "custom_signature_item": [
+        _f("name", "Name"),
+        # The admin guide calls this "Direction" and labels the choices
+        # "Request" / "Response"; the device field is ``type`` and the tokens
+        # are lowercase. Storing the GUI label here would produce a payload the
+        # box rejects, which is the class of defect this catalog exists to stop.
+        _f("type", "Direction", "enum", ["request", "response"]),
+        _f("action", "Action", "enum",
+           ["alert", "alert_deny", "alert_erase", "block-period",
+            "only_erase", "send_http_response"]),
+        _f("block-period", "Block Period (s)"),
+        _f("severity", "Severity", "enum", ["Informative", "Low", "Medium", "High"]),
+        _f("threat-weight", "Threat Weight", "enum",
+           ["low", "informational", "moderate", "substantial", "severe", "critical"]),
+        _f("trigger", "Trigger Policy"),
+    ],
+    # Custom Signature — one AND-ed condition. The live rule carried zero rows
+    # (``sz_meet-condition: 0``), so these keys follow the admin guide's field
+    # list for the condition dialog; they are NOT wire-confirmed. See
+    # ``UNVERIFIED_SHAPES``.
+    "custom_signature_condition_item": [
+        _f("operator", "Match Operator", "enum",
+           ["regular-expression", "greater-than", "less-than", "equal", "not-equal"]),
+        _f("case-sensitive", "Case Sensitive", "toggle"),
+        _f("expression", "Regular Expression"),
+        _f("threshold", "Threshold"),
+        _f("target", "Selected Target (space-separated)"),
+    ],
+    "custom_signature_group_item": [
+        _f("name", "Name"),
+        _f("max-alert-interval", "Max Alert Interval"),
+        _f("custom-protection-rule", "Member Signature"),
+    ],
     "signature_class_action": [
         _f("main_class_id", "Main Class ID"),
         _f("action", "Action", "enum",
            ["alert", "block", "alert_deny", "deny_no_log", "period_block"]),
         _f("severity", "Severity", "enum", ["Informative", "Low", "Medium", "High"]),
-    ],
-    "signature_group_rule_condition": [
-        _f("match-target", "Element Type"), _f("operator", "Operation"), _f("value", "Value"),
     ],
 }
 
@@ -201,6 +255,15 @@ REQUIRED_FIELDS: dict[str, list[str]] = {
     "signature_disable_item": ["signature_id"],
     "signature_alert_only_item": ["signature_id"],
     "signature_subclass_disable_item": ["sub_class_id"],
+    # A custom signature with no direction and no action is not a narrower
+    # signature — the box stores it and it never fires, which reads on the
+    # page as "deployed".
+    "custom_signature_item": ["name", "type", "action"],
+    # A condition with an operator but nothing to compare against matches
+    # EVERY request the target appears in. That is the widest possible rule
+    # wearing the name of a specific one.
+    "custom_signature_condition_item": ["operator", "target"],
+    "custom_signature_group_item": ["name"],
     "signature_class_action": ["main_class_id", "action"],
     "http_constraint_exception_item": ["request-type", "request-file"],
     # 'allow-request' is the allow list itself. FortiWeb accepts a row without
@@ -217,8 +280,90 @@ REQUIRED_FIELDS: dict[str, list[str]] = {
     "url_enc_exc_item": ["url-type", "url-pattern"],
     "link_cloak_exc_item": ["url-type", "url-pattern"],
     "file_exception_item": ["file-name"],
-    "signature_group_rule_condition": ["match-target", "operator", "value"],
 }
+
+# Which operations FortiWeb actually accepts for each element type.
+#
+# The admin guide fixes this PER TARGET (signature exceptions, doc 141292):
+# an HTTP Method is include/exclude, a Client IP is equal/not-equal, and every
+# string-ish target is string-match/regexp-match. SATOM offered the UNION of
+# all six for every element type, so ``HOST`` + ``INCLUDE`` was authorable and
+# savable — a row the box either rejects outright or, worse, stores and never
+# matches, which looks on the page exactly like a working carve-out.
+#
+# Deliberately NOT exhaustive: a target absent from a type's map is left
+# unconstrained. A wrong entry here makes a legitimate carve-out unauthorable,
+# which is a worse failure than the one being fixed, so only the mappings the
+# guide states outright are encoded.
+OPERATORS_BY_TARGET: dict[str, dict[str, list[str]]] = {
+    "signature_filter_item": {
+        "HTTP_METHOD": ["INCLUDE", "EXCLUDE"],
+        "CLIENT_IP": ["EQ", "NE"],
+        "HOST": ["STRING_MATCH", "REGEXP_MATCH"],
+        "URI": ["STRING_MATCH", "REGEXP_MATCH"],
+        "FULL_URL": ["STRING_MATCH", "REGEXP_MATCH"],
+        "PARAMETER": ["STRING_MATCH", "REGEXP_MATCH"],
+        "COOKIE": ["STRING_MATCH", "REGEXP_MATCH"],
+        "HTTP_HEADER": ["STRING_MATCH", "REGEXP_MATCH"],
+        "JSON_ELEMENTS": ["STRING_MATCH", "REGEXP_MATCH"],
+    },
+    "syntax_exception_item": {
+        "HOST": ["STRING_MATCH", "REGEXP_MATCH"],
+        "URI": ["STRING_MATCH", "REGEXP_MATCH"],
+        "FULL-URL": ["STRING_MATCH", "REGEXP_MATCH"],
+        "PARAMETER": ["STRING_MATCH", "REGEXP_MATCH"],
+        "COOKIE": ["STRING_MATCH", "REGEXP_MATCH"],
+    },
+    # bot_exception_element_item is INTENTIONALLY absent. Its element types are
+    # human labels ("Client IP", "Host") and its ``operator`` field carries no
+    # enum in this catalog at all, so there is no verified token set to gate
+    # against. The live appliance's exception-policy subtable is empty, so the
+    # tokens could not be read off the wire either. Guessing here would forbid
+    # working input on the strength of an assumption.
+}
+
+
+def operators_for(exc_type: str, match_target: str) -> list[str]:
+    """Operations valid for *match_target*, or [] when unconstrained.
+
+    [] means "this catalog does not know", never "none are valid" — callers
+    must treat it as pass-through.
+    """
+    return list((OPERATORS_BY_TARGET.get(exc_type) or {}).get(
+        (match_target or "").strip(), []))
+
+
+# Shapes carried from the admin guide that could NOT be confirmed against a
+# device, because every matching subtable on the live appliance was empty.
+# Recorded so a later session fixes the shape instead of re-deriving that it
+# was never checked. See docs/safeguards.md.
+UNVERIFIED_SHAPES: dict[str, str] = {
+    "custom_signature_condition_item":
+        "waf/custom-protection-rule/meet-condition returned 0 rows on "
+        "fortiweb12 (sz_meet-condition: 0); field keys follow admin guide "
+        "7.6.4 doc 780071, not the wire.",
+    "bot_exception_element_item":
+        "waf/exception-policy element-list unreadable on fortiweb12; the "
+        "human-label element types ('Client IP') and the free-text operator "
+        "are unconfirmed and are therefore left ungated.",
+}
+
+
+# Exception types that were persisted under a key this catalog never defined.
+# ``type_for()`` returned None for these, so they rendered with no label and
+# skipped validation entirely on the way in. Mapped rather than deleted: the
+# row is a real carve-out somebody authored.
+TYPE_ALIASES: dict[str, str] = {
+    "disabled_signature_item": "signature_disable_item",
+    # Was a THIRD name for the custom-signature condition, carrying only the
+    # match-target/operator/value fragment — no Match Operator, no Threshold,
+    # no Selected Target. It held zero rows on the live database, so it is
+    # aliased away rather than kept alongside the real shape: two catalog
+    # entries for one device object is how a form ends up posting to the
+    # endpoint nobody maintained.
+    "signature_group_rule_condition": "custom_signature_condition_item",
+}
+
 
 # Light format validators (key → (regex, message)). Only formats FortiWeb is
 # strict about; anything else stays free so nothing becomes un-authorable.
@@ -245,7 +390,31 @@ def validate_payload(exc_type: str, payload: dict) -> list[str]:
         val = payload.get(key)
         if val not in (None, "", []) and not _re.match(rx, str(val)):
             errors.append(msg)
+    errors.extend(_operator_errors(exc_type, payload))
     return errors
+
+
+def _operator_errors(exc_type: str, payload: dict) -> list[str]:
+    """Reject an operation the chosen element type cannot use.
+
+    Silence is the whole problem being fixed here: FortiWeb does not always
+    refuse ``HOST`` + ``INCLUDE``. When it stores such a row the exception page
+    shows a carve-out, the operator believes the traffic is excused, and the
+    request keeps being blocked (or keeps being let through) for reasons that
+    live nowhere in the UI.
+
+    Unknown type or unknown target => no error. This gate may only ever
+    subtract combinations the admin guide rules out, never add requirements.
+    """
+    allowed = operators_for(exc_type, str(payload.get("match-target") or ""))
+    if not allowed:
+        return []
+    op = str(payload.get("operator") or "").strip()
+    if not op or op in allowed:
+        return []
+    return ["'%s' is not a valid Operation for element type '%s' "
+            "(FortiWeb accepts: %s)"
+            % (op, payload.get("match-target"), ", ".join(allowed))]
 
 
 def fields_for(exc_type: str) -> list[dict]:
@@ -257,6 +426,7 @@ def fields_for(exc_type: str) -> list[dict]:
     the engine doesn't model."""
     from .fortiweb_field_schema import KIND_SPECS, descriptor, kind_keys
 
+    exc_type = canonical_type(exc_type)
     kind = _KIND_ALIAS.get(exc_type, exc_type)
     required = set(REQUIRED_FIELDS.get(exc_type, ()))
     if kind in KIND_SPECS:

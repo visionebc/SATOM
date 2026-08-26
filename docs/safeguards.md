@@ -11230,3 +11230,45 @@ must produce `rc == 1` **and name its own guard** among the FAILED lines. One
 is *meta* — it makes the fixture's hollow copy non-empty — and proves the
 fixture is what drives the rest.
 
+
+
+## §125 — the exception catalog (`tests/test_exception_catalog_shape.py`)
+
+**Nothing fails when this catalog is wrong.** A missing type just never appears in the
+picker. A wrong enum token is posted to the appliance and either bounces with a device
+error nobody reads, or is *stored and never matches*. Both render on the Exceptions page
+as a working carve-out. That is why every claim is asserted rather than eyeballed.
+
+19 guards, 16/16 mutations bite (by rc, only `rc==1` counts, green baseline required,
+no `-x`, and each mutation must name its own guard among the dead).
+
+What the guards pin, and why each one exists:
+
+| guard | the failure it stops |
+|---|---|
+| Direction uses `request`/`response` | the guide's labels are "Request"/"Response"; the label is a payload the box rejects |
+| action ⊆ the SDK token set | 23 kinds share one action vocabulary; inventing a 24th is unauthorable input |
+| threat-weight is a token scale | it looks like a 1-6 slider in the GUI and is `low…critical` on the wire |
+| a condition must name a target | a condition with no target matches every request the target appears in |
+| the orphan type resolves *and* is migrated | the alias is the guard; the row rewrite is the cleanup. One without the other leaves half the defect |
+| exactly one catalog entry per device object | two entries for one object is how a form posts to the endpoint nobody maintains |
+| the operator gate only ever SUBTRACTS | an empty operator and an unknown target must pass; the gate may not invent a requirement |
+| bot element types stay ungated | its tokens are human labels and its subtable was empty on the wire — guessing would forbid working input |
+| `FULL-URL` keeps its hyphen | pins the *status quo* of an unresolved question so a later session changes it on evidence, not on tidiness |
+
+**Recipe.** `venv/bin/python -m pytest tests/test_exception_catalog_shape.py -q` then the
+mutation harness. Read the options through `fields_for()`, never off `FIELD_SPECS`: the
+form prefers the curated WAF engine and only falls back to the static seed, so asserting
+the seed can pass while the picker renders something else.
+
+**Two verification traps paid for in this round.**
+1. A `200` is not evidence of authentication — the sign-in page is a 200. Four checks
+   scored OK against the login form before the assertions were tightened to demand
+   page-specific content.
+2. Flask signs the session cookie with `key_derivation='hmac'` + sha1, not itsdangerous'
+   default. Hand-rolling `URLSafeTimedSerializer` produces a cookie the server silently
+   discards. Use `app.session_interface.get_signing_serializer(app)`.
+
+**Known weak assertion:** `UNVERIFIED_SHAPES` notes are checked only for length > 40, and
+the notes are concatenated string literals, so hollowing out one fragment survives.
+Emptying the register does bite. Recorded rather than over-engineered.

@@ -300,9 +300,16 @@ def scope_stats(appl, refs, scans, stored, *, held_any=None,
     for rec in needed.values():
         totals[rec["verdict"]] += 1
 
+    from ..models import appliance_name_parts
+
     return {
         "appliance_id": aid,
         "appliance": appl.name,
+        #: The DEVICE name, with the ``@<adom>`` suffix stripped only when it
+        #: matches this row's own ``vdom``. ``host`` stays available beside it,
+        #: but it is an ADDRESS: one chassis carries four ADOM rows, so it
+        #: names none of them. Printing it as the device is what was reported.
+        "device": appliance_name_parts(appl)[0] or appl.name,
         "host": getattr(appl, "host", "") or "",
         "port": getattr(appl, "port", None),
         "adom": adom,
@@ -404,14 +411,19 @@ def fleet_stats(appliances, *, now=None) -> dict:
     #: docstring is explicit that lumping every keyless row together merges
     #: unrelated clusters, and a merged bucket would print one device that owns
     #: two clusters' artifacts.
-    from ..models import chassis_key
+    from ..models import appliance_name_parts, chassis_key
 
     devices: dict[str, dict] = {}
     for appl in appliances:
         key = chassis_key(appl) or ("row:%s" % appl.id)
         dev = devices.setdefault(key, {
             "host": (getattr(appl, "host", "") or "").strip() or "?",
-            "scopes": [], "appliance_ids": []})
+            #: All the rows of one chassis normally share a device name; when
+            #: they genuinely disagree the chassis has no single name and the
+            #: address is the honest label, so the first name wins only if the
+            #: rest agree with it.
+            "devices": set(), "scopes": [], "appliance_ids": []})
+        dev["devices"].add(appliance_name_parts(appl)[0] or appl.name)
         dev["scopes"].append(by_id[appl.id])
         dev["appliance_ids"].append(appl.id)
     device_rows = []
@@ -432,6 +444,8 @@ def fleet_stats(appliances, *, now=None) -> dict:
         totals["kinds_present"] = len({r.kind for r in d_refs})
         device_rows.append({
             "host": host,
+            "device": (sorted(dev["devices"])[0]
+                       if len(dev["devices"]) == 1 else host),
             "names": sorted(s["appliance"] for s in dev["scopes"]),
             "adoms": sorted(dev["scopes"],
                             key=lambda s: (not s["device_scope"],

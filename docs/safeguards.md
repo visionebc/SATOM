@@ -11177,3 +11177,56 @@ form, the fork's no-reader refusal disabled) plus one meta-mutation that breaks
 the fixture's symmetry to prove the control bites. All 15 must fail by
 `rc == 1` from a green baseline, without `-x`, each naming its own guard among
 the dead.
+
+
+## §124 — An emptiness is not an absence (`tests/test_artifact_empty_content.py`)
+
+**What is guarded.** That a stored artifact version with no content is treated
+as *not available* by everything that decides whether an object can travel, and
+that the standalone push verb stays gone.
+
+**Why it needs a guard.** Nothing fails when a copy is empty. `wa.resolve()`
+returns bytes, `held` is true, the coverage verdict reads `ready`, the
+pre-flight prints "will be copied WITH content" and the apply uploads it. The
+destination then shows the object as configured while the rule bound to it
+enforces nothing — and the failure surfaces, if ever, as a `-7694` on a
+completely different day. **Every "is it held?" check answers yes**, which is
+exactly why no page reported it.
+
+`push` belongs in the same section because it was the only way to repair such
+an object, and it did so by writing bytes to a device with nothing bound to
+them: no plan, no policy, no reconciliation report.
+
+**The rules that cost something to find.**
+
+1. **WSDL cannot be captured.** Three kinds (`xml_schema`, `wsdl`, `grpc_idl`)
+   have no read path, so `/artifacts/capture` refuses them *before* the fetch.
+   A capture guard written with `wsdl` goes green without ever reaching the
+   emptiness check — mine did, and only its CONTROL exposed it. Use `openapi`.
+2. **A door test is not a store test.** `wa.put()` has no guard of its own, and
+   the store already holds whatever the doors let through before they were
+   closed. The fixture therefore writes empty versions directly; asserting only
+   that new empties are refused would claim the house is clean because the lock
+   is new.
+3. **`empty` must not be folded into `missing`.** They read the same on a
+   counter and send the operator to opposite remedies: an absence is captured
+   or uploaded, an emptiness is re-authored.
+4. **A warning built from the filtered rows is not a warning.** The empty card
+   is derived from the pair's whole holding; a mutation that derives it from
+   `rows` still renders perfectly, and only the filter guard notices.
+5. **Assert the route is UNROUTED, not that it is scoped.** A scope test on a
+   dead route keeps passing after somebody re-adds an unscoped one under
+   another name. And assert the TEMPLATE separately: a page can still offer the
+   button after the route is gone, which reads as a broken product rather than
+   a removed feature.
+6. **Assert where the removed answer WENT.** Dropping the coverage table is
+   only correct because `/artifacts/audit` and the clone pre-flight still
+   answer it; a guard that asserted only the removal would pass just as well if
+   the answer were nowhere.
+
+**Verification recipe.** `pytest tests/test_artifact_empty_content.py` green,
+then the mutation harness in this section's round: 18 mutations, each of which
+must produce `rc == 1` **and name its own guard** among the FAILED lines. One
+is *meta* — it makes the fixture's hollow copy non-empty — and proves the
+fixture is what drives the rest.
+

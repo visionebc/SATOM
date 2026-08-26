@@ -12,9 +12,9 @@
   of the objects it really has, and would make one ADOM's uploaded copy look
   like coverage for another ADOM's identically-named object.
 
-  This page still holds no verb. The upload/capture/push controls live on
-  /artifacts/manage, and a destructive control on the page an operator opens to
-  LOOK SOMETHING UP is a mis-click waiting for a bad day.
+  This page still holds no verb. The upload/capture/author controls live on
+  /artifacts/inventory, and a destructive control on the page an operator opens
+  to LOOK SOMETHING UP is a mis-click waiting for a bad day.
 #}
 <div class="fw-page-header">
   <div>
@@ -25,11 +25,11 @@
     </p>
   </div>
   <div class="d-flex gap-2 align-items-start">
-    <a class="btn btn-fw-outline btn-sm" href="{{ url_for('artifacts.inventory') }}">
+    <a class="btn btn-fw-outline btn-sm" href="{{ url_for('artifacts.inventory') }}"
+       title="{{ _('What this device and ADOM holds, what it needs, and the per-policy migration verdict — plus the three add verbs') }}">
       <i class="bi bi-clipboard-data me-1"></i>{{ _('Inventory') }}</a>
-    <a class="btn btn-fw-outline btn-sm" href="{{ url_for('artifacts.manage') }}">
-      <i class="bi bi-folder-plus me-1"></i>{{ _('Files') }}</a>
-    <a class="btn btn-fw-primary btn-sm" href="{{ url_for('artifacts.audit') }}">
+    <a class="btn btn-fw-primary btn-sm" href="{{ url_for('artifacts.audit') }}"
+       title="{{ _('Everything SATOM knows about this device in one exportable place') }}">
       <i class="bi bi-clipboard-check me-1"></i>{{ _('Device audit') }}</a>
   </div>
 </div>
@@ -47,7 +47,7 @@
     #}
     <div class="d-flex flex-wrap align-items-center gap-2 flex-grow-1">
       <span class="text-secondary" style="font-size:12.5px">{{ _('Scope') }}</span>
-      <span class="fw-badge fw-badge-info">{{ scope_appl.host or scope_appl.name }}</span>
+      <span class="fw-badge fw-badge-info" title="{{ scope_appl.host }}">{{ appliance_name_parts(scope_appl)[0] }}</span>
       <span class="font-monospace" style="font-size:12.5px">{{ _('ADOM') }} {{ scope_appl.vdom or 'root' }}</span>
       <a class="btn btn-fw-outline btn-sm" href="{{ url_for('architecture.index') }}">
         <i class="bi bi-diagram-3 me-1"></i>{{ _('Switch device') }}</a>
@@ -77,10 +77,13 @@
     <span class="fw-badge fw-badge-primary">{{ _('narrowed') }}</span>
     <div>
       <div class="fw-semibold">
-        <i class="bi bi-hdd-rack me-1"></i>{{ scope_appl.host }}
+        {# The management ADDRESS lives on the hover, never in the label. One
+           chassis carries four ADOM rows, so its IP names none of them — and
+           printing it beside the device name is how the two got read as the
+           same thing in the first place. #}
+        <i class="bi bi-hdd-rack me-1"></i><span title="{{ scope_appl.host }}">{{ appliance_name_parts(scope_appl)[0] }}</span>
         <i class="bi bi-chevron-right mx-1 text-secondary" style="font-size:11px"></i>
         <i class="bi bi-diagram-2 me-1"></i>{{ _('ADOM') }} {{ scope_appl.vdom or 'root' }}
-        <span class="text-secondary" style="font-weight:400;font-size:12px">({{ scope_appl.name }})</span>
       </div>
       <div class="text-secondary" style="font-size:12.5px">
         {{ _('Every figure on this page counts THIS ADOM only. A sibling ADOM on the same chassis with the same number of policies reports the same totals — identical numbers are a property of the estate, not a filter that failed. The names in "Profiles that carry files" below belong to this ADOM alone; that is the check.') }}
@@ -275,7 +278,7 @@
       <tbody>
       {% for dev in fleet.devices %}
         <tr class="fw-semibold">
-          <td><i class="bi bi-hdd-rack me-1"></i>{{ dev.host }}
+          <td><i class="bi bi-hdd-rack me-1"></i><span title="{{ dev.host }}">{{ dev.device }}</span>
             <span class="text-secondary" style="font-weight:400;font-size:12px">
               — {{ dev.adom_count }} {{ _('ADOM(s)') }}, {{ dev.swept_adoms }} {{ _('swept') }}</span></td>
           <td class="text-end">{{ dev.totals.policies_walked }}</td>
@@ -352,8 +355,8 @@
   {% endif %}
       {% for p in s.by_profile %}
         <tr>
-          <td style="font-size:12.5px">{{ s.appliance }}<br>
-            <span class="text-secondary">{{ s.host }} · {{ s.adom }}</span></td>
+          <td style="font-size:12.5px">{{ s.device }}<br>
+            <span class="text-secondary" title="{{ s.host }}">{{ s.adom }}</span></td>
           <td>
             {% if p.state == 'profile' %}<code>{{ p.wpp }}</code>
             {% elif p.state == 'policy-level' %}
@@ -455,16 +458,14 @@
 </div>
 
 <div class="fw-card">
-  <div class="fw-card-header"><h2 class="fw-card-title">{{ _('The four pages') }}</h2></div>
+  <div class="fw-card-header"><h2 class="fw-card-title">{{ _('The three pages') }}</h2></div>
   <div class="fw-table-wrapper">
     <table class="fw-table">
       <tbody>
         <tr><td style="width:200px"><strong>{{ _('Object types') }}</strong></td>
             <td>{{ _('This page. Every statistic SATOM can compute, cut by device and ADOM, plus what the seven types are and why their content is separate. Reference only — no control here changes anything.') }}</td></tr>
         <tr><td><a href="{{ url_for('artifacts.inventory') }}"><strong>{{ _('Inventory') }}</strong></a></td>
-            <td>{{ _('What is held, where it lives, who uses it and through which profile, plus the per-policy migration verdict. Filterable by type, scope, origin and usage.') }}</td></tr>
-        <tr><td><a href="{{ url_for('artifacts.manage') }}"><strong>{{ _('Files') }}</strong></a></td>
-            <td>{{ _('Every verb: upload, author in the browser, capture off a device, edit, version, compare, delete, and push onto an appliance. Each row states the profile it is assigned to.') }}</td></tr>
+            <td>{{ _('What is held, how many policies of this ADOM read it, and the per-policy migration verdict. Carries the three add verbs — upload, author, capture — one dialog each. Editing, comparing and deleting a version live on the object page behind each row.') }}</td></tr>
         <tr><td><a href="{{ url_for('artifacts.audit') }}"><strong>{{ _('Device audit') }}</strong></a></td>
             <td>{{ _('Everything, grouped BY DEVICE and exportable as JSON or CSV: policies walked, walks that failed, artifacts needed, profiles, what is stored, what is orphaned, and where two boxes hold different content under one name.') }}</td></tr>
       </tbody>

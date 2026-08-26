@@ -49,9 +49,8 @@
   <div class="d-flex gap-2">
     <a class="btn btn-fw-primary btn-sm" href="{{ back }}">
       <i class="bi bi-arrow-left me-1"></i>{{ _('Back') }}</a>
-    <a class="btn btn-fw-outline btn-sm" href="{{ url_for('artifacts.manage', kind=kind) }}">
-      <i class="bi bi-folder me-1"></i>{{ _('Files') }}</a>
-    <a class="btn btn-fw-outline btn-sm" href="{{ url_for('artifacts.inventory', q=name) }}">
+    <a class="btn btn-fw-outline btn-sm" href="{{ url_for('artifacts.inventory', q=name) }}"
+       title="{{ _('The inventory, filtered to this object name') }}">
       <i class="bi bi-clipboard-data me-1"></i>{{ _('Inventory') }}</a>
   </div>
 </div>
@@ -257,7 +256,7 @@
                could only mislead. #}
             <div class="mt-2 font-monospace" style="font-size:12px" data-fork-target>
               {{ _('The fork is scoped to') }}
-              {{ scope_appl.host or scope_appl.name }} /
+              <span title="{{ scope_appl.host }}">{{ appliance_name_parts(scope_appl)[0] }}</span> /
               {{ scope_appl.vdom or _('no ADOM') }}
             </div>
           </div>
@@ -279,7 +278,7 @@
             <select class="form-select form-select-sm" name="appliance_id">
               <option value="" {{ 'selected' if not current.appliance_id }}>{{ _('Library-wide (any appliance may use it)') }}</option>
               {% for a in appliances %}
-                <option value="{{ a.id }}" {{ 'selected' if a.id == current.appliance_id }}>{{ a.host or a.name }} / {{ a.vdom or _('no ADOM') }}</option>
+                <option value="{{ a.id }}" {{ 'selected' if a.id == current.appliance_id }} title="{{ a.host }}">{{ appliance_name_parts(a)[0] }} / {{ a.vdom or _('no ADOM') }}</option>
               {% endfor %}
             </select>
           </div>
@@ -303,22 +302,12 @@
   </div>
 </div>
 
-{# ---------------------------------------------------------------- push ---- #}
-<div class="fw-card">
-  <div class="fw-card-header"><h2 class="fw-card-title">{{ _('Push this version to an appliance') }}</h2></div>
-  <div class="fw-card-body">
-    <p class="text-secondary" style="font-size:12.5px">
-      {{ _('Creates the object on the destination WITH its content. This is the only verb on this page that writes to a device.') }}
-    </p>
-    <form method="post" action="{{ url_for('artifacts.push') }}" class="d-flex gap-2 align-items-center">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <input type="hidden" name="id" value="{{ current_id }}">
-      <input type="hidden" name="back" value="object">
-      <select class="form-select form-select-sm" name="appliance_id" style="max-width:240px" required>
-        {% for a in appliances %}<option value="{{ a.id }}">{{ a.name }}</option>{% endfor %}
-      </select>
-      <button class="btn btn-fw-primary btn-sm"><i class="bi bi-upload me-1"></i>{{ _('Push') }}</button>
-    </form>
-  </div>
-</div>
+{# There is NO push control here.
+
+   Content reaches an appliance at CREATE time: the clone/migrate engine
+   uploads the bytes for every file-backed object that run creates, under a
+   pre-flight that refuses to proceed unacknowledged when one of them is
+   absent or EMPTY. A button here wrote to a device with nothing bound to the
+   write — no plan, no policy, no reconciliation report — so the only record
+   that those bytes were ever put on that box was an audit line. #}
 {% endblock %}

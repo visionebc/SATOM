@@ -36,7 +36,7 @@
       <div>
         <label class="form-label" style="font-size:12px">{{ _('Device') }}</label>
         <div class="form-control form-control-sm bg-body-secondary" style="min-width:200px">
-          {{ scope_appl.host or scope_appl.name }}
+          <span title="{{ scope_appl.host }}">{{ appliance_name_parts(scope_appl)[0] }}</span>
           {% if scope_appl.vdom %} / <span class="font-monospace">{{ scope_appl.vdom }}</span>{% endif %}
         </div>
       </div>

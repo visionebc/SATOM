@@ -181,24 +181,36 @@ def _resolve_artifacts(items, artifacts: dict | None, *, dry_run: bool):
             # Capture only on a real apply: a dry run must not mutate SATOM's
             # own state either.
             capture=(not dry_run), by=ctx.get("by", ""))
-        if blob is None:
+        empty = wa.is_empty(blob)
+        if blob is None or empty:
+            # An EMPTY stored copy takes the same exit as an absent one. It
+            # used to take the other: `blob is None` was the whole test, so a
+            # zero-byte (or whitespace-only) version resolved, was reported as
+            # "will be copied WITH content", and was uploaded — producing at
+            # the destination the exact empty object this branch exists to
+            # refuse to create. The REASON stays distinct because the remedy
+            # is: an absence is captured or uploaded, an emptiness is
+            # re-authored.
+            why = ("the copy SATOM holds is EMPTY (%d bytes)" % len(blob)
+                   if empty else (reason or "SATOM holds no copy"))
             missing.append({"kind": kind, "label": wa.label(kind),
-                            "name": it.mkey, "reason": reason})
+                            "name": it.mkey, "reason": why, "empty": empty})
             it.status = "no-content"
             it.note = ("content unavailable — %s. Skipped: creating the object "
                        "would leave an EMPTY %s at the destination."
-                       % (reason or "SATOM holds no copy", wa.label(kind)))
+                       % (why, wa.label(kind)))
         else:
             blobs[(kind, it.mkey)] = blob
             it.note = "content from %s (%d bytes)" % (origin, len(blob))
     if missing and not dry_run and not ctx.get("accept_missing"):
         names = ", ".join('%s "%s"' % (m["label"], m["name"]) for m in missing[:6])
         raise RuntimeError(
-            "no content available for %d file-backed object(s): %s%s — FortiWeb "
-            "stores only their NAME, so the copy would be created EMPTY and the "
-            "protection they enforce would be OFF at the destination. Upload "
-            "them to the SATOM artifact library, or accept the alert to clone "
-            "with those objects SKIPPED."
+            "no content available for %d file-backed object(s): %s%s — either "
+            "SATOM holds no copy (FortiWeb stores only their NAME) or the copy "
+            "it holds is EMPTY, so the object would be created with nothing in "
+            "it and the protection it enforces would be OFF at the destination. "
+            "Upload them to the SATOM artifact library, or accept the alert to "
+            "clone with those objects SKIPPED."
             % (len(missing), names, "…" if len(missing) > 6 else ""))
     return blobs, missing
 
@@ -1197,17 +1209,22 @@ def _artifact_gate(rows, *, dest_name, accepted: bool):
     suggest["artifacts_missing"] = missing
     bits = []
     for r in missing:
-        why = ("FortiWeb has no read endpoint for this type — only a copy SATOM "
-               "already holds can be pushed" if not r["readable"]
-               else (r.get("reason") or "no content available"))
+        # An empty copy is not "unreadable type" and not "no copy": saying
+        # either sends the operator to capture a file they already have.
+        why = ((r.get("reason") or "the copy SATOM holds is EMPTY")
+               if r.get("empty") else
+               ("FortiWeb has no read endpoint for this type — only a copy "
+                "SATOM already holds can be supplied" if not r["readable"]
+                else (r.get("reason") or "no content available")))
         bits.append('%s "%s": %s' % (r["label"], r["name"], why))
     head = ("ACCEPTED — %d file-backed object(s) will be SKIPPED"
             if accepted else
             "%d file-backed object(s) have NO CONTENT available")
     return ({"key": "artifacts", "level": "warn", "label": head % len(missing),
              "detail": "; ".join(bits)
-                       + " — the device stores only the NAME, so these cannot be "
-                         "cloned as configuration. They will be SKIPPED (not "
+                       + " — these cannot be cloned as configuration: either the "
+                         "device stores only the NAME, or the copy SATOM holds "
+                         "is empty. They will be SKIPPED (not "
                          "created empty: an empty object makes %s look configured "
                          "while the validation it names is off). The rule that "
                          "references one will fail with -651, and a migrate will "

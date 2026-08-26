@@ -469,24 +469,38 @@ def test_object_index_groups_versions_into_one_row_per_object(store):
 
 
 # ── the pages ────────────────────────────────────────────────────────────────
-def test_the_two_new_pages_are_registered(app):
+def test_the_pages_and_verbs_are_registered(app):
     rules = {r.endpoint for r in app.url_map.iter_rules()}
-    for endpoint in ("artifacts.manage", "artifacts.inventory",
+    for endpoint in ("artifacts.inventory",
                      "artifacts.object_page", "artifacts.save",
                      "artifacts.delete", "artifacts.refresh_refs",
                      "artifacts.raw", "artifacts.api_refs",
                      "artifacts.api_coverage"):
         assert endpoint in rules, "%s is not routed" % endpoint
+    # ``manage`` was a SECOND list of the inventory's rows carrying the same
+    # verbs. Two pages answering one question is how a scope gate or a
+    # validation gets fixed on one of them only; it was removed, and the
+    # assertion is that it stays removed rather than quietly coming back as a
+    # third place these verbs can be reached from.
+    assert "artifacts.manage" not in rules
 
 
 def test_the_mutating_endpoints_are_behind_config_write(app):
-    """``save``/``delete``/``refresh_refs`` write SATOM state; ``push`` writes a
-    device. None may be reachable by a read-only operator."""
+    """``save``/``delete``/``refresh_refs``/``upload``/``capture`` write SATOM
+    state. None may be reachable by a read-only operator.
+
+    ``push`` is gone from this list because the verb is gone: nothing on these
+    pages writes to an appliance any more. Its absence is asserted below rather
+    than left implicit — a write-to-device verb reappearing here is exactly the
+    change that needs to be noticed."""
     import inspect
 
     from app.views import artifacts as v
 
-    for fn in (v.save, v.delete, v.refresh_refs, v.push, v.upload, v.capture):
+    assert not hasattr(v, "push"), (
+        "a standalone push writes bytes to a device with nothing bound to "
+        "them: no plan, no policy, no reconciliation report")
+    for fn in (v.save, v.delete, v.refresh_refs, v.upload, v.capture):
         src = inspect.getsource(fn)
         assert "config_write" in src or hasattr(fn, "__wrapped__"), fn.__name__
     module_src = inspect.getsource(v)

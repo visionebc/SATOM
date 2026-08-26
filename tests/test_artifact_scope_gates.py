@@ -177,45 +177,16 @@ def test_control_this_pairs_own_version_still_deletes(ctx, app, client):
 
 
 # ------------------------------------------------------------- push, both ends
-
-def test_another_pairs_bytes_cannot_be_pushed_onto_this_device(
-        ctx, app, client, monkeypatch):
-    """The destination was already gated. The SOURCE was not — and a push sends
-    the row's bytes, so an off-scope row is how a file the operator cannot see
-    on this page becomes the file running on their device."""
-    prod, dev, _o = _fleet()
-    _stand_on(client, app, prod.id)
-    theirs = _row("wsdl", "sch-dev-1", dev.id)
-
-    from app.clients import fortiweb
-    from app.services import waf_artifacts as wa
-    sent = []
-    monkeypatch.setattr(fortiweb, "FortiWebClient", lambda appl: object())
-    monkeypatch.setattr(wa, "push",
-                        lambda *a, **k: (sent.append(a) or (True, "")))
-
-    client.post("/artifacts/push",
-                data={"id": str(theirs.id), "appliance_id": str(prod.id)})
-
-    assert sent == [], "another pair's stored bytes were pushed to a device"
-
-
-def test_control_this_pairs_own_bytes_still_push(ctx, app, client, monkeypatch):
-    prod, _d, _o = _fleet()
-    _stand_on(client, app, prod.id)
-    mine = _row("wsdl", "sch-prod-1", prod.id)
-
-    from app.clients import fortiweb
-    from app.services import waf_artifacts as wa
-    sent = []
-    monkeypatch.setattr(fortiweb, "FortiWebClient", lambda appl: object())
-    monkeypatch.setattr(wa, "push",
-                        lambda *a, **k: (sent.append(a) or (True, "")))
-
-    client.post("/artifacts/push",
-                data={"id": str(mine.id), "appliance_id": str(prod.id)})
-
-    assert len(sent) == 1
+#
+# The two guards that lived here (an off-scope ROW may not be pushed, and the
+# control that this pair's own row still could) went with the route. Scoping a
+# verb is the second-best answer to "this writes to a device"; not having the
+# verb is the first, and content now reaches an appliance only as part of a
+# clone that creates the object.
+#
+# What replaces them is `test_artifact_empty_content.py`'s assertion that the
+# endpoint is unrouted — a scope test on a dead route would keep passing after
+# somebody re-added an unscoped one under another name.
 
 
 # ------------------------------------------------------------- the JSON feeds

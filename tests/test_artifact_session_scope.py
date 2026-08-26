@@ -134,18 +134,21 @@ def test_the_statistics_page_is_scoped_by_the_session_device_too(
     assert "fw@dev" not in html and "fw2@root" not in html
 
 
-def test_the_manage_page_is_scoped_by_the_session_device_too(ctx, app, client):
+def test_the_retired_manage_page_is_gone_not_merely_unlinked(ctx, app, client):
+    """It carried upload, capture, push, edit and DELETE over a list of rows.
+
+    An unlinked page keeps answering to anyone who bookmarked it, and this one
+    was a duplicate of the inventory — so a scope or validation fix applied to
+    one of the two would leave the other serving the old behaviour."""
     prod, dev, other, _r = _fleet()
     _stand_on(client, app, prod.id)
 
-    html = client.get("/artifacts/manage").get_data(as_text=True)
-
-    assert "sch-dev-1" not in html and "sch-other-1" not in html
+    assert client.get("/artifacts/manage").status_code == 404
 
 
 # ---------------------------------------------------------------- the pickers
 
-@pytest.mark.parametrize("path", ["/artifacts/inventory", "/artifacts/manage"])
+@pytest.mark.parametrize("path", ["/artifacts/inventory"])
 def test_no_appliance_picker_offers_another_device(ctx, app, client, path):
     """The half three rounds of guards could not see, because they stripped
     <select> before asserting."""

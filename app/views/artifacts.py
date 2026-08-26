@@ -13,20 +13,30 @@ Three verbs, and the separation is deliberate:
              kinds ever enter the store.
 ``capture``  SATOM reads it off a device and keeps it. Available for the four
              readable kinds; a write to SATOM, never to the appliance.
-``push``     SATOM writes a stored copy onto an appliance. The only verb here
-             that touches a device, and it is a create — so it is behind
-             ``config_write`` and audited, unlike the two above.
+Neither writes to an appliance. There is no standalone ``push`` here any
+more: content reaches a device at CREATE time and nowhere else, uploaded by the
+clone/migrate engine for the objects that run is creating
+(``policy_ops._push_artifact``), under a pre-flight that refuses to proceed
+unacknowledged when a needed object is absent or EMPTY. A push button was the
+one control that wrote bytes to a box with nothing bound to them — no plan, no
+policy, no reconciliation report — and repairing a hand-made or empty object
+that way left the device carrying content SATOM could not tie to anything.
 
-Four pages, split by the question each answers:
+Three pages, split by the question each answers:
 
 ``/artifacts/``           the catalogue: which object types exist and which of
                           them a device will hand back. Reference, not work.
-``/artifacts/manage``     get bytes INTO the store and keep them: upload, author
-                          in the browser, capture off a device, push to a
-                          device, edit, delete a version.
-``/artifacts/inventory``  what is held, where it lives, WHO USES IT, and — the
-                          migration answer — which policies could move today and
-                          which are blocked on content nobody has a copy of.
+``/artifacts/inventory``  what is held, where it lives, how many policies of
+                          this pair read it, and — the migration answer —
+                          which policies could move today and which are blocked
+                          on content nobody has a copy of. The three add verbs
+                          live here, each behind its own dialog.
+
+                          ``/artifacts/manage`` used to be a SECOND list of the
+                          same rows with the same verbs bolted on. Two pages
+                          answering one question is how a filter, a scope gate
+                          or a validation gets fixed on one of them; it was
+                          removed rather than kept in sync.
 
 ``/artifacts/audit``      the whole picture PER DEVICE, in one place and
                           exportable: every policy walked (and every walk that
@@ -81,6 +91,24 @@ def _scope():
     the operator's navigation never produces.
     """
     return device_context.current_appliance()
+
+
+def _device_name(appl) -> str:
+    """What the DEVICE is called — never its management address.
+
+    ``host`` is the chassis's IP or FQDN, and it is what every scope label in
+    this blueprint printed: an operator standing on ``fortiweb12`` was told
+    they were on ``192.0.2.14``, which is the address of a box carrying four
+    ADOM rows and therefore names none of them.
+    :func:`models.appliance_name_parts` is the product's ONE answer to "what
+    is this device called" — the nav rail, the device switcher and every other
+    per-device page already read it. It strips the ``@<adom>`` suffix only
+    when it matches the row's own ``vdom``, so the label can never claim an
+    ADOM this row does not administer.
+    """
+    from ..models import appliance_name_parts
+    dev, _adom = appliance_name_parts(appl)
+    return dev or (getattr(appl, "name", "") or "")
 
 
 def _to_the_map(what: str):
@@ -180,7 +208,7 @@ def _no_device_json():
 def _out_of_scope(dest: str):
     """Refuse a write aimed at a device this page is not standing on."""
     scope = _scope()
-    where = ("%s / %s" % (scope.host or scope.name, (scope.vdom or "").strip()
+    where = ("%s / %s" % (_device_name(scope), (scope.vdom or "").strip()
                           or "no ADOM")) if scope is not None else "no device"
     flash("That would have written to a device you are not on. This page is "
           "%s — switch device on the Architecture map first." % where, "danger")
@@ -200,14 +228,18 @@ LIBRARY_DEVICE = "SATOM library"
 def _scopes() -> dict:
     """``{appliance_id: {name, device, adom}}`` — the pair, not the label.
 
-    The registered NAME already differs per ADOM (SATOM requires it unique), so
-    a name column silently answers "which device and which ADOM" only for
-    someone who knows the naming convention. ``host`` is the chassis and
-    ``vdom`` is the ADOM, and one chassis legitimately carries four rows.
+    ``device`` is the DEVICE NAME (``appliance_name_parts``), not ``host``.
+    The registered row name is ``<device>@<adom>`` by convention, so printing
+    it whole repeats the ADOM that already has its own column; printing
+    ``host`` instead names the chassis's IP, which is what was reported — a
+    page cut to ``fortiweb12 / adom_prod`` labelled itself ``192.0.2.14``.
+    ``host`` is kept as a separate key so the address stays available as a
+    tooltip: it is still the thing an operator types into a browser.
     """
     out = {}
     for a in Appliance.query.order_by(Appliance.name).all():
-        out[a.id] = {"name": a.name, "device": a.host or a.name,
+        out[a.id] = {"name": a.name, "device": _device_name(a),
+                     "host": (a.host or "").strip(),
                      "adom": (a.vdom or "").strip()}
     return out
 
@@ -215,45 +247,26 @@ def _scopes() -> dict:
 def _scope_of(scopes: dict, appliance_id) -> dict:
     """The (device, ADOM) pair for a scope id — including the library case."""
     if not appliance_id:
-        return {"name": "", "device": LIBRARY_DEVICE, "adom": ""}
+        return {"name": "", "device": LIBRARY_DEVICE, "host": "", "adom": ""}
     return scopes.get(appliance_id,
-                      {"name": "#%s" % appliance_id,
+                      {"name": "#%s" % appliance_id, "host": "",
                        "device": "#%s" % appliance_id, "adom": ""})
 
 
 def _verb_dest(back: str, kind: str = "") -> str:
     """Where upload/capture return to. One resolver, three callers.
 
-    The inventory's add-modal posts to the same three verbs the manage page
-    does, so it needs the same round trip; a second copy of this mapping is how
-    one of the two ends up returning to the page the operator did not start on.
+    The inventory's three add dialogs post to the same three verbs, so they
+    need the same round trip; a second copy of this mapping is how one of them
+    ends up returning to the page the operator did not start on. ``manage`` is
+    still accepted as an INPUT — a form rendered before the page was retired,
+    or a bookmarked round trip, must land somewhere real rather than 404 — and
+    it resolves to the inventory, which now carries those verbs.
     """
     back = (back or "").strip()
-    if back == "manage":
-        return url_for("artifacts.manage", kind=kind)
-    if back == "inventory":
+    if back in ("manage", "inventory"):
         return url_for("artifacts.inventory", kind=kind)
     return _safe_back(back, url_for("artifacts.index", kind=kind))
-
-
-def _used_on(refs: list, scopes: dict) -> list:
-    """The DISTINCT (device, ADOM) pairs a set of edges lands on.
-
-    Distinct on the *scope id*, so a device whose four ADOMs each name the
-    object appears four times — which is the fact — while one ADOM's twelve
-    policies appear once, which is what makes the column readable. The policy
-    count rides along, because "used here" and "used here by twelve policies"
-    are different answers to whether it is safe to fork a copy.
-    """
-    seen: dict = {}
-    for r in refs:
-        aid = r.get("appliance_id")
-        row = seen.get(aid)
-        if row is None:
-            row = dict(_scope_of(scopes, aid), appliance_id=aid, policies=0)
-            seen[aid] = row
-        row["policies"] += 1
-    return sorted(seen.values(), key=lambda s: (s["device"], s["adom"]))
 
 
 def _narrow(objects: list, usage: dict, scope_id: int) -> tuple:
@@ -286,7 +299,7 @@ def _narrow(objects: list, usage: dict, scope_id: int) -> tuple:
     return scoped, scoped_usage
 
 
-def _headline(objects: list, usage: dict, cov: list) -> dict:
+def _headline(objects: list, usage: dict, failed: int) -> dict:
     """The nine counters, over EXACTLY the rows this page renders.
 
     Computed from the page's own universe, never from ``wa.stats()`` /
@@ -315,7 +328,11 @@ def _headline(objects: list, usage: dict, cov: list) -> dict:
         "orphans": len(held - linked),
         "stale_edges": sum(1 for r in edges
                            if ar.is_stale(_parse_iso(r["seen_at"]))),
-        "failed_scans": sum(1 for c in cov if not c.get("scanned", True)),
+        #: Held, and the newest version carries NO bytes. It is not a small
+        #: copy — it is the absence wearing a filename, and it reads as held
+        #: everywhere else on this page.
+        "empty": sum(1 for o in objects if o.get("empty")),
+        "failed_scans": failed,
     }
 
 
@@ -337,8 +354,8 @@ def index():
     """Statistics, cut by (device, ADOM) — plus the reference the numbers need.
 
     No ``history()`` read any more. The page stopped rendering the stored-object
-    table when the verbs moved to ``/manage``, and a full scan of every artifact
-    version to build a list nothing displays is a cost with no reader.
+    table when the verbs moved to the inventory, and a full scan of every
+    artifact version to build a list nothing displays is a cost with no reader.
 
     Every figure is cut to the (device, ADOM) the SESSION is standing on —
     there is no fleet-wide reading of this page and no control that offers one,
@@ -403,12 +420,17 @@ def upload():
         flash("File is larger than %d KB — these objects are schemas, not "
               "archives." % (MAX_BYTES // 1024), "danger")
         return redirect(_verb_dest(back, kind))
-    if not blob:
+    if wa.is_empty(blob) or not blob:
         # An empty upload is the exact state this whole feature exists to
         # prevent: it would satisfy every "SATOM has a copy" check and still
-        # push an empty object the referencing rule rejects with -7694.
-        flash("The file is empty. Storing it would let a clone report success "
-              "while pushing an object with no content.", "danger")
+        # create an empty object the referencing rule rejects with -7694.
+        # WHITESPACE-ONLY counts, and did not before: a file holding a single
+        # newline passes ``if not blob``, is stored, resolves, reports a size
+        # and configures nothing. ``save_text`` has always tested ``.strip()``;
+        # this door was the one that did not.
+        flash("The file is empty — there is no content once whitespace is "
+              "discarded. Storing it would let a clone report success while "
+              "creating an object with nothing in it.", "danger")
         return redirect(_verb_dest(back, kind))
     warn = wa.name_warning(kind, name)
     row, created = wa.put(kind, name, blob,
@@ -457,6 +479,17 @@ def capture():
         flash("Could not capture %s \"%s\" from %s: %s"
               % (wa.label(kind), name, appl.name, err), "danger")
         return redirect(dest)
+    if wa.is_empty(blob):
+        # The device answered, and answered with nothing. Storing that is worse
+        # than the failure just above: an absence is reported as an absence and
+        # can be fixed, while a stored emptiness satisfies every "SATOM holds a
+        # copy" check and is then created, empty, at the destination of the
+        # next clone.
+        flash("%s \"%s\" came back EMPTY from %s — nothing was stored. The "
+              "object exists on the device by name; its content does not, so "
+              "there is nothing to carry to another box."
+              % (wa.label(kind), name, appl.name), "warning")
+        return redirect(dest)
     row, created = wa.put(kind, name, blob, appliance_id=appl.id, source="captured",
                           by=getattr(current_user, "username", "") or "",
                           note="captured from %s" % appl.name)
@@ -465,43 +498,6 @@ def capture():
     flash("Captured %s \"%s\" from %s — %d bytes%s."
           % (wa.label(kind), name, appl.name, len(blob),
              "" if created else " (unchanged, no new version)"), "success")
-    return redirect(dest)
-
-
-@bp.route("/push", methods=["POST"])
-@login_required
-@require_permission("config_write")
-def push():
-    """Create the object on an appliance WITH its stored content."""
-    row_id = int(request.form.get("id") or 0)
-    back = request.form.get("back") or ""
-    raw_appl = request.form.get("appliance_id") or ""
-    from ..models_artifacts import WafArtifact
-    row = WafArtifact.query.get_or_404(row_id)
-    dest = (url_for("artifacts.object_page", kind=row.kind, name=row.name)
-            if back == "object" else _verb_dest(back, row.kind))
-    # The only verb here that writes to an appliance. Aiming it off-scope is
-    # how content lands on a box nobody is looking at. BOTH ends are checked:
-    # the destination, and the row whose bytes are being sent — pushing another
-    # pair's copy onto this device is how a file the operator cannot see on
-    # this page becomes the file running on it.
-    if not _row_in_scope(row) or not _in_scope(raw_appl):
-        return _out_of_scope(dest)
-    appl = Appliance.query.get_or_404(int(raw_appl))
-    blob = wa.load(row.sha256)
-    if blob is None:
-        flash("The stored blob for %s is missing from data/artifacts — the "
-              "index row survived its content." % row.sha256[:12], "danger")
-        return redirect(dest)
-    from ..clients.fortiweb import FortiWebClient
-    ok, err = wa.push(FortiWebClient(appl), row.kind, row.name, blob,
-                      vdom=str(getattr(appl, "vdom", "") or ""))
-    log_action("artifact.push", "%s %s -> %s (%s)"
-               % (wa.label(row.kind), row.name, appl.name, "ok" if ok else err))
-    flash(("Pushed %s \"%s\" to %s." % (wa.label(row.kind), row.name, appl.name))
-          if ok else
-          ("Push failed on %s: %s" % (appl.name, err)),
-          "success" if ok else "danger")
     return redirect(dest)
 
 
@@ -527,7 +523,7 @@ def blob(row_id: int):
 @bp.route("/api/list")
 @login_required
 def api_list():
-    """The manage page's rows as JSON — the SAME universe the page renders.
+    """The stored versions of THIS pair as JSON — the inventory's own universe.
 
     An unscoped feed is the reported defect with the HTML stripped off: a
     caller that prints these rows under a banner naming one ADOM prints
@@ -548,49 +544,9 @@ def api_list():
                                            r["appliance_id"]) for r in rows}),
                           "blobs": len(blobs), "bytes": sum(blobs.values())},
                    scope={"appliance_id": scope.id,
-                          "device": scope.host or scope.name,
+                          "device": _device_name(scope),
+                          "host": (scope.host or "").strip(),
                           "adom": (scope.vdom or "").strip()})
-
-
-# --------------------------------------------------------------------------- #
-#  Uploads & file management                                                    #
-# --------------------------------------------------------------------------- #
-@bp.route("/manage")
-@login_required
-def manage():
-    """Get bytes into the store and keep them tidy.
-
-    Deliberately separate from the inventory: this page is a set of VERBS
-    (upload, author, capture, push, edit, delete) and the inventory is a set of
-    FACTS. Mixing them is how a page grows a delete button next to a read-only
-    report and someone finds it with the wrong row selected.
-    """
-    hop = _hop_from_legacy_scope_link()
-    if hop is not None:
-        return hop
-    scope = _scope()
-    if scope is None:
-        return _to_the_map("artifact management")
-
-    kind = (request.args.get("kind") or "").strip()
-    # Same universe as the inventory, from the same narrowing: a verbs page
-    # that lists the fleet offers `delete` and `push` on rows belonging to a
-    # device the operator is not standing on, one mis-clicked row apart.
-    objects, usage = _narrow(af.object_index(), ar.usage_index(), scope.id)
-    if kind in wa.KINDS:
-        objects = [o for o in objects if o["kind"] == kind]
-    names = _appliance_names()
-    for o in objects:
-        o["appliance"] = names.get(o["appliance_id"], "") if o["appliance_id"] else ""
-        o["used_by"] = usage.get((o["kind"], o["name"]), [])
-    return render_template("artifacts/manage.html", objects=objects,
-                           kinds=wa.KINDS, unreadable=wa.UNREADABLE,
-                           appliances=_scope_choices(),
-                           stats={"objects": len(objects),
-                                  "versions": sum(o["versions"] for o in objects),
-                                  "bytes": sum(o["bytes"] for o in objects)},
-                           scope_appl=scope,
-                           active_kind=kind, max_kb=MAX_BYTES // 1024)
 
 
 @bp.route("/save", methods=["POST"])
@@ -673,7 +629,8 @@ def save():
         note=(request.form.get("note") or "edited in SATOM").strip())
     if err:
         flash(err.capitalize() + ".", "danger")
-        return redirect(request.form.get("back") or url_for("artifacts.manage"))
+        return redirect(request.form.get("back")
+                        or url_for("artifacts.inventory", kind=kind))
     warn = wa.name_warning(kind, name)
     log_action("artifact.save", "%s %s (%d bytes, %s, %s%s)"
                % (wa.label(kind), name, row.size, row.sha256[:12],
@@ -720,14 +677,14 @@ def delete():
     # target is named by a bare row id — nothing in the request says which
     # device it belongs to. Unscoped, one id types away another pair's version.
     if not _row_in_scope(row):
-        return _out_of_scope(url_for("artifacts.manage", kind=row.kind))
+        return _out_of_scope(url_for("artifacts.inventory", kind=row.kind))
     kind, name = row.kind, row.name
     ok, msg, _removed = af.delete_version(row_id)
     log_action("artifact.delete", msg)
     flash(msg.capitalize() + ".", "success" if ok else "danger")
     if af.versions(kind, name, any_scope=True):
         return redirect(url_for("artifacts.object_page", kind=kind, name=name))
-    return redirect(url_for("artifacts.manage", kind=kind))
+    return redirect(url_for("artifacts.inventory", kind=kind))
 
 
 # --------------------------------------------------------------------------- #
@@ -903,12 +860,16 @@ def inventory():
             r["appliance"] = names.get(r["appliance_id"], "#%s" % r["appliance_id"])
         o["appliance"] = names.get(o["appliance_id"], "") if o["appliance_id"] else ""
         o["scope"] = _scope_of(scopes, o["appliance_id"])
-        # WHERE it is used, as (device, ADOM) and nothing else. The policy and
-        # profile names are still one click away on the object page; on a
-        # fleet-sized list they are four lines per row of detail nobody scans,
-        # and they pushed the one fact this page is read for — which box and
-        # which ADOM — off the right-hand edge.
-        o["used_on"] = _used_on(refs, scopes)
+        # HOW MANY policies of this pair read it — not WHERE, because where
+        # is the page. _narrow() dropped every edge belonging to another
+        # (device, ADOM), so a "used on" column could only ever print the pair
+        # already named in the banner, in the scope filter and in this row's
+        # own Device and ADOM cells: four copies of one constant, and the
+        # fifth reading — "no known user" — was being read as a fact about the
+        # fleet when it only ever meant "no policy OF THIS PAIR names it".
+        # The count is the part that still varies, and it is what decides
+        # whether forking a copy is safe.
+        o["policies"] = len(refs)
         o["used_by"] = refs
         # A library-wide copy is ONE file. How many OTHER pairs read it is the
         # copy-on-write warning, and it is a fact about this row rather than an
@@ -922,6 +883,15 @@ def inventory():
         o["stale"] = bool(refs) and all(
             ar.is_stale(_parse_iso(r["seen_at"])) for r in refs)
         o["orphan"] = not refs
+        # The NEWEST version, because that is the one resolve() serves — an
+        # older non-empty version is not what a clone would carry.
+        #
+        # Byte count only, deliberately: catching whitespace-only content here
+        # would mean decompressing every blob on every render of a page that
+        # lists the whole holding. The whitespace case is refused at all three
+        # doors (upload, author, capture) and caught again at migration time,
+        # where the bytes are read anyway.
+        o["empty"] = not (o["latest"].get("size") or 0)
 
     # Named by some policy but held by nobody: the migration blockers. They are
     # NOT in object_index (which lists what is stored), and leaving them out
@@ -941,7 +911,7 @@ def inventory():
                         # page exists to flag — and rendering it as held would
                         # claim this pair owns a file it does not.
                         "elsewhere": (k, n) in held_anywhere,
-                        "used_on": _used_on(refs, scopes)})
+                        "policies": len(refs)})
 
     rows = objects
     if kind in wa.KINDS:
@@ -986,16 +956,29 @@ def inventory():
         agg["objects"] += 1
         agg["bytes"] += o["bytes"]
 
-    cov = ar.coverage_fleet(scope_id)
-    for c in cov:
-        c["appliance"] = names.get(c["appliance_id"], "#%s" % c["appliance_id"])
+    # Held here and EMPTY. Taken from the UNFILTERED universe, never from
+    # `rows`: a warning a filter can hide is a warning that is not there. The
+    # kind/source/usage filters are for finding a row, not for deciding which
+    # risks this pair is carrying.
+    empties = [o for o in objects if o["empty"]]
+
+    # No migration-coverage report on this page any more. "Which policies can
+    # move today" is a question asked WHEN MIGRATING, and it is answered where
+    # a migration is decided — the clone/migrate pre-flight checklist, whose
+    # `artifacts` gate refuses to run unacknowledged when an object is absent
+    # or empty — and, per device and exportable, on /artifacts/audit. Rendering
+    # it on a holdings page cost a wa.resolve() per edge, i.e. every blob
+    # decompressed on every page load, to answer a question nobody had asked
+    # yet. The one counter it fed is read from the scan rows instead.
+    failed = ar.failed_scans(scope_id)
 
     return render_template(
         "artifacts/inventory.html", rows=rows, missing=missing,
         kinds=wa.KINDS, unreadable=wa.UNREADABLE, appliances=_scope_choices(),
-        head=_headline(objects, usage, cov), by_kind=by_kind,
+        head=_headline(objects, usage, failed), by_kind=by_kind,
+        empties=empties,
         scope_id=scope_id, scope_appl=_scope_of(scopes, scope_id),
-        by_scope=sorted(by_scope.items()), coverage=cov,
+        by_scope=sorted(by_scope.items()),
         active_kind=kind, active_source=source, active_usage=usage_f,
         active_held=held_f, query=request.args.get("q") or "",
         stale_days=ar.STALE_AFTER.days, max_kb=MAX_BYTES // 1024,
@@ -1066,7 +1049,8 @@ def api_refs():
                           "policies": len({r["policy_mkey"] for r in refs}),
                           "devices": 1 if refs else 0},
                    scope={"appliance_id": scope.id,
-                          "device": scope.host or scope.name,
+                          "device": _device_name(scope),
+                          "host": (scope.host or "").strip(),
                           "adom": (scope.vdom or "").strip()})
 
 

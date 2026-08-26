@@ -346,6 +346,22 @@ def is_stale(seen_at, *, now: datetime | None = None) -> bool:
     return ((now or datetime.utcnow()) - seen_at) > STALE_AFTER
 
 
+def failed_scans(appliance_id: int | None = None) -> int:
+    """How many policy walks FAILED — straight from the scan rows.
+
+    The inventory used to take this number out of :func:`coverage_fleet`, which
+    resolves every artifact of every scanned policy (one blob read per edge) to
+    build a report that page no longer renders. The counter's real source is
+    the scan row's own ``ok`` flag, and reading it there costs one COUNT.
+    """
+    from ..models_artifact_refs import WafArtifactScan
+
+    q = WafArtifactScan.query.filter_by(ok=False)
+    if appliance_id is not None:
+        q = q.filter_by(appliance_id=appliance_id)
+    return q.count()
+
+
 def policy_coverage(appliance_id: int, policy_mkey: str) -> dict:
     """*Can this policy be migrated?* — the answer this whole feature is for.
 
@@ -367,23 +383,37 @@ def policy_coverage(appliance_id: int, policy_mkey: str) -> dict:
     rows = (WafArtifactRef.query
             .filter_by(appliance_id=appliance_id, policy_mkey=policy_mkey)
             .order_by(WafArtifactRef.kind, WafArtifactRef.name).all())
-    out, missing, unrecoverable = [], 0, 0
+    out, missing, unrecoverable, empty = [], 0, 0, 0
     for r in rows:
         blob, origin, store_err = wa.resolve(r.kind, r.name, appliance_id)
         readable = wa.is_readable(r.kind)
         held = blob is not None
+        # HELD AND EMPTY is a third verdict, counted apart from both others.
+        # Folding it into `missing` would tell an operator to capture a file
+        # they already have; leaving it under `held` is how a policy reported
+        # "all content held" and moved an object that enforces nothing.
+        is_empty = held and wa.is_empty(blob)
         if not held:
             missing += 1
             if not readable:
                 unrecoverable += 1
+        elif is_empty:
+            empty += 1
         out.append({
             "kind": r.kind, "label": wa.label(r.kind), "name": r.name,
             "urn": r.urn, "readable": readable, "held": held,
+            "empty": is_empty,
             "size": len(blob) if blob is not None else 0,
             "origin": origin, "store_error": store_err,
             "seen_at": r.seen_at.isoformat(timespec="seconds") if r.seen_at else "",
             "stale": is_stale(r.seen_at),
-            "reason": "" if held else (
+            "reason": ("the copy SATOM holds is EMPTY (%d bytes, nothing "
+                       "once whitespace is discarded) — it satisfies every "
+                       "\"is it held?\" check and would be carried to the "
+                       "destination as an object that looks configured while "
+                       "the validation it names is off"
+                       % (len(blob) if blob is not None else 0))
+                      if is_empty else "" if held else (
                 store_err or
                 ("SATOM holds no copy, and %s cannot be read back from any "
                  "FortiWeb — this content cannot be recovered from the source "
@@ -399,8 +429,11 @@ def policy_coverage(appliance_id: int, policy_mkey: str) -> dict:
         "scan_error": (scan.error if scan is not None and not scan.ok else ""),
         "stale": (scan is None or is_stale(scan.scanned_at)),
         "artifacts": out, "total": len(out),
-        "missing": missing, "unrecoverable": unrecoverable,
-        "ready": (scan is not None and bool(scan.ok) and missing == 0),
+        "missing": missing, "unrecoverable": unrecoverable, "empty": empty,
+        # An empty copy blocks a migration exactly as an absent one does: what
+        # arrives at the destination is the same object with nothing in it.
+        "ready": (scan is not None and bool(scan.ok)
+                  and missing == 0 and empty == 0),
     }
 
 
@@ -418,19 +451,19 @@ def coverage_fleet(appliance_id: int | None = None) -> list[dict]:
             out.append({"appliance_id": scan.appliance_id,
                         "policy": scan.policy_mkey, "scanned": False,
                         "scan_error": scan.error, "total": 0, "missing": 0,
-                        "unrecoverable": 0, "ready": False,
+                        "unrecoverable": 0, "empty": 0, "ready": False,
                         "stale": is_stale(scan.scanned_at), "artifacts": []})
             continue
         if not scan.refs:
             out.append({"appliance_id": scan.appliance_id,
                         "policy": scan.policy_mkey, "scanned": True,
                         "scan_error": "", "total": 0, "missing": 0,
-                        "unrecoverable": 0, "ready": True,
+                        "unrecoverable": 0, "empty": 0, "ready": True,
                         "stale": is_stale(scan.scanned_at), "artifacts": []})
             continue
         out.append(policy_coverage(scan.appliance_id, scan.policy_mkey))
     out.sort(key=lambda r: (r["ready"], -r["unrecoverable"], -r["missing"],
-                            r["policy"]))
+                            -r.get("empty", 0), r["policy"]))
     return out
 
 

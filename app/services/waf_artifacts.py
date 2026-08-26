@@ -577,13 +577,31 @@ def content_for(kind: str, name: str, *, src_client=None, src_vdom: str = "",
     return None, "", store_err or reason
 
 
+def is_empty(blob) -> bool:
+    """Content that carries nothing, whatever its byte count.
+
+    ``None`` is NOT empty here — it is ABSENT, and the two must stay apart.
+    An absence is reported as "SATOM holds no copy" and can be fixed by a
+    capture or an upload; an EMPTY copy answers every "is it held?" check in
+    this module and then gets created, empty, at the destination of the next
+    clone — an object the device shows as configured while the rule bound to
+    it enforces nothing.
+
+    Whitespace-only counts as empty. A file holding one newline has a size, a
+    sha and a version row, and configures nothing: it is the empty object
+    wearing a byte count.
+    """
+    return blob is not None and not blob.strip()
+
+
 def resolve_for_plan(items, *, src_client=None, src_vdom: str = "",
                      source_appliance_id: int | None = None) -> list[dict]:
     """Read-only report: for every file-backed object in the plan, can its
     CONTENT be supplied? Never captures (see :func:`content_for`)."""
     out = []
     for a in plan_artifacts(items):
-        rec = dict(a, resolved=False, origin="", reason="", size=0)
+        rec = dict(a, resolved=False, origin="", reason="", size=0,
+                   empty=False)
         if a["status"] != "create":
             rec.update(resolved=True, origin="destination",
                        reason="already present on the destination — not copied, "
@@ -595,6 +613,19 @@ def resolve_for_plan(items, *, src_client=None, src_vdom: str = "",
             source_appliance_id=source_appliance_id, capture=False)
         if blob is None:
             rec.update(resolved=False, reason=reason or "SATOM holds no copy")
+        elif is_empty(blob):
+            # Resolved-but-EMPTY was reported as content available: the
+            # pre-flight counted it under "will be copied WITH content" and the
+            # apply uploaded it. `resolved` is the field every caller reads to
+            # decide whether the object can travel, so the empty case belongs
+            # on the same side of it as the absent one — with its own reason,
+            # because the fix is different (re-author the file, not capture it).
+            rec.update(resolved=False, empty=True, origin=origin,
+                       size=len(blob),
+                       reason="the copy SATOM holds is EMPTY (%d bytes, "
+                              "nothing once whitespace is discarded) — "
+                              "uploading it would create an object that looks "
+                              "configured and enforces nothing" % len(blob))
         else:
             rec.update(resolved=True, origin=origin, size=len(blob))
         out.append(rec)

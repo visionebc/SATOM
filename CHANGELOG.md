@@ -6,7 +6,81 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Removed
+
+- **`/artifacts/manage` — it was a second copy of the inventory.** Same rows,
+  same verbs, one more place for a scope gate or a validation to be fixed on
+  only one of the two. The three add verbs moved onto `/artifacts/inventory`
+  as **three buttons, one dialog each** (upload / author / capture — they
+  differ in what they touch, and a single "Add content" dialog left the
+  operator to notice which of its three columns reaches out to a live
+  appliance). They POST to the SAME endpoints; `back=manage` is still accepted
+  as an input so a bookmarked round trip lands on the inventory instead of a
+  404.
+
+- **"Push this version to an appliance".** Content reaches a device at CREATE
+  time and nowhere else: the clone/migrate engine uploads the bytes for every
+  file-backed object that run creates, under a pre-flight that refuses to
+  proceed unacknowledged when one of them is absent or empty. The standalone
+  button was the one control that wrote to a box with **nothing bound to the
+  write** — no plan, no policy, no reconciliation report — and its only real
+  use, repairing a hand-made or empty object, left content SATOM could not tie
+  to anything. The route is gone, not merely unlinked.
+
+- **The migration-coverage table on `/artifacts/inventory`.** "Which server
+  policies can move today" is asked WHEN MIGRATING, and it is answered where a
+  migration is decided: the clone/migrate pre-flight checklist and, per device
+  and exportable, `/artifacts/audit`. On a holdings page it cost a blob read
+  **per edge on every render** to answer a question nobody had asked yet. The
+  one counter it fed ("walks that FAILED") is read from the scan rows instead.
+
 ### Fixed
+
+- **An EMPTY stored copy is a warned state, everywhere it matters.** `blob is
+  None` was the whole test for "can this object travel", so a zero-byte (or
+  whitespace-only) version **resolved**: the pre-flight counted it under "will
+  be copied WITH content", the coverage verdict said `ready`, and the apply
+  uploaded it. What lands at the destination is an object the device shows as
+  configured while the rule bound to it enforces nothing. An emptiness is
+  worse than an absence precisely because every "is it held?" check answers
+  yes — so nothing reported it.
+
+  * `waf_artifacts.is_empty()` is the one predicate, and it keeps ABSENT and
+    EMPTY apart: the remedies differ (capture or upload vs re-author), so
+    telling an operator to capture a file they already hold is a useless
+    instruction.
+  * `resolve_for_plan` marks an empty copy **unresolved**, with its own reason;
+    the pre-flight gate says EMPTY instead of "the device stores only the
+    NAME"; the apply skips it and **refuses without an acknowledgement**,
+    exactly as it does for an absent one.
+  * `policy_coverage` counts `empty` apart from `missing` and no longer calls
+    such a policy `ready`.
+  * The inventory has a **"Held, but EMPTY"** card, a headline counter and a
+    row badge. The card is built from everything the pair holds, never from
+    the filtered rows: a warning a filter can hide is a warning that is not
+    there.
+  * The three doors are closed too — upload now tests `.strip()` (a file
+    holding one newline used to pass), and a capture that comes back empty
+    stores nothing.
+
+- **Scope labels name the DEVICE, not its management address.** Reported for
+  "todas las secciones" of `/artifacts/*`: an operator standing on
+  `fortiweb12 / adom_prod` was told they were on `192.0.2.14` — the address of a
+  chassis carrying four ADOM rows, so it names none of them. Every label now
+  goes through `models.appliance_name_parts` (the product's one answer to
+  "what is this device called"); the address stays available as a hover,
+  because it is still what an operator types into a browser.
+
+- **The inventory's "Used on (device / ADOM)" column is a count now.** The page
+  stands on one pair and the narrowing drops every edge belonging to any other,
+  so the column could only ever repeat the pair already printed in the banner
+  and in the row's own Device and ADOM cells — and its empty state, **"no known
+  user"**, was read as a fact about the fleet when it only ever meant "no
+  walked policy OF THIS PAIR names it".
+
+- **Every action on the inventory says what it does on hover.** An icon-only
+  control is a guess, and one of them leads to the page that can delete a
+  version.
 
 - **`/artifacts/*` takes its (device, ADOM) from the SESSION, like every other
   per-device page — and nothing in the section answers for anything else.**
@@ -21,7 +95,7 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   the fleet — 163 mentions of other pairs on one page, measured on the live
   node.
 
-  * `index`, `manage`, `inventory`, `object` and `audit` narrow to the session
+  * `index`, `inventory`, `object` and `audit` narrow to the session
     pair before a figure is computed; with **no** device chosen they send the
     operator to the map, as Backups does, instead of showing the fleet.
   * **The pickers were the other half of the report** (*"en los filtros"*).
@@ -30,7 +104,7 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
     back to the fleet — is replaced by a *within-scope* `held=own|library`, and
     the audit's device filter is gone.
   * A narrowed control is decoration, so **every verb is gated on the route**:
-    `upload`, `capture`, `push`, `save` and `refs/refresh` refuse an
+    `upload`, `capture`, `save` and `refs/refresh` refuse an
     `appliance_id` that is not the pair the page stands on (library-wide stays
     allowed where it is the shared bucket this pair reads).
   * Old `?appl=`/`?scope=` links still work — they **move** the session device

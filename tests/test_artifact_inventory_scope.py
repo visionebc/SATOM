@@ -324,32 +324,88 @@ def _held_table(html: str) -> str:
     return html[start:html.index("</table>", start)]
 
 
-def test_a_row_names_the_device_and_the_adom(app, client, ctx):
+def _visible(html: str) -> str:
+    """The text a reader SEES — every tag (and therefore every attribute)
+    stripped.
+
+    The management address is still carried as a ``title=``, which is right: it
+    is what an operator types into a browser. A guard that greps the raw markup
+    therefore cannot tell "the row is labelled 192.0.2.7" from "the row is
+    labelled fw7 and its address is one hover away" — the two readings are
+    opposite and the whole complaint was about the first one.
+    """
+    return re.sub(r"<[^>]+>", " ", html)
+
+
+def test_a_row_names_the_DEVICE_not_its_management_address(app, client, ctx):
+    """The chassis address is not the device.
+
+    One FortiWeb at 192.0.2.7 carries four ADOM rows, so its IP names none of
+    them; ``appliance_name_parts`` is the product's one answer to "what is this
+    device called" and every other per-device page already reads it. The
+    address stays reachable on hover.
+    """
     from tests.conftest import admin_user_id, login
 
     prod = _appl("fw7@prod", "192.0.2.7", "adom_prod")
     _put("wsdl", "sch-r", "<x/>", appliance_id=prod.id)
     _stand_on(client, app, prod.id)
     table = _held_table(client.get("/artifacts/inventory").get_data(as_text=True))
-    assert "192.0.2.7" in table, "the device (chassis) is not on the row"
-    assert "adom_prod" in table, "the ADOM is not on the row"
+    assert "fw7@prod" in _visible(table), "the device NAME is not on the row"
+    assert "adom_prod" in _visible(table), "the ADOM is not on the row"
+    assert "192.0.2.7" not in _visible(table), \
+        "the management address is being printed AS the device"
+    # …and it is still one hover away, which is the half a plain deletion loses.
+    assert 'title="192.0.2.7"' in table
 
 
-def test_the_used_on_column_carries_pairs_not_policy_and_profile_names(
-        app, client, ctx):
-    """The ask was device and ADOM, and only those. Four lines of policy →
-    profile per row pushed the one fact this page is read for off the edge;
-    the detail is one click away on the object page."""
+def test_there_is_no_used_on_column_only_a_count(app, client, ctx):
+    """Device and ADOM are the page, so they cannot also be a column.
+
+    ``_narrow()`` drops every edge belonging to another pair before a figure is
+    computed, so a "used on (device / ADOM)" column could only ever repeat the
+    pair already printed in the banner and in this row's own two cells — and
+    its empty state, "no known user", read as a statement about the fleet when
+    it only ever meant "no walked policy OF THIS PAIR names it". What is left
+    is the count, which is the part that varies.
+    """
     from tests.conftest import admin_user_id, login
 
     prod = _appl("fw8@prod", "192.0.2.8", "adom_prod")
     _put("wsdl", "sch-u", "<x/>")
     _ref(prod.id, "pol-secret-name", "wsdl", "sch-u", wpp="wpp-secret-name")
     _stand_on(client, app, prod.id)
-    table = _held_table(client.get("/artifacts/inventory").get_data(as_text=True))
-    assert "192.0.2.8" in table and "adom_prod" in table
+    html = client.get("/artifacts/inventory").get_data(as_text=True)
+    table = _held_table(html)
+    assert "Used on" not in html, "the redundant location column is back"
+    assert "no known user" not in _visible(table), \
+        "the orphan wording that was read as a fleet-wide claim is back"
+    # The count of THIS pair's policies is what the column became.
+    cell = table[table.index("data-policies-cell"):]
+    cell = cell[:cell.index("</td>")]
+    assert ">1<" in cell, "the policy count for this pair is not on the row"
+    # The detail behind the count stays one click away, never on this list.
     assert "pol-secret-name" not in table
     assert "wpp-secret-name" not in table
+
+
+def test_a_zero_count_does_not_claim_nobody_uses_it(app, client, ctx):
+    """An object no WALKED policy names is not an object nothing uses.
+
+    The old wording ("no known user") was the reported reading; the badge that
+    replaced it says zero and explains on hover that an unwalked policy names
+    nothing.
+    """
+    from tests.conftest import admin_user_id, login
+
+    prod = _appl("fwZ@prod", "192.0.2.12", "adom_prod")
+    _put("wsdl", "sch-orphan", "<x/>", appliance_id=prod.id)
+    _stand_on(client, app, prod.id)
+    table = _held_table(client.get("/artifacts/inventory").get_data(as_text=True))
+    cell = table[table.index("data-policies-cell"):]
+    cell = cell[:cell.index("</td>")]
+    assert ">0<" in cell
+    assert "not proof" in cell, "the zero is stated as a fact about the fleet"
 
 
 def test_the_eye_link_carries_the_scope_and_the_way_back(app, client, ctx):
@@ -378,18 +434,49 @@ def test_the_eye_link_carries_the_scope_and_the_way_back(app, client, ctx):
     assert "sch-eye" in landed
 
 
-def test_the_add_modal_posts_to_the_three_real_verbs(app, client, ctx):
-    """One set of routes, not a modal-flavoured second set: the copy that is
-    not the one with the empty-body refusal stores an artifact that pushes as
-    -7694."""
+def test_each_add_verb_has_its_OWN_button_and_dialog(app, client, ctx):
+    """Three verbs, three buttons, three dialogs.
+
+    They differ in what they touch — upload and author write only SATOM,
+    capture REACHES OUT to a live appliance — and a single dialog put all three
+    side by side, leaving the operator to notice which column contacts a
+    device. Each still posts to the SAME endpoint the retired manage page used:
+    a modal-flavoured second set of routes is how the copy WITHOUT the
+    empty-body refusal stores an artifact that pushes as -7694.
+    """
     from tests.conftest import admin_user_id, login
 
     _stand_on(client, app, _appl("fwM@prod", "192.0.2.11", "adom_prod").id)
     html = client.get("/artifacts/inventory").get_data(as_text=True)
-    assert 'id="artAddModal"' in html
-    assert 'data-bs-target="#artAddModal"' in html
-    for action in ("/artifacts/upload", "/artifacts/save", "/artifacts/capture"):
+    assert 'id="artAddModal"' not in html, "the one-dialog-for-three-verbs is back"
+    for modal, verb, action in (("artUploadModal", "upload", "/artifacts/upload"),
+                                ("artAuthorModal", "author", "/artifacts/save"),
+                                ("artCaptureModal", "capture", "/artifacts/capture")):
+        assert 'id="%s"' % modal in html, modal
+        assert 'data-bs-target="#%s"' % modal in html, modal
+        assert 'data-add-verb="%s"' % verb in html, verb
         assert 'action="%s"' % action in html, action
+    # A button an operator cannot read is a guess, and one of these contacts a
+    # live appliance.
+    head = html[html.index('data-add-verb="upload"'):]
+    head = head[:head.index("</div>")]
+    assert "title=" in head
+
+
+def test_the_page_no_longer_links_the_duplicate_manage_page(app, client, ctx):
+    """/artifacts/manage was a second list of these rows with the same verbs.
+
+    Two pages answering one question is how a scope gate, a filter or a
+    validation gets fixed on one of them; it was removed rather than kept in
+    sync, and the endpoint is gone — so a link to it would be a 500 at
+    url_for(), not a dead link.
+    """
+    from tests.conftest import admin_user_id, login
+
+    _stand_on(client, app, _appl("fwD@prod", "192.0.2.13", "adom_prod").id)
+    html = client.get("/artifacts/inventory").get_data(as_text=True)
+    assert "/artifacts/manage" not in html
+    assert client.get("/artifacts/manage").status_code == 404
 
 
 # --------------------------------------------------------------------------- #
@@ -432,3 +519,65 @@ def test_back_honours_a_local_path_and_refuses_an_offsite_one(app, client, ctx):
     bad = client.get("/artifacts/object/wsdl/sch-back"
                      "?back=%2F%2Fevil.example%2Fx").get_data(as_text=True)
     assert "evil.example" not in bad
+
+# --------------------------------------------------------------------------- #
+#  The device NAME, on every page of the blueprint                              #
+# --------------------------------------------------------------------------- #
+def test_no_artifact_page_labels_the_scope_with_its_IP(app, client, ctx):
+    """One guard per PAGE, because the label is written per template.
+
+    The scope label was ``host or name`` in five places and the service layer
+    computed it correctly the whole time — the same shape as every artifact
+    defect reported so far: the calculation was right and the RENDER was what
+    lied. A guard over the service would have passed while all five pages
+    printed an address.
+
+    Attributes are stripped before asserting: the address stays as a ``title=``
+    on purpose (it is what an operator types into a browser), and the raw
+    markup cannot distinguish "labelled 192.0.2.20" from "labelled fwLBL and its
+    address is one hover away" — opposite readings, and the first one is the
+    complaint.
+    """
+    import re as _re
+
+    appl = _appl("fwLBL@prod", "192.0.2.20", "adom_prod")
+    _put("wsdl", "sch-lbl", "<x/>", appliance_id=appl.id)
+    _ref(appl.id, "pol-lbl", "wsdl", "sch-lbl")
+    _stand_on(client, app, appl.id)
+
+    pages = {
+        "/artifacts/": None,
+        "/artifacts/inventory": None,
+        "/artifacts/audit": None,
+        "/artifacts/object/wsdl/sch-lbl": None,
+    }
+    for path in list(pages):
+        resp = client.get(path)
+        assert resp.status_code == 200, "%s -> %s" % (path, resp.status_code)
+        html = resp.get_data(as_text=True)
+        visible = _re.sub(r"<[^>]+>", " ", html)
+        assert "192.0.2.20" not in visible, (
+            "%s prints the management address as the device" % path)
+        assert "fwLBL" in visible, "%s does not name the device at all" % path
+        # …and the address is still one hover away on the pages that scope.
+        pages[path] = 'title="192.0.2.20"' in html
+    assert pages["/artifacts/inventory"], \
+        "the inventory dropped the address instead of moving it to the hover"
+
+
+def test_a_picker_labels_its_option_with_the_device_name(app, client, ctx):
+    """The half three earlier rounds of guards could not see: they stripped
+    ``<select>`` before asserting, so the fleet — and then the address —
+    survived inside the controls while six guards reported green."""
+    import re as _re
+
+    appl = _appl("fwSEL@prod", "192.0.2.21", "adom_prod")
+    _stand_on(client, app, appl.id)
+    html = client.get("/artifacts/inventory").get_data(as_text=True)
+
+    opts = _re.findall(r"<option\b[^>]*>(.*?)</option>", html, _re.S)
+    assert opts, "no picker at all — the guard would pass vacuously"
+    named = [o for o in opts if "fwSEL" in o]
+    assert named, "no picker offers the device by name"
+    for o in opts:
+        assert "192.0.2.21" not in o, "a picker option is labelled with the IP"

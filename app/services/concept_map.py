@@ -414,14 +414,11 @@ PAGES: tuple[dict, ...] = (
        "upload capture push clone migrate content -7694",
        "The file content FortiWeb keeps out of its own configuration, so a "
        "clone can carry it."),
-    _p("artifacts.manage", "Artifact uploads & files", "waf",
-       "artifact upload edit author version file manage delete push capture "
-       "schema xsd wsdl openapi grpc idl json lua editor online view",
-       "Get file-backed WAF object content into SATOM, edit it in the browser "
-       "and keep its versions."),
     _p("artifacts.inventory", "Artifact inventory", "waf",
        "artifact inventory statistics filter orphan used by policy spo "
-       "coverage migration missing stale where held",
+       "coverage migration missing stale where held "
+       "upload edit author version file manage delete capture "
+       "schema xsd wsdl openapi grpc idl json lua editor online view",
        "What SATOM holds, where each copy lives, which server policies need "
        "it, and which policies are blocked on content nobody has."),
     _p("artifacts.audit", "Artifact device audit", "waf",
@@ -512,16 +509,16 @@ EXCLUDED: dict[str, str] = {
     "change_requests.new": "create form of change_requests.index",
     "database.report_new": "create form of database.index",
     "lua_studio.new": "create form of lua_studio.index",
-    # Verbs of artifacts.manage. They used to be reached from artifacts.index
-    # too; that page is reference-only now (one author per verb), so pointing
-    # these reasons at it would have described a form that no longer exists.
-    "artifacts.upload": "form action of artifacts.manage",
-    "artifacts.capture": "form action of artifacts.manage",
-    "artifacts.push": "form action of artifacts.manage",
-    "artifacts.blob": "file download from artifacts.manage",
-    "artifacts.api_list": "JSON feed of artifacts.manage",
-    "artifacts.object_page": "detail view of artifacts.manage",
-    "artifacts.save": "form action of artifacts.manage",
+    # Verbs of artifacts.inventory. They were reachable from artifacts.index
+    # and from artifacts.manage before; index is reference-only and manage was
+    # a second copy of the inventory, so pointing these reasons at either would
+    # describe a form that no longer exists.
+    "artifacts.upload": "form action of artifacts.inventory",
+    "artifacts.capture": "form action of artifacts.inventory",
+    "artifacts.blob": "file download from artifacts.inventory",
+    "artifacts.api_list": "JSON feed of artifacts.inventory",
+    "artifacts.object_page": "detail view of artifacts.inventory",
+    "artifacts.save": "form action of artifacts.inventory",
     "artifacts.delete": "form action of artifacts.object_page",
     "artifacts.raw": "inline view from artifacts.object_page",
     "artifacts.refresh_refs": "form action of artifacts.inventory",

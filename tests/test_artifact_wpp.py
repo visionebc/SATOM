@@ -381,9 +381,10 @@ def test_the_four_artifact_pages_all_answer(app, client):
     # the operator to the Architecture map to pick one, exactly as Backups and
     # Server Objects do. A 200 here with no device chosen WAS the defect.
     _stand_device(client, app)
-    for url in ("/artifacts/", "/artifacts/inventory", "/artifacts/manage",
-                "/artifacts/audit"):
+    for url in ("/artifacts/", "/artifacts/inventory", "/artifacts/audit"):
         assert client.get(url).status_code == 200, url
+    # The fourth page was a duplicate of the inventory and is gone.
+    assert client.get("/artifacts/manage").status_code == 404
 
 
 def test_the_audit_exports_as_json_and_csv(app, client):
@@ -454,8 +455,10 @@ def test_the_nav_uses_the_products_own_submenu_shape(app):
     block = nav[max(0, j - 900):j + 1800]
     assert 'class="fw-so-parent"' in block
     assert "fw-so-parent-head" in block
-    assert block.count("fw-so-nav-flat") == 4, (
-        "four leaves: object types, inventory, files, device audit")
+    assert block.count("fw-so-nav-flat") == 3, (
+        "three leaves: object types, inventory, device audit — 'Files' was a "
+        "second door onto the inventory's own rows and went with that page")
     for endpoint in ("artifacts.index", "artifacts.inventory",
-                     "artifacts.manage", "artifacts.audit"):
+                     "artifacts.audit"):
         assert endpoint in block, endpoint
+    assert "artifacts.manage" not in block

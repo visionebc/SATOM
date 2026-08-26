@@ -8,6 +8,30 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Added
 
+- **`/artifacts/` now NAMES the scope it is showing.** The filter was applied
+  correctly and the page said nothing about it, which on a real screen is not
+  the same thing. Per-ADOM counters of a symmetric estate collide: the four
+  ADOMs of `192.0.2.13` hold **disjoint** data (`pol-root-*` / `pol-prod-*` /
+  `pol-dmz-*` / `pol-dev-*`, zero overlap) but five policies each, so all four
+  print the same six headline figures. Switching ADOM in the picker moved
+  nothing on screen and read as a filter that was never applied.
+
+  A narrowed page now carries a banner naming **device → ADOM**, and says
+  plainly that identical totals across sibling ADOMs are a property of the
+  estate rather than a failed filter — pointing at the profile names below,
+  which are unique to one ADOM and are the only thing an operator can actually
+  check. The unnarrowed page is labelled **whole fleet** rather than left
+  blank: an unlabelled page is not neutral, it reads as whichever scope the
+  reader last had in mind.
+
+  Guarded at the **route**, not at `fleet_stats()`. Every existing scope test
+  called the service directly, which is how a page that computed the right
+  numbers and rendered them unlabelled shipped: the arithmetic was tested and
+  the rendering never was. The fixture is deliberately **symmetric** (two ADOMs,
+  identical counts, disjoint names) with a control test asserting the symmetry
+  — two ADOMs of different sizes would let an unfiltered page pass by printing
+  a different number.
+
 - **`/artifacts/` is the statistics page, cut by (device, ADOM).** It answered
   only "what are the seven types" while every number about them lived one page
   away. It now leads with the figures and keeps the reference below them: how

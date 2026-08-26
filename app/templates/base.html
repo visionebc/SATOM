@@ -764,16 +764,16 @@
             <div class="fw-so-parent-body">
               <div class="fw-so-nav">
                 <a class="fw-nav-item fw-so-nav-flat {{ 'active' if request.endpoint == 'artifacts.index' else '' }}"
-                   href="{{ url_for('artifacts.index', scope=request.args.get('appl') or request.args.get('scope') or None) }}">
+                   href="{{ url_for('artifacts.index') }}">
                   <i class="bi bi-journal-text fw-nav-icon"></i><span>{{ _('Object types') }}</span></a>
                 <a class="fw-nav-item fw-so-nav-flat {{ 'active' if request.endpoint in ['artifacts.inventory', 'artifacts.object_page'] else '' }}"
-                   href="{{ url_for('artifacts.inventory', appl=request.args.get('appl') or request.args.get('scope') or None) }}">
+                   href="{{ url_for('artifacts.inventory') }}">
                   <i class="bi bi-clipboard-data fw-nav-icon"></i><span>{{ _('Inventory') }}</span></a>
                 <a class="fw-nav-item fw-so-nav-flat {{ 'active' if request.endpoint == 'artifacts.manage' else '' }}"
                    href="{{ url_for('artifacts.manage') }}">
                   <i class="bi bi-folder-plus fw-nav-icon"></i><span>{{ _('Files') }}</span></a>
                 <a class="fw-nav-item fw-so-nav-flat {{ 'active' if request.endpoint == 'artifacts.audit' else '' }}"
-                   href="{{ url_for('artifacts.audit', appl=request.args.get('appl') or request.args.get('scope') or None) }}">
+                   href="{{ url_for('artifacts.audit') }}">
                   <i class="bi bi-clipboard-check fw-nav-icon"></i><span>{{ _('Device audit') }}</span></a>
               </div>
             </div>

@@ -11081,3 +11081,99 @@ blinded, the `?scope=` alias dropped, the banner removed, the by-type and
 sidebar links dropping the scope, and one meta-mutation that breaks the
 fixture's symmetry to prove the control bites, and one that counts distinct NAMES instead of copies in the headline). All 14 must fail by `rc == 1`
 from a green baseline, and each must name its own guard among the dead.
+
+
+## §122 — The scope is the session's, and a picker is not a scope (`tests/test_artifact_session_scope.py`)
+
+**The failure this prevents.** A whole area of the product that does not
+participate in device-first navigation. The operator picks a device on the
+Architecture map, every other per-device page follows, and this one renders the
+fleet under a banner naming their device. It was reported three times in three
+days and the first two fixes were both real code that could not possibly have
+helped: they narrowed on `?appl=`, an argument the navigation never emits. The
+lesson is not "narrow harder" — it is **read the scope from where the product
+keeps it** (`device_context.current_appliance()`), so a page cannot have a
+second opinion about where the operator is standing.
+
+**Half the defect lived in the controls.** Every guard of the two previous
+rounds stripped `<select>` before asserting, on the reasoning that a picker
+enumerates the fleet by design. It does not, on a per-device page — and that is
+literally what the operator was still seeing. So: **each guard on a control has
+a matching guard on the POST that control drives**, because a picker narrowed
+in a template is decoration and a form post carries whatever its author types.
+
+**Rules these guards encode.**
+
+1. No `<select name="appliance_id">` on any artifacts page offers a device
+   other than the session pair, and none offers a maintenance-mode row.
+2. The row filter cannot widen the page: `held=own|library` selects *within*
+   the scope; the appliance filter it replaced had "Any" as its neutral option.
+3. With no device chosen the page **redirects to the map**. Rendering the fleet
+   is the reported defect with an empty session.
+4. A legacy `?appl=` link **moves the session** and redirects without the
+   argument — one answer to "which device am I on", not two.
+5. The write gate is on the ROUTE (`_in_scope`), and it is tested by POSTing
+   another pair's id, not by reading the rendered options.
+
+**Verification recipe.** 13 guards, rc=0, then the mutation set of §123 (the two
+files are run together: they share the contract).
+
+## §123 — A row id is a scope, and a JSON feed is a page (`tests/test_artifact_scope_gates.py`)
+
+**The failure this prevents.** Half of `/artifacts/*` never mentions a device
+in the request at all. `/blob/<id>`, `/raw/<id>`, `delete` and `push` name a
+stored version by **primary key**; `/api/list`, `/api/refs` and
+`/api/coverage/<appliance_id>/<policy>` are the rendered pages with the HTML
+stripped off, and the last one takes the whole scope in its path. §121 and §122
+narrowed what those pages *show* — and an unlisted row is decoration: the ids
+are consecutive integers, and the route that answered for every one of them
+included the only destructive verb in the blueprint.
+
+**Rules.**
+
+1. **Library-wide rows stay readable.** The gate is `appliance_id in (None,
+   scope.id)`, taken from `resolve()`'s search order rather than restated: a
+   gate that also refuses the shared bucket breaks the page it protects, which
+   is why every negative guard here has a positive control beside it.
+2. **404, not 403,** for the two readers: in this page's universe that version
+   does not exist, and "forbidden" confirms the existence of a row the operator
+   may not see.
+3. **`push` checks both ends.** The destination was already gated; the SOURCE
+   is what supplies the bytes, so an off-scope row is how a file the operator
+   cannot see on this page becomes the file running on their device.
+4. **JSON callers get 409, never a redirect** — `require_device_scope` learned
+   that a 302 to an HTML page renders as a parse error in a `fetch()`.
+5. **A scoped list may not print a store-wide total.** `stats` is re-derived
+   from the rows returned; the header/table contradiction is the defect §119
+   already cost this product once.
+6. **The narrowing goes in the QUERY, before the row limit.** Filtering the 200
+   rows that came back lets another pair's newer versions fill the limit and
+   the remainder gets reported as everything there is — the guard creates six
+   noise rows on another device and asks for `limit=3`.
+7. **A fork lands on the session pair**, and the posted `only_appliance_id` is
+   ignored rather than validated. A field that is ignored *quietly* is how a
+   control keeps writing to a device nobody named, so there is a guard that the
+   form cannot name the destination **and** one that the fork still lands.
+
+**Traps already paid for here.**
+
+- `FortiWebClient(appl)` decrypts the appliance password, so the positive
+  `push` control dies on `InvalidToken` with a fixture password. Stub the
+  client as well as `wa.push` — and stub it in the NEGATIVE guard too, or a
+  broken gate reports as an error instead of a failed assertion.
+- The first version of the re-pointed §120 guard asserted the refusal **after**
+  a successful fork in the same body: that fork makes the library copy unshared
+  (`affected` excludes a pair that now holds its own copy), so the second half
+  silently tested a different code path. Two tests, one fixture each.
+- `_stand_on` must clear `g._current_appliance`: `current_appliance()` memoises
+  on `g` and the `ctx` fixture holds one app context across every request.
+
+**Verification recipe.** 16 guards, rc=0; then 15 mutations run over §122 and
+§123 together — each gate removed one at a time (blob, raw, delete, push
+source, `api_list` rows, `api_list` totals, `api_refs` index, `api_refs` single
+object, `api_coverage` path id, the 409, the history filter moved after the
+limit, the fork picker restored in the template, the fork target read from the
+form, the fork's no-reader refusal disabled) plus one meta-mutation that breaks
+the fixture's symmetry to prove the control bites. All 15 must fail by
+`rc == 1` from a green baseline, without `-x`, each naming its own guard among
+the dead.

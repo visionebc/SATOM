@@ -25,11 +25,11 @@
     </p>
   </div>
   <div class="d-flex gap-2 align-items-start">
-    <a class="btn btn-fw-outline btn-sm" href="{{ url_for('artifacts.inventory', appl=scope_id or None) }}">
+    <a class="btn btn-fw-outline btn-sm" href="{{ url_for('artifacts.inventory') }}">
       <i class="bi bi-clipboard-data me-1"></i>{{ _('Inventory') }}</a>
     <a class="btn btn-fw-outline btn-sm" href="{{ url_for('artifacts.manage') }}">
       <i class="bi bi-folder-plus me-1"></i>{{ _('Files') }}</a>
-    <a class="btn btn-fw-primary btn-sm" href="{{ url_for('artifacts.audit', appl=scope_id or None) }}">
+    <a class="btn btn-fw-primary btn-sm" href="{{ url_for('artifacts.audit') }}">
       <i class="bi bi-clipboard-check me-1"></i>{{ _('Device audit') }}</a>
   </div>
 </div>
@@ -37,20 +37,21 @@
 {# --------------------------------------------------------- scope filter -- #}
 <div class="fw-card">
   <div class="fw-card-body d-flex flex-wrap align-items-center gap-2">
-    <form method="get" class="d-flex flex-wrap align-items-center gap-2 flex-grow-1">
-      <label class="text-secondary" style="font-size:12.5px" for="scope">{{ _('Scope') }}</label>
-      <select class="form-select form-select-sm" id="scope" name="scope" style="max-width:320px" onchange="this.form.submit()">
-        <option value="">{{ _('Whole fleet — every FortiWeb ADOM') }}</option>
-        {% for a in appliances %}
-          <option value="{{ a.id }}" {% if scope_id == a.id %}selected{% endif %}>
-            {{ a.name }} — {{ a.host }} · ADOM {{ a.vdom or 'root' }}</option>
-        {% endfor %}
-      </select>
-      <noscript><button class="btn btn-fw-outline btn-sm" type="submit">{{ _('Apply') }}</button></noscript>
-      {% if scope_id %}
-        <a class="btn btn-fw-outline btn-sm" href="{{ url_for('artifacts.index') }}">{{ _('clear') }}</a>
-      {% endif %}
-    </form>
+    {#
+      A LABEL, not a picker. The device and ADOM come from the session — the
+      one picked on the Architecture map and shown in the sidebar — exactly as
+      they do for Backups, Server Objects, Web Protection and Exceptions. The
+      dropdown that stood here listed every ADOM and led with "Whole fleet",
+      so the page an operator reached after choosing a device answered with
+      the fleet, which is the defect reported three times.
+    #}
+    <div class="d-flex flex-wrap align-items-center gap-2 flex-grow-1">
+      <span class="text-secondary" style="font-size:12.5px">{{ _('Scope') }}</span>
+      <span class="fw-badge fw-badge-info">{{ scope_appl.host or scope_appl.name }}</span>
+      <span class="font-monospace" style="font-size:12.5px">{{ _('ADOM') }} {{ scope_appl.vdom or 'root' }}</span>
+      <a class="btn btn-fw-outline btn-sm" href="{{ url_for('architecture.index') }}">
+        <i class="bi bi-diagram-3 me-1"></i>{{ _('Switch device') }}</a>
+    </div>
     <div class="text-secondary" style="font-size:12.5px">
       {{ fleet.swept_scopes }} / {{ fleet.scope_count }} {{ _('ADOM scopes swept') }}
       {% if fleet.swept_scopes < fleet.scope_count %}
@@ -71,7 +72,6 @@
   which are unique per ADOM, so the banner points at them instead of asking
   anyone to trust the arithmetic.
 #}
-{% if scope_appl %}
 <div class="fw-card" data-scope-banner="{{ scope_appl.id }}">
   <div class="fw-card-body d-flex flex-wrap align-items-center gap-3">
     <span class="fw-badge fw-badge-primary">{{ _('narrowed') }}</span>
@@ -88,14 +88,9 @@
     </div>
   </div>
 </div>
-{% else %}
-<div class="fw-card" data-scope-banner="fleet">
-  <div class="fw-card-body text-secondary" style="font-size:12.5px">
-    <span class="fw-badge fw-badge-secondary">{{ _('whole fleet') }}</span>
-    {{ _('Totals span every FortiWeb ADOM. Each ADOM is counted on its own and only then summed into its chassis, so a profile name present in two ADOMs counts twice — they are two profiles that may bind different files.') }}
-  </div>
-</div>
-{% endif %}
+{# There is no un-narrowed branch any more. The whole-fleet banner that stood
+   here could only ever render on a page that had ignored the operator's device,
+   which is the state this change removes. #}
 
 {# ------------------------------------------------------------- headline -- #}
 <div class="row row-cols-2 row-cols-md-3 row-cols-xl-6 g-3 mb-4">
@@ -299,7 +294,7 @@
         <tr>
           <td style="padding-left:32px">
             <i class="bi bi-diagram-2 me-1 text-secondary"></i>
-            <a href="{{ url_for('artifacts.index', scope=s.appliance_id) }}">{{ s.adom }}</a>
+            <a href="{{ url_for('artifacts.index') }}">{{ s.adom }}</a>
             {% if s.device_scope %}<span class="fw-badge fw-badge-secondary" title="{{ _('the row that administers the box itself, not a partition of it') }}">{{ _('device scope') }}</span>{% endif %}
             {% if s.maintenance %}<span class="fw-badge fw-badge-warning">{{ _('maintenance') }}</span>{% endif %}
             <span class="text-secondary" style="font-size:12px">{{ s.appliance }}</span>
@@ -398,10 +393,15 @@
          <div class="text-secondary" style="font-size:12.5px">{{ _('versions uploaded by an operator') }}</div></div>
     <div><div class="fw-semibold" style="font-size:20px">{{ fleet.totals.orphans }}</div>
          <div class="text-secondary" style="font-size:12.5px">{{ _('held, named by no walked policy') }}</div></div>
-    <div><div class="fw-semibold" style="font-size:20px">{{ stats.objects }}</div>
-         <div class="text-secondary" style="font-size:12.5px">{{ _('objects in the whole store') }}</div></div>
+    {# Both figures were "the whole store" and said so. On a page cut to one
+       pair that is a fleet total sitting above this pair's rows — the exact
+       reading reported for the inventory's counters. They count the narrowed
+       universe now, and the labels had to move with them: a scoped number
+       under a fleet-wide caption is worse than either. #}
+    <div><div class="fw-semibold" style="font-size:20px" data-store-objects>{{ stats.objects }}</div>
+         <div class="text-secondary" style="font-size:12.5px">{{ _('objects held for this device and ADOM') }}</div></div>
     <div><div class="fw-semibold" style="font-size:20px">{{ '%.1f'|format(stats.bytes / 1024) }} KB</div>
-         <div class="text-secondary" style="font-size:12.5px">{{ _('compressed blobs in') }} <code>data/artifacts</code></div></div>
+         <div class="text-secondary" style="font-size:12.5px">{{ _('of compressed blobs in') }} <code>data/artifacts</code> {{ _('for this pair') }}</div></div>
     <div class="text-secondary flex-grow-1" style="font-size:12.5px;min-width:280px">
       {{ _('Blobs live under') }} <code>data/</code> {{ _('so the standby datasync and the system-backup bundles already carry them — no separate backup to remember.') }}
       {% if fleet.totals.library_only %}

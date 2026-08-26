@@ -10,10 +10,146 @@
     </p>
   </div>
   <div class="d-flex gap-2">
+    <button class="btn btn-fw-primary btn-sm" type="button"
+            data-bs-toggle="modal" data-bs-target="#artAddModal">
+      <i class="bi bi-plus-lg me-1"></i>{{ _('Add content') }}</button>
     <a class="btn btn-fw-outline btn-sm" href="{{ url_for('artifacts.manage') }}">
       <i class="bi bi-folder-plus me-1"></i>{{ _('Uploads &amp; files') }}</a>
     <a class="btn btn-fw-outline btn-sm" href="{{ url_for('artifacts.index') }}">
       <i class="bi bi-info-circle me-1"></i>{{ _('Object types') }}</a>
+  </div>
+</div>
+
+{# ------------------------------------------------------------ add modal --- #}
+{#
+  The same three verbs the manage page offers, in a dialog, so content can be
+  added without leaving the inventory. They POST to the SAME endpoints — a
+  second set of routes for "the modal version" is how one of the two ends up
+  missing a validation the other has. `back=inventory` is the only difference,
+  and it is resolved server-side by _verb_dest.
+#}
+<div class="modal fade" id="artAddModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-plus-lg me-2"></i>{{ _('Add content') }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row g-4">
+
+          <div class="col-lg-4">
+            <form method="post" action="{{ url_for('artifacts.upload') }}" enctype="multipart/form-data">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="back" value="inventory">
+              <div class="fw-semibold mb-2"><i class="bi bi-upload me-1"></i>{{ _('Upload a file') }}</div>
+              <p class="text-secondary" style="font-size:12.5px">{{ _('The only way XML Schema, WSDL and gRPC IDL can ever enter the store.') }}</p>
+              <div class="mb-2">
+                <label class="fw-fld-label">{{ _('Type') }}</label>
+                <select class="form-select form-select-sm" name="kind" required>
+                  {% for key, spec in kinds.items() %}
+                    <option value="{{ key }}" {{ 'selected' if key == active_kind }}>{{ spec.label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="mb-2">
+                <label class="fw-fld-label">{{ _('Object name (mkey on the device)') }}</label>
+                <input class="form-control form-control-sm" name="name" placeholder="xsd-order">
+                <div class="form-text" style="font-size:11.5px">{{ _('Left empty, the uploaded filename is used. For OpenAPI the name IS the filename and the device validates its extension —') }} <code>.json</code> / <code>.yaml</code>.</div>
+              </div>
+              <div class="mb-2">
+                <label class="fw-fld-label">{{ _('Belongs to (device / ADOM)') }}</label>
+                <select class="form-select form-select-sm" name="appliance_id">
+                  <option value="">{{ _('Library-wide (any appliance may use it)') }}</option>
+                  {% for a in appliances %}
+                    <option value="{{ a.id }}">{{ a.host or a.name }} / {{ a.vdom or _('no ADOM') }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="mb-2">
+                <label class="fw-fld-label">{{ _('File') }}</label>
+                <input class="form-control form-control-sm" type="file" name="file" required>
+                <div class="form-text" style="font-size:11.5px">{{ _('Maximum') }} {{ max_kb }} KB.</div>
+              </div>
+              <div class="mb-3">
+                <label class="fw-fld-label">{{ _('Note') }}</label>
+                <input class="form-control form-control-sm" name="note" placeholder="{{ _('where this came from') }}">
+              </div>
+              <button class="btn btn-fw-primary btn-sm"><i class="bi bi-upload me-1"></i>{{ _('Store') }}</button>
+            </form>
+          </div>
+
+          <div class="col-lg-4">
+            <form method="post" action="{{ url_for('artifacts.save') }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="back" value="{{ back }}">
+              <div class="fw-semibold mb-2"><i class="bi bi-pencil-square me-1"></i>{{ _('Author it here') }}</div>
+              <p class="text-secondary" style="font-size:12.5px">{{ _('Paste or type the body. Saved as a version exactly like an upload — same store, same hash, same push path.') }}</p>
+              <div class="mb-2">
+                <label class="fw-fld-label">{{ _('Type') }}</label>
+                <select class="form-select form-select-sm" name="kind" required>
+                  {% for key, spec in kinds.items() %}
+                    <option value="{{ key }}" {{ 'selected' if key == active_kind }}>{{ spec.label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="mb-2">
+                <label class="fw-fld-label">{{ _('Object name') }}</label>
+                <input class="form-control form-control-sm" name="name" required placeholder="xsd-order">
+              </div>
+              <div class="mb-2">
+                <label class="fw-fld-label">{{ _('Belongs to (device / ADOM)') }}</label>
+                <select class="form-select form-select-sm" name="appliance_id">
+                  <option value="">{{ _('Library-wide (any appliance may use it)') }}</option>
+                  {% for a in appliances %}
+                    <option value="{{ a.id }}">{{ a.host or a.name }} / {{ a.vdom or _('no ADOM') }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="mb-3">
+                <label class="fw-fld-label">{{ _('Content') }}</label>
+                <textarea class="form-control form-control-sm" name="content" rows="8"
+                          spellcheck="false" required
+                          style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px"
+                          placeholder="&lt;xs:schema …&gt;"></textarea>
+              </div>
+              <button class="btn btn-fw-primary btn-sm"><i class="bi bi-save me-1"></i>{{ _('Save version') }}</button>
+            </form>
+          </div>
+
+          <div class="col-lg-4">
+            <form method="post" action="{{ url_for('artifacts.capture') }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="back" value="inventory">
+              <div class="fw-semibold mb-2"><i class="bi bi-download me-1"></i>{{ _('Capture from an appliance') }}</div>
+              <p class="text-secondary" style="font-size:12.5px">{{ _('Reads the object off the device and keeps a copy. Read-only on the appliance. Available for XML DTD, OpenAPI, JSON Schema and Lua scripting only — the other three answer') }} <code>-20005</code>.</p>
+              <div class="mb-2">
+                <label class="fw-fld-label">{{ _('Type') }}</label>
+                <select class="form-select form-select-sm" name="kind" required>
+                  {% for key, spec in kinds.items() if key not in unreadable %}
+                    <option value="{{ key }}">{{ spec.label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="mb-2">
+                <label class="fw-fld-label">{{ _('Object name') }}</label>
+                <input class="form-control form-control-sm" name="name" required>
+              </div>
+              <div class="mb-3">
+                <label class="fw-fld-label">{{ _('Device / ADOM') }}</label>
+                <select class="form-select form-select-sm" name="appliance_id" required>
+                  {% for a in appliances %}
+                    <option value="{{ a.id }}">{{ a.host or a.name }} / {{ a.vdom or _('no ADOM') }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <button class="btn btn-fw-outline btn-sm"><i class="bi bi-download me-1"></i>{{ _('Capture') }}</button>
+            </form>
+          </div>
+
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -110,10 +246,14 @@
       {% if by_scope %}
       <div class="fw-table-wrapper">
         <table class="fw-table">
-          <thead><tr><th>{{ _('Scope') }}</th><th>{{ _('Objects') }}</th><th>{{ _('KB') }}</th></tr></thead>
+          <thead><tr><th>{{ _('Device') }}</th><th>{{ _('ADOM') }}</th>
+                     <th>{{ _('Objects') }}</th><th>{{ _('KB') }}</th></tr></thead>
           <tbody>
           {% for scope, agg in by_scope %}
-            <tr><td>{{ scope }}</td><td>{{ agg.objects }}</td>
+            <tr><td>{{ agg.device }}</td>
+                <td>{% if agg.adom %}<span class="font-monospace">{{ agg.adom }}</span>
+                    {% else %}<span class="text-secondary">—</span>{% endif %}</td>
+                <td>{{ agg.objects }}</td>
                 <td>{{ '%.1f'|format(agg.bytes / 1024) }}</td></tr>
           {% endfor %}
           </tbody>
@@ -191,40 +331,60 @@
   </div>
   {% if rows %}
   <div class="fw-table-wrapper">
-    <table class="fw-table">
+    {# The anchor exists for the guards: this page carries FOUR tables and a
+       naive grep over the whole document matches the coverage table below,
+       which legitimately prints policy and profile names. #}
+    <table class="fw-table" data-held-table>
+      {#
+        The location columns are the DEVICE and the ADOM, and nothing else.
+        The registered name is unique per ADOM, so a name column answers
+        "which chassis, which ADOM" only for a reader who knows the naming
+        convention — and this page exists to answer exactly that.
+      #}
       <thead><tr>
-        <th>{{ _('Object') }}</th><th>{{ _('Type') }}</th><th>{{ _('Scope') }}</th>
+        <th>{{ _('Object') }}</th><th>{{ _('Type') }}</th>
+        <th>{{ _('Device') }}</th><th>{{ _('ADOM') }}</th>
         <th>{{ _('Versions') }}</th><th>{{ _('Latest') }}</th><th>{{ _('KB') }}</th>
-        <th>{{ _('Origin') }}</th><th>{{ _('Used by') }}</th>
+        <th>{{ _('Origin') }}</th><th>{{ _('Used on (device / ADOM)') }}</th>
+        <th></th>
       </tr></thead>
       <tbody>
       {% for o in rows %}
         <tr>
           <td class="font-monospace">
-            <a href="{{ url_for('artifacts.object_page', kind=o.kind, name=o.name) }}">{{ o.name }}</a></td>
+            <a href="{{ url_for('artifacts.object_page', kind=o.kind, name=o.name, v=o.latest.id, appl=o.appliance_id or '', back=back) }}">{{ o.name }}</a></td>
           <td style="font-size:12.5px">{{ o.label }}
             {% if not o.readable %}<span class="fw-badge fw-badge-danger">{{ _('upload only') }}</span>{% endif %}</td>
-          <td style="font-size:12.5px">{{ o.appliance or _('library-wide') }}</td>
+          <td style="font-size:12.5px" title="{{ o.scope.name }}">{{ o.scope.device }}</td>
+          <td style="font-size:12.5px">
+            {% if o.scope.adom %}<span class="font-monospace">{{ o.scope.adom }}</span>
+            {% elif o.appliance_id %}<span class="text-secondary">{{ _('no ADOM') }}</span>
+            {% else %}<span class="text-secondary">—</span>{% endif %}</td>
           <td>{{ o.versions }}</td>
           <td class="font-monospace" style="font-size:12px">{{ o.latest.short_sha }}</td>
           <td>{{ '%.1f'|format(o.bytes / 1024) }}</td>
           <td>{% for s in o.sources %}<span class="fw-badge {{ 'fw-badge-info' if s == 'captured' else 'fw-badge-secondary' }}">{{ s }}</span> {% endfor %}</td>
           <td style="font-size:12px">
-            {% if o.used_by %}
-              {% for u in o.used_by[:4] %}
-                <div>{{ u.appliance }} / <span class="font-monospace">{{ u.policy_mkey }}</span>
-                  {% if u.wpp is none %}<span class="fw-badge fw-badge-secondary">{{ _('profile not attributed') }}</span>
-                  {% elif u.wpp == '' %}<span class="fw-badge fw-badge-primary">{{ _('policy-level') }}</span>
-                  {% else %}&rarr; <span class="font-monospace">{{ u.wpp }}</span>{% endif %}
-                </div>
+            {% if o.used_on %}
+              {% for s in o.used_on[:4] %}
+                <div>{{ s.device }} / {% if s.adom %}<span class="font-monospace">{{ s.adom }}</span>{% else %}<span class="text-secondary">{{ _('no ADOM') }}</span>{% endif %}
+                  <span class="text-secondary">({{ s.policies }})</span></div>
               {% endfor %}
-              {% if o.used_by|length > 4 %}
-                <div class="text-secondary">+{{ o.used_by|length - 4 }} {{ _('more') }}</div>
+              {% if o.used_on|length > 4 %}
+                <div class="text-secondary">+{{ o.used_on|length - 4 }} {{ _('more') }}</div>
               {% endif %}
               {% if o.stale %}<span class="fw-badge fw-badge-warning">{{ _('stale') }}</span>{% endif %}
             {% else %}
               <span class="fw-badge fw-badge-secondary">{{ _('no known user') }}</span>
             {% endif %}
+          </td>
+          {# The eye opens the file itself — the thing FortiWeb's own GUI cannot
+             show — carrying this page's full query string so the object page can
+             offer a Back that lands on the filtered list, not on a reset one. #}
+          <td class="text-nowrap">
+            <a class="btn btn-fw-outline btn-sm" data-eye title="{{ _('View the content') }}"
+               href="{{ url_for('artifacts.object_page', kind=o.kind, name=o.name, v=o.latest.id, appl=o.appliance_id or '', back=back) }}">
+              <i class="bi bi-eye"></i></a>
           </td>
         </tr>
       {% endfor %}
@@ -249,7 +409,8 @@
   <div class="fw-table-wrapper">
     <table class="fw-table">
       <thead><tr><th>{{ _('Object') }}</th><th>{{ _('Type') }}</th>
-                 <th>{{ _('Recoverable from the device?') }}</th><th>{{ _('Needed by') }}</th></tr></thead>
+                 <th>{{ _('Recoverable from the device?') }}</th>
+                 <th>{{ _('Needed on (device / ADOM)') }}</th></tr></thead>
       <tbody>
       {% for m in missing %}
         <tr>
@@ -261,14 +422,11 @@
                 <span class="fw-badge fw-badge-danger">{{ _('no — upload only') }}</span>
               {% endif %}</td>
           <td style="font-size:12px">
-            {% for u in m.used_by[:4] %}
-              <div>{{ u.appliance }} / <span class="font-monospace">{{ u.policy_mkey }}</span>
-                {% if u.wpp is none %}<span class="fw-badge fw-badge-secondary">{{ _('profile not attributed') }}</span>
-                {% elif u.wpp == '' %}<span class="fw-badge fw-badge-primary">{{ _('policy-level') }}</span>
-                {% else %}&rarr; <span class="font-monospace">{{ u.wpp }}</span>{% endif %}
-              </div>
+            {% for s in m.used_on[:4] %}
+              <div>{{ s.device }} / {% if s.adom %}<span class="font-monospace">{{ s.adom }}</span>{% else %}<span class="text-secondary">{{ _('no ADOM') }}</span>{% endif %}
+                <span class="text-secondary">({{ s.policies }})</span></div>
             {% endfor %}
-            {% if m.used_by|length > 4 %}<div class="text-secondary">+{{ m.used_by|length - 4 }}</div>{% endif %}
+            {% if m.used_on|length > 4 %}<div class="text-secondary">+{{ m.used_on|length - 4 }}</div>{% endif %}
           </td>
         </tr>
       {% endfor %}

@@ -43,9 +43,14 @@
       {% if name_warning %}<br><span class="fw-badge fw-badge-warning">{{ _('name') }}</span> {{ name_warning }}{% endif %}
     </p>
   </div>
+  {# Back returns to the exact list the operator left — filters, page and all.
+     A link to the bare inventory would look like the same thing and quietly
+     throw away the filter that made the row findable. #}
   <div class="d-flex gap-2">
+    <a class="btn btn-fw-primary btn-sm" href="{{ back }}">
+      <i class="bi bi-arrow-left me-1"></i>{{ _('Back') }}</a>
     <a class="btn btn-fw-outline btn-sm" href="{{ url_for('artifacts.manage', kind=kind) }}">
-      <i class="bi bi-arrow-left me-1"></i>{{ _('Files') }}</a>
+      <i class="bi bi-folder me-1"></i>{{ _('Files') }}</a>
     <a class="btn btn-fw-outline btn-sm" href="{{ url_for('artifacts.inventory', q=name) }}">
       <i class="bi bi-clipboard-data me-1"></i>{{ _('Inventory') }}</a>
   </div>
@@ -99,7 +104,8 @@
   <div class="fw-table-wrapper">
     <table class="fw-table">
       <thead><tr>
-        <th>{{ _('sha256') }}</th><th>{{ _('Scope') }}</th><th>{{ _('Bytes') }}</th>
+        <th>{{ _('sha256') }}</th><th>{{ _('Device') }}</th><th>{{ _('ADOM') }}</th>
+        <th>{{ _('Bytes') }}</th>
         <th>{{ _('Origin') }}</th><th>{{ _('By') }}</th><th>{{ _('Created') }}</th>
         <th>{{ _('Last seen') }}</th><th>{{ _('Note') }}</th><th>{{ _('Compare') }}</th>
         <th>{{ _('Actions') }}</th>
@@ -110,7 +116,11 @@
           <td class="font-monospace" style="font-size:12px">
             <a href="{{ url_for('artifacts.object_page', kind=kind, name=name, v=v.id, a=a_id, b=b_id) }}">{{ v.short_sha }}</a>
           </td>
-          <td style="font-size:12.5px">{{ v.appliance or _('library-wide') }}</td>
+          <td style="font-size:12.5px" title="{{ v.scope.name }}">{{ v.scope.device }}</td>
+          <td style="font-size:12.5px">
+            {% if v.scope.adom %}<span class="font-monospace">{{ v.scope.adom }}</span>
+            {% elif v.appliance_id %}<span class="text-secondary">{{ _('no ADOM') }}</span>
+            {% else %}<span class="text-secondary">—</span>{% endif %}</td>
           <td>{{ v.size }}</td>
           <td><span class="fw-badge {{ 'fw-badge-info' if v.source == 'captured' else 'fw-badge-secondary' }}">{{ v.source }}</span></td>
           <td style="font-size:12px">{{ v.created_by or '—' }}</td>
@@ -181,25 +191,96 @@
       <p class="text-secondary" style="font-size:12.5px">{{ _('Shown with replacement characters. Editing is refused: a textarea round-trip would save those replacements as the new version, and the file would still look fine, still push, and no longer be the file.') }}</p>
     {% endif %}
     {% if editable %}
+      {#
+        WHO a save reaches, printed before the operator types. The copy on this
+        page is one file: if three ADOMs resolve to it, editing it "for prod"
+        edits dev and dmz too, both keep working, and the divergence only shows
+        up the next time somebody diffs them. The choice below is therefore
+        REQUIRED, not defaulted — see the refusal in artifacts.save.
+      #}
+      {% if impact.shared %}
+        <div class="fw-card mb-3" style="border-color:#7A5700">
+          <div class="fw-card-body">
+            <div class="fw-semibold mb-1" style="color:#7A5700">
+              <i class="bi bi-exclamation-triangle me-1"></i>
+              {{ _('This copy is read by') }} {{ impact.affected|length }} {{ _('device / ADOM pairs') }}
+            </div>
+            <div style="font-size:12.5px" data-impact-affected>
+              {% for s in impact.affected_scopes %}
+                <span class="fw-badge fw-badge-warning">{{ s.device }} / {{ s.adom or _('no ADOM') }}</span>
+              {% endfor %}
+            </div>
+            {% if impact.other_scopes %}
+              <div class="text-secondary mt-2" style="font-size:12px">
+                {{ _('Also named on') }}
+                {% for s in impact.other_scopes %}
+                  <span class="fw-badge fw-badge-secondary">{{ s.device }} / {{ s.adom or _('no ADOM') }}</span>
+                {% endfor %}
+                — {{ _('those hold their own copy, so an edit here does not reach them.') }}
+              </div>
+            {% endif %}
+          </div>
+        </div>
+      {% endif %}
       <form method="post" action="{{ url_for('artifacts.save') }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="kind" value="{{ kind }}">
         <input type="hidden" name="name" value="{{ name }}">
-        <input type="hidden" name="back" value="{{ url_for('artifacts.object_page', kind=kind, name=name) }}">
+        <input type="hidden" name="back" value="{{ back }}">
         <div class="mb-2">
           <textarea class="form-control form-control-sm fw-art-editor" name="content"
                     rows="22" spellcheck="false">{{ content }}</textarea>
         </div>
+        {% if impact.shared %}
+          <input type="hidden" name="appliance_id" value="{{ current.appliance_id or '' }}">
+          <div class="mb-3" data-scope-choice>
+            <label class="fw-fld-label">{{ _('Where does this change go?') }}</label>
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="scope_mode" value="all" id="scopeAll" required>
+              <label class="form-check-label" for="scopeAll" style="font-size:12.5px">
+                {{ _('All of them — save a new version of the shared copy. Every pair above reads the new content.') }}
+              </label>
+            </div>
+            <div class="form-check">
+              {# Neither is pre-selected. A default here is the defect in
+                 miniature: "all" edits devices nobody named, "only" quietly
+                 stops a fleet-wide fix from reaching the fleet. #}
+              <input class="form-check-input" type="radio" name="scope_mode" value="only" id="scopeOnly" required>
+              <label class="form-check-label" for="scopeOnly" style="font-size:12.5px">
+                {{ _('Only one pair — fork a COPY scoped to it. The shared copy is left exactly as it is, and a later edit of it will not reach the fork.') }}
+              </label>
+            </div>
+            <select class="form-select form-select-sm mt-2" name="only_appliance_id" style="max-width:340px">
+              {% for s in impact.affected_scopes %}
+                <option value="{{ s.appliance_id }}"
+                        {{ 'selected' if s.appliance_id == impact.working }}>
+                  {{ s.device }} / {{ s.adom or _('no ADOM') }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        {% else %}
+          <div class="mb-2" style="font-size:12px" data-scope-note>
+            {% if impact.affected %}
+              {{ _('This copy is read by') }}
+              <span class="font-monospace">{{ impact.affected_scopes[0].device }} / {{ impact.affected_scopes[0].adom or _('no ADOM') }}</span>
+              {{ _('only — a new version reaches nothing else.') }}
+            {% else %}
+              <span class="text-secondary">{{ _('No walked policy names this object yet, so a new version reaches no device until one does.') }}</span>
+            {% endif %}
+          </div>
+        {% endif %}
         <div class="row g-2 align-items-end">
+          {% if not impact.shared %}
           <div class="col-md-4">
             <label class="fw-fld-label">{{ _('Save the new version as') }}</label>
             <select class="form-select form-select-sm" name="appliance_id">
               <option value="" {{ 'selected' if not current.appliance_id }}>{{ _('Library-wide (any appliance may use it)') }}</option>
               {% for a in appliances %}
-                <option value="{{ a.id }}" {{ 'selected' if a.id == current.appliance_id }}>{{ a.name }}</option>
+                <option value="{{ a.id }}" {{ 'selected' if a.id == current.appliance_id }}>{{ a.host or a.name }} / {{ a.vdom or _('no ADOM') }}</option>
               {% endfor %}
             </select>
           </div>
+          {% endif %}
           <div class="col-md-5">
             <label class="fw-fld-label">{{ _('Note') }}</label>
             <input class="form-control form-control-sm" name="note" placeholder="{{ _('what changed and why') }}">

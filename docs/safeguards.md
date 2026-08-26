@@ -11026,3 +11026,58 @@ routes. Two traps worth keeping:
 Recipe: `venv/bin/python -m pytest tests/test_artifact_inventory_scope.py -q`
 (17 guards) and the mutation harness pattern from §116 — by `rc`, only `rc == 1`
 counts as a bite, with a green baseline required. 13 mutations, 13 bite.
+
+## §121 — A scope is a universe, not a filter (`tests/test_artifact_inventory_universe.py`)
+
+**The failure this prevents.** An operator picks one device and one ADOM and
+the page still shows the fleet. Reported twice in two days about
+`/artifacts/inventory`, and both times the arithmetic was correct: the filter
+was applied to the row table and forgotten by the five other sections. Nothing
+errors, no table is empty — only a counter that answers a question about one
+ADOM with every ADOM's rows, and the larger number is the one a reader treats
+as authoritative.
+
+**Why a per-section filter is the wrong shape.** Six sections meant six places
+to remember, and a section added later inherits nothing. The universe is
+narrowed ONCE (`_narrow`) before any figure is computed; every section is then
+a function of that universe and cannot widen it back.
+
+**Three rules these guards encode.**
+
+1. **The guards go through the ROUTE, never the service.** The services
+   computed correctly the whole time the defect shipped. The page was what
+   lied, so a test that calls `fleet_stats()` directly proves nothing about
+   it. (`test_the_scope_filter_narrows_the_statistics` took a `client` fixture
+   and never used it — that is how the previous round shipped.)
+2. **The fixture is symmetric by construction, and has its own control test.**
+   Two ADOMs of one chassis, identical counts, disjoint names, and the borrowed
+   edge present in BOTH directions so the symmetry survives it. With ADOMs of
+   different sizes an unfiltered page prints a different number and every guard
+   passes for the wrong reason. `test_control_...` fails if the fixture ever
+   loses that property.
+3. **Every negative assertion carries a positive control.** "No other ADOM
+   appears" also passes when the narrowing became "always show one scope", or
+   when the page 500s into a stub; the fleet-page controls pin the other end.
+
+**Traps already paid for here.**
+
+- `assert "999999" in html` for the unknown-scope complaint **passed with the
+  complaint deleted**: the id is echoed inside every `back=` value on the page.
+  It must assert the complaint's own words — and words the banner does not
+  also print (`"whole fleet"` alone is the unscoped banner's badge).
+- The document must have its `<select>` blocks removed before any "no other
+  device appears" sweep — the pickers list the fleet by design — and the strip
+  must assert that it removed something, or it is silently vacuous.
+- The page carries FOUR tables; `data-held-table`, `data-scopes-table`,
+  `data-missing-table` and `data-head="…"` exist so a guard reads the one it
+  means. The coverage table legitimately prints policy and profile names.
+- Run the mutation harness **without `-x`**: the first guard to die masks the
+  rest, and a mutation then scores as "bites" on somebody else's assertion.
+
+**Verification recipe.** 17 guards, rc=0; then 14 mutations, each reintroducing
+one half of the defect (usage not narrowed, objects not narrowed, headline over
+the whole store, `by_kind`/`by_scope` from the unfiltered index, held-elsewhere
+blinded, the `?scope=` alias dropped, the banner removed, the by-type and
+sidebar links dropping the scope, and one meta-mutation that breaks the
+fixture's symmetry to prove the control bites, and one that counts distinct NAMES instead of copies in the headline). All 14 must fail by `rc == 1`
+from a green baseline, and each must name its own guard among the dead.

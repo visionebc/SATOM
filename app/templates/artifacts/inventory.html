@@ -153,26 +153,55 @@
   </div>
 </div>
 
+{# ---------------------------------------------------------------- scope -- #}
+{#
+  The banner is not decoration. Two ADOMs of one chassis legitimately hold the
+  same NUMBER of objects, so a narrowed page and an un-narrowed one can print
+  identical figures — on screen that is indistinguishable from a filter that
+  never ran, which is the reading an operator reported twice.
+#}
+<div class="fw-card" data-scope-banner="{{ scope_id or '' }}">
+  <div class="fw-card-body d-flex justify-content-between align-items-center gap-3 flex-wrap" style="font-size:12.5px">
+    {% if scope_id %}
+      <div>
+        <span class="fw-badge fw-badge-info">{{ _('scope') }}</span>
+        <strong>{{ scope_appl.device }}</strong> &rarr;
+        {% if scope_appl.adom %}<span class="font-monospace">{{ scope_appl.adom }}</span>
+        {% else %}<span class="text-secondary">{{ _('no ADOM') }}</span>{% endif %}
+        <span class="text-secondary">
+          {{ _('Every counter and every table below covers ONLY this pair. A copy held by another chassis is not listed as held here even when a policy of this ADOM names it — it appears under "needed and NOT held", flagged as held elsewhere, because that is what a clone would have to borrow.') }}
+        </span>
+      </div>
+      <a class="btn btn-fw-outline btn-sm" href="{{ url_for('artifacts.inventory') }}">{{ _('Whole fleet') }}</a>
+    {% else %}
+      <div>
+        <span class="fw-badge fw-badge-secondary">{{ _('whole fleet') }}</span>
+        <span class="text-secondary">{{ _('Every device and every ADOM. Pick an appliance in the filters below to cut this page — counters included — to one (device, ADOM) pair.') }}</span>
+      </div>
+    {% endif %}
+  </div>
+</div>
+
 {# ------------------------------------------------------------- headline --- #}
 <div class="fw-card">
   <div class="fw-card-body d-flex align-items-center gap-4 flex-wrap">
-    <div><div class="fw-semibold" style="font-size:20px">{{ stats.objects }}</div>
+    <div><div class="fw-semibold" data-head="objects" style="font-size:20px">{{ head.objects }}</div>
          <div class="text-secondary" style="font-size:12.5px">{{ _('objects held') }}</div></div>
-    <div><div class="fw-semibold" style="font-size:20px">{{ stats.versions }}</div>
+    <div><div class="fw-semibold" data-head="versions" style="font-size:20px">{{ head.versions }}</div>
          <div class="text-secondary" style="font-size:12.5px">{{ _('versions') }}</div></div>
-    <div><div class="fw-semibold" style="font-size:20px">{{ '%.1f'|format(stats.bytes / 1024) }} KB</div>
-         <div class="text-secondary" style="font-size:12.5px">{{ _('blob bytes') }}</div></div>
-    <div><div class="fw-semibold" style="font-size:20px">{{ ref_stats.edges }}</div>
+    <div><div class="fw-semibold" data-head="bytes" style="font-size:20px">{{ '%.1f'|format(head.bytes / 1024) }} KB</div>
+         <div class="text-secondary" style="font-size:12.5px">{{ _('content bytes') }}</div></div>
+    <div><div class="fw-semibold" data-head="edges" style="font-size:20px">{{ head.edges }}</div>
          <div class="text-secondary" style="font-size:12.5px">{{ _('policy → artifact edges') }}</div></div>
-    <div><div class="fw-semibold" style="font-size:20px">{{ ref_stats.policies }}</div>
+    <div><div class="fw-semibold" data-head="policies" style="font-size:20px">{{ head.policies }}</div>
          <div class="text-secondary" style="font-size:12.5px">{{ _('policies walked') }}</div></div>
-    <div><div class="fw-semibold" style="font-size:20px{{ ';color:#8B1C2A' if ref_stats.unheld }}">{{ ref_stats.unheld }}</div>
+    <div><div class="fw-semibold" data-head="unheld" style="font-size:20px{{ ';color:#8B1C2A' if head.unheld }}">{{ head.unheld }}</div>
          <div class="text-secondary" style="font-size:12.5px">{{ _('needed, NOT held') }}</div></div>
-    <div><div class="fw-semibold" style="font-size:20px{{ ';color:#7A5700' if ref_stats.orphans }}">{{ ref_stats.orphans }}</div>
+    <div><div class="fw-semibold" data-head="orphans" style="font-size:20px{{ ';color:#7A5700' if head.orphans }}">{{ head.orphans }}</div>
          <div class="text-secondary" style="font-size:12.5px">{{ _('held, no known user') }}</div></div>
-    <div><div class="fw-semibold" style="font-size:20px{{ ';color:#7A5700' if ref_stats.stale_edges }}">{{ ref_stats.stale_edges }}</div>
+    <div><div class="fw-semibold" data-head="stale_edges" style="font-size:20px{{ ';color:#7A5700' if head.stale_edges }}">{{ head.stale_edges }}</div>
          <div class="text-secondary" style="font-size:12.5px">{{ _('stale edges') }}</div></div>
-    <div><div class="fw-semibold" style="font-size:20px{{ ';color:#8B1C2A' if ref_stats.failed_scans }}">{{ ref_stats.failed_scans }}</div>
+    <div><div class="fw-semibold" data-head="failed_scans" style="font-size:20px{{ ';color:#8B1C2A' if head.failed_scans }}">{{ head.failed_scans }}</div>
          <div class="text-secondary" style="font-size:12.5px">{{ _('walks that FAILED') }}</div></div>
   </div>
 </div>
@@ -223,7 +252,7 @@
           {% for key, spec in kinds.items() %}
             {% set agg = by_kind.get(key) %}
             <tr>
-              <td><a href="{{ url_for('artifacts.inventory', kind=key) }}">{{ spec.label }}</a></td>
+              <td><a href="{{ url_for('artifacts.inventory', kind=key, appl=active_appl or None) }}">{{ spec.label }}</a></td>
               <td>{{ agg.objects if agg else 0 }}</td>
               <td>{{ agg.versions if agg else 0 }}</td>
               <td>{{ '%.1f'|format((agg.bytes if agg else 0) / 1024) }}</td>
@@ -245,7 +274,7 @@
       <div class="fw-card-header"><h2 class="fw-card-title">{{ _('Where the copies live') }}</h2></div>
       {% if by_scope %}
       <div class="fw-table-wrapper">
-        <table class="fw-table">
+        <table class="fw-table" data-scopes-table>
           <thead><tr><th>{{ _('Device') }}</th><th>{{ _('ADOM') }}</th>
                      <th>{{ _('Objects') }}</th><th>{{ _('KB') }}</th></tr></thead>
           <tbody>
@@ -374,6 +403,7 @@
                 <div class="text-secondary">+{{ o.used_on|length - 4 }} {{ _('more') }}</div>
               {% endif %}
               {% if o.stale %}<span class="fw-badge fw-badge-warning">{{ _('stale') }}</span>{% endif %}
+              {% if o.shared_with %}<span class="fw-badge fw-badge-warning" title="{{ _('This is one library-wide file. Saving a new version reaches those pairs too unless you fork a copy.') }}">+{{ o.shared_with }} {{ _('other pair(s) read this same copy') }}</span>{% endif %}
             {% else %}
               <span class="fw-badge fw-badge-secondary">{{ _('no known user') }}</span>
             {% endif %}
@@ -407,7 +437,7 @@
     {{ _('These objects are named by a walked policy and SATOM has no copy of their content. For a type the device can return, capture it before the move. For the three it cannot, the bytes exist only on the source appliance in a form nothing can read — the content cannot be recovered, only re-supplied from wherever it was originally authored.') }}
   </div>
   <div class="fw-table-wrapper">
-    <table class="fw-table">
+    <table class="fw-table" data-missing-table>
       <thead><tr><th>{{ _('Object') }}</th><th>{{ _('Type') }}</th>
                  <th>{{ _('Recoverable from the device?') }}</th>
                  <th>{{ _('Needed on (device / ADOM)') }}</th></tr></thead>
@@ -420,7 +450,8 @@
                 <span class="fw-badge fw-badge-warning">{{ _('capture it') }}</span>
               {% else %}
                 <span class="fw-badge fw-badge-danger">{{ _('no — upload only') }}</span>
-              {% endif %}</td>
+              {% endif %}
+              {% if m.elsewhere %}<span class="fw-badge fw-badge-info" title="{{ _('Another scope holds a copy under this name. resolve() would fall back to those bytes — the borrowed guess, not a copy of this pair.') }}">{{ _('held elsewhere') }}</span>{% endif %}</td>
           <td style="font-size:12px">
             {% for s in m.used_on[:4] %}
               <div>{{ s.device }} / {% if s.adom %}<span class="font-monospace">{{ s.adom }}</span>{% else %}<span class="text-secondary">{{ _('no ADOM') }}</span>{% endif %}

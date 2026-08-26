@@ -8,6 +8,57 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Fixed
 
+- **`/artifacts/*` takes its (device, ADOM) from the SESSION, like every other
+  per-device page — and nothing in the section answers for anything else.**
+  Reported a third time (*"estamos en un device x con el adom y y veo todo"*),
+  and the two fixes before it could not have helped: they narrowed by
+  `?appl=`, **a query argument the operator's navigation never produces**. The
+  operator picks a device on the Architecture map; that lands in
+  `session['appliance_id']`, and Backups, Server Objects, Web Protection,
+  Exceptions, Section Config, Analysis and FortiAnalyzer all read it back
+  through `device_context.current_appliance()`. `/artifacts/*` was the **only**
+  per-device area that never called it, so with a device selected it rendered
+  the fleet — 163 mentions of other pairs on one page, measured on the live
+  node.
+
+  * `index`, `manage`, `inventory`, `object` and `audit` narrow to the session
+    pair before a figure is computed; with **no** device chosen they send the
+    operator to the map, as Backups does, instead of showing the fleet.
+  * **The pickers were the other half of the report** (*"en los filtros"*).
+    Every `<select name="appliance_id">` now offers that pair alone, the
+    inventory's appliance filter — whose neutral option was the page's own way
+    back to the fleet — is replaced by a *within-scope* `held=own|library`, and
+    the audit's device filter is gone.
+  * A narrowed control is decoration, so **every verb is gated on the route**:
+    `upload`, `capture`, `push`, `save` and `refs/refresh` refuse an
+    `appliance_id` that is not the pair the page stands on (library-wide stays
+    allowed where it is the shared bucket this pair reads).
+  * Old `?appl=`/`?scope=` links still work — they **move** the session device
+    and re-issue the request without the argument, so the URL bar and the nav
+    badge can no longer disagree about where the operator is standing.
+
+- **The routes that name their target by ID or by PATH are scoped too.**
+  `/blob/<id>`, `/raw/<id>`, `delete` and `push` name a stored version by
+  primary key: the device is never mentioned in the request at all. The object
+  page had stopped *listing* other pairs' versions, but an unlisted row is
+  decoration — the ids are consecutive integers, and `delete` answered for
+  every one of them. All four now refuse a version outside the pair (404 for
+  the two readers: in this page's universe that row does not exist), `push`
+  checks **both** ends, and `/api/list`, `/api/refs` and
+  `/api/coverage/<appliance_id>/<policy>` — the same pages with the HTML
+  stripped off, all three answering for the whole store, the last one taking
+  the scope in its **path** — are cut to the session pair and answer `409` when
+  no device is chosen. `waf_artifacts.history()` gained `scope_id`, applied in
+  the **query**, so the 200-row limit cannot be filled by another pair's
+  versions and the remainder reported as everything there is.
+
+- **A fork lands on the pair the page stands on.** The "only this device/ADOM"
+  branch of a shared-copy save offered a `<select>` of every affected pair —
+  a control that forked a copy onto a device the page is not named for. The
+  destination is now the session pair, the posted `only_appliance_id` is
+  ignored, and a fork is still refused where no walked policy reads the copy
+  (it would resolve to nothing and shadow whatever that pair does read).
+
 - **`/artifacts/inventory`: the (device, ADOM) selection is the page's
   universe, not a filter laid over a fleet page.** An operator on one device
   and one ADOM still saw the fleet, and was right: `?appl=` narrowed the row

@@ -14,15 +14,15 @@
   <div>
     <h1 class="fw-page-title"><i class="bi bi-clipboard-check me-2 text-accent"></i>{{ _('Artifact device audit') }}</h1>
     <p class="fw-page-sub">
-      {{ _('Every server policy walked on every FortiWeb, the file-backed objects it needs, the Web Protection Profile each one arrives through, and whether SATOM holds the bytes. Assembled from the index without reading a device.') }}
+      {{ _('Every server policy walked on the device and ADOM you are on, the file-backed objects it needs, the Web Protection Profile each one arrives through, and whether SATOM holds the bytes. Assembled from the index without reading a device.') }}
     </p>
   </div>
   <div class="d-flex gap-2 align-items-start">
     <a class="btn btn-fw-outline btn-sm"
-       href="{{ url_for('artifacts.audit', appl=active_appl, verdict=active_verdict, format='json') }}">
+       href="{{ url_for('artifacts.audit', verdict=active_verdict, format='json') }}">
       <i class="bi bi-filetype-json me-1"></i>JSON</a>
     <a class="btn btn-fw-outline btn-sm"
-       href="{{ url_for('artifacts.audit', appl=active_appl, verdict=active_verdict, format='csv') }}">
+       href="{{ url_for('artifacts.audit', verdict=active_verdict, format='csv') }}">
       <i class="bi bi-filetype-csv me-1"></i>CSV</a>
   </div>
 </div>
@@ -30,14 +30,15 @@
 <div class="fw-card">
   <div class="fw-card-body">
     <form method="get" class="d-flex flex-wrap gap-2 align-items-end">
+      {# The device is the session's, not this form's. "All FortiWeb devices"
+         as the default option meant an audit whose banner named one device
+         and whose rows covered the fleet. #}
       <div>
         <label class="form-label" style="font-size:12px">{{ _('Device') }}</label>
-        <select class="form-select form-select-sm fw-input" name="appl" style="min-width:200px">
-          <option value="">{{ _('All FortiWeb devices') }}</option>
-          {% for a in appliances %}
-          <option value="{{ a.id }}" {{ 'selected' if active_appl == a.id|string }}>{{ a.name }}</option>
-          {% endfor %}
-        </select>
+        <div class="form-control form-control-sm bg-body-secondary" style="min-width:200px">
+          {{ scope_appl.host or scope_appl.name }}
+          {% if scope_appl.vdom %} / <span class="font-monospace">{{ scope_appl.vdom }}</span>{% endif %}
+        </div>
       </div>
       <div>
         <label class="form-label" style="font-size:12px">{{ _('Artifact verdict') }}</label>
@@ -126,7 +127,6 @@
       {% if dev.totals.at_risk %}<span class="fw-badge fw-badge-warning">{{ dev.totals.at_risk }} {{ _('at risk') }}</span>{% endif %}
       {% if dev.totals.borrowed %}<span class="fw-badge fw-badge-info">{{ dev.totals.borrowed }} {{ _('borrowed') }}</span>{% endif %}
       {% if dev.totals.walk_failed %}<span class="fw-badge fw-badge-danger">{{ dev.totals.walk_failed }} {{ _('walk failed') }}</span>{% endif %}
-      <a class="btn btn-fw-outline btn-sm" href="{{ url_for('artifacts.audit', appl=dev.appliance_id) }}">{{ _('Only this device') }}</a>
     </div>
   </div>
 

@@ -103,12 +103,18 @@ def index():
         flash("No FortiWeb scope with id %s — showing the whole fleet."
               % scope_id, "warning")
         selected, scope_id = appliances, None
+    # The SELECTED record itself, so the page can NAME the scope it is
+    # showing. Without it the six headline counters are unlabelled, and two
+    # ADOMs of one chassis that happen to hold the same NUMBER of policies
+    # print identical figures -- on screen that is indistinguishable from a
+    # filter that was never applied, which is the reading an operator reported.
+    scope_appl = selected[0] if scope_id else None
     return render_template("artifacts/index.html",
                            kinds=wa.KINDS, unreadable=wa.UNREADABLE,
                            appliances=appliances, stats=wa.stats(),
                            ref_stats=ar.stats(),
                            fleet=ast_.fleet_stats(selected),
-                           scope_id=scope_id,
+                           scope_id=scope_id, scope_appl=scope_appl,
                            active_kind=(request.args.get("kind") or "").strip())
 
 

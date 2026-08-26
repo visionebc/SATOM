@@ -10946,3 +10946,32 @@ A dedicated third scope (scanned, zero refs) now covers it. Changing a fixture
 can uncover a mutation that was previously killed by accident — re-run the
 whole harness after every fixture edit, never just the mutation you were
 chasing.
+
+
+## §119 — A filter that cannot be SEEN to have applied (`tests/test_artifact_stats.py`)
+
+Counts are a lossy view of a scope. Two scopes holding **disjoint** data can
+report **identical** numbers, and on a statistics page that is indistinguishable
+from a filter that never ran. This actually happened: the four ADOMs of one
+chassis hold five policies each, so `?scope=` moved no figure and was reported
+as broken while being arithmetically correct.
+
+Rules this section fixes:
+
+1. **A narrowed page names its scope** (`data-scope-banner="<appliance_id>"`,
+   device and ADOM spelled out). The banner is fed the *selected record*, not
+   re-derived from the appliance list — re-deriving is a second author of the
+   selection and drifts from it.
+2. **The unnarrowed page is labelled too.** Blank is not neutral.
+3. **The banner points at the discriminator**, which is the per-ADOM-unique
+   profile/policy *names*, never the totals.
+4. **The guards go through the route.** A service-level scope test cannot see an
+   unlabelled or leaking render; that gap is exactly what shipped.
+5. **The fixture is symmetric, and a control test proves it.** Asymmetric ADOMs
+   would let an unfiltered page pass by printing a different number — the guard
+   would go green for the wrong reason.
+
+Verification recipe: 6 mutations, 6 bite (drop `scope_appl` from the view; pin
+it to `None`; point it at the wrong record; drop the `?scope=` filter entirely;
+strip the fleet label; break the fixture's symmetry). Measured by rc, only
+`rc==1` counts as a bite, green baseline required first.

@@ -437,3 +437,101 @@ def test_stats_survive_an_empty_fleet(ctx):
     assert out["scope_count"] == 0 and out["devices"] == []
     assert out["totals"]["edges"] == 0
     assert len(out["by_kind"]) >= 7
+
+
+# ── the page NAMES the scope it is showing ──────────────────────────────────
+#
+# These four go through the ROUTE, not through fleet_stats(). Every scope test
+# above calls the service directly, which is how a page that computed the right
+# numbers and printed them unlabelled shipped: the arithmetic was tested and
+# the rendering never was.
+#
+# The defect they pin is specific and was reported from a real screen. Two
+# ADOMs of one chassis that hold the SAME NUMBER of policies print the SAME six
+# headline counters. Switching ADOM in the picker then moves nothing on screen,
+# and "narrowed to adom_prod" becomes indistinguishable from "the filter did
+# nothing" -- so the page has to say which scope produced the numbers, and the
+# only per-ADOM-unique thing an operator can verify is the profile NAMES.
+def _two_symmetric_adoms():
+    """One chassis, two ADOMs, identical COUNTS, disjoint NAMES.
+
+    Identical counts are the whole point: a fixture whose two ADOMs differ in
+    size would let an unfiltered page pass by printing a different number.
+    """
+    from app.models import Appliance
+    from app import db
+
+    a = Appliance(name="sym-fw@adom_prod", kind="fortiweb", host="192.0.2.1",
+                  port=443, username="u", password_enc="x", vdom="adom_prod")
+    b = Appliance(name="sym-fw@adom_dev", kind="fortiweb", host="192.0.2.1",
+                  port=443, username="u", password_enc="x", vdom="adom_dev")
+    db.session.add_all([a, b])
+    db.session.commit()
+    for appl, tag in ((a, "prod"), (b, "dev")):
+        for n in ("crm", "shop"):
+            _ref(appl.id, "pol-%s-%s" % (tag, n), "wsdl",
+                 "sch-%s-%s" % (tag, n), "wpp-%s-%s" % (tag, n))
+            _scan(appl.id, "pol-%s-%s" % (tag, n), ok=True, refs=1)
+    db.session.commit()
+    return a, b
+
+
+def test_the_symmetric_fixture_really_is_symmetric(ctx):
+    """Control for the three guards below.
+
+    If the two ADOMs differed in size, an unfiltered page would print different
+    numbers per scope and the isolation guards would pass for the wrong reason.
+    """
+    from app.services import artifact_stats as st
+
+    a, b = _two_symmetric_adoms()
+    ta = st.fleet_stats([a])["totals"]
+    tb = st.fleet_stats([b])["totals"]
+    for key in ("edges", "objects", "profiles_with_files",
+                "policies_with_artifacts"):
+        assert ta[key] == tb[key] and ta[key] > 0, key
+
+
+def test_a_narrowed_page_names_its_device_and_adom(app, client, ctx):
+    from tests.conftest import admin_user_id, login
+
+    a, b = _two_symmetric_adoms()
+    login(client, admin_user_id(app))
+    html = client.get("/artifacts/?scope=%d" % a.id).get_data(as_text=True)
+    # The picker lists every ADOM by design; asserting over the whole document
+    # would match the page's own <select> and pass with the banner deleted.
+    body = _without_select(html)
+    assert 'data-scope-banner="%d"' % a.id in body
+    assert "192.0.2.1" in body and "adom_prod" in body
+
+
+def test_the_fleet_page_says_so_instead_of_leaving_the_scope_blank(
+        app, client, ctx):
+    """An unlabelled page is not neutral -- it reads as whichever scope the
+    operator last had in mind."""
+    from tests.conftest import admin_user_id, login
+
+    _two_symmetric_adoms()
+    login(client, admin_user_id(app))
+    body = _without_select(client.get("/artifacts/").get_data(as_text=True))
+    assert 'data-scope-banner="fleet"' in body
+
+
+def test_a_narrowed_page_prints_no_sibling_adoms_profile_names(
+        app, client, ctx):
+    """The names are the discriminator the banner points at. If the sibling's
+    names leak in, the banner is a lie about what is on the page."""
+    from tests.conftest import admin_user_id, login
+
+    a, b = _two_symmetric_adoms()
+    login(client, admin_user_id(app))
+    body = _without_select(
+        client.get("/artifacts/?scope=%d" % a.id).get_data(as_text=True))
+    assert "wpp-prod-crm" in body          # positive control: its own are there
+    assert "wpp-dev-crm" not in body
+    assert "wpp-dev-shop" not in body
+
+
+def _without_select(html):
+    import re
+    return re.sub(r"<select[\s\S]*?</select>", "", html)

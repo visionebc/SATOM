@@ -8,6 +8,50 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Added
 
+- **`/artifacts/inventory` says WHERE, and a save can no longer change a file
+  for devices nobody named.** Four changes, one round.
+
+  *Location is the pair.* The list printed the registered appliance NAME, which
+  is unique per ADOM and therefore answers "which chassis, which ADOM" only for
+  a reader who knows the naming convention. Rows now carry a **Device** column
+  (the chassis address) and an **ADOM** column, and the users column collapsed
+  to the distinct **device / ADOM** pairs that reference the object, with the
+  policy count beside each. The policy and profile names moved to the object
+  page: four lines of `policy → profile` per row pushed the one fact this page
+  is read for off the right-hand edge. Same treatment on "where the copies
+  live", on the not-held table and on the version list.
+
+  *Adding content without leaving the page.* An **Add content** button opens a
+  dialog with the three verbs from `/artifacts/manage` — upload, author,
+  capture — posting to the **same three endpoints**. A modal-flavoured second
+  set of routes is how the copy that lacks the empty-body refusal ends up
+  storing an artifact that pushes as `-7694`; the only difference is
+  `back=inventory`, resolved server-side.
+
+  *The eye.* Every row gets a view action carrying the object's **scope** and
+  the page's full query string, and the object page grew a **Back** button that
+  returns to the filtered list. Without the scope the object page opens
+  whichever version sorts first, which under one name can be a different file;
+  a link to the bare inventory would look identical and silently drop the
+  filter that made the row findable.
+
+  *Copy-on-write, and it is the load-bearing one.* A library-wide copy that
+  three ADOMs resolve to **is one file**: editing it "for prod" edited dev and
+  dmz too, both kept working, and the divergence surfaced only the next time
+  somebody diffed them. `artifact_files.scope_impact()` now computes who a save
+  reaches **before** the write — grounded in `waf_artifacts.resolve()`'s search
+  order, so a device holding its own copy is correctly reported as NOT affected
+  — and a save on a shared copy is **refused** until the operator says `all`
+  (a new version everyone gets) or `only` (fork a copy scoped to one pair and
+  leave the shared copy exactly as it was). Neither is pre-selected: a default
+  here is the defect in miniature, since `all` edits devices nobody named and
+  `only` quietly stops a fleet-wide fix from reaching the fleet. The fork is
+  reported as a fork, including the consequence — that pair stops receiving
+  later edits of the shared copy.
+
+  17 guards in `tests/test_artifact_inventory_scope.py`, **13 mutations, 13
+  bite**. See `docs/safeguards.md` §120.
+
 - **`/artifacts/` now NAMES the scope it is showing.** The filter was applied
   correctly and the page said nothing about it, which on a real screen is not
   the same thing. Per-ADOM counters of a symmetric estate collide: the four

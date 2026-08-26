@@ -10975,3 +10975,54 @@ Verification recipe: 6 mutations, 6 bite (drop `scope_appl` from the view; pin
 it to `None`; point it at the wrong record; drop the `?scope=` filter entirely;
 strip the fleet label; break the fixture's symmetry). Measured by rc, only
 `rc==1` counts as a bite, green baseline required first.
+
+## §120 — A save must not change a file for devices nobody named (`tests/test_artifact_inventory_scope.py`)
+
+The artifact store resolves `(kind, name)` narrowest-first: the device's own
+copy, then the SATOM library copy, then — reported by name — any other box's.
+One consequence is easy to miss and expensive: **a library-wide copy that three
+ADOMs resolve to is one file.** Editing it "for prod" edits dev and dmz as
+well. Nothing fails, all three devices keep working, and the divergence only
+surfaces the next time somebody diffs them — by which point nobody remembers
+which of the three the edit was meant for.
+
+`services.artifact_files.scope_impact(kind, name, appliance_id)` answers *who a
+new version of THIS copy would reach*, and it is computed **before** the write:
+
+* editing a **scoped** copy reaches exactly that `(device, ADOM)` pair; the
+  other boxes that name the same mkey read something else entirely;
+* editing the **library** copy reaches every consumer **that does not hold its
+  own copy**. The exclusion is grounded in `resolve()`'s order, not restated:
+  listing a device that holds its own copy as affected is not a harmless
+  over-count — it pushes the operator into forking a copy to protect a box that
+  was never at risk, and that fork then stops receiving the fleet-wide edits it
+  still wanted;
+* "no walked policy names it" is **not** "one reader".
+
+When more than one pair is affected the save is **refused** until the operator
+answers `all` or `only`. Neither radio is pre-selected, and that is deliberate:
+a default is the defect in miniature. `all` edits devices nobody named; `only`
+quietly stops a fleet-wide fix from reaching the fleet. `only` additionally
+requires a pair that actually reads this copy — a fork scoped to a box that
+reads something else is a copy nobody will ever be served, and it silently
+shadows whatever that box does read.
+
+**Rendering guards go through the ROUTE.** The four asks of this round all fail
+silently at the template, never at the service: a page can compute the right
+device and ADOM and print the appliance name; the eye can link to the right
+object and drop the scope; the modal can exist and post to a second set of
+routes. Two traps worth keeping:
+
+1. `/artifacts/inventory` carries **four tables**, and the coverage one
+   legitimately prints policy and profile names. A guard asserting "no policy
+   names in the users column" over the whole document matches that table and
+   reports the opposite of what it measured — hence the `data-held-table`
+   anchor and `_held_table()`.
+2. The object NAME in the first column links to the same place as the eye, so a
+   row-wide grep for the object URL passes **with the eye deleted**. The guard
+   slices the `data-eye` anchor itself. (Mutation 11 survived the first harness
+   for exactly this reason.)
+
+Recipe: `venv/bin/python -m pytest tests/test_artifact_inventory_scope.py -q`
+(17 guards) and the mutation harness pattern from §116 — by `rc`, only `rc == 1`
+counts as a bite, with a green baseline required. 13 mutations, 13 bite.

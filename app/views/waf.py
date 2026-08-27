@@ -34,11 +34,14 @@ from __future__ import annotations
 import csv
 import io
 
-from flask import Blueprint, Response, jsonify, render_template, request
+from flask import (Blueprint, Response, flash, jsonify, redirect,
+                   render_template, request, url_for)
 from flask_login import current_user, login_required
 
 from ..services import waf_artifact_fleet as artsvc
+from ..services import waf_export as export_svc
 from ..services import waf_fleet as svc
+from ..services.audit import log_action
 
 bp = Blueprint("waf", __name__, url_prefix="/waf")
 
@@ -386,3 +389,70 @@ def api_summary():
         "changes": svc.change_series(universe),
         "generated_at": stats["generated_at"],
     })
+
+
+# ---------------------------------------------------------------------------
+# Export — the whole visible fleet, in the formats the operator ticked
+# ---------------------------------------------------------------------------
+#: Where the panel may send an operator back to. A literal tuple, never a
+#: free-form ``next=``: an open redirect is an open redirect even when the
+#: form it hangs off only produces a download.
+_EXPORT_BACK: tuple[str, ...] = ("index", "inventory", "profiles", "coverage",
+                                 "artifacts")
+
+
+@bp.context_processor
+def _export_choices():
+    """What the panel offers, injected for THIS blueprint's templates only.
+
+    A context processor rather than five ``render_template`` kwargs: the panel
+    is in a shared partial, and a sixth /waf page added later would otherwise
+    render it with empty checkbox lists — silently, because an empty ``for``
+    renders nothing at all.
+    """
+    return {"export_datasets": export_svc.DATASETS,
+            "export_formats": export_svc.FORMATS}
+
+
+@bp.route("/export")
+@login_required
+def export():
+    """Build the ZIP the panel asked for.
+
+    GET on purpose: the entire selection is in the URL, so a bundle is
+    bookmarkable ("the one I take to change review") and a support request can
+    quote the exact link that produced a file. It reads and mutates nothing.
+
+    Scope is the exporting user's own visibility — ``waf_export`` narrows
+    through the same ``waf_fleet.fortiweb_scopes`` call every page here does,
+    so this endpoint cannot hand out a scope its caller could not already open.
+    """
+    keys = request.args.getlist("set")
+    formats = request.args.getlist("fmt")
+    back = request.args.get("back") or "index"
+    endpoint = "waf.%s" % (back if back in _EXPORT_BACK else "index")
+
+    try:
+        blob, filename = export_svc.build_zip(
+            keys=keys, formats=formats, user=current_user,
+            author=getattr(current_user, "username", ""))
+    except ValueError as exc:
+        # Nothing ticked. Not a 400 page (it loses the operator's place) and
+        # never an empty ZIP: that downloads perfectly happily and reads as
+        # "the fleet had nothing", which is a claim about the estate rather
+        # than about the form.
+        flash(str(exc), "warning")
+        return redirect(url_for(endpoint))
+
+    # A bulk copy of the fleet's WAF configuration leaving the appliance is
+    # worth a row even though nothing changed.
+    log_action("waf.export",
+               target=",".join(k for k in export_svc.DATASET_KEYS if k in keys),
+               extra={"formats": [f for f, _l in export_svc.FORMATS
+                                  if f in formats],
+                      "bytes": len(blob)})
+    return Response(blob, mimetype="application/zip",
+                    headers={"Content-Disposition":
+                             'attachment; filename="%s"' % filename,
+                             "Content-Length": str(len(blob)),
+                             "Cache-Control": "no-store"})

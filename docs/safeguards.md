@@ -11419,3 +11419,76 @@ Mutation harness: `/tmp/waf_mutate.py` — measured by rc (only `rc == 1` is a
 failure), baseline green required, no `-x`, and each mutation must name the
 guard it kills among the dead. One mutation is *meta*: it breaks the fixture so
 the never-harvested device is never created, proving the control can die.
+
+## §128 — Provenance travels with the data (`tests/test_waf_export.py`)
+
+An export is a snapshot OF A SNAPSHOT. Every `/waf/*` page reads the
+source-of-truth store, so its figures are exactly as old as the last harvest of
+each scope — which is why each page carries the scope-and-freshness banner as
+its DENOMINATOR and not as a footnote.
+
+**A spreadsheet in somebody's mail has no banner.** Left alone it becomes a
+document that outlives its own truth, and the person opening it three weeks
+later has no way to know which scopes were stale, which never reported, or
+whose visibility it was built under. That is why the bundle is not "the tables,
+zipped".
+
+### The five properties, and the guard for each
+
+1. **Provenance in every artefact, from ONE author.** `provenance()` writes the
+   same block into `MANIFEST.txt`, the workbook's first sheet (`Scope &
+   freshness`, before any data sheet) and the PDF's first page. A never-reported
+   scope is NAMED, never folded into a denominator as a device with zero
+   policies. Guards read the manifest, parse the workbook back out of its XML
+   (not the structure we handed the writer — that passes even if the file is one
+   Excel refuses to open) and un-filter the PDF's content streams.
+2. **Nothing ticked is not an empty export.** `build_zip` raises; the view
+   flashes and redirects. A typo in a dataset name is not quietly a selection.
+3. **The bundle is what THIS console may see.** Narrowed by the same single
+   `waf_fleet.fortiweb_scopes` call every page here is a function of. Guards go
+   through the ROUTE (§122) and scan EVERY byte of the archive for another
+   product's device.
+4. **Exceptions are desired state.** Verified against `models.WppException`:
+   there is no column recording a push, and `exception_inject.apply_injection`
+   returns its steps and stores nothing. So no artefact implies deployment, and
+   a scope with no snapshot answers **unknown** about its profiles and policies,
+   never *missing* — telling an operator to re-author a carve-out we simply have
+   no evidence about is worse than saying nothing.
+5. **A chart that travels is its series.** The PDF drawing and the (label,
+   value) rows in the CSV/workbook come from one `ChartSpec`. Colours are mapped
+   by KEY, not by position: a palette indexed by slot paints "blocking" whatever
+   colour the fourth entry happens to be.
+
+### Traps this round paid for
+
+* **The PDF's content streams are `/ASCII85Decode` THEN `/FlateDecode`.** A
+  verifier that only inflates finds nothing — and passes on an empty document.
+* **Manifest prose is hard-wrapped**, so any assertion on a sentence long enough
+  to be worth asserting fails against a PERFECT artefact. Compare with collapsed
+  whitespace (the same trap §7f documents for `LICENSE`).
+* **`xlsx_writer` bolds and freezes ROW 0.** A prose line above the header
+  freezes the prose and lets the real header scroll away — so the per-dataset
+  "about" text lives on the scope sheet, where the reader arrives first.
+* **The CSV needs a BOM.** Without `utf-8-sig`, Excel on Windows reads UTF-8 as
+  latin-1 and every accented device comment arrives mojibake.
+* **`policies` is a COUNT on `/waf/artifacts`.** An export that overwrites it
+  with a joined list gives one column two meanings across two surfaces; the
+  names get their own column.
+* **`back` is an endpoint KEY resolved against a literal tuple.** A form whose
+  only job is to produce a download is still a form, and an open redirect is
+  still an open redirect.
+* **The panel carries no JavaScript** — a `<details>` around a GET form. The CSP
+  drops `unsafe-inline`, the five page templates do not all declare a scripts
+  block, and a panel needing one gets forgotten by the sixth page. Its checkbox
+  lists come from the blueprint's own context processor, because an empty
+  `{% for %}` renders nothing at all and no error.
+
+### How to check it
+
+    cd /opt/satom && ./venv/bin/python -m pytest tests/test_waf_export.py -q
+
+Mutation harness: `/tmp/mutate.py` — measured by rc (only `rc == 1` is a
+failure), baseline green required, no `-x`, and each mutation must name the
+guard it kills among the dead. One mutation is *meta*: it gives the
+never-harvested scope a snapshot, proving the unknown-vs-missing control can
+die.

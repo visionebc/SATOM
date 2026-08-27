@@ -124,3 +124,81 @@
   border: 1px dashed rgba(139,28,42,.35); border-radius: var(--fw-radius);
   font-size: 13px;
 }
+
+
+/* --------------------------------------------------------------------------
+   Export panel.
+
+   THE PAGE IS LIGHT (safeguards §9m): everything below is drawn from the
+   --fw-* variables and the .fw-badge-* palette, both calibrated against
+   #FFFFFF. A translucent dark slab with a backdrop-filter — the fleet
+   glassmorphism — renders here as an opaque grey block, which is exactly the
+   report that opened §9m.
+
+   Collapsed it is one line. The panel is on all five pages and none of them
+   is about exporting, so open-by-default would push the actual answer below
+   the fold on every single one.
+   -------------------------------------------------------------------------- */
+.waf-export {
+  background: #FFFFFF;
+  border: 1px solid var(--fw-border, #DCDFE4);
+  border-radius: 6px;
+}
+.waf-export-summary {
+  cursor: pointer;
+  padding: .5rem .85rem;
+  font-size: .875rem;
+  color: var(--fw-text, #1B1F26);
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+}
+.waf-export-summary::-webkit-details-marker { display: none; }
+.waf-export-summary::before {
+  content: "\25B8";          /* rotates on open — the only affordance a
+                                 <details> gives us without JS */
+  display: inline-block;
+  transition: transform .15s ease;
+  color: var(--fw-accent, #EF5424);
+}
+.waf-export[open] > .waf-export-summary::before { transform: rotate(90deg); }
+.waf-export-summary:hover { background: #F4F5F7; }
+.waf-export-hint { color: #5A6270; font-size: .8125rem; }
+.waf-export-form {
+  padding: .25rem .85rem .85rem;
+  border-top: 1px solid var(--fw-border, #DCDFE4);
+}
+.waf-export-legend {
+  font-size: .75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: #5A6270;
+  margin: .6rem 0 .35rem;
+}
+.waf-export-item { margin-bottom: .35rem; }
+.waf-export-item .form-check-input:checked {
+  background-color: var(--fw-accent, #EF5424);
+  border-color: var(--fw-accent, #EF5424);
+}
+.waf-export-name {
+  display: block;
+  font-size: .8125rem;
+  font-weight: 600;
+  color: var(--fw-text, #1B1F26);
+}
+.waf-export-about {
+  display: block;
+  font-size: .75rem;
+  line-height: 1.35;
+  /* #5A6270 on white is 5.9:1. The slate-300 this would have been in a dark
+     theme is ~1.6:1 here — legible on a mock-up, unreadable on the product. */
+  color: #5A6270;
+}
+.waf-export-note {
+  font-size: .75rem;
+  line-height: 1.35;
+  color: #5A6270;
+  margin: .6rem 0;
+}

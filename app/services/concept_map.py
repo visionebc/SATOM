@@ -497,6 +497,7 @@ EXCLUDED: dict[str, str] = {
     "monitor_analytics.data": "json feed", "metrics_admin.data": "json feed",
     "waf.api_summary": "json feed",
     "waf.api_artifacts": "json feed",
+    "waf.export": "file download — the panel that drives it is on all five /waf pages",
     "metrics_admin.peer_store": "json feed", "metrics_admin.snapshots": "json feed",
     "metrics_admin.stores": "json feed", "monitoring.data": "json feed",
     "deep_monitor.data": "json feed", "monitor_reports.data": "json feed",

@@ -173,6 +173,9 @@ def create():
     # IPAM is opt-in per run: only then is the address ours to release on
     # rollback. A hand-typed address belongs to whoever typed it.
     run.ip_from_ipam = (f.get("use_ipam") or "").lower() in ("1", "on", "true")
+    # Which pool to ask. Blank = the provider's configured default; it is NOT
+    # a silent "any pool", because every backend refuses without one.
+    run.ip_pool = str(f.get("ip_pool") or "").strip()[:128]
     db.session.add(run)
     db.session.commit()
     log_action("provision.device.create",

@@ -11552,3 +11552,47 @@ indication of which field.
    absent from every harvest because no appliance had a custom signature, not
    because the sweep skips it. "Missing from the snapshot" is not "not
    collected".
+
+## §130 — IPAM allocation and the provisioning DNS step (2026-08-27)
+
+**The defect being guarded.** A step whose success value does not depend on
+whether the work happened. `provision_runner` imported four functions that did
+not exist, inside `except ImportError` handlers, so the DNS step reported OK
+with "no DNS provider configured" on installs that had one. Green run, no
+record.
+
+**How to check it by hand.**
+
+1. The four operations must exist at module level:
+   `venv/bin/python -c "import app.services.dns_providers as d; print([hasattr(d,n) for n in ('allocate_address','release_address','create_record','delete_record')])"`
+   -> `[True, True, True, True]`. Any `False` means the runner is again
+   blaming an operator's DDI for a hole in this package.
+2. `grep -n "except ImportError" app/services/provision_runner.py` — the only
+   legitimate hit is `_image_path` (an optional model import). A hit anywhere
+   near a `dns_providers` import is the original bug returning. The guard is
+   AST-based (`test_runner_does_not_swallow_a_missing_provider_module`)
+   because a substring check bites the legitimate one too — that mis-scoped
+   assertion is how this guard failed on its first run.
+3. `grep -c 0xFFFFFFFF app/services/dns_providers/*.py` — exactly ONE file
+   (`base.py`) may match. Two copies of the netmask conversion is how a subnet
+   ends up with two different masks depending on which backend answered.
+
+**Three properties that must not be quietly relaxed.**
+
+- **`can_allocate` is not `can_write`.** phpIPAM and NetBox-without-the-plugin
+  hand out addresses and cannot publish records. One flag for both re-creates
+  the original promise.
+- **Release is keyed on the handle.** Releasing by address string frees
+  whatever row currently holds that address, which after a lease expiry or an
+  operator edit is somebody else's.
+- **Nothing is guessed.** A non-power-of-two subnet size yields no prefix; an
+  absent gateway stays empty. Both values are written into an appliance's
+  default route at first boot, where a plausible wrong answer is worse than a
+  blank the operator has to fill in.
+
+**Trap for the next round.** The mutation "base class no longer refuses" first
+came back SURVIVES — the guard it named checks method *identity*
+(`cls.release_address is not DnsProvider.release_address`), which no change to
+the *body* can affect. The mutation was mis-aimed, but it exposed a real hole:
+nothing asserted the base class refuses at all. Ninth entry in the running
+tally of guards that assert the wrong layer.

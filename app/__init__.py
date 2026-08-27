@@ -1445,6 +1445,14 @@ def create_app(config_override: object | None = None) -> Flask:
             'waf_artifact_ref': [
                 ('wpp_mkey', 'VARCHAR(255)'),
             ],
+            # --- IPAM reservation handle + pool (2026-08-27) ---
+            # Nullable, no backfill. A run that predates these columns took its
+            # address before SATOM could record a handle, so NULL is the true
+            # answer: rollback must not pretend it can release it.
+            'provision_runs': [
+                ('ip_ref', 'VARCHAR(128)'),
+                ('ip_pool', 'VARCHAR(128)'),
+            ],
             'templates': [
                 ('exceptions', 'TEXT'),
                 ('status', "VARCHAR(16) DEFAULT 'pending'"),

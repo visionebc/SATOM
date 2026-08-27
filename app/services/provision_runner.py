@@ -162,39 +162,71 @@ def _step_ip_reserved(run: ProvisionRun) -> StepResult:
         return StepResult(
             False, "no management address given and IPAM allocation was not "
                    "requested for this run")
-    try:
-        from .dns_providers import allocate_address  # type: ignore
-    except ImportError:
+    from . import dns_providers
+
+    caps = dns_providers.capabilities()
+    if caps is None:
         return StepResult(
-            False, "IPAM allocation was requested but no DNS/IPAM provider "
-                   "exposes address allocation")
+            False, "IPAM allocation was requested but no DNS/IPAM provider is "
+                   "configured (Settings -> DNS Records)")
+    if not caps.can_allocate:
+        return StepResult(
+            False, f"IPAM allocation was requested but {caps.label} does not "
+                   "hand out addresses")
     try:
-        addr = allocate_address(hostname=run.hostname or run.name)
+        addr = dns_providers.allocate_address(
+            hostname=run.hostname or run.name, pool=run.ip_pool or "")
     except Exception as exc:  # noqa: BLE001 — provider-specific failures
         return StepResult(False, f"IPAM refused to allocate: {exc}")
-    run.mgmt_ip = addr.get("address", "")
-    run.netmask = addr.get("netmask", run.netmask or "")
-    run.gateway = addr.get("gateway", run.gateway or "")
-    return StepResult(bool(run.mgmt_ip),
-                      f"IPAM allocated {run.mgmt_ip}" if run.mgmt_ip
-                      else "IPAM returned no address")
+    if not addr.address:
+        return StepResult(False, "IPAM returned no address")
+    run.mgmt_ip = addr.address
+    # A field the pool did not answer leaves the run's own value alone: an
+    # empty netmask from the provider is "unknown", not "no netmask", and
+    # writing it over an operator-supplied one is a wrong default route.
+    run.netmask = addr.netmask or run.netmask or ""
+    run.gateway = addr.gateway or run.gateway or ""
+    run.ip_ref = addr.ref or ""
+    return StepResult(True, f"IPAM allocated {run.mgmt_ip}"
+                            + (f" from {addr.pool}" if addr.pool else ""))
 
 
 def _step_dns_created(run: ProvisionRun) -> StepResult:
+    """Publish the hostname, or say plainly that nothing was published.
+
+    The three outcomes below used to be two, and the missing one is why this
+    step could report success on a run that created no record:
+
+    * no provider configured -> a PASS, because a fleet without a DDI is a
+      supported install — but the detail says, in words nobody can misread,
+      that the name was not published and somebody has to do it by hand.
+    * a provider that cannot write records -> a FAILURE. The operator wired a
+      backend and asked for a hostname; answering "fine" to that is the lie.
+    * a provider that refuses the write -> a FAILURE, as before.
+    """
     if not run.hostname:
         return StepResult(True, "no hostname requested — DNS step skipped")
     if not run.mgmt_ip:
         return StepResult(False, "cannot create a DNS record without an address")
+    from . import dns_providers
+
+    caps = dns_providers.capabilities()
+    if caps is None:
+        return StepResult(
+            True, f"NO DNS PROVIDER IS CONFIGURED — no record was created for "
+                  f"{run.hostname}; publish {run.hostname} A {run.mgmt_ip} by "
+                  "hand, or configure a provider in Settings -> DNS Records")
+    if not caps.can_write:
+        return StepResult(
+            False, f"{caps.label} cannot create DNS records, but this run asked "
+                   f"for the hostname {run.hostname}. Clear the hostname, or "
+                   "point SATOM at a backend that writes records.")
     try:
-        from .dns_providers import create_record  # type: ignore
-    except ImportError:
-        return StepResult(True, "no DNS provider configured — record not "
-                                "created (this is not an error)")
-    try:
-        rec = create_record(name=run.hostname, rtype="A", value=run.mgmt_ip)
+        rec = dns_providers.create_record(
+            name=run.hostname, rtype="A", value=run.mgmt_ip)
     except Exception as exc:  # noqa: BLE001
         return StepResult(False, f"DNS provider refused the record: {exc}")
-    run.dns_record_id = str(rec.get("id", "") or "")
+    run.dns_record_id = str(rec.id or "")
     return StepResult(True, f"created {run.hostname} A {run.mgmt_ip}")
 
 
@@ -451,8 +483,8 @@ def rollback(run: ProvisionRun) -> ProvisionRun:
 
     if run.dns_record_id:
         try:
-            from .dns_providers import delete_record  # type: ignore
-            delete_record(run.dns_record_id)
+            from .dns_providers import delete_record
+            delete_record(run.dns_record_id, name=run.hostname, rtype="A")
             run.add_log("rollback:dns", True, f"removed {run.hostname}")
             run.dns_record_id = ""
         except Exception as exc:  # noqa: BLE001
@@ -461,10 +493,15 @@ def rollback(run: ProvisionRun) -> ProvisionRun:
 
     if run.ip_from_ipam and run.mgmt_ip:
         try:
-            from .dns_providers import release_address  # type: ignore
-            release_address(run.mgmt_ip)
+            from .dns_providers import release_address
+            # Driven by the handle recorded at allocation, not by the address
+            # string: between the reservation and now the pool may legitimately
+            # have given that address to somebody else, and a release keyed on
+            # the string frees THEIR entry.
+            release_address(run.mgmt_ip, ref=run.ip_ref or "")
             run.add_log("rollback:ip", True, f"released {run.mgmt_ip}")
             run.ip_from_ipam = False
+            run.ip_ref = ""
         except Exception as exc:  # noqa: BLE001
             errors.append(f"could not release the address: {exc}")
             run.add_log("rollback:ip", False, str(exc))

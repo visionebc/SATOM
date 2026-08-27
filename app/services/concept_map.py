@@ -274,6 +274,10 @@ PAGES: tuple[dict, ...] = (
     _p("classification.index", "Classification", "waf",
        "classification tier criticality label taxonomy risk grading",
        "How applications are graded and labelled."),
+    _p("line_profiles.index", "Line Profiles", "waf",
+       "line profile segment network certificate class wpp template declaration",
+       "What each classification line receives: segments, certificate class "
+       "and the Web Protection Profile a new policy starts from."),
     _p("workspace.index", "Workspace", "waf",
        "workspace scratch working set staging draft",
        "The per-user working set of objects."),

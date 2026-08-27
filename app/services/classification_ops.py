@@ -79,14 +79,20 @@ class Usage:
     appliances: int = 0
     baselines: int = 0
     segments: int = 0
+    #: Line profiles pointing at this value ('lines' catalog only). Counted
+    #: like every other reference: a value with a profile is IN USE, so a
+    #: delete has to say what happens to it instead of quietly orphaning it.
+    line_profiles: int = 0
 
     @property
     def total(self) -> int:
-        return self.appliances + self.baselines + self.segments
+        return (self.appliances + self.baselines + self.segments
+                + self.line_profiles)
 
     def as_dict(self) -> dict[str, int]:
         return {"appliances": self.appliances, "baselines": self.baselines,
-                "segments": self.segments, "total": self.total}
+                "segments": self.segments, "line_profiles": self.line_profiles,
+                "total": self.total}
 
 
 @dataclass
@@ -99,10 +105,13 @@ class Report:
     baselines_absorbed: int = 0
     baselines_renamed: int = 0
     segments: int = 0
+    line_profiles: int = 0
+    line_profiles_deleted: int = 0
 
     @property
     def touched(self) -> int:
-        return self.appliances + self.baselines + self.segments
+        return (self.appliances + self.baselines + self.segments
+                + self.line_profiles + self.line_profiles_deleted)
 
 
 @dataclass
@@ -148,6 +157,12 @@ def usage(kind: str) -> dict[str, Usage]:
         u = bucket(seg.get(fld))
         if u:
             u.segments += 1
+    if kind == "lines":
+        from ..models_lineprofile import LineProfile
+        for prof in LineProfile.query.all():
+            u = bucket(prof.line)
+            if u:
+                u.line_profiles += 1
     return out
 
 
@@ -345,6 +360,40 @@ def _retarget(fld: str, old: str, new: str, report: Report,
                 base.name = new_name
                 report.baselines_renamed += 1
         report.baselines += 1
+
+    # -- line profiles -------------------------------------------------------
+    # A profile is what a line MEANS. Left behind on a renamed string it is an
+    # orphan, and the line silently reverts to the inferred segment match —
+    # which is the guess this whole feature replaced, restored without anyone
+    # choosing it.
+    if fld == "line":
+        from ..models_lineprofile import LineProfile
+        for prof in LineProfile.query.filter(LineProfile.line == old).all():
+            if not new:
+                # Clearing the line leaves a profile that answers for nothing.
+                # Deleting it is the honest outcome and it is REPORTED, so the
+                # operator who chose "clear the references" sees what that
+                # cost. Keeping it with line="" would make it unreachable and
+                # invisible at once.
+                db.session.delete(prof)
+                report.line_profiles_deleted += 1
+                continue
+            twin = (LineProfile.query
+                    .filter(LineProfile.product == prof.product,
+                            LineProfile.line == new,
+                            LineProfile.id != prof.id).first())
+            if twin is not None:
+                # (product, line) is unique, so one of the two would have to
+                # go. Picking silently means a line quietly starts handing out
+                # a different set of networks — the exact class of error the
+                # declaration exists to prevent.
+                raise ClassificationError(
+                    f"line {new!r} already has a profile in product "
+                    f"{prof.product!r}, and {old!r} has one too. Merging them "
+                    "would silently pick one line's networks for the other — "
+                    "delete or edit one of the two profiles first.")
+            prof.line = new
+            report.line_profiles += 1
 
     # -- network segments (JSON blob in app_settings) ------------------------
     for seg in segs:

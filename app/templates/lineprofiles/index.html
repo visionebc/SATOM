@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+
+{% block title %}Line Profiles{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <span>{{ _('Line Profiles') }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+{#
+  LIGHT theme only (safeguards §9m). No rgba(30,41,59,..) slabs, no
+  backdrop-filter: this product is white with an orange accent, and the fleet
+  glassmorphism renders here as an opaque grey block. State colours come from
+  the .fw-badge-* set, which is calibrated against white.
+#}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title">
+      <i class="bi bi-signpost-split me-2 text-accent"></i>{{ _('Line Profiles') }}
+    </h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      {{ _('What each classification LINE receives: which network segments, which certificate class, and which Web Protection Profile a new policy starts from. Until a line is declared here, SATOM falls back to matching segments whose "line" field happens to equal the line name — a guess that looks identical to an answer.') }}
+    </p>
+  </div>
+  <div>
+    <a class="btn btn-fw-outline btn-sm" href="{{ url_for('segments.index') }}">
+      <i class="bi bi-hdd-network me-1"></i>{{ _('Network segments') }}
+    </a>
+    <a class="btn btn-fw-outline btn-sm" href="{{ url_for('classification.index') }}">
+      <i class="bi bi-diagram-2 me-1"></i>{{ _('Classification') }}
+    </a>
+  </div>
+</div>
+
+{% if not lines %}
+<div class="fw-card">
+  <div class="fw-card-body text-muted">
+    {{ _('The Lines catalog is empty. Add lines in Classification first — a profile can only answer for a line that exists.') }}
+  </div>
+</div>
+{% endif %}
+
+{% for plan in lines %}
+{% set prof = profiles.get(plan.line) %}
+<div class="fw-card mb-3">
+  <div class="fw-card-header">
+    <span class="fw-card-title">
+      <i class="bi bi-signpost me-2 text-accent"></i>{{ plan.line }}
+    </span>
+    {# The source is the headline fact, not a footnote: a plan the operator
+       declared and a plan SATOM guessed are different kinds of claim. #}
+    {% if plan.declared %}
+      <span class="fw-badge fw-badge-success">{{ _('declared') }}</span>
+    {% else %}
+      <span class="fw-badge fw-badge-warning">{{ _('inferred — no profile') }}</span>
+    {% endif %}
+    {% if plan.blocked %}
+      <span class="fw-badge fw-badge-danger">{{ _('blocks policy creation') }}</span>
+    {% endif %}
+  </div>
+  <div class="fw-card-body">
+
+    {% if plan.problems %}
+    <ul class="mb-3" style="font-size:12.5px;padding-left:1.1rem;">
+      {% for p in plan.problems %}
+      <li class="{{ 'text-danger' if p.blocking else 'text-muted' }}">
+        <span class="fw-badge {{ 'fw-badge-danger' if p.blocking else 'fw-badge-secondary' }}">{{ p.code }}</span>
+        {{ p.detail }}
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+
+    <div class="mb-3" style="font-size:12.5px;">
+      <div class="text-muted mb-1">{{ _('Resolved segments') }}</div>
+      {% for s in plan.segments %}
+        <span class="fw-badge fw-badge-primary">{{ s.name }}{% if s.cidr %} · {{ s.cidr }}{% endif %}{% if s.interface %} · {{ s.interface }}{% endif %}</span>
+      {% else %}
+        <span class="text-muted">{{ _('— none —') }}</span>
+      {% endfor %}
+    </div>
+
+    <form method="post" action="{{ url_for('line_profiles.save') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="line" value="{{ plan.line }}">
+      <div class="row g-3">
+        <div class="col-md-4">
+          <label class="form-label" style="font-size:12px;">{{ _('Segments this line receives') }}</label>
+          <select class="form-select form-select-sm" name="segments" multiple size="5">
+            {% for s in all_segments %}
+            <option value="{{ s.name }}" {% if prof and s.name in prof.segments %}selected{% endif %}>
+              {{ s.name }}{% if s.cidr %} — {{ s.cidr }}{% endif %}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label" style="font-size:12px;">{{ _('Certificate class') }}</label>
+          <select class="form-select form-select-sm" name="cert_class">
+            {# Blank is NOT DECIDED, not a default. The wizard asks rather
+               than picking 'server' on the operator's behalf. #}
+            <option value="">{{ _('— not decided —') }}</option>
+            {% for c in cert_classes %}
+            <option value="{{ c }}" {% if prof and prof.cert_class == c %}selected{% endif %}>{{ c }}</option>
+            {% endfor %}
+          </select>
+
+          <label class="form-label mt-2" style="font-size:12px;">{{ _('IPAM pool override') }}</label>
+          <input class="form-control form-control-sm" name="ipam_pool"
+                 value="{{ prof.ipam_pool if prof else '' }}"
+                 placeholder="{{ _('blank = use the segment CIDR') }}">
+        </div>
+        <div class="col-md-5">
+          <label class="form-label" style="font-size:12px;">{{ _('Web Protection Profile template') }}</label>
+          <select class="form-select form-select-sm" name="wpp_template_id">
+            <option value="">{{ _('— none —') }}</option>
+            {% for t in wpp_templates %}
+            <option value="{{ t.id }}" {% if prof and prof.wpp_template_id == t.id %}selected{% endif %}>
+              {{ t.name }} v{{ t.version }} — {{ t.status }}
+            </option>
+            {% endfor %}
+          </select>
+          <div class="text-muted mt-1" style="font-size:11.5px;">
+            {{ _('Only an APPROVED template may be instantiated onto a device. Approval is checked when a policy is built, not when this is saved — a template approved today can be rejected tomorrow.') }}
+          </div>
+
+          <label class="form-label mt-2" style="font-size:12px;">{{ _('Note') }}</label>
+          <input class="form-control form-control-sm" name="note"
+                 value="{{ prof.note if prof else '' }}">
+        </div>
+      </div>
+      <div class="mt-3 d-flex gap-2">
+        <button class="btn btn-fw-primary btn-sm" type="submit">
+          <i class="bi bi-save me-1"></i>{{ _('Save profile') }}
+        </button>
+      </div>
+    </form>
+
+    {% if prof %}
+    <form method="post" action="{{ url_for('line_profiles.delete') }}" class="mt-2">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="line" value="{{ plan.line }}">
+      <button class="btn btn-fw-outline btn-sm text-danger" type="submit">
+        <i class="bi bi-trash me-1"></i>{{ _('Delete profile (falls back to the guess)') }}
+      </button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+{% endfor %}
+{% endblock %}

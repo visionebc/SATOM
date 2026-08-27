@@ -21,6 +21,7 @@
      ('profiles',  url_for('waf.profiles'),  'Profiles',  'bi-shield-check'),
      ('coverage',  url_for('waf.coverage'),  'Coverage',  'bi-grid-3x3-gap'),
      ('artifacts', url_for('waf.artifacts'), 'Artifacts', 'bi-file-earmark-code'),
+     ('exceptions', url_for('waf.exceptions'), 'Exceptions', 'bi-slash-circle'),
    ] %}
 {% set _reporting = devices | rejectattr('missing') | list %}
 {% set _stale = _reporting | selectattr('stale') | list %}

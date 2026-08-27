@@ -327,7 +327,8 @@ def waf_delete_exception(exc_id):
         return err
 
     snapshot = _exception_json(exc, appliance=appliance)
-    store.delete(exc_id)
+    store.delete(exc_id, author=('api:' + (getattr(tok, 'name', '') or 'token')),
+                 note='deleted via API v1')
     log_action("api.wpp_exception.delete", target=f"wpp_exception:{exc_id}",
                extra=audit_extra(appliance_id=appliance.id,
                                  wpp=snapshot["wpp_mkey"],

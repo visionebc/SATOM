@@ -27,6 +27,7 @@ from ..clients.fortiweb import FortiWebClient
 from ..services import config_catalog
 from ..services import device_context
 from ..services import config_sections
+from ..services import waf_artifacts
 from ..services import read_layer
 from ..services import objform
 from ..services.templates import KIND_LABELS, list_templates, list_config_templates
@@ -156,8 +157,22 @@ def section(section_key: str):
         rows = [_row_view(o) for o in raw]
 
     kind = config_catalog.config_template_kind(section_key)
+    # Is the selected leaf a FILE-BACKED object (WSDL / XSD / DTD / JSON
+    # Schema / OpenAPI / gRPC IDL / Lua)? Derived from the registry collection,
+    # so a new leaf or a new artifact kind wires itself up. Empty string = an
+    # ordinary cmdb object, and the create/upload card does not render.
+    artifact_kind = waf_artifacts.kind_for_collection(
+        selected.collection if selected else '')
     return render_template(
         'section_config/section.html',
+        artifact_kind=artifact_kind,
+        artifact_label=waf_artifacts.label(artifact_kind) if artifact_kind else '',
+        # "The device will not give it back" is a different problem from "we
+        # have no copy", and only one of them is fixed by uploading. The page
+        # says which, so an operator does not go looking for a Capture button
+        # that cannot exist for this type.
+        artifact_readable=(waf_artifacts.is_readable(artifact_kind)
+                           if artifact_kind else False),
         section=sec,
         menu=menu,
         appliance=appliance,

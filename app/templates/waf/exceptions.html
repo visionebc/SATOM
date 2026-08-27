@@ -1,0 +1,318 @@
+{# ============================================================================
+   WAF — Exceptions (fleet). Every authored carve-out across every visible
+   (device, ADOM) scope, grouped by IDENTITY so the page can answer the
+   question `/exceptions/<device>` structurally cannot: *who has this one?*
+
+   Four things here are load-bearing:
+
+   1. **Authored is not pushed.** Carve-outs are desired state recorded in the
+      manager DB. Nothing on this page contacts an appliance, so every figure
+      describes what SATOM was TOLD, not what a box is running. Said in the
+      banner, not in a footnote — a page that implies the boxes agree is worse
+      than one that shows nothing.
+   2. **The grouping has two kinds and they are not interchangeable.** A
+      `library` group is somebody DECLARING two placements are the same
+      carve-out; a `content` group is this page INFERRING it from identical
+      payloads. Only the first is safe to act on in bulk, so each row says
+      which it is.
+   3. **Unversioned is not "unchanged".** A placement authored before the
+      versioner has no history and cannot be rolled back. Its own tile, because
+      "13 carve-outs, 0 recoverable" is the fact that decides whether the undo
+      button can be trusted.
+   4. Tiles and charts are the WHOLE visible fleet; the filters narrow the
+      TABLE only, and the line under the filters says so (safeguards §119).
+   ========================================================================= #}
+{% extends "base.html" %}
+{% block title %}WAF — Exceptions{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{{ asset('css/waf.css') }}" data-turbo-track="reload">
+{% endblock %}
+
+{% block content %}
+{% set active = 'exceptions' %}
+{% set subtitle = _('carve-outs, fleet-wide') %}
+{% include 'waf/_header.html' %}
+
+{# The one claim this page must never let an operator forget. #}
+<div class="fw-alert fw-alert-info mb-3">
+  <i class="bi bi-info-circle"></i>
+  <div>
+    <strong>{{ _('These are AUTHORED carve-outs, not device state.') }}</strong>
+    {{ _('SATOM records them as desired state; a placement is only live on a box where somebody pushed it. Opening this page contacts no appliance.') }}
+  </div>
+</div>
+
+{# ------------------------------------------------------------- KPI row -- #}
+<div class="row g-3 mb-3">
+  <div class="col-xl-2 col-md-4 col-sm-6">
+    <div class="fw-stat-card">
+      <div class="fw-stat-icon fw-stat-icon-primary"><i class="bi bi-slash-circle"></i></div>
+      <div>
+        <div class="fw-stat-value">{{ stats.placements }}</div>
+        <div class="fw-stat-label">{{ _('Placements') }} &middot;
+          {{ stats.distinct }} {{ _('distinct carve-outs') }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-xl-2 col-md-4 col-sm-6">
+    <div class="fw-stat-card">
+      <div class="fw-stat-icon fw-stat-icon-success"><i class="bi bi-diagram-3"></i></div>
+      <div>
+        <div class="fw-stat-value">{{ stats.shared }}</div>
+        <div class="fw-stat-label">{{ _('Held by more than one scope') }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-xl-2 col-md-4 col-sm-6">
+    <div class="fw-stat-card">
+      <div class="fw-stat-icon fw-stat-icon-info"><i class="bi bi-globe2"></i></div>
+      <div>
+        <div class="fw-stat-value">{{ stats.everywhere }}</div>
+        <div class="fw-stat-label">{{ _('On every visible scope') }}
+          ({{ stats.scopes }})</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-xl-2 col-md-4 col-sm-6">
+    <div class="fw-stat-card">
+      <div class="fw-stat-icon fw-stat-icon-warning"><i class="bi bi-exclamation-triangle"></i></div>
+      <div>
+        <div class="fw-stat-value">{{ stats.stale }}</div>
+        <div class="fw-stat-label">{{ _('Stale — the bound policy moved profile') }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-xl-2 col-md-4 col-sm-6">
+    {# NOT folded into a generic "health" figure: this is the only tile that
+       says whether the undo button means anything for a given row. #}
+    <div class="fw-stat-card">
+      <div class="fw-stat-icon fw-stat-icon-secondary"><i class="bi bi-clock-history"></i></div>
+      <div>
+        <div class="fw-stat-value">{{ stats.unversioned }}</div>
+        <div class="fw-stat-label">{{ _('Predate versioning — cannot be rolled back') }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-xl-2 col-md-4 col-sm-6">
+    <div class="fw-stat-card">
+      <div class="fw-stat-icon fw-stat-icon-danger"><i class="bi bi-question-octagon"></i></div>
+      <div>
+        <div class="fw-stat-value">{{ stats.orphans }}</div>
+        <div class="fw-stat-label">{{ _('Orphaned — their appliance is gone') }}</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ------------------------------------------------------------- charts --- #}
+<div id="waf-exc-root" class="row g-3 mb-3"
+     data-feed="{{ url_for('waf.api_exceptions') }}">
+  <div class="col-xl-4 col-lg-6">
+    <div class="fw-card h-100">
+      <div class="fw-card-header"><i class="bi bi-pie-chart"></i>
+        {{ _('Spread across the estate') }}</div>
+      <div class="fw-card-body"><canvas id="waf-exc-chart-spread" height="200"></canvas></div>
+    </div>
+  </div>
+  <div class="col-xl-4 col-lg-6">
+    <div class="fw-card h-100">
+      <div class="fw-card-header"><i class="bi bi-bar-chart"></i>
+        {{ _('Carve-outs by type') }}</div>
+      <div class="fw-card-body"><canvas id="waf-exc-chart-types" height="200"></canvas></div>
+    </div>
+  </div>
+  <div class="col-xl-4 col-lg-6">
+    <div class="fw-card h-100">
+      <div class="fw-card-header"><i class="bi bi-hdd-stack"></i>
+        {{ _('Placements per scope') }}</div>
+      <div class="fw-card-body"><canvas id="waf-exc-chart-scopes" height="200"></canvas></div>
+    </div>
+  </div>
+  <div class="col-xl-4 col-lg-6">
+    <div class="fw-card h-100">
+      <div class="fw-card-header"><i class="bi bi-tags"></i>
+        {{ _('Exceptions vs signature customisations') }}</div>
+      <div class="fw-card-body"><canvas id="waf-exc-chart-category" height="200"></canvas></div>
+    </div>
+  </div>
+  <div class="col-xl-4 col-lg-6">
+    <div class="fw-card h-100">
+      <div class="fw-card-header"><i class="bi bi-arrow-counterclockwise"></i>
+        {{ _('Can this be rolled back?') }}</div>
+      <div class="fw-card-body"><canvas id="waf-exc-chart-recoverable" height="200"></canvas></div>
+    </div>
+  </div>
+</div>
+
+{# ------------------------------------------------- who has what (groups) - #}
+<div class="fw-card mb-3">
+  <div class="fw-card-header d-flex justify-content-between align-items-center">
+    <span><i class="bi bi-people"></i> {{ _('Who has each carve-out') }}</span>
+    <span class="text-muted small">
+      {{ _('grouped by declared library link where one exists, otherwise by identical content') }}</span>
+  </div>
+  <div class="fw-card-body p-0">
+    <div class="table-responsive">
+      <table class="fw-table mb-0">
+        <thead>
+          <tr>
+            <th>{{ _('Carve-out') }}</th>
+            <th>{{ _('Type') }}</th>
+            <th>{{ _('Grouped by') }}</th>
+            <th class="text-end">{{ _('Scopes holding it') }}</th>
+            <th class="text-end">{{ _('Missing from') }}</th>
+            <th>{{ _('Where') }}</th>
+            <th>{{ _('Profiles') }}</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for g in groups %}
+          <tr>
+            <td>
+              <strong>{{ g.name or _('(unnamed)') }}</strong>
+              <div class="text-muted small font-monospace">{{ g.short }}</div>
+            </td>
+            <td>{{ g.type_label }}</td>
+            <td>
+              {% if g.kind == 'library' %}
+              <span class="fw-badge fw-badge-info" title="{{ _('An operator declared these are the same carve-out') }}">
+                <i class="bi bi-link-45deg"></i> {{ _('library link') }}</span>
+              {% else %}
+              {# Deliberately a WEAKER word than the library badge. Acting in
+                 bulk on an inference is how two carve-outs that merely look
+                 alike get edited together. #}
+              <span class="fw-badge fw-badge-neutral" title="{{ _('Inferred from identical content — nobody declared this') }}">
+                <i class="bi bi-fingerprint"></i> {{ _('same content') }}</span>
+              {% endif %}
+            </td>
+            <td class="text-end">
+              {% if g.everywhere %}
+              <span class="fw-badge fw-badge-success">{{ g.held_by }} / {{ stats.scopes }}</span>
+              {% elif g.unique %}
+              <span class="fw-badge fw-badge-neutral">1 / {{ stats.scopes }}</span>
+              {% else %}
+              <span class="fw-badge fw-badge-warning">{{ g.held_by }} / {{ stats.scopes }}</span>
+              {% endif %}
+            </td>
+            <td class="text-end">{{ g.missing_from }}</td>
+            <td class="small">{{ g.scopes | join(', ') }}</td>
+            <td class="small">{{ g.profiles | join(', ') or '—' }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="7" class="text-center text-muted py-4">
+            {{ _('No carve-outs authored on any visible scope.') }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{# ------------------------------------------------------------- filters -- #}
+<form method="get" class="fw-filter-bar mb-2">
+  <select name="type" class="form-select form-select-sm">
+    <option value="">{{ _('Any type') }}</option>
+    {% for key, label in types %}
+    <option value="{{ key }}" {{ 'selected' if selected.type == key }}>{{ label }}</option>
+    {% endfor %}
+  </select>
+  <select name="category" class="form-select form-select-sm">
+    <option value="">{{ _('Any category') }}</option>
+    {% for c in categories %}
+    <option value="{{ c }}" {{ 'selected' if selected.category == c }}>{{ c }}</option>
+    {% endfor %}
+  </select>
+  <select name="scope" class="form-select form-select-sm">
+    <option value="">{{ _('Any scope') }}</option>
+    {% for s in scope_names %}
+    <option value="{{ s }}" {{ 'selected' if selected.scope == s }}>{{ s }}</option>
+    {% endfor %}
+  </select>
+  <select name="state" class="form-select form-select-sm">
+    <option value="">{{ _('Any state') }}</option>
+    <option value="active" {{ 'selected' if selected.state == 'active' }}>{{ _('active') }}</option>
+    <option value="stale" {{ 'selected' if selected.state == 'stale' }}>{{ _('stale') }}</option>
+    <option value="disabled" {{ 'selected' if selected.state == 'disabled' }}>{{ _('disabled') }}</option>
+    <option value="unversioned" {{ 'selected' if selected.state == 'unversioned' }}>{{ _('predates versioning') }}</option>
+  </select>
+  <input type="search" name="q" class="form-control form-control-sm"
+         value="{{ selected.q }}" placeholder="{{ _('name, profile, policy, payload…') }}">
+  <button type="submit" class="btn btn-sm btn-primary">
+    <i class="bi bi-funnel"></i> {{ _('Filter') }}</button>
+  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('waf.exceptions') }}">
+    {{ _('Reset') }}</a>
+  {# This CSV is the filtered rows, and says so. The ZIP bundle on the export
+     panel is always the whole visible fleet — two different promises, kept
+     apart on purpose. #}
+  <a class="btn btn-sm btn-outline-secondary"
+     href="{{ url_for('waf.exceptions', **dict(request.args, format='csv')) }}">
+    <i class="bi bi-filetype-csv"></i> {{ _('CSV of these rows') }}</a>
+</form>
+
+<p class="text-muted small mb-2">
+  {{ _('Showing') }} <strong>{{ rows|length }}</strong> {{ _('of') }}
+  <strong>{{ total }}</strong> {{ _('placements. The tiles and charts above are the whole visible fleet and do not follow these filters.') }}
+</p>
+
+{# --------------------------------------------------------------- table -- #}
+<div class="fw-card">
+  <div class="fw-card-body p-0">
+    <div class="table-responsive">
+      <table class="fw-table mb-0">
+        <thead><tr>
+          {% for key, label in columns %}<th>{{ _(label) }}</th>{% endfor %}
+        </tr></thead>
+        <tbody>
+        {% for r in rows %}
+          <tr>
+            <td>
+              {% if r.scope == '(appliance removed)' %}
+              <span class="fw-badge fw-badge-danger" title="{{ _('The appliance this was authored on no longer exists') }}">
+                <i class="bi bi-question-octagon"></i> {{ r.scope }}</span>
+              {% else %}{{ r.scope }}{% endif %}
+            </td>
+            <td>{{ r.name or _('(unnamed)') }}</td>
+            <td>{{ r.type_label }}</td>
+            <td>{{ r.category }}</td>
+            <td>{{ r.wpp_mkey or '—' }}</td>
+            <td class="text-end">{{ r.policy_count }}</td>
+            <td class="small">{{ r.policy_list or '—' }}</td>
+            <td>
+              {% if r.state_label == 'stale' %}
+              <span class="fw-badge fw-badge-warning" title="{{ r.stale_reason }}">{{ _('stale') }}</span>
+              {% elif r.state_label == 'disabled' %}
+              <span class="fw-badge fw-badge-neutral">{{ _('disabled') }}</span>
+              {% else %}
+              <span class="fw-badge fw-badge-success">{{ _('active') }}</span>
+              {% endif %}
+            </td>
+            <td class="text-end">{{ r.held_by }}</td>
+            <td>{{ r.identity }}</td>
+            <td>
+              {% if r.versioned %}
+              <span class="fw-badge fw-badge-success">{{ _('yes') }}</span>
+              {% else %}
+              <span class="fw-badge fw-badge-warning"
+                    title="{{ _('Authored before the versioner — there is no earlier state to return to') }}">
+                {{ _('no') }}</span>
+              {% endif %}
+            </td>
+            <td>{{ r.author or '—' }}</td>
+            <td class="small">{{ r.reason or '—' }}</td>
+            <td class="small">{{ r.updated_at }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="{{ columns|length }}" class="text-center text-muted py-4">
+            {{ _('No carve-out matches these filters.') }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ asset('js/waf-exceptions.js') }}"></script>
+{% endblock %}

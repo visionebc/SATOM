@@ -51,6 +51,11 @@ class ExcRest:
     * ``key_field``      – for ``update``: payload field identifying the row → sub_mkey
     * ``bind_logical`` / ``bind_field`` – the WPP sub-policy + field that NAMES a
       freshly-created container (best-effort auto-bind), where one cleanly exists
+    * ``top_level``      – True = the object is NOT a by-parent sub-table row but
+      a named object of its own (``waf/custom-protection-rule``). There is no
+      parent mkey to scope the write to, so demanding a target would either
+      block the push or scope it to a path the box answers with the WRONG
+      object.
     """
     item_logical: str
     parent_logical: str
@@ -59,6 +64,7 @@ class ExcRest:
     key_field: str = ""
     bind_logical: str = ""
     bind_field: str = ""
+    top_level: bool = False
 
 
 # A signature SET / custom rule already exists on the box — never auto-create it.
@@ -97,13 +103,36 @@ EXCEPTION_REST: dict[str, ExcRest] = {
         "signature_subclass_disable_item", "signature", False),
     "signature_class_action": ExcRest(
         "signature_class_item", "signature", False, op="update", key_field="main_class_id"),
-    "signature_group_rule_condition": ExcRest(
+    # ── Custom signatures ──────────────────────────────────────────────────
+    # The chain, read off a live 7.6.8 box and not from the admin guide:
+    #   waf/custom-protection-rule                 the signature (TOP-LEVEL)
+    #     .../meet-condition                       its AND-ed conditions
+    #   waf/custom-protection-group/type-list      bundles rules into a group
+    #   waf/signature.custom-protection-group      binds the group to a policy
+    # so a custom signature is reached through the SIGNATURE POLICY, never
+    # through the Web Protection Profile — which is why nothing in the WPP-
+    # shaped half of this table could express it.
+    "custom_signature_item": ExcRest(
+        "signature_group_rule", "", False, top_level=True),
+    "custom_signature_condition_item": ExcRest(
         "signature_group_rule_condition", "signature_group_rule", False),
+    "custom_signature_group_item": ExcRest(
+        "signature_group_type_item", "signature_group", False),
 }
 
 
 def rest_for(exc_type: str) -> ExcRest | None:
-    return EXCEPTION_REST.get(exc_type)
+    """Mapping for *exc_type*, resolved through the catalog's ALIASES first.
+
+    A carve-out stored under a retired key (``signature_group_rule_condition``
+    before Tanda 0 folded it into ``custom_signature_condition_item``) is still
+    on the box and still in the DB. Looking it up raw would answer ``None`` and
+    render it un-pushable — the record would silently lose a capability it had
+    the day it was authored.
+    """
+    from . import wpp_exceptions as _cat
+    return (EXCEPTION_REST.get(exc_type)
+            or EXCEPTION_REST.get(_cat.canonical_type(exc_type)))
 
 
 def resolve_collection(logical: str) -> str | None:
@@ -113,8 +142,19 @@ def resolve_collection(logical: str) -> str | None:
 
 
 def supports_auto_bind(exc_type: str) -> bool:
-    rest = EXCEPTION_REST.get(exc_type)
+    rest = rest_for(exc_type)
     return bool(rest and rest.bind_logical and rest.bind_field)
+
+
+def needs_target(exc_type: str) -> bool:
+    """Does pushing this type require choosing a parent object on the box?
+
+    False for top-level objects. The inject UI asks this instead of inferring
+    it from an empty candidate list, because "no candidates" is also what an
+    unreachable device produces and the two need different words.
+    """
+    rest = rest_for(exc_type)
+    return bool(rest and not rest.top_level)
 
 
 # --------------------------------------------------------------------------- #
@@ -133,9 +173,17 @@ def plan_injection(exc_type: str, payload: dict, target: str) -> dict:
 
     Returns a plan dict with ``status`` ∈ ``ready`` / ``no-endpoint`` (no
     registry mapping) / ``no-target`` (no parent object chosen, or an update
-    missing its key field). ``endpoint`` is the full scoped REST path.
+    missing its key field) / ``invalid`` (the catalogue refuses the body).
+    ``endpoint`` is the full scoped REST path.
+
+    ``invalid`` closes a hole the deploy work opened: the catalogue's required
+    fields and enums were enforced by the AUTHORING FORM only, so every other
+    route to a write -- a push to a second appliance, a restored version, a
+    row authored before a token was corrected -- reached the device
+    unchecked and came back as a bare ``-651``. Refusing here costs one
+    dictionary lookup and names the field.
     """
-    rest = EXCEPTION_REST.get(exc_type)
+    rest = rest_for(exc_type)
     if rest is None:
         return _plan("no-endpoint", error=f"no inject mapping for {exc_type!r}")
     coll = resolve_collection(rest.item_logical)
@@ -144,6 +192,26 @@ def plan_injection(exc_type: str, payload: dict, target: str) -> dict:
                      error=f"registry has no endpoint {rest.item_logical!r}")
     payload = dict(payload or {})
     target = (target or "").strip()
+    from . import wpp_exceptions as _cat
+    # Runs at the READY boundary, never earlier: ``no-target`` and
+    # ``no-endpoint`` describe a plan that cannot be built at all, and a body
+    # complaint must not preempt them -- an operator told "x is required"
+    # when the real problem is that no target was picked goes looking in the
+    # wrong place.
+    def _checked(plan):
+        bad = _cat.validate_for_wire(exc_type, payload)
+        if not bad:
+            return plan
+        return _plan("invalid", error="; ".join(bad), collection=coll,
+                     inline=rest.inline, container_logical=rest.parent_logical)
+    if rest.top_level:
+        # A named object of its own: the collection path IS the write target.
+        # Any target the caller passed is IGNORED rather than appended — an
+        # appended one produces a path the box answers with a different object.
+        return _checked(_plan(
+            "ready", method="POST", endpoint=objform.rest_path(coll),
+            collection=coll, target="", inline=False,
+            container_logical="", body={"data": payload}))
     if not target:
         return _plan("no-target", error="a target object must be chosen on the device",
                      collection=coll, inline=rest.inline,
@@ -157,9 +225,10 @@ def plan_injection(exc_type: str, payload: dict, target: str) -> dict:
     else:
         endpoint, method = objform.scoped_path(coll, target), "POST"
 
-    return _plan("ready", method=method, endpoint=endpoint, collection=coll,
-                 target=target, inline=rest.inline,
-                 container_logical=rest.parent_logical, body={"data": payload})
+    return _checked(_plan(
+        "ready", method=method, endpoint=endpoint, collection=coll,
+        target=target, inline=rest.inline,
+        container_logical=rest.parent_logical, body={"data": payload}))
 
 
 # --------------------------------------------------------------------------- #
@@ -247,7 +316,7 @@ def apply_injection(ops, *, exc_type: str, payload: dict, target: str,
         return {"ok": False, "plan": plan, "steps": [], "dry_run": dry_run,
                 "already_present": False}
 
-    rest = EXCEPTION_REST[exc_type]
+    rest = rest_for(exc_type)
     steps: list[dict] = []
 
     if create_container and not rest.inline and rest.parent_logical not in _NO_CONTAINER:
@@ -285,8 +354,11 @@ def candidate_targets(client, exc_type: str) -> list[str]:
     signature SETs (a WPP ``signature-rule``). Best-effort: a dead device or an
     unmapped type yields ``[]``.
     """
-    rest = EXCEPTION_REST.get(exc_type)
-    if rest is None:
+    rest = rest_for(exc_type)
+    if rest is None or rest.top_level:
+        # top-level object -> there is no parent to pick. Returning [] here and
+        # letting the view say "no target needed" is the honest answer; an
+        # empty picker with no explanation reads as an unreachable device.
         return []
     coll = resolve_collection(rest.parent_logical)
     if not coll:
@@ -300,5 +372,6 @@ def candidate_targets(client, exc_type: str) -> list[str]:
 __all__ = [
     "ExcRest", "EXCEPTION_REST", "rest_for", "resolve_collection",
     "supports_auto_bind", "plan_injection", "apply_injection", "candidate_targets",
+    "needs_target",
     "DUPLICATE_ERRCODE", "errcode_of", "is_duplicate", "container_exists",
 ]

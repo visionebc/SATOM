@@ -104,7 +104,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
 // The CSP forbids inline handlers, so everything binds here.
 (function () {
   const PLANS = {{ line_plans | tojson }};

@@ -6,6 +6,24 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed — the SPO wizard's script was blocked by the CSP (2026-08-27)
+
+The wizard's Segment dropdown stayed empty however many network segments a line
+had, and Preview and Apply did nothing. The data was always there — the page
+shipped the segments in its `PLANS` payload — but the single inline `<script>`
+that is the wizard's whole UI carried no `nonce`, and the app serves
+`script-src-elem` with a nonce and no `'unsafe-inline'`, so the browser dropped
+it. No control on that page had ever worked.
+
+- **Fixed** `workspace/spo_wizard.html`: the block carries the CSP nonce.
+- **Fixed** `artifacts/object.html`: same defect on an inline `<style>`
+  (`style-src-elem` is nonce-gated too), found by sweeping the template tree —
+  the artifacts editor/viewer had been rendering unstyled.
+- **Added** a guard that renders the wizard and asserts every inline block
+  carries the nonce **the response actually served**, so a page that loses its
+  header fails too. `tests/test_csp_nonce.py` already covered the class and was
+  simply not run when the page was added (see `docs/safeguards.md` §134).
+
 ### New Server Policy from a line — one wizard, and a failure that cleans up after itself (2026-08-27)
 
 The last piece: pick a line, and its profile supplies the network, the

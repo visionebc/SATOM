@@ -8,8 +8,6 @@ Admin-only (USER_MANAGE), mirroring the desktop Settings console.
 """
 from __future__ import annotations
 
-import ipaddress
-
 from flask import Blueprint, render_template, request, flash, redirect, url_for
 from flask_login import login_required
 
@@ -17,6 +15,7 @@ from ..auth.decorators import require_permission
 from ..models import Permission
 from ..services import settings_store as store
 from ..services.audit import log_action
+from . import _segments_form as segment_form
 
 bp = Blueprint('segments', __name__, url_prefix='/segments')
 
@@ -36,28 +35,15 @@ def index():
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def save():
-    names = request.form.getlist('seg_name[]')
-    rows, bad_cidr = [], []
-    for i, name in enumerate(names):
-        def col(field):
-            vals = request.form.getlist(f'seg_{field}[]')
-            return vals[i] if i < len(vals) else ''
-        cidr = (col('cidr') or '').strip()
-        if not (name or '').strip() and not cidr:
-            continue
-        if cidr:
-            try:
-                ipaddress.ip_network(cidr, strict=False)
-            except ValueError:
-                bad_cidr.append(cidr)
-                continue
-        rows.append({
-            'name': name, 'zone': col('zone'), 'line': col('line'),
-            'department': col('department'), 'cidr': cidr,
-            'interface': col('interface') or 'port1', 'gateway': col('gateway'),
-            'note': col('note'),
-        })
-    store.save_segments(rows)
+    rows, bad_cidr = segment_form.parse_rows(request.form)
+    try:
+        store.save_segments(rows)
+    except store.SegmentError as exc:
+        # NOTHING was written. Re-showing the page would silently drop the
+        # operator's edits, so the refusal is stated and the previous list is
+        # what remains -- a rejected save is not a partial save.
+        flash(str(exc), 'danger')
+        return redirect(url_for('segments.index'))
     log_action('segments.save', detail=f'{len(rows)} segment(s)')
     if bad_cidr:
         flash(f"Skipped invalid CIDR(s): {', '.join(bad_cidr)}", 'warning')

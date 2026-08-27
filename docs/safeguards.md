@@ -11854,3 +11854,97 @@ after restart: **0 blocked inline scripts**, line `P` carries
 - `docs/safeguards.md` has **two sections numbered §132** (clone-additive and
   line profiles), both written 2026-08-27. Renumbering would break references
   already stored elsewhere, so it is reported, not silently rewritten.
+
+## §135 — one row per NETWORK: departments are a list, names are unique (2026-08-27)
+
+`tests/test_segment_departments.py` (47 guards). Reported by the operator as
+"I added a segment and I cannot see the department in the wizard, and the
+entries repeat". The repetition was the visible half; the invisible half was
+already wrong.
+
+### The defect
+
+Two segments called `LineP_External_LB` — one for WAF/LB, one for WSG, same
+CIDR — made **three independent resolvers disagree** about which row the name
+meant:
+
+| resolver | how it indexed | which row won |
+|---|---|---|
+| `line_profiles._segments_by_name` | `setdefault` | the FIRST |
+| `spo_wizard.build_plan` | dict comprehension | the **LAST** |
+| `line_profiles.pool_for` | loop, return on first match | the FIRST |
+
+So `plan.segment` came from one row and `plan.pool` from another. In the live
+data they agreed by accident (same CIDR); the day two departments share a
+network but differ in `interface` or `gateway`, the wizard builds the policy
+with one department's interface and the other's address — every printed value
+real, nothing empty, nothing raised, nothing logged. A declared `LineProfile`
+made it worse: `setdefault` discarded the second row **silently**, because the
+name still resolved.
+
+### The fix, in two halves that only work together
+
+**B — the unit of "a network" is the network.** `cidr`, `interface` and
+`gateway` are properties of the NETWORK, not of a department, so a network
+serving two departments is ONE row carrying `departments: [...]`. The previous
+shape duplicated those three fields with nothing keeping the copies equal.
+
+**C — `save_segments` refuses duplicate names.** Refusing writes NOTHING (a
+rejected save is not a partial save). Comparison is EXACT, not case-folded:
+every consumer keys on the exact string, so `DMZ`/`dmz` resolve identically
+everywhere — rejecting that pair would invent a rule the system does not need
+and would lock an install that already has one out of its own segments page.
+
+**And the structural half.** There is now exactly ONE indexer
+(`line_profiles.index_by_name`) and exactly ONE form parser
+(`views._segments_form.parse_rows`, shared by `/segments/save` and the legacy
+Settings console route). Two authors of one answer is how they drifted.
+
+- `line_plan` REFUSES a plan whose segment name is duplicated
+  (`P_DUPLICATE_SEGMENT`, **blocking**), scoped to the names that plan uses —
+  blocking every line because an unrelated pair collides is a guard operators
+  learn to route around.
+- `normalize_departments` is the single reader of the column, accepting the
+  list, a comma string, and the LEGACY single `department` value, so a blob
+  nobody has re-saved still answers in the current shape. No migration flag,
+  no era-aware consumer.
+- The wizard's Department control **narrows the choice and names nothing**.
+  Enforced server-side (`segment_not_in_department`), because a filter the
+  server does not apply is a filter the server does not have. A guard asserts
+  the object names are identical whichever department is picked.
+- `usage()` counts a shared network for EVERY department it serves; `analysis`
+  keeps it in every department's view and prints the whole list joined, never
+  the first (a row saying "WAF/LB" for a network WSG also uses is false).
+
+### ⚠ TRAPS (four survivors, all defects in MY guards)
+
+1. **Tenth assert that claimed more than it checked.** `..._is_distinct_from_
+   not_being_on_the_line` only exercised the off-line case, so a mutation that
+   made the OTHER branch emit the wrong code survived. It now asserts both
+   directions.
+2. **The reader masked the writer, twice.** Two mutations to `_retarget`
+   survived because `segments()` de-duplicates and drops blanks on the way
+   out. Asserting on the STORED blob exposed the real finding: the dedupe
+   inside `_retarget` was a **second author** of a rule `normalize_departments`
+   already owns. It was deleted, not defended — and the mutations were re-aimed
+   at the one author.
+3. **A nonce guard that read whichever script came first.** `base.html` also
+   ships a nonce'd block, so stripping the wizard's own nonce kept the guard
+   green. It now finds the block **by its content** (`const PLANS`) and checks
+   the nonce that block carries against the served CSP.
+4. The row form is parsed POSITIONALLY (`seg_<field>[]` matched by index), so a
+   `<select multiple>` posting a variable number of values per row would
+   silently shift every column after it. Departments therefore travel as ONE
+   encoded string per row: a **hidden JSON field** the multi-select mirrors
+   into — a page whose JS never ran saves the departments the row already had
+   instead of clearing them.
+
+### Migration
+
+`scripts/migrate_segment_departments.py` (dry-run unless `--apply`). It
+**refuses to merge rows that disagree** on CIDR/zone/line or on a non-blank
+interface/gateway: those are two networks with a name collision, and picking a
+survivor would be the script deciding what production keeps. Production: 5 rows
+→ 4, `LineP_External_LB` folded to `['WAF/LB', 'WSG']`, zero conflicts. Pre-
+migration blob kept at `data/segments-pre-B-20260827.json`.
+

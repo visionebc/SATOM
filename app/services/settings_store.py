@@ -36,7 +36,17 @@ ENV_MODES = ("production", "development")
 LOG_FORMATS = ["plain", "detailed", "json"]
 DEFAULT_TIMEZONE = "Europe/Zurich"
 CLASSIFICATION_KINDS = ("zones", "lines", "departments")
-SEGMENT_FIELDS = ("name", "zone", "line", "department", "cidr", "interface", "gateway", "note")
+#: Scalar segment columns. ``department`` is NOT here any more -- see
+#: :data:`SEGMENT_LIST_FIELDS`.
+SEGMENT_STR_FIELDS = ("name", "zone", "line", "cidr", "interface", "gateway", "note")
+#: Columns whose value is a LIST. A network serves whatever departments use
+#: it, and ``cidr``/``interface``/``gateway`` are properties of the NETWORK,
+#: not of a department -- so two departments sharing a network share ONE row.
+#: The previous shape (one row per department) duplicated those three fields
+#: with nothing keeping the copies equal, and gave two rows the same name,
+#: which is what made the three name-resolvers disagree about which row wins.
+SEGMENT_LIST_FIELDS = ("departments",)
+SEGMENT_FIELDS = SEGMENT_STR_FIELDS + SEGMENT_LIST_FIELDS
 
 DEFAULTS = {
     K_APP_NAME: "SATOM",
@@ -341,22 +351,126 @@ def save_classification(kind: str, values: list[str]) -> None:
 
 
 # ---- Network segments -----------------------------------------------------
-def segments() -> list[dict[str, str]]:
-    out: list[dict[str, str]] = []
-    for row in get_json(K_SEGMENTS, []):
-        if isinstance(row, dict):
-            out.append({f: str(row.get(f, "") or "") for f in SEGMENT_FIELDS})
+class SegmentError(ValueError):
+    """A segment list that must not become durable.
+
+    Raised by :func:`save_segments`. Callers turn it into a flash; nothing is
+    written, so a rejected save leaves the previous list exactly as it was.
+    """
+
+
+def normalize_departments(value) -> list[str]:
+    """The ONE reader of a segment's departments, whatever shape it arrives in.
+
+    Three shapes reach this function and all three are legitimate:
+
+    * ``list`` -- the current storage shape.
+    * ``str``  -- the form field (comma separated) and the LEGACY single
+      ``department`` column of every blob written before this change.
+    * anything else -- treated as "none named", never as an error, because a
+      garbled row must not make the segments page unopenable.
+
+    Case-insensitive de-duplication, first spelling kept: ``["WSG", "wsg"]``
+    is one department typed twice, and keeping both would put the same name in
+    a badge row twice and count it twice in ``classification_ops.usage``.
+    """
+    if isinstance(value, str):
+        parts = value.split(",")
+    elif isinstance(value, (list, tuple)):
+        parts = [str(v) for v in value]
+    else:
+        return []
+    out: list[str] = []
+    seen: set[str] = set()
+    for part in parts:
+        val = str(part or "").strip()
+        if not val or val.lower() in seen:
+            continue
+        seen.add(val.lower())
+        out.append(val)
     return out
 
 
-def save_segments(rows: list[dict[str, str]]) -> None:
-    clean: list[dict[str, str]] = []
+def segments() -> list[dict]:
+    """Live segments, always in the CURRENT shape.
+
+    Rows written before departments became a list are read through
+    :func:`normalize_departments`, so a blob nobody has re-saved yet still
+    answers ``departments`` -- one reader, no migration flag, and no consumer
+    that has to know which era its data came from.
+    """
+    out: list[dict] = []
+    for row in get_json(K_SEGMENTS, []):
+        if not isinstance(row, dict):
+            continue
+        seg: dict = {f: str(row.get(f, "") or "") for f in SEGMENT_STR_FIELDS}
+        raw = row.get("departments")
+        if raw is None:
+            raw = row.get("department")          # legacy single-value column
+        seg["departments"] = normalize_departments(raw)
+        out.append(seg)
+    return out
+
+
+def duplicate_segment_names(rows: list[dict] | None = None) -> list[str]:
+    """Names carried by more than one row, in first-seen order.
+
+    Exists so a consumer can REFUSE rather than pick. :func:`save_segments`
+    makes new duplicates impossible, but a blob written before that guard --
+    or by hand -- can still hold them, and the failure they cause is silent:
+    each resolver picks a different row and nothing disagrees out loud.
+    """
+    rows = segments() if rows is None else rows
+    seen: set[str] = set()
+    dupes: list[str] = []
+    for row in rows:
+        name = (row.get("name") or "").strip()
+        if not name:
+            continue
+        if name in seen and name not in dupes:
+            dupes.append(name)
+        seen.add(name)
+    return dupes
+
+
+def save_segments(rows: list[dict]) -> None:
+    """Validate, normalise and store. Raises :class:`SegmentError` on refusal.
+
+    **Names must be unique.** Two rows with the same name are the defect this
+    guard exists for: ``line_profiles`` keys segments by name, so a duplicate
+    means every resolver silently picks one row and they do not all pick the
+    same one. Merging the pair here would be this function deciding which
+    CIDR/gateway survives -- so it refuses and says which name to fix.
+
+    Comparison is EXACT, not case-folded: ``DMZ`` and ``dmz`` resolve
+    deterministically and identically in every consumer (they key on the exact
+    string), so rejecting that pair would invent a rule the system does not
+    need -- and would lock an install that already has one out of its own
+    segments page.
+    """
+    clean: list[dict] = []
+    seen: dict[str, int] = {}
+    dupes: list[str] = []
     for row in rows:
         name = (row.get("name") or "").strip()
         cidr = (row.get("cidr") or "").strip()
         if not name and not cidr:
             continue  # skip wholly-blank rows
-        clean.append({f: (row.get(f, "") or "").strip() for f in SEGMENT_FIELDS})
+        seg: dict = {f: (str(row.get(f, "") or "")).strip()
+                     for f in SEGMENT_STR_FIELDS}
+        seg["departments"] = normalize_departments(
+            row.get("departments", row.get("department")))
+        if name:
+            if name in seen and name not in dupes:
+                dupes.append(name)
+            seen[name] = seen.get(name, 0) + 1
+        clean.append(seg)
+    if dupes:
+        raise SegmentError(
+            "two or more segments share the name(s) " +
+            ", ".join(repr(d) for d in dupes) +
+            " — a segment name identifies one network, so add the extra "
+            "department to the existing row instead of adding a second row.")
     set_json(K_SEGMENTS, clean)
 
 

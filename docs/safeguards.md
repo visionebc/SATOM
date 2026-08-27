@@ -11272,3 +11272,85 @@ the seed can pass while the picker renders something else.
 **Known weak assertion:** `UNVERIFIED_SHAPES` notes are checked only for length > 40, and
 the notes are concatenated string literals, so hollowing out one fragment survives.
 Emptying the register does bite. Recorded rather than over-engineered.
+
+## §126 — A fleet page states its denominator (`tests/test_waf_fleet.py`)
+
+`Fleet -> WAF` is the first page in this product that is deliberately
+fleet-WIDE after four rounds of narrowing `/artifacts/*` to the session's
+device. The two are not in tension, but the difference has to be *stated*: a
+page that spans devices must say which devices, and a page built from stored
+snapshots must say how old they are. Both sentences are rendered by
+`templates/waf/_header.html` — ONE definition, four call sites, the same reason
+`partials/nav_monitoring.html` exists.
+
+### What the guards hold
+
+1. **The universe is narrowed once.** `waf_fleet.collect()` is the only place
+   that reads appliances; every section is a function of its result. Six call
+   sites each remembering a filter is what §121 had to retrofit. The guards are
+   written against the ROUTE, never the service: on `/artifacts/*` the services
+   computed correctly for the entire time the defect was live, and it was the
+   PAGE that leaked (§122).
+
+2. **Absence is not zero.** A device with no snapshot is listed, banner-named,
+   and excluded from the denominators; `reporting` and `scopes` are both
+   printed. Dropping it silently turns "3 policies need attention" into an
+   answer to a different question. Same rule as `satom_scrape_up 0`.
+
+3. **A field the collection does not have is not an unfilled field.** The
+   offline web-protection profile has ~38 of the 41 protection slots.
+   `applicable` is computed per profile from the keys the object actually
+   carries, and the matrix distinguishes *not applicable* (grey dash) from
+   *zero* (red) — printing the second where the first is true invents a gap.
+
+4. **A partition does not license hiding the parts.** The posture doughnut
+   assigns one bucket per policy; `detection_any` / `no_profile_any` /
+   `disabled_any` are published beside it because a disabled policy may also be
+   unprotected.
+
+5. **A question is only asked where it applies.** Deprecated TLS versions are
+   read only off a policy that terminates TLS, and a missing certificate is
+   only a finding where TLS is on — a plain-HTTP policy is not running weak TLS,
+   it is running none.
+
+6. **A dangling profile reference is not "no profile".** The first is a name
+   that resolves to nothing; the second is an empty field. They have different
+   remedies, so they are counted separately.
+
+### Traps this round paid for
+
+- **The extract cache was keyed by the SoT version-row id.** That looked
+  content-addressed (an unchanged config mints no row) and is not: ids are
+  re-issued whenever the index is rebuilt — a restore from a bundle, a promoted
+  standby, a test's fresh database — so one install's device answered for
+  another's. Keyed on the snapshot's SHA256 instead, and with no hash there is
+  no cache: a fallback to the id would put the exact collision back into the one
+  path that takes it. Found because the guards reuse ids by design.
+- **`conftest.login` writes `_user_id` over an existing session and
+  flask-login keeps serving the FIRST identity.** A permission guard that
+  switches user mid-body silently re-asserts the same user, so its control half
+  passes for the wrong reason. Every multi-user guard here is split into two
+  tests, which is what `tests/test_maintenance_mode.py` already does.
+- **`selectattr('2', ...)` on a tuple** is an index-as-attribute filter that
+  matches nothing and renders a confident, EMPTY table. The coverage rows are
+  grouped in Python and handed to Jinja already grouped; the findings list is
+  built with an explicit loop rather than `selectattr('1')`, because the failure
+  mode there is printing "nothing to fix" over a fleet that is not clear.
+- **Coverage counted naively is O(protections x policies x profiles).** At the
+  target fleet that is millions of comparisons per render for a number that
+  needs one pass: index the profiles once, then tally per policy.
+- **The chart palette is the light one.** `fortiweb.css` has no dark mode
+  (§9m); grid lines at 7% slate are invisible on white and the pastel status
+  colours drop to ~1.4:1. Every colour in `static/js/waf.js` and
+  `static/css/waf.css` comes from the `.fw-badge-*` set.
+- **A failed fetch is not an empty chart.** On a canvas they look identical and
+  mean opposite things, so the loader paints a message.
+
+### Recipe
+
+    venv/bin/python -m pytest tests/test_waf_fleet.py -q -p no:warnings
+
+Mutation harness: `/tmp/waf_mutate.py` — measured by rc (only `rc == 1` is a
+failure), baseline green required, no `-x`, and each mutation must name the
+guard it kills among the dead. One mutation is *meta*: it breaks the fixture so
+the never-harvested device is never created, proving the control can die.

@@ -1,0 +1,84 @@
+{# ============================================================================
+   WAF — shared page head: title, sub-tabs and the SCOPE / FRESHNESS banner.
+
+   ONE definition, four call sites (overview, inventory, profiles, coverage) —
+   the same reason partials/nav_monitoring.html exists. The banner is the part
+   that must not drift: every page here is fleet-wide, and every page here is
+   showing configuration as of the last harvest. A page that states neither
+   reads as "this is your fleet, right now", which is the claim this data
+   cannot make.
+
+   Callers pass ``active`` (the tab key) and ``devices``.
+   ========================================================================= #}
+{# Each tab carries its URL from a LITERAL url_for. Building the endpoint as
+   ``url_for('waf.' + key)`` reads better and is invisible to
+   services/route_audit — the scanner that exists because a BuildError in a
+   template 500s every authenticated page while /healthz stays green. An
+   endpoint it cannot resolve statically is an endpoint nothing checks. #}
+{% set _tabs = [
+     ('index',     url_for('waf.index'),     'Overview',  'bi-speedometer2'),
+     ('inventory', url_for('waf.inventory'), 'Inventory', 'bi-list-columns-reverse'),
+     ('profiles',  url_for('waf.profiles'),  'Profiles',  'bi-shield-check'),
+     ('coverage',  url_for('waf.coverage'),  'Coverage',  'bi-grid-3x3-gap'),
+   ] %}
+{% set _reporting = devices | rejectattr('missing') | list %}
+{% set _stale = _reporting | selectattr('stale') | list %}
+{% set _missing = devices | selectattr('missing') | list %}
+
+<div class="fw-page-header d-flex align-items-start justify-content-between flex-wrap gap-2 mb-3">
+  <div>
+    <h1 class="fw-page-title mb-0">
+      <i class="bi bi-shield-shaded me-2 text-accent"></i>{{ _('WAF') }}
+      <span class="text-muted fw-normal" style="font-size:.6em;">{{ subtitle }}</span>
+    </h1>
+    <p class="text-muted small mb-0">
+      {{ _('Every FortiWeb this console can see, read from the source-of-truth store — opening these pages contacts no appliance.') }}
+    </p>
+  </div>
+  <div class="waf-tabs">
+    {% for key, href, label, icon in _tabs %}
+    <a class="waf-tab {{ 'active' if active == key else '' }}" href="{{ href }}">
+      <i class="bi {{ icon }}"></i><span>{{ _(label) }}</span></a>
+    {% endfor %}
+  </div>
+</div>
+
+{# The scope line is NOT decoration: it is the denominator of every number on
+   the page. A device that never reported is carried here rather than dropped,
+   because a fleet page that quietly omits a box answers a narrower question
+   than the one it is labelled with. #}
+<div class="waf-scope mb-3">
+  <span class="waf-scope-main">
+    <i class="bi bi-globe2"></i>
+    {{ _('Fleet-wide') }} &mdash;
+    <strong>{{ devices|length }}</strong> {{ _('device/ADOM scopes visible here') }},
+    <strong>{{ _reporting|length }}</strong> {{ _('reporting') }}
+  </span>
+  {% if _stale %}
+  {# stale_hours comes from the view (services.waf_fleet.STALE_AFTER_HOURS).
+     A literal default here would be a second author for the threshold, and the
+     two would drift the first time the constant moves. #}
+  <span class="fw-badge fw-badge-warning" title="{{ _('Newest snapshot older than') }} {{ stale_hours }}h">
+    <i class="bi bi-clock-history"></i> {{ _stale|length }} {{ _('stale') }}</span>
+  {% endif %}
+  {% if _missing %}
+  <span class="fw-badge fw-badge-danger"
+        title="{{ _missing | map(attribute='scope') | join(', ') }}">
+    <i class="bi bi-question-octagon"></i> {{ _missing|length }} {{ _('never harvested') }}</span>
+  {% endif %}
+  {% if not _stale and not _missing and devices %}
+  <span class="fw-badge fw-badge-success"><i class="bi bi-check2"></i> {{ _('all snapshots fresh') }}</span>
+  {% endif %}
+  <span class="waf-scope-sep"></span>
+  <a class="waf-scope-link" href="{{ url_for('system_backup.index') }}">
+    <i class="bi bi-clock-history"></i> {{ _('Source-of-truth store') }}</a>
+</div>
+
+{% if _missing %}
+<div class="fw-alert fw-alert-warning mb-3">
+  <i class="bi bi-exclamation-triangle me-1"></i>
+  {{ _('These scopes have no configuration snapshot yet, so they contribute NOTHING to the figures below — they are not devices with zero policies:') }}
+  <strong>{{ _missing | map(attribute='scope') | join(', ') }}</strong>.
+  {{ _('Run a device sync (Automation) to bring them in.') }}
+</div>
+{% endif %}

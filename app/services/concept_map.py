@@ -175,6 +175,26 @@ PAGES: tuple[dict, ...] = (
     _p("fleet_objects.index", "Fleet Objects", "fleet",
        "objects across devices compare duplicate inventory pools servers",
        "One object type across every device at once."),
+    _p("waf.index", "WAF Overview", "fleet",
+       "waf fleet overview posture blocking monitor mode detection unprotected "
+       "coverage charts statistics protections weak tls stale snapshot",
+       "Fleet-wide FortiWeb posture: what blocks, what only watches, what is "
+       "protected by nothing."),
+    _p("waf.inventory", "WAF Inventory", "fleet",
+       "every server policy fleet wide list filter csv export virtual server "
+       "pool profile certificate tls plain http disabled",
+       "Every server policy on every visible FortiWeb, filterable and "
+       "exportable."),
+    _p("waf.profiles", "WAF Profiles", "fleet",
+       "web protection profile inline offline predefined custom unused orphan "
+       "signature policy slots filled usage",
+       "Every web protection profile, how many policies use it, and how much "
+       "of it is filled in."),
+    _p("waf.coverage", "WAF Coverage", "fleet",
+       "protection matrix per device adom heatmap gaps signatures bot "
+       "mitigation geo block json xml openapi validation csrf cookie",
+       "Protection-by-scope matrix: which WAF features each device's policies "
+       "actually switch on."),
     _p("search.index", "Search", "fleet",
        "find search free text lookup where is object policy pool certificate",
        "Free-text sweep across live device configuration."),
@@ -469,6 +489,7 @@ EXCLUDED: dict[str, str] = {
     "jobs.all_jobs": "json feed", "metrics.api_data": "json feed",
     "monitor_analytics.cadence": "json feed", "monitor_analytics.catalog": "json feed",
     "monitor_analytics.data": "json feed", "metrics_admin.data": "json feed",
+    "waf.api_summary": "json feed",
     "metrics_admin.peer_store": "json feed", "metrics_admin.snapshots": "json feed",
     "metrics_admin.stores": "json feed", "monitoring.data": "json feed",
     "deep_monitor.data": "json feed", "monitor_reports.data": "json feed",

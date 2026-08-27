@@ -1,0 +1,267 @@
+{# ============================================================================
+   WAF — Overview. KPIs, enforcement posture, six charts, freshness.
+
+   Every figure here is computed by services/waf_fleet.stats() from the ONE
+   universe collect() returned; the charts read the same numbers back from
+   /waf/api/summary.json rather than being handed a second copy. Two authors
+   for one figure is how a header came to contradict its own table on
+   /artifacts/inventory (safeguards §119).
+   ========================================================================= #}
+{% extends "base.html" %}
+{% block title %}WAF — Overview{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{{ asset('css/waf.css') }}" data-turbo-track="reload">
+{% endblock %}
+
+{% block content %}
+{% set active = 'index' %}
+{% set subtitle = _('fleet overview') %}
+{% include 'waf/_header.html' %}
+
+{# ------------------------------------------------------------- KPI row -- #}
+<div class="row g-3 mb-3">
+  <div class="col-xl-2 col-md-4 col-sm-6">
+    <div class="fw-stat-card">
+      <div class="fw-stat-icon fw-stat-icon-primary"><i class="bi bi-hdd-rack"></i></div>
+      <div>
+        <div class="fw-stat-value">{{ stats.chassis }}</div>
+        <div class="fw-stat-label">{{ _('FortiWeb chassis') }} &middot; {{ stats.adoms }} {{ _('ADOMs') }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-xl-2 col-md-4 col-sm-6">
+    <div class="fw-stat-card">
+      <div class="fw-stat-icon fw-stat-icon-primary"><i class="bi bi-shield-shaded"></i></div>
+      <div>
+        <div class="fw-stat-value">{{ stats.policies }}</div>
+        <div class="fw-stat-label">{{ _('Server policies') }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-xl-2 col-md-4 col-sm-6">
+    <div class="fw-stat-card">
+      <div class="fw-stat-icon fw-stat-icon-success"><i class="bi bi-check2-square"></i></div>
+      <div>
+        <div class="fw-stat-value">{{ stats.posture['blocking'] }}</div>
+        <div class="fw-stat-label">{{ _('Blocking (enabled, profile, not monitor-only)') }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-xl-2 col-md-4 col-sm-6">
+    <div class="fw-stat-card">
+      <div class="fw-stat-icon fw-stat-icon-danger"><i class="bi bi-eye"></i></div>
+      <div>
+        <div class="fw-stat-value">{{ stats.detection_any }}</div>
+        <div class="fw-stat-label">{{ _('Monitor-mode: logs, never blocks') }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-xl-2 col-md-4 col-sm-6">
+    <div class="fw-stat-card">
+      <div class="fw-stat-icon fw-stat-icon-danger"><i class="bi bi-shield-slash"></i></div>
+      <div>
+        <div class="fw-stat-value">{{ stats.no_profile_any }}</div>
+        <div class="fw-stat-label">{{ _('No web protection profile') }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-xl-2 col-md-4 col-sm-6">
+    <div class="fw-stat-card">
+      <div class="fw-stat-icon fw-stat-icon-info"><i class="bi bi-diagram-3"></i></div>
+      <div>
+        <div class="fw-stat-value">{{ stats.vservers }}</div>
+        <div class="fw-stat-label">{{ _('Virtual servers') }} &middot; {{ stats.pools }} {{ _('pools') }}</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# --------------------------------------------------------- what to fix -- #}
+{# Findings are stated with their remedy and a link that lands on exactly the
+   rows described. A count with no way to reach the rows is a number the
+   operator has to reproduce by hand. #}
+{% set _findings = [
+     ('danger',  stats.detection_any,   _('policies run in monitor mode'),
+      _('the WAF inspects and logs but never blocks'),
+      url_for('waf.inventory', posture='detection')),
+     ('danger',  stats.no_profile_any,  _('policies have no web protection profile'),
+      _('traffic is proxied with no WAF inspection at all'),
+      url_for('waf.inventory', posture='no-profile')),
+     ('danger',  stats.dangling,        _('policies name a profile that is not in the snapshot'),
+      _('a dangling reference — the device page cannot show what it resolves to'),
+      url_for('waf.inventory')),
+     ('warning', stats.weak_tls,        _('TLS policies still accept TLS 1.0/1.1'),
+      _('deprecated protocol versions on a terminating policy'),
+      url_for('waf.inventory', tls='weak')),
+     ('warning', stats.no_cert,         _('TLS policies carry no certificate'),
+      _('TLS is on and no certificate is named'),
+      url_for('waf.inventory', tls='tls')),
+     ('warning', stats.disabled_any,    _('policies are administratively disabled'),
+      _('registered, inspected by nothing, serving nothing'),
+      url_for('waf.inventory', posture='disabled')),
+     ('info',    stats.orphan_profiles, _('custom profiles are used by no policy'),
+      _('configuration that costs review time and protects nothing'),
+      url_for('waf.profiles', only='orphan')),
+   ] %}
+{# Built with an explicit loop rather than selectattr('1'): the findings are
+   tuples, and an index-as-attribute filter that silently returns nothing would
+   render the "all clear" message over a fleet that is not clear. #}
+{% set _hits = [] %}
+{% for _f in _findings %}{% if _f[1] %}{% set _ = _hits.append(_f) %}{% endif %}{% endfor %}
+<div class="fw-card p-0 mb-3">
+  <div class="fw-card-header d-flex align-items-center justify-content-between">
+    <span><i class="bi bi-clipboard2-pulse me-2"></i>{{ _('What this fleet would want fixed') }}</span>
+    <span class="text-muted small">{{ _('derived from') }} {{ stats.reporting }}/{{ stats.scopes }} {{ _('reporting scopes') }}</span>
+  </div>
+  <div class="fw-card-body">
+    {% if not _hits %}
+      <div class="text-muted small"><i class="bi bi-check2-circle me-1 text-success"></i>
+        {{ _('No monitor-mode policies, no unprotected policies, no deprecated TLS, no orphan profiles.') }}
+        {% if stats.reporting < stats.scopes %}
+        <strong>{{ _('Note the denominator: not every scope reported.') }}</strong>{% endif %}
+      </div>
+    {% else %}
+      <ul class="waf-findings">
+        {% for level, n, headline, why, link in _hits %}
+        <li class="waf-finding waf-finding-{{ level }}">
+          <a href="{{ link }}"><strong>{{ n }}</strong> {{ headline }}</a>
+          <span class="text-muted">&mdash; {{ why }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+  </div>
+</div>
+
+{# ------------------------------------------------------------- charts --- #}
+<div id="waf-root" data-summary="{{ url_for('waf.api_summary') }}">
+  <div class="row g-3 mb-3">
+    <div class="col-lg-4">
+      <div class="fw-card h-100">
+        <div class="fw-card-header"><i class="bi bi-pie-chart me-2"></i>{{ _('Enforcement posture') }}</div>
+        <div class="fw-card-body">
+          <div class="fw-chart-container"><canvas id="waf-chart-posture"></canvas></div>
+          <p class="text-muted small mb-0 mt-2">
+            {{ _('One bucket per policy, by precedence: disabled, then no profile, then monitor-mode, then blocking. The KPI tiles above count each condition on its own — a disabled policy may also have no profile.') }}
+          </p>
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-8">
+      <div class="fw-card h-100">
+        <div class="fw-card-header"><i class="bi bi-bar-chart me-2"></i>{{ _('Policies per device / ADOM') }}</div>
+        <div class="fw-card-body">
+          <div class="fw-chart-container"><canvas id="waf-chart-scopes"></canvas></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-3">
+    <div class="col-lg-7">
+      <div class="fw-card h-100">
+        <div class="fw-card-header d-flex justify-content-between align-items-center">
+          <span><i class="bi bi-list-check me-2"></i>{{ _('Protection coverage') }}</span>
+          <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('waf.coverage') }}">
+            {{ _('Full matrix') }}</a>
+        </div>
+        <div class="fw-card-body">
+          <div class="fw-chart-container" style="height:420px"><canvas id="waf-chart-coverage"></canvas></div>
+          <p class="text-muted small mb-0 mt-2">
+            {{ _('Share of policies whose profile HAS that slot and fills it. Profiles that have no slot for a protection are left out of its denominator, never counted as "off".') }}
+          </p>
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-5">
+      <div class="fw-card mb-3">
+        <div class="fw-card-header"><i class="bi bi-lock me-2"></i>{{ _('Transport security') }}</div>
+        <div class="fw-card-body">
+          <div class="fw-chart-container" style="height:200px"><canvas id="waf-chart-crypto"></canvas></div>
+        </div>
+      </div>
+      <div class="fw-card">
+        <div class="fw-card-header"><i class="bi bi-fingerprint me-2"></i>{{ _('Signature policy in use') }}</div>
+        <div class="fw-card-body">
+          <div class="fw-chart-container" style="height:200px"><canvas id="waf-chart-signatures"></canvas></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="fw-card mb-3">
+    <div class="fw-card-header"><i class="bi bi-activity me-2"></i>{{ _('Configuration changes, last 30 days') }}</div>
+    <div class="fw-card-body">
+      <div class="fw-chart-container" style="height:220px"><canvas id="waf-chart-changes"></canvas></div>
+      <p class="text-muted small mb-0 mt-2">
+        {{ _('One point per snapshot the store MINTED. An unchanged device costs no version, so a flat line means a stable fleet, not a stalled harvest — the freshness table below is what answers that.') }}
+      </p>
+    </div>
+  </div>
+</div>
+
+{# ------------------------------------------------------ coverage groups - #}
+<div class="row g-3 mb-3">
+  {% for group in stats.coverage | map(attribute='group') | unique %}
+  {% set _rows = stats.coverage | selectattr('group', 'equalto', group) | list %}
+  {% set _appl = _rows | sum(attribute='applicable') %}
+  {% set _on = _rows | sum(attribute='on') %}
+  <div class="col-xl-2 col-md-4 col-sm-6">
+    <div class="fw-card h-100 p-3">
+      <div class="text-muted small text-uppercase" style="letter-spacing:.04em">{{ group }}</div>
+      <div class="fw-stat-value mt-1">{{ (100 * _on / _appl) | round(0) | int if _appl else '—' }}{% if _appl %}%{% endif %}</div>
+      <div class="fw-stat-label">{{ _on }} / {{ _appl }} {{ _('slots filled') }}</div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+{# --------------------------------------------------------- freshness ---- #}
+<div class="fw-card p-0">
+  <div class="fw-card-header"><i class="bi bi-clock-history me-2"></i>{{ _('Snapshot freshness') }}</div>
+  <div class="fw-table-wrapper">
+    <table class="fw-table">
+      <thead>
+        <tr>
+          <th>{{ _('Device / ADOM') }}</th><th>{{ _('Host') }}</th><th>{{ _('Model') }}</th>
+          <th class="text-end">{{ _('Policies') }}</th><th class="text-end">{{ _('Profiles') }}</th>
+          <th class="text-end">{{ _('Objects') }}</th>
+          <th>{{ _('Last confirmed') }}</th><th>{{ _('Last change') }}</th><th>{{ _('State') }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in devices %}
+        <tr>
+          <td>{{ d.scope }}</td>
+          <td class="fw-cell-mono">{{ d.host }}</td>
+          <td>{{ d.model or '—' }}</td>
+          <td class="text-end">{{ d.counts.get('policies', '—') if not d.missing else '—' }}</td>
+          <td class="text-end">{{ d.counts.get('profiles', '—') if not d.missing else '—' }}</td>
+          <td class="text-end">{{ d.counts.get('objects', '—') if not d.missing else '—' }}</td>
+          <td class="fw-cell-mono">{{ d.harvested_at or '—' }}</td>
+          <td class="fw-cell-mono">{{ d.changed_at or '—' }}</td>
+          <td>
+            {% if d.missing %}
+              <span class="fw-badge fw-badge-danger">{{ _('never harvested') }}</span>
+            {% elif d.stale %}
+              <span class="fw-badge fw-badge-warning">{{ _('stale') }} ({{ d.age_hours }}h)</span>
+            {% else %}
+              <span class="fw-badge fw-badge-success">{{ _('fresh') }}</span>
+            {% endif %}
+            {% if d.maintenance %}<span class="fw-badge fw-badge-secondary">{{ _('maintenance') }}</span>{% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="9" class="text-muted text-center py-4">
+          {{ _('No FortiWeb appliance is visible in this ADOM.') }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ asset('js/waf.js') }}"></script>
+{% endblock %}

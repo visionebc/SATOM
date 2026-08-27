@@ -6,6 +6,49 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### WAF — a fleet-wide inventory, its statistics and its charts
+
+- **New area `Fleet -> WAF`, four pages over ONE universe.** `/waf/` (overview:
+  KPIs, six charts, freshness), `/waf/inventory` (every server policy in the
+  visible fleet, filterable, CSV), `/waf/profiles` (every web protection
+  profile, its usage and its gaps, CSV) and `/waf/coverage` (protection x
+  device/ADOM matrix, CSV). `/waf/api/summary.json` serves the chart payload,
+  so the figures on the page and the figures in the charts have ONE author.
+- **It reads the source-of-truth store, not the appliances.** Rendering these
+  pages contacts no device. The measurement that forced the metrics rewrite on
+  2026-08-05 applies unchanged: at the target fleet (60 FortiWebs) a live
+  aggregation would spend tens of seconds of device I/O per view, per worker,
+  per operator. The cost of the choice is that the numbers are as old as the
+  last harvest, which is why freshness is a column and a banner here, not a
+  footnote.
+- **Absence is not zero.** A registered device with no snapshot is carried as
+  *never harvested*, named in a banner, excluded from every denominator, and
+  the pages state how many scopes actually contributed. A snapshot older than
+  26 h is marked *stale* and still shown — it is the best evidence there is,
+  and a page that hides it answers "the fleet is compliant" with "the fleet WAS
+  compliant".
+- **A slot a profile does not HAVE is not an unfilled slot.** FortiWeb's
+  offline collection carries ~38 of the 41 protection fields; counting the
+  missing ones as "off" would have invented a fleet-wide gap no operator can
+  close. Coverage denominators are per profile, and the matrix renders
+  *not applicable* as a grey dash, never as a red zero.
+- **The posture doughnut adds up, and the tiles say what it swallowed.** Each
+  policy lands in exactly one bucket by precedence (disabled -> no profile ->
+  monitor-mode -> blocking), so the un-bucketed totals are published beside it:
+  a disabled policy that ALSO has no profile is invisible in a partition.
+- **Findings carry their remedy and a link that lands on the rows described**
+  (monitor-mode, no profile, dangling profile reference, deprecated TLS,
+  certificate-less TLS, disabled, orphan profiles). A count with no way to
+  reach the rows is a number the operator has to reproduce by hand.
+- **Scope.** Fleet-wide by design, like Fleet Objects — and only over what the
+  console may see: the universe is narrowed ONCE through
+  `models.visible_appliances()` and then to `kind == 'fortiweb'`, so
+  maintenance devices stay hidden without the permission and no other
+  product's device can appear. Offered in the Global and FortiWeb consoles
+  only; the other three ADOMs redirect, because the pages count objects those
+  products do not have.
+- **Guards:** `tests/test_waf_fleet.py` (22), `docs/safeguards.md` §126.
+
 ### Exceptions — catalog (custom signatures, operator coupling, orphan type)
 
 - **Custom Signature is now a first-class exception type.** `custom_signature_item`,

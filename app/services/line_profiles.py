@@ -42,12 +42,14 @@ P_WPP_GONE = "wpp_gone"
 P_WPP_NOT_APPROVED = "wpp_not_approved"
 P_WPP_WRONG_PRODUCT = "wpp_wrong_product"
 P_SEGMENT_NO_CIDR = "segment_no_cidr"
+P_DUPLICATE_SEGMENT = "duplicate_segment"
 
 #: Problems that must STOP an action that changes the world. The rest are
 #: things the operator can be asked about. Membership is data so a caller
 #: cannot invent its own idea of "serious".
 BLOCKING = frozenset({P_MISSING_SEGMENT, P_NO_SEGMENTS, P_WPP_GONE,
-                      P_WPP_NOT_APPROVED, P_WPP_WRONG_PRODUCT})
+                      P_WPP_NOT_APPROVED, P_WPP_WRONG_PRODUCT,
+                      P_DUPLICATE_SEGMENT})
 
 
 @dataclass
@@ -95,8 +97,21 @@ class LinePlan:
         }
 
 
-def _segments_by_name() -> dict[str, dict]:
-    """Live segments keyed by name.
+def index_by_name(segs) -> dict[str, dict]:
+    """The ONLY place a segment list is turned into a name -> row map.
+
+    Every consumer that needs "the row called X" calls this: the declared-plan
+    resolver below, :func:`pool_for`, and the new-policy wizard. They used to
+    index the list three separate ways and DISAGREED about which row a
+    duplicated name meant -- ``setdefault`` here kept the first, a dict
+    comprehension in the wizard kept the last, and ``pool_for`` looped and
+    kept the first. A plan could therefore describe one row's network while
+    allocating from another row's CIDR, silently, whenever two rows shared a
+    name.
+
+    First row wins, and that choice is only ever reached for data written
+    before ``save_segments`` refused duplicates -- which is why
+    :func:`line_plan` REFUSES such a plan rather than relying on it.
 
     Exact strings, not case-folded: a profile naming ``DMZ`` does not resolve
     a segment called ``dmz``, and pretending otherwise reports a link the rest
@@ -104,11 +119,15 @@ def _segments_by_name() -> dict[str, dict]:
     ``classification_ops.usage``).
     """
     out: dict[str, dict] = {}
-    for seg in store.segments():
+    for seg in segs:
         name = (seg.get("name") or "").strip()
         if name:
             out.setdefault(name, seg)
     return out
+
+
+def _segments_by_name() -> dict[str, dict]:
+    return index_by_name(store.segments())
 
 
 def profile_for(line: str, product: str = "fortiweb"):
@@ -215,6 +234,22 @@ def line_plan(line: str, product: str = "fortiweb") -> LinePlan:
                 P_SEGMENT_NO_CIDR,
                 f"segment {seg.get('name')!r} has no CIDR, so no address can "
                 "be allocated from it"))
+    # A name carried by two rows is ambiguous, and the ambiguity is invisible:
+    # every resolver answers confidently, just not with the same row. BLOCKING
+    # rather than a warning because the wrong answer here is "the policy was
+    # built on a network this line was never given", which nothing downstream
+    # can notice. save_segments makes new duplicates impossible; this catches
+    # a blob written before that guard, or by hand.
+    dupes = set(store.duplicate_segment_names())
+    if dupes:
+        for name in dict.fromkeys((seg.get("name") or "").strip()
+                                  for seg in plan.segments):
+            if name in dupes:
+                plan.problems.append(Problem(
+                    P_DUPLICATE_SEGMENT,
+                    f"more than one network segment is called {name!r}, so "
+                    "which network this line means cannot be decided — give "
+                    "them distinct names in Network segments"))
     return plan
 
 
@@ -228,9 +263,12 @@ def pool_for(plan: LinePlan, segment_name: str = "") -> str:
     """
     if plan.ipam_pool:
         return plan.ipam_pool
+    by_name = index_by_name(plan.segments)
+    if segment_name:
+        seg = by_name.get(segment_name)
+        return (seg.get("cidr") or "").strip() if seg else ""
     for seg in plan.segments:
-        if not segment_name or (seg.get("name") or "") == segment_name:
-            return (seg.get("cidr") or "").strip()
+        return (seg.get("cidr") or "").strip()
     return ""
 
 

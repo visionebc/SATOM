@@ -332,12 +332,15 @@ def test_segments_survive_two_axes_moving_in_one_save(seeded):
     """Segments are ONE json blob shared by all three axes. Writing it per
     axis makes the second write clobber the first."""
     store.save_segments([{"name": "s1", "zone": "internal", "line": "A",
-                          "department": "WAF/LB", "cidr": "192.0.2.0/24",
+                          "departments": ["WAF/LB", "WSG"], "cidr": "192.0.2.0/24",
                           "interface": "port1", "gateway": "", "note": ""}])
     ops.apply_all({
         "zones": _rows(("internal", "Internal"), ("external", "external")),
         "lines": _rows(("A", "Alpha"), ("P", "P")),
-        "departments": _rows(("WAF/LB", "WAF/LB")),
+        "departments": _rows(("WAF/LB", "Edge")),
     })
     seg = store.segments()[0]
-    assert (seg["zone"], seg["line"], seg["department"]) == ("Internal", "Alpha", "WAF/LB")
+    assert (seg["zone"], seg["line"]) == ("Internal", "Alpha")
+    # The renamed department moves IN PLACE inside the list; the department
+    # that was not renamed is untouched and keeps its position.
+    assert seg["departments"] == ["Edge", "WSG"]

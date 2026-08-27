@@ -1,0 +1,131 @@
+{# ============================================================================
+   WAF — Inventory. Every server policy in the visible fleet, one row each.
+
+   The filters narrow the TABLE; the tiles above them are fleet figures and say
+   so. Mixing the two silently is exactly the contradiction §119 documents.
+   ========================================================================= #}
+{% extends "base.html" %}
+{% block title %}WAF — Inventory{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{{ asset('css/waf.css') }}" data-turbo-track="reload">
+{% endblock %}
+
+{% block content %}
+{% set active = 'inventory' %}
+{% set subtitle = _('server policy inventory') %}
+{% include 'waf/_header.html' %}
+
+<form method="get" class="fw-card p-3 mb-3">
+  <div class="row g-2 align-items-end">
+    <div class="col-md-3">
+      <label class="fw-form-label small mb-1">{{ _('Device / ADOM') }}</label>
+      <select name="scope" class="form-select form-select-sm">
+        <option value="">{{ _('Every scope in this ADOM') }}</option>
+        {% for d in devices if not d.missing %}
+        <option value="{{ d.scope }}" {{ 'selected' if selected.scope == d.scope }}>{{ d.scope }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="fw-form-label small mb-1">{{ _('Enforcement') }}</label>
+      <select name="posture" class="form-select form-select-sm">
+        <option value="">{{ _('Any') }}</option>
+        {% for key in posture_order %}
+        <option value="{{ key }}" {{ 'selected' if selected.posture == key }}>{{ posture_labels[key] }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="fw-form-label small mb-1">{{ _('Transport') }}</label>
+      <select name="tls" class="form-select form-select-sm">
+        <option value="">{{ _('Any') }}</option>
+        <option value="tls" {{ 'selected' if selected.tls == 'tls' }}>{{ _('TLS terminated') }}</option>
+        <option value="weak" {{ 'selected' if selected.tls == 'weak' }}>{{ _('TLS 1.0/1.1 enabled') }}</option>
+        <option value="plain" {{ 'selected' if selected.tls == 'plain' }}>{{ _('Plain HTTP') }}</option>
+      </select>
+    </div>
+    <div class="col-md-3">
+      <label class="fw-form-label small mb-1">{{ _('Search') }}</label>
+      <input name="q" value="{{ selected.q }}" class="form-control form-control-sm"
+             placeholder="{{ _('name, host, pool, profile, comment…') }}">
+    </div>
+    <div class="col-md-2 d-flex gap-2">
+      <button class="btn btn-sm btn-outline-primary flex-grow-1">
+        <i class="bi bi-funnel me-1"></i>{{ _('Filter') }}</button>
+      <a class="btn btn-sm btn-outline-secondary"
+         href="{{ url_for('waf.inventory', format='csv', **selected) }}"
+         title="{{ _('Download exactly these rows') }}"><i class="bi bi-filetype-csv"></i></a>
+    </div>
+  </div>
+</form>
+
+<div class="d-flex align-items-center justify-content-between mb-2">
+  <div class="text-muted small">
+    {{ _('Showing') }} <strong>{{ rows|length }}</strong> {{ _('of') }} <strong>{{ total }}</strong>
+    {{ _('server policies across') }} {{ stats.reporting }} {{ _('reporting scopes') }}.
+  </div>
+  <div class="waf-legend">
+    {% for key in posture_order %}
+    <span class="waf-pill waf-pill-{{ key }}">{{ posture_labels[key] }}</span>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="fw-card p-0">
+  <div class="fw-table-wrapper">
+    <table class="fw-table waf-table">
+      <thead>
+        <tr>{% for ckey, clabel in columns %}
+          <th class="{{ 'text-end' if ckey == 'n_protections' }}">{{ clabel }}</th>{% endfor %}</tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td class="fw-cell-mono">{{ r.scope }}</td>
+          <td><strong>{{ r.name }}</strong></td>
+          <td><span class="waf-pill waf-pill-{{ r.posture }}">{{ r.posture_label }}</span></td>
+          <td>
+            {% if r.enabled %}<span class="fw-badge fw-badge-success">{{ _('enabled') }}</span>
+            {% else %}<span class="fw-badge fw-badge-secondary">{{ _('disabled') }}</span>{% endif %}
+          </td>
+          <td>{{ r.service or '—' }}</td>
+          <td>
+            {% if r.weak_tls %}
+              <span class="fw-badge fw-badge-warning" title="{{ _('Deprecated TLS versions are enabled') }}">
+                {{ r.weak_tls | join(', ') }}</span>
+            {% elif r.ssl %}<span class="fw-badge fw-badge-success">TLS</span>
+            {% else %}<span class="fw-badge fw-badge-secondary">{{ _('plain') }}</span>{% endif %}
+          </td>
+          <td>
+            {% if r.ssl and not r.certificate %}
+              <span class="fw-badge fw-badge-danger">{{ _('none') }}</span>
+            {% else %}{{ r.certificate or '—' }}{% endif %}
+          </td>
+          <td>{{ r.vserver or '—' }}</td>
+          <td>{{ r.pool or '—' }}</td>
+          <td>
+            {% if not r.wpp %}<span class="fw-badge fw-badge-danger">{{ _('none') }}</span>
+            {% elif not r.wpp_resolved %}
+              <span class="fw-badge fw-badge-warning"
+                    title="{{ _('Named by the policy but absent from this snapshot') }}">{{ r.wpp }} ⚠</span>
+            {% else %}{{ r.wpp }}
+              {% if r.wpp_predefined %}<span class="fw-badge fw-badge-secondary"
+                    title="{{ _('FortiWeb predefined profile') }}">{{ _('predefined') }}</span>{% endif %}
+            {% endif %}
+          </td>
+          <td class="text-end">{{ r.n_protections if r.wpp_resolved else '—' }}</td>
+          <td>{{ r.signature_rule or '—' }}</td>
+          <td class="fw-cell-note">{{ r.comment or '' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="{{ columns|length }}" class="text-muted text-center py-4">
+          {% if total %}{{ _('No policy matches these filters.') }}
+          {% else %}{{ _('No snapshot in this ADOM holds a server policy yet.') }}{% endif %}
+        </td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,111 @@
+{# ============================================================================
+   WAF — Profiles. Every web protection profile in the visible fleet.
+
+   "Slots available" is per PROFILE, not a constant: the offline collection
+   carries ~38 of the 41 protection slots against the inline one's full set, so
+   a fixed denominator would report every offline profile as permanently
+   incomplete for fields it has no way to hold.
+   ========================================================================= #}
+{% extends "base.html" %}
+{% block title %}WAF — Profiles{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{{ asset('css/waf.css') }}" data-turbo-track="reload">
+{% endblock %}
+
+{% block content %}
+{% set active = 'profiles' %}
+{% set subtitle = _('web protection profiles') %}
+{% include 'waf/_header.html' %}
+
+<form method="get" class="fw-card p-3 mb-3">
+  <div class="row g-2 align-items-end">
+    <div class="col-md-3">
+      <label class="fw-form-label small mb-1">{{ _('Device / ADOM') }}</label>
+      <select name="scope" class="form-select form-select-sm">
+        <option value="">{{ _('Every scope in this ADOM') }}</option>
+        {% for d in devices if not d.missing %}
+        <option value="{{ d.scope }}" {{ 'selected' if selected.scope == d.scope }}>{{ d.scope }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="fw-form-label small mb-1">{{ _('Origin') }}</label>
+      <select name="origin" class="form-select form-select-sm">
+        <option value="">{{ _('Any') }}</option>
+        <option value="custom" {{ 'selected' if selected.origin == 'custom' }}>{{ _('Custom') }}</option>
+        <option value="predefined" {{ 'selected' if selected.origin == 'predefined' }}>{{ _('FortiWeb predefined') }}</option>
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="fw-form-label small mb-1">{{ _('Usage') }}</label>
+      <select name="only" class="form-select form-select-sm">
+        <option value="">{{ _('Any') }}</option>
+        <option value="used" {{ 'selected' if selected.only == 'used' }}>{{ _('Bound to a policy') }}</option>
+        <option value="orphan" {{ 'selected' if selected.only == 'orphan' }}>{{ _('Custom and unused') }}</option>
+      </select>
+    </div>
+    <div class="col-md-3">
+      <label class="fw-form-label small mb-1">{{ _('Search') }}</label>
+      <input name="q" value="{{ selected.q }}" class="form-control form-control-sm"
+             placeholder="{{ _('profile, signature policy, comment…') }}">
+    </div>
+    <div class="col-md-2 d-flex gap-2">
+      <button class="btn btn-sm btn-outline-primary flex-grow-1">
+        <i class="bi bi-funnel me-1"></i>{{ _('Filter') }}</button>
+      <a class="btn btn-sm btn-outline-secondary"
+         href="{{ url_for('waf.profiles', format='csv', **selected) }}"
+         title="{{ _('Download exactly these rows') }}"><i class="bi bi-filetype-csv"></i></a>
+    </div>
+  </div>
+</form>
+
+<div class="text-muted small mb-2">
+  {{ _('Showing') }} <strong>{{ rows|length }}</strong> {{ _('of') }} <strong>{{ total }}</strong>
+  {{ _('profiles') }} &mdash; {{ stats.profiles_custom }} {{ _('custom') }},
+  {{ stats.orphan_profiles }} {{ _('custom and bound to nothing') }}.
+</div>
+
+<div class="fw-card p-0">
+  <div class="fw-table-wrapper">
+    <table class="fw-table waf-table">
+      <thead>
+        <tr>
+          <th>{{ _('Device / ADOM') }}</th><th>{{ _('Profile') }}</th><th>{{ _('Type') }}</th>
+          <th>{{ _('Origin') }}</th><th class="text-end">{{ _('Used by') }}</th>
+          <th style="min-width:190px">{{ _('Protections filled') }}</th>
+          <th>{{ _('Signature policy') }}</th><th>{{ _('Comment') }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td class="fw-cell-mono">{{ r.scope }}</td>
+          <td><strong>{{ r.name }}</strong>
+            {% if r.orphan %}<span class="fw-badge fw-badge-warning"
+                  title="{{ _('No server policy in this scope names it') }}">{{ _('unused') }}</span>{% endif %}</td>
+          <td><span class="fw-badge fw-badge-info">{{ r.kind }}</span></td>
+          <td>{% if r.predefined %}<span class="fw-badge fw-badge-secondary">{{ _('predefined') }}</span>
+              {% else %}<span class="fw-badge fw-badge-primary">{{ _('custom') }}</span>{% endif %}</td>
+          <td class="text-end">{{ r.used_by }}</td>
+          <td>
+            {% set _pct = (100 * r.n_filled / r.n_applicable) | round(0) | int if r.n_applicable else 0 %}
+            <div class="waf-meter" title="{{ r.filled | map('replace', '-', ' ') | join(', ') }}">
+              <div class="waf-meter-fill" style="width:{{ _pct }}%"></div>
+            </div>
+            <span class="small text-muted">{{ r.n_filled }} / {{ r.n_applicable }} {{ _('slots') }}</span>
+          </td>
+          <td>{{ r.signature_rule or '—' }}</td>
+          <td class="fw-cell-note">{{ r.comment or '' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8" class="text-muted text-center py-4">
+          {% if total %}{{ _('No profile matches these filters.') }}
+          {% else %}{{ _('No snapshot in this ADOM holds a web protection profile yet.') }}{% endif %}
+        </td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

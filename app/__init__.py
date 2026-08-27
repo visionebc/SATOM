@@ -1959,6 +1959,7 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.templates", "bp"),
         ("app.views.signatures", "bp"),
         ("app.views.fleet_objects", "bp"),
+        ("app.views.waf", "bp"),
         ("app.views.import_backup", "bp"),
         ("app.views.structure", "bp"),
         ("app.views.classification", "bp"),

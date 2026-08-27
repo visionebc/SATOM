@@ -16,7 +16,7 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
-from . import dbintrospect
+from . import dbintrospect, pdf_kit
 
 VIZ_KINDS = ("table", "bar", "line", "pie", "stat")
 WIDGET_WIDTHS = ("half", "full")
@@ -166,10 +166,9 @@ def run_report(report) -> dict:
 # PDF rendering (reportlab — pure python, headless)
 # --------------------------------------------------------------------------
 
-_ACCENT = "#3b82f6"
-_ACCENT2 = "#8b5cf6"
-_PALETTE = ["#3b82f6", "#8b5cf6", "#10b981", "#fbbf24", "#ef4444",
-            "#06b6d4", "#f97316", "#84cc16", "#ec4899", "#64748b"]
+_ACCENT = pdf_kit.ACCENT
+_ACCENT2 = pdf_kit.ACCENT2
+_PALETTE = pdf_kit.PALETTE
 
 
 def build_pdf(result: dict, *, author: str = "") -> bytes:
@@ -251,86 +250,22 @@ def build_pdf(result: dict, *, author: str = "") -> bytes:
     return buf.getvalue()
 
 
-def _esc(s) -> str:
-    return (str(s).replace("&", "&amp;").replace("<", "&lt;")
-            .replace(">", "&gt;"))
+# The chart and table flowables live in ``services/pdf_kit`` so the WAF
+# fleet export renders through the SAME code rather than a copy of it —
+# a comment promising two copies are identical is what §127 had to undo
+# for ``verdict_of``. The palette stays a parameter: this module renders
+# in the fleet blue, the WAF export in the .fw-badge-* set.
+_esc = pdf_kit.esc
 
 
 def _table_flowable(w, avail_w, cell_style, colors, Table, TableStyle):
-    from reportlab.platypus import Paragraph
-    cols = w["columns"]
-    rows = w["rows"][:PDF_MAX_TABLE_ROWS]
-    # cap very wide tables so they stay legible
-    max_cols = 10
-    if len(cols) > max_cols:
-        cols = cols[:max_cols]
-        rows = [r[:max_cols] for r in rows]
-    data = [[Paragraph(f"<b>{_esc(c)}</b>", cell_style) for c in cols]]
-    for r in rows:
-        data.append([Paragraph(_esc(v)[:300], cell_style) for v in r])
-    t = Table(data, colWidths=[avail_w / len(cols)] * len(cols),
-              repeatRows=1)
-    t.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#eef2ff")),
-        ("LINEBELOW", (0, 0), (-1, 0), 0.75, colors.HexColor(_ACCENT)),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -1),
-         [colors.white, colors.HexColor("#f8fafc")]),
-        ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#e2e8f0")),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("TOPPADDING", (0, 0), (-1, -1), 2),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-    ]))
-    return t
+    return pdf_kit.table_flowable(w, avail_w, cell_style,
+                                  max_rows=PDF_MAX_TABLE_ROWS,
+                                  accent=_ACCENT)
 
 
 def _chart_flowable(w, viz, avail_w):
-    from reportlab.graphics.charts.barcharts import VerticalBarChart
-    from reportlab.graphics.charts.linecharts import HorizontalLineChart
-    from reportlab.graphics.charts.piecharts import Pie
-    from reportlab.graphics.shapes import Drawing, String
-    from reportlab.lib import colors
-
-    labels = w.get("labels", [])[:PDF_MAX_CHART_POINTS]
-    values = w.get("values", [])[:PDF_MAX_CHART_POINTS]
-    height = 200
-    d = Drawing(avail_w, height)
-
-    if viz == "pie":
-        pie = Pie()
-        pie.x, pie.y = 40, 20
-        pie.width = pie.height = height - 50
-        pie.data = values or [1]
-        pie.labels = [str(l)[:22] for l in labels] or [""]
-        pie.sideLabels = True
-        pie.slices.strokeWidth = 0.5
-        pie.slices.strokeColor = colors.white
-        pie.slices.fontSize = 7
-        for i in range(len(pie.data)):
-            pie.slices[i].fillColor = colors.HexColor(
-                _PALETTE[i % len(_PALETTE)])
-        d.add(pie)
-        return d
-
-    chart_cls = VerticalBarChart if viz == "bar" else HorizontalLineChart
-    ch = chart_cls()
-    ch.x, ch.y = 35, 30
-    ch.width, ch.height = avail_w - 60, height - 55
-    ch.data = [values or [0]]
-    ch.categoryAxis.categoryNames = [str(l)[:14] for l in labels] or [""]
-    ch.categoryAxis.labels.fontSize = 6.5
-    ch.categoryAxis.labels.angle = 30
-    ch.categoryAxis.labels.boxAnchor = "ne"
-    ch.valueAxis.labels.fontSize = 7
-    lo = min(values or [0])
-    ch.valueAxis.valueMin = min(0, lo)
-    if viz == "bar":
-        ch.bars[0].fillColor = colors.HexColor(_ACCENT)
-        ch.bars[0].strokeColor = None
-    else:
-        ch.lines[0].strokeColor = colors.HexColor(_ACCENT2)
-        ch.lines[0].strokeWidth = 1.6
-    d.add(ch)
-    if not values:
-        d.add(String(avail_w / 2, height / 2, "no numeric data",
-                     fontSize=9, fillColor=colors.HexColor("#94a3b8")))
-    return d
+    return pdf_kit.chart_flowable(w, viz, avail_w,
+                                  max_points=PDF_MAX_CHART_POINTS,
+                                  palette=_PALETTE, accent=_ACCENT,
+                                  accent2=_ACCENT2)

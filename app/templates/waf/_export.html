@@ -1,0 +1,77 @@
+{# ============================================================================
+   WAF — the export panel. One definition, five call sites (it hangs off
+   _header.html, so every /waf page carries the same one).
+
+   NO JAVASCRIPT, deliberately. It is a plain GET form inside a native
+   <details>: the CSP here drops 'unsafe-inline' and script-src-attr is 'none'
+   (app/__init__.py), the five page templates do not all declare a scripts
+   block, and a panel that needed one would have to be wired into each of them
+   — which is exactly how a sixth page added later ends up without it. The
+   side-effect is worth more than the saved markup: the selection ends up in
+   the URL, so a bundle is bookmarkable and a support request can quote the
+   exact link that produced a file.
+
+   The checkbox lists come from services/waf_export via the blueprint's own
+   context processor, NOT from five render_template kwargs — an empty {% for %}
+   renders nothing at all, so a forgotten kwarg would show an export panel with
+   no contents and no error.
+   ========================================================================= #}
+<details class="waf-export mb-3">
+  <summary class="waf-export-summary">
+    <i class="bi bi-box-arrow-down me-1"></i>
+    <strong>{{ _('Export this fleet view') }}</strong>
+    <span class="waf-export-hint">{{ _('one ZIP — you pick the contents and the file formats') }}</span>
+  </summary>
+
+  <form method="get" action="{{ url_for('waf.export') }}" class="waf-export-form">
+    {# Where to land if nothing was ticked. Validated against a literal tuple
+       in the view: an open redirect is an open redirect even on a form whose
+       only job is to produce a download. #}
+    <input type="hidden" name="back" value="{{ active }}">
+
+    <div class="row g-3">
+      <div class="col-lg-8">
+        <div class="waf-export-legend">{{ _('Contents') }}</div>
+        {% for ds in export_datasets %}
+        <div class="form-check waf-export-item">
+          <input class="form-check-input" type="checkbox" name="set"
+                 value="{{ ds.key }}" id="waf-export-set-{{ ds.key }}" checked>
+          <label class="form-check-label" for="waf-export-set-{{ ds.key }}">
+            <span class="waf-export-name">{{ ds.label }}</span>
+            <span class="waf-export-about">{{ ds.about }}</span>
+          </label>
+        </div>
+        {% endfor %}
+      </div>
+
+      <div class="col-lg-4">
+        <div class="waf-export-legend">{{ _('File formats') }}</div>
+        {% for key, label in export_formats %}
+        <div class="form-check waf-export-item">
+          <input class="form-check-input" type="checkbox" name="fmt"
+                 value="{{ key }}" id="waf-export-fmt-{{ key }}" checked>
+          <label class="form-check-label" for="waf-export-fmt-{{ key }}">
+            <span class="waf-export-name">{{ label }}</span>
+          </label>
+        </div>
+        {% endfor %}
+
+        {# Both of these are things a reader of the ZIP cannot work out from
+           the ZIP, which is why they are said here and repeated in its
+           MANIFEST.txt rather than only in one of the two places. #}
+        <p class="waf-export-note">
+          <i class="bi bi-info-circle me-1"></i>
+          {{ _('The bundle is always the WHOLE visible fleet — the filters on these pages narrow the screen and the per-table CSV link, not this file. Every file in it carries the scope and freshness of the snapshots it was built from.') }}
+        </p>
+        <p class="waf-export-note">
+          <i class="bi bi-bar-chart me-1"></i>
+          {{ _('Charts are drawn into the PDF and shipped as their own series (label, value) in the CSV and the workbook, so the numbers behind every picture travel too.') }}
+        </p>
+
+        <button type="submit" class="btn btn-sm btn-primary w-100">
+          <i class="bi bi-file-earmark-zip me-1"></i>{{ _('Download ZIP') }}
+        </button>
+      </div>
+    </div>
+  </form>
+</details>

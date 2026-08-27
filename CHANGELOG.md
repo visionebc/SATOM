@@ -6,6 +6,44 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### WAF — the fleet view leaves the building: one ZIP, the formats you tick
+
+- **New export panel on all five `Fleet -> WAF` pages** and endpoint
+  `GET /waf/export`. Tick the contents (overview figures & charts, server
+  policies, protection profiles, coverage, artifacts, exceptions with their
+  profiles) and the formats (CSV, Excel `.xlsx`, PDF with the charts drawn in);
+  you get one ZIP with exactly that. The selection lives in the URL, so a
+  bundle is bookmarkable and a support request can quote the link that made a
+  file.
+- **Exceptions become fleet-visible for the first time.** `/exceptions` is
+  pinned to one device; the export joins every authored carve-out in the
+  visible fleet to the profile it names — is that profile in the snapshot, how
+  many server policies bind it (a WPP is usually SHARED, so that number is the
+  blast radius), are the policies it was authored for still there — and carries
+  its payload, so an export can be used to re-author one.
+- **Provenance travels with the data.** Every page here carries a
+  scope-and-freshness banner because its figures are only as fresh as the last
+  harvest; a spreadsheet in someone's mail has none. So `MANIFEST.txt`, the
+  workbook's FIRST sheet and the PDF's first page all carry the same block from
+  one `provenance()` call: when, by whom, how many scopes are covered, how many
+  actually reported, and the stale and never-harvested ones BY NAME.
+- **Charts travel as their series, not only as pictures.** The PDF draws them
+  server-side (no browser, no canvas capture — this product installs into
+  isolated networks); the CSV and the workbook carry every chart's
+  (label, value) rows from the SAME `ChartSpec`, so the drawing and the numbers
+  printed beside it cannot disagree.
+- **The bundle is always the WHOLE visible fleet.** The per-table CSV link is
+  the one that exports the rows you filtered, and says so. A ZIP that also
+  narrowed — invisibly, because nobody can see the filter bar the file came
+  from — is the safeguards §119 drift with a longer fuse.
+- **Nothing ticked is not an empty export**: the panel flashes a message and
+  returns you to the page. A zero-content ZIP downloads perfectly happily and
+  reads as "the fleet had nothing", which is a claim about the estate.
+- **`services/pdf_kit`** — the chart and table flowables move out of
+  `db_reports` so both PDF producers render through the same code instead of a
+  copy of it. The palette stays a parameter: DB reports keep the fleet blue,
+  the WAF export uses the `.fw-badge-*` set calibrated against white (§9m).
+
 ### WAF — the artifacts the estate needs, and the ones it does not have
 
 - **New page `Fleet -> WAF -> Artifacts`** (`/waf/artifacts`, feed

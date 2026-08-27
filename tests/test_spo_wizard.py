@@ -521,3 +521,35 @@ def test_an_empty_rendered_name_is_refused(app, env, monkeypatch):
     monkeypatch.setattr(wiz.naming, "render_names",
                         lambda *a, **k: dict.fromkeys(wiz.REQUIRED_NAMES, ""))
     assert "naming_incomplete" in _codes(_plan(app, env, address="192.0.2.1"))
+
+
+def test_the_pages_own_script_carries_the_csp_nonce(app, client, env):
+    """The wizard's whole UI is ONE inline <script>; without the nonce the
+    browser drops it and the page is furniture.
+
+    Reported 2026-08-27: "agregue un segmento y no me aparecen las opciones".
+    The segment WAS in the payload -- ``PLANS`` carried it, the route returned
+    200, every server-side test here was green -- and the select stayed empty,
+    because ``script-src-elem`` names a nonce and this block did not carry one.
+    Nothing logs that. The sibling guard above forbade ``onclick=`` (the OTHER
+    half of the same CSP rule) while the block that replaced those handlers was
+    itself blocked, so it read as coverage.
+
+    Asserted against the nonce the RESPONSE actually served, not against the
+    template text: a template that spells the attribute while the header stops
+    naming a nonce is the same dead page.
+    """
+    import re
+    from conftest import admin_user_id, login
+    login(client, admin_user_id(app))
+    r = client.get(f"/web/workspace/{env['appliance_id']}/spo-wizard")
+    assert r.status_code == 200
+    served = re.search(r"'nonce-([^']+)'",
+                       r.headers.get("Content-Security-Policy", ""))
+    assert served, "the wizard page is served without a nonce in its CSP"
+    blocked = [m.group(0)[:70]
+               for m in re.finditer(r"<script([^>]*)>", r.get_data(as_text=True))
+               if "src=" not in m.group(1)
+               and 'type="application/json"' not in m.group(1)
+               and served.group(1) not in m.group(1)]
+    assert not blocked, f"the browser drops these: {blocked}"

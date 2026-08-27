@@ -29,5 +29,11 @@
       <i class="bi bi-grid-3x3-gap fw-nav-icon"></i><span>{{ _('Coverage') }}</span></a>
     <a class="fw-nav-item {{ 'active' if request.endpoint == 'waf.artifacts' else '' }}" href="{{ url_for('waf.artifacts', _adom=product.key) }}">
       <i class="bi bi-file-earmark-code fw-nav-icon"></i><span>{{ _('Artifacts') }}</span></a>
+    {# Fleet-wide carve-outs. Distinct from the device-scoped
+       "Exceptions & Signature" entry in the WAF group: that one authors and
+       pushes for ONE (device, ADOM); this one answers who across the estate
+       has a given carve-out, which the device page structurally cannot. #}
+    <a class="fw-nav-item {{ 'active' if request.endpoint == 'waf.exceptions' else '' }}" href="{{ url_for('waf.exceptions', _adom=product.key) }}">
+      <i class="bi bi-slash-circle fw-nav-icon"></i><span>{{ _('Exceptions') }}</span></a>
   </div>
 </div>

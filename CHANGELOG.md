@@ -6,6 +6,46 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### WAF audit against a live appliance (2026-08-27)
+
+The custom-signature catalogue added in Tanda 0 was carried from the admin
+guide. Read off a live FortiWeb 7.6.8 it was wrong in five places, and every
+one of them failed the same way: authorable in the UI, refused by the box with
+an opaque `-651` at deploy time.
+
+- **Fixed** the meet-condition shape. The device's fields are `expression`
+  (the only mandatory one), `operator`, `request-target`, `response-target`
+  and `case-sensitive` — not the guide's dialog labels. `target` was one field
+  where the box has two, split by the parent rule's Direction.
+- **Fixed** the operator tokens: `EQ`/`NE`/`GT`/`LT`/`RE`, not the spelled-out
+  words.
+- **Fixed** the action set. It is DIRECTION-DEPENDENT: 7 actions for a request
+  rule, 9 for a response rule. Three the guide omits are real
+  (`client-id-block-period`, `deny_no_log`, `redirect`) and the erase pair is
+  response-only — enforced rather than merely listed.
+- **Fixed** `severity`: the token is `Info`; "Informative" is the device's
+  description of it.
+- **Added** the JSON Schema name rule. Measured: a `.json`/`.txt`/`.schema`
+  suffix is refused with `-61`, the bare name uploads and reads back
+  byte-identical. This is the INVERSE of the OpenAPI rule (`.json`/`.yaml`
+  required, `-20007` otherwise) — the two are now a table, and the other four
+  file kinds were measured to accept any name, so their silence is a result.
+- **Added** a write-path gate. `plan_injection` now returns `invalid` for a
+  value the device's own enum does not contain, instead of letting it reach
+  the appliance. Deliberately narrower than `validate_payload`: required and
+  format rules stay in the authoring form, because enforcing them at deploy
+  would turn carve-outs authored before a rule existed into errors on the push
+  to a second appliance.
+- **Fixed** a stray `@bp.route('/<id>/detect')` decorator that had stacked
+  onto `clone_for_policy`, so posting to the detect endpoint ran the
+  clone-and-rebind planner and returned a payload with no `found` key. The
+  detect button had been silently dead.
+- **Guards**: `tests/test_wire_shapes.py` (23) and
+  `tests/test_mutation_survivors.py` (3, closing mutations that survived the
+  previous harness: delete-version ordering, restorable vs a live lineage, and
+  a deploy destination outside the visible set).
+
+
 ### WAF — the fleet view leaves the building: one ZIP, the formats you tick
 
 - **New export panel on all five `Fleet -> WAF` pages** and endpoint

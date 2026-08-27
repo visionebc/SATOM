@@ -208,26 +208,62 @@ FIELD_SPECS: dict[str, list[dict]] = {
         # are lowercase. Storing the GUI label here would produce a payload the
         # box rejects, which is the class of defect this catalog exists to stop.
         _f("type", "Direction", "enum", ["request", "response"]),
+        # Read off ``set action ?`` on fortiweb13 (7.6.8) TWICE, because the
+        # list is DIRECTION-DEPENDENT: a request rule is offered 7 actions, a
+        # response rule 9 -- the two extra being the erase pair, which is the
+        # admin guide's own headline example (stripping ``Server:`` and
+        # ``X-Powered-By`` from responses). The union lives here and
+        # ``_direction_errors`` subtracts the pair for request rules, because
+        # a flat union would let a request rule claim an action the box
+        # refuses, and a request-only list would delete erase signatures.
+        # The set this replaced was carried from the shared SDK action list:
+        # it had the erase pair but was missing ``client-id-block-period``,
+        # ``deny_no_log`` and ``redirect``.
         _f("action", "Action", "enum",
            ["alert", "alert_deny", "alert_erase", "block-period",
-            "only_erase", "send_http_response"]),
+            "client-id-block-period", "deny_no_log", "only_erase", "redirect",
+            "send_http_response"]),
         _f("block-period", "Block Period (s)"),
-        _f("severity", "Severity", "enum", ["Informative", "Low", "Medium", "High"]),
+        # ``Info`` is the TOKEN; "Informative" is the device's own description
+        # of it, which is what the admin guide prints. Storing the description
+        # produces a payload the box rejects.
+        _f("severity", "Severity", "enum", ["Info", "Low", "Medium", "High"]),
         _f("threat-weight", "Threat Weight", "enum",
            ["low", "informational", "moderate", "substantial", "severe", "critical"]),
         _f("trigger", "Trigger Policy"),
     ],
-    # Custom Signature — one AND-ed condition. The live rule carried zero rows
-    # (``sz_meet-condition: 0``), so these keys follow the admin guide's field
-    # list for the condition dialog; they are NOT wire-confirmed. See
-    # ``UNVERIFIED_SHAPES``.
+    # Custom Signature — one AND-ed condition. WIRE-CONFIRMED 2026-08-27 by
+    # reading ``config waf custom-protection-rule / config meet-condition /
+    # set ?`` on fortiweb13 (7.6.8). The previous shape came from the admin
+    # guide's condition DIALOG and four of its five keys were wrong: the
+    # operator tokens were spelled out, ``expression`` was mislabelled as a
+    # regular expression when it is the operand for EVERY operator, and a
+    # single ``target`` hid that the box splits the
+    # target by DIRECTION. A REST write of the old shape answers -651
+    # "Invalid input value." (reproduced), so the type was authorable and
+    # unpushable — the worst of both.
     "custom_signature_condition_item": [
         _f("operator", "Match Operator", "enum",
-           ["regular-expression", "greater-than", "less-than", "equal", "not-equal"]),
+           ["EQ", "NE", "GT", "LT", "RE"]),
         _f("case-sensitive", "Case Sensitive", "toggle"),
-        _f("expression", "Regular Expression"),
-        _f("threshold", "Threshold"),
-        _f("target", "Selected Target (space-separated)"),
+        # The ONLY key the box marks mandatory (``*expression``); ``end``
+        # without it answers "attribute 'expression' must be set".
+        _f("expression", "Expression"),
+        # Two fields, not one, and which applies is decided by the PARENT
+        # rule's Direction. Collapsing them into one field is how a response
+        # rule ends up carrying a request-only target that never matches.
+        _f("request-target", "Targets (Direction = request)", "enum",
+           ["ARGS_NAMES", "ARGS_VALUE", "HTTP_METHOD", "REQUEST_BODY",
+            "REQUEST_COOKIES", "REQUEST_COOKIES_NAMES", "REQUEST_FILENAME",
+            "REQUEST_HEADERS", "REQUEST_HEADERS_NAMES", "REQUEST_RAW_BODY",
+            "REQUEST_RAW_URI", "REQUEST_URI"]),
+        _f("response-target", "Targets (Direction = response)", "enum",
+           ["RESPONSE_BODY", "RESPONSE_HEADER"]),
+        # Not offered by ``set ?`` but present on every row the box returns
+        # (``threshold: 0``), and meaningful for the numeric operators GT/LT.
+        # Kept because a field the device stores is a field an operator can be
+        # asked about; dropping it would silently pin every condition to 0.
+        _f("threshold", "Threshold (GT/LT)"),
     ],
     "custom_signature_group_item": [
         _f("name", "Name"),
@@ -259,10 +295,14 @@ REQUIRED_FIELDS: dict[str, list[str]] = {
     # signature — the box stores it and it never fires, which reads on the
     # page as "deployed".
     "custom_signature_item": ["name", "type", "action"],
-    # A condition with an operator but nothing to compare against matches
-    # EVERY request the target appears in. That is the widest possible rule
-    # wearing the name of a specific one.
-    "custom_signature_condition_item": ["operator", "target"],
+    # ``expression`` is the one key the FIRMWARE refuses to leave empty
+    # ("attribute 'expression' must be set"). ``operator`` stays required
+    # here because a condition with an expression and no operator matches
+    # EVERY request the target appears in -- the widest possible rule wearing
+    # the name of a specific one -- but ``target`` cannot be: the box has no
+    # field by that name, it has request-target and response-target and only
+    # one of them applies to any given rule.
+    "custom_signature_condition_item": ["operator", "expression"],
     "custom_signature_group_item": ["name"],
     "signature_class_action": ["main_class_id", "action"],
     "http_constraint_exception_item": ["request-type", "request-file"],
@@ -295,6 +335,19 @@ REQUIRED_FIELDS: dict[str, list[str]] = {
 # unconstrained. A wrong entry here makes a legitimate carve-out unauthorable,
 # which is a worse failure than the one being fixed, so only the mappings the
 # guide states outright are encoded.
+#: Enum fields whose value is a SPACE-SEPARATED LIST, not one token.
+#: The device's GUI calls this "Available Target / Selected Target" and stores
+#: exactly what you send: ``"REQUEST_URI REQUEST_BODY "``, trailing space and
+#: all (read back off fortiweb13). Validating such a field as a single token
+#: rejects every multi-target condition -- which is the normal case, not the
+#: exotic one.
+SPACE_LIST_FIELDS: frozenset[str] = frozenset({"request-target", "response-target"})
+
+#: Actions the box offers ONLY to a response-direction custom signature.
+#: Verified by asking ``set action ?`` under both directions on fortiweb13.
+RESPONSE_ONLY_ACTIONS: frozenset[str] = frozenset({"alert_erase", "only_erase"})
+
+
 OPERATORS_BY_TARGET: dict[str, dict[str, list[str]]] = {
     "signature_filter_item": {
         "HTTP_METHOD": ["INCLUDE", "EXCLUDE"],
@@ -338,10 +391,6 @@ def operators_for(exc_type: str, match_target: str) -> list[str]:
 # Recorded so a later session fixes the shape instead of re-deriving that it
 # was never checked. See docs/safeguards.md.
 UNVERIFIED_SHAPES: dict[str, str] = {
-    "custom_signature_condition_item":
-        "waf/custom-protection-rule/meet-condition returned 0 rows on "
-        "fortiweb12 (sz_meet-condition: 0); field keys follow admin guide "
-        "7.6.4 doc 780071, not the wire.",
     "bot_exception_element_item":
         "waf/exception-policy element-list unreadable on fortiweb12; the "
         "human-label element types ('Client IP') and the free-text operator "
@@ -391,7 +440,88 @@ def validate_payload(exc_type: str, payload: dict) -> list[str]:
         if val not in (None, "", []) and not _re.match(rx, str(val)):
             errors.append(msg)
     errors.extend(_operator_errors(exc_type, payload))
+    errors.extend(_enum_errors(exc_type, payload))
+    errors.extend(_direction_errors(exc_type, payload))
     return errors
+
+
+def validate_for_wire(exc_type: str, payload: dict) -> list[str]:
+    """The subset of :func:`validate_payload` a WRITE may enforce, and why.
+
+    ``validate_payload`` also checks required fields and id formats. Those are
+    good rules for the authoring form and BAD rules for the write path: they
+    are this catalogue's judgement, not the device's, so every carve-out
+    authored before a rule existed would stop deploying the day the rule
+    landed -- silently converting stored, working configuration into an error
+    on a push to a second appliance.
+
+    What is enforced here is only what the appliance itself was OBSERVED to
+    refuse: a token outside an enum the device enumerates (``-651 Invalid
+    input value.``, reproduced on fortiweb13 7.6.8) and an erase action on a
+    request-direction rule (not offered by ``set action ?`` under that
+    direction). Both can only ever subtract values the box already rejects, so
+    turning them on cannot break a write that works today.
+    """
+    return (_enum_errors(exc_type, payload)
+            + _direction_errors(exc_type, payload))
+
+
+def _enum_errors(exc_type: str, payload: dict) -> list[str]:
+    """Reject a value the device's own enum does not contain.
+
+    Until 2026-08-27 an out-of-enum value travelled all the way to the
+    appliance and came back as ``-651 Invalid input value.`` -- an opaque
+    firmware code for something this catalogue already knew was wrong. Worse,
+    the enum was consulted only to RENDER the ``<select>``: anything that
+    reached the write path another way (a deploy of a row authored before a
+    token changed, an API caller, a restored version) was never checked at
+    all.
+
+    Only fields that declare a non-empty option list gate. Types this
+    catalogue models loosely -- and free-text/datasource fields such as
+    ``trigger`` -- keep passing, so this may only ever subtract combinations
+    the device itself refuses.
+    """
+    errors = []
+    for spec in FIELD_SPECS.get(canonical_type(exc_type), []):
+        opts = spec.get("options") or []
+        if not opts:
+            continue
+        val = payload.get(spec["key"])
+        if val in (None, "", []):
+            continue
+        allowed = [str(o) for o in opts]
+        if spec["key"] in SPACE_LIST_FIELDS:
+            # Every token must be known; the device stores the list verbatim,
+            # so one bad token poisons a condition that otherwise looks fine.
+            bad = [tok for tok in str(val).split() if tok not in allowed]
+            for tok in bad:
+                errors.append("'%s' is not a valid %s (the device accepts: %s)"
+                              % (tok, spec.get("label", spec["key"]), ", ".join(allowed)))
+            continue
+        if str(val).strip() in allowed:
+            continue
+        errors.append("'%s' is not a valid %s (the device accepts: %s)"
+                      % (val, spec.get("label", spec["key"]), ", ".join(allowed)))
+    return errors
+
+
+def _direction_errors(exc_type: str, payload: dict) -> list[str]:
+    """Refuse an action the chosen Direction is not offered.
+
+    ``alert_erase``/``only_erase`` exist only for a RESPONSE rule -- erasing
+    something out of a request the server has not answered yet is not a thing
+    the box models. A request rule carrying one is stored by nothing and
+    refused by the firmware, so the carve-out reads as deployed and never
+    fires.
+    """
+    if canonical_type(exc_type) != "custom_signature_item":
+        return []
+    action = str(payload.get("action") or "").strip()
+    if action in RESPONSE_ONLY_ACTIONS and \
+            str(payload.get("type") or "").strip() != "response":
+        return ["'%s' is only available when Direction is 'response'" % action]
+    return []
 
 
 def _operator_errors(exc_type: str, payload: dict) -> list[str]:
@@ -573,22 +703,35 @@ def _set_policies(exc: WppException, policies: list[str]) -> None:
 
 def add(appliance_id: int, *, wpp_mkey: str, exc_type: str, payload: dict,
         name: str = "", reason: str = "", author: str = "",
-        policies: list[str] | None = None, category: str | None = None) -> WppException:
+        policies: list[str] | None = None, category: str | None = None,
+        library_uid: str | None = None, lineage: str | None = None,
+        version_action: str | None = None,
+        version_note: str = "") -> WppException:
     exc = WppException(
         appliance_id=appliance_id, wpp_mkey=wpp_mkey or "",
         exc_type=exc_type, category=category or category_for(exc_type),
         name=name or "", payload=json.dumps(payload or {}),
         reason=reason or "", author=author or "",
+        library_uid=library_uid or None, lineage=lineage or None,
     )
     _set_policies(exc, policies or [])
     db.session.add(exc)
+    # Flush BEFORE versioning so the version row carries a real exception_id.
+    # Recording after the commit would need a second commit; recording before
+    # the flush would freeze exception_id=None into history and break the
+    # "which placement was this?" link for every created row.
+    db.session.flush()
+    from . import exception_versions as _v
+    _v.record(exc, action=version_action or _v.ACT_CREATE, author=author,
+              note=version_note, force=True)
     db.session.commit()
     return exc
 
 
 def update(exc_id: int, *, wpp_mkey: str | None = None, payload: dict | None = None,
            name: str | None = None, reason: str | None = None,
-           enabled: bool | None = None, policies: list[str] | None = None) -> WppException | None:
+           enabled: bool | None = None, policies: list[str] | None = None,
+           author: str = "", note: str = "") -> WppException | None:
     exc = get(exc_id)
     if exc is None:
         return None
@@ -609,14 +752,24 @@ def update(exc_id: int, *, wpp_mkey: str | None = None, payload: dict | None = N
         exc.enabled = bool(enabled)
     if policies is not None:
         _set_policies(exc, policies)
+    # Versioning is unconditional and IDEMPOTENT: record() writes nothing when
+    # the content hash is unchanged. Asking "did anything change?" here would
+    # be a second author for that comparison, and the two would drift.
+    from . import exception_versions as _v
+    _v.record(exc, action=_v.ACT_UPDATE, author=author, note=note)
     db.session.commit()
     return exc
 
 
-def delete(exc_id: int) -> bool:
+def delete(exc_id: int, *, author: str = "", note: str = "") -> bool:
     exc = get(exc_id)
     if exc is None:
         return False
+    from . import exception_versions as _v
+    # Record the loss BEFORE the delete: after it, policy_names is empty and
+    # the body written to history would claim the carve-out was bound to
+    # nothing, which is the one detail a restore most needs.
+    _v.record_delete(exc, author=author, note=note)
     db.session.delete(exc)
     db.session.commit()
     return True
@@ -626,6 +779,7 @@ def delete_for_policy(appliance_id: int, server_policy: str,
                       category: str | None = None) -> int:
     """Clean-migration purge: unbind *server_policy* from every carve-out and
     delete any carve-out left with no policies. Returns the deleted count."""
+    from . import exception_versions as _v
     deleted = 0
     for exc in list_exceptions(appliance_id, category):
         names = set(exc.policy_names)
@@ -634,7 +788,11 @@ def delete_for_policy(appliance_id: int, server_policy: str,
         names.discard(server_policy)
         if names:
             _set_policies(exc, sorted(names))
+            _v.record(exc, action=_v.ACT_UPDATE,
+                      note='unbound from server policy "%s"' % server_policy)
         else:
+            _v.record_delete(exc, note=(
+                'last server policy "%s" removed' % server_policy))
             db.session.delete(exc)
             deleted += 1
     db.session.commit()

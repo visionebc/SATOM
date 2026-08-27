@@ -123,6 +123,13 @@ KINDS: dict[str, dict[str, Any]] = {
         "field": "jsonfile",
         "name_field": "name",
         "extra": {"json-schema-version": "auto-identify"},
+        # MEASURED on fortiweb13 (7.6.8), 2026-08-27: this kind is the INVERSE
+        # of OpenAPI. ``sa-j1.json``, ``sa-j3.txt`` and ``sa-j4.schema`` are
+        # all refused with -61 "Input is not as expected."; the same bytes
+        # under ``sa-j2`` upload and read back byte-identical. The natural
+        # name for a JSON schema is the one the device will not take, so this
+        # is the rule an operator is most likely to trip.
+        "no_ext": True,
     },
     "scripting": {
         "label": "Lua scripting",
@@ -149,6 +156,22 @@ def kind_for_urn(urn: str) -> str:
     return URN_KINDS.get((urn or "").strip(), "")
 
 
+def kind_for_collection(collection: str) -> str:
+    """Artifact kind behind a registry COLLECTION (``waf/xml-wsdl.file``).
+
+    Section Config knows a leaf by its collection; this catalogue knows it by
+    its urn, and the urn is the collection with a ``cmdb/`` prefix. Deriving
+    the join keeps ONE list: a hand-written second map would need extending
+    every time a leaf or a kind is added, and forgetting is SILENT — the
+    create/upload affordance would simply not appear, which reads as "this
+    object type cannot be created" rather than as a missing row.
+    """
+    coll = (collection or "").strip().strip("/")
+    if not coll:
+        return ""
+    return URN_KINDS.get("cmdb/" + coll, "") or URN_KINDS.get(coll, "")
+
+
 def is_artifact_urn(urn: str) -> bool:
     return bool(kind_for_urn(urn))
 
@@ -164,12 +187,30 @@ def is_readable(kind: str) -> bool:
 def name_warning(kind: str, name: str) -> str:
     """Non-fatal complaint about an object NAME, or ``""``.
 
-    Only OpenAPI has one, and it is real: the device rejects a name without a
-    known extension with ``-20007``, and because the name is the filename a
-    rename during a clone is a rename of the file.
+    TWO kinds have a rule and they point in OPPOSITE directions, which is
+    exactly why this is a table and not an ``if``: OpenAPI REQUIRES ``.json``
+    or ``.yaml`` (-20007 otherwise), JSON Schema requires NO extension at all
+    (-61 otherwise). Both were measured against a live 7.6.8; the other four
+    file kinds were measured too and accept any name, so they are silent on
+    purpose rather than by omission.
+
+    The name IS the filename for every kind here, so a rename during a clone
+    is a rename of the file -- which is what makes a name rule worth a warning
+    instead of a comment.
     """
-    exts = (KINDS.get(kind) or {}).get("ext")
-    if not exts or not name:
+    spec = KINDS.get(kind) or {}
+    if not name:
+        return ""
+    if spec.get("no_ext"):
+        # A dot in a leading path-ish segment is not an extension; only a
+        # trailing suffix is what the firmware objects to.
+        tail = name.rsplit("/", 1)[-1]
+        if "." in tail.strip("."):
+            return ("%s names must carry NO extension — the device answers "
+                    "-61 for %s. Drop the suffix." % (label(kind), name))
+        return ""
+    exts = spec.get("ext")
+    if not exts:
         return ""
     low = name.lower()
     if any(low.endswith(e) for e in exts):

@@ -11492,3 +11492,63 @@ failure), baseline green required, no `-x`, and each mutation must name the
 guard it kills among the dead. One mutation is *meta*: it gives the
 never-harvested scope a snapshot, proving the unknown-vs-missing control can
 die.
+
+## §129 — the catalogue must agree with the WIRE, not with the guide
+
+`tests/test_wire_shapes.py`, `tests/test_mutation_survivors.py`.
+
+**What goes wrong silently.** A catalogue that disagrees with the appliance is
+not a broken feature — it is a working-looking one. The operator fills the
+form, the row saves, the page lists it, and the only symptom is an opaque
+firmware code at deploy time, on a different day, probably to a different
+person. Five of the custom-signature catalogue's facts were wrong for three
+weeks under a guard that reported them healthy, because the guard asserted the
+admin guide back to itself.
+
+**How the facts were obtained (repeat this, do not re-derive it).** SSH to the
+appliance and ask the CLI, which enumerates every enum:
+
+    config waf custom-protection-rule
+    edit <name>
+    set action ?              # ask it TWICE: once per Direction
+    config meet-condition
+    edit 1
+    set ?                     # '*' marks the mandatory keys
+    set operator ?
+    set request-target ?
+
+The REST API does NOT expose this: `?action=schema` returns the rows, not a
+schema, and a wrong value comes back as `-651 Invalid input value.` with no
+indication of which field.
+
+**Traps this round paid for.**
+
+1. **`set action ?` answers differently per Direction.** Asking once and
+   writing the answer down deletes the erase actions, which are the admin
+   guide's headline example. Ask under both.
+2. **A target field is a SPACE-SEPARATED LIST.** The device stores what you
+   send verbatim, trailing space and all (`"REQUEST_URI REQUEST_BODY "`).
+   Validating it as one token rejects the normal case.
+3. **`threshold` is on the wire but not in `set ?`.** A field the device
+   stores is a field the operator can be asked about; absence from the
+   completion list is not absence from the object.
+4. **The two file-name rules point in OPPOSITE directions.** OpenAPI requires
+   an extension, JSON Schema forbids one. An `if` gets this wrong; a table
+   does not. The other four kinds were measured too — their silence is a
+   measurement, not an omission.
+5. **The guide states extensions the firmware does not enforce.** `.xsd` for
+   XML schema is documented and NOT checked (`.xsd`, no extension, `.txt` and
+   `.xml` all upload with 200). Do not warn about a rule the box does not
+   apply: a false warning trains operators to ignore the true one.
+6. **A guard can assert the wrong LAYER.** The guard for "the write gate stays
+   narrow" compared the two catalogue functions and passed while the write
+   path called the wrong one. A mutation swapping them survived. Assert
+   through the function whose behaviour is at stake.
+7. **`PUT /cmdb/<endpoint>/<mkey>` answers 500 and writes nothing;
+   `?mkey=` is the shape that works.** `fortiweb_ops._path` already builds the
+   working one — a probe written the other way makes SATOM look broken when
+   it is not. Verify the probe before believing the finding.
+8. **A snapshot omits kinds with zero rows.** `signature_group_rule` was
+   absent from every harvest because no appliance had a custom signature, not
+   because the sweep skips it. "Missing from the snapshot" is not "not
+   collected".

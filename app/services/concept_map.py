@@ -201,6 +201,12 @@ PAGES: tuple[dict, ...] = (
        "borrowed orphan empty library store migration blockers sweep",
        "Every file-backed WAF object the estate needs, whether SATOM holds it, "
        "and which policies cannot be migrated without it."),
+    _p("waf.exceptions", "WAF Exceptions", "fleet",
+       "exception carve out waiver false positive signature disable custom "
+       "signature inventory who has it fleet wide library version rollback "
+       "restore stale orphan bot geo syntax cookie url encryption file",
+       "Every authored WAF/signature carve-out across the estate, which scopes "
+       "hold each one, and whether it can be rolled back."),
     _p("search.index", "Search", "fleet",
        "find search free text lookup where is object policy pool certificate",
        "Free-text sweep across live device configuration."),
@@ -497,6 +503,7 @@ EXCLUDED: dict[str, str] = {
     "monitor_analytics.data": "json feed", "metrics_admin.data": "json feed",
     "waf.api_summary": "json feed",
     "waf.api_artifacts": "json feed",
+    "waf.api_exceptions": "json feed",
     "waf.export": "file download — the panel that drives it is on all five /waf pages",
     "metrics_admin.peer_store": "json feed", "metrics_admin.snapshots": "json feed",
     "metrics_admin.stores": "json feed", "monitoring.data": "json feed",

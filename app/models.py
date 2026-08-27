@@ -1682,6 +1682,15 @@ class WppException(db.Model):
     stale = db.Column(db.Boolean, nullable=False, default=False)
     stale_reason = db.Column(db.Text, nullable=True, default="")
     author = db.Column(db.String(64), nullable=True, default="")
+    # Stable identity, minted on first versioned write (models_exceptions).
+    # NULLABLE with NO BACKFILL: a carve-out authored before the versioner
+    # existed genuinely has no history, and stamping one on at boot would
+    # date thirteen records to the day the feature shipped.
+    lineage = db.Column(db.String(40), nullable=True, index=True)
+    # The fleet-level intent this placement realises (exception_library.uid).
+    # NULL = a local carve-out nobody has promoted to the library — which is
+    # what every row authored before the library existed truly is.
+    library_uid = db.Column(db.String(40), nullable=True, index=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(
         db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)

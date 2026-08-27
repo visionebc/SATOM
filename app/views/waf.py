@@ -39,6 +39,8 @@ from flask import (Blueprint, Response, flash, jsonify, redirect,
 from flask_login import current_user, login_required
 
 from ..services import waf_artifact_fleet as artsvc
+from ..services import exception_fleet as excsvc
+from ..services import wpp_exceptions as store
 from ..services import waf_export as export_svc
 from ..services import waf_fleet as svc
 from ..services.audit import log_action
@@ -78,6 +80,27 @@ ARTIFACT_COLUMNS: tuple[tuple[str, str], ...] = (
     ("created_at", "First stored"),
     ("recoverable", "Recoverable from device"),
     ("remedy", "What to do"),
+)
+
+#: The fleet exceptions table — screen and CSV, one definition. ``policies``
+#: is a COUNT here and the names ride in their own column: a cell that is
+#: sometimes a number and sometimes a list cannot be sorted or summed, which is
+#: the same call ARTIFACT_COLUMNS made for the identical reason.
+EXCEPTION_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("scope", "Device / ADOM"),
+    ("name", "Carve-out"),
+    ("type_label", "Type"),
+    ("category", "Category"),
+    ("wpp_mkey", "Web protection profile"),
+    ("policy_count", "Policies bound"),
+    ("policy_list", "Policy names"),
+    ("state_label", "State"),
+    ("held_by", "Scopes holding this content"),
+    ("identity", "Grouped by"),
+    ("versioned_label", "Recoverable"),
+    ("author", "Author"),
+    ("reason", "Reason"),
+    ("updated_at", "Last change"),
 )
 
 PROFILE_COLUMNS: tuple[tuple[str, str], ...] = (
@@ -364,6 +387,103 @@ def api_artifacts():
         "per_scope": universe["scopes"],
         "growth": artsvc.growth_series(universe),
         "generated_at": stats["generated_at"],
+    })
+
+
+@bp.route("/exceptions")
+@login_required
+def exceptions():
+    """Every authored carve-out across every visible scope, and who has it.
+
+    The counterpart of ``/exceptions/<device>``, which can only ever answer
+    "what has THIS box been given". Same rule as the artifacts page: the
+    filters narrow the TABLE only — every tile above them is the whole visible
+    fleet and says so.
+
+    Device-free by construction. Carve-outs are desired state authored here, so
+    the manager DB is their source of truth; the page states the consequence
+    (authored is not the same as pushed) instead of implying the boxes agree.
+    """
+    universe = excsvc.collect(user=current_user)
+    stats = universe["stats"]
+
+    # The group a row belongs to decides two of its columns, so the lookup is
+    # built ONCE. Re-deriving it per row would be a second author for the
+    # grouping rule and the table would eventually disagree with the tiles.
+    by_row: dict[int, dict] = {}
+    for g in universe["groups"]:
+        for pl in g["placements"]:
+            by_row[pl["id"]] = g
+
+    rows = []
+    for r in universe["rows"] + universe["orphans"]:
+        g = by_row.get(r["id"])
+        rows.append(dict(
+            r,
+            policy_list=", ".join(r["policies"][:6]),
+            state_label=("stale" if r["stale"] else
+                         "disabled" if not r["enabled"] else "active"),
+            held_by=g["held_by"] if g else 1,
+            identity=(g["kind"] if g else "content"),
+            # Not a synonym for "has a history": an unversioned placement
+            # predates the versioner and CANNOT be rolled back, which is the
+            # fact an operator needs before trusting the undo.
+            versioned_label=("yes" if r["versioned"] else "no — predates versioning"),
+        ))
+
+    exc_type = (request.args.get("type") or "").strip()
+    category = (request.args.get("category") or "").strip()
+    scope = (request.args.get("scope") or "").strip()
+    state = (request.args.get("state") or "").strip()
+    q = (request.args.get("q") or "").strip()
+    rows = excsvc.filter_rows(rows, exc_type=exc_type, category=category,
+                              scope=scope, state=state, q=q)
+
+    if (request.args.get("format") or "").lower() == "csv":
+        return _csv(EXCEPTION_COLUMNS, rows, "waf_fleet_exceptions.csv")
+
+    return render_template(
+        "waf/exceptions.html",
+        columns=EXCEPTION_COLUMNS,
+        rows=rows,
+        total=len(universe["rows"]) + len(universe["orphans"]),
+        stats=stats,
+        groups=universe["groups"],
+        scope_rows=universe["scopes"],
+        orphans=universe["orphans"],
+        devices=_universe()["devices"],
+        stale_hours=svc.STALE_AFTER_HOURS,
+        types=excsvc.type_choices(universe["rows"]),
+        scope_names=excsvc.scope_choices(universe["rows"]),
+        categories=[store.CAT_EXCEPTION, store.CAT_SIGNATURE],
+        selected={"type": exc_type, "category": category, "scope": scope,
+                  "state": state, "q": q},
+    )
+
+
+@bp.route("/api/exceptions.json")
+@login_required
+def api_exceptions():
+    universe = excsvc.collect(user=current_user)
+    stats = universe["stats"]
+    return jsonify({
+        "stats": {k: v for k, v in stats.items()
+                  if k not in ("by_type", "by_category", "spread")},
+        "by_type": [{"label": k, "value": v}
+                    for k, v in sorted(stats["by_type"].items(),
+                                       key=lambda kv: -kv[1])],
+        "by_category": [{"label": k, "value": v}
+                        for k, v in sorted(stats["by_category"].items())],
+        # Fixed order and fixed buckets: a chart whose categories appear and
+        # vanish with the data cannot be compared against yesterday's.
+        "spread": [{"label": b, "value": stats["spread"].get(b, 0)}
+                   for b in ("one scope", "some scopes", "everywhere")],
+        "per_scope": [{"label": s["scope"], "value": s["count"]}
+                      for s in universe["scopes"]],
+        "recoverable": [
+            {"label": "recoverable", "value": stats["placements"] - stats["unversioned"]},
+            {"label": "predates versioning", "value": stats["unversioned"]},
+        ],
     })
 
 

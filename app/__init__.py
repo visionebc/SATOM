@@ -1508,6 +1508,20 @@ def create_app(config_override: object | None = None) -> Flask:
             'wpp_exceptions': [
                 ('stale', 'BOOLEAN DEFAULT FALSE'),
                 ('stale_reason', 'TEXT'),
+                # --- identity + fleet library link (2026-08-27) ---
+                # Appended to the EXISTING key on purpose. A second
+                # 'wpp_exceptions' entry lower in this literal is not a merge:
+                # Python keeps the last one and the earlier columns are never
+                # added — no error, no log line, and the first save 500s on a
+                # column the model says exists. That is exactly what happened
+                # while writing this; tests/test_schema_migration_keys.py is
+                # the guard, and it reads the SOURCE because by the time this
+                # dict is built the duplicates have already collapsed.
+                # NULLABLE, NO DEFAULT, NO BACKFILL: a carve-out authored
+                # before the versioner has no history and belongs to no
+                # library item.
+                ('lineage', 'VARCHAR(40)'),
+                ('library_uid', 'VARCHAR(40)'),
             ],
             # --- product/ADOM separation (2026-07-07) ---
             'audit_logs': [
@@ -1818,6 +1832,11 @@ def create_app(config_override: object | None = None) -> Flask:
             # create_all() never makes the tables and the first render of
             # /sentinel 500s.
             from . import models_sentinel  # noqa: F401
+            # Carve-out identity (fleet library) and the append-only version
+            # history behind rollback/restore. Without this import
+            # create_all() never makes the tables and the first save on
+            # /exceptions 500s on a table the model says exists.
+            from . import models_exceptions  # noqa: F401
             # Sentinel's two collectors (http_status, infra) join the
             # fleet collection registry here so the scheduler sidecar — which
             # never imports a view — provisions and runs them like any other.

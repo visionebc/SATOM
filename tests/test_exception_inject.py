@@ -22,8 +22,36 @@ def test_every_catalog_type_has_a_resolvable_mapping():
         assert rest is not None, f"no EXCEPTION_REST entry for {key}"
         assert inj.resolve_collection(rest.item_logical), \
             f"{key}: item_logical {rest.item_logical!r} not in registry"
-        assert inj.resolve_collection(rest.parent_logical), \
-            f"{key}: parent_logical {rest.parent_logical!r} not in registry"
+        # Two SHAPES, and the guard must hold each to its own contract rather
+        # than relaxing to the weaker one. A by-parent row without a resolvable
+        # parent is unwritable; a top-level object with a parent would have its
+        # write scoped to a path the box answers with a DIFFERENT object.
+        if rest.top_level:
+            assert rest.parent_logical == "", \
+                f"{key}: a top-level object must declare no parent"
+            assert inj.needs_target(key) is False
+        else:
+            assert inj.resolve_collection(rest.parent_logical), \
+                f"{key}: parent_logical {rest.parent_logical!r} not in registry"
+            assert inj.needs_target(key) is True
+
+
+def test_top_level_write_is_the_bare_collection():
+    """``waf/custom-protection-rule`` is a named object, not a sub-table row.
+    Scoping the write to a target appends a segment and the box answers with a
+    different object — silently, with a 200."""
+    plan = inj.plan_injection("custom_signature_item",
+                              {"name": "cs-1", "type": "request"},
+                              "whatever-the-caller-passed")
+    assert plan["status"] == "ready" and plan["method"] == "POST"
+    assert plan["endpoint"].rstrip("/").endswith("custom-protection-rule")
+    assert plan["target"] == "", "a passed target must be ignored, not appended"
+
+
+def test_retired_type_key_still_resolves():
+    """A carve-out stored under the pre-Tanda-0 key is still on the box.
+    Looking it up raw answers None and renders it un-pushable."""
+    assert inj.rest_for("signature_group_rule_condition") is not None
 
 
 # ── planner (pure) ─────────────────────────────────────────────────────────

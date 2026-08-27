@@ -50,15 +50,17 @@ def test_direction_uses_device_tokens_not_gui_labels():
     assert "Request" not in opts and "Data Leakage" not in opts
 
 
-def test_custom_signature_actions_are_sdk_tokens():
+def test_custom_signature_actions_are_the_wire_set():
+    """Superseded 2026-08-27: the admin guide's six were neither necessary nor
+    sufficient. ``set action ?`` on a live 7.6.8 answers SEVEN for a request
+    rule and NINE for a response rule; the three the guide omits
+    (``client-id-block-period``, ``deny_no_log``, ``redirect``) are real, and
+    the erase pair is response-only rather than universal."""
     opts = set(_opts("custom_signature_item", "action"))
-    # the six the admin guide lists for this object
     assert opts == {"alert", "alert_deny", "alert_erase", "block-period",
-                    "only_erase", "send_http_response"}
-    # and every one of them is a token the generated SDK catalog knows
-    assert opts <= {"alert", "alert_deny", "alert_erase", "block-period",
-                    "deny_no_log", "only_erase", "pass", "redirect",
-                    "send_http_response"}
+                    "client-id-block-period", "deny_no_log", "only_erase",
+                    "redirect", "send_http_response"}
+    assert w.RESPONSE_ONLY_ACTIONS < opts
 
 
 def test_threat_weight_is_a_token_scale_not_a_number():
@@ -74,11 +76,16 @@ def test_custom_signature_requires_direction_and_action():
     assert any("type" in e for e in errs) and any("action" in e for e in errs)
 
 
-def test_a_condition_without_a_target_is_rejected():
-    """A condition that names no target matches everywhere it is evaluated."""
+def test_a_condition_without_an_expression_is_rejected():
+    """Superseded 2026-08-27. The device marks ``*expression`` mandatory and
+    nothing else on this subtable; ``target`` is not even a field name (it is
+    request-target/response-target, split by Direction). The old assertion
+    demanded a key the box has never had, which is how the whole shape stayed
+    wrong while a guard reported it healthy."""
     errs = w.validate_payload("custom_signature_condition_item",
-                              {"operator": "regular-expression"})
-    assert any("target" in e for e in errs)
+                              {"operator": "RE"})
+    assert any("expression" in e for e in errs)
+    assert not any("'target'" in e for e in errs)
 
 
 # ---------------------------------------------------------------- orphan type
@@ -177,7 +184,11 @@ def test_syntax_exception_keeps_its_own_hyphenated_token():
 
 
 def test_unverified_shapes_are_recorded_rather_than_forgotten():
-    assert "custom_signature_condition_item" in w.UNVERIFIED_SHAPES
+    """The register must SHRINK as shapes get confirmed, or it becomes a list
+    of things somebody once meant to check. ``custom_signature_condition_item``
+    left it on 2026-08-27 when the meet-condition schema was read off a live
+    device; ``bot_exception_element_item`` is still unreadable there."""
+    assert "custom_signature_condition_item" not in w.UNVERIFIED_SHAPES
     assert "bot_exception_element_item" in w.UNVERIFIED_SHAPES
     for note in w.UNVERIFIED_SHAPES.values():
         assert len(note) > 40

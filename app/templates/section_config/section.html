@@ -90,13 +90,44 @@
           {% if selected.read_only %}<span class="fw-badge fw-badge-secondary ms-1">{{ _('read-only') }}</span>{% endif %}
           {% if is_singleton %}<span class="fw-badge fw-badge-secondary ms-1">{{ _('single config') }}</span>{% endif %}
         </div>
-        {% if not selected.read_only and not is_singleton %}
+        <div class="d-flex gap-2">
+        {# A file-backed object cannot be created by the cmdb editor: its BODY
+           is a file the device takes over a multipart upload endpoint that is
+           not under /cmdb/. Offering the generic "New …" button here produced
+           an object with no content — which is precisely the EMPTY state
+           safeguards §124 exists to keep out of the estate. #}
+        {% if artifact_kind %}
+        <button class="btn btn-fw-primary btn-sm" type="button"
+                data-bs-toggle="modal" data-bs-target="#artifact-add">
+          <i class="bi bi-file-earmark-arrow-up me-1"></i>{{ _('New') }} {{ artifact_label }}
+        </button>
+        <a class="btn btn-outline-secondary btn-sm"
+           href="{{ url_for('artifacts.index', kind=artifact_kind) }}">
+          <i class="bi bi-archive me-1"></i>{{ _('Stored copies') }}</a>
+        {% elif not selected.read_only and not is_singleton %}
         <a class="btn btn-fw-primary btn-sm"
            href="{{ url_for('objedit.edit', appliance_id=appliance.id, collection=selected.collection, title=selected.label, create=1) }}">
           <i class="bi bi-plus-lg me-1"></i>New {{ selected.label }}
         </a>
         {% endif %}
+        </div>
       </div>
+
+      {% if artifact_kind %}
+      <div class="alert alert-info py-2 small">
+        <i class="bi bi-info-circle me-1"></i>
+        <strong>{{ artifact_label }}</strong> {{ _('objects are file-backed: their body is a file, not cmdb fields.') }}
+        {% if artifact_readable %}
+        {{ _('This type can be read back off the appliance, so SATOM can capture a copy of one that already exists.') }}
+        {% else %}
+        {# Not a footnote. An operator who does not know this goes looking for
+           a Capture button that cannot exist, and concludes the page is
+           broken rather than that the firmware is write-only here. #}
+        <strong>{{ _('The appliance will NOT give this file back.') }}</strong>
+        {{ _('Once it is on the box the only copy is the one SATOM keeps — upload it here, or the object cannot be migrated.') }}
+        {% endif %}
+      </div>
+      {% endif %}
 
       {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
 
@@ -218,6 +249,80 @@
 {% endif %}
 
 <!-- ====================== CONFIG TEMPLATE LIBRARY ====================== -->
+{# ---- create / upload a file-backed object, without leaving this page ---- #}
+{% if artifact_kind %}
+<div class="modal fade" id="artifact-add" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-file-earmark-arrow-up me-2"></i>
+          {{ _('New') }} {{ artifact_label }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <ul class="nav nav-tabs mb-3" role="tablist">
+          <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab"
+              data-bs-target="#art-tab-upload" type="button">{{ _('Upload a file') }}</button></li>
+          <li class="nav-item"><button class="nav-link" data-bs-toggle="tab"
+              data-bs-target="#art-tab-write" type="button">{{ _('Write it here') }}</button></li>
+        </ul>
+        <div class="tab-content">
+          {# Both tabs post to the SAME two verbs /artifacts already owns. A
+             third upload path here would be a second place for the empty-file
+             and name-extension rules to live, and they would drift. #}
+          <div class="tab-pane fade show active" id="art-tab-upload">
+            <form method="post" enctype="multipart/form-data"
+                  action="{{ url_for('artifacts.upload') }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="kind" value="{{ artifact_kind }}">
+              <input type="hidden" name="appliance_id" value="{{ appliance.id }}">
+              <input type="hidden" name="back" value="{{ request.full_path }}">
+              <div class="mb-2">
+                <label class="form-label small">{{ _('Object name') }}
+                  <span class="text-muted">{{ _('(the mkey the device stores it under; blank = the filename)') }}</span></label>
+                <input name="name" class="form-control form-control-sm">
+              </div>
+              <div class="mb-2">
+                <label class="form-label small">{{ _('File') }}</label>
+                <input type="file" name="file" class="form-control form-control-sm" required>
+              </div>
+              <div class="mb-2">
+                <label class="form-label small">{{ _('Note') }}</label>
+                <input name="note" class="form-control form-control-sm"
+                       placeholder="{{ _('where this came from, and why') }}">
+              </div>
+              <button class="btn btn-fw-primary btn-sm" type="submit">
+                <i class="bi bi-upload me-1"></i>{{ _('Store it') }}</button>
+              <span class="text-muted small ms-2">{{ _('Stored in SATOM. Nothing is sent to the appliance by this button.') }}</span>
+            </form>
+          </div>
+          <div class="tab-pane fade" id="art-tab-write">
+            <form method="post" action="{{ url_for('artifacts.save') }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="kind" value="{{ artifact_kind }}">
+              <input type="hidden" name="appliance_id" value="{{ appliance.id }}">
+              <input type="hidden" name="back" value="{{ request.full_path }}">
+              <div class="mb-2">
+                <label class="form-label small">{{ _('Object name') }}</label>
+                <input name="name" class="form-control form-control-sm" required>
+              </div>
+              <div class="mb-2">
+                <label class="form-label small">{{ _('Content') }}</label>
+                <textarea name="content" rows="12" class="form-control form-control-sm font-monospace"
+                          placeholder="{{ _('paste the schema / WSDL / DTD here') }}"></textarea>
+              </div>
+              <button class="btn btn-fw-primary btn-sm" type="submit">
+                <i class="bi bi-save me-1"></i>{{ _('Store it') }}</button>
+              <span class="text-muted small ms-2">{{ _('An empty body is refused — it would satisfy every "we have a copy" check and configure nothing.') }}</span>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 <div class="fw-card mt-4">
   <div class="fw-card-header d-flex align-items-center justify-content-between">
     <span class="fw-card-title"><i class="bi bi-collection me-2"></i>Config template library{% if selected %} · {{ selected.label }}{% endif %}

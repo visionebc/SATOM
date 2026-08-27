@@ -13,7 +13,14 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
   <h4 class="mb-0"><i class="bi bi-exclamation-triangle me-2"></i>Exceptions &amp; Signature Carve-outs — {{ appliance.name }}</h4>
-  <button class="btn btn-sm btn-outline-primary" data-js="open-detect"><i class="bi bi-search me-1"></i>{{ _('Detect on device') }}</button>
+  <div class="d-flex gap-2">
+    {# The fleet counterpart. Named as a DIFFERENT question rather than as
+       "the same page, wider": this one authors and pushes for one scope, that
+       one answers who across the estate holds a given carve-out. #}
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('waf.exceptions') }}">
+      <i class="bi bi-globe2 me-1"></i>{{ _('Fleet inventory') }}</a>
+    <button class="btn btn-sm btn-outline-primary" data-js="open-detect"><i class="bi bi-search me-1"></i>{{ _('Detect on device') }}</button>
+  </div>
 </div>
 <p class="text-muted">{{ _('Desired-state carve-outs authored in the manager and bound to a Server Policy. FortiWeb can\'t record which policy a shared-profile carve-out is for — this does.') }}
   <strong>{{ _('Authoring only') }}</strong>{{ _('; pushing to the device is a separate step.') }}</p>
@@ -25,9 +32,85 @@
 </div>
 {% endif %}
 
+{# ── inventory tally ───────────────────────────────────────────────────── #}
+<div class="row g-2 mb-3">
+  <div class="col-6 col-md-3">
+    <div class="fw-stat-card"><div class="fw-stat-icon fw-stat-icon-primary"><i class="bi bi-slash-circle"></i></div>
+      <div><div class="fw-stat-value">{{ total }}</div>
+        <div class="fw-stat-label">{{ _('Carve-outs on this scope') }}</div></div></div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="fw-stat-card"><div class="fw-stat-icon fw-stat-icon-warning"><i class="bi bi-exclamation-triangle"></i></div>
+      <div><div class="fw-stat-value">{{ stale_count }}</div>
+        <div class="fw-stat-label">{{ _('Stale') }}</div></div></div>
+  </div>
+  <div class="col-6 col-md-3">
+    {# Its own figure, not folded into a health number: an unversioned
+       carve-out cannot be rolled back, which is what decides whether the undo
+       button means anything for that row. #}
+    <div class="fw-stat-card"><div class="fw-stat-icon fw-stat-icon-secondary"><i class="bi bi-clock-history"></i></div>
+      <div><div class="fw-stat-value">{{ unversioned_count }}</div>
+        <div class="fw-stat-label">{{ _('Predate versioning') }}</div></div></div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="fw-stat-card"><div class="fw-stat-icon fw-stat-icon-info"><i class="bi bi-arrow-counterclockwise"></i></div>
+      <div><div class="fw-stat-value">{{ restorable_count }}</div>
+        <div class="fw-stat-label">{{ _('Deleted, still restorable') }}</div></div></div>
+  </div>
+</div>
+
+{# ── which Server Policy holds what ────────────────────────────────────── #}
+{% if by_policy %}
+<div class="card mb-3">
+  <div class="card-header"><strong>{{ _('Which Server Policy holds a carve-out') }}</strong></div>
+  <div class="card-body py-2">
+    {% for pol, n in by_policy %}
+    <a class="badge bg-secondary text-decoration-none me-1 mb-1"
+       href="{{ url_for('exceptions.list_exceptions', id=appliance.id, policy=pol) }}">
+      {{ pol }} <span class="badge bg-light text-dark">{{ n }}</span></a>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{# ── filters — resolved SERVER-SIDE. A client-side overlay would leave the
+     page shipping a superset it claims not to show, and the count line above
+     the table would be describing rows nobody can see. ─────────────────── #}
+<form method="get" class="d-flex flex-wrap gap-2 align-items-center mb-2">
+  <select name="type" class="form-select form-select-sm" style="width:auto">
+    <option value="">{{ _('Any type') }}</option>
+    {% for key, label in present_types %}
+    <option value="{{ key }}" {{ 'selected' if selected.type == key }}>{{ label }}</option>
+    {% endfor %}
+  </select>
+  <select name="category" class="form-select form-select-sm" style="width:auto">
+    <option value="">{{ _('Any category') }}</option>
+    <option value="{{ cat_exception }}" {{ 'selected' if selected.category == cat_exception }}>{{ cat_exception }}</option>
+    <option value="{{ cat_signature }}" {{ 'selected' if selected.category == cat_signature }}>{{ cat_signature }}</option>
+  </select>
+  <select name="policy" class="form-select form-select-sm" style="width:auto">
+    <option value="">{{ _('Any server policy') }}</option>
+    {% for pol, n in by_policy %}
+    <option value="{{ pol }}" {{ 'selected' if selected.policy == pol }}>{{ pol }}</option>
+    {% endfor %}
+  </select>
+  <select name="state" class="form-select form-select-sm" style="width:auto">
+    <option value="">{{ _('Any state') }}</option>
+    <option value="active" {{ 'selected' if selected.state == 'active' }}>{{ _('active') }}</option>
+    <option value="stale" {{ 'selected' if selected.state == 'stale' }}>{{ _('stale') }}</option>
+    <option value="disabled" {{ 'selected' if selected.state == 'disabled' }}>{{ _('disabled') }}</option>
+    <option value="unversioned" {{ 'selected' if selected.state == 'unversioned' }}>{{ _('predates versioning') }}</option>
+  </select>
+  <input type="search" name="q" class="form-control form-control-sm" style="width:16rem"
+         value="{{ selected.q }}" placeholder="{{ _('name, profile, policy, payload…') }}">
+  <button class="btn btn-sm btn-fw-primary" type="submit"><i class="bi bi-funnel me-1"></i>{{ _('Filter') }}</button>
+  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('exceptions.list_exceptions', id=appliance.id) }}">{{ _('Reset') }}</a>
+</form>
+
 {# ── existing carve-outs ───────────────────────────────────────────────── #}
 <div class="card mb-4">
-  <div class="card-header"><strong>{{ _('Authored carve-outs') }}</strong> <span class="text-muted">({{ items|length }})</span></div>
+  <div class="card-header"><strong>{{ _('Authored carve-outs') }}</strong>
+    <span class="text-muted">({{ items|length }} {{ _('of') }} {{ total }})</span></div>
   <div class="card-body p-0">
     <div class="table-responsive">
       <table class="table table-hover mb-0">
@@ -40,13 +123,22 @@
               data-payload='{{ it.payload_dict|tojson }}'>
             <td><span class="badge bg-{{ 'info' if it.category == cat_exception else 'warning' }}">{{ it.category }}</span>
               {% if it.stale %}<span class="badge bg-danger ms-1" title="{{ it.stale_reason }}">{{ _('STALE') }}</span>{% endif %}</td>
-            <td>{{ it.exc_type }}</td>
+            <td>{{ it.exc_type }}
+              {% if not it.lineage %}<span class="badge bg-secondary ms-1"
+                title="{{ _('Authored before the versioner — there is no earlier state to return to') }}">{{ _('no history') }}</span>{% endif %}
+              {% if it.library_uid %}<span class="badge bg-info ms-1"
+                title="{{ _('Linked to a fleet library item — other scopes may carry the same carve-out') }}"><i class="bi bi-link-45deg"></i></span>{% endif %}</td>
             <td>{{ it.wpp_mkey or '—' }}{% if it.wpp_mkey in managed_wpps %} <span title="{{ _('Template-managed profile — carve-outs on it are blocked') }}">🔒</span>{% endif %}</td>
             <td>{% for p in it.policy_names %}<span class="badge bg-secondary me-1">{{ p }}</span>{% else %}<span class="text-muted">{{ _('unbound') }}</span>{% endfor %}</td>
             <td class="small text-muted">{{ it.reason or '' }}</td>
             <td class="text-nowrap">
               <button class="btn btn-sm btn-outline-secondary" data-js="exc-edit">{{ _('Edit') }}</button>
               <button class="btn btn-sm btn-outline-primary" data-js="exc-inject" title="{{ _('Push to device') }}">{{ _('Inject') }}</button>
+              <button class="btn btn-sm btn-outline-primary" data-js="exc-deploy" title="{{ _('Place on other FortiWebs') }}">{{ _('Deploy') }}</button>
+              <button class="btn btn-sm btn-outline-secondary" data-js="exc-history" title="{{ _('Versions and rollback') }}"><i class="bi bi-clock-history"></i></button>
+              {# NOT a plain delete any more: the button opens the impact
+                 report first, because a carve-out on a shared profile takes
+                 the waiver away from policies that never appear in this row. #}
               <button class="btn btn-sm btn-outline-danger" data-js="exc-delete">{{ _('Delete') }}</button>
             </td>
           </tr>
@@ -56,6 +148,63 @@
         </tbody>
       </table>
     </div>
+  </div>
+</div>
+
+{# ── history / rollback ────────────────────────────────────────────────── #}
+<div class="card mb-4 d-none" id="history-panel">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <strong><i class="bi bi-clock-history me-1"></i>{{ _('Version history') }}
+      <span id="history-title" class="text-muted"></span></strong>
+    <button class="btn btn-sm btn-outline-secondary" data-js="close-history">{{ _('Close') }}</button>
+  </div>
+  <div class="card-body">
+    <p class="small text-muted mb-2">{{ _('A rollback APPENDS a new version — nothing is deleted, so what was tried and undone stays legible.') }}</p>
+    <div id="history-body"></div>
+    <div id="history-diff" class="mt-3 small d-none"></div>
+  </div>
+</div>
+
+{# ── restorable (deleted) ──────────────────────────────────────────────── #}
+{% if restorable_count %}
+<div class="card mb-4 border-info-subtle">
+  <div class="card-header"><strong><i class="bi bi-arrow-counterclockwise me-1"></i>
+    {{ _('Deleted carve-outs that can still be brought back') }}</strong>
+    <span class="text-muted">({{ restorable_count }})</span></div>
+  <div class="card-body">
+    <p class="small text-muted mb-2">{{ _('Their history survived the delete. Restoring re-creates the record with the bindings it had when it went.') }}</p>
+    <div id="restorable-body"><button class="btn btn-sm btn-outline-primary" data-js="load-restorable">{{ _('Show them') }}</button></div>
+  </div>
+</div>
+{% endif %}
+
+{# ── lifecycle: impact before delete ───────────────────────────────────── #}
+<div class="card mb-4 d-none border-danger-subtle" id="impact-panel">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <strong><i class="bi bi-exclamation-octagon me-1"></i>{{ _('What deleting this would take away') }}</strong>
+    <button class="btn btn-sm btn-outline-secondary" data-js="close-impact">{{ _('Close') }}</button>
+  </div>
+  <div class="card-body"><div id="impact-body"></div></div>
+</div>
+
+{# ── deploy to one or many FortiWebs ───────────────────────────────────── #}
+<div class="card mb-4 d-none border-primary-subtle" id="deploy-panel">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <strong><i class="bi bi-diagram-3 me-1"></i>{{ _('Place this carve-out on other FortiWebs') }}</strong>
+    <button class="btn btn-sm btn-outline-secondary" data-js="close-deploy">{{ _('Close') }}</button>
+  </div>
+  <div class="card-body">
+    <div class="alert alert-info py-2 small">
+      <strong>{{ _('Placing is not pushing.') }}</strong>
+      {{ _('This records the carve-out as desired state on each chosen scope. Nothing is sent to any appliance — push each placement from its own scope, where the template lock and the 128-entry headroom are checked. Server Policy bindings are NOT copied: a policy name is a fact about THIS box.') }}
+    </div>
+    <div id="deploy-body"></div>
+    <div class="mt-3">
+      <button class="btn btn-sm btn-outline-primary" data-js="deploy-dry-run">{{ _('Preview') }}</button>
+      <button class="btn btn-sm btn-fw-primary" data-js="deploy-apply"><i class="bi bi-diagram-3 me-1"></i>{{ _('Place on selected scopes') }}</button>
+      <span id="deploy-msg" class="ms-2 small"></span>
+    </div>
+    <pre class="mt-3 p-2 bg-light small d-none" id="deploy-out" style="white-space:pre-wrap;"></pre>
   </div>
 </div>
 
@@ -104,6 +253,18 @@
 
     <div class="row g-3 mt-1" id="exc-fields"><!-- dynamic fields per type --></div>
 
+    {# The advisory reads this. Empty is allowed and reported as "the operator
+       gave no description" rather than silently treated as a clean bill: an
+       analysis of a remedy with no stated problem cannot say "proportionate"
+       to anything. #}
+    <div class="mt-3">
+      <label class="form-label small">{{ _('What problem is this meant to solve?') }}
+        <span class="text-muted">{{ _('(used by the analysis; optional)') }}</span></label>
+      <textarea id="exc-problem" class="form-control form-control-sm" rows="2"
+                placeholder="{{ _('e.g. the checkout POST trips signature 010000001 on legitimate traffic') }}"></textarea>
+    </div>
+    <div class="alert alert-info py-2 small mt-3 d-none" id="advice-box"></div>
+
     <div class="row g-3 mt-1">
       <div class="col-md-6">
         <label class="form-label">{{ _('Bind to Server Policies') }}</label>
@@ -119,6 +280,12 @@
     </div>
 
     <div class="mt-3">
+      {# The gate the operator asked for: the option to have this analysed
+         BEFORE it is implemented. Opt-in and non-blocking by contract — a
+         model that could veto a change becomes an outage during the incident
+         where a false positive most needs waiving. #}
+      <button class="btn btn-sm btn-outline-info" data-js="advise-exc">
+        <i class="bi bi-stars me-1"></i>{{ _('Analyse before implementing') }}</button>
       <button class="btn btn-sm btn-fw-primary" data-js="save-exc"><i class="bi bi-check2-circle me-1"></i>{{ _('Save carve-out') }}</button>
       <span id="exc-msg" class="ms-2 small"></span>
     </div>
@@ -502,16 +669,29 @@ function cloneRebind(){
     saveExc();   // re-submit the carve-out, now against the clone
   });
 }
-function deleteExc(id){
-  if (!confirm('Delete this carve-out?')) return;
-  fwPost('/exceptions/'+EXC_AID+'/delete', {exc_id:id}).then(function(j){ if (j.ok) location.reload(); });
-}
+/* deleteExc now opens the IMPACT report first — see the lifecycle block
+   below. The one-click delete lived here and could take a waiver away from
+   Server Policies that never appear in the row being deleted. */
+/* The cascade is PREVIEWED first. It used to delete on the first click, and a
+   carve-out is authored against a profile that is usually shared — so a row
+   serving another policy went with it, unnamed and unrecorded. */
 function purgePolicy(){
   const p = document.getElementById('purge-policy').value;
   if (!p){ return; }
-  if (!confirm('Remove ALL carve-outs bound to '+p+'?')) return;
   fwPost('/exceptions/'+EXC_AID+'/purge', {server_policy:p}).then(function(j){
-    if (j.ok){ if (window.FW) FW.toast('Purged '+j.deleted+' carve-out(s)','success'); location.reload(); }
+    if (!j.ok){ alert(j.error || 'failed'); return; }
+    let msg = 'Server Policy "'+p+'":\n\n'
+      + '  DELETED (nothing else binds them): ' + j.deleted + '\n';
+    (j.to_delete||[]).forEach(function(r){ msg += '    - ' + (r.name || ('#'+r.id)) + ' [' + r.exc_type + ']\n'; });
+    msg += '\n  UNBOUND (they still serve another policy): ' + j.unbound + '\n';
+    (j.to_unbind||[]).forEach(function(r){ msg += '    - ' + (r.name || ('#'+r.id)) + ' -> keeps ' + (r.remaining||[]).join(', ') + '\n'; });
+    if (!j.deleted && !j.unbound){ alert(msg + '\nNothing is bound to that policy.'); return; }
+    msg += '\nApply this?';
+    if (!confirm(msg)) return;
+    fwPost('/exceptions/'+EXC_AID+'/purge', {server_policy:p, apply:true}).then(function(k){
+      if (k.ok){ if (window.FW) FW.toast('Purged '+k.deleted+' carve-out(s)','success'); location.reload(); }
+      else alert(k.error || 'failed');
+    });
   });
 }
 // ── inject to device ──
@@ -597,7 +777,303 @@ function detectImport(){
 }
 // ── event bindings (CSP: no inline handlers) ──
 (function () {
+
+/* ---------------------------------------------------------------------------
+   Version history, rollback and restore.
+
+   The panel says "no history" out loud for a carve-out authored before the
+   versioner. An empty timeline rendered as a clean one is the difference
+   between "nothing has changed" and "we cannot undo anything here", and only
+   one of those is safe to act on.
+   --------------------------------------------------------------------------- */
+let HIST_EXC = 0;
+function closeHistory(){ document.getElementById('history-panel').classList.add('d-none'); }
+function openHistory(btn){
+  const tr = btn.closest('tr');
+  HIST_EXC = +tr.dataset.excId;
+  const panel = document.getElementById('history-panel');
+  panel.classList.remove('d-none');
+  document.getElementById('history-title').textContent = '— ' + (tr.dataset.name || ('#' + HIST_EXC));
+  document.getElementById('history-diff').classList.add('d-none');
+  const body = document.getElementById('history-body');
+  body.innerHTML = '<span class="text-muted">Loading…</span>';
+  fetch('/exceptions/' + EXC_AID + '/versions?exc_id=' + HIST_EXC)
+    .then(r => r.json()).then(function(d){
+      if (!d.ok){ body.innerHTML = '<span class="text-danger">' + esc(d.error || 'failed') + '</span>'; return; }
+      if (!d.versioned){
+        body.innerHTML = '<div class="alert alert-warning py-2 mb-0 small">'
+          + 'This carve-out was authored before version history existed. There is '
+          + '<strong>no earlier state to return to</strong> — the next save will start its history.</div>';
+        return;
+      }
+      let html = '<table class="table table-sm align-middle"><thead><tr>'
+        + '<th>#</th><th>When</th><th>Action</th><th>By</th><th>Note</th><th>Content</th><th></th>'
+        + '</tr></thead><tbody>';
+      d.versions.forEach(function(v, i){
+        const current = (v.sha256 === d.current_sha && i === 0);
+        html += '<tr><td>' + v.id + '</td><td class="small">' + esc(v.created_at) + '</td>'
+          + '<td><span class="badge bg-' + (v.action === 'delete' ? 'danger'
+              : v.action === 'rollback' ? 'warning text-dark'
+              : v.action === 'create' ? 'success' : 'secondary') + '">' + esc(v.action) + '</span></td>'
+          + '<td class="small">' + esc(v.author || '—') + '</td>'
+          + '<td class="small text-muted">' + esc(v.note || '') + '</td>'
+          + '<td class="small font-monospace">' + esc(v.short) + (current ? ' <span class="badge bg-primary">current</span>' : '') + '</td>'
+          + '<td class="text-nowrap">'
+          + '<button class="btn btn-sm btn-outline-secondary hist-diff" data-vid="' + v.id + '">Diff vs current</button> '
+          + (current ? '' : '<button class="btn btn-sm btn-outline-warning hist-roll" data-vid="' + v.id + '">Roll back</button>')
+          + '</td></tr>';
+      });
+      body.innerHTML = html + '</tbody></table>';
+      body.querySelectorAll('.hist-diff').forEach(function(b){
+        b.addEventListener('click', function(){ showDiff(+this.dataset.vid); });
+      });
+      body.querySelectorAll('.hist-roll').forEach(function(b){
+        b.addEventListener('click', function(){ rollBack(+this.dataset.vid); });
+      });
+    });
+}
+function showDiff(vid){
+  const box = document.getElementById('history-diff');
+  box.classList.remove('d-none');
+  box.innerHTML = '<span class="text-muted">Loading…</span>';
+  fetch('/exceptions/' + EXC_AID + '/version-diff?exc_id=' + HIST_EXC + '&a=' + vid)
+    .then(r => r.json()).then(function(d){
+      if (!d.ok){ box.innerHTML = '<span class="text-danger">' + esc(d.error) + '</span>'; return; }
+      if (d.diff.identical){
+        box.innerHTML = '<div class="alert alert-secondary py-2 mb-0">Identical to ' + esc(d.right) + '.</div>';
+        return;
+      }
+      /* STRUCTURAL, by field. A text diff of two JSON blobs reports key order
+         and indentation as changes, which is how a no-op save reads as an
+         edit. */
+      let html = '<strong>' + esc(d.left) + ' → ' + esc(d.right) + '</strong>'
+        + '<table class="table table-sm mt-2"><thead><tr><th>Field</th><th>Then</th><th>Now</th></tr></thead><tbody>';
+      d.diff.changed.forEach(function(c){
+        html += '<tr><td class="font-monospace">' + esc(c.field) + '</td><td>' + esc(JSON.stringify(c.old)) + '</td><td>' + esc(JSON.stringify(c.new)) + '</td></tr>';
+      });
+      d.diff.removed.forEach(function(c){
+        html += '<tr class="table-warning"><td class="font-monospace">' + esc(c.field) + '</td><td>' + esc(JSON.stringify(c.old)) + '</td><td><em>removed</em></td></tr>';
+      });
+      d.diff.added.forEach(function(c){
+        html += '<tr class="table-success"><td class="font-monospace">' + esc(c.field) + '</td><td><em>absent</em></td><td>' + esc(JSON.stringify(c.new)) + '</td></tr>';
+      });
+      box.innerHTML = html + '</tbody></table>';
+    });
+}
+function rollBack(vid){
+  if (!confirm('Roll this carve-out back to version #' + vid + '? A NEW version is appended; nothing is deleted.')) return;
+  fwPost('/exceptions/' + EXC_AID + '/rollback', {exc_id: HIST_EXC, version_id: vid})
+    .then(function(d){
+      if (!d.ok){ alert(d.error || 'rollback failed'); return; }
+      location.reload();
+    });
+}
+function loadRestorable(){
+  const box = document.getElementById('restorable-body');
+  box.innerHTML = '<span class="text-muted">Loading…</span>';
+  fetch('/exceptions/' + EXC_AID + '/restorable').then(r => r.json()).then(function(d){
+    if (!d.items.length){ box.innerHTML = '<span class="text-muted">Nothing to restore.</span>'; return; }
+    let html = '<table class="table table-sm"><thead><tr><th>Name</th><th>Type</th><th>WPP</th><th>Policies</th><th>Deleted</th><th>By</th><th></th></tr></thead><tbody>';
+    d.items.forEach(function(it){
+      html += '<tr><td>' + esc(it.name || '(unnamed)') + '</td><td class="small">' + esc(it.exc_type) + '</td>'
+        + '<td class="small">' + esc(it.wpp_mkey || '—') + '</td>'
+        + '<td class="small">' + esc((it.policies || []).join(', ') || '—') + '</td>'
+        + '<td class="small">' + esc(it.deleted_at) + '</td><td class="small">' + esc(it.author || '—') + '</td>'
+        + '<td><button class="btn btn-sm btn-outline-primary rest-btn" data-lin="' + esc(it.lineage) + '">Restore</button></td></tr>';
+    });
+    box.innerHTML = html + '</tbody></table>';
+    box.querySelectorAll('.rest-btn').forEach(function(b){
+      b.addEventListener('click', function(){
+        fwPost('/exceptions/' + EXC_AID + '/restore', {lineage: this.dataset.lin})
+          .then(function(r){ if (!r.ok){ alert(r.error); return; } location.reload(); });
+      });
+    });
+  });
+}
+
+/* ---------------------------------------------------------------------------
+   Lifecycle. Delete opens the IMPACT report first — a carve-out is authored
+   against a profile, and a profile is usually shared, so "delete this row" and
+   "remove this waiver from four policies" can be the same click.
+   --------------------------------------------------------------------------- */
+let IMPACT_EXC = 0;
+function closeImpact(){ document.getElementById('impact-panel').classList.add('d-none'); }
+function deleteExc(excId){
+  IMPACT_EXC = excId;
+  const panel = document.getElementById('impact-panel');
+  panel.classList.remove('d-none');
+  panel.scrollIntoView({behavior: 'smooth', block: 'center'});
+  const body = document.getElementById('impact-body');
+  body.innerHTML = '<span class="text-muted">Checking what this would cost…</span>';
+  fetch('/exceptions/' + EXC_AID + '/impact?exc_id=' + excId).then(r => r.json()).then(function(d){
+    if (!d.ok){ body.innerHTML = '<span class="text-danger">' + esc(d.error) + '</span>'; return; }
+    const im = d.impact;
+    let html = '<div class="alert alert-' + (im.verdict === 'allow' ? 'success'
+        : im.verdict === 'split-required' ? 'danger' : 'warning') + ' py-2">'
+      + '<strong>' + esc(im.verdict_label) + '</strong></div>';
+    if (im.reasons.length){
+      html += '<ul class="small">';
+      im.reasons.forEach(function(r){ html += '<li>' + esc(r) + '</li>'; });
+      html += '</ul>';
+    }
+    if (!im.device_known){
+      html += '<p class="small text-muted">SATOM could not read the appliance, so profile sharing is <strong>unknown</strong> — which is not the same as "not shared".</p>';
+    }
+    if (im.siblings_on_profile.length){
+      html += '<p class="small">Other carve-outs on the same profile (untouched by this delete): '
+        + im.siblings_on_profile.map(function(s){ return esc(s.name || ('#' + s.id)); }).join(', ') + '.</p>';
+    }
+    if (!im.versioned){
+      html += '<div class="alert alert-warning py-2 small">This carve-out predates version history — <strong>deleting it cannot be undone</strong>.</div>';
+    }
+    html += '<div class="d-flex gap-2 flex-wrap">';
+    if (im.can_clone){
+      html += '<button class="btn btn-sm btn-fw-primary" data-js="impact-split">Clone one per policy (' + im.policy_count + ')</button>';
+    }
+    if (im.verdict === 'allow'){
+      html += '<button class="btn btn-sm btn-outline-danger" data-js="impact-delete">Delete</button>';
+    } else if (im.verdict === 'review'){
+      html += '<button class="btn btn-sm btn-outline-danger" data-js="impact-delete-ack">I have read the above — delete anyway</button>';
+    }
+    html += '<button class="btn btn-sm btn-outline-secondary" data-js="close-impact-2">Cancel</button></div>';
+    body.innerHTML = html;
+    const on = function(sel, fn){ const b = body.querySelector('[data-js="' + sel + '"]'); if (b) b.addEventListener('click', fn); };
+    on('impact-split', function(){
+      fwPost('/exceptions/' + EXC_AID + '/split', {exc_id: IMPACT_EXC})
+        .then(function(r){ if (!r.ok){ alert(r.error); return; } location.reload(); });
+    });
+    on('impact-delete', function(){ runGuardedDelete(false); });
+    on('impact-delete-ack', function(){ runGuardedDelete(true); });
+    on('close-impact-2', closeImpact);
+  });
+}
+function runGuardedDelete(ack){
+  if (!confirm('Delete this carve-out?')) return;
+  fwPost('/exceptions/' + EXC_AID + '/guarded-delete', {exc_id: IMPACT_EXC, acknowledge: ack})
+    .then(function(r){ if (!r.ok){ alert(r.error || 'refused'); return; } location.reload(); });
+}
+
+/* ---------------------------------------------------------------------------
+   Deploy: place one carve-out on several scopes. Refused destinations are
+   SHOWN with their reason — a list of only the eligible ones cannot be
+   audited, because "not offered" and "not applicable" look identical.
+   --------------------------------------------------------------------------- */
+let DEPLOY_EXC = 0;
+function closeDeploy(){ document.getElementById('deploy-panel').classList.add('d-none'); }
+function openDeploy(btn){
+  DEPLOY_EXC = +btn.closest('tr').dataset.excId;
+  const panel = document.getElementById('deploy-panel');
+  panel.classList.remove('d-none');
+  panel.scrollIntoView({behavior: 'smooth', block: 'center'});
+  document.getElementById('deploy-out').classList.add('d-none');
+  document.getElementById('deploy-msg').textContent = '';
+  const body = document.getElementById('deploy-body');
+  body.innerHTML = '<span class="text-muted">Loading destinations…</span>';
+  fetch('/exceptions/' + EXC_AID + '/deploy-targets?exc_id=' + DEPLOY_EXC)
+    .then(r => r.json()).then(function(d){
+      if (!d.ok){ body.innerHTML = '<span class="text-danger">' + esc(d.error) + '</span>'; return; }
+      let html = '<table class="table table-sm align-middle"><thead><tr><th></th><th>Scope</th><th>Verdict</th><th>Why</th></tr></thead><tbody>';
+      d.targets.forEach(function(t){
+        const ready = t.verdict === 'ready';
+        html += '<tr><td>' + (ready
+            ? '<input class="form-check-input dep-pick" type="checkbox" value="' + t.appliance_id + '">'
+            : '') + '</td>'
+          + '<td>' + esc(t.scope) + '</td>'
+          + '<td><span class="badge bg-' + (ready ? 'success' : t.verdict === 'source' ? 'primary' : 'secondary') + '">'
+          + esc(t.verdict_label) + '</span></td>'
+          + '<td class="small text-muted">' + esc(t.why || '') + '</td></tr>';
+      });
+      body.innerHTML = html + '</tbody></table>';
+    });
+}
+function deployPicks(){
+  return Array.from(document.querySelectorAll('.dep-pick:checked')).map(function(c){ return +c.value; });
+}
+function deployRun(apply){
+  const ids = deployPicks();
+  const msg = document.getElementById('deploy-msg');
+  if (!ids.length){ msg.className = 'ms-2 small text-danger'; msg.textContent = 'Choose at least one destination.'; return; }
+  msg.className = 'ms-2 small text-muted';
+  msg.textContent = apply ? 'Placing…' : 'Previewing…';
+  fwPost('/exceptions/' + EXC_AID + '/deploy', {exc_id: DEPLOY_EXC, appliance_ids: ids, apply: apply})
+    .then(function(d){
+      const out = document.getElementById('deploy-out');
+      out.classList.remove('d-none');
+      out.textContent = JSON.stringify(d, null, 2);
+      msg.className = 'ms-2 small ' + (d.ok ? 'text-success' : 'text-danger');
+      msg.textContent = d.ok ? (apply ? 'Placed.' : d.summary || 'Preview ready.') : (d.error || 'refused');
+    });
+}
+
+/* ---------------------------------------------------------------------------
+   The advisory gate. Opt-in, non-blocking, and it renders SATOM's own
+   deterministic findings even when no model is reachable — those are the facts,
+   and making them depend on a provider being up would tie the checkable half to
+   the guessing one.
+   --------------------------------------------------------------------------- */
+function adviseExc(){
+  const box = document.getElementById('advice-box');
+  const type = document.getElementById('exc-type').value;
+  if (!type){ alert('Pick a carve-out type first.'); return; }
+  box.classList.remove('d-none');
+  box.innerHTML = '<span class="text-muted">Analysing…</span>';
+  fwPost('/exceptions/' + EXC_AID + '/advice', {
+    exc_type: type,
+    fields: collectFields(),
+    wpp_mkey: document.getElementById('exc-wpp').value,
+    server_policy: (getMulti('exc-policies')[0] || ''),
+    problem: document.getElementById('exc-problem').value,
+    use_model: true
+  }).then(function(d){
+    if (!d.ok){ box.innerHTML = '<span class="text-danger">' + esc(d.error || 'failed') + '</span>'; return; }
+    const a = d.advice, ex = a.explain;
+    let html = '<div><strong>SATOM’s own analysis</strong> — breadth: '
+      + esc(ex.breadth_label) + '. ' + esc(ex.breadth_why) + '</div>';
+    html += '<div class="mt-1 small"><strong>Stops:</strong> ' + esc(ex.stops)
+         + '<br><strong>Keeps:</strong> ' + esc(ex.keeps) + '</div>';
+    if (a.concerns.length){
+      html += '<ul class="mt-2 mb-1 small">';
+      a.concerns.forEach(function(c){
+        html += '<li><span class="badge bg-' + (c.severity === 'high' ? 'danger' : 'warning text-dark')
+          + '">' + esc(c.severity) + '</span> ' + esc(c.text) + ' <em class="text-muted">' + esc(c.ask) + '</em></li>';
+      });
+      html += '</ul>';
+    } else {
+      html += '<div class="mt-2 small text-muted">No structural concern found. That is not the same as "this is the right fix" — nothing here knows what problem you are solving.</div>';
+    }
+    if (d.suggestions && d.suggestions.length){
+      html += '<div class="mt-2 small"><strong>Other instruments whose description matches your problem:</strong> '
+        + d.suggestions.map(function(s){ return esc(s.label); }).join(', ')
+        + ' <em class="text-muted">(word overlap only — not a recommendation)</em></div>';
+    }
+    if (a.model){
+      html += '<hr class="my-2"><div><strong>Assistant (' + esc(a.model.model) + ')</strong> — '
+        + '<span class="badge bg-' + (a.model.verdict === 'proportionate' ? 'success' : 'warning text-dark') + '">'
+        + esc(a.model.verdict_label) + '</span></div>'
+        + '<pre class="small mt-1 mb-0" style="white-space:pre-wrap">' + esc(a.model.text) + '</pre>';
+    } else if (a.model_error){
+      html += '<hr class="my-2"><div class="small text-muted"><strong>No assistant opinion:</strong> ' + esc(a.model_error) + '</div>';
+    }
+    html += '<div class="mt-2 small text-muted">This is advisory. Nothing has been saved or pushed.</div>';
+    box.innerHTML = html;
+  });
+}
+
   document.querySelector('[data-js="open-detect"]').addEventListener('click', function (event) { openDetect(); });
+  document.querySelectorAll('[data-js="exc-history"]').forEach(function (btn) {
+    btn.addEventListener('click', function (event) { openHistory(this); });
+  });
+  document.querySelectorAll('[data-js="exc-deploy"]').forEach(function (btn) {
+    btn.addEventListener('click', function (event) { openDeploy(this); });
+  });
+  document.querySelector('[data-js="close-history"]').addEventListener('click', function () { closeHistory(); });
+  document.querySelector('[data-js="close-impact"]').addEventListener('click', function () { closeImpact(); });
+  document.querySelector('[data-js="close-deploy"]').addEventListener('click', function () { closeDeploy(); });
+  document.querySelector('[data-js="deploy-dry-run"]').addEventListener('click', function () { deployRun(false); });
+  document.querySelector('[data-js="deploy-apply"]').addEventListener('click', function () { deployRun(true); });
+  document.querySelector('[data-js="advise-exc"]').addEventListener('click', function () { adviseExc(); });
+  var _rest = document.querySelector('[data-js="load-restorable"]');
+  if (_rest) { _rest.addEventListener('click', function () { loadRestorable(); }); }
   document.querySelectorAll('[data-js="exc-edit"]').forEach(function (btn) {
     btn.addEventListener('click', function (event) { editExc(this); });
   });

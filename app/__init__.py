@@ -490,7 +490,7 @@ def create_app(config_override: object | None = None) -> Flask:
         if ep in ('exceptions.type_fields',):
             return None
         bp_name = ep.split('.', 1)[0]
-        device_bps = {'workspace', 'server_objects', 'web_protection',
+        device_bps = {'workspace', 'spo_wizard', 'server_objects', 'web_protection',
                       'exceptions', 'backups'}
         if bp_name not in device_bps:
             return None
@@ -1973,6 +1973,7 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.attack_search", "bp"),
         ("app.views.architecture", "bp"),
         ("app.views.line_profiles", "bp"),
+        ("app.views.spo_wizard", "bp"),
         ("app.views.analysis", "bp"),
         ("app.views.backups", "bp"),
         ("app.views.logs", "bp"),
@@ -2041,7 +2042,7 @@ def _register_blueprints(app: Flask) -> None:
         "app.views.section_catalog", "app.views.templates",
         "app.views.signatures", "app.views.structure",
         "app.views.classification", "app.views.segments", "app.views.naming",
-        "app.views.line_profiles",
+        "app.views.line_profiles", "app.views.spo_wizard",
         "app.views.scheduled_actions", "app.views.change_requests",
         "app.views.upgrade_flow",
         "app.views.provisioning", "app.views.firmware",

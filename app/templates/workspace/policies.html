@@ -36,7 +36,8 @@
     </div>
   </div>
   <div class="d-flex gap-2">
-    {% if appliance %}<a href="{{ url_for('workspace.new_policy', appliance_id=appliance.id) }}" class="btn btn-fw-primary btn-sm"><i class="bi bi-plus-lg me-1"></i>{{ _('New Server Policy') }}</a>{% endif %}
+    {% if appliance %}<a href="{{ url_for('workspace.new_policy', appliance_id=appliance.id) }}" class="btn btn-fw-primary btn-sm"><i class="bi bi-plus-lg me-1"></i>{{ _('New Server Policy') }}</a>
+    <a href="{{ url_for('spo_wizard.index', appliance_id=appliance.id) }}" class="btn btn-fw-outline btn-sm"><i class="bi bi-magic me-1"></i>{{ _('From a line profile') }}</a>{% endif %}
     {% if appliance %}
     <form method="post" action="{{ url_for('workspace.refresh', appliance_id=appliance.id) }}" style="display:inline">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

@@ -1,0 +1,115 @@
+/* WAF fleet pages.
+ *
+ * SATOM IS A LIGHT PRODUCT. fortiweb.css defines the whole theme
+ * (--fw-content-bg #F4F5F7, .fw-card #FFFFFF, accent #EF5424) and there is no
+ * dark mode: no prefers-color-scheme, no data-theme, no body class. A card
+ * with rgba(30,41,59,.8) and a backdrop-filter is a grey slab here
+ * (safeguards §9m), and the pastel status colours that read on a dark slab
+ * fall to ~1.4:1 against white. Everything below is built from --fw-* and the
+ * .fw-badge-* palette, which is already calibrated against #FFFFFF.
+ */
+
+/* ---------------------------------------------------------------- tabs -- */
+.waf-tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+
+.waf-tab {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--fw-border);
+  border-radius: var(--fw-radius);
+  background: var(--fw-surface);
+  color: var(--fw-text-secondary);
+  font-size: 13px; text-decoration: none;
+  transition: background .12s ease, color .12s ease, border-color .12s ease;
+}
+.waf-tab:hover { border-color: var(--fw-accent); color: var(--fw-accent); }
+.waf-tab.active {
+  background: var(--fw-accent); border-color: var(--fw-accent); color: #FFFFFF;
+}
+.waf-tab.active:hover { color: #FFFFFF; }
+
+/* --------------------------------------------------------------- scope -- */
+.waf-scope {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 8px 14px;
+  border: 1px solid var(--fw-border);
+  border-left: 3px solid var(--fw-accent);
+  border-radius: var(--fw-radius);
+  background: var(--fw-surface);
+  font-size: 13px;
+}
+.waf-scope-main { color: var(--fw-text-primary); }
+.waf-scope-sep { flex: 1 1 auto; }
+.waf-scope-link { color: var(--fw-text-secondary); text-decoration: none; font-size: 12px; }
+.waf-scope-link:hover { color: var(--fw-accent); }
+
+/* ------------------------------------------------------------ findings -- */
+.waf-findings { list-style: none; margin: 0; padding: 0; }
+.waf-finding {
+  padding: 7px 0 7px 12px;
+  border-left: 3px solid var(--fw-border);
+  font-size: 13px;
+}
+.waf-finding + .waf-finding { border-top: 1px solid var(--fw-border-light, #EDEFF2); }
+.waf-finding a { color: var(--fw-text-primary); text-decoration: none; }
+.waf-finding a:hover { text-decoration: underline; }
+.waf-finding-danger  { border-left-color: #8B1C2A; }
+.waf-finding-warning { border-left-color: #7A5700; }
+.waf-finding-info    { border-left-color: #4C2A85; }
+
+/* --------------------------------------------------------- posture pill - */
+.waf-legend { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.waf-pill {
+  display: inline-block; padding: 2px 8px; border-radius: 999px;
+  font-size: 11px; font-weight: 600; white-space: nowrap;
+  border: 1px solid transparent;
+}
+/* Text on a 12%-tint of its own hue: the hue carries the meaning, the dark
+   text carries the contrast. A pastel on a pastel does neither. */
+.waf-pill-blocking   { color: #15692A; background: rgba(21,105,42,.12);  border-color: rgba(21,105,42,.30); }
+.waf-pill-detection  { color: #7A5700; background: rgba(122,87,0,.12);   border-color: rgba(122,87,0,.30); }
+.waf-pill-no-profile { color: #8B1C2A; background: rgba(139,28,42,.12);  border-color: rgba(139,28,42,.30); }
+.waf-pill-disabled   { color: #3D4550; background: rgba(61,69,80,.10);   border-color: rgba(61,69,80,.25); }
+
+/* --------------------------------------------------------------- meter -- */
+.waf-meter {
+  height: 6px; width: 100%; max-width: 170px;
+  background: rgba(61,69,80,.12); border-radius: 999px; overflow: hidden;
+}
+.waf-meter-fill { height: 100%; background: var(--fw-accent); border-radius: 999px; }
+
+/* -------------------------------------------------------------- tables -- */
+.waf-table td { vertical-align: middle; }
+.waf-table .fw-cell-note {
+  max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--fw-text-secondary); font-size: 12px;
+}
+
+/* -------------------------------------------------------------- matrix -- */
+.waf-matrix { font-size: 12px; }
+.waf-matrix th, .waf-matrix td { padding: 6px 8px; }
+.waf-matrix-head { text-align: left; white-space: nowrap; }
+.waf-matrix-col {
+  writing-mode: vertical-rl; transform: rotate(180deg);
+  white-space: nowrap; height: 130px; text-align: left; font-weight: 600;
+}
+.waf-matrix-group td {
+  background: var(--fw-content-bg); font-weight: 700; text-transform: uppercase;
+  letter-spacing: .04em; font-size: 11px; color: var(--fw-text-secondary);
+}
+.waf-cell { text-align: center; font-variant-numeric: tabular-nums; }
+.waf-cell-full { color: #15692A; background: rgba(21,105,42,.14); }
+.waf-cell-part { color: #7A5700; background: rgba(122,87,0,.14); }
+.waf-cell-none { color: #8B1C2A; background: rgba(139,28,42,.14); }
+/* "Not applicable" must NOT look like "zero": grey and dashed, never red. */
+.waf-cell-na   { color: var(--fw-text-secondary); background: transparent; }
+
+/* --------------------------------------------------------- chart error -- */
+.waf-chart-error {
+  display: flex; align-items: center; justify-content: center; height: 100%;
+  padding: 16px; text-align: center;
+  color: #8B1C2A; background: rgba(139,28,42,.06);
+  border: 1px dashed rgba(139,28,42,.35); border-radius: var(--fw-radius);
+  font-size: 13px;
+}

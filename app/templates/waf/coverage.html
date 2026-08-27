@@ -1,0 +1,90 @@
+{# ============================================================================
+   WAF — Coverage matrix. Protection (row) x device/ADOM (column).
+
+   A cell is ``on / applicable`` for the policies of that scope, NOT a
+   percentage of some fleet constant. An empty cell means no policy in that
+   scope has a profile with that slot — which is a different fact from 0%, and
+   is rendered differently on purpose: a grey dash reads "not asked", a red
+   zero reads "asked and failed", and printing the second where the first is
+   true is how a page invents a gap.
+   ========================================================================= #}
+{% extends "base.html" %}
+{% block title %}WAF — Coverage{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{{ asset('css/waf.css') }}" data-turbo-track="reload">
+{% endblock %}
+
+{% block content %}
+{% set active = 'coverage' %}
+{% set subtitle = _('protection coverage matrix') %}
+{% include 'waf/_header.html' %}
+
+<div class="d-flex align-items-center justify-content-between mb-2">
+  <p class="text-muted small mb-0" style="max-width:70ch">
+    {{ _('Each cell counts the server policies of that scope whose web protection profile HAS the slot, and how many of them fill it. Policies with no profile are absent from every denominator — they are counted once, as unprotected, on the overview.') }}
+  </p>
+  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('waf.coverage', format='csv') }}">
+    <i class="bi bi-filetype-csv me-1"></i>{{ _('CSV') }}</a>
+</div>
+
+{% if not scopes %}
+<div class="fw-empty-state">
+  <i class="bi bi-grid-3x3-gap fw-empty-state-icon"></i>
+  <div class="fw-empty-state-title">{{ _('Nothing to compare yet') }}</div>
+  <div class="fw-empty-state-text">
+    {{ _('No visible FortiWeb has a configuration snapshot, so there is no coverage to compute. This is not a fleet with zero protections.') }}
+  </div>
+</div>
+{% else %}
+<div class="fw-card p-0">
+  <div class="fw-table-wrapper">
+    <table class="fw-table waf-matrix">
+      <thead>
+        <tr>
+          <th class="waf-matrix-head">{{ _('Protection') }}</th>
+          <th class="text-end">{{ _('Fleet') }}</th>
+          {% for s in scopes %}<th class="waf-matrix-col" title="{{ s }}">{{ s }}</th>{% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {# ``groups`` arrives already grouped from the view. Grouping here with
+           selectattr on a tuple INDEX ('2') is the filter that silently
+           matches nothing and renders an empty, confident-looking table. #}
+        {% for group, _rows in groups %}
+        {% if _rows %}
+        <tr class="waf-matrix-group">
+          <td colspan="{{ scopes|length + 2 }}">{{ group }}</td>
+        </tr>
+        {% for key, label in _rows %}
+        {% set _fleet = fleet_coverage[key] %}
+        <tr>
+          <td class="waf-matrix-head">{{ label }}</td>
+          <td class="text-end">
+            {% if _fleet.applicable %}
+              <strong>{{ _fleet.pct }}%</strong>
+              <span class="text-muted small">({{ _fleet.on }}/{{ _fleet.applicable }})</span>
+            {% else %}<span class="text-muted">—</span>{% endif %}
+          </td>
+          {% for s in scopes %}
+          {% set cell = matrix[key].get(s) %}
+          {% if not cell %}
+            <td class="waf-cell waf-cell-na" title="{{ _('No policy here has a profile with this slot') }}">—</td>
+          {% else %}
+            {% set pct = (100 * cell.on / cell.applicable) | round(0) | int %}
+            <td class="waf-cell waf-cell-{{ 'full' if pct == 100 else ('none' if pct == 0 else 'part') }}"
+                title="{{ cell.on }} / {{ cell.applicable }} {{ _('policies') }}">
+              {{ cell.on }}/{{ cell.applicable }}
+            </td>
+          {% endif %}
+          {% endfor %}
+        </tr>
+        {% endfor %}
+        {% endif %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

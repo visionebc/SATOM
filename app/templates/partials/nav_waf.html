@@ -1,0 +1,31 @@
+{# ============================================================================
+   WAF submenu — ONE definition, TWO call sites (Global and the FortiWeb ADOM).
+
+   Why a partial and not two copies: partials/nav_monitoring.html exists for
+   exactly this reason — the Monitoring group had already drifted between the
+   Global menu and the ADOM menus, and an entry added to one was forgotten in
+   the other. An entry added here appears in both consoles in the same commit.
+
+   Why NOT in the FortiADC / FortiAnalyzer / FortiAuthenticator ADOMs: the
+   ``waf`` blueprint is not in their allow-lists in app/__init__.py, so those
+   sessions are redirected back to their own home. Rendering a link there would
+   offer a menu entry that bounces — and the pages count FortiWeb objects,
+   which those consoles have none of.
+
+   Scoping is NOT done here: every page filters through
+   ``models.visible_appliances()`` and then to ``kind == 'fortiweb'``, so the
+   FortiWeb ADOM sees its own boxes and Global sees every FortiWeb.
+   ========================================================================= #}
+<div class="fw-nav-subgroup {{ 'open' if request.blueprint == 'waf' }}" data-nav-subgroup="WAF">
+  <button type="button" class="fw-nav-item fw-nav-subtoggle"><i class="bi bi-shield-shaded fw-nav-icon"></i><span>{{ _('WAF') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+  <div class="fw-nav-subgroup-body">
+    <a class="fw-nav-item {{ 'active' if request.endpoint == 'waf.index' else '' }}" href="{{ url_for('waf.index', _adom=product.key) }}">
+      <i class="bi bi-speedometer2 fw-nav-icon"></i><span>{{ _('Overview') }}</span></a>
+    <a class="fw-nav-item {{ 'active' if request.endpoint == 'waf.inventory' else '' }}" href="{{ url_for('waf.inventory', _adom=product.key) }}">
+      <i class="bi bi-list-columns-reverse fw-nav-icon"></i><span>{{ _('Inventory') }}</span></a>
+    <a class="fw-nav-item {{ 'active' if request.endpoint == 'waf.profiles' else '' }}" href="{{ url_for('waf.profiles', _adom=product.key) }}">
+      <i class="bi bi-shield-check fw-nav-icon"></i><span>{{ _('Profiles') }}</span></a>
+    <a class="fw-nav-item {{ 'active' if request.endpoint == 'waf.coverage' else '' }}" href="{{ url_for('waf.coverage', _adom=product.key) }}">
+      <i class="bi bi-grid-3x3-gap fw-nav-icon"></i><span>{{ _('Coverage') }}</span></a>
+  </div>
+</div>

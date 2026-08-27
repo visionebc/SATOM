@@ -6,6 +6,37 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### The workspace identifies a box by the name it calls itself (2026-08-27)
+
+The workspace chrome printed the management address where it identifies the
+appliance, while the breadcrumb above it printed a name. Neither was the
+DEVICE's own hostname.
+
+- **Added** `appliances.device_hostname` and `device_hostname_at`, filled from
+  the **same status call `firmware_probe` already makes** — FortiWeb answers
+  `hostName` (measured on fortiweb12/13). No second request: "exactly one
+  status call per appliance" is what makes that module safe to expose on
+  `/api/v1`.
+- **Added** `display_host` / `host_title` as single authors for what the chrome
+  prints and how it qualifies it. Three templates deciding this for themselves
+  is how the identifier and the breadcrumb came to disagree.
+- **Changed** `workspace/policies.html`, `browse.html` and `index.html` to
+  print the hostname, falling back to the address when none was ever observed.
+- The hostname timestamp is stamped **only when a name actually came back**,
+  and a later silent answer does not erase a known one. This is not
+  hypothetical: **FortiAuthenticator's status payload contains no hostname
+  field at all** (measured on fac01), so a single shared
+  `firmware_checked_at` would attest a reading that never happened. `fac01`
+  correctly keeps showing its address.
+- An **ADOM row** answers with the CHASSIS hostname, which is qualified in the
+  tooltip rather than rewritten. The qualification keys on the operator having
+  named the row `<device>@<adom>` — **not** on `vdom` being set, because every
+  FortiWeb carries `vdom='root'` whether or not ADOM mode is in use. The first
+  version got this wrong and labelled two ordinary devices as shared chassis;
+  it was caught rendering against the live fleet, not by a test.
+- Guards: `tests/test_device_hostname.py` (20), 21 mutations, safeguards §131.
+
+
 ### IPAM allocation exists now, and the DNS step stopped lying (2026-08-27)
 
 `provision_runner` imported four functions that had never been written —

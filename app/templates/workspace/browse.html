@@ -20,7 +20,7 @@
 <div class="card mb-3">
   <div class="card-header">
     <strong>{{ _('Endpoint:') }}</strong> <code>/{{ endpoint_path }}</code>
-    on <strong>{{ appliance.name }}</strong> ({{ appliance.host }})
+    on <strong>{{ appliance.name }}</strong> (<span{% if appliance.host_title %} title="{{ appliance.host_title }}"{% endif %}>{{ appliance.display_host }}</span>)
   </div>
   <div class="card-body">
     {% if error %}

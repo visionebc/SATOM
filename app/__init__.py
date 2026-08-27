@@ -1499,6 +1499,15 @@ def create_app(config_override: object | None = None) -> Flask:
                 # 10 devices nobody ever probed.
                 ('firmware_checked_at', 'TIMESTAMP'),
                 ('maintenance', 'BOOLEAN DEFAULT FALSE'),
+                # --- the name the device calls itself (2026-08-27) ---
+                # Nullable, no backfill, NO DEFAULT. NULL means "never
+                # observed", which is the truth for every row predating the
+                # probe. A DEFAULT '' would be the same value the probe writes
+                # for a device that answered without one (FortiAuthenticator's
+                # status payload carries no hostname at all) — two different
+                # facts under one value, indistinguishable afterwards.
+                ('device_hostname', 'VARCHAR(255)'),
+                ('device_hostname_at', 'TIMESTAMP'),
             ],
             # Interface PURPOSE (2026-08-17). Additive with a default of
             # 'unspecified' so every port documented before the field reads as

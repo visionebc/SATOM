@@ -280,7 +280,35 @@ class Appliance(db.Model):
     # firmware was observed, and a consumer correlating this version against a
     # CVE feed needs to know which of the two it is looking at.
     firmware_checked_at = db.Column(db.DateTime, nullable=True)
+    # --- The name the DEVICE calls itself -------------------------------
+    # Read off the SAME status call firmware_probe already makes (FortiWeb:
+    # ``hostName``) — never a second request, because the "exactly one status
+    # call" property is what makes that module safe to expose on /api/v1.
+    #
+    # Deliberately NOT the same thing as ``name``: ``name`` is the label an
+    # operator typed into SATOM and ``host`` is how SATOM reaches the box.
+    # In this laboratory all three happen to agree, which is precisely why a
+    # fixture that only exercises the agreeing case proves nothing — see the
+    # divergent-hostname guard in tests/test_device_hostname.py.
+    device_hostname = db.Column(db.String(255), nullable=True)
+    # WHEN that name was last observed. Separate from firmware_checked_at
+    # because the two do not move together: FortiAuthenticator's status
+    # payload carries a firmware string and NO hostname at all (measured on
+    # fac01, 2026-08-27), so one timestamp would attest a hostname that was
+    # never read.
+    device_hostname_at = db.Column(db.DateTime, nullable=True)
     datasheet_filename = db.Column(db.String(256), nullable=True)  # original PDF name; file on disk is <id>.pdf
+
+    @property
+    def display_host(self) -> str:
+        """Identifier to print: the device's own hostname, else the address."""
+        return display_host(self)
+
+    @property
+    def host_title(self) -> str:
+        """Tooltip that keeps the printed identifier honest."""
+        return host_title(self)
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(
         db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
@@ -705,6 +733,56 @@ def chassis_tally(rows) -> tuple[int, int]:
         if adom:
             adoms.add((key, adom))
     return len(devices), len(adoms)
+
+
+def display_host(appl) -> str:
+    """What to print where a row is identified: the device's own hostname if
+    we have observed one, else the management address.
+
+    ONE author, called from every template that shows the identifier. Three
+    templates each deciding this for themselves is how the workspace came to
+    show an IP while the breadcrumb above it showed a name.
+    """
+    return (getattr(appl, "device_hostname", "") or "").strip() \
+        or (getattr(appl, "host", "") or "")
+
+
+def host_title(appl) -> str:
+    """The qualification the printed identifier needs, in one place.
+
+    Three templates writing their own version of this sentence is how the two
+    halves of a claim drift apart. Empty string when there is nothing to
+    qualify — a row still showing its management address needs no tooltip
+    explaining that it is a management address.
+    """
+    name = (getattr(appl, "device_hostname", "") or "").strip()
+    if not name:
+        return ""
+    addr = (getattr(appl, "host", "") or "")
+    out = f"Hostname reported by the device — reached at {addr}"
+    if hostname_is_shared(appl):
+        # NOT "this ADOM is called X": the chassis is, and its other ADOM rows
+        # answer with the same name.
+        out += (f"; {name} is the chassis, shared with the other ADOMs "
+                "registered on it")
+    return out
+
+
+def hostname_is_shared(appl) -> bool:
+    """True when this row's hostname belongs to a CHASSIS it shares.
+
+    An ADOM row is one of several rows on one box, and the box answers with
+    one hostname for all of them. Showing that name with no qualification
+    reads as "this ADOM is called fortiweb12", which is a different claim.
+    """
+    if not (getattr(appl, "device_hostname", "") or "").strip():
+        return False
+    # ``vdom`` is set to 'root' on every FortiWeb, ADOM mode or not (measured
+    # on fortiweb12/13, 2026-08-27), so its mere presence proves nothing. What
+    # proves it is the operator having named the row ``<device>@<adom>`` —
+    # which appliance_name_parts already decides, and is not re-decided here.
+    stem, adom = appliance_name_parts(appl)
+    return bool(adom) and stem != (getattr(appl, "name", "") or "").strip()
 
 
 def appliance_name_parts(appl) -> tuple[str, str]:

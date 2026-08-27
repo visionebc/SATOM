@@ -11688,3 +11688,50 @@ something Y also touches.
 - `/tmp` on these nodes has `fs.protected_regular` behaviour: root cannot
   rewrite a file it does not own there. Stage harness scripts under the app dir
   with `install -o satom`.
+
+## §132 — line profiles: declared vs inferred (2026-08-27)
+
+**The property.** `services.line_profiles.line_plan` is the ONLY module that
+answers "what does this line receive?", and every plan says which of two kinds
+of claim it is:
+
+* `declared` — a `LineProfile` row exists. Its segment names are resolved
+  against the live list, and a name that resolves to nothing is a **problem**.
+* `inferred` — nobody declared it, so the historical string match is used and
+  **labelled**. It exists so the feature works against catalogs nobody has
+  filled in; it is not a fallback that quietly does the same job.
+
+There is no third state. A declaration that resolves to nothing stays
+`declared` with zero segments and a `missing_segment` problem. Falling back to
+the guess there would hide the breakage behind the answer the operator
+overrode — and it is a one-line change, so there is a mutation for it.
+
+**How to check by hand.** The allowlist in
+`tests/test_line_profiles.py::_SEGMENT_READERS` names every module permitted to
+read the raw segment list, each with a reason. Adding a name to it is a review
+moment; that is the whole value. Four entries are display-only readers and one
+(`services/analysis.py`) is a report facet with **blank-means-any** semantics
+that `line_plan` deliberately does not share — routing it through `line_plan`
+would change what the report counts.
+
+**Four traps this round, all of them mine.**
+
+1. An AST guard looking for "a Compare on a subscript keyed `line`" flagged
+   `views/provisioning.py` and `services/analysis.py`, which compare a FILTER
+   dict. Third guard in this repo to assert the wrong LAYER. Replaced with the
+   allowlist, which cannot make that mistake.
+2. A test aimed at "rename onto a line that already has a profile" passed on
+   the **duplicate-value** error instead — `apply_rows` refuses a rename onto
+   an existing catalog value before `_retarget` ever runs. The collision branch
+   is only reachable through **delete-with-reassign**.
+3. A mutation removing dedup from `LineProfile.set_segments` survived because
+   `segments()` dedupes on READ too. A reader-only assertion cannot see a
+   writer's bug: assert on the stored blob.
+4. A test asserting the delete flash said "guess" passed against a flash that
+   said nothing — the page's own header prose contains the word. Match a
+   sentence only the handler can produce. (Ninth aserto-que-casa-su-propio-
+   contexto.)
+
+**Verified by render** against the live node: `/web/line-profiles/` 200, the
+four real catalog lines listed, every undeclared line badged `inferred`,
+anonymous bounced, zero fleet dark-theme chrome (§9m — this product is white).

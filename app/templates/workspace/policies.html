@@ -322,6 +322,16 @@
           <span class="text-muted" style="font-size:12.5px;">{{ _('Each copy\'s VIP gets a') }} <strong>{{ _('dummy IP') }}</strong> automatically, per the admin rules:
             <code>{{ clone_rules_summary }}</code> (Settings → Clone / Migrate).</span>
         </div>
+        <div id="actionFieldAdditive" class="mb-3 d-none">
+          <div class="form-check mb-0">
+            <input class="form-check-input" type="checkbox" id="actionAdditiveOnly" checked>
+            <label class="form-check-label" for="actionAdditiveOnly" style="font-size:13px;">
+              <strong>{{ _('Only add what is missing') }}</strong>
+              {{ _('— never write into an object the destination already has') }}
+            </label>
+          </div>
+          <div class="form-text" style="font-size:12px;">{{ _('An object the destination does not have is still created whole, with all of its rows. An object it already has is left exactly as it is: a colliding row is not rewritten AND a missing row is not added. Rows held back this way are listed in the plan and in the report as') }} <code>untouched</code>{{ _(' — they are the only difference a run can produce that leaves no trace on the destination.') }}</div>
+        </div>
         <div id="actionFieldWppOpts" class="mb-3 d-none">
           <div class="d-flex align-items-center flex-wrap gap-3">
             <div class="form-check mb-0">
@@ -630,6 +640,8 @@
     document.getElementById('actionBulkIpNote').classList.toggle('d-none', !(isClone && !single));
     // WPP options: admin defaults, editable only after "Override admin defaults".
     document.getElementById('actionFieldWppOpts').classList.toggle('d-none', !isClone);
+    document.getElementById('actionFieldAdditive').classList.toggle('d-none', !isClone);
+    document.getElementById('actionAdditiveOnly').checked = true;
     var copyWpp = document.getElementById('actionCopyWpp');
     copyWpp.checked = ADMIN_COPY_WPP; copyWpp.disabled = true;
     document.getElementById('actionOverrideDefaults').checked = false;
@@ -786,6 +798,7 @@
       if (single) p.vip_ip = document.getElementById('actionVipIp').value.trim();
       if (NEEDS_DEST[current.action]) p.iface_map = ifaceMapValue();
       p.accept_missing_artifacts = !!artState.accepted;
+      p.additive_only = document.getElementById('actionAdditiveOnly').checked;
       var choice = wppChoiceValue();
       if (choice === 'use_dest') {
         p.copy_wpp = false;
@@ -1021,6 +1034,13 @@
     if (!this.checked) { copyWpp.checked = ADMIN_COPY_WPP; runChecklist(); }
   });
   document.getElementById('actionCopyWpp').addEventListener('change', runChecklist);
+  // Flipping the mode INVALIDATES the preview instead of quietly re-labelling
+  // it. The plan on screen was classified with the value that was set when
+  // Analyse ran; leaving it there while the tick says otherwise would change
+  // nothing except what the operator believes the next Apply will do.
+  document.getElementById('actionAdditiveOnly').addEventListener('change', function () {
+    if (CLONE_ACTIONS[current.action]) { chk.previewDone = false; updateApply(); runChecklist(); }
+  });
   document.getElementById('actionDest').addEventListener('change', function () {
     if (CLONE_ACTIONS[current.action]) { chk.previewDone = false; updateApply(); runChecklist(); }
   });

@@ -6,6 +6,48 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### The clone only adds what is missing (2026-08-27)
+
+Ported from the standalone SATOM Policy Clone 1.27.0. The web clone had the
+same two write paths INTO an object the destination already owns, and only one
+of them was under an operator's control:
+
+- `update` — a row colliding on its unique key was **rewritten**, governed by
+  `reconcile_rows` (default ON).
+- `create` — a row the source has and the destination does not was **appended
+  to the live object**, labelled *"missing under an existing parent —
+  recreating"*, governed by nothing at all.
+
+The append is the dangerous one precisely because it reads as housekeeping. A
+server pool that GAINS a real server is serving traffic it was not serving a
+minute ago — as modified as a pool whose member was rewritten. A mode that only
+closed the rewrite would have left the pool changed, and reported green.
+
+- **Added** `additive_only`: the unit of *"the destination already has this"*
+  moves from the ROW to the OBJECT. An object the destination lacks is still
+  created whole, with all of its rows; an object it already has is left exactly
+  as it is.
+- **Added** the status `untouched` — amber in the report, its own mark (`/`) in
+  the plan text, **never folded into `exists`**: "the destination has this row"
+  and "the destination does NOT have it and we chose not to add it" are opposite
+  facts, and only one of them leaves the operator something to do.
+- **Added** a checkbox on the clone/migrate dialog, **default ON**; changing it
+  invalidates the preview, because the plan on screen was classified with the
+  value that was set when Analyse ran.
+- **Added** the cutover gate: a migration whose copy held rows back leaves the
+  **source ENABLED**, on the same reasoning already used for a file-backed
+  object whose bytes never arrived — a migration claims the two are
+  interchangeable, and a knowingly short copy is not.
+- **Refuses** additive mode together with *"new, compare and decide"*, before
+  any device is read: the second exists to change a profile the destination
+  already serves, and the first promises not to.
+- Defaults **ON at the HTTP layer** and **OFF in `policy_ops`**. The
+  operator-facing surface is where the safe posture belongs; the engine has
+  library callers whose deliveries must keep completing.
+- 25 guards (`tests/test_clone_additive.py`), 22/22 mutations killed by the
+  guard each one names. `docs/safeguards.md` §132.
+
+
 ### The workspace identifies a box by the name it calls itself (2026-08-27)
 
 The workspace chrome printed the management address where it identifies the

@@ -17,6 +17,40 @@ class ProviderError(Exception):
     """Any provider-side failure (auth, HTTP, unsupported op)."""
 
 
+# --------------------------------------------------------------------------
+# netmask arithmetic — ONE author, used by every provider that allocates.
+# Two copies of this conversion is how a subnet ends up with two different
+# masks depending on which backend answered.
+# --------------------------------------------------------------------------
+def prefix_from_size(size: object) -> int | None:
+    """A count of addresses (SOLIDserver ``subnet_size``) -> prefix length.
+
+    Returns None for anything that is not an exact power of two. A subnet
+    cannot have a non-power-of-two size, so such a value means the field was
+    not what we thought — and a guessed netmask gets pushed onto a real
+    appliance at first boot.
+    """
+    try:
+        n = int(str(size).strip())
+    except (TypeError, ValueError):
+        return None
+    if n <= 0 or (n & (n - 1)) != 0:
+        return None
+    return 32 - n.bit_length() + 1
+
+
+def mask_from_prefix(prefix: object) -> str:
+    """Prefix length -> dotted netmask. Empty string when it is not a prefix."""
+    try:
+        p = int(str(prefix).strip())
+    except (TypeError, ValueError):
+        return ""
+    if not 0 <= p <= 32:
+        return ""
+    bits = (0xFFFFFFFF << (32 - p)) & 0xFFFFFFFF
+    return ".".join(str((bits >> s) & 0xFF) for s in (24, 16, 8, 0))
+
+
 @dataclass
 class Capabilities:
     provider: str            # registry key: efficientip|phpipam|netbox|none
@@ -26,13 +60,52 @@ class Capabilities:
     needs_zone: bool         # modal offers a zone field/selector
     needs_view: bool         # EfficientIP DNS view selector
     notes: str = ""          # surfaced in the modal (constraints/warnings)
+    #: Supports taking an address out of a pool and handing it back.
+    #: DELIBERATELY SEPARATE FROM ``can_write``: the two are independent in
+    #: every backend we support. phpIPAM allocates but cannot write a record;
+    #: NetBox without ``netbox-dns`` is the same shape. Folding them into one
+    #: flag would have made "this provider can reserve an address" imply "this
+    #: provider will publish the name", which is the promise the provisioning
+    #: DNS step used to make and could not keep.
+    can_allocate: bool = False
+    #: A pool/prefix/subnet identifier is required to allocate (all real DDIs).
+    needs_pool: bool = False
 
     def as_dict(self) -> dict:
         return {
             "provider": self.provider, "label": self.label,
             "can_write": self.can_write, "record_types": self.record_types,
             "needs_zone": self.needs_zone, "needs_view": self.needs_view,
-            "notes": self.notes,
+            "notes": self.notes, "can_allocate": self.can_allocate,
+            "needs_pool": self.needs_pool,
+        }
+
+
+@dataclass
+class Address:
+    """One address taken from an IPAM pool.
+
+    ``ref`` is the provider-native handle and is what :meth:`release_address`
+    is driven by. Releasing by *address string* alone is a real hazard: between
+    the reservation and the rollback the pool may legitimately have handed the
+    same address to somebody else (a lease expiring, an operator editing the
+    row), and a release keyed on the string would free THEIR entry. The handle
+    names the row this run created, or nothing at all.
+    """
+
+    address: str = ""
+    ref: str = ""                    # provider-native id of the reservation
+    netmask: str = ""
+    prefix_len: int | None = None
+    gateway: str = ""
+    pool: str = ""
+    extra: dict = field(default_factory=dict)
+
+    def as_dict(self) -> dict:
+        return {
+            "address": self.address, "ref": self.ref, "netmask": self.netmask,
+            "prefix_len": self.prefix_len, "gateway": self.gateway,
+            "pool": self.pool, "extra": self.extra,
         }
 
 
@@ -100,3 +173,12 @@ class DnsProvider:
 
     def delete_record(self, rec: DnsRecord) -> None:
         raise ProviderError("This provider does not support deleting records.")
+
+    # -- address allocation ----------------------------------------------
+    def allocate_address(self, hostname: str = "", pool: str = "") -> Address:
+        raise ProviderError(
+            f"{self.label} does not expose address allocation.")
+
+    def release_address(self, address: str, ref: str = "") -> None:
+        raise ProviderError(
+            f"{self.label} does not expose address release.")

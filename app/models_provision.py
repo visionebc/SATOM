@@ -184,6 +184,14 @@ class ProvisionRun(db.Model):
     #: True when the address came from the IPAM provider (so rollback releases
     #: it). A user-typed address is not ours to release.
     ip_from_ipam = db.Column(db.Boolean, nullable=False, default=False)
+    #: Provider-native handle for the reservation, recorded at allocation and
+    #: the ONLY thing rollback releases against. Releasing by address string
+    #: would free whatever row currently holds that address — which after a
+    #: lease expiry or an operator edit is somebody else's.
+    ip_ref = db.Column(db.String(128), default="")
+    #: Which pool the address was asked from (subnet/prefix id or CIDR). Empty
+    #: means "the provider's configured default".
+    ip_pool = db.Column(db.String(128), default="")
     dns_record_id = db.Column(db.String(64), default="")
 
     admin_user = db.Column(db.String(64), default="admin")

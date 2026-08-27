@@ -6,6 +6,60 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### IPAM allocation exists now, and the DNS step stopped lying (2026-08-27)
+
+`provision_runner` imported four functions that had never been written —
+`allocate_address`, `release_address`, `create_record`, `delete_record` — each
+inside `try: ... except ImportError`. Nothing raised, nothing logged, and the
+two steps reported the opposite of the truth:
+
+- ticking **"allocate from IPAM"** always failed, blaming the operator's
+  provider (*"no DNS/IPAM provider exposes address allocation"*) on an
+  installation where one was configured and healthy;
+- the **DNS step always returned OK** with *"no DNS provider configured"* even
+  when a provider was configured. A provisioning run could finish green having
+  published no record at all.
+
+- **Added** address allocation to the provider abstraction: `Capabilities`
+  grew `can_allocate` / `needs_pool`, and a new `Address` record carries the
+  provider-native reservation handle. `can_allocate` is **deliberately
+  separate** from `can_write`: phpIPAM and plugin-less NetBox are address pools
+  that cannot publish a name, and folding the two into one flag is what let
+  "this backend can reserve an address" imply "this backend will publish the
+  hostname".
+- **Added** `allocate_address` / `release_address` for **EfficientIP
+  SOLIDserver** (`ip_block_subnet_list` -> `ip_find_free_address` -> `ip_add`,
+  released by `ip_id`), **phpIPAM** (`POST /addresses/first_free/`, released by
+  address id) and **NetBox core** (`POST /prefixes/{id}/available-ips/`,
+  released by ip-address id). A **Default IPAM pool** field was added to all
+  three provider forms in Settings -> DNS Records.
+- **Added** module-level `capabilities()`. Whether a missing provider is fatal
+  is the caller's judgement, so "not configured" is now **raised**, never
+  returned as a value that looks like a successful write — and the two are
+  told apart by asking, not by catching an exception.
+- **Changed** the DNS step to three outcomes instead of two. No provider is
+  still a pass, but the detail says in words nobody can misread that the name
+  was **not** published; a provider that *cannot write records* is now a
+  **failure**, because answering "fine" to a requested hostname the backend
+  will never publish is the same lie in a new place.
+- **Changed** rollback to release against the **recorded handle**, not the
+  address string. Between the reservation and the rollback the pool may have
+  legitimately given that address to somebody else, and a string-keyed release
+  frees their entry. New `provision_runs.ip_ref` / `ip_pool` columns, added by
+  the boot migration (nullable, no backfill: a run that predates them really
+  did take its address without a handle).
+- **Changed** netmask arithmetic to a single author in `dns_providers.base`,
+  and it refuses to guess: a subnet size that is not a power of two yields no
+  prefix rather than a fabricated mask, and NetBox's absent gateway comes back
+  empty rather than as `.1`. Both are written into a real appliance's default
+  route at first boot.
+- Guards: `tests/test_ipam_allocation.py` (63), 29 mutations, safeguards §130.
+
+**Still UNVERIFIED end-to-end**: there is no SOLIDserver, phpIPAM or NetBox in
+the fleet, so the wire shapes are exercised against `httpx.MockTransport`
+built from each vendor's documented API — not against an appliance.
+
+
 ### WAF audit against a live appliance (2026-08-27)
 
 The custom-signature catalogue added in Tanda 0 was carried from the admin

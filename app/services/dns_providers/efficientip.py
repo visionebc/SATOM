@@ -19,7 +19,8 @@ from __future__ import annotations
 
 import httpx
 
-from .base import Capabilities, DnsProvider, DnsRecord, ProviderError
+from .base import (Address, Capabilities, DnsProvider, DnsRecord,
+                   ProviderError, mask_from_prefix, prefix_from_size)
 
 _TYPES = ["A", "AAAA", "CNAME", "MX", "TXT", "NS", "PTR", "SRV"]
 
@@ -33,8 +34,10 @@ class EfficientIPProvider(DnsProvider):
             provider="efficientip", label="EfficientIP SOLIDserver",
             can_write=True, record_types=_TYPES,
             needs_zone=True, needs_view=True,
+            can_allocate=True, needs_pool=True,
             notes="Native DDI. A DNS zone (and optionally a view) is required "
-                  "to create records.",
+                  "to create records; a subnet (id or name) is required to "
+                  "allocate an address.",
         )
 
     # -- http ------------------------------------------------------------
@@ -175,3 +178,99 @@ class EfficientIPProvider(DnsProvider):
             self._raise_for(r)
         except httpx.HTTPError as exc:
             raise ProviderError(f"EfficientIP delete failed: {exc}") from exc
+
+    # -- address allocation ----------------------------------------------
+    #
+    # SOLIDserver IPAM verbs (separate class tree from ``dns_*``):
+    #   GET    /rest/ip_block_subnet_list  — resolve a subnet name -> subnet_id
+    #                                        and read its size/gateway
+    #   GET    /rest/ip_find_free_address  — next free host address in a subnet
+    #   POST   /rest/ip_add                — reserve it (returns ret_oid=ip_id)
+    #   DELETE /rest/ip_delete             — hand it back by ip_id
+    #
+    # UNVERIFIED end-to-end for the same reason the record verbs are: there is
+    # no SOLIDserver in the fleet. Written defensively — a field that is not
+    # present comes back EMPTY rather than guessed, because a fabricated
+    # netmask or gateway is pushed onto a real appliance at first boot.
+
+    def _subnet(self, pool: str) -> dict:
+        """Resolve ``pool`` (subnet id or subnet name) to its SOLIDserver row."""
+        pool = (pool or str(self.cfg.get("default_pool") or "")).strip()
+        if not pool:
+            raise ProviderError(
+                "No IPAM subnet given and no default subnet is configured "
+                "(Settings -> DNS Records -> Default IPAM pool).")
+        where = (f"subnet_id='{pool}'" if pool.isdigit()
+                 else f"subnet_name='{pool}'")
+        try:
+            with self._client() as c:
+                r = c.get("/rest/ip_block_subnet_list",
+                          params={"WHERE": where, "limit": 1})
+            if r.status_code == 204:
+                raise ProviderError(f"EfficientIP: subnet {pool!r} not found.")
+            self._raise_for(r)
+        except httpx.HTTPError as exc:
+            raise ProviderError(f"EfficientIP subnet lookup failed: {exc}") from exc
+        rows = [row for row in self._payload(r) if isinstance(row, dict)]
+        if not rows:
+            raise ProviderError(f"EfficientIP: subnet {pool!r} not found.")
+        return rows[0]
+
+    def allocate_address(self, hostname: str = "", pool: str = "") -> Address:
+        subnet = self._subnet(pool)
+        subnet_id = str(subnet.get("subnet_id") or "")
+        if not subnet_id:
+            raise ProviderError("EfficientIP returned a subnet without an id.")
+        try:
+            with self._client() as c:
+                r = c.get("/rest/ip_find_free_address",
+                          params={"subnet_id": subnet_id, "max_find": 1})
+                if r.status_code == 204:
+                    raise ProviderError(
+                        f"EfficientIP: subnet {subnet.get('subnet_name') or subnet_id} "
+                        "has no free address.")
+                self._raise_for(r)
+                free = [row for row in self._payload(r) if isinstance(row, dict)]
+                addr = str(free[0].get("hostaddr") or "") if free else ""
+                if not addr:
+                    raise ProviderError(
+                        "EfficientIP returned no free address for subnet "
+                        f"{subnet.get('subnet_name') or subnet_id}.")
+                params = {"subnet_id": subnet_id, "hostaddr": addr,
+                          "add_flag": "new_only"}
+                if hostname:
+                    params["ip_name"] = hostname
+                r2 = c.post("/rest/ip_add", params=params)
+                self._raise_for(r2)
+        except httpx.HTTPError as exc:
+            raise ProviderError(f"EfficientIP allocation failed: {exc}") from exc
+        rows = [row for row in self._payload(r2) if isinstance(row, dict)]
+        ref = str(rows[0].get("ret_oid") or "") if rows else ""
+        if not ref:
+            # The address may or may not have been written. Say so instead of
+            # returning a reservation with no handle: rollback could not undo
+            # it, and a silent success here strands an address forever.
+            raise ProviderError(
+                f"EfficientIP accepted {addr} but returned no reservation id — "
+                "check the subnet by hand before retrying.")
+        prefix = prefix_from_size(subnet.get("subnet_size"))
+        return Address(
+            address=addr, ref=ref, prefix_len=prefix,
+            netmask=mask_from_prefix(prefix),
+            gateway=str(subnet.get("subnet_ip_gateway")
+                        or subnet.get("gateway") or ""),
+            pool=str(subnet.get("subnet_name") or subnet_id),
+            extra={"subnet_id": subnet_id},
+        )
+
+    def release_address(self, address: str, ref: str = "") -> None:
+        if not ref:
+            raise ProviderError(
+                "EfficientIP release needs the reservation id recorded when "
+                f"{address or 'the address'} was taken.")
+        try:
+            with self._client() as c:
+                r = c.delete("/rest/ip_delete", params={"ip_id": ref})
+            self._raise_for(r)
+        except httpx.HTTPError as exc:
+            raise ProviderError(f"EfficientIP release failed: {exc}") from exc

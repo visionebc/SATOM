@@ -22,7 +22,7 @@
     <div class="d-flex align-items-center gap-2 mt-1">
       <span class="fw-badge fw-badge-secondary">{{ appliance.kind if appliance else '' }}</span>
       <span class="mono" style="font-size:12px;color:#6C757D;">
-        {{ appliance.host if appliance else '' }}:{{ appliance.port if appliance else '' }}
+        <span{% if appliance and appliance.host_title %} title="{{ appliance.host_title }}"{% endif %}>{{ appliance.display_host if appliance else '' }}</span>:{{ appliance.port if appliance else '' }}
       </span>
       <span class="fw-status fw-status-unknown" data-status-id="{{ appliance.id if appliance else '' }}" style="font-size:12px;">
         <span class="fw-status-dot"></span>{{ _('Checking…') }}

@@ -27,5 +27,7 @@
       <i class="bi bi-shield-check fw-nav-icon"></i><span>{{ _('Profiles') }}</span></a>
     <a class="fw-nav-item {{ 'active' if request.endpoint == 'waf.coverage' else '' }}" href="{{ url_for('waf.coverage', _adom=product.key) }}">
       <i class="bi bi-grid-3x3-gap fw-nav-icon"></i><span>{{ _('Coverage') }}</span></a>
+    <a class="fw-nav-item {{ 'active' if request.endpoint == 'waf.artifacts' else '' }}" href="{{ url_for('waf.artifacts', _adom=product.key) }}">
+      <i class="bi bi-file-earmark-code fw-nav-icon"></i><span>{{ _('Artifacts') }}</span></a>
   </div>
 </div>

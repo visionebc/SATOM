@@ -20,6 +20,7 @@
      ('inventory', url_for('waf.inventory'), 'Inventory', 'bi-list-columns-reverse'),
      ('profiles',  url_for('waf.profiles'),  'Profiles',  'bi-shield-check'),
      ('coverage',  url_for('waf.coverage'),  'Coverage',  'bi-grid-3x3-gap'),
+     ('artifacts', url_for('waf.artifacts'), 'Artifacts', 'bi-file-earmark-code'),
    ] %}
 {% set _reporting = devices | rejectattr('missing') | list %}
 {% set _stale = _reporting | selectattr('stale') | list %}

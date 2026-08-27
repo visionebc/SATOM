@@ -11642,3 +11642,49 @@ to `/architecture/` when none is selected), so the template never reaches a
 browser. It was updated for consistency and is guarded, but nothing verifies
 it renders. `policies.html` and `browse.html` were both confirmed over real
 HTTP against the live node.
+
+
+## §132 — "only add what is missing" (`tests/test_clone_additive.py`)
+
+**What it protects.** The clone must never write INTO an object the destination
+already owns, when the operator asked it not to. The subtlety is that there were
+TWO ways to do that and only one looked like a write:
+
+| the destination… | additive mode |
+|---|---|
+| does NOT have the object | created whole, with every row — unchanged |
+| has the object and the row | `exists` — unchanged |
+| has the object, the row is MISSING | **`untouched`** — the row is NOT added |
+| has the object, the row COLLIDES on its key | **`untouched`** — NOT rewritten |
+
+**Why the append is the one that matters.** `reconcile_rows` only ever governed
+the rewrite. The append arrived labelled *"missing under an existing parent —
+recreating"*, which reads as housekeeping, and it put a real server into a live
+pool. A version that closed only the rewrite would have left the pool modified
+and reported green.
+
+**Writing less obliges you to report more.** A held-back row is the only
+difference a run can produce that leaves NOTHING on the destination to find
+later: no object, no row, no error. So it is a status of its own (`untouched`,
+amber, mark `/`), a bucket of its own in `clone.outcome` carrying the parent and
+the key (a count is not the work), a number of its own in `clone_summary` that
+is **kept out of `skipped`** (everything else in that bucket is inert), and its
+own table in the clone report.
+
+**Recipe.** The classification guards drive `ClonePlanner.plan` directly, so
+they cannot see `clone_policy` dropping the flag — `test_the_mode_reaches_the_planner`
+is a separate guard for a separate claim, and it exists because a mutation that
+removed the kwarg from the `planner.plan(...)` call SURVIVED every other guard in
+the file. Any future guard that says "X reaches Y" must assert at Y, not at
+something Y also touches.
+
+**Traps found writing this.**
+- A mutation that removes the kwarg from a call site cannot be killed by a test
+  that calls the callee directly. Mis-aimed mutations report a gap that is not
+  there and hide the one that is.
+- The needle for the preview-invalidation mutation matched **two** handlers (the
+  destination selector uses the same line). Anchor a markup mutation on the
+  element id, never on the shared body.
+- `/tmp` on these nodes has `fs.protected_regular` behaviour: root cannot
+  rewrite a file it does not own there. Stage harness scripts under the app dir
+  with `install -o satom`.

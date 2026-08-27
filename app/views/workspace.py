@@ -282,6 +282,14 @@ def _parse_action(appliance_id):
         # own default and the run looks like it obeyed.
         rec_rows = body.get('reconcile_rows')
         opts['reconcile_rows'] = True if rec_rows is None else bool(rec_rows)
+        # "Only add what is missing": never write INTO an object the destination
+        # already owns. DEFAULTS ON here — this is the operator-facing surface,
+        # and the safe posture is the one a caller gets by saying nothing. The
+        # engine's own default is OFF for the opposite reason: `policy_ops` has
+        # library callers whose deliveries must keep completing. So the default
+        # lives here, once, where an operator can see it and turn it off.
+        add_only = body.get('additive_only')
+        opts['additive_only'] = True if add_only is None else bool(add_only)
         opts['dst_wpp'] = (body.get('dst_wpp') or '').strip()
         opts['wpp_only_if_missing'] = bool(body.get('wpp_only_if_missing'))
         # Carrying certificate MATERIAL moves a PRIVATE KEY over the CLI. Off

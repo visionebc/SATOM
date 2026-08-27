@@ -243,6 +243,7 @@ def clone_policy(planner, ops, policy: str, *, new_name: str, dry_run: bool,
                  iface_map: dict[str, str] | None = None,
                  artifacts: dict | None = None,
                  reconcile_rows: bool = True,
+                 additive_only: bool = False,
                  dst_wpp: str = "",
                  wpp_only_if_missing: bool = False,
                  certs: dict | None = None,
@@ -276,6 +277,13 @@ def clone_policy(planner, ops, policy: str, *, new_name: str, dry_run: bool,
       ``-7694``. Keys: ``enabled``, ``src_client``, ``src_vdom``,
       ``source_appliance_id``, ``accept_missing``, ``by``. Absent/disabled
       keeps the legacy behaviour.
+    * ``additive_only`` — never write INTO an object the destination already
+      owns. A missing object is still created whole, with all of its rows; an
+      object that is already there is left exactly as it is, and every row this
+      holds back is reported as ``untouched``. It supersedes ``reconcile_rows``,
+      which only ever governed the noisy half (the keyed rewrite) and left the
+      append — "missing under an existing parent — recreating" — writing into a
+      live object under a label that reads like housekeeping.
     * ``reconcile_rows`` — update, in place, the destination rows that already
       own a unique key this clone carries while serving different content.
       Turning it OFF does NOT skip those rows: it REFUSES the apply. A skipped
@@ -343,9 +351,22 @@ def clone_policy(planner, ops, policy: str, *, new_name: str, dry_run: bool,
         wpp_reused = clone.wpp_reuse_name(landing, have, True)
         if wpp_reused:
             copy_wpp = False
+    if additive_only and wpp_decisions:
+        # Refuted BEFORE any device is read, because the two options contradict
+        # each other in what they promise about the destination: "new, compare
+        # and decide" exists to EDIT a profile the destination is already
+        # serving, and additive mode promises not to touch anything already
+        # there. Honouring both would mean honouring neither, and silently
+        # dropping one of them is how an operator ends up believing a run did
+        # what the other one said.
+        raise RuntimeError(
+            'additive mode ("only add what is missing") and "new, compare and '
+            "decide\" cannot run together: the second one exists to change a "
+            "profile the destination already serves, and the first one "
+            "promises not to. Pick one.")
     items = planner.plan(clone.ROOT_SERVER_POLICY, policy, new_name=new_name,
                          follow_wpp=copy_wpp, wpp_new_name=wpp_new_name,
-                         wpp_suffix=wpp_suffix)
+                         wpp_suffix=wpp_suffix, additive_only=additive_only)
     if dst_wpp:
         clone.repoint_wpp(items, dst_wpp)
     # NEW, COMPARE AND DECIDE. Applied to the PLAN, before completeness, the VIP
@@ -422,6 +443,13 @@ def clone_policy(planner, ops, policy: str, *, new_name: str, dry_run: bool,
     # honest end: creating them is refused by the appliance, so the clone cannot
     # deliver them either way, and only the refusal says so.
     conflicts = [it for it in items if it.status == "update"]
+    if additive_only:
+        # Inert BY CONSTRUCTION, not by an extra branch: the planner already
+        # turned every keyed collision into ``untouched``, so this list is
+        # empty. Asserting it here is what stops a future change from letting
+        # the two modes both act on the same item, which would put the write
+        # back under a flag the operator set to prevent it.
+        assert not conflicts, "additive mode left an update item in the plan"
     if conflicts and not reconcile_rows:
         names = "; ".join(
             "%s under %s" % (it.label, it.parent_mkey or "?") for it in conflicts[:6])
@@ -528,6 +556,12 @@ def clone_summary(items: list[clone.CloneItem]) -> dict[str, int]:
         # inside ``skipped`` it would read as a thing the clone chose not to do.
         "no_rest": counts.get("no-rest", 0),
         "to_create": counts.get("create", 0),
+        # Held back by additive mode. NOT inside ``skipped``: everything else in
+        # that bucket is inert (an object already there, a cert that never
+        # travels over REST), while this one means the destination is missing a
+        # row the source has and nothing on the destination records that. A
+        # caller reading only ``skipped`` would be told a decision was a no-op.
+        "untouched": counts.get("untouched", 0),
         "total": len(items),
     }
 
@@ -555,7 +589,8 @@ def migrate_policy(dst_planner, dst_ops, src_ops, policy: str, *,
                    wpp_suffix: str = "",
                    iface_map: dict[str, str] | None = None,
                    artifacts: dict | None = None,
-                   reconcile_rows: bool = True, dst_wpp: str = "",
+                   reconcile_rows: bool = True, additive_only: bool = False,
+                   dst_wpp: str = "",
                    wpp_only_if_missing: bool = False,
                    certs: dict | None = None,
                    wpp_decisions: dict | None = None) -> dict:
@@ -567,6 +602,7 @@ def migrate_policy(dst_planner, dst_ops, src_ops, policy: str, *,
                          copy_wpp=copy_wpp, wpp_new_name=wpp_new_name,
                          wpp_suffix=wpp_suffix, iface_map=iface_map,
                          artifacts=artifacts, reconcile_rows=reconcile_rows,
+                         additive_only=additive_only,
                          dst_wpp=dst_wpp,
                          wpp_only_if_missing=wpp_only_if_missing, certs=certs,
                          wpp_decisions=wpp_decisions)
@@ -594,6 +630,26 @@ def migrate_policy(dst_planner, dst_ops, src_ops, policy: str, *,
                 "copy does not enforce what the source does, so the source was "
                 "left ENABLED. Disable it by hand once the files are in place."
                 % summary["no_content"],
+        }
+    # Same rule, same reason, one class further out: additive mode held rows
+    # back, so the destination does NOT carry everything the source does. A
+    # migration is a claim that the two are interchangeable, and disabling the
+    # source here would take the ONLY copy of those rows out of service on the
+    # strength of a copy that is knowingly short. The clone is kept; the cutover
+    # becomes a deliberate manual step, exactly as it already is for a
+    # file-backed object whose bytes never arrived.
+    if summary.get("untouched") and clone_ok and not dry_run:
+        return {
+            "ok": True,
+            "summary": summary,
+            "items": items,
+            "source_disabled": False,
+            "source_kept_reason":
+                "%d row(s) were held back by additive mode, so the copy does "
+                "not carry everything the source does and the two are not "
+                "interchangeable — the source was left ENABLED. Add those rows "
+                "(or re-run without additive mode) before cutting over."
+                % summary["untouched"],
         }
     if clone_ok and not dry_run:
         res = set_status(src_ops, policy, enable=False, dry_run=False)
@@ -745,6 +801,12 @@ def perform_one(action: str, *, source_appl, dest_appl=None, policy: str,
     wpp_new_name = str(opts.get("wpp_new_name") or "")
     wpp_suffix = str(opts.get("wpp_suffix") or "")
     reconcile_rows = bool(opts.get("reconcile_rows", True))
+    # Defaults FALSE at this layer and TRUE at the HTTP layer, on purpose. This
+    # function is a library entry point with existing callers; flipping its
+    # default would quietly stop deliveries that other code already depends on
+    # completing. The operator-facing surface is where the safe default belongs,
+    # and `views/workspace.py` is where it is set.
+    additive_only = bool(opts.get("additive_only", False))
     # The two non-interactive profile policies. Read HERE, once, for the same
     # reason `reconcile_rows` is: the bulk job calls this function per policy.
     dst_wpp = str(opts.get("dst_wpp") or "")
@@ -847,6 +909,7 @@ def perform_one(action: str, *, source_appl, dest_appl=None, policy: str,
                                  vip_ip=vip_ip, copy_wpp=copy_wpp,
                                  wpp_new_name=wpp_new_name, wpp_suffix=wpp_suffix,
                                  artifacts=art_ctx, reconcile_rows=reconcile_rows,
+                                 additive_only=additive_only,
                                  dst_wpp=dst_wpp,
                                  wpp_only_if_missing=wpp_only_if_missing,
                                  certs=cert_ctx, wpp_decisions=wpp_decisions)
@@ -875,6 +938,7 @@ def perform_one(action: str, *, source_appl, dest_appl=None, policy: str,
                                  wpp_new_name=wpp_new_name, wpp_suffix=wpp_suffix,
                                  iface_map=iface_map, artifacts=art_ctx,
                                  reconcile_rows=reconcile_rows,
+                                 additive_only=additive_only,
                                  dst_wpp=dst_wpp,
                                  wpp_only_if_missing=wpp_only_if_missing,
                                  certs=cert_ctx, wpp_decisions=wpp_decisions)
@@ -903,6 +967,7 @@ def perform_one(action: str, *, source_appl, dest_appl=None, policy: str,
                                  wpp_new_name=wpp_new_name, wpp_suffix=wpp_suffix,
                                  iface_map=iface_map, artifacts=art_ctx,
                                  reconcile_rows=reconcile_rows,
+                                 additive_only=additive_only,
                                  dst_wpp=dst_wpp,
                                  wpp_only_if_missing=wpp_only_if_missing,
                                  certs=cert_ctx, wpp_decisions=wpp_decisions)

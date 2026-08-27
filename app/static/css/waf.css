@@ -72,6 +72,17 @@
 .waf-pill-no-profile { color: #8B1C2A; background: rgba(139,28,42,.12);  border-color: rgba(139,28,42,.30); }
 .waf-pill-disabled   { color: #3D4550; background: rgba(61,69,80,.10);   border-color: rgba(61,69,80,.25); }
 
+/* Artifact states. Same rule as the posture pills: dark text on a 12% tint of
+   its own hue. The two HOLDING states (orphan, library) are deliberately
+   colourless — they are facts about a copy, not verdicts about a need, and
+   giving them a status hue would put them in the same vocabulary as `blocked`. */
+.waf-pill-blocked  { color: #8B1C2A; background: rgba(139,28,42,.12); border-color: rgba(139,28,42,.30); }
+.waf-pill-at-risk  { color: #7A5700; background: rgba(122,87,0,.12);  border-color: rgba(122,87,0,.30); }
+.waf-pill-borrowed { color: #4C2A85; background: rgba(76,42,133,.12); border-color: rgba(76,42,133,.30); }
+.waf-pill-ok       { color: #15692A; background: rgba(21,105,42,.12); border-color: rgba(21,105,42,.30); }
+.waf-pill-orphan   { color: #3D4550; background: rgba(61,69,80,.10);  border-color: rgba(61,69,80,.25); }
+.waf-pill-library  { color: #1D4ED8; background: rgba(29,78,216,.10); border-color: rgba(29,78,216,.25); }
+
 /* --------------------------------------------------------------- meter -- */
 .waf-meter {
   height: 6px; width: 100%; max-width: 170px;

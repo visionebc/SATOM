@@ -6,6 +6,48 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### WAF — the artifacts the estate needs, and the ones it does not have
+
+- **New page `Fleet -> WAF -> Artifacts`** (`/waf/artifacts`, feed
+  `/waf/api/artifacts.json`): every file-backed WAF object (XML Schema, DTD,
+  WSDL, OpenAPI, gRPC IDL, JSON Schema, Lua) the visible estate REFERENCES or
+  HOLDS, in one table, with six charts, per-type and per-scope breakdowns and a
+  CSV that carries exactly the filtered rows. `/artifacts/*` stays pinned to
+  the session's (device, ADOM) — that is deliberate and guarded — which left
+  the fleet question with no home at all.
+- **Demand against supply, in one row per (scope, object).** The four verdicts
+  are unchanged and now have ONE author,
+  `services.artifact_refs.verdict_of`, shared with `device_audit` and
+  `artifact_stats.scope_stats`: the expression used to be copied into all three
+  under a comment promising they were identical.
+- **Two states that are NOT verdicts.** A stored copy no walked policy names is
+  an `orphan` — there is no need behind it, and folding it into "held" would
+  inflate the share of the estate that is ready to move with copies nobody is
+  waiting for. The library-wide bucket gets its own rows and reports how many
+  scopes resolve to it, which is the blast radius of editing that one file.
+- **A `borrowed` row served by the LIBRARY gets its own sentence.** `resolve()`
+  prefers the library over any other appliance, so "a deliberate shared copy"
+  and "whichever box happens to hold the name" are different branches; the
+  library-backed count is published beside `borrowed` rather than folded into
+  it, because reading N borrowed as "N guesses" overstates the risk by exactly
+  that number.
+- **EMPTY is a flag, not a state.** A zero-byte newest version is `ok` for
+  every "do we have it?" check in the codebase and configures nothing; it is
+  counted, badged and filterable here. Emptiness is decided on byte count
+  alone, the same rule as `/artifacts/inventory` — decompressing every blob on
+  a page that lists the whole estate is not a trade this page can make.
+- **The page's blind spot is a NUMBER.** The configuration snapshot knows how
+  many server policies a scope has; the sweep knows how many it walked. The
+  difference (`never walked`) is printed per scope and fleet-wide, so a
+  migration plan copied off this page does not silently inherit it. A scope
+  with no snapshot reports `-` — unknown, never zero — and is excluded from the
+  fleet figure.
+- **Absence is not zero, again.** A scope with no scan row at all is `never
+  swept` and stays out of the denominators: "nobody looked" and "we looked and
+  it carries nothing" are the two answers this subsystem exists to keep apart.
+- `artifact_stats.fleet_stats` accepts a preloaded `(refs, scans, stored)`
+  triple so a page that already read those tables does not scan them twice.
+
 ### WAF — a fleet-wide inventory, its statistics and its charts
 
 - **New area `Fleet -> WAF`, four pages over ONE universe.** `/waf/` (overview:

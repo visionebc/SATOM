@@ -6,7 +6,15 @@ Four pages over ONE universe (``services/waf_fleet.collect``):
   ``/waf/inventory``  every server policy in the fleet, filterable + CSV
   ``/waf/profiles``   every web protection profile, its usage and its gaps
   ``/waf/coverage``   protection-by-scope matrix
-  ``/waf/api/summary.json``  the chart payload (the templates carry no data)
+  ``/waf/artifacts``  file-backed objects: what the estate needs, what SATOM
+                      holds, and what therefore cannot be migrated
+  ``/waf/api/summary.json``    the chart payload (the templates carry no data)
+  ``/waf/api/artifacts.json``  ditto, for the artifacts page
+
+The artifacts page reads a DIFFERENT universe from the other four — the
+artifact index, not the configuration snapshot — but it is narrowed by the same
+``waf_fleet.fortiweb_scopes`` call, so the scope banner over it means the same
+thing. See ``services/waf_artifact_fleet``.
 
 Why the charts fetch instead of being inlined: the CSP drops
 ``unsafe-inline`` and script-src-attr is ``'none'`` (app/__init__.py), so a
@@ -29,6 +37,7 @@ import io
 from flask import Blueprint, Response, jsonify, render_template, request
 from flask_login import current_user, login_required
 
+from ..services import waf_artifact_fleet as artsvc
 from ..services import waf_fleet as svc
 
 bp = Blueprint("waf", __name__, url_prefix="/waf")
@@ -49,6 +58,23 @@ INVENTORY_COLUMNS: tuple[tuple[str, str], ...] = (
     ("n_protections", "Protections on"),
     ("signature_rule", "Signature policy"),
     ("comment", "Comment"),
+)
+
+#: The artifacts table — screen and CSV, one definition.
+ARTIFACT_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("scope", "Device / ADOM"),
+    ("label", "Object type"),
+    ("name", "Object"),
+    ("state_label", "State"),
+    ("policies", "Policies naming it"),
+    ("profiles", "Profiles"),
+    ("versions", "Versions held"),
+    ("size", "Newest bytes"),
+    ("source", "Origin"),
+    ("sha", "Newest sha"),
+    ("created_at", "First stored"),
+    ("recoverable", "Recoverable from device"),
+    ("remedy", "What to do"),
 )
 
 PROFILE_COLUMNS: tuple[tuple[str, str], ...] = (
@@ -247,6 +273,95 @@ def coverage():
         devices=universe["devices"],
         stale_hours=svc.STALE_AFTER_HOURS,
     )
+
+
+@bp.route("/artifacts")
+@login_required
+def artifacts():
+    """Fleet-wide file-backed objects: demand, supply, and the gap.
+
+    Note what the filters do and do not do: they narrow the TABLE. Every tile
+    and every chart above them is the whole visible fleet and says so — the
+    header-contradicting-its-table drift of safeguards §119 came from letting a
+    filter quietly move one of the two.
+    """
+    universe = artsvc.collect(user=current_user)
+    stats = artsvc.stats(universe)
+    rows = [dict(r,
+                 recoverable=("yes" if r["readable"] else "no — upload only"),
+                 policy_list=", ".join(r["policy_names"][:6]))
+            for r in universe["rows"]]
+
+    scope = (request.args.get("scope") or "").strip()
+    kind = (request.args.get("kind") or "").strip()
+    state = (request.args.get("state") or "").strip()
+    flag = (request.args.get("flag") or "").strip()
+    q = (request.args.get("q") or "").strip().lower()
+
+    if scope:
+        rows = [r for r in rows if r["scope"] == scope]
+    if kind:
+        rows = [r for r in rows if r["kind"] == kind]
+    if state in artsvc.STATES:
+        rows = [r for r in rows if r["state"] == state]
+    elif state == "unheld":
+        # The one compound an operator actually asks for: everything the estate
+        # needs and does not have its own copy of, whatever the reason.
+        rows = [r for r in rows if r["needed"] and r["state"] != "ok"]
+    if flag == "empty":
+        rows = [r for r in rows if r["empty"]]
+    elif flag == "stale":
+        rows = [r for r in rows if r["stale"]]
+    if q:
+        rows = [r for r in rows
+                if any(q in str(r.get(k, "")).lower() for k, _l in ARTIFACT_COLUMNS)]
+
+    if (request.args.get("format") or "").lower() == "csv":
+        return _csv(ARTIFACT_COLUMNS, rows, "waf_fleet_artifacts.csv")
+
+    return render_template(
+        "waf/artifacts.html",
+        columns=ARTIFACT_COLUMNS,
+        rows=rows,
+        total=len(universe["rows"]),
+        stats=stats,
+        scopes=universe["scopes"],
+        by_kind=artsvc.by_kind(universe),
+        devices=universe["devices"],
+        stale_hours=svc.STALE_AFTER_HOURS,
+        states=artsvc.STATES,
+        state_labels=artsvc.STATE_LABELS,
+        verdicts=artsvc.VERDICTS,
+        kinds=artsvc.kind_choices(),
+        library_scope=artsvc.LIBRARY_SCOPE,
+        selected={"scope": scope, "kind": kind, "state": state,
+                  "flag": flag, "q": q},
+    )
+
+
+@bp.route("/api/artifacts.json")
+@login_required
+def api_artifacts():
+    universe = artsvc.collect(user=current_user)
+    stats = artsvc.stats(universe)
+    kinds = artsvc.by_kind(universe)
+    return jsonify({
+        "stats": {k: v for k, v in stats.items() if k != "by_state"},
+        "readiness": [{"key": v, "label": artsvc.STATE_LABELS[v],
+                       "value": stats["by_state"][v]} for v in artsvc.VERDICTS],
+        # Types with nothing at all are dropped HERE and only here: a bar of
+        # zeros for an object type the fleet does not use reads as a gap.
+        "by_kind": [{"label": k["label"], "held": k["ok"],
+                     "blocked": k["blocked"], "at-risk": k["at-risk"],
+                     "borrowed": k["borrowed"], "orphan": k["orphan"],
+                     "library": k["library"], "empty": k["empty"],
+                     "versions": k["versions"], "bytes": k["bytes"]}
+                    for k in kinds
+                    if k["needed"] or k["versions"] or k["orphan"] or k["library"]],
+        "per_scope": universe["scopes"],
+        "growth": artsvc.growth_series(universe),
+        "generated_at": stats["generated_at"],
+    })
 
 
 @bp.route("/api/summary.json")

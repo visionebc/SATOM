@@ -195,6 +195,12 @@ PAGES: tuple[dict, ...] = (
        "mitigation geo block json xml openapi validation csrf cookie",
        "Protection-by-scope matrix: which WAF features each device's policies "
        "actually switch on."),
+    _p("waf.artifacts", "WAF Artifacts", "fleet",
+       "artifacts fleet wide file backed objects xml schema xsd dtd wsdl "
+       "openapi grpc json schema lua scripting held missing blocked at risk "
+       "borrowed orphan empty library store migration blockers sweep",
+       "Every file-backed WAF object the estate needs, whether SATOM holds it, "
+       "and which policies cannot be migrated without it."),
     _p("search.index", "Search", "fleet",
        "find search free text lookup where is object policy pool certificate",
        "Free-text sweep across live device configuration."),
@@ -490,6 +496,7 @@ EXCLUDED: dict[str, str] = {
     "monitor_analytics.cadence": "json feed", "monitor_analytics.catalog": "json feed",
     "monitor_analytics.data": "json feed", "metrics_admin.data": "json feed",
     "waf.api_summary": "json feed",
+    "waf.api_artifacts": "json feed",
     "metrics_admin.peer_store": "json feed", "metrics_admin.snapshots": "json feed",
     "metrics_admin.stores": "json feed", "monitoring.data": "json feed",
     "deep_monitor.data": "json feed", "monitor_reports.data": "json feed",

@@ -45,6 +45,7 @@
           {% set fp = c.failed or [] %}
           {% set vm = c.verified_missing or [] %}
           {% set uv = c.unverifiable or [] %}
+          {% set ut = c.untouched or [] %}
           <div class="row g-2 mb-3">
             <div class="col-auto"><span class="badge bg-primary">{{ (c.planned_create or [])|length }} planned to create</span></div>
             <div class="col-auto"><span class="badge bg-success">{{ (c.created or [])|length }} created</span></div>
@@ -52,7 +53,24 @@
             {% if fp %}<div class="col-auto"><span class="badge bg-danger">{{ fp|length }} failed</span></div>{% endif %}
             {% if vm %}<div class="col-auto"><span class="badge bg-warning text-dark">{{ vm|length }} not found on device after write</span></div>{% endif %}
             {% if uv %}<div class="col-auto"><span class="badge bg-warning text-dark">{{ uv|length }} could not verify</span></div>{% endif %}
+            {% if ut %}<div class="col-auto"><span class="badge bg-warning text-dark">{{ ut|length }} rows not added</span></div>{% endif %}
           </div>
+
+          {% if ut %}
+          <h6 class="text-warning">{{ _('Rows NOT added (additive mode)') }}</h6>
+          <p class="small text-muted mb-2">{{ _('The destination already owned the parent object, so these rows were neither rewritten nor added. Nothing on the destination records that they are missing — this table is the only place they appear.') }}</p>
+          <table class="table table-sm table-dark align-middle mb-3">
+            <thead><tr><th>{{ _('Parent') }}</th><th>{{ _('Row') }}</th><th>{{ _('Type') }}</th><th>{{ _('Why') }}</th></tr></thead>
+            <tbody>
+            {% for r in ut %}
+              <tr><td><code>{{ r.parent_mkey or '—' }}</code></td>
+                  <td>{{ r.label }}{% if r.dst_row_key %} <code class="small">{{ r.dst_row_key }}</code>{% endif %}</td>
+                  <td class="small text-muted">{{ r.logical or r.urn }}</td>
+                  <td class="small">{{ r.note }}</td></tr>
+            {% endfor %}
+            </tbody>
+          </table>
+          {% endif %}
 
           {% if fp %}
           <h6 class="text-danger">{{ _('Failed objects') }}</h6>
@@ -77,7 +95,9 @@
                 <tr>
                   <td style="padding-left:{{ 6 + (r.depth or 0) * 16 }}px">{{ r.label }}</td>
                   <td><code>{{ r.mkey }}</code></td>
-                  <td><span class="badge bg-{{ 'primary' if r.status=='create' else 'secondary' }}">{{ r.status }}</span></td>
+                  {# amber, never the grey of `exists`: this row is the one the
+                     destination does NOT have. #}
+                  <td><span class="badge bg-{{ 'primary' if r.status=='create' else ('warning text-dark' if r.status=='untouched' else 'secondary') }}">{{ r.status }}</span></td>
                   <td class="small">
                     {% if (r.result or '').startswith('error') %}<span class="text-danger">{{ r.result }}</span>
                     {% elif r.result %}{{ r.result }}{% else %}—{% endif %}

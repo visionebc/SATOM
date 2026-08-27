@@ -246,7 +246,13 @@ class CloneItem:
     kind: str               # "object" | "subrow"
     depth: int
     payload: dict
-    status: str = "create"  # create | update | exists | cert | no-endpoint | no-rest | empty
+    status: str = "create"  # create | update | exists | untouched | cert |
+                            # no-endpoint | no-rest | empty
+    #: ``untouched`` is NOT a flavour of ``exists``. "the destination has
+    #: this row" and "the destination does NOT have it and we deliberately
+    #: are not putting it there" are opposite facts about the destination,
+    #: and only one of them leaves the operator something to do. Folding
+    #: them together is the whole defect additive mode exists to avoid.
     note: str = ""
     applied: bool = False
     result: str = ""
@@ -694,6 +700,7 @@ class ClonePlanner:
              follow_wpp: bool = True, wpp_new_name: str = "",
              wpp_suffix: str = "", deep_suffix: str = "",
              managed: dict | None = None,
+             additive_only: bool = False,
              clone_anyway: Iterable[str] = ()) -> list[CloneItem]:
         """Walk the source tree and classify each item vs the destination.
 
@@ -709,7 +716,18 @@ class ClonePlanner:
         root may legitimately own is copied under ``<name>-<deep_suffix>`` and
         the references are re-pointed, instead of being classified ``exists``
         and left pointing at the original's objects. Without it a same-device
-        clone shares its whole subtree — see :mod:`clone_scope`."""
+        clone shares its whole subtree — see :mod:`clone_scope`.
+
+        ``additive_only`` moves the unit of "the destination already has this"
+        from the ROW up to the OBJECT: an object the destination does not have
+        is created whole, with every row; an object it DOES have is left exactly
+        as it is. That closes BOTH write paths into a live object, not just the
+        loud one. The quiet one is the dangerous one — a pool that GAINS a
+        member serves traffic it was not serving a minute ago, which is as
+        modified as a pool whose member was rewritten, and it arrives labelled
+        "recreating". Every row held back this way becomes ``untouched``: it is
+        the only difference a run can produce that leaves NO trace on the
+        destination, so it is reported instead of written."""
         items = self.collect(root, mkey, new_name=new_name, follow_wpp=follow_wpp)
         self._subrow_cache = {}
         if follow_wpp and (wpp_new_name or wpp_suffix):
@@ -747,6 +765,21 @@ class ClonePlanner:
                 if it.parent_mkey in existing_parents:
                     if self._subrow_exists_at_dst(it):
                         it.status, it.note = "exists", "row already present under the existing parent"
+                    elif additive_only:
+                        # BOTH remaining outcomes write INTO an object the
+                        # destination already owns, so both are held back here:
+                        # the keyed collision (a rewrite) and the absent row (an
+                        # append). Which one it was still gets named — the
+                        # operator has to be able to tell "a row that differs was
+                        # not rewritten" from "a row that is missing was not
+                        # added"; they call for different work.
+                        it.status = "untouched"
+                        it.note = (
+                            "additive mode — the destination owns this key and "
+                            "its row was NOT rewritten"
+                            if self._subrow_owner_at_dst(it) else
+                            "additive mode — the parent already exists on the "
+                            "destination and this row was NOT added")
                     else:
                         # A row that is not there BY CONTENT may still be there
                         # BY KEY. Planning a create for it is planning a
@@ -1365,7 +1398,10 @@ def render_plan(items: list[CloneItem]) -> str:
     marks = {"create": "+", "update": "~>", "exists": "=", "cert": "lock",
              "no-endpoint": "!",
              "no-rest": "!",
-             "empty": ".", "no-content": "~"}
+             "empty": ".", "no-content": "~",
+             # Its own mark, never "=" — "=" reads as "the destination already
+             # has this", and this row is precisely the one it does NOT have.
+             "untouched": "/"}
     lines: list[str] = []
     for it in items:
         indent = "  " * it.depth
@@ -1456,6 +1492,12 @@ def outcome(items: list[CloneItem]) -> dict:
         # defect — and NOT folded into the silent statuses either, because the
         # destination is now missing protection the source had.
         "skipped_no_content": [r for r in rows if r["status"] == "no-content"],
+        # Additive mode's held-back rows. Enumerated, because this is the only
+        # difference a run can produce that leaves NOTHING behind on the
+        # destination to find later: no object, no row, no error. A count would
+        # say how many; the operator needs the parent and the key, which is the
+        # work.
+        "untouched": [r for r in rows if r["status"] == "untouched"],
         "verified_missing": [r for r in created if r.get("verified") == "missing"],
         "unverifiable": [r for r in created if r.get("verified") == "unverifiable"],
     }

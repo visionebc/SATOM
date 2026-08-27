@@ -6,6 +6,31 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Changed — a network segment is ONE row per network (2026-08-27)
+
+Reported as "two departments can share a network, but in the SPO wizard I
+cannot see the department and the entries repeat". The repetition was the
+visible half. The invisible half: three separate resolvers indexed segments by
+name and **disagreed** about which of two same-named rows won, so a plan could
+describe one row's network while allocating from the other's CIDR — silently.
+
+- **Changed** a segment now carries `departments` (a list) instead of a single
+  `department`. `cidr`/`interface`/`gateway` are properties of the network, so
+  a network two departments share is one row naming both. Blobs written before
+  this read through unchanged.
+- **Added** `save_segments` refuses duplicate segment names, and writes nothing
+  when it refuses. Exact match, not case-folded — see safeguards §135.
+- **Added** `line_plan` blocks on a duplicated segment name instead of picking.
+- **Added** a Department control on the SPO wizard that NARROWS the segment
+  choice, enforced server-side; the segment options now print the departments
+  they serve, and the plan summary names the one being built for.
+- **Changed** one indexer (`line_profiles.index_by_name`) and one segments-form
+  parser (`views._segments_form`) replace three and two respectively.
+- **Added** `scripts/migrate_segment_departments.py` — folds per-department
+  rows into one row per network; refuses to merge rows that disagree.
+- 47 guards in `tests/test_segment_departments.py`, 36/36 mutations killed.
+
+
 ### Fixed — the SPO wizard's script was blocked by the CSP (2026-08-27)
 
 The wizard's Segment dropdown stayed empty however many network segments a line

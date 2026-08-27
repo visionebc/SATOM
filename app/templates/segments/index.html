@@ -65,7 +65,7 @@
       <div class="fw-table-wrapper">
         <table class="fw-table" id="segments-table">
           <thead>
-            <tr><th>{{ _('Name') }}</th><th>{{ _('Zone') }}</th><th>{{ _('Line') }}</th><th>{{ _('Department') }}</th><th>CIDR</th><th>{{ _('Interface') }}</th><th>{{ _('Gateway') }}</th><th>{{ _('Note') }}</th><th></th></tr>
+            <tr><th>{{ _('Name') }}</th><th>{{ _('Zone') }}</th><th>{{ _('Line') }}</th><th>{{ _('Departments') }}</th><th>CIDR</th><th>{{ _('Interface') }}</th><th>{{ _('Gateway') }}</th><th>{{ _('Note') }}</th><th></th></tr>
           </thead>
           <tbody id="segments-body">
             {% for s in segments %}
@@ -86,10 +86,14 @@
                 </select>
               </td>
               <td>
-                <select class="form-select form-select-sm" name="seg_department[]">
-                  <option value="">{{ _('— any —') }}</option>
-                  {% for d in classification.departments %}<option value="{{ d }}" {{ 'selected' if s.department == d else '' }}>{{ d }}</option>{% endfor %}
-                  {% if s.department and s.department not in classification.departments %}<option value="{{ s.department }}" selected>{{ s.department }} (custom)</option>{% endif %}
+                {# The POSTED value is the hidden field; the multi-select only
+                   mirrors into it. That way a page whose JS never ran saves the
+                   departments the row already had instead of clearing them. #}
+                <input type="hidden" name="seg_departments[]" value='{{ s.departments | tojson }}'>
+                <select class="form-select form-select-sm" multiple size="3" data-js="seg-depts"
+                        title="{{ _('A network shared by two departments is ONE row — select both.') }}">
+                  {% for d in classification.departments %}<option value="{{ d }}" {{ 'selected' if d in s.departments else '' }}>{{ d }}</option>{% endfor %}
+                  {% for d in s.departments if d not in classification.departments %}<option value="{{ d }}" selected>{{ d }} (custom)</option>{% endfor %}
                 </select>
               </td>
               <td><input class="form-control form-control-sm" name="seg_cidr[]" value="{{ s.cidr }}" placeholder="192.0.2.0/24"></td>
@@ -118,6 +122,26 @@ var CLS = {
   lines: {{ classification.lines | tojson }},
   departments: {{ classification.departments | tojson }}
 };
+function deptCell() {
+  // Mirror of the server-rendered cell above: hidden field carries the value,
+  // the multi-select is only an editor for it.
+  var opts = '';
+  (CLS.departments || []).forEach(function (v) {
+    opts += '<option value="' + v + '">' + v + '</option>';
+  });
+  return '<input type="hidden" name="seg_departments[]" value="[]">' +
+         '<select class="form-select form-select-sm" multiple size="3" data-js="seg-depts">' +
+         opts + '</select>';
+}
+function syncDepts(sel) {
+  var hidden = sel.parentNode.querySelector('input[name="seg_departments[]"]');
+  if (!hidden) { return; }
+  var vals = [];
+  for (var i = 0; i < sel.options.length; i++) {
+    if (sel.options[i].selected) { vals.push(sel.options[i].value); }
+  }
+  hidden.value = JSON.stringify(vals);
+}
 function clsSelect(name, items) {
   var opts = '<option value="">— any —</option>';
   (items || []).forEach(function (v) {
@@ -133,7 +157,7 @@ function addSegmentRow() {
     '<td><input class="form-control form-control-sm" name="seg_name[]"></td>' +
     '<td>' + clsSelect('seg_zone[]', CLS.zones) + '</td>' +
     '<td>' + clsSelect('seg_line[]', CLS.lines) + '</td>' +
-    '<td>' + clsSelect('seg_department[]', CLS.departments) + '</td>' +
+    '<td>' + deptCell() + '</td>' +
     '<td><input class="form-control form-control-sm" name="seg_cidr[]" placeholder="192.0.2.0/24"></td>' +
     '<td><input class="form-control form-control-sm" name="seg_interface[]" placeholder="port1" value="port1"></td>' +
     '<td><input class="form-control form-control-sm" name="seg_gateway[]"></td>' +
@@ -150,6 +174,11 @@ function addSegmentRow() {
   body.addEventListener('click', function (event) {
     var btn = event.target.closest('[data-js="seg-remove"]');
     if (btn) { btn.closest('tr').remove(); }
+  });
+  // Delegated so rows added after load are covered by the same one binding.
+  body.addEventListener('change', function (event) {
+    var sel = event.target.closest('[data-js="seg-depts"]');
+    if (sel) { syncDepts(sel); }
   });
 })();
 </script>

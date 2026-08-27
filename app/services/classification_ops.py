@@ -45,6 +45,13 @@ from . import settings_store as store
 
 #: catalog kind -> the column/key that holds a reference to one of its values.
 FIELD_FOR_KIND = {"zones": "zone", "lines": "line", "departments": "department"}
+#: Same three axes, as they are spelled ON A SEGMENT. Departments diverge:
+#: the Appliance/Baseline column is a single string, the segment column is a
+#: list, because a network can serve several departments while a device
+#: belongs to one. Two maps rather than one lookup with a special case, so a
+#: reader cannot use the wrong spelling without saying which map it meant.
+SEGMENT_FIELD_FOR_KIND = {"zones": "zone", "lines": "line",
+                          "departments": "departments"}
 
 #: How a submitted row asks to be treated.
 ACTIONS = ("keep", "delete")
@@ -154,9 +161,15 @@ def usage(kind: str) -> dict[str, Usage]:
         if u:
             u.baselines += 1
     for seg in store.segments():
-        u = bucket(seg.get(fld))
-        if u:
-            u.segments += 1
+        # A segment names ONE zone and ONE line but any number of departments
+        # (two departments sharing a network share the row). Counting the list
+        # as a single value would report every shared network as unused by
+        # both -- and unregistered() would then hide a live reference.
+        for val in (seg.get(SEGMENT_FIELD_FOR_KIND[kind]) if kind == "departments"
+                    else [seg.get(fld)]):
+            u = bucket(val)
+            if u:
+                u.segments += 1
     if kind == "lines":
         from ..models_lineprofile import LineProfile
         for prof in LineProfile.query.all():
@@ -396,6 +409,24 @@ def _retarget(fld: str, old: str, new: str, report: Report,
             report.line_profiles += 1
 
     # -- network segments (JSON blob in app_settings) ------------------------
+    if fld == "department":
+        # The list case. A rename must not create a duplicate entry (the row
+        # may already carry the destination name), and clearing must REMOVE
+        # the entry rather than leave an empty string, which would render as a
+        # blank badge and count as a department in usage().
+        for seg in segs:
+            depts = list(seg.get("departments") or [])
+            if old not in depts:
+                continue
+            # Rename in place and STOP. Dropping the empty string a clear
+            # leaves, and collapsing a rename onto a name the row already
+            # carries, both belong to settings_store.normalize_departments --
+            # which save_segments runs on every row on the way in. Repeating
+            # the rule here would make this the second author of it, and the
+            # copy nobody reads is the copy that drifts (§132).
+            seg["departments"] = [new if d == old else d for d in depts]
+            report.segments += 1
+        return
     for seg in segs:
         if (seg.get(fld) or "") == old:
             seg[fld] = new or ""

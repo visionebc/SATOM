@@ -42,9 +42,15 @@
         </select>
         <div id="w-line-note" class="text-muted mt-1" style="font-size:11.5px;"></div>
       </div>
-      <div class="col-md-3">
+      <div class="col-md-2">
+        <label class="form-label" style="font-size:12px;">{{ _('Department') }}</label>
+        <select class="form-select form-select-sm" id="w-department"></select>
+        <div class="text-muted mt-1" style="font-size:11.5px;">{{ _('narrows the segments below') }}</div>
+      </div>
+      <div class="col-md-4">
         <label class="form-label" style="font-size:12px;">{{ _('Segment') }}</label>
         <select class="form-select form-select-sm" id="w-segment"></select>
+        <div id="w-segment-note" class="text-muted mt-1" style="font-size:11.5px;"></div>
       </div>
       <div class="col-md-3">
         <label class="form-label" style="font-size:12px;">{{ _('Web address') }}</label>
@@ -119,17 +125,69 @@
     return p ? p.segments : [];
   }
 
+  function departmentsFor(line) {
+    // Union across the line's segments, first-seen order. A network shared by
+    // two departments is ONE segment carrying both names.
+    const out = [];
+    segmentsFor(line).forEach(function (s) {
+      (s.departments || []).forEach(function (d) {
+        if (d && out.indexOf(d) < 0) { out.push(d); }
+      });
+    });
+    return out;
+  }
+
+  function refreshDepartments() {
+    const line = $('w-line').value;
+    const sel = $('w-department');
+    const had = sel.value;
+    sel.innerHTML = '';
+    const any = document.createElement('option');
+    any.value = ''; any.textContent = '— any —';
+    sel.appendChild(any);
+    departmentsFor(line).forEach(function (d) {
+      const o = document.createElement('option');
+      o.value = d; o.textContent = d;
+      sel.appendChild(o);
+    });
+    // Keep the operator's choice across a line change only if it still means
+    // something on the new line; silently keeping a department the new line
+    // does not serve would show an empty segment list with no reason given.
+    sel.value = departmentsFor(line).indexOf(had) >= 0 ? had : '';
+  }
+
+  function refreshSegments() {
+    const line = $('w-line').value;
+    const dept = $('w-department').value;
+    const sel = $('w-segment');
+    sel.innerHTML = '';
+    let shown = 0, total = 0;
+    segmentsFor(line).forEach(function (s) {
+      total += 1;
+      const depts = s.departments || [];
+      if (dept && depts.indexOf(dept) < 0) { return; }
+      shown += 1;
+      const o = document.createElement('option');
+      o.value = s.name;
+      // The departments are ON the option: two rows reading "name — cidr" and
+      // nothing else is what made a shared network impossible to tell apart.
+      o.textContent = s.name + (s.cidr ? ' — ' + s.cidr : '')
+                    + (depts.length ? '  ·  ' + depts.join(', ') : '  ·  no department');
+      sel.appendChild(o);
+    });
+    const note = $('w-segment-note');
+    if (!note) { return; }
+    if (!total) { note.textContent = ''; }
+    else if (!shown) { note.textContent = 'no segment on this line serves ' + dept; }
+    else if (dept) { note.textContent = shown + ' of ' + total + ' segments serve ' + dept; }
+    else { note.textContent = total + ' segment(s) on this line'; }
+  }
+
   function refreshLine() {
     const line = $('w-line').value;
     const p = PLANS[line];
-    const sel = $('w-segment');
-    sel.innerHTML = '';
-    segmentsFor(line).forEach(function (s) {
-      const o = document.createElement('option');
-      o.value = s.name;
-      o.textContent = s.name + (s.cidr ? ' — ' + s.cidr : '');
-      sel.appendChild(o);
-    });
+    refreshDepartments();
+    refreshSegments();
     // The source of the answer is stated, never implied: a declared plan and
     // an inferred one are different kinds of claim.
     if (!p) { $('w-line-note').textContent = ''; $('w-cert-note').textContent = ''; return; }
@@ -154,6 +212,7 @@
     return Object.assign({
       line: $('w-line').value,
       segment: $('w-segment').value,
+      department: $('w-department').value,
       web_address: $('w-address-web').value,
       hostname: $('w-hostname').value,
       use_ipam: $('w-use-ipam').checked,
@@ -175,6 +234,20 @@
     const box = $('w-result');
     const badge = $('w-result-badge');
     let html = '';
+    // What this plan is ABOUT, before what is wrong with it. The department
+    // is printed because a shared network is otherwise indistinguishable in
+    // the result from the other department's use of the same network.
+    if (plan.segment && plan.segment.name) {
+      const dl = (plan.segment_departments || []);
+      html += '<div class="mb-2" style="font-size:12.5px;">' +
+              '<span class="fw-badge fw-badge-info">' + plan.segment.name + '</span> ' +
+              (plan.segment.cidr || '') +
+              (plan.segment.interface ? ' on ' + plan.segment.interface : '') +
+              (dl.length ? ' &middot; serves ' + dl.join(', ') : ' &middot; no department') +
+              (plan.department ? ' &middot; building for <strong>' + plan.department + '</strong>' : '') +
+              (plan.pool ? ' &middot; pool ' + plan.pool : '') +
+              '</div>';
+    }
     if (plan.blockers.length) {
       html += '<div class="mb-2"><strong>Blocked</strong><ul style="font-size:12.5px;">';
       plan.blockers.forEach(function (b) {
@@ -225,6 +298,9 @@
   }
 
   $('w-line').addEventListener('change', refreshLine);
+  // Only the segment list is rebuilt: changing the department must not
+  // reset the department picker it was just set on.
+  $('w-department').addEventListener('change', refreshSegments);
   $('w-preview').addEventListener('click', function () {
     post(APPLY, body({ apply: false })).then(function (r) {
       render(r.plan, r.result);

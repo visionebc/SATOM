@@ -46,6 +46,7 @@ def _plan_from(appliance, body: dict):
         line=str(body.get('line') or ''),
         web_address=str(body.get('web_address') or ''),
         segment_name=str(body.get('segment') or ''),
+        department=str(body.get('department') or ''),
         hostname=str(body.get('hostname') or ''),
         use_ipam=bool(body.get('use_ipam')),
         address=str(body.get('address') or ''),
@@ -88,7 +89,9 @@ def apply(appliance_id: int):
                          actor=getattr(current_user, 'username', ''))
     if do_apply:
         log_action('spo_wizard.apply',
-                   detail='device=%s line=%s addr=%s ok=%s stranded=%d'
-                          % (appl.name, p.line, p.web_address,
+                   detail='device=%s line=%s dept=%s segment=%s addr=%s '
+                          'ok=%s stranded=%d'
+                          % (appl.name, p.line, p.department or '-',
+                             p.segment.get('name') or '-', p.web_address,
                              res.get('ok'), len(res.get('stranded') or [])))
     return jsonify(ok=res.get('ok'), result=res, plan=p.as_dict())

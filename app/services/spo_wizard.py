@@ -71,6 +71,7 @@ class SpoPlan:
     hostname: str = ""
     names: dict = field(default_factory=dict)
     segment: dict = field(default_factory=dict)
+    department: str = ""              # narrows the choice; never invents one
     pool: str = ""
     use_ipam: bool = False
     address: str = ""                 # operator-supplied when not using IPAM
@@ -92,7 +93,10 @@ class SpoPlan:
             "appliance_id": self.appliance_id, "product": self.product,
             "line": self.line, "line_source": self.line_source,
             "web_address": self.web_address, "hostname": self.hostname,
-            "names": self.names, "segment": self.segment, "pool": self.pool,
+            "names": self.names, "segment": self.segment,
+            "department": self.department,
+            "segment_departments": list(self.segment.get("departments") or []),
+            "pool": self.pool,
             "use_ipam": self.use_ipam, "address": self.address,
             "cert_class": self.cert_class, "issue_cert": self.issue_cert,
             "wpp_template_id": self.wpp_template_id,
@@ -107,7 +111,7 @@ class SpoPlan:
 #  plan — pure inspection                                                      #
 # --------------------------------------------------------------------------- #
 def build_plan(appliance, *, line: str, web_address: str,
-               segment_name: str = "", hostname: str = "",
+               segment_name: str = "", department: str = "", hostname: str = "",
                use_ipam: bool = False, address: str = "",
                issue_cert: bool = False, backends=None,
                product: str = "") -> SpoPlan:
@@ -123,6 +127,7 @@ def build_plan(appliance, *, line: str, web_address: str,
                    hostname=(hostname or "").strip(),
                    use_ipam=bool(use_ipam), address=(address or "").strip(),
                    issue_cert=bool(issue_cert),
+                   department=(department or "").strip(),
                    backends=list(backends or []))
 
     if not web_address:
@@ -162,14 +167,42 @@ def build_plan(appliance, *, line: str, web_address: str,
             "by matching names, not declared. Confirm each one.")
 
     # -- the segment ------------------------------------------------------
-    available = {(s.get("name") or ""): s for s in lplan.segments}
+    # ONE indexer, shared with line_profiles: three call sites keying this list
+    # their own way is what let a plan describe one row and allocate from
+    # another when two rows shared a name (§135).
+    on_line = lp.index_by_name(lplan.segments)
+
+    # A department NARROWS the choice; it never picks a network on its own and
+    # nothing downstream is named after it. Enforced HERE and not only in the
+    # page, because a filter the server does not apply is a filter the server
+    # does not have: the browser could post any segment on the line while the
+    # operator believes the department constrained it.
+    available = dict(on_line)
+    if plan.department:
+        available = {n: sg for n, sg in on_line.items()
+                     if plan.department in (sg.get("departments") or [])}
+        if not available:
+            plan.blockers.append(Blocker(
+                "department_not_on_line",
+                f"no segment on line {plan.line!r} serves department "
+                f"{plan.department!r}"))
+
     if segment_name:
-        seg = available.get(segment_name)
+        seg = on_line.get(segment_name)
         if seg is None:
             plan.blockers.append(Blocker(
                 "segment_not_on_line",
                 f"segment {segment_name!r} is not one of the segments line "
-                f"{plan.line!r} receives ({', '.join(sorted(available)) or 'none'})"))
+                f"{plan.line!r} receives ({', '.join(sorted(on_line)) or 'none'})"))
+        elif plan.department and segment_name not in available:
+            # Reported as its own refusal, not folded into the one above: "not
+            # on this line" and "on this line but not for that department" are
+            # different facts and lead to different fixes.
+            plan.blockers.append(Blocker(
+                "segment_not_in_department",
+                f"segment {segment_name!r} is on line {plan.line!r} but does "
+                f"not serve department {plan.department!r} — it serves "
+                + (", ".join(seg.get("departments") or []) or "no department")))
         else:
             plan.segment = dict(seg)
     elif len(available) == 1:

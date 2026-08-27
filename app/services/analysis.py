@@ -385,10 +385,17 @@ def _segments_block(f: dict) -> dict:
     segs = settings_store.segments() or []
     # scope filter: keep segments whose zone/line/dept match the active filter
     def keep(s):
-        for key in ("zone", "line", "department"):
+        for key in ("zone", "line"):
             want = f.get(key)
             if want and (s.get(key) or "") and s.get(key) != want:
                 return False
+        # departments is a LIST: a shared network is kept for EVERY department
+        # that uses it. Comparing it as a scalar would drop the shared rows
+        # from every department's view -- the networks most worth seeing.
+        want = f.get("department")
+        depts = s.get("departments") or []
+        if want and depts and want not in depts:
+            return False
         return True
     rows = []
     total_ips = 0
@@ -402,7 +409,11 @@ def _segments_block(f: dict) -> dict:
             "ips": hosts, "interface": s.get("interface") or "",
             "gateway": s.get("gateway") or "",
             "zone": s.get("zone") or "", "line": s.get("line") or "",
-            "department": s.get("department") or "",
+            "departments": list(s.get("departments") or []),
+            # Kept for readers that render one cell. Joined, never truncated to
+            # the first: a row that says "WAF/LB" for a network WSG also uses
+            # is a false statement, where "WAF/LB, WSG" is a true one.
+            "department": ", ".join(s.get("departments") or []),
         })
     rows.sort(key=lambda r: -r["ips"])
     return {

@@ -70,14 +70,15 @@ def _unwrap(raw):
     return raw if isinstance(raw, dict) else {}
 
 
-def _ok(firmware: str, model: str | None, hw: str | None) -> dict:
+def _ok(firmware: str, model: str | None, hw: str | None,
+        hostname: str = "") -> dict:
     return {"ok": True, "firmware": firmware, "model": model or None,
-            "hw_type": hw, "error": "", "detail": ""}
+            "hw_type": hw, "hostname": hostname, "error": "", "detail": ""}
 
 
 def _fail(code: str, detail: str = "") -> dict:
     return {"ok": False, "firmware": "", "model": None, "hw_type": None,
-            "error": code, "detail": str(detail)[:300]}
+            "hostname": "", "error": code, "detail": str(detail)[:300]}
 
 
 # --------------------------------------------------------------------------- #
@@ -102,7 +103,12 @@ def _read_fortiweb(appliance) -> dict:
     serial = _first(d, ("serialNumber", "serial"))
     # "FortiWeb-KVM 7.6.8,build1128(GA.M),260602" -> model "FortiWeb-KVM 7.6.8"
     model = fw.split(",")[0].strip() or platform or None
-    return _ok(fw, model, _hw_from(f"{platform} {fw} {serial}"))
+    # The device's own hostname rides along in the SAME payload — no second
+    # call. Measured on fortiweb12/13 2026-08-27: {"hostName": "fortiweb12"}.
+    # An ADOM row answers with the CHASSIS hostname, which is correct and is
+    # qualified at render time, not rewritten here.
+    return _ok(fw, model, _hw_from(f"{platform} {fw} {serial}"),
+               hostname=_first(d, ("hostName", "host_name", "hostname")))
 
 
 def _read_fortiadc(appliance) -> dict:
@@ -201,7 +207,23 @@ def refresh(appliance) -> dict:
     if res.get("hw_type"):
         appliance.hw_type = res["hw_type"]
     now = datetime.utcnow()
+    # The hostname is stamped ONLY when the device actually said one. The
+    # kinds differ and the difference is measured, not assumed: FortiWeb
+    # carries hostName; FortiAuthenticator's systeminfo payload has no
+    # hostname field at all (fac01, 2026-08-27). Writing device_hostname_at on
+    # a payload that never contained a name would attest an observation that
+    # did not happen — the same defect the module docstring forbids for
+    # firmware_checked_at.
+    if res.get("hostname"):
+        res["hostname_changed"] = (
+            (appliance.device_hostname or "") != res["hostname"])
+        appliance.device_hostname = res["hostname"]
+        appliance.device_hostname_at = now
+    else:
+        res["hostname_changed"] = False
     appliance.firmware_checked_at = now
     db.session.commit()
     res["checked_at"] = now.isoformat()
+    res["hostname_at"] = (appliance.device_hostname_at.isoformat()
+                          if res.get("hostname") else None)
     return res

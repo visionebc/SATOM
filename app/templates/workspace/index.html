@@ -35,7 +35,7 @@
         </div>
 
         <div class="fw-appliance-name">{{ a.name }}</div>
-        <div class="fw-appliance-host mb-2">{{ a.host }}:{{ a.port }}</div>
+        <div class="fw-appliance-host mb-2"{% if a.host_title %} title="{{ a.host_title }}"{% endif %}>{{ a.display_host }}:{{ a.port }}</div>
 
         <div class="d-flex align-items-center justify-content-between mt-3">
           <span class="fw-badge fw-badge-secondary">{{ a.kind }}</span>

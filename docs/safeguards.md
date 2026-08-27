@@ -11596,3 +11596,49 @@ came back SURVIVES — the guard it named checks method *identity*
 the *body* can affect. The mutation was mis-aimed, but it exposed a real hole:
 nothing asserted the base class refuses at all. Ninth entry in the running
 tally of guards that assert the wrong layer.
+
+## §131 — the device hostname (2026-08-27)
+
+**What is being guarded.** That the name printed for an appliance is the one
+the DEVICE reports, and that "never observed" stays distinguishable from
+"observed as empty".
+
+**The fixture rule, and why it is the whole section.** In this laboratory
+`hostName` equals `Appliance.name` on both FortiWebs. An implementation that
+read the wrong field — or never called the device and echoed the operator's
+label — passes every test built from the live fleet and fails on the first
+customer box that is called something else. Every fixture in
+`tests/test_device_hostname.py` therefore makes the three strings differ:
+
+    Appliance.name = "edge-a"   host = "192.0.2.9"   hostName = "fwb-cluster-1"
+
+Two mutations exist purely for this: *hostname never read* and *echoes the
+operator label*. Both die on the divergence, and neither would die on a
+laboratory-shaped fixture.
+
+**Three properties.**
+
+1. **One status call.** `firmware_probe` makes exactly one request per
+   appliance; that is what lets it sit on `/api/v1`. A hostname fetched from a
+   second endpoint doubles the fleet sweep. Guarded by counting calls, not by
+   reading the code.
+2. **The timestamp attests an observation.** `device_hostname_at` is written
+   only when a name came back. FortiAuthenticator has **no hostname field** in
+   its status payload (measured on fac01, 2026-08-27) — so a single shared
+   timestamp would claim it was checked. A later silent answer does not erase
+   a known name: absent means unknown.
+3. **The chassis qualification must be true.** `vdom` is `'root'` on every
+   FortiWeb regardless of ADOM mode, so it proves nothing; the qualification
+   keys on `appliance_name_parts` having actually stripped an `@<adom>`
+   suffix. Reusing that function rather than re-deriving the test is
+   deliberate — it already refuses a suffix that contradicts `vdom`.
+
+**How to check by hand.** `grep -n 'display_host' app/templates/workspace/*.html`
+-> three hits, and `grep -nE '\{\{ *(a|appliance)\.host *\}\}'` -> none.
+
+**Finding, reported and NOT acted on.** `app/templates/workspace/index.html`
+is dead chrome: `workspace.index` always redirects (to the current device, or
+to `/architecture/` when none is selected), so the template never reaches a
+browser. It was updated for consistency and is guarded, but nothing verifies
+it renders. `policies.html` and `browse.html` were both confirmed over real
+HTTP against the live node.

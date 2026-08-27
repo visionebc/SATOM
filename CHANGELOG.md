@@ -6,6 +6,48 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### New Server Policy from a line — one wizard, and a failure that cleans up after itself (2026-08-27)
+
+The last piece: pick a line, and its profile supplies the network, the
+certificate class and the Web Protection Profile. IPAM reserves the VIP, DNS
+publishes the name, the CA issues the certificate and the device gets the
+objects — in that order, with a preview that writes nowhere and a failure that
+undoes what it took.
+
+- **Added** `/web/workspace/<id>/spo-wizard` (linked from the policies page,
+  beside "New Server Policy") and `services.spo_wizard`.
+- **Plan first.** `build_plan` writes nothing and returns every reason the run
+  cannot proceed, including a **live name-collision check** against the device
+  — a run that would die after reserving an address is worse than one that
+  never started. An unreachable device is itself a blocker, not an assumption
+  that the box is empty.
+- **A blocked plan is never applied**, in dry run or not. Letting one "just
+  preview" is how a blocker becomes advisory.
+- **Compensation is driven by recorded facts.** A DNS failure releases the
+  address *by its handle*, and only if IPAM gave it to us — a hand-typed VIP
+  is not ours to hand back. A device failure removes the record we created and
+  releases the address we took.
+- **What is NOT undone is named, never silently done.** An issued certificate
+  is reported and **not revoked**: revocation is destructive and irreversible,
+  and a certificate that exists is not harmful. Objects already written to the
+  device are listed rather than deleted, because deleting one a human may
+  already have bound elsewhere is a destructive guess. The report keeps
+  "undone" and "left behind" as separate lists.
+- **It refuses to guess.** A segment the line does not receive is refused (the
+  wrong-network failure this whole feature exists to prevent). Several
+  segments must be chosen, not auto-picked. A blank hostname means *do not
+  publish*, and does not quietly become the web address. A read-only DNS
+  backend plus a requested hostname is a refusal, not a step reporting success
+  (§130's rule, in a new place).
+- **Bug found by its own guard:** the first version used invented naming keys
+  (`policy`/`vserver`/`pool`) where `services.naming` emits `server_policy` /
+  `virtual_server` / `server_pool`. Every lookup returned `None`, every object
+  would have been created with an **empty name**, and the collision check
+  silently did nothing — with no crash anywhere. There is now a blocker for an
+  empty rendered name and a guard pinning the keys to what `naming` emits.
+- Guards: `tests/test_spo_wizard.py` (37), 31 mutations, safeguards §133.
+
+
 ### Line Profiles — a line's networks become a declaration, not a string match (2026-08-27)
 
 "Which networks does this line receive?" was answered by matching the line name

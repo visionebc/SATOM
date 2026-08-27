@@ -340,6 +340,31 @@ def refs_for(kind: str, name: str, appliance_id: int | None = None) -> list[dict
     return [r.to_dict() for r in q.order_by(WafArtifactRef.policy_mkey).all()]
 
 
+def verdict_of(readable: bool, held_here: bool, held_anywhere: bool) -> str:
+    """The migration verdict for ONE artifact, in ONE place.
+
+    Written out once and imported by :func:`device_audit`,
+    :func:`services.artifact_stats.scope_stats` and
+    :mod:`services.waf_artifact_fleet`. The expression used to be copied into
+    each of them with a comment saying "identical, deliberately" — which is a
+    promise, not a mechanism, and the docstring of ``artifact_stats.VERDICTS``
+    is explicit that two pages disagreeing about the word "blocked" is worse
+    than either page alone.
+
+      ``ok``        a copy scoped to this device (or library-wide) is held.
+      ``borrowed``  no copy for THIS scope; ``resolve()`` would fall back to
+                    some other appliance's bytes. A guess, not a copy.
+      ``at-risk``   no copy anywhere, but the device still allows the read.
+      ``blocked``   no copy anywhere AND the device will never hand it back.
+                    The policy cannot be migrated, full stop.
+    """
+    if held_here:
+        return "ok"
+    if held_anywhere:
+        return "borrowed"
+    return "at-risk" if readable else "blocked"
+
+
 def is_stale(seen_at, *, now: datetime | None = None) -> bool:
     if not seen_at:
         return True
@@ -575,18 +600,9 @@ def device_audit(appliance_id: int) -> dict:
                 "kind": r.kind, "label": wa.label(r.kind), "name": r.name,
                 "readable": readable,
                 "held_here": here, "held_anywhere": anywhere,
-                # The verdict, and the only one worth acting on:
-                #   blocked  -> no copy anywhere AND the device will never hand
-                #               it back. The policy cannot be migrated, full stop.
-                #   at-risk  -> no copy, but it is still capturable off the box
-                #               while the box is alive.
-                #   borrowed -> no copy for THIS device; resolve() would fall
-                #               back to some other appliance's bytes. That is a
-                #               guess, not a copy (see content_divergence).
-                #   ok       -> a copy scoped to this device (or library-wide).
-                "verdict": ("ok" if here else
-                            ("borrowed" if anywhere else
-                             ("blocked" if not readable else "at-risk"))),
+                # The verdict, and the only one worth acting on. One
+                # author for all three pages — see verdict_of.
+                "verdict": verdict_of(readable, here, anywhere),
                 "policies": [], "wpps": [], "stale": True,
             }
         if r.policy_mkey not in rec["policies"]:

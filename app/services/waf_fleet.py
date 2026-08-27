@@ -307,6 +307,24 @@ def extract(snapshot: dict) -> dict:
 # ---------------------------------------------------------------------------
 # collection — the UNIVERSE, narrowed once
 # ---------------------------------------------------------------------------
+def fortiweb_scopes(user=None) -> list:
+    """THE universe of every ``/waf/*`` page — narrowed exactly once, here.
+
+    ``visible_appliances`` already applies the console's ADOM and the
+    maintenance permission; the ``kind`` filter is what keeps the GLOBAL
+    console — where the fleet legitimately means every product — from counting
+    a FortiADC's objects as WAF configuration.
+
+    Callers that need the ORM rows (``services.waf_artifact_fleet`` feeds them
+    to ``artifact_stats.fleet_stats``) take them from here rather than
+    re-deriving the query: six call sites each forgetting the filter separately
+    is precisely what safeguards §121 had to retrofit onto ``/artifacts/*``.
+    """
+    return (visible_appliances(user=user)
+            .filter(Appliance.kind == "fortiweb")
+            .order_by(Appliance.name).all())
+
+
 def collect(user=None) -> dict:
     """Every visible FortiWeb scope, with its policies and profiles.
 
@@ -316,9 +334,7 @@ def collect(user=None) -> dict:
     """
     from . import sot_store
 
-    rows = (visible_appliances(user=user)
-            .filter(Appliance.kind == "fortiweb")
-            .order_by(Appliance.name).all())
+    rows = fortiweb_scopes(user=user)
 
     devices: list[dict] = []
     policies: list[dict] = []
@@ -326,12 +342,12 @@ def collect(user=None) -> dict:
     now = datetime.utcnow()
 
     for appl in rows:
-        scope = _scope_label(appl)
+        scope = scope_label(appl)
         dev = {
             "appliance_id": appl.id,
             "name": appl.name,
             "scope": scope,
-            "device": _device_name(appl),
+            "device": device_name(appl),
             "adom": (appl.vdom or "").strip(),
             "host": appl.host,
             "model": appl.model or "",
@@ -385,16 +401,16 @@ def collect(user=None) -> dict:
     }
 
 
-def _device_name(appl) -> str:
+def device_name(appl) -> str:
     """The BOX's name, without the ADOM suffix the registration carries."""
     name = appl.name or ""
     return name.split("@", 1)[0] if "@" in name else name
 
 
-def _scope_label(appl) -> str:
+def scope_label(appl) -> str:
     """How this row is named everywhere on the page: ``device / ADOM``."""
     adom = (appl.vdom or "").strip()
-    return "%s / %s" % (_device_name(appl), adom) if adom else _device_name(appl)
+    return "%s / %s" % (device_name(appl), adom) if adom else device_name(appl)
 
 
 def _extract_cached(appliance_id: int, version_id: int,

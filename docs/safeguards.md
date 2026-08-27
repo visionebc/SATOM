@@ -11273,6 +11273,71 @@ the seed can pass while the picker renders something else.
 the notes are concatenated string literals, so hollowing out one fragment survives.
 Emptying the register does bite. Recorded rather than over-engineered.
 
+## §127 — Demand, supply, and the difference between them (`tests/test_waf_artifact_fleet.py`)
+
+`/waf/artifacts` is the only fleet-wide view of the file-backed WAF objects.
+`/artifacts/*` is pinned to the session's (device, ADOM) by §121–§123, on
+purpose, so nothing else in the product can answer *which policies in this
+estate could not be migrated today*.
+
+### What the guards hold
+
+- **The universe is `waf_fleet.fortiweb_scopes`, and nothing else.** A second
+  query here would be a second answer to "which devices may this console
+  count", and the two drift silently. The guards go through the ROUTE: on
+  `/artifacts/*` the services computed correctly for the whole time the leak
+  was live and it was the PAGE that showed the fleet (§122). One guard runs in
+  the GLOBAL console specifically, because in a FortiWeb session
+  `visible_appliances()` already drops the other products and the explicit
+  `kind` filter can be deleted without any FortiWeb-session test noticing.
+- **One author for the verdict.** `artifact_refs.verdict_of` is imported by
+  `device_audit`, `artifact_stats.scope_stats` and the fleet page. The guard
+  walks every needed object and asserts the three agree object by object — a
+  comment saying "identical expression, deliberately" is a promise, not a
+  mechanism.
+- **`orphan` and `library` are states, not verdicts.** A held copy nothing
+  names has no need behind it; the library bucket belongs to no device. Both
+  are excluded from readiness.
+- **A library-backed `borrowed` keeps the verdict and changes the remedy.**
+  Sending an operator to look for "another appliance's bytes" when the file is
+  a deliberate shared copy sends them after a device that is not in the story.
+- **EMPTY beside `ok`, decided on the NEWEST version.** An older hollow version
+  under a newer full one is not what `resolve()` serves, so it is not a
+  finding. §124 is the reason the flag exists at all.
+- **Two different absences, both kept out of the denominators.** `swept=False`
+  (nobody has looked at this scope) and `in_config=None` (no configuration
+  snapshot, so its policy total is unknown). The second is what makes
+  `unwalked=None` rather than a number, and `max(0, …)` is what stops a policy
+  deleted between the sweep and the harvest from printing a negative backlog.
+- **The filters narrow the TABLE.** Every tile and every chart is the whole
+  visible fleet, on every filtered URL — the §119 drift written down.
+
+### Traps this cost
+
+- `device_audit` returns its per-object rows under **`artifacts`**, not
+  `needed`.
+- A library copy is **`borrowed`**, not `ok`: `held_here` means a copy scoped
+  to THIS appliance. That is `artifact_stats`' existing vocabulary and the page
+  does not get a private one — it was the guard that discovered the page and
+  the guard's author disagreed, and the page was right.
+- The store's ordering (`created_at desc, id desc`) is re-derived in three
+  places already; a fourth answer here would make this page name a version
+  neither `waf_artifacts.latest` nor `artifact_files.object_index` would serve.
+- `conftest.login` writes `_user_id` over an existing session and flask-login
+  keeps serving the FIRST identity — multi-user guards are split into two tests
+  (same as §126, same as `tests/test_maintenance_mode.py`).
+
+### Recipe
+
+    venv/bin/python -m pytest tests/test_waf_artifact_fleet.py -q -p no:warnings
+
+Mutation harness: `/tmp/mutate.py` — measured by rc (only `rc == 1` is a
+failure), baseline green required, no `-x`, and each mutation must name the
+guard it kills among the dead. One mutation is *meta*: it removes the library
+copy from the fixture, proving the library guards are load-bearing.
+
+---
+
 ## §126 — A fleet page states its denominator (`tests/test_waf_fleet.py`)
 
 `Fleet -> WAF` is the first page in this product that is deliberately

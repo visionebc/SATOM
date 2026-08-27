@@ -1,0 +1,455 @@
+{# ============================================================================
+   WAF — Artifacts. Every file-backed WAF object the visible estate needs or
+   holds, in one table, with the six charts that describe it.
+
+   Three things on this page are load-bearing and easy to break:
+
+   1. The tiles and the charts are the WHOLE visible fleet; the filters narrow
+      the TABLE only, and the line under the filters says which is which. That
+      is the §119 drift (a header contradicting its own table) written down.
+   2. "Held" is not "usable". A copy whose newest version is zero bytes answers
+      every "do we have it?" check in the codebase and configures nothing
+      (safeguards §124) — so EMPTY is its own tile, its own badge and its own
+      filter, never folded into `ok`.
+   3. "Nobody has walked this scope" is not "this scope carries nothing". An
+      unswept scope is named, kept out of the denominators, and the unwalked
+      policy count is printed rather than described.
+   ========================================================================= #}
+{% extends "base.html" %}
+{% block title %}WAF — Artifacts{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{{ asset('css/waf.css') }}" data-turbo-track="reload">
+{% endblock %}
+
+{% block content %}
+{% set active = 'artifacts' %}
+{% set subtitle = _('file-backed objects, fleet-wide') %}
+{% include 'waf/_header.html' %}
+
+{# ------------------------------------------------------------- KPI row -- #}
+<div class="row g-3 mb-3">
+  <div class="col-xl-2 col-md-4 col-sm-6">
+    <div class="fw-stat-card">
+      <div class="fw-stat-icon fw-stat-icon-primary"><i class="bi bi-file-earmark-code"></i></div>
+      <div>
+        <div class="fw-stat-value">{{ stats.needed }}</div>
+        <div class="fw-stat-label">{{ _('Objects the estate needs') }} &middot;
+          {{ stats.distinct }} {{ _('distinct files') }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-xl-2 col-md-4 col-sm-6">
+    <div class="fw-stat-card">
+      <div class="fw-stat-icon fw-stat-icon-success"><i class="bi bi-archive"></i></div>
+      <div>
+        <div class="fw-stat-value">{{ stats.ok }}</div>
+        <div class="fw-stat-label">{{ _('Held for their own scope') }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-xl-2 col-md-4 col-sm-6">
+    <div class="fw-stat-card">
+      <div class="fw-stat-icon fw-stat-icon-danger"><i class="bi bi-slash-circle"></i></div>
+      <div>
+        <div class="fw-stat-value">{{ stats.blocked }}</div>
+        <div class="fw-stat-label">{{ _('Blocked: no copy, and the device will never give it back') }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-xl-2 col-md-4 col-sm-6">
+    <div class="fw-stat-card">
+      <div class="fw-stat-icon fw-stat-icon-danger"><i class="bi bi-exclamation-octagon"></i></div>
+      <div>
+        <div class="fw-stat-value">{{ stats.by_state['at-risk'] }}</div>
+        <div class="fw-stat-label">{{ _('At risk: capturable only while the box is alive') }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-xl-2 col-md-4 col-sm-6">
+    <div class="fw-stat-card">
+      <div class="fw-stat-icon fw-stat-icon-danger"><i class="bi bi-file-earmark-x"></i></div>
+      <div>
+        <div class="fw-stat-value">{{ stats.empty }}</div>
+        <div class="fw-stat-label">{{ _('Held, but EMPTY — configures nothing') }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-xl-2 col-md-4 col-sm-6">
+    <div class="fw-stat-card">
+      <div class="fw-stat-icon fw-stat-icon-info"><i class="bi bi-hdd"></i></div>
+      <div>
+        <div class="fw-stat-value">{{ stats.store_versions }}</div>
+        <div class="fw-stat-label">{{ _('Versions stored') }} &middot;
+          {{ (stats.store_bytes / 1024) | round(0) | int }} KiB</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ---------------------------------------------------- the sweep caveat -- #}
+{# The blind spot as a NUMBER. `caveat` says a policy created since the sweep
+   is in no figure here; this says how many that is. A caveat nobody can
+   quantify is a caveat everybody copies into their plan unread. #}
+<div class="fw-alert {{ 'fw-alert-warning' if (stats.unwalked or stats.unswept or stats.unknown_scopes) else 'fw-alert-info' }} mb-3">
+  <i class="bi bi-radar me-1"></i>
+  {{ _('Assembled from SATOM’s artifact index — no appliance was read.') }}
+  <strong>{{ stats.walked }}</strong> {{ _('server policies have been walked') }}
+  {{ _('out of') }} <strong>{{ stats.in_config }}</strong>
+  {{ _('in the configuration snapshots of') }} {{ stats.scopes - stats.unknown_scopes }}
+  {{ _('scopes') }}.
+  {% if stats.unwalked %}
+  <strong>{{ stats.unwalked }} {{ _('policies have never been walked') }}</strong> —
+  {{ _('any artifact they reference is in no number on this page. Re-run the artifact sweep.') }}
+  {% endif %}
+  {% if stats.unswept %}
+  {{ _('And') }} <strong>{{ stats.unswept }}</strong>
+  {{ _('scopes have no scan record at all: nobody has looked at them.') }}
+  {% endif %}
+  {% if stats.unknown_scopes %}
+  {{ _('%(n)d scopes have no configuration snapshot, so their policy total is unknown rather than zero.', n=stats.unknown_scopes) }}
+  {% endif %}
+</div>
+
+{# --------------------------------------------------------- what to fix -- #}
+{% set _findings = [
+     ('danger',  stats.blocked, _('objects are BLOCKED'),
+      _('no copy anywhere and the type cannot be read back off a FortiWeb — those policies cannot be migrated until someone uploads the file'),
+      url_for('waf.artifacts', state='blocked')),
+     ('danger',  stats.by_state['at-risk'], _('objects are AT RISK'),
+      _('no copy yet, but the device still allows the read — capture them before the box goes away'),
+      url_for('waf.artifacts', state='at-risk')),
+     ('danger',  stats.empty, _('held copies are EMPTY'),
+      _('zero bytes: every “do we have it?” check says yes and the rule bound to them enforces nothing'),
+      url_for('waf.artifacts', flag='empty')),
+     ('warning', stats.by_state['borrowed'], _('objects would be BORROWED from another scope'),
+      _('a clone would fall back to some other appliance’s bytes — a guess, not a copy'),
+      url_for('waf.artifacts', state='borrowed')),
+     ('warning', stats.walk_failed, _('policy walks FAILED'),
+      _('the sweep could not read those policies, so their artifacts are unknown — not absent'),
+      url_for('waf.artifacts')),
+     ('warning', stats.stale_rows, _('objects were last confirmed by a stale edge'),
+      _('the reference has not been re-seen recently; the policy may no longer use it'),
+      url_for('waf.artifacts', flag='stale')),
+     ('info',    stats.by_state['orphan'], _('stored copies are ORPHANS'),
+      _('held, and named by no walked policy — either the sweep is stale or the copy is dead weight'),
+      url_for('waf.artifacts', state='orphan')),
+     ('info',    stats.unattributed, _('edges are NOT ATTRIBUTED to a profile'),
+      _('nobody walked them for a web protection profile — “no profile” and “no answer” send you to opposite places'),
+      url_for('waf.artifacts')),
+   ] %}
+{% set _hits = [] %}
+{% for _f in _findings %}{% if _f[1] %}{% set _ = _hits.append(_f) %}{% endif %}{% endfor %}
+<div class="fw-card p-0 mb-3">
+  <div class="fw-card-header d-flex align-items-center justify-content-between">
+    <span><i class="bi bi-clipboard2-pulse me-2"></i>{{ _('What blocks a migration today') }}</span>
+    <span class="text-muted small">
+      {{ stats.swept }}/{{ stats.scopes }} {{ _('scopes swept') }} &middot;
+      {{ stats.edges }} {{ _('references') }} &middot;
+      {{ stats.policies_with_artifacts }} {{ _('policies carry files') }}</span>
+  </div>
+  <div class="fw-card-body">
+    {% if not _hits %}
+      <div class="text-muted small"><i class="bi bi-check2-circle me-1 text-success"></i>
+        {{ _('Every artifact this estate references is held for its own scope, none of them empty.') }}
+        {% if stats.unswept or stats.unwalked %}
+        <strong>{{ _('Read that against the sweep coverage above — it is an all-clear only for what has been walked.') }}</strong>
+        {% endif %}
+      </div>
+    {% else %}
+      <ul class="waf-findings">
+        {% for level, n, headline, why, link in _hits %}
+        <li class="waf-finding waf-finding-{{ level }}">
+          <a href="{{ link }}"><strong>{{ n }}</strong> {{ headline }}</a>
+          <span class="text-muted">&mdash; {{ why }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+  </div>
+</div>
+
+{# ------------------------------------------------------------- charts --- #}
+<div id="waf-art-root" data-summary="{{ url_for('waf.api_artifacts') }}">
+  <div class="row g-3 mb-3">
+    <div class="col-lg-4">
+      <div class="fw-card h-100">
+        <div class="fw-card-header"><i class="bi bi-pie-chart me-2"></i>{{ _('Migration readiness') }}</div>
+        <div class="fw-card-body">
+          <div class="fw-chart-container"><canvas id="waf-art-chart-readiness"></canvas></div>
+          <p class="text-muted small mb-0 mt-2">
+            {{ _('One slice per (scope, object) the estate NEEDS. Stored copies nobody needs are orphans and are counted separately — they are not readiness.') }}
+          </p>
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-8">
+      <div class="fw-card h-100">
+        <div class="fw-card-header"><i class="bi bi-bar-chart me-2"></i>{{ _('Objects needed per device / ADOM') }}</div>
+        <div class="fw-card-body">
+          <div class="fw-chart-container"><canvas id="waf-art-chart-scopes"></canvas></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-3">
+    <div class="col-lg-7">
+      <div class="fw-card h-100">
+        <div class="fw-card-header"><i class="bi bi-filetype-xml me-2"></i>{{ _('By object type') }}</div>
+        <div class="fw-card-body">
+          <div class="fw-chart-container" style="height:300px"><canvas id="waf-art-chart-kinds"></canvas></div>
+          <p class="text-muted small mb-0 mt-2">
+            {{ _('XML Schema, WSDL and gRPC IDL cannot be read back off a FortiWeb at all — for those three, a missing copy is permanent, which is why they are the ones that turn up BLOCKED.') }}
+          </p>
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-5">
+      <div class="fw-card mb-3">
+        <div class="fw-card-header"><i class="bi bi-hdd-stack me-2"></i>{{ _('What the store holds') }}</div>
+        <div class="fw-card-body">
+          <div class="fw-chart-container" style="height:200px"><canvas id="waf-art-chart-store"></canvas></div>
+        </div>
+      </div>
+      <div class="fw-card">
+        <div class="fw-card-header"><i class="bi bi-radar me-2"></i>{{ _('Sweep coverage') }}</div>
+        <div class="fw-card-body">
+          <div class="fw-chart-container" style="height:200px"><canvas id="waf-art-chart-sweep"></canvas></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="fw-card mb-3">
+    <div class="fw-card-header"><i class="bi bi-activity me-2"></i>{{ _('Artifact versions stored, last 30 days') }}</div>
+    <div class="fw-card-body">
+      <div class="fw-chart-container" style="height:220px"><canvas id="waf-art-chart-growth"></canvas></div>
+      <p class="text-muted small mb-0 mt-2">
+        {{ _('The hash is the identity: re-capturing an unchanged artifact writes no bytes and mints no row. A flat line is a stable estate, not a stalled capture.') }}
+      </p>
+    </div>
+  </div>
+</div>
+
+{# --------------------------------------------------------- by type ------ #}
+<div class="fw-card p-0 mb-3">
+  <div class="fw-card-header"><i class="bi bi-list-columns me-2"></i>{{ _('Object types') }}</div>
+  <div class="fw-table-wrapper">
+    <table class="fw-table waf-table">
+      <thead>
+        <tr>
+          <th>{{ _('Type') }}</th><th>{{ _('Readable off a device') }}</th>
+          <th class="text-end">{{ _('Needed') }}</th>
+          <th class="text-end">{{ _('Held') }}</th>
+          <th class="text-end">{{ _('Blocked') }}</th>
+          <th class="text-end">{{ _('At risk') }}</th>
+          <th class="text-end">{{ _('Borrowed') }}</th>
+          <th class="text-end">{{ _('Orphan') }}</th>
+          <th class="text-end">{{ _('Library') }}</th>
+          <th class="text-end">{{ _('Empty') }}</th>
+          <th class="text-end">{{ _('Versions') }}</th>
+          <th class="text-end">{{ _('Bytes') }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for k in by_kind %}
+        <tr>
+          <td><a href="{{ url_for('waf.artifacts', kind=k.kind) }}">{{ k.label }}</a></td>
+          <td>{% if k.readable %}<span class="fw-badge fw-badge-success">{{ _('yes') }}</span>
+              {% else %}<span class="fw-badge fw-badge-danger"
+                    title="{{ _('The firmware answers -20005 on every read shape: SATOM’s copy is the only copy that can ever exist') }}">{{ _('no — upload only') }}</span>{% endif %}</td>
+          <td class="text-end">{{ k.needed }}</td>
+          <td class="text-end">{{ k.ok }}</td>
+          <td class="text-end {{ 'text-danger fw-bold' if k.blocked }}">{{ k.blocked }}</td>
+          <td class="text-end {{ 'text-danger fw-bold' if k['at-risk'] }}">{{ k['at-risk'] }}</td>
+          <td class="text-end">{{ k.borrowed }}</td>
+          <td class="text-end">{{ k.orphan }}</td>
+          <td class="text-end">{{ k.library }}</td>
+          <td class="text-end {{ 'text-danger fw-bold' if k.empty }}">{{ k.empty }}</td>
+          <td class="text-end">{{ k.versions }}</td>
+          <td class="text-end">{{ k.bytes }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{# --------------------------------------------------------- per scope ---- #}
+<div class="fw-card p-0 mb-3" id="sweep">
+  <div class="fw-card-header"><i class="bi bi-hdd-rack me-2"></i>{{ _('Per device / ADOM') }}</div>
+  <div class="fw-table-wrapper">
+    <table class="fw-table waf-table">
+      <thead>
+        <tr>
+          <th>{{ _('Device / ADOM') }}</th>
+          <th class="text-end">{{ _('Policies walked') }}</th>
+          <th class="text-end">{{ _('In config') }}</th>
+          <th class="text-end">{{ _('Never walked') }}</th>
+          <th class="text-end">{{ _('References') }}</th>
+          <th class="text-end">{{ _('Objects') }}</th>
+          <th class="text-end">{{ _('Blocked') }}</th>
+          <th class="text-end">{{ _('At risk') }}</th>
+          <th class="text-end">{{ _('Borrowed') }}</th>
+          <th class="text-end">{{ _('Held') }}</th>
+          <th class="text-end">{{ _('Orphans') }}</th>
+          <th>{{ _('Last sweep') }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in scopes %}
+        <tr>
+          <td><a href="{{ url_for('waf.artifacts', scope=s.scope) }}">{{ s.scope }}</a>
+            {% if not s.swept %}
+            <span class="fw-badge fw-badge-danger"
+                  title="{{ _('No scan row and no reference: nobody has looked at this scope') }}">{{ _('never swept') }}</span>
+            {% endif %}</td>
+          <td class="text-end">{{ s.walked }}</td>
+          {# An unknown total is a dash, never a zero: the scope has no config
+             snapshot, so "how many policies does it have" has no answer here. #}
+          <td class="text-end">{{ s.in_config if s.in_config is not none else '—' }}</td>
+          <td class="text-end {{ 'text-danger fw-bold' if s.unwalked }}">
+            {{ s.unwalked if s.unwalked is not none else '—' }}</td>
+          <td class="text-end">{{ s.edges }}</td>
+          <td class="text-end">{{ s.objects }}</td>
+          <td class="text-end {{ 'text-danger fw-bold' if s.blocked }}">{{ s.blocked }}</td>
+          <td class="text-end {{ 'text-danger fw-bold' if s['at-risk'] }}">{{ s['at-risk'] }}</td>
+          <td class="text-end">{{ s.borrowed }}</td>
+          <td class="text-end">{{ s.ok }}</td>
+          <td class="text-end">{{ s.orphans }}</td>
+          <td class="fw-cell-mono">{{ s.last_scan_at or '—' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="12" class="text-muted text-center py-4">
+          {{ _('No FortiWeb appliance is visible in this ADOM.') }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{# ---------------------------------------------------------- the table --- #}
+<form method="get" class="fw-card p-3 mb-3">
+  <div class="row g-2 align-items-end">
+    <div class="col-md-3">
+      <label class="fw-form-label small mb-1">{{ _('Device / ADOM') }}</label>
+      <select name="scope" class="form-select form-select-sm">
+        <option value="">{{ _('Every scope in this ADOM') }}</option>
+        {% for s in scopes %}
+        <option value="{{ s.scope }}" {{ 'selected' if selected.scope == s.scope }}>{{ s.scope }}</option>
+        {% endfor %}
+        <option value="{{ library_scope }}" {{ 'selected' if selected.scope == library_scope }}>{{ library_scope }}</option>
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="fw-form-label small mb-1">{{ _('Object type') }}</label>
+      <select name="kind" class="form-select form-select-sm">
+        <option value="">{{ _('Any') }}</option>
+        {% for key, label in kinds %}
+        <option value="{{ key }}" {{ 'selected' if selected.kind == key }}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="fw-form-label small mb-1">{{ _('State') }}</label>
+      <select name="state" class="form-select form-select-sm">
+        <option value="">{{ _('Any') }}</option>
+        <option value="unheld" {{ 'selected' if selected.state == 'unheld' }}>{{ _('Needed and not held here') }}</option>
+        {% for key in states %}
+        <option value="{{ key }}" {{ 'selected' if selected.state == key }}>{{ state_labels[key] }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="fw-form-label small mb-1">{{ _('Flag') }}</label>
+      <select name="flag" class="form-select form-select-sm">
+        <option value="">{{ _('Any') }}</option>
+        <option value="empty" {{ 'selected' if selected.flag == 'empty' }}>{{ _('Empty content') }}</option>
+        <option value="stale" {{ 'selected' if selected.flag == 'stale' }}>{{ _('Stale reference') }}</option>
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="fw-form-label small mb-1">{{ _('Search') }}</label>
+      <input name="q" value="{{ selected.q }}" class="form-control form-control-sm"
+             placeholder="{{ _('object name, type, scope…') }}">
+    </div>
+    <div class="col-md-1 d-flex gap-2">
+      <button class="btn btn-sm btn-outline-primary flex-grow-1" title="{{ _('Apply these filters to the table') }}">
+        <i class="bi bi-funnel"></i></button>
+      <a class="btn btn-sm btn-outline-secondary"
+         href="{{ url_for('waf.artifacts', format='csv', **selected) }}"
+         title="{{ _('Download exactly these rows') }}"><i class="bi bi-filetype-csv"></i></a>
+    </div>
+  </div>
+</form>
+
+<div class="d-flex align-items-center justify-content-between mb-2">
+  <div class="text-muted small">
+    {{ _('Showing') }} <strong>{{ rows|length }}</strong> {{ _('of') }} <strong>{{ total }}</strong>
+    {{ _('rows across') }} {{ stats.scopes }} {{ _('scopes plus the shared library. The tiles and charts above are the whole visible fleet and do not move with these filters.') }}
+  </div>
+  <div class="waf-legend">
+    {% for key in states %}
+    <span class="waf-pill waf-pill-{{ key }}">{{ state_labels[key] }}</span>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="fw-card p-0">
+  <div class="fw-table-wrapper">
+    <table class="fw-table waf-table">
+      <thead>
+        <tr>{% for ckey, clabel in columns %}
+          <th class="{{ 'text-end' if ckey in ('policies', 'profiles', 'versions', 'size') }}">{{ clabel }}</th>{% endfor %}</tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td class="fw-cell-mono">{{ r.scope }}</td>
+          <td>{{ r.label }}</td>
+          <td><strong>{{ r.name }}</strong>
+            {% if r.empty %}
+            <span class="fw-badge fw-badge-danger"
+                  title="{{ _('The newest stored version is zero bytes. It resolves, it migrates, and it configures nothing.') }}">{{ _('EMPTY') }}</span>
+            {% endif %}
+            {% if r.library_only %}
+            <span class="fw-badge fw-badge-secondary"
+                  title="{{ _('Served by the shared library copy, not by one of this scope’s own') }}">{{ _('from library') }}</span>
+            {% endif %}
+            {% if r.stale %}
+            <span class="fw-badge fw-badge-warning"
+                  title="{{ _('Every reference to it is stale — the policy may no longer use it') }}">{{ _('stale ref') }}</span>
+            {% endif %}</td>
+          <td><span class="waf-pill waf-pill-{{ r.state }}" title="{{ r.remedy }}">{{ r.state_label }}</span></td>
+          <td class="text-end" title="{{ r.policy_list }}">{{ r.policies or '—' }}</td>
+          <td class="text-end">{{ r.profiles or '—' }}</td>
+          <td class="text-end">{{ r.versions or '—' }}</td>
+          <td class="text-end">{{ r.size if r.versions else '—' }}</td>
+          <td>{{ r.source or '—' }}
+            {% if r.state == 'library' and r.serves %}
+            <span class="fw-badge fw-badge-warning"
+                  title="{{ _('Editing this shared copy changes what these scopes resolve') }}">
+              {{ _('serves') }} {{ r.serves }}</span>
+            {% endif %}</td>
+          <td class="fw-cell-mono">{{ r.sha or '—' }}</td>
+          <td class="fw-cell-mono">{{ r.created_at or '—' }}</td>
+          <td>{% if r.readable %}{{ _('yes') }}
+              {% else %}<span class="text-danger">{{ _('no — upload only') }}</span>{% endif %}</td>
+          <td class="fw-cell-note" title="{{ r.remedy }}">{{ r.remedy }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="{{ columns|length }}" class="text-muted text-center py-4">
+          {% if total %}{{ _('No artifact matches these filters.') }}
+          {% else %}{{ _('No policy in this ADOM has been walked for file-backed objects yet, and the store holds nothing for these scopes. Run the artifact sweep.') }}{% endif %}
+        </td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ asset('js/waf-artifacts.js') }}"></script>
+{% endblock %}

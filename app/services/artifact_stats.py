@@ -55,7 +55,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from . import waf_artifacts as wa
-from .artifact_refs import is_stale
+from .artifact_refs import is_stale, verdict_of
 
 #: Verdict keys, in the order an operator should read them (worst first). Kept
 #: byte-identical to :func:`services.artifact_refs.device_audit` — two pages
@@ -166,10 +166,8 @@ def scope_stats(appl, refs, scans, stored, *, held_any=None,
             readable = wa.is_readable(r.kind)
             rec = needed[key] = {
                 "kind": r.kind, "name": r.name, "readable": readable,
-                # Identical expression to device_audit's, deliberately.
-                "verdict": ("ok" if here else
-                            ("borrowed" if anywhere else
-                             ("blocked" if not readable else "at-risk"))),
+                # One author, shared with device_audit — see verdict_of.
+                "verdict": verdict_of(readable, here, anywhere),
                 # A subset of `borrowed`, named rather than hidden: resolve()
                 # falls back to the library BEFORE it falls back to another
                 # device, so "an operator uploaded this for everyone" and "some
@@ -375,20 +373,30 @@ def _roll_up(scopes: list[dict]) -> dict:
     return out
 
 
-def fleet_stats(appliances, *, now=None) -> dict:
+def fleet_stats(appliances, *, now=None, data=None) -> dict:
     """Statistics for every FortiWeb scope, grouped chassis → ADOM.
 
     ``appliances`` is passed in rather than queried so the caller's visibility
     filter (maintenance mode) is the one that applies — this module must never
     widen what a read-only user can see.
+
+    ``data`` is an optional ``(refs, scans, stored)`` triple a caller has
+    already loaded, in exactly the shape :func:`_load` returns: ``refs`` and
+    ``scans`` NARROWED to ``appliances``, ``stored`` deliberately whole (the
+    ``borrowed`` verdict is a statement about copies that live elsewhere, and
+    the library bucket belongs to no appliance). It exists so a page that reads
+    those three tables itself does not scan them twice.
     """
     now = now or datetime.utcnow()
     appliances = list(appliances or [])
     ids = {a.id for a in appliances}
-    try:
-        refs, scans, stored = _load(ids)
-    except Exception:  # noqa: BLE001 — tables may not exist yet
-        refs, scans, stored = [], [], []
+    if data is not None:
+        refs, scans, stored = data
+    else:
+        try:
+            refs, scans, stored = _load(ids)
+        except Exception:  # noqa: BLE001 — tables may not exist yet
+            refs, scans, stored = [], [], []
 
     held_any = {(o.kind, o.name) for o in stored}
     held_lib = {(o.kind, o.name) for o in stored if o.appliance_id is None}

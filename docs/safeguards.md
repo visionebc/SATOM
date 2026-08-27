@@ -11787,3 +11787,70 @@ shows fortiweb13's own hostname, a dry run of line `A` refuses with
 `no_segments` and produces **zero steps**, and a plan whose derived name is
 `pol-dev-billing` is refused with `policy_exists` — read from fortiweb13's
 REAL policy list, not a fixture.
+
+## §134 — the wizard's script was blocked by the CSP, so the page was furniture (2026-08-27)
+
+Reported by the user: *"agregue un segmento /web/segments/ y no me aparecen las
+opciones dadas de alta en /web/workspace/26/spo-wizard"*.
+
+**The segment was never the problem.** Measured against the live database of
+a1: `line_plan('P','fortiweb')` returned all three segments of line P —
+`LineP_Internal_LB`, `LineP_External_LB` and the newly added `x` — and the
+rendered page carried them inside `const PLANS = {...}`. Route 200, payload
+correct, every server-side guard in `tests/test_spo_wizard.py` green.
+
+The `<script>` block that IS the wizard's entire UI shipped **without
+`nonce="{{ csp_nonce }}"`**. The app serves
+`script-src-elem 'self' 'nonce-<per-session>'` with no `'unsafe-inline'`, so
+the browser dropped the whole block: the Segment `<select>` was never
+populated, the declared/inferred note never appeared, and **Preview and Apply
+did nothing at all**. Not one control on that page had ever worked.
+
+### Why nothing caught it
+
+1. **`tests/test_csp_nonce.py` already guards exactly this class** and walks the
+   whole template tree — it would have failed the moment the file was added.
+   It was not run: the round ran only tests of the zone it touched (the user's
+   rule of 2026-08-09). This is that rule's known cost, materialised. When a
+   round adds a **new template**, `tests/test_csp_nonce.py` is part of the zone.
+2. **The sibling guard read as coverage.** `test_the_page_has_no_inline_handlers`
+   forbids `onclick=` "because the CSP drops unsafe-inline" — the OTHER half of
+   the same rule — while the block those handlers were refactored INTO was
+   itself blocked. A guard that names a rule and checks half of it is worse
+   than none: it looks like the rule is covered.
+3. **The ten HTTP checks of that round could not see it.** The blocking is done
+   by the header, in a browser. Server-side rendering is correct by
+   construction here, and this repo has no browser in CI.
+
+### What was added
+
+`tests/test_spo_wizard.py::test_the_pages_own_script_carries_the_csp_nonce` —
+asserts against the nonce the **response actually served**, not against the
+template text, so a template that spells the attribute while the header stops
+naming a nonce still fails.
+
+### Swept, and found a second one
+
+The same tree scan was red on `artifacts/object.html:10`: an inline `<style>`
+with no nonce, committed in `9930cb6`. `style-src-elem` is nonce-gated too, so
+the artifacts editor/viewer has been rendering without its monospace and diff
+styling since. Fixed in the same commit.
+
+**Verification:** `tests/test_csp_nonce.py` 8 rc=0 · `tests/test_spo_wizard.py`
+36 rc=0 · **3/3 mutations killed** (by rc, only `rc==1` counts, baseline green
+required, each by the guard it names) · rendered `/web/workspace/26/spo-wizard`
+after restart: **0 blocked inline scripts**, line `P` carries
+`['LineP_Internal_LB','LineP_External_LB','x']` · CSP verified over real HTTPS
+(nginx adds no header of its own) · `/healthz` 200 · 0 failed units.
+
+### Two things reported and NOT changed
+
+- `app/templates/workspace/policies.html` contains a **literal NUL byte** (a JS
+  key separator, `r.kind + '\0' + r.name`, line 863, committed). `grep` and
+  `rg` therefore treat that template as **binary and skip it silently** — any
+  text sweep over the template tree has a hole in it. The Python scan in
+  `test_csp_nonce.py` reads it fine, so the guard is intact; a sweep by hand is
+  not.
+- `docs/safeguards.md` has **two sections numbered §132** (clone-additive and
+  line profiles), both written 2026-08-27. Renumbering would break references
+  already stored elsewhere, so it is reported, not silently rewritten.

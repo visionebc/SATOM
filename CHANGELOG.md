@@ -6,6 +6,48 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Line Profiles — a line's networks become a declaration, not a string match (2026-08-27)
+
+"Which networks does this line receive?" was answered by matching the line name
+against `segments[].line`. Nothing declared that relationship, so nothing could
+be wrong about it — and nothing could be right about it either. A segment typed
+differently simply stopped matching, and the consumer saw a line with no
+networks, which is indistinguishable from a line that legitimately has none.
+
+Survivable while the answer only colours a page. Not survivable once it picks
+the network a **production server policy** is built on: the policy is created
+perfectly, on the wrong segment, and nothing raises.
+
+- **Added** `line_profiles` (new page under Administrator, admin-only): per
+  classification line, the segments it receives, its certificate class, its
+  Web Protection Profile template and an optional IPAM pool override.
+- **Added** `services.line_profiles.line_plan` — the **only** place either
+  answer is derived. A plan is labelled `declared` or `inferred`, and the two
+  are never blended: a line nobody has declared still gets the old string
+  match, but it says so, and a caller about to change the world must treat
+  that as a question.
+- A **declaration that stops resolving is a problem, not a shorter list**. A
+  profile naming a segment that has since been renamed reports
+  `missing_segment` and blocks; it does **not** quietly fall back to the guess,
+  because that would hide the breakage behind the very answer the operator
+  overrode.
+- **Approval is checked when the template is USED**, not frozen when the
+  profile was saved: a WPP template approved on Monday and rejected on Tuesday
+  stops being instantiable on Tuesday. A template from another product blocks
+  too.
+- A blank certificate class means **not decided** and is reported. `server`
+  would be a plausible guess; guessing is how a client-auth line gets a
+  server-only certificate. Likewise `pool_for` returns empty rather than
+  reaching for the provider's fleet-wide default pool.
+- **Changed** `classification_ops` to treat a profile as a **reference**: it is
+  counted in `usage()` (so deleting a line has to say what happens to it) and
+  moved on rename. Clearing a line deletes its profile and reports that;
+  reassigning onto a line that already has one is refused rather than silently
+  merged, since (product, line) is unique and picking one would make a line
+  quietly hand out a different set of networks.
+- Guards: `tests/test_line_profiles.py` (34), 26 mutations, safeguards §132.
+
+
 ### The clone only adds what is missing (2026-08-27)
 
 Ported from the standalone SATOM Policy Clone 1.27.0. The web clone had the

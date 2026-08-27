@@ -414,7 +414,7 @@
 
       {% if current_user and current_user.can('user_manage') %}
       {# Custom Views (Plugin Studio) are ADOM-scoped (FortiWeb/FortiADC) — not surfaced in the Global ADOM. #}
-      <div class="fw-nav-group {{ 'open' if request.blueprint in ['appliances','audit','users','appids','classification','database','system_backup','self_update','ha','reports','plugins','lua_studio'] }}" data-nav-group="Administrator">
+      <div class="fw-nav-group {{ 'open' if request.blueprint in ['appliances','audit','users','appids','classification','line_profiles','database','system_backup','self_update','ha','reports','plugins','lua_studio'] }}" data-nav-group="Administrator">
         <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-person-gear fw-nav-section-icon" style="color:#ef4444;"></i><span>{{ _('Administrator') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
         <div class="fw-nav-group-body">
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'appliances' else '' }}" href="{{ url_for('appliances.index') }}">
@@ -429,6 +429,8 @@
             <i class="bi bi-tags fw-nav-icon"></i><span>{{ _('AppIDs') }}</span></a>
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'classification' else '' }}" href="{{ url_for('classification.index') }}">
             <i class="bi bi-tags fw-nav-icon"></i><span>{{ _('Classification') }}</span></a>
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'line_profiles' else '' }}" href="{{ url_for('line_profiles.index') }}">
+            <i class="bi bi-signpost-split fw-nav-icon"></i><span>{{ _('Line Profiles') }}</span></a>
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'database' else '' }}" href="{{ url_for('database.index') }}">
             <i class="bi bi-hdd fw-nav-icon"></i><span>{{ _('Database') }}</span></a>
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'system_backup' else '' }}" href="{{ url_for('system_backup.index') }}">

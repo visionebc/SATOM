@@ -11735,3 +11735,55 @@ would change what the report counts.
 **Verified by render** against the live node: `/web/line-profiles/` 200, the
 four real catalog lines listed, every undeclared line badged `inferred`,
 anonymous bounced, zero fleet dark-theme chrome (§9m — this product is white).
+
+## §133 — the SPO wizard: refuse early, compensate exactly, never guess (2026-08-27)
+
+**Why a planner and not a form handler.** `workspace.create_policy` stops at
+the first failure and leaves everything before it. Survivable when the
+leftovers are all on one device an operator can see. NOT survivable once a
+reserved address and an issued certificate are in the chain — nobody finds
+those by looking at the appliance.
+
+**The four properties, and the mutation that proves each.**
+
+1. **`build_plan` writes nothing.** Structural guard over its AST (no
+   `commit`, no `create`, no provider verb), plus a runtime guard that patches
+   all four provider functions and asserts none was called. A planner that
+   writes is invisible: the operator pressed *Preview*.
+2. **A blocked plan is never applied** — dry run included.
+3. **Compensation is keyed on recorded facts.** `took_address` / `ip_ref` /
+   `dns_record_id`, never the current state of the world. The mutation
+   `took_address = plan.address` (release a hand-typed VIP back to a pool)
+   dies.
+4. **What is not undone is NAMED.** `compensated` and `stranded` are separate
+   lists in the result and separately rendered, because "we undid it" and "we
+   did not undo it" are opposite facts. The certificate is deliberately in the
+   second list.
+
+**The bug this round found in itself.** The module first used naming keys
+`policy` / `vserver` / `pool`. `services.naming` emits `server_policy` /
+`virtual_server` / `server_pool`, so every `.get()` returned `None`, every
+object would have been created with `name: ""`, and `_collision_check` read an
+empty `want` and returned early — the whole safety check silently disabled.
+**Nothing crashed and nothing logged.** Fixed by indexing (`n["server_policy"]`
+raises rather than returning None), a `naming_incomplete` blocker, and
+`test_the_naming_keys_are_the_ones_naming_actually_emits`.
+
+**Traps for the next round.**
+
+* `OpResult.ok` reads the **`ok` key**, not the absence of an error. A mock
+  returning `{"error": ""}` looks like a failure and silently short-circuits a
+  compensation test at step one.
+* An `or` in an assertion stops it asserting anything specific:
+  `assert "no_pool" in codes or "no_segments" in codes` let a mutation that
+  deleted the pool check survive, because the other blocker fired. Build the
+  fixture so only the code under test can fire.
+* A JSON POST over https with **no Referer** is refused by
+  `WTF_CSRF_SSL_STRICT` before the token is examined — the HTTP harness must
+  send `Referer` and `Origin`, or every check reads as a 400 with no clue.
+
+**Verified against the live node** (nothing written): the page renders and
+shows fortiweb13's own hostname, a dry run of line `A` refuses with
+`no_segments` and produces **zero steps**, and a plan whose derived name is
+`pol-dev-billing` is refused with `policy_exists` — read from fortiweb13's
+REAL policy list, not a fixture.

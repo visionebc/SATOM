@@ -1,0 +1,244 @@
+{% extends "base.html" %}
+
+{% block title %}New Server Policy from a line{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('workspace.appliance', appliance_id=appliance.id) }}">{{ appliance.name }}</a>
+  <span class="separator">/</span>
+  <span>{{ _('New policy from a line') }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+{# LIGHT theme only (§9m): .fw-card / --fw-* / .fw-badge-*. No dark slabs. #}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title">
+      <i class="bi bi-magic me-2 text-accent"></i>{{ _('New Server Policy from a line') }}
+    </h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      {{ _('Pick the line; its profile supplies the network, the certificate class and the Web Protection Profile. Nothing is written until you press Apply — Preview shows the exact device payloads, the address that would be reserved and the record that would be published.') }}
+      <span{% if appliance.host_title %} title="{{ appliance.host_title }}"{% endif %}>{{ appliance.display_host }}</span>
+    </p>
+  </div>
+</div>
+
+<div class="fw-card mb-3">
+  <div class="fw-card-header">
+    <span class="fw-card-title"><i class="bi bi-1-circle me-2 text-accent"></i>{{ _('What to build') }}</span>
+  </div>
+  <div class="fw-card-body">
+    <div class="row g-3">
+      <div class="col-md-3">
+        <label class="form-label" style="font-size:12px;">{{ _('Line') }}</label>
+        <select class="form-select form-select-sm" id="w-line">
+          <option value="">{{ _('— pick a line —') }}</option>
+          {% for l in lines %}
+          <option value="{{ l }}">{{ l }}{% if not line_plans[l].declared %} ({{ _('no profile') }}){% endif %}</option>
+          {% endfor %}
+        </select>
+        <div id="w-line-note" class="text-muted mt-1" style="font-size:11.5px;"></div>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label" style="font-size:12px;">{{ _('Segment') }}</label>
+        <select class="form-select form-select-sm" id="w-segment"></select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label" style="font-size:12px;">{{ _('Web address') }}</label>
+        <input class="form-control form-control-sm" id="w-address-web" placeholder="shop.example.com">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label" style="font-size:12px;">{{ _('Hostname to publish (DNS)') }}</label>
+        <input class="form-control form-control-sm" id="w-hostname" placeholder="{{ _('blank = do not publish') }}">
+      </div>
+    </div>
+
+    <div class="row g-3 mt-1">
+      <div class="col-md-3">
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" id="w-use-ipam">
+          <label class="form-check-label" for="w-use-ipam" style="font-size:12px;">
+            {{ _('Reserve the VIP from IPAM') }}
+          </label>
+        </div>
+        <input class="form-control form-control-sm mt-1" id="w-vip"
+               placeholder="{{ _('VIP address (when not using IPAM)') }}">
+      </div>
+      <div class="col-md-3">
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" id="w-cert">
+          <label class="form-check-label" for="w-cert" style="font-size:12px;">
+            {{ _('Issue the certificate') }}
+          </label>
+        </div>
+        <div id="w-cert-note" class="text-muted mt-1" style="font-size:11.5px;"></div>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label" style="font-size:12px;">{{ _('Real servers (one ip:port per line)') }}</label>
+        <textarea class="form-control form-control-sm" id="w-backends" rows="3"
+                  placeholder="192.0.2.11:8080&#10;192.0.2.12:8080"></textarea>
+      </div>
+    </div>
+
+    <div class="mt-3 d-flex gap-2">
+      <button class="btn btn-fw-outline btn-sm" id="w-preview">
+        <i class="bi bi-eye me-1"></i>{{ _('Preview (writes nothing)') }}
+      </button>
+      <button class="btn btn-fw-primary btn-sm" id="w-apply" disabled>
+        <i class="bi bi-play me-1"></i>{{ _('Apply') }}
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="fw-card" id="w-result-card" style="display:none;">
+  <div class="fw-card-header">
+    <span class="fw-card-title"><i class="bi bi-2-circle me-2 text-accent"></i>{{ _('Result') }}</span>
+    <span id="w-result-badge"></span>
+  </div>
+  <div class="fw-card-body" id="w-result"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// The CSP forbids inline handlers, so everything binds here.
+(function () {
+  const PLANS = {{ line_plans | tojson }};
+  const BASE = "{{ url_for('spo_wizard.plan', appliance_id=appliance.id) }}";
+  const APPLY = "{{ url_for('spo_wizard.apply', appliance_id=appliance.id) }}";
+  const CSRF = "{{ csrf_token() }}";
+  const $ = (id) => document.getElementById(id);
+  let lastOk = false;
+
+  function segmentsFor(line) {
+    const p = PLANS[line];
+    return p ? p.segments : [];
+  }
+
+  function refreshLine() {
+    const line = $('w-line').value;
+    const p = PLANS[line];
+    const sel = $('w-segment');
+    sel.innerHTML = '';
+    segmentsFor(line).forEach(function (s) {
+      const o = document.createElement('option');
+      o.value = s.name;
+      o.textContent = s.name + (s.cidr ? ' — ' + s.cidr : '');
+      sel.appendChild(o);
+    });
+    // The source of the answer is stated, never implied: a declared plan and
+    // an inferred one are different kinds of claim.
+    if (!p) { $('w-line-note').textContent = ''; $('w-cert-note').textContent = ''; return; }
+    $('w-line-note').textContent = p.declared
+      ? 'Declared profile.'
+      : 'No profile for this line — the segment, certificate class and WPP below were INFERRED by matching names. Confirm each one.';
+    $('w-cert-note').textContent = p.cert_class
+      ? ('class: ' + p.cert_class)
+      : 'this line declares no certificate class';
+  }
+
+  function backends() {
+    return $('w-backends').value.split('\n').map(function (l) {
+      const t = l.trim();
+      if (!t) return null;
+      const bits = t.split(':');
+      return { ip: bits[0].trim(), port: (bits[1] || '80').trim() };
+    }).filter(Boolean);
+  }
+
+  function body(extra) {
+    return Object.assign({
+      line: $('w-line').value,
+      segment: $('w-segment').value,
+      web_address: $('w-address-web').value,
+      hostname: $('w-hostname').value,
+      use_ipam: $('w-use-ipam').checked,
+      address: $('w-vip').value,
+      issue_cert: $('w-cert').checked,
+      backends: backends()
+    }, extra || {});
+  }
+
+  function post(url, payload) {
+    return fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+      body: JSON.stringify(payload)
+    }).then(function (r) { return r.json(); });
+  }
+
+  function render(plan, result) {
+    const box = $('w-result');
+    const badge = $('w-result-badge');
+    let html = '';
+    if (plan.blockers.length) {
+      html += '<div class="mb-2"><strong>Blocked</strong><ul style="font-size:12.5px;">';
+      plan.blockers.forEach(function (b) {
+        html += '<li class="text-danger"><span class="fw-badge fw-badge-danger">' +
+                b.code + '</span> ' + b.detail + '</li>';
+      });
+      html += '</ul></div>';
+    }
+    if (plan.warnings.length) {
+      html += '<ul style="font-size:12.5px;">';
+      plan.warnings.forEach(function (w) {
+        html += '<li class="text-muted">' + w + '</li>';
+      });
+      html += '</ul>';
+    }
+    if (result && result.steps) {
+      html += '<table class="table table-sm" style="font-size:12.5px;"><tbody>';
+      result.steps.forEach(function (s) {
+        html += '<tr><td><span class="fw-badge ' +
+                (s.ok ? 'fw-badge-success' : 'fw-badge-danger') + '">' +
+                (s.ok ? 'ok' : 'failed') + '</span></td><td>' + s.label +
+                '</td><td class="text-muted">' + (s.detail || '') + '</td></tr>';
+      });
+      html += '</tbody></table>';
+    }
+    if (result && result.objects) {
+      html += '<details class="mt-2"><summary style="font-size:12.5px;">Device payloads</summary><pre style="font-size:11.5px;">' +
+              JSON.stringify(result.objects, null, 2) + '</pre></details>';
+    }
+    // Compensation and what was deliberately LEFT are separate lists, because
+    // "we undid it" and "we did not undo it" are opposite facts.
+    (result && result.compensated || []).forEach(function (c) {
+      html += '<div class="text-muted" style="font-size:12.5px;">undone: ' + c + '</div>';
+    });
+    (result && result.stranded || []).forEach(function (s) {
+      html += '<div class="text-danger" style="font-size:12.5px;">left behind: ' + s + '</div>';
+    });
+    if (result && result.error) {
+      html += '<div class="text-danger mt-2" style="font-size:12.5px;">' + result.error + '</div>';
+    }
+    box.innerHTML = html || '<span class="text-muted">nothing to show</span>';
+    badge.innerHTML = plan.ok
+      ? '<span class="fw-badge fw-badge-success">plan is buildable</span>'
+      : '<span class="fw-badge fw-badge-danger">blocked</span>';
+    $('w-result-card').style.display = '';
+    lastOk = plan.ok;
+    $('w-apply').disabled = !plan.ok;
+  }
+
+  $('w-line').addEventListener('change', refreshLine);
+  $('w-preview').addEventListener('click', function () {
+    post(APPLY, body({ apply: false })).then(function (r) {
+      render(r.plan, r.result);
+    });
+  });
+  $('w-apply').addEventListener('click', function () {
+    if (!lastOk) { return; }
+    if (!window.confirm('This writes to the device, the IPAM pool, DNS and the CA. Continue?')) { return; }
+    post(APPLY, body({ apply: true })).then(function (r) {
+      render(r.plan, r.result);
+      $('w-apply').disabled = true;
+    });
+  });
+  refreshLine();
+})();
+</script>
+{% endblock %}

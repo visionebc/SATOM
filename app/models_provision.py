@@ -189,6 +189,14 @@ class ProvisionRun(db.Model):
     #: would free whatever row currently holds that address — which after a
     #: lease expiry or an operator edit is somebody else's.
     ip_ref = db.Column(db.String(128), default="")
+    #: WHICH backend reserved the address / published the record. With one
+    #: provider the rollback could not aim wrong; with several, re-resolving
+    #: at rollback time is not equivalent to remembering — the scope may have
+    #: been edited since, and a release aimed at the wrong pool manager frees
+    #: nothing of ours and possibly something of theirs. NULL on rows that
+    #: predate the column, which reads as "not recorded", not as backend 0.
+    ip_backend_id = db.Column(db.Integer)
+    dns_backend_id = db.Column(db.Integer)
     #: Which pool the address was asked from (subnet/prefix id or CIDR). Empty
     #: means "the provider's configured default".
     ip_pool = db.Column(db.String(128), default="")

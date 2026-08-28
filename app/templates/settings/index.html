@@ -2860,118 +2860,357 @@
   </div>
 
   <!-- DNS RECORDS / IPAM TAB -->
+  <!-- DNS RECORDS / IPAM BACKENDS TAB -->
   <div class="tab-pane fade" id="tab-dnsrecords">
-    <div class="fw-card" style="max-width:820px;">
-      <div class="fw-card-header"><i class="bi bi-pencil-square me-1"></i>{{ _('DNS Records — IPAM / DDI provider') }}</div>
+    <div class="fw-card" style="max-width:1120px;">
+      <div class="fw-card-header"><i class="bi bi-pencil-square me-1"></i>{{ _('DNS Records — IPAM / DDI backends') }}</div>
       <div class="fw-card-body">
         <p class="text-muted" style="font-size:13px;">
-          {{ _('Pick the backend the') }} <a href="{{ url_for('dns_tool.index') }}">DNS &amp; LB Lookup</a> {{ _('page writes to via its') }} <strong>{{ _('+DNS Records') }}</strong> {{ _('button. Only') }} <strong>{{ _('EfficientIP SOLIDserver') }}</strong> {{ _('manages DNS records natively;') }} <strong>{{ _('NetBox') }}</strong> needs the <code>netbox-dns</code> plugin and <strong>{{ _('phpIPAM') }}</strong>
-          {{ _('is read-only over its API (no PowerDNS record CRUD). The +DNS Records modal adapts to the provider\'s capabilities. The secret is stored Fernet-encrypted and never shown again.') }}
+          {{ _('Register every IPAM / DDI system SATOM may use.') }}
+          <strong>{{ _('More than one is supported') }}</strong>{{ _(', and each declares which of the two jobs it does: hand out') }} <strong>{{ _('addresses') }}</strong> {{ _('(IPAM role) and publish') }} <strong>{{ _('names') }}</strong> {{ _('(DNS role). Real installs split them — phpIPAM owns the pools, EfficientIP owns the zones — and a backend that does both simply carries both roles.') }}
+          <br><span class="text-body-secondary">{{ _('Credentials are Fernet-encrypted at rest and are never sent back to the browser. Leave the secret blank when editing to keep the stored one.') }}</span>
         </p>
-        {% if dnsrec_cfg %}
-        <form method="POST" action="{{ url_for('settings.save_dns_records') }}" id="dnsrecForm">
+
+        <div class="alert alert-light border small mb-3">
+          <div class="fw-semibold mb-2"><i class="bi bi-info-circle me-1"></i>{{ _('How a backend is chosen for a given request') }}</div>
+          <ol class="mb-2 ps-3">
+            <li>{{ _('Only backends carrying the role are considered.') }}</li>
+            <li>{{ _('The most specific scope wins — a backend scoped to') }} <code>sub.example.com</code> {{ _('answers') }} <code>www.sub.example.com</code> {{ _('ahead of one scoped to') }} <code>example.com</code>. {{ _('A backend with') }} <strong>{{ _('no scope declared answers anything') }}</strong>, {{ _('and ranks below every explicit claim.') }}</li>
+            <li>{{ _('Equal scope: the lowest') }} <strong>{{ _('priority') }}</strong> {{ _('number wins.') }}</li>
+            <li><strong>{{ _('Equal scope AND equal priority is refused, not guessed.') }}</strong> {{ _('The operation reports which backends collided so you can break the tie — choosing one silently is how a record ends up published in the wrong customer\'s zone.') }}</li>
+          </ol>
+          <div class="small text-body-secondary">
+            <strong>{{ _('Pools are matched exactly') }}</strong> {{ _('and never by network containment: a pool identifier may be a subnet id or a name, not only a CIDR, so') }} <code>10.30.0.0/16</code> {{ _('does not cover') }} <code>10.30.20.0/22</code>. {{ _('A single backend with no pools declared serves every pool, which is what an install with one DDI wants.') }}
+          </div>
+        </div>
+
+        <div class="table-responsive mb-4">
+          <table class="table table-sm align-middle">
+            <thead><tr>
+              <th>{{ _('Name') }}</th><th>{{ _('Provider') }}</th><th>{{ _('Roles') }}</th>
+              <th>{{ _('Scope') }}</th><th class="text-center">{{ _('Priority') }}</th>
+              <th>{{ _('Status') }}</th><th class="text-end">{{ _('Actions') }}</th>
+            </tr></thead>
+            <tbody id="dnsb-rows"><tr><td colspan="7" class="text-muted">{{ _('Loading…') }}</td></tr></tbody>
+          </table>
+        </div>
+
+        <div id="dnsb-result" class="mb-3"></div>
+
+        <hr class="my-4">
+        <h6 class="mb-3" id="dnsb-form-title">{{ _('Add a backend') }}</h6>
+        <form id="dnsb-form" class="row g-3" autocomplete="off">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <div class="mb-3" style="max-width:360px;">
-            <label class="fw-form-label">{{ _('Provider') }}</label>
-            <select name="dnsrec_provider" id="dnsrecProvider" class="form-select fw-form-control form-select-sm">
-              {% for key, label in dnsrec_providers %}
-              <option value="{{ key }}" {{ 'selected' if dnsrec_cfg.provider == key }}>{{ label }}</option>
-              {% endfor %}
-            </select>
+          <input type="hidden" id="dnsb-id" value="">
+          <div class="col-md-4">
+            <label class="form-label small">{{ _('Name') }}</label>
+            <input class="form-control form-control-sm" id="dnsb-name" required placeholder="{{ _('solidserver-prod') }}">
+            <div class="form-text">{{ _('What run logs and audit lines call this backend.') }}</div>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label small">{{ _('Provider') }}</label>
+            <select class="form-select form-select-sm" id="dnsb-provider"></select>
+          </div>
+          <div class="col-md-2">
+            <label class="form-label small">{{ _('Priority') }}</label>
+            <input class="form-control form-control-sm" id="dnsb-priority" value="100">
+            <div class="form-text">{{ _('Lowest wins a tie.') }}</div>
+          </div>
+          <div class="col-md-2">
+            <label class="form-label small d-block">{{ _('Enabled') }}</label>
+            <div class="form-check mt-1">
+              <input class="form-check-input" type="checkbox" id="dnsb-enabled" checked>
+              <label class="form-check-label small" for="dnsb-enabled">{{ _('In service') }}</label>
+            </div>
           </div>
 
-          {% for pkey, specs in dnsrec_field_specs.items() %}
-          <div class="dnsrec-fields" data-provider="{{ pkey }}"
-               style="{{ '' if dnsrec_cfg.provider == pkey else 'display:none;' }}">
-            {% for spec in specs %}
-            <div class="mb-2" style="max-width:520px;">
-              <label class="fw-form-label">{{ spec.label }}</label>
-              <input type="text" name="dnsrec_{{ spec.key }}"
-                     class="form-control fw-form-control form-control-sm"
-                     placeholder="{{ spec.ph }}"
-                     value="{{ dnsrec_cfg[spec.key] if dnsrec_cfg.provider == pkey else '' }}">
-            </div>
-            {% endfor %}
-            <div class="mb-2" style="max-width:520px;">
-              <label class="fw-form-label">{{ dnsrec_secret_labels[pkey] }}</label>
-              <input type="password" name="dnsrec_secret" autocomplete="new-password"
-                     class="form-control fw-form-control form-control-sm dnsrec-secret"
-                     placeholder="{{ '•••••••• (stored — leave blank to keep)' if dnsrec_cfg.has_secret and dnsrec_cfg.provider == pkey else 'enter secret' }}">
-              {% if dnsrec_cfg.has_secret and dnsrec_cfg.provider == pkey %}
-              <div class="form-check mt-1">
-                <input class="form-check-input" type="checkbox" name="dnsrec_clear_secret" id="dnsrecClearSecret">
-                <label class="form-check-label text-muted" for="dnsrecClearSecret" style="font-size:12px;">{{ _('Clear stored secret') }}</label>
+          <div class="col-12">
+            <label class="form-label small">{{ _('Roles') }}</label>
+            <div class="d-flex gap-4">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="dnsb-role-ipam" checked>
+                <label class="form-check-label small" for="dnsb-role-ipam">{{ _('IPAM — hands out addresses') }}</label>
+                <div class="form-text" id="dnsb-role-ipam-note"></div>
               </div>
-              {% endif %}
-            </div>
-            <div class="form-check mb-2">
-              <input class="form-check-input dnsrec-verify" type="checkbox" name="dnsrec_verify_ssl"
-                     {{ 'checked' if (dnsrec_cfg.provider != pkey) or dnsrec_cfg.verify_ssl }}>
-              <label class="form-check-label" style="font-size:13px;">{{ _('Verify TLS certificate') }}</label>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="dnsb-role-dns" checked>
+                <label class="form-check-label small" for="dnsb-role-dns">{{ _('DNS — publishes records') }}</label>
+                <div class="form-text" id="dnsb-role-dns-note"></div>
+              </div>
             </div>
           </div>
-          {% endfor %}
 
-          <div class="d-flex align-items-center gap-2 mt-3">
-            <button type="submit" class="btn btn-fw-primary"><i class="bi bi-check-lg me-1"></i>{{ _('Save provider') }}</button>
-            <button type="button" class="btn btn-outline-secondary" id="dnsrecTestBtn">
-              <i class="bi bi-plug me-1"></i>{{ _('Test connection') }}</button>
-            <span id="dnsrecTestResult" style="font-size:13px;"></span>
+          <div class="col-md-6">
+            <label class="form-label small">{{ _('DNS zones this backend serves') }}</label>
+            <textarea class="form-control form-control-sm font-monospace" id="dnsb-zones" rows="3"
+                      placeholder="example.com&#10;dmz.example.com"></textarea>
+            <div class="form-text">{{ _('One per line. Leave empty to answer for any zone.') }}</div>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small">{{ _('IPAM pools this backend serves') }}</label>
+            <textarea class="form-control form-control-sm font-monospace" id="dnsb-pools" rows="3"
+                      placeholder="198.51.100.0/24&#10;42"></textarea>
+            <div class="form-text">{{ _('One per line, matched exactly. Leave empty to answer for any pool.') }}</div>
+          </div>
+
+          <div class="col-12"><div class="row g-3" id="dnsb-fields"></div></div>
+
+          <div class="col-md-6">
+            <label class="form-label small" id="dnsb-secret-label">{{ _('Secret') }}</label>
+            <input type="password" class="form-control form-control-sm" id="dnsb-secret" autocomplete="new-password">
+            <div class="form-text" id="dnsb-secret-note">{{ _('Required when adding.') }}</div>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small d-block">TLS</label>
+            <div class="form-check mt-1">
+              <input class="form-check-input" type="checkbox" id="dnsb-verify" checked>
+              <label class="form-check-label small" for="dnsb-verify">{{ _('Verify the certificate') }}</label>
+            </div>
+          </div>
+
+          <div class="col-12 d-flex gap-2">
+            <button type="submit" class="btn btn-fw-primary btn-sm"><i class="bi bi-check-lg me-1"></i>{{ _('Save backend') }}</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="dnsb-test"><i class="bi bi-plug me-1"></i>{{ _('Test these values') }}</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="dnsb-cancel" style="display:none;">{{ _('Cancel edit') }}</button>
+            <span id="dnsb-test-out" class="align-self-center" style="font-size:13px;"></span>
           </div>
         </form>
-        {% else %}
-        <div class="text-muted">{{ _('Admin only.') }}</div>
-        {% endif %}
       </div>
     </div>
-    {% if dnsrec_cfg %}
     <script nonce="{{ csp_nonce }}">
     (function () {
-      var sel = document.getElementById('dnsrecProvider');
-      var groups = document.querySelectorAll('#dnsrecForm .dnsrec-fields');
-      var testBtn = document.getElementById('dnsrecTestBtn');
-      var out = document.getElementById('dnsrecTestResult');
-      var csrf = document.querySelector('#dnsrecForm [name=csrf_token]').value;
-      function activeGroup() {
-        var p = sel.value, found = null;
-        groups.forEach(function (g) {
-          var on = g.getAttribute('data-provider') === p;
-          g.style.display = on ? '' : 'none';
-          // Disabled inputs are NOT submitted -> stops the other providers'
-          // fields (same names) from colliding on POST.
-          g.querySelectorAll('input').forEach(function (inp) { inp.disabled = !on; });
-          if (on) found = g;
-        });
-        return found;
+      var root = document.getElementById('tab-dnsrecords');
+      if (!root) return;
+      var CSRF = document.querySelector('#dnsb-form [name=csrf_token]').value;
+      var URLS = {
+        state: "{{ url_for('settings.dns_backends_state') }}",
+        save: "{{ url_for('settings.dns_backend_save') }}",
+        test: "{{ url_for('settings.test_dns_records') }}",
+        row: "{{ url_for('settings.dns_backends_state') }}".replace(/\/state$/, '')
+      };
+      var PROVIDERS = {};
+      var el = function (id) { return document.getElementById(id); };
+
+      function esc(s) { var d = document.createElement('div'); d.textContent = s == null ? '' : s; return d.innerHTML; }
+
+      function say(msg, ok) {
+        var box = el('dnsb-result');
+        box.innerHTML = '<div class="alert alert-' + (ok ? 'success' : 'danger') +
+          ' py-2 mb-0" style="font-size:13px;">' + esc(msg) + '</div>';
       }
-      sel.addEventListener('change', function () { out.textContent = ''; activeGroup(); });
-      testBtn.addEventListener('click', function () {
-        var p = sel.value;
-        if (p === 'none') { out.textContent = 'Select a provider first.'; out.style.color = '#fbbf24'; return; }
-        var g = activeGroup(); if (!g) return;
-        var payload = { provider: p, verify_ssl: g.querySelector('.dnsrec-verify').checked };
-        g.querySelectorAll('input[name^=dnsrec_]').forEach(function (inp) {
-          var k = inp.name.replace(/^dnsrec_/, '');
-          if (k === 'secret') { if (inp.value) payload.secret = inp.value; }
-          else if (k !== 'verify_ssl' && k !== 'clear_secret') payload[k] = inp.value;
+
+      function api(url, body) {
+        var opts = { method: body === undefined ? 'GET' : 'POST',
+                     headers: { 'X-CSRFToken': CSRF } };
+        if (body !== undefined) {
+          opts.headers['Content-Type'] = 'application/json';
+          opts.body = JSON.stringify(body || {});
+        }
+        return fetch(url, opts).then(function (r) {
+          return r.json().then(function (d) {
+            if (!r.ok) throw new Error(d.error || d.message || ('HTTP ' + r.status));
+            return d;
+          });
         });
-        out.textContent = 'Testing…'; out.style.color = '#94a3b8';
-        testBtn.disabled = true;
-        fetch('{{ url_for("settings.test_dns_records") }}', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
-          body: JSON.stringify(payload)
-        }).then(function (r) { return r.json(); }).then(function (d) {
+      }
+
+      // The role checkboxes are disabled against the provider's STATIC
+      // maximum, not against a live probe: phpIPAM has no record CRUD in any
+      // install, so offering the DNS role there would offer a promise the
+      // server is going to refuse anyway. NetBox keeps the box enabled
+      // because netbox-dns may be present — that one is answered by Test.
+      function applyProvider() {
+        var p = PROVIDERS[el('dnsb-provider').value] || { fields: [] };
+        var wrap = el('dnsb-fields');
+        wrap.innerHTML = '';
+        (p.fields || []).forEach(function (spec) {
+          var col = document.createElement('div');
+          col.className = 'col-md-4';
+          col.innerHTML = '<label class="form-label small">' + esc(spec.label) + '</label>' +
+            '<input class="form-control form-control-sm dnsb-cfg" data-key="' + esc(spec.key) +
+            '" placeholder="' + esc(spec.ph || '') + '">';
+          wrap.appendChild(col);
+        });
+        el('dnsb-secret-label').textContent = p.secret_label || 'Secret';
+        var ri = el('dnsb-role-ipam'), rd = el('dnsb-role-dns');
+        ri.disabled = !p.may_allocate;
+        rd.disabled = !p.may_write;
+        if (!p.may_allocate) ri.checked = false;
+        if (!p.may_write) rd.checked = false;
+        el('dnsb-role-ipam-note').textContent = p.may_allocate ? '' :
+          'This provider never hands out addresses.';
+        el('dnsb-role-dns-note').textContent = p.may_write ? '' :
+          'This provider has no record CRUD in any installation.';
+      }
+
+      function badge(text, kind) {
+        return '<span class="fw-badge fw-badge-' + kind + '">' + esc(text) + '</span>';
+      }
+
+      function render(backends) {
+        var tb = el('dnsb-rows');
+        tb.innerHTML = '';
+        if (!backends.length) {
+          tb.innerHTML = '<tr><td colspan="7" class="text-muted">' +
+            'No backend configured — address reservation and name publication are off. ' +
+            'Provisioning still works against an address you supply by hand.</td></tr>';
+          return;
+        }
+        backends.forEach(function (b) {
+          var roles = [];
+          if (b.role_ipam) roles.push(badge('IPAM', 'info'));
+          if (b.role_dns) roles.push(badge('DNS', 'primary'));
+          var scope = [];
+          if (b.zones.length) scope.push('zones: ' + b.zones.join(', '));
+          if (b.pools.length) scope.push('pools: ' + b.pools.join(', '));
+          var status = b.last_status === 'ok' ? badge('OK', 'success')
+                     : (b.last_status === 'error' ? badge('error', 'danger')
+                                                  : badge('untested', 'secondary'));
+          var tr = document.createElement('tr');
+          if (!b.enabled) tr.style.opacity = '.55';
+          tr.innerHTML =
+            '<td class="fw-semibold">' + esc(b.name) +
+              (b.enabled ? '' : ' <span class="fw-badge fw-badge-secondary">disabled</span>') + '</td>' +
+            '<td>' + esc(b.provider_label) + '</td>' +
+            '<td>' + (roles.join(' ') || '<span class="text-muted">—</span>') + '</td>' +
+            '<td style="font-size:12px;">' + (scope.length ? esc(scope.join(' · '))
+              : '<span class="text-muted">any (catch-all)</span>') + '</td>' +
+            '<td class="text-center">' + esc(b.priority) + '</td>' +
+            '<td>' + status + (b.last_error ? '<div class="text-danger" style="font-size:11px;">' +
+              esc(b.last_error.slice(0, 120)) + '</div>' : '') + '</td>' +
+            '<td class="text-end">' +
+              '<button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1 me-1 dnsb-edit">Edit</button>' +
+              '<button type="button" class="btn btn-sm btn-outline-primary py-0 px-1 me-1 dnsb-test-row">Test</button>' +
+              '<button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1 me-1 dnsb-toggle">' +
+                (b.enabled ? 'Disable' : 'Enable') + '</button>' +
+              '<button type="button" class="btn btn-sm btn-outline-danger py-0 px-1 dnsb-del">Delete</button>' +
+            '</td>';
+          tr.querySelector('.dnsb-edit').addEventListener('click', function () { edit(b); });
+          tr.querySelector('.dnsb-test-row').addEventListener('click', function () {
+            say('Testing ' + b.name + '…', true);
+            api(URLS.row + '/' + b.id + '/test', {})
+              .then(function (d) { say(b.name + ': ' + (d.ok ? '✓ ' : '✗ ') + d.message, d.ok); load(); })
+              .catch(function (e) { say(e.message, false); });
+          });
+          tr.querySelector('.dnsb-toggle').addEventListener('click', function () {
+            api(URLS.row + '/' + b.id + '/toggle', {})
+              .then(function () { load(); }).catch(function (e) { say(e.message, false); });
+          });
+          tr.querySelector('.dnsb-del').addEventListener('click', function () {
+            if (!window.confirm('Delete the backend "' + b.name + '"?')) return;
+            api(URLS.row + '/' + b.id + '/delete', {})
+              .then(function () { say('Deleted ' + b.name + '.', true); load(); })
+              .catch(function (e) { say(e.message, false); });
+          });
+          tb.appendChild(tr);
+        });
+      }
+
+      function edit(b) {
+        el('dnsb-id').value = b.id;
+        el('dnsb-name').value = b.name;
+        el('dnsb-provider').value = b.provider;
+        applyProvider();
+        el('dnsb-priority').value = b.priority;
+        el('dnsb-enabled').checked = b.enabled;
+        el('dnsb-role-ipam').checked = b.role_ipam;
+        el('dnsb-role-dns').checked = b.role_dns;
+        el('dnsb-zones').value = (b.zones || []).join('\n');
+        el('dnsb-pools').value = (b.pools || []).join('\n');
+        el('dnsb-verify').checked = b.config.verify_ssl !== false;
+        document.querySelectorAll('.dnsb-cfg').forEach(function (inp) {
+          inp.value = b.config[inp.getAttribute('data-key')] || '';
+        });
+        el('dnsb-secret').value = '';
+        el('dnsb-secret-note').textContent = b.has_secret
+          ? 'Stored — leave blank to keep it.' : 'No credential stored yet.';
+        el('dnsb-form-title').textContent = 'Edit "' + b.name + '"';
+        el('dnsb-cancel').style.display = '';
+        root.querySelector('#dnsb-form').scrollIntoView({ block: 'center' });
+      }
+
+      function reset() {
+        el('dnsb-id').value = '';
+        el('dnsb-name').value = '';
+        el('dnsb-priority').value = '100';
+        el('dnsb-enabled').checked = true;
+        el('dnsb-zones').value = '';
+        el('dnsb-pools').value = '';
+        el('dnsb-secret').value = '';
+        el('dnsb-verify').checked = true;
+        el('dnsb-role-ipam').checked = true;
+        el('dnsb-role-dns').checked = true;
+        applyProvider();
+        el('dnsb-secret-note').textContent = 'Required when adding.';
+        el('dnsb-form-title').textContent = 'Add a backend';
+        el('dnsb-cancel').style.display = 'none';
+        el('dnsb-test-out').textContent = '';
+      }
+
+      function body() {
+        var payload = {
+          id: el('dnsb-id').value,
+          name: el('dnsb-name').value.trim(),
+          provider: el('dnsb-provider').value,
+          priority: el('dnsb-priority').value.trim(),
+          enabled: el('dnsb-enabled').checked,
+          role_ipam: el('dnsb-role-ipam').checked,
+          role_dns: el('dnsb-role-dns').checked,
+          zones: el('dnsb-zones').value,
+          pools: el('dnsb-pools').value,
+          secret: el('dnsb-secret').value,
+          verify_ssl: el('dnsb-verify').checked
+        };
+        document.querySelectorAll('.dnsb-cfg').forEach(function (inp) {
+          payload[inp.getAttribute('data-key')] = inp.value.trim();
+        });
+        return payload;
+      }
+
+      function load() {
+        return api(URLS.state).then(function (d) {
+          PROVIDERS = {};
+          var sel = el('dnsb-provider');
+          if (!sel.options.length) {
+            (d.providers || []).forEach(function (p) {
+              PROVIDERS[p.key] = p;
+              var o = document.createElement('option');
+              o.value = p.key; o.textContent = p.label;
+              sel.appendChild(o);
+            });
+            applyProvider();
+          } else {
+            (d.providers || []).forEach(function (p) { PROVIDERS[p.key] = p; });
+          }
+          render(d.backends || []);
+        }).catch(function (e) { say(e.message, false); });
+      }
+
+      el('dnsb-provider').addEventListener('change', applyProvider);
+      el('dnsb-cancel').addEventListener('click', reset);
+      el('dnsb-test').addEventListener('click', function () {
+        var out = el('dnsb-test-out');
+        out.textContent = 'Testing…'; out.style.color = '';
+        api(URLS.test, body()).then(function (d) {
           out.textContent = (d.ok ? '✓ ' : '✗ ') + (d.message || '');
-          out.style.color = d.ok ? '#10b981' : '#ef4444';
+          out.style.color = d.ok ? '#15692A' : '#8B1C2A';
         }).catch(function (e) {
-          out.textContent = '✗ ' + e; out.style.color = '#ef4444';
-        }).finally(function () { testBtn.disabled = false; });
+          out.textContent = '✗ ' + e.message; out.style.color = '#8B1C2A';
+        });
       });
-      activeGroup();
+      root.querySelector('#dnsb-form').addEventListener('submit', function (ev) {
+        ev.preventDefault();
+        api(URLS.save, body()).then(function (d) {
+          say('Saved "' + d.backend.name + '".', true);
+          reset(); load();
+        }).catch(function (e) { say(e.message, false); });
+      });
+
+      var btn = document.querySelector('[data-bs-target="#tab-dnsrecords"]');
+      if (btn) btn.addEventListener('shown.bs.tab', load, { once: true });
+      if (root.classList.contains('active') || location.hash === '#tab-dnsrecords') load();
     })();
     </script>
-    {% endif %}
   </div>
 
   <!-- POLICY LINKS TAB -->

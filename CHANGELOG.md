@@ -6,6 +6,46 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — N DNS/IPAM backends with optional roles and scopes (2026-08-28)
+
+`Settings → DNS Records` was one global provider. It is now a registry: add,
+edit, enable/disable, test and delete as many backends as the install needs,
+each declaring which of the two jobs it does and which zones / pools it serves.
+
+- **Added** the `dns_backends` table (`app/models_dnsbackend.py`): name,
+  provider, **roles** (IPAM / DNS, both on by default), **scope** (zones and
+  pools, empty = catch-all), priority, encrypted secret, last-test outcome.
+- **Added** `services/dns_providers/resolver.py` — the single author of "which
+  backend answers this". Most specific scope wins; priority breaks a tie
+  between equals; **an exact tie is refused and names the candidates** rather
+  than being broken by row order.
+- **Added** roles are validated against a static per-provider maximum:
+  `role_dns` is refused on phpIPAM (no record CRUD in any install) and allowed
+  on NetBox (netbox-dns may be present — the live probe decides). See
+  safeguards §136.
+- **Added** `provision_runs.ip_backend_id` / `.dns_backend_id`: rollback
+  releases and deletes against the backend that ACTED, and refuses rather than
+  redirecting when that backend is gone. Nullable, no backfill.
+- **Added** a backend selector in the **+DNS Records** modal, shown only when
+  there is a genuine choice; a stale or unknown id is refused, never silently
+  replaced.
+- **Changed** `capabilities()` split into `ipam_capabilities()` /
+  `dns_capabilities()` / `capabilities_of(row)`. With roles, "can something
+  reserve an address" and "can something publish a name" are different
+  questions with different answers.
+- **Changed** the provisioning runner and the SPO wizard now distinguish *no
+  DDI configured* (a supported deployment — warn, keep going) from *no backend
+  claims this name* and *two claim it equally* (misconfiguration — block).
+  New blocker codes `ipam_not_resolved`, `dns_not_resolved`,
+  `ipam_unreachable`, `dns_unreachable`.
+- **Migration** the old `dnsrecords.*` settings are folded into one **unscoped**
+  row on first boot, keeping the encrypted secret and the old `default_zone` /
+  `default_pool` as defaults — not as a scope, which would have narrowed a
+  working install at upgrade time. One-shot, guarded by its own flag so
+  deleting every backend does not resurrect it.
+- **Added** `tests/test_dns_backends.py` (54 guards) and the §130 guards moved
+  onto the new seam.
+
 ### Changed — a network segment is ONE row per network (2026-08-27)
 
 Reported as "two departments can share a network, but in the SPO wizard I

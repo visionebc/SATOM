@@ -42,6 +42,10 @@ class PhpIpamProvider(DnsProvider):
             base_url=self._base(), verify=verify, timeout=12.0,
             headers={"token": token, "Accept": "application/json"})
 
+    # No record CRUD in ANY phpIPAM install — its API simply has none.
+    may_write = False
+    may_allocate = True
+
     def capabilities(self) -> Capabilities:
         return Capabilities(
             provider="phpipam", label="phpIPAM (IPAM, read-only DNS)",

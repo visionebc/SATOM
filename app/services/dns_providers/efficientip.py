@@ -29,6 +29,9 @@ class EfficientIPProvider(DnsProvider):
     key = "efficientip"
     label = "EfficientIP SOLIDserver"
 
+    may_write = True
+    may_allocate = True
+
     def capabilities(self) -> Capabilities:
         return Capabilities(
             provider="efficientip", label="EfficientIP SOLIDserver",

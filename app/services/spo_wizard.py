@@ -80,6 +80,13 @@ class SpoPlan:
     wpp_template_id: int | None = None
     wpp_template_name: str = ""
     backends: list = field(default_factory=list)
+    #: Which backend each half of the plan resolved to. Shown in the summary
+    #: because with several configured, "an address will be reserved" is only
+    #: half a sentence — the operator has to be able to see that the address
+    #: comes from one system and the name is published in another BEFORE the
+    #: run, not by reading the log afterwards.
+    ipam_backend: str = ""
+    dns_backend: str = ""
     line_source: str = "inferred"
     blockers: list = field(default_factory=list)
     warnings: list = field(default_factory=list)
@@ -102,6 +109,7 @@ class SpoPlan:
             "wpp_template_id": self.wpp_template_id,
             "wpp_template_name": self.wpp_template_name,
             "backends": self.backends, "ok": self.ok,
+            "ipam_backend": self.ipam_backend, "dns_backend": self.dns_backend,
             "blockers": [b.as_dict() for b in self.blockers],
             "warnings": list(self.warnings),
         }
@@ -221,15 +229,34 @@ def build_plan(appliance, *, line: str, web_address: str,
                 "no_pool", "IPAM allocation was requested but neither the "
                            "line profile nor the segment says which pool to "
                            "take the address from"))
-        caps = _dns_caps()
-        if caps is None:
+        from . import dns_providers as _dp
+        res = _dp.resolve_ipam(plan.pool)
+        if res.code == _dp.NO_BACKEND:
             plan.blockers.append(Blocker(
                 "no_ipam_provider", "IPAM allocation was requested but no "
-                                    "DNS/IPAM provider is configured"))
-        elif not caps.can_allocate:
+                                    "backend carries the IPAM role"))
+        elif not res.ok:
+            # A pool no backend claims, or two claiming it equally. Reported
+            # under its own code and NOT folded into "none configured": the
+            # fix is different (scope a backend / break the tie) and an
+            # operator told "none is configured" while three are would go
+            # looking in the wrong place.
             plan.blockers.append(Blocker(
-                "ipam_cannot_allocate",
-                f"{caps.label} does not hand out addresses"))
+                "ipam_not_resolved",
+                f"IPAM allocation was requested but {res.detail}"))
+        else:
+            plan.ipam_backend = res.backend.name
+            caps = _dp.capabilities_of(res.backend)
+            if caps is None:
+                plan.blockers.append(Blocker(
+                    "ipam_unreachable",
+                    f"{res.backend.name} was chosen to reserve the address "
+                    "but did not answer — unreachable or misconfigured"))
+            elif not caps.can_allocate:
+                plan.blockers.append(Blocker(
+                    "ipam_cannot_allocate",
+                    f"{res.backend.name} ({caps.label}) does not hand out "
+                    "addresses"))
     elif not plan.address:
         plan.blockers.append(Blocker(
             "no_address", "no VIP address given and IPAM allocation was not "
@@ -240,16 +267,38 @@ def build_plan(appliance, *, line: str, web_address: str,
     # backend that cannot write records, plus a requested hostname, is a
     # refusal — not a step that reports success and publishes nothing.
     if plan.hostname:
-        caps = _dns_caps()
-        if caps is None:
+        from . import dns_providers as _dp
+        res = _dp.resolve_dns(plan.hostname)
+        if res.code == _dp.NO_BACKEND:
+            # A fleet with no DDI at all is a supported install: a WARNING,
+            # and the policy still gets built.
             plan.warnings.append(
-                f"no DNS provider is configured — {plan.hostname} will NOT be "
-                "published; create the record by hand")
-        elif not caps.can_write:
+                f"no backend carries the DNS role — {plan.hostname} will NOT "
+                "be published; create the record by hand")
+        elif not res.ok:
+            # Backends EXIST and none of them covers this name (or two cover
+            # it equally). That is a misconfiguration, not a deployment
+            # choice, so it blocks — the operator asked for a name they
+            # plainly expected to be published.
             plan.blockers.append(Blocker(
-                "dns_cannot_write",
-                f"{caps.label} cannot create DNS records, but this policy asks "
-                f"for the hostname {plan.hostname}"))
+                "dns_not_resolved",
+                f"the hostname {plan.hostname} cannot be published: "
+                f"{res.detail}"))
+        else:
+            plan.dns_backend = res.backend.name
+            caps = _dp.capabilities_of(res.backend)
+            if caps is None:
+                plan.blockers.append(Blocker(
+                    "dns_unreachable",
+                    f"{res.backend.name} was chosen to publish "
+                    f"{plan.hostname} but did not answer — unreachable or "
+                    "misconfigured"))
+            elif not caps.can_write:
+                plan.blockers.append(Blocker(
+                    "dns_cannot_write",
+                    f"{res.backend.name} ({caps.label}) cannot create DNS "
+                    f"records, but this policy asks for the hostname "
+                    f"{plan.hostname}"))
 
     # -- certificate ------------------------------------------------------
     plan.cert_class = lplan.cert_class or ""
@@ -281,11 +330,6 @@ def build_plan(appliance, *, line: str, web_address: str,
     # -- name collision, read from the LIVE device ------------------------
     _collision_check(appliance, plan)
     return plan
-
-
-def _dns_caps():
-    from . import dns_providers
-    return dns_providers.capabilities()
 
 
 def _collision_check(appliance, plan: SpoPlan) -> None:
@@ -344,7 +388,9 @@ def apply_plan(appliance, plan: SpoPlan, *, dry_run: bool = True,
     # Recorded facts — the ONLY things compensation acts on.
     took_address = ""
     address_ref = ""
+    address_backend = None
     dns_record_id = ""
+    dns_backend = None
 
     if not plan.ok:
         # A blocked plan is never applied, dry-run or not. Letting apply run
@@ -367,14 +413,16 @@ def apply_plan(appliance, plan: SpoPlan, *, dry_run: bool = True,
         if dns_record_id:
             try:
                 dns_providers.delete_record(dns_record_id, name=plan.hostname,
-                                            rtype="A")
+                                            rtype="A", backend_id=dns_backend)
                 compensated.append(f"removed the DNS record for {plan.hostname}")
             except Exception as exc:  # noqa: BLE001
                 stranded.append(f"DNS record {plan.hostname} could not be "
                                 f"removed: {exc}")
         if took_address:
             try:
-                dns_providers.release_address(took_address, ref=address_ref)
+                dns_providers.release_address(took_address, ref=address_ref,
+                                              backend_id=address_backend,
+                                              pool=plan.pool)
                 compensated.append(f"released {took_address}")
             except Exception as exc:  # noqa: BLE001
                 stranded.append(f"address {took_address} could not be "
@@ -401,6 +449,7 @@ def apply_plan(appliance, plan: SpoPlan, *, dry_run: bool = True,
                 return fail(f"IPAM refused to allocate: {exc}")
             vip = addr.address
             took_address, address_ref = addr.address, addr.ref
+            address_backend = addr.backend_id
             steps.append(RunStep(STEP_ADDRESS, "Reserve an address",
                                  detail=f"{addr.address} from "
                                         f"{addr.pool or plan.pool}"))
@@ -410,22 +459,31 @@ def apply_plan(appliance, plan: SpoPlan, *, dry_run: bool = True,
 
     # -- 2. DNS -----------------------------------------------------------
     if plan.hostname:
-        caps = dns_providers.capabilities()
-        if caps is None:
+        # ONLY the "no DDI anywhere" case is a pass here. Every other refusal
+        # (no backend claims this name, two claim it equally, the chosen one
+        # cannot write) was already turned into a BLOCKER in build_plan, and a
+        # blocked plan is never applied — so reaching this point with an
+        # unresolvable name is not possible without also having bypassed the
+        # blocker, which apply_plan refuses to do.
+        dns_res = dns_providers.resolve_dns(plan.hostname)
+        if dns_res.code == dns_providers.NO_BACKEND:
             # Said plainly, and it is NOT recorded as a creation.
             steps.append(RunStep(
                 STEP_DNS, "Publish the hostname",
-                detail=f"NO DNS PROVIDER IS CONFIGURED — no record was created "
+                detail=f"NO DNS BACKEND IS CONFIGURED — no record was created "
                        f"for {plan.hostname}; publish {plan.hostname} A {vip} "
                        "by hand"))
         elif dry_run:
-            steps.append(RunStep(STEP_DNS, "Publish the hostname",
-                                 detail=f"would create {plan.hostname} A {vip}"))
+            steps.append(RunStep(
+                STEP_DNS, "Publish the hostname",
+                detail=f"would create {plan.hostname} A {vip}"
+                       + (f" via {dns_res.backend.name}" if dns_res.ok else "")))
         else:
             try:
                 rec = dns_providers.create_record(
                     name=plan.hostname, rtype="A", value=vip)
                 dns_record_id = str(rec.id or "")
+                dns_backend = rec.backend_id
                 steps.append(RunStep(STEP_DNS, "Publish the hostname",
                                      detail=f"created {plan.hostname} A {vip}"))
             except Exception as exc:  # noqa: BLE001

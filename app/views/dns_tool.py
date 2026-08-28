@@ -100,44 +100,88 @@ def index():
         clip_lb=clip_lb,
         lb_error=lb_error,
         adom=session_product() or "global",
-        dns_provider=dns_providers.provider_key(),
+        dns_backends=[r.public()
+                      for r in dns_providers.enabled_backends("dns")],
         can_manage_records=current_user.can("user_manage"),
     )
 
 
 # ------------------------------------------------------------- DNS Records
-# CRUD against the configured IPAM/DDI provider (EfficientIP / phpIPAM /
-# NetBox), driven by the +DNS Records modal. Admin-only (USER_MANAGE); every
-# write is audited. The active provider is chosen in Settings → DNS Records,
-# so the same modal adapts per install (capabilities from schema()).
+# CRUD against a CHOSEN DNS backend (EfficientIP / phpIPAM / NetBox), driven
+# by the +DNS Records modal. Admin-only (USER_MANAGE); every write is audited.
+# Backends are configured in Settings → DNS Records, and the modal adapts to
+# whichever one is selected (capabilities from schema()).
+#
+# The backend is part of every request rather than a server-side "current"
+# one. A selection remembered in the session would be a second author of the
+# same decision, and the record the operator was looking at could be written
+# to a different system from the one whose records they had just listed.
+
+
+def _records_backend():
+    """The backend this request acts on, or a 400 explaining why there isn't one.
+
+    An explicit ``backend_id`` always wins. With exactly ONE DNS backend
+    configured the choice is made without asking — that is not a guess, it is
+    the only answer. With two or more and nothing named, the request is
+    REFUSED: picking the first row would write into whichever zone happened to
+    sort first, which is the failure this whole module was restructured to
+    make impossible.
+    """
+    rows = dns_providers.enabled_backends("dns")
+    if not rows:
+        return None, (jsonify(
+            error="No backend carries the DNS role. Configure one in "
+                  "Settings -> DNS Records."), 400)
+    body = request.get_json(silent=True) or {}
+    raw = (request.args.get("backend_id")
+           or body.get("backend_id")
+           or request.form.get("backend_id") or "")
+    raw = str(raw).strip()
+    if raw:
+        for row in rows:
+            if str(row.id) == raw:
+                return row, None
+        return None, (jsonify(
+            error="That DNS backend is gone, disabled, or no longer carries "
+                  "the DNS role."), 400)
+    if len(rows) == 1:
+        return rows[0], None
+    return None, (jsonify(
+        error="%d DNS backends are configured — say which one this record "
+              "belongs to." % len(rows),
+        backends=[{"id": r.id, "name": r.name} for r in rows]), 400)
+
 
 def _provider_or_400():
-    prov = dns_providers.active_provider()
-    if prov is None:
-        return None, (jsonify(error="No DNS/IPAM provider is configured."), 400)
-    return prov, None
+    """Kept as the single call shape the five handlers below use."""
+    row, err = _records_backend()
+    if err:
+        return None, None, err
+    return row, row.instance(), None
 
 
 @bp.route("/records/schema", methods=["GET"])
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def records_schema():
-    """Active provider's capabilities — the modal renders itself from this."""
-    prov, err = _provider_or_400()
+    """The chosen backend's capabilities — the modal renders itself from this."""
+    row, prov, err = _provider_or_400()
     if err:
         return err
     try:
         caps = prov.capabilities().as_dict()
     except ProviderError as exc:
         return jsonify(error=str(exc)), 502
-    return jsonify(capabilities=caps)
+    return jsonify(capabilities=caps, backend={"id": row.id, "name": row.name,
+                                               "zones": row.zone_list()})
 
 
 @bp.route("/records/list", methods=["GET"])
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def records_list():
-    prov, err = _provider_or_400()
+    _row, prov, err = _provider_or_400()
     if err:
         return err
     name = (request.args.get("name") or "").strip()
@@ -153,7 +197,7 @@ def records_list():
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def records_create():
-    prov, err = _provider_or_400()
+    row, prov, err = _provider_or_400()
     if err:
         return err
     rec = DnsRecord.from_form(request.get_json(silent=True) or request.form)
@@ -164,7 +208,7 @@ def records_create():
     except ProviderError as exc:
         return jsonify(error=str(exc)), 502
     log_action("dns_records.create",
-               target=f"{dns_providers.provider_key()}:{rec.type} {rec.name}")
+               target=f"{row.name}:{rec.type} {rec.name}")
     return jsonify(record=saved.as_dict()), 201
 
 
@@ -172,7 +216,7 @@ def records_create():
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def records_update():
-    prov, err = _provider_or_400()
+    row, prov, err = _provider_or_400()
     if err:
         return err
     rec = DnsRecord.from_form(request.get_json(silent=True) or request.form)
@@ -183,7 +227,7 @@ def records_update():
     except ProviderError as exc:
         return jsonify(error=str(exc)), 502
     log_action("dns_records.update",
-               target=f"{dns_providers.provider_key()}:{rec.type} {rec.name}")
+               target=f"{row.name}:{rec.type} {rec.name}")
     return jsonify(record=saved.as_dict())
 
 
@@ -191,7 +235,7 @@ def records_update():
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def records_delete():
-    prov, err = _provider_or_400()
+    row, prov, err = _provider_or_400()
     if err:
         return err
     rec = DnsRecord.from_form(request.get_json(silent=True) or request.form)
@@ -202,5 +246,5 @@ def records_delete():
     except ProviderError as exc:
         return jsonify(error=str(exc)), 502
     log_action("dns_records.delete",
-               target=f"{dns_providers.provider_key()}:{rec.type} {rec.name}")
+               target=f"{row.name}:{rec.type} {rec.name}")
     return jsonify(ok=True)

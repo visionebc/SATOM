@@ -6,6 +6,29 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Changed — the repository form hides, the SoT gets a cadence, the paths explain themselves (2026-08-29)
+
+- **Software Update Repository**: the *Configure Repository* card is gone as a
+  standalone card. Its form now lives **inside** the Repository card behind an
+  **Edit** button, and opens by itself on exactly one kind of node — one with no
+  `origin` at all, i.e. never registered at installation, which is also told so
+  in as many words. Previously three boxes that render *empty* until an async
+  fetch fills them sat permanently open, one submit away from writing blanks
+  over a working remote. Whether a repository exists is decided server-side on
+  the first render.
+- **Configuration SoT**: new **Refresh frequency** field — how often appliances
+  are harvested, in minutes. Default **60**, clamped to **5 – 10080**; `0`,
+  blank or garbage means *unset*, never "never". It writes the `device_sync`
+  schedule row rather than a settings key of its own (two authors of one cadence
+  is how a panel ends up showing an interval the scheduler never fires on) and
+  **recomputes `next_run`**, so a shortened interval applies now instead of
+  after the fire that was already pending. A wall-clock harvest is reported, not
+  converted; if no harvest exists at all, saving creates one fleet-wide.
+- **Backup Server**: each of the three paths carries a **“?”** saying what lands
+  in it and **who writes it** — the distinction that decides whose fault an
+  empty folder is. Text lives in `title`, so it degrades to the browser's native
+  tooltip.
+
 ### Changed — one Settings tab held three subjects; now each has its own (2026-08-29)
 
 `Settings → SoT & Backup` carried a firmware git URL, the SFTP credentials of

@@ -225,10 +225,7 @@
   });
 })();
 </script>
-{% endblock %}
-
-{% block firmware_kind_js %}
-<script nonce="{{ csp_nonce() }}">
+<script nonce="{{ csp_nonce }}">
 // Install media are not .out files (a FortiWeb VM ships as a zip of an OVF
 // plus VMDKs, or as a qcow2), so the accept filter and the hypervisor picker
 // follow the image type. The server re-validates; this only stops the
@@ -251,4 +248,5 @@
   sync();
 })();
 </script>
+
 {% endblock %}

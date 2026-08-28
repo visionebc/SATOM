@@ -66,6 +66,35 @@ def _caps(**kw) -> dp.Capabilities:
     return dp.Capabilities(**base)
 
 
+class _Backend:
+    """Stand-in for a DnsBackend row: a name, an id, and a provider instance.
+
+    Deliberately NOT a real row — these guards are about the runner's
+    decisions, and a real row would drag the DB fixture into tests that have
+    nothing to say about persistence.
+    """
+
+    def __init__(self, name="ddi-a", bid=7, caps=None):
+        self.id = bid
+        self.name = name
+        self._caps = caps
+
+
+def _res(backend=None, code="", detail="unresolved"):
+    return dp.Resolution(backend=backend, code=code,
+                         detail="" if backend is not None else detail)
+
+
+def _resolves(monkeypatch, backend=None, caps=None):
+    """Point BOTH resolvers at one working backend. Used by the guards whose
+    subject is a later step, so the resolution is not what they are testing."""
+    row = backend or _Backend(caps=caps if caps is not None else _caps())
+    monkeypatch.setattr(dp, "resolve_ipam", lambda pool="": _res(backend=row))
+    monkeypatch.setattr(dp, "resolve_dns", lambda zone="": _res(backend=row))
+    monkeypatch.setattr(dp, "capabilities_of", lambda r: r._caps)
+    return row
+
+
 def _mock(provider, handler):
     """Bind a provider instance to an httpx MockTransport.
 
@@ -87,7 +116,9 @@ def _mock(provider, handler):
 # ---------------------------------------------------------------------------
 @pytest.mark.parametrize("name", ["allocate_address", "release_address",
                                   "create_record", "delete_record",
-                                  "capabilities"])
+                                  "capabilities_of", "ipam_capabilities",
+                                  "dns_capabilities", "resolve_dns",
+                                  "resolve_ipam"])
 def test_module_level_operation_exists(name):
     assert callable(getattr(dp, name, None)), (
         f"dns_providers.{name} is imported by the provisioning runner; if it "
@@ -128,9 +159,19 @@ def test_runner_does_not_swallow_a_missing_provider_module():
 # 2. "not configured" is raised, never returned as a successful value
 # ---------------------------------------------------------------------------
 def test_capabilities_is_none_when_no_provider(app, monkeypatch):
+    """Both halves answer None, and they are asked SEPARATELY.
+
+    One question became two on purpose: with roles, "can something reserve an
+    address" and "can something publish a name" have different answers, and a
+    single function would have had to pick one to be wrong about.
+    """
     with app.app_context():
-        monkeypatch.setattr(dp, "active_provider", lambda: None)
-        assert dp.capabilities() is None
+        monkeypatch.setattr(dp, "resolve_ipam",
+                            lambda pool="": _res(code=dp.NO_BACKEND))
+        monkeypatch.setattr(dp, "resolve_dns",
+                            lambda zone="": _res(code=dp.NO_BACKEND))
+        assert dp.ipam_capabilities() is None
+        assert dp.dns_capabilities() is None
 
 
 @pytest.mark.parametrize("call", [
@@ -141,21 +182,31 @@ def test_capabilities_is_none_when_no_provider(app, monkeypatch):
 ])
 def test_operations_raise_when_no_provider(app, monkeypatch, call):
     with app.app_context():
-        monkeypatch.setattr(dp, "active_provider", lambda: None)
+        monkeypatch.setattr(dp, "resolve_ipam", lambda pool="": _res(
+            code=dp.NO_BACKEND,
+            detail="no enabled backend carries the IPAM role"))
+        monkeypatch.setattr(dp, "resolve_dns", lambda zone="": _res(
+            code=dp.NO_BACKEND,
+            detail="no enabled backend carries the DNS role"))
         with pytest.raises(ProviderError) as exc:
             call()
-        assert "no dns/ipam provider is configured" in str(exc.value).lower()
+        msg = str(exc.value).lower()
+        assert "no backend could be chosen" in msg
+        # The REASON travels with the refusal. A bare "not configured" sends
+        # an operator who has three backends wired looking in the wrong place.
+        assert "role" in msg
 
 
 # ---------------------------------------------------------------------------
 # 3. the DNS step: three outcomes, and only one of them is a pass
 # ---------------------------------------------------------------------------
 def test_dns_step_passes_but_says_nothing_was_published(monkeypatch):
-    monkeypatch.setattr(dp, "capabilities", lambda: None)
+    monkeypatch.setattr(dp, "resolve_dns",
+                        lambda zone="": _res(code=dp.NO_BACKEND))
     run = _Run(mgmt_ip="192.0.2.5")
     res = pr._step_dns_created(run)
     assert res.ok is True
-    assert "NO DNS PROVIDER IS CONFIGURED" in res.detail
+    assert "NO DNS BACKEND IS CONFIGURED" in res.detail
     assert "no record was created" in res.detail
     # The old detail could be read as an ordinary success line. This one may
     # never claim the record exists.
@@ -170,11 +221,15 @@ def test_dns_step_fails_when_the_provider_cannot_write(monkeypatch):
     original bug wearing a different hat: the name is not published and the
     run says it is fine.
     """
-    monkeypatch.setattr(dp, "capabilities",
-                        lambda: _caps(can_write=False, label="phpIPAM"))
+    _resolves(monkeypatch,
+              backend=_Backend(name="phpipam-a",
+                               caps=_caps(can_write=False, label="phpIPAM")))
     res = pr._step_dns_created(_Run(mgmt_ip="192.0.2.5"))
     assert res.ok is False
     assert "phpIPAM" in res.detail and "cannot create DNS records" in res.detail
+    # The ROW's name too, not only the provider label: with three backends of
+    # the same kind, "phpIPAM cannot write" does not say which one to fix.
+    assert "phpipam-a" in res.detail
 
 
 def test_dns_step_creates_and_records_the_id(monkeypatch):
@@ -182,20 +237,25 @@ def test_dns_step_creates_and_records_the_id(monkeypatch):
 
     def _create(name, rtype="A", value="", **kw):
         seen.update(name=name, rtype=rtype, value=value)
-        return DnsRecord(id="rr-42", name=name, type=rtype, value=value)
+        return DnsRecord(id="rr-42", name=name, type=rtype, value=value,
+                         backend_id=7)
 
-    monkeypatch.setattr(dp, "capabilities", lambda: _caps())
+    _resolves(monkeypatch)
     monkeypatch.setattr(dp, "create_record", _create)
     run = _Run(mgmt_ip="192.0.2.5")
     res = pr._step_dns_created(run)
     assert res.ok is True
     assert run.dns_record_id == "rr-42"
+    # WHICH backend published it is recorded, not re-derived at rollback:
+    # the scope may have been edited in between, and a delete aimed at
+    # another backend can name a different record entirely.
+    assert run.dns_backend_id == 7
     assert seen == {"name": "fw99.example.com", "rtype": "A",
                     "value": "192.0.2.5"}
 
 
 def test_dns_step_fails_when_the_provider_refuses(monkeypatch):
-    monkeypatch.setattr(dp, "capabilities", lambda: _caps())
+    _resolves(monkeypatch)
     monkeypatch.setattr(dp, "create_record", lambda *a, **k: (_ for _ in ()).throw(
         ProviderError("zone is frozen")))
     res = pr._step_dns_created(_Run(mgmt_ip="192.0.2.5"))
@@ -203,42 +263,83 @@ def test_dns_step_fails_when_the_provider_refuses(monkeypatch):
 
 
 def test_dns_step_skips_without_a_hostname(monkeypatch):
-    monkeypatch.setattr(dp, "capabilities", lambda: _caps())
+    _resolves(monkeypatch)
     res = pr._step_dns_created(_Run(hostname="", mgmt_ip="192.0.2.5"))
     assert res.ok is True and "no hostname" in res.detail
 
 
 def test_dns_step_fails_without_an_address(monkeypatch):
-    monkeypatch.setattr(dp, "capabilities", lambda: _caps())
+    _resolves(monkeypatch)
     assert pr._step_dns_created(_Run(mgmt_ip="")).ok is False
+
+
+def test_dns_step_fails_when_backends_exist_but_none_claims_the_name(
+        monkeypatch):
+    """The fourth outcome, and it must NOT be folded into the first.
+
+    "No DDI at all" is a deployment choice and passes loudly. "A DDI whose
+    scopes do not cover the name you asked for" is a misconfiguration — the
+    operator wired a backend and asked for a hostname — and passing it would
+    finish a run green having published nothing they expected.
+    """
+    monkeypatch.setattr(dp, "resolve_dns", lambda zone="": _res(
+        code=dp.NO_MATCH,
+        detail="no enabled DNS backend claims 'fw99.example.com'"))
+    res = pr._step_dns_created(_Run(mgmt_ip="192.0.2.5"))
+    assert res.ok is False
+    assert "could not be published" in res.detail
+    assert "NO DNS BACKEND IS CONFIGURED" not in res.detail
 
 
 # ---------------------------------------------------------------------------
 # 4. the IP step
 # ---------------------------------------------------------------------------
-def test_ip_step_blames_the_configuration_not_the_provider(monkeypatch):
-    monkeypatch.setattr(dp, "capabilities", lambda: None)
+def test_ip_step_reports_an_ambiguous_pool_and_names_the_candidates(
+        monkeypatch):
+    """A tie is reported, not broken. The step's detail has to carry both
+    names or the operator cannot act on it."""
+    monkeypatch.setattr(dp, "resolve_ipam", lambda pool="": _res(
+        code=dp.AMBIGUOUS,
+        detail="2 backends claim this pool with the same scope and the same "
+               "priority (ddi-a, ddi-b)"))
     res = pr._step_ip_reserved(_Run())
     assert res.ok is False
-    assert "no dns/ipam provider is configured" in res.detail.lower()
+    assert "ddi-a" in res.detail and "ddi-b" in res.detail
+
+
+def test_ip_step_blames_the_configuration_not_the_provider(monkeypatch):
+    monkeypatch.setattr(dp, "resolve_ipam", lambda pool="": _res(
+        code=dp.NO_BACKEND,
+        detail="no enabled backend carries the IPAM role"))
+    res = pr._step_ip_reserved(_Run())
+    assert res.ok is False
+    assert "carries the ipam role" in res.detail.lower()
+    assert "requested" in res.detail.lower()
 
 
 def test_ip_step_names_the_provider_that_cannot_allocate(monkeypatch):
-    monkeypatch.setattr(dp, "capabilities",
-                        lambda: _caps(can_allocate=False, label="Weird DDI"))
+    _resolves(monkeypatch,
+              backend=_Backend(name="Weird DDI",
+                               caps=_caps(can_allocate=False,
+                                          label="Weird DDI")))
     res = pr._step_ip_reserved(_Run())
     assert res.ok is False and "Weird DDI" in res.detail
 
 
 def test_ip_step_records_the_reservation_handle(monkeypatch):
-    monkeypatch.setattr(dp, "capabilities", lambda: _caps())
+    _resolves(monkeypatch)
     monkeypatch.setattr(dp, "allocate_address", lambda **kw: Address(
         address="198.51.100.7", ref="ip-99", netmask="255.255.255.0",
-        gateway="198.51.100.1", pool="198.51.100.0/24"))
+        gateway="198.51.100.1", pool="198.51.100.0/24", backend_id=7))
     run = _Run()
     res = pr._step_ip_reserved(run)
     assert res.ok is True
     assert (run.mgmt_ip, run.ip_ref) == ("198.51.100.7", "ip-99")
+    # WHICH backend reserved it, recorded before anything else can fail: a
+    # reservation whose owner was never written down is one nobody can hand
+    # back. The ``ref`` alone is only meaningful inside the system that
+    # issued it.
+    assert run.ip_backend_id == 7
     assert run.netmask == "255.255.255.0" and run.gateway == "198.51.100.1"
     assert "198.51.100.0/24" in res.detail
 
@@ -250,7 +351,7 @@ def test_ip_step_does_not_clobber_operator_values_with_blanks(monkeypatch):
     for a real backend — and overwriting a hand-entered gateway with "" writes
     a broken default route into the appliance at first boot.
     """
-    monkeypatch.setattr(dp, "capabilities", lambda: _caps())
+    _resolves(monkeypatch)
     monkeypatch.setattr(dp, "allocate_address", lambda **kw: Address(
         address="198.51.100.7", ref="ip-99", netmask="", gateway=""))
     run = _Run(netmask="255.255.255.128", gateway="198.51.100.1")
@@ -260,7 +361,7 @@ def test_ip_step_does_not_clobber_operator_values_with_blanks(monkeypatch):
 
 def test_ip_step_passes_the_requested_pool_through(monkeypatch):
     seen = {}
-    monkeypatch.setattr(dp, "capabilities", lambda: _caps())
+    _resolves(monkeypatch)
     monkeypatch.setattr(dp, "allocate_address",
                         lambda **kw: seen.update(kw) or Address(
                             address="198.51.100.7", ref="r"))
@@ -283,14 +384,22 @@ def test_rollback_releases_with_the_recorded_handle(app, monkeypatch):
 
     seen = {}
     monkeypatch.setattr(dp, "release_address",
-                        lambda addr, ref="": seen.update(addr=addr, ref=ref))
+                        lambda addr, ref="", backend_id=None, pool="":
+                        seen.update(addr=addr, ref=ref, backend_id=backend_id,
+                                    pool=pool))
     with app.app_context():
         run = ProvisionRun(name="fw99", mode="semi", mgmt_ip="198.51.100.7",
-                           ip_from_ipam=True, ip_ref="ip-99")
+                           ip_from_ipam=True, ip_ref="ip-99",
+                           ip_backend_id=7, ip_pool="198.51.100.0/24")
         db.session.add(run)
         db.session.commit()
         pr.rollback(run)
-        assert seen == {"addr": "198.51.100.7", "ref": "ip-99"}
+        # The RECORDED backend travels with the release. Re-resolving from the
+        # pool alone is not equivalent: the scope may have been edited since
+        # the reservation, and a release aimed at another pool manager frees
+        # nothing of ours and possibly something of theirs.
+        assert seen == {"addr": "198.51.100.7", "ref": "ip-99",
+                        "backend_id": 7, "pool": "198.51.100.0/24"}
         assert run.ip_ref == "" and run.ip_from_ipam is False
 
 

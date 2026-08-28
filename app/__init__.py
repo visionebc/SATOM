@@ -1452,6 +1452,13 @@ def create_app(config_override: object | None = None) -> Flask:
             'provision_runs': [
                 ('ip_ref', 'VARCHAR(128)'),
                 ('ip_pool', 'VARCHAR(128)'),
+                # --- which backend acted (2026-08-28) ---
+                # NULLABLE, NO DEFAULT, NO BACKFILL. A run that predates these
+                # took its address from the one provider there was, so NULL is
+                # the true answer: rollback re-resolves and says so, rather
+                # than claiming a backend id nobody recorded.
+                ('ip_backend_id', 'INTEGER'),
+                ('dns_backend_id', 'INTEGER'),
             ],
             'templates': [
                 ('exceptions', 'TEXT'),
@@ -1825,6 +1832,10 @@ def create_app(config_override: object | None = None) -> Flask:
             # code, create_all() never makes the tables, and the feature 500s
             # the first time an operator opens it.
             from . import models_provision  # noqa: F401
+            # DNS/IPAM backends. Same reason as the line above: without this
+            # import create_all() never makes ``dns_backends`` and every DNS
+            # or IPAM operation refuses on a table the model says exists.
+            from . import models_dnsbackend  # noqa: F401
             from . import models_advisor  # noqa: F401
             # Translation catalogue + the ledger of what producing
             # it cost. Without this import create_all() never makes
@@ -1875,6 +1886,16 @@ def create_app(config_override: object | None = None) -> Flask:
             _assign_missing_profiles()
             _seed_registry()
             _seed_acme_providers()
+            # One-shot: fold the old ``dnsrecords.*`` AppSetting singleton
+            # into a dns_backends row. Idempotent, guarded by its own flag,
+            # and never fatal — a boot that cannot migrate must still serve
+            # the page where the operator can configure it by hand.
+            try:
+                from .services.dns_providers import store as _dnsb_store
+                _dnsb_store.migrate_singleton()
+            except Exception:  # noqa: BLE001
+                app.logger.warning('DNS backend migration skipped',
+                                   exc_info=True)
             # A stored allowlist from before the feature was removed is no
             # longer enforced. Say so once, loudly: an install that relied on
             # it just got wider and silence would be the only warning.

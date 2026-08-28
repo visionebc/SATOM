@@ -164,15 +164,24 @@ def _step_ip_reserved(run: ProvisionRun) -> StepResult:
                    "requested for this run")
     from . import dns_providers
 
-    caps = dns_providers.capabilities()
+    # Which backend serves this pool is decided ONCE, here, and the same row
+    # is then asked what it can do. Resolving again for the capability probe
+    # would let the answer describe a different backend from the one about to
+    # be used the moment two of them are in scope.
+    res = dns_providers.resolve_ipam(run.ip_pool or "")
+    if not res.ok:
+        return StepResult(
+            False, f"IPAM allocation was requested but {res.detail}")
+    caps = dns_providers.capabilities_of(res.backend)
     if caps is None:
         return StepResult(
-            False, "IPAM allocation was requested but no DNS/IPAM provider is "
-                   "configured (Settings -> DNS Records)")
+            False, f"IPAM allocation was requested and {res.backend.name!r} "
+                   "was chosen, but it did not answer — unreachable or "
+                   "misconfigured (Settings -> DNS Records)")
     if not caps.can_allocate:
         return StepResult(
-            False, f"IPAM allocation was requested but {caps.label} does not "
-                   "hand out addresses")
+            False, f"IPAM allocation was requested but {res.backend.name!r} "
+                   f"({caps.label}) does not hand out addresses")
     try:
         addr = dns_providers.allocate_address(
             hostname=run.hostname or run.name, pool=run.ip_pool or "")
@@ -187,7 +196,12 @@ def _step_ip_reserved(run: ProvisionRun) -> StepResult:
     run.netmask = addr.netmask or run.netmask or ""
     run.gateway = addr.gateway or run.gateway or ""
     run.ip_ref = addr.ref or ""
-    return StepResult(True, f"IPAM allocated {run.mgmt_ip}"
+    # Recorded BEFORE anything else can fail: this is the handle the rollback
+    # is driven by, and a reservation whose owner was never written down is a
+    # reservation nobody can hand back.
+    run.ip_backend_id = addr.backend_id
+    return StepResult(True, f"IPAM allocated {run.mgmt_ip} via "
+                            f"{res.backend.name}"
                             + (f" from {addr.pool}" if addr.pool else ""))
 
 
@@ -203,6 +217,13 @@ def _step_dns_created(run: ProvisionRun) -> StepResult:
     * a provider that cannot write records -> a FAILURE. The operator wired a
       backend and asked for a hostname; answering "fine" to that is the lie.
     * a provider that refuses the write -> a FAILURE, as before.
+
+    Multi-backend adds a fourth that must NOT be folded into the first: DNS
+    backends exist but none of them claims this name, or two claim it equally.
+    "No DDI at all" is a deployment choice and passes; "a DDI whose scopes do
+    not cover the name you asked for" is a misconfiguration, and passing it
+    would report success for a record the operator fully expected to be
+    written.
     """
     if not run.hostname:
         return StepResult(True, "no hostname requested — DNS step skipped")
@@ -210,24 +231,37 @@ def _step_dns_created(run: ProvisionRun) -> StepResult:
         return StepResult(False, "cannot create a DNS record without an address")
     from . import dns_providers
 
-    caps = dns_providers.capabilities()
+    res = dns_providers.resolve_dns(run.hostname)
+    if res.code == dns_providers.NO_BACKEND:
+        return StepResult(
+            True, f"NO DNS BACKEND IS CONFIGURED — no record was created for "
+                  f"{run.hostname}; publish {run.hostname} A {run.mgmt_ip} by "
+                  "hand, or configure one in Settings -> DNS Records")
+    if not res.ok:
+        return StepResult(
+            False, f"the hostname {run.hostname} could not be published: "
+                   f"{res.detail}")
+    caps = dns_providers.capabilities_of(res.backend)
     if caps is None:
         return StepResult(
-            True, f"NO DNS PROVIDER IS CONFIGURED — no record was created for "
-                  f"{run.hostname}; publish {run.hostname} A {run.mgmt_ip} by "
-                  "hand, or configure a provider in Settings -> DNS Records")
+            False, f"{res.backend.name!r} was chosen to publish "
+                   f"{run.hostname} but did not answer — unreachable or "
+                   "misconfigured")
     if not caps.can_write:
         return StepResult(
-            False, f"{caps.label} cannot create DNS records, but this run asked "
-                   f"for the hostname {run.hostname}. Clear the hostname, or "
-                   "point SATOM at a backend that writes records.")
+            False, f"{res.backend.name!r} ({caps.label}) cannot create DNS "
+                   f"records, but this run asked for the hostname "
+                   f"{run.hostname}. Clear the hostname, or point the DNS role "
+                   "at a backend that writes records.")
     try:
         rec = dns_providers.create_record(
             name=run.hostname, rtype="A", value=run.mgmt_ip)
     except Exception as exc:  # noqa: BLE001
         return StepResult(False, f"DNS provider refused the record: {exc}")
     run.dns_record_id = str(rec.id or "")
-    return StepResult(True, f"created {run.hostname} A {run.mgmt_ip}")
+    run.dns_backend_id = rec.backend_id
+    return StepResult(True, f"created {run.hostname} A {run.mgmt_ip} via "
+                            f"{res.backend.name}")
 
 
 def _step_vm_created(run: ProvisionRun) -> StepResult:
@@ -484,7 +518,11 @@ def rollback(run: ProvisionRun) -> ProvisionRun:
     if run.dns_record_id:
         try:
             from .dns_providers import delete_record
-            delete_record(run.dns_record_id, name=run.hostname, rtype="A")
+            # Aimed at the RECORDED backend. A NULL id (a run from before the
+            # column existed) falls back to resolution, which is exactly what
+            # that run's single provider was.
+            delete_record(run.dns_record_id, name=run.hostname, rtype="A",
+                          backend_id=run.dns_backend_id)
             run.add_log("rollback:dns", True, f"removed {run.hostname}")
             run.dns_record_id = ""
         except Exception as exc:  # noqa: BLE001
@@ -498,7 +536,9 @@ def rollback(run: ProvisionRun) -> ProvisionRun:
             # string: between the reservation and now the pool may legitimately
             # have given that address to somebody else, and a release keyed on
             # the string frees THEIR entry.
-            release_address(run.mgmt_ip, ref=run.ip_ref or "")
+            release_address(run.mgmt_ip, ref=run.ip_ref or "",
+                            backend_id=run.ip_backend_id,
+                            pool=run.ip_pool or "")
             run.add_log("rollback:ip", True, f"released {run.mgmt_ip}")
             run.ip_from_ipam = False
             run.ip_ref = ""

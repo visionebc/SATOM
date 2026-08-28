@@ -524,6 +524,7 @@ EXCLUDED: dict[str, str] = {
     "search.results": "sub-view of search.index",
     "settings.ai_state": "json feed", "settings.preview_alerts": "json feed",
     "settings.git_info": "json feed", "settings.hypervisor_state": "json feed",
+    "settings.dns_backends_state": "json feed",
     "settings.library_pip_drift": "json feed", "settings.library_pip_state": "json feed",
     "settings.library_updates": "json feed", "settings.node_cert_state": "json feed",
     "settings.peer_libraries": "json feed", "settings.peer_services": "json feed",

@@ -12,6 +12,9 @@ class NoneProvider(DnsProvider):
     key = "none"
     label = "Disabled"
 
+    may_write = False
+    may_allocate = False
+
     def capabilities(self) -> Capabilities:
         return Capabilities(
             provider="none", label="Disabled", can_write=False,

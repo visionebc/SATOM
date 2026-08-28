@@ -54,6 +54,29 @@ def _caps(**kw):
     return dp.Capabilities(**base)
 
 
+class _Backend:
+    """Stand-in for a DnsBackend row (id + name + declared capabilities)."""
+
+    def __init__(self, name="ddi-a", bid=7, caps=None):
+        self.id = bid
+        self.name = name
+        self._caps = caps
+
+
+def _res(backend=None, code="", detail="unresolved"):
+    return dp.Resolution(backend=backend, code=code,
+                         detail="" if backend is not None else detail)
+
+
+def _resolves(monkeypatch, backend=None, caps=None):
+    """Point both resolvers at one working backend."""
+    row = backend or _Backend(caps=caps if caps is not None else _caps())
+    monkeypatch.setattr(dp, "resolve_ipam", lambda pool="": _res(backend=row))
+    monkeypatch.setattr(dp, "resolve_dns", lambda zone="": _res(backend=row))
+    monkeypatch.setattr(dp, "capabilities_of", lambda r: r._caps)
+    return row
+
+
 @pytest.fixture()
 def env(app, monkeypatch):
     """A catalog, a declared line, an approved template and a live-looking box."""
@@ -78,7 +101,7 @@ def env(app, monkeypatch):
         # the device answers, and has no clashing policy
         monkeypatch.setattr(type(appl), "build_client",
                             lambda self, **kw: _Client([]))
-        monkeypatch.setattr(dp, "capabilities", lambda: _caps())
+        _resolves(monkeypatch)
         yield {"appliance_id": appl.id, "template_id": t.id}
 
 
@@ -185,16 +208,21 @@ def test_a_dns_failure_releases_the_address_by_its_handle(app, env,
                                                           monkeypatch):
     released = {}
     monkeypatch.setattr(dp, "allocate_address", lambda **k: Address(
-        address="198.51.100.7", ref="ip-9", pool="198.51.100.0/24"))
+        address="198.51.100.7", ref="ip-9", pool="198.51.100.0/24", backend_id=7))
     monkeypatch.setattr(dp, "create_record", lambda **k: (_ for _ in ()).throw(
         RuntimeError("zone frozen")))
     monkeypatch.setattr(dp, "release_address",
-                        lambda a, ref="": released.update(addr=a, ref=ref))
+                        lambda a, ref="", backend_id=None, pool="":
+                        released.update(addr=a, ref=ref,
+                                        backend_id=backend_id))
     plan = _plan(app, env, use_ipam=True, hostname="shop.example.com")
     with app.app_context():
         res = wiz.apply_plan(_appl(app, env), plan, dry_run=False)
     assert res["ok"] is False
-    assert released == {"addr": "198.51.100.7", "ref": "ip-9"}
+    # Compensation is driven by the RECORDED backend, not by re-resolving the
+    # pool: between the reservation and the failure the scope may have moved,
+    # and a release aimed elsewhere frees somebody else's entry.
+    assert released == {"addr": "198.51.100.7", "ref": "ip-9", "backend_id": 7}
     assert any("released 198.51.100.7" in c for c in res["compensated"])
 
 
@@ -214,13 +242,16 @@ def test_nothing_is_released_that_was_not_taken(app, env, monkeypatch):
 def test_a_device_failure_undoes_dns_and_the_address(app, env, monkeypatch):
     undone = []
     monkeypatch.setattr(dp, "allocate_address", lambda **k: Address(
-        address="198.51.100.7", ref="ip-9"))
+        address="198.51.100.7", ref="ip-9", backend_id=7))
     monkeypatch.setattr(dp, "create_record",
-                        lambda **k: DnsRecord(id="rr-1", name=k.get("name")))
+                        lambda **k: DnsRecord(id="rr-1", name=k.get("name"),
+                                              backend_id=9))
     monkeypatch.setattr(dp, "delete_record",
-                        lambda rid, **k: undone.append(("dns", rid)))
+                        lambda rid, **k: undone.append(
+                            ("dns", rid, k.get("backend_id"))))
     monkeypatch.setattr(dp, "release_address",
-                        lambda a, ref="": undone.append(("ip", a, ref)))
+                        lambda a, ref="", backend_id=None, pool="":
+                        undone.append(("ip", a, ref, backend_id)))
     from app.services import fortiweb_ops
     monkeypatch.setattr(fortiweb_ops.FortiWebOps, "create",
                         lambda self, ep, data, **k: fortiweb_ops.OpResult(
@@ -229,7 +260,10 @@ def test_a_device_failure_undoes_dns_and_the_address(app, env, monkeypatch):
     with app.app_context():
         res = wiz.apply_plan(_appl(app, env), plan, dry_run=False)
     assert res["ok"] is False
-    assert ("dns", "rr-1") in undone and ("ip", "198.51.100.7", "ip-9") in undone
+    # The two halves can legitimately be DIFFERENT backends — that is the
+    # whole point of roles — so each is undone against the one that acted.
+    assert ("dns", "rr-1", 9) in undone
+    assert ("ip", "198.51.100.7", "ip-9", 7) in undone
 
 
 def test_objects_already_on_the_device_are_named_not_deleted(app, env,
@@ -337,10 +371,53 @@ def test_ipam_without_a_pool_is_refused(app, env):
 
 def test_ipam_with_a_provider_that_cannot_allocate_is_refused(app, env,
                                                               monkeypatch):
-    monkeypatch.setattr(dp, "capabilities",
-                        lambda: _caps(can_allocate=False, label="Weird DDI"))
+    _resolves(monkeypatch,
+              backend=_Backend(name="Weird DDI",
+                               caps=_caps(can_allocate=False,
+                                          label="Weird DDI")))
     plan = _plan(app, env, use_ipam=True)
     assert "ipam_cannot_allocate" in _codes(plan)
+
+
+def test_two_backends_claiming_the_same_pool_are_refused_not_ranked(app, env,
+                                                                   monkeypatch):
+    """A tie is the operator's to break, and it blocks under its OWN code.
+
+    Folding it into "no provider configured" would send somebody with two DDIs
+    wired looking for a provider they already have; folding it into
+    "cannot allocate" would blame a backend that is perfectly capable. And
+    picking one of them silently is the whole failure this was restructured to
+    make impossible — the address would come out of whichever row sorted
+    first, which is a network nobody chose.
+    """
+    monkeypatch.setattr(dp, "resolve_ipam", lambda pool="": _res(
+        code=dp.AMBIGUOUS,
+        detail="2 backends claim this pool with the same scope and the same "
+               "priority (ddi-a, ddi-b)"))
+    plan = _plan(app, env, use_ipam=True)
+    codes = _codes(plan)
+    assert "ipam_not_resolved" in codes
+    assert "no_ipam_provider" not in codes
+    assert "ipam_cannot_allocate" not in codes
+    assert any("ddi-a" in b.detail and "ddi-b" in b.detail
+               for b in plan.blockers)
+
+
+def test_a_hostname_no_dns_backend_claims_blocks_rather_than_warning(app, env,
+                                                                    monkeypatch):
+    """"No DDI at all" and "a DDI whose scopes miss this name" differ.
+
+    The first is a deployment choice and only warns; the second is a
+    misconfiguration, and warning about it would let a run finish green having
+    published nothing the operator plainly expected to be published.
+    """
+    monkeypatch.setattr(dp, "resolve_dns", lambda zone="": _res(
+        code=dp.NO_MATCH,
+        detail="no enabled DNS backend claims 'shop.example.com'"))
+    plan = _plan(app, env, address="198.51.100.50", hostname="shop.example.com")
+    assert "dns_not_resolved" in _codes(plan)
+    assert not plan.ok
+    assert not any("will NOT be published" in w for w in plan.warnings)
 
 
 def test_no_address_and_no_ipam_is_refused(app, env):
@@ -351,21 +428,26 @@ def test_a_hostname_with_a_read_only_dns_backend_is_refused(app, env,
                                                             monkeypatch):
     """§130's rule, in the wizard: a configured backend that cannot write,
     plus a requested hostname, is a refusal — not a step reporting success."""
-    monkeypatch.setattr(dp, "capabilities",
-                        lambda: _caps(can_write=False, label="phpIPAM"))
+    _resolves(monkeypatch,
+              backend=_Backend(name="phpipam-a",
+                               caps=_caps(can_write=False, label="phpIPAM")))
     plan = _plan(app, env, address="198.51.100.50", hostname="shop.example.com")
     assert "dns_cannot_write" in _codes(plan)
+    # Names the ROW, not only the provider kind: with two phpIPAMs wired,
+    # "phpIPAM cannot write" does not say which one to fix.
+    assert any("phpipam-a" in b.detail for b in plan.blockers)
 
 
 def test_no_dns_provider_warns_and_publishes_nothing(app, env, monkeypatch):
-    monkeypatch.setattr(dp, "capabilities", lambda: None)
+    monkeypatch.setattr(dp, "resolve_dns",
+                        lambda zone="": _res(code=dp.NO_BACKEND))
     plan = _plan(app, env, address="198.51.100.50", hostname="shop.example.com")
     assert plan.ok, _codes(plan)
     assert any("will NOT be published" in w for w in plan.warnings)
     with app.app_context():
         res = wiz.apply_plan(_appl(app, env), plan, dry_run=True)
     dns = [s for s in res["steps"] if s["key"] == "dns"][0]
-    assert "NO DNS PROVIDER IS CONFIGURED" in dns["detail"]
+    assert "NO DNS BACKEND IS CONFIGURED" in dns["detail"]
     assert "would create" not in dns["detail"]
 
 

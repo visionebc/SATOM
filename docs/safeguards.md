@@ -11948,3 +11948,110 @@ survivor would be the script deciding what production keeps. Production: 5 rows
 → 4, `LineP_External_LB` folded to `['WAF/LB', 'WSG']`, zero conflicts. Pre-
 migration blob kept at `data/segments-pre-B-20260827.json`.
 
+
+## §136 — N backends, optional roles, and a tie that is refused (2026-08-28)
+
+`tests/test_dns_backends.py` (54 guards) + the §130 guards moved onto the new
+seam in `tests/test_ipam_allocation.py` and `tests/test_spo_wizard.py`.
+
+**What changed.** `dnsrecords.provider` / `.config` / `.secret_enc` were three
+global `AppSetting` keys describing ONE provider. They are now rows in
+`dns_backends` (`app/models_dnsbackend.py`), each carrying optional **roles**
+(IPAM / DNS) and an optional **scope** (zones / pools). The singleton is folded
+into one row once by `store.migrate_singleton()` and then ignored.
+
+**Why it had to change.** `Capabilities.can_allocate` has been deliberately
+separate from `can_write` since phpIPAM was added — phpIPAM hands out addresses
+and has no record CRUD. Under a singleton that separation was inert: if the one
+provider could not write, nothing could. It only becomes actionable with rows.
+
+### The rule this section exists for
+
+*One provider* meant there was nothing to decide. *N providers* means every
+operation resolves, and a resolution is the exact shape that failed on
+2026-08-27: three independent resolvers of a segment name disagreed and a
+policy was built on the wrong network. So:
+
+1. **One author.** `services/dns_providers/resolver.py` is the only code that
+   decides which backend answers. Every consumer — `dns_tool`, `spo_wizard`,
+   `provision_runner`, the Settings API — routes through it.
+2. **Specificity beats priority; a tie on BOTH is refused.** `sub.example.com`
+   answers `www.sub.example.com` ahead of `example.com`. No scope declared is
+   catch-all and ranks below every explicit claim, so a single-backend install
+   (which declares nothing) behaves exactly as the singleton did. Two equal
+   claims at equal priority returns `AMBIGUOUS` naming both — "the first row"
+   is not an answer anybody declared.
+3. **Three refusals, never folded into one.** `NO_BACKEND` (nothing carries the
+   role), `NO_MATCH` (backends exist, none claims this), `AMBIGUOUS` (two claim
+   it equally) have three different fixes. Telling an operator with three DDIs
+   wired that "no provider is configured" sends them looking in the wrong
+   place. In the runner and the wizard this is load-bearing: *no DDI at all* is
+   a supported deployment and only warns, while *a DDI whose scopes miss the
+   name you asked for* is a misconfiguration and BLOCKS — folding them would
+   finish a run green having published nothing.
+4. **Undo goes back to the backend that acted.** `allocate_address` and
+   `create_record` stamp `backend_id`; callers persist it
+   (`provision_runs.ip_backend_id` / `.dns_backend_id`, nullable, no backfill);
+   `release_address` / `delete_record` honour the recorded id over
+   re-resolution, and REFUSE when that row is gone rather than redirecting. A
+   `ref` is only an identifier inside the system that issued it: replayed
+   against another backend it frees nothing of ours and can delete a row that
+   backend legitimately owns.
+5. **A role is a promise, refused when unkeepable.** Each provider class
+   declares STATIC maxima (`may_write` / `may_allocate`) — what it may EVER be
+   asked to do in any install. `role_dns` on phpIPAM is rejected at save time;
+   on NetBox it is accepted, because netbox-dns may be present and the LIVE
+   `capabilities()` probe decides. Refusing NetBox up front locks out a
+   supported deployment; accepting phpIPAM is §130's bug in a new place.
+6. **Scope and default are different questions and both are kept.**
+   `zones`/`pools` say what a backend is allowed to answer; `default_zone`/
+   `default_pool` say what to use when the caller names none. They cannot
+   drift: `save_backend` refuses a default outside the declared scope, and a
+   scoped backend with no explicit default derives one from its first entry —
+   one derivation, one place. The migration deliberately does NOT promote the
+   old default to a scope: it was a default, the operator could still write
+   into other zones from the modal, and an upgrade must not change what an
+   install does.
+7. **Pools match EXACTLY, never by containment.** A pool identifier may be a
+   subnet id (`42`) or a name. `10.30.0.0/16` does not cover `10.30.20.0/22` —
+   network arithmetic on a string that may not be an address is how an
+   allocation lands in somebody else's supernet.
+8. **Zones fold case, pools do not.** DNS is case-insensitive by definition, so
+   folding cannot lose a distinction; a pool name may differ only by case.
+9. **The records modal never guesses a backend.** One configured backend is
+   used without asking (that is the only answer, not a guess); two or more with
+   nothing named is a 400 listing them. A stale `backend_id` is refused, not
+   silently replaced.
+10. **Deleting a backend is refused while a run holds it** as the handle for an
+    address or record it created — the same refusal `hypervisor_delete` makes.
+
+### How to check it
+
+    cd /opt/satom
+    runuser -u satom -- ./venv/bin/python -m pytest -q \
+      tests/test_dns_backends.py tests/test_ipam_allocation.py \
+      tests/test_spo_wizard.py tests/test_provision_runner.py \
+      tests/test_dns_tool.py tests/test_csp_nonce.py
+
+The mutation harness for this section lives in the session notes; the
+load-bearing ones are: break the tie instead of refusing it, drop the priority
+tie-break, match a zone with a bare `endswith`, let a catch-all outrank an
+explicit claim, ignore the role filter, stop stamping `backend_id`, let a
+release fall back to re-resolution when the recorded backend is gone, let the
+modal fall back to the first row, and take the nonce off the Settings tab
+script. Each must be killed by the guard it names, measured by **rc, and only
+`rc == 1` counts** (2/4 are usage errors).
+
+### Traps this round paid for
+
+* **A "read-only" inspection script is not read-only if it calls
+  `create_app()`.** The factory runs `db.create_all()` and the boot migration.
+  Reading the live singleton created the `dns_backends` table and set
+  `dnsrecords.migrated_v2` on production — additive and identical to what the
+  next restart does, but it was a write, and it was not asked for.
+* **A new `<script>` in a template is dead unless it carries
+  `nonce="{{ csp_nonce }}"`** (§134). `tests/test_csp_nonce.py` is part of the
+  zone whenever a template gains a script block.
+* `settings.dns_backends_state` had to be declared in
+  `services/concept_map.py` as a `json feed`, or the route-coverage guards go
+  red on an unmapped endpoint.

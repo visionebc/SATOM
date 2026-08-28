@@ -22,6 +22,7 @@ from flask_login import current_user, login_required
 
 from ..auth.decorators import require_permission
 from ..models import visible_appliance_or_404
+from ..services import dns_providers as ddi
 from ..services import line_profiles as lp
 from ..services import spo_wizard as wiz
 from ..services import settings_store as store
@@ -51,6 +52,8 @@ def _plan_from(appliance, body: dict):
         use_ipam=bool(body.get('use_ipam')),
         address=str(body.get('address') or ''),
         issue_cert=bool(body.get('issue_cert')),
+        ipam_backend_id=body.get('ipam_backend_id'),
+        dns_backend_id=body.get('dns_backend_id'),
         backends=_backends(body),
     )
 
@@ -64,6 +67,11 @@ def index(appliance_id: int):
         lines=store.classification('lines'),
         line_plans={l: lp.line_plan(l, appl.kind or 'fortiweb').as_dict()
                     for l in store.classification('lines')},
+        # ENABLED rows only, and via ``public()`` — the same shape the
+        # Settings page renders, so the two lists cannot describe the same
+        # registry differently. A disabled backend is not a choice, and
+        # ``public()`` is where the secret is already known not to cross.
+        dns_backends=[r.public() for r in ddi.enabled_backends()],
     )
 
 
@@ -90,8 +98,12 @@ def apply(appliance_id: int):
     if do_apply:
         log_action('spo_wizard.apply',
                    detail='device=%s line=%s dept=%s segment=%s addr=%s '
-                          'ok=%s stranded=%d'
+                          'ipam=%s dns=%s ok=%s stranded=%d'
                           % (appl.name, p.line, p.department or '-',
                              p.segment.get('name') or '-', p.web_address,
+                             (p.ipam_backend or '-')
+                             + ('(chosen)' if p.ipam_pick else ''),
+                             (p.dns_backend or '-')
+                             + ('(chosen)' if p.dns_pick else ''),
                              res.get('ok'), len(res.get('stranded') or [])))
     return jsonify(ok=res.get('ok'), result=res, plan=p.as_dict())

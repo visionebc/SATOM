@@ -12055,3 +12055,59 @@ script. Each must be killed by the guard it names, measured by **rc, and only
 * `settings.dns_backends_state` had to be declared in
   `services/concept_map.py` as a `json feed`, or the route-coverage guards go
   red on an unmapped endpoint.
+
+
+## §137 — the operator chooses the backend, and the choice is checked (2026-08-28)
+
+**What the user reported.** *"Se agregó una sección de que se puede agregar a
+diferentes IPAMs en settings, por lo que aquí deben de aparecer las opciones
+que se tengan de alta para que el usuario pueda elegir dónde y cómo las
+quiere."* The registry shipped the same morning (§136); the wizard was still
+resolving silently and offering nothing.
+
+**The shape of the risk.** §136 turned "there is nothing to decide" into a
+resolution. Adding a manual override on top turns it into a resolution with
+**two** possible authors, which is exactly the 2026-08-27 failure with
+different nouns. So the override is not a second path — it is a parameter of
+the existing one:
+
+* `resolver.choose(role, query, backend_id)` is the ONLY entry point. Empty
+  pick returns `resolve_*` unchanged.
+* A pick is **validated against the same rules**: exists, enabled, carries the
+  role, claims the query. `claims()` reads the scope column the way the
+  resolvers read it rather than re-deriving it.
+* Four refusal codes, never folded: `backend_unknown` (reload the page),
+  `backend_disabled` (enable the row), `backend_wrong_role` (give it the
+  role), `backend_out_of_scope` (widen the scope). One code would name none of
+  the four fixes.
+* **An invalid pick is refused, never downgraded to Auto.** The guard proves
+  it with a catch-all present that *would* have answered.
+* **A pick cannot widen a scope.** The scope is an earlier declaration by the
+  same operator; the wizard is not the place to overrule it by accident.
+
+**Apply stopped resolving.** `apply_plan` used to call `resolve_dns` a second
+time. The registry is editable between Preview and Apply, so the second answer
+could differ from the one the summary printed. The plan now carries
+`ipam_backend_id` / `dns_backend_id` and the writes take them; `None` means
+exactly one thing (no backend carried the DNS role when the plan was built).
+
+**A defect found while touching it.** `resolve_ipam` lowered the pool query
+while `split_list` deliberately preserved the declaration — a pool named
+`Prod-DMZ` resolved to NO_MATCH for the pool `Prod-DMZ`. The store kept a
+distinction the matcher then made unusable. One author now: `pool_matches`,
+exact and case-preserving. Zones still fold, because DNS names are
+case-insensitive by definition and pool ids are opaque.
+
+**Recipe.**
+
+```
+./venv/bin/python -m pytest tests/test_spo_wizard.py tests/test_dns_backends.py -q
+python3 /tmp/mutate.py            # 22 mutations, by rc, only rc==1 is a kill
+```
+
+Structural guards worth keeping in mind: `test_the_form_sends_the_two_choices`
+reads the template, because no browser runs in this suite and a selector wired
+to nothing is invisible to every server-side assertion. And
+`test_the_page_offers_the_registry_and_never_the_secret` parses the
+`const BACKENDS` payload rather than searching the page — the first draft
+asserted `"hidden" not in body` and matched the **Hidden Fields** nav entry.

@@ -36,6 +36,17 @@
    and architecture, not one knob under Monitoring -- and it sits LAST at the
    operator's request, below Monitoring & Alerts.
 
+   "Source of Truth & Backup" is a group for the same reason, added 2026-08-29
+   at the operator's request.  It was ONE entry ("SoT & Backup") holding two
+   unrelated authorities and a third that was not an authority at all, and the
+   word "SoT" in its label was being read as covering all of them.  Splitting
+   the entries is the whole point: the CONFIGURATION SoT is the only thing this
+   product calls a source of truth, the BACKUP SERVER is a destination and not
+   an authority, and the repository this node downloads its own code from is a
+   third thing again -- which is why the entry that was labelled "Git" now says
+   "Software Update Repository" and stays under System, away from this group.
+   A label is the only place that distinction is visible before a click.
+
    Its six entries are ordered by what they are, not by when they were added:
    the four CONFIGURATION surfaces first (Settings, Context, Response policy,
    Border blocklist -- and Context is configuration, however little it looks
@@ -58,10 +69,12 @@
 {% set nav_groups = [
   {'key': 'system', 'label': _('System'), 'icon': 'bi-hdd-rack', 'admin': true, 'items': [
     {'t': 'tab-general',     'icon': 'bi-sliders',          'label': _('General')},
-    {'t': 'tab-git',         'icon': 'bi-git',              'label': _('Git')},
-    {'t': 'tab-sotbackup',   'icon': 'bi-hdd-network',      'label': 'SoT & Backup'},
+    {'t': 'tab-git',         'icon': 'bi-git',              'label': _('Software Update Repository')},
     {'t': 'tab-ai',          'icon': 'bi-stars',            'label': _('AI Advisor'),
      'perm': 'advisor.configure', 'id': 'ai-settings-tab-btn'}]},
+  {'key': 'sot', 'label': _('Source of Truth & Backup'), 'icon': 'bi-hdd-network', 'admin': true, 'items': [
+    {'t': 'tab-sot',         'icon': 'bi-file-earmark-diff','label': _('Configuration SoT')},
+    {'t': 'tab-backupsrv',   'icon': 'bi-hdd-network',      'label': _('Backup Server')}]},
   {'key': 'access', 'label': _('Access & Identity'), 'icon': 'bi-people', 'admin': true, 'items': [
     {'t': 'tab-users',       'icon': 'bi-people',           'label': _('Users')},
     {'t': 'tab-profiles',    'icon': 'bi-person-badge',     'label': _('Profiles')},

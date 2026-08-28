@@ -11827,6 +11827,104 @@ tests/test_i18n_foundation.py tests/test_ui_locale.py tests/test_cr_doc_i18n.py
 tests/test_cr_types.py -q</code> as <code>satom</code>. Live render (EN and ES, one fresh app
 context per request — flask-babel caches the locale on <code>g</code>):
 <code>/tmp/render2.py</code> pattern in §61.</p>
+<h2 id="140-three-subjects-under-one-authoritys-name-2026-08-29">§140 — three subjects under one authority's name (2026-08-29)</h2>
+<p><code>tests/test_sot_settings_split.py</code> — 22 guards, 15 mutations, 15 killed.</p>
+<h3 id="what-was-wrong">What was wrong</h3>
+<p>Settings carried one panel called <strong>SoT &amp; Backup</strong>. It held a git URL for a
+firmware <em>manifest</em>, the SFTP credentials of the backup box, and nothing at all
+about appliance configuration — under a heading whose first word names an
+authority. Nothing failed: the page rendered, the fields saved, the suite was
+green. The word simply covered more than it was true of, and both readings are
+reasonable, so a reader acted on the wider one.</p>
+<p>The firmware entry was the proof that the conflation cost something. Every
+consumer of <code>sot.firmware_repo_url</code> was presentational — the value was rendered
+as a link and nothing ever read the manifest — and the repo it named declared
+<code>firmwares: []</code> while two images were loaded on the node. <strong>A setting that
+announces an authority nobody reads is worse than no setting</strong>: it is a claim
+with no mechanism behind it. It was removed, not filled in.</p>
+<p>Three entries now, and each states what it is <em>not</em>:</p>
+<table>
+<thead>
+<tr>
+<th>Entry</th>
+<th>Is</th>
+<th>Is not</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Configuration SoT (<code>tab-sot</code>)</td>
+<td>the hashed history of device <strong>configuration</strong></td>
+<td>not firmware, backups or code</td>
+</tr>
+<tr>
+<td>Backup Server (<code>tab-backupsrv</code>)</td>
+<td>an SFTP <strong>destination</strong> for three streams</td>
+<td>not an authority</td>
+</tr>
+<tr>
+<td>Software Update Repository (<code>tab-git</code>)</td>
+<td>the repo this node pulls its own <strong>code</strong> from</td>
+<td>never held a device config</td>
+</tr>
+</tbody>
+</table>
+<p>The third was labelled <strong>Git</strong> — a tool, not a subject, which distinguished it
+from neither of the others. The operator's instruction on 2026-08-29 named this
+explicitly: the split has to be visible <em>against the update repository too</em>.</p>
+<h3 id="a-dead-knob-found-by-surfacing-it">A dead knob found by surfacing it</h3>
+<p><code>sot_store._retention</code> read <code>settings_store.get</code> — <strong>a function this product has
+never defined</strong>. The <code>AttributeError</code> landed in a blanket <code>except Exception</code>
+(there so retention can never sink a harvest), so every single harvest silently
+fell back to the hard-coded 60/180. Writing <code>sot.retention_versions</code> changed
+nothing and nothing said so; the keys were not even present in <code>app_settings</code>,
+which read as "never configured" rather than "cannot be configured".</p>
+<p>The guard therefore goes through <code>_retention()</code>, never through
+<code>hasattr(settings_store, "sot_retention")</code>: <strong>the call site was what was
+wrong</strong>, and an existence check on the accessor passes against the broken
+version.</p>
+<h3 id="two-more-defects-the-split-exposed">Two more defects the split exposed</h3>
+<ul>
+<li><strong>One POST served two panes.</strong> Saving a retention number rewrote the SFTP
+  credentials and redirected to a pane the operator might not have been on. Two
+  panes sharing one action is also how a field deleted from one goes on being
+  written blank by the other. One action per pane now, each returning to its
+  own anchor.</li>
+<li><strong><code>system_path</code> was read by the save and absent from the form</strong>, so every
+  submit quietly rewrote a customised value back to <code>/system</code> — a field nobody
+  could see undoing a setting nobody was told about.</li>
+</ul>
+<h3 id="traps">Traps</h3>
+<ol>
+<li><strong>Three cross-references nearly hung off <code>data-theme-jump</code></strong> — a hook bound
+   inside the Appearance IIFE, which returns early when the theme form is
+   absent, and named after a pane it would no longer be about. Generalised to
+   <code>data-tab-jump</code>, delegated from the document. It clicks the <strong>menu button</strong>,
+   not the pane: the lateral menu folds its groups from <code>shown.bs.tab</code> on its
+   own element, so a pane shown directly leaves the operator reading one
+   section with a different one highlighted.</li>
+<li><strong>A count-based guard failed against a correct file.</strong> <code>src.count(
+   "sot.firmware_repo") == 1</code> — the paragraph that retires the keys names
+   <em>both</em> of them. The right assertion is that no <strong>string literal</strong> survives
+   (<code>'"sot.firmware_repo' not in src</code>): a literal is a key something can read,
+   prose is a record of why it went.</li>
+<li><strong>A mutation anchor matched two panes</strong> (<code>data-tab-jump="#tab-backupsrv"&gt;…</code>
+   appears in the SoT pane and in the update-repository alert), and scored as
+   "unusable" rather than silently mutating the wrong one — which is why the
+   harness refuses any anchor whose count is not exactly 1.</li>
+<li>The manual is mechanically bound to the menu: <code>tests/test_user_guide_features.py</code>
+   parses <code>nav_groups</code> out of <code>_nav.html</code> with <code>ast.literal_eval</code>, so the group
+   count, the panel count and the §26 table row all break in the commit that
+   adds a group. That is the only moment anybody knows what the new thing does.</li>
+</ol>
+<h3 id="verification-recipe_6">Verification recipe</h3>
+<p><code>pytest tests/test_sot_settings_split.py tests/test_settings_nav_groups.py
+tests/test_user_guide_features.py tests/test_theme.py tests/test_sot_store.py
+tests/test_system_backup.py tests/test_menu_completeness.py
+tests/test_concept_map.py tests/test_route_audit.py tests/test_csp_nonce.py
+tests/test_failopen_settings_git.py tests/test_docs_links.py -q</code> as <code>satom</code>.
+Mutations: <code>/tmp/mutate.py</code> pattern — anchor count must be exactly 1, baseline
+must be green per selection, and only <code>rc==1</code> scores as a kill.</p>
     </div>
   </div>
 </section>

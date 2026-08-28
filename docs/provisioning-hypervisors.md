@@ -181,9 +181,26 @@ capability probe says the serial console is reachable.
 
 ### 4.2 Addressing
 
-IPAM is used **only** when a provider is configured *and* the operator turns it
-on for that run. Otherwise the address is typed in. A provisioning flow that
+IPAM is used **only** when the operator turns it on for that run *and* the
+address step resolves to **an enabled backend carrying the IPAM role whose scope
+claims the pool** (`dns_backends`; see the DNS Records registry in the user
+guide, §26.9). Otherwise the address is typed in. A provisioning flow that
 hard-required an IPAM would be unusable on every site that does not run one.
+
+The tick is always offered, so the requirement is enforced at the step, and the
+two ways it can go missing are reported apart because they have different fixes:
+
+- **Nothing carries the IPAM role** (`NO_BACKEND`) — the run fails at the
+  address step with *no enabled backend carries the IPAM role*, having reserved
+  nothing. Register a backend, or untick the box and supply the address.
+- **Backends exist but none claims this pool** (`NO_MATCH`), or two claim it
+  with the same scope and the same priority (`AMBIGUOUS`) — the run blocks the
+  same way, the colliding backends are named, and the fix is to a scope or a
+  priority on a row that is already there.
+
+The DNS step is deliberately not symmetric: `NO_BACKEND` there only **warns**
+and the run continues, because a site with no DDI at all is a supported
+deployment, while `NO_MATCH` and `AMBIGUOUS` block.
 
 ---
 

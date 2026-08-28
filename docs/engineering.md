@@ -43,7 +43,9 @@ app/clients/         REST clients (fortiweb.py, fortiadc.py, base.py) +
                      client_for(appliance) platform factory.
 app/registry/        endpoint catalog: loader.py (DB-first + YAML fallback),
                      data specs (WAF kinds, help overlays).
-app/models*.py       SQLAlchemy models. Postgres in production.
+app/models*.py       SQLAlchemy models, one file per domain — including
+                     models_dnsbackend.py, the DNS/IPAM backend
+                     registry. Postgres in production.
 app/api_v1/          the public token API (separate auth path, JSON-only).
 app/templates|static Jinja + Turbo Drive + CSP-safe vanilla JS.
 ```
@@ -293,7 +295,10 @@ Grouped tour of `app/services/` (~80 modules):
   preflight), `policy_form`, `policy_graph`, `policy_links`, `objform` (the
   form engine), `fortiweb_field_schema` (create-field seeds), `clone`,
   `clone_rules` (admin dummy-IP policy), `capacity`, `naming`, `baselines`,
-  `templates`, `bulk` (background fleet applies).
+  `templates`, `bulk` (background fleet applies), `line_profiles`
+  (`line_plan` — the one author of "what does this line get"),
+  `spo_wizard` (plan-first policy build: refuse up front, apply, then
+  compensate only what the run recorded doing).
 - **WAF:** `waf_specs` (catalog registration), `signature_catalog`,
   `wpp_exceptions` (rules 1–4 enforcement), `exception_inject`,
   `exception_detect`, `regex_lab`, `section_taxonomy`, `wp_menu`.
@@ -307,7 +312,11 @@ Grouped tour of `app/services/` (~80 modules):
 - **Platform:** `product_scope`, `access`/`auth_store`/`directory_auth`
   (RBAC + LDAP/RADIUS), `audit`, `notifications`, `email_service`,
   `encryption`, `lock_service`, `db_reports`/`report_builder`,
-  `dbintrospect`, `dns_tool`, `fleet_objects`, `datasheets`, `bug_reports`.
+  `dbintrospect`, `dns_tool`, `dns_providers/` (the N-backend IPAM/DDI
+  registry; `resolver` is the SOLE AUTHOR of "which backend answers
+  this" — most specific scope wins, and an exact tie is refused rather
+  than broken by row order), `fleet_objects`, `datasheets`,
+  `bug_reports`.
 - **FortiADC:** `adc_menu`, `adc_objform`, `adc_ops` (presets, discovery
   plan, VS inspector, health battery) — ADC-specific logic lives *only*
   here, enforced by the separation test.

@@ -327,6 +327,124 @@ objects.</p>
 <li><strong>⏰ Schedule</strong> lets an operator schedule a policy enable/disable, a backend
   enable/disable, or a certificate swap for a specific date/time (see §15).</li>
 </ul>
+<h3 id="51-new-server-policy-from-a-line-the-wizard">5.1 New Server Policy from a line — the wizard</h3>
+<p><code>/web/workspace/&lt;id&gt;/spo-wizard</code>, reached from the <strong>From a line profile</strong>
+button on the Server Policy page, beside <strong>New Server Policy</strong>.</p>
+<p>You pick a <strong>line</strong>, and its profile supplies the network segment, the
+certificate class and the Web Protection Profile. The wizard then runs the whole
+chain in one order: IPAM reserves the VIP, DNS publishes the name, the CA issues
+the certificate, and the device gets the objects. The point of the wizard is not
+speed — it is that a failure halfway through this chain strands a reserved
+address and an issued certificate that nobody finds by looking at the appliance.</p>
+<p><strong>Preview writes nothing.</strong> <em>Preview</em> builds a plan and returns <strong>every</strong> reason
+the run cannot proceed, not just the first. It reserves no address, creates no
+record, issues no certificate and touches the device only to read it, so it is
+safe to press at any time and at any permission level that can already see the
+device. <em>Apply</em> is the only button that writes, and it needs <code>config_write</code>.</p>
+<p><strong>A blocked plan is never applied</strong> — dry run included. There is no "just to
+preview it" path past a blocker; allowing one is how a blocker becomes advisory.</p>
+<p><strong>The name collision is checked live, against the device.</strong> The derived object
+names are compared with the appliance's own object list at plan time, not with a
+cached copy — a run that dies after reserving an address is worse than one that
+never started. An <strong>unreachable device is itself a blocker</strong>, not an assumption
+that the box is empty.</p>
+<p><strong>It refuses to guess.</strong> A segment the chosen line does not receive is refused
+— the wrong-network failure this feature exists to prevent. When a line offers
+several segments you choose one; the wizard does not pick for you. A blank
+hostname means <em>do not publish</em> and never quietly becomes the web address. A
+backend that cannot write records, plus a requested hostname, is a refusal — not
+a step that reports success and publishes nothing.</p>
+<p><strong>On failure, what was undone and what was left behind are reported as separate
+lists.</strong> Compensation is driven by what the run <em>recorded</em>, never by inspecting
+the current state of the world:</p>
+<ul>
+<li>A DNS failure releases the address <strong>by its handle</strong>, and only if IPAM handed
+  it out. A hand-typed VIP is not SATOM's to hand back to a pool.</li>
+<li>A device failure removes the record this run created and releases the address
+  this run took.</li>
+<li>An <strong>issued certificate is named and NOT revoked</strong>. Revocation is destructive
+  and irreversible, and a certificate that exists is not harmful.</li>
+<li>Objects already written to the device are <strong>listed, not deleted</strong>. Deleting
+  one that a human may already have bound elsewhere is a destructive guess.</li>
+</ul>
+<p>The result keeps <code>compensated</code> ("we undid this") and <code>stranded</code> ("we did not
+undo this") as two lists and renders them separately, because they are opposite
+facts and folding them would let a leftover read as a cleanup. The certificate
+is deliberately in the second list.</p>
+<h4 id="choosing-the-ipam-and-dns-backends">Choosing the IPAM and DNS backends</h4>
+<p>Because Settings → DNS Records is a registry of N backends (§26.9), the wizard
+offers two selectors — <strong>IPAM backend (the address)</strong> and <strong>DNS backend (the
+hostname)</strong> — each listing only the <em>enabled</em> rows that carry that role.</p>
+<ul>
+<li>Both default to <strong>Auto</strong>, which follows the scopes declared in Settings → DNS
+  Records. Auto is <strong>byte-for-byte the behaviour of an install that never picks
+  anything</strong>, which is what makes the selectors purely additive.</li>
+<li>Every option prints the backend's <strong>provider and its declared scope</strong>
+  (<code>any (catch-all)</code> when it declares none), because a name is not what decides
+  which backend answers. The note under each selector repeats the scope of the
+  current choice and the outcome of its last connection test.</li>
+<li>A selector with no eligible row is disabled and says so, pointing at Settings
+  → DNS Records.</li>
+</ul>
+<p><strong>A pick is validated, not trusted.</strong> The row you name is checked against the
+same rules Auto uses — read from the same scope column, not re-derived — and
+each way it can fail has its own code, because each has a different fix:</p>
+<table>
+<thead>
+<tr>
+<th>Code</th>
+<th>Meaning</th>
+<th>Fix</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>backend_unknown</code></td>
+<td>No such row (it was deleted since the page loaded).</td>
+<td>Reload the page.</td>
+</tr>
+<tr>
+<td><code>backend_disabled</code></td>
+<td>The row exists but is disabled.</td>
+<td>Enable it in Settings.</td>
+</tr>
+<tr>
+<td><code>backend_wrong_role</code></td>
+<td>The row does not carry the role you are using it for.</td>
+<td>Give it the role, or pick another row.</td>
+</tr>
+<tr>
+<td><code>backend_out_of_scope</code></td>
+<td>The row's scope does not claim this zone or pool.</td>
+<td>Widen that backend's scope, or pick the one that claims it.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>An invalid pick is refused, never quietly downgraded to Auto</strong> — even when a
+catch-all backend is present that <em>would</em> have answered. A silent fallback would
+run the work on a backend nobody named while the page still showed the one that
+was chosen.</p>
+<p><strong>A pick overrides the scope <em>choice</em> only; it never widens a scope.</strong> The scope
+is an earlier declaration by the same operator, and the wizard is not the place
+to overrule it by accident. What a pick <em>does</em> resolve is an <strong><code>AMBIGUOUS</code></strong>
+tie: both tied backends are in scope, so naming one is a legitimate answer to a
+question the configuration left open. That is the selectors' main use case.</p>
+<p><strong>Pick-level and scope-level blockers are kept apart.</strong>
+<code>ipam_backend_rejected</code> / <code>dns_backend_rejected</code> mean <em>the backend you named
+cannot do this</em>, and send you to that row. <code>ipam_not_resolved</code> /
+<code>dns_not_resolved</code> mean <em>the scope rules produced no single answer</em>, and send
+you to the scope rules. Folding them would send an operator who named a backend
+off to fix a scope, when the fix is to one row — or to the choice itself.</p>
+<p><strong>A chosen backend that cannot act raises a warning</strong>, not silence. Choosing an
+IPAM backend with <em>Reserve the VIP from IPAM</em> switched off, or a DNS backend
+with no hostname given, warns that nothing will be reserved or published. A
+control that silently does nothing reads as a control that worked.</p>
+<p><strong>Apply writes where Preview said it would.</strong> The plan records the backend ids
+it resolved, and <em>Apply</em> acts on those ids rather than resolving a second time.
+The registry is editable between the two presses, so a second resolution could
+answer differently and write to a backend the summary never named. A recorded
+<code>null</code> therefore means exactly one thing: no backend carried that role when the
+plan was built.</p>
 <h2 id="6-cloning-migrating-policies">6. Cloning &amp; migrating policies</h2>
 <p>From the Server Policy list, <strong>Clone / Migrate</strong> recreates a whole policy tree
 (virtual server, VIP, pool + members, health checks, content routing, and
@@ -2048,7 +2166,7 @@ column — and then they ignore the real failures too.</p>
 <tr>
 <td>Requires</td>
 <td>nothing</td>
-<td>an address-management provider configured in Settings, and the tick on this run</td>
+<td>an <strong>enabled backend carrying the IPAM role whose scope claims the pool</strong> (Settings → DNS Records, §26.9), and the tick on this run</td>
 </tr>
 <tr>
 <td>Advantage</td>
@@ -2067,8 +2185,27 @@ column — and then they ignore the real failures too.</p>
 </tr>
 </tbody>
 </table>
-<p>IPAM is never implicit: with no provider configured the option is not offered,
-and with one configured it still applies only to a run you ticked it on.</p>
+<p>IPAM is never implicit: it applies only to a run you ticked it on. The tick is
+always offered, so what it needs is checked when the run reaches the address
+step — and the two ways it can be missing are <strong>different conditions with
+different fixes</strong>, reported separately rather than as one message:</p>
+<ul>
+<li><strong>No backend is registered at all</strong> (nothing enabled carries the IPAM role).
+  The step refuses with <em>no enabled backend carries the IPAM role</em>, and the run
+  lands <strong>failed</strong> at that step with nothing reserved. The fix is to register
+  one in Settings → DNS Records (§26.9) — or to untick the box and type the
+  address.</li>
+<li><strong>Backends are registered but none claims this pool</strong> (<code>NO_MATCH</code>), or two
+  claim it equally (<code>AMBIGUOUS</code>). The step <strong>blocks</strong> the same way, but the
+  named backends are printed and the fix is to the <strong>scope or priority of a row
+  that already exists</strong>, not to the length of the list. An operator told "no
+  provider is configured" while three are wired goes looking in the wrong place.</li>
+</ul>
+<p>Publishing the <strong>hostname</strong> is the one place where "nothing registered" is
+tolerated: a fleet with no DDI at all is a supported install, so the DNS step
+<strong>warns</strong> that the record was not created — printing the record to add by hand —
+and the run carries on. A DDI that exists but whose scopes miss the name you
+asked for is a misconfiguration, and that one blocks.</p>
 <p>Backend detail, the capability matrix and the state machine:
 <a href="provisioning-hypervisors.html">docs/provisioning-hypervisors.md</a>.</p>
 <h2 id="22-updating-satom-itself">22. Updating SATOM itself</h2>
@@ -2865,14 +3002,104 @@ Monitoring → SATOM health (§14.1) points here.</p>
 <li><strong>DNS Lookup</strong> is the resolver list behind the fleet DNS &amp; LB Lookup tool
   (§13): a variable-length list of name + server rows, each individually
   enabled. Clearing a row removes that server.</li>
-<li><strong>DNS Records</strong> is the <em>write</em> side — the DNS/IPAM provider SATOM may create
-  records through (used by ACME dns-01 in §10 and by provisioning in §21). Pick
-  the provider, fill its connection fields, and store its one secret
-  Fernet-encrypted. A blank secret on save keeps the stored one; an explicit
-  <em>clear</em> tick wipes it, which is what you want when switching provider.
-  <strong>Test connection</strong> runs against the values in the form and falls back to the
-  stored secret if you left the field blank.</li>
+<li><strong>DNS Records — IPAM / DDI backends</strong> is the <em>write</em> side: the <strong>registry</strong>
+  of every IPAM / DDI system SATOM may act through (used by ACME dns-01 in §10,
+  by provisioning in §21 and by the Server Policy wizard in §5.1). It is a
+  registry, not one provider — <strong>more than one is supported</strong>. Add, edit,
+  enable, disable, test and delete as many backends as the site runs.</li>
 </ul>
+<p><strong>Each row declares its roles.</strong> The <strong>IPAM</strong> role hands out addresses; the
+<strong>DNS</strong> role publishes names. Both default on, and a backend that does both
+simply carries both — but real installs split them: phpIPAM owns the pools,
+EfficientIP owns the zones. A role is a promise, and it is refused at save time
+when the provider could never keep it. <code>role_dns</code> on <strong>phpIPAM</strong> is <strong>rejected</strong>
+— it has no record CRUD in any installation. On <strong>NetBox</strong> the same role is
+<strong>accepted</strong>, because netbox-dns may be present and the live capability probe
+is what decides; refusing it up front would lock out a supported deployment.</p>
+<p><strong>Each row declares its scope, its priority and its own secret.</strong> The scope is
+a list of <code>zones</code> and/or <code>pools</code>; an empty scope is a catch-all. The <code>priority</code>
+is a number, lowest wins. The credential is Fernet-encrypted at rest and is
+never sent back to the browser. Scope and <em>default</em> are different questions and
+both are kept: <code>zones</code>/<code>pools</code> say what a backend is <strong>allowed to answer</strong>,
+<code>default_zone</code>/<code>default_pool</code> say what to use when the caller <strong>names none</strong>. A
+default outside the declared scope is refused rather than silently rewritten.</p>
+<p><strong>How a backend is chosen for a given request:</strong></p>
+<ol>
+<li>Only backends carrying the <strong>role</strong> are considered.</li>
+<li><strong>The most specific scope wins.</strong> A backend scoped to <code>sub.example.com</code>
+   answers <code>www.sub.example.com</code> ahead of one scoped to <code>example.com</code>. A
+   backend with <strong>no scope declared answers anything</strong>, and ranks <strong>below</strong>
+   every explicit claim — which is why a single-backend install, declaring
+   nothing, behaves exactly as the old single-provider setting did.</li>
+<li>Equal scope: the lowest <strong>priority</strong> number wins.</li>
+<li><strong>Equal scope <em>and</em> equal priority is refused, not guessed.</strong> The operation
+   reports which backends collided so you can break the tie. "The first row" is
+   not an answer anybody declared, and choosing one silently is how a record
+   ends up published in the wrong customer's zone.</li>
+</ol>
+<p><strong>Zones fold case; pools do not, and the asymmetry is deliberate.</strong> DNS is
+case-insensitive by definition, so folding a zone cannot lose a distinction. A
+pool identifier is opaque — it may be a subnet id or a name — and two pools may
+differ only by case, so pool matching preserves case. Pools are also matched
+<strong>exactly, never by network containment</strong>: <code>{ip}/16</code> does <strong>not</strong> cover
+<code>{ip}/22</code>. Doing network arithmetic on a string that may not be an address
+is how an allocation lands in somebody else's supernet.</p>
+<p><strong>Three refusals, never folded into one</strong>, because they have three different
+fixes:</p>
+<table>
+<thead>
+<tr>
+<th>Refusal</th>
+<th>What it means</th>
+<th>Where to go</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>NO_BACKEND</code></td>
+<td>Nothing enabled carries the role at all.</td>
+<td>Register a backend here. <strong>A fleet with no DDI is a supported deployment</strong>: publishing a name then only <em>warns</em> and the run continues — both in the wizard (§5.1) and in the provisioning DNS step.</td>
+</tr>
+<tr>
+<td><code>NO_MATCH</code></td>
+<td>Backends exist; none of them claims this zone or pool, and none is a catch-all.</td>
+<td>Widen the scope of a row you already have. This <strong>blocks</strong>.</td>
+</tr>
+<tr>
+<td><code>AMBIGUOUS</code></td>
+<td>Two backends claim it with the same scope <em>and</em> the same priority; both are named.</td>
+<td>Lower one priority or narrow one scope. This <strong>blocks</strong>.</td>
+</tr>
+</tbody>
+</table>
+<p>Telling an operator with three DDIs wired that "no provider is configured"
+sends them looking in the wrong place, so the three are kept apart everywhere
+they surface.</p>
+<p><strong>Secrets.</strong> A blank secret when <em>editing</em> keeps the stored one — an empty
+password field is how a browser renders "not shown", never "blank it". A
+credential is <strong>required when adding</strong>; there is no <em>clear</em> tick, so retiring a
+credential means deleting the row. <strong>Test these values</strong> probes the values
+currently in the form and falls back to the stored secret of the row you are
+editing if you left the field blank; when adding, with nothing typed, it refuses
+rather than testing with some other backend's credential. The per-row <strong>Test</strong>
+probes the saved row and records the outcome, which is the <em>last test</em> shown in
+the table and on the wizard's selector notes.</p>
+<p><strong>Rollback goes back to the backend that acted.</strong> Allocation and record
+creation stamp the backend that answered, and callers persist it
+(<code>provision_runs.ip_backend_id</code> / <code>.dns_backend_id</code>). A release or a delete
+honours that recorded id over resolving again, and <strong>refuses rather than
+redirecting</strong> when that row has since been deleted — telling you to undo it by
+hand in that system. A <code>ref</code> only means something inside the system that issued
+it: replayed against another backend it frees nothing of yours and can delete a
+row that backend legitimately owns. For the same reason, <strong>deleting a backend is
+refused while an unfinished run still holds it</strong> as the handle for an address or
+a record it created.</p>
+<p><strong>On upgrade</strong> the old single-provider settings are folded into <strong>one unscoped
+backend</strong> on first boot, once, keeping the encrypted secret as it was. The old
+default zone and default pool are carried across <strong>as defaults, not as a
+scope</strong>: they were defaults, you could always write into other zones from the
+records modal, and a scope would start refusing those the moment the package was
+updated. An install that worked before is not narrowed by the upgrade.</p>
 <h3 id="2610-policy-links-deep-links-onto-every-server-policy-page">26.10 Policy Links — deep links onto every Server Policy page</h3>
 <p>Up to ten links rendered at the top of every <strong>Server Policy</strong> detail page, with
 <code>{token}</code> placeholders that each policy fills from its own context — so one entry
@@ -4354,8 +4581,8 @@ the page instead of on a manual.</p>
 discipline:</p>
 <ol>
 <li><strong>The URL map is the authority on what exists.</strong> Every parameterless page in
-   the console is either <strong>on the map</strong> (90 today) or <strong>excluded with a written
-   reason</strong> (113 today — JSON feeds, downloads, redirects and fragments that
+   the console is either <strong>on the map</strong> (99 today) or <strong>excluded with a written
+   reason</strong> (124 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.</li>
 <li><strong>Nothing here is a second source of truth.</strong> Paths are generated from the

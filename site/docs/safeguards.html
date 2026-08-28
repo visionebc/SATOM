@@ -6052,70 +6052,6 @@ command that never ran</strong>:</p>
   usage error).</li>
 </ul>
 <hr>
-<h2 id="44-a-rate-limit-on-the-wrong-verb-locks-out-the-innocent">§44. A rate limit on the wrong verb locks out the innocent</h2>
-<p><code>/auth/login</code> answers two different questions with one URL: <code>GET</code> asks "show me
-the form", <code>POST</code> asks "is this credential correct". Only the second is an
-attack surface, and only the second may be rationed. The shipped decorator
-rationed both, so five page views a minute — trivially reached by one logout
-redirect plus a reload — returned <code>429</code> on the <strong>form</strong>. The victim of that
-limiter is never the attacker: an attacker scripts <code>POST</code> and never loads the
-page, while the operator loads the page and is turned away.</p>
-<p><strong>Guard</strong> (<code>tests/test_directory_import.py</code>): ten <code>GET</code>s all <code>200</code>; the <code>POST</code>
-budget survives a <code>GET</code> flood untouched; the sixth <code>POST</code> is still <code>429</code>; and a
-<code>GET</code> served <em>during</em> the <code>POST</code> throttle still returns <code>200</code>. That last one is
-the human requirement — someone being throttled must be able to read the screen
-that says so.</p>
-<p>The shared test fixture sets <code>RATELIMIT_ENABLED = False</code>, so these tests build
-their own app with the limiter on. A limiter test against a fixture that
-disables the limiter passes for the wrong reason, which is worse than no test.</p>
-<p><strong>Related:</strong> a redirect target that points back at <code>/auth/logout</code> is the same
-class of self-inflicted door. Hitting logout without a session lands on
-<code>/auth/login?next=/auth/logout</code>; honour that <code>next</code> and a successful sign-in
-signs you out. It is refused by <strong>resolved path</strong> (<code>url_for('auth.logout')</code>),
-never by testing whether the string contains <code>logout</code> — a real page may.</p>
-<p><strong>Verification recipe.</strong> Against a live node, with a cookiejar and a real CSRF
-token (<code>curl</code> without one gets a 302 from the CSRF handler and proves nothing
-about the limiter): 12 <code>GET</code>s → all <code>200</code>; 8 <code>POST</code>s → <code>200 ×5</code> then <code>429 ×3</code>;
-one final <code>GET</code> → <code>200</code>.</p>
-<h2 id="45-radius-has-no-roster-so-importing-users-needs-a-second-channel">§45. RADIUS has no roster, so importing users needs a second channel</h2>
-<p>You cannot enumerate RADIUS. An Access-Request asks about <strong>one</strong> credential and
-returns yes or no; there is no "list this group" verb, and no amount of
-configuration adds one. So "import the users of group X" under a RADIUS backend
-is not a RADIUS feature at all — it is a read against the directory's <em>own</em> API,
-running alongside an authentication path that stays on RADIUS. Conflating the
-two would mean switching sign-in to LDAP to get a user list, quietly trading
-away FortiToken/push at the directory to buy a roster.</p>
-<p>The roster source is a FortiAuthenticator <strong>already registered under
-Appliances</strong>, reusing its Fernet-encrypted API key. A second copy of that
-credential in the auth config would be a second thing to rotate.</p>
-<p><strong>Measured on the device, not assumed:</strong> <code>/api/v1/localusers/</code> <strong>under-reports</strong>.
-On {device} (v8.0.3) it returned <code>meta.total_count: 1</code> for a FAC whose GUI showed
-three local users, omitting <code>admin</code> and <code>ebc</code>; <code>/api/v1/localgroup-memberships/</code>
-returned both members of the group, each with its <code>username</code>. Memberships are
-therefore the authoritative roster and <code>localusers</code> is only ever enrichment. A
-roster built on <code>localusers</code> would import a partial group and look successful.</p>
-<p><strong>Guards:</strong> the roster includes a member <code>localusers</code> hides; a group name the
-appliance does not know is an error naming the groups it does know (not an empty
-success); a device refusal is an error, not an empty group; a <code>localusers</code>
-failure does not take the roster down with it; two registered FACs with no
-choice made refuse rather than guess; a configured appliance of the wrong
-<code>kind</code> is rejected by name.</p>
-<h2 id="46-pending-approval-is-not-disabled-and-neither-is-a-bad-password">§46. Pending approval is not "disabled", and neither is a bad password</h2>
-<p>Three different refusals used to render as one message. An imported account
-awaiting approval, an account an admin revoked, and a wrong password are three
-different problems with three different owners — and telling a user "invalid
-username or password" after their <strong>bind succeeded</strong> sends them to reset a
-credential that was correct.</p>
-<p><code>User.is_pending_approval</code> is derived, not stored: <em>external, inactive, and
-<code>last_login is None</code></em>. An account an admin revoked has by definition been used,
-so it carries a <code>last_login</code>; one nobody ever signed into could not have been
-revoked. Deriving it means there is no new column to keep in sync with the
-truth, and no way for the flag and the state to disagree.</p>
-<p>The gate itself (<code>auth.require_approval</code>) is <strong>global, not per-backend</strong>, and is
-saved from every section of the Settings form. Scoping the save to the RADIUS
-branch would silently switch the gate off whenever an admin saved the LDAP half
-of the same page — a security control that turns itself off is worse than none.
-Existing accounts are never re-gated: the approval decision is made once.</p>
 <h2 id="43-a-change-that-leaves-this-product-must-not-be-able-to-lie-about-itself">§43. A change that leaves this product must not be able to lie about itself</h2>
 <p><code>tests/test_cr_orchestration.py</code>, <code>tests/test_netbox_client.py</code>,
 <code>tests/test_integration_hooks.py</code>, <code>tests/test_hook_queue_layout.py</code>.</p>
@@ -6217,6 +6153,72 @@ contract keyed on one device — one event carrying a list is not something a ho
 written from these docs could read. That test seeds two appliances explicitly;
 its first version created one and asked for "the first two", so it passed its
 own bug instead of testing the code's.</p>
+<hr>
+<h2 id="44-a-rate-limit-on-the-wrong-verb-locks-out-the-innocent">§44. A rate limit on the wrong verb locks out the innocent</h2>
+<p><code>/auth/login</code> answers two different questions with one URL: <code>GET</code> asks "show me
+the form", <code>POST</code> asks "is this credential correct". Only the second is an
+attack surface, and only the second may be rationed. The shipped decorator
+rationed both, so five page views a minute — trivially reached by one logout
+redirect plus a reload — returned <code>429</code> on the <strong>form</strong>. The victim of that
+limiter is never the attacker: an attacker scripts <code>POST</code> and never loads the
+page, while the operator loads the page and is turned away.</p>
+<p><strong>Guard</strong> (<code>tests/test_directory_import.py</code>): ten <code>GET</code>s all <code>200</code>; the <code>POST</code>
+budget survives a <code>GET</code> flood untouched; the sixth <code>POST</code> is still <code>429</code>; and a
+<code>GET</code> served <em>during</em> the <code>POST</code> throttle still returns <code>200</code>. That last one is
+the human requirement — someone being throttled must be able to read the screen
+that says so.</p>
+<p>The shared test fixture sets <code>RATELIMIT_ENABLED = False</code>, so these tests build
+their own app with the limiter on. A limiter test against a fixture that
+disables the limiter passes for the wrong reason, which is worse than no test.</p>
+<p><strong>Related:</strong> a redirect target that points back at <code>/auth/logout</code> is the same
+class of self-inflicted door. Hitting logout without a session lands on
+<code>/auth/login?next=/auth/logout</code>; honour that <code>next</code> and a successful sign-in
+signs you out. It is refused by <strong>resolved path</strong> (<code>url_for('auth.logout')</code>),
+never by testing whether the string contains <code>logout</code> — a real page may.</p>
+<p><strong>Verification recipe.</strong> Against a live node, with a cookiejar and a real CSRF
+token (<code>curl</code> without one gets a 302 from the CSRF handler and proves nothing
+about the limiter): 12 <code>GET</code>s → all <code>200</code>; 8 <code>POST</code>s → <code>200 ×5</code> then <code>429 ×3</code>;
+one final <code>GET</code> → <code>200</code>.</p>
+<h2 id="45-radius-has-no-roster-so-importing-users-needs-a-second-channel">§45. RADIUS has no roster, so importing users needs a second channel</h2>
+<p>You cannot enumerate RADIUS. An Access-Request asks about <strong>one</strong> credential and
+returns yes or no; there is no "list this group" verb, and no amount of
+configuration adds one. So "import the users of group X" under a RADIUS backend
+is not a RADIUS feature at all — it is a read against the directory's <em>own</em> API,
+running alongside an authentication path that stays on RADIUS. Conflating the
+two would mean switching sign-in to LDAP to get a user list, quietly trading
+away FortiToken/push at the directory to buy a roster.</p>
+<p>The roster source is a FortiAuthenticator <strong>already registered under
+Appliances</strong>, reusing its Fernet-encrypted API key. A second copy of that
+credential in the auth config would be a second thing to rotate.</p>
+<p><strong>Measured on the device, not assumed:</strong> <code>/api/v1/localusers/</code> <strong>under-reports</strong>.
+On {device} (v8.0.3) it returned <code>meta.total_count: 1</code> for a FAC whose GUI showed
+three local users, omitting <code>admin</code> and <code>ebc</code>; <code>/api/v1/localgroup-memberships/</code>
+returned both members of the group, each with its <code>username</code>. Memberships are
+therefore the authoritative roster and <code>localusers</code> is only ever enrichment. A
+roster built on <code>localusers</code> would import a partial group and look successful.</p>
+<p><strong>Guards:</strong> the roster includes a member <code>localusers</code> hides; a group name the
+appliance does not know is an error naming the groups it does know (not an empty
+success); a device refusal is an error, not an empty group; a <code>localusers</code>
+failure does not take the roster down with it; two registered FACs with no
+choice made refuse rather than guess; a configured appliance of the wrong
+<code>kind</code> is rejected by name.</p>
+<hr>
+<h2 id="46-pending-approval-is-not-disabled-and-neither-is-a-bad-password">§46. Pending approval is not "disabled", and neither is a bad password</h2>
+<p>Three different refusals used to render as one message. An imported account
+awaiting approval, an account an admin revoked, and a wrong password are three
+different problems with three different owners — and telling a user "invalid
+username or password" after their <strong>bind succeeded</strong> sends them to reset a
+credential that was correct.</p>
+<p><code>User.is_pending_approval</code> is derived, not stored: <em>external, inactive, and
+<code>last_login is None</code></em>. An account an admin revoked has by definition been used,
+so it carries a <code>last_login</code>; one nobody ever signed into could not have been
+revoked. Deriving it means there is no new column to keep in sync with the
+truth, and no way for the flag and the state to disagree.</p>
+<p>The gate itself (<code>auth.require_approval</code>) is <strong>global, not per-backend</strong>, and is
+saved from every section of the Settings form. Scoping the save to the RADIUS
+branch would silently switch the gate off whenever an admin saved the LDAP half
+of the same page — a security control that turns itself off is worse than none.
+Existing accounts are never re-gated: the approval decision is made once.</p>
 <h2 id="47-a-change-window-belongs-to-the-device-not-to-one-product">§47. A change window belongs to the DEVICE, not to one product</h2>
 <p><code>tests/test_cr_action_catalog.py</code></p>
 <p>Two independent narrowings, neither of which failed anything:</p>
@@ -7255,62 +7257,6 @@ exist; and the run-on above). The eighth — deleting a single <code>&lt;/div&gt
 body — correctly survives: the slice grows by one nesting level but stays inside
 its own group, and the block genuinely does still include the partial. A mutation
 that does not change the truth of the assertion is not supposed to kill it.</p>
-<h2 id="67-one-operation-two-authors-of-its-prose">§67. One operation, two authors of its prose</h2>
-<p><strong>Guard:</strong> <code>tests/test_upgrade_flow_wording.py</code> (12 tests). <strong>14 mutations, 14
-bite</strong> (harness <code>/root/ufw/mutate.py</code> on a1; judged by <strong>rc</strong>, and only <code>rc==1</code>
-is a failure).</p>
-<p>The Upgrade Flow's stage 2 composed its own change-request wording: a title
-placeholder written into <code>upgrade_flow/index.html</code>, a reason placeholder beside
-it, and no rollback field at all. The single-change form thirty lines away in
-<code>change_requests/form.html</code> proposed all three through <code>services.cr_types</code>,
-where an administrator's text wins per field and the product's sentence stands
-for every field they left alone.</p>
-<p>Neither form ever failed. The failure is what an administrator's correction
-does: they rename the change on Administration → Change Types, the single
-change picks it up, and the bulk one keeps offering the compiled sentence
-forever. Two documents about the same work, raised from the same console,
-disagreeing — and the one that disagreed covered the whole window.</p>
-<p>This is the §62 shape again (two implementations of one operation, differing in
-what they RECORD rather than in what they DO) with the roles reversed: here the
-duplicate is a sentence, not a function, and duplicated prose has no caller
-whose test could notice.</p>
-<p><strong>What the guard fixes in place</strong></p>
-<ul>
-<li>The template composes no proposal: <code>test_the_template_composes_no_proposal_of_its_own</code>
-  bans the three shipped placeholders <em>after stripping Jinja comments</em> — the
-  paragraph explaining the rule names the strings it bans, which is the eighth
-  time an assert-by-substring has matched its own comment in this repo.</li>
-<li>The batched (wave) path is not a narrower carbon copy: reason, rollback and
-  document language are asserted on every change of a rollout, because a field
-  that is simply never posted comes out empty and an empty rollback prints as a
-  change with no rollback plan rather than as a bug.</li>
-<li>The proposal quotes no single pre-flight run. <code>cr_types.draft_fields(prep=…)</code>
-  names one run's id, timestamp and backup; this stage rests on N of them.</li>
-<li>A change type disabled on the Change Types page is reported on arrival.
-  <code>create_change_request</code> rejects an action that is not on offer, so without
-  this the operator learns it after the pre-flight sweep — the expensive half —
-  with the form filled in.</li>
-</ul>
-<p><strong>Traps paid for here</strong></p>
-<ol>
-<li><code>cr_types.save_texts</code> walks the WHOLE field list and writes an empty string
-   over anything the payload omits. A test helper that wrote one override per
-   call silently blanked the previous one, and the failure read as "the page
-   ignores the administrator's wording" — the exact defect under test, reported
-   by a broken fixture.</li>
-<li>Two sentences split around a Jinja expression are two msgids that no
-   translator can order correctly. Both were folded into single msgids with
-   <code>%(lang)s</code> before the catalogues were touched.</li>
-<li>The JS payload legitimately carries the raw <code>{devices}</code> token — substituting
-   the live selection is its entire job — so a page-wide assertion that the
-   token never appears fails against a correct page. Assert on the FIELDS.</li>
-</ol>
-<p><strong>Recipe.</strong> <code>venv/bin/python -m pytest tests/test_upgrade_flow_wording.py
-tests/test_upgrade_flow.py tests/test_upgrade_flow_exec.py
-tests/test_i18n_foundation.py tests/test_ui_locale.py tests/test_cr_doc_i18n.py
-tests/test_cr_types.py -q</code> as <code>satom</code>. Live render (EN and ES, one fresh app
-context per request — flask-babel caches the locale on <code>g</code>):
-<code>/tmp/render2.py</code> pattern in §61.</p>
 <h2 id="69-a-language-gate-is-only-a-gate-if-every-surface-asks-it">§69 — a language gate is only a gate if every surface asks it</h2>
 <p><strong>Guard:</strong> <code>tests/test_lang_availability.py</code> (30 tests) + the widened
 <code>tests/test_i18n_foundation.py::test_the_registry_is_the_only_author_of_the_language_list</code>.
@@ -10509,6 +10455,1378 @@ duplicate guard was right to stay quiet), and one dropped a comma, which is
 <p><strong>Deliberately not covered.</strong> Sentinel → Documentation carries no "?" — that
 page <em>is</em> the explanation, and annotating prose with prose is the duplication
 this file exists to prevent.</p>
+<h2 id="116-the-policyartifact-index-derived-scoped-and-outage-immune-teststest_artifact_refspy">§116 — The policy→artifact index: derived, scoped, and outage-immune (<code>tests/test_artifact_refs.py</code>)</h2>
+<p><strong>What fails silently.</strong> Every failure mode in this feature renders as a page
+that works and a number that looks like a number. Nothing throws.</p>
+<table>
+<thead>
+<tr>
+<th>break</th>
+<th>what the operator sees</th>
+<th>what it costs</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>a failed walk deletes its edges</td>
+<td>"this appliance needs no artifacts"</td>
+<td>a clean bill of health manufactured out of an outage</td>
+</tr>
+<tr>
+<td>a successful walk keeps edges it no longer produces</td>
+<td>an artifact looks used forever</td>
+<td>dead objects migrate; real orphans stay hidden</td>
+</tr>
+<tr>
+<td>edges collapse across appliances</td>
+<td>one row for two chassis</td>
+<td>the schema of the wrong box travels with the policy</td>
+</tr>
+<tr>
+<td>never-walked reads as ready</td>
+<td>a green migration verdict</td>
+<td>nobody ever looked</td>
+</tr>
+<tr>
+<td>a bounded sweep hides its remainder</td>
+<td>a complete-looking run</td>
+<td>the untouched tail is invisible</td>
+</tr>
+<tr>
+<td>a crashed walk is smoothed to "no artifacts"</td>
+<td>ready</td>
+<td>same as the outage case, one policy at a time</td>
+</tr>
+<tr>
+<td>non-UTF-8 content is editable</td>
+<td>a textarea round-trip</td>
+<td>U+FFFD written over the real bytes; the file still looks fine and is no longer the file</td>
+</tr>
+<tr>
+<td>deleting a version unlinks a shared blob</td>
+<td>one deletion</td>
+<td>a second version silently points at nothing</td>
+</tr>
+<tr>
+<td>orphans summed with migration blockers</td>
+<td>one total</td>
+<td>two different kinds of work read as one</td>
+</tr>
+</tbody>
+</table>
+<p><strong>31 guards, rc=0. 22 mutations, 22 bite, each killing its own guard</strong>
+(measured by rc; only <code>rc==1</code> counts, with a green baseline required).</p>
+<p><strong>The trap that cost the most.</strong> The donation guard was <strong>vacuous on first
+write</strong>: it asserted <code>record_from_plan(0, "pol-a", []) == 0</code>, and an EMPTY plan
+returns 0 for the wrong reason — nothing to write. The assertion passed with
+the attribution check deleted. Mutation 12 survived and said so. The guard now
+hands in a <strong>non-empty</strong> plan and carries a <strong>positive control</strong> (the same plan,
+fully attributed, does record) — without that control the two refusals could be
+explained by the plan itself being unrecordable rather than by the check.
+A guard that cannot fail is not a guard.</p>
+<p><strong>Recipe.</strong> <code>venv/bin/python -m pytest tests/test_artifact_refs.py -q</code>; then
+the harness at <code>/tmp/mutate_artifacts.py</code> (22 mutations, anchor-checked at x1,
+tree restored per mutation).</p>
+<h2 id="117-the-profile-is-walked-and-unknown-is-not-none-teststest_artifact_wpppy">§117 — The profile is walked, and "unknown" is not "none" (<code>tests/test_artifact_wpp.py</code>)</h2>
+<p><strong>What breaks silently.</strong> <code>waf_artifact_ref</code> gained a <code>wpp_mkey</code> column, and
+every way of getting it wrong keeps the page rendering and the column holding a
+plausible string:</p>
+<ul>
+<li><code>None</code> (<strong>nobody attributed this edge</strong>) and <code>""</code> (<strong>walked, and it genuinely
+  hangs off the server policy</strong>) are opposite answers. A <code>DEFAULT ''</code> on the
+  migration would have collapsed them for 432 historical rows in one statement,
+  with no error;</li>
+<li><code>next(it for it in items if it.urn in _WPP_URNS)</code> — the shortcut already used
+  elsewhere in <code>clone.py</code> for a different purpose — picks ONE profile. A policy
+  with content routing binds several, and the ones it silently drops belong to
+  the most complicated policies on the box;</li>
+<li><strong>Lua scripting</strong> (<code>cmdb/server-policy/scripting</code>) hangs off the POLICY. Any
+  "the plan has a profile, so this belongs to it" rule prints a profile that has
+  never heard of the script;</li>
+<li>the referrer graph is not guaranteed acyclic, and an unguarded upward walk
+  <strong>hangs</strong> the sweep. A hang is worse than a failure: nothing times out;</li>
+<li><code>borrowed</code> rendered as <code>ok</code> hides that <code>waf_artifacts.resolve</code> would fall back
+  to <em>another appliance's</em> bytes for that name.</li>
+</ul>
+<p><strong>The shape of the guards.</strong> They assert the <strong>STATE</strong>, not merely that a value
+is present. A guard demanding "<code>wpp</code> is not empty" passes with <code>""</code> in place of
+<code>None</code> — that is, it passes with the bug installed, and that exact distinction
+IS the defect. Each negative guard is paired with a <strong>positive control</strong>
+(<code>test_the_profile_is_reported_when_the_artifact_really_travels_through_it</code>,
+<code>test_a_donated_plan_WITH_a_graph_records_the_profile</code>,
+<code>test_a_readable_missing_artifact_is_AT_RISK</code>), without which "no profile found"
+is explained by an attribution that never finds anything.</p>
+<p><strong>The nav guard reads the SOURCE.</strong> <code>fw-nav-sub</code> has no rule in
+<code>fortiweb.css</code>, so the two children it styled rendered flush with their parent
+— and the page still returned 200. Nothing can catch that from a response
+except reading the template, and the guard strips <code>{# … #}</code> comments first
+because the comment explaining it names <code>fw-nav-sub</code> and would match itself
+(the eighth assertion-matches-its-own-comment in this codebase).</p>
+<p><strong>How to check it.</strong></p>
+<pre><code>venv/bin/python -m pytest tests/test_artifact_wpp.py -q     # 27 guards, rc=0
+venv/bin/python /tmp/mutate.py                              # 19 mutations, all bite
+</code></pre>
+<p>Live proof the attribution is walked rather than assumed — re-derive the fleet
+and split the column:</p>
+<pre><code>select coalesce(wpp_mkey,'&lt;NULL&gt;'), count(*) from waf_artifact_ref group by 1;
+select kind, count(*) from waf_artifact_ref where wpp_mkey='' group by 1;
+</code></pre>
+<p>The second must return <strong><code>scripting</code> and nothing else</strong>. Any other kind under
+<code>''</code> means the walk lost a profile; a non-zero <code>&lt;NULL&gt;</code> count after a full sweep
+means edges were recorded without a referrer graph.</p>
+<h2 id="118-the-statistics-are-per-device-adom-and-the-empty-ones-are-not-zeros-teststest_artifact_statspy">§118 — The statistics are per (device, ADOM), and the empty ones are not zeros (<code>tests/test_artifact_stats.py</code>)</h2>
+<p>Every failure this pins is <strong>silent</strong>: the page renders, the numbers look like
+numbers, and each wrong one is wrong in the direction that clears a migration
+nobody checked.</p>
+<p><strong>The scope is the guard.</strong> SATOM registers one appliance row per ADOM, so
+<code>{ip}</code> is four rows. Counting per chassis makes <code>wpp-a</code> in <code>adom_prod</code>
+look like coverage for the <em>different</em> <code>wpp-a</code> in <code>adom_dev</code>. Every distinct
+count is keyed on <code>(appliance_id, …)</code> and the chassis figures are
+<strong>recomputed</strong>, never summed — and the grouping defers to
+<code>models.chassis_key</code> rather than to a second <code>host</code> comparison written here
+(the helper is explicit that keyless rows, i.e. HA cluster containers, must
+each get their own bucket).</p>
+<p><strong>Three attribution states, never two.</strong> <code>"wpp-a"</code> is a profile; <code>""</code> is
+policy-level (Lua hangs off the server policy) and is a FINDING; <code>NULL</code> is not
+attributed and is an unanswered question. <code>models.DEVICE_SCOPE_ADOMS</code> — not
+a local rule — decides that an empty <code>vdom</code> renders as <code>root</code>.</p>
+<p><strong>Never-swept is not zero.</strong> <code>swept</code> is <code>bool(scans or refs)</code>, not
+<code>bool(refs)</code>: an ADOM that WAS walked and carries nothing is a clean result,
+and filing it with the ones nobody looked at loses the distinction in the
+direction that matters.</p>
+<p><strong>Recipe.</strong> <code>venv/bin/python -m pytest tests/test_artifact_stats.py -q</code>
+(20 guards). The mutation harness lives at <code>mut_stats.py</code> in the checkout
+during development: 20 mutations, <strong>20 bite</strong>, scored by return code with only
+<code>rc == 1</code> counting as a failing suite (<code>rc == 4</code> is a usage error and an
+earlier harness in this repo scored those as kills), with a green baseline
+required first.</p>
+<p><strong>Three guards were VACUOUS on the first run and the harness is what found
+them:</strong></p>
+<ol>
+<li><code>readable_needed == 1 and unreadable_needed == 1</code> — with one of each,
+   swapping the two counters still passes. The fixture is now <strong>asymmetric</strong>
+   (2 unreadable, 1 readable).</li>
+<li><code>policies_clean == 1</code> over a fixture with exactly one scanned policy —
+   <code>scanned - with_artifacts</code> and <code>scanned</code> are the same set. A second policy
+   that <em>does</em> carry an artifact is now present.</li>
+<li>The profile count was asserted only on the <strong>fleet total</strong>, which
+   <code>fleet_stats</code> recomputes from the raw rows and overwrites — so the
+   per-ADOM counter, which is the number the table actually prints per row, was
+   never asserted at all.</li>
+</ol>
+<p>A fourth appeared <em>because of</em> fix 2: adding a loaded policy removed the last
+fixture that was swept-with-no-edges, and <code>swept = bool(refs)</code> started passing.
+A dedicated third scope (scanned, zero refs) now covers it. Changing a fixture
+can uncover a mutation that was previously killed by accident — re-run the
+whole harness after every fixture edit, never just the mutation you were
+chasing.</p>
+<h2 id="119-a-filter-that-cannot-be-seen-to-have-applied-teststest_artifact_statspy">§119 — A filter that cannot be SEEN to have applied (<code>tests/test_artifact_stats.py</code>)</h2>
+<p>Counts are a lossy view of a scope. Two scopes holding <strong>disjoint</strong> data can
+report <strong>identical</strong> numbers, and on a statistics page that is indistinguishable
+from a filter that never ran. This actually happened: the four ADOMs of one
+chassis hold five policies each, so <code>?scope=</code> moved no figure and was reported
+as broken while being arithmetically correct.</p>
+<p>Rules this section fixes:</p>
+<ol>
+<li><strong>A narrowed page names its scope</strong> (<code>data-scope-banner="&lt;appliance_id&gt;"</code>,
+   device and ADOM spelled out). The banner is fed the <em>selected record</em>, not
+   re-derived from the appliance list — re-deriving is a second author of the
+   selection and drifts from it.</li>
+<li><strong>The unnarrowed page is labelled too.</strong> Blank is not neutral.</li>
+<li><strong>The banner points at the discriminator</strong>, which is the per-ADOM-unique
+   profile/policy <em>names</em>, never the totals.</li>
+<li><strong>The guards go through the route.</strong> A service-level scope test cannot see an
+   unlabelled or leaking render; that gap is exactly what shipped.</li>
+<li><strong>The fixture is symmetric, and a control test proves it.</strong> Asymmetric ADOMs
+   would let an unfiltered page pass by printing a different number — the guard
+   would go green for the wrong reason.</li>
+</ol>
+<p>Verification recipe: 6 mutations, 6 bite (drop <code>scope_appl</code> from the view; pin
+it to <code>None</code>; point it at the wrong record; drop the <code>?scope=</code> filter entirely;
+strip the fleet label; break the fixture's symmetry). Measured by rc, only
+<code>rc==1</code> counts as a bite, green baseline required first.</p>
+<h2 id="120-a-save-must-not-change-a-file-for-devices-nobody-named-teststest_artifact_inventory_scopepy">§120 — A save must not change a file for devices nobody named (<code>tests/test_artifact_inventory_scope.py</code>)</h2>
+<p>The artifact store resolves <code>(kind, name)</code> narrowest-first: the device's own
+copy, then the SATOM library copy, then — reported by name — any other box's.
+One consequence is easy to miss and expensive: <strong>a library-wide copy that three
+ADOMs resolve to is one file.</strong> Editing it "for prod" edits dev and dmz as
+well. Nothing fails, all three devices keep working, and the divergence only
+surfaces the next time somebody diffs them — by which point nobody remembers
+which of the three the edit was meant for.</p>
+<p><code>services.artifact_files.scope_impact(kind, name, appliance_id)</code> answers <em>who a
+new version of THIS copy would reach</em>, and it is computed <strong>before</strong> the write:</p>
+<ul>
+<li>editing a <strong>scoped</strong> copy reaches exactly that <code>(device, ADOM)</code> pair; the
+  other boxes that name the same mkey read something else entirely;</li>
+<li>editing the <strong>library</strong> copy reaches every consumer <strong>that does not hold its
+  own copy</strong>. The exclusion is grounded in <code>resolve()</code>'s order, not restated:
+  listing a device that holds its own copy as affected is not a harmless
+  over-count — it pushes the operator into forking a copy to protect a box that
+  was never at risk, and that fork then stops receiving the fleet-wide edits it
+  still wanted;</li>
+<li>"no walked policy names it" is <strong>not</strong> "one reader".</li>
+</ul>
+<p>When more than one pair is affected the save is <strong>refused</strong> until the operator
+answers <code>all</code> or <code>only</code>. Neither radio is pre-selected, and that is deliberate:
+a default is the defect in miniature. <code>all</code> edits devices nobody named; <code>only</code>
+quietly stops a fleet-wide fix from reaching the fleet. <code>only</code> additionally
+requires a pair that actually reads this copy — a fork scoped to a box that
+reads something else is a copy nobody will ever be served, and it silently
+shadows whatever that box does read.</p>
+<p><strong>Rendering guards go through the ROUTE.</strong> The four asks of this round all fail
+silently at the template, never at the service: a page can compute the right
+device and ADOM and print the appliance name; the eye can link to the right
+object and drop the scope; the modal can exist and post to a second set of
+routes. Two traps worth keeping:</p>
+<ol>
+<li><code>/artifacts/inventory</code> carries <strong>four tables</strong>, and the coverage one
+   legitimately prints policy and profile names. A guard asserting "no policy
+   names in the users column" over the whole document matches that table and
+   reports the opposite of what it measured — hence the <code>data-held-table</code>
+   anchor and <code>_held_table()</code>.</li>
+<li>The object NAME in the first column links to the same place as the eye, so a
+   row-wide grep for the object URL passes <strong>with the eye deleted</strong>. The guard
+   slices the <code>data-eye</code> anchor itself. (Mutation 11 survived the first harness
+   for exactly this reason.)</li>
+</ol>
+<p>Recipe: <code>venv/bin/python -m pytest tests/test_artifact_inventory_scope.py -q</code>
+(17 guards) and the mutation harness pattern from §116 — by <code>rc</code>, only <code>rc == 1</code>
+counts as a bite, with a green baseline required. 13 mutations, 13 bite.</p>
+<h2 id="121-a-scope-is-a-universe-not-a-filter-teststest_artifact_inventory_universepy">§121 — A scope is a universe, not a filter (<code>tests/test_artifact_inventory_universe.py</code>)</h2>
+<p><strong>The failure this prevents.</strong> An operator picks one device and one ADOM and
+the page still shows the fleet. Reported twice in two days about
+<code>/artifacts/inventory</code>, and both times the arithmetic was correct: the filter
+was applied to the row table and forgotten by the five other sections. Nothing
+errors, no table is empty — only a counter that answers a question about one
+ADOM with every ADOM's rows, and the larger number is the one a reader treats
+as authoritative.</p>
+<p><strong>Why a per-section filter is the wrong shape.</strong> Six sections meant six places
+to remember, and a section added later inherits nothing. The universe is
+narrowed ONCE (<code>_narrow</code>) before any figure is computed; every section is then
+a function of that universe and cannot widen it back.</p>
+<p><strong>Three rules these guards encode.</strong></p>
+<ol>
+<li><strong>The guards go through the ROUTE, never the service.</strong> The services
+   computed correctly the whole time the defect shipped. The page was what
+   lied, so a test that calls <code>fleet_stats()</code> directly proves nothing about
+   it. (<code>test_the_scope_filter_narrows_the_statistics</code> took a <code>client</code> fixture
+   and never used it — that is how the previous round shipped.)</li>
+<li><strong>The fixture is symmetric by construction, and has its own control test.</strong>
+   Two ADOMs of one chassis, identical counts, disjoint names, and the borrowed
+   edge present in BOTH directions so the symmetry survives it. With ADOMs of
+   different sizes an unfiltered page prints a different number and every guard
+   passes for the wrong reason. <code>test_control_...</code> fails if the fixture ever
+   loses that property.</li>
+<li><strong>Every negative assertion carries a positive control.</strong> "No other ADOM
+   appears" also passes when the narrowing became "always show one scope", or
+   when the page 500s into a stub; the fleet-page controls pin the other end.</li>
+</ol>
+<p><strong>Traps already paid for here.</strong></p>
+<ul>
+<li><code>assert "999999" in html</code> for the unknown-scope complaint <strong>passed with the
+  complaint deleted</strong>: the id is echoed inside every <code>back=</code> value on the page.
+  It must assert the complaint's own words — and words the banner does not
+  also print (<code>"whole fleet"</code> alone is the unscoped banner's badge).</li>
+<li>The document must have its <code>&lt;select&gt;</code> blocks removed before any "no other
+  device appears" sweep — the pickers list the fleet by design — and the strip
+  must assert that it removed something, or it is silently vacuous.</li>
+<li>The page carries FOUR tables; <code>data-held-table</code>, <code>data-scopes-table</code>,
+  <code>data-missing-table</code> and <code>data-head="…"</code> exist so a guard reads the one it
+  means. The coverage table legitimately prints policy and profile names.</li>
+<li>Run the mutation harness <strong>without <code>-x</code></strong>: the first guard to die masks the
+  rest, and a mutation then scores as "bites" on somebody else's assertion.</li>
+</ul>
+<p><strong>Verification recipe.</strong> 17 guards, rc=0; then 14 mutations, each reintroducing
+one half of the defect (usage not narrowed, objects not narrowed, headline over
+the whole store, <code>by_kind</code>/<code>by_scope</code> from the unfiltered index, held-elsewhere
+blinded, the <code>?scope=</code> alias dropped, the banner removed, the by-type and
+sidebar links dropping the scope, and one meta-mutation that breaks the
+fixture's symmetry to prove the control bites, and one that counts distinct NAMES instead of copies in the headline). All 14 must fail by <code>rc == 1</code>
+from a green baseline, and each must name its own guard among the dead.</p>
+<h2 id="122-the-scope-is-the-sessions-and-a-picker-is-not-a-scope-teststest_artifact_session_scopepy">§122 — The scope is the session's, and a picker is not a scope (<code>tests/test_artifact_session_scope.py</code>)</h2>
+<p><strong>The failure this prevents.</strong> A whole area of the product that does not
+participate in device-first navigation. The operator picks a device on the
+Architecture map, every other per-device page follows, and this one renders the
+fleet under a banner naming their device. It was reported three times in three
+days and the first two fixes were both real code that could not possibly have
+helped: they narrowed on <code>?appl=</code>, an argument the navigation never emits. The
+lesson is not "narrow harder" — it is <strong>read the scope from where the product
+keeps it</strong> (<code>device_context.current_appliance()</code>), so a page cannot have a
+second opinion about where the operator is standing.</p>
+<p><strong>Half the defect lived in the controls.</strong> Every guard of the two previous
+rounds stripped <code>&lt;select&gt;</code> before asserting, on the reasoning that a picker
+enumerates the fleet by design. It does not, on a per-device page — and that is
+literally what the operator was still seeing. So: <strong>each guard on a control has
+a matching guard on the POST that control drives</strong>, because a picker narrowed
+in a template is decoration and a form post carries whatever its author types.</p>
+<p><strong>Rules these guards encode.</strong></p>
+<ol>
+<li>No <code>&lt;select name="appliance_id"&gt;</code> on any artifacts page offers a device
+   other than the session pair, and none offers a maintenance-mode row.</li>
+<li>The row filter cannot widen the page: <code>held=own|library</code> selects <em>within</em>
+   the scope; the appliance filter it replaced had "Any" as its neutral option.</li>
+<li>With no device chosen the page <strong>redirects to the map</strong>. Rendering the fleet
+   is the reported defect with an empty session.</li>
+<li>A legacy <code>?appl=</code> link <strong>moves the session</strong> and redirects without the
+   argument — one answer to "which device am I on", not two.</li>
+<li>The write gate is on the ROUTE (<code>_in_scope</code>), and it is tested by POSTing
+   another pair's id, not by reading the rendered options.</li>
+</ol>
+<p><strong>Verification recipe.</strong> 13 guards, rc=0, then the mutation set of §123 (the two
+files are run together: they share the contract).</p>
+<h2 id="123-a-row-id-is-a-scope-and-a-json-feed-is-a-page-teststest_artifact_scope_gatespy">§123 — A row id is a scope, and a JSON feed is a page (<code>tests/test_artifact_scope_gates.py</code>)</h2>
+<p><strong>The failure this prevents.</strong> Half of <code>/artifacts/*</code> never mentions a device
+in the request at all. <code>/blob/&lt;id&gt;</code>, <code>/raw/&lt;id&gt;</code>, <code>delete</code> and <code>push</code> name a
+stored version by <strong>primary key</strong>; <code>/api/list</code>, <code>/api/refs</code> and
+<code>/api/coverage/&lt;appliance_id&gt;/&lt;policy&gt;</code> are the rendered pages with the HTML
+stripped off, and the last one takes the whole scope in its path. §121 and §122
+narrowed what those pages <em>show</em> — and an unlisted row is decoration: the ids
+are consecutive integers, and the route that answered for every one of them
+included the only destructive verb in the blueprint.</p>
+<p><strong>Rules.</strong></p>
+<ol>
+<li><strong>Library-wide rows stay readable.</strong> The gate is <code>appliance_id in (None,
+   scope.id)</code>, taken from <code>resolve()</code>'s search order rather than restated: a
+   gate that also refuses the shared bucket breaks the page it protects, which
+   is why every negative guard here has a positive control beside it.</li>
+<li><strong>404, not 403,</strong> for the two readers: in this page's universe that version
+   does not exist, and "forbidden" confirms the existence of a row the operator
+   may not see.</li>
+<li><strong><code>push</code> checks both ends.</strong> The destination was already gated; the SOURCE
+   is what supplies the bytes, so an off-scope row is how a file the operator
+   cannot see on this page becomes the file running on their device.</li>
+<li><strong>JSON callers get 409, never a redirect</strong> — <code>require_device_scope</code> learned
+   that a 302 to an HTML page renders as a parse error in a <code>fetch()</code>.</li>
+<li><strong>A scoped list may not print a store-wide total.</strong> <code>stats</code> is re-derived
+   from the rows returned; the header/table contradiction is the defect §119
+   already cost this product once.</li>
+<li><strong>The narrowing goes in the QUERY, before the row limit.</strong> Filtering the 200
+   rows that came back lets another pair's newer versions fill the limit and
+   the remainder gets reported as everything there is — the guard creates six
+   noise rows on another device and asks for <code>limit=3</code>.</li>
+<li><strong>A fork lands on the session pair</strong>, and the posted <code>only_appliance_id</code> is
+   ignored rather than validated. A field that is ignored <em>quietly</em> is how a
+   control keeps writing to a device nobody named, so there is a guard that the
+   form cannot name the destination <strong>and</strong> one that the fork still lands.</li>
+</ol>
+<p><strong>Traps already paid for here.</strong></p>
+<ul>
+<li><code>FortiWebClient(appl)</code> decrypts the appliance password, so the positive
+  <code>push</code> control dies on <code>InvalidToken</code> with a fixture password. Stub the
+  client as well as <code>wa.push</code> — and stub it in the NEGATIVE guard too, or a
+  broken gate reports as an error instead of a failed assertion.</li>
+<li>The first version of the re-pointed §120 guard asserted the refusal <strong>after</strong>
+  a successful fork in the same body: that fork makes the library copy unshared
+  (<code>affected</code> excludes a pair that now holds its own copy), so the second half
+  silently tested a different code path. Two tests, one fixture each.</li>
+<li><code>_stand_on</code> must clear <code>g._current_appliance</code>: <code>current_appliance()</code> memoises
+  on <code>g</code> and the <code>ctx</code> fixture holds one app context across every request.</li>
+</ul>
+<p><strong>Verification recipe.</strong> 16 guards, rc=0; then 15 mutations run over §122 and
+§123 together — each gate removed one at a time (blob, raw, delete, push
+source, <code>api_list</code> rows, <code>api_list</code> totals, <code>api_refs</code> index, <code>api_refs</code> single
+object, <code>api_coverage</code> path id, the 409, the history filter moved after the
+limit, the fork picker restored in the template, the fork target read from the
+form, the fork's no-reader refusal disabled) plus one meta-mutation that breaks
+the fixture's symmetry to prove the control bites. All 15 must fail by
+<code>rc == 1</code> from a green baseline, without <code>-x</code>, each naming its own guard among
+the dead.</p>
+<h2 id="124-an-emptiness-is-not-an-absence-teststest_artifact_empty_contentpy">§124 — An emptiness is not an absence (<code>tests/test_artifact_empty_content.py</code>)</h2>
+<p><strong>What is guarded.</strong> That a stored artifact version with no content is treated
+as <em>not available</em> by everything that decides whether an object can travel, and
+that the standalone push verb stays gone.</p>
+<p><strong>Why it needs a guard.</strong> Nothing fails when a copy is empty. <code>wa.resolve()</code>
+returns bytes, <code>held</code> is true, the coverage verdict reads <code>ready</code>, the
+pre-flight prints "will be copied WITH content" and the apply uploads it. The
+destination then shows the object as configured while the rule bound to it
+enforces nothing — and the failure surfaces, if ever, as a <code>-7694</code> on a
+completely different day. <strong>Every "is it held?" check answers yes</strong>, which is
+exactly why no page reported it.</p>
+<p><code>push</code> belongs in the same section because it was the only way to repair such
+an object, and it did so by writing bytes to a device with nothing bound to
+them: no plan, no policy, no reconciliation report.</p>
+<p><strong>The rules that cost something to find.</strong></p>
+<ol>
+<li><strong>WSDL cannot be captured.</strong> Three kinds (<code>xml_schema</code>, <code>wsdl</code>, <code>grpc_idl</code>)
+   have no read path, so <code>/artifacts/capture</code> refuses them <em>before</em> the fetch.
+   A capture guard written with <code>wsdl</code> goes green without ever reaching the
+   emptiness check — mine did, and only its CONTROL exposed it. Use <code>openapi</code>.</li>
+<li><strong>A door test is not a store test.</strong> <code>wa.put()</code> has no guard of its own, and
+   the store already holds whatever the doors let through before they were
+   closed. The fixture therefore writes empty versions directly; asserting only
+   that new empties are refused would claim the house is clean because the lock
+   is new.</li>
+<li><strong><code>empty</code> must not be folded into <code>missing</code>.</strong> They read the same on a
+   counter and send the operator to opposite remedies: an absence is captured
+   or uploaded, an emptiness is re-authored.</li>
+<li><strong>A warning built from the filtered rows is not a warning.</strong> The empty card
+   is derived from the pair's whole holding; a mutation that derives it from
+   <code>rows</code> still renders perfectly, and only the filter guard notices.</li>
+<li><strong>Assert the route is UNROUTED, not that it is scoped.</strong> A scope test on a
+   dead route keeps passing after somebody re-adds an unscoped one under
+   another name. And assert the TEMPLATE separately: a page can still offer the
+   button after the route is gone, which reads as a broken product rather than
+   a removed feature.</li>
+<li><strong>Assert where the removed answer WENT.</strong> Dropping the coverage table is
+   only correct because <code>/artifacts/audit</code> and the clone pre-flight still
+   answer it; a guard that asserted only the removal would pass just as well if
+   the answer were nowhere.</li>
+</ol>
+<p><strong>Verification recipe.</strong> <code>pytest tests/test_artifact_empty_content.py</code> green,
+then the mutation harness in this section's round: 18 mutations, each of which
+must produce <code>rc == 1</code> <strong>and name its own guard</strong> among the FAILED lines. One
+is <em>meta</em> — it makes the fixture's hollow copy non-empty — and proves the
+fixture is what drives the rest.</p>
+<h2 id="125-the-exception-catalog-teststest_exception_catalog_shapepy">§125 — the exception catalog (<code>tests/test_exception_catalog_shape.py</code>)</h2>
+<p><strong>Nothing fails when this catalog is wrong.</strong> A missing type just never appears in the
+picker. A wrong enum token is posted to the appliance and either bounces with a device
+error nobody reads, or is <em>stored and never matches</em>. Both render on the Exceptions page
+as a working carve-out. That is why every claim is asserted rather than eyeballed.</p>
+<p>19 guards, 16/16 mutations bite (by rc, only <code>rc==1</code> counts, green baseline required,
+no <code>-x</code>, and each mutation must name its own guard among the dead).</p>
+<p>What the guards pin, and why each one exists:</p>
+<table>
+<thead>
+<tr>
+<th>guard</th>
+<th>the failure it stops</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Direction uses <code>request</code>/<code>response</code></td>
+<td>the guide's labels are "Request"/"Response"; the label is a payload the box rejects</td>
+</tr>
+<tr>
+<td>action ⊆ the SDK token set</td>
+<td>23 kinds share one action vocabulary; inventing a 24th is unauthorable input</td>
+</tr>
+<tr>
+<td>threat-weight is a token scale</td>
+<td>it looks like a 1-6 slider in the GUI and is <code>low…critical</code> on the wire</td>
+</tr>
+<tr>
+<td>a condition must name a target</td>
+<td>a condition with no target matches every request the target appears in</td>
+</tr>
+<tr>
+<td>the orphan type resolves <em>and</em> is migrated</td>
+<td>the alias is the guard; the row rewrite is the cleanup. One without the other leaves half the defect</td>
+</tr>
+<tr>
+<td>exactly one catalog entry per device object</td>
+<td>two entries for one object is how a form posts to the endpoint nobody maintains</td>
+</tr>
+<tr>
+<td>the operator gate only ever SUBTRACTS</td>
+<td>an empty operator and an unknown target must pass; the gate may not invent a requirement</td>
+</tr>
+<tr>
+<td>bot element types stay ungated</td>
+<td>its tokens are human labels and its subtable was empty on the wire — guessing would forbid working input</td>
+</tr>
+<tr>
+<td><code>FULL-URL</code> keeps its hyphen</td>
+<td>pins the <em>status quo</em> of an unresolved question so a later session changes it on evidence, not on tidiness</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Recipe.</strong> <code>venv/bin/python -m pytest tests/test_exception_catalog_shape.py -q</code> then the
+mutation harness. Read the options through <code>fields_for()</code>, never off <code>FIELD_SPECS</code>: the
+form prefers the curated WAF engine and only falls back to the static seed, so asserting
+the seed can pass while the picker renders something else.</p>
+<p><strong>Two verification traps paid for in this round.</strong>
+1. A <code>200</code> is not evidence of authentication — the sign-in page is a 200. Four checks
+   scored OK against the login form before the assertions were tightened to demand
+   page-specific content.
+2. Flask signs the session cookie with <code>key_derivation='hmac'</code> + sha1, not itsdangerous'
+   default. Hand-rolling <code>URLSafeTimedSerializer</code> produces a cookie the server silently
+   discards. Use <code>app.session_interface.get_signing_serializer(app)</code>.</p>
+<p><strong>Known weak assertion:</strong> <code>UNVERIFIED_SHAPES</code> notes are checked only for length &gt; 40, and
+the notes are concatenated string literals, so hollowing out one fragment survives.
+Emptying the register does bite. Recorded rather than over-engineered.</p>
+<h2 id="126-a-fleet-page-states-its-denominator-teststest_waf_fleetpy">§126 — A fleet page states its denominator (<code>tests/test_waf_fleet.py</code>)</h2>
+<p><code>Fleet -&gt; WAF</code> is the first page in this product that is deliberately
+fleet-WIDE after four rounds of narrowing <code>/artifacts/*</code> to the session's
+device. The two are not in tension, but the difference has to be <em>stated</em>: a
+page that spans devices must say which devices, and a page built from stored
+snapshots must say how old they are. Both sentences are rendered by
+<code>templates/waf/_header.html</code> — ONE definition, four call sites, the same reason
+<code>partials/nav_monitoring.html</code> exists.</p>
+<h3 id="what-the-guards-hold">What the guards hold</h3>
+<ol>
+<li>
+<p><strong>The universe is narrowed once.</strong> <code>waf_fleet.collect()</code> is the only place
+   that reads appliances; every section is a function of its result. Six call
+   sites each remembering a filter is what §121 had to retrofit. The guards are
+   written against the ROUTE, never the service: on <code>/artifacts/*</code> the services
+   computed correctly for the entire time the defect was live, and it was the
+   PAGE that leaked (§122).</p>
+</li>
+<li>
+<p><strong>Absence is not zero.</strong> A device with no snapshot is listed, banner-named,
+   and excluded from the denominators; <code>reporting</code> and <code>scopes</code> are both
+   printed. Dropping it silently turns "3 policies need attention" into an
+   answer to a different question. Same rule as <code>satom_scrape_up 0</code>.</p>
+</li>
+<li>
+<p><strong>A field the collection does not have is not an unfilled field.</strong> The
+   offline web-protection profile has ~38 of the 41 protection slots.
+   <code>applicable</code> is computed per profile from the keys the object actually
+   carries, and the matrix distinguishes <em>not applicable</em> (grey dash) from
+   <em>zero</em> (red) — printing the second where the first is true invents a gap.</p>
+</li>
+<li>
+<p><strong>A partition does not license hiding the parts.</strong> The posture doughnut
+   assigns one bucket per policy; <code>detection_any</code> / <code>no_profile_any</code> /
+   <code>disabled_any</code> are published beside it because a disabled policy may also be
+   unprotected.</p>
+</li>
+<li>
+<p><strong>A question is only asked where it applies.</strong> Deprecated TLS versions are
+   read only off a policy that terminates TLS, and a missing certificate is
+   only a finding where TLS is on — a plain-HTTP policy is not running weak TLS,
+   it is running none.</p>
+</li>
+<li>
+<p><strong>A dangling profile reference is not "no profile".</strong> The first is a name
+   that resolves to nothing; the second is an empty field. They have different
+   remedies, so they are counted separately.</p>
+</li>
+</ol>
+<h3 id="traps-this-round-paid-for">Traps this round paid for</h3>
+<ul>
+<li><strong>The extract cache was keyed by the SoT version-row id.</strong> That looked
+  content-addressed (an unchanged config mints no row) and is not: ids are
+  re-issued whenever the index is rebuilt — a restore from a bundle, a promoted
+  standby, a test's fresh database — so one install's device answered for
+  another's. Keyed on the snapshot's SHA256 instead, and with no hash there is
+  no cache: a fallback to the id would put the exact collision back into the one
+  path that takes it. Found because the guards reuse ids by design.</li>
+<li><strong><code>conftest.login</code> writes <code>_user_id</code> over an existing session and
+  flask-login keeps serving the FIRST identity.</strong> A permission guard that
+  switches user mid-body silently re-asserts the same user, so its control half
+  passes for the wrong reason. Every multi-user guard here is split into two
+  tests, which is what <code>tests/test_maintenance_mode.py</code> already does.</li>
+<li><strong><code>selectattr('2', ...)</code> on a tuple</strong> is an index-as-attribute filter that
+  matches nothing and renders a confident, EMPTY table. The coverage rows are
+  grouped in Python and handed to Jinja already grouped; the findings list is
+  built with an explicit loop rather than <code>selectattr('1')</code>, because the failure
+  mode there is printing "nothing to fix" over a fleet that is not clear.</li>
+<li><strong>Coverage counted naively is O(protections x policies x profiles).</strong> At the
+  target fleet that is millions of comparisons per render for a number that
+  needs one pass: index the profiles once, then tally per policy.</li>
+<li><strong>The chart palette is the light one.</strong> <code>fortiweb.css</code> has no dark mode
+  (§9m); grid lines at 7% slate are invisible on white and the pastel status
+  colours drop to ~1.4:1. Every colour in <code>static/js/waf.js</code> and
+  <code>static/css/waf.css</code> comes from the <code>.fw-badge-*</code> set.</li>
+<li><strong>A failed fetch is not an empty chart.</strong> On a canvas they look identical and
+  mean opposite things, so the loader paints a message.</li>
+</ul>
+<h3 id="recipe_4">Recipe</h3>
+<pre><code>venv/bin/python -m pytest tests/test_waf_fleet.py -q -p no:warnings
+</code></pre>
+<p>Mutation harness: <code>/tmp/waf_mutate.py</code> — measured by rc (only <code>rc == 1</code> is a
+failure), baseline green required, no <code>-x</code>, and each mutation must name the
+guard it kills among the dead. One mutation is <em>meta</em>: it breaks the fixture so
+the never-harvested device is never created, proving the control can die.</p>
+<hr>
+<h2 id="127-demand-supply-and-the-difference-between-them-teststest_waf_artifact_fleetpy">§127 — Demand, supply, and the difference between them (<code>tests/test_waf_artifact_fleet.py</code>)</h2>
+<p><code>/waf/artifacts</code> is the only fleet-wide view of the file-backed WAF objects.
+<code>/artifacts/*</code> is pinned to the session's (device, ADOM) by §121–§123, on
+purpose, so nothing else in the product can answer <em>which policies in this
+estate could not be migrated today</em>.</p>
+<h3 id="what-the-guards-hold_1">What the guards hold</h3>
+<ul>
+<li><strong>The universe is <code>waf_fleet.fortiweb_scopes</code>, and nothing else.</strong> A second
+  query here would be a second answer to "which devices may this console
+  count", and the two drift silently. The guards go through the ROUTE: on
+  <code>/artifacts/*</code> the services computed correctly for the whole time the leak
+  was live and it was the PAGE that showed the fleet (§122). One guard runs in
+  the GLOBAL console specifically, because in a FortiWeb session
+  <code>visible_appliances()</code> already drops the other products and the explicit
+  <code>kind</code> filter can be deleted without any FortiWeb-session test noticing.</li>
+<li><strong>One author for the verdict.</strong> <code>artifact_refs.verdict_of</code> is imported by
+  <code>device_audit</code>, <code>artifact_stats.scope_stats</code> and the fleet page. The guard
+  walks every needed object and asserts the three agree object by object — a
+  comment saying "identical expression, deliberately" is a promise, not a
+  mechanism.</li>
+<li><strong><code>orphan</code> and <code>library</code> are states, not verdicts.</strong> A held copy nothing
+  names has no need behind it; the library bucket belongs to no device. Both
+  are excluded from readiness.</li>
+<li><strong>A library-backed <code>borrowed</code> keeps the verdict and changes the remedy.</strong>
+  Sending an operator to look for "another appliance's bytes" when the file is
+  a deliberate shared copy sends them after a device that is not in the story.</li>
+<li><strong>EMPTY beside <code>ok</code>, decided on the NEWEST version.</strong> An older hollow version
+  under a newer full one is not what <code>resolve()</code> serves, so it is not a
+  finding. §124 is the reason the flag exists at all.</li>
+<li><strong>Two different absences, both kept out of the denominators.</strong> <code>swept=False</code>
+  (nobody has looked at this scope) and <code>in_config=None</code> (no configuration
+  snapshot, so its policy total is unknown). The second is what makes
+  <code>unwalked=None</code> rather than a number, and <code>max(0, …)</code> is what stops a policy
+  deleted between the sweep and the harvest from printing a negative backlog.</li>
+<li><strong>The filters narrow the TABLE.</strong> Every tile and every chart is the whole
+  visible fleet, on every filtered URL — the §119 drift written down.</li>
+</ul>
+<h3 id="traps-this-cost">Traps this cost</h3>
+<ul>
+<li><code>device_audit</code> returns its per-object rows under <strong><code>artifacts</code></strong>, not
+  <code>needed</code>.</li>
+<li>A library copy is <strong><code>borrowed</code></strong>, not <code>ok</code>: <code>held_here</code> means a copy scoped
+  to THIS appliance. That is <code>artifact_stats</code>' existing vocabulary and the page
+  does not get a private one — it was the guard that discovered the page and
+  the guard's author disagreed, and the page was right.</li>
+<li>The store's ordering (<code>created_at desc, id desc</code>) is re-derived in three
+  places already; a fourth answer here would make this page name a version
+  neither <code>waf_artifacts.latest</code> nor <code>artifact_files.object_index</code> would serve.</li>
+<li><code>conftest.login</code> writes <code>_user_id</code> over an existing session and flask-login
+  keeps serving the FIRST identity — multi-user guards are split into two tests
+  (same as §126, same as <code>tests/test_maintenance_mode.py</code>).</li>
+</ul>
+<h3 id="recipe_5">Recipe</h3>
+<pre><code>venv/bin/python -m pytest tests/test_waf_artifact_fleet.py -q -p no:warnings
+</code></pre>
+<p>Mutation harness: <code>/tmp/mutate.py</code> — measured by rc (only <code>rc == 1</code> is a
+failure), baseline green required, no <code>-x</code>, and each mutation must name the
+guard it kills among the dead. One mutation is <em>meta</em>: it removes the library
+copy from the fixture, proving the library guards are load-bearing.</p>
+<h2 id="128-provenance-travels-with-the-data-teststest_waf_exportpy">§128 — Provenance travels with the data (<code>tests/test_waf_export.py</code>)</h2>
+<p>An export is a snapshot OF A SNAPSHOT. Every <code>/waf/*</code> page reads the
+source-of-truth store, so its figures are exactly as old as the last harvest of
+each scope — which is why each page carries the scope-and-freshness banner as
+its DENOMINATOR and not as a footnote.</p>
+<p><strong>A spreadsheet in somebody's mail has no banner.</strong> Left alone it becomes a
+document that outlives its own truth, and the person opening it three weeks
+later has no way to know which scopes were stale, which never reported, or
+whose visibility it was built under. That is why the bundle is not "the tables,
+zipped".</p>
+<h3 id="the-five-properties-and-the-guard-for-each">The five properties, and the guard for each</h3>
+<ol>
+<li><strong>Provenance in every artefact, from ONE author.</strong> <code>provenance()</code> writes the
+   same block into <code>MANIFEST.txt</code>, the workbook's first sheet (<code>Scope &amp;
+   freshness</code>, before any data sheet) and the PDF's first page. A never-reported
+   scope is NAMED, never folded into a denominator as a device with zero
+   policies. Guards read the manifest, parse the workbook back out of its XML
+   (not the structure we handed the writer — that passes even if the file is one
+   Excel refuses to open) and un-filter the PDF's content streams.</li>
+<li><strong>Nothing ticked is not an empty export.</strong> <code>build_zip</code> raises; the view
+   flashes and redirects. A typo in a dataset name is not quietly a selection.</li>
+<li><strong>The bundle is what THIS console may see.</strong> Narrowed by the same single
+   <code>waf_fleet.fortiweb_scopes</code> call every page here is a function of. Guards go
+   through the ROUTE (§122) and scan EVERY byte of the archive for another
+   product's device.</li>
+<li><strong>Exceptions are desired state.</strong> Verified against <code>models.WppException</code>:
+   there is no column recording a push, and <code>exception_inject.apply_injection</code>
+   returns its steps and stores nothing. So no artefact implies deployment, and
+   a scope with no snapshot answers <strong>unknown</strong> about its profiles and policies,
+   never <em>missing</em> — telling an operator to re-author a carve-out we simply have
+   no evidence about is worse than saying nothing.</li>
+<li><strong>A chart that travels is its series.</strong> The PDF drawing and the (label,
+   value) rows in the CSV/workbook come from one <code>ChartSpec</code>. Colours are mapped
+   by KEY, not by position: a palette indexed by slot paints "blocking" whatever
+   colour the fourth entry happens to be.</li>
+</ol>
+<h3 id="traps-this-round-paid-for_1">Traps this round paid for</h3>
+<ul>
+<li><strong>The PDF's content streams are <code>/ASCII85Decode</code> THEN <code>/FlateDecode</code>.</strong> A
+  verifier that only inflates finds nothing — and passes on an empty document.</li>
+<li><strong>Manifest prose is hard-wrapped</strong>, so any assertion on a sentence long enough
+  to be worth asserting fails against a PERFECT artefact. Compare with collapsed
+  whitespace (the same trap §7f documents for <code>LICENSE</code>).</li>
+<li><strong><code>xlsx_writer</code> bolds and freezes ROW 0.</strong> A prose line above the header
+  freezes the prose and lets the real header scroll away — so the per-dataset
+  "about" text lives on the scope sheet, where the reader arrives first.</li>
+<li><strong>The CSV needs a BOM.</strong> Without <code>utf-8-sig</code>, Excel on Windows reads UTF-8 as
+  latin-1 and every accented device comment arrives mojibake.</li>
+<li><strong><code>policies</code> is a COUNT on <code>/waf/artifacts</code>.</strong> An export that overwrites it
+  with a joined list gives one column two meanings across two surfaces; the
+  names get their own column.</li>
+<li><strong><code>back</code> is an endpoint KEY resolved against a literal tuple.</strong> A form whose
+  only job is to produce a download is still a form, and an open redirect is
+  still an open redirect.</li>
+<li><strong>The panel carries no JavaScript</strong> — a <code>&lt;details&gt;</code> around a GET form. The CSP
+  drops <code>unsafe-inline</code>, the five page templates do not all declare a scripts
+  block, and a panel needing one gets forgotten by the sixth page. Its checkbox
+  lists come from the blueprint's own context processor, because an empty
+  <code>{% for %}</code> renders nothing at all and no error.</li>
+</ul>
+<h3 id="how-to-check-it">How to check it</h3>
+<pre><code>cd /opt/satom &amp;&amp; ./venv/bin/python -m pytest tests/test_waf_export.py -q
+</code></pre>
+<p>Mutation harness: <code>/tmp/mutate.py</code> — measured by rc (only <code>rc == 1</code> is a
+failure), baseline green required, no <code>-x</code>, and each mutation must name the
+guard it kills among the dead. One mutation is <em>meta</em>: it gives the
+never-harvested scope a snapshot, proving the unknown-vs-missing control can
+die.</p>
+<h2 id="129-the-catalogue-must-agree-with-the-wire-not-with-the-guide">§129 — the catalogue must agree with the WIRE, not with the guide</h2>
+<p><code>tests/test_wire_shapes.py</code>, <code>tests/test_mutation_survivors.py</code>.</p>
+<p><strong>What goes wrong silently.</strong> A catalogue that disagrees with the appliance is
+not a broken feature — it is a working-looking one. The operator fills the
+form, the row saves, the page lists it, and the only symptom is an opaque
+firmware code at deploy time, on a different day, probably to a different
+person. Five of the custom-signature catalogue's facts were wrong for three
+weeks under a guard that reported them healthy, because the guard asserted the
+admin guide back to itself.</p>
+<p><strong>How the facts were obtained (repeat this, do not re-derive it).</strong> SSH to the
+appliance and ask the CLI, which enumerates every enum:</p>
+<pre><code>config waf custom-protection-rule
+edit &lt;name&gt;
+set action ?              # ask it TWICE: once per Direction
+config meet-condition
+edit 1
+set ?                     # '*' marks the mandatory keys
+set operator ?
+set request-target ?
+</code></pre>
+<p>The REST API does NOT expose this: <code>?action=schema</code> returns the rows, not a
+schema, and a wrong value comes back as <code>-651 Invalid input value.</code> with no
+indication of which field.</p>
+<p><strong>Traps this round paid for.</strong></p>
+<ol>
+<li><strong><code>set action ?</code> answers differently per Direction.</strong> Asking once and
+   writing the answer down deletes the erase actions, which are the admin
+   guide's headline example. Ask under both.</li>
+<li><strong>A target field is a SPACE-SEPARATED LIST.</strong> The device stores what you
+   send verbatim, trailing space and all (<code>"REQUEST_URI REQUEST_BODY "</code>).
+   Validating it as one token rejects the normal case.</li>
+<li><strong><code>threshold</code> is on the wire but not in <code>set ?</code>.</strong> A field the device
+   stores is a field the operator can be asked about; absence from the
+   completion list is not absence from the object.</li>
+<li><strong>The two file-name rules point in OPPOSITE directions.</strong> OpenAPI requires
+   an extension, JSON Schema forbids one. An <code>if</code> gets this wrong; a table
+   does not. The other four kinds were measured too — their silence is a
+   measurement, not an omission.</li>
+<li><strong>The guide states extensions the firmware does not enforce.</strong> <code>.xsd</code> for
+   XML schema is documented and NOT checked (<code>.xsd</code>, no extension, <code>.txt</code> and
+   <code>.xml</code> all upload with 200). Do not warn about a rule the box does not
+   apply: a false warning trains operators to ignore the true one.</li>
+<li><strong>A guard can assert the wrong LAYER.</strong> The guard for "the write gate stays
+   narrow" compared the two catalogue functions and passed while the write
+   path called the wrong one. A mutation swapping them survived. Assert
+   through the function whose behaviour is at stake.</li>
+<li><strong><code>PUT /cmdb/&lt;endpoint&gt;/&lt;mkey&gt;</code> answers 500 and writes nothing;
+   <code>?mkey=</code> is the shape that works.</strong> <code>fortiweb_ops._path</code> already builds the
+   working one — a probe written the other way makes SATOM look broken when
+   it is not. Verify the probe before believing the finding.</li>
+<li><strong>A snapshot omits kinds with zero rows.</strong> <code>signature_group_rule</code> was
+   absent from every harvest because no appliance had a custom signature, not
+   because the sweep skips it. "Missing from the snapshot" is not "not
+   collected".</li>
+</ol>
+<h2 id="130-ipam-allocation-and-the-provisioning-dns-step-2026-08-27">§130 — IPAM allocation and the provisioning DNS step (2026-08-27)</h2>
+<p><strong>The defect being guarded.</strong> A step whose success value does not depend on
+whether the work happened. <code>provision_runner</code> imported four functions that did
+not exist, inside <code>except ImportError</code> handlers, so the DNS step reported OK
+with "no DNS provider configured" on installs that had one. Green run, no
+record.</p>
+<p><strong>How to check it by hand.</strong></p>
+<ol>
+<li>The four operations must exist at module level:
+   <code>venv/bin/python -c "import app.services.dns_providers as d; print([hasattr(d,n) for n in ('allocate_address','release_address','create_record','delete_record')])"</code>
+   -&gt; <code>[True, True, True, True]</code>. Any <code>False</code> means the runner is again
+   blaming an operator's DDI for a hole in this package.</li>
+<li><code>grep -n "except ImportError" app/services/provision_runner.py</code> — the only
+   legitimate hit is <code>_image_path</code> (an optional model import). A hit anywhere
+   near a <code>dns_providers</code> import is the original bug returning. The guard is
+   AST-based (<code>test_runner_does_not_swallow_a_missing_provider_module</code>)
+   because a substring check bites the legitimate one too — that mis-scoped
+   assertion is how this guard failed on its first run.</li>
+<li><code>grep -c 0xFFFFFFFF app/services/dns_providers/*.py</code> — exactly ONE file
+   (<code>base.py</code>) may match. Two copies of the netmask conversion is how a subnet
+   ends up with two different masks depending on which backend answered.</li>
+</ol>
+<p><strong>Three properties that must not be quietly relaxed.</strong></p>
+<ul>
+<li><strong><code>can_allocate</code> is not <code>can_write</code>.</strong> phpIPAM and NetBox-without-the-plugin
+  hand out addresses and cannot publish records. One flag for both re-creates
+  the original promise.</li>
+<li><strong>Release is keyed on the handle.</strong> Releasing by address string frees
+  whatever row currently holds that address, which after a lease expiry or an
+  operator edit is somebody else's.</li>
+<li><strong>Nothing is guessed.</strong> A non-power-of-two subnet size yields no prefix; an
+  absent gateway stays empty. Both values are written into an appliance's
+  default route at first boot, where a plausible wrong answer is worse than a
+  blank the operator has to fill in.</li>
+</ul>
+<p><strong>Trap for the next round.</strong> The mutation "base class no longer refuses" first
+came back SURVIVES — the guard it named checks method <em>identity</em>
+(<code>cls.release_address is not DnsProvider.release_address</code>), which no change to
+the <em>body</em> can affect. The mutation was mis-aimed, but it exposed a real hole:
+nothing asserted the base class refuses at all. Ninth entry in the running
+tally of guards that assert the wrong layer.</p>
+<h2 id="131-the-device-hostname-2026-08-27">§131 — the device hostname (2026-08-27)</h2>
+<p><strong>What is being guarded.</strong> That the name printed for an appliance is the one
+the DEVICE reports, and that "never observed" stays distinguishable from
+"observed as empty".</p>
+<p><strong>The fixture rule, and why it is the whole section.</strong> In this laboratory
+<code>hostName</code> equals <code>Appliance.name</code> on both FortiWebs. An implementation that
+read the wrong field — or never called the device and echoed the operator's
+label — passes every test built from the live fleet and fails on the first
+customer box that is called something else. Every fixture in
+<code>tests/test_device_hostname.py</code> therefore makes the three strings differ:</p>
+<pre><code>Appliance.name = "edge-a"   host = "{ip}"   hostName = "fwb-cluster-1"
+</code></pre>
+<p>Two mutations exist purely for this: <em>hostname never read</em> and <em>echoes the
+operator label</em>. Both die on the divergence, and neither would die on a
+laboratory-shaped fixture.</p>
+<p><strong>Three properties.</strong></p>
+<ol>
+<li><strong>One status call.</strong> <code>firmware_probe</code> makes exactly one request per
+   appliance; that is what lets it sit on <code>/api/v1</code>. A hostname fetched from a
+   second endpoint doubles the fleet sweep. Guarded by counting calls, not by
+   reading the code.</li>
+<li><strong>The timestamp attests an observation.</strong> <code>device_hostname_at</code> is written
+   only when a name came back. FortiAuthenticator has <strong>no hostname field</strong> in
+   its status payload (measured on {device}, 2026-08-27) — so a single shared
+   timestamp would claim it was checked. A later silent answer does not erase
+   a known name: absent means unknown.</li>
+<li><strong>The chassis qualification must be true.</strong> <code>vdom</code> is <code>'root'</code> on every
+   FortiWeb regardless of ADOM mode, so it proves nothing; the qualification
+   keys on <code>appliance_name_parts</code> having actually stripped an <code>@&lt;adom&gt;</code>
+   suffix. Reusing that function rather than re-deriving the test is
+   deliberate — it already refuses a suffix that contradicts <code>vdom</code>.</li>
+</ol>
+<p><strong>How to check by hand.</strong> <code>grep -n 'display_host' app/templates/workspace/*.html</code>
+-&gt; three hits, and <code>grep -nE '\{\{ *(a|appliance)\.host *\}\}'</code> -&gt; none.</p>
+<p><strong>Finding, reported and NOT acted on.</strong> <code>app/templates/workspace/index.html</code>
+is dead chrome: <code>workspace.index</code> always redirects (to the current device, or
+to <code>/architecture/</code> when none is selected), so the template never reaches a
+browser. It was updated for consistency and is guarded, but nothing verifies
+it renders. <code>policies.html</code> and <code>browse.html</code> were both confirmed over real
+HTTP against the live node.</p>
+<h2 id="132-line-profiles-declared-vs-inferred-2026-08-27">§132 — line profiles: declared vs inferred (2026-08-27)</h2>
+<p><strong>§132 means this section.</strong> The clone's additive mode briefly carried the
+same number; it was renumbered to §138 on 2026-08-28 because it had one
+citation to this section's five. The references in <code>services/spo_wizard.py</code>,
+<code>services/classification_ops.py</code>, <code>views/_segments_form.py</code>,
+<code>tests/test_spo_wizard.py</code> and <code>CHANGELOG.md</code>'s line-profiles entry all mean
+this one, and did not have to change.</p>
+<p><strong>The property.</strong> <code>services.line_profiles.line_plan</code> is the ONLY module that
+answers "what does this line receive?", and every plan says which of two kinds
+of claim it is:</p>
+<ul>
+<li><code>declared</code> — a <code>LineProfile</code> row exists. Its segment names are resolved
+  against the live list, and a name that resolves to nothing is a <strong>problem</strong>.</li>
+<li><code>inferred</code> — nobody declared it, so the historical string match is used and
+  <strong>labelled</strong>. It exists so the feature works against catalogs nobody has
+  filled in; it is not a fallback that quietly does the same job.</li>
+</ul>
+<p>There is no third state. A declaration that resolves to nothing stays
+<code>declared</code> with zero segments and a <code>missing_segment</code> problem. Falling back to
+the guess there would hide the breakage behind the answer the operator
+overrode — and it is a one-line change, so there is a mutation for it.</p>
+<p><strong>How to check by hand.</strong> The allowlist in
+<code>tests/test_line_profiles.py::_SEGMENT_READERS</code> names every module permitted to
+read the raw segment list, each with a reason. Adding a name to it is a review
+moment; that is the whole value. Four entries are display-only readers and one
+(<code>services/analysis.py</code>) is a report facet with <strong>blank-means-any</strong> semantics
+that <code>line_plan</code> deliberately does not share — routing it through <code>line_plan</code>
+would change what the report counts.</p>
+<p><strong>Four traps this round, all of them mine.</strong></p>
+<ol>
+<li>An AST guard looking for "a Compare on a subscript keyed <code>line</code>" flagged
+   <code>views/provisioning.py</code> and <code>services/analysis.py</code>, which compare a FILTER
+   dict. Third guard in this repo to assert the wrong LAYER. Replaced with the
+   allowlist, which cannot make that mistake.</li>
+<li>A test aimed at "rename onto a line that already has a profile" passed on
+   the <strong>duplicate-value</strong> error instead — <code>apply_rows</code> refuses a rename onto
+   an existing catalog value before <code>_retarget</code> ever runs. The collision branch
+   is only reachable through <strong>delete-with-reassign</strong>.</li>
+<li>A mutation removing dedup from <code>LineProfile.set_segments</code> survived because
+   <code>segments()</code> dedupes on READ too. A reader-only assertion cannot see a
+   writer's bug: assert on the stored blob.</li>
+<li>A test asserting the delete flash said "guess" passed against a flash that
+   said nothing — the page's own header prose contains the word. Match a
+   sentence only the handler can produce. (Ninth aserto-que-casa-su-propio-
+   contexto.)</li>
+</ol>
+<p><strong>Verified by render</strong> against the live node: <code>/web/line-profiles/</code> 200, the
+four real catalog lines listed, every undeclared line badged <code>inferred</code>,
+anonymous bounced, zero fleet dark-theme chrome (§9m — this product is white).</p>
+<h2 id="133-the-spo-wizard-refuse-early-compensate-exactly-never-guess-2026-08-27">§133 — the SPO wizard: refuse early, compensate exactly, never guess (2026-08-27)</h2>
+<p><strong>Why a planner and not a form handler.</strong> <code>workspace.create_policy</code> stops at
+the first failure and leaves everything before it. Survivable when the
+leftovers are all on one device an operator can see. NOT survivable once a
+reserved address and an issued certificate are in the chain — nobody finds
+those by looking at the appliance.</p>
+<p><strong>The four properties, and the mutation that proves each.</strong></p>
+<ol>
+<li><strong><code>build_plan</code> writes nothing.</strong> Structural guard over its AST (no
+   <code>commit</code>, no <code>create</code>, no provider verb), plus a runtime guard that patches
+   all four provider functions and asserts none was called. A planner that
+   writes is invisible: the operator pressed <em>Preview</em>.</li>
+<li><strong>A blocked plan is never applied</strong> — dry run included.</li>
+<li><strong>Compensation is keyed on recorded facts.</strong> <code>took_address</code> / <code>ip_ref</code> /
+   <code>dns_record_id</code>, never the current state of the world. The mutation
+   <code>took_address = plan.address</code> (release a hand-typed VIP back to a pool)
+   dies.</li>
+<li><strong>What is not undone is NAMED.</strong> <code>compensated</code> and <code>stranded</code> are separate
+   lists in the result and separately rendered, because "we undid it" and "we
+   did not undo it" are opposite facts. The certificate is deliberately in the
+   second list.</li>
+</ol>
+<p><strong>The bug this round found in itself.</strong> The module first used naming keys
+<code>policy</code> / <code>vserver</code> / <code>pool</code>. <code>services.naming</code> emits <code>server_policy</code> /
+<code>virtual_server</code> / <code>server_pool</code>, so every <code>.get()</code> returned <code>None</code>, every
+object would have been created with <code>name: ""</code>, and <code>_collision_check</code> read an
+empty <code>want</code> and returned early — the whole safety check silently disabled.
+<strong>Nothing crashed and nothing logged.</strong> Fixed by indexing (<code>n["server_policy"]</code>
+raises rather than returning None), a <code>naming_incomplete</code> blocker, and
+<code>test_the_naming_keys_are_the_ones_naming_actually_emits</code>.</p>
+<p><strong>Traps for the next round.</strong></p>
+<ul>
+<li><code>OpResult.ok</code> reads the <strong><code>ok</code> key</strong>, not the absence of an error. A mock
+  returning <code>{"error": ""}</code> looks like a failure and silently short-circuits a
+  compensation test at step one.</li>
+<li>An <code>or</code> in an assertion stops it asserting anything specific:
+  <code>assert "no_pool" in codes or "no_segments" in codes</code> let a mutation that
+  deleted the pool check survive, because the other blocker fired. Build the
+  fixture so only the code under test can fire.</li>
+<li>A JSON POST over https with <strong>no Referer</strong> is refused by
+  <code>WTF_CSRF_SSL_STRICT</code> before the token is examined — the HTTP harness must
+  send <code>Referer</code> and <code>Origin</code>, or every check reads as a 400 with no clue.</li>
+</ul>
+<p><strong>Verified against the live node</strong> (nothing written): the page renders and
+shows {device}'s own hostname, a dry run of line <code>A</code> refuses with
+<code>no_segments</code> and produces <strong>zero steps</strong>, and a plan whose derived name is
+<code>pol-dev-billing</code> is refused with <code>policy_exists</code> — read from {device}'s
+REAL policy list, not a fixture.</p>
+<h2 id="134-the-wizards-script-was-blocked-by-the-csp-so-the-page-was-furniture-2026-08-27">§134 — the wizard's script was blocked by the CSP, so the page was furniture (2026-08-27)</h2>
+<p>Reported by the user: <em>"agregue un segmento /web/segments/ y no me aparecen las
+opciones dadas de alta en /web/workspace/26/spo-wizard"</em>.</p>
+<p><strong>The segment was never the problem.</strong> Measured against the live database of
+a1: <code>line_plan('P','fortiweb')</code> returned all three segments of line P —
+<code>LineP_Internal_LB</code>, <code>LineP_External_LB</code> and the newly added <code>x</code> — and the
+rendered page carried them inside <code>const PLANS = {...}</code>. Route 200, payload
+correct, every server-side guard in <code>tests/test_spo_wizard.py</code> green.</p>
+<p>The <code>&lt;script&gt;</code> block that IS the wizard's entire UI shipped <strong>without
+<code>nonce="{{ csp_nonce }}"</code></strong>. The app serves
+<code>script-src-elem 'self' 'nonce-&lt;per-session&gt;'</code> with no <code>'unsafe-inline'</code>, so
+the browser dropped the whole block: the Segment <code>&lt;select&gt;</code> was never
+populated, the declared/inferred note never appeared, and <strong>Preview and Apply
+did nothing at all</strong>. Not one control on that page had ever worked.</p>
+<h3 id="why-nothing-caught-it">Why nothing caught it</h3>
+<ol>
+<li><strong><code>tests/test_csp_nonce.py</code> already guards exactly this class</strong> and walks the
+   whole template tree — it would have failed the moment the file was added.
+   It was not run: the round ran only tests of the zone it touched (the user's
+   rule of 2026-08-09). This is that rule's known cost, materialised. When a
+   round adds a <strong>new template</strong>, <code>tests/test_csp_nonce.py</code> is part of the zone.</li>
+<li><strong>The sibling guard read as coverage.</strong> <code>test_the_page_has_no_inline_handlers</code>
+   forbids <code>onclick=</code> "because the CSP drops unsafe-inline" — the OTHER half of
+   the same rule — while the block those handlers were refactored INTO was
+   itself blocked. A guard that names a rule and checks half of it is worse
+   than none: it looks like the rule is covered.</li>
+<li><strong>The ten HTTP checks of that round could not see it.</strong> The blocking is done
+   by the header, in a browser. Server-side rendering is correct by
+   construction here, and this repo has no browser in CI.</li>
+</ol>
+<h3 id="what-was-added">What was added</h3>
+<p><code>tests/test_spo_wizard.py::test_the_pages_own_script_carries_the_csp_nonce</code> —
+asserts against the nonce the <strong>response actually served</strong>, not against the
+template text, so a template that spells the attribute while the header stops
+naming a nonce still fails.</p>
+<h3 id="swept-and-found-a-second-one">Swept, and found a second one</h3>
+<p>The same tree scan was red on <code>artifacts/object.html:10</code>: an inline <code>&lt;style&gt;</code>
+with no nonce, committed in <code>9930cb6</code>. <code>style-src-elem</code> is nonce-gated too, so
+the artifacts editor/viewer has been rendering without its monospace and diff
+styling since. Fixed in the same commit.</p>
+<p><strong>Verification:</strong> <code>tests/test_csp_nonce.py</code> 8 rc=0 · <code>tests/test_spo_wizard.py</code>
+36 rc=0 · <strong>3/3 mutations killed</strong> (by rc, only <code>rc==1</code> counts, baseline green
+required, each by the guard it names) · rendered <code>/web/workspace/26/spo-wizard</code>
+after restart: <strong>0 blocked inline scripts</strong>, line <code>P</code> carries
+<code>['LineP_Internal_LB','LineP_External_LB','x']</code> · CSP verified over real HTTPS
+(nginx adds no header of its own) · <code>/healthz</code> 200 · 0 failed units.</p>
+<h3 id="two-things-reported-and-not-changed">Two things reported and NOT changed</h3>
+<ul>
+<li><code>app/templates/workspace/policies.html</code> contains a <strong>literal NUL byte</strong> (a JS
+  key separator, <code>r.kind + '\0' + r.name</code>, line 863, committed). <code>grep</code> and
+  <code>rg</code> therefore treat that template as <strong>binary and skip it silently</strong> — any
+  text sweep over the template tree has a hole in it. The Python scan in
+  <code>test_csp_nonce.py</code> reads it fine, so the guard is intact; a sweep by hand is
+  not.</li>
+<li><code>docs/safeguards.md</code> briefly had <strong>two sections numbered §132</strong>
+  (clone-additive and line profiles), both written 2026-08-27. Resolved
+  2026-08-28: the clone-additive half became §138, because it carried one
+  citation against the other's five (four of them in code).</li>
+</ul>
+<h2 id="135-one-row-per-network-departments-are-a-list-names-are-unique-2026-08-27">§135 — one row per NETWORK: departments are a list, names are unique (2026-08-27)</h2>
+<p><code>tests/test_segment_departments.py</code> (47 guards). Reported by the operator as
+"I added a segment and I cannot see the department in the wizard, and the
+entries repeat". The repetition was the visible half; the invisible half was
+already wrong.</p>
+<h3 id="the-defect">The defect</h3>
+<p>Two segments called <code>LineP_External_LB</code> — one for WAF/LB, one for WSG, same
+CIDR — made <strong>three independent resolvers disagree</strong> about which row the name
+meant:</p>
+<table>
+<thead>
+<tr>
+<th>resolver</th>
+<th>how it indexed</th>
+<th>which row won</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>line_profiles._segments_by_name</code></td>
+<td><code>setdefault</code></td>
+<td>the FIRST</td>
+</tr>
+<tr>
+<td><code>spo_wizard.build_plan</code></td>
+<td>dict comprehension</td>
+<td>the <strong>LAST</strong></td>
+</tr>
+<tr>
+<td><code>line_profiles.pool_for</code></td>
+<td>loop, return on first match</td>
+<td>the FIRST</td>
+</tr>
+</tbody>
+</table>
+<p>So <code>plan.segment</code> came from one row and <code>plan.pool</code> from another. In the live
+data they agreed by accident (same CIDR); the day two departments share a
+network but differ in <code>interface</code> or <code>gateway</code>, the wizard builds the policy
+with one department's interface and the other's address — every printed value
+real, nothing empty, nothing raised, nothing logged. A declared <code>LineProfile</code>
+made it worse: <code>setdefault</code> discarded the second row <strong>silently</strong>, because the
+name still resolved.</p>
+<h3 id="the-fix-in-two-halves-that-only-work-together">The fix, in two halves that only work together</h3>
+<p><strong>B — the unit of "a network" is the network.</strong> <code>cidr</code>, <code>interface</code> and
+<code>gateway</code> are properties of the NETWORK, not of a department, so a network
+serving two departments is ONE row carrying <code>departments: [...]</code>. The previous
+shape duplicated those three fields with nothing keeping the copies equal.</p>
+<p><strong>C — <code>save_segments</code> refuses duplicate names.</strong> Refusing writes NOTHING (a
+rejected save is not a partial save). Comparison is EXACT, not case-folded:
+every consumer keys on the exact string, so <code>DMZ</code>/<code>dmz</code> resolve identically
+everywhere — rejecting that pair would invent a rule the system does not need
+and would lock an install that already has one out of its own segments page.</p>
+<p><strong>And the structural half.</strong> There is now exactly ONE indexer
+(<code>line_profiles.index_by_name</code>) and exactly ONE form parser
+(<code>views._segments_form.parse_rows</code>, shared by <code>/segments/save</code> and the legacy
+Settings console route). Two authors of one answer is how they drifted.</p>
+<ul>
+<li><code>line_plan</code> REFUSES a plan whose segment name is duplicated
+  (<code>P_DUPLICATE_SEGMENT</code>, <strong>blocking</strong>), scoped to the names that plan uses —
+  blocking every line because an unrelated pair collides is a guard operators
+  learn to route around.</li>
+<li><code>normalize_departments</code> is the single reader of the column, accepting the
+  list, a comma string, and the LEGACY single <code>department</code> value, so a blob
+  nobody has re-saved still answers in the current shape. No migration flag,
+  no era-aware consumer.</li>
+<li>The wizard's Department control <strong>narrows the choice and names nothing</strong>.
+  Enforced server-side (<code>segment_not_in_department</code>), because a filter the
+  server does not apply is a filter the server does not have. A guard asserts
+  the object names are identical whichever department is picked.</li>
+<li><code>usage()</code> counts a shared network for EVERY department it serves; <code>analysis</code>
+  keeps it in every department's view and prints the whole list joined, never
+  the first (a row saying "WAF/LB" for a network WSG also uses is false).</li>
+</ul>
+<h3 id="traps-four-survivors-all-defects-in-my-guards">⚠ TRAPS (four survivors, all defects in MY guards)</h3>
+<ol>
+<li><strong>Tenth assert that claimed more than it checked.</strong> <code>..._is_distinct_from_
+   not_being_on_the_line</code> only exercised the off-line case, so a mutation that
+   made the OTHER branch emit the wrong code survived. It now asserts both
+   directions.</li>
+<li><strong>The reader masked the writer, twice.</strong> Two mutations to <code>_retarget</code>
+   survived because <code>segments()</code> de-duplicates and drops blanks on the way
+   out. Asserting on the STORED blob exposed the real finding: the dedupe
+   inside <code>_retarget</code> was a <strong>second author</strong> of a rule <code>normalize_departments</code>
+   already owns. It was deleted, not defended — and the mutations were re-aimed
+   at the one author.</li>
+<li><strong>A nonce guard that read whichever script came first.</strong> <code>base.html</code> also
+   ships a nonce'd block, so stripping the wizard's own nonce kept the guard
+   green. It now finds the block <strong>by its content</strong> (<code>const PLANS</code>) and checks
+   the nonce that block carries against the served CSP.</li>
+<li>The row form is parsed POSITIONALLY (<code>seg_&lt;field&gt;[]</code> matched by index), so a
+   <code>&lt;select multiple&gt;</code> posting a variable number of values per row would
+   silently shift every column after it. Departments therefore travel as ONE
+   encoded string per row: a <strong>hidden JSON field</strong> the multi-select mirrors
+   into — a page whose JS never ran saves the departments the row already had
+   instead of clearing them.</li>
+</ol>
+<h3 id="migration">Migration</h3>
+<p><code>scripts/migrate_segment_departments.py</code> (dry-run unless <code>--apply</code>). It
+<strong>refuses to merge rows that disagree</strong> on CIDR/zone/line or on a non-blank
+interface/gateway: those are two networks with a name collision, and picking a
+survivor would be the script deciding what production keeps. Production: 5 rows
+→ 4, <code>LineP_External_LB</code> folded to <code>['WAF/LB', 'WSG']</code>, zero conflicts. Pre-
+migration blob kept at <code>data/segments-pre-B-20260827.json</code>.</p>
+<h2 id="136-n-backends-optional-roles-and-a-tie-that-is-refused-2026-08-28">§136 — N backends, optional roles, and a tie that is refused (2026-08-28)</h2>
+<p><code>tests/test_dns_backends.py</code> (54 guards) + the §130 guards moved onto the new
+seam in <code>tests/test_ipam_allocation.py</code> and <code>tests/test_spo_wizard.py</code>.</p>
+<p><strong>What changed.</strong> <code>dnsrecords.provider</code> / <code>.config</code> / <code>.secret_enc</code> were three
+global <code>AppSetting</code> keys describing ONE provider. They are now rows in
+<code>dns_backends</code> (<code>app/models_dnsbackend.py</code>), each carrying optional <strong>roles</strong>
+(IPAM / DNS) and an optional <strong>scope</strong> (zones / pools). The singleton is folded
+into one row once by <code>store.migrate_singleton()</code> and then ignored.</p>
+<p><strong>Why it had to change.</strong> <code>Capabilities.can_allocate</code> has been deliberately
+separate from <code>can_write</code> since phpIPAM was added — phpIPAM hands out addresses
+and has no record CRUD. Under a singleton that separation was inert: if the one
+provider could not write, nothing could. It only becomes actionable with rows.</p>
+<h3 id="the-rule-this-section-exists-for">The rule this section exists for</h3>
+<p><em>One provider</em> meant there was nothing to decide. <em>N providers</em> means every
+operation resolves, and a resolution is the exact shape that failed on
+2026-08-27: three independent resolvers of a segment name disagreed and a
+policy was built on the wrong network. So:</p>
+<ol>
+<li><strong>One author.</strong> <code>services/dns_providers/resolver.py</code> is the only code that
+   decides which backend answers. Every consumer — <code>dns_tool</code>, <code>spo_wizard</code>,
+   <code>provision_runner</code>, the Settings API — routes through it.</li>
+<li><strong>Specificity beats priority; a tie on BOTH is refused.</strong> <code>sub.example.com</code>
+   answers <code>www.sub.example.com</code> ahead of <code>example.com</code>. No scope declared is
+   catch-all and ranks below every explicit claim, so a single-backend install
+   (which declares nothing) behaves exactly as the singleton did. Two equal
+   claims at equal priority returns <code>AMBIGUOUS</code> naming both — "the first row"
+   is not an answer anybody declared.</li>
+<li><strong>Three refusals, never folded into one.</strong> <code>NO_BACKEND</code> (nothing carries the
+   role), <code>NO_MATCH</code> (backends exist, none claims this), <code>AMBIGUOUS</code> (two claim
+   it equally) have three different fixes. Telling an operator with three DDIs
+   wired that "no provider is configured" sends them looking in the wrong
+   place. In the runner and the wizard this is load-bearing: <em>no DDI at all</em> is
+   a supported deployment and only warns, while <em>a DDI whose scopes miss the
+   name you asked for</em> is a misconfiguration and BLOCKS — folding them would
+   finish a run green having published nothing.</li>
+<li><strong>Undo goes back to the backend that acted.</strong> <code>allocate_address</code> and
+   <code>create_record</code> stamp <code>backend_id</code>; callers persist it
+   (<code>provision_runs.ip_backend_id</code> / <code>.dns_backend_id</code>, nullable, no backfill);
+   <code>release_address</code> / <code>delete_record</code> honour the recorded id over
+   re-resolution, and REFUSE when that row is gone rather than redirecting. A
+   <code>ref</code> is only an identifier inside the system that issued it: replayed
+   against another backend it frees nothing of ours and can delete a row that
+   backend legitimately owns.</li>
+<li><strong>A role is a promise, refused when unkeepable.</strong> Each provider class
+   declares STATIC maxima (<code>may_write</code> / <code>may_allocate</code>) — what it may EVER be
+   asked to do in any install. <code>role_dns</code> on phpIPAM is rejected at save time;
+   on NetBox it is accepted, because netbox-dns may be present and the LIVE
+   <code>capabilities()</code> probe decides. Refusing NetBox up front locks out a
+   supported deployment; accepting phpIPAM is §130's bug in a new place.</li>
+<li><strong>Scope and default are different questions and both are kept.</strong>
+   <code>zones</code>/<code>pools</code> say what a backend is allowed to answer; <code>default_zone</code>/
+   <code>default_pool</code> say what to use when the caller names none. They cannot
+   drift: <code>save_backend</code> refuses a default outside the declared scope, and a
+   scoped backend with no explicit default derives one from its first entry —
+   one derivation, one place. The migration deliberately does NOT promote the
+   old default to a scope: it was a default, the operator could still write
+   into other zones from the modal, and an upgrade must not change what an
+   install does.</li>
+<li><strong>Pools match EXACTLY, never by containment.</strong> A pool identifier may be a
+   subnet id (<code>42</code>) or a name. <code>{ip}/16</code> does not cover <code>{ip}/22</code> —
+   network arithmetic on a string that may not be an address is how an
+   allocation lands in somebody else's supernet.</li>
+<li><strong>Zones fold case, pools do not.</strong> DNS is case-insensitive by definition, so
+   folding cannot lose a distinction; a pool name may differ only by case.</li>
+<li><strong>The records modal never guesses a backend.</strong> One configured backend is
+   used without asking (that is the only answer, not a guess); two or more with
+   nothing named is a 400 listing them. A stale <code>backend_id</code> is refused, not
+   silently replaced.</li>
+<li><strong>Deleting a backend is refused while a run holds it</strong> as the handle for an
+    address or record it created — the same refusal <code>hypervisor_delete</code> makes.</li>
+</ol>
+<h3 id="how-to-check-it_1">How to check it</h3>
+<pre><code>cd /opt/satom
+runuser -u satom -- ./venv/bin/python -m pytest -q \
+  tests/test_dns_backends.py tests/test_ipam_allocation.py \
+  tests/test_spo_wizard.py tests/test_provision_runner.py \
+  tests/test_dns_tool.py tests/test_csp_nonce.py
+</code></pre>
+<p>The mutation harness for this section lives in the session notes; the
+load-bearing ones are: break the tie instead of refusing it, drop the priority
+tie-break, match a zone with a bare <code>endswith</code>, let a catch-all outrank an
+explicit claim, ignore the role filter, stop stamping <code>backend_id</code>, let a
+release fall back to re-resolution when the recorded backend is gone, let the
+modal fall back to the first row, and take the nonce off the Settings tab
+script. Each must be killed by the guard it names, measured by <strong>rc, and only
+<code>rc == 1</code> counts</strong> (2/4 are usage errors).</p>
+<h3 id="traps-this-round-paid-for_2">Traps this round paid for</h3>
+<ul>
+<li><strong>A "read-only" inspection script is not read-only if it calls
+  <code>create_app()</code>.</strong> The factory runs <code>db.create_all()</code> and the boot migration.
+  Reading the live singleton created the <code>dns_backends</code> table and set
+  <code>dnsrecords.migrated_v2</code> on production — additive and identical to what the
+  next restart does, but it was a write, and it was not asked for.</li>
+<li><strong>A new <code>&lt;script&gt;</code> in a template is dead unless it carries
+  <code>nonce="{{ csp_nonce }}"</code></strong> (§134). <code>tests/test_csp_nonce.py</code> is part of the
+  zone whenever a template gains a script block.</li>
+<li><code>settings.dns_backends_state</code> had to be declared in
+  <code>services/concept_map.py</code> as a <code>json feed</code>, or the route-coverage guards go
+  red on an unmapped endpoint.</li>
+</ul>
+<h2 id="137-the-operator-chooses-the-backend-and-the-choice-is-checked-2026-08-28">§137 — the operator chooses the backend, and the choice is checked (2026-08-28)</h2>
+<p><strong>What the user reported.</strong> <em>"Se agregó una sección de que se puede agregar a
+diferentes IPAMs en settings, por lo que aquí deben de aparecer las opciones
+que se tengan de alta para que el usuario pueda elegir dónde y cómo las
+quiere."</em> The registry shipped the same morning (§136); the wizard was still
+resolving silently and offering nothing.</p>
+<p><strong>The shape of the risk.</strong> §136 turned "there is nothing to decide" into a
+resolution. Adding a manual override on top turns it into a resolution with
+<strong>two</strong> possible authors, which is exactly the 2026-08-27 failure with
+different nouns. So the override is not a second path — it is a parameter of
+the existing one:</p>
+<ul>
+<li><code>resolver.choose(role, query, backend_id)</code> is the ONLY entry point. Empty
+  pick returns <code>resolve_*</code> unchanged.</li>
+<li>A pick is <strong>validated against the same rules</strong>: exists, enabled, carries the
+  role, claims the query. <code>claims()</code> reads the scope column the way the
+  resolvers read it rather than re-deriving it.</li>
+<li>Four refusal codes, never folded: <code>backend_unknown</code> (reload the page),
+  <code>backend_disabled</code> (enable the row), <code>backend_wrong_role</code> (give it the
+  role), <code>backend_out_of_scope</code> (widen the scope). One code would name none of
+  the four fixes.</li>
+<li><strong>An invalid pick is refused, never downgraded to Auto.</strong> The guard proves
+  it with a catch-all present that <em>would</em> have answered.</li>
+<li><strong>A pick cannot widen a scope.</strong> The scope is an earlier declaration by the
+  same operator; the wizard is not the place to overrule it by accident.</li>
+</ul>
+<p><strong>Apply stopped resolving.</strong> <code>apply_plan</code> used to call <code>resolve_dns</code> a second
+time. The registry is editable between Preview and Apply, so the second answer
+could differ from the one the summary printed. The plan now carries
+<code>ipam_backend_id</code> / <code>dns_backend_id</code> and the writes take them; <code>None</code> means
+exactly one thing (no backend carried the DNS role when the plan was built).</p>
+<p><strong>A defect found while touching it.</strong> <code>resolve_ipam</code> lowered the pool query
+while <code>split_list</code> deliberately preserved the declaration — a pool named
+<code>Prod-DMZ</code> resolved to NO_MATCH for the pool <code>Prod-DMZ</code>. The store kept a
+distinction the matcher then made unusable. One author now: <code>pool_matches</code>,
+exact and case-preserving. Zones still fold, because DNS names are
+case-insensitive by definition and pool ids are opaque.</p>
+<p><strong>Recipe.</strong></p>
+<pre><code>./venv/bin/python -m pytest tests/test_spo_wizard.py tests/test_dns_backends.py -q
+python3 /tmp/mutate.py            # 22 mutations, by rc, only rc==1 is a kill
+</code></pre>
+<p>Structural guards worth keeping in mind: <code>test_the_form_sends_the_two_choices</code>
+reads the template, because no browser runs in this suite and a selector wired
+to nothing is invisible to every server-side assertion. And
+<code>test_the_page_offers_the_registry_and_never_the_secret</code> parses the
+<code>const BACKENDS</code> payload rather than searching the page — the first draft
+asserted <code>"hidden" not in body</code> and matched the <strong>Hidden Fields</strong> nav entry.</p>
+<hr>
+<h2 id="138-only-add-what-is-missing-teststest_clone_additivepy">§138 — "only add what is missing" (<code>tests/test_clone_additive.py</code>)</h2>
+<p><strong>Renumbered from §132 (2026-08-28).</strong> This section and the line-profiles
+one were both written 2026-08-27 and both took the number §132. This is the
+clone's additive mode; it had exactly one citation (<code>CHANGELOG.md</code>), so it
+is the half that moved. <strong>§132 now means only</strong> line profiles: declared vs
+inferred — the <em>one author</em> rule cited from <code>services/spo_wizard.py</code>,
+<code>services/classification_ops.py</code>, <code>views/_segments_form.py</code> and
+<code>tests/test_spo_wizard.py</code>.</p>
+<p><strong>What it protects.</strong> The clone must never write INTO an object the destination
+already owns, when the operator asked it not to. The subtlety is that there were
+TWO ways to do that and only one looked like a write:</p>
+<table>
+<thead>
+<tr>
+<th>the destination…</th>
+<th>additive mode</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>does NOT have the object</td>
+<td>created whole, with every row — unchanged</td>
+</tr>
+<tr>
+<td>has the object and the row</td>
+<td><code>exists</code> — unchanged</td>
+</tr>
+<tr>
+<td>has the object, the row is MISSING</td>
+<td><strong><code>untouched</code></strong> — the row is NOT added</td>
+</tr>
+<tr>
+<td>has the object, the row COLLIDES on its key</td>
+<td><strong><code>untouched</code></strong> — NOT rewritten</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Why the append is the one that matters.</strong> <code>reconcile_rows</code> only ever governed
+the rewrite. The append arrived labelled <em>"missing under an existing parent —
+recreating"</em>, which reads as housekeeping, and it put a real server into a live
+pool. A version that closed only the rewrite would have left the pool modified
+and reported green.</p>
+<p><strong>Writing less obliges you to report more.</strong> A held-back row is the only
+difference a run can produce that leaves NOTHING on the destination to find
+later: no object, no row, no error. So it is a status of its own (<code>untouched</code>,
+amber, mark <code>/</code>), a bucket of its own in <code>clone.outcome</code> carrying the parent and
+the key (a count is not the work), a number of its own in <code>clone_summary</code> that
+is <strong>kept out of <code>skipped</code></strong> (everything else in that bucket is inert), and its
+own table in the clone report.</p>
+<p><strong>Recipe.</strong> The classification guards drive <code>ClonePlanner.plan</code> directly, so
+they cannot see <code>clone_policy</code> dropping the flag — <code>test_the_mode_reaches_the_planner</code>
+is a separate guard for a separate claim, and it exists because a mutation that
+removed the kwarg from the <code>planner.plan(...)</code> call SURVIVED every other guard in
+the file. Any future guard that says "X reaches Y" must assert at Y, not at
+something Y also touches.</p>
+<p><strong>Traps found writing this.</strong>
+- A mutation that removes the kwarg from a call site cannot be killed by a test
+  that calls the callee directly. Mis-aimed mutations report a gap that is not
+  there and hide the one that is.
+- The needle for the preview-invalidation mutation matched <strong>two</strong> handlers (the
+  destination selector uses the same line). Anchor a markup mutation on the
+  element id, never on the shared body.
+- <code>/tmp</code> on these nodes has <code>fs.protected_regular</code> behaviour: root cannot
+  rewrite a file it does not own there. Stage harness scripts under the app dir
+  with <code>install -o satom</code>.</p>
+<hr>
+<h2 id="139-one-operation-two-authors-of-its-prose">§139. One operation, two authors of its prose</h2>
+<p><strong>Renumbered from §67 (2026-08-28).</strong> Two sections carried §67. The other
+one — the monitor may not assert what it has not measured — is the §67 that
+<code>tests/test_thresholds.py</code> cites; it kept the number. This one had no
+citation anywhere, so it is the half that moved.</p>
+<p><strong>Guard:</strong> <code>tests/test_upgrade_flow_wording.py</code> (12 tests). <strong>14 mutations, 14
+bite</strong> (harness <code>/root/ufw/mutate.py</code> on a1; judged by <strong>rc</strong>, and only <code>rc==1</code>
+is a failure).</p>
+<p>The Upgrade Flow's stage 2 composed its own change-request wording: a title
+placeholder written into <code>upgrade_flow/index.html</code>, a reason placeholder beside
+it, and no rollback field at all. The single-change form thirty lines away in
+<code>change_requests/form.html</code> proposed all three through <code>services.cr_types</code>,
+where an administrator's text wins per field and the product's sentence stands
+for every field they left alone.</p>
+<p>Neither form ever failed. The failure is what an administrator's correction
+does: they rename the change on Administration → Change Types, the single
+change picks it up, and the bulk one keeps offering the compiled sentence
+forever. Two documents about the same work, raised from the same console,
+disagreeing — and the one that disagreed covered the whole window.</p>
+<p>This is the §62 shape again (two implementations of one operation, differing in
+what they RECORD rather than in what they DO) with the roles reversed: here the
+duplicate is a sentence, not a function, and duplicated prose has no caller
+whose test could notice.</p>
+<p><strong>What the guard fixes in place</strong></p>
+<ul>
+<li>The template composes no proposal: <code>test_the_template_composes_no_proposal_of_its_own</code>
+  bans the three shipped placeholders <em>after stripping Jinja comments</em> — the
+  paragraph explaining the rule names the strings it bans, which is the eighth
+  time an assert-by-substring has matched its own comment in this repo.</li>
+<li>The batched (wave) path is not a narrower carbon copy: reason, rollback and
+  document language are asserted on every change of a rollout, because a field
+  that is simply never posted comes out empty and an empty rollback prints as a
+  change with no rollback plan rather than as a bug.</li>
+<li>The proposal quotes no single pre-flight run. <code>cr_types.draft_fields(prep=…)</code>
+  names one run's id, timestamp and backup; this stage rests on N of them.</li>
+<li>A change type disabled on the Change Types page is reported on arrival.
+  <code>create_change_request</code> rejects an action that is not on offer, so without
+  this the operator learns it after the pre-flight sweep — the expensive half —
+  with the form filled in.</li>
+</ul>
+<p><strong>Traps paid for here</strong></p>
+<ol>
+<li><code>cr_types.save_texts</code> walks the WHOLE field list and writes an empty string
+   over anything the payload omits. A test helper that wrote one override per
+   call silently blanked the previous one, and the failure read as "the page
+   ignores the administrator's wording" — the exact defect under test, reported
+   by a broken fixture.</li>
+<li>Two sentences split around a Jinja expression are two msgids that no
+   translator can order correctly. Both were folded into single msgids with
+   <code>%(lang)s</code> before the catalogues were touched.</li>
+<li>The JS payload legitimately carries the raw <code>{devices}</code> token — substituting
+   the live selection is its entire job — so a page-wide assertion that the
+   token never appears fails against a correct page. Assert on the FIELDS.</li>
+</ol>
+<p><strong>Recipe.</strong> <code>venv/bin/python -m pytest tests/test_upgrade_flow_wording.py
+tests/test_upgrade_flow.py tests/test_upgrade_flow_exec.py
+tests/test_i18n_foundation.py tests/test_ui_locale.py tests/test_cr_doc_i18n.py
+tests/test_cr_types.py -q</code> as <code>satom</code>. Live render (EN and ES, one fresh app
+context per request — flask-babel caches the locale on <code>g</code>):
+<code>/tmp/render2.py</code> pattern in §61.</p>
     </div>
   </div>
 </section>

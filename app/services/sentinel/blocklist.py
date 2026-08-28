@@ -562,7 +562,16 @@ def mirror_push(text: str, message: str) -> dict:
         run("remote", "set-url", "origin", authed)
     run("config", "user.email", "sentinel@satom.local")
     run("config", "user.name", "SATOM Sentinel")
-    (root / MIRROR_FILE).write_text(text, encoding="utf-8")
+    try:
+        (root / MIRROR_FILE).write_text(text, encoding="utf-8")
+    except OSError as exc:
+        # Same best-effort contract as every git call above: an audit
+        # copy that cannot be written must not stop an address being
+        # listed. This line was the one unguarded path out of the
+        # function, and an unwritable MIRROR_DIR reached it.
+        lines.append(_redact(f"cannot write {MIRROR_FILE}: {exc}",
+                             cfg["token"]))
+        return {"ok": False, "log": "\n\n".join(lines)}
     run("add", MIRROR_FILE)
     run("commit", "-m", message)
     rc = run("push", "origin", f"HEAD:{cfg['branch']}")

@@ -62,9 +62,9 @@
       <div class="toc-title">On this page</div>
       <a href="#1-where-the-data-comes-from">1. Where the data comes from</a>
       <a href="#2-topics-curated">2. Topics (curated)</a>
-      <a href="#3-the-page-settings-operation-release-notes">3. The page (Settings → Operation → Release Notes)</a>
+      <a href="#3-the-modal-account-menu-release-notes">3. The modal (account menu → Release Notes)</a>
       <a href="#4-data-model">4. Data model</a>
-      <a href="#5-cli">5. CLI</a>
+      <a href="#5-running-a-scan-there-is-no-cli">5. Running a scan (there is no CLI)</a>
       <a href="#6-tests">6. Tests</a>
     </aside>
     <div class="doc-body mdx">
@@ -75,10 +75,15 @@ sections) across firmware versions, harvested from <code>docs.fortinet.com</code
 <em>gain</em> (issues fixed) and <em>inherit</em> (issues still open).</p>
 <ul>
 <li><strong>Service:</strong> <code>app/services/release_notes.py</code> (pure — no Qt, no DB)</li>
-<li><strong>DB projection:</strong> <code>release_note_issue</code> + <code>release_note_section</code> (store <strong>v12</strong>)</li>
-<li><strong>Git-shared reference:</strong> <code>reports/_release_notes.json</code></li>
-<li><strong>GUI:</strong> Settings → Operation → <strong>Release Notes</strong> (<code>ui/pages/release_notes_page.py</code>)</li>
-<li><strong>CLI:</strong> <code>scripts/sync_release_notes.py</code></li>
+<li><strong>Store:</strong> the git-shared JSON corpus <code>reports/_release_notes.json</code> — read
+  with <code>load_db()</code>, merged with <code>merge_db()</code>, written with <code>save_db()</code>. There
+  are <strong>no</strong> release-notes DB tables.</li>
+<li><strong>UI:</strong> account menu (top right) → <strong>Release Notes</strong> — a modal
+  (<code>app/templates/partials/release_notes_modal.html</code>,
+  <code>app/static/js/release_notes.js</code>) served by <code>app/views/release_notes.py</code>
+  (blueprint <code>release_notes</code>, url prefix <code>/release-notes</code>)</li>
+<li><strong>Harvest:</strong> <code>POST /release-notes/scan</code> (the modal's 🔎 button) — there is
+  <strong>no</strong> CLI entry point</li>
 </ul>
 <h2 id="1-where-the-data-comes-from">1. Where the data comes from</h2>
 <p>Fortinet publishes a <em>Release Notes</em> document per version at
@@ -156,53 +161,57 @@ topic by a deterministic, offline keyword classifier (<code>TOPIC_RULES</code> /
 SSO, Logging &amp; Reports, FortiGuard &amp; Updates, GeoIP &amp; IP Reputation, WAF /
 Signatures, API Protection, Server Policy &amp; Pools, Networking, Machine Learning,
 Bot Mitigation, Caching &amp; Compression, GUI / Web UI, Upgrade &amp; Configuration,
-System &amp; Performance,</em> else <em>General</em>. The page's topic filter reflects the topics
-actually present (<code>store.release_topics</code>), so tuning the rules never breaks the UI.</p>
-<h2 id="3-the-page-settings-operation-release-notes">3. The page (Settings → Operation → Release Notes)</h2>
-<p>Admin-only (the whole Settings area is). Three tabs:</p>
+System &amp; Performance,</em> else <em>General</em>. The modal's topic filter reflects the topics
+actually present (<code>_topics()</code> in <code>app/views/release_notes.py</code>), so tuning the rules
+never breaks the UI.</p>
+<h2 id="3-the-modal-account-menu-release-notes">3. The modal (account menu → Release Notes)</h2>
+<p>Reading needs <code>VIEW</code>; the 🔎 scan needs <code>USER_MANAGE</code> (admin). Three tabs:</p>
 <ul>
 <li><strong>Issues</strong> — filter by version / status (known·resolved) / topic / keyword;
   double-click a row for the full description + workaround + the source link.</li>
 <li><strong>Upgrade advisor</strong> — pick <strong>current → target</strong>: the issues <em>resolved in the
   range</em> (gained), the issues <em>still known in the target</em> (inherited), and the
-  upgrade-notes prose. (<code>AdvisoryWidget</code> — reused from the firmware Upgrade dialog
-  via the <strong>📋 Release-notes advisory</strong> button, target prefilled from the image
-  filename.)</li>
+  upgrade-notes prose (<code>GET /release-notes/advise?current=…&amp;target=…</code> →
+  <code>services.release_notes.advise</code>).</li>
 <li><strong>Notes</strong> — full-text search the prose sections (What's new / Upgrade notes / …).</li>
 </ul>
 <h3 id="scan-from-fortinet">🔎 Scan from Fortinet</h3>
 <p>Auto-discovers every version from the docs site and harvests the selected
-<code>major.minor</code> families (or <strong>all</strong>) into <code>reports/_release_notes.json</code> and the DB.
+<code>major.minor</code> families, merging them into <code>reports/_release_notes.json</code>.
 <strong>No appliance needed</strong> — it reads the public docs directly with a Firecrawl
 fallback (both transports on by default). Optionally publishes to git (multiuser-
-safe, like the inspector reports). CONFIG_WRITE + unlock.</p>
-<p><code>⤓ Sync from git</code> pulls the shared reference and re-ingests it (a fresh clone that
-pulled the JSON also self-heals into the DB on first open).</p>
+safe, like the inspector reports). Admin only (<code>USER_MANAGE</code>).</p>
+<p><code>⤓ Sync from git</code> (<code>POST /release-notes/sync</code>) pulls the shared reference and
+re-reads it, so a fresh clone that pulled the JSON is current on first open.</p>
 <h2 id="4-data-model">4. Data model</h2>
 <p><code>ReleaseIssue(product, version, status, bug_id, description, workaround, topic,
 source_url)</code> and <code>ReleaseSection(product, version, section, title, content,
 source_url)</code>, serialised to <code>reports/_release_notes.json</code>
 (<code>{generated_at, versions[], issues[], sections[]}</code>).</p>
-<p>In the DB they are a <strong>full projection</strong> (replaced wholesale on ingest):
-<code>store.replace_release_notes(issues, sections)</code>. Each row carries a zero-padded
-<code>version_key</code> so plain <code>ORDER BY</code> / range filters rank versions. Queries:
-<code>release_issues(version, status, topic, query, version_gt, version_le)</code>,
-<code>release_sections(...)</code>, <code>release_versions()</code>, <code>release_topics()</code>,
-<code>release_counts()</code>.</p>
+<p>There is <strong>no DB projection</strong> — the JSON corpus <em>is</em> the store. A scan merges into
+it (<code>merge_db</code>) and rewrites it (<code>save_db</code>); each request re-reads and
+product-scopes it (<code>load_db</code>, via <code>_load()</code> in <code>app/views/release_notes.py</code>).
+<code>version_key</code> zero-pads a version so a plain sort ranks versions, and the filters
+are pure functions over the loaded lists — <code>filter_issues(issues, version=,
+status=, topic=, query=)</code> for the Issues tab, <code>advise(...)</code> for the advisor.</p>
 <p>The upgrade advisory is a pure function <code>advise(issues, sections, current, target)</code>
-→ <code>UpgradeAdvisory(resolved, known_in_target, notes, is_upgrade)</code>; the GUI computes
-the same via the <code>version_gt</code>/<code>version_le</code> store filters.</p>
-<h2 id="5-cli">5. CLI</h2>
-<pre><code class="language-bash"># the relevant upgrade-planning range (default 7.0–8.0)
-arch -arm64 .venv/bin/python scripts/sync_release_notes.py
-# everything the docs site lists (5.x–8.x — slow)
-arch -arm64 .venv/bin/python scripts/sync_release_notes.py --all
-# a specific set + a Firecrawl fallback endpoint
-arch -arm64 .venv/bin/python scripts/sync_release_notes.py --majors 7.6,8.0 \
-    --firecrawl http://{ip}:3002
+→ <code>UpgradeAdvisory(resolved, known_in_target, notes, is_upgrade)</code>, exposed to the
+modal as <code>GET /release-notes/advise?current=…&amp;target=…</code>.</p>
+<h2 id="5-running-a-scan-there-is-no-cli">5. Running a scan (there is no CLI)</h2>
+<p>The harvest runs <strong>in the app</strong>, as a background thread behind the modal's
+🔎 <strong>Scan from Fortinet</strong> button (<code>_do_scan</code> in <code>app/views/release_notes.py</code>):</p>
+<pre><code class="language-http">POST /release-notes/scan
+{&quot;majors&quot;: &quot;7.6,8.0&quot;, &quot;all&quot;: false, &quot;use_direct&quot;: true,
+ &quot;use_firecrawl&quot;: true, &quot;firecrawl_endpoint&quot;: &quot;http://{ip}:3002&quot;,
+ &quot;publish&quot;: true}
+
+GET  /release-notes/scan/status   → {running, lines[], result, error}
+POST /release-notes/sync          → git pull + re-read the shared corpus
 </code></pre>
-<p>Writes <code>reports/_release_notes.json</code> and ingests it into the app DB. Review/commit
-the JSON (or use the GUI's Publish-to-git) to share with the team.</p>
+<p><code>majors</code> defaults to <code>7.0,7.2,7.4,7.6,8.0</code>; <code>all</code> harvests everything the docs
+site lists (slow). The worker writes <code>reports/_release_notes.json</code> and, with
+<code>publish</code>, commits it through <code>services/git_service.git_publish</code> so the team
+shares one corpus.</p>
 <h2 id="6-tests">6. Tests</h2>
 <p><code>tests/test_release_notes.py</code> — HTML-fixture parsing, the content guard, the
 curated topic classifier, <code>version_key</code> ordering, the scan (fake fetcher), merge,

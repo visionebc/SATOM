@@ -259,9 +259,25 @@ sending commands at it blindly turns them into failed logins against an
 <p><code>semi</code> is the mode that always works. <code>full</code> is offered only where the
 capability probe says the serial console is reachable.</p>
 <h3 id="42-addressing">4.2 Addressing</h3>
-<p>IPAM is used <strong>only</strong> when a provider is configured <em>and</em> the operator turns it
-on for that run. Otherwise the address is typed in. A provisioning flow that
+<p>IPAM is used <strong>only</strong> when the operator turns it on for that run <em>and</em> the
+address step resolves to <strong>an enabled backend carrying the IPAM role whose scope
+claims the pool</strong> (<code>dns_backends</code>; see the DNS Records registry in the user
+guide, §26.9). Otherwise the address is typed in. A provisioning flow that
 hard-required an IPAM would be unusable on every site that does not run one.</p>
+<p>The tick is always offered, so the requirement is enforced at the step, and the
+two ways it can go missing are reported apart because they have different fixes:</p>
+<ul>
+<li><strong>Nothing carries the IPAM role</strong> (<code>NO_BACKEND</code>) — the run fails at the
+  address step with <em>no enabled backend carries the IPAM role</em>, having reserved
+  nothing. Register a backend, or untick the box and supply the address.</li>
+<li><strong>Backends exist but none claims this pool</strong> (<code>NO_MATCH</code>), or two claim it
+  with the same scope and the same priority (<code>AMBIGUOUS</code>) — the run blocks the
+  same way, the colliding backends are named, and the fix is to a scope or a
+  priority on a row that is already there.</li>
+</ul>
+<p>The DNS step is deliberately not symmetric: <code>NO_BACKEND</code> there only <strong>warns</strong>
+and the run continues, because a site with no DDI at all is a supported
+deployment, while <code>NO_MATCH</code> and <code>AMBIGUOUS</code> block.</p>
 <hr>
 <h2 id="5-credentials">5. Credentials</h2>
 <p>Hypervisor targets live in <code>hypervisor_targets</code> (a table, not an

@@ -1020,16 +1020,21 @@ This page is the missing third position: name the CA and keep the check on.</p>
 <p><strong>Off-box copies — the source of truth and the external server.</strong> The vault above
 lives on this node. Two settings decide what leaves it:</p>
 <ul>
-<li><code>Settings → Git</code> (§26.4) is the code repository this node tracks. It is also
-  the transport the shared release-notes corpus (§31.1) rides on. What still
-  works when that remote is down, and how to recover afterwards, is
-  <a href="git-backup.html">git-backup-and-outage.md</a>.</li>
-<li><code>Settings → SoT &amp; Backup</code> (§26.5) configures the <strong>firmware manifest repo</strong>
-  and the <strong>external backup server</strong> over SFTP. That server is where the
-  appliances push their own scheduled config backups, and it is the target of the
+<li><code>Settings → Software Update Repository</code> (§26.4) is the repository this node
+  downloads its own <strong>code</strong> from. It is also the transport the shared
+  release-notes corpus (§31.1) rides on. What still works when that remote is
+  down, and how to recover afterwards, is
+  <a href="git-backup.html">git-backup-and-outage.md</a>. It holds no device
+  configuration and no firmware.</li>
+<li><code>Settings → Backup Server</code> (§26.5b) configures the <strong>external SFTP
+  destination</strong>. That server is where the appliances push their own scheduled
+  config backups, where retired firmware is archived, and it is the target of the
   <code>push_server</code> option on the system-backup action and the monitoring reports
   (§15, §14.9). The scheduled action <strong><code>device_inspect</code></strong> is the one that
   uploads the versioned source-of-truth blobs off-box.</li>
+<li><code>Settings → Configuration SoT</code> (§26.5) is where the retention of those blobs
+  is set — and it is the <strong>only</strong> one of the three the word <em>source of truth</em>
+  applies to.</li>
 </ul>
 <p>How the local source of truth is versioned and what it does and does not hold:
 <a href="source-of-truth.html">source-of-truth-spec.md</a>.</p>
@@ -2504,8 +2509,8 @@ deletes its bindings, and says so.</p>
 <p>The assignment picker spans both FortiWeb and FortiADC appliances — the catalog
 is a single <strong>global</strong> one, not per-ADOM.</p>
 <h2 id="26-settings-tab-by-tab">26. Settings, tab by tab</h2>
-<p><code>Settings</code> is one page with a <strong>grouped sidebar</strong>: <strong>9 groups, 31 panels</strong>.
-Eight of the groups (29 panels) are admin-only (<code>user_manage</code>); the remaining
+<p><code>Settings</code> is one page with a <strong>grouped sidebar</strong>: <strong>10 groups, 32 panels</strong>.
+Nine of the groups (30 panels) are admin-only (<code>user_manage</code>); the remaining
 one — <strong>My Account</strong>, holding <strong>Security</strong> and <strong>Change Password</strong> — is
 self-service and is the only group a non-admin sees. A group with nothing you may see is not
 rendered at all, so the menu never offers a section that is not there.</p>
@@ -2519,7 +2524,11 @@ rendered at all, so the menu never offers a section that is not there.</p>
 <tbody>
 <tr>
 <td><strong>System</strong></td>
-<td>General · Git · SoT &amp; Backup · AI Advisor</td>
+<td>General · Software Update Repository · AI Advisor</td>
+</tr>
+<tr>
+<td><strong>Source of Truth &amp; Backup</strong></td>
+<td>Configuration SoT · Backup Server</td>
 </tr>
 <tr>
 <td><strong>Access &amp; Identity</strong></td>
@@ -2557,6 +2566,48 @@ rendered at all, so the menu never offers a section that is not there.</p>
 </table>
 <p>The <strong>AI Advisor</strong> panel additionally needs <code>advisor.configure</code>; an admin
 without it does not see the entry.</p>
+<p><strong>Three repositories-or-destinations, three separate entries.</strong> Until
+2026-08-29 the System group carried one panel called <em>SoT &amp; Backup</em>, and it
+held a firmware git URL, the SFTP credentials of the backup box and nothing
+about appliance configuration at all — under a heading whose first word names
+an authority. Reading it as covering all three was the obvious reading and the
+wrong one. They are now three entries in two groups, and each states what it is
+<em>not</em>:</p>
+<table>
+<thead>
+<tr>
+<th>Entry</th>
+<th>What it is</th>
+<th>What it is <strong>not</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Configuration SoT</strong> (§26.5)</td>
+<td>the versioned, hashed history of every appliance's <strong>configuration</strong></td>
+<td>not firmware, not backups, not code</td>
+</tr>
+<tr>
+<td><strong>Backup Server</strong> (§26.5b)</td>
+<td>an SFTP <strong>destination</strong> three streams are copied to</td>
+<td>not an authority — nothing is consulted there to decide what a device is configured to do</td>
+</tr>
+<tr>
+<td><strong>Software Update Repository</strong> (§26.4)</td>
+<td>the git repo this node downloads its <strong>own code</strong> from</td>
+<td>has never held a device configuration or a firmware image</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Firmware is not a source of truth in this product</strong>, and no panel offers a
+setting that says it is. Its authority is the <code>firmware_images</code> table plus
+<code>data/firmware/</code>, on <strong>Infrastructure → Firmware</strong> (§20), which is indexed,
+hashed and inside every backup bundle. The retired <code>sot.firmware_repo_url</code> /
+<code>sot.firmware_repo_branch</code> settings pointed at a second git repo holding a
+firmware <em>manifest</em>; every consumer of them merely printed the URL, nothing ever
+read the manifest, and the repo they named declared <code>firmwares: []</code> while two
+images were loaded on the node. A setting that announces an authority nobody
+reads is worse than no setting, so it was removed rather than filled in.</p>
 <p><strong>Sentinel is its own group, and all six of its entries are panes.</strong>
 They are ordered by what they are, not by when they arrived: the four
 configuration surfaces first, then the reference document, then the live
@@ -2753,7 +2804,12 @@ starting point, not the ceiling.</p>
 <p>An <strong>anti-lockout guard</strong> keeps at least one active account holding both user
 management and profile management, so this page cannot be used to remove the
 last administrator.</p>
-<h3 id="264-git-the-code-repository-this-node-tracks">26.4 Git — the code repository this node tracks</h3>
+<h3 id="264-software-update-repository-where-this-node-downloads-its-own-code-from">26.4 Software Update Repository — where this node downloads its own code from</h3>
+<p>This is the product's <strong>source code</strong>, and the only one of the three
+repositories-or-destinations above that a software update is pulled from. It is
+not where appliance configuration is versioned (§26.5) and not where backups are
+stored (§26.5b). The panel was labelled <em>Git</em> until 2026-08-29 — a tool name,
+which distinguished it from nothing.</p>
 <ul>
 <li><strong>Repository</strong> — remote, branch, HEAD, working-tree status and ahead/behind,
   refreshed on demand.</li>
@@ -2767,22 +2823,72 @@ last administrator.</p>
 <li><strong>Recent commits</strong> lists what actually landed.</li>
 </ul>
 <p>See also <a href="git-backup.html">git backup and surviving a Gitea outage</a>.</p>
-<h3 id="265-sot-backup-the-firmware-manifest-repo-and-the-external-backup-server">26.5 SoT &amp; Backup — the firmware manifest repo and the external backup server</h3>
-<p>Two settings that the rest of the product leans on:</p>
+<h3 id="265-configuration-sot-the-only-thing-satom-calls-a-source-of-truth">26.5 Configuration SoT — the only thing SATOM calls a source of truth</h3>
+<p>The versioned history of every managed appliance's <strong>configuration</strong>. Each
+harvest is hashed; an unchanged config writes nothing at all, only a newer
+<code>last_seen_at</code>, so the version count is a count of real changes. Snapshots are
+stored content-addressed under <code>data/sot/objects/</code> with the index in Postgres,
+replicated to the standby node by <code>satom-ha-datasync</code>, and carried inside every
+system backup bundle. <code>device_sync</code> and <code>device_inspect</code> are the actions that
+feed it (§15). The design is in
+<a href="source-of-truth.html">source-of-truth-spec.md</a>.</p>
+<p><strong>Retention</strong> is the panel's only setting, and it is a <strong>union, not a pair of
+caps</strong>: a version is dropped only when it fails <em>both</em> tests — outside the
+newest <strong>N</strong> for its device <strong>and</strong> older than <strong>D</strong> days. That is what stops a
+week of churn from erasing the month before it. Product defaults are <strong>60
+versions</strong> and <strong>180 days</strong>; the panel says whether this node has configured
+them or is running on the defaults.</p>
+<blockquote>
+<p>Both keys existed before this panel did, and neither worked. <code>sot_store</code>
+read them through <code>settings_store.get</code> — a function this product has never
+defined — so every harvest raised <code>AttributeError</code> inside a blanket <code>except</code>
+and silently fell back to the defaults. Writing the settings changed nothing,
+and nothing said so. Fixed 2026-08-29 in the same change that surfaced them.</p>
+</blockquote>
+<p>Pruning runs after a harvest that actually changed something; an unchanged cycle
+cannot create anything to prune. Blobs no version references are deleted with
+the rows.</p>
+<h3 id="265b-backup-server-the-external-sftp-destination">26.5b Backup Server — the external SFTP destination</h3>
+<p>The box <strong>three separate streams are copied to</strong>. It is a destination, not an
+authority: nothing stored there is consulted to decide what a device is
+configured to do — that is §26.5.</p>
+<table>
+<thead>
+<tr>
+<th>Stream</th>
+<th>Written by</th>
+<th>Path</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Device config backups</td>
+<td>the <strong>appliances themselves</strong>, on their own schedule (<code>config system backup</code>)</td>
+<td><em>Config backups path</em></td>
+</tr>
+<tr>
+<td>System bundles</td>
+<td>this node's scheduled system-backup action, via <code>push_server</code> (§15)</td>
+<td><em>System bundles path</em></td>
+</tr>
+<tr>
+<td>Firmware archive</td>
+<td>images retired from local storage</td>
+<td><em>Firmware archive path</em></td>
+</tr>
+</tbody>
+</table>
+<p>SATOM connects read-mostly: it inventories what it finds on the System Backup
+page, diffs device backups against each other, and pulls firmware for
+console-driven restores. <strong>It does not author the device backups</strong> — if an
+appliance stops pushing, SATOM can report the gap but cannot fill it.</p>
 <ul>
-<li><strong>Firmware source-of-truth repository</strong> — a <em>separate</em> git repo from the
-  application code. It versions the firmware <strong>manifest</strong> (filenames, versions,
-  sha256, where the blob lives). The <code>.out</code> binaries themselves stay on the
-  backup server: git is the wrong tool for multi-hundred-megabyte blobs.</li>
-<li><strong>Backup server access (SFTP)</strong> — host, port, user, password, and the two
-  paths (config backups, firmware). This is the external box the appliances push
-  their own scheduled config backups to and where firmware binaries live. SATOM
-  connects read-mostly: inventory on the System Backup page, pulling firmware for
-  console-driven restores, and the <code>push_server</code> option on the system-backup and
-  monitoring-report actions (§15, §14.9).</li>
 <li><strong>Test connection</strong> proves the credentials and the paths before anything
   depends on them. The password is stored Fernet-encrypted; the paths are as seen
   <em>inside</em> the SFTP session, because the server chroots the backup user.</li>
+<li>All three paths are on the form. The system-bundles path used to be missing
+  from it while the save still read it with a default, so every submit quietly
+  rewrote a customised value back to <code>/system</code>.</li>
 </ul>
 <h3 id="266-email-alerts-this-is-the-delivery-policy-1410-defers-to">26.6 Email &amp; Alerts — this is the delivery policy §14.10 defers to</h3>
 <p><strong>Email (SMTP)</strong> — enable/disable, server, port, TLS verification (with an

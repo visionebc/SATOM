@@ -114,7 +114,6 @@ def _page_context(**extra) -> dict:
                   "remote_dir": git_backup.remote_dir()},
         sot=_sot_devices(),
         local_fw=local_fw,
-        fw_repo=settings_store.firmware_repo(),
         diff=None,
     )
     ctx.update(extra)

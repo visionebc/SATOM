@@ -381,6 +381,20 @@
 
   <!-- GIT TAB -->
   <div class="tab-pane fade" id="tab-git">
+    {#
+       The UPDATE repository.  This pane was labelled "Git", which is a tool,
+       not a subject: three different repositories were in play on this console
+       and the label distinguished none of them.  This one holds the PRODUCT'S
+       OWN SOURCE CODE and is where a software update is pulled from.  It has
+       never held a device configuration or a firmware image.
+    #}
+    <div class="alert alert-light border mb-3" style="font-size:13px;">
+      <i class="bi bi-info-circle me-1"></i>
+      {{ _('This is the repository this node downloads its own SOFTWARE from — the product\'s source code. It is not where appliance configuration is versioned') }}
+      (<a href="#tab-sot" data-tab-jump="#tab-sot">{{ _('Configuration SoT') }}</a>)
+      {{ _('and not where backups are stored') }}
+      (<a href="#tab-backupsrv" data-tab-jump="#tab-backupsrv">{{ _('Backup Server') }}</a>).
+    </div>
     <div class="row g-4">
       <div class="col-lg-7">
         <!-- Repo status card -->
@@ -480,81 +494,142 @@
   </div>
 
   {% if is_admin %}
-  <!-- SOT & BACKUP TAB -->
-  <div class="tab-pane fade" id="tab-sotbackup">
-    <form method="post" action="{{ url_for('settings.save_sot_backup') }}">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <div class="row g-3">
-        <div class="col-lg-6">
-          <div class="fw-card">
-            <div class="fw-card-header">
-              <i class="bi bi-cpu me-1"></i>{{ _('Firmware source-of-truth repository') }}
-            </div>
-            <div class="p-3">
-              <p class="text-muted" style="font-size:13px;">A <strong>{{ _('separate') }}</strong> {{ _('git repo from the application code — it versions the firmware') }} <em>{{ _('manifest') }}</em> (filenames, versions, sha256, storage location). The <code>.out</code> binaries themselves stay on the backup server below; git is the wrong tool for multi-hundred-MB blobs.</p>
-              <div class="mb-3">
-                <label class="form-label">{{ _('Repository URL') }}</label>
-                <input type="url" name="fw_repo_url" class="form-control fw-form-control font-monospace"
-                       value="{{ sot_firmware_repo.url }}" placeholder="{{ _('https://git.example.net/satom-dev/fortinet-firmware.git') }}">
-              </div>
-              <div class="mb-2" style="max-width:220px;">
-                <label class="form-label">{{ _('Branch') }}</label>
-                <input type="text" name="fw_repo_branch" class="form-control fw-form-control font-monospace"
-                       value="{{ sot_firmware_repo.branch }}" placeholder="{{ _('main') }}">
-              </div>
-            </div>
-          </div>
-        </div>
+  <!-- CONFIGURATION SoT TAB -->
+  {#
+     The CONFIGURATION source of truth, and nothing else.
 
-        <div class="col-lg-6">
-          <div class="fw-card">
-            <div class="fw-card-header">
-              <i class="bi bi-hdd-network me-1"></i>{{ _('Backup server access (SFTP)') }}
+     This pane and the one below it were a single "SoT & Backup" tab until
+     2026-08-29.  That tab held three subjects — the snapshots of device
+     configuration, the SFTP box those and other things are copied TO, and a
+     git URL for a firmware manifest — under one heading whose first word is
+     the name of an authority.  Nothing failed: the page rendered, the fields
+     saved, and the operator read "SoT" as covering firmware and backups too.
+     The firmware entry was the proof that the conflation had a cost — it
+     named a repo that declared no firmware at all while two images were
+     loaded, and every consumer of it merely printed the URL.
+
+     So: firmware is not a source of truth here and has no field on either
+     pane (its authority is the firmware_images table + data/firmware, on
+     Infrastructure → Firmware); the backup server is a destination and gets
+     its own pane; the repository this node downloads its own CODE from is
+     under System → Software Update Repository.  Each pane states what it is
+     NOT and where that other thing lives, because the operator arrives at one
+     of them by clicking a single menu entry and never sees the others.
+  #}
+  <div class="tab-pane fade" id="tab-sot">
+    <div class="fw-card mb-3">
+      <div class="fw-card-header">
+        <i class="bi bi-file-earmark-diff me-1"></i>{{ _('What the Configuration SoT is') }}
+      </div>
+      <div class="p-3">
+        <p class="text-muted mb-2" style="font-size:13px;">{{ _('The versioned history of every managed appliance\'s CONFIGURATION: each harvest is hashed, and an unchanged config writes nothing at all — only a new timestamp. Snapshots are stored content-addressed under') }} <code>data/sot/objects/</code> {{ _('with the index in Postgres, they are replicated to the standby node and they travel inside every system backup bundle.') }}</p>
+        <p class="text-muted mb-0" style="font-size:13px;">
+          <strong>{{ _('This is the only thing SATOM calls a source of truth.') }}</strong>
+          {{ _('Three neighbours are deliberately not part of it:') }}
+          <span class="d-block mt-2">&bull; {{ _('Where backups are COPIED to — an SFTP destination, not an authority:') }} <a href="#tab-backupsrv" data-tab-jump="#tab-backupsrv">{{ _('Backup Server') }}</a>.</span>
+          <span class="d-block">&bull; {{ _('Where this node downloads its own CODE from — a git repository holding the product, never a device:') }} <a href="#tab-git" data-tab-jump="#tab-git">{{ _('Software Update Repository') }}</a>.</span>
+          <span class="d-block">&bull; {{ _('Firmware images — appliance operating systems built by the vendor. Indexed, hashed and backed up, but NOT a source of truth:') }} <a href="{{ url_for('firmware.index') }}">{{ _('Infrastructure → Firmware') }}</a>.</span>
+        </p>
+      </div>
+    </div>
+
+    <form method="post" action="{{ url_for('settings.save_sot') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="fw-card">
+        <div class="fw-card-header">
+          <i class="bi bi-clock-history me-1"></i>{{ _('Retention') }}
+        </div>
+        <div class="p-3">
+          <p class="text-muted" style="font-size:13px;">{{ _('A version is dropped only when it fails BOTH tests: it is outside the newest N for its device AND older than D days. The two are a union, not a pair of independent caps — a device that changes constantly keeps more than N versions while any of them are still inside the window, which is what stops a busy week from erasing the month before it.') }}</p>
+          <div class="row g-3">
+            <div class="col-sm-4">
+              <label class="form-label">{{ _('Versions to keep, per device') }}</label>
+              <input type="number" name="keep_versions" min="1" max="10000"
+                     class="form-control fw-form-control" value="{{ sot_retention.versions }}">
+              <div class="form-text">{{ _('Default') }}: {{ sot_retention.default_versions }}</div>
             </div>
-            <div class="p-3">
-              <p class="text-muted" style="font-size:13px;">The external box the Fortinet appliances push their scheduled config backups to (<code>config system backup</code>) and where firmware binaries live. This app connects read-mostly: inventory on the System Backup page + pulling firmware for console-driven restores.</p>
-              <div class="row g-2 mb-2">
-                <div class="col-8">
-                  <label class="form-label">{{ _('Host') }}</label>
-                  <input type="text" name="host" class="form-control fw-form-control font-monospace"
-                         value="{{ sot_backup_server.host }}" placeholder="{{ _('backup-server.example.net') }}">
-                </div>
-                <div class="col-4">
-                  <label class="form-label">{{ _('Port') }}</label>
-                  <input type="number" name="port" class="form-control fw-form-control" value="{{ sot_backup_server.port }}">
-                </div>
-              </div>
-              <div class="row g-2 mb-2">
-                <div class="col-6">
-                  <label class="form-label">{{ _('Username') }}</label>
-                  <input type="text" name="username" class="form-control fw-form-control font-monospace"
-                         value="{{ sot_backup_server.username }}" placeholder="{{ _('fmbackup') }}">
-                </div>
-                <div class="col-6">
-                  <label class="form-label">{{ _('Password') }}</label>
-                  <input type="password" name="password" class="form-control fw-form-control"
-                         placeholder="{{ 'Leave blank to keep current' if sot_backup_server.configured else '' }}" autocomplete="new-password">
-                </div>
-              </div>
-              <div class="row g-2 mb-3">
-                <div class="col-6">
-                  <label class="form-label">{{ _('Config backups path') }}</label>
-                  <input type="text" name="config_path" class="form-control fw-form-control font-monospace" value="{{ sot_backup_server.config_path }}">
-                </div>
-                <div class="col-6">
-                  <label class="form-label">{{ _('Firmware path') }}</label>
-                  <input type="text" name="firmware_path" class="form-control fw-form-control font-monospace" value="{{ sot_backup_server.firmware_path }}">
-                </div>
-              </div>
-              <button type="button" class="btn btn-sm btn-outline-light" id="sot-test-btn"><i class="bi bi-plug me-1"></i>{{ _('Test connection') }}</button>
-              <span id="sot-test-out" class="ms-2" style="font-size:13px;"></span>
-              <div class="form-text mt-2">{{ _('The password is stored Fernet-encrypted. Paths are as seen inside the SFTP session (the server chroots the backup user).') }}</div>
+            <div class="col-sm-4">
+              <label class="form-label">{{ _('Days to keep, regardless of count') }}</label>
+              <input type="number" name="keep_days" min="1" max="36500"
+                     class="form-control fw-form-control" value="{{ sot_retention.days }}">
+              <div class="form-text">{{ _('Default') }}: {{ sot_retention.default_days }}</div>
             </div>
           </div>
+          <div class="form-text mt-2">
+            {% if sot_retention.configured %}{{ _('Configured on this node.') }}{% else %}{{ _('Not configured — the product defaults shown above are in effect.') }}{% endif %}
+            {{ _('Pruning runs after a harvest that actually changed something; an unchanged cycle cannot create anything to prune.') }}
+          </div>
+          <button type="submit" class="btn fw-btn-primary btn-sm mt-3"><i class="bi bi-save me-1"></i>{{ _('Save retention') }}</button>
         </div>
       </div>
-      <div class="mt-3">
-        <button type="submit" class="btn fw-btn-primary btn-sm"><i class="bi bi-save me-1"></i>Save SoT &amp; Backup settings</button>
+    </form>
+  </div>
+
+  <!-- BACKUP SERVER TAB -->
+  <div class="tab-pane fade" id="tab-backupsrv">
+    <form method="post" action="{{ url_for('settings.save_backup_srv') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="fw-card">
+        <div class="fw-card-header">
+          <i class="bi bi-hdd-network me-1"></i>{{ _('Backup server access (SFTP)') }}
+        </div>
+        <div class="p-3">
+          <p class="text-muted" style="font-size:13px;">{{ _('The external box three separate streams are copied TO. It is a DESTINATION, not an authority: nothing here is consulted to decide what a device is configured to do — that is the') }} <a href="#tab-sot" data-tab-jump="#tab-sot">{{ _('Configuration SoT') }}</a>. {{ _('SATOM connects read-mostly: it inventories what it finds and pulls on demand.') }}</p>
+          <ul class="text-muted" style="font-size:13px;">
+            <li><strong>{{ _('Config backups') }}</strong> — {{ _('written by the APPLIANCES themselves, on their own schedule') }} (<code>config system backup</code>). {{ _('SATOM reads, indexes and diffs them; it does not author them.') }}</li>
+            <li><strong>{{ _('System bundles') }}</strong> — {{ _('this node\'s own backups, uploaded by the scheduled system backup action.') }}</li>
+            <li><strong>{{ _('Firmware') }}</strong> — {{ _('where retired appliance images are archived once they leave local storage.') }}</li>
+          </ul>
+          <div class="row g-2 mb-2">
+            <div class="col-8">
+              <label class="form-label">{{ _('Host') }}</label>
+              <input type="text" name="host" class="form-control fw-form-control font-monospace"
+                     value="{{ sot_backup_server.host }}" placeholder="{{ _('backup-server.example.net') }}">
+            </div>
+            <div class="col-4">
+              <label class="form-label">{{ _('Port') }}</label>
+              <input type="number" name="port" class="form-control fw-form-control" value="{{ sot_backup_server.port }}">
+            </div>
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-6">
+              <label class="form-label">{{ _('Username') }}</label>
+              <input type="text" name="username" class="form-control fw-form-control font-monospace"
+                     value="{{ sot_backup_server.username }}" placeholder="{{ _('fmbackup') }}">
+            </div>
+            <div class="col-6">
+              <label class="form-label">{{ _('Password') }}</label>
+              <input type="password" name="password" class="form-control fw-form-control"
+                     placeholder="{{ 'Leave blank to keep current' if sot_backup_server.configured else '' }}" autocomplete="new-password">
+            </div>
+          </div>
+          {#
+             All THREE paths are on the form, including the system one.  It was
+             absent while the save read it with a default, so every submit
+             silently rewrote a customised system path back to /system — a
+             field nobody could see undoing a setting nobody was told about.
+          #}
+          <div class="row g-2 mb-3">
+            <div class="col-4">
+              <label class="form-label">{{ _('Config backups path') }}</label>
+              <input type="text" name="config_path" class="form-control fw-form-control font-monospace" value="{{ sot_backup_server.config_path }}">
+            </div>
+            <div class="col-4">
+              <label class="form-label">{{ _('Firmware archive path') }}</label>
+              <input type="text" name="firmware_path" class="form-control fw-form-control font-monospace" value="{{ sot_backup_server.firmware_path }}">
+            </div>
+            <div class="col-4">
+              <label class="form-label">{{ _('System bundles path') }}</label>
+              <input type="text" name="system_path" class="form-control fw-form-control font-monospace" value="{{ sot_backup_server.system_path }}">
+            </div>
+          </div>
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="sot-test-btn"><i class="bi bi-plug me-1"></i>{{ _('Test connection') }}</button>
+          <span id="sot-test-out" class="ms-2" style="font-size:13px;"></span>
+          <div class="form-text mt-2">{{ _('The password is stored Fernet-encrypted. Paths are as seen inside the SFTP session (the server chroots the backup user).') }}</div>
+          <div class="mt-3">
+            <button type="submit" class="btn fw-btn-primary btn-sm"><i class="bi bi-save me-1"></i>{{ _('Save backup server settings') }}</button>
+          </div>
+        </div>
       </div>
     </form>
   </div>
@@ -3608,7 +3683,7 @@
               <label class="form-label">{{ _('Brand logo') }} <span class="text-muted">{{ _('(optional)') }}</span></label>
               <input type="file" name="logo" class="form-control" accept=".png,.jpg,.jpeg,.webp,.gif,.svg">
               <div class="form-text">
-                {{ _('Replaces the top-bar mark in every ADOM while this theme is active. Leave empty to keep the per-ADOM marks from') }} <a href="#tab-adoms" data-theme-jump="#tab-adoms">Settings&nbsp;&rarr;&nbsp;ADOMs</a>.
+                {{ _('Replaces the top-bar mark in every ADOM while this theme is active. Leave empty to keep the per-ADOM marks from') }} <a href="#tab-adoms" data-tab-jump="#tab-adoms">Settings&nbsp;&rarr;&nbsp;ADOMs</a>.
                 <label class="ms-2"><input type="checkbox" name="clear_logo" value="1"> {{ _('remove current') }}</label>
               </div>
             </div>
@@ -3876,18 +3951,22 @@
       });
     });
 
-    document.querySelectorAll('[data-theme-jump]').forEach(function (a) {
-      a.addEventListener('click', function (ev) {
-        ev.preventDefault();
-        var btn = document.querySelector('[data-bs-target="' + a.getAttribute('data-theme-jump') + '"]');
-        if (btn && window.bootstrap) { new bootstrap.Tab(btn).show(); }
-      });
-    });
-
     // Saving must send what the server will store, not a half-previewed page.
     form.addEventListener('submit', function () { clearPreview(); });
   })();
   
+  // Cross-references between Settings panes.  Delegated, so a link inside a
+  // pane rendered after this script still works.
+  document.addEventListener('click', function (ev) {
+    var a = ev.target.closest ? ev.target.closest('[data-tab-jump]') : null;
+    if (!a) return;
+    var btn = document.querySelector('#settingsTabs [data-bs-target="'
+                                     + a.getAttribute('data-tab-jump') + '"]');
+    if (!btn || !window.bootstrap) return;   // no menu entry: let the href act
+    ev.preventDefault();
+    new bootstrap.Tab(btn).show();
+  });
+
   // gradient preview strips follow their text field
   document.addEventListener('input', function (ev) {
     var el = ev.target;
@@ -4645,7 +4724,7 @@ document.addEventListener('DOMContentLoaded', function() {
     var csrfMeta = document.querySelector('meta[name=csrf-token]');
     sotBtn.disabled = true;
     out.innerHTML = '<span class="text-muted"><span class="spinner-border spinner-border-sm me-1"></span>Connecting…</span>';
-    fetch('/settings/sot-backup/test', {method: 'POST',
+    fetch('/settings/backup-server/test', {method: 'POST',
         headers: {'X-CSRFToken': csrfMeta ? csrfMeta.content : ''}})
       .then(function(r){ return r.json(); })
       .then(function(d){

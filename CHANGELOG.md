@@ -6,6 +6,50 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Changed — one Settings tab held three subjects; now each has its own (2026-08-29)
+
+`Settings → SoT & Backup` carried a firmware git URL, the SFTP credentials of
+the backup box, and nothing about appliance configuration — under a heading
+whose first word names an authority. Nothing failed; the word simply covered
+more than it was true of.
+
+- **Added** the **Source of Truth & Backup** group, holding two entries:
+  **Configuration SoT** (`#tab-sot`) and **Backup Server** (`#tab-backupsrv`).
+  Each pane states what it is *not* and links to the other two.
+- **Renamed** the `Git` panel to **Software Update Repository**. It is the repo
+  this node downloads its own *code* from; it has never held a device
+  configuration or a firmware image, and "Git" is a tool name that
+  distinguished it from neither of the others. The target `#tab-git` is
+  unchanged, so every deep link and manual reference still lands.
+- **Removed** `sot.firmware_repo_url` / `sot.firmware_repo_branch`. Every
+  consumer was presentational — the URL was rendered as a link and nothing ever
+  read the manifest — while the repo they named declared `firmwares: []` with
+  two images loaded. **Firmware is not a source of truth in this product**; its
+  authority is `firmware_images` + `data/firmware/` (Infrastructure →
+  Firmware), which is indexed, hashed and backed up. The System Backup page no
+  longer labels the firmware folder a "manifest SoT".
+- **Fixed** the SoT retention settings, which had never worked: `sot_store`
+  read them through `settings_store.get`, **a function this product has never
+  defined**, so every harvest raised `AttributeError` inside a blanket `except`
+  and silently used the hard-coded 60/180. They are now read through
+  `settings_store.sot_retention()` and are editable on the Configuration SoT
+  pane. A stored `0` or a malformed value means *unset*, not *keep nothing*.
+- **Fixed** two panes sharing one POST: saving a retention number rewrote the
+  SFTP credentials and could redirect to the other pane. `POST /settings/sot`
+  and `POST /settings/backup-server` now own one pane each and return to it.
+  (`/settings/sot-backup/test` moved to `/settings/backup-server/test`.)
+- **Fixed** the backup server's **system bundles path**, which the save read
+  with a default while the form did not offer it — so every submit quietly
+  rewrote a customised value back to `/system`. All three paths are on the form.
+- **Changed** the pane cross-reference hook from `data-theme-jump` (bound
+  inside the Appearance block, which returns early when the theme form is
+  absent) to a delegated `data-tab-jump`. It clicks the menu button rather than
+  showing the pane, so the lateral menu's selection follows.
+- Guards: `tests/test_sot_settings_split.py` (22), safeguards §140.
+  Manual §26 rewritten — §26.4 is the update repository, §26.5 the
+  Configuration SoT, §26.5b the Backup Server.
+
+
 ### Added — the SPO wizard lets the operator choose the backend (2026-08-28)
 
 The registry gained N rows the same day, and the wizard still resolved in

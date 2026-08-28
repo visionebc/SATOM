@@ -263,7 +263,7 @@
     <div class="card mb-3"><div class="card-header"><strong><i class="bi bi-hdd-network me-1"></i>External backup server{% if bk.host %} — {{ bk.host }}{% endif %}</strong></div>
       <div class="card-body">
         {% if not bk.configured %}
-          <p class="text-muted small mb-0">{{ _('Not configured — set host / credentials in') }} <a href="{{ url_for('settings.index') }}#tab-sotbackup">Settings → SoT &amp; Backup</a>.</p>
+          <p class="text-muted small mb-0">{{ _('Not configured — set host / credentials in') }} <a href="{{ url_for('settings.index') }}#tab-backupsrv">Settings → Backup Server</a>.</p>
         {% elif not bk.reachable %}
           <div class="alert alert-danger small py-2 mb-0"><i class="bi bi-x-circle me-1"></i>{{ bk.host }}:{{ bk.port }} unreachable — {{ bk.error }}</div>
         {% else %}
@@ -285,7 +285,7 @@
         </table>
 
         <h6 class="small"><i class="bi bi-cpu me-1"></i>Firmware on the backup server
-          {% if fw_repo.url %}<span class="text-muted fw-normal">{{ _('· manifest SoT:') }} <a href="{{ fw_repo.url }}" target="_blank" rel="noopener" class="font-monospace">{{ fw_repo.url|replace('https://','')|replace('http://','')|truncate(48) }}</a></span>{% endif %}</h6>
+          <span class="text-muted fw-normal">{{ _('· archive of images retired from local storage; the live index is Infrastructure → Firmware') }}</span></h6>
         {% if not bk.firmware %}
           <p class="text-muted small mb-0">No <code>.out</code> images under the firmware folder yet.</p>
         {% else %}

@@ -12234,3 +12234,63 @@ tests/test_concept_map.py tests/test_route_audit.py tests/test_csp_nonce.py
 tests/test_failopen_settings_git.py tests/test_docs_links.py -q` as `satom`.
 Mutations: `/tmp/mutate.py` pattern — anchor count must be exactly 1, baseline
 must be green per selection, and only `rc==1` scores as a kill.
+
+## §141 — a form that is always open, a cadence with no knob, and three unlabelled destinations (2026-08-29)
+
+`tests/test_settings_repo_sot_backup_ux.py` (17 guards, 13 mutations, 13 dead).
+
+Three controls on the Settings panes that rendered perfectly and said the wrong
+thing. None of them could fail a test that asks "does the page render?".
+
+**1. The repository form was permanently open.** *Repository* and *Configure
+Repository* were two cards of equal weight, and the second one's three boxes
+render **empty** until an async fetch fills them — one submit before that fetch
+lands writes blanks over a working `origin`. The form is what an operator needs
+in exactly one state: a node that was never given a remote. So it folds into the
+card it describes, behind **Edit**, and opens by itself only when
+`git_service.remote_configured()` is false. That probe is **server-side, on the
+first render**; a client-side guess flashes the form open on a registered node.
+
+The guards assert the **default state in both directions**, which is the only
+thing a render test can see and the only thing that was wrong. They are scoped
+to the *card*, never the pane: "Configure Repository" is still a heading inside
+it, and `hidden` appears all over a settings page.
+
+**2. The SoT had no cadence control, and the honest place for one is not a new
+key.** `device_sync` is what reads a device and mints a version, so a
+`sot.refresh_minutes` key would be a **second author of one number** — the same
+shape as the firmware "SoT" retired in §140. `settings_store.sot_refresh()` /
+`save_sot_refresh()` read and write **the schedule row**. The load-bearing line
+is `next_run`: an interval stored without moving the next fire is a setting that
+looks saved and is inert, which is exactly how the retention knob failed for
+three weeks (§140). A wall-clock harvest is **reported, not rewritten** —
+"every night at 02:00" is a different statement and converting it discards it.
+
+**3. Three backup paths said nothing about what lands in each.** The
+distinction that matters is *who writes*: an empty config folder means the
+appliance is not pushing, not that SATOM failed. Reuses the `hint()` macro from
+`partials/_hint.html`, so the text is in `title` and survives a script that
+never loads.
+
+### ⚠ The fifteenth substring-assert that matched its own mutation
+
+`assert "git-config-block" in fn` stayed green against a toggle rewired to
+`git-config-blockZZ` — the mutated id **contains** the original. The anchor has
+to be the whole call, `getElementById('git-config-block')`. Caught by the
+harness, not by reading it.
+
+A mutation that fails to duplicate is not a mutation either: the first attempt
+at "two paths share one sentence" *prepended* text, leaving the three titles
+distinct, so the guard was correctly green and the harness said SURVIVES about a
+guard that works. The mutation must write the other field's text **verbatim**.
+
+### Recipe
+
+    venv/bin/python -m pytest tests/test_settings_repo_sot_backup_ux.py -q
+
+Mutate and expect a kill (rc==1, never a bare "failed" grep — pytest prints
+`FAILED`): rename `git-config-block`; delete `{% if git_configured %} hidden{%
+endif %}`; force it always-hidden; rewire the toggle; drop the `next_run`
+recompute; drop the clamp; make `val <= 0` into `val < 0`; make
+`_sot_refresh_primary` return any row regardless of kind; make the
+no-harvest path a silent no-op; strip a path hint; copy one hint over another.

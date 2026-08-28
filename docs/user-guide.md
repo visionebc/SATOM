@@ -2348,7 +2348,18 @@ which distinguished it from nothing.
 - **Repository** — remote, branch, HEAD, working-tree status and ahead/behind,
   refreshed on demand.
 - **Configure repository** — set the remote URL, an optional token (embedded in
-  the URL, never displayed back) and the branch.
+  the URL, never displayed back) and the branch. It is **folded away behind the
+  **Edit** button on the Repository card**, and opens by itself on exactly one
+  kind of node: one that has no `origin` at all, i.e. was never registered at
+  installation. Such a node also says so, in as many words, above the form.
+
+  > Until 2026-08-29 this was a second card of equal weight, permanently open,
+  > whose three boxes render **empty** until the status fetch fills them. A
+  > submit before that fetch lands writes blanks over a working remote. The
+  > repository is a fact to read; the form is only ever the answer on a fresh
+  > install, and that is the one state it now opens in. Whether a repository
+  > exists is decided **server-side, on the first render** — a client-side
+  > guess flashes the form open on a node that has been registered for a year.
 - **Update from Gitea** — a fast-forward-only `git pull`. Python changes need a
   service restart to take effect; the normal path for a code change is §22, not
   this button.
@@ -2386,6 +2397,36 @@ Pruning runs after a harvest that actually changed something; an unchanged cycle
 cannot create anything to prune. Blobs no version references are deleted with
 the rows.
 
+**Refresh frequency** — how often every managed appliance is read and its
+configuration hashed, in minutes. Default **60**, allowed **5 – 10080** (a
+week); out-of-range values are clamped rather than rejected, because the field
+has no error channel of its own and a silently dropped value would leave the old
+number on screen looking saved. A `0`, a blank or a malformed value means
+*unset* and restores the default — never "harvest never".
+
+> **This field does not create a settings key.** The cadence already has an
+> author: `device_sync` is the scheduled action that reads a device and mints a
+> version (§15), so a key of its own would be a **second author of one number**
+> — the panel would show one interval while the scheduler fired on another, and
+> neither would be wrong about itself. The field reads and writes that schedule
+> row, and **recomputes its next fire**: a stored interval that leaves
+> `next_run` alone does not apply until the fire that was already pending goes
+> off, which is a setting that looks saved and is inert.
+
+Two consequences worth knowing before typing a small number:
+
+- A short interval costs **device calls**, not storage — an unchanged harvest
+  writes nothing at all.
+- The panel names the row it drives and links to it, says whether that row is
+  **disabled** (in which case nothing is harvested on a schedule at all), and
+  reports any *other* `device_sync` schedules it is deliberately **not**
+  touching. A harvest pinned to a wall-clock time ("every night at 02:00") is a
+  different statement; converting it to an interval would discard it, so it is
+  reported and left alone. If no scheduled harvest exists at all, saving
+  **creates** one, fleet-wide, at the interval typed.
+- Uploading the new SoT blobs off-box is a separate action on its own schedule
+  (`device_inspect`) and is edited in Automation, not here.
+
 ### 26.5b Backup Server — the external SFTP destination
 
 The box **three separate streams are copied to**. It is a destination, not an
@@ -2409,6 +2450,12 @@ appliance stops pushing, SATOM can report the gap but cannot fill it.
 - All three paths are on the form. The system-bundles path used to be missing
   from it while the save still read it with a default, so every submit quietly
   rewrote a customised value back to `/system`.
+- **Each path carries a “?”** stating what lands in it and, more importantly,
+  **who writes it** — the distinction that decides whose fault an empty folder
+  is. Three paths side by side, with no such text, said nothing about either.
+  The hint text lives in the `title` attribute, so it still appears as the
+  browser's native tooltip if the script that upgrades it never loads: a
+  control whose whole purpose is to explain must not go silent.
 
 ### 26.6 Email & Alerts — this is the delivery policy §14.10 defers to
 

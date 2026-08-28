@@ -1098,6 +1098,117 @@ def save_sot_retention(versions, days) -> None:
         set_str(key, str(max(1, min(hi, val))))
 
 
+# ── Configuration SoT refresh cadence ────────────────────────────────────────
+#
+# How often the SoT refreshes is deliberately NOT a new key in this table.  The
+# number already has an author: ``device_sync`` is the scheduled action that
+# reads a device and mints a version, so a key here would be a SECOND author of
+# one cadence — the page would show one interval while the scheduler fired on
+# another, and neither would be wrong about itself.  That is the same shape as
+# the firmware "SoT" that was retired on 2026-08-29: an authority nobody read,
+# contradicting the one that was actually in force.  So these two functions
+# read and write the schedule row itself.
+SOT_REFRESH_ACTION = "device_sync"
+SOT_REFRESH_DEFAULT_MINUTES = 60
+SOT_REFRESH_MIN_MINUTES = 5
+SOT_REFRESH_MAX_MINUTES = 10080  # one week
+
+_SOT_REFRESH_UNIT_MINUTES = {"minutes": 1, "hours": 60, "days": 1440}
+
+
+def _sot_refresh_rows():
+    from ..models import ScheduledAction
+    return (ScheduledAction.query
+            .filter_by(action=SOT_REFRESH_ACTION)
+            .order_by(ScheduledAction.id).all())
+
+
+def _sot_refresh_primary(rows):
+    """The row this knob speaks for: the first INTERVAL harvest.
+
+    A harvest pinned to a wall-clock time is a different statement ("every
+    night at 02:00") and silently converting it to an interval would discard
+    it. Such a row is reported as *other*, not edited.
+    """
+    for r in rows:
+        if (r.schedule_kind or "") == "interval":
+            return r
+    return None
+
+
+def sot_refresh() -> dict:
+    """Cadence of the harvest that mints Configuration SoT versions."""
+    try:
+        rows = _sot_refresh_rows()
+    except Exception:  # noqa: BLE001 — settings must render without a schedule table
+        rows = []
+    primary = _sot_refresh_primary(rows)
+    minutes = SOT_REFRESH_DEFAULT_MINUTES
+    if primary is not None:
+        spec = primary.schedule_dict if hasattr(primary, "schedule_dict") else {}
+        try:
+            every = int((spec or {}).get("every", 0))
+        except (TypeError, ValueError):
+            every = 0
+        unit = _SOT_REFRESH_UNIT_MINUTES.get((spec or {}).get("unit", "minutes"), 1)
+        minutes = every * unit if every > 0 else SOT_REFRESH_DEFAULT_MINUTES
+    return {
+        "minutes": minutes,
+        "default_minutes": SOT_REFRESH_DEFAULT_MINUTES,
+        "min_minutes": SOT_REFRESH_MIN_MINUTES,
+        "max_minutes": SOT_REFRESH_MAX_MINUTES,
+        "configured": primary is not None,
+        "enabled": bool(getattr(primary, "enabled", False)),
+        "action_id": getattr(primary, "id", None),
+        "last_run": getattr(primary, "last_run", None),
+        "next_run": getattr(primary, "next_run", None),
+        "others": max(0, len(rows) - (1 if primary is not None else 0)),
+    }
+
+
+def save_sot_refresh(minutes) -> dict:
+    """Write the cadence to the harvest row and RECOMPUTE its next fire.
+
+    Recomputing ``next_run`` is the point of the function. Without it a
+    shortened interval does not apply until the fire that was already pending
+    goes off, so the page would claim a cadence the node would not honour for
+    another hour — the setting would look saved and be inert, which is exactly
+    the failure the retention knob had.
+
+    Out of range is clamped, not rejected: this form has one field and no error
+    channel, and a silently dropped value leaves the old number on screen as
+    though it had been stored.
+    """
+    from ..models import ScheduledAction
+    from ..extensions import db
+    from .scheduler import compute_next_run
+
+    try:
+        val = int(str(minutes).strip() or 0)
+    except (TypeError, ValueError):
+        val = 0
+    if val <= 0:
+        val = SOT_REFRESH_DEFAULT_MINUTES
+    val = max(SOT_REFRESH_MIN_MINUTES, min(SOT_REFRESH_MAX_MINUTES, val))
+
+    rows = _sot_refresh_rows()
+    row = _sot_refresh_primary(rows)
+    created = False
+    if row is None:
+        created = True
+        row = ScheduledAction(
+            name="Fleet sync (source of truth)",
+            scope="admin", product="fortiweb", action=SOT_REFRESH_ACTION,
+            targets="[]", params="{}", enabled=True, catch_up=True,
+            created_by="settings.sot_refresh")
+        db.session.add(row)
+    row.schedule_kind = "interval"
+    row.schedule = json.dumps({"every": val, "unit": "minutes"})
+    row.next_run = compute_next_run("interval", {"every": val, "unit": "minutes"})
+    db.session.commit()
+    return {"minutes": val, "created": created, "action_id": row.id}
+
+
 def backup_server(reveal_secret: bool = False) -> dict:
     raw = get_json(K_BACKUPSRV, {}) or {}
     cfg = dict(_BACKUPSRV_DEFAULTS)

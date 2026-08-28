@@ -213,6 +213,12 @@ def index():
         policy_link_tokens=policy_links_svc.TOKENS,
         clone_rules_cfg=(clone_rules_svc.config() if _is_admin() else None),
         sot_retention=(store.sot_retention() if _is_admin() else None),
+        sot_refresh=(store.sot_refresh() if _is_admin() else None),
+        # Server-side, on the first render: whether this node has an update
+        # repository at all decides whether the configuration form opens by
+        # itself. A client-side guess would flash the form open on a node that
+        # has been registered for a year.
+        git_configured=git_service.remote_configured(),
         sot_backup_server=(store.backup_server() if _is_admin() else None),
         system_info=system_info.collect(),
         # Languages — one row per language the PRODUCT speaks, so a language
@@ -1287,6 +1293,21 @@ def save_sot():
     log_action("settings.sot_retention",
                detail=f"versions={cfg['versions']} days={cfg['days']}")
     flash('Configuration SoT retention saved.', 'success')
+    return redirect(url_for('settings.index') + '#tab-sot')
+
+
+@bp.route('/sot/refresh', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def save_sot_refresh():
+    """Cadence of the SoT harvest. Its own POST, like every other pane's."""
+    res = store.save_sot_refresh(request.form.get('refresh_minutes', ''))
+    log_action("settings.sot_refresh",
+               detail=f"every={res['minutes']}min created={res['created']}")
+    flash('Created a fleet-wide SoT harvest every %d minutes.' % res['minutes']
+          if res['created'] else
+          'Configuration SoT now refreshes every %d minutes.' % res['minutes'],
+          'success')
     return redirect(url_for('settings.index') + '#tab-sot')
 
 

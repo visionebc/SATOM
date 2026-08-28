@@ -123,6 +123,20 @@ def _local(iso: str) -> str:
     return _stz.to_local(iso)
 
 
+def remote_configured() -> bool:
+    """Does this node have an update repository AT ALL?
+
+    Kept apart from :func:`git_info`, which describes a repository; this
+    answers whether there is one to describe. The settings page needs the
+    answer on its FIRST render, before any fetch, because it decides whether
+    the configuration form is the thing the operator needs to see. It is one
+    probe, and a git that cannot answer counts as "not configured" — the state
+    in which showing the form is harmless.
+    """
+    ok, out = _git_try(_repo_root(), "remote", "get-url", "origin")
+    return bool(ok and out.strip())
+
+
 def git_info() -> dict:
     """Snapshot of the repo for the Settings → Git tab."""
     root = _repo_root()

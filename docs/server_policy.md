@@ -240,11 +240,12 @@ and the before/after* — never appliance secrets (those live in the OS keyring)
 |---|---|
 | Endpoint URNs per API version | `app/registry/data/endpoints.yaml` |
 | Dependency tree (this graph, as data) | `app/registry/dependencies.py` (`SERVER_POLICY`, `WEB_PROTECTION_PROFILE`; 131 nodes) |
-| Composite read (walk a policy's whole graph) | `app/services/inspector_report.py`, `app/services/operations.py` (`policy_full`) |
-| CRUD with snapshot + audit + dry-run | `app/services/operations.py` (`FortiWebOps`) |
-| Versioned REST client | `app/clients/versioned.py` |
-| Modify / Delete UI | `app/ui/pages/workspace_page.py` + the structured policy editor |
-| Audit storage | `app/db/store.py` (`audit_log`, change history) |
+| Composite read (walk a policy's whole graph) | `app/clients/fortiweb.py` (`FortiWebClient.policy_full`), `app/services/read_layer.py` (`policy_full_cached`), `app/services/inspector.py` |
+| CRUD with snapshot + audit + dry-run | `app/services/fortiweb_ops.py` (`FortiWebOps`) |
+| REST client (URNs resolved from the registry) | `app/clients/fortiweb.py` (`FortiWebClient`), `app/registry/loader.py` |
+| Modify / Delete UI | `app/views/workspace.py` + `app/templates/workspace/policies.html` (bulk actions → `app/services/policy_ops.py`) |
+| Structured policy editor | `app/templates/workspace/policy_detail.html` + `app/templates/workspace/_fields.html`, sections from `app/services/policy_form.py` |
+| Audit storage | `app/models.py` (`AuditLog` → `audit_logs`, `ChangeHistory` → `change_history`), written through `app/services/audit.py` |
 
 Vendor SDK (offline ground truth, not committed):
 `/Volumes/DEBIAN 12_5/py_scripts/fortiweb_api/.../v2_0/cmdb/` — 272 object schemas

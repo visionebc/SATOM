@@ -544,23 +544,27 @@ and the before/after</em> — never appliance secrets (those live in the OS keyr
 </tr>
 <tr>
 <td>Composite read (walk a policy's whole graph)</td>
-<td><code>app/services/inspector_report.py</code>, <code>app/services/operations.py</code> (<code>policy_full</code>)</td>
+<td><code>app/clients/fortiweb.py</code> (<code>FortiWebClient.policy_full</code>), <code>app/services/read_layer.py</code> (<code>policy_full_cached</code>), <code>app/services/inspector.py</code></td>
 </tr>
 <tr>
 <td>CRUD with snapshot + audit + dry-run</td>
-<td><code>app/services/operations.py</code> (<code>FortiWebOps</code>)</td>
+<td><code>app/services/fortiweb_ops.py</code> (<code>FortiWebOps</code>)</td>
 </tr>
 <tr>
-<td>Versioned REST client</td>
-<td><code>app/clients/versioned.py</code></td>
+<td>REST client (URNs resolved from the registry)</td>
+<td><code>app/clients/fortiweb.py</code> (<code>FortiWebClient</code>), <code>app/registry/loader.py</code></td>
 </tr>
 <tr>
 <td>Modify / Delete UI</td>
-<td><code>app/ui/pages/workspace_page.py</code> + the structured policy editor</td>
+<td><code>app/views/workspace.py</code> + <code>app/templates/workspace/policies.html</code> (bulk actions → <code>app/services/policy_ops.py</code>)</td>
+</tr>
+<tr>
+<td>Structured policy editor</td>
+<td><code>app/templates/workspace/policy_detail.html</code> + <code>app/templates/workspace/_fields.html</code>, sections from <code>app/services/policy_form.py</code></td>
 </tr>
 <tr>
 <td>Audit storage</td>
-<td><code>app/db/store.py</code> (<code>audit_log</code>, change history)</td>
+<td><code>app/models.py</code> (<code>AuditLog</code> → <code>audit_logs</code>, <code>ChangeHistory</code> → <code>change_history</code>), written through <code>app/services/audit.py</code></td>
 </tr>
 </tbody>
 </table>

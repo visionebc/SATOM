@@ -77,11 +77,23 @@ each declaring which of the two jobs it does and which zones / pools it serves.
   claims this name* and *two claim it equally* (misconfiguration — block).
   New blocker codes `ipam_not_resolved`, `dns_not_resolved`,
   `ipam_unreachable`, `dns_unreachable`.
+- **Added** the resolver's own three answers are **never folded** into
+  one: `NO_BACKEND` (nothing registered), `NO_MATCH` (no backend claims
+  this name) and `AMBIGUOUS` (two claim it equally). The first only
+  **warns** — an install with no DDI is supported; the other two
+  **block**, because a run that proceeds past either one publishes into
+  a zone or a pool nobody chose.
 - **Migration** the old `dnsrecords.*` settings are folded into one **unscoped**
   row on first boot, keeping the encrypted secret and the old `default_zone` /
   `default_pool` as defaults — not as a scope, which would have narrowed a
   working install at upgrade time. One-shot, guarded by its own flag so
   deleting every backend does not resurrect it.
+- **Added** `save_backend` **refuses** a `default_zone` / `default_pool`
+  that falls outside the row's own declared scope, and writes nothing
+  when it refuses. The two contradict each other: the resolver would
+  route that zone away from the very backend about to write into it.
+  Refused, not silently rewritten — an operator who typed both meant
+  both.
 - **Added** `tests/test_dns_backends.py` (54 guards) and the §130 guards moved
   onto the new seam.
 
@@ -251,7 +263,7 @@ closed the rewrite would have left the pool changed, and reported green.
   operator-facing surface is where the safe posture belongs; the engine has
   library callers whose deliveries must keep completing.
 - 25 guards (`tests/test_clone_additive.py`), 22/22 mutations killed by the
-  guard each one names. `docs/safeguards.md` §132.
+  guard each one names. `docs/safeguards.md` §138.
 
 
 ### The workspace identifies a box by the name it calls itself (2026-08-27)

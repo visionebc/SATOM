@@ -6017,85 +6017,6 @@ command that never ran**:
 
 ---
 
-## §44. A rate limit on the wrong verb locks out the innocent
-
-`/auth/login` answers two different questions with one URL: `GET` asks "show me
-the form", `POST` asks "is this credential correct". Only the second is an
-attack surface, and only the second may be rationed. The shipped decorator
-rationed both, so five page views a minute — trivially reached by one logout
-redirect plus a reload — returned `429` on the **form**. The victim of that
-limiter is never the attacker: an attacker scripts `POST` and never loads the
-page, while the operator loads the page and is turned away.
-
-**Guard** (`tests/test_directory_import.py`): ten `GET`s all `200`; the `POST`
-budget survives a `GET` flood untouched; the sixth `POST` is still `429`; and a
-`GET` served *during* the `POST` throttle still returns `200`. That last one is
-the human requirement — someone being throttled must be able to read the screen
-that says so.
-
-The shared test fixture sets `RATELIMIT_ENABLED = False`, so these tests build
-their own app with the limiter on. A limiter test against a fixture that
-disables the limiter passes for the wrong reason, which is worse than no test.
-
-**Related:** a redirect target that points back at `/auth/logout` is the same
-class of self-inflicted door. Hitting logout without a session lands on
-`/auth/login?next=/auth/logout`; honour that `next` and a successful sign-in
-signs you out. It is refused by **resolved path** (`url_for('auth.logout')`),
-never by testing whether the string contains `logout` — a real page may.
-
-**Verification recipe.** Against a live node, with a cookiejar and a real CSRF
-token (`curl` without one gets a 302 from the CSRF handler and proves nothing
-about the limiter): 12 `GET`s → all `200`; 8 `POST`s → `200 ×5` then `429 ×3`;
-one final `GET` → `200`.
-
-## §45. RADIUS has no roster, so importing users needs a second channel
-
-You cannot enumerate RADIUS. An Access-Request asks about **one** credential and
-returns yes or no; there is no "list this group" verb, and no amount of
-configuration adds one. So "import the users of group X" under a RADIUS backend
-is not a RADIUS feature at all — it is a read against the directory's *own* API,
-running alongside an authentication path that stays on RADIUS. Conflating the
-two would mean switching sign-in to LDAP to get a user list, quietly trading
-away FortiToken/push at the directory to buy a roster.
-
-The roster source is a FortiAuthenticator **already registered under
-Appliances**, reusing its Fernet-encrypted API key. A second copy of that
-credential in the auth config would be a second thing to rotate.
-
-**Measured on the device, not assumed:** `/api/v1/localusers/` **under-reports**.
-On fac01 (v8.0.3) it returned `meta.total_count: 1` for a FAC whose GUI showed
-three local users, omitting `admin` and `ebc`; `/api/v1/localgroup-memberships/`
-returned both members of the group, each with its `username`. Memberships are
-therefore the authoritative roster and `localusers` is only ever enrichment. A
-roster built on `localusers` would import a partial group and look successful.
-
-**Guards:** the roster includes a member `localusers` hides; a group name the
-appliance does not know is an error naming the groups it does know (not an empty
-success); a device refusal is an error, not an empty group; a `localusers`
-failure does not take the roster down with it; two registered FACs with no
-choice made refuse rather than guess; a configured appliance of the wrong
-`kind` is rejected by name.
-
-## §46. Pending approval is not "disabled", and neither is a bad password
-
-Three different refusals used to render as one message. An imported account
-awaiting approval, an account an admin revoked, and a wrong password are three
-different problems with three different owners — and telling a user "invalid
-username or password" after their **bind succeeded** sends them to reset a
-credential that was correct.
-
-`User.is_pending_approval` is derived, not stored: *external, inactive, and
-`last_login is None`*. An account an admin revoked has by definition been used,
-so it carries a `last_login`; one nobody ever signed into could not have been
-revoked. Deriving it means there is no new column to keep in sync with the
-truth, and no way for the flag and the state to disagree.
-
-The gate itself (`auth.require_approval`) is **global, not per-backend**, and is
-saved from every section of the Settings form. Scoping the save to the RADIUS
-branch would silently switch the gate off whenever an admin saved the LDAP half
-of the same page — a security control that turns itself off is worse than none.
-Existing accounts are never re-gated: the approval decision is made once.
-
 ## §43. A change that leaves this product must not be able to lie about itself
 
 `tests/test_cr_orchestration.py`, `tests/test_netbox_client.py`,
@@ -6220,6 +6141,91 @@ contract keyed on one device — one event carrying a list is not something a ho
 written from these docs could read. That test seeds two appliances explicitly;
 its first version created one and asked for "the first two", so it passed its
 own bug instead of testing the code's.
+
+---
+
+## §44. A rate limit on the wrong verb locks out the innocent
+
+`/auth/login` answers two different questions with one URL: `GET` asks "show me
+the form", `POST` asks "is this credential correct". Only the second is an
+attack surface, and only the second may be rationed. The shipped decorator
+rationed both, so five page views a minute — trivially reached by one logout
+redirect plus a reload — returned `429` on the **form**. The victim of that
+limiter is never the attacker: an attacker scripts `POST` and never loads the
+page, while the operator loads the page and is turned away.
+
+**Guard** (`tests/test_directory_import.py`): ten `GET`s all `200`; the `POST`
+budget survives a `GET` flood untouched; the sixth `POST` is still `429`; and a
+`GET` served *during* the `POST` throttle still returns `200`. That last one is
+the human requirement — someone being throttled must be able to read the screen
+that says so.
+
+The shared test fixture sets `RATELIMIT_ENABLED = False`, so these tests build
+their own app with the limiter on. A limiter test against a fixture that
+disables the limiter passes for the wrong reason, which is worse than no test.
+
+**Related:** a redirect target that points back at `/auth/logout` is the same
+class of self-inflicted door. Hitting logout without a session lands on
+`/auth/login?next=/auth/logout`; honour that `next` and a successful sign-in
+signs you out. It is refused by **resolved path** (`url_for('auth.logout')`),
+never by testing whether the string contains `logout` — a real page may.
+
+**Verification recipe.** Against a live node, with a cookiejar and a real CSRF
+token (`curl` without one gets a 302 from the CSRF handler and proves nothing
+about the limiter): 12 `GET`s → all `200`; 8 `POST`s → `200 ×5` then `429 ×3`;
+one final `GET` → `200`.
+
+## §45. RADIUS has no roster, so importing users needs a second channel
+
+You cannot enumerate RADIUS. An Access-Request asks about **one** credential and
+returns yes or no; there is no "list this group" verb, and no amount of
+configuration adds one. So "import the users of group X" under a RADIUS backend
+is not a RADIUS feature at all — it is a read against the directory's *own* API,
+running alongside an authentication path that stays on RADIUS. Conflating the
+two would mean switching sign-in to LDAP to get a user list, quietly trading
+away FortiToken/push at the directory to buy a roster.
+
+The roster source is a FortiAuthenticator **already registered under
+Appliances**, reusing its Fernet-encrypted API key. A second copy of that
+credential in the auth config would be a second thing to rotate.
+
+**Measured on the device, not assumed:** `/api/v1/localusers/` **under-reports**.
+On fac01 (v8.0.3) it returned `meta.total_count: 1` for a FAC whose GUI showed
+three local users, omitting `admin` and `ebc`; `/api/v1/localgroup-memberships/`
+returned both members of the group, each with its `username`. Memberships are
+therefore the authoritative roster and `localusers` is only ever enrichment. A
+roster built on `localusers` would import a partial group and look successful.
+
+**Guards:** the roster includes a member `localusers` hides; a group name the
+appliance does not know is an error naming the groups it does know (not an empty
+success); a device refusal is an error, not an empty group; a `localusers`
+failure does not take the roster down with it; two registered FACs with no
+choice made refuse rather than guess; a configured appliance of the wrong
+`kind` is rejected by name.
+
+
+---
+
+## §46. Pending approval is not "disabled", and neither is a bad password
+
+Three different refusals used to render as one message. An imported account
+awaiting approval, an account an admin revoked, and a wrong password are three
+different problems with three different owners — and telling a user "invalid
+username or password" after their **bind succeeded** sends them to reset a
+credential that was correct.
+
+`User.is_pending_approval` is derived, not stored: *external, inactive, and
+`last_login is None`*. An account an admin revoked has by definition been used,
+so it carries a `last_login`; one nobody ever signed into could not have been
+revoked. Deriving it means there is no new column to keep in sync with the
+truth, and no way for the flag and the state to disagree.
+
+The gate itself (`auth.require_approval`) is **global, not per-backend**, and is
+saved from every section of the Settings form. Scoping the save to the RADIUS
+branch would silently switch the gate off whenever an admin saved the LDAP half
+of the same page — a security control that turns itself off is worse than none.
+Existing accounts are never re-gated: the approval decision is made once.
+
 
 
 ## §47. A change window belongs to the DEVICE, not to one product
@@ -7364,67 +7370,6 @@ body — correctly survives: the slice grows by one nesting level but stays insi
 its own group, and the block genuinely does still include the partial. A mutation
 that does not change the truth of the assertion is not supposed to kill it.
 
-## §67. One operation, two authors of its prose
-
-**Guard:** `tests/test_upgrade_flow_wording.py` (12 tests). **14 mutations, 14
-bite** (harness `/root/ufw/mutate.py` on a1; judged by **rc**, and only `rc==1`
-is a failure).
-
-The Upgrade Flow's stage 2 composed its own change-request wording: a title
-placeholder written into `upgrade_flow/index.html`, a reason placeholder beside
-it, and no rollback field at all. The single-change form thirty lines away in
-`change_requests/form.html` proposed all three through `services.cr_types`,
-where an administrator's text wins per field and the product's sentence stands
-for every field they left alone.
-
-Neither form ever failed. The failure is what an administrator's correction
-does: they rename the change on Administration → Change Types, the single
-change picks it up, and the bulk one keeps offering the compiled sentence
-forever. Two documents about the same work, raised from the same console,
-disagreeing — and the one that disagreed covered the whole window.
-
-This is the §62 shape again (two implementations of one operation, differing in
-what they RECORD rather than in what they DO) with the roles reversed: here the
-duplicate is a sentence, not a function, and duplicated prose has no caller
-whose test could notice.
-
-**What the guard fixes in place**
-
-* The template composes no proposal: `test_the_template_composes_no_proposal_of_its_own`
-  bans the three shipped placeholders *after stripping Jinja comments* — the
-  paragraph explaining the rule names the strings it bans, which is the eighth
-  time an assert-by-substring has matched its own comment in this repo.
-* The batched (wave) path is not a narrower carbon copy: reason, rollback and
-  document language are asserted on every change of a rollout, because a field
-  that is simply never posted comes out empty and an empty rollback prints as a
-  change with no rollback plan rather than as a bug.
-* The proposal quotes no single pre-flight run. `cr_types.draft_fields(prep=…)`
-  names one run's id, timestamp and backup; this stage rests on N of them.
-* A change type disabled on the Change Types page is reported on arrival.
-  `create_change_request` rejects an action that is not on offer, so without
-  this the operator learns it after the pre-flight sweep — the expensive half —
-  with the form filled in.
-
-**Traps paid for here**
-
-1. `cr_types.save_texts` walks the WHOLE field list and writes an empty string
-   over anything the payload omits. A test helper that wrote one override per
-   call silently blanked the previous one, and the failure read as "the page
-   ignores the administrator's wording" — the exact defect under test, reported
-   by a broken fixture.
-2. Two sentences split around a Jinja expression are two msgids that no
-   translator can order correctly. Both were folded into single msgids with
-   `%(lang)s` before the catalogues were touched.
-3. The JS payload legitimately carries the raw `{devices}` token — substituting
-   the live selection is its entire job — so a page-wide assertion that the
-   token never appears fails against a correct page. Assert on the FIELDS.
-
-**Recipe.** `venv/bin/python -m pytest tests/test_upgrade_flow_wording.py
-tests/test_upgrade_flow.py tests/test_upgrade_flow_exec.py
-tests/test_i18n_foundation.py tests/test_ui_locale.py tests/test_cr_doc_i18n.py
-tests/test_cr_types.py -q` as `satom`. Live render (EN and ES, one fresh app
-context per request — flask-babel caches the locale on `g`):
-`/tmp/render2.py` pattern in §61.
 
 ## §69 — a language gate is only a gate if every surface asks it
 
@@ -11273,71 +11218,6 @@ the seed can pass while the picker renders something else.
 the notes are concatenated string literals, so hollowing out one fragment survives.
 Emptying the register does bite. Recorded rather than over-engineered.
 
-## §127 — Demand, supply, and the difference between them (`tests/test_waf_artifact_fleet.py`)
-
-`/waf/artifacts` is the only fleet-wide view of the file-backed WAF objects.
-`/artifacts/*` is pinned to the session's (device, ADOM) by §121–§123, on
-purpose, so nothing else in the product can answer *which policies in this
-estate could not be migrated today*.
-
-### What the guards hold
-
-- **The universe is `waf_fleet.fortiweb_scopes`, and nothing else.** A second
-  query here would be a second answer to "which devices may this console
-  count", and the two drift silently. The guards go through the ROUTE: on
-  `/artifacts/*` the services computed correctly for the whole time the leak
-  was live and it was the PAGE that showed the fleet (§122). One guard runs in
-  the GLOBAL console specifically, because in a FortiWeb session
-  `visible_appliances()` already drops the other products and the explicit
-  `kind` filter can be deleted without any FortiWeb-session test noticing.
-- **One author for the verdict.** `artifact_refs.verdict_of` is imported by
-  `device_audit`, `artifact_stats.scope_stats` and the fleet page. The guard
-  walks every needed object and asserts the three agree object by object — a
-  comment saying "identical expression, deliberately" is a promise, not a
-  mechanism.
-- **`orphan` and `library` are states, not verdicts.** A held copy nothing
-  names has no need behind it; the library bucket belongs to no device. Both
-  are excluded from readiness.
-- **A library-backed `borrowed` keeps the verdict and changes the remedy.**
-  Sending an operator to look for "another appliance's bytes" when the file is
-  a deliberate shared copy sends them after a device that is not in the story.
-- **EMPTY beside `ok`, decided on the NEWEST version.** An older hollow version
-  under a newer full one is not what `resolve()` serves, so it is not a
-  finding. §124 is the reason the flag exists at all.
-- **Two different absences, both kept out of the denominators.** `swept=False`
-  (nobody has looked at this scope) and `in_config=None` (no configuration
-  snapshot, so its policy total is unknown). The second is what makes
-  `unwalked=None` rather than a number, and `max(0, …)` is what stops a policy
-  deleted between the sweep and the harvest from printing a negative backlog.
-- **The filters narrow the TABLE.** Every tile and every chart is the whole
-  visible fleet, on every filtered URL — the §119 drift written down.
-
-### Traps this cost
-
-- `device_audit` returns its per-object rows under **`artifacts`**, not
-  `needed`.
-- A library copy is **`borrowed`**, not `ok`: `held_here` means a copy scoped
-  to THIS appliance. That is `artifact_stats`' existing vocabulary and the page
-  does not get a private one — it was the guard that discovered the page and
-  the guard's author disagreed, and the page was right.
-- The store's ordering (`created_at desc, id desc`) is re-derived in three
-  places already; a fourth answer here would make this page name a version
-  neither `waf_artifacts.latest` nor `artifact_files.object_index` would serve.
-- `conftest.login` writes `_user_id` over an existing session and flask-login
-  keeps serving the FIRST identity — multi-user guards are split into two tests
-  (same as §126, same as `tests/test_maintenance_mode.py`).
-
-### Recipe
-
-    venv/bin/python -m pytest tests/test_waf_artifact_fleet.py -q -p no:warnings
-
-Mutation harness: `/tmp/mutate.py` — measured by rc (only `rc == 1` is a
-failure), baseline green required, no `-x`, and each mutation must name the
-guard it kills among the dead. One mutation is *meta*: it removes the library
-copy from the fixture, proving the library guards are load-bearing.
-
----
-
 ## §126 — A fleet page states its denominator (`tests/test_waf_fleet.py`)
 
 `Fleet -> WAF` is the first page in this product that is deliberately
@@ -11419,6 +11299,71 @@ Mutation harness: `/tmp/waf_mutate.py` — measured by rc (only `rc == 1` is a
 failure), baseline green required, no `-x`, and each mutation must name the
 guard it kills among the dead. One mutation is *meta*: it breaks the fixture so
 the never-harvested device is never created, proving the control can die.
+
+---
+
+## §127 — Demand, supply, and the difference between them (`tests/test_waf_artifact_fleet.py`)
+
+`/waf/artifacts` is the only fleet-wide view of the file-backed WAF objects.
+`/artifacts/*` is pinned to the session's (device, ADOM) by §121–§123, on
+purpose, so nothing else in the product can answer *which policies in this
+estate could not be migrated today*.
+
+### What the guards hold
+
+- **The universe is `waf_fleet.fortiweb_scopes`, and nothing else.** A second
+  query here would be a second answer to "which devices may this console
+  count", and the two drift silently. The guards go through the ROUTE: on
+  `/artifacts/*` the services computed correctly for the whole time the leak
+  was live and it was the PAGE that showed the fleet (§122). One guard runs in
+  the GLOBAL console specifically, because in a FortiWeb session
+  `visible_appliances()` already drops the other products and the explicit
+  `kind` filter can be deleted without any FortiWeb-session test noticing.
+- **One author for the verdict.** `artifact_refs.verdict_of` is imported by
+  `device_audit`, `artifact_stats.scope_stats` and the fleet page. The guard
+  walks every needed object and asserts the three agree object by object — a
+  comment saying "identical expression, deliberately" is a promise, not a
+  mechanism.
+- **`orphan` and `library` are states, not verdicts.** A held copy nothing
+  names has no need behind it; the library bucket belongs to no device. Both
+  are excluded from readiness.
+- **A library-backed `borrowed` keeps the verdict and changes the remedy.**
+  Sending an operator to look for "another appliance's bytes" when the file is
+  a deliberate shared copy sends them after a device that is not in the story.
+- **EMPTY beside `ok`, decided on the NEWEST version.** An older hollow version
+  under a newer full one is not what `resolve()` serves, so it is not a
+  finding. §124 is the reason the flag exists at all.
+- **Two different absences, both kept out of the denominators.** `swept=False`
+  (nobody has looked at this scope) and `in_config=None` (no configuration
+  snapshot, so its policy total is unknown). The second is what makes
+  `unwalked=None` rather than a number, and `max(0, …)` is what stops a policy
+  deleted between the sweep and the harvest from printing a negative backlog.
+- **The filters narrow the TABLE.** Every tile and every chart is the whole
+  visible fleet, on every filtered URL — the §119 drift written down.
+
+### Traps this cost
+
+- `device_audit` returns its per-object rows under **`artifacts`**, not
+  `needed`.
+- A library copy is **`borrowed`**, not `ok`: `held_here` means a copy scoped
+  to THIS appliance. That is `artifact_stats`' existing vocabulary and the page
+  does not get a private one — it was the guard that discovered the page and
+  the guard's author disagreed, and the page was right.
+- The store's ordering (`created_at desc, id desc`) is re-derived in three
+  places already; a fourth answer here would make this page name a version
+  neither `waf_artifacts.latest` nor `artifact_files.object_index` would serve.
+- `conftest.login` writes `_user_id` over an existing session and flask-login
+  keeps serving the FIRST identity — multi-user guards are split into two tests
+  (same as §126, same as `tests/test_maintenance_mode.py`).
+
+### Recipe
+
+    venv/bin/python -m pytest tests/test_waf_artifact_fleet.py -q -p no:warnings
+
+Mutation harness: `/tmp/mutate.py` — measured by rc (only `rc == 1` is a
+failure), baseline green required, no `-x`, and each mutation must name the
+guard it kills among the dead. One mutation is *meta*: it removes the library
+copy from the fixture, proving the library guards are load-bearing.
 
 ## §128 — Provenance travels with the data (`tests/test_waf_export.py`)
 
@@ -11644,52 +11589,15 @@ it renders. `policies.html` and `browse.html` were both confirmed over real
 HTTP against the live node.
 
 
-## §132 — "only add what is missing" (`tests/test_clone_additive.py`)
-
-**What it protects.** The clone must never write INTO an object the destination
-already owns, when the operator asked it not to. The subtlety is that there were
-TWO ways to do that and only one looked like a write:
-
-| the destination… | additive mode |
-|---|---|
-| does NOT have the object | created whole, with every row — unchanged |
-| has the object and the row | `exists` — unchanged |
-| has the object, the row is MISSING | **`untouched`** — the row is NOT added |
-| has the object, the row COLLIDES on its key | **`untouched`** — NOT rewritten |
-
-**Why the append is the one that matters.** `reconcile_rows` only ever governed
-the rewrite. The append arrived labelled *"missing under an existing parent —
-recreating"*, which reads as housekeeping, and it put a real server into a live
-pool. A version that closed only the rewrite would have left the pool modified
-and reported green.
-
-**Writing less obliges you to report more.** A held-back row is the only
-difference a run can produce that leaves NOTHING on the destination to find
-later: no object, no row, no error. So it is a status of its own (`untouched`,
-amber, mark `/`), a bucket of its own in `clone.outcome` carrying the parent and
-the key (a count is not the work), a number of its own in `clone_summary` that
-is **kept out of `skipped`** (everything else in that bucket is inert), and its
-own table in the clone report.
-
-**Recipe.** The classification guards drive `ClonePlanner.plan` directly, so
-they cannot see `clone_policy` dropping the flag — `test_the_mode_reaches_the_planner`
-is a separate guard for a separate claim, and it exists because a mutation that
-removed the kwarg from the `planner.plan(...)` call SURVIVED every other guard in
-the file. Any future guard that says "X reaches Y" must assert at Y, not at
-something Y also touches.
-
-**Traps found writing this.**
-- A mutation that removes the kwarg from a call site cannot be killed by a test
-  that calls the callee directly. Mis-aimed mutations report a gap that is not
-  there and hide the one that is.
-- The needle for the preview-invalidation mutation matched **two** handlers (the
-  destination selector uses the same line). Anchor a markup mutation on the
-  element id, never on the shared body.
-- `/tmp` on these nodes has `fs.protected_regular` behaviour: root cannot
-  rewrite a file it does not own there. Stage harness scripts under the app dir
-  with `install -o satom`.
 
 ## §132 — line profiles: declared vs inferred (2026-08-27)
+
+**§132 means this section.** The clone's additive mode briefly carried the
+same number; it was renumbered to §138 on 2026-08-28 because it had one
+citation to this section's five. The references in `services/spo_wizard.py`,
+`services/classification_ops.py`, `views/_segments_form.py`,
+`tests/test_spo_wizard.py` and `CHANGELOG.md`'s line-profiles entry all mean
+this one, and did not have to change.
 
 **The property.** `services.line_profiles.line_plan` is the ONLY module that
 answers "what does this line receive?", and every plan says which of two kinds
@@ -11851,9 +11759,10 @@ after restart: **0 blocked inline scripts**, line `P` carries
   text sweep over the template tree has a hole in it. The Python scan in
   `test_csp_nonce.py` reads it fine, so the guard is intact; a sweep by hand is
   not.
-- `docs/safeguards.md` has **two sections numbered §132** (clone-additive and
-  line profiles), both written 2026-08-27. Renumbering would break references
-  already stored elsewhere, so it is reported, not silently rewritten.
+- `docs/safeguards.md` briefly had **two sections numbered §132**
+  (clone-additive and line profiles), both written 2026-08-27. Resolved
+  2026-08-28: the clone-additive half became §138, because it carried one
+  citation against the other's five (four of them in code).
 
 ## §135 — one row per NETWORK: departments are a list, names are unique (2026-08-27)
 
@@ -12111,3 +12020,127 @@ to nothing is invisible to every server-side assertion. And
 `test_the_page_offers_the_registry_and_never_the_secret` parses the
 `const BACKENDS` payload rather than searching the page — the first draft
 asserted `"hidden" not in body` and matched the **Hidden Fields** nav entry.
+
+---
+
+## §138 — "only add what is missing" (`tests/test_clone_additive.py`)
+
+**Renumbered from §132 (2026-08-28).** This section and the line-profiles
+one were both written 2026-08-27 and both took the number §132. This is the
+clone's additive mode; it had exactly one citation (`CHANGELOG.md`), so it
+is the half that moved. **§132 now means only** line profiles: declared vs
+inferred — the *one author* rule cited from `services/spo_wizard.py`,
+`services/classification_ops.py`, `views/_segments_form.py` and
+`tests/test_spo_wizard.py`.
+
+**What it protects.** The clone must never write INTO an object the destination
+already owns, when the operator asked it not to. The subtlety is that there were
+TWO ways to do that and only one looked like a write:
+
+| the destination… | additive mode |
+|---|---|
+| does NOT have the object | created whole, with every row — unchanged |
+| has the object and the row | `exists` — unchanged |
+| has the object, the row is MISSING | **`untouched`** — the row is NOT added |
+| has the object, the row COLLIDES on its key | **`untouched`** — NOT rewritten |
+
+**Why the append is the one that matters.** `reconcile_rows` only ever governed
+the rewrite. The append arrived labelled *"missing under an existing parent —
+recreating"*, which reads as housekeeping, and it put a real server into a live
+pool. A version that closed only the rewrite would have left the pool modified
+and reported green.
+
+**Writing less obliges you to report more.** A held-back row is the only
+difference a run can produce that leaves NOTHING on the destination to find
+later: no object, no row, no error. So it is a status of its own (`untouched`,
+amber, mark `/`), a bucket of its own in `clone.outcome` carrying the parent and
+the key (a count is not the work), a number of its own in `clone_summary` that
+is **kept out of `skipped`** (everything else in that bucket is inert), and its
+own table in the clone report.
+
+**Recipe.** The classification guards drive `ClonePlanner.plan` directly, so
+they cannot see `clone_policy` dropping the flag — `test_the_mode_reaches_the_planner`
+is a separate guard for a separate claim, and it exists because a mutation that
+removed the kwarg from the `planner.plan(...)` call SURVIVED every other guard in
+the file. Any future guard that says "X reaches Y" must assert at Y, not at
+something Y also touches.
+
+**Traps found writing this.**
+- A mutation that removes the kwarg from a call site cannot be killed by a test
+  that calls the callee directly. Mis-aimed mutations report a gap that is not
+  there and hide the one that is.
+- The needle for the preview-invalidation mutation matched **two** handlers (the
+  destination selector uses the same line). Anchor a markup mutation on the
+  element id, never on the shared body.
+- `/tmp` on these nodes has `fs.protected_regular` behaviour: root cannot
+  rewrite a file it does not own there. Stage harness scripts under the app dir
+  with `install -o satom`.
+
+---
+
+## §139. One operation, two authors of its prose
+
+**Renumbered from §67 (2026-08-28).** Two sections carried §67. The other
+one — the monitor may not assert what it has not measured — is the §67 that
+`tests/test_thresholds.py` cites; it kept the number. This one had no
+citation anywhere, so it is the half that moved.
+
+**Guard:** `tests/test_upgrade_flow_wording.py` (12 tests). **14 mutations, 14
+bite** (harness `/root/ufw/mutate.py` on a1; judged by **rc**, and only `rc==1`
+is a failure).
+
+The Upgrade Flow's stage 2 composed its own change-request wording: a title
+placeholder written into `upgrade_flow/index.html`, a reason placeholder beside
+it, and no rollback field at all. The single-change form thirty lines away in
+`change_requests/form.html` proposed all three through `services.cr_types`,
+where an administrator's text wins per field and the product's sentence stands
+for every field they left alone.
+
+Neither form ever failed. The failure is what an administrator's correction
+does: they rename the change on Administration → Change Types, the single
+change picks it up, and the bulk one keeps offering the compiled sentence
+forever. Two documents about the same work, raised from the same console,
+disagreeing — and the one that disagreed covered the whole window.
+
+This is the §62 shape again (two implementations of one operation, differing in
+what they RECORD rather than in what they DO) with the roles reversed: here the
+duplicate is a sentence, not a function, and duplicated prose has no caller
+whose test could notice.
+
+**What the guard fixes in place**
+
+* The template composes no proposal: `test_the_template_composes_no_proposal_of_its_own`
+  bans the three shipped placeholders *after stripping Jinja comments* — the
+  paragraph explaining the rule names the strings it bans, which is the eighth
+  time an assert-by-substring has matched its own comment in this repo.
+* The batched (wave) path is not a narrower carbon copy: reason, rollback and
+  document language are asserted on every change of a rollout, because a field
+  that is simply never posted comes out empty and an empty rollback prints as a
+  change with no rollback plan rather than as a bug.
+* The proposal quotes no single pre-flight run. `cr_types.draft_fields(prep=…)`
+  names one run's id, timestamp and backup; this stage rests on N of them.
+* A change type disabled on the Change Types page is reported on arrival.
+  `create_change_request` rejects an action that is not on offer, so without
+  this the operator learns it after the pre-flight sweep — the expensive half —
+  with the form filled in.
+
+**Traps paid for here**
+
+1. `cr_types.save_texts` walks the WHOLE field list and writes an empty string
+   over anything the payload omits. A test helper that wrote one override per
+   call silently blanked the previous one, and the failure read as "the page
+   ignores the administrator's wording" — the exact defect under test, reported
+   by a broken fixture.
+2. Two sentences split around a Jinja expression are two msgids that no
+   translator can order correctly. Both were folded into single msgids with
+   `%(lang)s` before the catalogues were touched.
+3. The JS payload legitimately carries the raw `{devices}` token — substituting
+   the live selection is its entire job — so a page-wide assertion that the
+   token never appears fails against a correct page. Assert on the FIELDS.
+
+**Recipe.** `venv/bin/python -m pytest tests/test_upgrade_flow_wording.py
+tests/test_upgrade_flow.py tests/test_upgrade_flow_exec.py
+tests/test_i18n_foundation.py tests/test_ui_locale.py tests/test_cr_doc_i18n.py
+tests/test_cr_types.py -q` as `satom`. Live render (EN and ES, one fresh app
+context per request — flask-babel caches the locale on `g`):
+`/tmp/render2.py` pattern in §61.

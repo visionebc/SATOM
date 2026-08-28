@@ -117,7 +117,9 @@ app/clients/         REST clients (fortiweb.py, fortiadc.py, base.py) +
                      client_for(appliance) platform factory.
 app/registry/        endpoint catalog: loader.py (DB-first + YAML fallback),
                      data specs (WAF kinds, help overlays).
-app/models*.py       SQLAlchemy models. Postgres in production.
+app/models*.py       SQLAlchemy models, one file per domain — including
+                     models_dnsbackend.py, the DNS/IPAM backend
+                     registry. Postgres in production.
 app/api_v1/          the public token API (separate auth path, JSON-only).
 app/templates|static Jinja + Turbo Drive + CSP-safe vanilla JS.
 </code></pre>
@@ -349,7 +351,10 @@ importing a concrete client in views.</p>
   preflight), <code>policy_form</code>, <code>policy_graph</code>, <code>policy_links</code>, <code>objform</code> (the
   form engine), <code>fortiweb_field_schema</code> (create-field seeds), <code>clone</code>,
   <code>clone_rules</code> (admin dummy-IP policy), <code>capacity</code>, <code>naming</code>, <code>baselines</code>,
-  <code>templates</code>, <code>bulk</code> (background fleet applies).</li>
+  <code>templates</code>, <code>bulk</code> (background fleet applies), <code>line_profiles</code>
+  (<code>line_plan</code> — the one author of "what does this line get"),
+  <code>spo_wizard</code> (plan-first policy build: refuse up front, apply, then
+  compensate only what the run recorded doing).</li>
 <li><strong>WAF:</strong> <code>waf_specs</code> (catalog registration), <code>signature_catalog</code>,
   <code>wpp_exceptions</code> (rules 1–4 enforcement), <code>exception_inject</code>,
   <code>exception_detect</code>, <code>regex_lab</code>, <code>section_taxonomy</code>, <code>wp_menu</code>.</li>
@@ -363,7 +368,11 @@ importing a concrete client in views.</p>
 <li><strong>Platform:</strong> <code>product_scope</code>, <code>access</code>/<code>auth_store</code>/<code>directory_auth</code>
   (RBAC + LDAP/RADIUS), <code>audit</code>, <code>notifications</code>, <code>email_service</code>,
   <code>encryption</code>, <code>lock_service</code>, <code>db_reports</code>/<code>report_builder</code>,
-  <code>dbintrospect</code>, <code>dns_tool</code>, <code>fleet_objects</code>, <code>datasheets</code>, <code>bug_reports</code>.</li>
+  <code>dbintrospect</code>, <code>dns_tool</code>, <code>dns_providers/</code> (the N-backend IPAM/DDI
+  registry; <code>resolver</code> is the SOLE AUTHOR of "which backend answers
+  this" — most specific scope wins, and an exact tie is refused rather
+  than broken by row order), <code>fleet_objects</code>, <code>datasheets</code>,
+  <code>bug_reports</code>.</li>
 <li><strong>FortiADC:</strong> <code>adc_menu</code>, <code>adc_objform</code>, <code>adc_ops</code> (presets, discovery
   plan, VS inspector, health battery) — ADC-specific logic lives <em>only</em>
   here, enforced by the separation test.</li>

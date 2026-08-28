@@ -7,8 +7,8 @@
 > records the per-policy alignment FortiWeb itself cannot.
 >
 > Companion of [`web_protection_profile.md`](web_protection_profile.md). Keep current
-> when the exception specs (`app/ui/pages/wpp_specs.py`), the store
-> (`app/services/exceptions.py`) or the page change.
+> when the exception catalog + store (`app/services/wpp_exceptions.py`), the field
+> specs (`app/registry/data/waf_specs.json`) or the page change.
 
 ## 1. Why this exists
 
@@ -31,8 +31,8 @@ exceptions (with stale-record detection against the device's live bindings).
 
 ## 2. Data model (migration v7)
 
-`db/store.py` adds two tables; `services/exceptions.WppExceptionStore` is the CRUD
-+ join over them (own connection, like `TemplateLibrary`). NEVER secrets.
+`app/models.py` declares two tables (`WppException`, `WppExceptionPolicy`);
+`app/services/wpp_exceptions.py` is the CRUD + join over them. NEVER secrets.
 
 ```
 wpp_exceptions(id, appliance_id, wpp_mkey, exc_type, name, payload_json,
@@ -41,7 +41,7 @@ wpp_exception_policies(exception_id → wpp_exceptions.id ON DELETE CASCADE,
                        server_policy)            -- PK(exception_id, server_policy)
 ```
 
-* `exc_type` = the `objform`/`wpp_specs` spec key (so the same FortiWeb-style form
+* `exc_type` = the curated WAF **kind** key (so the same FortiWeb-style form
   re-opens it). `payload_json` = the FortiWeb-shaped exception entry.
 * An exception is assigned to **one OR several** Server Policies (the junction is
   the missing relationship). `alignment(appliance_id, bindings)` joins the DB
@@ -51,7 +51,7 @@ wpp_exception_policies(exception_id → wpp_exceptions.id ON DELETE CASCADE,
 
 ## 3. Exception-type catalog
 
-`EXCEPTION_TYPES` in `app/ui/pages/exceptions_page.py` — the menu of WAF exceptions
+`EXCEPTION_TYPES` in `app/services/wpp_exceptions.py` — the menu of WAF exceptions
 the operator can add, each mapped to a curated spec key:
 
 | GUI group | Sub-policy | spec key | structure |
@@ -157,23 +157,24 @@ key), `comment`. Allows a specific file past file-security/AV scanning.
 
 | Concern | File |
 |---|---|
-| DB tables (v7) | `app/db/store.py` (`wpp_exceptions`, `wpp_exception_policies`) |
-| Store + alignment join + template guard helper | `app/services/exceptions.py` |
+| DB tables | `app/models.py` (`WppException` → `wpp_exceptions`, `WppExceptionPolicy` → `wpp_exception_policies`) |
+| Store + alignment join + template guard helper | `app/services/wpp_exceptions.py` (`alignment()`, `body_exception_markers`) |
 | Template "no exceptions" guard | `app/services/templates.py` (`save`, kind WPP) |
 | **Inject to box** (REST map + planner + apply) | `app/services/exception_inject.py` |
 | **Git-share** (export/import/publish per device) | `app/services/exception_sync.py` |
-| Exception-type catalog + page + editor | `app/ui/pages/exceptions_page.py` |
-| Inject dialog (dry-run preview → push) | `app/ui/pages/exception_inject_dialog.py` |
-| Alignment report dialog | `app/ui/pages/exception_report_dialog.py` |
-| The FortiWeb-style forms (specs) | `app/ui/pages/wpp_specs.py` (the `*_exception*`/`*_exc_*` specs) |
+| Exception-type catalog | `app/services/wpp_exceptions.py` (`EXCEPTION_TYPES`, `SIGNATURE_TYPES`, `fields_for()`) |
+| Exceptions page + editor | `app/views/exceptions.py` + `app/templates/exceptions/list.html` |
+| Inject panel (dry-run preview → push) | `app/templates/exceptions/list.html` (`#inject-panel`) → `app/views/exceptions.py` (`inject_targets`, `inject`) |
+| Alignment report | `app/services/wpp_exceptions.py` (`alignment()`); surfaced inline on the page (stale banner + the `state=stale` filter) |
+| The FortiWeb-style forms (specs) | `app/registry/data/waf_specs.json` (the `*_exception*`/`*_exc_*` kinds), registered by `app/services/waf_specs.py` |
 | Tests | `tests/test_wpp_exceptions.py`, `tests/test_exception_inject.py`, `tests/test_exception_sync.py` |
 
 ## 6. Inject to the device ("save to policy")
 
 Authoring is desired-state in the DB; pushing it onto a box is the SEPARATE step in
-`services/exception_inject.py` + the **⬆ Inject to device…** button on the
-Exceptions page (`exception_inject_dialog.py`). A WAF exception entry is always a
-**by-parent sub-table row**, so the write is uniformly
+`app/services/exception_inject.py` + the **⬆ Inject to device…** button on the
+Exceptions page (`#inject-panel` in `app/templates/exceptions/list.html`). A WAF
+exception entry is always a **by-parent sub-table row**, so the write is uniformly
 `FortiWebOps.create(item_logical, payload, mkey=<target>)` — a POST of the entry
 scoped to its parent (snapshot + audit + change-history + `dry_run`, exactly like
 every other write path). Two parent shapes:

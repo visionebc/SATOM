@@ -337,7 +337,11 @@ def test_the_new_chrome_stays_on_the_light_theme(tpl):
     """This product has no dark mode (safeguards 9m). A dark-theme colour here
     renders as a grey slab on a white card and its text goes to ~1.3:1 --
     complete, and unreadable."""
-    block = tpl[tpl.index("<style>"):tpl.index("</style>")]
+    open_tag = re.search(r"<style\b[^>]*>", tpl)
+    assert open_tag, ("the page has no <style> block -- this guard "
+                      "would check nothing; it was disarmed once when "
+                      "the CSP nonce turned <style> into <style nonce=..>")
+    block = tpl[open_tag.end():tpl.index("</style>")]
     for literal in ("rgba(0,0,0", "#94a3b8", "#0f172a", "#1e293b", "#cbd5e1",
                     "backdrop-filter"):
         assert literal not in block, "dark-theme leftover %s" % literal

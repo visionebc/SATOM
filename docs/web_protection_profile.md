@@ -11,7 +11,8 @@
 > [[internal-firecrawl-lan]]) for GUI labels / menu sections / enum choices.
 >
 > The companion of [`server_policy.md`](server_policy.md). Keep this current when the
-> registry, `dependencies.py`, or the WPP specs (`app/ui/pages/wpp_specs.py`) change.
+> registry, `dependencies.py`, or the WAF specs (`app/registry/data/waf_specs.json`,
+> registered by `app/services/waf_specs.py`) change.
 
 REST convention: a field's wire name is the SDK attribute with `_` → `-`
 (`signature_rule` → `signature-rule`). Every **named object's mkey is `name`**;
@@ -35,7 +36,9 @@ rules…). 36 of its fields are such references; the rest are scalars/enums. In 
 7.6 GUI it renders as one big form of dropdowns grouped into the menu sections
 **Standard Protection / Client-Side Security / Advanced Protection / API
 Protection / Application Delivery / Tracking** — which is exactly how
-`ui/pages/wpp_view.WppViewDialog` lays it out.
+`waf_specs.wpp_sections()` (data: `app/registry/data/waf_specs.json`) groups the
+form that `app/views/objedit.py` renders through
+`app/templates/objedit/editor.html`.
 
 The referenced objects nest their own rule-lists, **up to six levels deep**:
 
@@ -170,14 +173,16 @@ admin guide (per-module action sets vary; this is the union):
 ## 5. Editing model (how the app exposes all of this)
 
 The WPP is edited from **Web Protection** (main sidebar; CONFIG_WRITE + unlock) via
-`ui/pages/wpp_view.WppViewDialog` — the FortiWeb-style form. Each sub-policy is a
+the generic object editor — `app/views/objedit.py` (`edit`) rendering
+`app/templates/objedit/editor.html` — the FortiWeb-style form. Each sub-policy is a
 dropdown with **Edit…** (open the selected object) and **＋** (create a new one).
-Every referenced object — and every level below it — is a curated
-`objform.ObjectSpec` in `app/ui/pages/wpp_specs.py` (~160 specs), so the shared
-`objform.ObjectEditDialog` renders it like FortiWeb's own sub-page:
+Every referenced object — and every level below it — is a curated **kind** in
+`app/registry/data/waf_specs.json` (166 kinds), merged into
+`fortiweb_field_schema.KIND_SPECS` at import by `app/services/waf_specs.py`, so the
+shared editor renders it like FortiWeb's own sub-page:
 
 - **inline sub-tables** → Add / Edit / Delete rows in place;
-- **binding rule-lists** → `SubTableSpec.ref_spec_key` gives the row an **Edit
+- **binding rule-lists** → `objform.subtables_for()` gives the row an **Edit
   rule…** button that opens the *named* rule (and its children);
 - **reference fields** to an object that has a spec get a **✎** (edit the selected)
   next to the **＋** (create), so existing deep references are reachable, not just
@@ -218,12 +223,12 @@ policy reused across the fleet). So:
 |---|---|
 | WPP dependency tree (this graph, as data) | `app/registry/dependencies.py` (`WEB_PROTECTION_PROFILE`; 136 nodes) |
 | Endpoint URNs per API version | `app/registry/data/endpoints.yaml` (191 `cmdb/waf/*`) |
-| Curated edit specs (the ~160 forms) | `app/ui/pages/wpp_specs.py` |
-| The FortiWeb-style WPP form | `app/ui/pages/wpp_view.py` (`WppViewDialog`) |
-| The shared object-edit modal + engine | `app/ui/pages/objform.py` (`ObjectEditDialog`, `SubTableSpec.ref_spec_key`, ref `✎`) |
-| Web Protection page (device → WPP → form) | `app/ui/pages/web_protection_page.py` |
-| CRUD with snapshot + audit + dry-run | `app/services/operations.py` (`FortiWebOps`) |
-| Specs regression guard | `tests/test_wpp_specs.py` |
+| Curated edit specs (the ~160 forms) | `app/registry/data/waf_specs.json` (166 kinds) + `app/services/waf_specs.py` (registration) |
+| The FortiWeb-style WPP form | `app/views/objedit.py` (`edit`) + `app/templates/objedit/editor.html` |
+| The shared object-edit engine | `app/services/objform.py` + `app/services/fortiweb_field_schema.py` (`KIND_SPECS`, `build_groups`); the ref `✎` comes from `objedit._enable_ref_actions` |
+| Web Protection page (device → WPP → form) | `app/views/web_protection.py` + `app/templates/web_protection/overview.html` (left menu: `app/services/wp_menu.py`) |
+| CRUD with snapshot + audit + dry-run | `app/services/fortiweb_ops.py` (`FortiWebOps`) |
+| Specs / editor regression guard | `tests/test_objform.py`, `tests/test_objedit.py`, `tests/test_objedit_blank_forms.py` |
 
 Vendor SDK (offline ground truth, not committed):
 `/Volumes/DEBIAN 12_5/py_scripts/fortiweb_api/.../v2_0/cmdb/waf/` — 172 schemas.
@@ -235,9 +240,9 @@ Vendor SDK (offline ground truth, not committed):
 - **Registry:** every one of the 136 `WEB_PROTECTION_PROFILE` tree nodes resolves to
   an `endpoints.yaml` endpoint (`dependencies.coverage` → 136/136, 0 missing).
 - **Specs:** all 36 sub-policies + their named rules + sub-tables + leaf rows are
-  curated (`wpp_specs.WPP_SPECS`, ~160 `ObjectSpec`); `tests/test_wpp_specs.py`
-  asserts every endpoint / `row_spec_key` / `ref_spec_key` / ref `source` resolves,
-  and that the API-Gateway chain is editable **6 levels deep**.
+  curated (`app/registry/data/waf_specs.json`, 166 kinds); `tests/test_objform.py`
+  and `tests/test_objedit.py` assert that every collection, sub-table segment and
+  reference resolves, and that the API-Gateway chain is editable **6 levels deep**.
 - **SDK:** field/wire names taken verbatim from the marshmallow schemas (191
   registry waf endpoints parsed). 9 registry-only objects have **no SDK schema**
   (`advanced-bot-protection`, `bot-detection-policy`, `client-side-protection`,

@@ -182,7 +182,7 @@
               {# Deliberately a WEAKER word than the library badge. Acting in
                  bulk on an inference is how two carve-outs that merely look
                  alike get edited together. #}
-              <span class="fw-badge fw-badge-neutral" title="{{ _('Inferred from identical content — nobody declared this') }}">
+              <span class="fw-badge fw-badge-secondary" title="{{ _('Inferred from identical content — nobody declared this') }}">
                 <i class="bi bi-fingerprint"></i> {{ _('same content') }}</span>
               {% endif %}
             </td>
@@ -190,7 +190,7 @@
               {% if g.everywhere %}
               <span class="fw-badge fw-badge-success">{{ g.held_by }} / {{ stats.scopes }}</span>
               {% elif g.unique %}
-              <span class="fw-badge fw-badge-neutral">1 / {{ stats.scopes }}</span>
+              <span class="fw-badge fw-badge-secondary">1 / {{ stats.scopes }}</span>
               {% else %}
               <span class="fw-badge fw-badge-warning">{{ g.held_by }} / {{ stats.scopes }}</span>
               {% endif %}
@@ -282,7 +282,7 @@
               {% if r.state_label == 'stale' %}
               <span class="fw-badge fw-badge-warning" title="{{ r.stale_reason }}">{{ _('stale') }}</span>
               {% elif r.state_label == 'disabled' %}
-              <span class="fw-badge fw-badge-neutral">{{ _('disabled') }}</span>
+              <span class="fw-badge fw-badge-secondary">{{ _('disabled') }}</span>
               {% else %}
               <span class="fw-badge fw-badge-success">{{ _('active') }}</span>
               {% endif %}

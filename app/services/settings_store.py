@@ -1005,20 +1005,42 @@ def save_banners(mapping: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
-#  SoT & Backup server (Settings → admin console → "SoT & Backup" tab)
+#  Source of Truth & Backup — THREE things this product kept calling one
 #
-#  Two pieces of the fleet source-of-truth architecture that live OUTSIDE the
-#  code repo:
-#   * the firmware SoT repository — a SEPARATE git repo (manifest only; the
-#     .out binaries live on the backup server, git is the wrong tool for them)
-#   * the external backup server (backup-server) — the SFTP box the Fortinet
-#     appliances push their own scheduled config backups to, and where the
-#     firmware binaries are stored. SATOM reads it to list/pull.
+#  The console used to carry a single "SoT & Backup" tab, and that tab held a
+#  git URL. Two different readers acted on the word "SoT" and meant different
+#  objects; the split below is what the operator asked for on 2026-08-29, and
+#  it is spelled out here because the names are the whole point:
+#
+#   * CONFIGURATION SoT — the ONLY thing this product calls a source of
+#     truth. Content-addressed snapshots of the appliances' configuration in
+#     ``data/sot/objects`` + the ``sot_version`` index. Retention lives here
+#     (``sot.retention_versions`` / ``sot.retention_days``); ``sot_store``
+#     reads it.
+#   * BACKUP SERVER — a DESTINATION, not an authority: the SFTP box the
+#     appliances push their own ``config system backup`` to, where the SATOM
+#     system bundles are uploaded and where retired firmware is archived.
+#     SATOM connects read-mostly (inventory + pull).
+#   * The UPDATE REPOSITORY — where this node downloads its own CODE from.
+#     That one is git, it is configured on the Software Update Repository
+#     pane, and it lives in ``git_service``, not here. It has never held a
+#     device configuration.
+#
+#  Retired 2026-08-29: ``sot.firmware_repo_url`` / ``sot.firmware_repo_branch``.
+#  They pointed at a second git repo holding a firmware *manifest*, and every
+#  consumer of them was presentational — the value was rendered as a link and
+#  nothing ever read the manifest. The authority for firmware is the
+#  ``firmware_images`` table plus ``data/firmware/`` (Infrastructure →
+#  Firmware), which is indexed, hashed and backed up. A setting that announces
+#  a source of truth nobody reads is worse than no setting: the repo it named
+#  declared ``firmwares: []`` while two images were loaded. Firmware is NOT a
+#  source of truth in this product, and no key here may say it is.
+#
 #  The SFTP password is Fernet-encrypted at rest, same pattern as the
 #  Certificate Manager domain secret.
 # ---------------------------------------------------------------------------
-K_FW_REPO_URL = "sot.firmware_repo_url"
-K_FW_REPO_BRANCH = "sot.firmware_repo_branch"
+K_SOT_KEEP_VERSIONS = "sot.retention_versions"
+K_SOT_KEEP_DAYS = "sot.retention_days"
 K_BACKUPSRV = "backup_server.config"                # JSON dict, password_enc inside
 
 _BACKUPSRV_DEFAULTS = {
@@ -1028,16 +1050,52 @@ _BACKUPSRV_DEFAULTS = {
 }
 
 
-def firmware_repo() -> dict:
-    return {
-        "url": get_str(K_FW_REPO_URL, "") or "",
-        "branch": get_str(K_FW_REPO_BRANCH, "main") or "main",
-    }
+def sot_retention() -> dict:
+    """Retention for the CONFIGURATION SoT store, as integers.
+
+    ``sot_store`` used to reach for ``settings_store.get`` — a function that
+    has never existed on this module. The call raised ``AttributeError`` inside
+    a blanket ``except``, so both knobs silently resolved to the hard-coded
+    defaults on every harvest: writing them changed nothing, and nothing said
+    so. The accessor lives here now, beside the keys it reads.
+
+    A stored 0 or a malformed value means "unset", not "keep nothing": zero
+    would make the next prune delete every version of every device, which is
+    not a policy anyone types into a box labelled *keep*.
+    """
+    from .sot_store import DEFAULT_KEEP_VERSIONS, DEFAULT_KEEP_DAYS
+    out = {}
+    for key, field, dflt in ((K_SOT_KEEP_VERSIONS, "versions", DEFAULT_KEEP_VERSIONS),
+                             (K_SOT_KEEP_DAYS, "days", DEFAULT_KEEP_DAYS)):
+        try:
+            val = int(get_str(key, "") or 0)
+        except (TypeError, ValueError):
+            val = 0
+        out[field] = val if val > 0 else dflt
+    out["default_versions"] = DEFAULT_KEEP_VERSIONS
+    out["default_days"] = DEFAULT_KEEP_DAYS
+    out["configured"] = bool(get_str(K_SOT_KEEP_VERSIONS, "")
+                             or get_str(K_SOT_KEEP_DAYS, ""))
+    return out
 
 
-def save_firmware_repo(url: str, branch: str) -> None:
-    set_str(K_FW_REPO_URL, (url or "").strip())
-    set_str(K_FW_REPO_BRANCH, (branch or "main").strip() or "main")
+def save_sot_retention(versions, days) -> None:
+    """Store the two retention knobs, clamped to something a prune can honour.
+
+    Out-of-range is clamped rather than rejected: this form has two fields and
+    no error channel of its own, so a silently dropped value would leave the
+    page showing the old number as though it had been saved.
+    """
+    from .sot_store import DEFAULT_KEEP_VERSIONS, DEFAULT_KEEP_DAYS
+    for key, raw, dflt, hi in ((K_SOT_KEEP_VERSIONS, versions, DEFAULT_KEEP_VERSIONS, 10000),
+                               (K_SOT_KEEP_DAYS, days, DEFAULT_KEEP_DAYS, 36500)):
+        try:
+            val = int(str(raw).strip() or 0)
+        except (TypeError, ValueError):
+            val = 0
+        if val <= 0:
+            val = dflt
+        set_str(key, str(max(1, min(hi, val))))
 
 
 def backup_server(reveal_secret: bool = False) -> dict:

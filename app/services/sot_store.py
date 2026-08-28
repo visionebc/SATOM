@@ -147,13 +147,19 @@ def canonical_bytes(snapshot: dict) -> bytes:
 
 
 def _retention() -> tuple[int, int]:
+    """The configured (versions, days), or the defaults.
+
+    Reads ``settings_store.sot_retention`` — the accessor that owns the two
+    keys. The previous call was to ``settings_store.get``, which this product
+    has never defined: every harvest raised ``AttributeError`` here, the
+    blanket except swallowed it, and the operator's configured retention was
+    discarded on every single run. The except stays (retention must never sink
+    a harvest) but it is no longer the normal path.
+    """
     try:
         from . import settings_store
-        keep_v = int(settings_store.get("sot.retention_versions",
-                                        DEFAULT_KEEP_VERSIONS) or 0)
-        keep_d = int(settings_store.get("sot.retention_days",
-                                        DEFAULT_KEEP_DAYS) or 0)
-        return (keep_v or DEFAULT_KEEP_VERSIONS, keep_d or DEFAULT_KEEP_DAYS)
+        cfg = settings_store.sot_retention()
+        return (int(cfg["versions"]), int(cfg["days"]))
     except Exception:  # noqa: BLE001 — retention must never sink a harvest
         return (DEFAULT_KEEP_VERSIONS, DEFAULT_KEEP_DAYS)
 

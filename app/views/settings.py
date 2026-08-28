@@ -212,7 +212,7 @@ def index():
         policy_links=(policy_links_svc.links() if _is_admin() else []),
         policy_link_tokens=policy_links_svc.TOKENS,
         clone_rules_cfg=(clone_rules_svc.config() if _is_admin() else None),
-        sot_firmware_repo=(store.firmware_repo() if _is_admin() else None),
+        sot_retention=(store.sot_retention() if _is_admin() else None),
         sot_backup_server=(store.backup_server() if _is_admin() else None),
         system_info=system_info.collect(),
         # Languages — one row per language the PRODUCT speaks, so a language
@@ -1267,25 +1267,44 @@ def git_configure():
     return jsonify({"transcript": transcript})
 
 
-# ── SoT & Backup server (firmware SoT repo + backup-server SFTP access) ──────────
+# ── Source of Truth & Backup ───────────────────────────────────
+#
+#  ONE POST PER PANE, on purpose. The single ``/sot-backup`` action that
+#  preceded these wrote the firmware repo AND the SFTP credentials from one
+#  submit, so saving a retention number re-wrote the backup server, and the
+#  redirect landed on a pane the operator might not have been on. Two panes
+#  sharing one action is also how a field that has been deleted from one of
+#  them keeps being written as blank by the other.
 
-@bp.route('/sot-backup', methods=['POST'])
+@bp.route('/sot', methods=['POST'])
 @login_required
 @require_permission(Permission.USER_MANAGE)
-def save_sot_backup():
-    store.save_firmware_repo(request.form.get('fw_repo_url', ''),
-                             request.form.get('fw_repo_branch', ''))
+def save_sot():
+    """Configuration SoT retention. Devices only — see settings_store."""
+    store.save_sot_retention(request.form.get('keep_versions', ''),
+                             request.form.get('keep_days', ''))
+    cfg = store.sot_retention()
+    log_action("settings.sot_retention",
+               detail=f"versions={cfg['versions']} days={cfg['days']}")
+    flash('Configuration SoT retention saved.', 'success')
+    return redirect(url_for('settings.index') + '#tab-sot')
+
+
+@bp.route('/backup-server', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def save_backup_srv():
     store.save_backup_server(request.form)
-    log_action("settings.sot_backup",
+    log_action("settings.backup_server",
                detail=f"backup_server={request.form.get('host','')!r}")
-    flash('SoT & Backup server settings saved.', 'success')
-    return redirect(url_for('settings.index') + '#tab-sotbackup')
+    flash('Backup server settings saved.', 'success')
+    return redirect(url_for('settings.index') + '#tab-backupsrv')
 
 
-@bp.route('/sot-backup/test', methods=['POST'])
+@bp.route('/backup-server/test', methods=['POST'])
 @login_required
 @require_permission(Permission.USER_MANAGE)
-def test_sot_backup():
+def test_backup_srv():
     from ..services import backup_server as bksrv
     return jsonify(bksrv.test_connection())
 

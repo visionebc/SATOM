@@ -12144,3 +12144,93 @@ tests/test_i18n_foundation.py tests/test_ui_locale.py tests/test_cr_doc_i18n.py
 tests/test_cr_types.py -q` as `satom`. Live render (EN and ES, one fresh app
 context per request — flask-babel caches the locale on `g`):
 `/tmp/render2.py` pattern in §61.
+
+## §140 — three subjects under one authority's name (2026-08-29)
+
+`tests/test_sot_settings_split.py` — 22 guards, 15 mutations, 15 killed.
+
+### What was wrong
+
+Settings carried one panel called **SoT & Backup**. It held a git URL for a
+firmware *manifest*, the SFTP credentials of the backup box, and nothing at all
+about appliance configuration — under a heading whose first word names an
+authority. Nothing failed: the page rendered, the fields saved, the suite was
+green. The word simply covered more than it was true of, and both readings are
+reasonable, so a reader acted on the wider one.
+
+The firmware entry was the proof that the conflation cost something. Every
+consumer of `sot.firmware_repo_url` was presentational — the value was rendered
+as a link and nothing ever read the manifest — and the repo it named declared
+`firmwares: []` while two images were loaded on the node. **A setting that
+announces an authority nobody reads is worse than no setting**: it is a claim
+with no mechanism behind it. It was removed, not filled in.
+
+Three entries now, and each states what it is *not*:
+
+| Entry | Is | Is not |
+|---|---|---|
+| Configuration SoT (`tab-sot`) | the hashed history of device **configuration** | not firmware, backups or code |
+| Backup Server (`tab-backupsrv`) | an SFTP **destination** for three streams | not an authority |
+| Software Update Repository (`tab-git`) | the repo this node pulls its own **code** from | never held a device config |
+
+The third was labelled **Git** — a tool, not a subject, which distinguished it
+from neither of the others. The operator's instruction on 2026-08-29 named this
+explicitly: the split has to be visible *against the update repository too*.
+
+### A dead knob found by surfacing it
+
+`sot_store._retention` read `settings_store.get` — **a function this product has
+never defined**. The `AttributeError` landed in a blanket `except Exception`
+(there so retention can never sink a harvest), so every single harvest silently
+fell back to the hard-coded 60/180. Writing `sot.retention_versions` changed
+nothing and nothing said so; the keys were not even present in `app_settings`,
+which read as "never configured" rather than "cannot be configured".
+
+The guard therefore goes through `_retention()`, never through
+`hasattr(settings_store, "sot_retention")`: **the call site was what was
+wrong**, and an existence check on the accessor passes against the broken
+version.
+
+### Two more defects the split exposed
+
+* **One POST served two panes.** Saving a retention number rewrote the SFTP
+  credentials and redirected to a pane the operator might not have been on. Two
+  panes sharing one action is also how a field deleted from one goes on being
+  written blank by the other. One action per pane now, each returning to its
+  own anchor.
+* **`system_path` was read by the save and absent from the form**, so every
+  submit quietly rewrote a customised value back to `/system` — a field nobody
+  could see undoing a setting nobody was told about.
+
+### Traps
+
+1. **Three cross-references nearly hung off `data-theme-jump`** — a hook bound
+   inside the Appearance IIFE, which returns early when the theme form is
+   absent, and named after a pane it would no longer be about. Generalised to
+   `data-tab-jump`, delegated from the document. It clicks the **menu button**,
+   not the pane: the lateral menu folds its groups from `shown.bs.tab` on its
+   own element, so a pane shown directly leaves the operator reading one
+   section with a different one highlighted.
+2. **A count-based guard failed against a correct file.** `src.count(
+   "sot.firmware_repo") == 1` — the paragraph that retires the keys names
+   *both* of them. The right assertion is that no **string literal** survives
+   (`'"sot.firmware_repo' not in src`): a literal is a key something can read,
+   prose is a record of why it went.
+3. **A mutation anchor matched two panes** (`data-tab-jump="#tab-backupsrv">…`
+   appears in the SoT pane and in the update-repository alert), and scored as
+   "unusable" rather than silently mutating the wrong one — which is why the
+   harness refuses any anchor whose count is not exactly 1.
+4. The manual is mechanically bound to the menu: `tests/test_user_guide_features.py`
+   parses `nav_groups` out of `_nav.html` with `ast.literal_eval`, so the group
+   count, the panel count and the §26 table row all break in the commit that
+   adds a group. That is the only moment anybody knows what the new thing does.
+
+### Verification recipe
+
+`pytest tests/test_sot_settings_split.py tests/test_settings_nav_groups.py
+tests/test_user_guide_features.py tests/test_theme.py tests/test_sot_store.py
+tests/test_system_backup.py tests/test_menu_completeness.py
+tests/test_concept_map.py tests/test_route_audit.py tests/test_csp_nonce.py
+tests/test_failopen_settings_git.py tests/test_docs_links.py -q` as `satom`.
+Mutations: `/tmp/mutate.py` pattern — anchor count must be exactly 1, baseline
+must be green per selection, and only `rc==1` scores as a kill.

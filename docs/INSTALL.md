@@ -635,8 +635,10 @@ works, computes its signals and notifies nobody. It has to be armed by hand:
 
    Without `git_bundle` none of the repository copies exists; without
    `device_sync` the devices' SoT stays frozen at the day of the installation.
-3. **External backup server** — Settings → SoT & Backup. Without it, every copy
-   lives inside the same pair of nodes.
+3. **External backup server** — Settings → Backup Server. Without it, every copy
+   lives inside the same pair of nodes. (Retention of the configuration SoT is a
+   separate panel, Settings → Configuration SoT; the two were one tab until
+   2026-08-29 and only one of them is a source of truth.)
 4. **Update queue** — check that `satom-updater.path` is armed **on both
    nodes**: if the `.path` is stopped, queued updates stay `queued` forever.
 

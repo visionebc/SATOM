@@ -883,16 +883,21 @@ This page is the missing third position: name the CA and keep the check on.
 **Off-box copies — the source of truth and the external server.** The vault above
 lives on this node. Two settings decide what leaves it:
 
-- `Settings → Git` (§26.4) is the code repository this node tracks. It is also
-  the transport the shared release-notes corpus (§31.1) rides on. What still
-  works when that remote is down, and how to recover afterwards, is
-  [git-backup-and-outage.md](git-backup-and-outage.md).
-- `Settings → SoT & Backup` (§26.5) configures the **firmware manifest repo**
-  and the **external backup server** over SFTP. That server is where the
-  appliances push their own scheduled config backups, and it is the target of the
+- `Settings → Software Update Repository` (§26.4) is the repository this node
+  downloads its own **code** from. It is also the transport the shared
+  release-notes corpus (§31.1) rides on. What still works when that remote is
+  down, and how to recover afterwards, is
+  [git-backup-and-outage.md](git-backup-and-outage.md). It holds no device
+  configuration and no firmware.
+- `Settings → Backup Server` (§26.5b) configures the **external SFTP
+  destination**. That server is where the appliances push their own scheduled
+  config backups, where retired firmware is archived, and it is the target of the
   `push_server` option on the system-backup action and the monitoring reports
   (§15, §14.9). The scheduled action **`device_inspect`** is the one that
   uploads the versioned source-of-truth blobs off-box.
+- `Settings → Configuration SoT` (§26.5) is where the retention of those blobs
+  is set — and it is the **only** one of the three the word *source of truth*
+  applies to.
 
 How the local source of truth is versioned and what it does and does not hold:
 [source-of-truth-spec.md](source-of-truth-spec.md).
@@ -2099,15 +2104,16 @@ is a single **global** one, not per-ADOM.
 
 ## 26. Settings, tab by tab
 
-`Settings` is one page with a **grouped sidebar**: **9 groups, 31 panels**.
-Eight of the groups (29 panels) are admin-only (`user_manage`); the remaining
+`Settings` is one page with a **grouped sidebar**: **10 groups, 32 panels**.
+Nine of the groups (30 panels) are admin-only (`user_manage`); the remaining
 one — **My Account**, holding **Security** and **Change Password** — is
 self-service and is the only group a non-admin sees. A group with nothing you may see is not
 rendered at all, so the menu never offers a section that is not there.
 
 | Group | Panels |
 |---|---|
-| **System** | General · Git · SoT & Backup · AI Advisor |
+| **System** | General · Software Update Repository · AI Advisor |
+| **Source of Truth & Backup** | Configuration SoT · Backup Server |
 | **Access & Identity** | Users · Profiles · Authentication · Access Control · Vault |
 | **Certificates & Trust** | Certificate Manager · Node TLS · Trust store |
 | **Network & DNS** | DNS Lookup · DNS Records |
@@ -2119,6 +2125,30 @@ rendered at all, so the menu never offers a section that is not there.
 
 The **AI Advisor** panel additionally needs `advisor.configure`; an admin
 without it does not see the entry.
+
+**Three repositories-or-destinations, three separate entries.** Until
+2026-08-29 the System group carried one panel called *SoT & Backup*, and it
+held a firmware git URL, the SFTP credentials of the backup box and nothing
+about appliance configuration at all — under a heading whose first word names
+an authority. Reading it as covering all three was the obvious reading and the
+wrong one. They are now three entries in two groups, and each states what it is
+*not*:
+
+| Entry | What it is | What it is **not** |
+|---|---|---|
+| **Configuration SoT** (§26.5) | the versioned, hashed history of every appliance's **configuration** | not firmware, not backups, not code |
+| **Backup Server** (§26.5b) | an SFTP **destination** three streams are copied to | not an authority — nothing is consulted there to decide what a device is configured to do |
+| **Software Update Repository** (§26.4) | the git repo this node downloads its **own code** from | has never held a device configuration or a firmware image |
+
+**Firmware is not a source of truth in this product**, and no panel offers a
+setting that says it is. Its authority is the `firmware_images` table plus
+`data/firmware/`, on **Infrastructure → Firmware** (§20), which is indexed,
+hashed and inside every backup bundle. The retired `sot.firmware_repo_url` /
+`sot.firmware_repo_branch` settings pointed at a second git repo holding a
+firmware *manifest*; every consumer of them merely printed the URL, nothing ever
+read the manifest, and the repo they named declared `firmwares: []` while two
+images were loaded on the node. A setting that announces an authority nobody
+reads is worse than no setting, so it was removed rather than filled in.
 
 **Sentinel is its own group, and all six of its entries are panes.**
 They are ordered by what they are, not by when they arrived: the four
@@ -2307,7 +2337,13 @@ An **anti-lockout guard** keeps at least one active account holding both user
 management and profile management, so this page cannot be used to remove the
 last administrator.
 
-### 26.4 Git — the code repository this node tracks
+### 26.4 Software Update Repository — where this node downloads its own code from
+
+This is the product's **source code**, and the only one of the three
+repositories-or-destinations above that a software update is pulled from. It is
+not where appliance configuration is versioned (§26.5) and not where backups are
+stored (§26.5b). The panel was labelled *Git* until 2026-08-29 — a tool name,
+which distinguished it from nothing.
 
 - **Repository** — remote, branch, HEAD, working-tree status and ahead/behind,
   refreshed on demand.
@@ -2322,23 +2358,57 @@ last administrator.
 
 See also [git backup and surviving a Gitea outage](git-backup-and-outage.md).
 
-### 26.5 SoT & Backup — the firmware manifest repo and the external backup server
+### 26.5 Configuration SoT — the only thing SATOM calls a source of truth
 
-Two settings that the rest of the product leans on:
+The versioned history of every managed appliance's **configuration**. Each
+harvest is hashed; an unchanged config writes nothing at all, only a newer
+`last_seen_at`, so the version count is a count of real changes. Snapshots are
+stored content-addressed under `data/sot/objects/` with the index in Postgres,
+replicated to the standby node by `satom-ha-datasync`, and carried inside every
+system backup bundle. `device_sync` and `device_inspect` are the actions that
+feed it (§15). The design is in
+[source-of-truth-spec.md](source-of-truth-spec.md).
 
-- **Firmware source-of-truth repository** — a *separate* git repo from the
-  application code. It versions the firmware **manifest** (filenames, versions,
-  sha256, where the blob lives). The `.out` binaries themselves stay on the
-  backup server: git is the wrong tool for multi-hundred-megabyte blobs.
-- **Backup server access (SFTP)** — host, port, user, password, and the two
-  paths (config backups, firmware). This is the external box the appliances push
-  their own scheduled config backups to and where firmware binaries live. SATOM
-  connects read-mostly: inventory on the System Backup page, pulling firmware for
-  console-driven restores, and the `push_server` option on the system-backup and
-  monitoring-report actions (§15, §14.9).
+**Retention** is the panel's only setting, and it is a **union, not a pair of
+caps**: a version is dropped only when it fails *both* tests — outside the
+newest **N** for its device **and** older than **D** days. That is what stops a
+week of churn from erasing the month before it. Product defaults are **60
+versions** and **180 days**; the panel says whether this node has configured
+them or is running on the defaults.
+
+> Both keys existed before this panel did, and neither worked. `sot_store`
+> read them through `settings_store.get` — a function this product has never
+> defined — so every harvest raised `AttributeError` inside a blanket `except`
+> and silently fell back to the defaults. Writing the settings changed nothing,
+> and nothing said so. Fixed 2026-08-29 in the same change that surfaced them.
+
+Pruning runs after a harvest that actually changed something; an unchanged cycle
+cannot create anything to prune. Blobs no version references are deleted with
+the rows.
+
+### 26.5b Backup Server — the external SFTP destination
+
+The box **three separate streams are copied to**. It is a destination, not an
+authority: nothing stored there is consulted to decide what a device is
+configured to do — that is §26.5.
+
+| Stream | Written by | Path |
+|---|---|---|
+| Device config backups | the **appliances themselves**, on their own schedule (`config system backup`) | *Config backups path* |
+| System bundles | this node's scheduled system-backup action, via `push_server` (§15) | *System bundles path* |
+| Firmware archive | images retired from local storage | *Firmware archive path* |
+
+SATOM connects read-mostly: it inventories what it finds on the System Backup
+page, diffs device backups against each other, and pulls firmware for
+console-driven restores. **It does not author the device backups** — if an
+appliance stops pushing, SATOM can report the gap but cannot fill it.
+
 - **Test connection** proves the credentials and the paths before anything
   depends on them. The password is stored Fernet-encrypted; the paths are as seen
   *inside* the SFTP session, because the server chroots the backup user.
+- All three paths are on the form. The system-bundles path used to be missing
+  from it while the save still read it with a default, so every submit quietly
+  rewrote a customised value back to `/system`.
 
 ### 26.6 Email & Alerts — this is the delivery policy §14.10 defers to
 

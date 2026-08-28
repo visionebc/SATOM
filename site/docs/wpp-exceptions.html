@@ -79,8 +79,8 @@ labels/sections/enums scraped from the admin guide via the internal Firecrawl
 [[internal-firecrawl-lan]]; wire names from the team SDK), and the DB model that
 records the per-policy alignment FortiWeb itself cannot.</p>
 <p>Companion of <a href="web-protection-profile.html"><code>web_protection_profile.md</code></a>. Keep current
-when the exception specs (<code>app/ui/pages/wpp_specs.py</code>), the store
-(<code>app/services/exceptions.py</code>) or the page change.</p>
+when the exception catalog + store (<code>app/services/wpp_exceptions.py</code>), the field
+specs (<code>app/registry/data/waf_specs.json</code>) or the page change.</p>
 </blockquote>
 <h2 id="1-why-this-exists">1. Why this exists</h2>
 <p>A Web Protection Profile is <strong>usually shared</strong> by several Server Policies (see
@@ -100,15 +100,15 @@ carve-out was authored for</strong>. The team's rule:</p>
 <p>The page also produces the <strong>alignment report</strong>: FortiWeb → Server Policy → WPP →
 exceptions (with stale-record detection against the device's live bindings).</p>
 <h2 id="2-data-model-migration-v7">2. Data model (migration v7)</h2>
-<p><code>db/store.py</code> adds two tables; <code>services/exceptions.WppExceptionStore</code> is the CRUD
-+ join over them (own connection, like <code>TemplateLibrary</code>). NEVER secrets.</p>
+<p><code>app/models.py</code> declares two tables (<code>WppException</code>, <code>WppExceptionPolicy</code>);
+<code>app/services/wpp_exceptions.py</code> is the CRUD + join over them. NEVER secrets.</p>
 <pre><code>wpp_exceptions(id, appliance_id, wpp_mkey, exc_type, name, payload_json,
                reason, enabled, author, created_at, updated_at)
 wpp_exception_policies(exception_id → wpp_exceptions.id ON DELETE CASCADE,
                        server_policy)            -- PK(exception_id, server_policy)
 </code></pre>
 <ul>
-<li><code>exc_type</code> = the <code>objform</code>/<code>wpp_specs</code> spec key (so the same FortiWeb-style form
+<li><code>exc_type</code> = the curated WAF <strong>kind</strong> key (so the same FortiWeb-style form
   re-opens it). <code>payload_json</code> = the FortiWeb-shaped exception entry.</li>
 <li>An exception is assigned to <strong>one OR several</strong> Server Policies (the junction is
   the missing relationship). <code>alignment(appliance_id, bindings)</code> joins the DB
@@ -117,7 +117,7 @@ wpp_exception_policies(exception_id → wpp_exceptions.id ON DELETE CASCADE,
   binding: policy renamed/removed, WPP swapped).</li>
 </ul>
 <h2 id="3-exception-type-catalog">3. Exception-type catalog</h2>
-<p><code>EXCEPTION_TYPES</code> in <code>app/ui/pages/exceptions_page.py</code> — the menu of WAF exceptions
+<p><code>EXCEPTION_TYPES</code> in <code>app/services/wpp_exceptions.py</code> — the menu of WAF exceptions
 the operator can add, each mapped to a curated spec key:</p>
 <table>
 <thead>
@@ -455,12 +455,12 @@ key), <code>comment</code>. Allows a specific file past file-security/AV scannin
 </thead>
 <tbody>
 <tr>
-<td>DB tables (v7)</td>
-<td><code>app/db/store.py</code> (<code>wpp_exceptions</code>, <code>wpp_exception_policies</code>)</td>
+<td>DB tables</td>
+<td><code>app/models.py</code> (<code>WppException</code> → <code>wpp_exceptions</code>, <code>WppExceptionPolicy</code> → <code>wpp_exception_policies</code>)</td>
 </tr>
 <tr>
 <td>Store + alignment join + template guard helper</td>
-<td><code>app/services/exceptions.py</code></td>
+<td><code>app/services/wpp_exceptions.py</code> (<code>alignment()</code>, <code>body_exception_markers</code>)</td>
 </tr>
 <tr>
 <td>Template "no exceptions" guard</td>
@@ -475,20 +475,24 @@ key), <code>comment</code>. Allows a specific file past file-security/AV scannin
 <td><code>app/services/exception_sync.py</code></td>
 </tr>
 <tr>
-<td>Exception-type catalog + page + editor</td>
-<td><code>app/ui/pages/exceptions_page.py</code></td>
+<td>Exception-type catalog</td>
+<td><code>app/services/wpp_exceptions.py</code> (<code>EXCEPTION_TYPES</code>, <code>SIGNATURE_TYPES</code>, <code>fields_for()</code>)</td>
 </tr>
 <tr>
-<td>Inject dialog (dry-run preview → push)</td>
-<td><code>app/ui/pages/exception_inject_dialog.py</code></td>
+<td>Exceptions page + editor</td>
+<td><code>app/views/exceptions.py</code> + <code>app/templates/exceptions/list.html</code></td>
 </tr>
 <tr>
-<td>Alignment report dialog</td>
-<td><code>app/ui/pages/exception_report_dialog.py</code></td>
+<td>Inject panel (dry-run preview → push)</td>
+<td><code>app/templates/exceptions/list.html</code> (<code>#inject-panel</code>) → <code>app/views/exceptions.py</code> (<code>inject_targets</code>, <code>inject</code>)</td>
+</tr>
+<tr>
+<td>Alignment report</td>
+<td><code>app/services/wpp_exceptions.py</code> (<code>alignment()</code>); surfaced inline on the page (stale banner + the <code>state=stale</code> filter)</td>
 </tr>
 <tr>
 <td>The FortiWeb-style forms (specs)</td>
-<td><code>app/ui/pages/wpp_specs.py</code> (the <code>*_exception*</code>/<code>*_exc_*</code> specs)</td>
+<td><code>app/registry/data/waf_specs.json</code> (the <code>*_exception*</code>/<code>*_exc_*</code> kinds), registered by <code>app/services/waf_specs.py</code></td>
 </tr>
 <tr>
 <td>Tests</td>
@@ -498,9 +502,9 @@ key), <code>comment</code>. Allows a specific file past file-security/AV scannin
 </table>
 <h2 id="6-inject-to-the-device-save-to-policy">6. Inject to the device ("save to policy")</h2>
 <p>Authoring is desired-state in the DB; pushing it onto a box is the SEPARATE step in
-<code>services/exception_inject.py</code> + the <strong>⬆ Inject to device…</strong> button on the
-Exceptions page (<code>exception_inject_dialog.py</code>). A WAF exception entry is always a
-<strong>by-parent sub-table row</strong>, so the write is uniformly
+<code>app/services/exception_inject.py</code> + the <strong>⬆ Inject to device…</strong> button on the
+Exceptions page (<code>#inject-panel</code> in <code>app/templates/exceptions/list.html</code>). A WAF
+exception entry is always a <strong>by-parent sub-table row</strong>, so the write is uniformly
 <code>FortiWebOps.create(item_logical, payload, mkey=&lt;target&gt;)</code> — a POST of the entry
 scoped to its parent (snapshot + audit + change-history + <code>dry_run</code>, exactly like
 every other write path). Two parent shapes:</p>

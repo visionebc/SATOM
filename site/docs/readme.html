@@ -67,7 +67,7 @@
     </aside>
     <div class="doc-body mdx">
 <h1 id="satom-documentation">SATOM documentation</h1>
-<p>Twenty-two reference documents with no front door is not a manual — it is a
+<p>Thirty reference documents with no front door is not a manual — it is a
 directory listing. This page is the front door: what exists, in what order to
 read it, and <strong>which surface to read it on</strong>.</p>
 <hr>
@@ -218,6 +218,10 @@ page.</p>
 <td><a href="cli.html"><code>cli.md</code></a></td>
 <td>The operator console: diagnose, control, rebuild — and the sudo rule to request.</td>
 </tr>
+<tr>
+<td><a href="theming.html"><code>theming.md</code></a></td>
+<td>Repainting the console: design tokens, named themes, the value allowlist that keeps operator input out of the stylesheet's structure, and the contrast audit.</td>
+</tr>
 </tbody>
 </table>
 <h3 id="deployment-protection">Deployment &amp; protection</h3>
@@ -234,6 +238,10 @@ page.</p>
 <td>Requirements, per-distribution packages, preflight, clustering, hardening, uninstall.</td>
 </tr>
 <tr>
+<td><a href="sizing.html"><code>sizing.md</code></a></td>
+<td>How big the node has to be for the fleet you are pointing it at: one measured formula per resource, the tiers, and the free-space floor that has to be watched continuously.</td>
+</tr>
+<tr>
 <td><a href="privilege-model.html"><code>privilege-model.md</code></a></td>
 <td>Which account runs what, the two-command sudo allowlist, the privileged-runner boundary, node trust.</td>
 </tr>
@@ -246,8 +254,20 @@ page.</p>
 <td>Where operational data lives and why: the fleet-scale measurement, aggregated collection, the time-series store, selector dashboards, and the content-addressed source-of-truth store.</td>
 </tr>
 <tr>
+<td><a href="alerting.html"><code>alerting.md</code></a></td>
+<td>What happens after a health check finds something: the two delivery paths, the per-sink severity floor and family mask, the signed webhook contract and the syslog/CEF field maps.</td>
+</tr>
+<tr>
+<td><a href="provisioning-hypervisors.html"><code>provisioning-hypervisors.md</code></a></td>
+<td>Building the appliance from nothing: the Proxmox and ESXi backends, the live capability probe that decides what each can actually do, and the run state machine that undoes a half-finished build.</td>
+</tr>
+<tr>
 <td><a href="git-backup.html"><code>git-backup-and-outage.md</code></a></td>
 <td>Anti-reset guard, unpushed-commit alert, repository bundles, four-copy recovery.</td>
+</tr>
+<tr>
+<td><a href="offline-update-packages.html"><code>offline-update-packages.md</code></a></td>
+<td>Updating a node with no route to the git remote: signed packages, the root-owned trust store that decides which signatures count, preflight, and the privileged apply with rollback.</td>
 </tr>
 <tr>
 <td><a href="release-pipeline.html"><code>release-pipeline.md</code></a></td>
@@ -276,6 +296,14 @@ page.</p>
 <td><a href="acme.html"><code>acme-certificate-manager.md</code></a></td>
 <td>ACME issuance, the DNS-provider catalog, and how credentials reach the signer without leaking.</td>
 </tr>
+<tr>
+<td><a href="sentinel.html"><code>sentinel-architecture.md</code></a></td>
+<td>Security correlation and autonomous response: the deterministic hot path, why the language model sits outside it, robust baselines, the local CVE mirror, and the gates between a score and a firewall change.</td>
+</tr>
+<tr>
+<td><a href="ai-advisor.html"><code>ai-advisor.md</code></a></td>
+<td>The read-only chat assistant: providers, redaction and the pre-send preview, prompt-injection handling, and the structured-proposal write boundary.</td>
+</tr>
 </tbody>
 </table>
 <h3 id="development-integration">Development &amp; integration</h3>
@@ -302,6 +330,10 @@ page.</p>
 <tr>
 <td><a href="device-api.html"><code>device-api.md</code></a></td>
 <td>The device API consoles, the endpoint registry behind them, reconciling that registry against the fleet, and the firmware-line field matrix.</td>
+</tr>
+<tr>
+<td><a href="fortiauthenticator.html"><code>fortiauthenticator.md</code></a></td>
+<td>How the identity product is wired: its Django/Tastypie REST dialect, the per-user API key, the pagination trap and the 18-character product-key ceiling it exposed.</td>
 </tr>
 </tbody>
 </table>

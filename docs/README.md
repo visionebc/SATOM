@@ -1,6 +1,6 @@
 # SATOM documentation
 
-Twenty-two reference documents with no front door is not a manual — it is a
+Thirty reference documents with no front door is not a manual — it is a
 directory listing. This page is the front door: what exists, in what order to
 read it, and **which surface to read it on**.
 
@@ -118,15 +118,20 @@ page.
 | [`overview.md`](overview.md) | Architecture, deployment, security posture, and the rules the team works by. |
 | [`user-guide.md`](user-guide.md) | Day-to-day operation, screen by screen. |
 | [`cli.md`](cli.md) | The operator console: diagnose, control, rebuild — and the sudo rule to request. |
+| [`theming.md`](theming.md) | Repainting the console: design tokens, named themes, the value allowlist that keeps operator input out of the stylesheet's structure, and the contrast audit. |
 
 ### Deployment & protection
 | Document | What it is for |
 |---|---|
 | [`INSTALL.md`](INSTALL.md) | Requirements, per-distribution packages, preflight, clustering, hardening, uninstall. |
+| [`sizing.md`](sizing.md) | How big the node has to be for the fleet you are pointing it at: one measured formula per resource, the tiers, and the free-space floor that has to be watched continuously. |
 | [`privilege-model.md`](privilege-model.md) | Which account runs what, the two-command sudo allowlist, the privileged-runner boundary, node trust. |
 | [`safeguards.md`](safeguards.md) | Every protection: what it prevents, where it lives, how to prove it is armed. |
 | [`metrics-architecture.md`](metrics-architecture.md) | Where operational data lives and why: the fleet-scale measurement, aggregated collection, the time-series store, selector dashboards, and the content-addressed source-of-truth store. |
+| [`alerting.md`](alerting.md) | What happens after a health check finds something: the two delivery paths, the per-sink severity floor and family mask, the signed webhook contract and the syslog/CEF field maps. |
+| [`provisioning-hypervisors.md`](provisioning-hypervisors.md) | Building the appliance from nothing: the Proxmox and ESXi backends, the live capability probe that decides what each can actually do, and the run state machine that undoes a half-finished build. |
 | [`git-backup-and-outage.md`](git-backup-and-outage.md) | Anti-reset guard, unpushed-commit alert, repository bundles, four-copy recovery. |
+| [`offline-update-packages.md`](offline-update-packages.md) | Updating a node with no route to the git remote: signed packages, the root-owned trust store that decides which signatures count, preflight, and the privileged apply with rollback. |
 | [`release-pipeline.md`](release-pipeline.md) | How a release is sanitized, secret-scanned, audited and published. |
 | [`release_notes.md`](release_notes.md) | The **vendor's** known/resolved issue corpus behind the upgrade advisor — Fortinet's, not SATOM's. SATOM's own history is [`../CHANGELOG.md`](../CHANGELOG.md), published per version as the site's Release notes. |
 
@@ -135,6 +140,8 @@ page.
 |---|---|
 | [`encryption-and-node-tls.md`](encryption-and-node-tls.md) | Service certificates, node-to-node encryption, enforced database TLS, live probes. |
 | [`acme-certificate-manager.md`](acme-certificate-manager.md) | ACME issuance, the DNS-provider catalog, and how credentials reach the signer without leaking. |
+| [`sentinel-architecture.md`](sentinel-architecture.md) | Security correlation and autonomous response: the deterministic hot path, why the language model sits outside it, robust baselines, the local CVE mirror, and the gates between a score and a firewall change. |
+| [`ai-advisor.md`](ai-advisor.md) | The read-only chat assistant: providers, redaction and the pre-send preview, prompt-injection handling, and the structured-proposal write boundary. |
 
 ### Development & integration
 | Document | What it is for |
@@ -143,6 +150,7 @@ page.
 | [`source-of-truth-spec.md`](source-of-truth-spec.md) | The authoritative behavioural specification. |
 | [`api_v1.md`](api_v1.md) | Token authentication and the public API surface. |
 | [`device-api.md`](device-api.md) | The device API consoles, the endpoint registry behind them, reconciling that registry against the fleet, and the firmware-line field matrix. |
+| [`fortiauthenticator.md`](fortiauthenticator.md) | How the identity product is wired: its Django/Tastypie REST dialect, the per-user API key, the pagination trap and the 18-character product-key ceiling it exposed. |
 
 ### Managed-device reference
 | Document | What it is for |

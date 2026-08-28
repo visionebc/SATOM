@@ -106,8 +106,931 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
-<h2 id="1200-2026-08-24">[1.20.0] - 2026-08-24</h2>
+<h3 id="added-the-spo-wizard-lets-the-operator-choose-the-backend-2026-08-28">Added — the SPO wizard lets the operator choose the backend (2026-08-28)</h3>
+<p>The registry gained N rows the same day, and the wizard still resolved in
+silence: whichever row the declared scopes happened to select did the work,
+and the page never showed the list.</p>
+<ul>
+<li><strong>Added</strong> an <strong>IPAM backend</strong> and a <strong>DNS backend</strong> selector to
+  <code>Workspace → New Server Policy</code>. Both default to <strong>Auto</strong>, which is
+  byte-for-byte the previous behaviour, so an install that never picks
+  anything is unchanged. Each option carries the provider and the declared
+  scope, because a name is not what decides which backend answers.</li>
+<li><strong>Added</strong> <code>resolver.choose(role, query, backend_id)</code> — the single author of
+  "which backend", pick or no pick. A pick is <strong>validated, not trusted</strong>: the
+  row must exist, be enabled, carry the role and claim the query, and each
+  failure has its own code (<code>backend_unknown</code>, <code>backend_disabled</code>,
+  <code>backend_wrong_role</code>, <code>backend_out_of_scope</code>) because each has a different
+  fix.</li>
+<li><strong>Changed</strong> an invalid pick is <strong>refused, never downgraded to Auto</strong>. A
+  fallback would run the work on a backend nobody named while the page still
+  showed the one that was chosen.</li>
+<li><strong>Changed</strong> <code>apply_plan</code> acts on the backend ids the <strong>plan recorded</strong>
+  instead of resolving a second time — the registry is editable between
+  Preview and Apply, and a second answer could send the address and the record
+  to systems the summary never named. <code>allocate_address</code> and <code>create_record</code>
+  gained a validated <code>backend_id</code>.</li>
+<li><strong>Added</strong> two blockers, <code>ipam_backend_rejected</code> / <code>dns_backend_rejected</code>,
+  kept apart from the scope-level <code>*_not_resolved</code>: one sends the operator to
+  the row they named, the other to the scope rules.</li>
+<li><strong>Added</strong> warnings when a chosen backend cannot do anything (IPAM picked
+  with the reserve box off; DNS picked with no hostname). A control that
+  silently does nothing reads as a control that worked.</li>
+<li><strong>Fixed</strong> <code>resolve_ipam</code> lowered the pool query while <code>split_list</code>
+  deliberately preserved the declaration, so a pool named <code>Prod-DMZ</code> could
+  never be matched. Pool matching now has one author, <code>pool_matches</code>, exact
+  and case-preserving on both sides. Zones still fold case; the asymmetry is
+  the point.</li>
+<li>See safeguards §137.</li>
+</ul>
+<h3 id="added-n-dnsipam-backends-with-optional-roles-and-scopes-2026-08-28">Added — N DNS/IPAM backends with optional roles and scopes (2026-08-28)</h3>
+<p><code>Settings → DNS Records</code> was one global provider. It is now a registry: add,
+edit, enable/disable, test and delete as many backends as the install needs,
+each declaring which of the two jobs it does and which zones / pools it serves.</p>
+<ul>
+<li><strong>Added</strong> the <code>dns_backends</code> table (<code>app/models_dnsbackend.py</code>): name,
+  provider, <strong>roles</strong> (IPAM / DNS, both on by default), <strong>scope</strong> (zones and
+  pools, empty = catch-all), priority, encrypted secret, last-test outcome.</li>
+<li><strong>Added</strong> <code>services/dns_providers/resolver.py</code> — the single author of "which
+  backend answers this". Most specific scope wins; priority breaks a tie
+  between equals; <strong>an exact tie is refused and names the candidates</strong> rather
+  than being broken by row order.</li>
+<li><strong>Added</strong> roles are validated against a static per-provider maximum:
+  <code>role_dns</code> is refused on phpIPAM (no record CRUD in any install) and allowed
+  on NetBox (netbox-dns may be present — the live probe decides). See
+  safeguards §136.</li>
+<li><strong>Added</strong> <code>provision_runs.ip_backend_id</code> / <code>.dns_backend_id</code>: rollback
+  releases and deletes against the backend that ACTED, and refuses rather than
+  redirecting when that backend is gone. Nullable, no backfill.</li>
+<li><strong>Added</strong> a backend selector in the <strong>+DNS Records</strong> modal, shown only when
+  there is a genuine choice; a stale or unknown id is refused, never silently
+  replaced.</li>
+<li><strong>Changed</strong> <code>capabilities()</code> split into <code>ipam_capabilities()</code> /
+  <code>dns_capabilities()</code> / <code>capabilities_of(row)</code>. With roles, "can something
+  reserve an address" and "can something publish a name" are different
+  questions with different answers.</li>
+<li><strong>Changed</strong> the provisioning runner and the SPO wizard now distinguish <em>no
+  DDI configured</em> (a supported deployment — warn, keep going) from <em>no backend
+  claims this name</em> and <em>two claim it equally</em> (misconfiguration — block).
+  New blocker codes <code>ipam_not_resolved</code>, <code>dns_not_resolved</code>,
+  <code>ipam_unreachable</code>, <code>dns_unreachable</code>.</li>
+<li><strong>Added</strong> the resolver's own three answers are <strong>never folded</strong> into
+  one: <code>NO_BACKEND</code> (nothing registered), <code>NO_MATCH</code> (no backend claims
+  this name) and <code>AMBIGUOUS</code> (two claim it equally). The first only
+  <strong>warns</strong> — an install with no DDI is supported; the other two
+  <strong>block</strong>, because a run that proceeds past either one publishes into
+  a zone or a pool nobody chose.</li>
+<li><strong>Migration</strong> the old <code>dnsrecords.*</code> settings are folded into one <strong>unscoped</strong>
+  row on first boot, keeping the encrypted secret and the old <code>default_zone</code> /
+  <code>default_pool</code> as defaults — not as a scope, which would have narrowed a
+  working install at upgrade time. One-shot, guarded by its own flag so
+  deleting every backend does not resurrect it.</li>
+<li><strong>Added</strong> <code>save_backend</code> <strong>refuses</strong> a <code>default_zone</code> / <code>default_pool</code>
+  that falls outside the row's own declared scope, and writes nothing
+  when it refuses. The two contradict each other: the resolver would
+  route that zone away from the very backend about to write into it.
+  Refused, not silently rewritten — an operator who typed both meant
+  both.</li>
+<li><strong>Added</strong> <code>tests/test_dns_backends.py</code> (54 guards) and the §130 guards moved
+  onto the new seam.</li>
+</ul>
+<h3 id="changed-a-network-segment-is-one-row-per-network-2026-08-27">Changed — a network segment is ONE row per network (2026-08-27)</h3>
+<p>Reported as "two departments can share a network, but in the SPO wizard I
+cannot see the department and the entries repeat". The repetition was the
+visible half. The invisible half: three separate resolvers indexed segments by
+name and <strong>disagreed</strong> about which of two same-named rows won, so a plan could
+describe one row's network while allocating from the other's CIDR — silently.</p>
+<ul>
+<li><strong>Changed</strong> a segment now carries <code>departments</code> (a list) instead of a single
+  <code>department</code>. <code>cidr</code>/<code>interface</code>/<code>gateway</code> are properties of the network, so
+  a network two departments share is one row naming both. Blobs written before
+  this read through unchanged.</li>
+<li><strong>Added</strong> <code>save_segments</code> refuses duplicate segment names, and writes nothing
+  when it refuses. Exact match, not case-folded — see safeguards §135.</li>
+<li><strong>Added</strong> <code>line_plan</code> blocks on a duplicated segment name instead of picking.</li>
+<li><strong>Added</strong> a Department control on the SPO wizard that NARROWS the segment
+  choice, enforced server-side; the segment options now print the departments
+  they serve, and the plan summary names the one being built for.</li>
+<li><strong>Changed</strong> one indexer (<code>line_profiles.index_by_name</code>) and one segments-form
+  parser (<code>views._segments_form</code>) replace three and two respectively.</li>
+<li><strong>Added</strong> <code>scripts/migrate_segment_departments.py</code> — folds per-department
+  rows into one row per network; refuses to merge rows that disagree.</li>
+<li>47 guards in <code>tests/test_segment_departments.py</code>, 36/36 mutations killed.</li>
+</ul>
+<h3 id="fixed-the-spo-wizards-script-was-blocked-by-the-csp-2026-08-27">Fixed — the SPO wizard's script was blocked by the CSP (2026-08-27)</h3>
+<p>The wizard's Segment dropdown stayed empty however many network segments a line
+had, and Preview and Apply did nothing. The data was always there — the page
+shipped the segments in its <code>PLANS</code> payload — but the single inline <code>&lt;script&gt;</code>
+that is the wizard's whole UI carried no <code>nonce</code>, and the app serves
+<code>script-src-elem</code> with a nonce and no <code>'unsafe-inline'</code>, so the browser dropped
+it. No control on that page had ever worked.</p>
+<ul>
+<li><strong>Fixed</strong> <code>workspace/spo_wizard.html</code>: the block carries the CSP nonce.</li>
+<li><strong>Fixed</strong> <code>artifacts/object.html</code>: same defect on an inline <code>&lt;style&gt;</code>
+  (<code>style-src-elem</code> is nonce-gated too), found by sweeping the template tree —
+  the artifacts editor/viewer had been rendering unstyled.</li>
+<li><strong>Added</strong> a guard that renders the wizard and asserts every inline block
+  carries the nonce <strong>the response actually served</strong>, so a page that loses its
+  header fails too. <code>tests/test_csp_nonce.py</code> already covered the class and was
+  simply not run when the page was added (see <code>docs/safeguards.md</code> §134).</li>
+</ul>
+<h3 id="new-server-policy-from-a-line-one-wizard-and-a-failure-that-cleans-up-after-itself-2026-08-27">New Server Policy from a line — one wizard, and a failure that cleans up after itself (2026-08-27)</h3>
+<p>The last piece: pick a line, and its profile supplies the network, the
+certificate class and the Web Protection Profile. IPAM reserves the VIP, DNS
+publishes the name, the CA issues the certificate and the device gets the
+objects — in that order, with a preview that writes nowhere and a failure that
+undoes what it took.</p>
+<ul>
+<li><strong>Added</strong> <code>/web/workspace/&lt;id&gt;/spo-wizard</code> (linked from the policies page,
+  beside "New Server Policy") and <code>services.spo_wizard</code>.</li>
+<li><strong>Plan first.</strong> <code>build_plan</code> writes nothing and returns every reason the run
+  cannot proceed, including a <strong>live name-collision check</strong> against the device
+  — a run that would die after reserving an address is worse than one that
+  never started. An unreachable device is itself a blocker, not an assumption
+  that the box is empty.</li>
+<li><strong>A blocked plan is never applied</strong>, in dry run or not. Letting one "just
+  preview" is how a blocker becomes advisory.</li>
+<li><strong>Compensation is driven by recorded facts.</strong> A DNS failure releases the
+  address <em>by its handle</em>, and only if IPAM gave it to us — a hand-typed VIP
+  is not ours to hand back. A device failure removes the record we created and
+  releases the address we took.</li>
+<li><strong>What is NOT undone is named, never silently done.</strong> An issued certificate
+  is reported and <strong>not revoked</strong>: revocation is destructive and irreversible,
+  and a certificate that exists is not harmful. Objects already written to the
+  device are listed rather than deleted, because deleting one a human may
+  already have bound elsewhere is a destructive guess. The report keeps
+  "undone" and "left behind" as separate lists.</li>
+<li><strong>It refuses to guess.</strong> A segment the line does not receive is refused (the
+  wrong-network failure this whole feature exists to prevent). Several
+  segments must be chosen, not auto-picked. A blank hostname means <em>do not
+  publish</em>, and does not quietly become the web address. A read-only DNS
+  backend plus a requested hostname is a refusal, not a step reporting success
+  (§130's rule, in a new place).</li>
+<li><strong>Bug found by its own guard:</strong> the first version used invented naming keys
+  (<code>policy</code>/<code>vserver</code>/<code>pool</code>) where <code>services.naming</code> emits <code>server_policy</code> /
+  <code>virtual_server</code> / <code>server_pool</code>. Every lookup returned <code>None</code>, every object
+  would have been created with an <strong>empty name</strong>, and the collision check
+  silently did nothing — with no crash anywhere. There is now a blocker for an
+  empty rendered name and a guard pinning the keys to what <code>naming</code> emits.</li>
+<li>Guards: <code>tests/test_spo_wizard.py</code> (37), 31 mutations, safeguards §133.</li>
+</ul>
+<h3 id="line-profiles-a-lines-networks-become-a-declaration-not-a-string-match-2026-08-27">Line Profiles — a line's networks become a declaration, not a string match (2026-08-27)</h3>
+<p>"Which networks does this line receive?" was answered by matching the line name
+against <code>segments[].line</code>. Nothing declared that relationship, so nothing could
+be wrong about it — and nothing could be right about it either. A segment typed
+differently simply stopped matching, and the consumer saw a line with no
+networks, which is indistinguishable from a line that legitimately has none.</p>
+<p>Survivable while the answer only colours a page. Not survivable once it picks
+the network a <strong>production server policy</strong> is built on: the policy is created
+perfectly, on the wrong segment, and nothing raises.</p>
+<ul>
+<li><strong>Added</strong> <code>line_profiles</code> (new page under Administrator, admin-only): per
+  classification line, the segments it receives, its certificate class, its
+  Web Protection Profile template and an optional IPAM pool override.</li>
+<li><strong>Added</strong> <code>services.line_profiles.line_plan</code> — the <strong>only</strong> place either
+  answer is derived. A plan is labelled <code>declared</code> or <code>inferred</code>, and the two
+  are never blended: a line nobody has declared still gets the old string
+  match, but it says so, and a caller about to change the world must treat
+  that as a question.</li>
+<li>A <strong>declaration that stops resolving is a problem, not a shorter list</strong>. A
+  profile naming a segment that has since been renamed reports
+  <code>missing_segment</code> and blocks; it does <strong>not</strong> quietly fall back to the guess,
+  because that would hide the breakage behind the very answer the operator
+  overrode.</li>
+<li><strong>Approval is checked when the template is USED</strong>, not frozen when the
+  profile was saved: a WPP template approved on Monday and rejected on Tuesday
+  stops being instantiable on Tuesday. A template from another product blocks
+  too.</li>
+<li>A blank certificate class means <strong>not decided</strong> and is reported. <code>server</code>
+  would be a plausible guess; guessing is how a client-auth line gets a
+  server-only certificate. Likewise <code>pool_for</code> returns empty rather than
+  reaching for the provider's fleet-wide default pool.</li>
+<li><strong>Changed</strong> <code>classification_ops</code> to treat a profile as a <strong>reference</strong>: it is
+  counted in <code>usage()</code> (so deleting a line has to say what happens to it) and
+  moved on rename. Clearing a line deletes its profile and reports that;
+  reassigning onto a line that already has one is refused rather than silently
+  merged, since (product, line) is unique and picking one would make a line
+  quietly hand out a different set of networks.</li>
+<li>Guards: <code>tests/test_line_profiles.py</code> (34), 26 mutations, safeguards §132.</li>
+</ul>
+<h3 id="the-clone-only-adds-what-is-missing-2026-08-27">The clone only adds what is missing (2026-08-27)</h3>
+<p>Ported from the standalone SATOM Policy Clone 1.27.0. The web clone had the
+same two write paths INTO an object the destination already owns, and only one
+of them was under an operator's control:</p>
+<ul>
+<li><code>update</code> — a row colliding on its unique key was <strong>rewritten</strong>, governed by
+  <code>reconcile_rows</code> (default ON).</li>
+<li><code>create</code> — a row the source has and the destination does not was <strong>appended
+  to the live object</strong>, labelled <em>"missing under an existing parent —
+  recreating"</em>, governed by nothing at all.</li>
+</ul>
+<p>The append is the dangerous one precisely because it reads as housekeeping. A
+server pool that GAINS a real server is serving traffic it was not serving a
+minute ago — as modified as a pool whose member was rewritten. A mode that only
+closed the rewrite would have left the pool changed, and reported green.</p>
+<ul>
+<li><strong>Added</strong> <code>additive_only</code>: the unit of <em>"the destination already has this"</em>
+  moves from the ROW to the OBJECT. An object the destination lacks is still
+  created whole, with all of its rows; an object it already has is left exactly
+  as it is.</li>
+<li><strong>Added</strong> the status <code>untouched</code> — amber in the report, its own mark (<code>/</code>) in
+  the plan text, <strong>never folded into <code>exists</code></strong>: "the destination has this row"
+  and "the destination does NOT have it and we chose not to add it" are opposite
+  facts, and only one of them leaves the operator something to do.</li>
+<li><strong>Added</strong> a checkbox on the clone/migrate dialog, <strong>default ON</strong>; changing it
+  invalidates the preview, because the plan on screen was classified with the
+  value that was set when Analyse ran.</li>
+<li><strong>Added</strong> the cutover gate: a migration whose copy held rows back leaves the
+  <strong>source ENABLED</strong>, on the same reasoning already used for a file-backed
+  object whose bytes never arrived — a migration claims the two are
+  interchangeable, and a knowingly short copy is not.</li>
+<li><strong>Refuses</strong> additive mode together with <em>"new, compare and decide"</em>, before
+  any device is read: the second exists to change a profile the destination
+  already serves, and the first promises not to.</li>
+<li>Defaults <strong>ON at the HTTP layer</strong> and <strong>OFF in <code>policy_ops</code></strong>. The
+  operator-facing surface is where the safe posture belongs; the engine has
+  library callers whose deliveries must keep completing.</li>
+<li>25 guards (<code>tests/test_clone_additive.py</code>), 22/22 mutations killed by the
+  guard each one names. <code>docs/safeguards.md</code> §138.</li>
+</ul>
+<h3 id="the-workspace-identifies-a-box-by-the-name-it-calls-itself-2026-08-27">The workspace identifies a box by the name it calls itself (2026-08-27)</h3>
+<p>The workspace chrome printed the management address where it identifies the
+appliance, while the breadcrumb above it printed a name. Neither was the
+DEVICE's own hostname.</p>
+<ul>
+<li><strong>Added</strong> <code>appliances.device_hostname</code> and <code>device_hostname_at</code>, filled from
+  the <strong>same status call <code>firmware_probe</code> already makes</strong> — FortiWeb answers
+  <code>hostName</code> (measured on {device}/13). No second request: "exactly one
+  status call per appliance" is what makes that module safe to expose on
+  <code>/api/v1</code>.</li>
+<li><strong>Added</strong> <code>display_host</code> / <code>host_title</code> as single authors for what the chrome
+  prints and how it qualifies it. Three templates deciding this for themselves
+  is how the identifier and the breadcrumb came to disagree.</li>
+<li><strong>Changed</strong> <code>workspace/policies.html</code>, <code>browse.html</code> and <code>index.html</code> to
+  print the hostname, falling back to the address when none was ever observed.</li>
+<li>The hostname timestamp is stamped <strong>only when a name actually came back</strong>,
+  and a later silent answer does not erase a known one. This is not
+  hypothetical: <strong>FortiAuthenticator's status payload contains no hostname
+  field at all</strong> (measured on {device}), so a single shared
+  <code>firmware_checked_at</code> would attest a reading that never happened. <code>{device}</code>
+  correctly keeps showing its address.</li>
+<li>An <strong>ADOM row</strong> answers with the CHASSIS hostname, which is qualified in the
+  tooltip rather than rewritten. The qualification keys on the operator having
+  named the row <code>&lt;device&gt;@&lt;adom&gt;</code> — <strong>not</strong> on <code>vdom</code> being set, because every
+  FortiWeb carries <code>vdom='root'</code> whether or not ADOM mode is in use. The first
+  version got this wrong and labelled two ordinary devices as shared chassis;
+  it was caught rendering against the live fleet, not by a test.</li>
+<li>Guards: <code>tests/test_device_hostname.py</code> (20), 21 mutations, safeguards §131.</li>
+</ul>
+<h3 id="ipam-allocation-exists-now-and-the-dns-step-stopped-lying-2026-08-27">IPAM allocation exists now, and the DNS step stopped lying (2026-08-27)</h3>
+<p><code>provision_runner</code> imported four functions that had never been written —
+<code>allocate_address</code>, <code>release_address</code>, <code>create_record</code>, <code>delete_record</code> — each
+inside <code>try: ... except ImportError</code>. Nothing raised, nothing logged, and the
+two steps reported the opposite of the truth:</p>
+<ul>
+<li>ticking <strong>"allocate from IPAM"</strong> always failed, blaming the operator's
+  provider (<em>"no DNS/IPAM provider exposes address allocation"</em>) on an
+  installation where one was configured and healthy;</li>
+<li>
+<p>the <strong>DNS step always returned OK</strong> with <em>"no DNS provider configured"</em> even
+  when a provider was configured. A provisioning run could finish green having
+  published no record at all.</p>
+</li>
+<li>
+<p><strong>Added</strong> address allocation to the provider abstraction: <code>Capabilities</code>
+  grew <code>can_allocate</code> / <code>needs_pool</code>, and a new <code>Address</code> record carries the
+  provider-native reservation handle. <code>can_allocate</code> is <strong>deliberately
+  separate</strong> from <code>can_write</code>: phpIPAM and plugin-less NetBox are address pools
+  that cannot publish a name, and folding the two into one flag is what let
+  "this backend can reserve an address" imply "this backend will publish the
+  hostname".</p>
+</li>
+<li><strong>Added</strong> <code>allocate_address</code> / <code>release_address</code> for <strong>EfficientIP
+  SOLIDserver</strong> (<code>ip_block_subnet_list</code> -&gt; <code>ip_find_free_address</code> -&gt; <code>ip_add</code>,
+  released by <code>ip_id</code>), <strong>phpIPAM</strong> (<code>POST /addresses/first_free/</code>, released by
+  address id) and <strong>NetBox core</strong> (<code>POST /prefixes/{id}/available-ips/</code>,
+  released by ip-address id). A <strong>Default IPAM pool</strong> field was added to all
+  three provider forms in Settings -&gt; DNS Records.</li>
+<li><strong>Added</strong> module-level <code>capabilities()</code>. Whether a missing provider is fatal
+  is the caller's judgement, so "not configured" is now <strong>raised</strong>, never
+  returned as a value that looks like a successful write — and the two are
+  told apart by asking, not by catching an exception.</li>
+<li><strong>Changed</strong> the DNS step to three outcomes instead of two. No provider is
+  still a pass, but the detail says in words nobody can misread that the name
+  was <strong>not</strong> published; a provider that <em>cannot write records</em> is now a
+  <strong>failure</strong>, because answering "fine" to a requested hostname the backend
+  will never publish is the same lie in a new place.</li>
+<li><strong>Changed</strong> rollback to release against the <strong>recorded handle</strong>, not the
+  address string. Between the reservation and the rollback the pool may have
+  legitimately given that address to somebody else, and a string-keyed release
+  frees their entry. New <code>provision_runs.ip_ref</code> / <code>ip_pool</code> columns, added by
+  the boot migration (nullable, no backfill: a run that predates them really
+  did take its address without a handle).</li>
+<li><strong>Changed</strong> netmask arithmetic to a single author in <code>dns_providers.base</code>,
+  and it refuses to guess: a subnet size that is not a power of two yields no
+  prefix rather than a fabricated mask, and NetBox's absent gateway comes back
+  empty rather than as <code>.1</code>. Both are written into a real appliance's default
+  route at first boot.</li>
+<li>Guards: <code>tests/test_ipam_allocation.py</code> (63), 29 mutations, safeguards §130.</li>
+</ul>
+<p><strong>Still UNVERIFIED end-to-end</strong>: there is no SOLIDserver, phpIPAM or NetBox in
+the fleet, so the wire shapes are exercised against <code>httpx.MockTransport</code>
+built from each vendor's documented API — not against an appliance.</p>
+<h3 id="waf-audit-against-a-live-appliance-2026-08-27">WAF audit against a live appliance (2026-08-27)</h3>
+<p>The custom-signature catalogue added in Tanda 0 was carried from the admin
+guide. Read off a live FortiWeb 7.6.8 it was wrong in five places, and every
+one of them failed the same way: authorable in the UI, refused by the box with
+an opaque <code>-651</code> at deploy time.</p>
+<ul>
+<li><strong>Fixed</strong> the meet-condition shape. The device's fields are <code>expression</code>
+  (the only mandatory one), <code>operator</code>, <code>request-target</code>, <code>response-target</code>
+  and <code>case-sensitive</code> — not the guide's dialog labels. <code>target</code> was one field
+  where the box has two, split by the parent rule's Direction.</li>
+<li><strong>Fixed</strong> the operator tokens: <code>EQ</code>/<code>NE</code>/<code>GT</code>/<code>LT</code>/<code>RE</code>, not the spelled-out
+  words.</li>
+<li><strong>Fixed</strong> the action set. It is DIRECTION-DEPENDENT: 7 actions for a request
+  rule, 9 for a response rule. Three the guide omits are real
+  (<code>client-id-block-period</code>, <code>deny_no_log</code>, <code>redirect</code>) and the erase pair is
+  response-only — enforced rather than merely listed.</li>
+<li><strong>Fixed</strong> <code>severity</code>: the token is <code>Info</code>; "Informative" is the device's
+  description of it.</li>
+<li><strong>Added</strong> the JSON Schema name rule. Measured: a <code>.json</code>/<code>.txt</code>/<code>.schema</code>
+  suffix is refused with <code>-61</code>, the bare name uploads and reads back
+  byte-identical. This is the INVERSE of the OpenAPI rule (<code>.json</code>/<code>.yaml</code>
+  required, <code>-20007</code> otherwise) — the two are now a table, and the other four
+  file kinds were measured to accept any name, so their silence is a result.</li>
+<li><strong>Added</strong> a write-path gate. <code>plan_injection</code> now returns <code>invalid</code> for a
+  value the device's own enum does not contain, instead of letting it reach
+  the appliance. Deliberately narrower than <code>validate_payload</code>: required and
+  format rules stay in the authoring form, because enforcing them at deploy
+  would turn carve-outs authored before a rule existed into errors on the push
+  to a second appliance.</li>
+<li><strong>Fixed</strong> a stray <code>@bp.route('/&lt;id&gt;/detect')</code> decorator that had stacked
+  onto <code>clone_for_policy</code>, so posting to the detect endpoint ran the
+  clone-and-rebind planner and returned a payload with no <code>found</code> key. The
+  detect button had been silently dead.</li>
+<li><strong>Guards</strong>: <code>tests/test_wire_shapes.py</code> (23) and
+  <code>tests/test_mutation_survivors.py</code> (3, closing mutations that survived the
+  previous harness: delete-version ordering, restorable vs a live lineage, and
+  a deploy destination outside the visible set).</li>
+</ul>
+<h3 id="waf-the-fleet-view-leaves-the-building-one-zip-the-formats-you-tick">WAF — the fleet view leaves the building: one ZIP, the formats you tick</h3>
+<ul>
+<li><strong>New export panel on all five <code>Fleet -&gt; WAF</code> pages</strong> and endpoint
+  <code>GET /waf/export</code>. Tick the contents (overview figures &amp; charts, server
+  policies, protection profiles, coverage, artifacts, exceptions with their
+  profiles) and the formats (CSV, Excel <code>.xlsx</code>, PDF with the charts drawn in);
+  you get one ZIP with exactly that. The selection lives in the URL, so a
+  bundle is bookmarkable and a support request can quote the link that made a
+  file.</li>
+<li><strong>Exceptions become fleet-visible for the first time.</strong> <code>/exceptions</code> is
+  pinned to one device; the export joins every authored carve-out in the
+  visible fleet to the profile it names — is that profile in the snapshot, how
+  many server policies bind it (a WPP is usually SHARED, so that number is the
+  blast radius), are the policies it was authored for still there — and carries
+  its payload, so an export can be used to re-author one.</li>
+<li><strong>Provenance travels with the data.</strong> Every page here carries a
+  scope-and-freshness banner because its figures are only as fresh as the last
+  harvest; a spreadsheet in someone's mail has none. So <code>MANIFEST.txt</code>, the
+  workbook's FIRST sheet and the PDF's first page all carry the same block from
+  one <code>provenance()</code> call: when, by whom, how many scopes are covered, how many
+  actually reported, and the stale and never-harvested ones BY NAME.</li>
+<li><strong>Charts travel as their series, not only as pictures.</strong> The PDF draws them
+  server-side (no browser, no canvas capture — this product installs into
+  isolated networks); the CSV and the workbook carry every chart's
+  (label, value) rows from the SAME <code>ChartSpec</code>, so the drawing and the numbers
+  printed beside it cannot disagree.</li>
+<li><strong>The bundle is always the WHOLE visible fleet.</strong> The per-table CSV link is
+  the one that exports the rows you filtered, and says so. A ZIP that also
+  narrowed — invisibly, because nobody can see the filter bar the file came
+  from — is the safeguards §119 drift with a longer fuse.</li>
+<li><strong>Nothing ticked is not an empty export</strong>: the panel flashes a message and
+  returns you to the page. A zero-content ZIP downloads perfectly happily and
+  reads as "the fleet had nothing", which is a claim about the estate.</li>
+<li><strong><code>services/pdf_kit</code></strong> — the chart and table flowables move out of
+  <code>db_reports</code> so both PDF producers render through the same code instead of a
+  copy of it. The palette stays a parameter: DB reports keep the fleet blue,
+  the WAF export uses the <code>.fw-badge-*</code> set calibrated against white (§9m).</li>
+</ul>
+<h3 id="waf-the-artifacts-the-estate-needs-and-the-ones-it-does-not-have">WAF — the artifacts the estate needs, and the ones it does not have</h3>
+<ul>
+<li><strong>New page <code>Fleet -&gt; WAF -&gt; Artifacts</code></strong> (<code>/waf/artifacts</code>, feed
+  <code>/waf/api/artifacts.json</code>): every file-backed WAF object (XML Schema, DTD,
+  WSDL, OpenAPI, gRPC IDL, JSON Schema, Lua) the visible estate REFERENCES or
+  HOLDS, in one table, with six charts, per-type and per-scope breakdowns and a
+  CSV that carries exactly the filtered rows. <code>/artifacts/*</code> stays pinned to
+  the session's (device, ADOM) — that is deliberate and guarded — which left
+  the fleet question with no home at all.</li>
+<li><strong>Demand against supply, in one row per (scope, object).</strong> The four verdicts
+  are unchanged and now have ONE author,
+  <code>services.artifact_refs.verdict_of</code>, shared with <code>device_audit</code> and
+  <code>artifact_stats.scope_stats</code>: the expression used to be copied into all three
+  under a comment promising they were identical.</li>
+<li><strong>Two states that are NOT verdicts.</strong> A stored copy no walked policy names is
+  an <code>orphan</code> — there is no need behind it, and folding it into "held" would
+  inflate the share of the estate that is ready to move with copies nobody is
+  waiting for. The library-wide bucket gets its own rows and reports how many
+  scopes resolve to it, which is the blast radius of editing that one file.</li>
+<li><strong>A <code>borrowed</code> row served by the LIBRARY gets its own sentence.</strong> <code>resolve()</code>
+  prefers the library over any other appliance, so "a deliberate shared copy"
+  and "whichever box happens to hold the name" are different branches; the
+  library-backed count is published beside <code>borrowed</code> rather than folded into
+  it, because reading N borrowed as "N guesses" overstates the risk by exactly
+  that number.</li>
+<li><strong>EMPTY is a flag, not a state.</strong> A zero-byte newest version is <code>ok</code> for
+  every "do we have it?" check in the codebase and configures nothing; it is
+  counted, badged and filterable here. Emptiness is decided on byte count
+  alone, the same rule as <code>/artifacts/inventory</code> — decompressing every blob on
+  a page that lists the whole estate is not a trade this page can make.</li>
+<li><strong>The page's blind spot is a NUMBER.</strong> The configuration snapshot knows how
+  many server policies a scope has; the sweep knows how many it walked. The
+  difference (<code>never walked</code>) is printed per scope and fleet-wide, so a
+  migration plan copied off this page does not silently inherit it. A scope
+  with no snapshot reports <code>-</code> — unknown, never zero — and is excluded from the
+  fleet figure.</li>
+<li><strong>Absence is not zero, again.</strong> A scope with no scan row at all is <code>never
+  swept</code> and stays out of the denominators: "nobody looked" and "we looked and
+  it carries nothing" are the two answers this subsystem exists to keep apart.</li>
+<li><code>artifact_stats.fleet_stats</code> accepts a preloaded <code>(refs, scans, stored)</code>
+  triple so a page that already read those tables does not scan them twice.</li>
+</ul>
+<h3 id="waf-a-fleet-wide-inventory-its-statistics-and-its-charts">WAF — a fleet-wide inventory, its statistics and its charts</h3>
+<ul>
+<li><strong>New area <code>Fleet -&gt; WAF</code>, four pages over ONE universe.</strong> <code>/waf/</code> (overview:
+  KPIs, six charts, freshness), <code>/waf/inventory</code> (every server policy in the
+  visible fleet, filterable, CSV), <code>/waf/profiles</code> (every web protection
+  profile, its usage and its gaps, CSV) and <code>/waf/coverage</code> (protection x
+  device/ADOM matrix, CSV). <code>/waf/api/summary.json</code> serves the chart payload,
+  so the figures on the page and the figures in the charts have ONE author.</li>
+<li><strong>It reads the source-of-truth store, not the appliances.</strong> Rendering these
+  pages contacts no device. The measurement that forced the metrics rewrite on
+  2026-08-05 applies unchanged: at the target fleet (60 FortiWebs) a live
+  aggregation would spend tens of seconds of device I/O per view, per worker,
+  per operator. The cost of the choice is that the numbers are as old as the
+  last harvest, which is why freshness is a column and a banner here, not a
+  footnote.</li>
+<li><strong>Absence is not zero.</strong> A registered device with no snapshot is carried as
+  <em>never harvested</em>, named in a banner, excluded from every denominator, and
+  the pages state how many scopes actually contributed. A snapshot older than
+  26 h is marked <em>stale</em> and still shown — it is the best evidence there is,
+  and a page that hides it answers "the fleet is compliant" with "the fleet WAS
+  compliant".</li>
+<li><strong>A slot a profile does not HAVE is not an unfilled slot.</strong> FortiWeb's
+  offline collection carries ~38 of the 41 protection fields; counting the
+  missing ones as "off" would have invented a fleet-wide gap no operator can
+  close. Coverage denominators are per profile, and the matrix renders
+  <em>not applicable</em> as a grey dash, never as a red zero.</li>
+<li><strong>The posture doughnut adds up, and the tiles say what it swallowed.</strong> Each
+  policy lands in exactly one bucket by precedence (disabled -&gt; no profile -&gt;
+  monitor-mode -&gt; blocking), so the un-bucketed totals are published beside it:
+  a disabled policy that ALSO has no profile is invisible in a partition.</li>
+<li><strong>Findings carry their remedy and a link that lands on the rows described</strong>
+  (monitor-mode, no profile, dangling profile reference, deprecated TLS,
+  certificate-less TLS, disabled, orphan profiles). A count with no way to
+  reach the rows is a number the operator has to reproduce by hand.</li>
+<li><strong>Scope.</strong> Fleet-wide by design, like Fleet Objects — and only over what the
+  console may see: the universe is narrowed ONCE through
+  <code>models.visible_appliances()</code> and then to <code>kind == 'fortiweb'</code>, so
+  maintenance devices stay hidden without the permission and no other
+  product's device can appear. Offered in the Global and FortiWeb consoles
+  only; the other three ADOMs redirect, because the pages count objects those
+  products do not have.</li>
+<li><strong>Guards:</strong> <code>tests/test_waf_fleet.py</code> (22), <code>docs/safeguards.md</code> §126.</li>
+</ul>
+<h3 id="exceptions-catalog-custom-signatures-operator-coupling-orphan-type">Exceptions — catalog (custom signatures, operator coupling, orphan type)</h3>
+<ul>
+<li><strong>Custom Signature is now a first-class exception type.</strong> <code>custom_signature_item</code>,
+  <code>custom_signature_condition_item</code> and <code>custom_signature_group_item</code> were added to the
+  catalog. Field names and enum tokens were read off a live FortiWeb 7.6.8
+  (<code>waf/custom-protection-rule</code>, <code>waf/custom-protection-group</code>) and the generated SDK
+  catalog, not from the admin guide's GUI labels — the guide's "Request"/"Response"
+  Direction is the device's lowercase <code>type</code>, and storing the label produces a payload
+  the appliance rejects.</li>
+<li><strong><code>operator</code> is coupled to the element type.</strong> The picker offered the union of all six
+  operations for every element type, so <code>HOST</code> + <code>INCLUDE</code> was authorable and savable.
+  <code>OPERATORS_BY_TARGET</code> encodes only the mappings the admin guide states outright;
+  anything unlisted stays unconstrained, because forbidding a legitimate carve-out is a
+  worse failure than the one being fixed.</li>
+<li><strong>The orphan <code>disabled_signature_item</code> is resolved and migrated.</strong> One live row carried
+  an <code>exc_type</code> no catalog entry defined: <code>type_for()</code> returned <code>None</code>, so it rendered
+  unlabelled and skipped validation entirely on the way in. <code>TYPE_ALIASES</code> maps it (the
+  guard against recurrence) and the stored row was normalised (the cleanup).</li>
+<li><strong>The meet-condition no longer has two names.</strong> <code>signature_group_rule_condition</code> carried
+  only a match-target/operator/value fragment and held zero rows; it is aliased onto
+  <code>custom_signature_condition_item</code> and removed from the catalog.</li>
+<li><strong>Not changed, deliberately:</strong> the three element-type conventions in this catalog
+  (<code>CLIENT_IP</code> / <code>FULL-URL</code> / <code>"Client IP"</code>) were left alone. Every matching subtable on
+  the live appliance was empty, so which convention each endpoint accepts could not be
+  established. Recorded in <code>UNVERIFIED_SHAPES</code> rather than normalised on a guess.</li>
+</ul>
+<h3 id="removed">Removed</h3>
+<ul>
+<li>
+<p><strong><code>/artifacts/manage</code> — it was a second copy of the inventory.</strong> Same rows,
+  same verbs, one more place for a scope gate or a validation to be fixed on
+  only one of the two. The three add verbs moved onto <code>/artifacts/inventory</code>
+  as <strong>three buttons, one dialog each</strong> (upload / author / capture — they
+  differ in what they touch, and a single "Add content" dialog left the
+  operator to notice which of its three columns reaches out to a live
+  appliance). They POST to the SAME endpoints; <code>back=manage</code> is still accepted
+  as an input so a bookmarked round trip lands on the inventory instead of a
+  404.</p>
+</li>
+<li>
+<p><strong>"Push this version to an appliance".</strong> Content reaches a device at CREATE
+  time and nowhere else: the clone/migrate engine uploads the bytes for every
+  file-backed object that run creates, under a pre-flight that refuses to
+  proceed unacknowledged when one of them is absent or empty. The standalone
+  button was the one control that wrote to a box with <strong>nothing bound to the
+  write</strong> — no plan, no policy, no reconciliation report — and its only real
+  use, repairing a hand-made or empty object, left content SATOM could not tie
+  to anything. The route is gone, not merely unlinked.</p>
+</li>
+<li>
+<p><strong>The migration-coverage table on <code>/artifacts/inventory</code>.</strong> "Which server
+  policies can move today" is asked WHEN MIGRATING, and it is answered where a
+  migration is decided: the clone/migrate pre-flight checklist and, per device
+  and exportable, <code>/artifacts/audit</code>. On a holdings page it cost a blob read
+  <strong>per edge on every render</strong> to answer a question nobody had asked yet. The
+  one counter it fed ("walks that FAILED") is read from the scan rows instead.</p>
+</li>
+</ul>
+<h3 id="fixed">Fixed</h3>
+<ul>
+<li>
+<p><strong>An EMPTY stored copy is a warned state, everywhere it matters.</strong> <code>blob is
+  None</code> was the whole test for "can this object travel", so a zero-byte (or
+  whitespace-only) version <strong>resolved</strong>: the pre-flight counted it under "will
+  be copied WITH content", the coverage verdict said <code>ready</code>, and the apply
+  uploaded it. What lands at the destination is an object the device shows as
+  configured while the rule bound to it enforces nothing. An emptiness is
+  worse than an absence precisely because every "is it held?" check answers
+  yes — so nothing reported it.</p>
+</li>
+<li>
+<p><code>waf_artifacts.is_empty()</code> is the one predicate, and it keeps ABSENT and
+    EMPTY apart: the remedies differ (capture or upload vs re-author), so
+    telling an operator to capture a file they already hold is a useless
+    instruction.</p>
+</li>
+<li><code>resolve_for_plan</code> marks an empty copy <strong>unresolved</strong>, with its own reason;
+    the pre-flight gate says EMPTY instead of "the device stores only the
+    NAME"; the apply skips it and <strong>refuses without an acknowledgement</strong>,
+    exactly as it does for an absent one.</li>
+<li><code>policy_coverage</code> counts <code>empty</code> apart from <code>missing</code> and no longer calls
+    such a policy <code>ready</code>.</li>
+<li>The inventory has a <strong>"Held, but EMPTY"</strong> card, a headline counter and a
+    row badge. The card is built from everything the pair holds, never from
+    the filtered rows: a warning a filter can hide is a warning that is not
+    there.</li>
+<li>
+<p>The three doors are closed too — upload now tests <code>.strip()</code> (a file
+    holding one newline used to pass), and a capture that comes back empty
+    stores nothing.</p>
+</li>
+<li>
+<p><strong>Scope labels name the DEVICE, not its management address.</strong> Reported for
+  "todas las secciones" of <code>/artifacts/*</code>: an operator standing on
+  <code>{device} / adom_prod</code> was told they were on <code>{ip}</code> — the address of a
+  chassis carrying four ADOM rows, so it names none of them. Every label now
+  goes through <code>models.appliance_name_parts</code> (the product's one answer to
+  "what is this device called"); the address stays available as a hover,
+  because it is still what an operator types into a browser.</p>
+</li>
+<li>
+<p><strong>The inventory's "Used on (device / ADOM)" column is a count now.</strong> The page
+  stands on one pair and the narrowing drops every edge belonging to any other,
+  so the column could only ever repeat the pair already printed in the banner
+  and in the row's own Device and ADOM cells — and its empty state, <strong>"no known
+  user"</strong>, was read as a fact about the fleet when it only ever meant "no
+  walked policy OF THIS PAIR names it".</p>
+</li>
+<li>
+<p><strong>Every action on the inventory says what it does on hover.</strong> An icon-only
+  control is a guess, and one of them leads to the page that can delete a
+  version.</p>
+</li>
+<li>
+<p><strong><code>/artifacts/*</code> takes its (device, ADOM) from the SESSION, like every other
+  per-device page — and nothing in the section answers for anything else.</strong>
+  Reported a third time (<em>"estamos en un device x con el adom y y veo todo"</em>),
+  and the two fixes before it could not have helped: they narrowed by
+  <code>?appl=</code>, <strong>a query argument the operator's navigation never produces</strong>. The
+  operator picks a device on the Architecture map; that lands in
+  <code>session['appliance_id']</code>, and Backups, Server Objects, Web Protection,
+  Exceptions, Section Config, Analysis and FortiAnalyzer all read it back
+  through <code>device_context.current_appliance()</code>. <code>/artifacts/*</code> was the <strong>only</strong>
+  per-device area that never called it, so with a device selected it rendered
+  the fleet — 163 mentions of other pairs on one page, measured on the live
+  node.</p>
+</li>
+<li>
+<p><code>index</code>, <code>inventory</code>, <code>object</code> and <code>audit</code> narrow to the session
+    pair before a figure is computed; with <strong>no</strong> device chosen they send the
+    operator to the map, as Backups does, instead of showing the fleet.</p>
+</li>
+<li><strong>The pickers were the other half of the report</strong> (<em>"en los filtros"</em>).
+    Every <code>&lt;select name="appliance_id"&gt;</code> now offers that pair alone, the
+    inventory's appliance filter — whose neutral option was the page's own way
+    back to the fleet — is replaced by a <em>within-scope</em> <code>held=own|library</code>, and
+    the audit's device filter is gone.</li>
+<li>A narrowed control is decoration, so <strong>every verb is gated on the route</strong>:
+    <code>upload</code>, <code>capture</code>, <code>save</code> and <code>refs/refresh</code> refuse an
+    <code>appliance_id</code> that is not the pair the page stands on (library-wide stays
+    allowed where it is the shared bucket this pair reads).</li>
+<li>
+<p>Old <code>?appl=</code>/<code>?scope=</code> links still work — they <strong>move</strong> the session device
+    and re-issue the request without the argument, so the URL bar and the nav
+    badge can no longer disagree about where the operator is standing.</p>
+</li>
+<li>
+<p><strong>The routes that name their target by ID or by PATH are scoped too.</strong>
+  <code>/blob/&lt;id&gt;</code>, <code>/raw/&lt;id&gt;</code>, <code>delete</code> and <code>push</code> name a stored version by
+  primary key: the device is never mentioned in the request at all. The object
+  page had stopped <em>listing</em> other pairs' versions, but an unlisted row is
+  decoration — the ids are consecutive integers, and <code>delete</code> answered for
+  every one of them. All four now refuse a version outside the pair (404 for
+  the two readers: in this page's universe that row does not exist), <code>push</code>
+  checks <strong>both</strong> ends, and <code>/api/list</code>, <code>/api/refs</code> and
+  <code>/api/coverage/&lt;appliance_id&gt;/&lt;policy&gt;</code> — the same pages with the HTML
+  stripped off, all three answering for the whole store, the last one taking
+  the scope in its <strong>path</strong> — are cut to the session pair and answer <code>409</code> when
+  no device is chosen. <code>waf_artifacts.history()</code> gained <code>scope_id</code>, applied in
+  the <strong>query</strong>, so the 200-row limit cannot be filled by another pair's
+  versions and the remainder reported as everything there is.</p>
+</li>
+<li>
+<p><strong>A fork lands on the pair the page stands on.</strong> The "only this device/ADOM"
+  branch of a shared-copy save offered a <code>&lt;select&gt;</code> of every affected pair —
+  a control that forked a copy onto a device the page is not named for. The
+  destination is now the session pair, the posted <code>only_appliance_id</code> is
+  ignored, and a fork is still refused where no walked policy reads the copy
+  (it would resolve to nothing and shadow whatever that pair does read).</p>
+</li>
+<li>
+<p><strong><code>/artifacts/inventory</code>: the (device, ADOM) selection is the page's
+  universe, not a filter laid over a fleet page.</strong> An operator on one device
+  and one ADOM still saw the fleet, and was right: <code>?appl=</code> narrowed the row
+  table and the coverage table and <strong>nothing else</strong>. The nine headline
+  counters came from <code>wa.stats()</code> / <code>ar.stats()</code>, which take no scope and
+  cannot answer for anything but the whole store; "By object type" and "Where
+  the copies live" were built from the unfiltered index. Measured on the live
+  node, a page cut to one ADOM printed <strong>170 objects over a list of 30</strong> and
+  enumerated all five device/ADOM pairs, including a second chassis (37
+  mentions of a host the operator was not on).</p>
+</li>
+</ul>
+<p>The narrowing now happens <strong>once, in <code>_narrow()</code>, before a single figure is
+  computed</strong>, so a section added later inherits it instead of having to
+  remember to repeat the filter. Two consequences worth naming:</p>
+<ul>
+<li>the per-row user list is keyed <code>(kind, name)</code> with <strong>no scope in the key</strong>,
+    so a copy held here whose <em>name</em> another chassis also uses arrived carrying
+    that chassis's edges — dropped;</li>
+<li>a copy held for <strong>another</strong> scope is no longer listed as held here. It
+    moves to "needed and NOT held" flagged <strong>held elsewhere</strong>, which is what it
+    is: <code>resolve()</code> would fall back to another box's bytes, the <code>borrowed</code>
+    guess the device audit exists to surface.</li>
+</ul>
+<p>A library-wide copy the pair reads is still listed — it is served here today
+  — and now carries the count of <strong>other pairs that read the same file</strong>, so
+  the copy-on-write warning survives the narrowing.</p>
+<ul>
+<li>
+<p><strong>The selection survives a click.</strong> <code>/artifacts/</code> published <code>?scope=</code> and the
+  inventory read <code>?appl=</code>: two names for one concept, and every cross-page
+  link dropped both, so picking a device on the statistics page and clicking
+  <em>Inventory</em> landed on the fleet. Both names are now read by one helper, the
+  four artifact pages and the sidebar carry the active scope, and the by-type
+  links stop resetting it.</p>
+</li>
+<li>
+<p><strong>A scope id that matches nothing complains</strong> instead of silently widening —
+  answering a question about one ADOM with twelve ADOMs' rows looks exactly
+  like a correct answer. The page also states which pair it is showing, or
+  says <em>whole fleet</em>: two ADOMs of one chassis legitimately hold the same
+  number of objects, so an unlabelled narrowed page is indistinguishable from
+  one that never narrowed.</p>
+</li>
+</ul>
 <h3 id="added">Added</h3>
+<ul>
+<li><strong><code>/artifacts/inventory</code> says WHERE, and a save can no longer change a file
+  for devices nobody named.</strong> Four changes, one round.</li>
+</ul>
+<p><em>Location is the pair.</em> The list printed the registered appliance NAME, which
+  is unique per ADOM and therefore answers "which chassis, which ADOM" only for
+  a reader who knows the naming convention. Rows now carry a <strong>Device</strong> column
+  (the chassis address) and an <strong>ADOM</strong> column, and the users column collapsed
+  to the distinct <strong>device / ADOM</strong> pairs that reference the object, with the
+  policy count beside each. The policy and profile names moved to the object
+  page: four lines of <code>policy → profile</code> per row pushed the one fact this page
+  is read for off the right-hand edge. Same treatment on "where the copies
+  live", on the not-held table and on the version list.</p>
+<p><em>Adding content without leaving the page.</em> An <strong>Add content</strong> button opens a
+  dialog with the three verbs from <code>/artifacts/manage</code> — upload, author,
+  capture — posting to the <strong>same three endpoints</strong>. A modal-flavoured second
+  set of routes is how the copy that lacks the empty-body refusal ends up
+  storing an artifact that pushes as <code>-7694</code>; the only difference is
+  <code>back=inventory</code>, resolved server-side.</p>
+<p><em>The eye.</em> Every row gets a view action carrying the object's <strong>scope</strong> and
+  the page's full query string, and the object page grew a <strong>Back</strong> button that
+  returns to the filtered list. Without the scope the object page opens
+  whichever version sorts first, which under one name can be a different file;
+  a link to the bare inventory would look identical and silently drop the
+  filter that made the row findable.</p>
+<p><em>Copy-on-write, and it is the load-bearing one.</em> A library-wide copy that
+  three ADOMs resolve to <strong>is one file</strong>: editing it "for prod" edited dev and
+  dmz too, both kept working, and the divergence surfaced only the next time
+  somebody diffed them. <code>artifact_files.scope_impact()</code> now computes who a save
+  reaches <strong>before</strong> the write — grounded in <code>waf_artifacts.resolve()</code>'s search
+  order, so a device holding its own copy is correctly reported as NOT affected
+  — and a save on a shared copy is <strong>refused</strong> until the operator says <code>all</code>
+  (a new version everyone gets) or <code>only</code> (fork a copy scoped to one pair and
+  leave the shared copy exactly as it was). Neither is pre-selected: a default
+  here is the defect in miniature, since <code>all</code> edits devices nobody named and
+  <code>only</code> quietly stops a fleet-wide fix from reaching the fleet. The fork is
+  reported as a fork, including the consequence — that pair stops receiving
+  later edits of the shared copy.</p>
+<p>17 guards in <code>tests/test_artifact_inventory_scope.py</code>, <strong>13 mutations, 13
+  bite</strong>. See <code>docs/safeguards.md</code> §120.</p>
+<ul>
+<li><strong><code>/artifacts/</code> now NAMES the scope it is showing.</strong> The filter was applied
+  correctly and the page said nothing about it, which on a real screen is not
+  the same thing. Per-ADOM counters of a symmetric estate collide: the four
+  ADOMs of <code>{ip}</code> hold <strong>disjoint</strong> data (<code>pol-root-*</code> / <code>pol-prod-*</code> /
+  <code>pol-dmz-*</code> / <code>pol-dev-*</code>, zero overlap) but five policies each, so all four
+  print the same six headline figures. Switching ADOM in the picker moved
+  nothing on screen and read as a filter that was never applied.</li>
+</ul>
+<p>A narrowed page now carries a banner naming <strong>device → ADOM</strong>, and says
+  plainly that identical totals across sibling ADOMs are a property of the
+  estate rather than a failed filter — pointing at the profile names below,
+  which are unique to one ADOM and are the only thing an operator can actually
+  check. The unnarrowed page is labelled <strong>whole fleet</strong> rather than left
+  blank: an unlabelled page is not neutral, it reads as whichever scope the
+  reader last had in mind.</p>
+<p>Guarded at the <strong>route</strong>, not at <code>fleet_stats()</code>. Every existing scope test
+  called the service directly, which is how a page that computed the right
+  numbers and rendered them unlabelled shipped: the arithmetic was tested and
+  the rendering never was. The fixture is deliberately <strong>symmetric</strong> (two ADOMs,
+  identical counts, disjoint names) with a control test asserting the symmetry
+  — two ADOMs of different sizes would let an unfiltered page pass by printing
+  a different number.</p>
+<ul>
+<li><strong><code>/artifacts/</code> is the statistics page, cut by (device, ADOM).</strong> It answered
+  only "what are the seven types" while every number about them lived one page
+  away. It now leads with the figures and keeps the reference below them: how
+  many <strong>Web Protection Profiles carry files</strong>, how many policies name one, per
+  object type the references / distinct objects / policies / profiles / held /
+  not-held / versions / bytes, the store split by captured vs uploaded vs
+  orphaned, and a per-profile table. A <code>?scope=&lt;appliance&gt;</code> selector narrows
+  every figure to one ADOM.</li>
+</ul>
+<p>The scope is <strong>(device, ADOM) and never the chassis</strong>, and that is the whole
+  design rather than a formatting choice. SATOM registers one appliance record
+  per administrative domain, so <code>{ip}</code> is four records (<code>root</code>,
+  <code>adom_prod</code>, <code>adom_dmz</code>, <code>adom_dev</code>). A profile called <code>wpp-a</code> in <code>adom_prod</code>
+  and a profile called <code>wpp-a</code> in <code>adom_dev</code> are different profiles that may
+  bind different files under one name — counted per chassis, one ADOM's
+  uploaded copy would read as coverage for another ADOM's object, and the two
+  files never met. Chassis rollups therefore come from <code>models.chassis_key</code>
+  (which the repo already owns, and which correctly refuses to bucket HA
+  cluster containers together), and the profile and object counts are
+  recomputed from <code>(appliance_id, …)</code> pairs rather than summed.</p>
+<p>Three things the page refuses to round off:</p>
+<ul>
+<li>the three attribution states stay apart. A named profile counts towards
+    <em>profiles with files</em>; <code>""</code> is <strong>policy-level</strong> (Lua scripting hangs off the
+    server policy and passes through no profile at all) and is reported as a
+    finding; <code>NULL</code> is <strong>not attributed</strong> and is reported as an unanswered
+    question. Folding either into the first invents a profile that does not
+    mention the file.</li>
+<li>an ADOM nobody ever walked renders <strong>"never swept"</strong>, not a row of zeros —
+    zeros read as <em>walked, and it carries nothing</em>, which is the false
+    all-clear this subsystem exists to withhold.</li>
+<li>
+<p>a <code>?scope=</code> that matches nothing <strong>complains</strong> and says it fell back, rather
+    than silently answering a question about one ADOM with the fleet's numbers.</p>
+</li>
+<li>
+<p><strong>WAF Artifacts is one sub-menu with four pages, not three siblings.</strong> The
+  entries lived flat in the WAF group and two of them carried <code>fw-nav-sub</code> — a
+  class with <strong>no rule in <code>fortiweb.css</code></strong> (the sheet defines <code>fw-nav-subitem</code>
+  and <code>fw-nav-subgroup</code>; neither matches). With nothing to style them the
+  children rendered at their parent's weight: three top-level entries wearing
+  the word <em>Artifact</em>, and no group to collapse. They now use the product's own
+  shape — <code>&lt;details class="fw-so-parent"&gt;</code> with <code>fw-so-nav-flat</code> leaves, the
+  same as Server Objects and Web Protection — and open only on their own
+  blueprint so the accordion still holds.</p>
+</li>
+<li>
+<p><strong>Object types</strong> (<code>/artifacts/</code>) — reference and theory: the seven types,
+    why their content is not in the configuration, and the four-link chain a
+    file travels (<em>policy → profile → rule → file</em>). The upload/capture forms
+    and the push table that used to sit here moved to <strong>Files</strong>: two authors
+    for one verb is how they drift, and a destructive control has no business
+    on the page an operator opens to look something up.</p>
+</li>
+<li><strong>Inventory</strong> (<code>/artifacts/inventory</code>) — unchanged in purpose, now naming
+    the profile behind every user.</li>
+<li><strong>Files</strong> (<code>/artifacts/manage</code>) — every verb, and each row states <strong>which
+    Web Protection Profile it is assigned to</strong> rather than a bare count. A
+    count said somebody used the file but not where, one click from <em>delete</em>.</li>
+<li>
+<p><strong>Device audit</strong> (<code>/artifacts/audit</code>) — <strong>new</strong>: everything SATOM knows,
+    grouped by device and exportable as <strong>JSON or CSV</strong>, at one row per
+    <em>(device, policy, profile, artifact)</em>.</p>
+</li>
+<li>
+<p><strong>Every artifact reference now names the Web Protection Profile it travels
+  through</strong> (<code>services/artifact_wpp.py</code>, column <code>waf_artifact_ref.wpp_mkey</code>).
+  A FortiWeb operator does not bind a schema to a policy — they bind it to a
+  rule inside a profile, and the policy names the profile. The attribution is
+  <strong>walked</strong> up the clone planner's own referrer graph, never assumed, and it
+  has <strong>three distinct states</strong>: a profile name; <code>""</code> = walked and it hangs off
+  the <strong>server policy itself</strong>; <code>NULL</code> = <strong>not attributed</strong>, nobody looked. The
+  column is nullable with no back-fill for exactly that reason — a <code>DEFAULT ''</code>
+  would have re-labelled 432 historical edges as a finding the walk never made.</p>
+</li>
+<li>
+<p><strong>Four migration verdicts per artifact, per device.</strong> <code>ok</code> (a copy scoped
+  here), <code>borrowed</code> (no copy here, but another appliance holds that name — a
+  <strong>guess</strong>, which the new <em>same name, different content</em> report exists to
+  qualify), <code>at-risk</code> (no copy, still capturable off a live box) and <code>blocked</code>
+  (no copy anywhere and no FortiWeb will ever hand this type back — the policy
+  cannot be migrated until someone uploads the file).</p>
+</li>
+</ul>
+<h3 id="fixed_1">Fixed</h3>
+<ul>
+<li>
+<p><strong>The shortcut that would have mislabelled every Lua script.</strong> "The plan
+  contains one profile, so every artifact belongs to it" is wrong twice:
+  <code>cmdb/server-policy/scripting</code> hangs off the <strong>policy</strong> and never passes a
+  profile, and a policy with content routing can bind <strong>several</strong> profiles.
+  Re-derived live across the fleet: <strong>432 edges, 16 profiles, and the 48
+  <code>policy-level</code> edges are all — and only — <code>scripting</code>.</strong></p>
+</li>
+<li>
+<p><code>/artifacts/</code> no longer runs a full <code>history()</code> scan of every artifact
+  version to build a list the page stopped rendering.</p>
+</li>
+<li>
+<p><strong>Artifacts stopped being a flat store.</strong> The library knew <em>what</em> file-backed
+  objects it held and <em>which appliance</em> they came from, but never <em>which
+  policy needs them</em> — so the only way to answer "can I migrate this SPO?" was
+  to start a clone pre-flight against a chosen destination and read the
+  fallout. Three pages now answer it before the decision:</p>
+</li>
+<li>
+<p><strong><code>/artifacts/manage</code></strong> — uploads and file management. Three verbs, kept
+    distinct on purpose: <strong>upload</strong> a file from disk, <strong>author</strong> one in the
+    browser, <strong>capture</strong> one off an appliance. Anything stored here can be
+    <strong>pushed</strong> into a FortiWeb, which is the advantage the appliance itself
+    does not give you.</p>
+</li>
+<li><strong><code>/artifacts/object/&lt;kind&gt;/&lt;name&gt;</code></strong> — the object itself: view the
+    content online, edit it in place, every save is a <strong>new version</strong>, and any
+    two versions can be <strong>compared</strong> with a structural diff.</li>
+<li>
+<p><strong><code>/artifacts/inventory</code></strong> — statistics, where each object lives, a
+    <strong>"used by"</strong> column naming the policies that reference it, and filters by
+    kind, appliance, orphan and staleness.</p>
+</li>
+<li>
+<p><strong>The policy→artifact index is DERIVED, never typed.</strong> <code>waf_artifact_ref</code>
+  records observations — <em>this policy named this object on this appliance at
+  this time</em> — produced by the same dependency walk the clone planner already
+  performs, run source-only. A hand-maintained field would go stale the day a
+  rule changed schema and nothing would fail; it would simply become false,
+  and the cost of that falsehood is a migration that ships without a WSDL the
+  destination will never receive.</p>
+</li>
+<li>
+<p><strong>Edges are scoped by (appliance, policy), never by policy name.</strong> The same
+  name on two chassis can point at different schemas; collapsing them
+  manufactures the exact all-clear this index exists to deny.</p>
+</li>
+<li>
+<p><strong>A failed walk never deletes edges; a successful one deletes what it no
+  longer produces.</strong> The first rule makes one unreachable appliance unable to
+  "prove" that none of its policies need anything. The second stops the index
+  from growing forever off one historical reference.</p>
+</li>
+<li>
+<p><strong>"Walked, needs nothing" and "never walked" do not render the same.</strong> The
+  first clears a migration; the second means nobody looked.</p>
+</li>
+<li>
+<p>Scheduled action <strong><code>artifact_refs</code></strong> refreshes the index on a cadence;
+  bounded sweeps report their remainder, because a truncated run otherwise
+  reads exactly like a complete one. The clone pre-flight <strong>donates</strong> its walk
+  instead of re-walking.</p>
+</li>
+</ul>
+<h2 id="1200-2026-08-24">[1.20.0] - 2026-08-24</h2>
+<h3 id="added_1">Added</h3>
 <ul>
 <li><strong>The "?" reached the pages.</strong> Settings → Sentinel has explained every knob
   since 1.16; the four operational pages explained nothing. 27 explanations now
@@ -152,7 +1075,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   shipped here.</li>
 </ul>
 <h2 id="1190-2026-08-23">[1.19.0] - 2026-08-23</h2>
-<h3 id="added_1">Added</h3>
+<h3 id="added_2">Added</h3>
 <ul>
 <li><strong>The border blocklist — a list SATOM publishes, never a write it performs.</strong>
   Sentinel can now put a source address on a text feed a FortiGate reads as an
@@ -239,7 +1162,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   outside this product.</p>
 </li>
 </ul>
-<h3 id="fixed">Fixed</h3>
+<h3 id="fixed_2">Fixed</h3>
 <ul>
 <li><code>not_listable()</code> accepted <strong>multicast</strong> addresses. <code>ipaddress</code> answers
   <code>is_global == True</code> for <code>224.0.0.1</code>, because that property asks "outside the
@@ -279,7 +1202,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
 </li>
 </ul>
 <h2 id="1180-2026-08-23">[1.18.0] - 2026-08-23</h2>
-<h3 id="added_2">Added</h3>
+<h3 id="added_3">Added</h3>
 <ul>
 <li><strong>Border corroboration — Sentinel can ask the firewall in front whether a
   source is a real peer.</strong> A new operator-entered map (Sentinel → Context →
@@ -329,7 +1252,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   zero rows, and only one of the four is an answer.</p>
 </li>
 </ul>
-<h3 id="fixed_1">Fixed</h3>
+<h3 id="fixed_3">Fixed</h3>
 <ul>
 <li>The Admin Console pane for Sentinel → Context re-listed the section's
   context keys by hand, so a key added to the single shared builder reached
@@ -351,7 +1274,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
   logsearch route.</li>
 </ul>
 <h2 id="1171-2026-08-23">[1.17.1] - 2026-08-23</h2>
-<h3 id="fixed_2">Fixed</h3>
+<h3 id="fixed_4">Fixed</h3>
 <ul>
 <li><strong>The two buttons that reveal a sibling pane did nothing.</strong> <em>Response engine
   → Response policy</em> (in the Incidents console) and <em>Architecture → Incidents
@@ -372,7 +1295,7 @@ source-available project — see <a href="NOTICE">NOTICE</a> for the trademark d
 <h2 id="1170-2026-08-23">[1.17.0] - 2026-08-23</h2>
 <p>Sentinel's four surfaces are now panes of the Admin Console, autonomy has four
 named modes, and the on-demand sweep is a job over the devices you pick.</p>
-<h3 id="added_3">Added</h3>
+<h3 id="added_4">Added</h3>
 <ul>
 <li><strong>Context and Response policy are panes of the Admin Console</strong>
   (<code>Settings → Sentinel → Context</code> / <code>Response policy</code>), each rendered from the
@@ -409,7 +1332,7 @@ named modes, and the on-demand sweep is a job over the devices you pick.</p>
   reason they could go: until now the Context button was the <em>only</em> way to
   reach that page.</li>
 </ul>
-<h3 id="fixed_3">Fixed</h3>
+<h3 id="fixed_5">Fixed</h3>
 <ul>
 <li>Every POST form in the Context, Response policy and incidents-console
   sections carries the return marker, so a save or a delete fired inside the
@@ -420,7 +1343,7 @@ named modes, and the on-demand sweep is a job over the devices you pick.</p>
 <h2 id="1161-2026-08-23">[1.16.1] - 2026-08-23</h2>
 <p>The Admin Console menu could not be opened. Eleven inline blocks were being
 dropped by the browser, silently.</p>
-<h3 id="fixed_4">Fixed</h3>
+<h3 id="fixed_6">Fixed</h3>
 <ul>
 <li><strong>The Admin Console side menu expands again.</strong> The accordion script moved
   into the shared <code>settings/_nav.html</code> partial in 1.14.0 and lost the
@@ -437,7 +1360,7 @@ dropped by the browser, silently.</p>
   of the change-request form and the concept map (<code>style-src-elem</code> names a
   nonce too, so those styles never applied).</li>
 </ul>
-<h3 id="added_4">Added</h3>
+<h3 id="added_5">Added</h3>
 <ul>
 <li><strong><code>tests/test_csp_nonce.py</code> (safeguards §108)</strong> — every inline script and
   style in every template must carry the nonce; the rendered Settings surfaces
@@ -449,7 +1372,7 @@ dropped by the browser, silently.</p>
 </ul>
 <h2 id="1160-2026-08-23">[1.16.0] - 2026-08-23</h2>
 <p>Every control in the Sentinel settings section explains itself, on hover.</p>
-<h3 id="added_5">Added</h3>
+<h3 id="added_6">Added</h3>
 <ul>
 <li><strong>A "?" beside every element of <code>Settings → Sentinel → Settings</code></strong> — all 25
   knobs, the five group headings, the four health chips and the three links
@@ -483,7 +1406,7 @@ dropped by the browser, silently.</p>
   to <code>SPEC</code> without a hint fails here, as does a hint that never reaches the
   HTML on <strong>either</strong> surface. 16 mutations, all biting.</li>
 </ul>
-<h3 id="fixed_5">Fixed</h3>
+<h3 id="fixed_7">Fixed</h3>
 <ul>
 <li>Two of those guards read <code>fw_hints.js</code> for <code>container: 'body'</code> and
   <code>turbo:before-render</code> and were answered by the file's own header comment,
@@ -494,7 +1417,7 @@ dropped by the browser, silently.</p>
 <h2 id="1150-2026-08-23">[1.15.0] - 2026-08-23</h2>
 <p>Sentinel's Architecture and Incidents console are rendered in the Admin
 Console, beside its settings.</p>
-<h3 id="added_6">Added</h3>
+<h3 id="added_7">Added</h3>
 <ul>
 <li><strong><code>Settings → Sentinel → Architecture</code></strong> and <strong><code>Settings → Sentinel →
   Incidents console</code></strong> are now <strong>panes</strong>, not links out. Both render the same
@@ -536,7 +1459,7 @@ Console, beside its settings.</p>
 </ul>
 <h2 id="1140-2026-08-23">[1.14.0] - 2026-08-23</h2>
 <p>The Admin Console menu is defined once and included everywhere.</p>
-<h3 id="added_7">Added</h3>
+<h3 id="added_8">Added</h3>
 <ul>
 <li><strong><code>app/templates/settings/_nav.html</code> — the menu, in one file.</strong> The group
   list, the render loop and the accordion script now live together in a single
@@ -568,7 +1491,7 @@ Console, beside its settings.</p>
   order the menu draws them</strong>: every previous guard stayed green while the two
   orders drifted, because each row was still present and still correct.</li>
 </ul>
-<h3 id="fixed_6">Fixed</h3>
+<h3 id="fixed_8">Fixed</h3>
 <ul>
 <li><code>tests/test_settings_nav_groups.py</code> sliced the menu script by anchoring on
   the line that happened to follow it in the console page. With the script in
@@ -579,7 +1502,7 @@ Console, beside its settings.</p>
 </ul>
 <h2 id="1130-2026-08-23">[1.13.0] - 2026-08-23</h2>
 <p>Settings → Sentinel is now a full section, not a form in a pane.</p>
-<h3 id="added_8">Added</h3>
+<h3 id="added_9">Added</h3>
 <ul>
 <li><strong><code>/settings/sentinel</code> — the whole Sentinel section.</strong> The pane held the
   form and nothing else, so "what will this thing actually DO?" was answered
@@ -630,7 +1553,7 @@ Console, beside its settings.</p>
 block. This release documents all of it, and repairs the one defect that
 auditing it uncovered: <strong>a declined section was only half declined, and the
 missing half was the half that writes.</strong></p>
-<h3 id="added_9">Added</h3>
+<h3 id="added_10">Added</h3>
 <ul>
 <li><strong>An SNI policy is cloned at all.</strong> <code>clone._CERT_URNS</code> held
   <code>system/certificate.sni</code>, so the object was classified <code>cert</code> — "SSH-only,
@@ -712,7 +1635,7 @@ missing half was the half that writes.</strong></p>
   that can be down at the same moment. It is a legible failure, not a fix —
   free space still has to be watched from outside the node.</li>
 </ul>
-<h3 id="fixed_7">Fixed</h3>
+<h3 id="fixed_9">Fixed</h3>
 <ul>
 <li>⚠ <strong>A decline is now honoured in the fields that NAME the declined section.</strong>
   Declining a section removed the item from the plan and stopped there — while
@@ -785,7 +1708,7 @@ missing half was the half that writes.</strong></p>
   Both are guarded, both had drifted since the pages were added.</li>
 </ul>
 <h2 id="1110-2026-08-20">[1.11.0] - 2026-08-20</h2>
-<h3 id="added_10">Added</h3>
+<h3 id="added_11">Added</h3>
 <ul>
 <li><strong>Sentinel: the remaining device transports, captured rather than specified.</strong>
   <code>block_country</code> and <code>raise_protection</code> were run against a live FortiWeb 7.6.8
@@ -835,7 +1758,7 @@ missing half was the half that writes.</strong></p>
   enabled by the installer. Expiry of a live block lives in that tick: a node
   without it can hold a block that nothing will ever lift.</li>
 </ul>
-<h3 id="fixed_8">Fixed</h3>
+<h3 id="fixed_10">Fixed</h3>
 <ul>
 <li><strong>The response runner had no role guard.</strong> Found by reading the standby after
   the rest of this round had shipped: the timer is present there and disabled,
@@ -869,7 +1792,7 @@ missing half was the half that writes.</strong></p>
   accepts. Widened to 64 on both the event and the incident; the existing
   boot-time widener applies it in place.</li>
 </ul>
-<h3 id="added_11">Added</h3>
+<h3 id="added_12">Added</h3>
 <ul>
 <li><strong>Sentinel phase 7 — a response that can actually execute, for exactly one
   action.</strong> <code>block_ip</code>'s transport was captured from a live FortiWeb 7.6.8
@@ -893,7 +1816,7 @@ missing half was the half that writes.</strong></p>
   to a policy's protection profile, as an explicit human action recorded in the
   audit log. The response runner will not do this for itself.</li>
 </ul>
-<h3 id="removed">Removed</h3>
+<h3 id="removed_1">Removed</h3>
 <ul>
 <li>
 <p><strong>Sentinel action <code>rate_limit_ip</code>.</strong> Probing {device} showed the route its
@@ -1004,7 +1927,7 @@ missing half was the half that writes.</strong></p>
   <code>tests/test_secret_backend.py</code> (30 tests, safeguards §103).</p>
 </li>
 </ul>
-<h3 id="fixed_9">Fixed</h3>
+<h3 id="fixed_11">Fixed</h3>
 <ul>
 <li>
 <p><strong>A stale process could send <code>__stored-in-vault__</code> to an appliance as a
@@ -1090,7 +2013,7 @@ missing half was the half that writes.</strong></p>
   unreachable from the entire UI.</p>
 </li>
 </ul>
-<h3 id="added_12">Added</h3>
+<h3 id="added_13">Added</h3>
 <ul>
 <li>
 <p><strong>The appliance roster folds the ADOMs of one chassis under their device,
@@ -1211,7 +2134,7 @@ missing half was the half that writes.</strong></p>
   unprotected cutover; <code>failed == 0</code> does not cover this, because the
   referencing rule only fails when it is itself in the plan.</li>
 </ul>
-<h3 id="fixed_10">Fixed</h3>
+<h3 id="fixed_12">Fixed</h3>
 <ul>
 <li>The <em>View Backups</em> link is emitted once, not once per branch. Splitting it
   into an owns-the-chassis case and a points-at-the-owner case duplicated the
@@ -1263,7 +2186,7 @@ missing half was the half that writes.</strong></p>
   radius.</li>
 </ul>
 <h2 id="1101-2026-08-17">[1.10.1] - 2026-08-17</h2>
-<h3 id="added_13">Added</h3>
+<h3 id="added_14">Added</h3>
 <ul>
 <li><strong>Sharded test runner</strong> — <code>scripts/run_test_shards.sh</code> splits the suite
   across 2-4 parallel shards (by file, never within a file) and
@@ -1281,7 +2204,7 @@ missing half was the half that writes.</strong></p>
   unpinned, so an offline bundle built on two different days could ship two
   different ORM versions).</li>
 </ul>
-<h3 id="fixed_11">Fixed</h3>
+<h3 id="fixed_13">Fixed</h3>
 <ul>
 <li>
 <p><strong>Three POST buttons could never be submitted.</strong> The Rebuild button on
@@ -1368,7 +2291,7 @@ missing half was the half that writes.</strong></p>
   only at write time trusts every row the process did not write. A refused link
   keeps its row and states why rather than silently losing its <code>href</code>, which
   would read as a UI bug and leave the bad URL in place.</p>
-<h3 id="added_14">Added</h3>
+<h3 id="added_15">Added</h3>
 <ul>
 <li><strong>Three tools that know something a browser tab does not: a certificate
   inspector, a false-positive explainer and a three-leg transaction tracer.</strong>
@@ -2066,7 +2989,7 @@ missing half was the half that writes.</strong></p>
   approval gate, and carries any existing ticket reference so a re-request
   updates a ticket instead of opening a second one for the same window.</li>
 </ul>
-<h3 id="fixed_12">Fixed</h3>
+<h3 id="fixed_14">Fixed</h3>
 <ul>
 <li>
 <p><strong>A standby that serves traffic is now restarted by an update, instead of
@@ -2431,7 +3354,7 @@ missing half was the half that writes.</strong></p>
 </li>
 </ul>
 <h2 id="193-2026-08-10">[1.9.3] - 2026-08-10</h2>
-<h3 id="added_15">Added</h3>
+<h3 id="added_16">Added</h3>
 <ul>
 <li><strong>The interface itself is translated — Spanish, German, French and Italian,
   chosen from your profile.</strong> Until now only the change <em>document</em> could change
@@ -2795,7 +3718,7 @@ missing half was the half that writes.</strong></p>
   block and every path are unchanged, so the <code>§</code> citations from <code>README.md</code>,
   <code>cli.md</code>, <code>safeguards.md</code> and this changelog still land where they did.</li>
 </ul>
-<h3 id="removed_1">Removed</h3>
+<h3 id="removed_2">Removed</h3>
 <ul>
 <li><strong>The appearance preset named after the vendor.</strong> <code>LOGIN_BG_PRESETS</code> shipped
   an entry keyed <code>fortinet</code>, labelled "Fortinet", in the vendor's corporate red
@@ -2944,7 +3867,7 @@ missing half was the half that writes.</strong></p>
   survived three project renames in the first place.</p>
 </li>
 </ul>
-<h3 id="fixed_13">Fixed</h3>
+<h3 id="fixed_15">Fixed</h3>
 <ul>
 <li><strong>The translation layer had never produced a single translation.</strong> It read
   <code>.content</code> off the provider result, whose field is <code>.text</code>, through a
@@ -3187,7 +4110,7 @@ missing half was the half that writes.</strong></p>
   configured platform.</li>
 </ul>
 <h2 id="192-2026-08-09">[1.9.2] - 2026-08-09</h2>
-<h3 id="fixed_14">Fixed</h3>
+<h3 id="fixed_16">Fixed</h3>
 <ul>
 <li><strong>The object editor no longer offers a free text box for a field that only
   accepts the name of an existing object.</strong> Twenty reference fields — eighteen
@@ -3201,7 +4124,7 @@ missing half was the half that writes.</strong></p>
   could not be proven were deliberately left unmapped — a wrong mapping would
   populate the dropdown from the wrong collection and reject valid values.</li>
 </ul>
-<h3 id="added_16">Added</h3>
+<h3 id="added_17">Added</h3>
 <ul>
 <li><strong>Reference fields are checked against the appliance before the write.</strong> Every
   operator-facing save and create resolves each submitted field to the cmdb
@@ -3214,7 +4137,7 @@ missing half was the half that writes.</strong></p>
   blocks a save; the affected fields come back as <code>unverified_refs</code>.</li>
 </ul>
 <h2 id="191-2026-08-09">[1.9.1] - 2026-08-09</h2>
-<h3 id="fixed_15">Fixed</h3>
+<h3 id="fixed_17">Fixed</h3>
 <ul>
 <li><strong>A migrated Custom Access Rule now carries the conditions it matches on.</strong>
   A rule was declared in the dependency map as a leaf, so a clone or a
@@ -3274,7 +4197,7 @@ missing half was the half that writes.</strong></p>
   such a duplicate visible at all.</p>
 </li>
 </ul>
-<h3 id="added_17">Added</h3>
+<h3 id="added_18">Added</h3>
 <ul>
 <li>
 <p><strong>The clone says what it cannot copy, before it writes.</strong> Three things are
@@ -3349,7 +4272,7 @@ missing half was the half that writes.</strong></p>
   single cost chip every other analysis on the page uses.</p>
 </li>
 </ul>
-<h3 id="fixed_16">Fixed</h3>
+<h3 id="fixed_18">Fixed</h3>
 <ul>
 <li>
 <p><strong>A carve-out on a shared profile reported failure for a change it had
@@ -3442,7 +4365,7 @@ missing half was the half that writes.</strong></p>
   it from. A device that cannot be read answers <em>unknown</em>, never <em>no one</em>.
   Enforced hardest at the push, which is where the leak physically happens.</li>
 </ul>
-<h3 id="added_18">Added</h3>
+<h3 id="added_19">Added</h3>
 <ul>
 <li>
 <p><strong>The results table shows the Web Protection Profile behind each policy, and
@@ -3536,7 +4459,7 @@ missing half was the half that writes.</strong></p>
   operator to another screen to push it.</li>
 </ul>
 <h2 id="180-2026-08-07">[1.8.0] - 2026-08-07</h2>
-<h3 id="fixed_17">Fixed</h3>
+<h3 id="fixed_19">Fixed</h3>
 <ul>
 <li>
 <p><strong>The AI Advisor's replies were saved and never shown.</strong> After Send, the
@@ -3562,7 +4485,7 @@ missing half was the half that writes.</strong></p>
   wiring the peer status poll.</p>
 </li>
 </ul>
-<h3 id="added_19">Added</h3>
+<h3 id="added_20">Added</h3>
 <ul>
 <li><strong>The chat streams, shows that it is working, and can be stopped.</strong> The
   reply now appears as it is generated, with an animated indicator, a live
@@ -3715,7 +4638,7 @@ durability problem solved. Anyone who sealed on 1.7.0 should re-run
 <code>satom execute seal recovery</code> on the primary and confirm the check reports the
 envelope as reachable. 1.7.0 stays published; this entry is the public record
 that it carries the defect.</p>
-<h3 id="fixed_18">Fixed</h3>
+<h3 id="fixed_20">Fixed</h3>
 <ul>
 <li><strong>The sealed recovery envelope was unreachable by every mechanism that
   carries it.</strong> <code>satom execute seal recovery</code> runs as root and wrote
@@ -3739,7 +4662,7 @@ that it carries the defect.</p>
   <code>reset theme</code> — the anti-lockout command. A guard now walks the AST of
   every CLI module rather than the two known call sites.</li>
 </ul>
-<h3 id="added_20">Added</h3>
+<h3 id="added_21">Added</h3>
 <ul>
 <li><strong>The operator manual now documents recovery custody.</strong> 1.7.0 shipped two CLI
   verbs, a diagnostic and a passphrase the operator must store outside the fleet,
@@ -3759,7 +4682,7 @@ that it carries the defect.</p>
   deleting it everywhere.</li>
 </ul>
 <h2 id="170-2026-08-07">[1.7.0] - 2026-08-07</h2>
-<h3 id="added_21">Added</h3>
+<h3 id="added_22">Added</h3>
 <ul>
 <li><code>tests/test_no_pem_literals.py</code> - no source file may carry a literal PEM
   private-key header. The publisher scans every blob of the sanitised mirror
@@ -3825,7 +4748,7 @@ that it carries the defect.</p>
   <code>advisor.configure</code>. See <code>docs/ai-advisor.md</code>.</p>
 </li>
 </ul>
-<h3 id="fixed_19">Fixed</h3>
+<h3 id="fixed_21">Fixed</h3>
 <ul>
 <li><strong>Nine probes answered "I could not tell" with a value that means "fine".</strong>
   Scoping resolved to the Global console and showed every product; a malformed
@@ -3896,7 +4819,7 @@ that it carries the defect.</p>
   frozen into an old bundle.</li>
 </ul>
 <h2 id="160-2026-08-07">[1.6.0] - 2026-08-07</h2>
-<h3 id="added_22">Added</h3>
+<h3 id="added_23">Added</h3>
 <ul>
 <li>Monitoring is provisioned from <strong>one seam</strong>. Saving an appliance now creates
   both its scrape targets and its threshold probes; until now <code>ensure_baseline</code>
@@ -3955,7 +4878,7 @@ that it carries the defect.</p>
   manual harder to read on the machines most operators use. Marketing pages
   stay narrow deliberately.</li>
 </ul>
-<h3 id="removed_2">Removed</h3>
+<h3 id="removed_3">Removed</h3>
 <ul>
 <li><strong>Lua Studio is no longer reachable from the FortiAuthenticator ADOM.</strong> It
   was in the ADOM's blueprint set, but <code>LuaScript.TARGETS</code> is FortiWeb and
@@ -3963,7 +4886,7 @@ that it carries the defect.</p>
   its API, so the page listed zero targets and zero devices. A page that can
   only fail is worse than one that is not offered.</li>
 </ul>
-<h3 id="fixed_20">Fixed</h3>
+<h3 id="fixed_22">Fixed</h3>
 <ul>
 <li><strong>The publication redaction rule was a roster, not a shape.</strong> It enumerated
   the appliances that existed the day it was written, so every unit onboarded
@@ -4056,7 +4979,7 @@ that it carries the defect.</p>
 </li>
 </ul>
 <h2 id="150-2026-08-06">[1.5.0] - 2026-08-06</h2>
-<h3 id="added_23">Added</h3>
+<h3 id="added_24">Added</h3>
 <ul>
 <li><strong>Settings &gt; Thresholds</strong> — a 22nd tab, and the first place in this product
   where a limit can be stated once instead of once per probe. Six scopes: the
@@ -4250,7 +5173,7 @@ that it carries the defect.</p>
   column holding anything else was left alone.</li>
 <li>Alert bodies now name the Thresholds scope that governs the finding.</li>
 </ul>
-<h3 id="fixed_21">Fixed</h3>
+<h3 id="fixed_23">Fixed</h3>
 <ul>
 <li><strong><code>satom diagnose code</code> now sees the artifact gunicorn actually caches.</strong> It
   compared the newest <code>.py</code> against each process start time, so a change that
@@ -4450,7 +5373,7 @@ that it carries the defect.</p>
   shadowing the tracked templates under <code>app/templates/backups/</code>.</li>
 </ul>
 <h2 id="141-2026-08-05">[1.4.1] - 2026-08-05</h2>
-<h3 id="fixed_22">Fixed</h3>
+<h3 id="fixed_24">Fixed</h3>
 <ul>
 <li>
 <p><strong>The installation page was answering a question about the appliances.</strong>
@@ -4485,7 +5408,7 @@ that it carries the defect.</p>
   column, which nothing else writes and which was empty on the whole fleet.</li>
 </ul>
 <h2 id="140-2026-08-05">[1.4.0] - 2026-08-05</h2>
-<h3 id="added_24">Added</h3>
+<h3 id="added_25">Added</h3>
 <ul>
 <li>
 <p><strong>SATOM health and Device health are two pages.</strong> Fleet health carried the
@@ -4757,7 +5680,7 @@ that it carries the defect.</p>
   [SATOM-LICENSE-TAGS]</p>
 </li>
 </ul>
-<h3 id="fixed_23">Fixed</h3>
+<h3 id="fixed_25">Fixed</h3>
 <ul>
 <li>
 <p><strong>A missing systemd unit is no longer reported as a failed one.</strong>
@@ -5124,7 +6047,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   published copy.</li>
 </ul>
 <h2 id="13-2026-08-02">[1.3] - 2026-08-02</h2>
-<h3 id="added_25">Added</h3>
+<h3 id="added_26">Added</h3>
 <ul>
 <li><strong>The manual is reachable from the sign-in screen.</strong> The login page offered a
   link to the API manual and nothing else. The person who cannot get in is
@@ -5502,7 +6425,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   does not render where it matters. The vendored copy was already in the tree
   and unused.</li>
 </ul>
-<h3 id="fixed_24">Fixed</h3>
+<h3 id="fixed_26">Fixed</h3>
 <ul>
 <li><strong><code>/docs/api</code> was public and served the document unredacted.</strong> The route
   needed no session and rendered <code>docs/api_v1.md</code> verbatim, so a management
@@ -5800,7 +6723,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   <code>Appliance</code>; the column is <code>maintenance</code>.</li>
 </ul>
 <h2 id="122-2026-07-27">[1.2.2] - 2026-07-27</h2>
-<h3 id="fixed_25">Fixed</h3>
+<h3 id="fixed_27">Fixed</h3>
 <ul>
 <li><strong><code>app/services/cert_service.py</code> did not parse.</strong> An <code>import os</code> had been
   placed above <code>from __future__ import annotations</code>, which is a hard
@@ -5811,7 +6734,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   Certificate Manager endpoints raised on import, and the cert alert degraded
   to reporting the import error instead of the certificate's real state.</li>
 </ul>
-<h3 id="added_26">Added</h3>
+<h3 id="added_27">Added</h3>
 <ul>
 <li><strong><code>tests/test_every_module_imports.py</code></strong> — every shipped module under <code>app/</code>
   and <code>deploy/</code> must compile, and the modules that callers import <em>lazily</em>
@@ -5823,7 +6746,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
 <h2 id="121-2026-07-27">[1.2.1] - 2026-07-27</h2>
 <p>Documentation release. No application code changed; the offline bundles were
 rebuilt so that the shipped tree matches the documentation set.</p>
-<h3 id="added_27">Added</h3>
+<h3 id="added_28">Added</h3>
 <ul>
 <li><strong><code>docs/safeguards.md</code></strong> — single catalog of every protection in the product:
   what it prevents, where it lives, and <strong>how to verify it is armed</strong>. Covers
@@ -5851,7 +6774,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
 <li><strong>Rule recorded in <code>docs/overview.md</code></strong>: a new safeguard lands in
   <code>docs/safeguards.md</code> in the same commit that introduces it.</li>
 </ul>
-<h3 id="fixed_26">Fixed</h3>
+<h3 id="fixed_28">Fixed</h3>
 <ul>
 <li>Offline bundle checksums used an absolute path, so <code>sha256sum -c</code> failed in
   the directory the file was downloaded to. Now basename-only, as the RHEL
@@ -5889,7 +6812,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
   with <code>from=</code>, <code>restrict</code> and a forced command that can only serve
   <code>rsync --sender</code> over the data directory.</li>
 </ul>
-<h3 id="added_28">Added</h3>
+<h3 id="added_29">Added</h3>
 <ul>
 <li><strong>ACME / Let's Encrypt certificate issuance</strong> with a DNS-provider catalog
   (30 providers seeded as data, editable by the operator) and per-provider
@@ -5915,7 +6838,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
   Manager</strong>. Vendor names (FortiWeb, FortiADC, FortiAnalyzer) are untouched:
   the product manages those appliances and has to name them.</li>
 </ul>
-<h3 id="fixed_27">Fixed</h3>
+<h3 id="fixed_29">Fixed</h3>
 <ul>
 <li><strong>Scheduler and git-publish were silently dead</strong> after the privilege drop:
   both guard scripts used <code>runuser</code>, which only works as root. The scheduler
@@ -5957,7 +6880,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
   server (appliance-side push config points at it), and <code>FM_*</code> env var names.</li>
 </ul>
 <h2 id="10-2026-07-14">[1.0] - 2026-07-14</h2>
-<h3 id="added_29">Added</h3>
+<h3 id="added_30">Added</h3>
 <ul>
 <li><strong>DNS Records management (IPAM/DDI)</strong>: "+DNS Records" CRUD in the DNS &amp; LB
   lookup tool, backed by pluggable providers (EfficientIP SOLIDserver,
@@ -5975,20 +6898,20 @@ rebuilt so that the shipped tree matches the documentation set.</p>
   bundles), generic package-manager support, public site (GitHub Pages),
   package registry artifacts.</li>
 </ul>
-<h3 id="fixed_28">Fixed</h3>
+<h3 id="fixed_30">Fixed</h3>
 <ul>
 <li>Upgrade-event timestamps now render in local time (<code>| localtime</code>) instead
   of raw UTC.</li>
 </ul>
 <h2 id="09-2026-07-13">[0.9] - 2026-07-13</h2>
-<h3 id="added_30">Added</h3>
+<h3 id="added_31">Added</h3>
 <ul>
 <li><strong>Node TLS + node-to-node encryption</strong>: internal CA, per-node leaf certs,
   mutually-authenticated Postgres replication, HTTPS peer probes, and
   "encryption in transit" monitoring cards (every badge backed by a live probe).</li>
 </ul>
 <h2 id="08-2026-07-12">[0.8] - 2026-07-12</h2>
-<h3 id="added_31">Added</h3>
+<h3 id="added_32">Added</h3>
 <ul>
 <li><strong>FortiAnalyzer</strong> integration (JSON-RPC, dual dialect) as a full ADOM, with
   its endpoints in the DB registry and a git source-of-truth harvest.</li>

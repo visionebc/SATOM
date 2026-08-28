@@ -82,7 +82,8 @@ dependency tree (<code>app/registry/dependencies.py</code>, <code>WEB_PROTECTION
 (docs.fortinet.com — a JS SPA, scraped via the internal Firecrawl,
 [[internal-firecrawl-lan]]) for GUI labels / menu sections / enum choices.</p>
 <p>The companion of <a href="server-policy.html"><code>server_policy.md</code></a>. Keep this current when the
-registry, <code>dependencies.py</code>, or the WPP specs (<code>app/ui/pages/wpp_specs.py</code>) change.</p>
+registry, <code>dependencies.py</code>, or the WAF specs (<code>app/registry/data/waf_specs.json</code>,
+registered by <code>app/services/waf_specs.py</code>) change.</p>
 </blockquote>
 <p>REST convention: a field's wire name is the SDK attribute with <code>_</code> → <code>-</code>
 (<code>signature_rule</code> → <code>signature-rule</code>). Every <strong>named object's mkey is <code>name</code></strong>;
@@ -103,7 +104,9 @@ rules…). 36 of its fields are such references; the rest are scalars/enums. In 
 7.6 GUI it renders as one big form of dropdowns grouped into the menu sections
 <strong>Standard Protection / Client-Side Security / Advanced Protection / API
 Protection / Application Delivery / Tracking</strong> — which is exactly how
-<code>ui/pages/wpp_view.WppViewDialog</code> lays it out.</p>
+<code>waf_specs.wpp_sections()</code> (data: <code>app/registry/data/waf_specs.json</code>) groups the
+form that <code>app/views/objedit.py</code> renders through
+<code>app/templates/objedit/editor.html</code>.</p>
 <p>The referenced objects nest their own rule-lists, <strong>up to six levels deep</strong>:</p>
 <pre><code>Web Protection Profile
 └─ API Gateway (api-management-policy → cmdb/waf/api-policy)
@@ -252,14 +255,16 @@ admin guide (per-module action sets vary; this is the union):</p>
 <hr>
 <h2 id="5-editing-model-how-the-app-exposes-all-of-this">5. Editing model (how the app exposes all of this)</h2>
 <p>The WPP is edited from <strong>Web Protection</strong> (main sidebar; CONFIG_WRITE + unlock) via
-<code>ui/pages/wpp_view.WppViewDialog</code> — the FortiWeb-style form. Each sub-policy is a
+the generic object editor — <code>app/views/objedit.py</code> (<code>edit</code>) rendering
+<code>app/templates/objedit/editor.html</code> — the FortiWeb-style form. Each sub-policy is a
 dropdown with <strong>Edit…</strong> (open the selected object) and <strong>＋</strong> (create a new one).
-Every referenced object — and every level below it — is a curated
-<code>objform.ObjectSpec</code> in <code>app/ui/pages/wpp_specs.py</code> (~160 specs), so the shared
-<code>objform.ObjectEditDialog</code> renders it like FortiWeb's own sub-page:</p>
+Every referenced object — and every level below it — is a curated <strong>kind</strong> in
+<code>app/registry/data/waf_specs.json</code> (166 kinds), merged into
+<code>fortiweb_field_schema.KIND_SPECS</code> at import by <code>app/services/waf_specs.py</code>, so the
+shared editor renders it like FortiWeb's own sub-page:</p>
 <ul>
 <li><strong>inline sub-tables</strong> → Add / Edit / Delete rows in place;</li>
-<li><strong>binding rule-lists</strong> → <code>SubTableSpec.ref_spec_key</code> gives the row an <strong>Edit
+<li><strong>binding rule-lists</strong> → <code>objform.subtables_for()</code> gives the row an <strong>Edit
   rule…</strong> button that opens the <em>named</em> rule (and its children);</li>
 <li><strong>reference fields</strong> to an object that has a spec get a <strong>✎</strong> (edit the selected)
   next to the <strong>＋</strong> (create), so existing deep references are reachable, not just
@@ -309,27 +314,27 @@ policy reused across the fleet). So:</p>
 </tr>
 <tr>
 <td>Curated edit specs (the ~160 forms)</td>
-<td><code>app/ui/pages/wpp_specs.py</code></td>
+<td><code>app/registry/data/waf_specs.json</code> (166 kinds) + <code>app/services/waf_specs.py</code> (registration)</td>
 </tr>
 <tr>
 <td>The FortiWeb-style WPP form</td>
-<td><code>app/ui/pages/wpp_view.py</code> (<code>WppViewDialog</code>)</td>
+<td><code>app/views/objedit.py</code> (<code>edit</code>) + <code>app/templates/objedit/editor.html</code></td>
 </tr>
 <tr>
-<td>The shared object-edit modal + engine</td>
-<td><code>app/ui/pages/objform.py</code> (<code>ObjectEditDialog</code>, <code>SubTableSpec.ref_spec_key</code>, ref <code>✎</code>)</td>
+<td>The shared object-edit engine</td>
+<td><code>app/services/objform.py</code> + <code>app/services/fortiweb_field_schema.py</code> (<code>KIND_SPECS</code>, <code>build_groups</code>); the ref <code>✎</code> comes from <code>objedit._enable_ref_actions</code></td>
 </tr>
 <tr>
 <td>Web Protection page (device → WPP → form)</td>
-<td><code>app/ui/pages/web_protection_page.py</code></td>
+<td><code>app/views/web_protection.py</code> + <code>app/templates/web_protection/overview.html</code> (left menu: <code>app/services/wp_menu.py</code>)</td>
 </tr>
 <tr>
 <td>CRUD with snapshot + audit + dry-run</td>
-<td><code>app/services/operations.py</code> (<code>FortiWebOps</code>)</td>
+<td><code>app/services/fortiweb_ops.py</code> (<code>FortiWebOps</code>)</td>
 </tr>
 <tr>
-<td>Specs regression guard</td>
-<td><code>tests/test_wpp_specs.py</code></td>
+<td>Specs / editor regression guard</td>
+<td><code>tests/test_objform.py</code>, <code>tests/test_objedit.py</code>, <code>tests/test_objedit_blank_forms.py</code></td>
 </tr>
 </tbody>
 </table>
@@ -341,9 +346,9 @@ policy reused across the fleet). So:</p>
 <li><strong>Registry:</strong> every one of the 136 <code>WEB_PROTECTION_PROFILE</code> tree nodes resolves to
   an <code>endpoints.yaml</code> endpoint (<code>dependencies.coverage</code> → 136/136, 0 missing).</li>
 <li><strong>Specs:</strong> all 36 sub-policies + their named rules + sub-tables + leaf rows are
-  curated (<code>wpp_specs.WPP_SPECS</code>, ~160 <code>ObjectSpec</code>); <code>tests/test_wpp_specs.py</code>
-  asserts every endpoint / <code>row_spec_key</code> / <code>ref_spec_key</code> / ref <code>source</code> resolves,
-  and that the API-Gateway chain is editable <strong>6 levels deep</strong>.</li>
+  curated (<code>app/registry/data/waf_specs.json</code>, 166 kinds); <code>tests/test_objform.py</code>
+  and <code>tests/test_objedit.py</code> assert that every collection, sub-table segment and
+  reference resolves, and that the API-Gateway chain is editable <strong>6 levels deep</strong>.</li>
 <li><strong>SDK:</strong> field/wire names taken verbatim from the marshmallow schemas (191
   registry waf endpoints parsed). 9 registry-only objects have <strong>no SDK schema</strong>
   (<code>advanced-bot-protection</code>, <code>bot-detection-policy</code>, <code>client-side-protection</code>,

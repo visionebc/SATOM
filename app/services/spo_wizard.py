@@ -87,6 +87,18 @@ class SpoPlan:
     #: run, not by reading the log afterwards.
     ipam_backend: str = ""
     dns_backend: str = ""
+    #: What the OPERATOR picked ("" = Auto), kept apart from what the plan
+    #: RESOLVED to. Folding them would make "Auto happened to land on this
+    #: one" indistinguishable from "somebody chose this one", and only the
+    #: second survives an edit to the registry.
+    ipam_pick: str = ""
+    dns_pick: str = ""
+    #: The resolved row ids. Recorded on the plan so ``apply_plan`` acts on
+    #: the backend the PREVIEW named instead of resolving a second time: two
+    #: resolutions in one request is how the summary and the write end up
+    #: describing different systems.
+    ipam_backend_id: int | None = None
+    dns_backend_id: int | None = None
     line_source: str = "inferred"
     blockers: list = field(default_factory=list)
     warnings: list = field(default_factory=list)
@@ -110,6 +122,9 @@ class SpoPlan:
             "wpp_template_name": self.wpp_template_name,
             "backends": self.backends, "ok": self.ok,
             "ipam_backend": self.ipam_backend, "dns_backend": self.dns_backend,
+            "ipam_pick": self.ipam_pick, "dns_pick": self.dns_pick,
+            "ipam_backend_id": self.ipam_backend_id,
+            "dns_backend_id": self.dns_backend_id,
             "blockers": [b.as_dict() for b in self.blockers],
             "warnings": list(self.warnings),
         }
@@ -122,6 +137,7 @@ def build_plan(appliance, *, line: str, web_address: str,
                segment_name: str = "", department: str = "", hostname: str = "",
                use_ipam: bool = False, address: str = "",
                issue_cert: bool = False, backends=None,
+               ipam_backend_id: object = None, dns_backend_id: object = None,
                product: str = "") -> SpoPlan:
     """Everything the run will do, and every reason it cannot. Writes nothing."""
     product = product or getattr(appliance, "kind", "") or "fortiweb"
@@ -136,6 +152,8 @@ def build_plan(appliance, *, line: str, web_address: str,
                    use_ipam=bool(use_ipam), address=(address or "").strip(),
                    issue_cert=bool(issue_cert),
                    department=(department or "").strip(),
+                   ipam_pick=str(ipam_backend_id or "").strip(),
+                   dns_pick=str(dns_backend_id or "").strip(),
                    backends=list(backends or []))
 
     if not web_address:
@@ -230,11 +248,20 @@ def build_plan(appliance, *, line: str, web_address: str,
                            "line profile nor the segment says which pool to "
                            "take the address from"))
         from . import dns_providers as _dp
-        res = _dp.resolve_ipam(plan.pool)
+        res = _dp.choose("ipam", plan.pool, plan.ipam_pick)
         if res.code == _dp.NO_BACKEND:
             plan.blockers.append(Blocker(
                 "no_ipam_provider", "IPAM allocation was requested but no "
                                     "backend carries the IPAM role"))
+        elif plan.ipam_pick and not res.ok:
+            # A rejected CHOICE is its own refusal. Folding it into
+            # "not resolved" would send an operator who named a backend off
+            # to fix the scope rules, when the fix is to that one row (or to
+            # the choice itself).
+            plan.blockers.append(Blocker(
+                "ipam_backend_rejected",
+                f"the chosen IPAM backend cannot reserve this address: "
+                f"{res.detail}"))
         elif not res.ok:
             # A pool no backend claims, or two claiming it equally. Reported
             # under its own code and NOT folded into "none configured": the
@@ -246,6 +273,7 @@ def build_plan(appliance, *, line: str, web_address: str,
                 f"IPAM allocation was requested but {res.detail}"))
         else:
             plan.ipam_backend = res.backend.name
+            plan.ipam_backend_id = res.backend.id
             caps = _dp.capabilities_of(res.backend)
             if caps is None:
                 plan.blockers.append(Blocker(
@@ -261,6 +289,11 @@ def build_plan(appliance, *, line: str, web_address: str,
         plan.blockers.append(Blocker(
             "no_address", "no VIP address given and IPAM allocation was not "
                           "requested"))
+    if plan.ipam_pick and not plan.use_ipam:
+        # A control that silently does nothing reads as a control that worked.
+        plan.warnings.append(
+            "an IPAM backend was chosen but 'Reserve the VIP from IPAM' is "
+            "off, so no address will be reserved from it")
 
     # -- DNS --------------------------------------------------------------
     # Same honesty rule as the provisioning DNS step (§130): a configured
@@ -268,13 +301,18 @@ def build_plan(appliance, *, line: str, web_address: str,
     # refusal — not a step that reports success and publishes nothing.
     if plan.hostname:
         from . import dns_providers as _dp
-        res = _dp.resolve_dns(plan.hostname)
+        res = _dp.choose("dns", plan.hostname, plan.dns_pick)
         if res.code == _dp.NO_BACKEND:
             # A fleet with no DDI at all is a supported install: a WARNING,
             # and the policy still gets built.
             plan.warnings.append(
                 f"no backend carries the DNS role — {plan.hostname} will NOT "
                 "be published; create the record by hand")
+        elif plan.dns_pick and not res.ok:
+            plan.blockers.append(Blocker(
+                "dns_backend_rejected",
+                f"the chosen DNS backend cannot publish {plan.hostname}: "
+                f"{res.detail}"))
         elif not res.ok:
             # Backends EXIST and none of them covers this name (or two cover
             # it equally). That is a misconfiguration, not a deployment
@@ -286,6 +324,7 @@ def build_plan(appliance, *, line: str, web_address: str,
                 f"{res.detail}"))
         else:
             plan.dns_backend = res.backend.name
+            plan.dns_backend_id = res.backend.id
             caps = _dp.capabilities_of(res.backend)
             if caps is None:
                 plan.blockers.append(Blocker(
@@ -299,6 +338,10 @@ def build_plan(appliance, *, line: str, web_address: str,
                     f"{res.backend.name} ({caps.label}) cannot create DNS "
                     f"records, but this policy asks for the hostname "
                     f"{plan.hostname}"))
+    elif plan.dns_pick:
+        plan.warnings.append(
+            "a DNS backend was chosen but no hostname was given, so nothing "
+            "will be published")
 
     # -- certificate ------------------------------------------------------
     plan.cert_class = lplan.cert_class or ""
@@ -442,7 +485,8 @@ def apply_plan(appliance, plan: SpoPlan, *, dry_run: bool = True,
         else:
             try:
                 addr = dns_providers.allocate_address(
-                    hostname=plan.hostname or plan.web_address, pool=plan.pool)
+                    hostname=plan.hostname or plan.web_address, pool=plan.pool,
+                    backend_id=plan.ipam_backend_id)
             except Exception as exc:  # noqa: BLE001
                 steps.append(RunStep(STEP_ADDRESS, "Reserve an address",
                                      ok=False, detail=str(exc)))
@@ -465,8 +509,13 @@ def apply_plan(appliance, plan: SpoPlan, *, dry_run: bool = True,
         # blocked plan is never applied — so reaching this point with an
         # unresolvable name is not possible without also having bypassed the
         # blocker, which apply_plan refuses to do.
-        dns_res = dns_providers.resolve_dns(plan.hostname)
-        if dns_res.code == dns_providers.NO_BACKEND:
+        # NOT resolved again here. ``build_plan`` already chose, honouring
+        # the operator's pick, and recorded the row id; resolving a second
+        # time could answer differently (the registry is editable between the
+        # preview and the press) and would write to a backend the summary
+        # never named. ``None`` therefore means exactly one thing: no backend
+        # carried the DNS role when the plan was built.
+        if plan.dns_backend_id is None:
             # Said plainly, and it is NOT recorded as a creation.
             steps.append(RunStep(
                 STEP_DNS, "Publish the hostname",
@@ -477,11 +526,13 @@ def apply_plan(appliance, plan: SpoPlan, *, dry_run: bool = True,
             steps.append(RunStep(
                 STEP_DNS, "Publish the hostname",
                 detail=f"would create {plan.hostname} A {vip}"
-                       + (f" via {dns_res.backend.name}" if dns_res.ok else "")))
+                       + (f" via {plan.dns_backend}" if plan.dns_backend
+                          else "")))
         else:
             try:
                 rec = dns_providers.create_record(
-                    name=plan.hostname, rtype="A", value=vip)
+                    name=plan.hostname, rtype="A", value=vip,
+                    backend_id=plan.dns_backend_id)
                 dns_record_id = str(rec.id or "")
                 dns_backend = rec.backend_id
                 steps.append(RunStep(STEP_DNS, "Publish the hostname",

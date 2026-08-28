@@ -40,6 +40,15 @@ NO_BACKEND = "no_backend"        # nothing enabled carries the role at all
 NO_MATCH = "no_match"            # backends exist, none claims this zone/pool
 AMBIGUOUS = "ambiguous"          # two equal claims — the operator must choose
 
+#: Refusals that only an EXPLICIT pick can produce. Kept apart from the three
+#: above because they are answers to a different question — not "what does the
+#: configuration imply" but "can the thing you named actually do this" — and
+#: every one of them has its own fix.
+UNKNOWN = "backend_unknown"            # the picked row is not in the registry
+DISABLED = "backend_disabled"          # picked, but switched off
+WRONG_ROLE = "backend_wrong_role"      # picked, but never given that role
+OUT_OF_SCOPE = "backend_out_of_scope"  # picked, but its scope excludes this
+
 
 @dataclass
 class Resolution:
@@ -100,6 +109,22 @@ def zone_specificity(declared: str, query: str) -> int:
     if q == d or q.endswith("." + d):
         return d.count(".") + 1
     return -1
+
+
+def pool_matches(declared: list, query: str) -> bool:
+    """Does a declared pool list claim ``query``? The ONE author of that test.
+
+    Exact and CASE-PRESERVING on both sides. ``split_list`` deliberately
+    refuses to fold pool identifiers, because a provider-native id may differ
+    only in case; a matcher that lowered the query while the store preserved
+    the declaration could never match a pool with a capital letter in it, and
+    that is exactly what this function replaced (a backend scoped to
+    ``Prod-DMZ`` resolved to NO_MATCH for the pool ``Prod-DMZ``).
+    """
+    q = (query or "").strip()
+    if not q:
+        return False
+    return q in [str(d).strip() for d in (declared or [])]
 
 
 def _pick(cands: list[tuple[int, object]], what: str, query: str) -> Resolution:
@@ -165,14 +190,14 @@ def resolve_ipam(pool: str = "") -> Resolution:
         return Resolution(code=NO_BACKEND, detail=(
             "no enabled backend carries the IPAM role (Settings -> DNS "
             "Records)"))
-    query = (pool or "").strip().lower()
+    query = (pool or "").strip()
     cands: list[tuple[int, object]] = []
     for row in rows:
         declared = row.pool_list()
         if not declared:
             cands.append((-1, row))
             continue
-        if query and query in declared:
+        if pool_matches(declared, query):
             cands.append((1, row))
     return _pick(cands, "IPAM", pool or "(no pool given)")
 
@@ -188,3 +213,65 @@ def backend_by_id(backend_id: object):
         return DnsBackend.query.get(bid)
     except Exception:  # noqa: BLE001
         return None
+
+
+def claims(row, role: str, query: str) -> bool:
+    """Does this row's declared scope cover ``query`` for ``role``?
+
+    Reads the scope the SAME way ``resolve_dns`` / ``resolve_ipam`` do —
+    empty means catch-all, zones by specificity, pools exactly — instead of
+    re-deriving it, so an explicit pick and an automatic resolution can never
+    disagree about what one row claims.
+    """
+    if role == "ipam":
+        declared = row.pool_list()
+        return True if not declared else pool_matches(declared, query)
+    declared = row.zone_list()
+    if not declared:
+        return True
+    return max(zone_specificity(d, query) for d in declared) >= 0
+
+
+def choose(role: str, query: str = "", backend_id: object = None) -> Resolution:
+    """Resolve ``role`` for ``query``, honouring the operator's explicit pick.
+
+    An empty ``backend_id`` means AUTO and is byte-for-byte ``resolve_*`` —
+    the default behaviour of an install that never picks anything is
+    unchanged, which is what lets the selector be additive.
+
+    A pick is an operator declaration, and it is CHECKED against the same
+    rules rather than trusted: the row must exist, be enabled, carry the role
+    and claim the query.
+
+    **An invalid pick is refused, never quietly downgraded to AUTO.** A
+    fallback would hand the work to a backend nobody named while the page
+    still showed the one that was chosen — silent substitution, which is the
+    single failure this module exists to prevent. It is also why the pick
+    cannot widen a scope: the scope is an earlier declaration by the same
+    operator, and the wizard is not the place to overrule it by accident.
+    """
+    auto = resolve_ipam if role == "ipam" else resolve_dns
+    if backend_id in (None, "", 0, "0"):
+        return auto(query)
+    row = backend_by_id(backend_id)
+    if row is None:
+        return Resolution(code=UNKNOWN, detail=(
+            f"backend id {backend_id} is not in the registry — it was most "
+            "likely deleted after this page was opened; reload and choose "
+            "again"))
+    if not row.enabled:
+        return Resolution(code=DISABLED, detail=(
+            f"{row.name} is disabled (Settings -> DNS Records)"))
+    if (role == "ipam" and not row.role_ipam) or \
+       (role == "dns" and not row.role_dns):
+        return Resolution(code=WRONG_ROLE, detail=(
+            f"{row.name} does not carry the {role.upper()} role — give it "
+            f"that role in Settings -> DNS Records, or choose another "
+            f"backend"))
+    if not claims(row, role, query):
+        declared = row.pool_list() if role == "ipam" else row.zone_list()
+        return Resolution(code=OUT_OF_SCOPE, detail=(
+            f"{row.name} was chosen for {query or '(nothing)'!r} but its "
+            f"declared scope is {', '.join(declared)} — widen that scope in "
+            f"Settings -> DNS Records, or choose a backend that claims it"))
+    return Resolution(backend=row)

@@ -6,6 +6,45 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — the SPO wizard lets the operator choose the backend (2026-08-28)
+
+The registry gained N rows the same day, and the wizard still resolved in
+silence: whichever row the declared scopes happened to select did the work,
+and the page never showed the list.
+
+- **Added** an **IPAM backend** and a **DNS backend** selector to
+  `Workspace → New Server Policy`. Both default to **Auto**, which is
+  byte-for-byte the previous behaviour, so an install that never picks
+  anything is unchanged. Each option carries the provider and the declared
+  scope, because a name is not what decides which backend answers.
+- **Added** `resolver.choose(role, query, backend_id)` — the single author of
+  "which backend", pick or no pick. A pick is **validated, not trusted**: the
+  row must exist, be enabled, carry the role and claim the query, and each
+  failure has its own code (`backend_unknown`, `backend_disabled`,
+  `backend_wrong_role`, `backend_out_of_scope`) because each has a different
+  fix.
+- **Changed** an invalid pick is **refused, never downgraded to Auto**. A
+  fallback would run the work on a backend nobody named while the page still
+  showed the one that was chosen.
+- **Changed** `apply_plan` acts on the backend ids the **plan recorded**
+  instead of resolving a second time — the registry is editable between
+  Preview and Apply, and a second answer could send the address and the record
+  to systems the summary never named. `allocate_address` and `create_record`
+  gained a validated `backend_id`.
+- **Added** two blockers, `ipam_backend_rejected` / `dns_backend_rejected`,
+  kept apart from the scope-level `*_not_resolved`: one sends the operator to
+  the row they named, the other to the scope rules.
+- **Added** warnings when a chosen backend cannot do anything (IPAM picked
+  with the reserve box off; DNS picked with no hostname). A control that
+  silently does nothing reads as a control that worked.
+- **Fixed** `resolve_ipam` lowered the pool query while `split_list`
+  deliberately preserved the declaration, so a pool named `Prod-DMZ` could
+  never be matched. Pool matching now has one author, `pool_matches`, exact
+  and case-preserving on both sides. Zones still fold case; the asymmetry is
+  the point.
+- See safeguards §137.
+
+
 ### Added — N DNS/IPAM backends with optional roles and scopes (2026-08-28)
 
 `Settings → DNS Records` was one global provider. It is now a registry: add,

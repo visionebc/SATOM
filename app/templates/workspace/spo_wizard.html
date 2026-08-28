@@ -89,6 +89,24 @@
       </div>
     </div>
 
+    <div class="row g-3 mt-1">
+      <div class="col-md-3">
+        <label class="form-label" style="font-size:12px;">{{ _('IPAM backend (the address)') }}</label>
+        <select class="form-select form-select-sm" id="w-ipam-backend"></select>
+        <div id="w-ipam-note" class="text-muted mt-1" style="font-size:11.5px;"></div>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label" style="font-size:12px;">{{ _('DNS backend (the hostname)') }}</label>
+        <select class="form-select form-select-sm" id="w-dns-backend"></select>
+        <div id="w-dns-note" class="text-muted mt-1" style="font-size:11.5px;"></div>
+      </div>
+      <div class="col-md-6 d-flex align-items-end">
+        <div class="text-muted" style="font-size:11.5px;">
+          {{ _('Auto follows the scopes declared in Settings → DNS Records. Choosing a backend overrides that choice only — it never widens a scope, so a backend that does not claim this pool or zone is refused rather than used.') }}
+        </div>
+      </div>
+    </div>
+
     <div class="mt-3 d-flex gap-2">
       <button class="btn btn-fw-outline btn-sm" id="w-preview">
         <i class="bi bi-eye me-1"></i>{{ _('Preview (writes nothing)') }}
@@ -114,6 +132,7 @@
 // The CSP forbids inline handlers, so everything binds here.
 (function () {
   const PLANS = {{ line_plans | tojson }};
+  const BACKENDS = {{ dns_backends | tojson }};
   const BASE = "{{ url_for('spo_wizard.plan', appliance_id=appliance.id) }}";
   const APPLY = "{{ url_for('spo_wizard.apply', appliance_id=appliance.id) }}";
   const CSRF = "{{ csrf_token() }}";
@@ -199,6 +218,60 @@
       : 'this line declares no certificate class';
   }
 
+  // The two selectors are built by ONE function. Two copies differing only
+  // in a role key is how the IPAM list and the DNS list end up disagreeing
+  // about what the registry contains.
+  function fillBackends(selId, noteId, roleKey, scopeKey) {
+    const sel = $(selId);
+    const rows = BACKENDS.filter(function (b) { return b[roleKey]; });
+    sel.innerHTML = '';
+    const auto = document.createElement('option');
+    auto.value = '';
+    auto.textContent = rows.length
+      ? 'Auto \u2014 resolve from the declared scope'
+      : 'no backend carries this role';
+    sel.appendChild(auto);
+    rows.forEach(function (b) {
+      const o = document.createElement('option');
+      o.value = String(b.id);
+      const scope = b[scopeKey] || [];
+      // The scope is ON the option. Two backends are otherwise told apart
+      // only by a name, and the name is not what decides which one answers.
+      o.textContent = b.name + '  \u00b7  ' + (b.provider_label || b.provider) +
+                      '  \u00b7  ' + (scope.length ? scope.join(', ') : 'any (catch-all)');
+      sel.appendChild(o);
+    });
+    sel.disabled = rows.length === 0;
+    describeBackend(selId, noteId, scopeKey, rows);
+  }
+
+  function describeBackend(selId, noteId, scopeKey, rows) {
+    const note = $(noteId);
+    const val = $(selId).value;
+    if (!rows.length) {
+      note.textContent = 'none configured \u2014 Settings \u2192 DNS Records';
+      return;
+    }
+    if (!val) {
+      note.textContent = rows.length + ' available; Auto takes the most '
+                       + 'specific claim and refuses a tie';
+      return;
+    }
+    const row = rows.filter(function (b) { return String(b.id) === val; })[0];
+    if (!row) { note.textContent = ''; return; }
+    const scope = row[scopeKey] || [];
+    note.textContent = (scope.length ? 'claims ' + scope.join(', ')
+                                     : 'catch-all \u2014 claims anything')
+                     + '  \u00b7  last test: ' + (row.last_status || 'unknown');
+  }
+
+  function refreshBackendNotes() {
+    describeBackend('w-ipam-backend', 'w-ipam-note', 'pools',
+                    BACKENDS.filter(function (b) { return b.role_ipam; }));
+    describeBackend('w-dns-backend', 'w-dns-note', 'zones',
+                    BACKENDS.filter(function (b) { return b.role_dns; }));
+  }
+
   function backends() {
     return $('w-backends').value.split('\n').map(function (l) {
       const t = l.trim();
@@ -218,6 +291,8 @@
       use_ipam: $('w-use-ipam').checked,
       address: $('w-vip').value,
       issue_cert: $('w-cert').checked,
+      ipam_backend_id: $('w-ipam-backend').value,
+      dns_backend_id: $('w-dns-backend').value,
       backends: backends()
     }, extra || {});
   }
@@ -247,6 +322,21 @@
               (plan.department ? ' &middot; building for <strong>' + plan.department + '</strong>' : '') +
               (plan.pool ? ' &middot; pool ' + plan.pool : '') +
               '</div>';
+    }
+    // Printed for every plan that resolved one, chosen or not: "an address
+    // will be reserved" is half a sentence once several systems can reserve
+    // it, and the operator has to see WHICH before pressing Apply, not by
+    // reading the log afterwards.
+    if (plan.ipam_backend || plan.dns_backend) {
+      html += '<div class="mb-2" style="font-size:12.5px;">' +
+        (plan.ipam_backend
+          ? '<span class="fw-badge fw-badge-info">IPAM</span> ' +
+            plan.ipam_backend + (plan.ipam_pick ? ' (chosen)' : ' (auto)') +
+            '&nbsp;&nbsp;' : '') +
+        (plan.dns_backend
+          ? '<span class="fw-badge fw-badge-info">DNS</span> ' +
+            plan.dns_backend + (plan.dns_pick ? ' (chosen)' : ' (auto)') : '') +
+        '</div>';
     }
     if (plan.blockers.length) {
       html += '<div class="mb-2"><strong>Blocked</strong><ul style="font-size:12.5px;">';
@@ -297,6 +387,8 @@
     $('w-apply').disabled = !plan.ok;
   }
 
+  $('w-ipam-backend').addEventListener('change', refreshBackendNotes);
+  $('w-dns-backend').addEventListener('change', refreshBackendNotes);
   $('w-line').addEventListener('change', refreshLine);
   // Only the segment list is rebuilt: changing the department must not
   // reset the department picker it was just set on.
@@ -314,6 +406,8 @@
       $('w-apply').disabled = true;
     });
   });
+  fillBackends('w-ipam-backend', 'w-ipam-note', 'role_ipam', 'pools');
+  fillBackends('w-dns-backend', 'w-dns-note', 'role_dns', 'zones');
   refreshLine();
 })();
 </script>

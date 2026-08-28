@@ -41,9 +41,11 @@ from .none import NoneProvider
 from .efficientip import EfficientIPProvider
 from .phpipam import PhpIpamProvider
 from .netbox import NetBoxProvider
-from .resolver import (AMBIGUOUS, NO_BACKEND, NO_MATCH, Resolution,
-                       backend_by_id, enabled_backends, resolve_dns,
-                       resolve_ipam, zone_specificity)
+from .resolver import (AMBIGUOUS, DISABLED, NO_BACKEND, NO_MATCH,
+                       OUT_OF_SCOPE, UNKNOWN, WRONG_ROLE, Resolution,
+                       backend_by_id, choose, claims, enabled_backends,
+                       pool_matches, resolve_dns, resolve_ipam,
+                       zone_specificity)
 
 PROVIDERS: dict[str, type[DnsProvider]] = {
     "none": NoneProvider,
@@ -150,13 +152,18 @@ def dns_capabilities(zone: str = "") -> Capabilities | None:
 
 # ------------------------------------------------- module-level operations
 
-def allocate_address(hostname: str = "", pool: str = "") -> Address:
+def allocate_address(hostname: str = "", pool: str = "",
+                     backend_id: object = None) -> Address:
     """Take the next free address out of ``pool``.
+
+    ``backend_id`` is the operator's explicit choice and is validated, not
+    trusted — see :func:`resolver.choose`. Empty means AUTO.
 
     The returned :class:`Address` carries ``backend_id`` — the caller must
     persist it, because it is the only handle that makes the release correct.
     """
-    row = _require(resolve_ipam(pool), f"an address out of pool {pool or '(default)'!r}")
+    row = _require(choose("ipam", pool, backend_id),
+                   f"an address out of pool {pool or '(default)'!r}")
     addr = row.instance().allocate_address(hostname=hostname, pool=pool)
     addr.backend_id = row.id
     return addr
@@ -185,14 +192,19 @@ def release_address(address: str, ref: str = "", backend_id: object = None,
 
 def create_record(name: str, rtype: str = "A", value: str = "",
                   zone: str = "", view: str = "",
-                  ttl: int | None = None) -> DnsRecord:
+                  ttl: int | None = None,
+                  backend_id: object = None) -> DnsRecord:
     """Publish one resource record. Routed on the zone, or on the FQDN itself.
+
+    ``backend_id`` is the operator's explicit choice, validated by
+    :func:`resolver.choose`. Empty means AUTO (route on the scope).
 
     Routing on the name when no zone is given is what makes scopes usable:
     ``www.example.com`` finds the backend that declared ``example.com``
     without the caller having to know how the zone was cut.
     """
-    row = _require(resolve_dns(zone or name), f"the record {name!r}")
+    row = _require(choose("dns", zone or name, backend_id),
+                   f"the record {name!r}")
     rec = row.instance().create_record(DnsRecord(
         name=(name or "").rstrip("."), type=(rtype or "A").upper(),
         value=value, zone=zone, view=view, ttl=ttl))
@@ -228,8 +240,9 @@ __all__ = [
     "Address", "Capabilities", "DnsProvider", "DnsRecord", "ProviderError",
     "PROVIDERS", "SELECTABLE", "FIELD_SPECS", "SECRET_LABELS",
     "Resolution", "AMBIGUOUS", "NO_BACKEND", "NO_MATCH",
+    "UNKNOWN", "DISABLED", "WRONG_ROLE", "OUT_OF_SCOPE",
     "resolve_dns", "resolve_ipam", "backend_by_id", "enabled_backends",
-    "zone_specificity",
+    "zone_specificity", "choose", "claims", "pool_matches",
     "provider_for_test", "capabilities_of",
     "ipam_capabilities", "dns_capabilities",
     "allocate_address", "release_address", "create_record", "delete_record",

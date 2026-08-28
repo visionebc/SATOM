@@ -27,6 +27,8 @@ from app.services import settings_store as store
 from app.services import spo_wizard as wiz
 from app.services.dns_providers import Address, DnsRecord
 
+from tests.conftest import admin_user_id, login
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 _SEGMENTS = [
@@ -71,8 +73,12 @@ def _res(backend=None, code="", detail="unresolved"):
 def _resolves(monkeypatch, backend=None, caps=None):
     """Point both resolvers at one working backend."""
     row = backend or _Backend(caps=caps if caps is not None else _caps())
-    monkeypatch.setattr(dp, "resolve_ipam", lambda pool="": _res(backend=row))
-    monkeypatch.setattr(dp, "resolve_dns", lambda zone="": _res(backend=row))
+    # ``choose`` is the seam: it is what ``build_plan`` calls, and it is the
+    # one author of "which backend", pick or no pick. Stubbing ``resolve_*``
+    # here would stub a function the wizard no longer reaches.
+    monkeypatch.setattr(dp, "choose",
+                        lambda role="", query="", backend_id=None:
+                        _res(backend=row))
     monkeypatch.setattr(dp, "capabilities_of", lambda r: r._caps)
     return row
 
@@ -390,10 +396,12 @@ def test_two_backends_claiming_the_same_pool_are_refused_not_ranked(app, env,
     make impossible — the address would come out of whichever row sorted
     first, which is a network nobody chose.
     """
-    monkeypatch.setattr(dp, "resolve_ipam", lambda pool="": _res(
-        code=dp.AMBIGUOUS,
-        detail="2 backends claim this pool with the same scope and the same "
-               "priority (ddi-a, ddi-b)"))
+    monkeypatch.setattr(dp, "choose", lambda role="", query="",
+                        backend_id=None: _res(
+                            code=dp.AMBIGUOUS,
+                            detail="2 backends claim this pool with the same "
+                                   "scope and the same priority (ddi-a, "
+                                   "ddi-b)"))
     plan = _plan(app, env, use_ipam=True)
     codes = _codes(plan)
     assert "ipam_not_resolved" in codes
@@ -411,9 +419,11 @@ def test_a_hostname_no_dns_backend_claims_blocks_rather_than_warning(app, env,
     misconfiguration, and warning about it would let a run finish green having
     published nothing the operator plainly expected to be published.
     """
-    monkeypatch.setattr(dp, "resolve_dns", lambda zone="": _res(
-        code=dp.NO_MATCH,
-        detail="no enabled DNS backend claims 'shop.example.com'"))
+    monkeypatch.setattr(dp, "choose", lambda role="", query="",
+                        backend_id=None: _res(
+                            code=dp.NO_MATCH,
+                            detail="no enabled DNS backend claims "
+                                   "'shop.example.com'"))
     plan = _plan(app, env, address="198.51.100.50", hostname="shop.example.com")
     assert "dns_not_resolved" in _codes(plan)
     assert not plan.ok
@@ -439,8 +449,8 @@ def test_a_hostname_with_a_read_only_dns_backend_is_refused(app, env,
 
 
 def test_no_dns_provider_warns_and_publishes_nothing(app, env, monkeypatch):
-    monkeypatch.setattr(dp, "resolve_dns",
-                        lambda zone="": _res(code=dp.NO_BACKEND))
+    monkeypatch.setattr(dp, "choose", lambda role="", query="",
+                        backend_id=None: _res(code=dp.NO_BACKEND))
     plan = _plan(app, env, address="198.51.100.50", hostname="shop.example.com")
     assert plan.ok, _codes(plan)
     assert any("will NOT be published" in w for w in plan.warnings)
@@ -635,3 +645,263 @@ def test_the_pages_own_script_carries_the_csp_nonce(app, client, env):
                and 'type="application/json"' not in m.group(1)
                and served.group(1) not in m.group(1)]
     assert not blocked, f"the browser drops these: {blocked}"
+
+
+# ---------------------------------------------------------------------------
+# 9. the operator CHOOSES the backend (2026-08-28)
+#
+# The registry became N rows on 2026-08-28 and the wizard still resolved
+# silently: whichever row the scopes happened to select did the work, and the
+# page never offered the list. These guards are about the CHOICE — that it
+# reaches the plan, that an impossible one is refused rather than downgraded
+# to Auto, that a choice which does nothing SAYS so, and that Apply acts on
+# the backend Preview named instead of resolving a second time.
+# ---------------------------------------------------------------------------
+def _pick_env(monkeypatch, rows):
+    """Point the wizard at REAL rows and the REAL chooser.
+
+    The ``env`` fixture stubs ``choose`` so the other guards do not need a
+    registry; a guard about choosing has to run the thing it is about.
+    """
+    from app.services.dns_providers import resolver as _rz
+    from app.models_dnsbackend import DnsBackend
+    for kw in rows:
+        row = DnsBackend(**{k: v for k, v in kw.items()})
+        db.session.add(row)
+    db.session.commit()
+    monkeypatch.setattr(dp, "choose", _rz.choose)
+    monkeypatch.setattr(dp, "capabilities_of", lambda r: _caps())
+    return {r.name: r.id for r in DnsBackend.query.all()}
+
+
+def test_the_pick_is_carried_into_the_plan_and_the_resolved_id_recorded(
+        app, env, monkeypatch):
+    """Both halves. The NAME is what the operator reads; the ID is what Apply
+    acts on, and a plan that showed one while carrying the other is the
+    silent substitution this feature exists to prevent."""
+    with app.app_context():
+        ids = _pick_env(monkeypatch, [
+            dict(name="ddi-a", provider="efficientip"),
+            dict(name="ddi-b", provider="efficientip"),
+        ])
+        plan = wiz.build_plan(
+            _appl(app, env), line="retail", web_address="shop.example.com",
+            backends=list(BACKENDS), use_ipam=True,
+            hostname="shop.example.com",
+            ipam_backend_id=ids["ddi-b"], dns_backend_id=ids["ddi-a"])
+    assert plan.ipam_backend == "ddi-b" and plan.dns_backend == "ddi-a"
+    assert plan.ipam_backend_id == ids["ddi-b"]
+    assert plan.dns_backend_id == ids["ddi-a"]
+    # And the pick is kept apart from the outcome, so the page can say
+    # "(chosen)" rather than implying Auto happened to agree.
+    assert plan.as_dict()["ipam_pick"] == str(ids["ddi-b"])
+    assert plan.as_dict()["dns_pick"] == str(ids["ddi-a"])
+
+
+def test_a_pick_breaks_a_tie_that_auto_refuses(app, env, monkeypatch):
+    """The reason the selector exists. Two equal claims are unresolvable by
+    configuration alone; naming one is the operator resolving it."""
+    with app.app_context():
+        ids = _pick_env(monkeypatch, [
+            dict(name="ddi-a", provider="efficientip", pools="p1"),
+            dict(name="ddi-b", provider="efficientip", pools="p1"),
+        ])
+        prof = LineProfile.query.filter_by(line="retail").first()
+        prof.ipam_pool = "p1"
+        db.session.commit()
+        auto = wiz.build_plan(_appl(app, env), line="retail",
+                              web_address="shop.example.com",
+                              backends=list(BACKENDS), use_ipam=True)
+        picked = wiz.build_plan(_appl(app, env), line="retail",
+                                web_address="shop.example.com",
+                                backends=list(BACKENDS), use_ipam=True,
+                                ipam_backend_id=ids["ddi-b"])
+    assert "ipam_not_resolved" in _codes(auto)
+    assert "ipam_not_resolved" not in _codes(picked)
+    assert picked.ipam_backend == "ddi-b"
+
+
+def test_an_impossible_pick_blocks_and_is_never_downgraded_to_auto(
+        app, env, monkeypatch):
+    """A catch-all that WOULD have answered is present on purpose: the guard
+    is that its presence does not rescue a bad pick. Falling back would run
+    the work on a backend nobody named while the page still showed the one
+    that was chosen."""
+    with app.app_context():
+        ids = _pick_env(monkeypatch, [
+            dict(name="catch-all", provider="efficientip"),
+            dict(name="dns-only", provider="efficientip", role_ipam=False),
+            dict(name="switched-off", provider="efficientip", enabled=False),
+        ])
+        def _p(bid):
+            return wiz.build_plan(_appl(app, env), line="retail",
+                                  web_address="shop.example.com",
+                                  backends=list(BACKENDS), use_ipam=True,
+                                  ipam_backend_id=bid)
+        gone = _p(9999)
+        wrong = _p(ids["dns-only"])
+        off = _p(ids["switched-off"])
+    for plan in (gone, wrong, off):
+        assert "ipam_backend_rejected" in _codes(plan)
+        assert plan.ipam_backend == "" and plan.ipam_backend_id is None
+    # Distinct reasons, distinct fixes — never folded into one message.
+    assert "not in the registry" in gone.blockers[0].detail
+    assert "IPAM role" in wrong.blockers[0].detail
+    assert "disabled" in off.blockers[0].detail
+
+
+def test_a_rejected_pick_is_its_own_code_not_the_scope_one(app, env,
+                                                           monkeypatch):
+    """``ipam_not_resolved`` sends an operator to the scope rules. Somebody
+    who NAMED a backend has to be sent to that row instead."""
+    with app.app_context():
+        ids = _pick_env(monkeypatch, [
+            dict(name="scoped", provider="efficientip", pools="other-pool"),
+        ])
+        prof = LineProfile.query.filter_by(line="retail").first()
+        prof.ipam_pool = "p1"
+        db.session.commit()
+        plan = wiz.build_plan(_appl(app, env), line="retail",
+                              web_address="shop.example.com",
+                              backends=list(BACKENDS), use_ipam=True,
+                              ipam_backend_id=ids["scoped"])
+    assert "ipam_backend_rejected" in _codes(plan)
+    assert "ipam_not_resolved" not in _codes(plan)
+    assert "declared scope" in plan.blockers[0].detail
+
+
+def test_a_rejected_dns_pick_blocks_under_its_own_code(app, env, monkeypatch):
+    with app.app_context():
+        ids = _pick_env(monkeypatch, [
+            dict(name="zoned", provider="efficientip", zones="other.example"),
+        ])
+        plan = wiz.build_plan(_appl(app, env), line="retail",
+                              web_address="shop.example.com",
+                              backends=list(BACKENDS), address="198.51.100.50",
+                              hostname="shop.example.com",
+                              dns_backend_id=ids["zoned"])
+    assert "dns_backend_rejected" in _codes(plan)
+    assert "dns_not_resolved" not in _codes(plan)
+
+
+def test_a_pick_that_cannot_do_anything_says_so(app, env, monkeypatch):
+    """A control that silently does nothing reads as a control that worked."""
+    with app.app_context():
+        ids = _pick_env(monkeypatch, [dict(name="ddi-a",
+                                           provider="efficientip")])
+        no_ipam = wiz.build_plan(_appl(app, env), line="retail",
+                                 web_address="shop.example.com",
+                                 backends=list(BACKENDS), address="198.51.100.50",
+                                 ipam_backend_id=ids["ddi-a"])
+        no_host = wiz.build_plan(_appl(app, env), line="retail",
+                                 web_address="shop.example.com",
+                                 backends=list(BACKENDS), address="198.51.100.50",
+                                 dns_backend_id=ids["ddi-a"])
+    assert any("no address will be reserved" in w for w in no_ipam.warnings)
+    assert any("nothing will be published" in w for w in no_host.warnings)
+    # A warning, not a blocker: the policy itself is still buildable.
+    assert no_ipam.ok and no_host.ok
+
+
+def test_apply_acts_on_the_recorded_id_and_does_not_resolve_again(
+        app, env, monkeypatch):
+    """Apply must write where Preview said. Re-resolving is not equivalent —
+    the registry is editable between the two, and a second answer would send
+    the address and the record to systems the summary never named."""
+    seen = {}
+
+    def _alloc(**k):
+        seen["ipam"] = k.get("backend_id")
+        return Address(address="198.51.100.77", ref="r1", pool="p1",
+                       backend_id=k.get("backend_id"))
+
+    def _rec(**k):
+        seen["dns"] = k.get("backend_id")
+        return DnsRecord(id="rec1", name=k.get("name"))
+
+    monkeypatch.setattr(dp, "allocate_address", _alloc)
+    monkeypatch.setattr(dp, "create_record", _rec)
+    monkeypatch.setattr(dp, "resolve_dns", lambda *a, **k: (_ for _ in ()).throw(
+        AssertionError("apply_plan re-resolved DNS instead of using the "
+                       "backend the plan recorded")))
+    from app.services import fortiweb_ops
+    # OpResult.ok reads the "ok" KEY — a bare dict has no .ok at all.
+    monkeypatch.setattr(fortiweb_ops.FortiWebOps, "create",
+                        lambda self, ep, payload, **kw:
+                        fortiweb_ops.OpResult({"ok": True}))
+    with app.app_context():
+        ids = _pick_env(monkeypatch, [
+            dict(name="ddi-a", provider="efficientip"),
+            dict(name="ddi-b", provider="efficientip"),
+        ])
+        plan = wiz.build_plan(_appl(app, env), line="retail",
+                              web_address="shop.example.com",
+                              backends=list(BACKENDS), use_ipam=True,
+                              hostname="shop.example.com",
+                              ipam_backend_id=ids["ddi-b"],
+                              dns_backend_id=ids["ddi-a"])
+        assert plan.ok, _codes(plan)
+        wiz.apply_plan(_appl(app, env), plan, dry_run=False)
+    assert seen.get("ipam") == ids["ddi-b"]
+    assert seen.get("dns") == ids["ddi-a"]
+
+
+def test_the_page_offers_the_registry_and_never_the_secret(app, client, env):
+    """The complaint that started this: the options were not on the page."""
+    import json
+    import re
+    with app.app_context():
+        from app.models_dnsbackend import DnsBackend
+        for kw in (dict(name="ddi-a", provider="efficientip", zones="ex.com"),
+                   dict(name="zz-switched-off", provider="efficientip",
+                        enabled=False)):
+            row = DnsBackend(**kw)
+            row.secret = "top-secret-token"
+            db.session.add(row)
+        db.session.commit()
+        aid = env["appliance_id"]
+    login(client, admin_user_id(app))
+    body = client.get(f"/web/workspace/{aid}/spo-wizard").get_data(as_text=True)
+    assert 'id="w-ipam-backend"' in body and 'id="w-dns-backend"' in body
+    # Asserted against the PAYLOAD, never a substring of the page: "hidden"
+    # matched the Hidden Fields nav entry, which is the eleventh time an
+    # assert-by-substring in this repo has matched something else.
+    served = json.loads(
+        re.search(r"const BACKENDS = (\[.*?\]);", body, re.S).group(1))
+    assert [b["name"] for b in served] == ["ddi-a"]
+    assert served[0]["zones"] == ["ex.com"]
+    # A disabled backend is not a choice, and the secret never crosses.
+    assert "top-secret-token" not in body
+    assert not any("secret" in k for b in served for k in b.get("config", {}))
+
+
+def test_the_view_threads_the_choice_from_the_form_to_the_plan(app, client,
+                                                               env):
+    """The selectors are useless if the request drops them. Guarded through
+    the real endpoint, because that is where the two ends meet."""
+    with app.app_context():
+        from app.models_dnsbackend import DnsBackend
+        row = DnsBackend(name="ddi-b", provider="efficientip")
+        db.session.add(row)
+        db.session.commit()
+        bid, aid = row.id, env["appliance_id"]
+    login(client, admin_user_id(app))
+    r = client.post(f"/web/workspace/{aid}/spo-wizard/plan", json={
+        "line": "retail", "web_address": "shop.example.com",
+        "backends": [{"ip": "192.0.2.11", "port": "8080"}],
+        "use_ipam": True, "hostname": "shop.example.com",
+        "ipam_backend_id": str(bid), "dns_backend_id": str(bid),
+    })
+    plan = r.get_json()["plan"]
+    assert plan["ipam_pick"] == str(bid) and plan["dns_pick"] == str(bid)
+
+
+def test_the_form_sends_the_two_choices():
+    """Structural, and it has to be: no browser runs in this suite, so the
+    only thing that can catch a selector wired to nothing is reading what the
+    request body is built from."""
+    src = (ROOT / "app/templates/workspace/spo_wizard.html").read_text()
+    start = src.index("function body(extra)")
+    frag = src[start:src.index("function post(", start)]
+    assert "ipam_backend_id: $('w-ipam-backend').value" in frag
+    assert "dns_backend_id: $('w-dns-backend').value" in frag

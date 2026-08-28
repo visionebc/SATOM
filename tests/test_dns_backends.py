@@ -727,3 +727,122 @@ def test_the_settings_tab_has_no_inline_event_handlers(app, client):
     block = html[start:start + 30000]
     for bad in ("onclick=", "onchange=", "onsubmit="):
         assert bad not in block
+
+
+# --------------------------------------------------------------------------- #
+#  11. choose() — the operator's pick, checked rather than trusted             #
+# --------------------------------------------------------------------------- #
+def test_choose_with_no_pick_is_exactly_the_automatic_resolution(app):
+    """The selector is additive: an install that never picks is unchanged."""
+    with app.app_context():
+        _mk("ddi-a", zones="ex.com")
+        for pick in (None, "", 0, "0"):
+            assert dp.choose("dns", "www.ex.com", pick).backend.name == "ddi-a"
+            assert dp.choose("ipam", "p1", pick).backend.name == "ddi-a"
+
+
+def test_choose_honours_a_valid_pick_over_the_automatic_winner(app):
+    with app.app_context():
+        _mk("specific", zones="ex.com", priority=1)
+        b = _mk("catch-all")
+        assert dp.choose("dns", "www.ex.com").backend.name == "specific"
+        assert dp.choose("dns", "www.ex.com", b.id).backend.name == "catch-all"
+
+
+def test_an_invalid_pick_refuses_and_never_falls_back_to_auto(app):
+    """A catch-all that WOULD answer is present on purpose. Falling back to it
+    would do the work on a backend the operator did not name."""
+    with app.app_context():
+        _mk("catch-all")
+        assert dp.choose("dns", "www.ex.com", 9999).code == dp.UNKNOWN
+        off = _mk("off", enabled=False)
+        assert dp.choose("dns", "www.ex.com", off.id).code == dp.DISABLED
+        dnsless = _mk("pools-only", role_dns=False)
+        assert dp.choose("dns", "www.ex.com", dnsless.id).code == dp.WRONG_ROLE
+        scoped = _mk("elsewhere", zones="other.example")
+        res = dp.choose("dns", "www.ex.com", scoped.id)
+        assert res.code == dp.OUT_OF_SCOPE
+        assert all(r.backend is None for r in [res])
+
+
+def test_the_pick_refusals_are_four_distinct_codes(app):
+    """Four different fixes: reload the page / enable the row / give it the
+    role / widen the scope. One code would name none of them."""
+    codes = {dp.UNKNOWN, dp.DISABLED, dp.WRONG_ROLE, dp.OUT_OF_SCOPE}
+    assert len(codes) == 4
+    assert not codes & {dp.NO_BACKEND, dp.NO_MATCH, dp.AMBIGUOUS}
+
+
+def test_a_picked_catch_all_answers_anything(app):
+    with app.app_context():
+        b = _mk("catch-all")
+        assert dp.choose("dns", "anything.example", b.id).ok
+        assert dp.choose("ipam", "any-pool", b.id).ok
+
+
+def test_choose_reads_the_scope_the_same_way_the_resolvers_do(app):
+    """``claims`` is not a second reading of the scope column — a pick and an
+    automatic resolution disagreeing about what one row declares is the
+    2026-08-27 failure with a different noun."""
+    with app.app_context():
+        row = _mk("ddi-a", zones="ex.com", pools="p1")
+        assert dp.claims(row, "dns", "www.ex.com") is True
+        assert dp.claims(row, "dns", "www.other.example") is False
+        assert dp.claims(row, "ipam", "p1") is True
+        assert dp.claims(row, "ipam", "p2") is False
+        assert dp.choose("dns", "www.ex.com", row.id).ok
+        assert dp.resolve_dns("www.ex.com").ok
+
+
+def test_a_pool_with_a_capital_letter_resolves(app):
+    """Regression. ``resolve_ipam`` lowered the query while ``split_list``
+    deliberately preserved the declaration, so a pool named ``Prod-DMZ`` could
+    never be matched — the store kept a distinction the matcher then made
+    unusable."""
+    with app.app_context():
+        _mk("ddi-a", pools="Prod-DMZ")
+        assert dp.resolve_ipam("Prod-DMZ").backend.name == "ddi-a"
+
+
+def test_pool_matching_stays_case_sensitive_and_zones_stay_folded(app):
+    """The asymmetry is the point: a pool id may differ only in case, a DNS
+    name may not."""
+    with app.app_context():
+        _mk("pools", pools="Prod-DMZ", role_dns=False)
+        _mk("zones", zones="EX.com", role_ipam=False)
+        assert dp.resolve_ipam("prod-dmz").code == dp.NO_MATCH
+        assert dp.resolve_dns("WWW.Ex.COM").backend.name == "zones"
+        assert dp.pool_matches(["Prod-DMZ"], "Prod-DMZ") is True
+        assert dp.pool_matches(["Prod-DMZ"], "prod-dmz") is False
+        assert dp.pool_matches(["Prod-DMZ"], "") is False
+
+
+def test_allocate_and_create_route_through_the_pick(app, monkeypatch):
+    """The two write paths take ``backend_id``, and it is validated by the
+    same chooser rather than trusted — a caller cannot reach a disabled row
+    by passing its id."""
+    import inspect
+    for fn in (dp.allocate_address, dp.create_record):
+        assert "backend_id" in inspect.signature(fn).parameters
+    with app.app_context():
+        good = _mk("ddi-a")
+        off = _mk("off", enabled=False)
+        monkeypatch.setattr(type(good), "instance",
+                            lambda self: _FakeInstance(self.id))
+        addr = dp.allocate_address(hostname="h", pool="p1",
+                                   backend_id=good.id)
+        assert addr.backend_id == good.id
+        with pytest.raises(dp.ProviderError):
+            dp.allocate_address(hostname="h", pool="p1", backend_id=off.id)
+
+
+class _FakeInstance:
+    def __init__(self, bid):
+        self.bid = bid
+
+    def allocate_address(self, hostname="", pool=""):
+        return Address(address="192.0.2.5", ref="r", pool=pool)
+
+    def create_record(self, rec):
+        rec.id = "rec1"
+        return rec

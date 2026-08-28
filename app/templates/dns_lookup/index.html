@@ -73,7 +73,7 @@
       <div class="fw-card-header d-flex align-items-center justify-content-between">
         <span><i class="bi bi-table me-1"></i>{{ _('Results') }}</span>
         <span class="d-flex gap-2">
-          {% if can_manage_records and dns_provider != 'none' %}
+          {% if can_manage_records and dns_backends %}
           <button type="button" class="btn btn-sm btn-primary" id="dnsRecBtnHeader"
                   data-entry="{{ results[0].resolved if results else '' }}">
             <i class="bi bi-plus-lg me-1"></i>{{ _('DNS Records') }}</button>
@@ -113,7 +113,7 @@
                   {% if r.is_wildcard %}
                   <span class="badge text-bg-warning ms-1" style="font-size:9px;">&rarr; {{ r.resolved }}</span>
                   {% endif %}
-                  {% if can_manage_records and dns_provider != 'none' %}
+                  {% if can_manage_records and dns_backends %}
                   <button type="button" class="btn btn-sm btn-outline-primary py-0 px-1 ms-1 dns-rec-btn"
                           data-entry="{{ r.resolved }}" title="Manage DNS records for {{ r.resolved }}"
                           style="font-size:10px;"><i class="bi bi-pencil-square"></i></button>
@@ -248,7 +248,7 @@
 })();
 </script>
 
-{% if can_manage_records and dns_provider != 'none' %}
+{% if can_manage_records and dns_backends %}
 <!-- +DNS Records modal — CRUD against the configured IPAM/DDI provider -->
 <div class="modal fade" id="dnsRecModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-scrollable">
@@ -259,6 +259,22 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
       </div>
       <div class="modal-body">
+        {# Shown ONLY when there is a choice to make. One backend is not a
+           choice, and a select with a single option teaches the operator to
+           click past it without reading — which is how they would click past
+           it when a second backend appears. #}
+        {% if dns_backends|length > 1 %}
+        <div class="mb-3">
+          <label class="fw-form-label">{{ _('Backend') }}</label>
+          <select id="dnsRecBackend" class="form-select fw-form-control form-select-sm">
+            {% for b in dns_backends %}
+            <option value="{{ b.id }}">{{ b.name }} — {{ b.provider_label }}{% if b.zones %} ({{ b.zones|join(', ') }}){% else %} ({{ _('any zone') }}){% endif %}</option>
+            {% endfor %}
+          </select>
+        </div>
+        {% else %}
+        <input type="hidden" id="dnsRecBackend" value="{{ dns_backends[0].id }}">
+        {% endif %}
         <div class="alert alert-secondary py-2" id="dnsRecNotes" style="font-size:12.5px;"></div>
         <div class="row g-2 align-items-end mb-3">
           <div class="col">
@@ -328,8 +344,17 @@
   };
   var modalEl = document.getElementById('dnsRecModal');
   var modal = new bootstrap.Modal(modalEl);
+  // Capabilities are cached PER BACKEND, never in one shared `caps`. Two
+  // backends genuinely differ (one writes records, one only lists them), so a
+  // single cached answer would render the editor for a backend that cannot
+  // write, or hide it for one that can.
+  var capsCache = {};
   var caps = null;
   var el = function (id) { return document.getElementById(id); };
+  function backendId() {
+    var b = el('dnsRecBackend');
+    return b ? String(b.value || '') : '';
+  }
 
   function setMsg(text, kind) {
     var m = el('dnsRecMsg');
@@ -341,11 +366,18 @@
     var url = (method === 'GET')
       ? URLS.list + '?name=' + encodeURIComponent(el('dnsRecName').value.trim())
                   + '&zone=' + encodeURIComponent(el('dnsRecZone').value.trim())
+                  + '&backend_id=' + encodeURIComponent(backendId())
       : URLS.crud;
     var opts = { method: method, headers: { 'X-CSRFToken': CSRF } };
     if (method !== 'GET') {
+      var payload = {};
+      for (var k in (body || {})) payload[k] = body[k];
+      // Stamped here rather than at each call site: three of them build the
+      // body and one forgetting is a write aimed at whichever backend the
+      // server would have fallen back to.
+      payload.backend_id = backendId();
       opts.headers['Content-Type'] = 'application/json';
-      opts.body = JSON.stringify(body || {});
+      opts.body = JSON.stringify(payload);
     }
     return fetch(url, opts).then(function (r) {
       return r.json().then(function (d) {
@@ -357,6 +389,7 @@
 
   function applyCaps() {
     el('dnsRecProviderBadge').textContent = caps.label;
+    el('dnsRecRows').innerHTML = '<tr><td colspan="5" class="text-muted text-center py-3">Press <strong>Load</strong> to list records.</td></tr>';
     el('dnsRecNotes').textContent = caps.notes || '';
     document.querySelector('.dnsRec-zone').style.display = caps.needs_zone ? '' : 'none';
     document.querySelector('.dnsRec-view').style.display = caps.needs_view ? '' : 'none';
@@ -449,16 +482,37 @@
     setMsg('');
     clearEditor();
     modal.show();
-    if (caps) { if (el('dnsRecName').value) loadRecords(); return; }
-    fetch(URLS.schema, { headers: { 'X-CSRFToken': CSRF } })
+    loadSchema(true);
+  }
+
+  function loadSchema(thenList) {
+    var bid = backendId();
+    if (capsCache[bid]) {
+      caps = capsCache[bid]; applyCaps();
+      if (thenList && el('dnsRecName').value) loadRecords();
+      return;
+    }
+    setMsg('Loading backend…');
+    fetch(URLS.schema + '?backend_id=' + encodeURIComponent(bid),
+          { headers: { 'X-CSRFToken': CSRF } })
       .then(function (r) { return r.json().then(function (d) { if (!r.ok) throw new Error(d.error || r.status); return d; }); })
-      .then(function (d) { caps = d.capabilities; applyCaps(); if (el('dnsRecName').value) loadRecords(); })
-      .catch(function (e) { setMsg('Provider error: ' + e.message, 'err'); });
+      .then(function (d) {
+        capsCache[bid] = d.capabilities; caps = d.capabilities;
+        setMsg(''); applyCaps();
+        if (thenList && el('dnsRecName').value) loadRecords();
+      })
+      .catch(function (e) { setMsg('Backend error: ' + e.message, 'err'); });
   }
 
   document.querySelectorAll('.dns-rec-btn, #dnsRecBtnHeader').forEach(function (b) {
     b.addEventListener('click', function () { openModal(b.getAttribute('data-entry') || ''); });
   });
+  var backendSel = el('dnsRecBackend');
+  if (backendSel && backendSel.tagName === 'SELECT') {
+    // Switching backend clears the listing rather than leaving the previous
+    // backend's records on screen under the new backend's name.
+    backendSel.addEventListener('change', function () { loadSchema(false); });
+  }
   el('dnsRecLoadBtn').addEventListener('click', loadRecords);
   el('dnsRecSaveBtn').addEventListener('click', saveRecord);
   el('dnsRecClearBtn').addEventListener('click', clearEditor);

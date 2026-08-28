@@ -57,6 +57,11 @@ class NetBoxProvider(DnsProvider):
         return self._plugin
 
     # -- introspection ---------------------------------------------------
+    # netbox-dns MAY be installed, so writing is permitted as a role and
+    # the live probe below decides whether it actually happens.
+    may_write = True
+    may_allocate = True
+
     def capabilities(self) -> Capabilities:
         try:
             with self._client() as c:

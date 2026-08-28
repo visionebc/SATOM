@@ -209,12 +209,6 @@ def index():
         acme_provider_creds=(_acme_creds_state() if _is_admin() else {}),
         cert_lifecycle=(store.cert_lifecycle_policy() if _is_admin() else None),
         dns_tool_servers=(dns_tool_svc.dns_servers() if _is_admin() else []),
-        dnsrec_cfg=(dns_providers.config_public() if _is_admin() else None),
-        dnsrec_providers=([(k, dns_providers.PROVIDERS[k].label)
-                           for k in ('none', 'efficientip', 'phpipam', 'netbox')]
-                          if _is_admin() else []),
-        dnsrec_field_specs=(dns_providers.FIELD_SPECS if _is_admin() else {}),
-        dnsrec_secret_labels=(dns_providers.SECRET_LABELS if _is_admin() else {}),
         policy_links=(policy_links_svc.links() if _is_admin() else []),
         policy_link_tokens=policy_links_svc.TOKENS,
         clone_rules_cfg=(clone_rules_svc.config() if _is_admin() else None),
@@ -1513,51 +1507,140 @@ def save_dns_tool():
     return redirect(url_for('settings.index'))
 
 
-def _dnsrec_form_fields(provider):
-    """Pull the non-secret fields for *provider* out of the request form."""
-    fields = {'verify_ssl': bool(request.form.get('dnsrec_verify_ssl'))}
-    for spec in dns_providers.FIELD_SPECS.get(provider, []):
-        fields[spec['key']] = request.form.get('dnsrec_' + spec['key'], '')
-    return fields
+# ---------------------------------------------------------------------------
+# DNS / IPAM backends — a registry of rows, not one global provider.
+#
+# Three rules, and the first two are inherited from the hypervisor registry
+# for the same reasons:
+#
+# 1. **Secrets never cross back to the browser.** ``public()`` is the only
+#    shape sent out; an empty secret field on edit means "keep what is
+#    stored", never "blank it".
+# 2. **Admin only.** These credentials publish names and hand out addresses.
+# 3. **Roles are validated against what the provider MAY do, once, in
+#    ``store.save_backend``.** The view does not re-implement that check —
+#    the migration writes rows too, and a rule enforced only in the view is a
+#    rule the other writer can break.
+# ---------------------------------------------------------------------------
+
+def _dnsb_or_404(backend_id: int):
+    from ..models_dnsbackend import DnsBackend
+    row = DnsBackend.query.get(backend_id)
+    if row is None:
+        abort(404)
+    return row
 
 
-@bp.route('/dns-records', methods=['POST'])
+@bp.route('/dns-records/state')
 @login_required
 @require_permission(Permission.USER_MANAGE)
-def save_dns_records():
-    """Persist the DNS Records / IPAM provider (AppSetting ``dnsrecords.*``).
+def dns_backends_state():
+    from ..models_dnsbackend import DnsBackend
+    rows = DnsBackend.query.order_by(DnsBackend.priority.asc(),
+                                     DnsBackend.name.asc()).all()
+    return jsonify({
+        'backends': [r.public() for r in rows],
+        'providers': [{
+            'key': k,
+            'label': dns_providers.PROVIDERS[k].label,
+            'fields': dns_providers.FIELD_SPECS.get(k, []),
+            'secret_label': dns_providers.SECRET_LABELS.get(k, 'Secret'),
+            'may_write': bool(getattr(dns_providers.PROVIDERS[k], 'may_write', False)),
+            'may_allocate': bool(getattr(dns_providers.PROVIDERS[k], 'may_allocate', False)),
+        } for k in dns_providers.SELECTABLE],
+    })
 
-    Provider selector + non-secret connection fields + one Fernet-encrypted
-    secret. A blank secret leaves the stored one untouched; the explicit
-    ``dnsrec_clear_secret`` checkbox wipes it (e.g. switching provider)."""
-    provider = (request.form.get('dnsrec_provider') or 'none').strip()
-    if provider not in dns_providers.PROVIDERS:
-        provider = 'none'
-    fields = _dnsrec_form_fields(provider)
-    secret = (request.form.get('dnsrec_secret') or '').strip() or None
-    dns_providers.save_config(provider, fields, secret)
-    if request.form.get('dnsrec_clear_secret'):
-        dns_providers.clear_secret()
-    log_action('settings.dns_records', target=f'dnsrecords.provider={provider}')
-    flash(f'DNS Records provider saved ({dns_providers.PROVIDERS[provider].label}).',
-          'success')
-    return redirect(url_for('settings.index') + '#tab-dnsrecords')
+
+@bp.route('/dns-records/save', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def dns_backend_save():
+    from ..services.dns_providers import store as dnsb_store
+    data = request.get_json(silent=True) or request.form.to_dict()
+    try:
+        row = dnsb_store.save_backend(data, data.get('id'))
+    except dnsb_store.BackendError as exc:
+        return jsonify({'ok': False, 'error': str(exc)}), 400
+    log_action('settings.dns_backend.save',
+               detail='name=%s provider=%s ipam=%s dns=%s'
+                      % (row.name, row.provider, row.role_ipam, row.role_dns))
+    return jsonify({'ok': True, 'backend': row.public()})
+
+
+@bp.route('/dns-records/<int:backend_id>/toggle', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def dns_backend_toggle(backend_id: int):
+    row = _dnsb_or_404(backend_id)
+    row.enabled = not row.enabled
+    db.session.commit()
+    log_action('settings.dns_backend.toggle',
+               detail='name=%s enabled=%s' % (row.name, row.enabled))
+    return jsonify({'ok': True, 'backend': row.public()})
+
+
+@bp.route('/dns-records/<int:backend_id>/delete', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def dns_backend_delete(backend_id: int):
+    from ..services.dns_providers import store as dnsb_store
+    row = _dnsb_or_404(backend_id)
+    name = row.name
+    try:
+        dnsb_store.delete_backend(row)
+    except dnsb_store.BackendError as exc:
+        return jsonify({'ok': False, 'error': str(exc)}), 409
+    log_action('settings.dns_backend.delete', detail='name=%s' % name)
+    return jsonify({'ok': True})
+
+
+@bp.route('/dns-records/<int:backend_id>/test', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def dns_backend_test(backend_id: int):
+    """Probe a SAVED backend and record the outcome on the row."""
+    from ..services.dns_providers import store as dnsb_store
+    row = _dnsb_or_404(backend_id)
+    try:
+        ok, message = row.instance().test_connection()
+    except Exception as exc:  # noqa: BLE001 — surface any client error
+        ok, message = False, str(exc)
+    caps = dns_providers.capabilities_of(row)
+    dnsb_store.record_test(row, ok, message)
+    log_action('settings.dns_backend.test',
+               detail='name=%s ok=%s' % (row.name, ok))
+    return jsonify(ok=bool(ok), message=message,
+                   capabilities=caps.as_dict() if caps else None,
+                   backend=row.public())
 
 
 @bp.route('/dns-records/test', methods=['POST'])
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def test_dns_records():
-    """Test the connection using the CURRENT form values (unsaved). Falls back
-    to the stored secret when the form leaves the secret blank."""
+    """Test UNSAVED form values, so a backend can be proved before it is added.
+
+    Unlike the saved-row probe this one CANNOT fall back to a stored secret:
+    there is no row yet to fall back to, and quietly testing with some other
+    backend's credential would report a connection the new one has not made.
+    """
     data = request.get_json(silent=True) or {}
-    provider = (data.get('provider') or 'none').strip()
-    if provider == 'none' or provider not in dns_providers.PROVIDERS:
+    provider = (data.get('provider') or '').strip()
+    if provider not in dns_providers.SELECTABLE:
         return jsonify(ok=False, message='Select a provider first.'), 400
     fields = {'verify_ssl': bool(data.get('verify_ssl', True))}
     for spec in dns_providers.FIELD_SPECS.get(provider, []):
         fields[spec['key']] = data.get(spec['key'], '')
-    secret = (data.get('secret') or '').strip() or None
+    secret = (data.get('secret') or '').strip()
+    if not secret:
+        bid = str(data.get('id') or '').strip()
+        row = dns_providers.backend_by_id(bid) if bid else None
+        if row is None:
+            return jsonify(
+                ok=False,
+                message='Enter the credential — there is no saved backend to '
+                        'take it from yet.'), 400
+        secret = row.secret
     prov = dns_providers.provider_for_test(provider, fields, secret)
     try:
         ok, message = prov.test_connection()

@@ -95,6 +95,12 @@ class Address:
 
     address: str = ""
     ref: str = ""                    # provider-native id of the reservation
+    #: WHICH backend handed this out. Meaningless under a single provider and
+    #: load-bearing with several: ``ref`` is only an identifier inside the
+    #: system that issued it, so a release replayed against a different
+    #: backend either does nothing or frees a row that backend owns. Callers
+    #: persist this next to ``ref``.
+    backend_id: int | None = None
     netmask: str = ""
     prefix_len: int | None = None
     gateway: str = ""
@@ -106,6 +112,7 @@ class Address:
             "address": self.address, "ref": self.ref, "netmask": self.netmask,
             "prefix_len": self.prefix_len, "gateway": self.gateway,
             "pool": self.pool, "extra": self.extra,
+            "backend_id": self.backend_id,
         }
 
 
@@ -119,12 +126,17 @@ class DnsRecord:
     zone: str = ""
     view: str = ""
     extra: dict = field(default_factory=dict)
+    #: WHICH backend published this. Same reasoning as ``Address.backend_id``:
+    #: a provider-native record id replayed against another backend can name a
+    #: different record entirely.
+    backend_id: int | None = None
 
     def as_dict(self) -> dict:
         return {
             "id": self.id, "name": self.name, "type": self.type,
             "value": self.value, "ttl": self.ttl, "zone": self.zone,
             "view": self.view, "extra": self.extra,
+            "backend_id": self.backend_id,
         }
 
     @classmethod
@@ -150,6 +162,22 @@ class DnsProvider:
 
     key = "base"
     label = "Base"
+
+    #: STATIC MAXIMA — what this provider may EVER be asked to do, in any
+    #: installation. They bound which roles a backend row may carry and are
+    #: deliberately NOT the same thing as :meth:`capabilities`, which reports
+    #: what THIS install will actually do right now and may need the network
+    #: to find out (NetBox has to look for the netbox-dns plugin).
+    #:
+    #: The split is what lets a role be refused honestly. phpIPAM has no
+    #: record CRUD in ANY install, so promising the DNS role there is a
+    #: promise that can never be kept and is rejected at save time. NetBox
+    #: MIGHT have the plugin, so the role is allowed and the live probe
+    #: decides — refusing it up front would lock out a supported deployment,
+    #: and accepting it blindly is the "reports success, publishes nothing"
+    #: bug §130 was written about.
+    may_write = False
+    may_allocate = False
 
     def __init__(self, cfg: dict):
         self.cfg = cfg or {}

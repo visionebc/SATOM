@@ -1209,6 +1209,135 @@ def save_sot_refresh(minutes) -> dict:
     return {"minutes": val, "created": created, "action_id": row.id}
 
 
+# ── System bundle schedule ───────────────────────────────────────────────────
+#
+# Same rule as the SoT cadence above, and for the same reason: the hour a
+# bundle is written at ALREADY has an author.  ``system_backup`` is the
+# scheduled action that dumps Postgres, packs the JSON tree and the SoT blobs
+# and uploads the result, so a settings key here would be a SECOND author of
+# one hour — the page would print 01:30 while the node backed up at 03:00, and
+# neither would be wrong about itself.
+#
+# It diverges from the SoT knob in one deliberate way.  ``save_sot_refresh``
+# creates a row when it finds no INTERVAL harvest even though a wall-clock one
+# exists: two harvests cost device calls.  Two system backups cost a full
+# bundle each — 578 MB apiece on a node with 9 GB free — so when the bundle is
+# already scheduled some other way this REFUSES and says so, rather than adding
+# a second nightly run nobody asked for.
+SYSTEM_BACKUP_ACTION = "system_backup"
+SYSTEM_BACKUP_DEFAULT_TIME = "01:30"
+
+
+def _system_backup_rows():
+    from ..models import ScheduledAction
+    return (ScheduledAction.query
+            .filter_by(action=SYSTEM_BACKUP_ACTION)
+            .order_by(ScheduledAction.id).all())
+
+
+def _system_backup_primary(rows):
+    """The row this knob speaks for: the first DAILY bundle run."""
+    for r in rows:
+        if (r.schedule_kind or "") == "daily":
+            return r
+    return None
+
+
+def _normalise_hhmm(value, fallback: str) -> str:
+    """``HH:MM``, or the hour already in force — never a silent ``00:00``.
+
+    This form has one field and no error channel.  A submit the parser cannot
+    read must therefore leave the backup where it is: defaulting to midnight
+    would relocate a nightly job to the hour the fleet is least watched and
+    make it look like somebody asked for that.
+    """
+    try:
+        parts = str(value or "").strip().split(":")
+        h, m = int(parts[0]), int(parts[1])
+    except (ValueError, TypeError, IndexError):
+        return fallback
+    if not (0 <= h <= 23 and 0 <= m <= 59):
+        return fallback
+    return "%02d:%02d" % (h, m)
+
+
+def system_backup_schedule() -> dict:
+    """When this node writes and uploads its OWN bundle (not a device backup)."""
+    try:
+        rows = _system_backup_rows()
+    except Exception:  # noqa: BLE001 — settings must render without a schedule table
+        rows = []
+    primary = _system_backup_primary(rows)
+    at = SYSTEM_BACKUP_DEFAULT_TIME
+    if primary is not None:
+        spec = primary.schedule_dict if hasattr(primary, "schedule_dict") else {}
+        at = _normalise_hhmm((spec or {}).get("time"), SYSTEM_BACKUP_DEFAULT_TIME)
+    return {
+        "time": at,
+        "default_time": SYSTEM_BACKUP_DEFAULT_TIME,
+        # The hour is WALL-CLOCK in this zone, not UTC.  Printing "01:30" with
+        # no zone beside it is the ambiguity that had a nightly job running at
+        # 03:00 in winter and 04:00 in summer before the scheduler learned
+        # about time zones at all.
+        "tz": tz_name(),
+        "configured": primary is not None,
+        "enabled": bool(getattr(primary, "enabled", False)),
+        "action_id": getattr(primary, "id", None),
+        "last_run": getattr(primary, "last_run", None),
+        "last_status": getattr(primary, "last_status", None),
+        "next_run": getattr(primary, "next_run", None),
+        # A bundle scheduled some other way (weekly, or every N hours) is a
+        # different statement and one hour field cannot express it.  Reported,
+        # so the pane can send the operator to Automation instead of claiming
+        # this node has no bundle schedule at all.
+        "other_kind": (rows[0].schedule_kind if rows and primary is None else None),
+        "others": max(0, len(rows) - (1 if primary is not None else 0)),
+    }
+
+
+def save_system_backup_schedule(value) -> dict:
+    """Write the hour to the bundle row and RECOMPUTE its next fire.
+
+    ``tz`` is passed into the schedule math because ``daily`` is a WALL-CLOCK
+    kind: computed in UTC, "01:30" typed on a Europe/Zurich console fires at
+    03:30 local in summer.  Omitting it here while the Automation page passes
+    it would leave two pages disagreeing about the same row — which is the
+    whole failure this knob exists to avoid.
+    """
+    from ..models import ScheduledAction
+    from ..extensions import db
+    from .scheduler import compute_next_run
+
+    rows = _system_backup_rows()
+    row = _system_backup_primary(rows)
+    if row is None and rows:
+        return {"conflict": True, "kind": (rows[0].schedule_kind or "custom"),
+                "time": None, "created": False, "action_id": rows[0].id}
+
+    current = SYSTEM_BACKUP_DEFAULT_TIME
+    if row is not None:
+        current = _normalise_hhmm((row.schedule_dict or {}).get("time"),
+                                  SYSTEM_BACKUP_DEFAULT_TIME)
+    hhmm = _normalise_hhmm(value, current)
+
+    created = False
+    if row is None:
+        created = True
+        row = ScheduledAction(
+            name="Nightly system backup (Postgres + JSON -> backup-server)",
+            scope="admin", product="fortiweb", action=SYSTEM_BACKUP_ACTION,
+            targets="[]", params=json.dumps({"push_server": True}),
+            enabled=True, catch_up=True,
+            created_by="settings.system_backup_schedule")
+        db.session.add(row)
+    row.schedule_kind = "daily"
+    row.schedule = json.dumps({"time": hhmm})
+    row.next_run = compute_next_run("daily", {"time": hhmm}, tz=tz_name())
+    db.session.commit()
+    return {"conflict": False, "time": hhmm, "created": created,
+            "action_id": row.id}
+
+
 def backup_server(reveal_secret: bool = False) -> dict:
     raw = get_json(K_BACKUPSRV, {}) or {}
     cfg = dict(_BACKUPSRV_DEFAULTS)

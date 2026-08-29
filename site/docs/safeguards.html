@@ -11925,6 +11925,97 @@ tests/test_concept_map.py tests/test_route_audit.py tests/test_csp_nonce.py
 tests/test_failopen_settings_git.py tests/test_docs_links.py -q</code> as <code>satom</code>.
 Mutations: <code>/tmp/mutate.py</code> pattern — anchor count must be exactly 1, baseline
 must be green per selection, and only <code>rc==1</code> scores as a kill.</p>
+<h2 id="141-a-form-that-is-always-open-a-cadence-with-no-knob-and-three-unlabelled-destinations-2026-08-29">§141 — a form that is always open, a cadence with no knob, and three unlabelled destinations (2026-08-29)</h2>
+<p><code>tests/test_settings_repo_sot_backup_ux.py</code> (17 guards, 13 mutations, 13 dead).</p>
+<p>Three controls on the Settings panes that rendered perfectly and said the wrong
+thing. None of them could fail a test that asks "does the page render?".</p>
+<p><strong>1. The repository form was permanently open.</strong> <em>Repository</em> and <em>Configure
+Repository</em> were two cards of equal weight, and the second one's three boxes
+render <strong>empty</strong> until an async fetch fills them — one submit before that fetch
+lands writes blanks over a working <code>origin</code>. The form is what an operator needs
+in exactly one state: a node that was never given a remote. So it folds into the
+card it describes, behind <strong>Edit</strong>, and opens by itself only when
+<code>git_service.remote_configured()</code> is false. That probe is <strong>server-side, on the
+first render</strong>; a client-side guess flashes the form open on a registered node.</p>
+<p>The guards assert the <strong>default state in both directions</strong>, which is the only
+thing a render test can see and the only thing that was wrong. They are scoped
+to the <em>card</em>, never the pane: "Configure Repository" is still a heading inside
+it, and <code>hidden</code> appears all over a settings page.</p>
+<p><strong>2. The SoT had no cadence control, and the honest place for one is not a new
+key.</strong> <code>device_sync</code> is what reads a device and mints a version, so a
+<code>sot.refresh_minutes</code> key would be a <strong>second author of one number</strong> — the same
+shape as the firmware "SoT" retired in §140. <code>settings_store.sot_refresh()</code> /
+<code>save_sot_refresh()</code> read and write <strong>the schedule row</strong>. The load-bearing line
+is <code>next_run</code>: an interval stored without moving the next fire is a setting that
+looks saved and is inert, which is exactly how the retention knob failed for
+three weeks (§140). A wall-clock harvest is <strong>reported, not rewritten</strong> —
+"every night at 02:00" is a different statement and converting it discards it.</p>
+<p><strong>3. Three backup paths said nothing about what lands in each.</strong> The
+distinction that matters is <em>who writes</em>: an empty config folder means the
+appliance is not pushing, not that SATOM failed. Reuses the <code>hint()</code> macro from
+<code>partials/_hint.html</code>, so the text is in <code>title</code> and survives a script that
+never loads.</p>
+<h3 id="the-fifteenth-substring-assert-that-matched-its-own-mutation">⚠ The fifteenth substring-assert that matched its own mutation</h3>
+<p><code>assert "git-config-block" in fn</code> stayed green against a toggle rewired to
+<code>git-config-blockZZ</code> — the mutated id <strong>contains</strong> the original. The anchor has
+to be the whole call, <code>getElementById('git-config-block')</code>. Caught by the
+harness, not by reading it.</p>
+<p>A mutation that fails to duplicate is not a mutation either: the first attempt
+at "two paths share one sentence" <em>prepended</em> text, leaving the three titles
+distinct, so the guard was correctly green and the harness said SURVIVES about a
+guard that works. The mutation must write the other field's text <strong>verbatim</strong>.</p>
+<h3 id="recipe_6">Recipe</h3>
+<pre><code>venv/bin/python -m pytest tests/test_settings_repo_sot_backup_ux.py -q
+</code></pre>
+<p>Mutate and expect a kill (rc==1, never a bare "failed" grep — pytest prints
+<code>FAILED</code>): rename <code>git-config-block</code>; delete <code>{% if git_configured %} hidden{%
+endif %}</code>; force it always-hidden; rewire the toggle; drop the <code>next_run</code>
+recompute; drop the clamp; make <code>val &lt;= 0</code> into <code>val &lt; 0</code>; make
+<code>_sot_refresh_primary</code> return any row regardless of kind; make the
+no-harvest path a silent no-op; strip a path hint; copy one hint over another.</p>
+<h2 id="142-a-destination-with-no-visible-hour-2026-08-29">§142 — a destination with no visible hour (2026-08-29)</h2>
+<p><strong>What was wrong.</strong> <em>System bundles path</em> said WHERE this node's own backups
+land and nothing about WHEN they are written. The hour existed — the
+<code>system_backup</code> scheduled action, daily at 01:30 — but only in the Automation
+list, under an action name, three pages from the folder it fills. Nothing
+failed: the job ran, the page rendered. The pane was simply silent about the
+half of the fact that decides whether an empty folder is a problem.</p>
+<p><strong>The rule this follows.</strong> The hour has ONE author, and it is not a settings
+key: <code>system_backup</code> is the action that dumps, packs and uploads, so the field
+edits that schedule row. Same shape as §141's SoT cadence and §140's retired
+firmware "SoT" — a second author of one number is a page that prints 01:30 over
+a node backing up at 03:00, with neither of them wrong about itself.</p>
+<p><strong>Where it diverges from §141, deliberately.</strong> <code>save_sot_refresh</code> creates an
+interval row even when a wall-clock harvest exists: two harvests cost device
+calls. Two system backups cost a full bundle each (~578 MB on a node with ~9 GB
+free), so a bundle already scheduled some other way is <strong>refused and reported</strong>,
+with the field and the save button locked, pointing at Automation.</p>
+<p><strong>Two things that are load-bearing and invisible in a render.</strong></p>
+<ol>
+<li><code>compute_next_run</code> is called <strong>with <code>tz=tz_name()</code></strong>. <code>daily</code> is a wall-clock
+   kind: computed in UTC, "01:30" on a Europe/Zurich console fires at 03:30
+   local in summer — and the Automation page, which does pass the zone, would
+   disagree with this one about the same row.</li>
+<li>An unreadable submit returns <strong>the hour already in force</strong>, never <code>00:00</code>.
+   The form has one field and no error channel; defaulting to midnight would
+   relocate a nightly job to the hour the fleet is least watched and make it
+   look asked-for.</li>
+</ol>
+<p><strong>⚠ Sixteenth assertion answered by something else.</strong> <code>assert "disabled" in
+form</code> stayed green against a re-enabled input, because the <strong>submit button</strong> in
+the same form carries that attribute too. An attribute assertion belongs on the
+tag that is supposed to carry it (<code>_hour_input()</code> / <code>_submit_button()</code>), never
+on the form. Found by the harness, not by reading.</p>
+<p><strong>How to check it.</strong> <code>tests/test_system_bundle_schedule.py</code> (19 guards). The
+timezone guard pins <strong>Asia/Kolkata</strong> (+05:30, no DST) so the conversion is an
+exact number — 01:30 there is 20:00 UTC — rather than a "something changed"
+that a wrong-but-different answer would also satisfy. <strong>12 mutations, 12 dead</strong>
+(by rc, only <code>rc==1</code>, baseline green demanded per selection, anchor count
+exactly 1): drop <code>tz=</code>; stop recomputing <code>next_run</code>; fall back to <code>00:00</code> on
+garbage and on out-of-range; ignore the conflict and add a second bundle; take
+any schedule kind for the daily one; never report <code>other_kind</code>; drop the zone
+from the field; point the form at the SFTP endpoint; re-enable the field;
+re-enable the button; make the hour's POST also save the SFTP form.</p>
     </div>
   </div>
 </section>

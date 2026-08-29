@@ -2436,7 +2436,7 @@ configured to do — that is §26.5.
 | Stream | Written by | Path |
 |---|---|---|
 | Device config backups | the **appliances themselves**, on their own schedule (`config system backup`) | *Config backups path* |
-| System bundles | this node's scheduled system-backup action, via `push_server` (§15) | *System bundles path* |
+| System bundles | this node's scheduled system-backup action, via `push_server` (§15), **at the hour set on this same pane** | *System bundles path* |
 | Firmware archive | images retired from local storage | *Firmware archive path* |
 
 SATOM connects read-mostly: it inventories what it finds on the System Backup
@@ -2456,6 +2456,36 @@ appliance stops pushing, SATOM can report the gap but cannot fill it.
   The hint text lives in the `title` attribute, so it still appears as the
   browser's native tooltip if the script that upgrades it never loads: a
   control whose whole purpose is to explain must not go silent.
+
+#### System bundle schedule — when, beside where
+
+A path says *where* this node's own backups land and nothing about *when* they
+are written, and the hour was reachable only from the Automation list, under an
+action name, three pages away from the folder it fills. Whether an empty folder
+is a problem depends on both halves.
+
+- **Daily, at HH:MM.** A **wall-clock time in this console's timezone**, which
+  is printed beside the field. An hour with no zone next to it is the ambiguity
+  that had a nightly job running at 03:00 in winter and 04:00 in summer before
+  the scheduler learned about zones at all.
+- The field writes the **`system_backup` schedule row** — the action that
+  actually dumps Postgres, packs the JSON tree and the SoT blobs and uploads the
+  result — and **not a settings key of its own**. Two authors of one hour is a
+  page printing 01:30 over a node backing up at 03:00, with neither of them
+  wrong about itself. Same rule as the SoT cadence in §26.5.
+- **Saving recomputes the next run**, so a new hour takes effect tonight instead
+  of after the fire that was already pending. A cadence that is stored but does
+  not move the next fire looks saved and is inert.
+- The pane states the driving action, whether it is **disabled** (a node writing
+  no bundles at all is the one thing a backup page must not be quiet about), and
+  the last and next run in UTC.
+- **A bundle scheduled some other way** — weekly, or every N hours — is
+  **reported and the field is locked**, pointing at Automation. It is not
+  converted, and no second nightly run is added: unlike a SoT harvest, which
+  costs device calls, a duplicate bundle costs a full copy each (~578 MB on a
+  node with ~9 GB free). If nothing is scheduled at all, saving creates it.
+- Uploading depends on the credentials above: **a run whose upload fails still
+  leaves a local bundle**. Local bundles are not pruned yet.
 
 ### 26.6 Email & Alerts — this is the delivery policy §14.10 defers to
 

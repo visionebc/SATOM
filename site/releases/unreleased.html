@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Removed · Fixed · Added · 131 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Removed · Fixed · Added · 145 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Removed · Fixed · Added · 131 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Removed · Fixed · Added · 145 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,8 +59,8 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Removed · Fixed · Added · 131 entries</span>
-        <ul class="rel-leads"><li>Added</li><li>Added</li><li>Changed</li><li class="rel-more">… and 128 more</li></ul>
+        <span class="rel-nav-meta">unreleased · Removed · Fixed · Added · 145 entries</span>
+        <ul class="rel-leads"><li>Backup Server → System bundle schedule</li><li>A bundle scheduled some other way is reported and locked, never converted</li><li>Software Update Repository</li><li class="rel-more">… and 142 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v1.20.0.html" data-rel-version="1.20.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 1.20.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
@@ -255,6 +255,90 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
+<h3 id="added-the-system-bundle-says-when-not-only-where-2026-08-29">Added — the system bundle says when, not only where (2026-08-29)</h3>
+<ul>
+<li><strong>Backup Server → System bundle schedule</strong>: new card next to the three paths.
+  <em>System bundles path</em> stated where this node's own backups land and nothing
+  about when they are written; the hour lived only in the Automation list, under
+  an action name. The field is a <strong>daily wall-clock time</strong>, with the console's
+  <strong>timezone printed beside it</strong> — an hour with no zone is the ambiguity that
+  had nightly jobs drifting an hour twice a year.</li>
+<li>It writes the <strong><code>system_backup</code> schedule row</strong>, not a settings key of its own,
+  and <strong>recomputes <code>next_run</code></strong> in that timezone, so a new hour takes effect
+  tonight and the Settings and Automation pages cannot disagree about the same
+  row. The pane names the driving action, says loudly when it is <strong>disabled</strong>,
+  and prints last and next run.</li>
+<li><strong>A bundle scheduled some other way is reported and locked, never converted</strong>,
+  and no second nightly run is created: unlike a SoT harvest, a duplicate bundle
+  costs a full copy each. If nothing is scheduled, saving creates it. An
+  unreadable submit keeps the hour already in force rather than falling back to
+  midnight.</li>
+</ul>
+<h3 id="changed-the-repository-form-hides-the-sot-gets-a-cadence-the-paths-explain-themselves-2026-08-29">Changed — the repository form hides, the SoT gets a cadence, the paths explain themselves (2026-08-29)</h3>
+<ul>
+<li><strong>Software Update Repository</strong>: the <em>Configure Repository</em> card is gone as a
+  standalone card. Its form now lives <strong>inside</strong> the Repository card behind an
+  <strong>Edit</strong> button, and opens by itself on exactly one kind of node — one with no
+  <code>origin</code> at all, i.e. never registered at installation, which is also told so
+  in as many words. Previously three boxes that render <em>empty</em> until an async
+  fetch fills them sat permanently open, one submit away from writing blanks
+  over a working remote. Whether a repository exists is decided server-side on
+  the first render.</li>
+<li><strong>Configuration SoT</strong>: new <strong>Refresh frequency</strong> field — how often appliances
+  are harvested, in minutes. Default <strong>60</strong>, clamped to <strong>5 – 10080</strong>; <code>0</code>,
+  blank or garbage means <em>unset</em>, never "never". It writes the <code>device_sync</code>
+  schedule row rather than a settings key of its own (two authors of one cadence
+  is how a panel ends up showing an interval the scheduler never fires on) and
+  <strong>recomputes <code>next_run</code></strong>, so a shortened interval applies now instead of
+  after the fire that was already pending. A wall-clock harvest is reported, not
+  converted; if no harvest exists at all, saving creates one fleet-wide.</li>
+<li><strong>Backup Server</strong>: each of the three paths carries a <strong>“?”</strong> saying what lands
+  in it and <strong>who writes it</strong> — the distinction that decides whose fault an
+  empty folder is. Text lives in <code>title</code>, so it degrades to the browser's native
+  tooltip.</li>
+</ul>
+<h3 id="changed-one-settings-tab-held-three-subjects-now-each-has-its-own-2026-08-29">Changed — one Settings tab held three subjects; now each has its own (2026-08-29)</h3>
+<p><code>Settings → SoT &amp; Backup</code> carried a firmware git URL, the SFTP credentials of
+the backup box, and nothing about appliance configuration — under a heading
+whose first word names an authority. Nothing failed; the word simply covered
+more than it was true of.</p>
+<ul>
+<li><strong>Added</strong> the <strong>Source of Truth &amp; Backup</strong> group, holding two entries:
+  <strong>Configuration SoT</strong> (<code>#tab-sot</code>) and <strong>Backup Server</strong> (<code>#tab-backupsrv</code>).
+  Each pane states what it is <em>not</em> and links to the other two.</li>
+<li><strong>Renamed</strong> the <code>Git</code> panel to <strong>Software Update Repository</strong>. It is the repo
+  this node downloads its own <em>code</em> from; it has never held a device
+  configuration or a firmware image, and "Git" is a tool name that
+  distinguished it from neither of the others. The target <code>#tab-git</code> is
+  unchanged, so every deep link and manual reference still lands.</li>
+<li><strong>Removed</strong> <code>sot.firmware_repo_url</code> / <code>sot.firmware_repo_branch</code>. Every
+  consumer was presentational — the URL was rendered as a link and nothing ever
+  read the manifest — while the repo they named declared <code>firmwares: []</code> with
+  two images loaded. <strong>Firmware is not a source of truth in this product</strong>; its
+  authority is <code>firmware_images</code> + <code>data/firmware/</code> (Infrastructure →
+  Firmware), which is indexed, hashed and backed up. The System Backup page no
+  longer labels the firmware folder a "manifest SoT".</li>
+<li><strong>Fixed</strong> the SoT retention settings, which had never worked: <code>sot_store</code>
+  read them through <code>settings_store.get</code>, <strong>a function this product has never
+  defined</strong>, so every harvest raised <code>AttributeError</code> inside a blanket <code>except</code>
+  and silently used the hard-coded 60/180. They are now read through
+  <code>settings_store.sot_retention()</code> and are editable on the Configuration SoT
+  pane. A stored <code>0</code> or a malformed value means <em>unset</em>, not <em>keep nothing</em>.</li>
+<li><strong>Fixed</strong> two panes sharing one POST: saving a retention number rewrote the
+  SFTP credentials and could redirect to the other pane. <code>POST /settings/sot</code>
+  and <code>POST /settings/backup-server</code> now own one pane each and return to it.
+  (<code>/settings/sot-backup/test</code> moved to <code>/settings/backup-server/test</code>.)</li>
+<li><strong>Fixed</strong> the backup server's <strong>system bundles path</strong>, which the save read
+  with a default while the form did not offer it — so every submit quietly
+  rewrote a customised value back to <code>/system</code>. All three paths are on the form.</li>
+<li><strong>Changed</strong> the pane cross-reference hook from <code>data-theme-jump</code> (bound
+  inside the Appearance block, which returns early when the theme form is
+  absent) to a delegated <code>data-tab-jump</code>. It clicks the menu button rather than
+  showing the pane, so the lateral menu's selection follows.</li>
+<li>Guards: <code>tests/test_sot_settings_split.py</code> (22), safeguards §140.
+  Manual §26 rewritten — §26.4 is the update repository, §26.5 the
+  Configuration SoT, §26.5b the Backup Server.</li>
+</ul>
 <h3 id="added-the-spo-wizard-lets-the-operator-choose-the-backend-2026-08-28">Added — the SPO wizard lets the operator choose the backend (2026-08-28)</h3>
 <p>The registry gained N rows the same day, and the wizard still resolved in
 silence: whichever row the declared scopes happened to select did the work,

@@ -6,6 +6,25 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — the system bundle says when, not only where (2026-08-29)
+
+- **Backup Server → System bundle schedule**: new card next to the three paths.
+  *System bundles path* stated where this node's own backups land and nothing
+  about when they are written; the hour lived only in the Automation list, under
+  an action name. The field is a **daily wall-clock time**, with the console's
+  **timezone printed beside it** — an hour with no zone is the ambiguity that
+  had nightly jobs drifting an hour twice a year.
+- It writes the **`system_backup` schedule row**, not a settings key of its own,
+  and **recomputes `next_run`** in that timezone, so a new hour takes effect
+  tonight and the Settings and Automation pages cannot disagree about the same
+  row. The pane names the driving action, says loudly when it is **disabled**,
+  and prints last and next run.
+- **A bundle scheduled some other way is reported and locked, never converted**,
+  and no second nightly run is created: unlike a SoT harvest, a duplicate bundle
+  costs a full copy each. If nothing is scheduled, saving creates it. An
+  unreadable submit keeps the hour already in force rather than falling back to
+  midnight.
+
 ### Changed — the repository form hides, the SoT gets a cadence, the paths explain themselves (2026-08-29)
 
 - **Software Update Repository**: the *Configure Repository* card is gone as a

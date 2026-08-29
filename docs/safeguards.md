@@ -12294,3 +12294,53 @@ endif %}`; force it always-hidden; rewire the toggle; drop the `next_run`
 recompute; drop the clamp; make `val <= 0` into `val < 0`; make
 `_sot_refresh_primary` return any row regardless of kind; make the
 no-harvest path a silent no-op; strip a path hint; copy one hint over another.
+
+## §142 — a destination with no visible hour (2026-08-29)
+
+**What was wrong.** *System bundles path* said WHERE this node's own backups
+land and nothing about WHEN they are written. The hour existed — the
+`system_backup` scheduled action, daily at 01:30 — but only in the Automation
+list, under an action name, three pages from the folder it fills. Nothing
+failed: the job ran, the page rendered. The pane was simply silent about the
+half of the fact that decides whether an empty folder is a problem.
+
+**The rule this follows.** The hour has ONE author, and it is not a settings
+key: `system_backup` is the action that dumps, packs and uploads, so the field
+edits that schedule row. Same shape as §141's SoT cadence and §140's retired
+firmware "SoT" — a second author of one number is a page that prints 01:30 over
+a node backing up at 03:00, with neither of them wrong about itself.
+
+**Where it diverges from §141, deliberately.** `save_sot_refresh` creates an
+interval row even when a wall-clock harvest exists: two harvests cost device
+calls. Two system backups cost a full bundle each (~578 MB on a node with ~9 GB
+free), so a bundle already scheduled some other way is **refused and reported**,
+with the field and the save button locked, pointing at Automation.
+
+**Two things that are load-bearing and invisible in a render.**
+
+1. `compute_next_run` is called **with `tz=tz_name()`**. `daily` is a wall-clock
+   kind: computed in UTC, "01:30" on a Europe/Zurich console fires at 03:30
+   local in summer — and the Automation page, which does pass the zone, would
+   disagree with this one about the same row.
+2. An unreadable submit returns **the hour already in force**, never `00:00`.
+   The form has one field and no error channel; defaulting to midnight would
+   relocate a nightly job to the hour the fleet is least watched and make it
+   look asked-for.
+
+**⚠ Sixteenth assertion answered by something else.** `assert "disabled" in
+form` stayed green against a re-enabled input, because the **submit button** in
+the same form carries that attribute too. An attribute assertion belongs on the
+tag that is supposed to carry it (`_hour_input()` / `_submit_button()`), never
+on the form. Found by the harness, not by reading.
+
+**How to check it.** `tests/test_system_bundle_schedule.py` (19 guards). The
+timezone guard pins **Asia/Kolkata** (+05:30, no DST) so the conversion is an
+exact number — 01:30 there is 20:00 UTC — rather than a "something changed"
+that a wrong-but-different answer would also satisfy. **12 mutations, 12 dead**
+(by rc, only `rc==1`, baseline green demanded per selection, anchor count
+exactly 1): drop `tz=`; stop recomputing `next_run`; fall back to `00:00` on
+garbage and on out-of-range; ignore the conflict and add a second bundle; take
+any schedule kind for the daily one; never report `other_kind`; drop the zone
+from the field; point the form at the SFTP endpoint; re-enable the field;
+re-enable the button; make the hour's POST also save the SFTP form.
+

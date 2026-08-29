@@ -2814,14 +2814,26 @@ which distinguished it from nothing.</p>
 <li><strong>Repository</strong> — remote, branch, HEAD, working-tree status and ahead/behind,
   refreshed on demand.</li>
 <li><strong>Configure repository</strong> — set the remote URL, an optional token (embedded in
-  the URL, never displayed back) and the branch.</li>
-<li><strong>Update from Gitea</strong> — a fast-forward-only <code>git pull</code>. Python changes need a
-  service restart to take effect; the normal path for a code change is §22, not
-  this button.</li>
-<li><strong>Manual git console</strong> — one git command per line, <code>#</code> for comments. It is
-  <strong>git-only, not a shell</strong>: anything that is not a git subcommand is refused.</li>
-<li><strong>Recent commits</strong> lists what actually landed.</li>
+  the URL, never displayed back) and the branch. It is <strong>folded away behind the
+  </strong>Edit<strong> button on the Repository card</strong>, and opens by itself on exactly one
+  kind of node: one that has no <code>origin</code> at all, i.e. was never registered at
+  installation. Such a node also says so, in as many words, above the form.</li>
 </ul>
+<blockquote>
+<p>Until 2026-08-29 this was a second card of equal weight, permanently open,
+whose three boxes render <strong>empty</strong> until the status fetch fills them. A
+submit before that fetch lands writes blanks over a working remote. The
+repository is a fact to read; the form is only ever the answer on a fresh
+install, and that is the one state it now opens in. Whether a repository
+exists is decided <strong>server-side, on the first render</strong> — a client-side
+guess flashes the form open on a node that has been registered for a year.
+- <strong>Update from Gitea</strong> — a fast-forward-only <code>git pull</code>. Python changes need a
+  service restart to take effect; the normal path for a code change is §22, not
+  this button.
+- <strong>Manual git console</strong> — one git command per line, <code>#</code> for comments. It is
+  <strong>git-only, not a shell</strong>: anything that is not a git subcommand is refused.
+- <strong>Recent commits</strong> lists what actually landed.</p>
+</blockquote>
 <p>See also <a href="git-backup.html">git backup and surviving a Gitea outage</a>.</p>
 <h3 id="265-configuration-sot-the-only-thing-satom-calls-a-source-of-truth">26.5 Configuration SoT — the only thing SATOM calls a source of truth</h3>
 <p>The versioned history of every managed appliance's <strong>configuration</strong>. Each
@@ -2848,6 +2860,36 @@ and nothing said so. Fixed 2026-08-29 in the same change that surfaced them.</p>
 <p>Pruning runs after a harvest that actually changed something; an unchanged cycle
 cannot create anything to prune. Blobs no version references are deleted with
 the rows.</p>
+<p><strong>Refresh frequency</strong> — how often every managed appliance is read and its
+configuration hashed, in minutes. Default <strong>60</strong>, allowed <strong>5 – 10080</strong> (a
+week); out-of-range values are clamped rather than rejected, because the field
+has no error channel of its own and a silently dropped value would leave the old
+number on screen looking saved. A <code>0</code>, a blank or a malformed value means
+<em>unset</em> and restores the default — never "harvest never".</p>
+<blockquote>
+<p><strong>This field does not create a settings key.</strong> The cadence already has an
+author: <code>device_sync</code> is the scheduled action that reads a device and mints a
+version (§15), so a key of its own would be a <strong>second author of one number</strong>
+— the panel would show one interval while the scheduler fired on another, and
+neither would be wrong about itself. The field reads and writes that schedule
+row, and <strong>recomputes its next fire</strong>: a stored interval that leaves
+<code>next_run</code> alone does not apply until the fire that was already pending goes
+off, which is a setting that looks saved and is inert.</p>
+</blockquote>
+<p>Two consequences worth knowing before typing a small number:</p>
+<ul>
+<li>A short interval costs <strong>device calls</strong>, not storage — an unchanged harvest
+  writes nothing at all.</li>
+<li>The panel names the row it drives and links to it, says whether that row is
+  <strong>disabled</strong> (in which case nothing is harvested on a schedule at all), and
+  reports any <em>other</em> <code>device_sync</code> schedules it is deliberately <strong>not</strong>
+  touching. A harvest pinned to a wall-clock time ("every night at 02:00") is a
+  different statement; converting it to an interval would discard it, so it is
+  reported and left alone. If no scheduled harvest exists at all, saving
+  <strong>creates</strong> one, fleet-wide, at the interval typed.</li>
+<li>Uploading the new SoT blobs off-box is a separate action on its own schedule
+  (<code>device_inspect</code>) and is edited in Automation, not here.</li>
+</ul>
 <h3 id="265b-backup-server-the-external-sftp-destination">26.5b Backup Server — the external SFTP destination</h3>
 <p>The box <strong>three separate streams are copied to</strong>. It is a destination, not an
 authority: nothing stored there is consulted to decide what a device is
@@ -2868,7 +2910,7 @@ configured to do — that is §26.5.</p>
 </tr>
 <tr>
 <td>System bundles</td>
-<td>this node's scheduled system-backup action, via <code>push_server</code> (§15)</td>
+<td>this node's scheduled system-backup action, via <code>push_server</code> (§15), <strong>at the hour set on this same pane</strong></td>
 <td><em>System bundles path</em></td>
 </tr>
 <tr>
@@ -2889,6 +2931,41 @@ appliance stops pushing, SATOM can report the gap but cannot fill it.</p>
 <li>All three paths are on the form. The system-bundles path used to be missing
   from it while the save still read it with a default, so every submit quietly
   rewrote a customised value back to <code>/system</code>.</li>
+<li><strong>Each path carries a “?”</strong> stating what lands in it and, more importantly,
+  <strong>who writes it</strong> — the distinction that decides whose fault an empty folder
+  is. Three paths side by side, with no such text, said nothing about either.
+  The hint text lives in the <code>title</code> attribute, so it still appears as the
+  browser's native tooltip if the script that upgrades it never loads: a
+  control whose whole purpose is to explain must not go silent.</li>
+</ul>
+<h4 id="system-bundle-schedule-when-beside-where">System bundle schedule — when, beside where</h4>
+<p>A path says <em>where</em> this node's own backups land and nothing about <em>when</em> they
+are written, and the hour was reachable only from the Automation list, under an
+action name, three pages away from the folder it fills. Whether an empty folder
+is a problem depends on both halves.</p>
+<ul>
+<li><strong>Daily, at HH:MM.</strong> A <strong>wall-clock time in this console's timezone</strong>, which
+  is printed beside the field. An hour with no zone next to it is the ambiguity
+  that had a nightly job running at 03:00 in winter and 04:00 in summer before
+  the scheduler learned about zones at all.</li>
+<li>The field writes the <strong><code>system_backup</code> schedule row</strong> — the action that
+  actually dumps Postgres, packs the JSON tree and the SoT blobs and uploads the
+  result — and <strong>not a settings key of its own</strong>. Two authors of one hour is a
+  page printing 01:30 over a node backing up at 03:00, with neither of them
+  wrong about itself. Same rule as the SoT cadence in §26.5.</li>
+<li><strong>Saving recomputes the next run</strong>, so a new hour takes effect tonight instead
+  of after the fire that was already pending. A cadence that is stored but does
+  not move the next fire looks saved and is inert.</li>
+<li>The pane states the driving action, whether it is <strong>disabled</strong> (a node writing
+  no bundles at all is the one thing a backup page must not be quiet about), and
+  the last and next run in UTC.</li>
+<li><strong>A bundle scheduled some other way</strong> — weekly, or every N hours — is
+  <strong>reported and the field is locked</strong>, pointing at Automation. It is not
+  converted, and no second nightly run is added: unlike a SoT harvest, which
+  costs device calls, a duplicate bundle costs a full copy each (~578 MB on a
+  node with ~9 GB free). If nothing is scheduled at all, saving creates it.</li>
+<li>Uploading depends on the credentials above: <strong>a run whose upload fails still
+  leaves a local bundle</strong>. Local bundles are not pruned yet.</li>
 </ul>
 <h3 id="266-email-alerts-this-is-the-delivery-policy-1410-defers-to">26.6 Email &amp; Alerts — this is the delivery policy §14.10 defers to</h3>
 <p><strong>Email (SMTP)</strong> — enable/disable, server, port, TLS verification (with an

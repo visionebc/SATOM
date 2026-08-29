@@ -220,6 +220,7 @@ def index():
         # has been registered for a year.
         git_configured=git_service.remote_configured(),
         sot_backup_server=(store.backup_server() if _is_admin() else None),
+        system_backup_schedule=(store.system_backup_schedule() if _is_admin() else None),
         system_info=system_info.collect(),
         # Languages — one row per language the PRODUCT speaks, so a language
         # the operator switched off is still visible (and switchable back on).
@@ -1319,6 +1320,31 @@ def save_backup_srv():
     log_action("settings.backup_server",
                detail=f"backup_server={request.form.get('host','')!r}")
     flash('Backup server settings saved.', 'success')
+    return redirect(url_for('settings.index') + '#tab-backupsrv')
+
+
+@bp.route('/backup-server/schedule', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def save_backup_schedule():
+    """The hour this node writes its own bundle at.
+
+    Its own POST on purpose: sharing the SFTP form's endpoint would make
+    changing the hour rewrite the credentials, which is exactly how the fused
+    SoT/backup pane used to behave.
+    """
+    res = store.save_system_backup_schedule(request.form.get('bundle_time', ''))
+    if res.get('conflict'):
+        flash('This node backs up on a %s schedule, which one hour cannot '
+              'express — change it in Automation rather than adding a second '
+              'nightly bundle.' % res['kind'], 'warning')
+        return redirect(url_for('settings.index') + '#tab-backupsrv')
+    log_action("settings.system_backup_schedule",
+               detail=f"at={res['time']} tz={store.tz_name()} created={res['created']}")
+    flash('Created a nightly system backup at %s %s.' % (res['time'], store.tz_name())
+          if res['created'] else
+          'System bundles are now written at %s %s.' % (res['time'], store.tz_name()),
+          'success')
     return redirect(url_for('settings.index') + '#tab-backupsrv')
 
 

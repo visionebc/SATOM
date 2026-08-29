@@ -643,7 +643,7 @@
           <p class="text-muted" style="font-size:13px;">{{ _('The external box three separate streams are copied TO. It is a DESTINATION, not an authority: nothing here is consulted to decide what a device is configured to do — that is the') }} <a href="#tab-sot" data-tab-jump="#tab-sot">{{ _('Configuration SoT') }}</a>. {{ _('SATOM connects read-mostly: it inventories what it finds and pulls on demand.') }}</p>
           <ul class="text-muted" style="font-size:13px;">
             <li><strong>{{ _('Config backups') }}</strong> — {{ _('written by the APPLIANCES themselves, on their own schedule') }} (<code>config system backup</code>). {{ _('SATOM reads, indexes and diffs them; it does not author them.') }}</li>
-            <li><strong>{{ _('System bundles') }}</strong> — {{ _('this node\'s own backups, uploaded by the scheduled system backup action.') }}</li>
+            <li><strong>{{ _('System bundles') }}</strong> — {{ _('this node\'s own backups, written and uploaded by the scheduled system backup action — on the schedule set below.') }}</li>
             <li><strong>{{ _('Firmware') }}</strong> — {{ _('where retired appliance images are archived once they leave local storage.') }}</li>
           </ul>
           <div class="row g-2 mb-2">
@@ -709,6 +709,51 @@
           <div class="mt-3">
             <button type="submit" class="btn fw-btn-primary btn-sm"><i class="bi bi-save me-1"></i>{{ _('Save backup server settings') }}</button>
           </div>
+        </div>
+      </div>
+    </form>
+
+    {#
+       WHEN the bundle is written, edited beside WHERE it lands.  The field
+       writes the ``system_backup`` schedule row — the action that actually
+       dumps, packs and uploads — and not a settings key of its own: an hour
+       with two authors is a page that prints 01:30 over a node backing up at
+       03:00.  A bundle scheduled any other way is reported, never converted.
+    #}
+    <form method="post" action="{{ url_for('settings.save_backup_schedule') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="fw-card mt-3">
+        <div class="fw-card-header">
+          <i class="bi bi-clock-history me-1"></i>{{ _('System bundle schedule') }}
+        </div>
+        <div class="p-3">
+          <p class="text-muted" style="font-size:13px;">{{ _('How often — and at what hour — this node packs its own bundle and uploads it to the system bundles path above. One bundle per run: a Postgres dump plus the JSON tree and the SoT blobs.') }}</p>
+          <div class="row g-3">
+            <div class="col-sm-4">
+              <label class="form-label">{{ _('Daily, at') }}
+                {{ hint(_('A wall-clock time in this console\'s timezone, not UTC. Saving also moves the next run, so a new hour takes effect tonight instead of after the fire that was already pending. Bundles are large: this is a daily job, and a second one is not created behind your back.'), _('About the bundle hour')) }}
+              </label>
+              <input type="time" name="bundle_time" class="form-control fw-form-control"
+                     value="{{ system_backup_schedule.time }}"
+                     {% if system_backup_schedule.other_kind %}disabled{% endif %}>
+              <div class="form-text">{{ _('Runs every day. Timezone') }}: <code>{{ system_backup_schedule.tz }}</code> ({{ _('default') }} {{ system_backup_schedule.default_time }})</div>
+            </div>
+            <div class="col-sm-8">
+              <div class="form-text">
+                {% if system_backup_schedule.other_kind %}
+                  <span class="text-warning">{{ _('This node\'s bundle runs on a') }} <code>{{ system_backup_schedule.other_kind }}</code> {{ _('schedule, which a single hour cannot express — edit it in') }} <a href="{{ url_for('scheduled_actions.index') }}">{{ _('Automation') }}</a>. {{ _('Nothing here will add a second nightly bundle.') }}</span>
+                {% elif system_backup_schedule.configured %}
+                  {{ _('Driven by the scheduled action') }} <a href="{{ url_for('scheduled_actions.index') }}"><code>system_backup</code> #{{ system_backup_schedule.action_id }}</a>{% if not system_backup_schedule.enabled %} — <span class="text-danger">{{ _('DISABLED, so this node is writing no bundles at all right now') }}</span>{% endif %}.
+                  {% if system_backup_schedule.last_run %} {{ _('Last run') }}: {{ system_backup_schedule.last_run.strftime('%Y-%m-%d %H:%M') }} UTC{% if system_backup_schedule.last_status %} ({{ system_backup_schedule.last_status }}){% endif %}.{% endif %}
+                  {% if system_backup_schedule.next_run %} {{ _('Next') }}: {{ system_backup_schedule.next_run.strftime('%Y-%m-%d %H:%M') }} UTC.{% endif %}
+                {% else %}
+                  {{ _('No system backup is scheduled on this node — saving creates one, daily, at the hour you type.') }}
+                {% endif %}
+                <span class="d-block mt-1">{{ _('Uploading depends on the credentials above: a run whose upload fails still leaves a local bundle. Local bundles are not pruned yet.') }}</span>
+              </div>
+            </div>
+          </div>
+          <button type="submit" class="btn fw-btn-primary btn-sm mt-3"{% if system_backup_schedule.other_kind %} disabled{% endif %}><i class="bi bi-save me-1"></i>{{ _('Save bundle schedule') }}</button>
         </div>
       </div>
     </form>

@@ -101,6 +101,7 @@
       <a href="#38-bookmarks-the-panel-you-file-yourself">38. Bookmarks: the panel you file yourself</a>
       <a href="#39-concept-map-where-does-x-live">39. Concept Map: where does X live?</a>
       <a href="#40-upgrade-flow-a-maintenance-window-as-one-workflow">40. Upgrade Flow: a maintenance window as one workflow</a>
+      <a href="#41-stored-assets-what-each-adom-actually-holds">41. Stored Assets: what each ADOM actually holds</a>
     </aside>
     <div class="doc-body mdx">
 <h1 id="satom-user-guide">SATOM — User Guide</h1>
@@ -2844,22 +2845,62 @@ replicated to the standby node by <code>satom-ha-datasync</code>, and carried in
 system backup bundle. <code>device_sync</code> and <code>device_inspect</code> are the actions that
 feed it (§15). The design is in
 <a href="source-of-truth.html">source-of-truth-spec.md</a>.</p>
-<p><strong>Retention</strong> is the panel's only setting, and it is a <strong>union, not a pair of
-caps</strong>: a version is dropped only when it fails <em>both</em> tests — outside the
-newest <strong>N</strong> for its device <strong>and</strong> older than <strong>D</strong> days. That is what stops a
-week of churn from erasing the month before it. Product defaults are <strong>60
-versions</strong> and <strong>180 days</strong>; the panel says whether this node has configured
-them or is running on the defaults.</p>
+<h4 id="the-change-log-is-permanent-the-payload-is-not">The change log is permanent. The payload is not.</h4>
+<p>Since <strong>2026-08-30</strong> these are two different lifetimes and only one of them is
+configurable.</p>
+<p><strong>The index — the <code>sot_version</code> rows — is kept forever, and there is no setting
+to shorten it.</strong> The row <em>is</em> the change log: the list an operator walks back
+through to find the value a parameter used to have. A knob that shortened it
+could achieve exactly one thing, which is destroying the record this store
+exists to keep, so the panel states the rule instead of offering a field.</p>
 <blockquote>
-<p>Both keys existed before this panel did, and neither worked. <code>sot_store</code>
-read them through <code>settings_store.get</code> — a function this product has never
-defined — so every harvest raised <code>AttributeError</code> inside a blanket <code>except</code>
-and silently fell back to the defaults. Writing the settings changed nothing,
-and nothing said so. Fixed 2026-08-29 in the same change that surfaced them.</p>
+<p>Until this change <code>prune()</code> deleted rows, and that was the documented
+behaviour. Nothing failed: the page rendered, the suite was green. It only
+became a data-loss defect the moment a <strong>one-day</strong> local policy was asked
+for — the whole history would have gone inside a day while every byte sat
+safely on the backup server, unreachable, because <code>load()</code> and <code>diff()</code> only
+ever opened the local file. <code>diff()</code> said so out loud:
+<code>blob missing (pruned?)</code>.</p>
 </blockquote>
-<p>Pruning runs after a harvest that actually changed something; an unchanged cycle
-cannot create anything to prune. Blobs no version references are deleted with
-the rows.</p>
+<p><strong>The payload — the gzip snapshot under <code>data/sot/objects/</code> — leaves.</strong> Two
+numbers govern it, and they are a <strong>union, not a pair of caps</strong>: a snapshot
+stays on this node while it is inside the newest <strong>N</strong> for its device <strong>or</strong>
+younger than <strong>D</strong> days. Defaults: <strong>2 versions</strong> and <strong>1 day</strong>.</p>
+<p>Two, not one, for the versions floor: a diff needs a version <em>and</em> the one
+before it, and <em>what changed in the last harvest</em> is the most-used view in the
+product — at one, that view would go to the network every single time.</p>
+<p><strong>These numbers are set per ADOM.</strong> The panel shows the house rule first and
+then one card per ADOM. Resolution is three deep — ADOM key, house key, product
+default — and each card prints <strong>which level answered</strong>, because "2 because you
+set it" and "2 because nobody set anything" lead to different next actions.
+Leaving both boxes of an ADOM card empty and saving <strong>clears</strong> that override so
+the ADOM inherits again; that is the only way to undo one. Per ADOM because the
+families are not comparable: a FortiAnalyzer snapshot measures ~6 MB raw where
+a FortiWeb's is ~0.5 MB, so one number for all four fits none of them.</p>
+<p>A <code>0</code>, a blank or a malformed value means <em>unset</em> and restores the default,
+never "keep nothing" — zero down this path would evacuate the newest payload
+too, and the very next diff would go to the network for a config harvested a
+minute ago.</p>
+<h4 id="confirm-off-box-then-delete-in-that-order-always">Confirm off-box, then delete — in that order, always</h4>
+<p>Evacuation <strong>uploads first, lists the server, and deletes locally only what
+that listing confirms</strong>. A listing that fails yields an empty set, so an
+unreachable or misconfigured server evacuates <strong>nothing</strong>; it is never read as
+permission to delete. This ordering is the single line the whole feature rests
+on, and it is checked per blob, not per server: one file missing from an
+otherwise healthy listing is kept.</p>
+<p>An evacuated version is <strong>not gone</strong>. Opening it — history, diff, restore —
+fetches the blob back from the backup server on demand and re-caches it
+locally, after verifying that the bytes hash to the name they were stored
+under. The row carries <code>evacuated_at</code> so the page can say where the payload
+currently lives, and a device that reverts to an older configuration re-writes
+the blob and clears that flag.</p>
+<p>This normally runs by itself after each off-box sync (<code>device_inspect</code>). The
+<strong>Apply the payload policy now</strong> button on this pane does the same thing
+immediately. A shared snapshot — the same configuration recorded under a
+chassis <em>and</em> its per-ADOM rows — only leaves when no retained row anywhere
+still wants it on disk.</p>
+<p>Blobs no version references at all are still deleted outright; those are
+orphans, not history.</p>
 <p><strong>Refresh frequency</strong> — how often every managed appliance is read and its
 configuration hashed, in minutes. Default <strong>60</strong>, allowed <strong>5 – 10080</strong> (a
 week); out-of-range values are clamped rather than rejected, because the field
@@ -2965,7 +3006,37 @@ is a problem depends on both halves.</p>
   costs device calls, a duplicate bundle costs a full copy each (~578 MB on a
   node with ~9 GB free). If nothing is scheduled at all, saving creates it.</li>
 <li>Uploading depends on the credentials above: <strong>a run whose upload fails still
-  leaves a local bundle</strong>. Local bundles are not pruned yet.</li>
+  leaves a local bundle</strong> — which is correct, because then the local copy is the
+  only copy.</li>
+</ul>
+<h4 id="local-bundle-retention-the-bundle-lives-off-the-node-it-backs-up">Local bundle retention — the bundle lives off the node it backs up</h4>
+<p>Added <strong>2026-08-30</strong>. A bundle is SATOM's own backup, so the one place it is
+worth least is beside the thing it backs up: the node that loses its disk loses
+both. <strong>Bundles kept on this node</strong> therefore defaults to <strong>0</strong>.</p>
+<ul>
+<li>Zero is a <strong>real value</strong> here, not "unset". Everywhere else in Settings a
+  stored <code>0</code> means <em>nobody configured this</em>; collapsing it that way here would
+  make the recommended setting unreachable. The pane distinguishes "configured
+  as 0" from "not configured, default 0" — same effect, different sentence.</li>
+<li>A local bundle is deleted <strong>only when the backup server is confirmed to hold
+  it at the same size</strong>. Name alone would accept a truncated upload, which is
+  the exact failure <code>push_bundle</code> already guards at write time and would be
+  pointless to re-open at delete time. A bundle the server does not hold is
+  always kept, whatever the number says.</li>
+<li>The sweep runs automatically <strong>after every successful upload</strong>, and the
+  <strong>Apply bundle retention now</strong> button runs it on demand. That button uploads
+  nothing: a bundle that was never pushed is reported as kept, never silently
+  deleted.</li>
+<li><strong>Downloading or restoring an off-box bundle fetches it back automatically</strong>
+  (to a temp name, renamed only after the size the server reported round-trips).
+  Without that, the default policy would make every bundle unrestorable the
+  moment it started working: the page would list it and Restore would answer
+  <em>unknown backup</em>.</li>
+<li>The System Backup page lists the <strong>union</strong> of local and off-box bundles, each
+  tagged with where it actually is. <code>/healthz/backups</code> and the primary/standby
+  comparison keep reporting <strong>local only</strong>, on purpose: that comparison means
+  "what does each node physically hold", and folding the shared off-box copy in
+  would make two empty nodes look identical to two full ones.</li>
 </ul>
 <h3 id="266-email-alerts-this-is-the-delivery-policy-1410-defers-to">26.6 Email &amp; Alerts — this is the delivery policy §14.10 defers to</h3>
 <p><strong>Email (SMTP)</strong> — enable/disable, server, port, TLS verification (with an
@@ -4764,8 +4835,8 @@ the page instead of on a manual.</p>
 discipline:</p>
 <ol>
 <li><strong>The URL map is the authority on what exists.</strong> Every parameterless page in
-   the console is either <strong>on the map</strong> (99 today) or <strong>excluded with a written
-   reason</strong> (124 today — JSON feeds, downloads, redirects and fragments that
+   the console is either <strong>on the map</strong> (100 today) or <strong>excluded with a written
+   reason</strong> (125 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.</li>
 <li><strong>Nothing here is a second source of truth.</strong> Paths are generated from the
@@ -4847,6 +4918,119 @@ nineteen devices enter a maintenance window with no baseline; a wave that
 silently disappeared takes its appliances out of every window without anybody
 being told. If you are over a limit, split the window — the tool will not do it
 behind your back.</p>
+<h2 id="41-stored-assets-what-each-adom-actually-holds">41. Stored Assets: what each ADOM actually holds</h2>
+<p><code>Administration → Stored Assets</code> (<code>/adom-assets</code>), added <strong>2026-08-30</strong>. Needs
+the <strong>user_manage</strong> permission. It appears in every ADOM, including Global, and
+is scoped to the ADOM you are in — Global means "every family", and is the only
+scope where the two <em>unowned</em> buckets below can appear at all.</p>
+<p><strong>Why it exists.</strong> The four things an operator asks about a device lived in four
+different places: the backup server's per-device folder, the <code>sot_version</code>
+index, the firmware store and the appliance row. The only page that joined any
+two of them — System Backup — joins them for the whole console at once. Inside
+an ADOM you could see what SATOM <em>does</em> to a device and never what it <em>holds</em>
+for it.</p>
+<p><strong>The split with Settings is deliberate.</strong> The knobs — how much SoT payload
+stays local (§26.5), how many bundles stay on the node (§26.5b), where the
+backup server is — are one console-wide configuration and stay in the admin
+console. What each ADOM <em>holds</em> is per-ADOM data read while working inside that
+ADOM. Putting both on one page is how a console-wide retention field ends up
+being edited by somebody who came to check a backup date.</p>
+<h3 id="what-the-page-shows">What the page shows</h3>
+<p>Five tiles, then one row per device: name (with every earlier name it has been
+known by), <strong>serial</strong>, model and firmware, backups on the server, <strong>last push</strong>,
+SoT versions with a local/off-box split, and the last configuration change.
+Expanding a row lists the individual files with size and date.</p>
+<p><strong>"Last push" is the point of the page.</strong> A folder with nothing in it and a
+folder that stopped filling look identical, and only one of them is normal, so
+the two are separate states and named separately:</p>
+<table>
+<thead>
+<tr>
+<th>State</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>never pushed</strong></td>
+<td>no file has ever arrived — this appliance has probably never been given a <code>config system backup</code> job</td>
+</tr>
+<tr>
+<td>≤ 8 days</td>
+<td>healthy</td>
+</tr>
+<tr>
+<td>9 – 31 days</td>
+<td>stale</td>
+</tr>
+<tr>
+<td>&gt; 31 days</td>
+<td>critical</td>
+</tr>
+<tr>
+<td><strong>date unreadable / unknown</strong></td>
+<td>the server answered but the timestamp could not be parsed</td>
+</tr>
+</tbody>
+</table>
+<p>The thresholds are deliberately generous at the top: appliance backup jobs are
+typically daily or weekly, and a red badge at three days would cry wolf on a
+correctly configured weekly job.</p>
+<p><strong>An unreachable backup server reads as <em>unknown</em>, never as <em>no backups</em>.</strong> The
+banner says so and the columns say so. That distinction is the difference
+between "go configure the appliances" and "go fix the SFTP credentials".</p>
+<h3 id="the-two-unowned-buckets-global-scope">The two unowned buckets (Global scope)</h3>
+<ul>
+<li><strong>Unclaimed folders on the backup server</strong> — files are arriving under a name
+  no device in SATOM answers to. Either the appliance is pushing under a
+  different name than it is registered with, or the device was removed from
+  SATOM while its backups kept coming. Neither is an error, and neither was
+  visible anywhere before.</li>
+<li><strong>Configuration history with no identity record</strong> — devices the SoT remembers
+  that no row claims, so their versions are filed under no ADOM. Pressing
+  <strong>Reconcile identity</strong> adopts them.</li>
+</ul>
+<h3 id="reconcile-identity">Reconcile identity</h3>
+<p>Idempotent, safe to press twice. It gives every appliance and every device the
+SoT has ever recorded an identity row, and stamps the ADOM onto versions
+recorded before that column existed. The ADOM of a device that no longer has an
+appliance row is established by <strong>fingerprinting its own snapshot</strong> — matching
+the endpoint keys it contains against the four shipped endpoint catalogs — not
+by guessing from its name. A snapshot that matches nothing is left
+<strong>unassigned</strong>: an unassigned device is visible and askable; one filed under the
+wrong ADOM is neither.</p>
+<h3 id="identity-and-why-it-is-not-a-column">Identity, and why it is not a column</h3>
+<p>See §41.1. Deleting a backup from the server is the page's one destructive
+action: an exact filename, an explicit typed <strong>DELETE</strong>, an audit entry naming
+the device and the byte size — recorded whether or not it succeeded. There is
+deliberately <strong>no</strong> "delete everything older than": the appliances author those
+files, and a bulk delete of somebody else's artefacts is not something this page
+should be able to do by accident.</p>
+<h3 id="411-serial-numbers-and-the-record-that-outlives-the-device">41.1 Serial numbers and the record that outlives the device</h3>
+<p>Everything hanging off <code>appliances.id</code> is <code>ON DELETE CASCADE</code>: hardware,
+certificates, probes, snapshots. De-registering a device destroys its record
+along with it — which is exactly backwards for the question an operator asks
+about a file sitting on the backup server: <em>whose is this?</em></p>
+<p>So identity lives in its own table, <code>device_identity</code>, <strong>with no foreign key</strong>.
+A row here outlives the appliance it describes, the same way <code>sot_version</code>
+outlives it by indexing on the device name. Retiring a device sets a timestamp;
+nothing is deleted, and de-registering an appliance now records its identity
+<em>before</em> the row goes.</p>
+<p><strong>The identity is the serial number, not the name.</strong> A name is a label an
+operator typed and can change; the serial is what the chassis answers with. One
+serial with three names is one box that was renamed twice — and on FortiWeb, one
+chassis whose per-ADOM rows all report the <strong>same</strong> serial, which is precisely
+why a backup taken from that chassis covers every one of them and must never be
+presented as belonging to a single ADOM.</p>
+<p>The serial is read off the <strong>same status call</strong> the firmware probe already
+makes — every reader in <code>firmware_probe</code> was already extracting it to guess
+<code>hw_type</code> and then throwing it away — so no extra device call was introduced
+anywhere, which is the property that keeps that module safe on <code>/api/v1</code>.</p>
+<p><code>""</code> means <strong>never observed</strong>, never "this box has no serial", and a payload
+that does not carry one never erases a serial an earlier probe established: the
+four kinds answer with different payloads, and <em>this payload did not say</em> is not
+<em>the value is now empty</em>. Same attestation rule the firmware probe applies to
+<code>firmware_checked_at</code>.</p>
     </div>
   </div>
 </section>

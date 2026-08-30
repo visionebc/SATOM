@@ -74,6 +74,65 @@ And the corollary that dictates where the code lives:
 
 ---
 
+### 1.4 The console announces what it is, who made it and under what licence
+
+`satom` with no arguments opens the interactive prompt, and before the first
+prompt it prints a banner: the SATOM wordmark in ASCII blocks, the version and
+node identity read from the node itself, the attribution to VisionEBC, and the
+licence.
+
+```
+    ############  ############  ############  ############  ###      ###
+  ##        ##  ##        ##      ####      ##        ##  ####    ####
+  ##            ##        ##      ####      ##        ##  ## ##  ## ##
+  ############  ############      ####      ##        ##  ##  ####  ##
+            ##  ##        ##      ####      ##        ##  ##   ##   ##
+  ##        ##  ##        ##      ####      ##        ##  ##        ##
+  ############  ##        ##      ####      ############  ##        ##
+
+  SATOM operator CLI 1.20.0
+  System Automation & Task Orchestration Manager
+  Made by VisionEBC  ·  https://visionebc.com
+  satom-node-1 · primary · root
+  ────────────────────────────────────────────────────────────────────────────
+  Copyright 2026 Vision EBC  ·  Licensed under the Elastic License 2.0
+  Source-available, NOT OSI open source  ·  provided AS IS, without warranty
+  Offering SATOM to third parties as a hosted or managed service requires
+  a commercial licence: licensing@visionebc.com
+  ────────────────────────────────────────────────────────────────────────────
+  '?' lists commands here  ·  'show tree' is the whole map  ·  'exit' leaves
+```
+
+Three properties are load-bearing, and §1.1 is why:
+
+* **The art is blocks of `#`, never Unicode.** The alternate glyph set in
+  `render.py` exists because box drawing folds to garbage on a serial console —
+  which is exactly where this tool gets opened. `#` renders identically with
+  `--ascii`, through a pipe, and on the console of a node that will not boot.
+* **Below 78 columns the banner collapses to its one-line header.** The licence
+  paragraph is fixed-width prose; suppressing only the art would leave four
+  74-column sentences to wrap into confetti on the recovery console the
+  threshold exists to protect. Through a **pipe** nothing is suppressed: width
+  `0` means "do not reflow", not "narrow", and a redirected transcript must
+  still carry the licence.
+* **`SATOM_CLI_NO_BANNER=1` returns the one-line header.** Runbooks and
+  operators who open this console dozens of times a day should not have to
+  scroll past twenty lines to reach a prompt.
+
+The banner is the **ninth** surface on which SATOM states its licence, after
+`LICENSE`, `NOTICE`, `README.md`, `CONTRIBUTING.md`, `DISCLAIMER`,
+`SECURITY.md`, the curated `site/` pages and the footer template in
+`deploy/gen_site_docs.py`. Nothing *fails* when one of them goes stale — the
+claim simply becomes false, which is how `Version: 1.0` survived four releases
+in the README. `tests/test_cli_banner.py` pins the console's wording to the same
+assertions the site footer makes and forbids the old licence outright.
+
+> The banner is **not** printed on SSH login. It appears when someone opens the
+> SATOM console, which is a different event: an operator who signs in to read a
+> log has not asked what licence the product ships under.
+
+---
+
 ## 2. Getting the privilege
 
 Print the rule and hand it to whoever administers the box. This needs no

@@ -22,6 +22,140 @@ HINT = ("'?' lists commands here  ·  'show tree' is the whole map  ·  "
 HINT_ASCII = ("'?' lists commands here | 'show tree' is the whole map | "
               "'exit' leaves")
 
+# --- console banner -------------------------------------------------------
+#
+# The wordmark is drawn from a table PER LETTER, not by slicing one string at
+# fixed offsets: a slice makes every future edit a column-arithmetic problem
+# and is how an earlier draft painted the M in the O's column.
+#
+# Blocks of '#' only. This CLI is used on serial consoles of broken nodes,
+# where the alternate glyph set (_GLYPHS[False]) already exists because box
+# drawing folds to garbage there; art built from Unicode blocks would have the
+# same fate and would need a second variant. '#' renders identically in both
+# modes and through a pipe.
+_ART_GLYPHS = {
+    "S": ("############",
+          "##        ##",
+          "##          ",
+          "############",
+          "          ##",
+          "##        ##",
+          "############"),
+    "A": ("############",
+          "##        ##",
+          "##        ##",
+          "############",
+          "##        ##",
+          "##        ##",
+          "##        ##"),
+    "T": ("############",
+          "    ####    ",
+          "    ####    ",
+          "    ####    ",
+          "    ####    ",
+          "    ####    ",
+          "    ####    "),
+    "O": ("############",
+          "##        ##",
+          "##        ##",
+          "##        ##",
+          "##        ##",
+          "##        ##",
+          "############"),
+    "M": ("###      ###",
+          "####    ####",
+          "## ##  ## ##",
+          "##  ####  ##",
+          "##   ##   ##",
+          "##        ##",
+          "##        ##"),
+}
+_ART_WORD = "SATOM"
+_ART_ROWS = 7
+_ART_GAP = "  "
+_ART_INDENT = "  "
+
+# Extra lead on the TOP row only, requested explicitly by the operator after
+# being told what it does. It shifts the top bars of S/A/T/O and the peaks of
+# the M two columns right of their own stems. Revert by setting this to "".
+_ART_TOP_EXTRA = "  "
+
+# Below this terminal width the art is suppressed and the short header is
+# printed instead. A banner that wraps on a recovery console is worse than no
+# banner. width == 0 means "piped": no reflow happens there, so nothing is
+# suppressed.
+_ART_MIN_WIDTH = 78
+_RULE_W = 76
+
+SUBTITLE = "System Automation & Task Orchestration Manager"
+ATTRIBUTION = "Made by VisionEBC  \u00b7  https://visionebc.com"
+
+# NINTH surface that declares the licence (LICENSE, NOTICE, README.md,
+# CONTRIBUTING.md, DISCLAIMER, SECURITY.md, the curated site pages and the
+# footer template in deploy/gen_site_docs.py are the other eight).
+#
+# Nothing fails when a licence surface goes stale -- the claim simply becomes
+# false. That is how 'Version: 1.0' survived four releases in the README, and
+# here it is worse: whoever acts on the wrong surface relies on a grant that
+# was never made. tests/test_cli_banner.py pins these lines against the same
+# assertions as the site footer.
+LICENCE_LINES = (
+    "Copyright 2026 Vision EBC  \u00b7  Licensed under the Elastic License 2.0",
+    "Source-available, NOT OSI open source  \u00b7  provided AS IS, without warranty",
+    "Offering SATOM to third parties as a hosted or managed service requires",
+    "a commercial licence: licensing@visionebc.com",
+)
+
+# Escape hatch. Runbooks and operators who open this console dozens of times a
+# day get the one-line header back without losing the console.
+NO_BANNER_ENV = "SATOM_CLI_NO_BANNER"
+
+
+def art_lines():
+    """The wordmark, one string per row, trailing blanks stripped."""
+    rows = []
+    for i in range(_ART_ROWS):
+        row = _ART_GAP.join(_ART_GLYPHS[ch][i] for ch in _ART_WORD)
+        lead = _ART_INDENT + (_ART_TOP_EXTRA if i == 0 else "")
+        rows.append((lead + row).rstrip())
+    return rows
+
+
+def banner_lines(ctx, st):
+    """Every line the interactive console prints before its first prompt."""
+    out = []
+    # Narrow collapses to the SAME short form as the opt-out, not just "art
+    # off". The licence prose is fixed-width, so suppressing only the art
+    # leaves four 74-column sentences to wrap into confetti on the recovery
+    # console this threshold exists to protect.
+    short = (os.environ.get(NO_BANNER_ENV) == "1"
+             or (st.width and st.width < _ART_MIN_WIDTH))
+    if not short:
+        out.extend(art_lines())
+        out.append("")
+
+    out.append("  " + st.c("b", "%s %s" % (BANNER, ctx.version())))
+    if not short:
+        out.append("  " + st.c("dim", st.fold(SUBTITLE)))
+        out.append("  " + st.c("dim", st.fold(ATTRIBUTION)))
+    out.append("  " + st.c("dim", st.fold("%s \u00b7 %s \u00b7 %s"
+                                          % (ctx.host, ctx.role, ctx.user))))
+    if not ctx.is_root:
+        out.append("  " + st.c("warn", st.fold(
+            "unprivileged \u2014 'execute' is unavailable; "
+            "diagnostics all work")))
+
+    rule = st.rule(min(st.width or _RULE_W, _RULE_W))
+    out.append("  " + st.c("dim", rule))
+    if not short:
+        for line in LICENCE_LINES:
+            out.append("  " + st.c("dim", st.fold(line)))
+        out.append("  " + st.c("dim", rule))
+    out.append("  " + st.c("dim", HINT_ASCII if st.ascii else HINT))
+    return out
+
+
+
 
 def help_for(node, path, ctx):
     st = style_of(ctx)
@@ -169,19 +303,9 @@ def repl(ctx):
         readline.set_completer_delims(" \t")
         readline.parse_and_bind("tab: complete")
 
-    role = ctx.role
-    head = "%s %s" % (BANNER, ctx.version())
-    facts = "%s · %s · %s" % (ctx.host, role, ctx.user)
-    if st.ascii:
-        facts = facts.replace(" · ", " | ")
     print("")
-    print("  %s" % st.c("b", head))
-    print("  %s" % st.c("dim", facts))
-    if not ctx.is_root:
-        print("  %s" % st.c("warn", "unprivileged — 'execute' is unavailable; "
-                                    "diagnostics all work"))
-    print("  %s" % st.c("dim", st.rule(min(st.width or 72, 64))))
-    print("  %s" % st.c("dim", HINT_ASCII if st.ascii else HINT))
+    for line in banner_lines(ctx, st):
+        print(line)
     print("")
 
     sigil = "#" if ctx.is_root else ">"

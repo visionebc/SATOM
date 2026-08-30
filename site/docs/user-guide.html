@@ -2829,13 +2829,22 @@ which distinguished it from nothing.</p>
 <ul>
 <li><strong>Repository</strong> — remote, branch, HEAD, working-tree status and ahead/behind,
   refreshed on demand.</li>
-<li><strong>Configure repository</strong> — set the remote URL, an optional token (embedded in
+</ul>
+<blockquote>
+<p><strong>Which remote should be here?</strong> For an installation you did not build
+yourself, the answer is the public repository the installer clones by
+default, <code>github.com/visionebc/SATOM</code>. Development happens in a separate,
+private repository that a customer node is not expected to reach. Between
+2026-07 and 2026-08-30 there was a third, intermediate mirror; it has been
+<strong>retired and deleted</strong>, so a node still pointing at it fails its next
+update with a <code>404</code> on a remote that no longer exists rather than with
+anything that names the real problem. If <strong>Repository</strong> shows a
+<code>satom-prod</code> URL, re-point it here before the next maintenance window.
+- <strong>Configure repository</strong> — set the remote URL, an optional token (embedded in
   the URL, never displayed back) and the branch. It is <strong>folded away behind the
   </strong>Edit<strong> button on the Repository card</strong>, and opens by itself on exactly one
   kind of node: one that has no <code>origin</code> at all, i.e. was never registered at
-  installation. Such a node also says so, in as many words, above the form.</li>
-</ul>
-<blockquote>
+  installation. Such a node also says so, in as many words, above the form.</p>
 <p>Until 2026-08-29 this was a second card of equal weight, permanently open,
 whose three boxes render <strong>empty</strong> until the status fetch fills them. A
 submit before that fetch lands writes blanks over a working remote. The

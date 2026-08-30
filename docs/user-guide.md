@@ -2366,6 +2366,16 @@ which distinguished it from nothing.
 
 - **Repository** — remote, branch, HEAD, working-tree status and ahead/behind,
   refreshed on demand.
+
+  > **Which remote should be here?** For an installation you did not build
+  > yourself, the answer is the public repository the installer clones by
+  > default, `github.com/visionebc/SATOM`. Development happens in a separate,
+  > private repository that a customer node is not expected to reach. Between
+  > 2026-07 and 2026-08-30 there was a third, intermediate mirror; it has been
+  > **retired and deleted**, so a node still pointing at it fails its next
+  > update with a `404` on a remote that no longer exists rather than with
+  > anything that names the real problem. If **Repository** shows a
+  > `satom-prod` URL, re-point it here before the next maintenance window.
 - **Configure repository** — set the remote URL, an optional token (embedded in
   the URL, never displayed back) and the branch. It is **folded away behind the
   **Edit** button on the Repository card**, and opens by itself on exactly one

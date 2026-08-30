@@ -74,11 +74,23 @@
 automated, deterministic gate. Nothing reaches the public mirror by hand.
 This document is the source of truth for that process and is intentionally
 public so users can see exactly how releases are produced and vetted.</p>
+<p><strong>There are exactly two repositories, and they are not peers.</strong> Development is
+private and holds the full history; the public mirror is derived from it by the
+gate below and is the only thing anyone installs from. A third, intermediate
+mirror existed until 2026-08-30 and was <strong>retired</strong>: it was always pinned to the
+same commit as the public mirror, so it added a hop that could fail without
+adding a copy that could be restored from — and its package registry was the
+undeclared source of the public release assets, which made an ordinary cleanup
+into an outage waiting to happen. Release assets are now taken from the build
+output directly.</p>
+<p>The public <strong>documentation and product site is not GitHub Pages.</strong> Pages is
+switched off for this project; <code>satom.visionebc.com</code> is served from its own
+repository and its own node (Stage 0, hop 7).</p>
 <pre><code>   INTERNAL (private)                    GATE                     PUBLIC
   ┌──────────────────┐   ┌───────────────────────────────┐   ┌──────────────┐
-  │ Gitea dev repo   │──▶│ 1. Sanitize (git-filter-repo) │──▶│ Gitea prod   │
-  │ satom-dev    │   │ 2. Secret scan (gitleaks-like) │   │ GitHub mirror│
-  │ (full history)   │   │ 3. Internal AI vuln audit      │   │ GitHub Pages │
+  │ Gitea dev repo   │──▶│ 1. Sanitize (git-filter-repo) │──▶│ GitHub mirror│
+  │ satom-dev        │   │ 2. Secret scan (gitleaks-like) │   │ + Releases   │
+  │ (full history)   │   │ 3. Internal AI vuln audit      │   │ (public)     │
   └──────────────────┘   └───────────────────────────────┘   └──────────────┘
 </code></pre>
 <h2 id="stage-0-the-promotion-order">Stage 0 — the promotion order</h2>
@@ -128,7 +140,7 @@ a gate that must be green before the next one runs.</p>
 <tr>
 <td>6</td>
 <td><strong>Public mirror</strong></td>
-<td>sanitised history, release artefacts</td>
+<td>sanitised history, release artefacts, tagged releases</td>
 <td>stages 1–4 of this document</td>
 </tr>
 <tr>
@@ -168,6 +180,22 @@ detector (high-confidence patterns: PEM private keys, GitHub/AWS/Slack/
 Google tokens, and <code>fernet</code>/<code>secret_key</code>/<code>encryption_key</code> assignments).
 <strong>A single hit aborts the publish</strong> and reports the pattern -&gt; path. Large
 and binary blobs are skipped. This is a hard gate, not advisory.</p>
+<p><strong>The PEM rule matches key MATERIAL, not the label</strong> (2026-08-30). It used to
+fire on a bare <code>-----BEGIN … PRIVATE KEY-----</code> header, so an HTML <code>placeholder=</code>
+attribute, a test fixture whose body is the letter <code>B</code> repeated, and a design
+note in Markdown all aborted the publish exactly as a real key would. The
+practical cost was not noise: the scan runs over the <strong>whole</strong> history of the
+mirror, so neutralising the files at <code>HEAD</code> unblocked nothing, and the public
+repository sat frozen for twelve days before anyone attempted a publish and
+found out. The header must now be followed by <strong>at least 40 base64 characters
+within the next 200 bytes</strong>. The window is deliberately narrow — widen it and
+the header starts pairing with unrelated base64 further down the file (a
+data-URI, a CSP nonce) and the false positive returns through another door.</p>
+<p>Narrowing a scanner that guards a public repository is only defensible with
+evidence that it still bites. <code>tools_check_secret_patterns.py</code> <strong>generates</strong>
+eight real key encodings — PKCS#8, traditional RSA, EC, ED25519, OpenSSH, a
+<code>DEK-Info</code> encrypted PEM, a JSON-escaped one-liner and a YAML block scalar —
+and asserts every one still aborts, alongside seven labels that must not.</p>
 <h2 id="stage-3-internal-ai-vulnerability-audit">Stage 3 — Internal AI vulnerability audit</h2>
 <p>Before a release is blessed, the code is audited by <strong>fleet-internal LLMs</strong>
 (no third-party/cloud AI, no code leaves the LAN): DeepSeek-R1 and
@@ -195,10 +223,33 @@ rule you can forget — but running it after the tests and before the sync saves
 a round trip.</p>
 <hr>
 <h2 id="stage-4-publish">Stage 4 — Publish</h2>
-<p>On a clean gate the sanitized history is force-pushed to the public Gitea
-prod repo and the GitHub mirror, the <code>gh-pages</code> site is regenerated from
-<code>site/</code>, and the release artifacts (installer + offline bundles + SHA256)
-are published to the package registry / GitHub Release.</p>
+<p>On a clean gate the sanitized history is force-pushed to the <strong>public GitHub
+mirror</strong> — one destination, with every version tag repointed at the sanitized
+commit that carries the same tree — and the release artefacts (installer +
+offline bundles + <code>SHA256</code>) are attached to the matching <strong>GitHub Release</strong>.</p>
+<p>Three properties of this stage are worth stating because none of them announces
+itself when it breaks:</p>
+<ul>
+<li><strong>The artefacts come from the build output.</strong> They used to be copied out of
+  the intermediate mirror's package registry, which quietly made a repository
+  nobody looked at into a mandatory link in the chain of custody for every
+  public download. The source of a published artefact is now the artefact.</li>
+<li><strong>A release refuses to carry a filename that disagrees with <code>VERSION</code>.</strong> If
+  the built bundles are <code>…-1.10.1-…</code> and <code>VERSION</code> says <code>1.20.0</code>, the publish
+  <strong>aborts</strong> rather than creating a <code>v1.20.0</code> release whose assets are named
+  after a different build. That mismatch is invisible after the fact — the
+  release is created, the files upload, and every step reports success — so the
+  only place it can be caught is before the upload.</li>
+<li><strong>Every commit on the mirror is attributable.</strong> The rewrite stamps a single
+  public identity, and the address it stamps is the account's <code>noreply</code> form
+  (<code>&lt;id&gt;+&lt;login&gt;@users.noreply.github.com</code>), not the contact address published
+  in the source. GitHub only links a commit to an account through a <strong>verified</strong>
+  address; the contact address is not one, so the entire public history read as
+  authored by nobody — no account, no avatar, no link — while every check
+  passed, because "all identities are identical" and "the identity is
+  attributable" are different claims. The numeric account id is used rather
+  than the login because a login can be renamed and the id cannot.</li>
+</ul>
 <h2 id="why-publish-this">Why publish this</h2>
 <p>Users of a security tool deserve to know how its releases are vetted.
 Publishing the pipeline is part of the trust model: reproducible

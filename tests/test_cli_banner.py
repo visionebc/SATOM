@@ -103,13 +103,17 @@ def test_body_rows_share_one_left_margin():
     assert body == [2, 2, 2, 2, 2], leads
 
 
-def test_top_row_carries_the_operator_requested_offset():
-    """Explicitly asked for, twice, after being told it shifts the top bars
-    right of their own stems. Pinned so it cannot drift back silently."""
+def test_top_row_shares_the_body_margin():
+    """The offset was asked for, seen in a real terminal, and withdrawn: any
+    extra lead on row 0 hangs the top bars of S/A/T/O and the peaks of the M
+    right of their own stems. Pinned to the LITERAL 2 -- deriving it from
+    _ART_TOP_EXTRA would make the assertion true for every value of the
+    constant it exists to pin, which is how the margin guard went blind."""
     art = cli_main.art_lines()
     top = len(art[0]) - len(art[0].lstrip())
     body = len(art[1]) - len(art[1].lstrip())
-    assert top - body == len(cli_main._ART_TOP_EXTRA) == 2
+    assert top == body == 2, (top, body)
+    assert cli_main._ART_TOP_EXTRA == ""
 
 
 def test_wordmark_is_pure_ascii_blocks():

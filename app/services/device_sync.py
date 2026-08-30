@@ -356,10 +356,16 @@ def persist_snapshot(appliance, snapshot: dict, *, source: str = "live",
         if publish:
             from . import sot_store
             try:
-                # push THEN evacuate: the local payload policy only ever
-                # deletes what the server has been confirmed to hold.
+                # push, THEN evacuate the payload, THEN archive whole past
+                # months of the change log — each step only ever deletes what
+                # the server has been confirmed to hold, and the order is not
+                # free: a month may leave only once its snapshots are off-box,
+                # which is what the evacuation just did.
                 pr = sot_store.offload()
-                run.detail += (f" | off-box: {pr.get('detail', '')[:120]}"
+                # 220, not 120: the summary now carries three clauses and the
+                # third one is the only place the log archive is reported on a
+                # scheduled run. A truncated line reads as "it did not run".
+                run.detail += (f" | off-box: {pr.get('detail', '')[:220]}"
                                if pr.get("ok")
                                else f" | off-box: {pr.get('detail', '')[:80]}")
             except Exception as exc:  # noqa: BLE001 — push never sinks the sync

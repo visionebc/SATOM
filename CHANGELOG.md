@@ -6,6 +6,58 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed — the 500 page's Copy button can no longer fail in silence (2026-08-30)
+
+- **A failed copy now stays on screen and names its reason.** The button flashed
+  a ✗ for two seconds and then restored its label, which is indistinguishable
+  from a button that does nothing — and it took the diagnosis with it. A failure
+  now keeps the label, **selects the reference**, and shows a persistent line
+  with the browser's own error name.
+- **The legacy fallback moved back inside the click.** It was being called from
+  the promise's rejection handler, where `document.execCommand('copy')` no
+  longer has the click's transient activation — so it could only ever report a
+  second failure. It now runs only for the non-secure-context case, inside the
+  handler itself.
+- **`writeText()` has a 1.5 s deadline.** A permission prompt that never appears
+  used to leave the button silent for good.
+- **The reference is click-to-select**, a path that depends on no clipboard API.
+- Verified in a real Chromium over CDP with a *trusted* click (a synthetic
+  `.click()` carries no user activation and would have proved nothing), on the
+  byte-identical page and CSP header, across secure, non-secure and
+  permission-denied origins. See `docs/safeguards.md` §145.
+
+### Added — the change log gets a window, and it is archived before it leaves (2026-08-30)
+
+- **Days of change log kept in the database**, a third field on every SoT policy
+  card. Default **365**, per ADOM with the same three-deep resolution as the
+  payload boxes, and `0` is a real value here meaning *never trim* (in the two
+  payload boxes zero stays meaningless and reads as unset; a blank box is a
+  third state again and restores the default).
+- **The log is archived off-box before any of it is deleted.** Whole past
+  calendar months are written to `<system_path>/sot-log/` on the backup server
+  as one plain JSONL file per device and month — every field of every row, so
+  it stands on its own and can be pulled straight off the server with `sftp`
+  without restoring the database. Rows leave only after that file is **listed
+  back at exactly the size that was written**; an unreachable server archives
+  nothing, a file already on the server is never overwritten, and a month whose
+  snapshots are not off-box yet is held whole.
+- `offload()` (and the button, and `device_inspect`) now runs push → evacuate →
+  archive, in that order: a month may only leave once its snapshots are
+  off-box, and the evacuation is what puts them there.
+
+### Changed
+
+- **Per-ADOM SoT settings are gated on the ADOM being active.** An inactive
+  device family no longer gets a retention card. An override written before it
+  was switched off keeps resolving, so those are listed separately with their
+  numbers and a **Clear the override** button rather than disappearing.
+- **"Apply the payload policy now" / "Push and evacuate now" is now "Free space
+  on this node now" / "Upload and free space now".** The card states in its
+  first line that it does *not* discard history, names the two things it
+  removes locally, and prints where the change-log archive lands and what the
+  last run did. The old wording named the mechanism and left the consequence to
+  be guessed.
+
 ### Added — the change log became permanent and the payload learned to leave (2026-08-30)
 
 - **The Configuration SoT index is now kept forever, and `prune()` no longer

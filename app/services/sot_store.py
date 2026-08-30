@@ -28,12 +28,15 @@ Design rules:
 * **Blobs live under ``data/``** so the existing ``satom-ha-datasync`` rsync
   replicates them to the standby and the system-backup bundles include them.
   No new replication mechanism.
-* **Retention is a policy, not "forever".** ``prune()`` keeps the newest
-  ``sot.retention_versions`` per device and anything younger than
-  ``sot.retention_days``; blobs no longer referenced by any row are deleted.
-  Pruning runs inside ``record()`` (same pattern as the monitor rollups): a
-  fresh install has no seeded ScheduledAction rows, so a function that only
-  works when the operator creates one does not exist there.
+* **Two lifetimes, never one.** The INDEX (``sot_version`` rows) is the change
+  log; the PAYLOAD (blobs) is what it points at. ``evacuate()`` moves payload
+  off-box and leaves every row; ``archive_log()`` writes whole past months of
+  ROWS to the backup server as JSONL and only then deletes them. Both obey the
+  same order: confirm the server holds it, then delete locally — a listing
+  that fails reads as "nothing is off-box", never as permission to delete.
+  Payload retention runs inside ``record()`` (same pattern as the monitor
+  rollups): a fresh install has no seeded ScheduledAction rows, so a function
+  that only works when the operator creates one does not exist there.
 """
 from __future__ import annotations
 
@@ -148,6 +151,24 @@ DEFAULT_LOCAL_DAYS = 1
 DEFAULT_KEEP_VERSIONS = DEFAULT_LOCAL_VERSIONS
 DEFAULT_KEEP_DAYS = DEFAULT_LOCAL_DAYS
 
+#: How long the change log stays in this node's database before whole past
+#: months of it are written to the backup server and removed here.
+#:
+#: A year, and deliberately long. The log is not what fills a node: a row plus
+#: its indexes costs ~875 B against ~62 KB for the gzipped snapshot it points
+#: at, so a hundred devices changing daily add ~32 MB of rows a year against
+#: ~2 GB of payload. Shortening this buys almost no disk and costs the one
+#: thing the store exists for — being able to open a device's history in the
+#: UI without going to the network. The knob exists so the table is bounded
+#: and the log is provably off-box, not as a space measure.
+#:
+#: 0 disables trimming entirely: the log then stays here forever, which is
+#: what this product did before the setting existed.
+DEFAULT_LOG_KEEP_DAYS = 365
+
+#: Folder under the backup server's ``system_path`` that holds the archive.
+LOG_ARCHIVE_SUBDIR = "sot-log"
+
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
@@ -191,6 +212,20 @@ def _retention(product: str = "") -> tuple[int, int]:
         return (int(cfg["versions"]), int(cfg["days"]))
     except Exception:  # noqa: BLE001 — retention must never sink a harvest
         return (DEFAULT_LOCAL_VERSIONS, DEFAULT_LOCAL_DAYS)
+
+
+def _log_retention(product: str = "") -> int:
+    """Days of change log this node keeps, FOR ONE ADOM.
+
+    Same three-deep resolution and same fail-safe as :func:`_retention`: any
+    failure returns the product default rather than a number that would delete
+    more. Zero is a real answer here (never trim) and is passed through.
+    """
+    try:
+        from . import settings_store
+        return int(settings_store.sot_local_policy(product)["log_days"])
+    except Exception:  # noqa: BLE001 — retention must never sink a harvest
+        return DEFAULT_LOG_KEEP_DAYS
 
 
 def product_for_device(device: str) -> str:
@@ -520,6 +555,199 @@ def evacuate(device: str = "", *, dry_run: bool = False) -> dict:
             "off_box_known": len(off_box), "dry_run": dry_run}
 
 
+def _slug(device: str) -> str:
+    """A device name that is safe as one path component of an archive file.
+
+    Separators and dots are collapsed, not escaped: the archive lands in one
+    flat folder on the backup server, so a device called ``../x`` must not be
+    able to name a file outside it.
+    """
+    keep = [c if (c.isalnum() or c in "-_") else "_" for c in (device or "")]
+    return ("".join(keep).strip("_") or "device")[:80]
+
+
+def _month_bounds(when: datetime) -> tuple:
+    """First instant of *when*'s calendar month and of the month after it."""
+    start = datetime(when.year, when.month, 1)
+    end = (datetime(when.year + 1, 1, 1) if when.month == 12
+           else datetime(when.year, when.month + 1, 1))
+    return start, end
+
+
+def remote_log_archive() -> dict:
+    """``{filename: size}`` of the change-log archive files the backup server
+    holds. Empty on ANY failure, for the same reason
+    :func:`remote_blob_names` is: an unreachable server must read as "nothing
+    is archived", so a failed listing archives and deletes nothing."""
+    try:
+        from . import backup_server as _bk
+        from . import settings_store as _store
+        cfg = _store.backup_server()
+        if not cfg.get("configured"):
+            return {}
+        remote = ((cfg.get("system_path") or "/system").rstrip("/")
+                  + "/" + LOG_ARCHIVE_SUBDIR)
+        inv = _bk.dir_inventory(remote)
+        if not inv.get("reachable"):
+            return {}
+        return {str(f.get("name") or ""): int(f.get("size") or 0)
+                for f in (inv.get("files") or [])}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _archive_payload(rows: list) -> bytes:
+    """The bytes of one archive file: one JSON object per row, oldest first.
+
+    Deterministic on purpose — same rows in, same bytes out — because the
+    delete step compares the size of what it would upload against the size of
+    what the server already holds. A payload that varied between runs would
+    make that comparison meaningless.
+    """
+    lines = [json.dumps(r.to_dict(), sort_keys=True, separators=(",", ":"))
+             for r in sorted(rows, key=lambda r: (r.taken_at or datetime.min,
+                                                  r.id))]
+    return ("\n".join(lines) + "\n").encode("utf-8")
+
+
+def archive_log(device: str = "", *, dry_run: bool = False) -> dict:
+    """Write whole past months of the change log off-box, then delete those
+    rows from this node.
+
+    Three rules, and each one is load-bearing:
+
+    * **Whole calendar months only.** A month is archived once it lies
+      ENTIRELY beyond the retention window. Archiving the old half of a month
+      would mean writing that month's file a second time later — with fewer
+      rows in it — and the second write would replace a complete archive with
+      a truncated one.
+    * **The payload must already be off-box.** Deleting a row whose blob is
+      still local-only orphans that blob, and the orphan sweep in
+      :func:`prune` then deletes it: the archive would point at bytes that no
+      longer exist anywhere. A month holding any such row is held whole.
+    * **Confirm, then delete.** The file is uploaded, the folder is listed
+      back, and the rows go only when the server reports the file at exactly
+      the size that was written. A size that disagrees holds the month and
+      says so rather than overwriting.
+    """
+    from ..models import db
+    from ..models_sot import SotVersion
+
+    now = datetime.utcnow()
+    devices = ([device] if device else
+               [d["device"] for d in devices_summary()])
+
+    off_box = remote_blob_names()
+    plan: dict = {}
+    held_recent = 0
+    held_local_payload = set()
+    for dev in devices:
+        keep_days = _log_retention(product_for_device(dev))
+        if keep_days <= 0:
+            continue
+        cutoff = now - timedelta(days=keep_days)
+        rows = SotVersion.query.filter_by(device=dev).all()
+        for row in rows:
+            taken = row.taken_at or now
+            _, month_end = _month_bounds(taken)
+            if month_end > cutoff:
+                held_recent += 1
+                continue
+            key = (dev, taken.strftime("%Y-%m"))
+            plan.setdefault(key, []).append(row)
+            if row.evacuated_at is None and f"{row.sha256}.json.gz" not in off_box:
+                held_local_payload.add(key)
+
+    have = remote_log_archive()
+    tmp_dir = store_dir() / "log-archive-out"
+    to_push = []
+    staged = {}
+    frozen_mismatch = 0
+    for key, rows in sorted(plan.items()):
+        if key in held_local_payload:
+            continue
+        dev, month = key
+        name = f"{_slug(dev)}-{month}.jsonl"
+        data = _archive_payload(rows)
+        if name in have:
+            # Already off-box. Same size means the same rows: proceed to the
+            # delete without re-uploading a frozen file. A DIFFERENT size is
+            # not a no-op to pass over in silence — the server holds a file
+            # for this month that is not what these rows would produce, so
+            # the month is held AND said out loud. Dropping it quietly is how
+            # a held month would read as an archived one.
+            if have[name] == len(data):
+                staged[key] = (name, rows, len(data))
+            else:
+                frozen_mismatch += 1
+            continue
+        if dry_run:
+            staged[key] = (name, rows, len(data))
+            continue
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+        path = tmp_dir / name
+        path.write_bytes(data)
+        to_push.append(str(path))
+        staged[key] = (name, rows, len(data))
+
+    push = {"ok": True, "pushed": 0, "skipped": 0, "detail": "nothing to push"}
+    if to_push and not dry_run:
+        try:
+            from . import backup_server as _bk
+            push = _bk.push_log_archive(to_push)
+        except Exception as exc:  # noqa: BLE001
+            push = {"ok": False, "detail": str(exc)}
+        for f in to_push:
+            Path(f).unlink(missing_ok=True)
+        if not push.get("ok"):
+            return {"ok": False, "archived_rows": 0, "files": 0,
+                    "held_months": len(held_local_payload),
+                    "held_rows": held_recent, "mismatched": 0,
+                    "detail": "archive upload failed, nothing deleted: "
+                              + str(push.get("detail", ""))[:160]}
+
+    # Re-list AFTER the upload: the delete is authorised by what the server
+    # reports holding, never by the upload call returning without an error.
+    confirmed = have if dry_run else remote_log_archive()
+    deleted = files = 0
+    mismatched = frozen_mismatch
+    for key, (name, rows, size) in sorted(staged.items()):
+        if dry_run:
+            files += 1
+            deleted += len(rows)
+            continue
+        if confirmed.get(name) != size:
+            mismatched += 1
+            continue
+        for row in rows:
+            db.session.delete(row)
+        deleted += len(rows)
+        files += 1
+    if not dry_run:
+        db.session.commit()
+
+    detail = (f"change log: {deleted} row(s) in {files} monthly file(s) "
+              f"archived off-box and removed locally")
+    if mismatched:
+        detail += f"; {mismatched} month(s) HELD (off-box size disagrees)"
+    if held_local_payload:
+        detail += (f"; {len(held_local_payload)} month(s) held "
+                   f"(snapshot not off-box yet)")
+    res = {"ok": True, "archived_rows": deleted, "files": files,
+           "held_months": len(held_local_payload), "held_rows": held_recent,
+           "mismatched": mismatched, "dry_run": dry_run, "detail": detail}
+    if not dry_run:
+        try:
+            from . import settings_store as _store
+            _store.set_str(_store.K_SOT_LOG_ARCHIVE_LAST, json.dumps({
+                "at": now.isoformat(timespec="seconds"),
+                "rows": deleted, "files": files,
+                "held": len(held_local_payload), "mismatched": mismatched}))
+        except Exception:  # noqa: BLE001 — reporting must not sink the sweep
+            pass
+    return res
+
+
 def prune(device: str = "") -> dict:
     """Apply the local payload policy, then collect orphan blobs.
 
@@ -670,7 +898,13 @@ def offload(device: str = "") -> dict:
                 "detail": "push failed, nothing evacuated: "
                           + str(push.get("detail", ""))[:160]}
     ev = evacuate(device)
-    return {"ok": True, "push": push, "evacuate": ev,
+    # The change log leaves LAST, and it has to: a month may only be deleted
+    # once its snapshots are off-box, and this run is what puts them there.
+    # Archiving first would hold exactly the months this call is about to make
+    # eligible, so the trim would always lag a full cycle behind the policy.
+    log = archive_log(device)
+    return {"ok": True, "push": push, "evacuate": ev, "log": log,
             "detail": f"{push.get('detail', '')}; "
                       f"evacuated {ev['evacuated']} blob(s), "
-                      f"{ev['bytes_freed'] // 1024} KB freed"}
+                      f"{ev['bytes_freed'] // 1024} KB freed; "
+                      f"{log.get('detail', '')}"}

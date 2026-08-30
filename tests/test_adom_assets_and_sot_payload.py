@@ -325,19 +325,29 @@ def test_the_read_refuses_a_stored_zero_it_did_not_write(app):
             "a stored 0 was honoured as a policy: everything would be evacuated"
 
 
-def test_no_setting_can_shorten_the_change_log(app, client):
-    """The pane must not offer an index-retention field. Such a knob's only
-    possible effect is destroying the record this store exists to keep."""
+def test_no_setting_can_shorten_the_change_log_without_archiving_it(app, client):
+    """AMENDED 2026-08-30, and the amendment is the point.
+
+    This guard used to demand the pane state the log was kept forever with no
+    setting at all. The operator then asked for the missing half — keep a
+    window here, put the rest on the backup server — so the absolute claim is
+    no longer true and pinning it would have frozen the product against its
+    own operator. What still must hold is the SAFETY of the shortening: a row
+    may only leave after the same rows have been written off-box and listed
+    back. The claim moved; the invariant did not.
+
+    The retired field names stay in the list: they belonged to a knob that
+    deleted rows with nothing written anywhere, which is what must not return.
+    """
     login(client, admin_user_id(app))
     html = client.get("/settings/").get_data(as_text=True)
     marker = '<div class="tab-pane fade" id="tab-sot">'
     assert marker in html
     pane = html.split(marker, 1)[1].split('class="tab-pane', 1)[0]
-    # Scoped to the pane, and anchored on the CLAIM the pane must make rather
-    # than on the absence of a word: "retention" legitimately appears in the
-    # payload copy.
-    assert "kept forever and has no retention setting" in pane, \
-        "the pane no longer states that the change log is permanent"
+    assert "never thrown away" in pane, \
+        "the pane no longer states that the change log is moved, not discarded"
+    assert "listed back at the exact size" in pane, \
+        "the pane no longer states what authorises deleting a row"
     for gone in ('name="index_versions"', 'name="index_days"',
                  'name="retention_versions"'):
         assert gone not in pane, "%s is back on the form" % gone

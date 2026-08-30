@@ -1054,6 +1054,18 @@ def save_banners(mapping: dict) -> None:
 # operator can set a house rule once and override one family.
 K_SOT_LOCAL_VERSIONS = "sot.local_versions"
 K_SOT_LOCAL_DAYS = "sot.local_days"
+#: How long the change log itself — the ``sot_version`` ROWS — stays in this
+#: node's database. Distinct from the two keys above, which govern snapshot
+#: FILES: the log is ~1000x cheaper than the payload it indexes (a row plus
+#: its indexes is ~875 B against ~62 KB of gzipped snapshot), so this bound
+#: exists to keep the table finite, not to reclaim space. Nothing is deleted
+#: until the same rows have been written to the backup server as a plain
+#: JSONL file and that file has been listed back — the same
+#: confirm-then-delete order the payload evacuation rests on.
+K_SOT_LOG_KEEP_DAYS = "sot.log_keep_days"
+#: Outcome of the last archive run, so the pane can state what happened
+#: without making an SFTP call on every render.
+K_SOT_LOG_ARCHIVE_LAST = "sot.log_archive_last"
 K_BACKUPSRV = "backup_server.config"                # JSON dict, password_enc inside
 #: How many freshly written system bundles stay on this node after a verified
 #: upload. 0 = none, which is the default and what was asked for: a bundle is
@@ -1071,6 +1083,7 @@ _BACKUPSRV_DEFAULTS = {
 
 SOT_LOCAL_VERSIONS_MAX = 10000
 SOT_LOCAL_DAYS_MAX = 36500
+SOT_LOG_KEEP_DAYS_MAX = 36500
 
 
 def _scoped(key: str, product: str = "") -> str:
@@ -1089,34 +1102,53 @@ def sot_local_policy(product: str = "") -> dict:
     newest, so the very next diff would go to the network for a config
     harvested a minute ago.
     """
-    from .sot_store import DEFAULT_LOCAL_VERSIONS, DEFAULT_LOCAL_DAYS
+    from .sot_store import (DEFAULT_LOCAL_VERSIONS, DEFAULT_LOCAL_DAYS,
+                            DEFAULT_LOG_KEEP_DAYS)
     out = {"product": product or ""}
     for key, field, dflt in ((K_SOT_LOCAL_VERSIONS, "versions", DEFAULT_LOCAL_VERSIONS),
-                             (K_SOT_LOCAL_DAYS, "days", DEFAULT_LOCAL_DAYS)):
+                             (K_SOT_LOCAL_DAYS, "days", DEFAULT_LOCAL_DAYS),
+                             (K_SOT_LOG_KEEP_DAYS, "log_days", DEFAULT_LOG_KEEP_DAYS)):
+        # Zero means DIFFERENT things for the two kinds of key, so they cannot
+        # share one rule. For the payload keys a stored 0 is meaningless — it
+        # would evacuate every snapshot including the newest — so it reads as
+        # unset. For the log window 0 is the real, asked-for policy "never
+        # trim": collapsing it into the default would silently start deleting
+        # rows from a node whose operator had switched trimming off.
+        zero_is_real = (key == K_SOT_LOG_KEEP_DAYS)
         raw_own = get_str(_scoped(key, product), "") if product else ""
         raw_house = get_str(key, "")
         source = "default"
-        val = 0
+        val = None
         for candidate, level in ((raw_own, "adom"), (raw_house, "house")):
+            if str(candidate).strip() == "":
+                continue
             try:
-                parsed = int(candidate or 0)
+                parsed = int(candidate)
             except (TypeError, ValueError):
-                parsed = 0
-            if parsed > 0:
+                continue
+            if parsed > 0 or (zero_is_real and parsed == 0):
                 val, source = parsed, level
                 break
-        out[field] = val if val > 0 else dflt
+        out[field] = dflt if val is None else val
         out[field + "_source"] = source
     out["default_versions"] = DEFAULT_LOCAL_VERSIONS
     out["default_days"] = DEFAULT_LOCAL_DAYS
+    out["default_log_days"] = DEFAULT_LOG_KEEP_DAYS
     out["configured"] = (out["versions_source"] != "default"
-                         or out["days_source"] != "default")
-    out["own"] = bool(product and (get_str(_scoped(K_SOT_LOCAL_VERSIONS, product), "")
-                                   or get_str(_scoped(K_SOT_LOCAL_DAYS, product), "")))
+                         or out["days_source"] != "default"
+                         or out["log_days_source"] != "default")
+    # ``own`` decides whether the ADOM's boxes render filled or as
+    # placeholders, so it must count EVERY key this scope can carry. Leaving
+    # the log key out would render a stored override as an empty box, and the
+    # next save of the other two fields would clear it without being asked.
+    out["own"] = bool(product and any(
+        get_str(_scoped(k, product), "")
+        for k in (K_SOT_LOCAL_VERSIONS, K_SOT_LOCAL_DAYS, K_SOT_LOG_KEEP_DAYS)))
     return out
 
 
-def save_sot_local_policy(versions, days, product: str = "") -> dict:
+def save_sot_local_policy(versions, days, product: str = "",
+                          log_days=None) -> dict:
     """Write the local payload policy for one ADOM (or the house rule).
 
     Out of range is clamped, not rejected: the form has no error channel and a
@@ -1125,24 +1157,45 @@ def save_sot_local_policy(versions, days, product: str = "") -> dict:
     override so the ADOM goes back to inheriting, which is the only way to
     undo a per-ADOM rule once it exists.
     """
-    from .sot_store import DEFAULT_LOCAL_VERSIONS, DEFAULT_LOCAL_DAYS
+    from .sot_store import (DEFAULT_LOCAL_VERSIONS, DEFAULT_LOCAL_DAYS,
+                            DEFAULT_LOG_KEEP_DAYS)
     written = {}
-    for key, raw, dflt, hi in (
-            (K_SOT_LOCAL_VERSIONS, versions, DEFAULT_LOCAL_VERSIONS, SOT_LOCAL_VERSIONS_MAX),
-            (K_SOT_LOCAL_DAYS, days, DEFAULT_LOCAL_DAYS, SOT_LOCAL_DAYS_MAX)):
+    fields = [
+        (K_SOT_LOCAL_VERSIONS, versions, DEFAULT_LOCAL_VERSIONS, SOT_LOCAL_VERSIONS_MAX),
+        (K_SOT_LOCAL_DAYS, days, DEFAULT_LOCAL_DAYS, SOT_LOCAL_DAYS_MAX),
+    ]
+    # ``log_days is None`` means the caller did not carry the field at all —
+    # a form that never showed it must not silently rewrite it to a default.
+    if log_days is not None:
+        fields.append((K_SOT_LOG_KEEP_DAYS, log_days, DEFAULT_LOG_KEEP_DAYS,
+                       SOT_LOG_KEEP_DAYS_MAX))
+    for key, raw, dflt, hi in fields:
         text = str(raw if raw is not None else "").strip()
         scoped = _scoped(key, product)
         if text == "" and product:
             set_str(scoped, "")
             written[key] = None
             continue
-        try:
-            val = int(text or 0)
-        except (TypeError, ValueError):
-            val = 0
-        if val <= 0:
+        # Out of range is clamped, not rejected: the form has no error channel
+        # and a silently dropped value leaves the old number on screen as
+        # though it had been stored. The floor differs by key — 0 is the
+        # asked-for "never trim" for the log window and meaningless for the
+        # two payload keys, where it would evacuate even the newest snapshot.
+        lo = 0 if key == K_SOT_LOG_KEEP_DAYS else 1
+        if text == "":
+            # House scope, blank box. Blank is "I did not choose", which is
+            # the default — NOT the floor. Without this the log window would
+            # read a blank as the literal 0 the floor now allows and quietly
+            # switch trimming off for the whole node.
             val = dflt
-        val = max(1, min(hi, val))
+        else:
+            try:
+                val = int(text)
+            except (TypeError, ValueError):
+                val = 0
+            if val < lo:
+                val = dflt
+        val = max(lo, min(hi, val))
         set_str(scoped, str(val))
         written[key] = val
     return {"product": product or "", "written": written}

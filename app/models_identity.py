@@ -49,6 +49,26 @@ class DeviceIdentity(db.Model):
     #: fortiauthenticator. "" only when it could not be established.
     product = db.Column(db.String(32), nullable=False, default="", index=True)
 
+    #: The slug of the CHASSIS whose stored artefacts this row shares.
+    #:
+    #: A FortiWeb in ADOM mode is one appliance row per ADOM, but it has ONE
+    #: flash partition and ONE ``execute backup`` that contains every ADOM
+    #: (models.chassis_device_row says the same thing about firmware). So the
+    #: file on the backup server belongs to the BOX, and three ADOM rows are
+    #: three views of one artefact rather than three artefacts. Equal to
+    #: :attr:`slug` for a plain device, and for an unresolved row — an
+    #: unresolved row is its own chassis, never somebody else's.
+    #:
+    #: Recorded rather than derived on read for two reasons: the appliance row
+    #: that carries ``vdom`` is GONE by the time anybody asks about a
+    #: de-registered device, and the other authority is the device's own
+    #: snapshot, whose payload may be off-box (one SFTP round trip is fine on
+    #: a button press and is not fine per row of a page render).
+    chassis_slug = db.Column(db.String(128), nullable=False, default="",
+                             index=True)
+    #: The ADOM this row administers; "" when it administers the box itself.
+    adom = db.Column(db.String(64), nullable=False, default="")
+
     model = db.Column(db.String(128), nullable=True)
     firmware = db.Column(db.String(64), nullable=True)
     hw_type = db.Column(db.String(16), nullable=True)
@@ -81,6 +101,17 @@ class DeviceIdentity(db.Model):
             return []
 
     @property
+    def chassis(self) -> str:
+        """The slug this row's stored artefacts are filed under.
+
+        Falls back to its own slug, never to a blank: a row whose chassis was
+        never established has to group as ITSELF, because the alternative —
+        every unresolved row sharing one empty key — merges unrelated devices
+        into a single line and reports one device's backups as another's.
+        """
+        return self.chassis_slug or self.slug
+
+    @property
     def retired(self) -> bool:
         return self.retired_at is not None
 
@@ -88,6 +119,7 @@ class DeviceIdentity(db.Model):
         return {
             "id": self.id, "slug": self.slug, "name": self.name,
             "serial": self.serial or "", "product": self.product or "",
+            "chassis": self.chassis, "adom": self.adom or "",
             "model": self.model or "", "firmware": self.firmware or "",
             "hw_type": self.hw_type or "", "host": self.host or "",
             "appliance_id": self.appliance_id,

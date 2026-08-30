@@ -67,6 +67,23 @@ def widen_plan(tables, live_widths):
     return plan
 
 
+#: Blueprints that are page CHROME: ``base.html`` renders them into EVERY
+#: page of EVERY ADOM, so the product gate must never refuse them. They are
+#: listed HERE, once, and not inside the three per-ADOM allowlists, because
+#: those three hand-kept copies are how this defect recurs — between them they
+#: have now forgotten ``docs``, ``change_requests``, ``scheduled_actions``,
+#: ``advisor``, ``adom_assets`` and finally the bookmarks rail, whose own
+#: ``GET /bookmarks/panel`` was answered with a redirect to the ADOM home in
+#: the ADC/FAZ/FAC consoles. The rail could only report that as a dead
+#: session (2026-08-30).
+#:
+#: Reachable is NOT visible: every row these blueprints serve still goes
+#: through ``product_scope``/``visible_appliances``, so a console reaches its
+#: own rail and sees only its own devices. Nothing whose ROWS are not scoped
+#: that way belongs in this set.
+CHROME_BPS = frozenset({'bookmarks'})
+
+
 def create_app(config_override: object | None = None) -> Flask:
     app = Flask(__name__, instance_relative_config=False)
 
@@ -293,7 +310,7 @@ def create_app(config_override: object | None = None) -> Flask:
             'product.enter', 'product.fortiadc_home',
             'product.placeholder_home',
         }
-        if ep in always or ep.startswith('auth.'):
+        if ep in always or bp_name in CHROME_BPS or ep.startswith('auth.'):
             return None
         if eff == 'fortiadc':
             # FortiADC sessions get the ADC area + the product-neutral shared
@@ -303,8 +320,22 @@ def create_app(config_override: object | None = None) -> Flask:
             # the DB browser. 'cert_manager'/'database' are product-scoped;
             # 'adc_api' is the ADC-scoped API hub. RBAC still gates each write.
             adc_bps = {'concept_map', 'adc', 'adc_api', 'appliances', 'settings', 'audit',
-                       'jobs', 'notifications', 'profiles', 'users', 'docs',
+                       'jobs', 'notifications', 'profiles', 'users',
                        'database', 'locks',
+                       # 'advisor' and 'adom_assets' are rendered into EVERY
+                       # ADOM's sidebar by partials/nav_advisor.html and
+                       # partials/nav_adom_assets.html. Both were missing from
+                       # the three per-ADOM allowlists, so in the ADC/FAZ/FAC
+                       # consoles those two live-looking entries REDIRECTED to
+                       # the ADOM home — the exact defect 'scheduled_actions'
+                       # had on 2026-08-10 and 'change_requests' the day
+                       # before. tests/test_adom_menu_reachability.py now
+                       # walks every rendered sidebar link in every ADOM, so
+                       # the next entry added to a shared partial cannot
+                       # repeat it. ('docs' left this set: that blueprint was
+                       # deleted on 2026-08-02 and the string had been
+                       # allowing nothing ever since.)
+                       'advisor', 'adom_assets',
                        # Change Types is an Administration page, mirrored
                        # into every ADOM for the same reason Change Requests
                        # was: the form it configures is offered in every
@@ -360,7 +391,8 @@ def create_app(config_override: object | None = None) -> Flask:
             # Configuration/Operation/Automation sections are faz-blueprint
             # scaffolds. RBAC still gates each write.
             faz_bps = {'concept_map', 'faz', 'faz_api', 'appliances', 'settings', 'audit', 'jobs',
-                       'notifications', 'profiles', 'users', 'docs',
+                       'notifications', 'profiles', 'users',
+                       'advisor', 'adom_assets',   # see the adc_bps note
                        'database', 'locks', 'firmware', 'segments',
                        'device_provision',
                        # Change Types is an Administration page, mirrored
@@ -393,7 +425,8 @@ def create_app(config_override: object | None = None) -> Flask:
             # The Authentication/Certificate/Logging sections are fac-blueprint
             # pages. RBAC still gates each write.
             fac_bps = {'concept_map', 'fac', 'fac_api', 'appliances', 'settings', 'audit', 'jobs',
-                       'notifications', 'profiles', 'users', 'docs',
+                       'notifications', 'profiles', 'users',
+                       'advisor', 'adom_assets',   # see the adc_bps note
                        'database', 'locks', 'segments', 'firmware',
                        'device_provision',
                        # Change Types is an Administration page, mirrored
@@ -1567,6 +1600,16 @@ def create_app(config_override: object | None = None) -> Flask:
                 # library item.
                 ('lineage', 'VARCHAR(40)'),
                 ('library_uid', 'VARCHAR(40)'),
+            ],
+            # --- the chassis a row's artefacts belong to (2026-08-30) ---
+            # DEFAULT '' and NOT backfilled here: "" means "not established
+            # yet", which DeviceIdentity.chassis reads as "its own chassis".
+            # A DEFAULT of the slug is impossible in one ALTER anyway, and
+            # device_identity.reconcile() is the one writer that may go and
+            # ASK (appliance row first, the device's own snapshot second).
+            'device_identity': [
+                ('chassis_slug', "VARCHAR(128) DEFAULT ''"),
+                ('adom', "VARCHAR(64) DEFAULT ''"),
             ],
             # --- product/ADOM separation (2026-07-07) ---
             'audit_logs': [

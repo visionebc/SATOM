@@ -75,10 +75,11 @@ _ART_ROWS = 7
 _ART_GAP = "  "
 _ART_INDENT = "  "
 
-# Extra lead on the TOP row only, requested explicitly by the operator after
-# being told what it does. It shifts the top bars of S/A/T/O and the peaks of
-# the M two columns right of their own stems. Revert by setting this to "".
-_ART_TOP_EXTRA = "  "
+# Extra lead on the TOP row only. Held at "" so every row of the wordmark
+# starts in the same column: any non-empty value shifts the top bars of
+# S/A/T/O and the peaks of the M right of their own stems, which is the exact
+# defect this art was drawn to remove. Set it to "  " to get the offset back.
+_ART_TOP_EXTRA = ""
 
 # Below this terminal width the art is suppressed and the short header is
 # printed instead. A banner that wraps on a recovery console is worse than no

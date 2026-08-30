@@ -1,6 +1,163 @@
 {% extends "base.html" %}
 {% block title %}{{ _('Stored Assets') }}{% endblock %}
 {#
+   ── One author, three tables ───────────────────────────────────────────────
+   The fold identifier is spelled in the markup of three tables AND again in
+   the toggle script. Spelling it more than once is how the browser's copy and
+   the markup's copy drift apart and a section quietly stops opening, so it is
+   built here and nowhere else.
+
+   The device rows live in macros for the same reason: a family with no
+   classification below it draws its rows directly, and a family that has one
+   draws them under a bucket. Two loops are unavoidable; two copies of the row
+   are not, and a column added to one copy and not the other is a table whose
+   header stops describing half its own body.
+#}
+{% macro ancestors(sec, fam, paths) -%}
+fam:{{ sec }}:{{ fam }}{% for p in paths %}|grp:{{ sec }}:{{ p }}{% endfor %}
+{%- endmacro %}
+
+{% macro group_row(sec, fam, node, cols) -%}
+<tr class="fw-assets-node fw-sub is-collapsed fw-sub-hidden" data-sec="{{ sec }}"
+    data-node="grp:{{ sec }}:{{ node.path }}"
+    data-anc="{{ ancestors(sec, fam, node.anc) }}">
+  <th colspan="{{ cols }}" class="py-1" style="background:#F5F7FA;font-weight:600;">
+    <span style="display:inline-block;width:{{ (node.depth + 1) * 22 }}px;"></span>
+    <button type="button" class="fw-sub-toggle" aria-expanded="false">
+      <i class="bi bi-chevron-down fw-sub-caret me-1"></i>
+      <span class="text-muted" style="font-weight:400;font-size:11px;">{{ node.dim_label }}:</span>
+      {{ node.label }}
+      <span class="text-muted ms-2" style="font-weight:400;">{{ caller() }}</span>
+    </button>
+  </th>
+</tr>
+{%- endmacro %}
+
+{% macro backup_row(r, anc) -%}
+<tr class="fw-sub-row fw-sub-hidden" data-sec="backups" data-anc="{{ anc }}">
+  <td>
+    <strong>{{ r.name }}</strong>
+    {% if r.retired %}<span class="fw-badge fw-badge-secondary ms-1">{{ _('retired') }}</span>{% endif %}
+    {% if r.identity.name_history | length > 1 %}
+      <div class="text-muted" style="font-size:11px;">{{ _('also known as') }}: {{ r.identity.name_history[:-1] | join(', ') }}</div>
+    {% endif %}
+    {% if r.identity.host %}<div class="text-muted font-monospace" style="font-size:11px;">{{ r.identity.host }}</div>{% endif %}
+  </td>
+  <td class="font-monospace">
+    {% if r.serial %}{{ r.serial }}
+    {% else %}<span class="fw-badge fw-badge-secondary">{{ _('not observed') }}</span>{% endif %}
+  </td>
+  <td>{{ r.identity.model or '—' }}<div class="text-muted" style="font-size:11px;">{{ r.identity.firmware or '' }}</div></td>
+  <td class="text-end">{{ r.backups }}</td>
+  <td>
+    {% set cls = {'ok':'success','warn':'warning','crit':'danger','never':'danger','unknown':'secondary'}[r.state] %}
+    <span class="fw-badge fw-badge-{{ cls }}">{{ r.state_label }}</span>
+    {% if r.backup_latest %}<div class="text-muted" style="font-size:11px;">{{ r.backup_latest }}</div>{% endif %}
+  </td>
+  <td class="text-end">
+    {% if r.backups %}
+    <button class="btn btn-sm btn-outline-secondary py-0" type="button" data-bs-toggle="collapse" data-bs-target="#files-{{ r.slug }}">
+      <i class="bi bi-list-ul me-1"></i>{{ _('Files') }}</button>
+    {% endif %}
+  </td>
+</tr>
+{% if r.backups %}
+<tr class="collapse fw-sub-row fw-sub-hidden" data-sec="backups" data-anc="{{ anc }}" id="files-{{ r.slug }}"><td colspan="6" class="p-0">
+  {#
+     Grouped by FOLDER, not flattened. A chassis normally pushes under one
+     name, but if a second folder exists the delete and download links must
+     address the folder the file is actually in — a single r.slug would send
+     them at a path that does not hold it.
+  #}
+  {% for fv in r.folders %}
+  <table class="table table-sm mb-0" style="font-size:12px;background:#FAFBFC;">
+    <thead><tr>
+      <th>{{ _('File') }}{% if r.folders | length > 1 %} <span class="text-muted font-monospace">— {{ fv.slug }}/</span>{% endif %}</th>
+      <th>{{ _('Modified') }}</th><th class="text-end">{{ _('Size') }}</th><th class="text-end">{{ _('Actions') }}</th></tr></thead>
+    <tbody>
+    {% for f in fv.files %}
+      <tr>
+        <td class="font-monospace">{{ f.name }}</td>
+        <td class="text-muted">{{ f.mtime }}</td>
+        <td class="text-end">{{ (f.size / 1024) | round(0) | int }} KB</td>
+        <td class="text-end">
+          <a class="btn btn-sm btn-outline-secondary py-0" href="{{ url_for('system_backup.external_download', device=fv.slug, name=f.name) }}"><i class="bi bi-download"></i></a>
+          {#
+             No inline onsubmit: this console runs a nonce'd CSP, so an inline
+             handler is silently dropped and the form would post with an EMPTY
+             confirm — which the view rejects, so the button would simply never
+             work. The confirmation is wired from the scripts block below.
+          #}
+          <form method="post" action="{{ url_for('adom_assets.delete_backup') }}" class="d-inline js-del-backup"
+                data-file="{{ f.name }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="device" value="{{ fv.slug }}">
+            <input type="hidden" name="filename" value="{{ f.name }}">
+            <input type="hidden" name="confirm" value="">
+            <button class="btn btn-sm btn-outline-danger py-0"><i class="bi bi-trash"></i></button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endfor %}
+</td></tr>
+{% endif %}
+{%- endmacro %}
+
+{% macro sot_row(r, anc) -%}
+<tr class="fw-sub-row fw-sub-hidden" data-sec="sot" data-anc="{{ anc }}">
+  <td><strong>{{ r.name }}</strong>
+    {% if r.retired %}<span class="fw-badge fw-badge-secondary ms-1">{{ _('retired') }}</span>{% endif %}
+  </td>
+  <td class="text-end">
+    {% if r.sot_versions %}{{ r.sot_versions }}
+    {% else %}<span class="fw-badge fw-badge-danger">{{ _('no history') }}</span>{% endif %}
+  </td>
+  <td class="text-muted">
+    {% if r.sot_versions %}
+      {{ _('%(n)s on this node', n=r.sot_local) }}
+      {% if r.sot_evacuated %} · {{ _('%(n)s off-box', n=r.sot_evacuated) }}{% endif %}
+    {% else %}—{% endif %}
+  </td>
+  <td class="text-end">{% if r.sot_bytes %}{{ (r.sot_bytes / 1024) | round(0) | int }} KB{% else %}—{% endif %}</td>
+  <td class="text-muted">{{ r.sot_last_change or '—' }}</td>
+</tr>
+{%- endmacro %}
+{#
+   The collapse CSS lives HERE, nonce'd, and not in fortiweb.css on purpose.
+   Sections render folded in the markup so the page never paints the whole
+   estate and then folds itself; and this rule and the toggle script in
+   {% block scripts %} carry the SAME nonce from the SAME response, so the CSP
+   admits both or drops both. Dropped-both leaves every section EXPANDED,
+   which is usable. The rule in the external sheet would survive a dropped
+   script and leave the page folded shut with nothing able to open it.
+#}
+{% block head %}
+<style nonce="{{ csp_nonce }}">
+  .fw-sec.is-collapsed > .fw-sec-body { display: none; }
+  .fw-sec-toggle, .fw-sub-toggle {
+    background: none; border: 0; padding: 0; margin: 0; text-align: left;
+    color: inherit; font: inherit; cursor: pointer;
+  }
+  .fw-sec-toggle:focus-visible, .fw-sub-toggle:focus-visible {
+    outline: 2px solid var(--fw-accent); outline-offset: 2px;
+  }
+  .fw-sec-caret, .fw-sub-caret {
+    display: inline-block; transition: transform .12s ease-in-out;
+  }
+  /* Every folded thing turns its own caret, at whatever depth: the rule is
+     written against the fold marker, not against one level's class, so a
+     classification bucket three deep does not need a rule of its own. */
+  .fw-sec.is-collapsed .fw-sec-caret,
+  tr.fw-sub.is-collapsed .fw-sub-caret { transform: rotate(-90deg); }
+  /* !important because a hidden family row may ALSO be a Bootstrap collapse
+     target mid-animation: the family is the outer container and must win. */
+  tr.fw-sub-hidden { display: none !important; }
+</style>
+{% endblock %}
+{#
    Light chrome only. SATOM has no dark theme: .fw-card is white on #F4F5F7
    and the state colours come from the .fw-badge-* set, which is calibrated
    against white. A pastel from a dark palette here renders at ~1.4:1 and a
@@ -11,11 +168,36 @@
   <div>
     <h1 class="fw-page-title"><i class="bi bi-archive me-2 text-accent"></i>{{ _('Stored Assets') }}</h1>
     <p class="text-muted mb-0" style="font-size:13px;">
-      {{ _('What this ADOM HOLDS: config backups sitting on the backup server, the permanent configuration change log, firmware images, and the identity of each device — including the ones that were de-registered, whose files are still there and still need an owner.') }}
+      {{ _('What this ADOM HOLDS, one card per kind of artefact:') }}
+      <strong>{{ _('1 · device config backups') }}</strong> {{ _('the appliances wrote and pushed to the backup server;') }}
+      <strong>{{ _('2 · the configuration SoT') }}</strong> {{ _('SATOM records itself at every harvest;') }}
+      <strong>{{ _('3 · firmware images') }}</strong> {{ _('held here to be installed onto a device;') }}
+      <strong>{{ _("4 · SATOM's own backup bundles") }}</strong> {{ _('— console-wide, so Global only.') }}
+      {{ _('They are four different things in four different places with four different retention policies, and none of them is a copy of another.') }}
+      {{ _('One row per DEVICE: an appliance with several ADOMs has one flash partition and one backup file, so its ADOM rows are folded into the device and their version counts added.') }}
       {{ _('The policies behind these numbers are set once for the whole console in') }}
       <a href="{{ url_for('settings.index') }}#tab-sot">{{ _('Settings → Configuration SoT') }}</a> {{ _('and') }}
       <a href="{{ url_for('settings.index') }}#tab-backupsrv">{{ _('Backup Server') }}</a>.
     </p>
+  </div>
+  <div class="d-flex gap-2 align-items-start flex-shrink-0">
+    {#
+       The arrangement is NAMED, not just applied. A control can only tell you
+       how a tree is grouped once you open it, whereas the heading says it
+       while you are reading the tree it produced — the same reason the
+       bookmarks rail put its order in the root's name instead of a dropdown.
+       And it says WHOSE it is: two operators reading one ADOM legitimately
+       see different headings over identical rows, which without this line
+       looks like the fleet was re-classified overnight.
+    #}
+    <a class="btn btn-sm btn-outline-secondary" id="asArrangement"
+       href="{{ url_for('auth.profile') }}#bookmark-view"
+       title="{{ _('Your bookmark rail groups the fleet the same way. Change the order on your profile — it is yours alone.') }}">
+      <i class="bi bi-diagram-3 me-1"></i>{{ data.lens_title }}</a>
+    <button type="button" class="btn btn-sm btn-outline-secondary" id="asExpandAll">
+      <i class="bi bi-arrows-expand me-1"></i>{{ _('Expand all') }}</button>
+    <button type="button" class="btn btn-sm btn-outline-secondary" id="asCollapseAll">
+      <i class="bi bi-arrows-collapse me-1"></i>{{ _('Collapse all') }}</button>
   </div>
 </div>
 
@@ -33,14 +215,32 @@
   </div>
 {% endif %}
 
+{#
+   The tiles describe the WHOLE ADOM and never the filter. A count that
+   shrinks when you type reads as "this ADOM has two devices", which is a
+   claim about the estate rather than about the search box.
+#}
 <div class="row g-3 mb-3">
   {% set t = data.totals %}
-  {% for tile in [
+  {#
+     One tile per section below, in the same order, so the summary row and the
+     cards can be read against each other. The SATOM tile is appended only in
+     Global for the same reason its card is: there is one bundle set for the
+     whole console and showing it inside an ADOM claims it belongs there.
+  #}
+  {% set tiles = [
       {'k': _('Devices'),          'v': t.devices,       'sub': (t.retired ~ ' ' ~ _('retired')), 'i': 'bi-hdd-rack',   'c': 'secondary'},
       {'k': _('Backups on server'),'v': t.backups,       'sub': _('files, all devices'),          'i': 'bi-file-earmark-zip', 'c': 'info'},
       {'k': _('Never pushed'),     'v': t.no_backup,     'sub': _('no file has ever arrived'),    'i': 'bi-slash-circle','c': 'danger' if t.no_backup else 'success'},
       {'k': _('Stale'),            'v': t.stale,         'sub': _('older than %(d)s days', d=8),  'i': 'bi-hourglass',  'c': 'warning' if t.stale else 'success'},
-      {'k': _('SoT versions'),     'v': t.sot_versions,  'sub': (t.sot_evacuated ~ ' ' ~ _('off-box')), 'i': 'bi-file-earmark-diff','c': 'secondary'}] %}
+      {'k': _('SoT versions'),     'v': t.sot_versions,  'sub': (t.sot_evacuated ~ ' ' ~ _('off-box')), 'i': 'bi-file-earmark-diff','c': 'secondary'},
+      {'k': _('Firmware images'),  'v': t.firmware,      'sub': ((t.firmware_bytes / 1048576) | round(0) | int ~ ' MB'), 'i': 'bi-cpu', 'c': 'secondary'}]
+     + ([{'k': _('SATOM backups'), 'v': data.bundles.count,
+          'sub': (data.bundles.local ~ ' ' ~ _('on this node')),
+          'i': 'bi-box-seam',
+          'c': 'warning' if (data.bundles.only_off_box or data.bundles.only_local) else 'success'}]
+        if data.bundles.shown else []) %}
+  {% for tile in tiles %}
   <div class="col-6 col-lg">
     <div class="fw-card h-100"><div class="p-3">
       <div class="text-muted" style="font-size:12px;"><i class="bi {{ tile.i }} me-1"></i>{{ tile.k }}</div>
@@ -51,100 +251,200 @@
   {% endfor %}
 </div>
 
-<div class="fw-card mb-3">
+{#
+   The filter does NOT fold, and that is a deliberate exception to "everything
+   on this page folds". Every other card holds an ANSWER, and folding an
+   answer hides something the page is telling you. This card holds the
+   QUESTION — it is the control that decides which rows the answers describe,
+   so a fold would put the page's own premise one click out of sight. The
+   badges stay: they were added when this card folded, and they still say at a
+   glance what the four inputs say in detail.
+#}
+<div class="fw-card mb-3" id="sec-filter">
   <div class="fw-card-header d-flex justify-content-between align-items-center">
-    <span><i class="bi bi-hdd-rack me-1"></i>{{ _('Devices') }}{% if product_key %} — <code>{{ product_key }}</code>{% endif %}</span>
+    <span>
+      <i class="bi bi-funnel me-1"></i><strong>{{ _('Filter') }}</strong>{% if product_key %} — <code>{{ product_key }}</code>{% endif %}
+      <span class="text-muted ms-2" style="font-weight:400;font-size:12px;">
+        {{ _('narrows the two device sections below — firmware by family, and never SATOM\'s own bundles') }}
+      </span>
+      {% if data.filters.active %}
+        <span class="fw-badge fw-badge-info ms-2">{{ _('filtered') }}</span>
+        {% if data.filters.type %}<span class="fw-badge fw-badge-secondary ms-1">{{ _('type') }}: {{ data.filters.type }}</span>{% endif %}
+        {% if data.filters.state %}<span class="fw-badge fw-badge-secondary ms-1">{{ _('state') }}: {{ data.filters.state }}</span>{% endif %}
+        {% if data.filters.q %}<span class="fw-badge fw-badge-secondary ms-1">{{ _('text') }}: {{ data.filters.q }}</span>{% endif %}
+        {% if data.filters.hide_retired %}<span class="fw-badge fw-badge-secondary ms-1">{{ _('de-registered hidden') }}</span>{% endif %}
+      {% endif %}
+    </span>
     <form method="post" action="{{ url_for('adom_assets.refresh_identity') }}" class="m-0">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button class="btn btn-sm btn-outline-secondary py-0"><i class="bi bi-arrow-repeat me-1"></i>{{ _('Reconcile identity') }}</button>
     </form>
   </div>
+
+  {#
+     GET, so the narrowing IS the URL: shareable, reloadable, back-button
+     safe, and there is exactly one authority for which rows exist. A browser
+     overlay over a full render would disagree with the "showing N of M"
+     count above the moment either side changed.
+     The ADOM pin travels as a hidden field — a GET cannot carry the X-ADOM
+     header, and without it a filtered reload falls back to the session and
+     silently changes ADOM (see _product_gate).
+  #}
+  <div id="body-filter">
+  <form method="get" class="p-3 pb-2">
+    {% if request.args.get('_adom') %}<input type="hidden" name="_adom" value="{{ request.args.get('_adom') }}">{% endif %}
+    <div class="row g-2 align-items-end">
+      {% if not product_key %}
+      <div class="col-6 col-md-3">
+        <label class="form-label text-muted mb-1" style="font-size:12px;">{{ _('Device type') }}</label>
+        <select class="form-select form-select-sm" name="type">
+          <option value="">{{ _('All types') }}</option>
+          {% for s in data.sections %}
+            <option value="{{ s.key }}" {% if data.filters.type == s.key %}selected{% endif %}>{{ s.label }}</option>
+          {% endfor %}
+          {% for k in data.types %}{% if k not in data.sections|map(attribute='key')|list %}
+            <option value="{{ k }}" {% if data.filters.type == k %}selected{% endif %}>{{ k }}</option>
+          {% endif %}{% endfor %}
+        </select>
+      </div>
+      {% endif %}
+      <div class="col-6 col-md-3">
+        <label class="form-label text-muted mb-1" style="font-size:12px;">{{ _('Backup state') }}</label>
+        <select class="form-select form-select-sm" name="state">
+          <option value="">{{ _('Any state') }}</option>
+          <option value="ok"      {% if data.filters.state == 'ok' %}selected{% endif %}>{{ _('Pushing') }}</option>
+          <option value="stale"   {% if data.filters.state == 'stale' %}selected{% endif %}>{{ _('Stale') }}</option>
+          <option value="never"   {% if data.filters.state == 'never' %}selected{% endif %}>{{ _('Never pushed') }}</option>
+          <option value="unknown" {% if data.filters.state == 'unknown' %}selected{% endif %}>{{ _('Unknown') }}</option>
+        </select>
+      </div>
+      <div class="col-12 col-md-4">
+        <label class="form-label text-muted mb-1" style="font-size:12px;">{{ _('Name, former name, serial, host or model') }}</label>
+        <input type="search" class="form-control form-control-sm" name="q" value="{{ data.filters.q }}" placeholder="{{ _('e.g. fortiweb12') }}">
+      </div>
+      <div class="col-12 col-md-2 d-flex gap-2">
+        <button class="btn btn-sm btn-primary flex-grow-1"><i class="bi bi-funnel me-1"></i>{{ _('Filter') }}</button>
+        {% if data.filters.active %}
+          <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('adom_assets.index', _adom=request.args.get('_adom')) }}">{{ _('Clear') }}</a>
+        {% endif %}
+      </div>
+      <div class="col-12">
+        <div class="form-check" style="font-size:12.5px;">
+          <input class="form-check-input" type="checkbox" id="f-retired" name="retired" value="hide" {% if data.filters.hide_retired %}checked{% endif %}>
+          <label class="form-check-label text-muted" for="f-retired">
+            {{ _('Hide de-registered devices') }} —
+            <span class="text-muted">{{ _('their backups are still on the server; hiding them here does not remove anything.') }}</span>
+          </label>
+        </div>
+      </div>
+    </div>
+  </form>
+  </div>
+</div>
+
+{# ═══ 1 ═══ Config backups the APPLIANCES wrote and pushed to the server. #}
+<div class="fw-card fw-sec is-collapsed mb-3" id="sec-backups" data-sec="backups">
+  <div class="fw-card-header d-flex justify-content-between align-items-center">
+    <button type="button" class="fw-sec-toggle" aria-expanded="false" aria-controls="body-backups">
+      <i class="bi bi-chevron-down fw-sec-caret me-1"></i><i class="bi bi-file-earmark-zip me-1"></i>{{ _('1 · Device config backups') }}
+      <span class="text-muted ms-2" style="font-weight:400;font-size:12px;">
+        {{ _('written by the appliance, held on the backup server') }}{% if data.server.host %} <code>{{ data.server.host }}</code>{% endif %}
+      </span>
+      {% if data.filters.active %}
+        <span class="fw-badge fw-badge-info ms-2">{{ _('showing %(n)s of %(m)s', n=data.filters.shown, m=data.filters.of) }}</span>
+      {% endif %}
+    </button>
+    <span class="text-muted" style="font-size:12px;">{{ _('%(n)s file(s)', n=data.totals.backups) }}</span>
+  </div>
+  <div class="fw-sec-body" id="body-backups">
   <div class="table-responsive">
   <table class="table table-sm align-middle mb-0" style="font-size:12.5px;">
     <thead><tr>
       <th>{{ _('Device') }}</th><th>{{ _('Serial') }}</th><th>{{ _('Model / firmware') }}</th>
-      <th class="text-end">{{ _('Backups') }}</th><th>{{ _('Last push') }}</th>
-      <th class="text-end">{{ _('SoT versions') }}</th><th>{{ _('Last config change') }}</th><th></th>
+      <th class="text-end">{{ _('Backups') }}</th><th>{{ _('Last push') }}</th><th></th>
     </tr></thead>
     <tbody>
-    {% for r in data.rows %}
-      <tr>
-        <td>
-          <strong>{{ r.name }}</strong>
-          {% if r.retired %}<span class="fw-badge fw-badge-secondary ms-1">{{ _('retired') }}</span>{% endif %}
-          {% if r.identity.name_history | length > 1 %}
-            <div class="text-muted" style="font-size:11px;">{{ _('also known as') }}: {{ r.identity.name_history[:-1] | join(', ') }}</div>
-          {% endif %}
-          {% if r.identity.host %}<div class="text-muted font-monospace" style="font-size:11px;">{{ r.identity.host }}</div>{% endif %}
-        </td>
-        <td class="font-monospace">
-          {% if r.serial %}{{ r.serial }}
-          {% else %}<span class="fw-badge fw-badge-secondary">{{ _('not observed') }}</span>{% endif %}
-        </td>
-        <td>{{ r.identity.model or '—' }}<div class="text-muted" style="font-size:11px;">{{ r.identity.firmware or '' }}</div></td>
-        <td class="text-end">{{ r.backups }}</td>
-        <td>
-          {% set cls = {'ok':'success','warn':'warning','crit':'danger','never':'danger','unknown':'secondary'}[r.state] %}
-          <span class="fw-badge fw-badge-{{ cls }}">{{ r.state_label }}</span>
-          {% if r.backup_latest %}<div class="text-muted" style="font-size:11px;">{{ r.backup_latest }}</div>{% endif %}
-        </td>
-        <td class="text-end">
-          {{ r.sot_versions }}
-          {% if r.sot_evacuated %}<div class="text-muted" style="font-size:11px;">{{ r.sot_local }} {{ _('local') }} / {{ r.sot_evacuated }} {{ _('off-box') }}</div>{% endif %}
-        </td>
-        <td class="text-muted">{{ r.sot_last_change or '—' }}</td>
-        <td class="text-end">
-          {% if r.backups %}
-          <button class="btn btn-sm btn-outline-secondary py-0" type="button" data-bs-toggle="collapse" data-bs-target="#files-{{ loop.index }}">
-            <i class="bi bi-list-ul me-1"></i>{{ _('Files') }}</button>
-          {% endif %}
-        </td>
+    {% for section in data.sections %}
+      {#
+         One table, one header row per device family, and BELOW it the
+         reader's own classification. A separate <table> per type would give
+         each family its own column widths and two devices of different
+         families would stop being comparable by eye — which is the only
+         thing this page is for.
+
+         The family header counts the whole family and every bucket counts
+         its whole subtree, so folding is never hiding a number.
+      #}
+      <tr class="fw-assets-section fw-sub is-collapsed" data-sec="backups"
+          data-node="fam:backups:{{ section.key }}">
+        <th colspan="6" class="py-1" style="background:#EEF1F5;font-weight:600;">
+          <button type="button" class="fw-sub-toggle" aria-expanded="false">
+          <i class="bi bi-chevron-down fw-sub-caret me-1"></i><i class="bi bi-diagram-3 me-1"></i>{{ section.label }}
+          <span class="text-muted ms-2" style="font-weight:400;">
+            {{ _('%(n)s device(s)', n=section.count) }} ·
+            {{ _('%(n)s backup file(s)', n=section.backups) }}
+            {% if section.no_backup %} · <span class="text-danger">{{ _('%(n)s never pushed', n=section.no_backup) }}</span>{% endif %}
+          </span>
+          </button>
+        </th>
       </tr>
-      {% if r.backups %}
-      <tr class="collapse" id="files-{{ loop.index }}"><td colspan="8" class="p-0">
-        <table class="table table-sm mb-0" style="font-size:12px;background:#FAFBFC;">
-          <thead><tr><th>{{ _('File') }}</th><th>{{ _('Modified') }}</th><th class="text-end">{{ _('Size') }}</th><th class="text-end">{{ _('Actions') }}</th></tr></thead>
-          <tbody>
-          {% for f in r.backup_files %}
-            <tr>
-              <td class="font-monospace">{{ f.name }}</td>
-              <td class="text-muted">{{ f.mtime }}</td>
-              <td class="text-end">{{ (f.size / 1024) | round(0) | int }} KB</td>
-              <td class="text-end">
-                <a class="btn btn-sm btn-outline-secondary py-0" href="{{ url_for('system_backup.external_download', device=r.slug, name=f.name) }}"><i class="bi bi-download"></i></a>
-                {#
-                   No inline onsubmit: this console runs a nonce'd CSP, so an
-                   inline handler is silently dropped and the form would post
-                   with an EMPTY confirm — which the view rejects, so the
-                   button would simply never work. The confirmation is wired
-                   from the scripts block below.
-                #}
-                <form method="post" action="{{ url_for('adom_assets.delete_backup') }}" class="d-inline js-del-backup"
-                      data-file="{{ f.name }}">
-                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                  <input type="hidden" name="device" value="{{ r.slug }}">
-                  <input type="hidden" name="filename" value="{{ f.name }}">
-                  <input type="hidden" name="confirm" value="">
-                  <button class="btn btn-sm btn-outline-danger py-0"><i class="bi bi-trash"></i></button>
-                </form>
-              </td>
-            </tr>
-          {% endfor %}
-          </tbody>
-        </table>
-      </td></tr>
-      {% endif %}
+      {#
+         A family with no classification below it draws its devices straight
+         under the family heading. That is the honest degenerate case, not a
+         missing level: it is what a reader whose whole lens is "Product"
+         asked for.
+      #}
+      {% for r in section.rows if not section.nodes %}
+        {{ backup_row(r, ancestors('backups', section.key, [])) }}
+      {% endfor %}
+      {% for node in section.nodes %}
+        {% call group_row('backups', section.key, node, 6) %}
+            {{ _('%(n)s device(s)', n=node.count) }} ·
+            {{ _('%(n)s backup file(s)', n=node.backups) }}
+            {% if node.no_backup %} · <span class="text-danger">{{ _('%(n)s never pushed', n=node.no_backup) }}</span>{% endif %}
+        {% endcall %}
+        {#
+           A bucket may hold devices of its OWN and buckets below it at the
+           same time — a device with a zone but no department stops here while
+           its neighbour goes one level deeper. Drawing only one of the two
+           would take devices off the page.
+        #}
+        {% for r in node.rows %}
+          {{ backup_row(r, ancestors('backups', section.key, node.chain)) }}
+        {% endfor %}
+      {% endfor %}
     {% else %}
-      <tr><td colspan="8" class="text-muted p-3">{{ _('No device identities for this ADOM yet — press "Reconcile identity" to build them from the appliance list and the configuration history.') }}</td></tr>
+      <tr><td colspan="6" class="text-muted p-3">
+        {% if data.filters.active %}
+          {{ _('No device matches this filter.') }}
+          <a href="{{ url_for('adom_assets.index', _adom=request.args.get('_adom')) }}">{{ _('Clear the filter') }}</a> —
+          {{ _('this ADOM holds %(n)s device(s).', n=data.filters.of) }}
+        {% else %}
+          {{ _('No device identities for this ADOM yet — press "Reconcile identity" to build them from the appliance list and the configuration history.') }}
+        {% endif %}
+      </td></tr>
     {% endfor %}
     </tbody>
   </table>
   </div>
+  </div>
 </div>
 
+{#
+   Part of section 1: these ARE config backups, they just have no device to
+   hang on. Kept immediately under the backups card so the two are read
+   together — an operator counting files must see this bucket in the same
+   glance or the count is wrong.
+#}
 {% if data.unclaimed %}
-<div class="fw-card mb-3">
-  <div class="fw-card-header"><i class="bi bi-question-octagon me-1"></i>{{ _('Unclaimed folders on the backup server') }}</div>
+<div class="fw-card fw-sec is-collapsed mb-3" id="sec-unclaimed" data-sec="unclaimed">
+  <div class="fw-card-header">
+    <button type="button" class="fw-sec-toggle" aria-expanded="false" aria-controls="body-unclaimed">
+      <i class="bi bi-chevron-down fw-sec-caret me-1"></i><i class="bi bi-question-octagon me-1"></i>{{ _('1b · Unclaimed folders on the backup server') }}
+      <span class="fw-badge fw-badge-warning ms-2">{{ _('%(n)s folder(s)', n=data.unclaimed | length) }}</span>
+    </button>
+  </div>
+  <div class="fw-sec-body" id="body-unclaimed">
   <div class="p-3 pb-0"><p class="text-muted mb-2" style="font-size:13px;">
     {{ _('Files are arriving in these folders and no device in SATOM answers to the name. Either the appliance is pushing under a different name than it is registered with, or the device was removed from SATOM while its backups kept coming. Neither is an error — but neither is visible anywhere else.') }}
   </p></div>
@@ -164,8 +464,98 @@
     </tbody>
   </table>
   </div>
+  </div>
 </div>
 {% endif %}
+
+{#
+   ═══ 2 ═══ The configuration change log SATOM keeps itself. A different
+   artefact from the card above, written by a different actor, kept under a
+   different retention policy — and NOT a copy of it: a device that has never
+   pushed a backup file can still have a hundred recorded versions here. That
+   is why the backup-state filter is deliberately not applied to this table;
+   it grades the backup server, and using it here would hide the very rows
+   somebody filtering for "never pushed" came to look at.
+#}
+<div class="fw-card fw-sec is-collapsed mb-3" id="sec-sot" data-sec="sot">
+  <div class="fw-card-header d-flex justify-content-between align-items-center">
+    <button type="button" class="fw-sec-toggle" aria-expanded="false" aria-controls="body-sot">
+      <i class="bi bi-chevron-down fw-sec-caret me-1"></i><i class="bi bi-file-earmark-diff me-1"></i>{{ _('2 · Configuration SoT') }}
+      <span class="text-muted ms-2" style="font-weight:400;font-size:12px;">
+        {{ _('recorded by SATOM at every harvest, de-duplicated by content hash') }}
+      </span>
+      {% if data.filters.active %}
+        <span class="fw-badge fw-badge-info ms-2">{{ _('showing %(n)s of %(m)s', n=data.filters.shown_sot, m=data.filters.of) }}</span>
+      {% endif %}
+      {% if data.filters.state %}
+        <span class="fw-badge fw-badge-secondary ms-1">{{ _('backup state not applied here') }}</span>
+      {% endif %}
+    </button>
+    <a class="text-muted" style="font-size:12px;" href="{{ url_for('system_backup.index') }}">{{ _('History and diffs') }} <i class="bi bi-box-arrow-up-right"></i></a>
+  </div>
+  <div class="fw-sec-body" id="body-sot">
+  <div class="table-responsive">
+  <table class="table table-sm align-middle mb-0" style="font-size:12.5px;">
+    <thead><tr>
+      <th>{{ _('Device') }}</th>
+      <th class="text-end">{{ _('Versions') }}</th>
+      <th>{{ _('Where') }}</th>
+      <th class="text-end">{{ _('Stored') }}</th>
+      <th>{{ _('Last config change') }}</th>
+    </tr></thead>
+    <tbody>
+    {% for section in data.sot_sections %}
+      {#
+         One table, one header row per device family, and BELOW it the
+         reader's own classification. A separate <table> per type would give
+         each family its own column widths and two devices of different
+         families would stop being comparable by eye — which is the only
+         thing this page is for.
+
+         The family header counts the whole family and every bucket counts
+         its whole subtree, so folding is never hiding a number.
+      #}
+      <tr class="fw-assets-section fw-sub is-collapsed" data-sec="sot"
+          data-node="fam:sot:{{ section.key }}">
+        <th colspan="5" class="py-1" style="background:#EEF1F5;font-weight:600;">
+          <button type="button" class="fw-sub-toggle" aria-expanded="false">
+          <i class="bi bi-chevron-down fw-sub-caret me-1"></i><i class="bi bi-diagram-3 me-1"></i>{{ section.label }}
+          <span class="text-muted ms-2" style="font-weight:400;">
+            {{ _('%(n)s device(s)', n=section.count) }} ·
+            {{ _('%(n)s version(s)', n=section.sot_versions) }}
+            {% if section.sot_none %} · <span class="text-danger">{{ _('%(n)s with no history', n=section.sot_none) }}</span>{% endif %}
+          </span>
+          </button>
+        </th>
+      </tr>
+      {% for r in section.rows if not section.nodes %}
+        {{ sot_row(r, ancestors('sot', section.key, [])) }}
+      {% endfor %}
+      {% for node in section.nodes %}
+        {% call group_row('sot', section.key, node, 5) %}
+            {{ _('%(n)s device(s)', n=node.count) }} ·
+            {{ _('%(n)s version(s)', n=node.sot_versions) }}
+            {% if node.sot_none %} · <span class="text-danger">{{ _('%(n)s with no history', n=node.sot_none) }}</span>{% endif %}
+        {% endcall %}
+        {% for r in node.rows %}
+          {{ sot_row(r, ancestors('sot', section.key, node.chain)) }}
+        {% endfor %}
+      {% endfor %}
+    {% else %}
+      <tr><td colspan="5" class="text-muted p-3">
+        {% if data.filters.active %}
+          {{ _('No device matches this filter.') }}
+          <a href="{{ url_for('adom_assets.index', _adom=request.args.get('_adom')) }}">{{ _('Clear the filter') }}</a>
+        {% else %}
+          {{ _('No configuration history recorded for this ADOM yet.') }}
+        {% endif %}
+      </td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  </div>
+</div>
 
 {% if data.orphan_sot %}
 <div class="alert alert-warning" style="font-size:13px;">
@@ -176,14 +566,51 @@
 </div>
 {% endif %}
 
-<div class="fw-card">
-  <div class="fw-card-header"><i class="bi bi-cpu me-1"></i>{{ _('Firmware images held for this ADOM') }}</div>
+{#
+   ═══ 3 ═══ Images SATOM holds to PUT ON a device — the only artefact on this
+   page that flows towards the appliance instead of away from it. Grouped by
+   the family they are for, in the same registry order as the sections above,
+   so "FortiWeb" means the same thing in all three cards.
+#}
+<div class="fw-card fw-sec is-collapsed mb-3" id="sec-firmware" data-sec="firmware">
+  <div class="fw-card-header d-flex justify-content-between align-items-center">
+    <button type="button" class="fw-sec-toggle" aria-expanded="false" aria-controls="body-firmware">
+      <i class="bi bi-chevron-down fw-sec-caret me-1"></i><i class="bi bi-cpu me-1"></i>{{ _('3 · Firmware images') }}
+      <span class="text-muted ms-2" style="font-weight:400;font-size:12px;">
+        {{ _('held here to be installed onto a device — grouped by family only: an image on a shelf is not installed anywhere, so it has no line, zone or department') }}
+      </span>
+    </button>
+    <a class="text-muted" style="font-size:12px;" href="{{ url_for('firmware.index') }}">{{ _('Infrastructure → Firmware') }} <i class="bi bi-box-arrow-up-right"></i></a>
+  </div>
+  <div class="fw-sec-body" id="body-firmware">
   <div class="table-responsive">
   <table class="table table-sm align-middle mb-0" style="font-size:12.5px;">
     <thead><tr><th>{{ _('Version') }}</th><th>{{ _('Kind') }}</th><th>{{ _('File') }}</th><th class="text-end">{{ _('Size') }}</th><th>{{ _('Added') }}</th></tr></thead>
     <tbody>
-    {% for f in data.firmware %}
-      <tr>
+    {% for section in data.firmware_sections %}
+      {#
+         Grouped by family and by nothing else, deliberately. Line, zone and
+         department describe a DEVICE; an image on a shelf has not been
+         installed on anything, so nesting it under a zone would invent a
+         placement it does not have. The card header says this out loud —
+         silently grouping one table differently from the two above it is how
+         an operator concludes the classification is broken.
+      #}
+      <tr class="fw-assets-section fw-sub is-collapsed" data-sec="firmware"
+          data-node="fam:firmware:{{ section.key }}">
+        <th colspan="5" class="py-1" style="background:#EEF1F5;font-weight:600;">
+          <button type="button" class="fw-sub-toggle" aria-expanded="false">
+          <i class="bi bi-chevron-down fw-sub-caret me-1"></i><i class="bi bi-diagram-3 me-1"></i>{{ section.label }}
+          <span class="text-muted ms-2" style="font-weight:400;">
+            {{ _('%(n)s image(s)', n=section.count) }} ·
+            {{ (section.bytes / 1048576) | round(0) | int }} MB
+          </span>
+          </button>
+        </th>
+      </tr>
+      {% for f in section.rows %}
+      <tr class="fw-sub-row fw-sub-hidden" data-sec="firmware"
+          data-anc="{{ ancestors('firmware', section.key, []) }}">
         <td><strong>{{ f.version }}</strong>{% if f.build %} <span class="text-muted">build{{ f.build }}</span>{% endif %}</td>
         <td><span class="fw-badge fw-badge-{{ 'primary' if f.image_kind == 'upgrade' else 'info' }}">{{ f.image_kind }}</span>
             {% if f.hypervisor %} <span class="text-muted">{{ f.hypervisor }}</span>{% endif %}</td>
@@ -191,14 +618,106 @@
         <td class="text-end">{{ (f.size_bytes / 1048576) | round(0) | int }} MB</td>
         <td class="text-muted">{{ f.created_at.strftime('%Y-%m-%d') if f.created_at else '' }}</td>
       </tr>
+      {% endfor %}
     {% else %}
-      <tr><td colspan="5" class="text-muted p-3">{{ _('No firmware images stored for this ADOM.') }}
-        <a href="{{ url_for('firmware.index') }}">{{ _('Infrastructure → Firmware') }}</a></td></tr>
+      <tr><td colspan="5" class="text-muted p-3">
+        {% if data.filters.type %}
+          {{ _('No firmware image is stored for that family.') }}
+          <a href="{{ url_for('adom_assets.index', _adom=request.args.get('_adom')) }}">{{ _('Clear the filter') }}</a> —
+          {{ _('this ADOM holds %(n)s image(s).', n=data.totals.firmware) }}
+        {% else %}
+          {{ _('No firmware images stored for this ADOM.') }}
+          <a href="{{ url_for('firmware.index') }}">{{ _('Infrastructure → Firmware') }}</a>
+        {% endif %}
+      </td></tr>
     {% endfor %}
     </tbody>
   </table>
   </div>
+  </div>
 </div>
+
+{#
+   ═══ 4 ═══ SATOM's OWN backup. Global only, and not for tidiness: a bundle
+   is a dump of the entire console — every ADOM's devices, the credentials,
+   the SoT index — so rendering it inside one ADOM would state that it belongs
+   to that ADOM. There is exactly one set of these files however many ADOMs
+   exist. Read-only here; creation, restore and retention live on the System
+   Backup page, which is the one place that should be able to overwrite a
+   database.
+#}
+{% if data.bundles.shown %}
+<div class="fw-card fw-sec is-collapsed" id="sec-satom" data-sec="satom">
+  <div class="fw-card-header d-flex justify-content-between align-items-center">
+    <button type="button" class="fw-sec-toggle" aria-expanded="false" aria-controls="body-satom">
+      <i class="bi bi-chevron-down fw-sec-caret me-1"></i><i class="bi bi-box-seam me-1"></i>{{ _("4 · SATOM's own backup") }}
+      <span class="text-muted ms-2" style="font-weight:400;font-size:12px;">
+        {{ _('the whole console in one bundle — shown in Global only, because it belongs to no single ADOM') }}
+      </span>
+    </button>
+    <a class="text-muted" style="font-size:12px;" href="{{ url_for('system_backup.index') }}">{{ _('Create, restore, retention') }} <i class="bi bi-box-arrow-up-right"></i></a>
+  </div>
+
+  {% if data.bundles.error %}
+    <div class="p-3 pb-0"><div class="alert alert-danger mb-0" style="font-size:13px;">
+      <i class="bi bi-x-octagon me-1"></i>{{ _('The bundle inventory could not be read') }} — <code>{{ data.bundles.error }}</code>.
+      <strong>{{ _('This says nothing about whether the bundles exist.') }}</strong>
+    </div></div>
+  {% elif data.bundles.only_off_box %}
+    <div class="p-3 pb-0"><div class="alert alert-warning mb-0" style="font-size:13px;">
+      <i class="bi bi-exclamation-triangle me-1"></i>
+      {{ _('Every bundle lives on the backup server and none on this node. That is the configured policy (local copies are evicted once the upload verifies), and it means the backup server is a single point of failure for SATOM\'s own recovery.') }}
+    </div></div>
+  {% elif data.bundles.only_local %}
+    <div class="p-3 pb-0"><div class="alert alert-warning mb-0" style="font-size:13px;">
+      <i class="bi bi-exclamation-triangle me-1"></i>
+      {{ _('Every bundle is on this node and none is off-box. A bundle stored beside the thing it backs up is lost with it.') }}
+    </div></div>
+  {% endif %}
+  {% if data.bundles.mismatch %}
+    <div class="p-3 pb-0"><div class="alert alert-danger mb-0" style="font-size:13px;">
+      <i class="bi bi-x-octagon me-1"></i>
+      {{ _('These bundles exist in both places under one name with two different sizes, which is what a truncated upload looks like') }}:
+      <code>{{ data.bundles.mismatch | join(', ') }}</code>.
+    </div></div>
+  {% endif %}
+
+  <div class="fw-sec-body" id="body-satom">
+  <div class="table-responsive">
+  <table class="table table-sm align-middle mb-0" style="font-size:12.5px;">
+    <thead><tr>
+      <th>{{ _('Bundle') }}</th><th class="text-end">{{ _('Size') }}</th>
+      <th>{{ _('Held') }}</th><th>{{ _('Created') }}</th>
+    </tr></thead>
+    <tbody>
+    {% for b in data.bundles.rows %}
+      <tr>
+        <td class="font-monospace">{{ b.name }}</td>
+        <td class="text-end">{{ (b.size / 1048576) | round(1) }} MB</td>
+        <td>
+          {#
+             Two independent badges, never one "where" string: "on this node"
+             and "off-box" are separate facts and a device that has both is
+             the only one that is actually redundant.
+          #}
+          {% if b.local %}<span class="fw-badge fw-badge-success">{{ _('this node') }}</span>{% endif %}
+          {% if b.off_box %}<span class="fw-badge fw-badge-info">{{ _('backup server') }}</span>{% endif %}
+          {% if not b.local and not b.off_box %}<span class="fw-badge fw-badge-secondary">{{ _('unknown') }}</span>{% endif %}
+        </td>
+        <td class="text-muted">{{ b.created or '—' }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="4" class="text-muted p-3">
+        {{ _('No SATOM bundle is visible from this node — neither locally nor on the backup server.') }}
+        <a href="{{ url_for('system_backup.index') }}">{{ _('System Backup & Restore') }}</a>
+      </td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  </div>
+</div>
+{% endif %}
 {% endblock %}
 
 {#
@@ -224,6 +743,132 @@
     if (typed !== 'DELETE') { ev.preventDefault(); return; }
     form.querySelector('input[name="confirm"]').value = 'DELETE';
   });
+})();
+
+// ── section / bucket folding ────────────────────────────────
+// The store holds the set of OPEN ids, never the closed ones. An empty set by
+// default IS "everything folded", with no first-run flag to keep in sync; and
+// a stored closed-set later read as an open-set would expand exactly the
+// sections the operator had folded. Keyed per ADOM: Global lists every family
+// and a choice made there is not a choice about FortiWeb.
+//
+// The filter card is deliberately NOT foldable and therefore not in here: it
+// carries the page's QUESTION, and every other card carries an answer to it.
+(function () {
+  var KEY = 'satom.assets.open.' + {{ (product_key or 'global') | tojson }};
+  var OPEN = (function () {
+    try { return new Set(JSON.parse(localStorage.getItem(KEY) || '[]')); }
+    catch (e) { return new Set(); }
+  })();
+  function save() {
+    try { localStorage.setItem(KEY, JSON.stringify(Array.from(OPEN))); }
+    catch (e) { /* private mode or quota: folding still works, it forgets */ }
+  }
+
+  function secs() { return document.querySelectorAll('.fw-sec[data-sec]'); }
+  // Families and classification buckets are the SAME kind of thing to this
+  // script: a row that owns an id others may hang from. One selector, so a
+  // level added below can never be the level nobody wired up.
+  function nodes() { return document.querySelectorAll('tr[data-node]'); }
+  function foldable() { return document.querySelectorAll('tr[data-anc]'); }
+  function secId(card) { return 'sec:' + card.getAttribute('data-sec'); }
+
+  function paintSec(card, open) {
+    card.classList.toggle('is-collapsed', !open);
+    var b = card.querySelector('.fw-sec-toggle');
+    if (b) b.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+
+  // A row is visible when EVERY ancestor on its chain is open. Recomputed
+  // from the chain rather than toggled pairwise: with the classification
+  // nested several levels deep, opening a bucket pairwise would reveal rows
+  // whose own parent is still folded. Ancestors are read from an attribute
+  // and compared as strings -- the key is DATA and a CSS selector is code, so
+  // a zone named with a bracket or a dot cannot become a selector.
+  function visible(tr) {
+    var anc = tr.getAttribute('data-anc');
+    if (!anc) return true;
+    var ids = anc.split('|');
+    for (var i = 0; i < ids.length; i++) {
+      if (ids[i] && !OPEN.has(ids[i])) return false;
+    }
+    return true;
+  }
+
+  function paint() {
+    var n = nodes(), r = foldable(), i;
+    for (i = 0; i < n.length; i++) {
+      var open = OPEN.has(n[i].getAttribute('data-node'));
+      n[i].classList.toggle('is-collapsed', !open);
+      var b = n[i].querySelector('.fw-sub-toggle');
+      if (b) b.setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
+    for (i = 0; i < r.length; i++) {
+      r[i].classList.toggle('fw-sub-hidden', !visible(r[i]));
+    }
+  }
+
+  var s = secs(), i;
+  for (i = 0; i < s.length; i++) paintSec(s[i], OPEN.has(secId(s[i])));
+  paint();
+
+  // A deep link to a section must show that section. Landing on #sec-satom
+  // and seeing a closed strip is a link that does not work.
+  //
+  // Wired to `hashchange` as well as to the first paint. A fragment followed
+  // from the page you are already on is a SAME-DOCUMENT navigation: nothing
+  // reloads and this script never runs again, so the reader is scrolled to a
+  // strip that stays shut — the same broken link, only harder to explain
+  // because the address bar says it worked.
+  function openHash() {
+    var hash = (window.location.hash || '').replace(/^#/, '');
+    if (!hash) return;
+    var target = document.getElementById(hash);
+    if (target && target.classList.contains('fw-sec') &&
+        !OPEN.has(secId(target))) {
+      OPEN.add(secId(target)); save(); paintSec(target, true);
+    }
+  }
+  openHash();
+  window.addEventListener('hashchange', openHash);
+
+  document.addEventListener('click', function (ev) {
+    if (!ev.target || !ev.target.closest) return;
+    var sb = ev.target.closest('.fw-sec-toggle');
+    if (sb) {
+      var card = sb.closest('.fw-sec');
+      if (!card) return;
+      var sid = secId(card), sopen = !OPEN.has(sid);
+      if (sopen) { OPEN.add(sid); } else { OPEN.delete(sid); }
+      save(); paintSec(card, sopen);
+      return;
+    }
+    var fb = ev.target.closest('.fw-sub-toggle');
+    if (fb) {
+      var tr = fb.closest('tr[data-node]');
+      if (!tr) return;
+      var nid = tr.getAttribute('data-node');
+      if (OPEN.has(nid)) { OPEN.delete(nid); } else { OPEN.add(nid); }
+      save(); paint();
+    }
+  });
+
+  function setAll(open) {
+    var ss = secs(), nn = nodes(), k;
+    for (k = 0; k < ss.length; k++) {
+      if (open) { OPEN.add(secId(ss[k])); } else { OPEN.delete(secId(ss[k])); }
+      paintSec(ss[k], open);
+    }
+    for (k = 0; k < nn.length; k++) {
+      var id = nn[k].getAttribute('data-node');
+      if (open) { OPEN.add(id); } else { OPEN.delete(id); }
+    }
+    save(); paint();
+  }
+  var xa = document.getElementById('asExpandAll');
+  var ca = document.getElementById('asCollapseAll');
+  if (xa) xa.addEventListener('click', function () { setAll(true); });
+  if (ca) ca.addEventListener('click', function () { setAll(false); });
 })();
 </script>
 {% endblock %}

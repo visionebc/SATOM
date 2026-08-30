@@ -96,6 +96,55 @@ def fingerprint_product(snapshot: dict) -> str:
     return best[1]
 
 
+#: Where a harvested FortiWeb snapshot carries the name of the CHASSIS.
+#: Section, endpoint, field — measured on the live store 2026-08-30: all four
+#: snapshots of fortiweb12 (the box and its three ADOM rows) answer
+#: ``fortiweb12`` here, and all four of fortiweb09 answer ``fortiweb09``.
+CHASSIS_HOSTNAME_PATH = ("System", "global", "hostname")
+
+
+def chassis_from_snapshot(snapshot: dict) -> str:
+    """The hostname the BOX answered with, or "".
+
+    This is a measurement, not a reading of the row's name. Operators name a
+    per-ADOM row ``<device>@<adom>`` BY HAND and nothing enforces it, which is
+    why :func:`models.appliance_name_parts` refuses to trust the text after
+    '@' on its own. The snapshot does not have that problem — and it is the
+    ONLY authority left for a de-registered device, whose appliance row (and
+    with it the ``vdom`` that proved the suffix) no longer exists.
+    """
+    sec, endpoint, field = CHASSIS_HOSTNAME_PATH
+    section = ((snapshot or {}).get("sections") or {}).get(sec)
+    rows = section.get(endpoint) if isinstance(section, dict) else None
+    if isinstance(rows, dict):
+        rows = rows.get("results", rows)
+    if isinstance(rows, dict):
+        rows = [rows]
+    if not isinstance(rows, list):
+        return ""
+    for entry in rows:
+        if isinstance(entry, dict) and str(entry.get(field) or "").strip():
+            return str(entry[field]).strip()
+    return ""
+
+
+def chassis_from_appliance(appl) -> tuple:
+    """``(chassis slug, adom)`` for an appliance row, or ``("", "")``.
+
+    Delegates the split to :func:`models.appliance_name_parts` — the product's
+    ONE answer to "what is this row called" — and accepts it only when it
+    actually stripped something. ``vdom`` is ``root`` on every FortiWeb,
+    whether or not ADOM mode is on (measured on fortiweb12/13, 2026-08-27), so
+    a non-empty ``vdom`` proves nothing by itself.
+    """
+    from ..models import appliance_name_parts
+    stem, adom = appliance_name_parts(appl)
+    name = (getattr(appl, "name", "") or "").strip()
+    if not adom or not stem or stem == name:
+        return "", ""
+    return slug_for(stem), adom
+
+
 # --------------------------------------------------------------------------- #
 #  Writers                                                                     #
 # --------------------------------------------------------------------------- #
@@ -150,6 +199,12 @@ def observe(appliance, *, serial: str = "", firmware: str = "",
         row.host = appliance.host
     if getattr(appliance, "kind", ""):
         row.product = appliance.kind
+    # Assigned, not or-ed with what is already stored: a LIVE appliance row is
+    # the authority on which box it administers, so a row renamed out of its
+    # ADOM must stop claiming the old chassis on the very next observation.
+    chassis, adom = chassis_from_appliance(appliance)
+    row.chassis_slug = chassis or slug
+    row.adom = adom
     row.appliance_id = getattr(appliance, "id", None)
     # Seeing a device again un-retires it: a box that answers a status call is
     # not retired, whatever a stale timestamp says.
@@ -210,6 +265,9 @@ def reconcile() -> dict:
         row.model = app_row.model or row.model
         row.firmware = app_row.firmware or row.firmware
         row.hw_type = app_row.hw_type or row.hw_type
+        chassis, adom = chassis_from_appliance(app_row)
+        row.chassis_slug = chassis or slug
+        row.adom = adom
         row.appliance_id = app_row.id
         row.retired_at = None
         if getattr(app_row, "serial", "") and not row.serial:
@@ -242,7 +300,65 @@ def reconcile() -> dict:
         db.session.add(row)
         adopted += 1
     db.session.commit()
-    return {"created": created, "adopted": adopted}
+
+    # Pass three: rows with no chassis yet — everything written before the
+    # column existed, plus the ones just adopted. Deliberately its OWN pass
+    # rather than a line inside the two above, so it cannot depend on the
+    # order in which peers happen to be created: the guard below asks whether
+    # the chassis names a device THIS store already knows, and in pass two
+    # half of them do not exist yet.
+    filled = _resolve_chassis()
+    return {"created": created, "adopted": adopted, "chassis": filled}
+
+
+def _resolve_chassis() -> int:
+    """Fill ``chassis_slug`` wherever it is still blank. Returns how many.
+
+    Order of authority: the appliance row (free, and the operator authored
+    it), then the device's own newest snapshot. A snapshot may cost an SFTP
+    round trip for an evacuated payload — acceptable here because this only
+    ever runs behind the *Reconcile identity* button, never in a page render.
+    """
+    from ..extensions import db
+    from ..models import Appliance
+    from ..models_identity import DeviceIdentity
+    from ..models_sot import SotVersion
+
+    pending = DeviceIdentity.query.filter(
+        db.or_(DeviceIdentity.chassis_slug == "",
+               DeviceIdentity.chassis_slug.is_(None))).all()
+    known = {r.slug: r for r in DeviceIdentity.query.all()}
+    filled = 0
+    for row in pending:
+        chassis = ""
+        if row.appliance_id:
+            appl = db.session.get(Appliance, row.appliance_id)
+            if appl is not None:
+                chassis, adom = chassis_from_appliance(appl)
+                if adom:
+                    row.adom = adom
+        if not chassis:
+            newest = (SotVersion.query.filter_by(device=row.slug)
+                      .order_by(SotVersion.taken_at.desc()).first())
+            if newest is not None:
+                try:
+                    from . import sot_store
+                    chassis = slug_for(
+                        chassis_from_snapshot(sot_store.load(newest.id) or {}))
+                except Exception:  # noqa: BLE001 — an unreadable blob must
+                    chassis = ""   # not block the rest of the reconciliation
+        # A hostname that names no device of this family identifies NOTHING,
+        # and adopting it anyway would file one box's backups under another
+        # box's row. Two chassis with one hostname is a real configuration;
+        # silently merging them is not a real answer.
+        if chassis and chassis != row.slug:
+            peer = known.get(chassis)
+            if peer is None or (peer.product or "") != (row.product or ""):
+                chassis = ""
+        row.chassis_slug = chassis or row.slug
+        filled += 1
+    db.session.commit()
+    return filled
 
 
 # --------------------------------------------------------------------------- #
@@ -267,6 +383,36 @@ def by_product(product: str = "", include_retired: bool = True) -> list:
         q = q.filter(DeviceIdentity.retired_at.is_(None))
     return q.order_by(DeviceIdentity.retired_at.isnot(None),
                       DeviceIdentity.name).all()
+
+
+def chassis_groups(product: str = "") -> list:
+    """Identities folded onto the chassis whose stored artefacts they share.
+
+    One entry per DEVICE, which is the unit the backup server stores. Sibling
+    ADOM rows never carry a folder of their own — the box pushes one file
+    under one name — so listing them beside the chassis prints N-1 permanent
+    "never pushed" lines for a device that is pushing perfectly well.
+
+    Rows whose chassis could not be established group as themselves. Nothing
+    is dropped and nothing is merged on a guess.
+    """
+    groups = {}
+    for row in by_product(product):
+        g = groups.setdefault(row.chassis, {"chassis": row.chassis, "rows": []})
+        g["rows"].append(row)
+    out = []
+    for key, g in groups.items():
+        # The row that speaks for the box first: no ADOM, then the one whose
+        # slug IS the chassis, then still-live over retired. Deterministic, so
+        # the same device does not change identity between two renders.
+        g["rows"].sort(key=lambda r: (bool(r.adom), r.slug != key,
+                                      r.retired_at is not None, r.name))
+        g["primary"] = g["rows"][0]
+        g["folded"] = len(g["rows"]) - 1
+        out.append(g)
+    out.sort(key=lambda g: (g["primary"].retired_at is not None,
+                            g["primary"].name))
+    return out
 
 
 def serial_groups(product: str = "") -> list:

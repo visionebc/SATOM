@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from flask import (Blueprint, flash, redirect, render_template, request,
                    url_for, jsonify)
-from flask_login import login_required
+from flask_login import current_user, login_required
 
 from ..auth.decorators import require_permission
 from ..models import Permission
@@ -35,10 +35,65 @@ def _scope() -> str:
     ADOM" — which is also the only view where the unclaimed folders and the
     unassigned SoT devices can be shown, because they belong to no family by
     definition.
+
+    Read from ``g.product``, which ``_product_gate`` resolves per REQUEST
+    (URL ``?_adom=`` > ``X-ADOM`` header > form field > session). The previous
+    version asked ``get_product(None)``, and ``None`` is not "the current
+    one" — ``branding.get_product`` falls straight through to
+    ``DEFAULT_PRODUCT``. So this page answered **fortiweb in every ADOM**,
+    Global included: verified 2026-08-30 against the live console, where a
+    ``product=global`` session rendered 14 FortiWeb rows and neither FortiADC,
+    FortiAnalyzer nor FortiAuthenticator appeared anywhere at all. Nothing
+    failed — the page just quietly held one family's answer under four
+    different headings.
     """
-    from ..branding import get_product
-    key = (get_product(None) or {}).get("key") or ""
+    from flask import g
+    key = (getattr(g, "product", "") or "").strip()
     return "" if key in ("", "global") else key
+
+
+def _filters() -> dict:
+    """The narrowing this request asked for, read from the query string.
+
+    Server-side and authoritative: the URL is the filter, so a filtered view
+    can be shared, reloaded and linked, and the page never renders rows it
+    then hides in the browser. An unrecognised value narrows NOTHING rather
+    than emptying the table — a typo in a hand-edited URL must not look like
+    an ADOM with no devices.
+    """
+    from ..services.adom_assets import STATE_FILTERS, UNASSIGNED
+    dt = (request.args.get("type") or "").strip().lower()
+    st = (request.args.get("state") or "").strip().lower()
+    from ..branding import PRODUCTS
+    if dt not in set(PRODUCTS) | {UNASSIGNED}:
+        dt = ""
+    if st not in STATE_FILTERS:
+        st = ""
+    return {"device_type": dt, "state": st,
+            "q": (request.args.get("q") or "").strip()[:120],
+            "hide_retired": request.args.get("retired") == "hide"}
+
+
+def _lens() -> list:
+    """How THIS reader has arranged the fleet, taken from their bookmark rail.
+
+    Not a second preference. The panel on the right of every page of this
+    console already nests the same devices by the same dimensions, and a page
+    that grouped them its own way would give one operator two fleets. It is
+    per-user, so two people reading the same ADOM legitimately see different
+    headings over the same rows — which is the point: the arrangement belongs
+    to the reader, the rows to the estate.
+
+    ``lens_for`` is documented never to raise: this panel renders on every
+    page, so a stored value a later release stops recognising degrades to the
+    default instead of taking the console down. The same forgiveness is what
+    this page needs.
+    """
+    from ..services import bookmarks as bookmarks_svc
+    try:
+        return bookmarks_svc.lens_for(current_user)
+    except Exception:  # noqa: BLE001 — an arrangement is not worth a 500
+        return list(bookmarks_svc.DEFAULT_LENS)
 
 
 @bp.route("/")
@@ -46,7 +101,7 @@ def _scope() -> str:
 @require_permission(Permission.USER_MANAGE)
 def index():
     product = _scope()
-    data = assets_svc.collect(product)
+    data = assets_svc.collect(product, lens=_lens(), **_filters())
     return render_template("adom_assets/index.html", data=data,
                            product_key=product)
 

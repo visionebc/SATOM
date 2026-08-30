@@ -350,6 +350,10 @@ _SEGMENT_READERS = {
     # this line receive"
     "app/views/settings.py": "renders the whole list read-only",
     "app/views/bookmarks.py": "labels a bookmark with its segment",
+    "app/services/adom_assets.py": "labels a device row with its "
+                                   "segment through bookmarks."
+                                   "dimension_value; never asks what a "
+                                   "line receives",
     # A REPORT facet, and deliberately NOT the same question: it filters on
     # zone/line/department together and treats a BLANK facet on a segment as
     # "any", which line_plan does not do. Routing it through line_plan would

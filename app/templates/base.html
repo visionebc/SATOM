@@ -1116,6 +1116,41 @@
   var query = '';
   var timer = null;
 
+  // The rail is `data-turbo-permanent`, so the CSRF token minted with the
+  // FIRST page load is the only one it would ever hold — and the token has a
+  // one-hour life. Every panel answer carries a fresh one and the rail adopts
+  // it, so a long session stops walking into an expiry it cannot see.
+  function adoptToken(r) {
+    var t = r.headers.get('X-CSRF-Token');
+    if (t) { CSRF = t; rail.dataset.bmCsrf = t; }
+    return r;
+  }
+
+  // A 200 is not consent to paint. The CSRF handler answers a non-XHR POST
+  // with a 302 to the referring page, fetch FOLLOWS it, and the rail used to
+  // paste a whole console page into a 300px column — killing every control in
+  // it, on every page, until a full reload, because the element is permanent.
+  // The panel says it is the panel; nothing else may be rendered as one.
+  function isPanel(r) { return r.headers.get('X-SATOM-Panel') === 'bookmarks'; }
+
+  var EXPIRED = 'Your session expired — reload the page to use bookmarks.';
+
+  // A non-panel answer is not automatically an expiry. Until 2026-08-30 the
+  // product gate redirected /bookmarks/panel to the ADOM home in the ADC, FAZ
+  // and FAC consoles, and the rail reported that as a dead session — which
+  // sends the reader to re-authenticate over a routing bug that
+  // re-authenticating cannot touch. Only an answer that actually came from
+  // the login page is an expiry; anything else names its own status, because
+  // "it did not work" is what made that report cost a browser session to
+  // diagnose. One authority: load() and post() both ask this function.
+  function whyNotPanel(r) {
+    var where = (r.url || '').replace(location.origin, '');
+    if (where.indexOf('/auth/login') !== -1) return EXPIRED;
+    return 'Bookmarks did not load — the server answered HTTP ' + r.status +
+           ' from ' + (where || '?') + '. Reload the page; if it repeats, ' +
+           'report that line.';
+  }
+
   function post(url, data) {
     var body = new URLSearchParams(data || {});
     body.set('csrf_token', CSRF);
@@ -1124,18 +1159,22 @@
     if (!body.has('q')) body.set('q', query);
     return fetch(url, {
       method: 'POST', credentials: 'same-origin',
-      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      headers: {'Content-Type': 'application/x-www-form-urlencoded',
+                // Without this the CSRF handler REDIRECTS instead of refusing,
+                // and a followed redirect is indistinguishable from success.
+                'X-Requested-With': 'XMLHttpRequest'},
       body: body.toString()
-    }).then(function (r) {
+    }).then(adoptToken).then(function (r) {
       if (r.status === 400) {
-        return r.json().then(function (j) {
-          // Never a bare "not allowed": the reason is what tells the operator
-          // how to satisfy the rule instead of routing around it.
-          alert(j.error || j.reason || 'refused');
-          return null;
-        });
+        // Never a bare "not allowed": the reason is what tells the operator
+        // how to satisfy the rule instead of routing around it. A 400 that is
+        // not JSON still has to speak — parsing it is not the message.
+        return r.json().then(function (j) { return j.error || j.reason; },
+                             function () { return null; })
+          .then(function (msg) { alert(msg || 'refused (HTTP 400)'); return null; });
       }
       if (!r.ok) { alert('HTTP ' + r.status); return null; }
+      if (!isPanel(r)) { alert(whyNotPanel(r)); return null; }
       return r.text();
     }).then(function (html) { if (html !== null) render(html); });
   }
@@ -1155,9 +1194,19 @@
 
   function load(keepFocus) {
     var url = rail.dataset.bmUrl + (query ? '?q=' + encodeURIComponent(query) : '');
-    fetch(url, {credentials: 'same-origin'})
-      .then(function (r) { return r.text(); })
-      .then(function (h) { render(h, keepFocus); });
+    fetch(url, {credentials: 'same-origin',
+                headers: {'X-Requested-With': 'XMLHttpRequest'}})
+      .then(adoptToken)
+      .then(function (r) {
+        // Whatever went wrong is said WHERE THE TREE WOULD HAVE BEEN, which
+        // beats pasting a login form into a 300px column and leaving the
+        // reader to work out why. textContent, not innerHTML: the message
+        // carries a URL the server chose.
+        if (isPanel(r)) return r.text().then(function (h) { render(h, keepFocus); });
+        var msg = whyNotPanel(r);
+        panel.innerHTML = '<p class="bm-empty"></p>';
+        panel.firstChild.textContent = msg;
+      });
   }
 
   function openNodes() {
@@ -1308,16 +1357,34 @@
     new bootstrap.Modal(document.getElementById('bmAddModal')).show();
   }
 
+  function isOpen() {
+    try { return localStorage.getItem(OPEN_KEY) === '1'; } catch (e) { return false; }
+  }
+  // Open/closed is a class on <body>, and Turbo replaces <body> on EVERY
+  // visit while the rail itself lives through it — that is what
+  // `data-turbo-permanent` buys, and it is also why the restore below never
+  // ran a second time: the wiring guard above returns early on the element
+  // that survived. The rail therefore shut itself on every navigation, which
+  // is every click on a bookmark. The class has to be re-applied to whatever
+  // body is current, and only where the rail is actually on the page.
+  function applyOpen() {
+    var live = document.getElementById('fw-bookmarks');
+    document.body.classList.toggle('bm-open', !!live && isOpen());
+  }
   function setOpen(on) {
-    document.body.classList.toggle('bm-open', on);
     try { localStorage.setItem(OPEN_KEY, on ? '1' : '0'); } catch (e) {}
+    document.body.classList.toggle('bm-open', on);
   }
   tab.addEventListener('click', function () {
     setOpen(!document.body.classList.contains('bm-open'));
   });
   // Default CLOSED. On a hundred-device fleet an open-by-default rail is a
   // wall of text over the page the operator actually came for.
-  try { setOpen(localStorage.getItem(OPEN_KEY) === '1'); } catch (e) { setOpen(false); }
+  applyOpen();
+  // On `document`, which Turbo does NOT replace. A listener on the body would
+  // be swapped away with the very body it exists to fix.
+  document.addEventListener('turbo:render', applyOpen);
+  document.addEventListener('turbo:load', applyOpen);
   load();
 })();
 </script>

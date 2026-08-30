@@ -12344,3 +12344,109 @@ any schedule kind for the daily one; never report `other_kind`; drop the zone
 from the field; point the form at the SFTP endpoint; re-enable the field;
 re-enable the button; make the hour's POST also save the SFTP form.
 
+
+## §143 — two lifetimes: the change log is permanent, the payload leaves (2026-08-30)
+
+`tests/test_adom_assets_and_sot_payload.py` — **46 guards, 34 mutations, 34 dead.**
+
+### What was wrong
+
+Nothing failed. `prune()` deleted `sot_version` rows and that was the documented
+behaviour; the page rendered, the suite was green. It became a data-loss defect
+the moment a **one-day local policy** was asked for: the row *is* the change log
+— the list an operator walks back through to find the value a parameter used to
+have — so the whole history would have vanished inside a day while every byte
+sat safely on the backup server, unreachable, because `load()` and `diff()` only
+ever opened the local file. `diff()` even said so: `blob missing (pruned?)`.
+
+Three more things were missing around it, and each was invisible in the same
+way — a true statement that simply covered less than the reader assumed:
+
+* **No device carried a serial anywhere.** `firmware_probe` extracted one on
+  every status call, used it to guess `hw_type`, and discarded it. So a file on
+  the backup server had no owner, and four FortiWebs' 24 SoT versions were
+  unreachable from any page because nothing had a row to hang them on.
+* **A bundle lived beside the thing it backs up** — the one place it is worth
+  least: the node that loses its disk loses both. 54 local bundles, 632 MB.
+* **No ADOM could see what it held.** The four stores join only on the
+  console-wide System Backup page.
+
+### The rules the guards fix
+
+1. **`prune()` never deletes an index row.** There is no setting to shorten the
+   index and there will not be one: a knob whose only possible effect is
+   destroying the record the store exists to keep is not a policy.
+2. **Confirm off-box, then delete — per blob, never per server.** A listing that
+   fails yields an empty set, so an unreachable server evacuates *nothing*. One
+   file missing from an otherwise healthy listing is kept. This is the single
+   line the whole feature rests on.
+3. **An evacuated version still opens.** `load()` fetches the blob back and
+   verifies it hashes to the name it was stored under before adopting it —
+   otherwise a server returning the wrong bytes poisons the content-addressed
+   store for every version sharing that sha.
+4. **The policy is per ADOM, three levels deep**, and the answer says which
+   level produced it. A FortiAnalyzer snapshot is ~6 MB raw where a FortiWeb's
+   is ~0.5 MB.
+5. **Identity has no foreign key.** A `ForeignKey` on `device_identity` would
+   cascade the row away with the device — the exact failure the table exists to
+   prevent.
+6. **A blank serial never erases a known one**; `""` is *never observed*.
+7. **A bundle leaves only when the server holds it at the same SIZE.** Name
+   alone accepts a truncated upload — the failure `push_bundle` already guards
+   at write time.
+8. **Never-pushed is not stale.** Two states, two labels: "has never been given
+   a backup job" and "stopped pushing" need different actions.
+
+### Traps this round (all cost time)
+
+1. **A duplicate key in the `_ensure_columns` literal.** Adding a second
+   `'appliances':` entry collapsed silently — Python keeps the last one — so
+   `serial` was never added and the first live run died on
+   `column appliances.serial does not exist`. The comment in `app/__init__.py`
+   warns about exactly this and `tests/test_schema_migration_keys.py` guards it;
+   it still happened. **Merge into the existing entry, never add a second key.**
+2. **An `Edit` that dropped a line it was only meant to move.** Rewriting the
+   block around `SotVersion.taken_at` deleted the column. The model imported
+   fine and failed at the first query. *Re-read the replaced region, not the
+   diff intent.*
+3. **`data/system_backups` was never isolated from the production tree.** It had
+   been merely write-only, so the litter was tolerable; the day eviction started
+   **deleting** there, an un-isolated suite could destroy real bundles. Fixed
+   with `SATOM_BACKUPS_DIR` / `SATOM_VAULT_DIR` in conftest — the same treatment
+   `SATOM_SOT_DIR` and `SATOM_JOBS_DIR` already had. *A store that gains a
+   delete path must be re-checked for isolation even if it was safe to write.*
+4. **The isolated store is shared across the RUN** (one module-level tmpdir),
+   so a bundle test that does not clear it asserts against the previous test's
+   files.
+5. **Four mutations survived because the code defended twice.** Two independent
+   re-derivations of one rule mean breaking either changes nothing observable —
+   so no test can tell one intact layer from two, a silent break of the first
+   goes unnoticed, and the second break is the fatal one. Resolved two ways, and
+   the choice matters: `evacuate()`'s duplicated retention rule was
+   **refactored to a single authority** (a rule with two authors is the shape
+   this codebase keeps retiring); the settings read/write pair and the backfill's
+   two filters are legitimate defence in depth and got **one guard per layer**
+   instead.
+6. **A guard that stubbed the function under test.** The serial guard patched
+   `firmware_probe.read`, so deleting the serial from `_read_fortiweb` survived
+   it: it proved `refresh` persists what it is handed and nothing about the
+   reader. A second guard now drives the parser with the payload shape measured
+   on the live boxes.
+7. **A stub that also satisfied the mutation.** `test_an_unreachable_server_evicts_no_bundle`
+   returned `reachable: False` *and* an empty file list, so deleting the
+   reachable check changed nothing. The stub now carries files while reporting
+   itself unreachable, which is what makes the check load-bearing.
+8. **An anchor matching two sites.** `ev = evacuate(device)` appears in both
+   `prune()` and `offload()`; the harness refuses any anchor whose count is not
+   exactly 1, which is the only reason it was caught instead of mutating the
+   wrong one and reporting a survivor that never existed.
+
+### Verification recipe
+
+```
+/opt/satom/venv/bin/python -m pytest tests/test_adom_assets_and_sot_payload.py -q
+python3 /root/mutate.py            # 34 mutations, all must print KILLED
+```
+Measure by **return code**, and only `rc==1` is a failure (`rc==4` is a usage
+error, and pytest prints `FAILED` in upper case so a lower-case grep finds
+nothing). The baseline for the selected tests must be green before mutating.

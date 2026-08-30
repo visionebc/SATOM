@@ -554,33 +554,98 @@
       </div>
     </div>
 
+    {#
+       The change log is permanent and there is no field to shorten it — see
+       the card copy.  What is editable is how much PAYLOAD stays on this
+       node, and it is edited once per ADOM because the four families differ
+       by an order of magnitude in snapshot size.
+    #}
+    <div class="fw-card">
+      <div class="fw-card-header">
+        <i class="bi bi-clock-history me-1"></i>{{ _('Change log and local payload') }}
+      </div>
+      <div class="p-3">
+        <p class="text-muted mb-2" style="font-size:13px;">
+          <strong>{{ _('The change log is kept forever and has no retention setting.') }}</strong>
+          {{ _('Every recorded version stays in the index permanently, which is what lets an operator walk back and find the value a parameter used to have. Deleting those rows would delete the history itself, so the only knob here governs how much snapshot PAYLOAD sits on this node.') }}
+        </p>
+        <p class="text-muted mb-0" style="font-size:13px;">
+          {{ _('Payload older than the policy is uploaded to the') }} <a href="#tab-backupsrv" data-tab-jump="#tab-backupsrv">{{ _('Backup Server') }}</a> {{ _('and then removed from local disk — and only ever in that order: a snapshot is deleted here strictly after the server has been listed and confirmed to hold it. Opening an evacuated version fetches it back automatically, so history stays readable; it just travels.') }}
+        </p>
+        {% if sot_store_stats %}
+        <div class="form-text mt-2">
+          {{ _('Store now') }}: <strong>{{ sot_store_stats.versions }}</strong> {{ _('versions') }} —
+          {{ sot_store_stats.local }} {{ _('with payload on this node') }},
+          <strong>{{ sot_store_stats.evacuated }}</strong> {{ _('evacuated') }};
+          {{ sot_store_stats.blobs }} {{ _('blobs') }}, {{ (sot_store_stats.bytes / 1048576) | round(1) }} MB.
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    {% for scope in [{'key': '', 'name': _('All ADOMs (house rule)'), 'policy': sot_local_policies.house}] + sot_local_policies.adoms %}
     <form method="post" action="{{ url_for('settings.save_sot') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <div class="fw-card">
+      <input type="hidden" name="product" value="{{ scope.key }}">
+      <div class="fw-card mt-3">
         <div class="fw-card-header">
-          <i class="bi bi-clock-history me-1"></i>{{ _('Retention') }}
+          <i class="bi bi-{{ 'diagram-3' if scope.key else 'globe2' }} me-1"></i>{{ scope.name }}
+          {% if scope.key %}<span class="fw-badge fw-badge-info ms-2">{{ scope.key }}</span>{% endif %}
         </div>
         <div class="p-3">
-          <p class="text-muted" style="font-size:13px;">{{ _('A version is dropped only when it fails BOTH tests: it is outside the newest N for its device AND older than D days. The two are a union, not a pair of independent caps — a device that changes constantly keeps more than N versions while any of them are still inside the window, which is what stops a busy week from erasing the month before it.') }}</p>
           <div class="row g-3">
             <div class="col-sm-4">
-              <label class="form-label">{{ _('Versions to keep, per device') }}</label>
+              <label class="form-label">{{ _('Newest versions kept locally') }}
+                {{ hint(_('Always kept on this node regardless of age. Two is the product default because a diff needs a version and the one before it, and "what changed in the last harvest" is by far the most used view — at one, that view would go to the network every time.'), _('About local versions')) }}
+              </label>
               <input type="number" name="keep_versions" min="1" max="10000"
-                     class="form-control fw-form-control" value="{{ sot_retention.versions }}">
-              <div class="form-text">{{ _('Default') }}: {{ sot_retention.default_versions }}</div>
+                     class="form-control fw-form-control"
+                     value="{{ scope.policy.versions if (scope.policy.own or not scope.key) else '' }}"
+                     placeholder="{{ scope.policy.versions }}">
+              <div class="form-text">
+                {{ _('In force') }}: <strong>{{ scope.policy.versions }}</strong>
+                ({{ {'adom': _('set for this ADOM'), 'house': _('inherited from the house rule'), 'default': _('product default')}[scope.policy.versions_source] }})
+              </div>
             </div>
             <div class="col-sm-4">
-              <label class="form-label">{{ _('Days to keep, regardless of count') }}</label>
+              <label class="form-label">{{ _('Days of payload kept locally') }}
+                {{ hint(_('Payload younger than this stays on the node whatever the version count says. The two are a union, not a pair of caps: a device that changes constantly keeps more than N while any of them are still inside the window.'), _('About local days')) }}
+              </label>
               <input type="number" name="keep_days" min="1" max="36500"
-                     class="form-control fw-form-control" value="{{ sot_retention.days }}">
-              <div class="form-text">{{ _('Default') }}: {{ sot_retention.default_days }}</div>
+                     class="form-control fw-form-control"
+                     value="{{ scope.policy.days if (scope.policy.own or not scope.key) else '' }}"
+                     placeholder="{{ scope.policy.days }}">
+              <div class="form-text">
+                {{ _('In force') }}: <strong>{{ scope.policy.days }}</strong>
+                ({{ {'adom': _('set for this ADOM'), 'house': _('inherited from the house rule'), 'default': _('product default')}[scope.policy.days_source] }})
+              </div>
+            </div>
+            <div class="col-sm-4">
+              <div class="form-text">
+                {% if scope.key %}
+                  {{ _('Leave both boxes empty and save to clear this ADOM\'s override — it goes back to inheriting the house rule. That is the only way to undo one.') }}
+                {% else %}
+                  {{ _('Applies to every ADOM that has no rule of its own.') }}
+                  {{ _('Defaults') }}: {{ scope.policy.default_versions }} {{ _('versions') }}, {{ scope.policy.default_days }} {{ _('day(s)') }}.
+                {% endif %}
+              </div>
             </div>
           </div>
-          <div class="form-text mt-2">
-            {% if sot_retention.configured %}{{ _('Configured on this node.') }}{% else %}{{ _('Not configured — the product defaults shown above are in effect.') }}{% endif %}
-            {{ _('Pruning runs after a harvest that actually changed something; an unchanged cycle cannot create anything to prune.') }}
-          </div>
-          <button type="submit" class="btn fw-btn-primary btn-sm mt-3"><i class="bi bi-save me-1"></i>{{ _('Save retention') }}</button>
+          <button type="submit" class="btn fw-btn-primary btn-sm mt-3"><i class="bi bi-save me-1"></i>{{ _('Save') }}</button>
+        </div>
+      </div>
+    </form>
+    {% endfor %}
+
+    <form method="post" action="{{ url_for('settings.run_sot_evacuate') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="fw-card mt-3">
+        <div class="fw-card-header">
+          <i class="bi bi-box-arrow-up me-1"></i>{{ _('Apply the payload policy now') }}
+        </div>
+        <div class="p-3">
+          <p class="text-muted" style="font-size:13px;">{{ _('Uploads every blob the backup server does not hold yet, then removes from this node only what the server is confirmed to hold. An unreachable server evacuates nothing — the listing failing reads as "nothing is off-box", never as permission to delete. Normally this runs by itself after each off-box sync') }} (<code>device_inspect</code>).</p>
+          <button type="submit" class="btn btn-sm btn-outline-secondary"><i class="bi bi-play me-1"></i>{{ _('Push and evacuate now') }}</button>
         </div>
       </div>
     </form>
@@ -749,11 +814,59 @@
                 {% else %}
                   {{ _('No system backup is scheduled on this node — saving creates one, daily, at the hour you type.') }}
                 {% endif %}
-                <span class="d-block mt-1">{{ _('Uploading depends on the credentials above: a run whose upload fails still leaves a local bundle. Local bundles are not pruned yet.') }}</span>
+                <span class="d-block mt-1">{{ _('Uploading depends on the credentials above: a run whose upload fails still leaves a local bundle — which is correct, because then the local copy is the only copy.') }}</span>
               </div>
             </div>
           </div>
           <button type="submit" class="btn fw-btn-primary btn-sm mt-3"{% if system_backup_schedule.other_kind %} disabled{% endif %}><i class="bi bi-save me-1"></i>{{ _('Save bundle schedule') }}</button>
+        </div>
+      </div>
+    </form>
+
+    {#
+       A bundle is SATOM's own backup, so the one place it is worth least is
+       beside the thing it backs up: the node that loses its disk loses both.
+       Default is to keep NONE locally once an upload has been size-verified;
+       download and restore fetch the bundle back on demand.
+    #}
+    <form method="post" action="{{ url_for('settings.save_bundle_retention') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="fw-card mt-3">
+        <div class="fw-card-header">
+          <i class="bi bi-hdd me-1"></i>{{ _('Local bundle retention') }}
+        </div>
+        <div class="p-3">
+          <p class="text-muted" style="font-size:13px;">{{ _('How many bundles stay on this node after they have been uploaded. A bundle is deleted locally only when the backup server is confirmed to hold it AT THE SAME SIZE — name alone would accept a truncated upload. Downloading or restoring an off-box bundle fetches it back automatically, so nothing becomes unreachable.') }}</p>
+          <div class="row g-3">
+            <div class="col-sm-4">
+              <label class="form-label">{{ _('Bundles kept on this node') }}
+                {{ hint(_('Zero means the node keeps none: every verified bundle lives on the backup server only. Zero is a real setting here, not "unset" — it is the recommended one. Raise it if you want a local copy to restore from without the network.'), _('About local bundle retention')) }}
+              </label>
+              <input type="number" name="bundle_keep" min="0" max="{{ bundle_local_keep.max }}"
+                     class="form-control fw-form-control" value="{{ bundle_local_keep.keep }}">
+              <div class="form-text">
+                {{ _('Default') }}: {{ bundle_local_keep.default }} —
+                {% if bundle_local_keep.configured %}{{ _('configured on this node.') }}{% else %}{{ _('not configured; the default is in effect.') }}{% endif %}
+              </div>
+            </div>
+            <div class="col-sm-8">
+              <div class="form-text">{{ _('Applied automatically after every successful upload. A bundle the server does not hold is always kept, whatever this number says.') }}</div>
+            </div>
+          </div>
+          <button type="submit" class="btn fw-btn-primary btn-sm mt-3"><i class="bi bi-save me-1"></i>{{ _('Save bundle retention') }}</button>
+        </div>
+      </div>
+    </form>
+
+    <form method="post" action="{{ url_for('settings.run_bundle_evict') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="fw-card mt-3">
+        <div class="fw-card-header">
+          <i class="bi bi-box-arrow-up me-1"></i>{{ _('Apply bundle retention now') }}
+        </div>
+        <div class="p-3">
+          <p class="text-muted" style="font-size:13px;">{{ _('Sweeps the existing local bundles against the server listing and removes the verified ones. Nothing is uploaded by this button — a bundle that was never pushed is reported as kept, not silently deleted.') }}</p>
+          <button type="submit" class="btn btn-sm btn-outline-secondary"><i class="bi bi-play me-1"></i>{{ _('Evict verified bundles now') }}</button>
         </div>
       </div>
     </form>

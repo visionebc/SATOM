@@ -27,7 +27,13 @@ def _repo_root() -> Path:
 
 
 def backups_dir() -> Path:
-    d = _repo_root() / "data" / "system_backups"
+    # Env-overridable for the same reason SATOM_SOT_DIR and SATOM_JOBS_DIR
+    # are (the jobs-ledger contamination, 2026-07-28) — and now with teeth:
+    # this directory was the last unisolated one, and it stopped being merely
+    # write-only the day eviction started DELETING from it. A suite pointed at
+    # the production tree could destroy real bundles. conftest sets this.
+    d = Path(os.environ.get("SATOM_BACKUPS_DIR")
+             or (_repo_root() / "data" / "system_backups"))
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -221,6 +227,20 @@ def create_backup(*, include_reports: bool = True, publish_git: bool = False,
                 pr = _bk.push_bundle(str(bundle))
                 detail.append("backup-server: " + (pr["detail"] if pr.get("ok")
                               else "push failed: " + pr.get("detail", "")))
+                # Off-load only after a successful, size-verified push, and
+                # only for bundles the server is confirmed to hold — including
+                # this one. A push failure leaves everything on disk, which is
+                # the correct outcome: the local copy is the only copy.
+                if pr.get("ok"):
+                    ev = evict_local_bundles()
+                    if ev["removed"]:
+                        detail.append(
+                            f"local: {len(ev['removed'])} bundle(s) removed after "
+                            f"verified upload, {ev['bytes_freed'] // (1024 * 1024)} MB freed")
+                    if ev["unverified"]:
+                        detail.append(
+                            f"local: {len(ev['unverified'])} bundle(s) KEPT — "
+                            f"not verified on the server")
             except Exception as exc:  # noqa: BLE001
                 detail.append(f"backup-server push error: {type(exc).__name__}")
         return {"ok": True, "name": name, "path": str(bundle), "size": size,
@@ -245,13 +265,137 @@ def delete_backup(name: str) -> dict:
 
 
 def list_backups() -> list:
-    """Existing bundles, newest first."""
+    """Existing bundles ON THIS NODE, newest first.
+
+    Deliberately local-only: ``/healthz/backups`` publishes this and the peer
+    comparison means "what does each node physically hold". Folding the shared
+    off-box copy in here would make two nodes look identical while neither had
+    a bundle. The page-facing union is :func:`all_bundles`.
+    """
     out = []
     for f in sorted(backups_dir().glob("fmw-backup-*.tar.gz"), reverse=True):
         st = f.stat()
         out.append({"name": f.name, "size": st.st_size,
                     "created": datetime.utcfromtimestamp(st.st_mtime).isoformat(timespec="seconds")})
     return out
+
+
+# ── off-loading: the bundle lives on the backup server, not on the node ──────
+#
+# A bundle is SATOM's own backup, and keeping it beside the thing it backs up
+# is the one place it is worth least: the node that loses its disk loses both.
+# So the default is to keep NONE locally once an upload has been verified, and
+# every read path (download, restore, compare) fetches on demand.
+
+def remote_bundle_index() -> dict:
+    """``{name: size}`` for bundles the backup server holds.
+
+    Returns ``{}`` on ANY failure — unreachable server, bad credentials, folder
+    never created. Everything below treats an empty index as "nothing is
+    off-box", so a network blip can never be read as permission to delete.
+    """
+    try:
+        from . import backup_server as _bk
+        inv = _bk.system_inventory()
+        if not inv.get("reachable"):
+            return {}
+        out = {}
+        for f in inv.get("files") or []:
+            name = str(f.get("name") or "")
+            if name.startswith("fmw-backup-"):
+                out[name] = int(f.get("size") or 0)
+        return out
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def evict_local_bundles(keep: int | None = None, *, dry_run: bool = False) -> dict:
+    """Delete local bundles that the backup server verifiably holds.
+
+    Two conditions, both required: the name is present remotely AND the size
+    matches byte for byte. Name alone would accept a truncated upload — the
+    exact failure ``push_bundle`` already guards against at write time, which
+    would be pointless to re-open at delete time.
+
+    ``keep`` newest bundles are exempt regardless (default from settings, 0).
+    """
+    from . import settings_store as _store
+    if keep is None:
+        try:
+            keep = int(_store.bundle_local_keep()["keep"])
+        except Exception:  # noqa: BLE001
+            keep = 0
+    keep = max(0, int(keep))
+    remote = remote_bundle_index()
+    local = list_backups()          # newest first
+    removed, freed, kept, unverified = [], 0, [], []
+    for i, b in enumerate(local):
+        if i < keep:
+            kept.append(b["name"])
+            continue
+        if remote.get(b["name"]) != b["size"]:
+            unverified.append(b["name"])
+            continue
+        if not dry_run:
+            (backups_dir() / b["name"]).unlink(missing_ok=True)
+        removed.append(b["name"])
+        freed += int(b["size"] or 0)
+    return {"removed": removed, "kept": kept, "unverified": unverified,
+            "bytes_freed": freed, "keep": keep,
+            "remote_known": len(remote), "dry_run": dry_run}
+
+
+def ensure_local(name: str) -> dict:
+    """Make one bundle readable on this node, fetching it back if evicted.
+
+    Downloaded to a temp name and renamed, and only after the size the server
+    reported round-trips: a half-fetched file under the real name is a bundle
+    that restores into a broken database.
+    """
+    if not name.startswith("fmw-backup-") or "/" in name or ".." in name:
+        return {"ok": False, "detail": "unknown backup"}
+    path = backups_dir() / name
+    if path.exists():
+        return {"ok": True, "path": str(path), "fetched": False}
+    try:
+        from . import backup_server as _bk
+        from . import settings_store as _store
+        cfg = _store.backup_server()
+        if not cfg.get("configured"):
+            return {"ok": False, "detail": "backup server not configured"}
+        expect = remote_bundle_index().get(name)
+        if expect is None:
+            return {"ok": False, "detail": f"{name} is not on the backup server"}
+        data = _bk.fetch_file(cfg.get("system_path") or "/system", name)
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "detail": f"fetch failed: {exc}"}
+    if len(data) != int(expect):
+        return {"ok": False,
+                "detail": f"size mismatch on fetch ({len(data)} != {expect})"}
+    tmp = path.with_suffix(".part")
+    tmp.write_bytes(data)
+    os.replace(tmp, path)
+    return {"ok": True, "path": str(path), "fetched": True, "size": len(data)}
+
+
+def all_bundles() -> list:
+    """Union of local and off-box bundles, newest first, each tagged with
+    where it actually is. A page that lists only local files would report an
+    empty node as "no backups" the moment the policy starts working."""
+    local = {b["name"]: b for b in list_backups()}
+    remote = remote_bundle_index()
+    rows = []
+    for name in sorted(set(local) | set(remote), reverse=True):
+        loc, size = local.get(name), remote.get(name)
+        rows.append({
+            "name": name,
+            "size": (loc or {}).get("size", size or 0),
+            "created": (loc or {}).get("created", ""),
+            "local": loc is not None,
+            "off_box": name in remote,
+            "size_match": bool(loc and size is not None and loc["size"] == size),
+        })
+    return rows
 
 
 def _safe_member(member: tarfile.TarInfo, dest: Path) -> bool:
@@ -265,8 +409,16 @@ def restore_backup(name: str, *, conn: dict | None = None,
     DESTRUCTIVE — replaces the DB schema/data with the bundle's."""
     conn = conn or _conn_from_app()
     bundle = backups_dir() / name
-    if not bundle.exists() or not name.startswith("fmw-backup-"):
+    if not name.startswith("fmw-backup-"):
         return {"ok": False, "detail": "unknown backup"}
+    if not bundle.exists():
+        # The bundle may be off-box by policy. Fetch it back BEFORE the safety
+        # dump: failing after that dump would leave a node with a restore it
+        # never started and an extra bundle nobody asked for.
+        got = ensure_local(name)
+        if not got.get("ok"):
+            return {"ok": False,
+                    "detail": "unknown backup: " + str(got.get("detail", ""))}
     # 1) safety net
     safety = create_backup(include_reports=True, publish_git=False, conn=conn,
                            label="pre-restore-safety")
@@ -351,7 +503,8 @@ def restore_backup(name: str, *, conn: dict | None = None,
 
 def vault_dir() -> Path:
     """Per-appliance config-backup vault (services/backup.py blobs)."""
-    return _repo_root() / "data" / "backups"
+    return Path(os.environ.get("SATOM_VAULT_DIR")
+                or (_repo_root() / "data" / "backups"))
 
 
 def local_inventory() -> dict:

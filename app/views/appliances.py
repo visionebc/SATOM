@@ -413,11 +413,23 @@ def edit_save(id):
 def delete(id):
     appliance = visible_appliance_or_404(id)
     name = appliance.name
+    # Record the identity BEFORE the row goes: everything hanging off
+    # appliances.id is ON DELETE CASCADE, so after the delete there is nothing
+    # left to read a serial or a model from — and its backups are still on the
+    # server, still needing an owner.
+    try:
+        from ..services import device_identity as _ident
+        _ident.observe(appliance)
+        _ident.retire(name, note='de-registered from SATOM')
+    except Exception:  # noqa: BLE001 — never block a delete on bookkeeping
+        db.session.rollback()
     datasheets.delete(appliance.id)  # drop the PDF file (interfaces cascade via FK)
     db.session.delete(appliance)
     db.session.commit()
     log_action('appliance.delete', target=name)
-    flash(f'Appliance {name} deleted.', 'success')
+    flash(f'Appliance {name} deleted. Its identity, configuration history and '
+          f'backups on the server are kept — see Administration → Stored Assets.',
+          'success')
     return redirect(url_for('appliances.index'))
 
 

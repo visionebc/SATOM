@@ -169,7 +169,11 @@ def download(name):
         abort(404)
     path = system_backup.backups_dir() / name
     if not path.exists():
-        abort(404)
+        # Off-box by policy is not "missing": fetch it back rather than 404 on
+        # a bundle the page is listing as available.
+        got = system_backup.ensure_local(name)
+        if not got.get("ok"):
+            abort(404)
     return send_file(str(path), as_attachment=True, download_name=name)
 
 

@@ -1,0 +1,229 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Stored Assets') }}{% endblock %}
+{#
+   Light chrome only. SATOM has no dark theme: .fw-card is white on #F4F5F7
+   and the state colours come from the .fw-badge-* set, which is calibrated
+   against white. A pastel from a dark palette here renders at ~1.4:1 and a
+   badge reading "never pushed" becomes unreadable.
+#}
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-archive me-2 text-accent"></i>{{ _('Stored Assets') }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      {{ _('What this ADOM HOLDS: config backups sitting on the backup server, the permanent configuration change log, firmware images, and the identity of each device — including the ones that were de-registered, whose files are still there and still need an owner.') }}
+      {{ _('The policies behind these numbers are set once for the whole console in') }}
+      <a href="{{ url_for('settings.index') }}#tab-sot">{{ _('Settings → Configuration SoT') }}</a> {{ _('and') }}
+      <a href="{{ url_for('settings.index') }}#tab-backupsrv">{{ _('Backup Server') }}</a>.
+    </p>
+  </div>
+</div>
+
+{% if not data.server.configured %}
+  <div class="alert alert-warning" style="font-size:13px;">
+    <i class="bi bi-exclamation-triangle me-1"></i>
+    {{ _('No backup server is configured, so nothing below can say whether a device is pushing its backups. Configure it in') }}
+    <a href="{{ url_for('settings.index') }}#tab-backupsrv">{{ _('Settings → Backup Server') }}</a>.
+  </div>
+{% elif not data.server.reachable %}
+  <div class="alert alert-danger" style="font-size:13px;">
+    <i class="bi bi-x-octagon me-1"></i>
+    {{ _('The backup server') }} <code>{{ data.server.host }}</code> {{ _('is not reachable') }}{% if data.server.error %} — <code>{{ data.server.error }}</code>{% endif %}.
+    <strong>{{ _('Backup columns below read "unknown", not "none".') }}</strong>
+  </div>
+{% endif %}
+
+<div class="row g-3 mb-3">
+  {% set t = data.totals %}
+  {% for tile in [
+      {'k': _('Devices'),          'v': t.devices,       'sub': (t.retired ~ ' ' ~ _('retired')), 'i': 'bi-hdd-rack',   'c': 'secondary'},
+      {'k': _('Backups on server'),'v': t.backups,       'sub': _('files, all devices'),          'i': 'bi-file-earmark-zip', 'c': 'info'},
+      {'k': _('Never pushed'),     'v': t.no_backup,     'sub': _('no file has ever arrived'),    'i': 'bi-slash-circle','c': 'danger' if t.no_backup else 'success'},
+      {'k': _('Stale'),            'v': t.stale,         'sub': _('older than %(d)s days', d=8),  'i': 'bi-hourglass',  'c': 'warning' if t.stale else 'success'},
+      {'k': _('SoT versions'),     'v': t.sot_versions,  'sub': (t.sot_evacuated ~ ' ' ~ _('off-box')), 'i': 'bi-file-earmark-diff','c': 'secondary'}] %}
+  <div class="col-6 col-lg">
+    <div class="fw-card h-100"><div class="p-3">
+      <div class="text-muted" style="font-size:12px;"><i class="bi {{ tile.i }} me-1"></i>{{ tile.k }}</div>
+      <div style="font-size:26px;font-weight:600;line-height:1.1;">{{ tile.v }}</div>
+      <span class="fw-badge fw-badge-{{ tile.c }}" style="font-size:11px;">{{ tile.sub }}</span>
+    </div></div>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="fw-card mb-3">
+  <div class="fw-card-header d-flex justify-content-between align-items-center">
+    <span><i class="bi bi-hdd-rack me-1"></i>{{ _('Devices') }}{% if product_key %} — <code>{{ product_key }}</code>{% endif %}</span>
+    <form method="post" action="{{ url_for('adom_assets.refresh_identity') }}" class="m-0">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn btn-sm btn-outline-secondary py-0"><i class="bi bi-arrow-repeat me-1"></i>{{ _('Reconcile identity') }}</button>
+    </form>
+  </div>
+  <div class="table-responsive">
+  <table class="table table-sm align-middle mb-0" style="font-size:12.5px;">
+    <thead><tr>
+      <th>{{ _('Device') }}</th><th>{{ _('Serial') }}</th><th>{{ _('Model / firmware') }}</th>
+      <th class="text-end">{{ _('Backups') }}</th><th>{{ _('Last push') }}</th>
+      <th class="text-end">{{ _('SoT versions') }}</th><th>{{ _('Last config change') }}</th><th></th>
+    </tr></thead>
+    <tbody>
+    {% for r in data.rows %}
+      <tr>
+        <td>
+          <strong>{{ r.name }}</strong>
+          {% if r.retired %}<span class="fw-badge fw-badge-secondary ms-1">{{ _('retired') }}</span>{% endif %}
+          {% if r.identity.name_history | length > 1 %}
+            <div class="text-muted" style="font-size:11px;">{{ _('also known as') }}: {{ r.identity.name_history[:-1] | join(', ') }}</div>
+          {% endif %}
+          {% if r.identity.host %}<div class="text-muted font-monospace" style="font-size:11px;">{{ r.identity.host }}</div>{% endif %}
+        </td>
+        <td class="font-monospace">
+          {% if r.serial %}{{ r.serial }}
+          {% else %}<span class="fw-badge fw-badge-secondary">{{ _('not observed') }}</span>{% endif %}
+        </td>
+        <td>{{ r.identity.model or '—' }}<div class="text-muted" style="font-size:11px;">{{ r.identity.firmware or '' }}</div></td>
+        <td class="text-end">{{ r.backups }}</td>
+        <td>
+          {% set cls = {'ok':'success','warn':'warning','crit':'danger','never':'danger','unknown':'secondary'}[r.state] %}
+          <span class="fw-badge fw-badge-{{ cls }}">{{ r.state_label }}</span>
+          {% if r.backup_latest %}<div class="text-muted" style="font-size:11px;">{{ r.backup_latest }}</div>{% endif %}
+        </td>
+        <td class="text-end">
+          {{ r.sot_versions }}
+          {% if r.sot_evacuated %}<div class="text-muted" style="font-size:11px;">{{ r.sot_local }} {{ _('local') }} / {{ r.sot_evacuated }} {{ _('off-box') }}</div>{% endif %}
+        </td>
+        <td class="text-muted">{{ r.sot_last_change or '—' }}</td>
+        <td class="text-end">
+          {% if r.backups %}
+          <button class="btn btn-sm btn-outline-secondary py-0" type="button" data-bs-toggle="collapse" data-bs-target="#files-{{ loop.index }}">
+            <i class="bi bi-list-ul me-1"></i>{{ _('Files') }}</button>
+          {% endif %}
+        </td>
+      </tr>
+      {% if r.backups %}
+      <tr class="collapse" id="files-{{ loop.index }}"><td colspan="8" class="p-0">
+        <table class="table table-sm mb-0" style="font-size:12px;background:#FAFBFC;">
+          <thead><tr><th>{{ _('File') }}</th><th>{{ _('Modified') }}</th><th class="text-end">{{ _('Size') }}</th><th class="text-end">{{ _('Actions') }}</th></tr></thead>
+          <tbody>
+          {% for f in r.backup_files %}
+            <tr>
+              <td class="font-monospace">{{ f.name }}</td>
+              <td class="text-muted">{{ f.mtime }}</td>
+              <td class="text-end">{{ (f.size / 1024) | round(0) | int }} KB</td>
+              <td class="text-end">
+                <a class="btn btn-sm btn-outline-secondary py-0" href="{{ url_for('system_backup.external_download', device=r.slug, name=f.name) }}"><i class="bi bi-download"></i></a>
+                {#
+                   No inline onsubmit: this console runs a nonce'd CSP, so an
+                   inline handler is silently dropped and the form would post
+                   with an EMPTY confirm — which the view rejects, so the
+                   button would simply never work. The confirmation is wired
+                   from the scripts block below.
+                #}
+                <form method="post" action="{{ url_for('adom_assets.delete_backup') }}" class="d-inline js-del-backup"
+                      data-file="{{ f.name }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="device" value="{{ r.slug }}">
+                  <input type="hidden" name="filename" value="{{ f.name }}">
+                  <input type="hidden" name="confirm" value="">
+                  <button class="btn btn-sm btn-outline-danger py-0"><i class="bi bi-trash"></i></button>
+                </form>
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </td></tr>
+      {% endif %}
+    {% else %}
+      <tr><td colspan="8" class="text-muted p-3">{{ _('No device identities for this ADOM yet — press "Reconcile identity" to build them from the appliance list and the configuration history.') }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+{% if data.unclaimed %}
+<div class="fw-card mb-3">
+  <div class="fw-card-header"><i class="bi bi-question-octagon me-1"></i>{{ _('Unclaimed folders on the backup server') }}</div>
+  <div class="p-3 pb-0"><p class="text-muted mb-2" style="font-size:13px;">
+    {{ _('Files are arriving in these folders and no device in SATOM answers to the name. Either the appliance is pushing under a different name than it is registered with, or the device was removed from SATOM while its backups kept coming. Neither is an error — but neither is visible anywhere else.') }}
+  </p></div>
+  <div class="table-responsive">
+  <table class="table table-sm align-middle mb-0" style="font-size:12.5px;">
+    <thead><tr><th>{{ _('Folder') }}</th><th class="text-end">{{ _('Files') }}</th><th>{{ _('Last push') }}</th></tr></thead>
+    <tbody>
+    {% for u in data.unclaimed %}
+      <tr>
+        <td class="font-monospace">{{ u.slug }}</td>
+        <td class="text-end">{{ u.backups }}</td>
+        <td>{% set cls = {'ok':'success','warn':'warning','crit':'danger','never':'danger','unknown':'secondary'}[u.state] %}
+            <span class="fw-badge fw-badge-{{ cls }}">{{ u.state_label }}</span>
+            {% if u.backup_latest %}<span class="text-muted ms-2">{{ u.backup_latest }}</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endif %}
+
+{% if data.orphan_sot %}
+<div class="alert alert-warning" style="font-size:13px;">
+  <i class="bi bi-exclamation-triangle me-1"></i>
+  {{ _('These devices have configuration history and no identity record, so their versions are filed under no ADOM') }}:
+  <code>{{ data.orphan_sot | join(', ') }}</code>.
+  {{ _('Press "Reconcile identity" above — it adopts them from the history itself.') }}
+</div>
+{% endif %}
+
+<div class="fw-card">
+  <div class="fw-card-header"><i class="bi bi-cpu me-1"></i>{{ _('Firmware images held for this ADOM') }}</div>
+  <div class="table-responsive">
+  <table class="table table-sm align-middle mb-0" style="font-size:12.5px;">
+    <thead><tr><th>{{ _('Version') }}</th><th>{{ _('Kind') }}</th><th>{{ _('File') }}</th><th class="text-end">{{ _('Size') }}</th><th>{{ _('Added') }}</th></tr></thead>
+    <tbody>
+    {% for f in data.firmware %}
+      <tr>
+        <td><strong>{{ f.version }}</strong>{% if f.build %} <span class="text-muted">build{{ f.build }}</span>{% endif %}</td>
+        <td><span class="fw-badge fw-badge-{{ 'primary' if f.image_kind == 'upgrade' else 'info' }}">{{ f.image_kind }}</span>
+            {% if f.hypervisor %} <span class="text-muted">{{ f.hypervisor }}</span>{% endif %}</td>
+        <td class="font-monospace">{{ f.filename }}</td>
+        <td class="text-end">{{ (f.size_bytes / 1048576) | round(0) | int }} MB</td>
+        <td class="text-muted">{{ f.created_at.strftime('%Y-%m-%d') if f.created_at else '' }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="5" class="text-muted p-3">{{ _('No firmware images stored for this ADOM.') }}
+        <a href="{{ url_for('firmware.index') }}">{{ _('Infrastructure → Firmware') }}</a></td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endblock %}
+
+{#
+   In {% block scripts %} — a block base.html actually declares. A block the
+   parent does not declare is discarded SILENTLY by Jinja: no error, no
+   warning, nothing in the log, and the feature simply never reaches the
+   browser. That is exactly how the firmware page's install-kind script sat
+   dead for 23 days.
+#}
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+(function () {
+  // Delegated from the document: the file tables live inside collapses that
+  // exist at render time but a per-form listener would still need re-binding
+  // if any of them were ever re-rendered.
+  document.addEventListener('submit', function (ev) {
+    var form = ev.target.closest ? ev.target.closest('form.js-del-backup') : null;
+    if (!form) return;
+    var name = form.getAttribute('data-file') || '';
+    var typed = window.prompt(
+      'Type DELETE to remove ' + name + ' from the backup server.\n' +
+      'The appliance wrote this file; SATOM will not re-create it.');
+    if (typed !== 'DELETE') { ev.preventDefault(); return; }
+    form.querySelector('input[name="confirm"]').value = 'DELETE';
+  });
+})();
+</script>
+{% endblock %}

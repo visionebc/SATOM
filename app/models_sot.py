@@ -36,6 +36,22 @@ class SotVersion(db.Model):
     source = db.Column(db.String(32), nullable=False, default="harvest")
     taken_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow,
                          index=True)
+    #: Which ADOM / device family this version belongs to. Stamped at record
+    #: time from the live appliance, backfilled for retired devices from
+    #: ``device_identity``. "" only when it could not be established — an
+    #: unassigned version is visible and askable; one filed under the wrong
+    #: ADOM is neither.
+    product = db.Column(db.String(32), nullable=False, default="", index=True)
+    #: When this version's BLOB left local disk for the backup server. The row
+    #: is untouched: index and payload have different lifetimes on purpose.
+    #: NULL = the payload is (or should be) on this node.
+    #:
+    #: This split is what makes a one-day local policy safe. Deleting the row
+    #: would delete the change log itself — the thing an operator goes back
+    #: through to find the configuration a parameter used to have — while the
+    #: bytes sat safely off-box and unreachable, because ``load()`` and
+    #: ``diff()`` only ever looked at the local file.
+    evacuated_at = db.Column(db.DateTime, nullable=True, index=True)
     # An unchanged config does NOT mint a new row — the newest row's
     # last_seen_at advances instead. "How fresh is my SoT?" reads this;
     # "when did the config actually change?" reads taken_at.
@@ -48,6 +64,10 @@ class SotVersion(db.Model):
             "size_raw": self.size_raw, "size_gz": self.size_gz,
             "total_objects": self.total_objects,
             "section_count": self.section_count, "source": self.source,
+            "product": self.product or "",
+            "evacuated": self.evacuated_at is not None,
+            "evacuated_at": self.evacuated_at.isoformat(timespec="seconds")
+                            if self.evacuated_at else "",
             "taken_at": self.taken_at.isoformat(timespec="seconds")
                         if self.taken_at else "",
             "last_seen_at": self.last_seen_at.isoformat(timespec="seconds")

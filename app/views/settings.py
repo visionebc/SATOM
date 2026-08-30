@@ -212,7 +212,11 @@ def index():
         policy_links=(policy_links_svc.links() if _is_admin() else []),
         policy_link_tokens=policy_links_svc.TOKENS,
         clone_rules_cfg=(clone_rules_svc.config() if _is_admin() else None),
-        sot_retention=(store.sot_retention() if _is_admin() else None),
+        # One row per ADOM plus the house rule, because the four families are
+        # not comparable in size and a single number fits none of them.
+        sot_local_policies=(_sot_local_policies() if _is_admin() else None),
+        sot_store_stats=(_sot_store_stats() if _is_admin() else None),
+        bundle_local_keep=(store.bundle_local_keep() if _is_admin() else None),
         sot_refresh=(store.sot_refresh() if _is_admin() else None),
         # Server-side, on the first render: whether this node has an update
         # repository at all decides whether the configuration form opens by
@@ -1283,17 +1287,86 @@ def git_configure():
 #  sharing one action is also how a field that has been deleted from one of
 #  them keeps being written as blank by the other.
 
+def _sot_adoms() -> list:
+    """The device families a SoT policy can be written for.
+
+    Read from the ADOM registry, never a hardcoded tuple: that registry exists
+    precisely because five scattered lists used to disagree, and a sixth here
+    would put an ADOM in the selector with no retention policy behind it.
+    ``global`` is excluded — it is a console scope, not a device family.
+    """
+    try:
+        from ..models_adom import Adom
+        rows = (Adom.query.filter(Adom.key != 'global')
+                .order_by(Adom.sort_order, Adom.key).all())
+        return [{"key": r.key, "name": r.name, "active": bool(r.active)}
+                for r in rows]
+    except Exception:  # noqa: BLE001 — settings must render without the table
+        return []
+
+
+def _sot_local_policies() -> dict:
+    """House rule + one resolved policy per ADOM, each carrying WHICH level
+    answered. "2 because you set it" and "2 because nobody set anything" are
+    different facts and lead to different next actions."""
+    return {"house": store.sot_local_policy(""),
+            "adoms": [dict(a, policy=store.sot_local_policy(a["key"]))
+                      for a in _sot_adoms()]}
+
+
+def _sot_store_stats() -> dict:
+    """Store totals, so the policy is edited beside what it currently costs."""
+    try:
+        from ..services import sot_store
+        return sot_store.stats()
+    except Exception:  # noqa: BLE001
+        return {}
+
+
 @bp.route('/sot', methods=['POST'])
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def save_sot():
-    """Configuration SoT retention. Devices only — see settings_store."""
-    store.save_sot_retention(request.form.get('keep_versions', ''),
-                             request.form.get('keep_days', ''))
-    cfg = store.sot_retention()
-    log_action("settings.sot_retention",
-               detail=f"versions={cfg['versions']} days={cfg['days']}")
-    flash('Configuration SoT retention saved.', 'success')
+    """Local PAYLOAD policy for the Configuration SoT, for ONE ADOM.
+
+    There is no index-retention field here and there will not be one: the
+    index IS the change log, and the only thing a knob shortening it could
+    achieve is destroying the record this store exists to keep. What is
+    configurable is how much payload stays on this node.
+    """
+    product = (request.form.get('product') or '').strip()
+    valid = {a["key"] for a in _sot_adoms()}
+    if product and product not in valid:
+        # An unknown ADOM would write a key nothing ever reads — a policy that
+        # looks saved and governs nothing, which is the exact defect the SoT
+        # retention knob had for three weeks.
+        flash('Unknown ADOM %r — no policy was written.' % product, 'danger')
+        return redirect(url_for('settings.index') + '#tab-sot')
+    store.save_sot_local_policy(request.form.get('keep_versions', ''),
+                                request.form.get('keep_days', ''), product)
+    cfg = store.sot_local_policy(product)
+    log_action("settings.sot_local_policy",
+               detail=f"adom={product or 'house'} versions={cfg['versions']} "
+                      f"days={cfg['days']}")
+    flash('Local SoT payload policy saved for %s: newest %d version(s) and '
+          '%d day(s) stay on this node; older payload moves to the backup '
+          'server and the change log is kept in full.'
+          % (product or 'every ADOM', cfg['versions'], cfg['days']), 'success')
+    return redirect(url_for('settings.index') + '#tab-sot')
+
+
+@bp.route('/sot/evacuate', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def run_sot_evacuate():
+    """Apply the payload policy now: push what is missing off-box, then delete
+    only what the server is confirmed to hold."""
+    from ..services import sot_store
+    res = sot_store.offload()
+    log_action("settings.sot_evacuate", detail=str(res.get('detail', ''))[:200])
+    flash(res.get('detail', 'done') if res.get('ok')
+          else 'Nothing was evacuated: ' + str(res.get('detail', '')),
+          'success' if res.get('ok') else 'warning')
     return redirect(url_for('settings.index') + '#tab-sot')
 
 
@@ -1345,6 +1418,46 @@ def save_backup_schedule():
           if res['created'] else
           'System bundles are now written at %s %s.' % (res['time'], store.tz_name()),
           'success')
+    return redirect(url_for('settings.index') + '#tab-backupsrv')
+
+
+@bp.route('/backup-server/bundle-retention', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def save_bundle_retention():
+    """How many bundles stay on this node after a verified upload.
+
+    Its own POST, like the hour and the credentials: three panes that shared
+    one endpoint is how saving a number used to rewrite an SFTP password.
+    """
+    keep = store.save_bundle_local_keep(request.form.get('bundle_keep', ''))
+    log_action("settings.bundle_local_keep", detail=f"keep={keep}")
+    flash('System bundles: keeping %d on this node after a verified upload. '
+          'A bundle is only deleted once the backup server is confirmed to '
+          'hold it at the same size.' % keep, 'success')
+    return redirect(url_for('settings.index') + '#tab-backupsrv')
+
+
+@bp.route('/backup-server/bundle-evict', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def run_bundle_evict():
+    """Apply the bundle policy now."""
+    from ..services import system_backup as sb
+    res = sb.evict_local_bundles()
+    log_action("settings.bundle_evict",
+               detail=f"removed={len(res['removed'])} kept={len(res['kept'])} "
+                      f"unverified={len(res['unverified'])}")
+    if res["removed"]:
+        flash('%d bundle(s) removed from this node, %d MB freed. %d kept by '
+              'policy, %d kept because the backup server does not hold them.'
+              % (len(res["removed"]), res["bytes_freed"] // (1024 * 1024),
+                 len(res["kept"]), len(res["unverified"])), 'success')
+    else:
+        flash('Nothing removed. %d kept by policy, %d not verified on the '
+              'backup server (%d bundle(s) known off-box).'
+              % (len(res["kept"]), len(res["unverified"]), res["remote_known"]),
+              'warning')
     return redirect(url_for('settings.index') + '#tab-backupsrv')
 
 

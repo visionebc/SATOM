@@ -205,16 +205,25 @@ server is installed and active — mandatory on the **primary**.
 ```bash
 sudo bash install-satom.sh
 ```
-Downloads packages from the mirrors and clones the production repository
-(`https://git.example.net/satom-prod/SATOM.git`, configurable at the prompt).
+Downloads packages from the mirrors and clones the **public source of record**,
+`https://github.com/visionebc/SATOM.git` — configurable at the prompt.
 
-> **The repository is private.** `git clone` will ask for credentials; if it is
-> run unattended you have to supply the URL with a token
-> (`https://<user>:<token>@git.example.net/...`) or point it at a reachable
-> mirror. A `401` at this point stops the installation before anything is
-> touched.
+> **The default clone needs no credentials, and that is the point.** Until
+> 2026-08-30 this document named an internal mirror that only resolved inside
+> one company's network, so an unattended install anywhere else hung on a clone
+> it could never complete. That mirror has been retired and **no longer
+> exists**: a runbook that still names it sends an operator to a `404` in the
+> middle of a maintenance window. The installer's own default has pointed at
+> the public repository since before the retirement — it was this page that was
+> wrong, not the code.
+>
+> **If you point the prompt somewhere else** — an air-gapped copy, or a private
+> development repository — `git clone` will ask for credentials, and an
+> unattended run has to supply them in the URL
+> (`https://<user>:<token>@<host>/...`). A `401` at this point stops the
+> installation before anything is touched.
 > **Wipe the credential from the checkout when you are done:**
-> `git -C /opt/satom remote set-url origin https://git.example.net/satom-prod/SATOM.git`
+> `git -C /opt/satom remote set-url origin <url-without-the-token>`
 
 ### 2.2 Offline (no network)
 ```bash
@@ -669,7 +678,11 @@ have to be removed, that is the systems team's call (`apt-get remove`).
 ## 7. Support
 
 - Installation log: `/var/log/satom-install.log` (always written).
-- Production repository: `satom-prod/SATOM` (internal Gitea).
+- Public repository — source of record, tagged releases, installer and offline
+  bundles: **`github.com/visionebc/SATOM`**. Development happens in a private
+  repository that is never installed from directly; the internal `satom-prod`
+  mirror that used to sit between the two was **retired on 2026-08-30** and is
+  not a fallback.
 - The application catalogue (apps.example.net → SATOM → web platform)
   publishes this installer and the offline bundle, and has the
   **Sync Prod with Git/GitHub** buttons to promote development code to

@@ -6,6 +6,41 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Documentation — the manual stops naming a repository that was deleted (2026-08-30)
+
+Publication was consolidated onto a single public mirror and the intermediate
+one was retired. Nothing failed when the documentation kept describing the old
+shape, which is exactly why it survived in three places at once: a stale
+instruction does not break a build, it breaks the person following it.
+
+- **`INSTALL.md` told operators to clone a repository that no longer exists**,
+  in the install command and again under *Support*, and warned them to expect a
+  credential prompt that the real default has never produced. The installer's
+  own default has pointed at the public repository all along — the page was
+  wrong, not the code — so an operator who trusted the page over the tool got a
+  `404` in the middle of a maintenance window.
+- **`release-pipeline.md` drew a destination that had been deleted** and named
+  GitHub Pages as the public site, which is switched off for this project. It
+  now states the two-repository premise outright, says why the third was
+  retired (it was always pinned to the same commit as the public mirror, so it
+  added a hop that could fail without adding a copy that could be restored
+  from), and records that release assets are taken from the build output rather
+  than from that mirror's package registry.
+- **Stage 2 now documents what the PEM rule matches.** It used to fire on a bare
+  header, so a `placeholder=` attribute and a fixture body of repeated `B`s
+  aborted a publish exactly as a real key would; the scan runs over the whole
+  history, so neutralising the files at `HEAD` unblocked nothing and the public
+  repository sat frozen for twelve days. The header must now be followed by 40
+  base64 characters within 200 bytes, and the narrowing ships with a generator
+  that proves eight real key encodings still abort.
+- **Stage 4 records the two guards that protect a published artefact**: a
+  release refuses to carry asset filenames that disagree with `VERSION`, and
+  every commit is stamped with an attributable identity. Both failures are
+  invisible after the fact — the release is created, the files upload, and every
+  step reports success.
+- **User guide §26.4 says which remote belongs in the Repository card**, and what
+  to do with a node still pointing at the retired one.
+
 ### Changed — Stored Assets arranges devices the way YOU arrange your bookmarks (2026-08-30)
 
 `/adom-assets/` grouped devices by family and stopped there. The bookmarks rail

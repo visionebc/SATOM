@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Removed · Fixed · Added · 155 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Changed · Removed · Fixed · Added · 165 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Removed · Fixed · Added · 155 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Changed · Removed · Fixed · Added · 165 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,8 +59,8 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Removed · Fixed · Added · 155 entries</span>
-        <ul class="rel-leads"><li>The Configuration SoT index is now kept forever, and prune() no longer deletes a single row</li><li>Snapshot payload now leaves the node instead</li><li>Confirm off-box, then delete — per blob, never per server</li><li class="rel-more">… and 152 more</li></ul>
+        <span class="rel-nav-meta">unreleased · Changed · Removed · Fixed · Added · 165 entries</span>
+        <ul class="rel-leads"><li>A failed copy now stays on screen and names its reason</li><li>The legacy fallback moved back inside the click</li><li>writeText() has a 1.5 s deadline</li><li class="rel-more">… and 162 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v1.20.0.html" data-rel-version="1.20.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 1.20.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
@@ -255,6 +255,58 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
+<h3 id="fixed-the-500-pages-copy-button-can-no-longer-fail-in-silence-2026-08-30">Fixed — the 500 page's Copy button can no longer fail in silence (2026-08-30)</h3>
+<ul>
+<li><strong>A failed copy now stays on screen and names its reason.</strong> The button flashed
+  a ✗ for two seconds and then restored its label, which is indistinguishable
+  from a button that does nothing — and it took the diagnosis with it. A failure
+  now keeps the label, <strong>selects the reference</strong>, and shows a persistent line
+  with the browser's own error name.</li>
+<li><strong>The legacy fallback moved back inside the click.</strong> It was being called from
+  the promise's rejection handler, where <code>document.execCommand('copy')</code> no
+  longer has the click's transient activation — so it could only ever report a
+  second failure. It now runs only for the non-secure-context case, inside the
+  handler itself.</li>
+<li><strong><code>writeText()</code> has a 1.5 s deadline.</strong> A permission prompt that never appears
+  used to leave the button silent for good.</li>
+<li><strong>The reference is click-to-select</strong>, a path that depends on no clipboard API.</li>
+<li>Verified in a real Chromium over CDP with a <em>trusted</em> click (a synthetic
+  <code>.click()</code> carries no user activation and would have proved nothing), on the
+  byte-identical page and CSP header, across secure, non-secure and
+  permission-denied origins. See <code>docs/safeguards.md</code> §145.</li>
+</ul>
+<h3 id="added-the-change-log-gets-a-window-and-it-is-archived-before-it-leaves-2026-08-30">Added — the change log gets a window, and it is archived before it leaves (2026-08-30)</h3>
+<ul>
+<li><strong>Days of change log kept in the database</strong>, a third field on every SoT policy
+  card. Default <strong>365</strong>, per ADOM with the same three-deep resolution as the
+  payload boxes, and <code>0</code> is a real value here meaning <em>never trim</em> (in the two
+  payload boxes zero stays meaningless and reads as unset; a blank box is a
+  third state again and restores the default).</li>
+<li><strong>The log is archived off-box before any of it is deleted.</strong> Whole past
+  calendar months are written to <code>&lt;system_path&gt;/sot-log/</code> on the backup server
+  as one plain JSONL file per device and month — every field of every row, so
+  it stands on its own and can be pulled straight off the server with <code>sftp</code>
+  without restoring the database. Rows leave only after that file is <strong>listed
+  back at exactly the size that was written</strong>; an unreachable server archives
+  nothing, a file already on the server is never overwritten, and a month whose
+  snapshots are not off-box yet is held whole.</li>
+<li><code>offload()</code> (and the button, and <code>device_inspect</code>) now runs push → evacuate →
+  archive, in that order: a month may only leave once its snapshots are
+  off-box, and the evacuation is what puts them there.</li>
+</ul>
+<h3 id="changed">Changed</h3>
+<ul>
+<li><strong>Per-ADOM SoT settings are gated on the ADOM being active.</strong> An inactive
+  device family no longer gets a retention card. An override written before it
+  was switched off keeps resolving, so those are listed separately with their
+  numbers and a <strong>Clear the override</strong> button rather than disappearing.</li>
+<li><strong>"Apply the payload policy now" / "Push and evacuate now" is now "Free space
+  on this node now" / "Upload and free space now".</strong> The card states in its
+  first line that it does <em>not</em> discard history, names the two things it
+  removes locally, and prints where the change-log archive lands and what the
+  last run did. The old wording named the mechanism and left the consequence to
+  be guessed.</li>
+</ul>
 <h3 id="added-the-change-log-became-permanent-and-the-payload-learned-to-leave-2026-08-30">Added — the change log became permanent and the payload learned to leave (2026-08-30)</h3>
 <ul>
 <li><strong>The Configuration SoT index is now kept forever, and <code>prune()</code> no longer

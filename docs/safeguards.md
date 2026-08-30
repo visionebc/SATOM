@@ -12450,3 +12450,203 @@ python3 /root/mutate.py            # 34 mutations, all must print KILLED
 Measure by **return code**, and only `rc==1` is a failure (`rc==4` is a usage
 error, and pytest prints `FAILED` in upper case so a lower-case grep finds
 nothing). The baseline for the selected tests must be green before mutating.
+
+
+## §144 — the change log gets a window, and the window is only safe because the log leaves first (2026-08-30)
+
+**What was asked.** Three things, from the operator, about `Settings → Configuration SoT`:
+gate the per-device-family settings on whether that ADOM is switched on; give the
+change log a configurable window with the rest backed up somewhere it can be pulled
+from; and explain what the *"Apply the payload policy now / Push and evacuate now"*
+button actually does, because it read as though it might delete their SoT.
+
+**The uncomfortable half.** §143 — written the day before — states that the index has
+no retention knob and never will, on the grounds that a setting whose only possible
+effect is destroying the record is not a policy. That reasoning is still right about a
+knob that *only deletes*. What the operator asked for is the other half: keep a window
+here and put the rest **on the backup server, retrievable**. So the rule is not
+reversed, it is completed — and the completion is the archive, not the knob.
+
+### The three rules the trim rests on
+
+1. **Whole calendar months, never part of one.** Archiving the old half of a month
+   means writing that month's file again later with fewer rows in it, replacing a
+   complete archive with a truncated one. A month is archived only once it lies
+   *entirely* past the window, and a file already on the server is **never
+   overwritten**: a name present at a different size holds the month and is reported.
+2. **The payload must already be off-box.** Deleting a row whose blob is still
+   local-only orphans that blob, and `prune()`'s orphan sweep then deletes it — the
+   archive would point at bytes that exist nowhere. One such row holds its whole month.
+3. **Confirm, then delete** — the same single line §143 rests on, applied to the second
+   half. The file is uploaded, the folder is **listed back**, and rows go only when the
+   server reports the file at exactly the size that was written. An unreachable server
+   archives nothing; the listing failing reads as "nothing is off-box", never as
+   permission to delete. Which is why `_archive_payload` is deterministic: bytes that
+   varied between runs would make the size comparison — the thing that authorises the
+   delete — meaningless.
+
+`offload()` therefore runs push → evacuate → **archive, last**. A month may only leave
+once its snapshots are off-box and the evacuation is what puts them there; archiving
+first would hold exactly the months the same call just made eligible, so the trim would
+lag a full cycle behind the policy forever.
+
+### Zero means two different things, so it cannot share one rule
+
+`0` in either payload box is meaningless — it would evacuate even the newest snapshot,
+so it reads as *unset*. `0` in the log window is the real, asked-for policy **never
+trim**. Collapsing them would silently start deleting rows on a node whose operator had
+switched trimming off. A **blank** box is a third thing again ("I did not choose") and
+restores the default — reading a blank as the literal zero the new floor allows would
+switch trimming off for the whole node without anyone typing it. Three states, three
+guards, one per layer.
+
+**Default: 365 days, and deliberately long.** A row plus its indexes costs ~875 B where
+the snapshot it points at costs ~62 KB gzipped. A hundred devices changing daily add
+~32 MB of rows a year against ~2 GB of payload. Shortening this frees almost nothing
+and costs the ability to open a device history without going to the network: the window
+exists so the table is bounded and the log is provably off-box, not as a space measure.
+
+### The ADOM gate, and the rule it must not hide
+
+Only **active** ADOMs get a retention card: an inactive family is off across the whole
+console (routes 404, gone from the selector), so a form for it invites tuning a family
+this node does not manage. But an override written *before* the family was switched off
+**keeps resolving** for every row still filed under it — so hiding the form must not
+hide the rule. Dormant ADOMs that still carry an override or still hold change-log rows
+are listed underneath with the numbers and a *Clear the override* button, and the POST
+validates against the **registered** set rather than the active one precisely so that
+button can work. Validating against the active set would have made the reported rule
+impossible to remove without `psql`.
+
+### The button nobody could decode
+
+*"Apply the payload policy now"* / *"Push and evacuate now"* named the mechanism, not
+the consequence. It is now **Free space on this node now** / **Upload and free space
+now**, it states in the first line that it does **not** discard history, it names the
+two things it removes locally, and it prints where the archive lands and what the last
+run did. A card whose effect has to be guessed is the defect, not the wording.
+
+### ⚠ TRAMPAS
+
+1. **Two mutation harnesses ran at once and every result after that was noise.** The
+   foreground run hit the tool's 2-minute timeout; the SSH client died and the remote
+   `runuser` kept going. A second launch then mutated and restored the same files under
+   the first, so tests "failed" against correct code, "passed" against mutated code, and
+   the failing test moved between runs. The rule that already exists for two pytest
+   processes (§ the 2026-08-05 trap) applies to the harness itself: launch it
+   **detached** (`setsid … < /dev/null`), never in the foreground, and before believing
+   any red, `pgrep -af 'py[t]est|mut[.]py'` and check the tree for leftover mutation
+   strings.
+2. **A guard that reported a held month as nothing at all.** When the server already
+   held the month's file at a *different* size, the code skipped it silently: correct
+   not to delete, but `mismatched` stayed 0, so a held month read exactly like an
+   archived one. The test caught it and the fix went in the **code**, not the test.
+3. **Day-offset back-dating makes a guard depend on the calendar.** "400 and 380 days
+   ago" straddles a month boundary depending on the day the suite runs, so
+   "exactly one archive file" was answered differently in March than in April. Fixed
+   datetimes inside one known month (`OLD_A`/`OLD_B`/`OLD_MONTH`) instead.
+4. **`save_sot_local_policy(versions, days, product)` takes `product` third.** Adding
+   the new field as a third positional would have silently rebound every existing call —
+   it goes in as a keyword after `product`, and `log_days=None` means "this form did not
+   carry the field" so a form that never showed it cannot rewrite it.
+
+### Verification
+
+`tests/test_sot_log_archive_and_adom_gate.py` (21 guards) plus the amended
+`test_no_setting_can_shorten_the_change_log_without_archiving_it` in
+`tests/test_adom_assets_and_sot_payload.py` — amended, not deleted, and the docstring
+records why the absolute claim it pinned no longer holds while the invariant does.
+
+```bash
+cd /opt/satom
+venv/bin/python -m pytest tests/test_sot_log_archive_and_adom_gate.py \
+  tests/test_adom_assets_and_sot_payload.py -q
+python3 /tmp/mut.py                # 25 mutations, all must print KILLED
+```
+
+Measure by **return code**, only `rc==1` is a failure, the baseline must be green
+before mutating, and every anchor must match **exactly once** in its file.
+
+## §145 — a copy button that could not report its own failure (2026-08-30)
+
+**Report:** *"error DD5943CE, el botón de copy tampoco sirve"*.
+
+### The 500 was not a defect in shipped code
+
+`DD5943CE` is in `data/logs/satom.log`: `GET /settings/ ::
+UndefinedError: 'dict object' has no attribute 'log_days'`, raised at
+`settings/index.html:636`. The template on disk was 40 minutes ahead of the
+Python the running workers had imported — the SoT log-window round was mid-edit,
+template first, backend after. `jinja_env.auto_reload` is **False** here, but
+that only means a compiled template is never re-checked; compilation still
+happens **lazily on first render**, so the first visit after an edit picks up
+whatever is on disk. `/opt/satom` is both the editing tree and the served tree:
+any half-finished edit is live for the next visitor.
+
+**Rule:** when a template's contract changes, land the backend first or restart
+immediately. A restart is what closed it (`/settings/` renders 200; verified
+against the production database before restarting, not after).
+
+### What the copy button actually did, measured in a real browser
+
+The failure could **not** be reproduced from a description, so the page was
+driven in a real Chromium (146) over the Chrome DevTools Protocol with
+`Input.dispatchMouseEvent` — a **trusted** click; a synthetic `.click()` carries
+no user activation, which is the one thing every clipboard path depends on, so
+it would have proved nothing. The bytes were byte-identical to what the browser
+got (4022 bytes, matching the access-log entry) and were served with the exact
+CSP header the app emits.
+
+| scenario | result |
+|---|---|
+| secure origin, clipboard granted | ✓, clipboard read back as the reference |
+| non-secure origin (`navigator.clipboard` undefined) | ✓ via `execCommand` |
+| secure origin, clipboard permission **denied** | ✓ — Chrome still allows a gesture-backed sanitized write |
+
+Also checked, because both would have been invisible in the template: the
+`<script>` nonce equals the nonce in that response's CSP header, and **nginx
+adds no headers of its own** (no `Permissions-Policy`).
+
+So the page and both copy paths are sound on the engine available here. What the
+code could not do was **tell anyone why** when it failed on a browser we do not
+have (the report came from Chrome 151 on macOS over HTTPS):
+
+1. **The rejection handler called `legacyCopy()`.** `document.execCommand('copy')`
+   needs the click's transient activation, and a promise continuation has
+   already lost it — so the "fallback" could only ever produce a second,
+   guaranteed failure, overwriting the reason for the first.
+2. **A promise that never settles left the button silent for good** — no
+   deadline. A permission prompt that never appears is indistinguishable from a
+   dead button.
+3. **The failure state erased itself.** A ✗ for two seconds, then the label
+   back. From the operator's seat that is a button that does nothing, and the
+   diagnosis left with it — which is exactly the report we got.
+
+### What it does now
+
+`writeText()` with a **1.5 s deadline**; on rejection or timeout the page keeps
+the label, **selects the reference**, and shows a **persistent** yellow line
+carrying the browser's own error name (`NotAllowedError`, `timeout`, …). The
+legacy path stays, but only where the gesture still exists — inside the click,
+for the non-secure case. The reference is click-to-select on its own, a path
+that needs no clipboard API. The instruction is server-rendered
+(`data-msg="{{ _(…) }}"`), so it is translated like everything else.
+
+### Recipe to check
+
+    grep -n 'DD5943CE' /opt/satom/data/logs/satom.log      # ref -> traceback
+    venv/bin/python -m pytest tests/test_error_page_copy.py -q
+
+The guards read the **properties**, not the glyphs: the rejection branch must
+not name `legacyCopy`; both continuations must clear the deadline and check a
+`settled` flag; the failure half of `done()` must contain **no** `setTimeout`;
+the reason must reach `note.textContent`; the success glyph may appear exactly
+once and only inside `if (ok)`. Comments are stripped before asserting — the
+code's own comment says *NOT legacyCopy()*, and an assertion that matches its
+own comment proves nothing (the sixteenth time that trap has been paid for).
+The last guard renders `/__selftest/error` and compares the script's nonce with
+the nonce that response enforced: a CSP-blocked script is a button that does
+nothing, and no amount of reading the template can settle it.
+
+**15 guards, 15 mutations, 15 dead** (by rc, only `rc==1` counting as a kill,
+green baseline required, every anchor matching exactly once).

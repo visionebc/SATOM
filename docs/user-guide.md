@@ -2380,16 +2380,48 @@ system backup bundle. `device_sync` and `device_inspect` are the actions that
 feed it (§15). The design is in
 [source-of-truth-spec.md](source-of-truth-spec.md).
 
-#### The change log is permanent. The payload is not.
+#### Two lifetimes: the snapshot and the change log
 
-Since **2026-08-30** these are two different lifetimes and only one of them is
-configurable.
+Since **2026-08-30** these are two different things and each has its own
+window. The **snapshot** is the harvested configuration itself and it is large;
+the **change log** is the one-line-per-version record an operator walks back
+through to find the value a parameter used to have, and it is roughly a
+thousand times smaller. Neither is ever deleted from this node before the
+backup server has been confirmed to hold it.
 
-**The index — the `sot_version` rows — is kept forever, and there is no setting
-to shorten it.** The row *is* the change log: the list an operator walks back
-through to find the value a parameter used to have. A knob that shortened it
-could achieve exactly one thing, which is destroying the record this store
-exists to keep, so the panel states the rule instead of offering a field.
+**The change log is never thrown away — it is moved.** Whole past calendar
+months are written to the backup server as one plain `JSONL` file per device
+and month under `<system_path>/sot-log/`, and the rows leave the database only
+after that file has been listed back **at the exact size that was written**.
+Every field of every row is in the file, so it is a record on its own and can
+be pulled straight off the backup server with `sftp` — no restore of the
+database required.
+
+> **Why whole months, never part of one.** Archiving the old half of a month
+> means writing that month's file again later with fewer rows in it, which
+> would replace a complete archive with a truncated one. A month is therefore
+> archived only once it lies **entirely** beyond the window, and a file already
+> on the server is **never overwritten**: a name present at a different size
+> holds the month and says so.
+
+> **Why a month is also held when its snapshots are still local.** Deleting a
+> row whose blob has not gone off-box orphans that blob, and the orphan sweep
+> then deletes it — the archive would point at bytes that exist nowhere. One
+> such row holds its whole month.
+
+**Do not expect this to free disk.** A row plus its indexes costs ~875 B where
+the snapshot it points at costs ~62 KB gzipped: a hundred devices changing
+daily add ~32 MB of rows a year against ~2 GB of payload. The window exists so
+the table is bounded and the log is provably off-box, not as a space measure —
+which is why the default is a **year** and why shortening it to days buys
+almost nothing while costing the ability to open a device history without going
+to the network.
+
+> **This replaces a stricter rule, deliberately.** Until 2026-08-30 the index
+> had no setting at all, on the grounds that a knob whose only effect is
+> erasing the record is not a policy. That still holds for a knob that *only*
+> deletes; the operator asked for the missing half — a window here and the rest
+> off-box, retrievable — and the archive is what makes the shortening safe.
 
 > Until this change `prune()` deleted rows, and that was the documented
 > behaviour. Nothing failed: the page rendered, the suite was green. It only
@@ -2408,12 +2440,29 @@ Two, not one, for the versions floor: a diff needs a version *and* the one
 before it, and *what changed in the last harvest* is the most-used view in the
 product — at one, that view would go to the network every single time.
 
-**These numbers are set per ADOM.** The panel shows the house rule first and
-then one card per ADOM. Resolution is three deep — ADOM key, house key, product
+**Days of change log kept in the database** is the third field on each card.
+Default **365**, maximum 36500, and **`0` is a real value here** — unlike the
+two payload boxes it means *never trim*, so the whole log stays on this node.
+(For the payload boxes zero is meaningless: it would evacuate even the newest
+snapshot, so it reads as unset.) A **blank** box is still "I did not choose"
+and restores the default.
+
+**These numbers are set per ADOM, and only for ADOMs that are switched on.**
+The panel shows the house rule first and then one card per **active** ADOM. Resolution is three deep — ADOM key, house key, product
 default — and each card prints **which level answered**, because "2 because you
 set it" and "2 because nobody set anything" lead to different next actions.
-Leaving both boxes of an ADOM card empty and saving **clears** that override so
-the ADOM inherits again; that is the only way to undo one. Per ADOM because the
+Leaving all three boxes of an ADOM card empty and saving **clears** that
+override so the ADOM inherits again; that is the only way to undo one.
+
+> **An inactive ADOM has no card.** A family switched off in the ADOM registry
+> is off across the whole console — its routes 404, it is gone from the
+> selector — so offering a retention form for it invites tuning a family this
+> node does not manage. But a rule written *before* it was switched off keeps
+> resolving for every row still filed under that family, so hiding the form
+> must not hide the rule: inactive ADOMs that still carry an override or still
+> hold change-log rows are listed underneath, with the numbers and a **Clear
+> the override** button. Saving is accepted for any registered ADOM, active or
+> not, precisely so that button can work. Per ADOM because the
 families are not comparable: a FortiAnalyzer snapshot measures ~6 MB raw where
 a FortiWeb's is ~0.5 MB, so one number for all four fits none of them.
 
@@ -2439,8 +2488,17 @@ currently lives, and a device that reverts to an older configuration re-writes
 the blob and clears that flag.
 
 This normally runs by itself after each off-box sync (`device_inspect`). The
-**Apply the payload policy now** button on this pane does the same thing
-immediately. A shared snapshot — the same configuration recorded under a
+**Free space on this node now** card on this pane does the same thing
+immediately — its button reads **Upload and free space now**.
+
+> **It was called "Apply the payload policy now" / "Push and evacuate now"
+> until 2026-08-30 and nobody could tell from the page whether it deleted their
+> history.** It does not. The card now names the two things it removes locally
+> — snapshots the server is confirmed to hold, and change-log months the server
+> is confirmed to hold — and states plainly that nothing is discarded: an
+> evacuated snapshot is fetched back when opened, and an archived month is a
+> file on the backup server. It also prints where the archive lands and what
+> the last run did. A shared snapshot — the same configuration recorded under a
 chassis *and* its per-ADOM rows — only leaves when no retained row anywhere
 still wants it on disk.
 
@@ -3587,6 +3645,21 @@ with a red **Error reference** — an eight-character code you can `grep` in
 `data/logs/satom.log` for the full traceback. That is a different identifier from
 the entry ID and answers a different question: the entry ID names *the record*,
 the error ID names *the crash*.
+
+**Getting that reference out of the page.** The error page's **Copy** button
+tries the browser clipboard API first. On a page served over plain `http` the
+API does not exist at all (it is a secure-context feature), so the button falls
+back to the legacy copy path — but only from *inside* the click, because that
+path needs the user gesture a promise callback has already lost. If neither
+works — a blocked clipboard permission, an extension, or a permission prompt
+that never appears (the button stops waiting after 1.5 s) — it **selects the
+reference and says so in yellow, and that message stays on screen**, naming the
+browser's own reason. A failure you can read is a failure you can report; the
+earlier version showed a ✗ for two seconds and then put the label back, which
+looks exactly like a button that does nothing.
+
+The reference is also **click-to-select on its own**, which depends on no
+clipboard API at all.
 
 ---
 

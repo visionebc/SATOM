@@ -642,6 +642,54 @@ def push_sot_blobs(paths: list) -> dict:
         return {"ok": False, "detail": str(exc)}
 
 
+def push_log_archive(paths: list) -> dict:
+    """Upload change-log archive files to ``<system_path>/sot-log``.
+
+    Deliberately NOT an overwrite: a name already present on the server is
+    skipped, never replaced. Each file holds one device's whole calendar month
+    of change-log rows and is written once the month is entirely past the
+    retention window, so the only way a second upload could differ from the
+    first is if rows had already been deleted locally — in which case the
+    complete archive would be overwritten by a truncated one. Skipping is the
+    safe half of that choice; the caller compares sizes and refuses to delete
+    when they disagree. Never raises."""
+    try:
+        cfg = store.backup_server(reveal_secret=True)
+        if not cfg.get("configured"):
+            return {"ok": False, "detail": "backup server not configured "
+                                           "(Settings -> SoT & Backup)"}
+        sys_path = cfg.get("system_path") or "/system"
+        dest = posixpath.join(sys_path, "sot-log")
+        t, sftp = _connect(cfg)
+        pushed = skipped = 0
+        try:
+            for d in (sys_path, dest):
+                try:
+                    sftp.stat(d)
+                except IOError:
+                    try:
+                        sftp.mkdir(d)
+                    except IOError as exc:
+                        return {"ok": False,
+                                "detail": f"{d} does not exist and could not "
+                                          f"be created ({exc})"}
+            have = set(sftp.listdir(dest))
+            for local in paths:
+                name = os.path.basename(local)
+                if name in have or not os.path.exists(local):
+                    skipped += 1
+                    continue
+                sftp.put(local, posixpath.join(dest, name))
+                pushed += 1
+        finally:
+            t.close()
+        return {"ok": True, "pushed": pushed, "skipped": skipped,
+                "detail": f"sot-log: {pushed} archive file(s) uploaded, "
+                          f"{skipped} already off-box"}
+    except Exception as exc:  # noqa: BLE001 — never raise into the sync flow
+        return {"ok": False, "detail": str(exc)}
+
+
 def dir_inventory(path: str) -> dict:
     """Generic listing of one folder on the backup server. Same shape as
     :func:`system_inventory` (which predates it and is kept for the DB-bundle

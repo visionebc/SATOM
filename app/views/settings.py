@@ -215,6 +215,8 @@ def index():
         # One row per ADOM plus the house rule, because the four families are
         # not comparable in size and a single number fits none of them.
         sot_local_policies=(_sot_local_policies() if _is_admin() else None),
+        sot_dormant_adoms=(_sot_dormant_adoms() if _is_admin() else []),
+        sot_log_archive=(_sot_log_archive() if _is_admin() else None),
         sot_store_stats=(_sot_store_stats() if _is_admin() else None),
         bundle_local_keep=(store.bundle_local_keep() if _is_admin() else None),
         sot_refresh=(store.sot_refresh() if _is_admin() else None),
@@ -1287,10 +1289,10 @@ def git_configure():
 #  sharing one action is also how a field that has been deleted from one of
 #  them keeps being written as blank by the other.
 
-def _sot_adoms() -> list:
-    """The device families a SoT policy can be written for.
+def _sot_registered_adoms() -> list:
+    """Every device family the ADOM registry knows, active or not.
 
-    Read from the ADOM registry, never a hardcoded tuple: that registry exists
+    Read from the registry, never a hardcoded tuple: that registry exists
     precisely because five scattered lists used to disagree, and a sixth here
     would put an ADOM in the selector with no retention policy behind it.
     ``global`` is excluded — it is a console scope, not a device family.
@@ -1305,6 +1307,45 @@ def _sot_adoms() -> list:
         return []
 
 
+def _sot_adoms() -> list:
+    """The device families whose SoT policy is EDITABLE here.
+
+    An inactive ADOM is switched off across the whole console — its routes
+    404, it is gone from the selector — so offering a per-family retention
+    form for it invites an operator to configure a family this node does not
+    manage. The gate is the registry's own ``active`` flag rather than a
+    second list, for the reason the registry exists at all.
+    """
+    return [a for a in _sot_registered_adoms() if a["active"]]
+
+
+def _sot_dormant_adoms() -> list:
+    """Inactive ADOMs that nonetheless still carry a stored override or still
+    hold change-log rows.
+
+    Hiding an inactive family is right; hiding a RULE that is still in force
+    is not. If an ADOM is switched off after a policy was written, that policy
+    keeps resolving for every row filed under it — so it is reported here,
+    with the numbers, instead of silently disappearing from the page.
+    """
+    out = []
+    for a in _sot_registered_adoms():
+        if a["active"]:
+            continue
+        policy = store.sot_local_policy(a["key"])
+        versions = 0
+        try:
+            from ..models import db
+            from ..models_sot import SotVersion
+            versions = (db.session.query(db.func.count(SotVersion.id))
+                        .filter(SotVersion.product == a["key"]).scalar() or 0)
+        except Exception:  # noqa: BLE001
+            versions = 0
+        if policy["own"] or versions:
+            out.append(dict(a, policy=policy, versions=int(versions)))
+    return out
+
+
 def _sot_local_policies() -> dict:
     """House rule + one resolved policy per ADOM, each carrying WHICH level
     answered. "2 because you set it" and "2 because nobody set anything" are
@@ -1312,6 +1353,29 @@ def _sot_local_policies() -> dict:
     return {"house": store.sot_local_policy(""),
             "adoms": [dict(a, policy=store.sot_local_policy(a["key"]))
                       for a in _sot_adoms()]}
+
+
+def _sot_log_archive() -> dict:
+    """Where the change-log archive lands and what the last run did.
+
+    Read from the stored outcome, never by listing the server: this renders on
+    every visit to Settings, and an SFTP round-trip in that path would make an
+    unreachable backup server look like a broken page.
+    """
+    out = {"path": "", "last": None}
+    try:
+        from ..services import sot_store
+        cfg = store.backup_server()
+        base = (cfg.get("system_path") or "/system").rstrip("/")
+        out["path"] = f"{base}/{sot_store.LOG_ARCHIVE_SUBDIR}"
+        out["configured"] = bool(cfg.get("configured"))
+        raw = store.get_str(store.K_SOT_LOG_ARCHIVE_LAST, "")
+        if raw:
+            import json as _json
+            out["last"] = _json.loads(raw)
+    except Exception:  # noqa: BLE001
+        pass
+    return out
 
 
 def _sot_store_stats() -> dict:
@@ -1335,7 +1399,10 @@ def save_sot():
     configurable is how much payload stays on this node.
     """
     product = (request.form.get('product') or '').strip()
-    valid = {a["key"] for a in _sot_adoms()}
+    # Registered, not active: the pane offers a Clear button for a dormant
+    # ADOM whose rule is still in force, and rejecting it here would make that
+    # rule impossible to remove without psql.
+    valid = {a["key"] for a in _sot_registered_adoms()}
     if product and product not in valid:
         # An unknown ADOM would write a key nothing ever reads — a policy that
         # looks saved and governs nothing, which is the exact defect the SoT
@@ -1343,15 +1410,19 @@ def save_sot():
         flash('Unknown ADOM %r — no policy was written.' % product, 'danger')
         return redirect(url_for('settings.index') + '#tab-sot')
     store.save_sot_local_policy(request.form.get('keep_versions', ''),
-                                request.form.get('keep_days', ''), product)
+                                request.form.get('keep_days', ''), product,
+                                log_days=request.form.get('keep_log_days', ''))
     cfg = store.sot_local_policy(product)
     log_action("settings.sot_local_policy",
                detail=f"adom={product or 'house'} versions={cfg['versions']} "
-                      f"days={cfg['days']}")
-    flash('Local SoT payload policy saved for %s: newest %d version(s) and '
-          '%d day(s) stay on this node; older payload moves to the backup '
-          'server and the change log is kept in full.'
-          % (product or 'every ADOM', cfg['versions'], cfg['days']), 'success')
+                      f"days={cfg['days']} log_days={cfg['log_days']}")
+    flash('SoT policy saved for %s: newest %d version(s) and %d day(s) of '
+          'snapshot stay on this node, and %s of change log. Older snapshots '
+          'move to the backup server; whole past months of the log are '
+          'written there before they leave the database.'
+          % (product or 'every ADOM', cfg['versions'], cfg['days'],
+             ('%d day(s)' % cfg['log_days']) if cfg['log_days'] > 0
+             else 'the full history'), 'success')
     return redirect(url_for('settings.index') + '#tab-sot')
 
 

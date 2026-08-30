@@ -2845,15 +2845,45 @@ replicated to the standby node by <code>satom-ha-datasync</code>, and carried in
 system backup bundle. <code>device_sync</code> and <code>device_inspect</code> are the actions that
 feed it (§15). The design is in
 <a href="source-of-truth.html">source-of-truth-spec.md</a>.</p>
-<h4 id="the-change-log-is-permanent-the-payload-is-not">The change log is permanent. The payload is not.</h4>
-<p>Since <strong>2026-08-30</strong> these are two different lifetimes and only one of them is
-configurable.</p>
-<p><strong>The index — the <code>sot_version</code> rows — is kept forever, and there is no setting
-to shorten it.</strong> The row <em>is</em> the change log: the list an operator walks back
-through to find the value a parameter used to have. A knob that shortened it
-could achieve exactly one thing, which is destroying the record this store
-exists to keep, so the panel states the rule instead of offering a field.</p>
+<h4 id="two-lifetimes-the-snapshot-and-the-change-log">Two lifetimes: the snapshot and the change log</h4>
+<p>Since <strong>2026-08-30</strong> these are two different things and each has its own
+window. The <strong>snapshot</strong> is the harvested configuration itself and it is large;
+the <strong>change log</strong> is the one-line-per-version record an operator walks back
+through to find the value a parameter used to have, and it is roughly a
+thousand times smaller. Neither is ever deleted from this node before the
+backup server has been confirmed to hold it.</p>
+<p><strong>The change log is never thrown away — it is moved.</strong> Whole past calendar
+months are written to the backup server as one plain <code>JSONL</code> file per device
+and month under <code>&lt;system_path&gt;/sot-log/</code>, and the rows leave the database only
+after that file has been listed back <strong>at the exact size that was written</strong>.
+Every field of every row is in the file, so it is a record on its own and can
+be pulled straight off the backup server with <code>sftp</code> — no restore of the
+database required.</p>
 <blockquote>
+<p><strong>Why whole months, never part of one.</strong> Archiving the old half of a month
+means writing that month's file again later with fewer rows in it, which
+would replace a complete archive with a truncated one. A month is therefore
+archived only once it lies <strong>entirely</strong> beyond the window, and a file already
+on the server is <strong>never overwritten</strong>: a name present at a different size
+holds the month and says so.</p>
+<p><strong>Why a month is also held when its snapshots are still local.</strong> Deleting a
+row whose blob has not gone off-box orphans that blob, and the orphan sweep
+then deletes it — the archive would point at bytes that exist nowhere. One
+such row holds its whole month.</p>
+</blockquote>
+<p><strong>Do not expect this to free disk.</strong> A row plus its indexes costs ~875 B where
+the snapshot it points at costs ~62 KB gzipped: a hundred devices changing
+daily add ~32 MB of rows a year against ~2 GB of payload. The window exists so
+the table is bounded and the log is provably off-box, not as a space measure —
+which is why the default is a <strong>year</strong> and why shortening it to days buys
+almost nothing while costing the ability to open a device history without going
+to the network.</p>
+<blockquote>
+<p><strong>This replaces a stricter rule, deliberately.</strong> Until 2026-08-30 the index
+had no setting at all, on the grounds that a knob whose only effect is
+erasing the record is not a policy. That still holds for a knob that <em>only</em>
+deletes; the operator asked for the missing half — a window here and the rest
+off-box, retrievable — and the archive is what makes the shortening safe.</p>
 <p>Until this change <code>prune()</code> deleted rows, and that was the documented
 behaviour. Nothing failed: the page rendered, the suite was green. It only
 became a data-loss defect the moment a <strong>one-day</strong> local policy was asked
@@ -2869,14 +2899,31 @@ younger than <strong>D</strong> days. Defaults: <strong>2 versions</strong> and 
 <p>Two, not one, for the versions floor: a diff needs a version <em>and</em> the one
 before it, and <em>what changed in the last harvest</em> is the most-used view in the
 product — at one, that view would go to the network every single time.</p>
-<p><strong>These numbers are set per ADOM.</strong> The panel shows the house rule first and
-then one card per ADOM. Resolution is three deep — ADOM key, house key, product
+<p><strong>Days of change log kept in the database</strong> is the third field on each card.
+Default <strong>365</strong>, maximum 36500, and <strong><code>0</code> is a real value here</strong> — unlike the
+two payload boxes it means <em>never trim</em>, so the whole log stays on this node.
+(For the payload boxes zero is meaningless: it would evacuate even the newest
+snapshot, so it reads as unset.) A <strong>blank</strong> box is still "I did not choose"
+and restores the default.</p>
+<p><strong>These numbers are set per ADOM, and only for ADOMs that are switched on.</strong>
+The panel shows the house rule first and then one card per <strong>active</strong> ADOM. Resolution is three deep — ADOM key, house key, product
 default — and each card prints <strong>which level answered</strong>, because "2 because you
 set it" and "2 because nobody set anything" lead to different next actions.
-Leaving both boxes of an ADOM card empty and saving <strong>clears</strong> that override so
-the ADOM inherits again; that is the only way to undo one. Per ADOM because the
+Leaving all three boxes of an ADOM card empty and saving <strong>clears</strong> that
+override so the ADOM inherits again; that is the only way to undo one.</p>
+<blockquote>
+<p><strong>An inactive ADOM has no card.</strong> A family switched off in the ADOM registry
+is off across the whole console — its routes 404, it is gone from the
+selector — so offering a retention form for it invites tuning a family this
+node does not manage. But a rule written <em>before</em> it was switched off keeps
+resolving for every row still filed under that family, so hiding the form
+must not hide the rule: inactive ADOMs that still carry an override or still
+hold change-log rows are listed underneath, with the numbers and a <strong>Clear
+the override</strong> button. Saving is accepted for any registered ADOM, active or
+not, precisely so that button can work. Per ADOM because the
 families are not comparable: a FortiAnalyzer snapshot measures ~6 MB raw where
 a FortiWeb's is ~0.5 MB, so one number for all four fits none of them.</p>
+</blockquote>
 <p>A <code>0</code>, a blank or a malformed value means <em>unset</em> and restores the default,
 never "keep nothing" — zero down this path would evacuate the newest payload
 too, and the very next diff would go to the network for a config harvested a
@@ -2895,10 +2942,20 @@ under. The row carries <code>evacuated_at</code> so the page can say where the p
 currently lives, and a device that reverts to an older configuration re-writes
 the blob and clears that flag.</p>
 <p>This normally runs by itself after each off-box sync (<code>device_inspect</code>). The
-<strong>Apply the payload policy now</strong> button on this pane does the same thing
-immediately. A shared snapshot — the same configuration recorded under a
+<strong>Free space on this node now</strong> card on this pane does the same thing
+immediately — its button reads <strong>Upload and free space now</strong>.</p>
+<blockquote>
+<p><strong>It was called "Apply the payload policy now" / "Push and evacuate now"
+until 2026-08-30 and nobody could tell from the page whether it deleted their
+history.</strong> It does not. The card now names the two things it removes locally
+— snapshots the server is confirmed to hold, and change-log months the server
+is confirmed to hold — and states plainly that nothing is discarded: an
+evacuated snapshot is fetched back when opened, and an archived month is a
+file on the backup server. It also prints where the archive lands and what
+the last run did. A shared snapshot — the same configuration recorded under a
 chassis <em>and</em> its per-ADOM rows — only leaves when no retained row anywhere
 still wants it on disk.</p>
+</blockquote>
 <p>Blobs no version references at all are still deleted outright; those are
 orphans, not history.</p>
 <p><strong>Refresh frequency</strong> — how often every managed appliance is read and its
@@ -4245,6 +4302,19 @@ with a red <strong>Error reference</strong> — an eight-character code you can 
 <code>data/logs/satom.log</code> for the full traceback. That is a different identifier from
 the entry ID and answers a different question: the entry ID names <em>the record</em>,
 the error ID names <em>the crash</em>.</p>
+<p><strong>Getting that reference out of the page.</strong> The error page's <strong>Copy</strong> button
+tries the browser clipboard API first. On a page served over plain <code>http</code> the
+API does not exist at all (it is a secure-context feature), so the button falls
+back to the legacy copy path — but only from <em>inside</em> the click, because that
+path needs the user gesture a promise callback has already lost. If neither
+works — a blocked clipboard permission, an extension, or a permission prompt
+that never appears (the button stops waiting after 1.5 s) — it <strong>selects the
+reference and says so in yellow, and that message stays on screen</strong>, naming the
+browser's own reason. A failure you can read is a failure you can report; the
+earlier version showed a ✗ for two seconds and then put the label back, which
+looks exactly like a button that does nothing.</p>
+<p>The reference is also <strong>click-to-select on its own</strong>, which depends on no
+clipboard API at all.</p>
 <hr>
 <h2 id="35-integrations-netbox-change-tickets-and-your-own-python">35. Integrations: NetBox, change tickets and your own Python</h2>
 <p><strong>Settings → Integrations</strong> (admin only) is where SATOM is wired to systems it

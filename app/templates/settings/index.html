@@ -566,8 +566,12 @@
       </div>
       <div class="p-3">
         <p class="text-muted mb-2" style="font-size:13px;">
-          <strong>{{ _('The change log is kept forever and has no retention setting.') }}</strong>
-          {{ _('Every recorded version stays in the index permanently, which is what lets an operator walk back and find the value a parameter used to have. Deleting those rows would delete the history itself, so the only knob here governs how much snapshot PAYLOAD sits on this node.') }}
+          <strong>{{ _('Two different things age here, and they are configured separately.') }}</strong>
+          {{ _('The SNAPSHOT is the harvested configuration itself, and it is large. The CHANGE LOG is the one-line-per-version record an operator walks back through to find the value a parameter used to have, and it is roughly a thousand times smaller. Neither is ever deleted before the backup server has been confirmed to hold it.') }}
+        </p>
+        <p class="text-muted mb-2" style="font-size:13px;">
+          <strong>{{ _('The change log is never thrown away — it is moved.') }}</strong>
+          {{ _('Whole past calendar months are written to the backup server as one plain JSONL file per device and month, and the rows are removed here only after that file has been listed back at the exact size that was written. Part of a month is never archived: writing the same month a second time with fewer rows in it would replace a complete archive with a truncated one.') }}
         </p>
         <p class="text-muted mb-0" style="font-size:13px;">
           {{ _('Payload older than the policy is uploaded to the') }} <a href="#tab-backupsrv" data-tab-jump="#tab-backupsrv">{{ _('Backup Server') }}</a> {{ _('and then removed from local disk — and only ever in that order: a snapshot is deleted here strictly after the server has been listed and confirmed to hold it. Opening an evacuated version fetches it back automatically, so history stays readable; it just travels.') }}
@@ -621,12 +625,28 @@
               </div>
             </div>
             <div class="col-sm-4">
+              <label class="form-label">{{ _('Days of change log kept in the database') }}
+                {{ hint(_('How long this node keeps the version rows themselves before whole past months of them are written to the backup server and removed here. Long by default on purpose: a row costs about 875 bytes against ~62 KB for the snapshot it points at, so shortening this frees almost no disk and costs the ability to open a device history without going to the network. Zero disables trimming — the log then stays here in full.'), _('About the change log window')) }}
+              </label>
+              <input type="number" name="keep_log_days" min="0" max="36500"
+                     class="form-control fw-form-control"
+                     value="{{ scope.policy.log_days if (scope.policy.own or not scope.key) else '' }}"
+                     placeholder="{{ scope.policy.log_days }}">
+              <div class="form-text">
+                {{ _('In force') }}: <strong>{{ scope.policy.log_days if scope.policy.log_days > 0 else _('kept in full') }}</strong>
+                {% if scope.policy.log_days > 0 %}{{ _('day(s)') }}{% endif %}
+                ({{ {'adom': _('set for this ADOM'), 'house': _('inherited from the house rule'), 'default': _('product default')}[scope.policy.log_days_source] }})
+              </div>
+            </div>
+          </div>
+          <div class="row g-3 mt-0">
+            <div class="col-12">
               <div class="form-text">
                 {% if scope.key %}
-                  {{ _('Leave both boxes empty and save to clear this ADOM\'s override — it goes back to inheriting the house rule. That is the only way to undo one.') }}
+                  {{ _('Leave all three boxes empty and save to clear this ADOM\'s override — it goes back to inheriting the house rule. That is the only way to undo one.') }}
                 {% else %}
                   {{ _('Applies to every ADOM that has no rule of its own.') }}
-                  {{ _('Defaults') }}: {{ scope.policy.default_versions }} {{ _('versions') }}, {{ scope.policy.default_days }} {{ _('day(s)') }}.
+                  {{ _('Defaults') }}: {{ scope.policy.default_versions }} {{ _('versions') }}, {{ scope.policy.default_days }} {{ _('day(s) of snapshot') }}, {{ scope.policy.default_log_days }} {{ _('day(s) of change log') }}.
                 {% endif %}
               </div>
             </div>
@@ -637,15 +657,78 @@
     </form>
     {% endfor %}
 
+    {#
+       Only ACTIVE ADOMs get a form above: an inactive family is switched off
+       across the whole console, so offering to configure its retention here
+       invites an operator to tune a family this node does not manage. But a
+       rule written before the ADOM was switched off keeps resolving for every
+       row still filed under it, so hiding the form must not hide the rule.
+    #}
+    {% if sot_dormant_adoms %}
+    <div class="fw-card mt-3">
+      <div class="fw-card-header">
+        <i class="bi bi-exclamation-triangle me-1"></i>{{ _('Inactive ADOMs that still carry a rule or a history') }}
+      </div>
+      <div class="p-3">
+        <p class="text-muted" style="font-size:13px;">{{ _('These device families are switched off in the ADOM registry, so they have no form above. What they still have is listed here — a stored override keeps governing the rows filed under it, and a history that exists is a history someone may need to open.') }}</p>
+        <table class="table fw-table table-sm mb-0">
+          <thead><tr><th>{{ _('ADOM') }}</th><th>{{ _('Stored rule') }}</th><th>{{ _('Change-log rows') }}</th><th></th></tr></thead>
+          <tbody>
+          {% for d in sot_dormant_adoms %}
+            <tr>
+              <td><code>{{ d.key }}</code> — {{ d.name }}</td>
+              <td>
+                {% if d.policy.own %}
+                  {{ d.policy.versions }} {{ _('versions') }}, {{ d.policy.days }} {{ _('day(s)') }}, {{ d.policy.log_days }} {{ _('day(s) of log') }}
+                {% else %}<span class="text-muted">{{ _('none — inherits the house rule') }}</span>{% endif %}
+              </td>
+              <td>{{ d.versions }}</td>
+              <td class="text-end">
+                {% if d.policy.own %}
+                <form method="post" action="{{ url_for('settings.save_sot') }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="product" value="{{ d.key }}">
+                  <input type="hidden" name="keep_versions" value="">
+                  <input type="hidden" name="keep_days" value="">
+                  <input type="hidden" name="keep_log_days" value="">
+                  <button type="submit" class="btn btn-sm btn-outline-secondary">{{ _('Clear the override') }}</button>
+                </form>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+
     <form method="post" action="{{ url_for('settings.run_sot_evacuate') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="fw-card mt-3">
         <div class="fw-card-header">
-          <i class="bi bi-box-arrow-up me-1"></i>{{ _('Apply the payload policy now') }}
+          <i class="bi bi-box-arrow-up me-1"></i>{{ _('Free space on this node now') }}
         </div>
         <div class="p-3">
-          <p class="text-muted" style="font-size:13px;">{{ _('Uploads every blob the backup server does not hold yet, then removes from this node only what the server is confirmed to hold. An unreachable server evacuates nothing — the listing failing reads as "nothing is off-box", never as permission to delete. Normally this runs by itself after each off-box sync') }} (<code>device_inspect</code>).</p>
-          <button type="submit" class="btn btn-sm btn-outline-secondary"><i class="bi bi-play me-1"></i>{{ _('Push and evacuate now') }}</button>
+          <p class="text-muted mb-2" style="font-size:13px;">
+            {{ _('This uploads to the backup server first and deletes from this node second. It does NOT discard any history: everything it removes locally has been confirmed to exist on the server, and the console fetches it back when you open it.') }}
+          </p>
+          <ul class="text-muted mb-2" style="font-size:13px;">
+            <li>{{ _('SNAPSHOTS older than the policy above: uploaded if the server does not have them yet, then deleted from this disk. Opening such a version downloads it again — the history stays readable, it just travels.') }}</li>
+            <li>{{ _('CHANGE-LOG rows in calendar months entirely older than the log window: written to the server as one file per device and month, then removed from the database. A month whose snapshots are not off-box yet is held whole.') }}</li>
+          </ul>
+          <p class="text-muted" style="font-size:13px;">{{ _('An unreachable server does nothing at all — a listing that fails reads as "nothing is off-box", never as permission to delete. Normally this runs by itself after each off-box sync') }} (<code>device_inspect</code>).</p>
+          {% if sot_log_archive and sot_log_archive.path %}
+          <div class="form-text mb-2">
+            {{ _('Change-log archive lands in') }} <code>{{ sot_log_archive.path }}</code>{% if not sot_log_archive.configured %} — <span class="text-danger">{{ _('no backup server is configured, so nothing can leave this node') }}</span>{% endif %}.
+            {% if sot_log_archive.last %}
+              {{ _('Last run') }} {{ sot_log_archive.last.at }} UTC: {{ sot_log_archive.last.rows }} {{ _('row(s) in') }} {{ sot_log_archive.last.files }} {{ _('file(s)') }}{% if sot_log_archive.last.held %}, {{ sot_log_archive.last.held }} {{ _('month(s) held') }}{% endif %}.
+            {% else %}
+              {{ _('It has not run yet.') }}
+            {% endif %}
+          </div>
+          {% endif %}
+          <button type="submit" class="btn btn-sm btn-outline-secondary"><i class="bi bi-play me-1"></i>{{ _('Upload and free space now') }}</button>
         </div>
       </div>
     </form>

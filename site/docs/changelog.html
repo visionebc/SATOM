@@ -106,6 +106,58 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="fixed-the-500-pages-copy-button-can-no-longer-fail-in-silence-2026-08-30">Fixed — the 500 page's Copy button can no longer fail in silence (2026-08-30)</h3>
+<ul>
+<li><strong>A failed copy now stays on screen and names its reason.</strong> The button flashed
+  a ✗ for two seconds and then restored its label, which is indistinguishable
+  from a button that does nothing — and it took the diagnosis with it. A failure
+  now keeps the label, <strong>selects the reference</strong>, and shows a persistent line
+  with the browser's own error name.</li>
+<li><strong>The legacy fallback moved back inside the click.</strong> It was being called from
+  the promise's rejection handler, where <code>document.execCommand('copy')</code> no
+  longer has the click's transient activation — so it could only ever report a
+  second failure. It now runs only for the non-secure-context case, inside the
+  handler itself.</li>
+<li><strong><code>writeText()</code> has a 1.5 s deadline.</strong> A permission prompt that never appears
+  used to leave the button silent for good.</li>
+<li><strong>The reference is click-to-select</strong>, a path that depends on no clipboard API.</li>
+<li>Verified in a real Chromium over CDP with a <em>trusted</em> click (a synthetic
+  <code>.click()</code> carries no user activation and would have proved nothing), on the
+  byte-identical page and CSP header, across secure, non-secure and
+  permission-denied origins. See <code>docs/safeguards.md</code> §145.</li>
+</ul>
+<h3 id="added-the-change-log-gets-a-window-and-it-is-archived-before-it-leaves-2026-08-30">Added — the change log gets a window, and it is archived before it leaves (2026-08-30)</h3>
+<ul>
+<li><strong>Days of change log kept in the database</strong>, a third field on every SoT policy
+  card. Default <strong>365</strong>, per ADOM with the same three-deep resolution as the
+  payload boxes, and <code>0</code> is a real value here meaning <em>never trim</em> (in the two
+  payload boxes zero stays meaningless and reads as unset; a blank box is a
+  third state again and restores the default).</li>
+<li><strong>The log is archived off-box before any of it is deleted.</strong> Whole past
+  calendar months are written to <code>&lt;system_path&gt;/sot-log/</code> on the backup server
+  as one plain JSONL file per device and month — every field of every row, so
+  it stands on its own and can be pulled straight off the server with <code>sftp</code>
+  without restoring the database. Rows leave only after that file is <strong>listed
+  back at exactly the size that was written</strong>; an unreachable server archives
+  nothing, a file already on the server is never overwritten, and a month whose
+  snapshots are not off-box yet is held whole.</li>
+<li><code>offload()</code> (and the button, and <code>device_inspect</code>) now runs push → evacuate →
+  archive, in that order: a month may only leave once its snapshots are
+  off-box, and the evacuation is what puts them there.</li>
+</ul>
+<h3 id="changed">Changed</h3>
+<ul>
+<li><strong>Per-ADOM SoT settings are gated on the ADOM being active.</strong> An inactive
+  device family no longer gets a retention card. An override written before it
+  was switched off keeps resolving, so those are listed separately with their
+  numbers and a <strong>Clear the override</strong> button rather than disappearing.</li>
+<li><strong>"Apply the payload policy now" / "Push and evacuate now" is now "Free space
+  on this node now" / "Upload and free space now".</strong> The card states in its
+  first line that it does <em>not</em> discard history, names the two things it
+  removes locally, and prints where the change-log archive lands and what the
+  last run did. The old wording named the mechanism and left the consequence to
+  be guessed.</li>
+</ul>
 <h3 id="added-the-change-log-became-permanent-and-the-payload-learned-to-leave-2026-08-30">Added — the change log became permanent and the payload learned to leave (2026-08-30)</h3>
 <ul>
 <li><strong>The Configuration SoT index is now kept forever, and <code>prune()</code> no longer
@@ -1196,7 +1248,7 @@ an opaque <code>-651</code> at deploy time.</p>
   console had the sentence that explains it one page away and invisible.
   <code>hint_for()</code> falls through to the settings catalog rather than copying it;
   a guard fails if any <code>health.*</code> key is ever duplicated into <code>PAGE_HINTS</code>.</p>
-<h3 id="changed">Changed</h3>
+<h3 id="changed_1">Changed</h3>
 <ul>
 <li>
 <p><code>sn_hint</code> is registered as an <strong>application-wide Jinja global</strong>, not as a key
@@ -1291,7 +1343,7 @@ an opaque <code>-651</code> at deploy time.</p>
   entry.</p>
 </li>
 </ul>
-<h3 id="changed_1">Changed</h3>
+<h3 id="changed_2">Changed</h3>
 <ul>
 <li>
 <p><strong>The published TTL is a property of the data, not of a job.</strong> <code>block_ip</code> on
@@ -1469,7 +1521,7 @@ named modes, and the on-demand sweep is a job over the devices you pick.</p>
   reason rather than hidden. Selecting nothing sweeps every eligible device,
   which is what the button always did.</li>
 </ul>
-<h3 id="changed_2">Changed</h3>
+<h3 id="changed_3">Changed</h3>
 <ul>
 <li><strong>The on-demand sweep runs as a job</strong>, not inside the request. It used to
   hold one gunicorn worker for as long as the slowest appliance took, with no
@@ -1586,7 +1638,7 @@ Console, beside its settings.</p>
   builder per section, shared by both surfaces, so the pane and the page
   cannot answer differently.</li>
 </ul>
-<h3 id="changed_3">Changed</h3>
+<h3 id="changed_4">Changed</h3>
 <ul>
 <li><strong>Controls inside the panes stay inside the console.</strong> The sweep and the
   baseline rebuild carry <code>return_to</code> and come back to the pane they were fired
@@ -1627,7 +1679,7 @@ Console, beside its settings.</p>
   panes that are not on that page, and the entry being shown is marked. A tab
   button there would be a row that highlights on hover and then does nothing.</li>
 </ul>
-<h3 id="changed_4">Changed</h3>
+<h3 id="changed_5">Changed</h3>
 <ul>
 <li><strong>Sentinel is the last group in the menu</strong>, below <em>Monitoring &amp; Alerts</em>
   (operator's request). The two configure-once groups now sit together at the
@@ -1684,7 +1736,7 @@ Console, beside its settings.</p>
   hand-copied second one would put a second <code>id="sn-enabled"</code> on the page and
   point every <code>&lt;label for&gt;</code> at the wrong input.</li>
 </ul>
-<h3 id="changed_5">Changed</h3>
+<h3 id="changed_6">Changed</h3>
 <ul>
 <li><strong>Monitoring &amp; Alerts moved to the bottom of the Settings menu</strong> (operator's
   request): the alert plumbing is configured once and then left alone, unlike
@@ -2257,7 +2309,7 @@ missing half was the half that writes.</strong></p>
   ADOMs): <code>server-policy/policy</code> differs per ADOM, while <code>system/interface</code>
   and <code>system/vip</code> are identical from all four. That asymmetry is the whole
   basis for the split above.</p>
-<h3 id="changed_6">Changed</h3>
+<h3 id="changed_7">Changed</h3>
 <ul>
 <li><strong>The manual documents how a change is promoted and how it is tested.</strong>
   <code>docs/engineering.md</code> §2 gains the two-node code path — the standby fetches
@@ -2348,7 +2400,7 @@ missing half was the half that writes.</strong></p>
   substring-matching it, because <code>pgrep -f pytest</code> returns any process that
   merely <em>mentions</em> the word.</li>
 </ul>
-<h3 id="changed_7">Changed</h3>
+<h3 id="changed_8">Changed</h3>
 <ul>
 <li><strong><code>SQLAlchemy</code> is pinned to <code>2.0.52</code></strong> in <code>requirements.txt</code> (previously
   unpinned, so an offline bundle built on two different days could ship two
@@ -3007,7 +3059,7 @@ missing half was the half that writes.</strong></p>
   breaks the suite in the commit that adds it.</p>
 </li>
 </ul>
-<h3 id="changed_8">Changed</h3>
+<h3 id="changed_9">Changed</h3>
 <ul>
 <li><strong>Pointing at a row in the bookmarks sidebar now lights it in the reader's
   own banner colour</strong> instead of the flat grey it used to take, washed to a
@@ -3842,7 +3894,7 @@ missing half was the half that writes.</strong></p>
   sign-in. Just-in-time users get the global default instead, which is why that
   default is now <code>readonly</code> and why the approval gate exists.</li>
 </ul>
-<h3 id="changed_9">Changed</h3>
+<h3 id="changed_10">Changed</h3>
 <ul>
 <li><strong>One SATOM mark on every surface — the emblem the product already had.</strong>
   The console, the repo site and the product site each drew something different:
@@ -4387,7 +4439,7 @@ missing half was the half that writes.</strong></p>
   contain it. And it is not a way around ADOM scoping — a FortiWeb session that
   guesses a FortiADC row's number still gets nothing.</p>
 <h2 id="190-2026-08-08">[1.9.0] - 2026-08-08</h2>
-<h3 id="changed_10">Changed</h3>
+<h3 id="changed_11">Changed</h3>
 <ul>
 <li>
 <p><strong>The required scope is ticked, not demanded.</strong> An Allow Method or
@@ -4656,7 +4708,7 @@ missing half was the half that writes.</strong></p>
 <li>Errors now render in place of the reply instead of an alert box, and the
   composer keeps what was typed when an external-provider preview is declined.</li>
 </ul>
-<h3 id="changed_11">Changed</h3>
+<h3 id="changed_12">Changed</h3>
 <ul>
 <li>
 <p><code>deploy/satom.service</code> raises the gunicorn worker timeout to 600s. It was
@@ -5015,7 +5067,7 @@ that it carries the defect.</p>
   manual went from 23 sections to 32 and now says where to read what changed
   in a version — it had never mentioned the changelog.</li>
 </ul>
-<h3 id="changed_12">Changed</h3>
+<h3 id="changed_13">Changed</h3>
 <ul>
 <li><strong>The release notes are a rail and a panel, not a wall of cards.</strong> Versions
   on the left, that version's changes on the right, newest first, opening on
@@ -5302,7 +5354,7 @@ that it carries the defect.</p>
   mode was previously told where each one stops but not what it costs, which
   is the half of the decision that matters.</li>
 </ul>
-<h3 id="changed_13">Changed</h3>
+<h3 id="changed_14">Changed</h3>
 <ul>
 <li><strong>Analysis moved into the Monitoring submenu.</strong> It was a bare Fleet item
   written out five times in <code>base.html</code>, once per ADOM block — the exact drift
@@ -5549,7 +5601,7 @@ that it carries the defect.</p>
   count nodes is <code>unknown</code>, never <code>standalone</code>. Split-brain is its own badge.</p>
 </li>
 </ul>
-<h3 id="changed_14">Changed</h3>
+<h3 id="changed_15">Changed</h3>
 <ul>
 <li>The HA pill on both pages uses the product's own <code>fw-badge</code> set instead of a
   local palette, so cluster state reads like every other status in the console.</li>
@@ -5686,7 +5738,7 @@ that it carries the defect.</p>
   states that their terms are not superseded.</p>
 </li>
 </ul>
-<h3 id="changed_15">Changed</h3>
+<h3 id="changed_16">Changed</h3>
 <ul>
 <li>
 <p><strong>Collection moved from Monitoring to Administrator.</strong> The other six
@@ -6445,7 +6497,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   reported back in <code>source</code>, and the UI prints which one it drew: an hourly
   average and a five-minute reading are not the same claim about the device.</li>
 </ul>
-<h3 id="changed_16">Changed</h3>
+<h3 id="changed_17">Changed</h3>
 <ul>
 <li><strong>The last <code>fortinet</code> identifiers are gone from the platform itself.</strong> The
   database, the PostgreSQL role, the Linux service account and the PostgreSQL
@@ -6916,7 +6968,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
 <li>Public site: <code>site/safeguards.html</code> (linked from the nav and footer of every
   page) and the matching notes on <code>site/install.html</code>.</li>
 </ul>
-<h3 id="changed_17">Changed</h3>
+<h3 id="changed_18">Changed</h3>
 <ul>
 <li>In-app <strong>Documentation</strong> index now curates a title, order and description for
   all 18 manuals; half of them previously fell through to an auto-generated

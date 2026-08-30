@@ -450,16 +450,24 @@ server is installed and active — mandatory on the <strong>primary</strong>.</p
 <h3 id="21-online-with-network">2.1 Online (with network)</h3>
 <pre><code class="language-bash">sudo bash install-satom.sh
 </code></pre>
-<p>Downloads packages from the mirrors and clones the production repository
-(<code>https://{host}.example.net/satom-prod/SATOM.git</code>, configurable at the prompt).</p>
+<p>Downloads packages from the mirrors and clones the <strong>public source of record</strong>,
+<code>https://github.com/visionebc/SATOM.git</code> — configurable at the prompt.</p>
 <blockquote>
-<p><strong>The repository is private.</strong> <code>git clone</code> will ask for credentials; if it is
-run unattended you have to supply the URL with a token
-(<code>https://&lt;user&gt;:&lt;token&gt;@{host}.example.net/...</code>) or point it at a reachable
-mirror. A <code>401</code> at this point stops the installation before anything is
-touched.
+<p><strong>The default clone needs no credentials, and that is the point.</strong> Until
+2026-08-30 this document named an internal mirror that only resolved inside
+one company's network, so an unattended install anywhere else hung on a clone
+it could never complete. That mirror has been retired and <strong>no longer
+exists</strong>: a runbook that still names it sends an operator to a <code>404</code> in the
+middle of a maintenance window. The installer's own default has pointed at
+the public repository since before the retirement — it was this page that was
+wrong, not the code.</p>
+<p><strong>If you point the prompt somewhere else</strong> — an air-gapped copy, or a private
+development repository — <code>git clone</code> will ask for credentials, and an
+unattended run has to supply them in the URL
+(<code>https://&lt;user&gt;:&lt;token&gt;@&lt;host&gt;/...</code>). A <code>401</code> at this point stops the
+installation before anything is touched.
 <strong>Wipe the credential from the checkout when you are done:</strong>
-<code>git -C /opt/satom remote set-url origin https://{host}.example.net/satom-prod/SATOM.git</code></p>
+<code>git -C /opt/satom remote set-url origin &lt;url-without-the-token&gt;</code></p>
 </blockquote>
 <h3 id="22-offline-no-network">2.2 Offline (no network)</h3>
 <pre><code class="language-bash"># Debian 12
@@ -905,7 +913,11 @@ have to be removed, that is the systems team's call (<code>apt-get remove</code>
 <h2 id="7-support">7. Support</h2>
 <ul>
 <li>Installation log: <code>/var/log/satom-install.log</code> (always written).</li>
-<li>Production repository: <code>satom-prod/SATOM</code> (internal Gitea).</li>
+<li>Public repository — source of record, tagged releases, installer and offline
+  bundles: <strong><code>github.com/visionebc/SATOM</code></strong>. Development happens in a private
+  repository that is never installed from directly; the internal <code>satom-prod</code>
+  mirror that used to sit between the two was <strong>retired on 2026-08-30</strong> and is
+  not a fallback.</li>
 <li>The application catalogue ({host}.example.net → SATOM → web platform)
   publishes this installer and the offline bundle, and has the
   <strong>Sync Prod with Git/GitHub</strong> buttons to promote development code to

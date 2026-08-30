@@ -106,6 +106,40 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="documentation-the-manual-stops-naming-a-repository-that-was-deleted-2026-08-30">Documentation — the manual stops naming a repository that was deleted (2026-08-30)</h3>
+<p>Publication was consolidated onto a single public mirror and the intermediate
+one was retired. Nothing failed when the documentation kept describing the old
+shape, which is exactly why it survived in three places at once: a stale
+instruction does not break a build, it breaks the person following it.</p>
+<ul>
+<li><strong><code>INSTALL.md</code> told operators to clone a repository that no longer exists</strong>,
+  in the install command and again under <em>Support</em>, and warned them to expect a
+  credential prompt that the real default has never produced. The installer's
+  own default has pointed at the public repository all along — the page was
+  wrong, not the code — so an operator who trusted the page over the tool got a
+  <code>404</code> in the middle of a maintenance window.</li>
+<li><strong><code>release-pipeline.md</code> drew a destination that had been deleted</strong> and named
+  GitHub Pages as the public site, which is switched off for this project. It
+  now states the two-repository premise outright, says why the third was
+  retired (it was always pinned to the same commit as the public mirror, so it
+  added a hop that could fail without adding a copy that could be restored
+  from), and records that release assets are taken from the build output rather
+  than from that mirror's package registry.</li>
+<li><strong>Stage 2 now documents what the PEM rule matches.</strong> It used to fire on a bare
+  header, so a <code>placeholder=</code> attribute and a fixture body of repeated <code>B</code>s
+  aborted a publish exactly as a real key would; the scan runs over the whole
+  history, so neutralising the files at <code>HEAD</code> unblocked nothing and the public
+  repository sat frozen for twelve days. The header must now be followed by 40
+  base64 characters within 200 bytes, and the narrowing ships with a generator
+  that proves eight real key encodings still abort.</li>
+<li><strong>Stage 4 records the two guards that protect a published artefact</strong>: a
+  release refuses to carry asset filenames that disagree with <code>VERSION</code>, and
+  every commit is stamped with an attributable identity. Both failures are
+  invisible after the fact — the release is created, the files upload, and every
+  step reports success.</li>
+<li><strong>User guide §26.4 says which remote belongs in the Repository card</strong>, and what
+  to do with a node still pointing at the retired one.</li>
+</ul>
 <h3 id="changed-stored-assets-arranges-devices-the-way-you-arrange-your-bookmarks-2026-08-30">Changed — Stored Assets arranges devices the way YOU arrange your bookmarks (2026-08-30)</h3>
 <p><code>/adom-assets/</code> grouped devices by family and stopped there. The bookmarks rail
 on the right of every page already nests the same devices by a per-user stack

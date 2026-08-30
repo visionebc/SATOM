@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Removed · Fixed · Added · 145 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Removed · Fixed · Added · 155 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Removed · Fixed · Added · 145 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Removed · Fixed · Added · 155 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,8 +59,8 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Removed · Fixed · Added · 145 entries</span>
-        <ul class="rel-leads"><li>Backup Server → System bundle schedule</li><li>A bundle scheduled some other way is reported and locked, never converted</li><li>Software Update Repository</li><li class="rel-more">… and 142 more</li></ul>
+        <span class="rel-nav-meta">unreleased · Removed · Fixed · Added · 155 entries</span>
+        <ul class="rel-leads"><li>The Configuration SoT index is now kept forever, and prune() no longer deletes a single row</li><li>Snapshot payload now leaves the node instead</li><li>Confirm off-box, then delete — per blob, never per server</li><li class="rel-more">… and 152 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v1.20.0.html" data-rel-version="1.20.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 1.20.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
@@ -255,6 +255,72 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
+<h3 id="added-the-change-log-became-permanent-and-the-payload-learned-to-leave-2026-08-30">Added — the change log became permanent and the payload learned to leave (2026-08-30)</h3>
+<ul>
+<li><strong>The Configuration SoT index is now kept forever, and <code>prune()</code> no longer
+  deletes a single row.</strong> The row <em>is</em> the change log — the list an operator
+  walks back through to find the value a parameter used to have. Nothing failed
+  before this: deleting rows was the documented behaviour, the page rendered,
+  the suite was green. It became a data-loss defect the moment a one-day local
+  policy was asked for, because the history would have gone inside a day while
+  every byte sat safely on the backup server, unreachable, since <code>load()</code> and
+  <code>diff()</code> only ever opened the local file. There is deliberately <strong>no setting</strong>
+  to shorten the index.</li>
+<li><strong>Snapshot payload now leaves the node instead.</strong> Two numbers govern it — the
+  newest <strong>N</strong> versions and <strong>D</strong> days, a union, defaults <strong>2</strong> and <strong>1</strong> — and
+  they are set <strong>per ADOM</strong>, three levels deep (ADOM → house → product default),
+  with each card printing which level answered. A FortiAnalyzer snapshot is
+  ~6 MB raw where a FortiWeb's is ~0.5 MB.</li>
+<li><strong>Confirm off-box, then delete — per blob, never per server.</strong> Evacuation
+  uploads first, lists the server, and removes locally only what that listing
+  confirms; a listing that fails yields an empty set, so an unreachable server
+  evacuates nothing. <strong>An evacuated version still opens</strong>: <code>load()</code> and <code>diff()</code>
+  fetch the blob back on demand and verify it hashes to the name it was stored
+  under before adopting it.</li>
+<li><strong>Devices now carry their serial number</strong>, read off the <em>same</em> status call the
+  firmware probe already makes — every reader was already extracting it to guess
+  <code>hw_type</code> and discarding it, so no new device call exists anywhere.</li>
+<li><strong>New <code>device_identity</code> table, deliberately with no foreign key</strong>, so the
+  record of who a device is — and <em>was</em> — outlives de-registration. Everything
+  else hanging off <code>appliances.id</code> is <code>ON DELETE CASCADE</code>, which is exactly
+  backwards for the question asked about a file on the backup server: whose is
+  this? One serial with three names is one box renamed twice; on FortiWeb the
+  chassis and its per-ADOM rows share one serial, which is why a backup from
+  that chassis covers all of them.</li>
+<li><strong>New page: <code>Administration → Stored Assets</code></strong>, in every ADOM. Per device:
+  backups on the server with a <strong>days-since-last-push</strong> grade, SoT versions
+  split local vs off-box, firmware, identity and every earlier name — including
+  <strong>retired devices</strong> and two buckets that were previously invisible: folders on
+  the server no device claims, and configuration history with no identity row.
+  <strong>"Never pushed" is its own state</strong>, not another shade of stale. An
+  unreachable server reads as <em>unknown</em>, never as <em>no backups</em>. Deleting a
+  backup needs an exact filename and a typed <strong>DELETE</strong>, and is audited whether
+  or not it succeeds; there is no bulk delete.</li>
+</ul>
+<h3 id="added-system-bundles-live-off-the-node-they-back-up-2026-08-30">Added — system bundles live off the node they back up (2026-08-30)</h3>
+<ul>
+<li><strong>Backup Server → Local bundle retention</strong>, default <strong>0</strong>: after a verified
+  upload the node keeps none. A bundle is SATOM's own backup, so the one place
+  it is worth least is beside the thing it backs up. <code>0</code> is a <strong>real value</strong>
+  here rather than "unset", which is the convention everywhere else in Settings.</li>
+<li>A local bundle is removed <strong>only when the server holds it at the same size</strong> —
+  name alone would accept a truncated upload. <strong>Download and restore fetch an
+  off-box bundle back automatically</strong>, so the policy cannot make a bundle
+  unrestorable. The page lists the union of local and off-box copies;
+  <code>/healthz/backups</code> and the primary/standby comparison stay <strong>local-only</strong> on
+  purpose.</li>
+</ul>
+<h3 id="fixed-2026-08-30">Fixed (2026-08-30)</h3>
+<ul>
+<li><code>data/system_backups</code> and <code>data/backups</code> were the last on-disk stores not
+  isolated from the production tree in tests. They had been write-only, so the
+  litter was tolerable; the day local eviction started <strong>deleting</strong> there, an
+  un-isolated suite could have destroyed real bundles. Both now honour
+  <code>SATOM_BACKUPS_DIR</code> / <code>SATOM_VAULT_DIR</code>, set by <code>conftest</code>.</li>
+<li><code>evacuate()</code> derived its retention rule twice. Two authors of one rule mean
+  breaking either changes nothing observable, so no test could tell one intact
+  layer from two — refactored to a single authority.</li>
+</ul>
 <h3 id="added-the-system-bundle-says-when-not-only-where-2026-08-29">Added — the system bundle says when, not only where (2026-08-29)</h3>
 <ul>
 <li><strong>Backup Server → System bundle schedule</strong>: new card next to the three paths.

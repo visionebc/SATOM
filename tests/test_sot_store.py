@@ -112,18 +112,32 @@ def test_diff_identical_versions(app):
 
 # ── retention ────────────────────────────────────────────────────────────────
 
-def test_prune_keeps_newest_and_deletes_orphan_blobs(app, monkeypatch):
+def test_prune_keeps_every_version_and_deletes_orphan_blobs(app, monkeypatch):
+    """Rewritten 2026-08-30: retention no longer caps the version COUNT.
+
+    This guard used to assert ``len(history) == 2`` — that a tight retention
+    deleted index rows. That was the documented behaviour and it was the
+    defect: the row is the change log, and a one-day policy would have erased
+    the history while every byte sat safe and unreachable off-box. Retention
+    now governs PAYLOAD only (see §143 and
+    tests/test_adom_assets_and_sot_payload.py); what prune still does here is
+    collect blobs that no version references at all, which are orphans rather
+    than history.
+    """
     from app.services import sot_store
-    monkeypatch.setattr(sot_store, "_retention", lambda: (2, 0))
+    monkeypatch.setattr(sot_store, "_retention", lambda product="": (2, 0))
     with app.app_context():
         for n in range(1, 5):
             sot_store.record("fwx", _snap(n))
         hist = sot_store.history("fwx")
-        assert len(hist) == 2, "retention must cap the version count"
+        assert len(hist) == 4, "prune deleted index rows — that IS the change log"
         live = {h["sha256"] for h in hist}
         objects = sot_store.store_dir() / "objects"
         on_disk = {f.name[:-8] for f in objects.glob("*/*.json.gz")}
-        assert on_disk == live, "orphan blobs must be deleted with their rows"
+        # Nothing has been confirmed off-box (no backup server is configured in
+        # the fixture), so evacuation must have removed nothing.
+        assert on_disk == live, \
+            "payload was deleted without the server confirming it holds it"
 
 
 # ── integration: the harvest records automatically ───────────────────────────

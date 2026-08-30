@@ -297,6 +297,19 @@ class Appliance(db.Model):
     # fac01, 2026-08-27), so one timestamp would attest a hostname that was
     # never read.
     device_hostname_at = db.Column(db.DateTime, nullable=True)
+    # --- What the chassis calls ITSELF (2026-08-30) ----------------------
+    # Read off the same status payload as the firmware and the hostname —
+    # every reader in firmware_probe was already extracting it to guess
+    # hw_type and discarding it. NULL/"" means "never observed", never "this
+    # box has no serial".
+    #
+    # This column is the CURRENT value, and it dies with the row: everything
+    # hanging off appliances.id is ON DELETE CASCADE, so de-registering a
+    # device would take its serial with it. The record that has to survive
+    # that — and that gives a file on the backup server an owner — is
+    # models_identity.DeviceIdentity, which deliberately has no foreign key.
+    serial = db.Column(db.String(64), nullable=True)
+    serial_checked_at = db.Column(db.DateTime, nullable=True)
     datasheet_filename = db.Column(db.String(256), nullable=True)  # original PDF name; file on disk is <id>.pdf
 
     @property
@@ -2175,8 +2188,26 @@ class DeviceHardware(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow,
                            onupdate=datetime.utcnow, nullable=False)
 
+    # The backref makes ``Appliance.hardware`` a relationship the ORM knows
+    # about, and without a cascade the ORM's default on delete is to NULL the
+    # child's foreign key — into a column declared NOT NULL. So de-registering
+    # any appliance that had ever been hardware-scanned raised
+    #     NotNullViolation: null value in column "appliance_id"
+    # and the delete 500'd, while an appliance that had never been scanned
+    # deleted fine. That is why it went unnoticed: it depended on whether a
+    # scan had ever run. Found 2026-08-30 removing the DMZ FortiADCs — the two
+    # unscanned ones deleted, the scanned one did not.
+    #
+    # ORM-side cascade only, exactly like ``interfaces`` above and for the
+    # reason stated there: ``passive_deletes=True`` would hand the job to the
+    # ``ON DELETE CASCADE`` on the column, which Postgres honours and SQLite
+    # does not — foreign keys are off by default there, so the child row would
+    # be silently orphaned in every test and in any SQLite deployment. Letting
+    # the ORM issue the DELETE is correct on both.
     appliance = db.relationship(
-        "Appliance", backref=db.backref("hardware", uselist=False))
+        "Appliance",
+        backref=db.backref("hardware", uselist=False,
+                           cascade="all, delete-orphan"))
 
     @property
     def disks(self) -> list:

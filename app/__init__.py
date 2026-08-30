@@ -1445,6 +1445,16 @@ def create_app(config_override: object | None = None) -> Flask:
             'waf_artifact_ref': [
                 ('wpp_mkey', 'VARCHAR(255)'),
             ],
+            # --- SoT: which ADOM, and whether the payload is still here ---
+            # product DEFAULTS to '' rather than a family: a version recorded
+            # before the column existed was not filed under FortiWeb, it was
+            # not filed at all, and sot_store.backfill_products() resolves it
+            # from the same authority record() uses. evacuated_at is NULL for
+            # every existing row, which is true — nothing has left yet.
+            'sot_version': [
+                ('product', "VARCHAR(32) DEFAULT ''"),
+                ('evacuated_at', 'TIMESTAMP'),
+            ],
             # --- IPAM reservation handle + pool (2026-08-27) ---
             # Nullable, no backfill. A run that predates these columns took its
             # address before SATOM could record a handle, so NULL is the true
@@ -1496,6 +1506,17 @@ def create_app(config_override: object | None = None) -> Flask:
                 ('hypervisor', "VARCHAR(16) DEFAULT ''"),
             ],
             'appliances': [
+                # --- the chassis serial, read off the status call (2026-08-30) ---
+                # NULLABLE, NO DEFAULT, NO BACKFILL. NULL means "never
+                # observed"; a DEFAULT '' would claim every pre-existing device
+                # was asked and answered nothing — the attestation lie
+                # firmware_probe refuses to tell about firmware_checked_at.
+                # Merged into THIS entry rather than added as a second
+                # 'appliances' key: a repeated key collapses silently and every
+                # column under the earlier copy is never added. That is exactly
+                # what happened on the first attempt at this change.
+                ('serial', 'VARCHAR(64)'),
+                ('serial_checked_at', 'TIMESTAMP'),
                 ('hw_type', "VARCHAR(16) DEFAULT 'unknown'"),
                 ('model', 'VARCHAR(128)'),
                 ('datasheet_filename', 'VARCHAR(256)'),
@@ -1865,6 +1886,12 @@ def create_app(config_override: object | None = None) -> Flask:
             # create_all() never makes the tables and the first save on
             # /exceptions 500s on a table the model says exists.
             from . import models_exceptions  # noqa: F401
+            # Who a device IS and who it WAS — the record that outlives
+            # de-registration, because everything else hanging off
+            # appliances.id is ON DELETE CASCADE. Without this import
+            # create_all() never makes device_identity and every page that
+            # names the owner of an old backup 500s.
+            from . import models_identity  # noqa: F401
             # Sentinel's two collectors (http_status, infra) join the
             # fleet collection registry here so the scheduler sidecar — which
             # never imports a view — provisions and runs them like any other.
@@ -2050,6 +2077,10 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.bookmarks", "bp"),
         ("app.views.artifacts", "bp"),
         ("app.views.sentinel", "bp"),
+        # Per-ADOM "what this ADOM holds" — backups on the server, SoT
+        # history, firmware, identity. NOT /web-prefixed: it is scoped by the
+        # current ADOM, and every ADOM including global renders it.
+        ("app.views.adom_assets", "bp"),
     ]
 
     # FortiWeb-scoped areas live under the /web ADOM prefix (2026-07-07).

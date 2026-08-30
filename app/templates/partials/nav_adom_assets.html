@@ -1,0 +1,17 @@
+{# ============================================================================
+   Stored Assets — Administration entry. ONE definition, every Administrator /
+   Administration block in base.html (2026-08-30).
+
+   It sits next to Change Types and Collection because, like them, it is about
+   what this ADOM *has* rather than what it *runs*. The retention knobs behind
+   it deliberately live somewhere else — Settings → Configuration SoT and
+   Backup Server — because a console-wide policy edited from inside one ADOM
+   is a policy somebody changes for everyone while checking a backup date.
+
+   Why a partial and not five inline copies: the admin blocks in base.html have
+   drifted before (two are even titled differently), and an entry added to
+   Global and forgotten in the other four is invisible without failing.
+   tests/test_adom_assets.py fails if any admin block stops including it.
+   ========================================================================= #}
+<a class="fw-nav-item {{ 'active' if request.blueprint == 'adom_assets' else '' }}" href="{{ url_for('adom_assets.index', _adom=product.key) }}">
+  <i class="bi bi-archive fw-nav-icon"></i><span>{{ _('Stored Assets') }}</span></a>

@@ -190,7 +190,7 @@ def test_a_stored_retention_reaches_the_prune(app):
     """
     from app.services import settings_store, sot_store
     with app.app_context():
-        settings_store.save_sot_retention(7, 9)
+        settings_store.save_sot_local_policy(7, 9)
         assert sot_store._retention() == (7, 9), \
             "the configured retention is discarded: %r" % (sot_store._retention(),)
 
@@ -198,7 +198,7 @@ def test_a_stored_retention_reaches_the_prune(app):
 def test_nothing_stored_means_the_product_defaults(app):
     from app.services import settings_store, sot_store
     with app.app_context():
-        cfg = settings_store.sot_retention()
+        cfg = settings_store.sot_local_policy()
         assert cfg["configured"] is False
         assert sot_store._retention() == (sot_store.DEFAULT_KEEP_VERSIONS,
                                           sot_store.DEFAULT_KEEP_DAYS)
@@ -210,7 +210,7 @@ def test_a_meaningless_value_is_not_read_as_keep_nothing(app, bad):
     every device — not a policy anyone types into a box labelled *keep*."""
     from app.services import settings_store, sot_store
     with app.app_context():
-        settings_store.save_sot_retention(bad, bad)
+        settings_store.save_sot_local_policy(bad, bad)
         assert sot_store._retention() == (sot_store.DEFAULT_KEEP_VERSIONS,
                                           sot_store.DEFAULT_KEEP_DAYS)
 
@@ -247,13 +247,13 @@ def test_saving_the_backup_server_leaves_retention_alone(app, client):
     from app.services import settings_store
     _admin(app, client)
     with app.app_context():
-        settings_store.save_sot_retention(11, 12)
+        settings_store.save_sot_local_policy(11, 12)
     client.post("/settings/backup-server",
                 data={"host": "fm.example", "username": "bk",
                       "config_path": "/c", "firmware_path": "/f",
                       "system_path": "/s"})
     with app.app_context():
-        cfg = settings_store.sot_retention()
+        cfg = settings_store.sot_local_policy()
     assert (cfg["versions"], cfg["days"]) == (11, 12), \
         "saving the backup server reset the SoT retention"
 

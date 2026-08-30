@@ -356,8 +356,11 @@ def persist_snapshot(appliance, snapshot: dict, *, source: str = "live",
         if publish:
             from . import sot_store
             try:
-                pr = sot_store.push_to_backup_server()
-                run.detail += (" | off-box: pushed" if pr.get("ok")
+                # push THEN evacuate: the local payload policy only ever
+                # deletes what the server has been confirmed to hold.
+                pr = sot_store.offload()
+                run.detail += (f" | off-box: {pr.get('detail', '')[:120]}"
+                               if pr.get("ok")
                                else f" | off-box: {pr.get('detail', '')[:80]}")
             except Exception as exc:  # noqa: BLE001 — push never sinks the sync
                 run.detail += f" | off-box error: {type(exc).__name__}"
@@ -410,7 +413,7 @@ def sync_fleet(appliances, *, publish: bool = False, user_label: str | None = No
     if publish:
         from . import sot_store
         try:
-            sot_store.push_to_backup_server()
+            sot_store.offload()
         except Exception:  # noqa: BLE001
             pass
     return runs

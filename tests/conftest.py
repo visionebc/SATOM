@@ -48,6 +48,12 @@ os.environ["SATOM_JOBS_DIR"] = f"{_TMPDIR}/jobs"
 # device sync now records a version, so an un-isolated suite would grow REAL
 # blobs under data/sot/ on the production node (the jobs-ledger lesson).
 os.environ["SATOM_SOT_DIR"] = f"{_TMPDIR}/sot"
+# The system-bundle store and the per-appliance vault were the LAST two
+# un-isolated on-disk stores, and they stopped being merely write-only on
+# 2026-08-30: local bundle eviction DELETES from data/system_backups. An
+# un-isolated suite could destroy production bundles, not just litter.
+os.environ["SATOM_BACKUPS_DIR"] = f"{_TMPDIR}/system_backups"
+os.environ["SATOM_VAULT_DIR"] = f"{_TMPDIR}/vault"
 # The TLS trust bundle is a FILE the client layer feeds to OpenSSL.
 # Without this redirect a test run rewrites the live installation's
 # pki/trust bundle — the same contamination pytest caused in the job

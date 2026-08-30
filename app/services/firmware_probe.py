@@ -71,14 +71,20 @@ def _unwrap(raw):
 
 
 def _ok(firmware: str, model: str | None, hw: str | None,
-        hostname: str = "") -> dict:
+        hostname: str = "", serial: str = "") -> dict:
+    # ``serial`` rides the SAME payload the version came from — every reader
+    # below was already extracting it to decide hw_type and then throwing it
+    # away. Returning it costs no extra device call, which is the property
+    # that lets this module stay on /api/v1.
     return {"ok": True, "firmware": firmware, "model": model or None,
-            "hw_type": hw, "hostname": hostname, "error": "", "detail": ""}
+            "hw_type": hw, "hostname": hostname, "serial": serial,
+            "error": "", "detail": ""}
 
 
 def _fail(code: str, detail: str = "") -> dict:
     return {"ok": False, "firmware": "", "model": None, "hw_type": None,
-            "hostname": "", "error": code, "detail": str(detail)[:300]}
+            "hostname": "", "serial": "", "error": code,
+            "detail": str(detail)[:300]}
 
 
 # --------------------------------------------------------------------------- #
@@ -108,7 +114,8 @@ def _read_fortiweb(appliance) -> dict:
     # An ADOM row answers with the CHASSIS hostname, which is correct and is
     # qualified at render time, not rewritten here.
     return _ok(fw, model, _hw_from(f"{platform} {fw} {serial}"),
-               hostname=_first(d, ("hostName", "host_name", "hostname")))
+               hostname=_first(d, ("hostName", "host_name", "hostname")),
+               serial=serial)
 
 
 def _read_fortiadc(appliance) -> dict:
@@ -121,7 +128,12 @@ def _read_fortiadc(appliance) -> dict:
     model, hw, fw = adc_ops.model_inventory_from(p)
     if not fw:
         return _fail("no_version_in_status", f"keys={sorted(p)[:12]}")
-    return _ok(fw, model, hw)
+    # Candidate keys, not one assumed key: the platform payload is the only
+    # place an ADC serial could be, and a shape that does not carry one must
+    # degrade to "" (never observed) rather than to a wrong string.
+    return _ok(fw, model, hw,
+               serial=_first(p, ("serial", "serialNumber", "sn",
+                                 "serial_number", "serial-number")))
 
 
 def _read_fortiauthenticator(appliance) -> dict:
@@ -136,7 +148,7 @@ def _read_fortiauthenticator(appliance) -> dict:
     parts = fw.split()
     head = parts[0].strip() if parts else ""
     model = f"FortiAuthenticator-{head}" if head else None
-    return _ok(fw, model, _hw_from(f"{head} {fw} {serial}"))
+    return _ok(fw, model, _hw_from(f"{head} {fw} {serial}"), serial=serial)
 
 
 def _read_fortianalyzer(appliance) -> dict:
@@ -151,7 +163,7 @@ def _read_fortianalyzer(appliance) -> dict:
     platform = _first(d, ("Platform Full Name", "Platform Type", "platform"))
     serial = _first(d, ("Serial Number", "serial"))
     model = f"FortiAnalyzer-{platform}" if platform else None
-    return _ok(fw, model, _hw_from(f"{platform} {fw} {serial}"))
+    return _ok(fw, model, _hw_from(f"{platform} {fw} {serial}"), serial=serial)
 
 
 _READERS = {
@@ -221,8 +233,29 @@ def refresh(appliance) -> dict:
         appliance.device_hostname_at = now
     else:
         res["hostname_changed"] = False
+    # The serial is stamped on the SAME rule as the hostname: only when the
+    # payload actually carried one. A blank must never erase a serial an
+    # earlier probe established, because the four kinds answer differently and
+    # "this payload did not say" is not "this box has no serial".
+    if res.get("serial"):
+        res["serial_changed"] = (appliance.serial or "") != res["serial"]
+        appliance.serial = res["serial"]
+        appliance.serial_checked_at = now
+    else:
+        res["serial_changed"] = False
     appliance.firmware_checked_at = now
     db.session.commit()
+    # Identity is recorded from the same observation, and AFTER the commit
+    # above so a failure here can never roll back the inventory write. It is
+    # the record that outlives de-registration — see models_identity.
+    try:
+        from . import device_identity as _ident
+        _ident.observe(appliance, serial=res.get("serial") or "",
+                       firmware=res.get("firmware") or "",
+                       model=res.get("model") or "",
+                       hw_type=res.get("hw_type") or "")
+    except Exception as exc:  # noqa: BLE001 — a probe must never 500 its caller
+        res["identity_error"] = type(exc).__name__
     res["checked_at"] = now.isoformat()
     res["hostname_at"] = (appliance.device_hostname_at.isoformat()
                           if res.get("hostname") else None)

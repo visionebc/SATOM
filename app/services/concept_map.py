@@ -134,6 +134,15 @@ PAGES: tuple[dict, ...] = (
     _p("product.select", "ADOM Selector", "fleet",
        "adom product switch change context fortiweb fortiadc scope",
        "Choose which product scope this session works in."),
+    _p("adom_assets.index", "Stored Assets", "fleet",
+       "stored assets adom holds backups on the server config backup coverage "
+       "days since last push never pushed serial number identity retired "
+       "de-registered device history sot versions off-box firmware unclaimed "
+       "orphan folder whose backup is this who owns this file",
+       "Per ADOM: the config backups sitting on the backup server with a "
+       "days-since-last-push grade, the configuration history split local vs "
+       "off-box, firmware, and the identity — serial and every earlier name — "
+       "of each device, including the ones that were de-registered."),
     _p("sentinel.index", "Sentinel — Incidents", "monitoring",
        "sentinel incident attack detection anomaly correlation score band "
        "respond breach suspicious spike who attacked",
@@ -496,6 +505,7 @@ EXCLUDED: dict[str, str] = {
     "architecture.topology_data": "json feed", "architecture.map_data": "json feed",
     "architecture.picker": "html fragment",
     "bookmarks.panel": "html fragment", "bookmarks.devices": "json feed",
+    "adom_assets.files": "json feed",
     # The three helper tools are API-only blueprints; their UI is rendered by
     # a page that is already on the map, so these two are feeds, not pages.
     "cert_inspect.targets": "json feed", "txn_trace.context": "json feed", "cert_manager.renewals_durability": "json feed",

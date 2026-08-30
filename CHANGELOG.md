@@ -6,6 +6,239 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Changed — Stored Assets arranges devices the way YOU arrange your bookmarks (2026-08-30)
+
+`/adom-assets/` grouped devices by family and stopped there. The bookmarks rail
+on the right of every page already nests the same devices by a per-user stack
+of classification dimensions (`line › zone › department` until you change it),
+and two arrangements of one estate is not a cosmetic difference: an operator
+who knows their DMZ boxes live under *dmz* on the rail and finds them somewhere
+else here concludes that one of the two pages is lying about the fleet.
+
+- **The family stays the outermost level and your lens nests below it.** The
+  heading names the whole order — *Product › Line › Zone › Department* — and
+  links to the profile page where you change it. It is yours alone: two people
+  reading one ADOM see different headings over identical rows, which is why the
+  page says so instead of leaving it to be discovered.
+- **`kind` is dropped from the nested part.** The family heading already IS
+  `kind`; nesting it under itself gives every family one child named after the
+  family — the chain of single-child folders the profile form refuses.
+- **The chain is truncated exactly as the rail truncates it.** A device
+  classified nowhere gets one `(unclassified)` bucket, not three; a device with
+  no line but a real zone still gets `(unclassified) → dmz`, because that zone
+  is a fact.
+- **A bucket counts its whole subtree and draws only its own rows.** Folding
+  never takes a number off the page, and a device that stops one level above
+  its neighbours is still drawn.
+- `(unclassified)` and `(no segment)` sort **last** at every level: a bracket
+  sorts before every letter, so plain sorting would open each family with the
+  bucket that says nothing about the fleet.
+- **Firmware is grouped by family and by nothing else, and the card says so.**
+  Line, zone and department describe a device; an image on a shelf has not been
+  installed on anything.
+- The **filter card no longer folds**. Every other card holds an answer, and
+  folding an answer hides something the page is telling you; this one holds the
+  question that decides which rows those answers describe.
+- A fragment link to a section now opens it even when followed from the page
+  you are already on (`hashchange`, not just first paint).
+
+### Fixed — the bookmarks rail works in the ADC, FortiAnalyzer and FortiAuthenticator consoles (2026-08-30)
+
+The rail reported *"Your session expired — reload the page to use bookmarks."*
+in three of the five ADOMs. The session was fine.
+
+- **`base.html` renders the rail into every page of every ADOM, but
+  `bookmarks` was in none of the three per-ADOM allowlists**, so the product
+  gate answered the rail's own `GET /bookmarks/panel` with a **redirect to the
+  ADOM home**. `fetch` follows redirects, the answer carried no `X-SATOM-Panel`
+  header, and the rail said the only thing it knew how to say. It is the fifth
+  entry those three hand-kept copies have forgotten, so the fix is **one
+  authority** — `CHROME_BPS`, consulted by the gate beside its always-allowed
+  endpoints — and not a fourth copy.
+- **Reachable is not visible.** Every row the panel serves still goes through
+  `product_scope` / `visible_appliances`: each console reaches its own rail and
+  keeps seeing only its own devices and its own bookmarks.
+- **A routing bounce is no longer called an expiry.** Only an answer that
+  actually came from the login page says the session expired; anything else
+  names its own status and path, because "it did not work" is what made this
+  report cost a browser session to diagnose.
+
+### Changed — every Stored Assets section and family folds, and starts folded (2026-08-30)
+
+`/adom-assets/` now opens with all four artefact cards, the filter card and
+every device-family group **collapsed**. At fleet scale the expanded page is a
+minute of scrolling; folded, it is an index you open where you need it.
+
+- **Two levels.** Opening a card shows its family headers (`FortiWeb — 8
+  device(s) · 12 backup file(s)`); opening a family shows its rows. A device's
+  *Files* table stays a third, separate control and is not force-opened by
+  *Expand all*.
+- **The state is the set of OPEN ids**, stored per ADOM under
+  `satom.assets.open.<adom>`. An empty set by default *is* "everything folded",
+  with no first-run flag to keep in sync — and a stored closed-set later read as
+  an open-set would expand exactly the sections the operator had folded.
+- **Nothing that warns can be folded away.** The bundle card's "the backup
+  server is a single point of failure for SATOM's own recovery" notice, the
+  truncated-upload list and the unreachable-server banner all render outside the
+  collapsible body.
+- **A folded Filter card still names what it filters** (`filtered · type:
+  fortiweb · state: never`). Otherwise a filtered URL and an unfiltered one look
+  identical, and "3 devices" stops being a statement about the search box.
+- Each header keeps its counts, so a closed card still says what it holds;
+  `Expand all` / `Collapse all` sit in the page header; and a link to
+  `#sec-backups`, `#sec-sot`, `#sec-firmware` or `#sec-satom` opens that section
+  on arrival.
+- The folded state is in the markup, and the rule that honours it carries the
+  same CSP nonce as the toggle script, so the page can neither paint expanded
+  and then fold itself, nor arrive folded with no way to open it.
+
+### Changed — Stored Assets is one card per artefact, not one table with everything in it (2026-08-30)
+
+`/adom-assets/` now splits into **1 · device config backups**, **2 ·
+configuration SoT**, **3 · firmware images** and **4 · SATOM's own backup**,
+with the filter bar lifted above all four.
+
+- **The four are not copies of each other.** A backup is a file the appliance
+  wrote and pushed; a SoT version is a snapshot SATOM recorded itself under its
+  own retention; a firmware image flows *towards* the device; a bundle is the
+  console backing up itself. One row carrying "21 backups" beside "11 versions"
+  invited the reading that one was a copy of the other.
+- **The backup-state filter narrows card 1 only, on purpose.** It grades the
+  backup server, and a device that has never pushed a file can still hold a
+  hundred recorded versions — filtering *never pushed* and then hiding those
+  rows from the SoT card would hide exactly what was being looked for. The card
+  says so with a badge and carries its own *showing N of M*. Family, free text
+  and *hide de-registered* describe the device, so they narrow every card;
+  `type=` narrows the firmware card too.
+- **Firmware is grouped by family** in the same registry order as the device
+  cards, so one family name means one thing across the page. An image with no
+  family lands in `unassigned` rather than under a real appliance line.
+- **SATOM's own bundles appear in Global only** — a bundle is a dump of every
+  ADOM at once, so filing it under one would claim it belongs there. Each is
+  badged `this node` and `backup server` independently, since only a bundle
+  with both is redundant; having *only* one or *only* the other is called out,
+  as is a name whose two copies disagree on size (a truncated upload). An
+  unreadable inventory renders as an error, never as "no backups". Read-only:
+  create, restore and retention stay on System Backup & Restore.
+- Sections carry their own SoT counters, and a device with **no configuration
+  history at all** is reported by name in its section and in a total, the same
+  way *never pushed* already was on the backup side.
+
+### Fixed — the bookmarks rail stopped working everywhere, twice over (2026-08-30)
+
+Reported as *"the bookmarks tab does not work anywhere"*. Two defects, both of
+which rendered perfectly and neither of which raised. The rail is
+`data-turbo-permanent`, so both were **permanent for the rest of the session,
+on every page**, until a full browser reload.
+
+- **A 200 that was not the panel got painted as one.** The CSRF error handler
+  answers a POST that does not declare itself an XHR with a *302 to the
+  referring page*; `fetch` follows redirects, so the rail received a whole
+  console page with `r.ok` true and pasted 60 KB of `<!DOCTYPE html>` into a
+  300px column, killing every control in it. The trigger was ordinary: the
+  rail's CSRF token is minted once per full page load and lives an hour, so
+  the first click on any bookmark control an hour into a session did it —
+  **expanding a folder was enough**, because that persists the open set.
+  The rail now declares its fetches `X-Requested-With: XMLHttpRequest` (so the
+  handler *refuses* instead of redirecting), the panel fragment identifies
+  itself with `X-SATOM-Panel`, and nothing without that header is rendered
+  into the panel. Every panel answer also hands back a fresh `X-CSRF-Token`
+  that the rail adopts, so the token stops going stale under normal use.
+- **The open/closed state lived on a `<body>` Turbo throws away.** `bm-open`
+  is a class on `<body>`, which Turbo replaces on every visit, while the rail
+  survives — and that survival is exactly why the one-shot restore never ran
+  again (it sits below the `data-bm-wired` early return). The rail therefore
+  shut itself on every navigation, and a navigation is what clicking a
+  bookmark *is*. The state is now re-applied on `turbo:render`/`turbo:load`
+  from a listener on `document`, which Turbo does not replace, and only on
+  pages that actually carry the rail.
+- A refused mutation can no longer die inside `r.json()` when the 400 is not
+  JSON, and the panel's own GET says *"session expired — reload the page"*
+  where the tree would have been instead of pasting a login form into it.
+- 19 guards in `tests/test_bookmarks_session_expiry.py`; safeguards §149.
+
+### Added — the operator console says what it is and under what licence (2026-08-30)
+
+`satom` with no arguments now opens with a SATOM wordmark in ASCII blocks, the
+version and node identity read from the node, `Made by VisionEBC`, and the full
+Elastic License 2.0 declaration.
+
+- Art is blocks of `#` only, so it is identical with `--ascii`, through a pipe
+  and on a serial console — where Unicode blocks fold to garbage.
+- Below 78 columns the banner collapses to its one-line header (the licence is
+  fixed-width prose and would wrap); a **pipe** suppresses nothing, so
+  redirected transcripts keep the declaration.
+- All seven rows of the wordmark start in the same column. A two-column lead
+  on the top row was applied on request and withdrawn the same day once it was
+  seen in a real terminal: it hangs the top bars of S/A/T/O and the peaks of
+  the M right of their own stems. `_ART_TOP_EXTRA` restores it in one edit and
+  a guard pins the value, so it cannot drift back silently.
+- `SATOM_CLI_NO_BANNER=1` restores the previous one-line header for runbooks.
+- Ninth licence surface, guarded by `tests/test_cli_banner.py` against the same
+  assertions as the site footer. The attribution reads `VisionEBC`; the
+  copyright keeps the licensor's legal name `Vision EBC`.
+
+
+### Fixed — three ADOMs could not reach the pages their own menus drew (2026-08-30)
+
+Reported as *"only the Global and FortiWeb menus work — ADC, FortiAuth and
+Analyzer do not"*. Three separate defects, none of which raised.
+
+- **Four device ADOMs shared three session slots.** The selected-device slot was
+  a hardcoded `if` chain matching `fortiadc` and `fortianalyzer` by name;
+  **`fortiauthenticator` fell through to FortiWeb's slot**. Both directions were
+  live: picking a FortiWeb device blanked the FortiAuthenticator console, whose
+  entire menu then answered *"No FortiAuthenticator is selected"*, and picking
+  the FAC device made a FortiAuthenticator the FortiWeb ADOM's implicit
+  context — `/web/workspace/` opened `fac01`'s workspace. **The slot is now
+  derived from the ADOM registry**, one per ADOM, with the three existing key
+  names kept verbatim so open sessions keep their pick.
+- **An ADOM holding exactly one appliance now uses it everywhere, not just on
+  its dashboard.** `faz.index` and `fac.index` each carried their own
+  `header_dev = current or fleet[0]` fallback, so the FortiAuthenticator front
+  page rendered the live unit's firmware, CPU and licence counters while every
+  menu page in the same ADOM said no device was selected. One authority
+  (`device_context._sole_device`), and it is **read-only** — resolving the
+  context never records a choice the operator did not make.
+- **AI Advisor and Stored Assets are reachable from the ADC / FAZ / FAC
+  consoles.** Both are drawn into every sidebar by a shared partial and neither
+  was in the three per-ADOM allowlists, so the product gate redirected them to
+  the ADOM home — a live-looking entry that goes nowhere, exactly what
+  `scheduled_actions` did on 2026-08-10. The new guard walks **every link the
+  sidebar renders in every ADOM** rather than naming the entry of the week.
+  (`docs` also left those lists: that blueprint was deleted on 2026-08-02 and
+  the string had been allowing nothing since.)
+
+See `docs/safeguards.md` §147 and `docs/user-guide.md` §3.1.
+
+### Fixed — Stored Assets showed one family in every ADOM, and one row per ADOM per device (2026-08-30)
+
+- **The page now reads the ADOM of the request.** `_scope()` asked
+  `branding.get_product(None)`, which falls through to the default product, so
+  `/adom-assets/` rendered **FortiWeb in every ADOM including Global** —
+  FortiADC, FortiAnalyzer and FortiAuthenticator devices appeared nowhere at
+  all. It now reads `g.product`, resolved per request by the product gate.
+- **One row per DEVICE, not per ADOM.** A FortiWeb in ADOM mode is one
+  appliance row per ADOM with one flash partition and one `execute backup`, so
+  its ADOM rows can never own a backup folder — they carried a permanent
+  *never pushed* badge each (six of twelve on this fleet). They are folded onto
+  the chassis and **their version counts, byte totals and any folder a sibling
+  really pushes under are added, never dropped**; delete and download still
+  address the folder each file is actually in.
+- **The chassis is stored, and never guessed.** New `device_identity.chassis_slug`
+  / `.adom`, resolved from the appliance row (via `appliance_name_parts`, only
+  when `vdom` explains the `@` suffix), else from the hostname the device
+  reported in its own snapshot, else itself — and a snapshot hostname is adopted
+  only when it names a device of the same family that SATOM already knows.
+  Stored because the appliance row is gone by the time anybody asks about a
+  de-registered device.
+- **The table is split into a section per device family**, in the order of the
+  ADOM switcher, with an explicit **unassigned** section.
+- **Server-side filter in the URL**: device type, backup state, free text over
+  the name *and every former name* plus serial/host/model, and hide
+  de-registered. An unrecognised value narrows nothing; the tiles always
+  describe the whole ADOM, never the filter. See `docs/safeguards.md` §146.
+
 ### Fixed — the 500 page's Copy button can no longer fail in silence (2026-08-30)
 
 - **A failed copy now stays on screen and names its reason.** The button flashed

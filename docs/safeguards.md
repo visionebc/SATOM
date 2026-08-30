@@ -12650,3 +12650,680 @@ nothing, and no amount of reading the template can settle it.
 
 **15 guards, 15 mutations, 15 dead** (by rc, only `rc==1` counting as a kill,
 green baseline required, every anchor matching exactly once).
+
+
+---
+
+## §146 — one family's answer under four headings, and a row per ADOM for a backup there is only one of (2026-08-30)
+
+Two defects, one page, and **neither of them failed**. `/adom-assets/` returned
+200 in every ADOM, the suite was green, and the page had been reviewed. What it
+did was answer a different question from the one its heading asked.
+
+### The scope was never read
+
+`_scope()` asked `branding.get_product(None)` for "the ADOM this request is
+about". `None` is not "the current one" — `get_product` treats an unknown key
+as *no key* and falls through to `DEFAULT_PRODUCT`. So the page answered
+**fortiweb in every ADOM**, Global included.
+
+Verified against the live console rather than reasoned about: a session with
+`product=global` rendered `Devices — fortiweb` and fourteen FortiWeb rows, and
+`fortiadc`, `faz01` and `fac01` appeared **nowhere on the page in any ADOM**.
+
+**The rule.** The ADOM of a REQUEST is `g.product` and nothing else —
+`_product_gate` resolves it per request (URL `?_adom=` > `X-ADOM` header > form
+field > session) precisely because the session is only a default. A branding
+lookup answers *what is this product called*, never *which one am I in*, and a
+lookup that silently substitutes a default for a missing argument cannot tell
+you it had nothing to work with.
+
+### The row was the ADOM, the artefact is the box
+
+A FortiWeb in ADOM mode is one appliance row per ADOM, one flash partition and
+ONE `execute backup` covering every ADOM — `models.chassis_device_row` says
+exactly this about firmware, and §41.1 said it about backups before this page
+existed. The page still listed the ADOM rows as devices, so each one carried a
+permanent **never pushed** badge for a folder it can never have: **six of this
+fleet's twelve** "never pushed" were siblings of two healthy boxes.
+
+Folding them is only safe under two rules, and both are guarded:
+
+* **the numbers are ADDED, never dropped.** A fold that loses a sibling's
+  version count replaces a visible wrong number with an invisible one. Folder
+  lists stay per folder, too — a sibling that really is pushing under its own
+  name has files somebody has to be able to open, and the delete and download
+  links must address the folder the file is in, not the chassis;
+* **nothing merges on a guess.** Authority order: the appliance row via
+  `appliance_name_parts` (accepted only when `vdom` explains the suffix — the
+  name after `@` is typed by hand and nothing enforces it), then the hostname
+  the DEVICE reported in its own snapshot, then itself. A snapshot hostname is
+  adopted only when it names a device of the same family that this store
+  already knows: two chassis with one hostname is a real configuration, and
+  merging them reports one box's backups as another's.
+
+Stored (`device_identity.chassis_slug`, `.adom`), not recomputed: the appliance
+row that carried `vdom` is **gone** by the time anybody asks about a
+de-registered device, and the snapshot may be off-box. One SFTP round trip is
+acceptable behind the *Reconcile identity* button and is not acceptable once
+per row of a page render.
+
+### The filter is the URL
+
+Server-side and authoritative (`type`, `state`, `q`, `retired=hide`), because a
+browser overlay over a full render is a second authority for which rows exist
+and disagrees with the *showing N of M* count the moment either side changes.
+An unrecognised value narrows **nothing**: a typo in a hand-edited URL must not
+look like an ADOM with no devices. And the tiles describe the whole ADOM, never
+the filter — a count that shrinks when you type is a claim about the estate.
+
+### ⚠ Traps
+
+* **`_ensure_columns` again.** `device_identity` had no entry at all (the table
+  is created by `create_all`), so this is a NEW key — but the guard still reads
+  the SOURCE and asserts it appears exactly once, because a repeated key
+  collapses in silence and takes every column under the earlier copy with it.
+  That is how `appliances.serial` went missing.
+* **`conftest.login()` defaults to `product="fortiweb"`.** Two guards written
+  against a FortiADC row failed on correct code until they logged in as
+  `global` — which is itself the fix working: before it, the session's ADOM
+  made no difference to this page at all.
+* **`DeviceIdentity.chassis` must fall back to its own slug, never to blank.**
+  A blank key groups every unresolved row together and merges unrelated devices
+  into one line.
+* A chassis with two folders is graded by its **freshest** one. Grading by the
+  worst paints a device red for a folder it deliberately stopped using.
+
+### Verification
+
+**30 guards** (`tests/test_adom_assets_sections.py`) · **37 mutations, 37 dead**
+(by rc, only `rc==1` counting as a kill, green baseline required, every anchor
+matching exactly once, tree verified byte-identical afterwards).
+
+## §147 — three slots for four ADOMs, and a fallback that only two pages knew (2026-08-30)
+
+**Guard:** `tests/test_adom_menu_reachability.py` (19 tests, 12 mutations, 12
+killed).
+
+Reported as *"only the Global and FortiWeb menus work — ADC, FortiAuth and
+Analyzer do not"*. Three defects arrived under one sentence; each of them made
+a console answer something false rather than fail.
+
+### 1. The device slot was typed out, and there were three of them for four ADOMs
+
+`device_context._active_key()` / `_key_for()` matched `fortiadc` and
+`fortianalyzer` by name and returned the FortiWeb slot for everything else. So
+`fortiauthenticator` — a real product ADOM since 2026-08-05 — **shared
+FortiWeb's slot**, and the module's own re-homing guard could not help: it fires
+when a device is found in the WRONG slot, and both ADOMs agreed this was the
+right one.
+
+Both directions were reproduced against the production database:
+
+* pick a FortiWeb device → the FAC console's **entire menu** answers *"No
+  FortiAuthenticator is selected"*, while its dashboard still renders the live
+  unit's firmware, CPU and licence counters;
+* pick the FAC device → `/web/workspace/` in the **FortiWeb** ADOM redirects to
+  `/web/workspace/12`, the workspace of a FortiAuthenticator.
+
+This is the failure `app/services/product_scope.py` documents at length for its
+own key set, one module over — and that module's docstring even names the day
+FortiAuthenticator broke a hardcoded tuple. **A new ADOM is a registry row.**
+The slot is now `_slot_for_product()`, derived from `concrete_products()`.
+
+Two constraints that are not obvious and that the guards pin:
+
+* **the three existing key names are kept verbatim** (`appliance_id`,
+  `appliance_id_adc`, `appliance_id_faz`). A tidier scheme would have blanked
+  the device context of every console open at deploy time — the session cookie
+  already names them;
+* **a kind no ADOM claims stays in the legacy slot.** Such a device is
+  manageable from the Global console only, and Global reads that slot; giving
+  it a slot of its own would make the Global map's pick unreadable one request
+  later. Same rule `product_scope` applies to the unscoped rows.
+
+### 2. The single-appliance fallback lived on two dashboards, not in the context
+
+`faz.index` and `fac.index` each carried `header_dev = current or fleet[0]`,
+with a comment explaining that otherwise the banner "looks missing". They were
+right about the rule and wrong about where it belongs: **two derivations of one
+rule, so the pages could disagree — and they did.** The front page described a
+live unit; every other page in the ADOM denied it existed.
+
+`device_context._sole_device()` is the single authority now. Three properties
+the guards fix, because each is a decision and not an implementation detail:
+
+* **read-only.** A GET must not record a choice for the operator; writing one
+  would also make the picker's Select button a no-op it cannot undo.
+* **exactly one, never "the first of many".** Two devices is a real choice;
+  auto-picking would silently point the console at a device nobody selected.
+* **counted through `visible_appliances()`**, so a maintenance device hidden
+  from this user is not silently handed to them by the fallback.
+
+### 3. Two shared nav partials were absent from three allowlists
+
+`advisor` and `adom_assets` are drawn into EVERY sidebar by
+`partials/nav_advisor.html` / `partials/nav_adom_assets.html`, and neither was
+in `adc_bps` / `faz_bps` / `fac_bps`. The product gate redirected both to the
+ADOM home: a live-looking menu entry that goes nowhere. `scheduled_actions` did
+this on 2026-08-10 and `change_requests` the day before — and
+`tests/test_automation_adom_nav.py` already documents the class. It did not
+catch this one because it names features, and **no test that names features can
+cover an entry that does not exist yet.**
+
+So the guard here sweeps the **whole rendered sidebar** of every ADOM and
+asserts that no link redirects to that ADOM's own home — the gate's exact
+refusal signature. It is derived from `concrete_products()`, and it asserts the
+sidebar produced more than ten links so an empty extraction cannot pass
+vacuously.
+
+`docs` left the three lists in the same commit: that blueprint was deleted on
+2026-08-02, so the string had been allowing nothing for four weeks while
+reading like policy.
+
+### ⚠ Traps
+
+* **The first reproduction was wrong and looked right.** Driving `/adc/menu/<k>`
+  (the route is `/adc/m/<k>`) produced a 302 to `/adc/` for every item — the
+  bounce signature — and would have "confirmed" a gate bug that did not exist.
+  Build nav URLs from `url_for`/the rendered sidebar, never by hand.
+* A fixture appliance carrying a literal `password_enc="x"` is fine for rows
+  that are only queried; a page that builds a CLIENT decrypts it, and the
+  `InvalidToken` looks exactly like the bug under test. Use the real setter.
+* Fixture hosts end in `.invalid` on purpose: DNS fails instantly, where a
+  TEST-NET address would hang the guard on a TCP connect.
+
+
+## §148 — a ninth place to state the licence, on the console of a broken node (2026-08-30)
+
+`satom` with no arguments now prints a wordmark, an attribution and the licence
+before its first prompt. Guards in `tests/test_cli_banner.py` (25).
+
+**Why it needs guards at all.** The banner is the **ninth** surface that
+declares the licence. Eight already had one (§7f) for a reason that applies here
+unchanged: *nothing fails when a licence surface goes stale — the claim simply
+becomes false.* That is how `Version: 1.0` survived four releases in the README.
+On a console it is worse than on a web page: an operator reading a grant off a
+recovery terminal is relying on terms that may never have been granted. So the
+console's wording is pinned to the same assertions the site footer makes
+(`Elastic License 2.0`, source-available, **not** OSI, AS IS,
+`licensing@visionebc.com`) and any Apache marker fails the suite.
+
+**Two names, deliberately not one.** The attribution line says **`VisionEBC`**
+(the marque, as asked for). The copyright line keeps **`Vision EBC`** with the
+space, because there it is not a marque — it is the **licensor**, and it has to
+read the same as it does in all 19 occurrences across `LICENSE`, `NOTICE`,
+`README.md` and the site. A grant made by a name that appears nowhere in
+`LICENSE` is a defect that renders perfectly. One guard per line.
+
+**Degradation is the load-bearing half.** This CLI is opened on serial consoles
+of nodes that will not boot:
+- art is blocks of `#` only — Unicode blocks fold to garbage there, and would
+  force a second art variant for `--ascii`;
+- below 78 columns the whole banner collapses to the one-line header, **not**
+  just the art: the licence is fixed-width prose and suppressing only the art
+  leaves four 74-column sentences to wrap into confetti;
+- `st.width == 0` means *piped*, not *narrow* — suppressing there would strip
+  the licence from every redirected transcript;
+- `SATOM_CLI_NO_BANNER=1` gives the old header back, because runbooks open this
+  console.
+
+**⚠ TRAMPA — the eighteenth self-satisfying assertion, and the only survivor of
+24 mutations.** The left-margin guard read:
+
+```python
+assert body == [len(cli_main._ART_INDENT)] * 5
+```
+
+It derives its expectation **from the very constant it exists to pin**, so any
+value of `_ART_INDENT` satisfies it. Narrowing the margin to one column changed
+the rendered banner and the suite stayed green. Pinned to the literal `2`, the
+mutation dies. *An assertion whose expected value is computed from the code under
+test asserts nothing.*
+
+**⚠ A guard that could never fail.** `test_no_row_has_trailing_whitespace` was
+green against `art_lines()` **with the trim removed** — the word ends in `M`,
+whose rows carry no trailing blanks, so the trim was unobservable on the real
+banner. Rewritten to put `S` (whose middle row does end in blanks) last via
+`_ART_WORD`, it kills the mutation. *Before trusting a guard, check that the
+input can actually exhibit the defect.*
+
+**⚠ `pkill -f` killed its own shell again** (rc 255): the pattern appeared in the
+SSH command line that contained it. `pgrep -af 'pty.for[k]' | awk '{print $1}' |
+xargs -r kill`, or match by PID. Fourth occurrence.
+
+**Verification.** 25 guards · **24 mutations probed, 24 killed** (by rc, only
+`rc == 1` counts; every anchor required to match exactly once; green baseline
+demanded before the first mutation): top offset dropped, margin narrowed, S
+loses its top bar, M one column short, T drawn in Unicode blocks, letters spaced
+apart, trim removed, threshold neutered, a pipe counted as narrow, threshold off
+by one, opt-out never fires, opt-out still prints the licence, source-available
+claim dropped, old licence named, commercial contact dropped, brand spelled with
+a space, licensor renamed to the marque, attribution not printed, typography not
+folded for `--ascii`, banner not wired into `repl()`, art painted with colour,
+version hardcoded, unprivileged warning removed, rule blown past 80 columns ·
+**168 neighbouring tests rc=0** (`test_cli`, `test_cli_render`, `test_cli_ops`,
+`test_cli_device_ops`, `test_license_consistency`, `test_cli_banner`) · rendered
+on the **real pty** of a1 at 100 columns, measured column by column (all seven
+rows are 70 wide with a margin of 2) · installed copy at
+`/usr/local/lib/satom-cli/` byte-identical to `deploy/satom_cli/`.
+
+**The top row shares the body margin — `_ART_TOP_EXTRA = ""`.** The operator
+asked for two extra columns of lead there, twice, and I applied them after
+saying what they do; seeing them in a real terminal, he withdrew the request the
+same day. Any non-empty value hangs the top bars of S/A/T/O and the peaks of the
+M two columns right of their own stems, which is the exact defect this art was
+redrawn to remove. The guard pins the top lead to the **literal 2**, the same
+value as the body, and asserts the constant is empty — deriving the expectation
+from `_ART_TOP_EXTRA` would be satisfied by every value of the constant it
+exists to pin, which is how the left-margin guard went blind (§148, above).
+
+**The full suite was NOT run** (operator rule, 2026-08-09).
+
+
+---
+
+## §149 — a panel that painted a whole page into itself, and a class on a body Turbo throws away (2026-08-30)
+
+Reported as *"the bookmarks tab does not work anywhere"*. Two defects. Neither
+raised, neither logged, both rendered perfectly, and **both were permanent for
+the rest of the session on every page** — because `#fw-bookmarks` is
+`data-turbo-permanent`, so the element the operator is looking at is the one
+minted with the FIRST page load and nothing short of a full reload replaces it.
+
+### The 200 that was not the panel
+
+`app/__init__.py` answers a `CSRFError` two ways, and the branch is chosen by
+sniffing the request: an XHR gets a **JSON 400**, anything else gets a **302 to
+the referring page**. The rail's `post()` declared neither `Accept: application/json`
+nor `X-Requested-With`, so it took the redirect — and `fetch` follows redirects
+silently. What came back was a **200, `text/html`, `r.ok === true`**: a whole
+console page. `post()` handed those 60 KB straight to `render()`, which does
+`panel.innerHTML = html`.
+
+The panel then contained a page. `wire()` found no `[data-bm-*]` controls, so
+**every button, star, folder and search box in the rail was dead** — and stayed
+dead on every subsequent page, because the wreckage is inside the permanent
+element. Reloading was the only exit, and nothing anywhere said so.
+
+**The trigger is not exotic.** The token in `data-bm-csrf` is rendered once per
+full page load, `WTF_CSRF_TIME_LIMIT` is 3600, and the permanence guarantees it
+is never re-rendered. So **one hour into any console session, the next click on
+any bookmark control destroyed the rail** — and *expanding a folder is enough*,
+because that calls `persistOpen()`.
+
+Three changes, and each closes a different half of it:
+
+1. **The rail declares its fetches to be XHR.** The handler branch already
+   existed (2026-06-28, for the editor's save calls); the rail simply never
+   asked for it. A refusal is now a refusal.
+2. **The panel says it is the panel.** `_render()` sets `X-SATOM-Panel:
+   bookmarks`, and neither `post()` nor `load()` will render a response without
+   it. This is the load-bearing half: a status check cannot work here, because
+   the response that destroyed the rail was a **200 and a perfectly good page**.
+   A header rather than markup sniffing, so the contract is not the first line
+   of a template.
+3. **Every answer hands back a fresh token** (`X-CSRF-Token`), which the rail
+   adopts into both the closure and the attribute. That removes the expiry from
+   normal use instead of only making it legible — the fix for permanence is
+   refreshing what permanence froze.
+
+### The class on a body that does not survive
+
+`bm-open` is a class on `<body>`. **Turbo replaces `<body>` on every visit**
+(verified in a real browser: the body node identity changes, the rail node does
+not). The only line that restored the state from `localStorage` sat *below* the
+`if (rail.dataset.bmWired) return;` early return — which the surviving element
+makes true forever after the first load.
+
+So the rail **shut itself on every navigation**, and a navigation is what
+clicking a bookmark IS. The operator's own preference stayed `'1'` in
+`localStorage` the whole time, describing a rail that was closed.
+
+`applyOpen()` now re-applies it on `turbo:render` and `turbo:load`, from a
+listener on **`document`** — a listener on `document.body` would be discarded
+with the very body it exists to repair, and would read as a fix. It is a
+**read**: the old restore ran the value back through `setOpen()`, which
+persists, so re-applying it on every page would have had the rail rewriting the
+preference it was supposed to be obeying. And it no-ops where there is no rail,
+since `body.bm-open .fw-main` reserves a 300px column that would otherwise be
+margin for nothing.
+
+### ⚠ TRAPS
+
+1. **A repro that changed nothing.** Setting `rail.dataset.bmCsrf` to a dead
+   value does not make the rail send a dead token — `CSRF` is a closure
+   variable read once at wiring. The honest repro rewrites the outgoing POST
+   body with **CDP request interception**, so the code under test is the real
+   closure and not a re-implementation of it.
+2. **Two runs of the same probe told opposite stories.** The first run's
+   `persistOpen()` POST had already saved the expanded set, so the second run's
+   "expand" was a collapse. Probes that mutate stored preferences are not
+   repeatable; the state has to be read before AND after, never inferred.
+3. **The mobile media query answers at the default headless viewport.** 800px
+   is below `991.98px`, so `body.bm-open .bm-panel` resolved to `84vw` and the
+   measurement was `655px`, not `300px` — a number that looks like the rule not
+   applying at all. Emulate a desktop viewport before measuring desktop CSS.
+4. **`pkill -f` on a pattern the shell's own command line contains kills the
+   shell.** Same trap as §145; matched by PID or `chromiu[m]`.
+5. Guards over the rail's inline JS **strip comments before asserting** — the
+   code explains itself with the very identifiers under assertion. Eighteenth
+   time in this repo.
+
+### Verification
+
+**19 guards** (`tests/test_bookmarks_session_expiry.py`) · **18 mutations
+probed, 18 killed** (by rc, only `rc==1` counts, green baseline required,
+anchors with a count of exactly 1) · neighbouring bookmarks/CSP/template/nav
+suites green · **four live checks in a real Chromium against a1**: the rail
+stays open across two Turbo navigations (300px, 18 controls); the fragment
+carries `X-SATOM-Panel: bookmarks` and a 91-character token; a stale token
+declared as an XHR is answered `400 application/json`, not redirected; and the
+**real rail with an intercepted stale token** keeps its panel intact and says
+*"CSRF token missing or expired — reload the page and retry"* instead of
+painting a page into itself.
+
+**The full suite was NOT run** (operator rule, 2026-08-09).
+
+## §150 — four artefacts in one row, and a filter that would have hidden the disagreement (2026-08-30)
+
+**Where:** `app/services/adom_assets.py`, `app/templates/adom_assets/index.html`,
+`tests/test_adom_assets_artefact_sections.py` (23 guards).
+
+`/adom-assets/` was one table whose columns mixed two unrelated artefacts:
+*Backups* and *SoT versions* sat in the same row. Nothing failed. The defect was
+a **reading**: that one number is a copy of the other. It is not — a device that
+has never pushed a config file can hold a hundred recorded versions, and a
+device pushing daily can have no history at all. The split into one card per
+artefact makes the disagreement visible.
+
+**The load-bearing decision is the filter, not the cards.** The `state` filter
+grades the *backup server*. Applied to the SoT table it would have removed
+exactly the rows an operator filtering for *never pushed* is hunting: the ones
+whose two artefacts disagree. So `collect()` builds **two row sets** — `shown`
+(all filters) and `shown_sot` (device filters only) — and reports **two
+counters**. A single "showing N of M" over two tables of different length is a
+wrong number on whichever card it does not describe.
+
+Corollaries that each cost a guard:
+
+* **The console's own bundle is Global-only by construction**, not for
+  tidiness: it is a dump of every ADOM, so drawing it inside one asserts that
+  it belongs to that one. Guarded in the service (`bundles_view(product)`
+  returns `shown=False`) *and* in the template — a service that returns nothing
+  and a template that would have drawn it anyway is one refactor from leaking.
+* **`off_box == 0` is vacuously true of an empty list.** A "the backup server
+  is your single point of failure" banner fired by emptiness would state that
+  about a console with **no backups at all** — a different and worse fact,
+  stated wrongly. Both redundancy verdicts are guarded by `bool(rows) and`.
+* **A mismatch needs two copies.** `size_match` is false for a bundle that
+  exists in only one place, so the "truncated upload" list must require
+  `local AND off_box` first.
+* **"We could not look" must never render as "there are none."** The bundle
+  inventory reports its exception; the row list stays empty and says why.
+* **One grouping function, two calls.** Cards 1 and 2 are built by the same
+  `_sections()` over the same rows. Two grouping functions is how a device ends
+  up under FortiWeb in one card and under `unassigned` in the next — guarded by
+  comparing the two slug→section maps.
+
+⚠ **Trap — a `colspan` left behind does not fail.** Card 1 lost two columns in
+this change. A section header still spanning 8 of 6 columns stretches silently
+past the table and the family heading lands over the wrong column; no
+exception, no log line. The guard walks the template's real `<thead>` blocks,
+counts `<th>`, and compares against the next `colspan` — the number is never
+trusted because it is written next to the columns it describes.
+
+⚠ **Trap — a card slice that runs to the end of the document.** The "no write
+path in the bundle card" guard failed on a correct card because
+`html[html.find(anchor):]` dragged in the page chrome's own forms. Bounded at
+the card's `</table>`. Same class as an assertion that matches its own comment.
+
+⚠ **Trap — `DeviceIdentity.retired` is a property over `retired_at`.** A
+fixture doing `.update({"retired": True})` dies with
+`'property' object has no attribute '_bulk_update_tuples'`; use
+`device_identity.retire(slug)`.
+
+**Verification:** 23 guards, **27 mutations, 27 killed** (measured by rc, only
+`rc==1` counts, green baseline required, every anchor unique, tree checked byte
+for byte afterwards).
+
+## §151 — a page that folds itself shut, and the three things it must never fold (2026-08-30)
+
+`/adom-assets/` was asked to open with every section and subsection collapsed.
+Folding a page is four lines of CSS; the failures are all silent.
+
+### The folded page that cannot open
+
+The folded state has to be in the **markup**, or the browser paints the whole
+estate and collapses it afterwards. But markup-folded plus a rule that hides the
+bodies is a page whose only way back is JavaScript — and this console serves a
+nonce'd CSP. So the rule lives in a `<style nonce="{{ csp_nonce }}">` in
+`{% block head %}`, pinned to the **same nonce** as the toggle script in
+`{% block scripts %}`: CSP admits both or drops both, and dropped-both renders
+everything expanded, which is usable. The same rule in `fortiweb.css` would
+outlive a dropped script and leave the page shut for good — there is a guard
+asserting `fw-sec-body` never appears in that stylesheet.
+
+### The three things that must not fold
+
+1. **Warnings.** Card 4 raises *every bundle lives on the backup server and none
+   on this node — the backup server is a single point of failure for SATOM's own
+   recovery*. A default-collapsed card that hid it would silently retract the
+   warning the card was built to raise. The alerts render **outside** the
+   collapsible body; the guard slices the card at `id="body-satom"` and asserts
+   the sentence is in the head half.
+2. **The narrowing.** With the filter card folded, a filtered URL and an
+   unfiltered one look identical, and *3 devices* stops being a statement about
+   the search box and becomes one about the estate. The folded header names each
+   active filter.
+3. **The empty state.** *"No device matches this filter"* lives outside any
+   family. Marked foldable it would be hidden by the default, so a filter that
+   matched nothing would open onto a blank table with no explanation. Guarded.
+
+### The store holds the OPEN set
+
+`satom.assets.open.<adom>`, defaulting to the empty set — which *is* "everything
+folded", with no first-run flag to keep in sync. A stored closed-set later read
+as an open-set expands exactly what the operator had folded; that is why the
+probe cards minted `…probecards.open.` instead of reusing `…collapsed.` (§9j),
+and the same reasoning applies here. Keyed per ADOM: Global lists every family
+and a choice made there is not a choice about FortiWeb.
+
+### ⚠ TRAPS
+
+1. **A browser harness that reports a dead button on a working one.**
+   `Input.dispatchMouseEvent` takes **viewport** coordinates. At the default
+   800×600 headless viewport the section header laid out below the fold, so the
+   click landed on nothing and six assertions failed against correct code. The
+   tell was that a synthetic `.click()` *did* toggle and did write the store.
+   Set device metrics, `scrollIntoView`, re-read the rect, and assert with
+   `elementFromPoint` that the element you meant is actually under the cursor.
+2. **A caret guard answered by both states.** `"matrix" in transform` passes on
+   the folded caret too — `rotate(-90deg)` resolves to a matrix. Compare an open
+   section's caret against a folded one's, and allow for the `.12s` transition:
+   read too early and the open one still reports its start value.
+3. **`Page.navigate` to the same URL with only the fragment changed** is a
+   same-document history update. The script never re-runs, so a "deep link opens
+   the section" test grades the previous page. Go via `about:blank`.
+4. **Counting `tr.fw-sub-row` to grade *Expand all*** counts the per-device file
+   tables, which are a third level owned by their own button. The assertion has
+   to be `:not(.collapse)`, or it fails a control for not doing something it
+   never claimed.
+5. `role="button"` on a `<th>` stops it being a column header for a screen
+   reader, and on a card header whose right-hand side holds a `<form>` and an
+   `<a>` it wraps interactive descendants. Both toggles are real `<button>`s
+   wrapping only the title, which also makes Enter and Space work for free.
+6. **Editing this template before the Python is safe only because there is no
+   Python change** — see §150 trap 2. The template was written to `.new`, parsed
+   with Jinja, and moved into place with a single `mv` after re-checking the
+   md5, because another session was editing the same tree.
+
+### Verification
+
+27 guards (`tests/test_adom_assets_collapse.py`) · 27 mutations, 27 killed ·
+31 live checks against the production database in two ADOMs · **27 assertions
+driven through a real Chromium over CDP** — first paint, real mouse clicks, the
+two levels, a Bootstrap collapse nested inside a folded family, persistence
+across reload, Enter on a focused toggle, expand/collapse all, and the deep
+link.
+
+## §152 — page chrome the product gate refused, and a bounce reported as a dead session (2026-08-30)
+
+Reported in the reader's own words: *"Your session expired — reload the page
+to use bookmarks."* The session was fine. Two defects, one visible and one
+that made the visible one unreadable.
+
+**1. The gate refused the chrome.** `base.html` renders the bookmarks rail
+into every page of every ADOM, and `bookmarks` was in none of the three
+per-ADOM allowlists — so in the ADC, FortiAnalyzer and FortiAuthenticator
+consoles `GET /bookmarks/panel` was answered with a **302 to the ADOM home**.
+Nothing raised: the redirect is a 200 by the time `fetch` is done with it, and
+the rail correctly refused to paint a page that did not declare itself the
+panel (§149). It is the **fifth** entry those three copies have forgotten —
+`docs`, `change_requests`, `scheduled_actions`, then `advisor` and
+`adom_assets` earlier the same day. Four hand-kept lists is the defect;
+`CHROME_BPS` is one, consulted beside the gate's always-allowed endpoints, and
+a guard asserts the three per-ADOM sets do **not** name it, because a fourth
+copy would pass every behavioural test while restoring the bug's shape.
+
+**Reachable is not visible**, and that distinction is what makes the fix safe:
+every row still goes through `product_scope` / `visible_appliances`. Guarded
+on a **bookmark row**, not only on the inventory lens — the lens is scoped by
+`visible_appliances` and would have gone on passing while every saved link
+leaked across ADOMs.
+
+**2. The message was a wrong diagnosis, which is worse than none.** It sent
+the reader to re-authenticate over a routing bug that re-authenticating cannot
+touch. Only an answer whose final URL is the login page is an expiry now;
+anything else names its own status and path. One authority (`whyNotPanel`),
+asked by both `load()` and `post()` — guarding only `load()` left the path a
+reader actually reaches by clicking free to keep lying, which the mutation
+harness proved and the first draft of the guard did not.
+
+**⚠ Why the existing sweep could not see this.**
+`tests/test_adom_menu_reachability.py` walks every rendered **sidebar link** in
+every ADOM. The rail is not a link — it is a `data-` attribute a script
+fetches. The sweep here reads the URLs off the rendered `#fw-bookmarks` tag,
+so the next chrome fetch added to it is covered without being named.
+
+**⚠ Probe each URL with a method it accepts.** The first version of that sweep
+failed on `/bookmarks/{create,adopt,prefs}` against *correct* code: a **GET at
+a POST-only route never resolves an endpoint**, so `request.endpoint` is
+`None`, the gate sees no blueprint and bounces it. The rail posts. The probe
+now asks `url_map` what each URL accepts. (Worth knowing separately: for a
+method-mismatched request the gate redirects rather than letting Flask answer
+`405`.)
+
+**⚠ A regex literal escapes its slashes.** A guard looking for `/auth/login`
+could never match `/\/auth\/login/`. The check is an `indexOf` of the plain
+path now — the guard and the code say the same thing once.
+
+### Verification
+
+29 guards (`tests/test_chrome_reachability.py`) · **9 mutations, 9 killed**
+(by rc, only `rc==1` counted, green baseline required, every anchor unique,
+tree verified byte-for-byte afterwards) · 10 read-only checks against the
+production database: `GET /bookmarks/panel` and `/bookmarks/devices` **200 with
+the panel header in all five ADOMs**, each with a fresh CSRF token and a device
+count that matches its own ADOM (global 9, FortiWeb 7, ADC 0, FAZ 1, FAC 1) ·
+`satom.service` restarted · `/healthz` 200 · 0 failed units.
+
+## §153 — one fleet, one arrangement; and the card that must not fold (2026-08-30)
+
+**What was wrong.** This console grouped one estate two ways. The bookmarks
+rail nests devices by a per-user lens (`line › zone › department` by default);
+`/adom-assets/` nested them by family and stopped. Nothing failed. An operator
+who knows their DMZ boxes sit under *dmz* on the rail and finds them elsewhere
+here concludes one of the two pages is lying about the fleet, and both keep
+answering 200.
+
+**The rule.** A page that groups devices reads `bookmarks.lens_for(user)` and
+nests by it. It does NOT invent a second preference, and it does not copy the
+classification onto any row — the rail's whole design is that the grouping is
+recomputed from the live inventory, so re-classifying a device needs no
+migration anywhere.
+
+**Four things that had to be reproduced exactly, not approximately:**
+
+1. **`kind` is dropped from the nested lens** (`lens_below_family`). The family
+   heading is `kind`; nesting it under itself is the chain of single-child
+   folders `parse_lens` refuses on the profile form. Refusing it there and
+   producing it here is one tree drawn two ways.
+2. **The chain is truncated at the first level whose whole TAIL is
+   unclassified** — not at the first blank level. `(unclassified) → dmz` must
+   survive; `(unclassified) → (unclassified) → (unclassified)` must not.
+   Reproduced in behaviour and pinned device-by-device against the rail's own
+   computation (`test_the_page_and_the_bookmarks_rail_agree_device_by_device`),
+   because the rail walks appliances and this walks folded chassis.
+3. **The classification is read off the APPLIANCE row.** `DeviceIdentity` has
+   no zone/line/department column, so reading the identity answers
+   "(unclassified)" for the whole fleet and nothing fails. The primary row
+   answers; a blank primary falls back to the first sibling carrying a value (a
+   sibling ADOM row nobody filled in does not un-classify a box that IS in the
+   DMZ); a chassis with no appliance row left reads `(unclassified)`, which is
+   the honest answer rather than a guess from the name.
+4. **A bucket counts its SUBTREE and draws only its OWN rows.** Truncation
+   means a node legitimately has both children and rows of its own; dropping
+   either loses devices, and counting only the drawn rows makes a folded
+   heading understate the fleet.
+
+**Ordering.** `(unclassified)` and `(no segment)` sort last at every level. A
+bracket sorts before every letter, so the obvious sort opens each family with
+the bucket that says nothing about the estate.
+
+**Identity of a bucket.** The fold id is built from the RAW value and prefixed
+by its family; only the label is the displayed name. A path built from the
+label would fold shut every reader's open tree the day a value is re-spelled,
+and an unprefixed path would make FortiWeb's `dmz` and FortiADC's `dmz` one
+control. ⚠ The label/value guard cannot be driven by real data —
+`dimension_label` only re-spells `kind`, and `kind` can never be in the nested
+lens, so a path built from the label is byte-identical today. The guard forces
+them apart by monkeypatching the labeller. **An assertion that cannot observe
+the defect is not a guard**, and this is the twentieth time in this codebase
+that a fixture, not the code, was the thing at fault.
+
+**The fold rule changed shape.** With N levels, a row is visible only when
+EVERY ancestor on its chain is open. It is recomputed from a `data-anc`
+attribute (`fam:…|grp:…|grp:…`) rather than toggled pairwise — pairwise reveals
+a bucket whose own grandparent is still folded, which looks like the fold
+working right up to the level that matters. Ancestors are compared as STRINGS:
+the key is data and a CSS selector is code, so a zone named with a bracket or a
+dot cannot become a selector.
+
+**The filter card is the documented exception to "everything folds".** Every
+other card holds an ANSWER and folding an answer hides something the page is
+saying. The filter holds the QUESTION that decides which rows those answers
+describe. Its exclusion from `SECTIONS` is pinned by a guard of its own —
+an omission nothing asserts is one edit away from coming back.
+
+**Also fixed in passing.** A fragment followed from the page you are already on
+is a same-document navigation: nothing reloads and the fold script never runs
+again, so `#sec-satom` scrolled to a strip that stayed shut. Wired to
+`hashchange` as well as first paint.
+
+### ⚠ Traps this round
+
+1. **A slice bounded by an attribute drags in the next element.** `html[index(
+   'id="sec-filter"'):index('id="sec-backups"')]` ends inside the *backups*
+   card's opening tag, because a class attribute is written before the id — so
+   "the filter does not fold" was answered by the backups card's own
+   `is-collapsed`. Bound the window at the ELEMENT (`rindex("<div", 0, i)`).
+2. **A queued "wait until the tree is free" job that did not wait.** It applied
+   five patches under a running suite; the suite's result was worthless and one
+   patch missed its anchor by two spaces, leaving the tree half-changed. Verify
+   the wait condition itself before trusting a queued apply.
+3. **`Page.navigate` returns before the load starts, and `about:blank` is
+   already `complete`.** Polling `readyState` alone hands you the PREVIOUS
+   document, and every assertion then describes a page that was never under
+   test. Wait for `document.location.href` to be the URL under test.
+4. **A browser profile carries the previous run's `localStorage`.** "Arrives
+   folded" is a claim about a FIRST visit; without clearing the store first the
+   harness reports a defect that is its own leftover state.
+5. **`pkill -f` killed its own shell again** (rc 144) — the pattern appeared in
+   the cmdline of the bash that ran it, and `serve[.]py` still matches the text
+   `serve.py`. Fifth occurrence. Kill by PID.
+6. **A guard that compared two empty sets.** `test_no_row_is_stranded_and_no_
+   toggle_is_dead` compared `data-fam` pairs; once the rows moved to an
+   ancestor chain both sides matched empty and it passed while measuring
+   nothing — which is the exact failure mode it exists to catch, one level up.
+

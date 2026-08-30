@@ -71,14 +71,16 @@ def index():
     groups = fac_menu.visible_menu()
     items = fac_menu.all_items()
     fleet = _fac_fleet()
+    # The single-appliance fallback that used to live here (``header_dev =
+    # current or fleet[0]``) moved into device_context._sole_device() on
+    # 2026-08-30: this page knew the ADOM had exactly one unit and the rest of
+    # the ADOM did not, so the dashboard described a live FortiAuthenticator
+    # while every menu page said none was selected. One authority now.
     current = _current_fac()
-    # With a single FAC appliance the header should always describe it, even
-    # before an explicit pick — otherwise the device banner looks 'missing'.
-    header_dev = current or (fleet[0] if len(fleet) == 1 else None)
 
     status, status_err = {}, None
-    if header_dev is not None:
-        client = FortiAuthenticatorClient(header_dev, timeout=15.0)
+    if current is not None:
+        client = FortiAuthenticatorClient(current, timeout=15.0)
         try:
             status = client.sys_status()
         except Exception as exc:  # noqa: BLE001 — dashboard must still render
@@ -87,7 +89,7 @@ def index():
     return render_template('fac/index.html', fleet=fleet, groups=groups,
                            n_items=len(items),
                            n_bound=sum(1 for i in items if i.logicals),
-                           current=current, header_dev=header_dev,
+                           current=current, header_dev=current,
                            status=status, status_err=status_err)
 
 

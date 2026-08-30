@@ -61,13 +61,11 @@ def index():
     groups = faz_menu.visible_menu()
     n_items = sum(len(g.items) for g in groups)
     fleet = _faz_fleet()
+    # The single-appliance fallback that used to live here moved into
+    # device_context._sole_device() on 2026-08-30 — see app/views/fac.py.
     current = _current_faz()
-    # With a single FAZ appliance the header should always describe it, even
-    # before an explicit pick -- otherwise the device metadata banner looks
-    # 'missing'. Selection state (picker) still tracks the real session slot.
-    header_dev = current or (fleet[0] if len(fleet) == 1 else None)
     return render_template('faz/index.html', fleet=fleet, groups=groups,
-                           n_items=n_items, current=current, header_dev=header_dev)
+                           n_items=n_items, current=current, header_dev=current)
 
 
 @bp.route('/use/<int:id>')

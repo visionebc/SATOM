@@ -41,8 +41,10 @@ import json
 
 from flask import (
     Blueprint, render_template, request, abort, jsonify, url_for, g, session,
+    make_response,
 )
 from flask_login import login_required, current_user
+from flask_wtf.csrf import generate_csrf
 
 from ..branding import get_product
 
@@ -405,7 +407,28 @@ def _sub_for(it: dict) -> str:
 
 
 def _render(q: str = ''):
-    return render_template('partials/bookmarks_panel.html', **build_panel(q))
+    """The panel fragment — and it SAYS it is the panel fragment.
+
+    A 200 is not consent to paint. The CSRF error handler answers a POST that
+    does not declare itself an XHR with a **302 to the referring page**, and
+    ``fetch`` follows redirects, so the rail used to receive a whole console
+    page with ``r.ok`` true and paste those 60 KB into a 300px column. Every
+    control in the rail died with it, on EVERY page and until a full reload,
+    because the element is ``data-turbo-permanent``. ``X-SATOM-Panel`` is the
+    marker the rail checks before rendering anything; sniffing the markup
+    would tie the contract to the first line of a template.
+
+    ``X-CSRF-Token`` exists for the same permanence. The token the rail was
+    born with is the only one it would ever hold, and ``WTF_CSRF_TIME_LIMIT``
+    is an hour — so an hour into any session the next click on any bookmark
+    control was refused. Every answer now hands the rail a fresh token, which
+    is why the refusal became rare rather than merely legible.
+    """
+    resp = make_response(
+        render_template('partials/bookmarks_panel.html', **build_panel(q)))
+    resp.headers['X-SATOM-Panel'] = 'bookmarks'
+    resp.headers['X-CSRF-Token'] = generate_csrf()
+    return resp
 
 
 @bp.route('/panel')

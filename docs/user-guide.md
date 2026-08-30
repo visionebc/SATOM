@@ -50,6 +50,7 @@
 38. [Bookmarks: the panel you file yourself](#38-bookmarks-the-panel-you-file-yourself)
 39. [Concept Map: where does X live?](#39-concept-map-where-does-x-live)
 40. [Upgrade Flow: a maintenance window as one workflow](#40-upgrade-flow-a-maintenance-window-as-one-workflow)
+41. [Stored Assets: what each ADOM actually holds](#41-stored-assets-what-each-adom-actually-holds)
 
 ---
 
@@ -142,6 +143,24 @@ each sidebar. **The ADOM is per browser tab** — you can keep FortiWeb open in
 one tab and FortiADC in another; switching in one tab never changes the other.
 Data is strictly scoped: a FortiADC session sees only FortiADC jobs,
 notifications, templates and appliances (and vice versa); Global sees all.
+
+### 3.1 The selected device is per ADOM
+
+Most per-device pages read an **implicit device context** rather than asking
+which appliance you mean on every page. That context is **one slot per ADOM**:
+picking a FortiWeb on the Architecture map and picking a FortiAuthenticator on
+the FAC dashboard are two independent choices, and neither disturbs the other.
+The Global console reads FortiWeb's slot, as it always has.
+
+**An ADOM that holds exactly one appliance does not ask.** With no choice to
+make, that appliance is the context on every page of the ADOM — the dashboard
+and the menu alike. It is a *resolution*, not a selection: nothing is written
+to your session, so the picker still shows what you actually chose and the
+Select button still means something. From two appliances up, the choice is
+real and the pages ask for it.
+
+An appliance in maintenance mode is counted only for operators who may see
+maintenance devices, so this can never hand you a device the picker hides.
 
 ## 4. Registering and operating devices
 
@@ -4155,7 +4174,44 @@ that is not a device has no classification at all, and a device nobody has
 classified yet is a different situation. They are shown separately rather than
 both as "ungrouped".
 
+### 38.1 When the rail says your session expired
+
+The panel is kept alive across page changes rather than re-fetched on every
+click, which is why it holds its scroll position and its open folders while you
+move around the console. The cost of that is one thing worth knowing: the
+security token it carries is minted when you **load** a page, not when you
+navigate to one, and it has a **one-hour life**.
+
+- In normal use you will never meet it: every answer the panel receives hands
+  it a fresh token, so a session in which you use the panel keeps renewing it.
+- If the token does lapse — a tab left open overnight, a sign-in that expired
+  elsewhere — the next click says **"CSRF token missing or expired — reload the
+  page and retry"**, and the panel is left exactly as it was. **Reload the page
+  and the click works.** Nothing you had filed is lost; the panel is rebuilt
+  from the server on every render.
+- The rail never renders a reply it cannot identify as the panel. That rule is
+  what stands between a lapsed session and a console page pasted into a 300px
+  column — which is what it used to do, on every page, until the browser was
+  reloaded.
+
+The open/closed state of the rail is **yours and per browser**: it is
+remembered locally, re-applied on every page you open, and it starts closed the
+first time. Which folders are expanded, and whether hidden entries are shown,
+are stored on the **server** against your account instead, so they follow you
+to another browser.
+
 ---
+
+**If the panel says something instead of showing the tree.** Two different
+messages, and they mean different things. *"Your session expired — reload the
+page to use bookmarks."* is exactly what it says: the rail asked for the tree
+and the server answered with the login page. Anything else appears as
+*"Bookmarks did not load — the server answered HTTP `<status>` from
+`<path>`."* — that is not an expiry, and reloading or signing in again will not
+change it; quote that line when reporting it, because the status and the path
+are the whole diagnosis. Until 2026-08-30 both cases printed the first
+message, so the ADC, FortiAnalyzer and FortiAuthenticator consoles told
+readers to re-authenticate over a routing bug.
 
 ## 39. Concept Map: where does X live?
 
@@ -4249,6 +4305,15 @@ the **user_manage** permission. It appears in every ADOM, including Global, and
 is scoped to the ADOM you are in — Global means "every family", and is the only
 scope where the two *unowned* buckets below can appear at all.
 
+> **Fixed 2026-08-30 (same day).** For its first hours this page showed
+> **FortiWeb in every ADOM**, Global included. It asked
+> `branding.get_product(None)` for "the current ADOM", and `None` is not "the
+> current one" — that call falls straight through to the default product. So a
+> Global session rendered fourteen FortiWeb rows and FortiADC, FortiAnalyzer
+> and FortiAuthenticator appeared nowhere at all, under a heading that said
+> Global. The scope now comes from `g.product`, which the request gate resolves
+> per request (`?_adom=` > `X-ADOM` > form field > session).
+
 **Why it exists.** The four things an operator asks about a device lived in four
 different places: the backup server's per-device folder, the `sot_version`
 index, the firmware store and the appliance row. The only page that joined any
@@ -4265,10 +4330,77 @@ being edited by somebody who came to check a backup date.
 
 ### What the page shows
 
-Five tiles, then one row per device: name (with every earlier name it has been
-known by), **serial**, model and firmware, backups on the server, **last push**,
-SoT versions with a local/off-box split, and the last configuration change.
-Expanding a row lists the individual files with size and date.
+A tile row, a filter bar, then **one card per kind of artefact** (restructured
+**2026-08-30**):
+
+| Card | What it holds | Written by | Scope |
+|---|---|---|---|
+| **1 · Device config backups** | the `.conf` files on the backup server, per device, expandable to the individual files | the **appliance**, on its own schedule | this ADOM |
+| **1b · Unclaimed folders** | folders no device answers to (Global only) | the appliance | Global |
+| **2 · Configuration SoT** | the permanent change log, de-duplicated by content hash, with the local/off-box split | **SATOM**, at every harvest | this ADOM |
+| **3 · Firmware images** | images held to be installed **onto** a device | you, by upload or pull | this ADOM |
+| **4 · SATOM's own backup** | the console's bundles (database, reports, SoT index) | SATOM's backup job | **Global only** |
+
+**They are not copies of each other**, and the page is split so that stops
+being an easy misreading: one row that carried *21 backups* beside *11
+versions* invited exactly that. A device that has never pushed a backup file
+can hold a hundred recorded SoT versions, and a device pushing daily can have
+no history at all — the two cards are graded independently and each names its
+own kind of silence (*never pushed*, *no history*).
+
+Cards 1 and 2 keep the **section per device family**, built from the same rows
+in the same ADOM-switcher order, so a device sits under the same heading in
+both. A device whose family could not be established gets its own
+**unassigned** section rather than being folded into a real one. Card 3 groups
+firmware the same way and in the same order, so "FortiWeb" means one thing on
+the whole page.
+
+Card 1 lists one **device** per row: name (with every earlier name it has been
+known by), **serial**, model and firmware, backups on the server and **last
+push**. Expanding a row lists the individual files with size and date. Card 2
+lists versions, where they are held, the stored size and the last configuration
+change.
+
+**A row is the CHASSIS, and the ADOMs of a device are not shown.** A FortiWeb
+in ADOM mode is one appliance row per ADOM but has one flash partition and one
+`execute backup` containing every ADOM (§41.1), so an ADOM row can never own a
+backup folder — and listing them beside the device printed a permanent *never
+pushed* line each, one per ADOM, for boxes that were pushing perfectly well.
+They are folded onto the device and **their numbers are added, never dropped**:
+the version counts, the byte totals and any folder a sibling really is pushing
+under all survive the fold, and a device that pushes under two folder names
+lists both, each file linked to the folder it is actually in. What is gone is
+the per-ADOM *row*, because backups are per device.
+
+A device is shown as **retired** only when every one of its rows is: a box with
+one ADOM row still registered is a box still in service.
+
+### Filtering
+
+The filter is **server-side and lives in the URL**, so a narrowed view can be
+shared, bookmarked and reloaded, and there is exactly one authority for which
+rows exist:
+
+| Control | Query parameter | Notes |
+|---|---|---|
+| Device type | `type=` | Global scope only; `unassigned` selects the devices whose family could not be established |
+| Backup state | `state=` | `ok`, `stale` (both *stale* and *critical*), `never`, `unknown` |
+| Free text | `q=` | matches the name, **every former name**, serial, host and model |
+| Hide de-registered | `retired=hide` | hides only; nothing is removed from the server |
+
+**`state=` deliberately narrows card 1 only.** It grades the *backup server*,
+so applying it to the SoT card would hide precisely the devices somebody
+filtering for *never pushed* went looking for — the ones whose two artefacts
+disagree. The SoT card says so with a **backup state not applied here** badge
+whenever that filter is set, and carries its own *showing N of M*. The other
+three controls describe the **device**, not the artefact, so they narrow every
+card; `type=` narrows the firmware card too.
+
+An unrecognised value narrows **nothing** rather than emptying the table: a
+typo in a hand-edited URL must not look like an ADOM with no devices. The five
+tiles always describe the whole ADOM, never the filter — a count that shrinks
+when you type reads as a claim about the estate — and the header says
+*showing N of M* while a filter is active.
 
 **"Last push" is the point of the page.** A folder with nothing in it and a
 folder that stopped filling look identical, and only one of them is normal, so
@@ -4289,6 +4421,33 @@ correctly configured weekly job.
 **An unreachable backup server reads as *unknown*, never as *no backups*.** The
 banner says so and the columns say so. That distinction is the difference
 between "go configure the appliances" and "go fix the SFTP credentials".
+
+### Card 4: SATOM's own backup (Global only)
+
+Read-only here, and Global-only by construction: a bundle is a dump of the
+**whole console** — every ADOM's devices, the credentials, the SoT index — so
+rendering it inside one ADOM would assert that it belongs to that ADOM. There
+is one such set of files however many ADOMs exist.
+
+Each bundle carries **two independent badges**, `this node` and `backup
+server`, never one combined "where": a bundle is only redundant if it has both.
+The card states the two ways of having no redundancy, because they fail
+differently:
+
+- **every bundle off-box and none local** — the configured policy (local copies
+  are evicted once the upload verifies, §26.5b), and it makes the backup server
+  a single point of failure for SATOM's own recovery;
+- **every bundle local and none off-box** — a backup stored beside the thing it
+  backs up, lost with it.
+
+A bundle present in both places under one name **with two different sizes** is
+named explicitly: that is what a truncated upload looks like, and the name is
+the only thing that lets you go and check which copy is short. An inventory
+that could not be read renders as an error, never as *there are no backups* —
+that reading is how somebody stops looking for a bundle they need.
+
+Creation, restore and retention stay on **System Backup & Restore**: one page
+should be able to overwrite a database, and it is not this one.
 
 ### The two unowned buckets (Global scope)
 
@@ -4334,6 +4493,27 @@ outlives it by indexing on the device name. Retiring a device sets a timestamp;
 nothing is deleted, and de-registering an appliance now records its identity
 *before* the row goes.
 
+**How the chassis of a row is decided.** In order of authority, and never by
+reading the text after `@` on its own:
+
+1. the **appliance row** — split by `models.appliance_name_parts`, the
+   product's one answer to *what is this row called*, and accepted only when
+   the row's `vdom` actually explains the suffix (`vdom` is `root` on every
+   FortiWeb whether or not ADOM mode is on, so its presence proves nothing);
+2. the **hostname the device itself reported** in its own last snapshot
+   (`System / global.hostname`) — a measurement, and the only authority left
+   for a de-registered device, whose appliance row and its `vdom` are gone;
+3. otherwise **itself**. An unresolved row is its own chassis, never somebody
+   else's.
+
+Rule 2 is accepted only when that hostname names a device of the **same family**
+that SATOM already knows. Two chassis answering to one hostname is a real
+configuration; merging them would report one box's backups as another's. The
+answer is stored on the identity row (`chassis_slug`, `adom`) rather than
+recomputed, because by the time anybody asks the appliance row is gone and the
+snapshot may be off-box — one SFTP round trip is fine behind *Reconcile
+identity* and is not fine once per row of a page render.
+
 **The identity is the serial number, not the name.** A name is a label an
 operator typed and can change; the serial is what the chassis answers with. One
 serial with three names is one box that was renamed twice — and on FortiWeb, one
@@ -4351,3 +4531,89 @@ that does not carry one never erases a serial an earlier probe established: the
 four kinds answer with different payloads, and *this payload did not say* is not
 *the value is now empty*. Same attestation rule the firmware probe applies to
 `firmware_checked_at`.
+
+### Folding
+
+Every card on this page, and every device-family group inside a card, is a
+toggle, and **they all start closed**.
+
+| you click | you get |
+|---|---|
+| a card header (`2 · Configuration SoT`) | that card's family headers |
+| a family header (`FortiWeb — 8 device(s) · 41 version(s)`) | that family's rows |
+| a row's **Files** button | that one device's backup files |
+
+`Expand all` and `Collapse all` are at the top right. What you open is
+remembered in this browser, separately per ADOM — and only what you *opened*:
+close everything and the page forgets, rather than remembering a list of closed
+things that would later be read the wrong way round.
+
+Three things deliberately do **not** fold, because folding them would retract
+something the page is telling you:
+
+- the summary tiles;
+- every warning — an unreachable backup server, *these bundles exist in both
+  places under one name with two different sizes*, and the notice that every
+  bundle lives off this node, which makes the backup server a single point of
+  failure for SATOM's own recovery;
+- the counts in each header, so a closed card still says what it holds.
+
+A closed **Filter** card still shows what is being filtered
+(`filtered · type: fortiweb · state: never · text: fw12`). Filtering does not
+open anything — the `showing N of M` badge on each card is how you see it
+worked. Note that badge differs between cards 1 and 2 on purpose: the backup
+state filter grades the backup server and does not narrow the SoT card.
+
+A link to `#sec-backups`, `#sec-sot`, `#sec-firmware` or `#sec-satom` opens that
+section when you arrive on it.
+
+### 41.6 How the devices are arranged
+
+The two device cards group devices by **family** first, and below that by
+**your own classification lens** — the same one the bookmarks rail on the right
+of every page uses. The chip at the top right of the page names the whole
+order, for example *Product › Line › Zone › Department*, and links to
+**Profile → Bookmarks — grouping order**, which is where you change it.
+
+Four things worth knowing:
+
+* **It is per-reader.** Two operators looking at one ADOM legitimately see
+  different headings over identical rows. Nothing about the fleet changed; only
+  the way each of you asked to see it. That is why the arrangement is written
+  on the page rather than left to be inferred.
+* **`Product` is fixed and cannot be nested twice.** If your lens contains
+  *Product*, it is used for the family heading and skipped below it — nesting a
+  dimension under itself would give every family one child named after the
+  family.
+* **A device only sinks as deep as it is classified.** One without a line, zone
+  or department gets a single `(unclassified)` bucket, not three. One with a
+  zone but no line still gets `(unclassified) → dmz` — that zone is a fact and
+  the page will not swallow it to look tidy. `(unclassified)` and
+  `(no segment)` always sort last.
+* **Every heading counts everything beneath it.** A folded bucket still states
+  its device count, backup count and version count, so folding never removes a
+  number from the page. It draws only the devices that stop at that level; the
+  ones classified deeper are under their own heading below.
+
+Devices whose appliance record has been removed (de-registered boxes that only
+the identity table still remembers) read `(unclassified)`: the record that held
+the classification is gone, and the page will not guess one from the name.
+
+**Firmware is grouped by family and by nothing else.** An image on a shelf has
+not been installed on anything, so it has no line, zone or department; the card
+header says so, because a table grouped silently differently from the two above
+it reads like the classification is broken.
+
+### 41.7 Folding
+
+Every card and every heading folds, and the page **arrives folded** — at fleet
+scale the expanded page is a minute of scrolling. *Expand all* / *Collapse all*
+are at the top right, and what you leave open is remembered per ADOM in your
+own browser.
+
+A heading is only visible when **every** heading above it is open, so folding a
+family puts away everything beneath it at once, however deep.
+
+**The filter card does not fold.** Every other card on this page holds an
+answer; the filter holds the question that decides which rows those answers
+describe, so putting it away would hide the premise of every count below it.

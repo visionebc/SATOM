@@ -146,6 +146,38 @@ def device_files(device: str) -> dict:
         return {"ok": False, "error": str(exc), "files": []}
 
 
+def delete_device_file(device: str, filename: str) -> dict:
+    """Remove ONE config backup from the server. Never raises.
+
+    The appliance writes these, so SATOM deleting one is deleting somebody
+    else's artefact — hence: an exact name (no globs, no "delete older than"),
+    a size reported back so the audit line records what was destroyed, and a
+    refusal on anything with a separator in it. The caller is responsible for
+    the audit entry and for asking first.
+    """
+    dev, fname = _safe_names(device, filename)
+    try:
+        cfg = store.backup_server(reveal_secret=True)
+        if not cfg.get("configured"):
+            return {"ok": False, "detail": "backup server not configured"}
+        base = posixpath.join(cfg.get("config_path") or "/configs", dev)
+        remote = posixpath.join(base, fname)
+        t, sftp = _connect(cfg)
+        try:
+            try:
+                size = int(sftp.stat(remote).st_size or 0)
+            except IOError:
+                return {"ok": False, "detail": f"{dev}/{fname} is not on the server"}
+            sftp.remove(remote)
+        finally:
+            t.close()
+        return {"ok": True, "device": dev, "filename": fname, "size": size,
+                "detail": f"{dev}/{fname} ({size // 1024} KB) deleted from "
+                          f"{cfg['host']}"}
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "detail": str(exc)}
+
+
 def _fetch_raw(device: str, filename: str) -> bytes:
     dev, fn = _safe_names(device, filename)
     cfg = store.backup_server(reveal_secret=True)

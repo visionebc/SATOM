@@ -6,6 +6,72 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — the change log became permanent and the payload learned to leave (2026-08-30)
+
+- **The Configuration SoT index is now kept forever, and `prune()` no longer
+  deletes a single row.** The row *is* the change log — the list an operator
+  walks back through to find the value a parameter used to have. Nothing failed
+  before this: deleting rows was the documented behaviour, the page rendered,
+  the suite was green. It became a data-loss defect the moment a one-day local
+  policy was asked for, because the history would have gone inside a day while
+  every byte sat safely on the backup server, unreachable, since `load()` and
+  `diff()` only ever opened the local file. There is deliberately **no setting**
+  to shorten the index.
+- **Snapshot payload now leaves the node instead.** Two numbers govern it — the
+  newest **N** versions and **D** days, a union, defaults **2** and **1** — and
+  they are set **per ADOM**, three levels deep (ADOM → house → product default),
+  with each card printing which level answered. A FortiAnalyzer snapshot is
+  ~6 MB raw where a FortiWeb's is ~0.5 MB.
+- **Confirm off-box, then delete — per blob, never per server.** Evacuation
+  uploads first, lists the server, and removes locally only what that listing
+  confirms; a listing that fails yields an empty set, so an unreachable server
+  evacuates nothing. **An evacuated version still opens**: `load()` and `diff()`
+  fetch the blob back on demand and verify it hashes to the name it was stored
+  under before adopting it.
+- **Devices now carry their serial number**, read off the *same* status call the
+  firmware probe already makes — every reader was already extracting it to guess
+  `hw_type` and discarding it, so no new device call exists anywhere.
+- **New `device_identity` table, deliberately with no foreign key**, so the
+  record of who a device is — and *was* — outlives de-registration. Everything
+  else hanging off `appliances.id` is `ON DELETE CASCADE`, which is exactly
+  backwards for the question asked about a file on the backup server: whose is
+  this? One serial with three names is one box renamed twice; on FortiWeb the
+  chassis and its per-ADOM rows share one serial, which is why a backup from
+  that chassis covers all of them.
+- **New page: `Administration → Stored Assets`**, in every ADOM. Per device:
+  backups on the server with a **days-since-last-push** grade, SoT versions
+  split local vs off-box, firmware, identity and every earlier name — including
+  **retired devices** and two buckets that were previously invisible: folders on
+  the server no device claims, and configuration history with no identity row.
+  **"Never pushed" is its own state**, not another shade of stale. An
+  unreachable server reads as *unknown*, never as *no backups*. Deleting a
+  backup needs an exact filename and a typed **DELETE**, and is audited whether
+  or not it succeeds; there is no bulk delete.
+
+### Added — system bundles live off the node they back up (2026-08-30)
+
+- **Backup Server → Local bundle retention**, default **0**: after a verified
+  upload the node keeps none. A bundle is SATOM's own backup, so the one place
+  it is worth least is beside the thing it backs up. `0` is a **real value**
+  here rather than "unset", which is the convention everywhere else in Settings.
+- A local bundle is removed **only when the server holds it at the same size** —
+  name alone would accept a truncated upload. **Download and restore fetch an
+  off-box bundle back automatically**, so the policy cannot make a bundle
+  unrestorable. The page lists the union of local and off-box copies;
+  `/healthz/backups` and the primary/standby comparison stay **local-only** on
+  purpose.
+
+### Fixed (2026-08-30)
+
+- `data/system_backups` and `data/backups` were the last on-disk stores not
+  isolated from the production tree in tests. They had been write-only, so the
+  litter was tolerable; the day local eviction started **deleting** there, an
+  un-isolated suite could have destroyed real bundles. Both now honour
+  `SATOM_BACKUPS_DIR` / `SATOM_VAULT_DIR`, set by `conftest`.
+- `evacuate()` derived its retention rule twice. Two authors of one rule mean
+  breaking either changes nothing observable, so no test could tell one intact
+  layer from two — refactored to a single authority.
+
 ### Added — the system bundle says when, not only where (2026-08-29)
 
 - **Backup Server → System bundle schedule**: new card next to the three paths.

@@ -120,8 +120,33 @@ def normalise(value):
         out[key] = normalise(val)
     return out
 
-DEFAULT_KEEP_VERSIONS = 60
-DEFAULT_KEEP_DAYS = 180
+# ── Retention: the INDEX and the PAYLOAD have different lifetimes ───────────
+#
+# The change log is permanent. ``prune()`` used to delete ``sot_version`` ROWS,
+# and the row IS the log — the list an operator walks back through to find what
+# a parameter used to be set to. With a one-day local policy that made the
+# whole history disappear inside a day even though every byte was already
+# safe on the backup server, because ``load()`` and ``diff()`` only ever
+# opened the local file. There is deliberately NO knob to shorten the index:
+# a setting whose only possible effect is to destroy the record this store
+# exists to keep is not a policy, it is a footgun with a label.
+#
+# The payload is what costs disk, so the payload is what leaves. A version
+# whose blob has been confirmed on the backup server is marked evacuated and
+# its local file removed; :func:`load` fetches it back on demand.
+
+#: Newest N blobs per device kept on local disk regardless of age. Two, not
+#: one: a diff needs a version AND the one before it, and the overwhelmingly
+#: common diff is "what changed in the last harvest". At one, the single most
+#: used operation on this store would hit the network every time.
+DEFAULT_LOCAL_VERSIONS = 2
+#: …plus anything younger than this many days. One, as specified.
+DEFAULT_LOCAL_DAYS = 1
+
+# Kept as names because the on-disk store and its tests refer to them; they no
+# longer govern row deletion, only how much payload stays local.
+DEFAULT_KEEP_VERSIONS = DEFAULT_LOCAL_VERSIONS
+DEFAULT_KEEP_DAYS = DEFAULT_LOCAL_DAYS
 
 
 def _repo_root() -> Path:
@@ -146,22 +171,50 @@ def canonical_bytes(snapshot: dict) -> bytes:
                       separators=(",", ":")).encode("utf-8")
 
 
-def _retention() -> tuple[int, int]:
-    """The configured (versions, days), or the defaults.
+def _retention(product: str = "") -> tuple[int, int]:
+    """The configured (local versions, local days) FOR ONE ADOM.
 
-    Reads ``settings_store.sot_retention`` — the accessor that owns the two
-    keys. The previous call was to ``settings_store.get``, which this product
-    has never defined: every harvest raised ``AttributeError`` here, the
-    blanket except swallowed it, and the operator's configured retention was
-    discarded on every single run. The except stays (retention must never sink
-    a harvest) but it is no longer the normal path.
+    Reads ``settings_store.sot_local_policy`` — the accessor that owns the
+    keys. The call before that one was to ``settings_store.get``, a function
+    this product has never defined: every harvest raised ``AttributeError``
+    here, the blanket except swallowed it, and the operator's configured
+    policy was discarded on every single run. The except stays (retention must
+    never sink a harvest) but it is no longer the normal path.
+
+    Per ADOM because the families are not comparable: a FortiAnalyzer snapshot
+    measures 6 MB raw against a FortiWeb's 0.5 MB, so one number that suits
+    both is a number that suits neither.
     """
     try:
         from . import settings_store
-        cfg = settings_store.sot_retention()
+        cfg = settings_store.sot_local_policy(product)
         return (int(cfg["versions"]), int(cfg["days"]))
     except Exception:  # noqa: BLE001 — retention must never sink a harvest
-        return (DEFAULT_KEEP_VERSIONS, DEFAULT_KEEP_DAYS)
+        return (DEFAULT_LOCAL_VERSIONS, DEFAULT_LOCAL_DAYS)
+
+
+def product_for_device(device: str) -> str:
+    """Which ADOM a SoT device name belongs to.
+
+    Live appliance first — a registered device is authoritative about its own
+    family — then the identity record, which is the only thing that still
+    knows for a device that has been de-registered. Never a guess from the
+    name: ``fw7`` and ``fortiweb11`` are the same kind of box and neither
+    name says so.
+    """
+    try:
+        from ..models import Appliance
+        from .device_sync import slugify
+        for row in Appliance.query.all():
+            if slugify(row.name or "") == device:
+                return row.kind or ""
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from . import device_identity
+        return device_identity.product_for_slug(device)
+    except Exception:  # noqa: BLE001
+        return ""
 
 
 def record(device: str, snapshot: dict, *, source: str = "harvest") -> dict:
@@ -195,11 +248,17 @@ def record(device: str, snapshot: dict, *, source: str = "harvest") -> dict:
         with gzip.open(tmp, "wb", compresslevel=6) as fh:
             fh.write(raw)
         os.replace(tmp, blob)
+        # A device that reverts to an older configuration re-writes a blob
+        # that was evacuated. Every row on that sha is local again, and a row
+        # still flagged evacuated would send the next read to the network for
+        # a file lying on this disk.
+        SotVersion.query.filter_by(sha256=sha).update({"evacuated_at": None})
 
     row = SotVersion(device=device, sha256=sha, size_raw=len(raw),
                      size_gz=blob.stat().st_size,
                      total_objects=int(snapshot.get("total_objects") or 0),
                      section_count=int(snapshot.get("section_count") or 0),
+                     product=product_for_device(device),
                      source=source, taken_at=now, last_seen_at=now)
     db.session.add(row)
     db.session.commit()
@@ -210,15 +269,61 @@ def record(device: str, snapshot: dict, *, source: str = "harvest") -> dict:
     return {"changed": True, "version_id": row.id, "sha256": sha}
 
 
+def fetch_blob(sha: str) -> bool:
+    """Bring one evacuated blob back from the backup server. Never raises.
+
+    Written to a temp file and renamed, exactly like :func:`record`: a
+    half-downloaded blob under its content-addressed name would be indexed as
+    present by every other function here and would then fail a hash it can no
+    longer be checked against.
+    """
+    if not sha or len(sha) != 64 or not all(c in "0123456789abcdef" for c in sha):
+        return False
+    blob = _blob_path(sha)
+    if blob.exists():
+        return True
+    try:
+        from . import backup_server as _bk
+        from . import settings_store as _store
+        cfg = _store.backup_server()
+        if not cfg.get("configured"):
+            return False
+        remote_dir = (cfg.get("system_path") or "/system").rstrip("/") + "/sot"
+        data = _bk.fetch_file(remote_dir, f"{sha}.json.gz")
+    except Exception:  # noqa: BLE001 — a missing off-box copy is not a crash
+        return False
+    if not data:
+        return False
+    # The name is the hash: verify before adopting it. A server that returned
+    # the wrong bytes would otherwise poison the content-addressed store for
+    # every version that shares this sha.
+    try:
+        if hashlib.sha256(gzip.decompress(data)).hexdigest() != sha:
+            return False
+    except Exception:  # noqa: BLE001
+        return False
+    blob.parent.mkdir(parents=True, exist_ok=True)
+    tmp = blob.with_suffix(".tmp")
+    tmp.write_bytes(data)
+    os.replace(tmp, blob)
+    return True
+
+
 def load(version_id: int) -> dict | None:
-    """Load one version's snapshot body (config sections, no volatile keys)."""
-    from ..models_sot import SotVersion
+    """Load one version's snapshot body (config sections, no volatile keys).
+
+    A payload that has been evacuated is fetched back from the backup server
+    on demand and re-cached locally. Without this the local retention policy
+    would silently amputate history: the row would still list the version, the
+    page would still offer to open it, and the answer would be nothing.
+    """
     row = db_get(version_id)
     if row is None:
         return None
     blob = _blob_path(row.sha256)
     if not blob.exists():
-        return None
+        if not fetch_blob(row.sha256):
+            return None
     with gzip.open(blob, "rb") as fh:
         return json.loads(fh.read().decode("utf-8"))
 
@@ -316,26 +421,115 @@ def diff(id_a: int, id_b: int, *, max_entries: int = 400) -> dict:
             "truncated": trunc}
 
 
-def prune(device: str = "") -> dict:
-    """Apply retention: per device keep the newest N versions plus anything
-    younger than D days; then delete blobs no version references."""
+def remote_blob_names() -> set:
+    """Blob filenames the backup server currently holds. Empty set on any
+    failure — which is the whole point: an unreachable server must read as
+    "nothing is off-box", so evacuation refuses to delete anything."""
+    try:
+        from . import backup_server as _bk
+        from . import settings_store as _store
+        cfg = _store.backup_server()
+        if not cfg.get("configured"):
+            return set()
+        remote_dir = (cfg.get("system_path") or "/system").rstrip("/") + "/sot"
+        inv = _bk.dir_inventory(remote_dir)
+        if not inv.get("reachable"):
+            return set()
+        return {str(f.get("name") or "") for f in (inv.get("files") or [])}
+    except Exception:  # noqa: BLE001
+        return set()
+
+
+def evacuate(device: str = "", *, dry_run: bool = False) -> dict:
+    """Move payload off this node, keeping the index whole.
+
+    Per device: the newest N blobs and anything younger than D days stay; every
+    other version's blob is deleted locally **only after it has been seen on
+    the backup server** and its row is stamped ``evacuated_at``. Rows are never
+    deleted here — see the module notes on why the index has no retention knob.
+
+    Confirm-then-delete, never delete-then-hope: an SFTP listing that fails
+    yields an empty set, so an unreachable server evacuates nothing instead of
+    quietly turning a retention policy into data loss. This ordering is the
+    single line the whole feature rests on.
+    """
     from ..models import db
     from ..models_sot import SotVersion
-    keep_v, keep_d = _retention()
-    cutoff = datetime.utcnow() - timedelta(days=keep_d)
-    removed_rows = 0
+
     devices = ([device] if device else
                [d["device"] for d in devices_summary()])
-    for dev in devices:
+
+    # ONE authority for "this payload must stay local", derived once and then
+    # used both to select candidates and to protect shared blobs. It was two
+    # independent re-derivations of the same rule, and that redundancy meant
+    # breaking either one changed nothing observable — so no test could tell
+    # the difference between one intact layer and two. A rule with two authors
+    # is the shape this codebase keeps retiring.
+    #
+    # It is computed across EVERY device, not only the ones being evacuated: a
+    # sha can be shared by several devices (the same config recorded under a
+    # chassis and its ADOM rows), and it may only leave when NO retained row
+    # anywhere still wants it on disk.
+    pinned: set = set()
+    candidates: dict[str, list] = {}
+    all_devices = [d["device"] for d in devices_summary()]
+    now = datetime.utcnow()
+    for dev in all_devices:
+        keep_v, keep_d = _retention(product_for_device(dev))
+        cutoff = now - timedelta(days=keep_d)
         rows = (SotVersion.query.filter_by(device=dev)
                 .order_by(SotVersion.taken_at.desc(), SotVersion.id.desc())
                 .all())
-        for row in rows[keep_v:]:
-            if row.taken_at and row.taken_at >= cutoff:
-                continue
-            db.session.delete(row)
-            removed_rows += 1
-    db.session.commit()
+        for i, row in enumerate(rows):
+            if i < keep_v or (row.taken_at and row.taken_at >= cutoff):
+                pinned.add(row.sha256)
+            elif dev in devices:
+                if not _blob_path(row.sha256).exists():
+                    # Already gone: stamp the row so the UI stops implying the
+                    # payload is here. Costs no network and fixes rows
+                    # evacuated by an older build.
+                    if row.evacuated_at is None and not dry_run:
+                        row.evacuated_at = now
+                    continue
+                candidates.setdefault(row.sha256, []).append(row)
+    if not dry_run:
+        db.session.commit()
+
+    off_box = remote_blob_names()
+    moved = skipped = 0
+    freed = 0
+    now = datetime.utcnow()
+    for sha, rows in candidates.items():
+        if sha in pinned:
+            skipped += 1
+            continue
+        if f"{sha}.json.gz" not in off_box:
+            skipped += 1
+            continue
+        blob = _blob_path(sha)
+        size = blob.stat().st_size if blob.exists() else 0
+        if not dry_run:
+            blob.unlink(missing_ok=True)
+            for row in SotVersion.query.filter_by(sha256=sha).all():
+                row.evacuated_at = row.evacuated_at or now
+        moved += 1
+        freed += size
+    if not dry_run:
+        db.session.commit()
+    return {"evacuated": moved, "kept": skipped, "bytes_freed": freed,
+            "off_box_known": len(off_box), "dry_run": dry_run}
+
+
+def prune(device: str = "") -> dict:
+    """Apply the local payload policy, then collect orphan blobs.
+
+    Kept under its old name because ``record()`` and the CLI call it, but it no
+    longer deletes a single index row: what it prunes is bytes on this node.
+    """
+    from ..models import db
+    from ..models_sot import SotVersion
+
+    ev = evacuate(device)
 
     removed_blobs = 0
     live = {sha for (sha,) in db.session.query(SotVersion.sha256).distinct()}
@@ -347,7 +541,11 @@ def prune(device: str = "") -> dict:
             if f.name[:-8] not in live:
                 f.unlink(missing_ok=True)
                 removed_blobs += 1
-    return {"rows": removed_rows, "blobs": removed_blobs}
+    # ``rows`` stays in the return shape and is always 0: callers (the CLI,
+    # the System Backup page) print it, and dropping the key would 500 them
+    # while printing a number would be a lie. Zero is the truth now.
+    return {"rows": 0, "blobs": removed_blobs, "evacuated": ev["evacuated"],
+            "bytes_freed": ev["bytes_freed"]}
 
 
 def stats() -> dict:
@@ -366,8 +564,75 @@ def stats() -> dict:
                 for f in sub.glob("*.json.gz"):
                     size += f.stat().st_size
                     n_blobs += 1
+    n_evac = (db.session.query(db.func.count(SotVersion.id))
+              .filter(SotVersion.evacuated_at.isnot(None)).scalar() or 0)
     return {"versions": int(n_versions), "devices": int(n_devices),
-            "blobs": n_blobs, "bytes": size}
+            "blobs": n_blobs, "bytes": size,
+            # How much of the permanent change log is retrievable only over
+            # the network. A page that shows "1200 versions" and nothing else
+            # hides the fact that most of them now depend on the backup
+            # server being up.
+            "evacuated": int(n_evac),
+            "local": int(n_versions) - int(n_evac)}
+
+
+def devices_detail(product: str = "") -> list[dict]:
+    """Per-device SoT rollup for the ADOM pages: counts, local vs evacuated,
+    first and last change. Empty *product* means every device."""
+    from ..models import db
+    from ..models_sot import SotVersion
+    q = db.session.query(
+        SotVersion.device,
+        db.func.count(SotVersion.id),
+        db.func.sum(db.case((SotVersion.evacuated_at.isnot(None), 1), else_=0)),
+        db.func.min(SotVersion.taken_at),
+        db.func.max(SotVersion.taken_at),
+        db.func.max(SotVersion.last_seen_at),
+        db.func.sum(SotVersion.size_gz))
+    if product:
+        q = q.filter(SotVersion.product == product)
+    rows = q.group_by(SotVersion.device).order_by(SotVersion.device).all()
+    out = []
+    for dev, n, evac, first, last, seen, size in rows:
+        out.append({
+            "device": dev, "versions": int(n or 0),
+            "evacuated": int(evac or 0), "local": int(n or 0) - int(evac or 0),
+            "bytes_gz": int(size or 0),
+            "first_change": first.isoformat(timespec="seconds") if first else "",
+            "last_change": last.isoformat(timespec="seconds") if last else "",
+            "last_seen": seen.isoformat(timespec="seconds") if seen else "",
+        })
+    return out
+
+
+def backfill_products() -> dict:
+    """Stamp ``product`` on rows recorded before the column existed.
+
+    Runs off the same resolver as ``record()``, so a row and a fresh harvest
+    of the same device can never disagree. Idempotent: only rows with an empty
+    product are touched, so a device that genuinely cannot be identified is
+    re-examined next time instead of being frozen wrong.
+    """
+    from ..models import db
+    from ..models_sot import SotVersion
+    devices = [d for (d,) in db.session.query(SotVersion.device)
+               .filter(db.or_(SotVersion.product == "",
+                              SotVersion.product.is_(None)))
+               .distinct()]
+    stamped = unresolved = 0
+    for dev in devices:
+        product = product_for_device(dev)
+        if not product:
+            unresolved += 1
+            continue
+        stamped += (SotVersion.query
+                    .filter(SotVersion.device == dev)
+                    .filter(db.or_(SotVersion.product == "",
+                                   SotVersion.product.is_(None)))
+                    .update({"product": product}, synchronize_session=False))
+    db.session.commit()
+    return {"stamped": stamped, "unresolved": unresolved,
+            "devices": len(devices)}
 
 
 def push_to_backup_server() -> dict:
@@ -387,3 +652,25 @@ def push_to_backup_server() -> dict:
     if not hasattr(_bk, "push_sot_blobs"):
         return {"ok": False, "detail": "backup server push not available"}
     return _bk.push_sot_blobs(paths)
+
+
+def offload(device: str = "") -> dict:
+    """Push new blobs off-box, THEN apply the local payload policy.
+
+    One call because the two halves are one decision and the order between
+    them is not free: evacuating first would delete a blob the server has not
+    been offered yet, and running them on separate schedules leaves the node
+    holding a day of payload it has already uploaded. ``evacuate`` still makes
+    its own independent check against the server listing — this ordering is a
+    convenience, never the thing that makes the delete safe.
+    """
+    push = push_to_backup_server()
+    if not push.get("ok"):
+        return {"ok": False, "push": push, "evacuate": None,
+                "detail": "push failed, nothing evacuated: "
+                          + str(push.get("detail", ""))[:160]}
+    ev = evacuate(device)
+    return {"ok": True, "push": push, "evacuate": ev,
+            "detail": f"{push.get('detail', '')}; "
+                      f"evacuated {ev['evacuated']} blob(s), "
+                      f"{ev['bytes_freed'] // 1024} KB freed"}

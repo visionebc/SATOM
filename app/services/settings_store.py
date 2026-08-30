@@ -1039,9 +1039,28 @@ def save_banners(mapping: dict) -> None:
 #  The SFTP password is Fernet-encrypted at rest, same pattern as the
 #  Certificate Manager domain secret.
 # ---------------------------------------------------------------------------
-K_SOT_KEEP_VERSIONS = "sot.retention_versions"
-K_SOT_KEEP_DAYS = "sot.retention_days"
+# ── Configuration SoT: local PAYLOAD policy, per ADOM ───────────────────────
+#
+# The old pair (``sot.retention_versions`` / ``sot.retention_days``) governed
+# how many index ROWS survived, and the row is the change log. It is gone,
+# and so is the knob: a setting whose only effect is to erase the history this
+# store exists to keep is not a policy. What is configurable is how much
+# PAYLOAD stays on this node; the index is permanent.
+#
+# Per ADOM because the families are not comparable — a FortiAnalyzer snapshot
+# is ~6 MB raw where a FortiWeb's is ~0.5 MB, so one number for all four is a
+# number that fits none of them. An ADOM with nothing stored falls back to the
+# unsuffixed key, which falls back to the product default: three levels, so an
+# operator can set a house rule once and override one family.
+K_SOT_LOCAL_VERSIONS = "sot.local_versions"
+K_SOT_LOCAL_DAYS = "sot.local_days"
 K_BACKUPSRV = "backup_server.config"                # JSON dict, password_enc inside
+#: How many freshly written system bundles stay on this node after a verified
+#: upload. 0 = none, which is the default and what was asked for: a bundle is
+#: ~27 MB today and the node has ~9 GB free.
+K_BUNDLE_LOCAL_KEEP = "backup.bundle_local_keep"
+BUNDLE_LOCAL_KEEP_DEFAULT = 0
+BUNDLE_LOCAL_KEEP_MAX = 365
 
 _BACKUPSRV_DEFAULTS = {
     "host": "", "port": 22, "protocol": "sftp", "username": "",
@@ -1050,52 +1069,112 @@ _BACKUPSRV_DEFAULTS = {
 }
 
 
-def sot_retention() -> dict:
-    """Retention for the CONFIGURATION SoT store, as integers.
+SOT_LOCAL_VERSIONS_MAX = 10000
+SOT_LOCAL_DAYS_MAX = 36500
 
-    ``sot_store`` used to reach for ``settings_store.get`` — a function that
-    has never existed on this module. The call raised ``AttributeError`` inside
-    a blanket ``except``, so both knobs silently resolved to the hard-coded
-    defaults on every harvest: writing them changed nothing, and nothing said
-    so. The accessor lives here now, beside the keys it reads.
 
-    A stored 0 or a malformed value means "unset", not "keep nothing": zero
-    would make the next prune delete every version of every device, which is
-    not a policy anyone types into a box labelled *keep*.
+def _scoped(key: str, product: str = "") -> str:
+    return f"{key}.{product}" if product else key
+
+
+def sot_local_policy(product: str = "") -> dict:
+    """How much SoT PAYLOAD stays on this node, for one ADOM.
+
+    Resolution is three-deep — ADOM key, house key, product default — and the
+    answer says which level answered, because "60 because you set it" and "60
+    because nobody set anything" lead to different next actions.
+
+    A stored 0 or a malformed value means *unset*, never "keep nothing".
+    Zero down this path would evacuate every payload on the node including the
+    newest, so the very next diff would go to the network for a config
+    harvested a minute ago.
     """
-    from .sot_store import DEFAULT_KEEP_VERSIONS, DEFAULT_KEEP_DAYS
-    out = {}
-    for key, field, dflt in ((K_SOT_KEEP_VERSIONS, "versions", DEFAULT_KEEP_VERSIONS),
-                             (K_SOT_KEEP_DAYS, "days", DEFAULT_KEEP_DAYS)):
-        try:
-            val = int(get_str(key, "") or 0)
-        except (TypeError, ValueError):
-            val = 0
+    from .sot_store import DEFAULT_LOCAL_VERSIONS, DEFAULT_LOCAL_DAYS
+    out = {"product": product or ""}
+    for key, field, dflt in ((K_SOT_LOCAL_VERSIONS, "versions", DEFAULT_LOCAL_VERSIONS),
+                             (K_SOT_LOCAL_DAYS, "days", DEFAULT_LOCAL_DAYS)):
+        raw_own = get_str(_scoped(key, product), "") if product else ""
+        raw_house = get_str(key, "")
+        source = "default"
+        val = 0
+        for candidate, level in ((raw_own, "adom"), (raw_house, "house")):
+            try:
+                parsed = int(candidate or 0)
+            except (TypeError, ValueError):
+                parsed = 0
+            if parsed > 0:
+                val, source = parsed, level
+                break
         out[field] = val if val > 0 else dflt
-    out["default_versions"] = DEFAULT_KEEP_VERSIONS
-    out["default_days"] = DEFAULT_KEEP_DAYS
-    out["configured"] = bool(get_str(K_SOT_KEEP_VERSIONS, "")
-                             or get_str(K_SOT_KEEP_DAYS, ""))
+        out[field + "_source"] = source
+    out["default_versions"] = DEFAULT_LOCAL_VERSIONS
+    out["default_days"] = DEFAULT_LOCAL_DAYS
+    out["configured"] = (out["versions_source"] != "default"
+                         or out["days_source"] != "default")
+    out["own"] = bool(product and (get_str(_scoped(K_SOT_LOCAL_VERSIONS, product), "")
+                                   or get_str(_scoped(K_SOT_LOCAL_DAYS, product), "")))
     return out
 
 
-def save_sot_retention(versions, days) -> None:
-    """Store the two retention knobs, clamped to something a prune can honour.
+def save_sot_local_policy(versions, days, product: str = "") -> dict:
+    """Write the local payload policy for one ADOM (or the house rule).
 
-    Out-of-range is clamped rather than rejected: this form has two fields and
-    no error channel of its own, so a silently dropped value would leave the
-    page showing the old number as though it had been saved.
+    Out of range is clamped, not rejected: the form has no error channel and a
+    silently dropped value leaves the old number on screen as though it had
+    been stored. A BLANK field is different from a bad one — it clears the
+    override so the ADOM goes back to inheriting, which is the only way to
+    undo a per-ADOM rule once it exists.
     """
-    from .sot_store import DEFAULT_KEEP_VERSIONS, DEFAULT_KEEP_DAYS
-    for key, raw, dflt, hi in ((K_SOT_KEEP_VERSIONS, versions, DEFAULT_KEEP_VERSIONS, 10000),
-                               (K_SOT_KEEP_DAYS, days, DEFAULT_KEEP_DAYS, 36500)):
+    from .sot_store import DEFAULT_LOCAL_VERSIONS, DEFAULT_LOCAL_DAYS
+    written = {}
+    for key, raw, dflt, hi in (
+            (K_SOT_LOCAL_VERSIONS, versions, DEFAULT_LOCAL_VERSIONS, SOT_LOCAL_VERSIONS_MAX),
+            (K_SOT_LOCAL_DAYS, days, DEFAULT_LOCAL_DAYS, SOT_LOCAL_DAYS_MAX)):
+        text = str(raw if raw is not None else "").strip()
+        scoped = _scoped(key, product)
+        if text == "" and product:
+            set_str(scoped, "")
+            written[key] = None
+            continue
         try:
-            val = int(str(raw).strip() or 0)
+            val = int(text or 0)
         except (TypeError, ValueError):
             val = 0
         if val <= 0:
             val = dflt
-        set_str(key, str(max(1, min(hi, val))))
+        val = max(1, min(hi, val))
+        set_str(scoped, str(val))
+        written[key] = val
+    return {"product": product or "", "written": written}
+
+
+def bundle_local_keep() -> dict:
+    """How many system bundles stay on this node after a verified upload.
+
+    Zero is a REAL value here, unlike everywhere else in this module: "keep
+    none locally" is exactly the policy that was asked for, so an unset key
+    and a stored 0 must not collapse into the same answer. Unset is reported
+    separately and also resolves to 0 — the difference is what the page says,
+    not what the sweep does.
+    """
+    raw = get_str(K_BUNDLE_LOCAL_KEEP, "")
+    try:
+        val = int(raw) if str(raw).strip() != "" else BUNDLE_LOCAL_KEEP_DEFAULT
+    except (TypeError, ValueError):
+        val = BUNDLE_LOCAL_KEEP_DEFAULT
+    val = max(0, min(BUNDLE_LOCAL_KEEP_MAX, val))
+    return {"keep": val, "configured": str(raw).strip() != "",
+            "default": BUNDLE_LOCAL_KEEP_DEFAULT, "max": BUNDLE_LOCAL_KEEP_MAX}
+
+
+def save_bundle_local_keep(keep) -> int:
+    try:
+        val = int(str(keep).strip() or 0)
+    except (TypeError, ValueError):
+        val = BUNDLE_LOCAL_KEEP_DEFAULT
+    val = max(0, min(BUNDLE_LOCAL_KEEP_MAX, val))
+    set_str(K_BUNDLE_LOCAL_KEEP, str(val))
+    return val
 
 
 # ── Configuration SoT refresh cadence ────────────────────────────────────────

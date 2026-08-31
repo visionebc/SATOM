@@ -106,6 +106,78 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="changed-every-install-shape-provisions-tls-for-itself-2026-08-31">Changed — every install shape provisions TLS for itself (2026-08-31)</h3>
+<p>The turnkey installer has always issued an internal CA and put nginx in front
+of gunicorn. Three other install paths did not, and one of them is the quick
+start in this repository's own README:</p>
+<table>
+<thead>
+<tr>
+<th>path</th>
+<th>before</th>
+<th>now</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>installers/install-satom.sh</code> (+ the three offline bundles)</td>
+<td>TLS</td>
+<td>unchanged</td>
+</tr>
+<tr>
+<td><code>scripts/install.sh</code></td>
+<td>gunicorn on <code>0.0.0.0:8000</code>, plain HTTP</td>
+<td>loopback gunicorn behind nginx on <code>:443</code></td>
+</tr>
+<tr>
+<td><code>deploy/install.sh</code> (legacy bootstrap)</td>
+<td>plain HTTP</td>
+<td>same</td>
+</tr>
+<tr>
+<td><code>deploy/docker/</code></td>
+<td>published <code>:80</code>, delegated TLS to a proxy the operator supplied</td>
+<td>a <code>proxy</code> service in the stack terminates <code>:443</code></td>
+</tr>
+</tbody>
+</table>
+<p>Nothing failed in the old shapes. They came up, answered <code>/healthz</code> 200 and
+reported success — and could not accept a password, because the app runs
+<code>FLASK_ENV=production</code>, session cookies are <code>Secure</code>, and a browser will not
+return a <code>Secure</code> cookie to a plain-HTTP origin. The login POST arrived with no
+session, therefore no CSRF token, and was rejected <em>before</em> the password was
+compared.</p>
+<ul>
+<li><strong><code>deploy/tls-bootstrap.sh</code></strong> is the one implementation: <code>ensure-pki</code>
+  (internal CA, 10 years; node leaf, 825 days), <code>write-vhost</code>, <code>import-cert</code>.
+  Idempotent, and it <strong>refuses to reissue over a certificate an operator
+  imported</strong> — a re-run replacing a trusted certificate with a self-signed one
+  is how a node lost its wildcard on 2026-08-04.</li>
+<li>The certificate is <strong>self-signed and the browser warns</strong>. That is the day-zero
+  state on purpose: usable immediately, replaced on the operator's schedule.
+  <code>import-cert</code> refuses a mismatched certificate/key pair, which nginx would
+  otherwise accept and then fail on the first handshake.</li>
+<li><strong>Container stack</strong>: <code>tls-init</code> (the SATOM image, run to completion) issues
+  the material into a <code>satom-pki</code> volume; <code>proxy</code> (stock <code>nginx:alpine</code>) serves
+  it. The volume means an image-tag change keeps the certificate. <code>web</code>,
+  <code>scheduler</code> and <code>cron</code> publish nothing.</li>
+<li><code>SATOM_HTTP_BIND</code> is <strong>retired, not reused</strong> — it published gunicorn
+  directly. <code>satom-docker.sh</code> stops with an explanation rather than ignoring a
+  stale value, because an operator who wrote <code>127.0.0.1:8080</code> to keep the app
+  off the network would otherwise have had the opposite of what their file said.
+  Replaced by <code>SATOM_HTTPS_BIND</code> / <code>SATOM_REDIRECT_BIND</code>.</li>
+<li>The proxy has a <strong>static address</strong> in a pinned subnet: <code>TRUSTED_PROXIES</code>
+  matches exact addresses, and container-to-container traffic arrives from the
+  proxy's own address, not the bridge gateway. <code>satom-docker.sh</code> refuses to run
+  when the two disagree — the failure is otherwise invisible, collapsing rate
+  limiting into one bucket and recording the proxy as the actor in every audit
+  entry.</li>
+<li><code>tests/test_tls_by_default.py</code> (31 tests) asserts that every install path
+  provisions TLS <strong>and that they provision the same TLS</strong> — <code>Host $http_host</code>
+  (never <code>$host</code>), <code>X-Forwarded-Proto https</code>, <code>client_max_body_size 400M</code>. Each
+  of those was learned once, in production; a second install path is exactly
+  where they get re-learned.</li>
+</ul>
 <h3 id="fixed-a-container-served-over-plain-http-could-sign-nobody-in-2026-08-31">Fixed — a container served over plain HTTP could sign nobody in (2026-08-31)</h3>
 <p>The development node <code>{primary-node}-dock</code> served the stack over plain HTTP while
 the image runs <code>FLASK_ENV=production</code>, which marks session cookies <code>Secure</code>. A

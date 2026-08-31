@@ -170,8 +170,21 @@ sudo ./scripts/install.sh --offline
 ```
 
 The installer provisions PostgreSQL, generates `SECRET_KEY` / `FERNET_KEY`
-into `.env`, runs Alembic migrations, installs the systemd unit and starts the
-app on `:8000`. First login: `admin` / `Sopas123.-` — **change it immediately**
+into `.env`, runs Alembic migrations, installs the systemd unit, **issues a TLS
+certificate and puts nginx in front** — gunicorn binds loopback only, and the
+console answers on `https://<host>/`.
+
+The certificate is self-signed by a per-node internal CA, so the browser warns
+on the first visit. That is deliberate: the node works on day zero and you
+replace the certificate when you are ready, with
+
+```bash
+sudo ./deploy/tls-bootstrap.sh import-cert --cert fullchain.pem --key privkey.pem
+sudo systemctl reload nginx
+```
+
+An imported certificate is never overwritten by re-running the installer.
+First login: `admin` / `Sopas123.-` — **change it immediately**
 (the app also supports per-account lockout, TOTP 2FA, and LDAP/RADIUS
 directory auth).
 

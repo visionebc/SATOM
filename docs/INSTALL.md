@@ -317,7 +317,7 @@ instead of shipping them broken:
 |---|---|
 | **Software Update & HA** (in-place self-update) | deploy a new image tag and recreate the stack |
 | **Service control** (start/stop/restart of node units) | `docker compose restart <service>` |
-| **Certificate activation** | terminate TLS on the reverse proxy in front of the stack |
+| **Certificate activation** | the stack serves TLS already; swap the certificate with `deploy/tls-bootstrap.sh import-cert` and restart `proxy` |
 | **systemd unit health** | read container health from the container engine |
 
 Each of the four refuses with a message naming its alternative; none of them
@@ -325,7 +325,14 @@ fails silently, and the refusals are asserted in `tests/test_container_runtime.p
 rather than promised here. Everything else — device management, probes and
 monitors, the metrics store, backups and restore, the source of truth, reports,
 the CLI, RBAC and SSO — behaves exactly as on a host install.
-**If you need in-place self-update or node-managed TLS, install on a host.**
+**If you need in-place self-update, install on a host.**
+
+**TLS is provisioned by the stack itself**, like every other install shape: the
+`proxy` service terminates HTTPS on `:443` with a certificate issued at first
+start and redirects `:80` to it, and the application container publishes no
+port. The certificate is self-signed by a per-node internal CA, so the browser
+warns until you replace it — set `SATOM_SERVED_NAMES` in `.env` first, so the
+SAN covers the name operators actually type.
 
 The runtime is **declared by the image** (`SATOM_RUNTIME=container`), never
 detected. `system_health.is_container()` returns true on an LXC *host* install

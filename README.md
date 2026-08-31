@@ -171,8 +171,9 @@ sudo ./scripts/install.sh --offline
 
 The installer provisions PostgreSQL, generates `SECRET_KEY` / `FERNET_KEY`
 into `.env`, runs Alembic migrations, installs the systemd unit, **issues a TLS
-certificate and puts nginx in front** — gunicorn binds loopback only, and the
-console answers on `https://<host>/`.
+certificate and puts nginx in front** — gunicorn binds loopback only, the
+console answers on `https://<host>/`, and plain `http://` redirects to it with
+a `301`.
 
 The certificate is self-signed by a per-node internal CA, so the browser warns
 on the first visit. That is deliberate: the node works on day zero and you

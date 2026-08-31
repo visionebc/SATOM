@@ -201,6 +201,25 @@ server is installed and active — mandatory on the **primary**.
 
 ## 2. Ways to install
 
+**Every path below ends with the same thing: the console on `https://`, and
+plain `http://` answering `301` to it.** No path leaves the choice to the
+operator, and none of them needs a certificate to be supplied first — the
+install issues one, and you replace it whenever you are ready
+(`deploy/tls-bootstrap.sh import-cert`, which a later re-run will not overwrite).
+
+Two details of that redirect are deliberate:
+
+- It is scoped to `location /`, so `/.well-known/acme-challenge/` still answers
+  over plain `:80`. A server-level `return` would run before location selection
+  and swallow the ACME challenge — the certificate would work for months and
+  then fail to renew.
+- The redirect listener claims `default_server`. nginx awards the unnamed
+  default to the first `:80` block in parse order, which **between files is
+  alphabetical**, so a packaged `default.conf` or Debian's enabled default site
+  would otherwise keep `:80` and answer the welcome page while `:443` works
+  perfectly. Each installer removes those and, if some *other* vhost already
+  claims the default, rewrites its own without the claim rather than failing.
+
 ### 2.1 Online (with network)
 ```bash
 sudo bash install-satom.sh

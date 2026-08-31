@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Changed · Removed · Fixed · Added · 230 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Changed · Removed · Fixed · Added · 233 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Changed · Removed · Fixed · Added · 230 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Changed · Removed · Fixed · Added · 233 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,8 +59,8 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Changed · Removed · Fixed · Added · 230 entries</span>
-        <ul class="rel-leads"><li>deploy/tls-bootstrap.sh</li><li>Container stack</li><li>The node</li><li class="rel-more">… and 227 more</li></ul>
+        <span class="rel-nav-meta">unreleased · Changed · Removed · Fixed · Added · 233 entries</span>
+        <ul class="rel-leads"><li>deploy/tls-bootstrap.sh</li><li>Container stack</li><li>installers/install-satom.sh hardcoded default_server on its :80 listener</li><li class="rel-more">… and 230 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v1.20.0.html" data-rel-version="1.20.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 1.20.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
@@ -313,7 +313,32 @@ compared.</p>
 <li><code>SATOM_HTTP_BIND</code> is <strong>retired, not reused</strong> — it published gunicorn
   directly. <code>satom-docker.sh</code> stops with an explanation rather than ignoring a
   stale value, because an operator who wrote <code>127.0.0.1:8080</code> to keep the app
-  off the network would otherwise have had the opposite of what their file said.
+  off the network would otherwise have had the opposite of what their file said.</li>
+</ul>
+<h3 id="fixed-the-80-443-redirect-now-actually-fires-on-every-path-2026-08-31">Fixed — the <code>:80</code> → <code>:443</code> redirect now actually fires on every path (2026-08-31)</h3>
+<p>Every install path already <em>wrote</em> a redirect. Whether nginx ever <strong>selected</strong>
+it was another matter: the redirect block is matched by <code>server_name _</code>, so it
+only ever serves requests that reach it as the <strong>default server</strong> for <code>:80</code> —
+and nothing guaranteed it was.</p>
+<ul>
+<li><strong><code>installers/install-satom.sh</code> hardcoded <code>default_server</code> on its <code>:80</code>
+  listener</strong> while the TLS listener took it from the self-correction switch. On
+  a host where another vhost already claimed the default, nginx answered
+  <code>duplicate default server</code>, the installer rewrote the vhost without the claim
+  — and the <code>:80</code> listener kept it, so <code>nginx -t</code> failed again and the install
+  died at its final step with the application already installed and healthy.
+  Both listeners now take the claim from the same switch.</li>
+<li><strong><code>scripts/install.sh</code> and <code>deploy/install.sh</code> never asked for
+  <code>default_server</code> at all</strong>, and cleared only Debian's enabled default site.
+  They now claim it, fall back exactly like the turnkey installer when another
+  vhost already holds it, and also remove the <code>conf.d/default.conf</code> shipped by
+  the nginx.org and RHEL packages — which beats <code>satom.conf</code> on the alphabetical
+  parse order between files.</li>
+<li><code>tests/test_tls_by_default.py</code> grew guards for the redirect itself: that each
+  vhost author emits it on <code>:80</code>, that it is scoped to <code>location /</code> so the ACME
+  challenge survives, that neither author hardcodes <code>default_server</code> on that
+  listener, and that every host installer asks for the claim, self-corrects on
+  a conflict and clears the packaged default site.
   Replaced by <code>SATOM_HTTPS_BIND</code> / <code>SATOM_REDIRECT_BIND</code>.</li>
 <li>The proxy has a <strong>static address</strong> in a pinned subnet: <code>TRUSTED_PROXIES</code>
   matches exact addresses, and container-to-container traffic arrives from the

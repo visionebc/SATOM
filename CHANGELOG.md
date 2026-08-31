@@ -43,6 +43,32 @@ compared.
   directly. `satom-docker.sh` stops with an explanation rather than ignoring a
   stale value, because an operator who wrote `127.0.0.1:8080` to keep the app
   off the network would otherwise have had the opposite of what their file said.
+
+### Fixed — the `:80` → `:443` redirect now actually fires on every path (2026-08-31)
+
+Every install path already *wrote* a redirect. Whether nginx ever **selected**
+it was another matter: the redirect block is matched by `server_name _`, so it
+only ever serves requests that reach it as the **default server** for `:80` —
+and nothing guaranteed it was.
+
+- **`installers/install-satom.sh` hardcoded `default_server` on its `:80`
+  listener** while the TLS listener took it from the self-correction switch. On
+  a host where another vhost already claimed the default, nginx answered
+  `duplicate default server`, the installer rewrote the vhost without the claim
+  — and the `:80` listener kept it, so `nginx -t` failed again and the install
+  died at its final step with the application already installed and healthy.
+  Both listeners now take the claim from the same switch.
+- **`scripts/install.sh` and `deploy/install.sh` never asked for
+  `default_server` at all**, and cleared only Debian's enabled default site.
+  They now claim it, fall back exactly like the turnkey installer when another
+  vhost already holds it, and also remove the `conf.d/default.conf` shipped by
+  the nginx.org and RHEL packages — which beats `satom.conf` on the alphabetical
+  parse order between files.
+- `tests/test_tls_by_default.py` grew guards for the redirect itself: that each
+  vhost author emits it on `:80`, that it is scoped to `location /` so the ACME
+  challenge survives, that neither author hardcodes `default_server` on that
+  listener, and that every host installer asks for the claim, self-corrects on
+  a conflict and clears the packaged default site.
   Replaced by `SATOM_HTTPS_BIND` / `SATOM_REDIRECT_BIND`.
 - The proxy has a **static address** in a pinned subnet: `TRUSTED_PROXIES`
   matches exact addresses, and container-to-container traffic arrives from the

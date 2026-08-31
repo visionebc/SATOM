@@ -61,10 +61,24 @@ SERVED_NAMES="${SERVED_NAMES:-$(hostname -f 2>/dev/null || hostname)}"
 NODE_IP="${NODE_IP:-$(hostname -I 2>/dev/null | awk '{print $1}')}"
 APP_DIR="$APP_DIR" SATOM_SERVED_NAMES="$SERVED_NAMES" SATOM_NODE_IP="$NODE_IP" \
   "$APP_DIR/deploy/tls-bootstrap.sh" ensure-pki
-APP_DIR="$APP_DIR" SATOM_SERVED_NAMES="$SERVED_NAMES" SATOM_NODE_IP="$NODE_IP" \
-  "$APP_DIR/deploy/tls-bootstrap.sh" write-vhost \
-    --out /etc/nginx/conf.d/satom.conf --port 443 --upstream 127.0.0.1:8000
-rm -f /etc/nginx/sites-enabled/default
+write_satom_vhost() {   # $1: "" or --default-server
+  APP_DIR="$APP_DIR" SATOM_SERVED_NAMES="$SERVED_NAMES" SATOM_NODE_IP="$NODE_IP" \
+    "$APP_DIR/deploy/tls-bootstrap.sh" write-vhost \
+      --out /etc/nginx/conf.d/satom.conf --port 443 --upstream 127.0.0.1:8000 ${1:+"$1"}
+}
+# [SATOM-NGINX-DEFAULT] The :80 -> :443 redirect only fires when nginx picks THIS
+# block for an unmatched name, which means it has to own default_server. A
+# surviving packaged default site answers the welcome page over plain HTTP while
+# :443 works, so the node looks healthy and the redirect is silently gone.
+rm -f /etc/nginx/sites-enabled/default /etc/nginx/conf.d/default.conf
+# Written WITH default_server; only a verbatim "duplicate default server" from
+# nginx rewrites it without. Self-correcting instead of guessing at another
+# vhost's configuration.
+write_satom_vhost --default-server
+if ! nginx -t >/dev/null 2>&1 && nginx -t 2>&1 | grep -qi "duplicate default server"; then
+  echo "==> Another vhost already claims default_server on :443 — rewriting without it"
+  write_satom_vhost
+fi
 nginx -t
 systemctl enable nginx >/dev/null 2>&1 || true
 systemctl reload nginx 2>/dev/null || systemctl restart nginx

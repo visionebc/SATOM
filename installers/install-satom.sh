@@ -1847,8 +1847,8 @@ server {
 # server-level "return" runs before location selection and would swallow the
 # challenge. Not needed if you validate with dns-01.
 server {
-    listen 80 default_server;
-    listen [::]:80 default_server;
+    listen 80${dflt};
+    listen [::]:80${dflt};
     server_name _;
     location ^~ /.well-known/acme-challenge/ {
         root ${ACME_WEBROOT};
@@ -1862,6 +1862,12 @@ NGX
         ln -sf /etc/nginx/sites-available/satom.conf /etc/nginx/sites-enabled/satom.conf
         rm -f /etc/nginx/sites-enabled/default
     fi
+    # [SATOM-NGINX-DEFAULT] El sitio de bienvenida que empaquetan nginx.org y
+    # RHEL vive en conf.d/default.conf y reclama `listen 80 default_server`.
+    # Si sobrevive, gana :80 por orden ALFABETICO entre ficheros y el redirect
+    # a HTTPS deja de dispararse mientras :443 sigue perfecto — el nodo parece
+    # sano. Y con default_server duplicado nginx rechaza la config ENTERA.
+    [ "$NGXCONF" = /etc/nginx/conf.d/default.conf ] || rm -f /etc/nginx/conf.d/default.conf
 }
 
 # Se escribe CON default_server. Si otro vhost ya lo reclamaba, nginx lo dice

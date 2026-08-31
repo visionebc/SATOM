@@ -164,7 +164,32 @@ compared.</p>
 <li><code>SATOM_HTTP_BIND</code> is <strong>retired, not reused</strong> — it published gunicorn
   directly. <code>satom-docker.sh</code> stops with an explanation rather than ignoring a
   stale value, because an operator who wrote <code>127.0.0.1:8080</code> to keep the app
-  off the network would otherwise have had the opposite of what their file said.
+  off the network would otherwise have had the opposite of what their file said.</li>
+</ul>
+<h3 id="fixed-the-80-443-redirect-now-actually-fires-on-every-path-2026-08-31">Fixed — the <code>:80</code> → <code>:443</code> redirect now actually fires on every path (2026-08-31)</h3>
+<p>Every install path already <em>wrote</em> a redirect. Whether nginx ever <strong>selected</strong>
+it was another matter: the redirect block is matched by <code>server_name _</code>, so it
+only ever serves requests that reach it as the <strong>default server</strong> for <code>:80</code> —
+and nothing guaranteed it was.</p>
+<ul>
+<li><strong><code>installers/install-satom.sh</code> hardcoded <code>default_server</code> on its <code>:80</code>
+  listener</strong> while the TLS listener took it from the self-correction switch. On
+  a host where another vhost already claimed the default, nginx answered
+  <code>duplicate default server</code>, the installer rewrote the vhost without the claim
+  — and the <code>:80</code> listener kept it, so <code>nginx -t</code> failed again and the install
+  died at its final step with the application already installed and healthy.
+  Both listeners now take the claim from the same switch.</li>
+<li><strong><code>scripts/install.sh</code> and <code>deploy/install.sh</code> never asked for
+  <code>default_server</code> at all</strong>, and cleared only Debian's enabled default site.
+  They now claim it, fall back exactly like the turnkey installer when another
+  vhost already holds it, and also remove the <code>conf.d/default.conf</code> shipped by
+  the nginx.org and RHEL packages — which beats <code>satom.conf</code> on the alphabetical
+  parse order between files.</li>
+<li><code>tests/test_tls_by_default.py</code> grew guards for the redirect itself: that each
+  vhost author emits it on <code>:80</code>, that it is scoped to <code>location /</code> so the ACME
+  challenge survives, that neither author hardcodes <code>default_server</code> on that
+  listener, and that every host installer asks for the claim, self-corrects on
+  a conflict and clears the packaged default site.
   Replaced by <code>SATOM_HTTPS_BIND</code> / <code>SATOM_REDIRECT_BIND</code>.</li>
 <li>The proxy has a <strong>static address</strong> in a pinned subnet: <code>TRUSTED_PROXIES</code>
   matches exact addresses, and container-to-container traffic arrives from the

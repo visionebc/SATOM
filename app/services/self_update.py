@@ -328,6 +328,12 @@ def reconcile_interlock(status: dict | None) -> None:
 def request_update(target: str, by: str, *, do_pip: bool = True,
                    do_migrate: bool = True, role: str | None = None,
                    origin: str = "manual") -> str:
+    from .. import runtime
+    # satom-updater.service installs unit files and restarts services as root.
+    # In a container the correct update is "deploy a new image tag", so a
+    # second, broken way to update is worse than none.
+    runtime.require("self_update")
+
     REQ_DIR.mkdir(parents=True, exist_ok=True)
     STATUS_DIR.mkdir(parents=True, exist_ok=True)
     uid = datetime.utcnow().strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:6]
@@ -408,6 +414,10 @@ def request_pip_change(package: str, version: str, by: str, *,
     THIS node's venv — which is exactly why a peer that wants the same change
     calls this same function on ITSELF instead of being handed a package.
     """
+    from .. import runtime
+    # Same runner, same reason: pip changes are baked into the image.
+    runtime.require("self_update")
+
     package = (package or "").strip()
     version = (version or "").strip()
     if not _PKG_RE.match(package) or package not in _pip_allowlist():

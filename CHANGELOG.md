@@ -6,6 +6,64 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Packaging — a third installation shape: containers, with the host-only features removed rather than broken (2026-08-31)
+
+SATOM had two installation shapes (full install, package-only). It now has a
+third. The work that mattered was not the Dockerfile.
+
+**SATOM is an appliance that administers its own host.** Measured on
+satom-node-1: 21 `systemctl` call sites, 40 references to nginx, a root
+`satom-updater.service` whose job is installing unit files, and fourteen
+`satom-*` units. Packaging that without a decision produces the worst outcome
+available — an image that boots, answers `/healthz` 200, and has four menu
+entries that fail the first time somebody needs them.
+
+So the container variant **renounces** four capabilities explicitly, in code:
+in-place self-update, service control, certificate activation, and systemd unit
+health. Each refuses with a message naming the alternative
+(`docker compose restart`, "deploy a new image tag", "install the certificate
+on the reverse proxy"). Everything else is unchanged.
+
+- **The runtime is a declaration, not an inference** (`app/runtime.py`,
+  `SATOM_RUNTIME=container` set by the image). `system_health.is_container()`
+  already existed and would have been the obvious probe — and it returns
+  **true on satom-node-1 and satom-node-2**, which are LXC containers.
+  Autodetection would have disabled self-update on the two production nodes:
+  the exact inverse of the intent. Only the literal value `container` counts,
+  so a typo can never silently strip an appliance of its updater.
+- **One image, three roles** (`SATOM_ROLE=web|scheduler|cron`). Three images
+  would let the scheduler run code the web worker does not have, and that
+  difference stays invisible until a scheduled action behaves differently from
+  the same action fired by hand.
+- **`scheduler` and `cron` are primary-only**, by the same looping
+  `pg_is_in_recovery()` guard the host units use — promotion starts them with
+  no external coordination, and two nodes never both fire an action. A double
+  firmware-upgrade action means a double flash.
+- **The metrics store publishes no port.** VictoriaMetrics has no
+  authentication; on a host install the `127.0.0.1` bind is the only thing
+  protecting the fleet's metrics. In the stack that job is done by the absence
+  of a `ports:` entry, so the absence is asserted by a test. Its version is
+  pinned to `deploy/metrics-store.env`, and a test fails if the two drift.
+- **Production is a two-node cluster**: primary plus a streaming-replica
+  standby carried as `backup` by the reverse proxy. The standby's entrypoint
+  **refuses to rebuild a promoted node** — that node holds every write accepted
+  since the failover, and a re-basebackup would discard exactly those, quietly,
+  with a healthy container afterwards.
+- `vm_store.base_url()` gained an environment fallback for the sidecar
+  endpoint, ranked **below** the operator's `metrics.vm_url` setting. Above it,
+  the settings field would have become silently ineffective on a container
+  node — which is the failure that function's own docstring already records
+  once.
+
+Found by writing the tests, not by reading the code: a service-level
+`environment:` **replaces** the mapping inherited through a YAML merge key
+instead of merging into it, so giving `scheduler` its `SATOM_ROLE` had silently
+dropped the database URI, the rate-limit URI and the metrics URL from that
+container. It would have started, fallen back to the `127.0.0.1` values in
+`.env`, connected to nothing, and logged normally.
+
+Docs: `docs/docker.md`. Guards: `tests/test_container_runtime.py` (45 checks).
+
 ### Documentation — the manual stops naming a repository that was deleted (2026-08-30)
 
 Publication was consolidated onto a single public mirror and the intermediate

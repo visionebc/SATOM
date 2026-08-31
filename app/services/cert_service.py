@@ -257,6 +257,13 @@ def _install(cert_pem: bytes, key_pem: bytes, chain_pem: bytes | None,
              source: str, by: str) -> dict:
     """Write the cert (+chain) and key, test nginx, reload — rolling the files
     back if nginx rejects them."""
+    from .. import runtime
+    # Refused BEFORE anything is written. Failing later, inside _reload_nginx,
+    # would take the rollback path and leave the operator with a stack trace
+    # about nginx on a node that has no nginx -- the wrong diagnosis, pointing
+    # at the wrong container.
+    runtime.require("cert_activation")
+
     PUB.mkdir(parents=True, exist_ok=True)
     bak = PUB / ".rollback"
     bak.mkdir(exist_ok=True)

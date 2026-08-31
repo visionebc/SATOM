@@ -1,0 +1,44 @@
+# SATOM — standby overlay. The SECOND node of a production cluster.
+#
+#   docker compose -f compose.yaml -f compose.prod.yaml -f compose.standby.yaml up -d
+#
+# Only ONE service differs from the primary: postgres, which is built from a
+# base backup of the primary and then follows it by streaming replication.
+#
+# Everything else is deliberately IDENTICAL, and that is what makes the node a
+# usable failover target rather than a cold spare:
+#
+#   * `scheduler` starts, probes pg_is_in_recovery() and idles. Promote the
+#     database and it fires on its own, with no external coordination -- and
+#     until then the two nodes can never both fire the same action. (A double
+#     firmware-upgrade action means a double flash.)
+#   * `cron` does the same for the alert engine and the sentinel responder.
+#   * `web` serves normally. Reads work; anything that writes fails with the
+#     database's own read-only error, which is the truthful answer. HAProxy on
+#     dmz-edge carries this node as `backup`, so it takes traffic only when the
+#     primary's /healthz stops answering.
+#
+# THIS FILE MUST NEVER BE APPLIED TO THE PRIMARY. Doing so wipes PGDATA and
+# rebuilds it from the peer -- which, on the primary, means from the standby.
+# satom-docker.sh refuses when SATOM_NODE_ROLE is not `standby`.
+
+services:
+  postgres:
+    environment:
+      SATOM_PRIMARY_HOST: ${SATOM_PRIMARY_HOST:?SATOM_PRIMARY_HOST is required on a standby, e.g. 203.0.113.14}
+      SATOM_PRIMARY_PORT: ${SATOM_PRIMARY_PORT:-5432}
+      SATOM_REPL_USER: ${SATOM_REPL_USER:-satom_repl}
+      SATOM_REPL_PASSWORD: ${SATOM_REPL_PASSWORD:?SATOM_REPL_PASSWORD is required on a standby}
+    volumes:
+      - ./pg-standby-entrypoint.sh:/usr/local/bin/pg-standby-entrypoint.sh:ro
+    entrypoint: ["/usr/local/bin/pg-standby-entrypoint.sh"]
+    # The primary's `command:` (from compose.prod.yaml) is inherited unchanged
+    # and handed to the stock entrypoint by the wrapper. A standby that ran
+    # with different settings than the primary would only reveal it after
+    # promotion, which is the worst possible moment to discover it.
+    ports:
+      # A standby publishes nothing. It is not a replication source and
+      # nothing outside the stack has business talking to its database.
+      # `!reset` is required: without it this list is APPENDED to the
+      # primary's, and the standby would publish 5432 on the DMZ.
+      !reset []

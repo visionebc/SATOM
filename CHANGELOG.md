@@ -50,7 +50,14 @@ compared.
   when the two disagree — the failure is otherwise invisible, collapsing rate
   limiting into one bucket and recording the proxy as the actor in every audit
   entry.
-- `tests/test_tls_by_default.py` (31 tests) asserts that every install path
+- The container proxy claims `default_server` on both listeners and deletes the
+  nginx image's own `default.conf`. Docker copies that file into the conf volume
+  when the proxy container is *created*, before `tls-init` runs; the leftover
+  then wins `:80` on alphabetical parse order and answers the nginx welcome page
+  while `:443` works perfectly — a node with nothing red anywhere and a
+  `http://` that has silently stopped redirecting. Found by testing the
+  redirect, not by reading the file.
+- `tests/test_tls_by_default.py` (35 tests) asserts that every install path
   provisions TLS **and that they provision the same TLS** — `Host $http_host`
   (never `$host`), `X-Forwarded-Proto https`, `client_max_body_size 400M`. Each
   of those was learned once, in production; a second install path is exactly

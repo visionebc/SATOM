@@ -43,7 +43,21 @@ SATOM_ACME_WEBROOT="$ACME" \
 SATOM_SERVED_NAMES="$NAMES" \
 SATOM_ACME_WEBROOT="$ACME" \
 /opt/satom/deploy/tls-bootstrap.sh write-vhost \
-    --pki "$PKI" --out "$CONF_OUT" --port 443 --upstream "$UPSTREAM"
+    --pki "$PKI" --out "$CONF_OUT" --port 443 --upstream "$UPSTREAM" \
+    --default-server
+
+# MEASURED, not defensive: on the first `up` Docker copies the nginx image's
+# own /etc/nginx/conf.d into this volume -- population happens when the proxy
+# container is CREATED, which compose does before tls-init has run. The
+# leftover `default.conf` then wins :80 on parse order (alphabetical between
+# files) and answers every request with the nginx welcome page while :443 works
+# fine, so the node looks healthy and http:// silently stops redirecting.
+#
+# It is removed HERE and not from the proxy's command because the proxy mounts
+# conf.d READ-ONLY, which is correct and which is exactly why the rm belonged
+# on this side. Ordering is guaranteed: the proxy waits for this container to
+# exit successfully.
+rm -f "$(dirname "$CONF_OUT")/default.conf"
 
 # The proxy runs its master as root and reads the key directly; the worker
 # never opens it. Left at 0600 rather than widened for the container that will

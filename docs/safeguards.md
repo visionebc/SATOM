@@ -13327,3 +13327,80 @@ again, so `#sec-satom` scrolled to a strip that stayed shut. Wired to
    ancestor chain both sides matched empty and it passed while measuring
    nothing — which is the exact failure mode it exists to catch, one level up.
 
+
+## §154 — the lease that outlived the process, and the nine days nobody was told about (2026-08-31)
+
+`scheduled_action.running_at` is a lease: `execute_and_record` claims it with a
+**committed** `UPDATE ... WHERE running_at IS NULL`, and `due_actions` filters
+leased rows out. That is correct dedupe and a permanent trap, because the claim
+commits *before* the work starts while the release lives in a `finally` that a
+dead process never reaches.
+
+On **2026-08-22 01:52–02:16 UTC** Postgres went away on `satom-node-1` mid-tick.
+Five actions were caught in the window and split into two failure modes, both of
+which were invisible:
+
+* **6** (nightly deep capture), **7** (nightly certificate scan) and **23** (CVE
+  mirror) died between the claim commit and the history-row commit. Steps (1)
+  and (2) sat *outside* the `try`, so the exception escaped `execute_and_record`
+  entirely; the sidecar's own `except` rolled back a transaction that no longer
+  held anything. The lease stayed set for **nine days**. There is no run row for
+  that night at all — the actions did not fail, they stopped existing, with
+  `last_status = 'ok'` still on the row and a green unit in systemd.
+* **15** and **21** got one statement further. Their `finally` could not commit
+  the status write, the rollback discarded it, and the last-ditch branch cleared
+  the lease with a bare `UPDATE` that does not repeat it. Those actions
+  recovered; their history rows said **'running' for nine days**.
+
+The measurable cost of the first mode: `device_certificate` frozen at
+2026-08-21 02:16 (26 rows, so every expiry the Certificate Manager showed was
+ten days stale), and the deep policy/WPP tree for the live FortiWebs likewise.
+Action 23 cost nothing — outbound sync is off by default, so its 26 ms run is a
+refusal by design and the mirror is empty on purpose.
+
+Three fixes, and the second and third are not the same fix:
+
+1. **Nothing may raise between the claim and the `try`.** The history-row INSERT
+   is now guarded and hands the lease back on its way out.
+2. **`reap_stale_leases`, phase 1** — a lease held past `LEASE_TTL_MINUTES`
+   (60; the longest run ever recorded here is 5.5 min, so ~11× the worst case)
+   is released, `next_run` is recomputed, and the fire is recorded as a **failed
+   scheduled run**. Reused row if the dead fire opened one, written if it did
+   not. `trigger` stays `'schedule'` because that is the only trigger
+   `_check_actions` counts — a recovery nobody can see is indistinguishable
+   from the outage continuing.
+3. **Phase 2** — history rows still `'running'` past the TTL whose action holds
+   **no** lease are closed. Phase 1 iterates leased actions and can never reach
+   these. Gated on *both* conditions: a live fire holds its lease, but reading
+   the lease and reading the row are two statements, so the age bound is what
+   removes the race.
+
+The sidecar reaps **before** `due_actions`, not after — reaping after would
+delay every recovery by a full tick, since `due_actions` is precisely the query
+that cannot see a leased row.
+
+**Recipe.** `reap_stale_leases` returns one dict per repair tagged
+`kind` (`lease` / `orphan-run`); the sidecar prints each. To check a node:
+
+```sql
+SELECT id, name, running_at FROM scheduled_action WHERE running_at IS NOT NULL;
+SELECT count(*) FROM scheduled_action_run WHERE status = 'running';
+```
+
+Both should be 0 on an idle node. A non-zero second number with a zero first
+number is the phase-2 case specifically.
+
+## §154b — the backup check that fired on its own policy working
+
+`_check_backup` read `local_inventory()`, i.e. this node's disk. Default
+retention is `keep=0`: `evict_local_bundles` deletes the local bundle once the
+backup server verifiably holds it, byte for byte. So every day, in the window
+between the eviction and the next nightly dump, the engine raised **"No database
+backup bundles present"** — on the backup policy succeeding. It now reads
+`all_bundles()`, the local+off-box union the System Backup page already renders,
+whose own docstring names this exact failure.
+
+An off-box row carries no local mtime, because there is no local file. Its age
+comes from the name (`fmw-backup-YYYYmmdd-HHMMSS`), which is written from the
+same clock. The name is a **fallback**, never the first source: preferring it
+over an explicit timestamp is a separate lie, and both directions have a test.

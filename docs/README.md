@@ -77,6 +77,9 @@ page.
 3. [`privilege-model.md`](privilege-model.md) — the installer account, the
    service account and the operator account are three different things.
 4. [`INSTALL.md`](INSTALL.md) §5 — hardening, and the two `sudoers` rules.
+5. [`docker.md`](docker.md) — only if the host runs containers rather than
+   services. Read it **before** choosing that shape: it renounces four host
+   capabilities on purpose, and one of them is the in-place updater.
 
 ### Something is broken
 1. `satom diagnose all` — 24 checks, one exit code, works unprivileged.
@@ -124,6 +127,7 @@ page.
 | Document | What it is for |
 |---|---|
 | [`INSTALL.md`](INSTALL.md) | Requirements, per-distribution packages, preflight, clustering, hardening, uninstall. |
+| [`docker.md`](docker.md) | The container shape: what the stack contains, the four host capabilities it renounces rather than ships broken, the development node, the primary/standby production cluster, offline image delivery and backups. |
 | [`sizing.md`](sizing.md) | How big the node has to be for the fleet you are pointing it at: one measured formula per resource, the tiers, and the free-space floor that has to be watched continuously. |
 | [`privilege-model.md`](privilege-model.md) | Which account runs what, the two-command sudo allowlist, the privileged-runner boundary, node trust. |
 | [`safeguards.md`](safeguards.md) | Every protection: what it prevents, where it lives, how to prove it is armed. |

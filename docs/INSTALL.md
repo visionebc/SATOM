@@ -294,6 +294,69 @@ Without it the URLs come out malformed, the refresh appears to work, and every
 package is reported as *not found in package names* — a failure that reads as
 "this distribution does not have python311".
 
+### 2.3 Containers (Docker)
+```bash
+cd deploy/docker
+cp env.example .env
+./satom-docker.sh gen-secrets     # real SECRET_KEY / FERNET_KEY / passwords
+./satom-docker.sh build satom:<ver>
+./satom-docker.sh up
+```
+A third shape, for a host that runs containers rather than services. The
+application, PostgreSQL, Redis and the metrics store come up as one stack.
+`web`, `scheduler` and `cron` are **the same image**, selected by `SATOM_ROLE`:
+three images would let the scheduler run code the web worker does not have, and
+that difference is invisible until a scheduled action behaves differently from
+the same action fired by hand.
+
+**It is not the full install in a box, and the difference is deliberate.** A
+container administers no host, so this shape **renounces** four capabilities
+instead of shipping them broken:
+
+| capability | what to do instead |
+|---|---|
+| **Software Update & HA** (in-place self-update) | deploy a new image tag and recreate the stack |
+| **Service control** (start/stop/restart of node units) | `docker compose restart <service>` |
+| **Certificate activation** | terminate TLS on the reverse proxy in front of the stack |
+| **systemd unit health** | read container health from the container engine |
+
+Each of the four refuses with a message naming its alternative; none of them
+fails silently, and the refusals are asserted in `tests/test_container_runtime.py`
+rather than promised here. Everything else — device management, probes and
+monitors, the metrics store, backups and restore, the source of truth, reports,
+the CLI, RBAC and SSO — behaves exactly as on a host install.
+**If you need in-place self-update or node-managed TLS, install on a host.**
+
+The runtime is **declared by the image** (`SATOM_RUNTIME=container`), never
+detected. `system_health.is_container()` returns true on an LXC *host* install
+as well, so keying these capabilities off a `/proc` probe would strip the
+updater from the nodes that most need it. Only the exact value `container`
+selects the container runtime — a typo means `host`, so a stray environment
+variable can never quietly disarm an appliance.
+
+Production runs two nodes: a primary, and a **standby** whose PostgreSQL is a
+streaming replica and whose scheduler idles until the database is promoted (two
+nodes must never both fire the same action — a duplicated firmware upgrade is a
+double flash). A node with no route to a registry is served the same way the
+offline bundles are, as a file:
+
+```bash
+./satom-docker.sh export satom:<ver> /tmp/satom-<ver>.tar.gz
+# copy the tarball AND its .sha256, then on the target
+./satom-docker.sh import /tmp/satom-<ver>.tar.gz
+```
+
+`import` verifies the checksum **before** loading, because a truncated transfer
+otherwise surfaces as a layer error inside `docker load` — which reads like a
+corrupt image rather than a short file.
+
+**Full page: [`docker.md`](docker.md)** — the stack service by service, the
+development single node, the production cluster and its failover rules, offline
+image delivery, and what a backup has to cover. (A `pg_dump` alone is not a
+backup: the source-of-truth index lives in PostgreSQL while its blobs live in
+the data volume, so restoring only the database leaves rows pointing at
+nothing.)
+
 ---
 
 ## 3. What the installer asks (in this order)

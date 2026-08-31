@@ -1868,6 +1868,14 @@ rights to install packages or restart services.
 > **node-local**, and they are deliberately not merged: a dependency bump and a
 > code release have different blast radii and different reasons to happen.
 
+> **On a container install this page is unavailable, and that is the design,
+> not a gap.** The updater installs unit files and restarts services as root —
+> work a container cannot do to a host it does not own. The equivalent there is
+> to deploy a new image tag and recreate the stack. Service control (§26) and
+> certificate activation (§10) are absent for the same reason, each refusing
+> with a message that names its alternative rather than failing obscurely. See
+> [Running SATOM in containers](docker.md).
+
 ### 22.1 Applying an offline package
 
 **Upload → read the preflight → Apply.** The preflight names every check, and a
@@ -2070,6 +2078,12 @@ day something goes wrong:
   renewed (the settings for it are §26.8).
 - [Git backup and surviving a Gitea outage](git-backup-and-outage.md) — what
   keeps working when the code remote is unreachable, and how to recover from it.
+- [Running SATOM in containers](docker.md) — the third installation shape, whose
+  cluster this page does not describe: there the standby is a PostgreSQL
+  streaming replica whose scheduler idles until promotion, the reverse proxy
+  carries it as `backup` rather than as the other half of a balancer, and
+  promotion is an operator decision the stack deliberately refuses to undo for
+  you.
 
 ## 25. AppIDs
 

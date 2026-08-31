@@ -174,6 +174,32 @@ def test_dockerfile_does_not_copy_the_whole_context():
             assert not re.match(r"COPY\s+\.\s+\.?/?\s*$", s), s
 
 
+def test_dockerfile_copies_the_deploy_tree():
+    """The application does not start without it.
+
+    ``app/services/update_package_service.py`` loads ``deploy/update_package.py``
+    BY PATH at module import time, and ``app/views/self_update.py`` imports that
+    module — so an image carrying only ``deploy/docker/`` boot-loops gunicorn on
+    a FileNotFoundError. That is exactly how this was found: by running the
+    stack, after the build succeeded and the tests passed.
+    """
+    text = DOCKERFILE.read_text()
+    assert re.search(r"^\s*COPY\s+deploy/\s+\./deploy/\s*$", text, re.M), (
+        "the image must carry the whole deploy/ tree"
+    )
+
+
+def test_the_import_time_deploy_dependency_still_exists():
+    """Pins the REASON for the test above.
+
+    If update_package_service stops loading by path, the rule above becomes
+    cargo cult — a copy nobody can justify, which is how a Dockerfile
+    accumulates lines that outlive their reason.
+    """
+    svc = (ROOT / "app" / "services" / "update_package_service.py").read_text()
+    assert '"deploy" / "update_package.py"' in svc
+
+
 def test_dockerfile_runs_as_a_non_root_user():
     assert re.search(r"^\s*USER\s+satom\s*$", DOCKERFILE.read_text(), re.M)
 

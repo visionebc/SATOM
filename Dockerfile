@@ -77,7 +77,13 @@ WORKDIR /opt/satom
 # means a new top-level directory does not silently enter the image.
 COPY app/            ./app/
 COPY migrations/     ./migrations/
-COPY deploy/docker/  ./deploy/docker/
+# The WHOLE deploy/ tree, not just deploy/docker/.
+# app/services/update_package_service.py loads deploy/update_package.py BY PATH
+# at import time, and app/views/self_update.py imports it -- so without this the
+# application does not start at all: gunicorn boot-loops on FileNotFoundError.
+# deploy/ is ~1.3 MB of text (unit templates, generators, the CLI); the point of
+# the allowlist is keeping data/ and venv/ out, not shaving kilobytes.
+COPY deploy/         ./deploy/
 COPY scripts/        ./scripts/
 COPY wsgi.py VERSION requirements.txt babel.cfg pytest.ini ./
 COPY endpoints.yaml endpoints_fortiadc.yaml endpoints_fortianalyzer.yaml endpoints_fortiauthenticator.yaml ./

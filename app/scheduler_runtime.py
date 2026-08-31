@@ -47,6 +47,24 @@ def _handle_stop(signum, frame):  # noqa: ANN001
 def tick(app) -> None:
     with app.app_context():
         now = datetime.utcnow()
+        # Hand back any lease a dead fire is still holding, BEFORE asking what
+        # is due - due_actions() filters leased actions out, so reaping after
+        # it would delay every recovery by a full tick for no reason.
+        try:
+            reaped = scheduled_actions.reap_stale_leases(now)
+            for r in reaped:
+                if r["kind"] == "lease":
+                    print("reaped stale lease: #%s %s held %s min since %s; "
+                          "next run %s"
+                          % (r["id"], r["name"], r["held_minutes"],
+                             r["held_since"], r["next_run"]), flush=True)
+                else:
+                    print("closed orphan run %s of #%s %s, open %s min "
+                          "since %s" % (r["run_id"], r["id"], r["name"],
+                                        r["held_minutes"], r["held_since"]),
+                          flush=True)
+        except Exception:  # noqa: BLE001 - a failed reap must not stop the tick
+            db.session.rollback()
         for action in scheduled_actions.due_actions(now):
             spec = action.schedule_dict
             if (not action.catch_up

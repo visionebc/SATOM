@@ -28,7 +28,7 @@ import os
 import re
 import traceback
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from urllib.parse import urlencode
 
 from sqlalchemy import text
@@ -1384,11 +1384,25 @@ def execute_and_record(action_row, *, trigger: str = "schedule"):
         return None  # already running elsewhere
 
     # (2) Open the history row immediately (visible to the UI while it runs).
-    run = ScheduledActionRun(
-        action_id=action_row.id, status="running", trigger=trigger,
-        started_at=now, summary="", log="")
-    db.session.add(run)
-    db.session.commit()
+    # GUARDED, and that guard is the whole point: this INSERT is an ordinary
+    # database write, and the try/finally that releases the lease does not start
+    # until several statements below. On 2026-08-22 Postgres went away between
+    # the claim commit above and this commit; the exception escaped this function
+    # entirely, the sidecar's own `except` rolled back a transaction that no
+    # longer held anything, and the lease claimed one statement earlier was never
+    # cleared. due_actions() filters leased actions out, so actions 6, 7 and 23
+    # were skipped in silence for nine days. Anything that can raise between the
+    # claim and the finally MUST hand the lease back.
+    try:
+        run = ScheduledActionRun(
+            action_id=action_row.id, status="running", trigger=trigger,
+            started_at=now, summary="", log="")
+        db.session.add(run)
+        db.session.commit()
+    except Exception:  # noqa: BLE001 - never strand the lease we just took
+        db.session.rollback()
+        release_lease(action_row.id)
+        raise
 
     status = "failed"
     summary = ""
@@ -1636,6 +1650,187 @@ def _parked_targets(action_row, spec: ActionSpec) -> list[str]:
 # --------------------------------------------------------------------------- #
 #  Due-now query (consumed by the scheduler sidecar)                            #
 # --------------------------------------------------------------------------- #
+#: How long a lease may be held before the reaper takes it back. The longest
+#: run ever recorded on this fleet is 5.5 minutes (action 6, deep_capture), so
+#: this is ~11x the worst observed case: a slow-but-alive run is never reaped
+#: out from under itself, while a dead one costs at most one hour instead of
+#: forever. Operator-tunable via the ``scheduler.lease_ttl_minutes`` setting.
+LEASE_TTL_MINUTES = 60
+
+
+def release_lease(action_id: int) -> bool:
+    """Clear ``running_at`` for one action on its own transaction.
+
+    Separate from any surrounding session state on purpose: every caller is
+    already handling a failure, so this must not depend on the broken
+    transaction it is cleaning up after. Returns True if the lease was cleared.
+    """
+    try:
+        db.session.execute(
+            text("UPDATE scheduled_action SET running_at = NULL WHERE id = :id"),
+            {"id": action_id})
+        db.session.commit()
+        return True
+    except Exception:  # noqa: BLE001 - best effort by definition
+        db.session.rollback()
+        return False
+
+
+def _lease_ttl_minutes() -> int:
+    try:
+        from ..models import AppSetting
+        raw = AppSetting.get("scheduler.lease_ttl_minutes")
+        val = int(str(raw).strip())
+        return val if val > 0 else LEASE_TTL_MINUTES
+    except Exception:  # noqa: BLE001 - a bad setting must not disable the reaper
+        return LEASE_TTL_MINUTES
+
+
+def reap_stale_leases(now: datetime | None = None,
+                      ttl_minutes: int | None = None) -> list[dict]:
+    """Release leases held past the TTL and close the runs they left open.
+
+    ``running_at`` is claimed with a COMMITTED update before any work starts, so
+    every way a fire can die without reaching its ``finally`` - SIGKILL, OOM, a
+    database that goes away, an exception in the window before the try block -
+    leaves the action leased. ``due_actions`` filters leased actions out, and
+    before this function existed nothing in the codebase ever put one back:
+    the failure mode was not "the action fails", it was "the action silently
+    stops existing". That is what happened on 2026-08-22 and it lasted nine
+    days.
+
+    Two repairs per reaped action, and the second matters as much as the first:
+
+    * the lease is cleared and ``next_run`` recomputed, so the action fires
+      again on its normal schedule;
+    * the run is recorded as a FAILED scheduled run - reusing the row the dead
+      fire left in 'running' if it got that far, writing one if it did not.
+      Without it the reap is invisible: ``_check_actions`` reads scheduled runs
+      to find broken automations, an action whose history simply skips nine
+      days looks idle rather than broken, and a recovery nobody can see is
+      indistinguishable from the outage continuing.
+
+    A second sweep closes history rows left 'running' by a fire whose lease
+    WAS freed. The last-ditch branch of ``execute_and_record``'s ``finally``
+    clears ``running_at`` with a bare UPDATE *after* the rollback has already
+    discarded the status write it was meant to accompany, so the action itself
+    recovers while its run row says 'running' forever. Two such rows (actions
+    15 and 21) had been open since the same 2026-08-22 outage. Phase 1 cannot
+    reach them: it iterates leased actions, and these are not leased. An
+    unfinished row is not cosmetic - it is the row ``_check_actions`` reads to
+    decide whether an automation is broken, and 'running' is neither outcome.
+
+    Returns one dict per repair, tagged ``kind`` ('lease' or 'orphan-run');
+    an empty list is the normal case.
+    """
+    now = now or datetime.utcnow()
+    ttl = int(ttl_minutes if ttl_minutes is not None else _lease_ttl_minutes())
+    ttl = max(1, ttl)
+    cutoff = now - timedelta(minutes=ttl)
+    stale = (ScheduledAction.query
+             .filter(ScheduledAction.running_at.isnot(None),
+                     ScheduledAction.running_at < cutoff)
+             .all())
+
+    reaped: list[dict] = []
+    for action in stale:
+        held = action.running_at
+        held_min = int((now - held).total_seconds() // 60)
+        summary = (
+            "Lease reaped: the run claimed at %s UTC never released it "
+            "(%d min held > %d min TTL). The process died before it could "
+            "record an outcome; the action was skipped by the scheduler for "
+            "the whole time it stayed leased."
+            % (held.strftime("%Y-%m-%d %H:%M"), held_min, ttl))
+
+        open_runs = (ScheduledActionRun.query
+                     .filter(ScheduledActionRun.action_id == action.id,
+                             ScheduledActionRun.status == "running")
+                     .all())
+        for r in open_runs:
+            r.status = "failed"
+            r.summary = summary[:_SUMMARY_MAX]
+            r.finished_at = now
+        if not open_runs:
+            # The claim committed but the history INSERT never did - the exact
+            # window that stranded 6/7/23. Record the gap anyway; trigger stays
+            # 'schedule' because a scheduled fire is what died here, and it is
+            # the only trigger _check_actions counts.
+            db.session.add(ScheduledActionRun(
+                action_id=action.id, status="failed", trigger="schedule",
+                started_at=held, finished_at=now,
+                summary=summary[:_SUMMARY_MAX], log=""))
+
+        try:
+            next_run = (None if action.schedule_kind == "once"
+                        else scheduler.compute_next_run(
+                            action.schedule_kind, action.schedule_dict, now,
+                            tz=_configured_tz()))
+        except Exception:  # noqa: BLE001 - a bad spec must not re-strand the lease
+            next_run = None
+
+        action.running_at = None
+        action.last_run = held
+        action.last_status = "failed"
+        action.next_run = next_run
+        reaped.append({
+            "kind": "lease",
+            "id": action.id,
+            "name": action.name,
+            "action": action.action,
+            "held_since": held.isoformat(timespec="seconds"),
+            "held_minutes": held_min,
+            "next_run": next_run.isoformat(timespec="seconds") if next_run else None,
+            "closed_runs": len(open_runs),
+        })
+
+    reaped.extend(_close_orphan_runs(now, cutoff))
+    if not reaped:
+        return []
+    try:
+        db.session.commit()
+    except Exception:  # noqa: BLE001
+        db.session.rollback()
+        # Bookkeeping is optional; freeing the leases is not.
+        for r in reaped:
+            if r["kind"] == "lease":
+                release_lease(r["id"])
+    return reaped
+
+
+def _close_orphan_runs(now: datetime, cutoff: datetime) -> list[dict]:
+    """Close 'running' history rows whose action holds no lease (see above).
+
+    Gated on BOTH conditions - the action is unleased AND the row is older than
+    the TTL. Either one alone would be a race: a live fire holds its lease, but
+    reading the lease and the row are two statements, and a row younger than
+    the TTL may simply be a run that started between them.
+    """
+    rows = (db.session.query(ScheduledActionRun, ScheduledAction)
+            .join(ScheduledAction,
+                  ScheduledActionRun.action_id == ScheduledAction.id)
+            .filter(ScheduledActionRun.status == "running",
+                    ScheduledActionRun.started_at < cutoff,
+                    ScheduledAction.running_at.is_(None))
+            .all())
+    out = []
+    for run_row, action in rows:
+        age = int((now - run_row.started_at).total_seconds() // 60)
+        run_row.status = "failed"
+        run_row.finished_at = now
+        run_row.summary = (
+            "Never finished: the run opened at %s UTC was still marked "
+            "'running' %d min later while its action held no lease. The "
+            "process died after opening the row and the outcome was never "
+            "written."
+            % (run_row.started_at.strftime("%Y-%m-%d %H:%M"), age))[:_SUMMARY_MAX]
+        out.append({"kind": "orphan-run", "id": action.id, "name": action.name,
+                    "action": action.action, "run_id": run_row.id,
+                    "held_since": run_row.started_at.isoformat(timespec="seconds"),
+                    "held_minutes": age, "next_run": None, "closed_runs": 1})
+    return out
+
+
 def due_actions(now: datetime | None = None) -> list[ScheduledAction]:
     """Enabled actions whose ``next_run`` has arrived and that are NOT already
     leased (``running_at IS NULL``) - i.e. ready to fire right now."""
@@ -1690,6 +1885,9 @@ __all__ = [
     "run_action",
     "execute_and_record",
     "due_actions",
+    "release_lease",
+    "reap_stale_leases",
+    "LEASE_TTL_MINUTES",
     "SERVER_POLICY_EP",
     "SERVER_POOL_MEMBER_EP",
 ]

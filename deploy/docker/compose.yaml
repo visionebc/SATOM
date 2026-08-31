@@ -156,14 +156,13 @@ services:
         condition: service_completed_successfully
       web:
         condition: service_started
-    # conf.d is a named volume that tls-init has already written into, so
-    # Docker does not pre-populate it from the image. The rm is belt and
-    # braces: if that ever changed, the image's default.conf would claim :80
-    # and the redirect would stop working with no error anywhere.
-    command:
-      - "sh"
-      - "-c"
-      - "rm -f /etc/nginx/conf.d/default.conf; exec nginx -g 'daemon off;'"
+    # conf.d IS pre-populated from the image on the first `up` -- Docker copies
+    # it when this container is CREATED, which happens before tls-init runs.
+    # The leftover default.conf then wins :80 on parse order and answers the
+    # nginx welcome page while :443 works, so nothing looks broken. tls-init
+    # deletes it and claims default_server on both listeners; it cannot be done
+    # from here because this mount is read-only, which is the correct state for
+    # it. Measured on the dev node, 2026-08-31, not anticipated.
     volumes:
       - satom-pki:/opt/satom/pki:ro
       - satom-proxy-conf:/etc/nginx/conf.d:ro

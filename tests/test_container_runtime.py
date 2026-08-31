@@ -242,10 +242,14 @@ def test_metrics_store_is_not_published():
     assert "ports" not in svc, "publishing the metrics store exposes the fleet"
 
 
-def test_base_stack_publishes_only_the_web_service():
+def test_base_stack_publishes_only_the_proxy_service():
+    """It used to be `web`. That INVERTED when the stack grew its own TLS
+    terminator: publishing gunicorn beside the proxy re-opens the plain-HTTP
+    door, and FLASK_ENV=production makes that door one where no password works
+    -- so the application container must publish nothing at all."""
     services = _yaml(COMPOSE)["services"]
     published = {n for n, s in services.items() if s.get("ports")}
-    assert published == {"web"}, published
+    assert published == {"proxy"}, published
 
 
 def test_metrics_image_matches_the_host_install_version():

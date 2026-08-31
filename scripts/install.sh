@@ -52,9 +52,16 @@ if [ "$SYSTEM_DEPS" = "1" ]; then
     log "  (offline) skipping apt — assuming postgresql + python3-venv already present"
   else
     apt-get update -qq
-    apt-get install -y -qq postgresql postgresql-client python3 python3-venv python3-pip >/dev/null
+    apt-get install -y -qq postgresql postgresql-client python3 python3-venv python3-pip \
+                          nginx openssl >/dev/null
   fi
 fi
+# nginx and openssl are NOT optional extras: step 8 puts the application behind
+# TLS, and without them this installer would produce the plain-HTTP node it
+# used to produce -- one that answers /healthz 200 and rejects every correct
+# password, because FLASK_ENV=production marks the session cookie Secure.
+command -v openssl >/dev/null || die "openssl not found — required to issue the node certificate"
+command -v nginx   >/dev/null || die "nginx not found — required to terminate TLS (apt-get install nginx)"
 command -v psql   >/dev/null || die "psql not found — install postgresql-client"
 command -v pg_dump >/dev/null || log "WARN: pg_dump not found — backup/restore page will be unavailable"
 systemctl is-active --quiet postgresql || systemctl start postgresql || true
@@ -147,7 +154,7 @@ Type=simple
 User=root
 WorkingDirectory=$APP_DIR
 EnvironmentFile=$APP_DIR/.env
-ExecStart=$APP_DIR/venv/bin/gunicorn --workers 4 --bind 0.0.0.0:$PORT --timeout 120 --access-logfile /var/log/satom/access.log --error-logfile /var/log/satom/error.log wsgi:app
+ExecStart=$APP_DIR/venv/bin/gunicorn --workers 4 --bind 127.0.0.1:$PORT --timeout 120 --access-logfile /var/log/satom/access.log --error-logfile /var/log/satom/error.log wsgi:app
 Restart=always
 RestartSec=5
 
@@ -159,11 +166,40 @@ systemctl enable "$SERVICE" >/dev/null 2>&1 || true
 systemctl restart "$SERVICE"
 
 # --------------------------------------------------------------------------- #
-# 8) Health check
+# 8) TLS — issued by the install, replaced by the operator later
+# --------------------------------------------------------------------------- #
+# gunicorn now binds loopback only, so this step is what makes the node
+# reachable at all. Self-signed by a per-node internal CA: the browser warns,
+# which is the intended day-zero state -- a node that is USABLE immediately and
+# whose certificate the operator swaps on their own schedule.
+log "Provisioning TLS (internal CA + node certificate + nginx)…"
+SERVED_NAMES="${SERVED_NAMES:-$(hostname -f 2>/dev/null || hostname)}"
+NODE_IP="${NODE_IP:-$(hostname -I 2>/dev/null | awk '{print $1}')}"
+APP_DIR="$APP_DIR" SATOM_SERVED_NAMES="$SERVED_NAMES" SATOM_NODE_IP="$NODE_IP" \
+  "$APP_DIR/deploy/tls-bootstrap.sh" ensure-pki
+APP_DIR="$APP_DIR" SATOM_SERVED_NAMES="$SERVED_NAMES" SATOM_NODE_IP="$NODE_IP" \
+  "$APP_DIR/deploy/tls-bootstrap.sh" write-vhost \
+    --out /etc/nginx/conf.d/satom.conf --port "${WEB_PORT:-443}" \
+    --upstream "127.0.0.1:$PORT"
+# Debian's packaged nginx ships a default site on :80 that would win the
+# redirect listener; sites-enabled is included before conf.d.
+rm -f /etc/nginx/sites-enabled/default
+nginx -t || die "nginx rejected the generated vhost — see the output above"
+systemctl enable nginx >/dev/null 2>&1 || true
+systemctl reload nginx 2>/dev/null || systemctl restart nginx
+
+# --------------------------------------------------------------------------- #
+# 9) Health check
 # --------------------------------------------------------------------------- #
 log "Waiting for the service to come up…"
-if timeout 30 bash -c "until curl -sfo /dev/null http://127.0.0.1:$PORT/auth/login; do sleep 1; done"; then
-  log "✓ SATOM is UP on port $PORT."
+if timeout 30 bash -c "until curl -skfo /dev/null https://127.0.0.1:${WEB_PORT:-443}/auth/login; do sleep 1; done"; then
+  log "✓ SATOM is UP on https://${SERVED_NAMES%% *}:${WEB_PORT:-443}/"
+  echo
+  echo "  The certificate is SELF-SIGNED by this node's internal CA, so the"
+  echo "  browser will warn on first visit. Replace it whenever you like:"
+  echo "    $APP_DIR/deploy/tls-bootstrap.sh import-cert --cert F --key F [--chain F]"
+  echo "    systemctl reload nginx"
+  echo "  An imported certificate is never overwritten by re-running this installer."
   echo
   echo "  Admin login: admin / Sopas123.-  (CHANGE IT after first login)"
   echo "  Service:     systemctl status $SERVICE"

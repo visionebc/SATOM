@@ -43,9 +43,10 @@ def real_client_ip() -> str:
 INSECURE_TRANSPORT_HINT = (
     "This SATOM is served over plain HTTP while its session cookies are marked "
     "Secure, so your browser never returns the session cookie and no password "
-    "can be accepted. This is a deployment problem, not a wrong password: put "
-    "an HTTPS reverse proxy in front of SATOM (see docs/docker.md, "
-    "'TLS is not optional')."
+    "can be accepted. This is a deployment problem, not a wrong password. "
+    "Every SATOM install provisions TLS for itself, so reaching this message "
+    "means the HTTPS terminator was bypassed or removed: reach the node over "
+    "https://, or re-run deploy/tls-bootstrap.sh (see docs/docker.md)."
 )
 
 

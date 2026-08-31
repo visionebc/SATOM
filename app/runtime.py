@@ -50,8 +50,11 @@ HOST_ONLY_CAPABILITIES: tuple[str, ...] = (
     "self_update",
     # systemctl start/stop/restart of the node's own units.
     "service_control",
-    # Writes the node PKI and reloads the HOST nginx. In the container variant
-    # TLS is terminated by the reverse proxy in front of the stack.
+    # Writes the node PKI and reloads the HOST nginx. The container stack DOES
+    # serve TLS -- the `proxy` service terminates it with a certificate the
+    # install issues for itself -- but that nginx lives in a sibling container
+    # this process cannot reload, so activation from the UI stays denied and
+    # the certificate is replaced through deploy/tls-bootstrap.sh instead.
     "cert_activation",
     # `systemctl is-active` over satom-*.service: there is no systemd here.
     "unit_health",
@@ -70,8 +73,9 @@ _REASONS: dict[str, str] = {
     ),
     "cert_activation": (
         "Certificate activation is not available in the container runtime. "
-        "TLS is terminated by the reverse proxy in front of this stack; "
-        "install the certificate there."
+        "This stack already serves TLS from its own proxy container; replace "
+        "the certificate with 'deploy/tls-bootstrap.sh import-cert' and "
+        "restart the proxy service."
     ),
     "unit_health": (
         "systemd unit health is not available in the container runtime. "

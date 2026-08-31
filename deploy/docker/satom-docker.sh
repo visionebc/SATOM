@@ -50,6 +50,30 @@ load_env() {
         [ -n "${SATOM_PRIMARY_HOST:-}" ] || \
             die "SATOM_NODE_ROLE=standby but SATOM_PRIMARY_HOST is empty"
     fi
+
+    # SATOM_HTTP_BIND used to publish the APPLICATION. The stack now terminates
+    # TLS itself and only the proxy publishes, so the name is gone. Refusing
+    # rather than ignoring it is the point: an operator who wrote
+    # 127.0.0.1:8080 to keep the app off the network would otherwise still
+    # believe that is what their file does.
+    if [ -n "${SATOM_HTTP_BIND:-}" ]; then
+        die "SATOM_HTTP_BIND is retired (it published gunicorn directly).
+     The stack now terminates TLS itself. Replace it in $ENV_FILE with:
+       SATOM_HTTPS_BIND=${SATOM_HTTP_BIND%%:*}:443      # the console
+       SATOM_REDIRECT_BIND=${SATOM_HTTP_BIND%%:*}:80    # ACME + 301 only"
+    fi
+
+    # TRUSTED_PROXIES matches EXACT addresses, and the hop is now the stack's
+    # own proxy container. If these disagree the app stops recognising its
+    # proxy: X-Forwarded-For is ignored, every user shares one rate-limit
+    # bucket and every audit entry records the proxy as the actor. None of that
+    # is visible without going looking, so it is checked before every command.
+    _pip="${SATOM_PROXY_IP:-203.0.113.10}"
+    case ",${TRUSTED_PROXIES:-203.0.113.10}," in
+        *",$_pip,"*) : ;;
+        *) die "TRUSTED_PROXIES (${TRUSTED_PROXIES:-<unset>}) does not include the
+     stack's own proxy at SATOM_PROXY_IP=$_pip. Add it — first hop first." ;;
+    esac
 }
 
 dc() { load_env; docker compose $(compose_files) --env-file "$ENV_FILE" "$@"; }

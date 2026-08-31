@@ -18,7 +18,7 @@ than pretending to have them:
 |---|---|---|
 | **Software Update & HA** (in-place self-update) | the updater installs unit files and restarts services as root | deploy a new image tag and recreate the stack |
 | **Service control** (start/stop/restart of node units) | there is no systemd here | `docker compose restart <service>` |
-| **Certificate activation** | it writes the node PKI and reloads the *host* nginx | install the certificate on the reverse proxy in front of the stack |
+| **Certificate activation** | it writes the node PKI and reloads the *host* nginx, which is a sibling container here | the stack already serves TLS; replace the certificate with `tls-bootstrap.sh import-cert` and restart `proxy` |
 | **systemd unit health** | there are no units to read | container health comes from the container engine |
 
 These are enforced in code (`app/runtime.py`), not by documentation. Each one
@@ -26,7 +26,8 @@ refuses with a message naming the alternative. Everything else — device
 management, probes and monitors, the metrics store, backups and restore, the
 SoT, reports, the CLI, RBAC and SSO — behaves identically to a host install.
 
-**If you need in-place self-update or node-managed TLS, use a host install.**
+**If you need in-place self-update, use a host install.** TLS is *not* on
+that list any more: since 1.20.1 the container stack terminates it itself.
 
 ### The runtime is declared, never detected
 
@@ -66,57 +67,117 @@ Two invariants are worth stating because nothing fails when they break:
   database starts them with no external coordination — and two nodes never both
   fire the same action. A double firmware-upgrade action means a double flash.
 
-## TLS is not optional
+## TLS ships with the stack
+
+**There is nothing to arrange before the first login.** `docker compose up`
+brings up a `proxy` service that terminates TLS on `:443` with a certificate
+the stack issues for itself, and redirects `:80` to it. The application
+container publishes no port at all.
+
+The certificate is **self-signed by a per-node internal CA**, so a browser
+warns on the first visit. That is the intended day-zero state: the node is
+usable immediately, and the operator replaces the certificate on their own
+schedule.
+
+### Why it is not optional
 
 The image runs with `FLASK_ENV=production`, which marks session cookies
-`Secure`. A browser withholds a `Secure` cookie from a plain-HTTP origin, so
-serving this stack over HTTP produces a deployment in which **no password
-works**: the login POST arrives with no session, there is no CSRF token to
-match, and the request is bounced back to the login form. Nothing about it
-looks broken — the container is healthy, `/healthz` answers 200, the login page
-renders — and the account is never locked out either, because the password is
-never compared. This is not hypothetical: it is how the first development node
-shipped, on 2026-08-31.
+`Secure`. A browser withholds a `Secure` cookie from a plain-HTTP origin, so a
+stack served over HTTP is one in which **no password works**: the login POST
+arrives with no session, there is no CSRF token to match, and the request is
+bounced back to the login form. Nothing about it looks broken — the container
+is healthy, `/healthz` answers 200, the login page renders — and the account is
+never locked out either, because the password is never compared. This is not
+hypothetical: it is how the first development node shipped, on 2026-08-31, and
+it is why the terminator is now part of the stack rather than a prerequisite
+the operator has to remember.
 
-So every container deployment needs an HTTPS terminator in front of the stack,
-development included.
-
-| shape | terminator | `SATOM_HTTP_BIND` | `TRUSTED_PROXIES` |
-|---|---|---|---|
-| single node | nginx on the same host | `127.0.0.1:8080` | the Docker bridge gateway |
-| cluster | the DMZ / edge proxy | `0.0.0.0:80` | the proxy's address |
-
-The gateway is what the container sees as its peer when publishing to
-loopback:
-
-```bash
-docker network inspect satom_satom \
-  --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}'
-```
-
-Whatever terminates TLS must pass `Host` through **with its port** and declare
-the client's scheme:
-
-```nginx
-proxy_set_header Host              $http_host;   # NOT $host — see below
-proxy_set_header X-Forwarded-Proto https;
-proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
-```
-
-`$host` drops the port, and Flask-WTF's referer check compares scheme, host
-*and* port — which is how login broke behind a non-standard-port NAT on
-2026-08-04. Serve a redirect from `:80`, too: leaving plain HTTP answering the
-app re-creates the trap for anyone who types `http://`.
+If the misconfiguration does reach a running node anyway — someone publishes
+the app container directly, or strips the proxy — SATOM says so out loud: a
+CSRF rejection on a plain-HTTP request while `SESSION_COOKIE_SECURE` is on is
+reported as a deployment problem, in the flash message, in the JSON error and
+in the log, instead of as an expired session.
 
 Do **not** answer any of this by setting `SESSION_COOKIE_SECURE=False`.
 Without TLS the cookie already travels in clear text, so the flag protects
 nothing extra — but turning it off normalises an insecure configuration inside
 an image that also runs in production.
 
-If the misconfiguration does reach a running node, SATOM now says so out loud:
-a CSRF rejection on a plain-HTTP request while `SESSION_COOKIE_SECURE` is on is
-reported as a deployment problem — in the flash message, in the JSON error and
-in the log — instead of as an expired session.
+### Name the node before you build
+
+The certificate's SAN must cover the name operators actually type. Set it in
+`.env`:
+
+```ini
+SATOM_SERVED_NAMES=satom.example.com satom-a1.example.com
+```
+
+Left empty it falls back to the container's hostname, which is almost never
+right — and a SAN that does not cover the name in the address bar produces a
+browser warning on a certificate the install just reported as issued, with no
+remedy but to reissue.
+
+### Replacing the certificate
+
+The install ships a working certificate; you replace it whenever you like.
+
+```bash
+docker compose exec -u 0 tls-init sh -c '
+  /opt/satom/deploy/tls-bootstrap.sh import-cert \
+    --cert /path/fullchain.pem --key /path/privkey.pem'
+docker compose restart proxy
+```
+
+`import-cert` refuses a certificate and key that do not match — nginx would
+accept the reload and fail on the first handshake, which reads as a network
+fault rather than a configuration one. It then records `source: "imported"` in
+`pki/public/meta.json`, and **`up` never reissues over an imported
+certificate**: an operator's real certificate is not silently replaced by a
+self-signed one at the next deploy.
+
+The PKI lives in the `satom-pki` **volume**, not in the image, so changing the
+image tag keeps the certificate.
+
+### Putting a further proxy in front
+
+A DMZ or edge load balancer in front of the stack talks HTTPS to `:443`
+(certificate verification off, or trust the node's internal CA). Do **not**
+point it at `:80` — that listener exists because ACME http-01 is always
+validated over plain `:80`, and everything else on it is a 301.
+
+Whatever the outer hop is, it must pass `Host` through **with its port** and
+declare the client's scheme:
+
+```nginx
+proxy_set_header Host              $http_host;   # NOT $host
+proxy_set_header X-Forwarded-Proto https;
+proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+```
+
+`$host` drops the port, and Flask-WTF's referer check compares scheme, host
+*and* port — which is how login broke behind a non-standard-port NAT on
+2026-08-04.
+
+Then append the outer hop to `TRUSTED_PROXIES`, after the stack's own proxy:
+
+```ini
+TRUSTED_PROXIES=203.0.113.10,203.0.113.4
+```
+
+`TRUSTED_PROXIES` matches **exact addresses**, and container-to-container
+traffic arrives from the proxy container's own address — not from the bridge
+gateway, which is only the peer for traffic entering through a published port.
+That is why the proxy has a static address (`SATOM_PROXY_IP`) inside a pinned
+subnet (`SATOM_NETWORK_SUBNET`). Getting it wrong does not fail loudly: it
+collapses rate limiting into one bucket for every user and records the proxy as
+the actor in every audit entry. `satom-docker.sh` refuses to run if
+`TRUSTED_PROXIES` does not contain `SATOM_PROXY_IP`.
+
+> **`SATOM_HTTP_BIND` is retired.** It published gunicorn directly. The name is
+> not reused for the redirect listener — an operator who set `127.0.0.1:8080`
+> to keep the application off the network would otherwise have had the opposite
+> of what their file said. `satom-docker.sh` stops with an explanation rather
+> than ignoring it. Use `SATOM_HTTPS_BIND` and `SATOM_REDIRECT_BIND`.
 
 ## Development — a single node
 

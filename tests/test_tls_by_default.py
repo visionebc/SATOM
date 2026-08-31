@@ -349,6 +349,40 @@ def test_the_proxy_init_runs_the_shared_provisioner():
     )
 
 
+def test_the_container_vhost_claims_the_default_server():
+    """[SATOM-NGINX-DEFAULT], reproduced in the container on 2026-08-31.
+
+    Docker pre-populates the conf.d volume from the nginx image when the proxy
+    container is CREATED -- which compose does before tls-init runs. The
+    surviving `default.conf` then wins :80, because between files nginx awards
+    the unnamed default server in ALPHABETICAL parse order. The result is a node
+    whose :443 works perfectly and whose http:// answers the nginx welcome page
+    instead of redirecting: nothing is red anywhere.
+
+    Two independent defences, so this asserts both.
+    """
+    init = code_only(read(DEPLOY / "docker" / "proxy-init.sh"))
+    assert "--default-server" in init, (
+        "proxy-init.sh does not claim default_server, so a stray conf file "
+        "silently takes over :80"
+    )
+    assert re.search(r"rm\s+-f\b.*default\.conf", init), (
+        "proxy-init.sh does not remove the nginx image's default.conf. It "
+        "cannot be removed from the proxy's own command: that mount is "
+        "read-only."
+    )
+    boot = code_only(read(BOOTSTRAP))
+    assert "--default-server)" in boot, (
+        "tls-bootstrap.sh does not accept --default-server, so proxy-init "
+        "passes a flag that is silently rejected"
+    )
+    assert boot.count("$DEFAULT_SERVER") >= 4, (
+        "the default_server marker reaches %d listen directives; both the TLS "
+        "and the :80 listener need it, on IPv4 and IPv6"
+        % boot.count("$DEFAULT_SERVER")
+    )
+
+
 def test_the_pki_is_a_volume_so_a_new_image_tag_keeps_the_certificate():
     compose = _compose()
     assert "satom-pki" in compose["volumes"], (

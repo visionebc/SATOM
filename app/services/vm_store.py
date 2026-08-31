@@ -40,7 +40,12 @@ def base_url() -> str:
         # the whole point of this comment is that it went unnoticed for months.
         raise
     except Exception:  # noqa: BLE001 — outside app context (tests, CLI)
-        return DEFAULT_URL
+        # The environment still applies HERE, and this is the branch that
+        # matters most: this module is imported inside the scheduler
+        # sidecar, which has no application context, so returning
+        # DEFAULT_URL made every sidecar write go to a loopback store that
+        # does not exist in a container. Verified in the running stack.
+        return _env_url() or DEFAULT_URL
     return (configured or _env_url() or DEFAULT_URL).rstrip("/")
 
 

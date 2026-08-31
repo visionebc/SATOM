@@ -42,9 +42,10 @@ while :; do
     # A failing job must never kill the loop: the responder failing at 03:00
     # would otherwise also stop alerts, and the alert engine is what tells the
     # operator the responder is failing.
-    if ! python -m app.cli_sentinel responder-tick; then
-        log "responder-tick FAILED (rc=$?)"
-    fi
+    # rc captured on its own line. Inside `if ! cmd; then log "$?"`, $?
+    # holds the status of the TEST, not of the command -- which printed
+    # "responder-tick FAILED (rc=0)" for a genuine failure.
+    python -m app.cli_sentinel responder-tick || log "responder-tick FAILED (rc=$?)"
 
     if [ $((n % ALERTS_EVERY)) -eq 0 ]; then
         if ! FLASK_APP=wsgi:app flask alerts-run; then

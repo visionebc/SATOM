@@ -15,6 +15,8 @@ import tempfile
 import time
 from pathlib import Path
 
+from .. import runtime
+
 from sqlalchemy import text as sa_text
 
 from ..models import db
@@ -266,6 +268,13 @@ def service_status(units: tuple[str, ...] = MONITORED_UNITS) -> list[dict]:
     ``LoadState`` tells them apart, so a missing unit is reported with
     ``ok=None`` (neutral, grey) instead of red.
     """
+    if not runtime.capability("unit_health"):
+        # There is no systemd here. Letting the loop below run would report
+        # every unit as "not installed" -- literally true, and operationally a
+        # lie: a page of neutral grey rows reads as "we looked and found
+        # nothing wrong". Say what the runtime is instead.
+        return [{"unit": u, "state": "n/a (container runtime)",
+                 "ok": None, "installed": False} for u in units]
     out = []
     for u in units:
         state, installed = "unknown", True

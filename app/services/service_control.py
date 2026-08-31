@@ -431,6 +431,13 @@ def request_service_action(unit: str, action: str, by: str,
     Node-local by construction: the runner that picks this up is the one on
     THIS host.
     """
+    from .. import runtime
+    # Refuses rather than enqueues. The queue is drained by a privileged runner
+    # that does not exist in the container runtime, so accepting the request
+    # would leave it "queued" forever -- an action the operator watched succeed
+    # and that never happened.
+    runtime.require("service_control")
+
     from . import self_update as su  # queue paths live in exactly one module
 
     unit = (unit or "").strip()

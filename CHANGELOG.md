@@ -6,6 +6,56 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Changed — every install shape provisions TLS for itself (2026-08-31)
+
+The turnkey installer has always issued an internal CA and put nginx in front
+of gunicorn. Three other install paths did not, and one of them is the quick
+start in this repository's own README:
+
+| path | before | now |
+|---|---|---|
+| `installers/install-satom.sh` (+ the three offline bundles) | TLS | unchanged |
+| `scripts/install.sh` | gunicorn on `0.0.0.0:8000`, plain HTTP | loopback gunicorn behind nginx on `:443` |
+| `deploy/install.sh` (legacy bootstrap) | plain HTTP | same |
+| `deploy/docker/` | published `:80`, delegated TLS to a proxy the operator supplied | a `proxy` service in the stack terminates `:443` |
+
+Nothing failed in the old shapes. They came up, answered `/healthz` 200 and
+reported success — and could not accept a password, because the app runs
+`FLASK_ENV=production`, session cookies are `Secure`, and a browser will not
+return a `Secure` cookie to a plain-HTTP origin. The login POST arrived with no
+session, therefore no CSRF token, and was rejected *before* the password was
+compared.
+
+- **`deploy/tls-bootstrap.sh`** is the one implementation: `ensure-pki`
+  (internal CA, 10 years; node leaf, 825 days), `write-vhost`, `import-cert`.
+  Idempotent, and it **refuses to reissue over a certificate an operator
+  imported** — a re-run replacing a trusted certificate with a self-signed one
+  is how a node lost its wildcard on 2026-08-04.
+- The certificate is **self-signed and the browser warns**. That is the day-zero
+  state on purpose: usable immediately, replaced on the operator's schedule.
+  `import-cert` refuses a mismatched certificate/key pair, which nginx would
+  otherwise accept and then fail on the first handshake.
+- **Container stack**: `tls-init` (the SATOM image, run to completion) issues
+  the material into a `satom-pki` volume; `proxy` (stock `nginx:alpine`) serves
+  it. The volume means an image-tag change keeps the certificate. `web`,
+  `scheduler` and `cron` publish nothing.
+- `SATOM_HTTP_BIND` is **retired, not reused** — it published gunicorn
+  directly. `satom-docker.sh` stops with an explanation rather than ignoring a
+  stale value, because an operator who wrote `127.0.0.1:8080` to keep the app
+  off the network would otherwise have had the opposite of what their file said.
+  Replaced by `SATOM_HTTPS_BIND` / `SATOM_REDIRECT_BIND`.
+- The proxy has a **static address** in a pinned subnet: `TRUSTED_PROXIES`
+  matches exact addresses, and container-to-container traffic arrives from the
+  proxy's own address, not the bridge gateway. `satom-docker.sh` refuses to run
+  when the two disagree — the failure is otherwise invisible, collapsing rate
+  limiting into one bucket and recording the proxy as the actor in every audit
+  entry.
+- `tests/test_tls_by_default.py` (31 tests) asserts that every install path
+  provisions TLS **and that they provision the same TLS** — `Host $http_host`
+  (never `$host`), `X-Forwarded-Proto https`, `client_max_body_size 400M`. Each
+  of those was learned once, in production; a second install path is exactly
+  where they get re-learned.
+
 ### Fixed — a container served over plain HTTP could sign nobody in (2026-08-31)
 
 The development node `satom-node-1-dock` served the stack over plain HTTP while

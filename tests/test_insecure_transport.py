@@ -181,10 +181,17 @@ def test_docker_doc_states_the_tls_requirement():
     """The trap cost a session precisely because no document mentioned it."""
     text = (REPO / "docs" / "docker.md").read_text()
     flat = " ".join(text.split())  # the body is hard-wrapped; anchors must not
-    assert "## TLS is not optional" in text
+    # The heading changed with the behaviour: the stack now SHIPS the
+    # terminator instead of requiring the operator to supply one. The page
+    # still has to explain WHY, because that is what cost a session.
+    assert "## TLS ships with the stack" in text
     for needle in ("SESSION_COOKIE_SECURE", "$http_host", "X-Forwarded-Proto"):
         assert needle in flat, needle
     assert "no password works" in flat
+    assert "import-cert" in flat, (
+        "the page promises TLS out of the box but never says how to replace "
+        "the self-signed certificate"
+    )
 
 
 def test_env_example_does_not_still_call_development_unproxied():
@@ -193,4 +200,14 @@ def test_env_example_does_not_still_call_development_unproxied():
     text = (REPO / "deploy" / "docker" / "env.example").read_text()
     flat = " ".join(text.split())
     assert "Empty in development" not in flat
-    assert "127.0.0.1:8080" in flat
+    # 127.0.0.1:8080 was the OLD advice: publish the app on loopback and put a
+    # terminator in front by hand. The stack does that itself now, so the file
+    # must document the keys that exist rather than the ones that were retired.
+    assert "SATOM_HTTPS_BIND" in flat, (
+        "env.example no longer documents where the console is published"
+    )
+    assert "SATOM_HTTP_BIND=" not in flat, (
+        "env.example still SETS the retired SATOM_HTTP_BIND; satom-docker.sh "
+        "refuses to start with it, so shipping it in the template hands every "
+        "new operator a stack that will not come up"
+    )

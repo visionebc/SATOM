@@ -563,7 +563,7 @@ instead of shipping them broken:</p>
 </tr>
 <tr>
 <td><strong>Certificate activation</strong></td>
-<td>terminate TLS on the reverse proxy in front of the stack</td>
+<td>the stack serves TLS already; swap the certificate with <code>deploy/tls-bootstrap.sh import-cert</code> and restart <code>proxy</code></td>
 </tr>
 <tr>
 <td><strong>systemd unit health</strong></td>
@@ -576,7 +576,13 @@ fails silently, and the refusals are asserted in <code>tests/test_container_runt
 rather than promised here. Everything else — device management, probes and
 monitors, the metrics store, backups and restore, the source of truth, reports,
 the CLI, RBAC and SSO — behaves exactly as on a host install.
-<strong>If you need in-place self-update or node-managed TLS, install on a host.</strong></p>
+<strong>If you need in-place self-update, install on a host.</strong></p>
+<p><strong>TLS is provisioned by the stack itself</strong>, like every other install shape: the
+<code>proxy</code> service terminates HTTPS on <code>:443</code> with a certificate issued at first
+start and redirects <code>:80</code> to it, and the application container publishes no
+port. The certificate is self-signed by a per-node internal CA, so the browser
+warns until you replace it — set <code>SATOM_SERVED_NAMES</code> in <code>.env</code> first, so the
+SAN covers the name operators actually type.</p>
 <p>The runtime is <strong>declared by the image</strong> (<code>SATOM_RUNTIME=container</code>), never
 detected. <code>system_health.is_container()</code> returns true on an LXC <em>host</em> install
 as well, so keying these capabilities off a <code>/proc</code> probe would strip the

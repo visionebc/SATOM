@@ -52,7 +52,25 @@ systemctl daemon-reload
 systemctl enable "$SERVICE_NAME"
 systemctl restart "$SERVICE_NAME"
 
+# 7. TLS — every install shape serves HTTPS from its first boot.
+#    Same provisioner as scripts/install.sh, installers/install-satom.sh and the
+#    container stack, so the vhost cannot drift between install paths.
+echo "==> Provisioning TLS (internal CA + node certificate + nginx)"
+command -v nginx >/dev/null || { echo "installing nginx"; apt-get install -y -qq nginx >/dev/null; }
+SERVED_NAMES="${SERVED_NAMES:-$(hostname -f 2>/dev/null || hostname)}"
+NODE_IP="${NODE_IP:-$(hostname -I 2>/dev/null | awk '{print $1}')}"
+APP_DIR="$APP_DIR" SATOM_SERVED_NAMES="$SERVED_NAMES" SATOM_NODE_IP="$NODE_IP" \
+  "$APP_DIR/deploy/tls-bootstrap.sh" ensure-pki
+APP_DIR="$APP_DIR" SATOM_SERVED_NAMES="$SERVED_NAMES" SATOM_NODE_IP="$NODE_IP" \
+  "$APP_DIR/deploy/tls-bootstrap.sh" write-vhost \
+    --out /etc/nginx/conf.d/satom.conf --port 443 --upstream 127.0.0.1:8000
+rm -f /etc/nginx/sites-enabled/default
+nginx -t
+systemctl enable nginx >/dev/null 2>&1 || true
+systemctl reload nginx 2>/dev/null || systemctl restart nginx
+
 echo ""
 echo "Installation complete."
-echo "App running at http://localhost:8000"
+echo "App running at https://${SERVED_NAMES%% *}/  (self-signed — replace it with"
+echo "  $APP_DIR/deploy/tls-bootstrap.sh import-cert --cert F --key F)"
 echo "Service status: $(systemctl is-active $SERVICE_NAME)"

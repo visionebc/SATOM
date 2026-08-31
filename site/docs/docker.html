@@ -62,6 +62,7 @@
       <div class="toc-title">On this page</div>
       <a href="#read-this-before-you-choose-the-container-shape">Read this before you choose the container shape</a>
       <a href="#what-the-stack-contains">What the stack contains</a>
+      <a href="#tls-is-not-optional">TLS is not optional</a>
       <a href="#development-a-single-node">Development — a single node</a>
       <a href="#production-a-two-node-cluster">Production — a two-node cluster</a>
       <a href="#delivering-an-image-to-an-air-gapped-or-dmz-node">Delivering an image to an air-gapped or DMZ node</a>
@@ -168,6 +169,65 @@ the same action fired by hand.</p>
   database starts them with no external coordination — and two nodes never both
   fire the same action. A double firmware-upgrade action means a double flash.</li>
 </ul>
+<h2 id="tls-is-not-optional">TLS is not optional</h2>
+<p>The image runs with <code>FLASK_ENV=production</code>, which marks session cookies
+<code>Secure</code>. A browser withholds a <code>Secure</code> cookie from a plain-HTTP origin, so
+serving this stack over HTTP produces a deployment in which <strong>no password
+works</strong>: the login POST arrives with no session, there is no CSRF token to
+match, and the request is bounced back to the login form. Nothing about it
+looks broken — the container is healthy, <code>/healthz</code> answers 200, the login page
+renders — and the account is never locked out either, because the password is
+never compared. This is not hypothetical: it is how the first development node
+shipped, on 2026-08-31.</p>
+<p>So every container deployment needs an HTTPS terminator in front of the stack,
+development included.</p>
+<table>
+<thead>
+<tr>
+<th>shape</th>
+<th>terminator</th>
+<th><code>SATOM_HTTP_BIND</code></th>
+<th><code>TRUSTED_PROXIES</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>single node</td>
+<td>nginx on the same host</td>
+<td><code>127.0.0.1:8080</code></td>
+<td>the Docker bridge gateway</td>
+</tr>
+<tr>
+<td>cluster</td>
+<td>the DMZ / edge proxy</td>
+<td><code>0.0.0.0:80</code></td>
+<td>the proxy's address</td>
+</tr>
+</tbody>
+</table>
+<p>The gateway is what the container sees as its peer when publishing to
+loopback:</p>
+<pre><code class="language-bash">docker network inspect satom_satom \
+  --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}'
+</code></pre>
+<p>Whatever terminates TLS must pass <code>Host</code> through <strong>with its port</strong> and declare
+the client's scheme:</p>
+<pre><code class="language-nginx">proxy_set_header Host              $http_host;   # NOT $host — see below
+proxy_set_header X-Forwarded-Proto https;
+proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+</code></pre>
+<p><code>$host</code> drops the port, and Flask-WTF's referer check compares scheme, host
+<em>and</em> port — which is how login broke behind a non-standard-port NAT on
+2026-08-04. Serve a redirect from <code>:80</code>, too: leaving plain HTTP answering the
+app re-creates the trap for anyone who types <code>http://</code>.</p>
+<p>Do <strong>not</strong> answer any of this by setting <code>SESSION_COOKIE_SECURE=False</code>.
+Without TLS the cookie already travels in clear text, so the flag protects
+nothing extra — but turning it off normalises an insecure configuration inside
+an image that also runs in production.</p>
+<p>If the misconfiguration does reach a running node, SATOM now says so out loud:
+a CSRF rejection on a plain-HTTP request while <code>SESSION_COOKIE_SECURE</code> is on is
+reported as a deployment problem — in the flash message, in the JSON error and
+in the log — instead of as an expired session.</p>
 <h2 id="development-a-single-node">Development — a single node</h2>
 <pre><code class="language-bash">git clone &lt;repo&gt; /opt/satom &amp;&amp; cd /opt/satom/deploy/docker
 cp env.example .env

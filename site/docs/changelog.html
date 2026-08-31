@@ -106,6 +106,33 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="fixed-a-container-served-over-plain-http-could-sign-nobody-in-2026-08-31">Fixed — a container served over plain HTTP could sign nobody in (2026-08-31)</h3>
+<p>The development node <code>{primary-node}-dock</code> served the stack over plain HTTP while
+the image runs <code>FLASK_ENV=production</code>, which marks session cookies <code>Secure</code>. A
+browser withholds a <code>Secure</code> cookie from a plain-HTTP origin, so every login
+POST arrived with no session, no CSRF token could match, and the CSRF handler
+redirected back to the login form. <strong>No password could be accepted</strong>, the
+account was never locked out (the password is never compared) and every health
+signal — container healthy, <code>/healthz</code> 200, login page rendering — stayed green.</p>
+<ul>
+<li><strong>The node</strong>: TLS terminated by nginx on the node itself with the fleet
+  wildcard, the container republished to <code>127.0.0.1:8080</code>, <code>:80</code> redirecting to
+  HTTPS so plain HTTP cannot re-create the trap, and <code>TRUSTED_PROXIES</code> set to
+  the Docker bridge gateway — empty meant "trust nothing", which collapsed rate
+  limiting into a single bucket shared by every user.</li>
+<li><strong>The message</strong>: <code>app.extensions.insecure_session_transport()</code> distinguishes
+  the two causes of a CSRF failure. On a plain-HTTP request with
+  <code>SESSION_COOKIE_SECURE</code> on, the flash, the JSON error and the log now name
+  the deployment problem instead of claiming the session expired — which is how
+  an operator ends up retyping a correct password forever. The client's scheme
+  is read from <code>X-Forwarded-Proto</code>, so a healthy TLS-offloading proxy (measured:
+  the DMZ HAProxy in front of the production cluster) does not trip it.</li>
+<li><strong><code>SESSION_COOKIE_SECURE</code> was NOT turned off.</strong> Without TLS the cookie
+  already travels in clear; disabling the flag hides the symptom and normalises
+  an insecure configuration in an image that also runs in production.</li>
+<li>Documented in <code>docs/docker.md</code> ("TLS is not optional") and
+  <code>deploy/docker/env.example</code>; guarded by <code>tests/test_insecure_transport.py</code>.</li>
+</ul>
 <h3 id="documentation-the-container-shape-reaches-the-manual-which-it-had-not-2026-08-31">Documentation — the container shape reaches the manual, which it had not (2026-08-31)</h3>
 <p><code>docs/docker.md</code> was written with the packaging work and then reachable from
 nothing. It was absent from <code>PUBLIC_DOCS</code>, and <strong>absence from that list is the

@@ -6,6 +6,34 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed — a container served over plain HTTP could sign nobody in (2026-08-31)
+
+The development node `satom-node-1-dock` served the stack over plain HTTP while
+the image runs `FLASK_ENV=production`, which marks session cookies `Secure`. A
+browser withholds a `Secure` cookie from a plain-HTTP origin, so every login
+POST arrived with no session, no CSRF token could match, and the CSRF handler
+redirected back to the login form. **No password could be accepted**, the
+account was never locked out (the password is never compared) and every health
+signal — container healthy, `/healthz` 200, login page rendering — stayed green.
+
+- **The node**: TLS terminated by nginx on the node itself with the fleet
+  wildcard, the container republished to `127.0.0.1:8080`, `:80` redirecting to
+  HTTPS so plain HTTP cannot re-create the trap, and `TRUSTED_PROXIES` set to
+  the Docker bridge gateway — empty meant "trust nothing", which collapsed rate
+  limiting into a single bucket shared by every user.
+- **The message**: `app.extensions.insecure_session_transport()` distinguishes
+  the two causes of a CSRF failure. On a plain-HTTP request with
+  `SESSION_COOKIE_SECURE` on, the flash, the JSON error and the log now name
+  the deployment problem instead of claiming the session expired — which is how
+  an operator ends up retyping a correct password forever. The client's scheme
+  is read from `X-Forwarded-Proto`, so a healthy TLS-offloading proxy (measured:
+  the DMZ HAProxy in front of the production cluster) does not trip it.
+- **`SESSION_COOKIE_SECURE` was NOT turned off.** Without TLS the cookie
+  already travels in clear; disabling the flag hides the symptom and normalises
+  an insecure configuration in an image that also runs in production.
+- Documented in `docs/docker.md` ("TLS is not optional") and
+  `deploy/docker/env.example`; guarded by `tests/test_insecure_transport.py`.
+
 ### Documentation — the container shape reaches the manual, which it had not (2026-08-31)
 
 `docs/docker.md` was written with the packaging work and then reachable from

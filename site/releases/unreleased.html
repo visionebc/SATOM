@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Changed · Removed · Fixed · Added · 219 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Changed · Removed · Fixed · Added · 223 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Changed · Removed · Fixed · Added · 219 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Changed · Removed · Fixed · Added · 223 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,8 +59,8 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Changed · Removed · Fixed · Added · 219 entries</span>
-        <ul class="rel-leads"><li>Published</li><li>INSTALL.md §2.3 — Containers (Docker)</li><li>user-guide.md</li><li class="rel-more">… and 216 more</li></ul>
+        <span class="rel-nav-meta">unreleased · Changed · Removed · Fixed · Added · 223 entries</span>
+        <ul class="rel-leads"><li>The node</li><li>The message</li><li>SESSION_COOKIE_SECURE was NOT turned off</li><li class="rel-more">… and 220 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v1.20.0.html" data-rel-version="1.20.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 1.20.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
@@ -255,6 +255,33 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
+<h3 id="fixed-a-container-served-over-plain-http-could-sign-nobody-in-2026-08-31">Fixed — a container served over plain HTTP could sign nobody in (2026-08-31)</h3>
+<p>The development node <code>{primary-node}-dock</code> served the stack over plain HTTP while
+the image runs <code>FLASK_ENV=production</code>, which marks session cookies <code>Secure</code>. A
+browser withholds a <code>Secure</code> cookie from a plain-HTTP origin, so every login
+POST arrived with no session, no CSRF token could match, and the CSRF handler
+redirected back to the login form. <strong>No password could be accepted</strong>, the
+account was never locked out (the password is never compared) and every health
+signal — container healthy, <code>/healthz</code> 200, login page rendering — stayed green.</p>
+<ul>
+<li><strong>The node</strong>: TLS terminated by nginx on the node itself with the fleet
+  wildcard, the container republished to <code>127.0.0.1:8080</code>, <code>:80</code> redirecting to
+  HTTPS so plain HTTP cannot re-create the trap, and <code>TRUSTED_PROXIES</code> set to
+  the Docker bridge gateway — empty meant "trust nothing", which collapsed rate
+  limiting into a single bucket shared by every user.</li>
+<li><strong>The message</strong>: <code>app.extensions.insecure_session_transport()</code> distinguishes
+  the two causes of a CSRF failure. On a plain-HTTP request with
+  <code>SESSION_COOKIE_SECURE</code> on, the flash, the JSON error and the log now name
+  the deployment problem instead of claiming the session expired — which is how
+  an operator ends up retyping a correct password forever. The client's scheme
+  is read from <code>X-Forwarded-Proto</code>, so a healthy TLS-offloading proxy (measured:
+  the DMZ HAProxy in front of the production cluster) does not trip it.</li>
+<li><strong><code>SESSION_COOKIE_SECURE</code> was NOT turned off.</strong> Without TLS the cookie
+  already travels in clear; disabling the flag hides the symptom and normalises
+  an insecure configuration in an image that also runs in production.</li>
+<li>Documented in <code>docs/docker.md</code> ("TLS is not optional") and
+  <code>deploy/docker/env.example</code>; guarded by <code>tests/test_insecure_transport.py</code>.</li>
+</ul>
 <h3 id="documentation-the-container-shape-reaches-the-manual-which-it-had-not-2026-08-31">Documentation — the container shape reaches the manual, which it had not (2026-08-31)</h3>
 <p><code>docs/docker.md</code> was written with the packaging work and then reachable from
 nothing. It was absent from <code>PUBLIC_DOCS</code>, and <strong>absence from that list is the

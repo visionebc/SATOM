@@ -2248,6 +2248,13 @@ point. This page moves the <strong>application code</strong>; that panel moves w
 runs on. They use the same privileged runner and the same queue, they are both
 <strong>node-local</strong>, and they are deliberately not merged: a dependency bump and a
 code release have different blast radii and different reasons to happen.</p>
+<p><strong>On a container install this page is unavailable, and that is the design,
+not a gap.</strong> The updater installs unit files and restarts services as root —
+work a container cannot do to a host it does not own. The equivalent there is
+to deploy a new image tag and recreate the stack. Service control (§26) and
+certificate activation (§10) are absent for the same reason, each refusing
+with a message that names its alternative rather than failing obscurely. See
+<a href="docker.html">Running SATOM in containers</a>.</p>
 </blockquote>
 <h3 id="221-applying-an-offline-package">22.1 Applying an offline package</h3>
 <p><strong>Upload → read the preflight → Apply.</strong> The preflight names every check, and a
@@ -2480,6 +2487,12 @@ day something goes wrong:</p>
   renewed (the settings for it are §26.8).</li>
 <li><a href="git-backup.html">Git backup and surviving a Gitea outage</a> — what
   keeps working when the code remote is unreachable, and how to recover from it.</li>
+<li><a href="docker.html">Running SATOM in containers</a> — the third installation shape, whose
+  cluster this page does not describe: there the standby is a PostgreSQL
+  streaming replica whose scheduler idles until promotion, the reverse proxy
+  carries it as <code>backup</code> rather than as the other half of a balancer, and
+  promotion is an operator decision the stack deliberately refuses to undo for
+  you.</li>
 </ul>
 <h2 id="25-appids">25. AppIDs</h2>
 <p>Global ADOM → Administrator → <strong>AppIDs</strong> (admin, <code>user_manage</code>).</p>

@@ -158,6 +158,9 @@ page.</p>
 <li><a href="privilege-model.html"><code>privilege-model.md</code></a> — the installer account, the
    service account and the operator account are three different things.</li>
 <li><a href="install.html"><code>INSTALL.md</code></a> §5 — hardening, and the two <code>sudoers</code> rules.</li>
+<li><a href="docker.html"><code>docker.md</code></a> — only if the host runs containers rather than
+   services. Read it <strong>before</strong> choosing that shape: it renounces four host
+   capabilities on purpose, and one of them is the in-place updater.</li>
 </ol>
 <h3 id="something-is-broken">Something is broken</h3>
 <ol>
@@ -236,6 +239,10 @@ page.</p>
 <tr>
 <td><a href="install.html"><code>INSTALL.md</code></a></td>
 <td>Requirements, per-distribution packages, preflight, clustering, hardening, uninstall.</td>
+</tr>
+<tr>
+<td><a href="docker.html"><code>docker.md</code></a></td>
+<td>The container shape: what the stack contains, the four host capabilities it renounces rather than ships broken, the development node, the primary/standby production cluster, offline image delivery and backups.</td>
 </tr>
 <tr>
 <td><a href="sizing.html"><code>sizing.md</code></a></td>

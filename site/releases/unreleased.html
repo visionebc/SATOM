@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Changed · Removed · Fixed · Added · 209 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Changed · Removed · Fixed · Added · 219 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Changed · Removed · Fixed · Added · 209 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Changed · Removed · Fixed · Added · 219 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,8 +59,8 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Changed · Removed · Fixed · Added · 209 entries</span>
-        <ul class="rel-leads"><li>INSTALL.md told operators to clone a repository that no longer exists</li><li>release-pipeline.md drew a destination that had been deleted</li><li>Stage 2 now documents what the PEM rule matches</li><li class="rel-more">… and 206 more</li></ul>
+        <span class="rel-nav-meta">unreleased · Changed · Removed · Fixed · Added · 219 entries</span>
+        <ul class="rel-leads"><li>Published</li><li>INSTALL.md §2.3 — Containers (Docker)</li><li>user-guide.md</li><li class="rel-more">… and 216 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v1.20.0.html" data-rel-version="1.20.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 1.20.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
@@ -255,6 +255,98 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
+<h3 id="documentation-the-container-shape-reaches-the-manual-which-it-had-not-2026-08-31">Documentation — the container shape reaches the manual, which it had not (2026-08-31)</h3>
+<p><code>docs/docker.md</code> was written with the packaging work and then reachable from
+nothing. It was absent from <code>PUBLIC_DOCS</code>, and <strong>absence from that list is the
+opt-out</strong>, so the page was published on no surface and no link pointed at it.
+Meanwhile section 2 of <code>INSTALL.md</code> — the canonical answer to "how do I install
+this" — named two ways when there were three, and the pages of the user guide
+that describe Software Update (§22) and High Availability (§24) described
+behaviour the container shape deliberately does not have, with nothing telling
+the reader so.</p>
+<ul>
+<li><strong>Published</strong>: <code>docker.md</code> joins the registry under <em>Deploy &amp; operate</em>, and
+  the generator emits <code>site/docs/docker.html</code> with the rest (33 pages, 0 leaks).</li>
+<li><strong><code>INSTALL.md</code> §2.3 — Containers (Docker)</strong>: the third shape stated where an
+  operator chooses one, with the four renounced capabilities and their
+  alternatives, the declared-not-detected runtime, the two-node production
+  cluster and the checksum-verified offline image transfer.</li>
+<li><strong><code>user-guide.md</code></strong>: §22 now says the update page is unavailable on a
+  container install <em>and why</em>; §24 points at the container cluster, whose
+  standby is a database replica rather than the other half of a balancer.</li>
+<li><strong><code>README.md</code></strong>: the manual's own index and its install reading path list the
+  page, so the map is complete again.</li>
+</ul>
+<p><strong>New guard <code>tests/test_install_shapes.py</code> (11 tests).</strong> Four documents state
+the SIZE of the capability set in words and two reproduce its CONTENTS as a
+table, while <code>app/runtime.py</code> owns the fact. Nothing failed when those drifted —
+the sentences merely became false, which is how <code>Version: 1.0</code> survived four
+releases. The guard reads the documents and compares against
+<code>HOST_ONLY_CAPABILITIES</code>; every pattern carries a minimum count, because a regex
+that matches nothing reports a perfect document it never inspected. Two
+mutations of the guard itself were needed before it was honest: the counting
+phrase is <strong>hard-wrapped</strong>, so an anchor spanning the line break matched
+nothing, and a whole-file substring check for <code>docker.md</code> passed while the
+authoritative index row was missing — the section-3 scope exists because of it.
+<strong>10/10 mutations bite.</strong></p>
+<p>Also fixed: fifteen tracked files from the packaging round were left owned by
+<code>root</code> in the working tree, including <code>app/runtime.py</code> and everything under
+<code>deploy/docker/</code>. The application and the reconciler both run as <code>satom</code>; a
+root-owned tracked file makes the checkout that deploys those very files fail.
+The tree is back to zero root-owned tracked files.</p>
+<h3 id="packaging-a-third-installation-shape-containers-with-the-host-only-features-removed-rather-than-broken-2026-08-31">Packaging — a third installation shape: containers, with the host-only features removed rather than broken (2026-08-31)</h3>
+<p>SATOM had two installation shapes (full install, package-only). It now has a
+third. The work that mattered was not the Dockerfile.</p>
+<p><strong>SATOM is an appliance that administers its own host.</strong> Measured on
+{primary-node}: 21 <code>systemctl</code> call sites, 40 references to nginx, a root
+<code>satom-updater.service</code> whose job is installing unit files, and fourteen
+<code>satom-*</code> units. Packaging that without a decision produces the worst outcome
+available — an image that boots, answers <code>/healthz</code> 200, and has four menu
+entries that fail the first time somebody needs them.</p>
+<p>So the container variant <strong>renounces</strong> four capabilities explicitly, in code:
+in-place self-update, service control, certificate activation, and systemd unit
+health. Each refuses with a message naming the alternative
+(<code>docker compose restart</code>, "deploy a new image tag", "install the certificate
+on the reverse proxy"). Everything else is unchanged.</p>
+<ul>
+<li><strong>The runtime is a declaration, not an inference</strong> (<code>app/runtime.py</code>,
+  <code>SATOM_RUNTIME=container</code> set by the image). <code>system_health.is_container()</code>
+  already existed and would have been the obvious probe — and it returns
+  <strong>true on {primary-node} and {standby-node}</strong>, which are LXC containers.
+  Autodetection would have disabled self-update on the two production nodes:
+  the exact inverse of the intent. Only the literal value <code>container</code> counts,
+  so a typo can never silently strip an appliance of its updater.</li>
+<li><strong>One image, three roles</strong> (<code>SATOM_ROLE=web|scheduler|cron</code>). Three images
+  would let the scheduler run code the web worker does not have, and that
+  difference stays invisible until a scheduled action behaves differently from
+  the same action fired by hand.</li>
+<li><strong><code>scheduler</code> and <code>cron</code> are primary-only</strong>, by the same looping
+  <code>pg_is_in_recovery()</code> guard the host units use — promotion starts them with
+  no external coordination, and two nodes never both fire an action. A double
+  firmware-upgrade action means a double flash.</li>
+<li><strong>The metrics store publishes no port.</strong> VictoriaMetrics has no
+  authentication; on a host install the <code>127.0.0.1</code> bind is the only thing
+  protecting the fleet's metrics. In the stack that job is done by the absence
+  of a <code>ports:</code> entry, so the absence is asserted by a test. Its version is
+  pinned to <code>deploy/metrics-store.env</code>, and a test fails if the two drift.</li>
+<li><strong>Production is a two-node cluster</strong>: primary plus a streaming-replica
+  standby carried as <code>backup</code> by the reverse proxy. The standby's entrypoint
+  <strong>refuses to rebuild a promoted node</strong> — that node holds every write accepted
+  since the failover, and a re-basebackup would discard exactly those, quietly,
+  with a healthy container afterwards.</li>
+<li><code>vm_store.base_url()</code> gained an environment fallback for the sidecar
+  endpoint, ranked <strong>below</strong> the operator's <code>metrics.vm_url</code> setting. Above it,
+  the settings field would have become silently ineffective on a container
+  node — which is the failure that function's own docstring already records
+  once.</li>
+</ul>
+<p>Found by writing the tests, not by reading the code: a service-level
+<code>environment:</code> <strong>replaces</strong> the mapping inherited through a YAML merge key
+instead of merging into it, so giving <code>scheduler</code> its <code>SATOM_ROLE</code> had silently
+dropped the database URI, the rate-limit URI and the metrics URL from that
+container. It would have started, fallen back to the <code>127.0.0.1</code> values in
+<code>.env</code>, connected to nothing, and logged normally.</p>
+<p>Docs: <code>docs/docker.md</code>. Guards: <code>tests/test_container_runtime.py</code> (45 checks).</p>
 <h3 id="documentation-the-manual-stops-naming-a-repository-that-was-deleted-2026-08-30">Documentation — the manual stops naming a repository that was deleted (2026-08-30)</h3>
 <p>Publication was consolidated onto a single public mirror and the intermediate
 one was retired. Nothing failed when the documentation kept describing the old

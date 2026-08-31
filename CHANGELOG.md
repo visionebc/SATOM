@@ -6,6 +6,48 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Documentation — the container shape reaches the manual, which it had not (2026-08-31)
+
+`docs/docker.md` was written with the packaging work and then reachable from
+nothing. It was absent from `PUBLIC_DOCS`, and **absence from that list is the
+opt-out**, so the page was published on no surface and no link pointed at it.
+Meanwhile section 2 of `INSTALL.md` — the canonical answer to "how do I install
+this" — named two ways when there were three, and the pages of the user guide
+that describe Software Update (§22) and High Availability (§24) described
+behaviour the container shape deliberately does not have, with nothing telling
+the reader so.
+
+- **Published**: `docker.md` joins the registry under *Deploy & operate*, and
+  the generator emits `site/docs/docker.html` with the rest (33 pages, 0 leaks).
+- **`INSTALL.md` §2.3 — Containers (Docker)**: the third shape stated where an
+  operator chooses one, with the four renounced capabilities and their
+  alternatives, the declared-not-detected runtime, the two-node production
+  cluster and the checksum-verified offline image transfer.
+- **`user-guide.md`**: §22 now says the update page is unavailable on a
+  container install *and why*; §24 points at the container cluster, whose
+  standby is a database replica rather than the other half of a balancer.
+- **`README.md`**: the manual's own index and its install reading path list the
+  page, so the map is complete again.
+
+**New guard `tests/test_install_shapes.py` (11 tests).** Four documents state
+the SIZE of the capability set in words and two reproduce its CONTENTS as a
+table, while `app/runtime.py` owns the fact. Nothing failed when those drifted —
+the sentences merely became false, which is how `Version: 1.0` survived four
+releases. The guard reads the documents and compares against
+`HOST_ONLY_CAPABILITIES`; every pattern carries a minimum count, because a regex
+that matches nothing reports a perfect document it never inspected. Two
+mutations of the guard itself were needed before it was honest: the counting
+phrase is **hard-wrapped**, so an anchor spanning the line break matched
+nothing, and a whole-file substring check for `docker.md` passed while the
+authoritative index row was missing — the section-3 scope exists because of it.
+**10/10 mutations bite.**
+
+Also fixed: fifteen tracked files from the packaging round were left owned by
+`root` in the working tree, including `app/runtime.py` and everything under
+`deploy/docker/`. The application and the reconciler both run as `satom`; a
+root-owned tracked file makes the checkout that deploys those very files fail.
+The tree is back to zero root-owned tracked files.
+
 ### Packaging — a third installation shape: containers, with the host-only features removed rather than broken (2026-08-31)
 
 SATOM had two installation shapes (full install, package-only). It now has a

@@ -12886,6 +12886,72 @@ again, so <code>#sec-satom</code> scrolled to a strip that stayed shut. Wired to
    ancestor chain both sides matched empty and it passed while measuring
    nothing — which is the exact failure mode it exists to catch, one level up.</li>
 </ol>
+<h2 id="154-the-lease-that-outlived-the-process-and-the-nine-days-nobody-was-told-about-2026-08-31">§154 — the lease that outlived the process, and the nine days nobody was told about (2026-08-31)</h2>
+<p><code>scheduled_action.running_at</code> is a lease: <code>execute_and_record</code> claims it with a
+<strong>committed</strong> <code>UPDATE ... WHERE running_at IS NULL</code>, and <code>due_actions</code> filters
+leased rows out. That is correct dedupe and a permanent trap, because the claim
+commits <em>before</em> the work starts while the release lives in a <code>finally</code> that a
+dead process never reaches.</p>
+<p>On <strong>2026-08-22 01:52–02:16 UTC</strong> Postgres went away on <code>{primary-node}</code> mid-tick.
+Five actions were caught in the window and split into two failure modes, both of
+which were invisible:</p>
+<ul>
+<li><strong>6</strong> (nightly deep capture), <strong>7</strong> (nightly certificate scan) and <strong>23</strong> (CVE
+  mirror) died between the claim commit and the history-row commit. Steps (1)
+  and (2) sat <em>outside</em> the <code>try</code>, so the exception escaped <code>execute_and_record</code>
+  entirely; the sidecar's own <code>except</code> rolled back a transaction that no longer
+  held anything. The lease stayed set for <strong>nine days</strong>. There is no run row for
+  that night at all — the actions did not fail, they stopped existing, with
+  <code>last_status = 'ok'</code> still on the row and a green unit in systemd.</li>
+<li><strong>15</strong> and <strong>21</strong> got one statement further. Their <code>finally</code> could not commit
+  the status write, the rollback discarded it, and the last-ditch branch cleared
+  the lease with a bare <code>UPDATE</code> that does not repeat it. Those actions
+  recovered; their history rows said <strong>'running' for nine days</strong>.</li>
+</ul>
+<p>The measurable cost of the first mode: <code>device_certificate</code> frozen at
+2026-08-21 02:16 (26 rows, so every expiry the Certificate Manager showed was
+ten days stale), and the deep policy/WPP tree for the live FortiWebs likewise.
+Action 23 cost nothing — outbound sync is off by default, so its 26 ms run is a
+refusal by design and the mirror is empty on purpose.</p>
+<p>Three fixes, and the second and third are not the same fix:</p>
+<ol>
+<li><strong>Nothing may raise between the claim and the <code>try</code>.</strong> The history-row INSERT
+   is now guarded and hands the lease back on its way out.</li>
+<li><strong><code>reap_stale_leases</code>, phase 1</strong> — a lease held past <code>LEASE_TTL_MINUTES</code>
+   (60; the longest run ever recorded here is 5.5 min, so ~11× the worst case)
+   is released, <code>next_run</code> is recomputed, and the fire is recorded as a <strong>failed
+   scheduled run</strong>. Reused row if the dead fire opened one, written if it did
+   not. <code>trigger</code> stays <code>'schedule'</code> because that is the only trigger
+   <code>_check_actions</code> counts — a recovery nobody can see is indistinguishable
+   from the outage continuing.</li>
+<li><strong>Phase 2</strong> — history rows still <code>'running'</code> past the TTL whose action holds
+   <strong>no</strong> lease are closed. Phase 1 iterates leased actions and can never reach
+   these. Gated on <em>both</em> conditions: a live fire holds its lease, but reading
+   the lease and reading the row are two statements, so the age bound is what
+   removes the race.</li>
+</ol>
+<p>The sidecar reaps <strong>before</strong> <code>due_actions</code>, not after — reaping after would
+delay every recovery by a full tick, since <code>due_actions</code> is precisely the query
+that cannot see a leased row.</p>
+<p><strong>Recipe.</strong> <code>reap_stale_leases</code> returns one dict per repair tagged
+<code>kind</code> (<code>lease</code> / <code>orphan-run</code>); the sidecar prints each. To check a node:</p>
+<pre><code class="language-sql">SELECT id, name, running_at FROM scheduled_action WHERE running_at IS NOT NULL;
+SELECT count(*) FROM scheduled_action_run WHERE status = 'running';
+</code></pre>
+<p>Both should be 0 on an idle node. A non-zero second number with a zero first
+number is the phase-2 case specifically.</p>
+<h2 id="154b-the-backup-check-that-fired-on-its-own-policy-working">§154b — the backup check that fired on its own policy working</h2>
+<p><code>_check_backup</code> read <code>local_inventory()</code>, i.e. this node's disk. Default
+retention is <code>keep=0</code>: <code>evict_local_bundles</code> deletes the local bundle once the
+backup server verifiably holds it, byte for byte. So every day, in the window
+between the eviction and the next nightly dump, the engine raised <strong>"No database
+backup bundles present"</strong> — on the backup policy succeeding. It now reads
+<code>all_bundles()</code>, the local+off-box union the System Backup page already renders,
+whose own docstring names this exact failure.</p>
+<p>An off-box row carries no local mtime, because there is no local file. Its age
+comes from the name (<code>fmw-backup-YYYYmmdd-HHMMSS</code>), which is written from the
+same clock. The name is a <strong>fallback</strong>, never the first source: preferring it
+over an explicit timestamp is a separate lie, and both directions have a test.</p>
     </div>
   </div>
 </section>

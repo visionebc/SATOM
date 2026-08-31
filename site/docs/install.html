@@ -529,6 +529,78 @@ resolves the full closure — the equivalent of <code>dnf download --resolve
 Without it the URLs come out malformed, the refresh appears to work, and every
 package is reported as <em>not found in package names</em> — a failure that reads as
 "this distribution does not have python311".</p>
+<h3 id="23-containers-docker">2.3 Containers (Docker)</h3>
+<pre><code class="language-bash">cd deploy/docker
+cp env.example .env
+./satom-docker.sh gen-secrets     # real SECRET_KEY / FERNET_KEY / passwords
+./satom-docker.sh build satom:&lt;ver&gt;
+./satom-docker.sh up
+</code></pre>
+<p>A third shape, for a host that runs containers rather than services. The
+application, PostgreSQL, Redis and the metrics store come up as one stack.
+<code>web</code>, <code>scheduler</code> and <code>cron</code> are <strong>the same image</strong>, selected by <code>SATOM_ROLE</code>:
+three images would let the scheduler run code the web worker does not have, and
+that difference is invisible until a scheduled action behaves differently from
+the same action fired by hand.</p>
+<p><strong>It is not the full install in a box, and the difference is deliberate.</strong> A
+container administers no host, so this shape <strong>renounces</strong> four capabilities
+instead of shipping them broken:</p>
+<table>
+<thead>
+<tr>
+<th>capability</th>
+<th>what to do instead</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Software Update &amp; HA</strong> (in-place self-update)</td>
+<td>deploy a new image tag and recreate the stack</td>
+</tr>
+<tr>
+<td><strong>Service control</strong> (start/stop/restart of node units)</td>
+<td><code>docker compose restart &lt;service&gt;</code></td>
+</tr>
+<tr>
+<td><strong>Certificate activation</strong></td>
+<td>terminate TLS on the reverse proxy in front of the stack</td>
+</tr>
+<tr>
+<td><strong>systemd unit health</strong></td>
+<td>read container health from the container engine</td>
+</tr>
+</tbody>
+</table>
+<p>Each of the four refuses with a message naming its alternative; none of them
+fails silently, and the refusals are asserted in <code>tests/test_container_runtime.py</code>
+rather than promised here. Everything else — device management, probes and
+monitors, the metrics store, backups and restore, the source of truth, reports,
+the CLI, RBAC and SSO — behaves exactly as on a host install.
+<strong>If you need in-place self-update or node-managed TLS, install on a host.</strong></p>
+<p>The runtime is <strong>declared by the image</strong> (<code>SATOM_RUNTIME=container</code>), never
+detected. <code>system_health.is_container()</code> returns true on an LXC <em>host</em> install
+as well, so keying these capabilities off a <code>/proc</code> probe would strip the
+updater from the nodes that most need it. Only the exact value <code>container</code>
+selects the container runtime — a typo means <code>host</code>, so a stray environment
+variable can never quietly disarm an appliance.</p>
+<p>Production runs two nodes: a primary, and a <strong>standby</strong> whose PostgreSQL is a
+streaming replica and whose scheduler idles until the database is promoted (two
+nodes must never both fire the same action — a duplicated firmware upgrade is a
+double flash). A node with no route to a registry is served the same way the
+offline bundles are, as a file:</p>
+<pre><code class="language-bash">./satom-docker.sh export satom:&lt;ver&gt; /tmp/satom-&lt;ver&gt;.tar.gz
+# copy the tarball AND its .sha256, then on the target
+./satom-docker.sh import /tmp/satom-&lt;ver&gt;.tar.gz
+</code></pre>
+<p><code>import</code> verifies the checksum <strong>before</strong> loading, because a truncated transfer
+otherwise surfaces as a layer error inside <code>docker load</code> — which reads like a
+corrupt image rather than a short file.</p>
+<p><strong>Full page: <a href="docker.html"><code>docker.md</code></a></strong> — the stack service by service, the
+development single node, the production cluster and its failover rules, offline
+image delivery, and what a backup has to cover. (A <code>pg_dump</code> alone is not a
+backup: the source-of-truth index lives in PostgreSQL while its blobs live in
+the data volume, so restoring only the database leaves rows pointing at
+nothing.)</p>
 <hr>
 <h2 id="3-what-the-installer-asks-in-this-order">3. What the installer asks (in this order)</h2>
 <p><strong>Step 0 — preflight.</strong> Before the first question it verifies that the machine

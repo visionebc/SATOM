@@ -1,0 +1,147 @@
+# SATOM — base stack. Runnable as-is (development); production layers
+# deploy/docker/compose.prod.yaml on top.
+#
+#   dev   docker compose -f compose.yaml up -d
+#   prod  docker compose -f compose.yaml -f compose.prod.yaml up -d
+#
+# Use deploy/docker/satom-docker.sh so the -f order is not something anyone has
+# to remember: with the files reversed the production overrides are the BASE
+# and the development defaults win, which brings up a production node bound to
+# a development configuration and reports success.
+#
+# WHAT THIS STACK IS NOT
+# A host install also runs satom-updater(.path), satom-integrations(.path),
+# satom-reconciler and satom-cert-renew. They are absent on purpose, not
+# forgotten -- see app/runtime.py, and the four capabilities it subtracts.
+
+name: satom
+
+# The environment is its OWN anchor, separate from the service anchor.
+#
+# Not style: in Compose a service-level `environment:` REPLACES the mapping
+# inherited through `<<:`, it does not merge into it. Written the obvious way
+# (one anchor carrying both), giving `scheduler` its `SATOM_ROLE` would have
+# dropped SQLALCHEMY_DATABASE_URI, RATELIMIT_STORAGE_URI and SATOM_METRICS_URL
+# from that container -- and the scheduler would then have fallen back to
+# whatever .env carries, which on a node copied from a host install is
+# 127.0.0.1. It would have started, connected to nothing, and logged normally.
+x-app-env: &app-env
+  # These OVERRIDE .env on purpose. .env is normally copied from a host node
+  # where both endpoints are 127.0.0.1 -- and 127.0.0.1 inside a container is
+  # the container itself, so the app would quietly run with no rate-limit
+  # backend and no metrics store.
+  SQLALCHEMY_DATABASE_URI: postgresql+psycopg://${POSTGRES_USER:-satom}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-satom}
+  RATELIMIT_STORAGE_URI: redis://redis:6379/0
+  SATOM_METRICS_URL: http://victoria-metrics:8428
+  TZ: ${TZ:-Europe/Zurich}
+
+x-app: &app
+  image: ${SATOM_IMAGE:-satom:local}
+  restart: unless-stopped
+  env_file:
+    - .env
+  volumes:
+    # data/ holds the device vault, system-backup bundles, the SoT object store
+    # and reports/. On a host install it is ~1.4 GB and it is the only thing in
+    # the tree that is irreplaceable: the image can be rebuilt, this cannot.
+    - satom-data:/opt/satom/data
+    - satom-state:/opt/satom/state
+    - satom-instance:/opt/satom/instance
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_started
+  networks:
+    - satom
+
+services:
+  postgres:
+    image: postgres:15-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-satom}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-satom}
+      TZ: ${TZ:-Europe/Zurich}
+    volumes:
+      - satom-pgdata:/var/lib/postgresql/data
+    # No published port. The database is reachable only from this stack's
+    # network; an operator who needs psql runs it through `docker compose exec`.
+    networks:
+      - satom
+    healthcheck:
+      # -U/-d on purpose: bare pg_isready answers "accepting connections"
+      # during the initdb bootstrap, before the application role and database
+      # exist, and the app then fails its first connection with an
+      # authentication error that reads like a wrong password.
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-satom} -d ${POSTGRES_DB:-satom} -q"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 30s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # Rate-limit counters only. They are derivable state, so no volume: losing
+    # them on restart resets a window, it does not lose data. Flask-Limiter
+    # falls back to in-memory with a warning if this is unreachable, which is
+    # why it is a real service and not an optional one -- per-worker in-memory
+    # counters mean the documented limit is silently multiplied by the worker
+    # count.
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    networks:
+      - satom
+
+  victoria-metrics:
+    # Pinned to the SAME version as a host install (deploy/metrics-store.env
+    # VM_VERSION). tests/test_container_runtime.py fails if the two drift: a
+    # container node and a host node answering different MetricsQL is a
+    # difference that only shows up as an empty dashboard panel.
+    image: victoriametrics/victoria-metrics:v1.148.0
+    restart: unless-stopped
+    command:
+      - "--storageDataPath=/victoria-metrics-data"
+      - "--retentionPeriod=396d"
+      - "--httpListenAddr=:8428"
+    volumes:
+      - satom-metrics:/victoria-metrics-data
+    # DELIBERATELY NO `ports:`. VictoriaMetrics has NO AUTHENTICATION -- on a
+    # host install the 127.0.0.1 bind is the only thing protecting the fleet's
+    # metrics. Here that role is played by the absence of a published port:
+    # the service is reachable on the compose network and nowhere else.
+    # There is a test for this.
+    networks:
+      - satom
+
+  web:
+    <<: *app
+    environment:
+      <<: *app-env
+      SATOM_ROLE: web
+    ports:
+      - "${SATOM_HTTP_BIND:-0.0.0.0:80}:8000"
+
+  scheduler:
+    <<: *app
+    environment:
+      <<: *app-env
+      SATOM_ROLE: scheduler
+
+  cron:
+    <<: *app
+    environment:
+      <<: *app-env
+      SATOM_ROLE: cron
+
+volumes:
+  satom-data:
+  satom-state:
+  satom-instance:
+  satom-pgdata:
+  satom-metrics:
+
+networks:
+  satom:
+    driver: bridge

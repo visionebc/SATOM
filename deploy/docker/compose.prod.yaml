@@ -1,0 +1,91 @@
+# SATOM — production overlay. Layers on compose.yaml, never used alone.
+#
+#   docker compose -f compose.yaml -f compose.prod.yaml up -d
+#
+# What this adds: a PINNED image (never :local), restart=always, log rotation,
+# resource ceilings, and the streaming-replication plumbing that makes a
+# two-node cluster possible.
+#
+# The standby node ALSO layers compose.standby.yaml on top of this one.
+
+services:
+  postgres:
+    environment:
+      # Consumed by 10-replication.sh below, on first initdb only.
+      SATOM_REPL_USER: ${SATOM_REPL_USER:-satom_repl}
+      SATOM_REPL_PASSWORD: ${SATOM_REPL_PASSWORD:?SATOM_REPL_PASSWORD is required in production}
+    volumes:
+      - ./initdb.d:/docker-entrypoint-initdb.d:ro
+    command:
+      - "postgres"
+      # wal_level=replica and max_wal_senders>0 are PostgreSQL 15 defaults, but
+      # they are stated because they are LOAD-BEARING here: a future base-image
+      # bump that changed either would break replication at the next
+      # pg_basebackup, i.e. during a rebuild of the standby, i.e. exactly when
+      # the cluster is already down to one node.
+      - "-c"
+      - "wal_level=replica"
+      - "-c"
+      - "max_wal_senders=10"
+      - "-c"
+      - "wal_keep_size=1024MB"
+      - "-c"
+      - "hot_standby=on"
+    ports:
+      # The standby reaches the primary over the DMZ, so this port must leave
+      # the compose network. It is bound to an EXPLICIT address
+      # (SATOM_PG_BIND), never 0.0.0.0: on a node with two interfaces the
+      # difference between "the peer can reach it" and "everyone can" is this
+      # one string. Authentication is scram-sha-256 and the only role allowed
+      # to connect over it is the replication role (see initdb.d).
+      - "${SATOM_PG_BIND:?SATOM_PG_BIND is required in production, e.g. 203.0.113.14:5432}:5432"
+    restart: always
+    logging: &logging
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+
+  redis:
+    restart: always
+    logging: *logging
+
+  victoria-metrics:
+    restart: always
+    logging: *logging
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+
+  web:
+    # No :local in production. An image tag that can be rebuilt in place makes
+    # "which build is running?" unanswerable, and the answer is the first thing
+    # asked during an incident.
+    image: ${SATOM_IMAGE:?SATOM_IMAGE must be an immutable tag in production, e.g. satom:1.20.0}
+    restart: always
+    logging: *logging
+    environment:
+      # TLS is terminated by dmz-edge; the app sees plain HTTP and must be told
+      # which hop to trust for X-Forwarded-*. Getting this wrong does not fail
+      # loudly -- it makes every audit-log entry record the proxy's address as
+      # the actor's.
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:?TRUSTED_PROXIES is required in production, e.g. 203.0.113.4}
+    deploy:
+      resources:
+        limits:
+          memory: 3g
+
+  scheduler:
+    image: ${SATOM_IMAGE:?SATOM_IMAGE must be an immutable tag in production}
+    restart: always
+    logging: *logging
+
+  cron:
+    image: ${SATOM_IMAGE:?SATOM_IMAGE must be an immutable tag in production}
+    restart: always
+    logging: *logging

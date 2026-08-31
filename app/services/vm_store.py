@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import time
+import os
 import urllib.parse
 import urllib.request
 
@@ -40,7 +41,24 @@ def base_url() -> str:
         raise
     except Exception:  # noqa: BLE001 — outside app context (tests, CLI)
         return DEFAULT_URL
-    return (configured or DEFAULT_URL).rstrip("/")
+    return (configured or _env_url() or DEFAULT_URL).rstrip("/")
+
+
+def _env_url() -> str:
+    """Deployment-supplied default, ranked BELOW the operator's setting.
+
+    The container stack runs VictoriaMetrics as a sibling service, so
+    ``127.0.0.1:8428`` -- correct on every host install -- is the app container
+    itself there. ``deploy/docker/compose.yaml`` sets ``SATOM_METRICS_URL``.
+
+    The precedence is the point. Putting the environment ABOVE
+    ``metrics.vm_url`` would make the settings field silently ineffective on a
+    container node, which is precisely the failure ``base_url``'s own docstring
+    already records once: ``settings_store.get`` never existed, the broad
+    ``except`` ate the AttributeError, and the setting was unconfigurable for
+    months while the default was always returned.
+    """
+    return os.environ.get("SATOM_METRICS_URL", "").strip()
 
 
 def _http(path: str, *, data: bytes | None = None, timeout: float = 10.0,

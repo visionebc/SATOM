@@ -1,0 +1,47 @@
+# The build context is a LIVE appliance checkout. Without this file the daemon
+# tars ~1.4 GB of runtime state (firmware images, system-backup bundles, SoT
+# blobs) plus venv/ and .git/ before the first instruction runs -- measured on
+# satom-node-1: data/ 1.4 G, venv/ 380 M, site/ 26 pages of generated HTML.
+#
+# The Dockerfile also uses an explicit COPY allowlist. Both, on purpose: this
+# file keeps the context small (build speed, and secrets never leave the node),
+# the allowlist keeps the IMAGE correct.
+
+.git
+.gitignore
+.github
+
+venv/
+**/__pycache__/
+**/*.pyc
+.pytest_cache/
+.python_history
+
+# Runtime state — belongs on volumes, never in a layer.
+data/
+reports/
+instance/
+state/
+pki/
+dist/
+logs/
+*.db
+*.sqlite3
+*.dump
+*.tar.gz
+
+# Secrets. An image that carries FERNET_KEY is an image that decrypts every
+# appliance password in fortinet.db for whoever pulls it.
+.env
+.env.*
+!deploy/docker/env.example
+*.pem
+*.key
+keys/
+
+# Generated site and local operator config: not part of the application.
+site/
+*.pre-*
+*.bak-*
+publication-rules.local.json
+acme_providers.overlay.yaml

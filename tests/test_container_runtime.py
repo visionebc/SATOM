@@ -358,3 +358,54 @@ def test_shipped_scripts_are_executable_with_a_shebang(script):
     assert p.exists(), p
     assert p.read_text().startswith("#!"), f"{script} has no shebang"
     assert os.access(p, os.X_OK), f"{script} is not executable"
+
+
+# ---------------------------------------------------------------------------
+# Found by RUNNING the stack. Each of these passed every earlier check.
+# ---------------------------------------------------------------------------
+
+def test_only_the_listening_role_is_health_checked():
+    """`scheduler` and `cron` do not listen; the image HEALTHCHECK curls :8000.
+
+    Without an explicit disable they inherit it, sit at "starting", and settle
+    on "unhealthy" forever. A health signal that is always red for a working
+    container is worse than none — it teaches the operator to ignore the
+    column meant to carry the alarm.
+    """
+    services = _yaml(COMPOSE)["services"]
+    for name in ("scheduler", "cron"):
+        hc = services[name].get("healthcheck")
+        assert hc and hc.get("disable") is True, (
+            f"{name} inherits the web healthcheck it can never pass"
+        )
+    assert "healthcheck" not in services["web"], (
+        "web must keep the image healthcheck"
+    )
+
+
+def test_metrics_url_env_applies_without_an_app_context():
+    """The scheduler sidecar imports vm_store with NO application context.
+
+    The settings lookup raises there, and if the fallback lived only on the
+    success path the sidecar would write every metric to a loopback store that
+    does not exist in a container. Measured in the running dev stack: it
+    returned http://127.0.0.1:8428 while SATOM_METRICS_URL was set correctly.
+    """
+    src = (ROOT / "app" / "services" / "vm_store.py").read_text()
+    # The except branch must consult the environment, not return the constant.
+    i = src.index("outside app context")
+    tail = src[i:i + 700]
+    assert "_env_url() or DEFAULT_URL" in tail, (
+        "the no-app-context branch must still honour SATOM_METRICS_URL"
+    )
+
+
+def test_cron_runner_reports_a_real_exit_code():
+    """`if ! cmd; then log "$?"` captures the status of the TEST, not the
+    command — it printed "responder-tick FAILED (rc=0)" for a real failure,
+    which invites the reader to dismiss the message as spurious."""
+    text = (ROOT / "deploy" / "docker" / "cron-runner.sh").read_text()
+    body = "\n".join(l for l in text.splitlines()
+                     if not l.lstrip().startswith("#"))
+    assert 'if ! python -m app.cli_sentinel responder-tick' not in body
+    assert 'responder-tick || log' in body

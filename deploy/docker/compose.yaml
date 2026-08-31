@@ -128,12 +128,22 @@ services:
     environment:
       <<: *app-env
       SATOM_ROLE: scheduler
+    # The image HEALTHCHECK curls :8000. This role does not listen, so it was
+    # pinned at "starting" and would have settled on "unhealthy" forever. A
+    # health signal that is always red for a working container is worse than
+    # none: it teaches the operator to ignore the column meant to carry the
+    # alarm. Disabled rather than replaced, matching the host install --
+    # systemd does not health-check satom-scheduler.service either.
+    healthcheck:
+      disable: true
 
   cron:
     <<: *app
     environment:
       <<: *app-env
       SATOM_ROLE: cron
+    healthcheck:
+      disable: true
 
 volumes:
   satom-data:

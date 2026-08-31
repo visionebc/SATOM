@@ -29,6 +29,7 @@ Design notes
 from __future__ import annotations
 
 import json
+import re
 import socket
 from datetime import datetime, timezone
 
@@ -624,31 +625,62 @@ def _check_actions() -> list[dict]:
                        f"evaluated on {_node()}. Details: /scheduled-actions/")})
     return findings
 
+def _bundle_stamp(entry: dict):
+    """When a bundle was taken, as an aware UTC datetime, or None.
+
+    The name is a real fallback, not a nicety: an off-box-only row carries no
+    local mtime (there is no local file), and ``fmw-backup-YYYYmmdd-HHMMSS`` is
+    written from the same clock as the mtime this used to be the only source
+    for.
+    """
+    ts = entry.get("created") or entry.get("modified") or entry.get("mtime") or entry.get("date")
+    dt = None
+    if isinstance(ts, (int, float)):
+        dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+    elif isinstance(ts, str) and ts:
+        try:
+            dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        except ValueError:
+            dt = None
+    if dt is None:
+        m = re.search(r"(\d{8})-(\d{6})", str(entry.get("name") or ""))
+        if m:
+            try:
+                dt = datetime.strptime(m.group(1) + m.group(2), "%Y%m%d%H%M%S")
+            except ValueError:
+                dt = None
+    if dt is not None and dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
 def _check_backup() -> list[dict]:
+    """Is there a recent database bundle ANYWHERE we can see?
+
+    Reads the local+off-box union, not this node's disk. Keeping a bundle
+    beside the database it backs up is where it is worth least, so the default
+    retention is ``keep=0``: once an upload to the backup server is verified
+    byte for byte the local copy is deleted. A check that only listed local
+    files therefore raised "No database backup bundles present" every day in
+    the window between the eviction and the next nightly dump - it fired on the
+    backup policy WORKING. ``all_bundles`` is the same union the System Backup
+    page renders, whose own docstring already names this failure.
+    """
     from . import system_backup
     try:
-        inv = system_backup.local_inventory()
+        bundles = system_backup.all_bundles()
     except Exception as exc:  # noqa: BLE001
         return [{"key": "backup.error", "severity": SEV_INFO,
                  "title": "Backup inventory unreadable",
-                 "detail": f"local_inventory() failed: {exc}"}]
-    bundles = inv.get("bundles") or []
+                 "detail": f"all_bundles() failed: {exc}"}]
     if not bundles:
         return [{"key": "backup.none", "severity": SEV_WARNING,
                  "title": "No database backup bundles present",
-                 "detail": f"No pg_dump bundles found on {_node()}."}]
-    # Newest bundle mtime; each entry carries an ISO 'modified' or epoch 'mtime'.
+                 "detail": (f"No pg_dump bundle found on {_node()} nor on the "
+                            f"backup server.")}]
     newest = None
     for b in bundles:
-        ts = b.get("created") or b.get("modified") or b.get("mtime") or b.get("date")
-        dt = None
-        if isinstance(ts, (int, float)):
-            dt = datetime.fromtimestamp(ts, tz=timezone.utc)
-        elif isinstance(ts, str) and ts:
-            try:
-                dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
-            except ValueError:
-                dt = None
+        dt = _bundle_stamp(b)
         if dt is not None and (newest is None or dt > newest):
             newest = dt
     if newest is None:

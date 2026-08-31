@@ -411,3 +411,160 @@ def test_the_pki_is_a_volume_so_a_new_image_tag_keeps_the_certificate():
     assert any(str(m).startswith("satom-pki:") for m in mounts), (
         "the proxy does not mount satom-pki: %r" % mounts
     )
+
+
+# ---------------------------------------------------------------------------
+# 4. Plain HTTP redirects to HTTPS -- on every path, without breaking renewal
+# ---------------------------------------------------------------------------
+# TLS being provisioned is not the whole promise. A node that serves HTTPS and
+# ALSO answers plain HTTP hands the operator a working-looking page over a
+# transport where the session cookie (Secure) is never returned -- the exact
+# shape that made a freshly installed node reject every correct password. The
+# redirect is what closes it, and it only fires when nginx selects this block
+# for a name it does not otherwise match, i.e. when it owns default_server.
+
+
+def _redirect_block(text: str, who: str) -> str:
+    """The one `server { ... }` block that listens on plain :80.
+
+    Extracted from the ARTEFACT rather than restated here: a guard that carries
+    its own copy of the expected vhost becomes a third author of it, and then
+    agrees with itself while the shipped file drifts.
+    """
+    hits = []
+    for chunk in re.split(r"^server\s*\{", text, flags=re.MULTILINE)[1:]:
+        block = re.split(r"^\}", chunk, maxsplit=1, flags=re.MULTILINE)[0]
+        if re.search(r"^\s*listen\s+80\b", block, re.MULTILINE):
+            hits.append(block)
+    assert len(hits) == 1, (
+        "%s authors %d server blocks listening on plain :80 — expected exactly "
+        "one, the redirect" % (who, len(hits))
+    )
+    assert len(hits[0].splitlines()) >= 4, (
+        "the :80 block in %s is %d lines — too short to be the real one; the "
+        "guard would be inspecting a fragment" % (who, len(hits[0].splitlines()))
+    )
+    return hits[0]
+
+
+@pytest.mark.parametrize("author", VHOST_AUTHORS, ids=lambda p: p.name)
+def test_every_vhost_author_redirects_plain_http_to_https(author: pathlib.Path):
+    block = _redirect_block(code_only(read(author)), author.name)
+    assert re.search(r"return\s+301\s+https://", block), (
+        "%s serves :80 without redirecting it to HTTPS. The bare "
+        "`return 301 https://` invariant does not cover this: it is satisfied "
+        "by a redirect anywhere in the file, including inside the TLS block."
+        % author.name
+    )
+
+
+@pytest.mark.parametrize("author", VHOST_AUTHORS, ids=lambda p: p.name)
+def test_the_redirect_does_not_swallow_the_acme_challenge(author: pathlib.Path):
+    """The redirect must be scoped to `location /`, never a server-level return.
+
+    ACME http-01 is validated over plain :80 even for a host that only serves
+    TLS. A server-level `return` runs BEFORE location selection, so it answers
+    the challenge with a 301 and every future renewal fails -- months later,
+    silently, on a node whose certificate had been working all along.
+    """
+    block = _redirect_block(code_only(read(author)), author.name)
+    assert "acme-challenge" in block, (
+        "%s has no acme-challenge location on :80; http-01 renewal cannot "
+        "complete on that node" % author.name
+    )
+    assert re.search(r"location\s+/\s*\{[^}]*return\s+301\s+https://", block), (
+        "%s does not scope the redirect to `location /`" % author.name
+    )
+    assert not re.search(r"^\s{0,4}return\s+301", block, re.MULTILINE), (
+        "%s has a server-level `return 301` on :80, which runs before location "
+        "selection and swallows the ACME challenge" % author.name
+    )
+
+
+@pytest.mark.parametrize("author", VHOST_AUTHORS, ids=lambda p: p.name)
+def test_the_redirect_listener_shares_the_tls_listener_default_server_switch(
+    author: pathlib.Path,
+):
+    """A hardcoded `default_server` on :80 defeats its own self-correction.
+
+    Both authors write the vhost WITH default_server and rewrite it without
+    when nginx answers "duplicate default server". If the :80 listener hardcodes
+    the marker instead of taking it from that switch, the rewrite changes only
+    the TLS listener, nginx keeps refusing the configuration, and the install
+    dies at its last step with the application already installed and healthy.
+    Found in installers/install-satom.sh on 2026-08-31.
+    """
+    block = _redirect_block(code_only(read(author)), author.name)
+    listens = [l for l in block.splitlines() if re.search(r"^\s*listen\b", l)]
+    assert len(listens) >= 2, (
+        "%s binds :80 on %d listeners; IPv4 and IPv6 are both needed"
+        % (author.name, len(listens))
+    )
+    for line in listens:
+        assert "default_server" not in line, (
+            "%s hardcodes default_server on the :80 listener (%s). It must come "
+            "from the same switch as the TLS listener, or the duplicate-default "
+            "rewrite cannot remove it." % (author.name, line.strip())
+        )
+        assert re.search(r"\$\{?\w+\}?\s*;", line), (
+            "%s takes default_server from no variable at all on %s, so the :80 "
+            "listener can never claim it" % (author.name, line.strip())
+        )
+
+
+@pytest.mark.parametrize("script", HOST_INSTALLERS, ids=lambda p: p.name)
+def test_every_host_installer_asks_for_the_default_server(script: pathlib.Path):
+    """Asserted on the CALL, never on the flag appearing somewhere in the file.
+
+    The first version of this test looked for the substring `--default-server`
+    and SURVIVED having the flag removed from the invocation: the writer
+    function carries a trailing comment naming its own argument, and
+    code_only() only strips whole-line comments. Same failure mode as the
+    guards that matched their own explanation -- so the pattern is anchored to
+    a line that actually dispatches.
+    """
+    body = code_only(read(script))
+    assert re.search(
+        r"^\s*write_satom_vhost\s+(--default-server\b|\"\s*default_server)", body,
+        re.MULTILINE,
+    ), (
+        "%s never calls its vhost writer asking for default_server, so a "
+        "packaged welcome site keeps :80 and the redirect never runs"
+        % script.name
+    )
+
+
+@pytest.mark.parametrize("script", HOST_INSTALLERS, ids=lambda p: p.name)
+def test_every_host_installer_survives_a_competing_default_server(
+    script: pathlib.Path,
+):
+    body = code_only(read(script))
+    assert re.search(r"duplicate default server", body, re.IGNORECASE), (
+        "%s does not recognise nginx's own 'duplicate default server' error, "
+        "so on a host that already serves another site the install aborts "
+        "instead of writing the vhost without the claim" % script.name
+    )
+    assert body.count("write_satom_vhost") >= 3, (
+        "%s references its vhost writer %d times; the self-correction needs a "
+        "definition and TWO calls" % (script.name, body.count("write_satom_vhost"))
+    )
+
+
+@pytest.mark.parametrize("script", HOST_INSTALLERS, ids=lambda p: p.name)
+def test_every_host_installer_clears_the_packaged_default_site(
+    script: pathlib.Path,
+):
+    """Removing it is not tidiness: it is what lets the redirect be reached.
+
+    Debian's default site lives in sites-enabled; the nginx.org and RHEL
+    packages drop conf.d/default.conf, which beats satom.conf on the
+    ALPHABETICAL parse order between files. Either one answers the welcome page
+    over plain HTTP while :443 works perfectly -- nothing is red anywhere.
+    """
+    body = code_only(read(script))
+    assert re.search(r"rm\s+-f\b[^\n]*sites-enabled/default\b", body), (
+        "%s leaves Debian's default site enabled" % script.name
+    )
+    assert re.search(r"rm\s+-f\b[^\n]*conf\.d/default\.conf", body), (
+        "%s leaves the packaged conf.d/default.conf in place" % script.name
+    )

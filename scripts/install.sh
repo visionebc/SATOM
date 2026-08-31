@@ -177,13 +177,30 @@ SERVED_NAMES="${SERVED_NAMES:-$(hostname -f 2>/dev/null || hostname)}"
 NODE_IP="${NODE_IP:-$(hostname -I 2>/dev/null | awk '{print $1}')}"
 APP_DIR="$APP_DIR" SATOM_SERVED_NAMES="$SERVED_NAMES" SATOM_NODE_IP="$NODE_IP" \
   "$APP_DIR/deploy/tls-bootstrap.sh" ensure-pki
-APP_DIR="$APP_DIR" SATOM_SERVED_NAMES="$SERVED_NAMES" SATOM_NODE_IP="$NODE_IP" \
-  "$APP_DIR/deploy/tls-bootstrap.sh" write-vhost \
-    --out /etc/nginx/conf.d/satom.conf --port "${WEB_PORT:-443}" \
-    --upstream "127.0.0.1:$PORT"
-# Debian's packaged nginx ships a default site on :80 that would win the
-# redirect listener; sites-enabled is included before conf.d.
-rm -f /etc/nginx/sites-enabled/default
+write_satom_vhost() {   # $1: "" or --default-server
+  APP_DIR="$APP_DIR" SATOM_SERVED_NAMES="$SERVED_NAMES" SATOM_NODE_IP="$NODE_IP" \
+    "$APP_DIR/deploy/tls-bootstrap.sh" write-vhost \
+      --out /etc/nginx/conf.d/satom.conf --port "${WEB_PORT:-443}" \
+      --upstream "127.0.0.1:$PORT" ${1:+"$1"}
+}
+# [SATOM-NGINX-DEFAULT] The :80 -> :443 redirect only ever runs when nginx picks
+# THIS block for an unmatched name, i.e. when it owns default_server. A packaged
+# default site that keeps it answers the welcome page over plain HTTP while :443
+# works perfectly, so the node looks healthy and the redirect is silently gone.
+# Debian's lives in sites-enabled (included before conf.d); the nginx.org and
+# RHEL packages drop a conf.d/default.conf, which beats satom.conf on the
+# ALPHABETICAL parse order between files.
+rm -f /etc/nginx/sites-enabled/default /etc/nginx/conf.d/default.conf
+# Written WITH default_server. If some other vhost already claims it, nginx says
+# so verbatim and only THEN is it rewritten without -- self-correcting, rather
+# than guessing at someone else's configuration with a regex. An `nginx -t` that
+# fails for any other reason keeps default_server and falls through to the check
+# below, which reports the real cause.
+write_satom_vhost --default-server
+if ! nginx -t >/dev/null 2>&1 && nginx -t 2>&1 | grep -qi "duplicate default server"; then
+  log "Another vhost already claims default_server on :${WEB_PORT:-443} — rewriting without it"
+  write_satom_vhost
+fi
 nginx -t || die "nginx rejected the generated vhost — see the output above"
 systemctl enable nginx >/dev/null 2>&1 || true
 systemctl reload nginx 2>/dev/null || systemctl restart nginx

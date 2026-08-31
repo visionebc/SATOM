@@ -383,6 +383,23 @@ def test_the_container_vhost_claims_the_default_server():
     )
 
 
+@pytest.mark.parametrize("script", (BOOTSTRAP, DEPLOY / "docker" / "proxy-init.sh"),
+                         ids=lambda p: p.name)
+def test_the_provisioning_scripts_are_executable(script: pathlib.Path):
+    """Committed 0644 once and the stack would not start.
+
+    proxy-init.sh is an `entrypoint`, so it is exec-d directly rather than
+    handed to a shell: a missing execute bit surfaces as an OCI runtime error
+    about creating the container process, which reads like a broken image. And
+    the checked-out mode comes from the git index, so an `rsync -a` from a
+    working copy can quietly carry it back down after a chmod.
+    """
+    assert script.stat().st_mode & 0o111, (
+        "%s is not executable; the container entrypoint and the installer "
+        "call it directly" % script.name
+    )
+
+
 def test_the_pki_is_a_volume_so_a_new_image_tag_keeps_the_certificate():
     compose = _compose()
     assert "satom-pki" in compose["volumes"], (

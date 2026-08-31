@@ -66,6 +66,58 @@ Two invariants are worth stating because nothing fails when they break:
   database starts them with no external coordination — and two nodes never both
   fire the same action. A double firmware-upgrade action means a double flash.
 
+## TLS is not optional
+
+The image runs with `FLASK_ENV=production`, which marks session cookies
+`Secure`. A browser withholds a `Secure` cookie from a plain-HTTP origin, so
+serving this stack over HTTP produces a deployment in which **no password
+works**: the login POST arrives with no session, there is no CSRF token to
+match, and the request is bounced back to the login form. Nothing about it
+looks broken — the container is healthy, `/healthz` answers 200, the login page
+renders — and the account is never locked out either, because the password is
+never compared. This is not hypothetical: it is how the first development node
+shipped, on 2026-08-31.
+
+So every container deployment needs an HTTPS terminator in front of the stack,
+development included.
+
+| shape | terminator | `SATOM_HTTP_BIND` | `TRUSTED_PROXIES` |
+|---|---|---|---|
+| single node | nginx on the same host | `127.0.0.1:8080` | the Docker bridge gateway |
+| cluster | the DMZ / edge proxy | `0.0.0.0:80` | the proxy's address |
+
+The gateway is what the container sees as its peer when publishing to
+loopback:
+
+```bash
+docker network inspect satom_satom \
+  --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}'
+```
+
+Whatever terminates TLS must pass `Host` through **with its port** and declare
+the client's scheme:
+
+```nginx
+proxy_set_header Host              $http_host;   # NOT $host — see below
+proxy_set_header X-Forwarded-Proto https;
+proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+```
+
+`$host` drops the port, and Flask-WTF's referer check compares scheme, host
+*and* port — which is how login broke behind a non-standard-port NAT on
+2026-08-04. Serve a redirect from `:80`, too: leaving plain HTTP answering the
+app re-creates the trap for anyone who types `http://`.
+
+Do **not** answer any of this by setting `SESSION_COOKIE_SECURE=False`.
+Without TLS the cookie already travels in clear text, so the flag protects
+nothing extra — but turning it off normalises an insecure configuration inside
+an image that also runs in production.
+
+If the misconfiguration does reach a running node, SATOM now says so out loud:
+a CSRF rejection on a plain-HTTP request while `SESSION_COOKIE_SECURE` is on is
+reported as a deployment problem — in the flash message, in the JSON error and
+in the log — instead of as an expired session.
+
 ## Development — a single node
 
 ```bash

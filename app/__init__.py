@@ -841,7 +841,8 @@ def create_app(config_override: object | None = None) -> Flask:
 
     @app.errorhandler(CSRFError)
     def _handle_csrf_error(exc):  # noqa: ANN001
-        from flask import flash, redirect, request, url_for, jsonify
+        from flask import flash, redirect, request, url_for, jsonify, current_app
+        from .extensions import INSECURE_TRANSPORT_HINT, insecure_session_transport
         # JSON/XHR callers (the editor save/inject fetch calls) must get a JSON
         # error, not a 302 redirect they can't parse (which silently aborts the
         # save). Browsers carry the token via the global fetch wrapper; this is
@@ -849,9 +850,25 @@ def create_app(config_override: object | None = None) -> Flask:
         wants_json = (request.is_json
                       or "application/json" in (request.headers.get("Accept") or "")
                       or request.headers.get("X-Requested-With") == "XMLHttpRequest")
+        # A CSRF failure has two entirely different causes, and only one of
+        # them is the user's. When the app is served over plain HTTP with
+        # SESSION_COOKIE_SECURE on, the browser withholds the cookie from
+        # EVERY request: there is never a token to match and no password can
+        # be accepted. Telling that operator "your session expired" sends
+        # them off to retype a CORRECT password forever, which is exactly
+        # what satom-node-1-dock did on 2026-08-31.
+        insecure = insecure_session_transport()
+        if insecure:
+            current_app.logger.error(
+                "CSRF rejection on a plain-HTTP request while "
+                "SESSION_COOKIE_SECURE is enabled: %s", INSECURE_TRANSPORT_HINT
+            )
         if wants_json:
-            return jsonify(ok=False, error="CSRF token missing or expired \u2014 reload the page and retry"), 400
-        flash("Your session expired or the form was stale \u2014 please try again.", "warning")
+            return jsonify(ok=False, error=(
+                INSECURE_TRANSPORT_HINT if insecure
+                else "CSRF token missing or expired \u2014 reload the page and retry")), 400
+        flash(INSECURE_TRANSPORT_HINT if insecure
+              else "Your session expired or the form was stale \u2014 please try again.", "warning")
         ref = request.referrer or ""
         if ref.startswith(request.host_url):
             return redirect(ref)

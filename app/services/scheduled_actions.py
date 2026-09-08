@@ -1215,22 +1215,6 @@ def _do_ha_failover(appliance, params: dict, dry_run: bool) -> dict:
                             "device of this product. NOTHING was sent."),
                 "log": (f"no FAILOVER_TRANSPORT entry for kind {kind!r}; known: "
                         f"{', '.join(sorted(FAILOVER_TRANSPORT))}")}
-    floor = ".".join(str(n) for n in transport.min_version)
-    running = _appliance_version(appliance)
-    if running is None:
-        return {"ok": False,
-                "summary": (f"{name}: SATOM has no recorded firmware version, and "
-                            f"this command only exists from {kind} {floor}. Run "
-                            "'Sync device to local source of truth' against it "
-                            "first. NOTHING was sent."),
-                "log": f"firmware={getattr(appliance, 'firmware', None)!r}"}
-    if running < transport.min_version:
-        return {"ok": False,
-                "summary": (f"{name}: {kind} "
-                            f"{'.'.join(str(n) for n in running)} has no failover "
-                            f"command - it exists from {floor}. NOTHING was sent."),
-                "log": transport.provenance}
-
     # A cluster node 0 is a container, not a box. resolve_write_target is the ONE
     # implementation of "which appliance does a write land on", and reusing it
     # here keeps the failover aimed at the same node every other write reaches.
@@ -1244,6 +1228,28 @@ def _do_ha_failover(appliance, params: dict, dry_run: bool) -> dict:
         except Exception as exc:  # noqa: BLE001 - HAError and anything under it
             return {"ok": False, "summary": f"{name}: {exc}", "log": ""}
     tname = getattr(target, "name", name)
+
+    floor = ".".join(str(n) for n in transport.min_version)
+    # The firmware floor is checked on the box that RECEIVES the command, which
+    # is why the write target is resolved first. In per-node mode node 0 is a
+    # logical container with no host and no firmware string (models.chassis_key
+    # says so in as many words): checking it refused every per-node cluster as
+    # "no recorded firmware version", and a stale string left on node 0 would
+    # have cleared a floor the live primary does not meet.
+    running = _appliance_version(target)
+    if running is None:
+        return {"ok": False,
+                "summary": (f"{tname}: SATOM has no recorded firmware version, and "
+                            f"this command only exists from {kind} {floor}. Run "
+                            "'Sync device to local source of truth' against it "
+                            "first. NOTHING was sent."),
+                "log": f"firmware={getattr(target, 'firmware', None)!r}"}
+    if running < transport.min_version:
+        return {"ok": False,
+                "summary": (f"{tname}: {kind} "
+                            f"{'.'.join(str(n) for n in running)} has no failover "
+                            f"command - it exists from {floor}. NOTHING was sent."),
+                "log": transport.provenance}
 
     role, evidence = _live_ha_role(target, transport)
     if direction == "set" and role != "primary":

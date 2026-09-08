@@ -822,9 +822,9 @@ def upgrade_prep_show(id, prep_id):
 
 
 # -- 5. Upgrade (firmware push from the repository — WRITE, dry-run default) --
-def _upgrade_authorization(appliance):
+def _change_authorization(appliance, action='upgrade'):
     """``(cr, ok, reason)`` — the approved change request that authorizes a LIVE
-    flash of this appliance right now.
+    run of ``action`` against this appliance right now.
 
     This page was the hole. The headless executor has refused to flash outside
     an approved window since the gate was generalised, but the button a human
@@ -842,13 +842,13 @@ def _upgrade_authorization(appliance):
     from ..services import change_requests as crsvc
     candidates = [cr for cr in
                   ChangeRequest.query.filter(
-                      ChangeRequest.action == 'upgrade',
+                      ChangeRequest.action == action,
                       ChangeRequest.status.in_(('approved', 'scheduled',
                                                 'in_progress'))).all()
                   if appliance.id in cr.device_ids_list]
     if not candidates:
         return None, False, ('no approved change request names this appliance '
-                             'for a firmware upgrade')
+                             f'for {action}')
     reasons: list[str] = []
     runnable = []
     for cr in candidates:
@@ -862,6 +862,11 @@ def _upgrade_authorization(appliance):
         return candidates[0], False, '; '.join(reasons[:3])
     runnable.sort(key=lambda c: (c.window_start or datetime.max))
     return runnable[0], True, 'inside an approved maintenance window'
+
+
+def _upgrade_authorization(appliance):
+    """The firmware-flash reading of :func:`_change_authorization`."""
+    return _change_authorization(appliance, 'upgrade')
 
 
 def _selected_compatible_image(appliance, image_id):
@@ -1708,3 +1713,244 @@ def restore_run(id):
     fw, backups = _restore_context(appliance)
     return render_template('appliances/restore.html', appliance=appliance, firmware=fw,
                            backups=backups, result=result, pre_backup=pre_backup)
+
+
+# --------------------------------------------------------------------------- #
+#  HA failover — the device-page surface of the ``ha_failover`` action          #
+# --------------------------------------------------------------------------- #
+FAILOVER_ACTION = 'ha_failover'
+
+
+def _failover_or_404(id):
+    """``(node0, '')`` for a row this product can fail over, else ``(row, why)``.
+
+    "Cluster" here means SATOM's OWN model of one — node 0 (``is_cluster``) or a
+    member node (``is_cluster_member``) — because that is the only thing this
+    page can decide from the database. Asking the box instead would put an SSH
+    round-trip on every appliance page render and still be wrong for an
+    unreachable device.
+
+    A row that is neither is refused with a message that NAMES what to do. The
+    refusal is on the ROUTE, not only on the button: a page that merely hides a
+    link is decoration, and the URL is guessable (the lesson ``require_device_scope``
+    already records in this module).
+    """
+    appliance = visible_appliance_or_404(id)
+    if not (appliance.is_cluster or appliance.is_cluster_member):
+        return appliance, (
+            f'{appliance.name} is not registered as an HA cluster, so there is no '
+            'peer to hand the primary role to. Mark it as a cluster (or attach it '
+            'to one as a member node) under Edit, then plan the failover here.')
+    return appliance, ''
+
+
+def _failover_state(appliance):
+    """Everything the failover page can state WITHOUT touching the appliance.
+
+    Read out of :data:`scheduled_actions.FAILOVER_TRANSPORT` rather than restated
+    here. That table is the single record of which command exists on which
+    product from which release, and a second copy of it on a page is how a page
+    ends up promising a command the executor refuses to send.
+    """
+    from ..services import scheduled_actions as sa
+    kind = (appliance.kind or 'fortiweb').strip().lower()
+    transport = sa.FAILOVER_TRANSPORT.get(kind)
+    state = {
+        'kind': kind,
+        'supported': transport is not None,
+        'products': sorted(sa.FAILOVER_TRANSPORT),
+        'set_cmd': transport.set_cmd if transport else '',
+        'unset_cmd': transport.unset_cmd if transport else '',
+        'floor': ('.'.join(str(n) for n in transport.min_version)
+                  if transport else ''),
+        'sticky': (not transport.clears_on_reboot) if transport else False,
+        'provenance': transport.provenance if transport else '',
+        # Per-node clusters resolve the target LIVE (the member reporting
+        # primary), so the version that will be checked is not knowable from
+        # here. Saying "unknown until the readiness check runs" is the honest
+        # answer; naming node 0's own firmware would name a row that never
+        # receives the command.
+        'target_known': not (appliance.is_cluster
+                             and (appliance.ha_mode or '').lower() != 'vip'),
+        'recorded_firmware': (appliance.firmware or '').strip(),
+    }
+    return state
+
+
+@bp.route('/<int:id>/failover')
+@login_required
+@require_permission(Permission.CONFIG_WRITE)
+@require_device_scope
+def failover(id):
+    appliance, why = _failover_or_404(id)
+    if why:
+        flash(why, 'warning')
+        return redirect(url_for('appliances.detail', id=id))
+    cr, cr_ok, cr_reason = _change_authorization(appliance, FAILOVER_ACTION)
+    return render_template('appliances/failover.html', appliance=appliance,
+                           state=_failover_state(appliance), tz_name=store.tz_name(),
+                           cr=cr, cr_ok=cr_ok, cr_reason=cr_reason)
+
+
+@bp.route('/<int:id>/failover/preflight', methods=['POST'])
+@login_required
+@require_permission(Permission.CONFIG_WRITE)
+@require_device_scope
+def failover_preflight(id):
+    """Readiness check. Runs the action's OWN dry run, which sends nothing.
+
+    Deliberately not a second implementation of "is this cluster ready": the
+    dry-run path of ``_do_ha_failover`` already walks every refusal in order
+    (product, firmware floor, write-target resolution, live role) and phrases
+    each one for a human. A page-local copy would drift from the executor, and
+    the operator would be told the failover is ready by one of them and refused
+    by the other.
+
+    NOT gated on a change request: a dry run reads the box and writes nothing,
+    and gating it would push operators to skip the check entirely.
+    """
+    appliance, why = _failover_or_404(id)
+    if why:
+        return jsonify({'ok': False, 'summary': why, 'log': ''}), 409
+    direction = _failover_direction(request.form.get('direction'))
+    if direction is None:
+        return jsonify({'ok': False, 'log': '',
+                        'summary': 'Pick set (hand the role over) or unset '
+                                   '(give it back). Nothing was sent.'}), 400
+    from ..services import scheduled_actions as sa
+    result = sa.run_action(sa.get_spec(FAILOVER_ACTION), appliance,
+                           {'direction': direction}, dry_run=True)
+    log_action('appliance.failover_preflight', target=appliance.name,
+               extra={'direction': direction, 'ok': bool(result.get('ok'))})
+    return jsonify({'ok': bool(result.get('ok')),
+                    'summary': result.get('summary') or '',
+                    'log': result.get('log') or ''})
+
+
+def _failover_direction(raw):
+    """``'set'`` | ``'unset'`` | ``None``. An unrecognised value is NEVER coerced.
+
+    Defaulting a missing direction to ``set`` would turn a glitched form into the
+    disruptive half of this action; the two directions are not interchangeable
+    and only one of them takes a cluster down."""
+    value = (raw or '').strip().lower()
+    return value if value in ('set', 'unset') else None
+
+
+@bp.route('/<int:id>/failover', methods=['POST'])
+@login_required
+@require_permission(Permission.CONFIG_WRITE)
+@require_device_scope
+def failover_run(id):
+    """Fail over NOW — only inside an approved change request's open window.
+
+    The headless executor has refused to run ``ha_failover`` unbound since the
+    action was registered (``ActionSpec.requires_change_request``). The button a
+    human clicks carries the SAME gate, from the same helper: a change-control
+    regime that only binds the unused code path is decoration — the defect this
+    module already paid for once on the firmware page.
+    """
+    appliance, why = _failover_or_404(id)
+    if why:
+        flash(why, 'warning')
+        return redirect(url_for('appliances.detail', id=id))
+    direction = _failover_direction(request.form.get('direction'))
+    if direction is None:
+        flash('Pick set (hand the role over) or unset (give it back). '
+              'Nothing was sent.', 'danger')
+        return redirect(url_for('appliances.failover', id=id))
+
+    cr, cr_ok, cr_reason = _change_authorization(appliance, FAILOVER_ACTION)
+    if not cr_ok:
+        msg = ('Live failover refused — change control: ' + cr_reason
+               + '. Plan it below, get the change approved, and run it inside '
+                 'its window. The readiness check still works — it sends nothing.')
+        log_action('appliance.failover_refused', target=appliance.name,
+                   detail=cr_reason)
+        flash(msg, 'danger')
+        return redirect(url_for('appliances.failover', id=id))
+
+    # Typing the exact name is the defence against a mis-click draining the
+    # wrong cluster — the same confirmation the live firmware push demands.
+    if (request.form.get('confirm_name') or '').strip() != appliance.name:
+        flash('A live failover requires typing the exact appliance name to '
+              'confirm. Nothing was sent.', 'danger')
+        return redirect(url_for('appliances.failover', id=id))
+
+    from ..services import scheduled_actions as sa
+    from ..services import change_requests as crsvc
+    crsvc.start(cr, by=getattr(current_user, 'username', '') or 'operator',
+                detail=f'Interactive HA failover ({direction}) of {appliance.name}')
+    result = sa.run_action(sa.get_spec(FAILOVER_ACTION), appliance,
+                           {'direction': direction}, dry_run=False)
+    crsvc.finish(cr, 'ok' if result.get('ok') else 'error', by='operator',
+                 summary=(result.get('summary') or '')[:2000])
+    log_action('appliance.failover', target=appliance.name,
+               extra={'direction': direction, 'cr': cr.ref or cr.id,
+                      'ok': bool(result.get('ok'))})
+    return render_template('appliances/failover.html', appliance=appliance,
+                           state=_failover_state(appliance), tz_name=store.tz_name(),
+                           cr=cr, cr_ok=False,
+                           cr_reason=f'{cr.ref or ("CR #%d" % cr.id)} has been '
+                                     f'closed by this run',
+                           result=result, result_direction=direction)
+
+
+@bp.route('/<int:id>/failover/schedule', methods=['POST'])
+@login_required
+@require_permission(Permission.CONFIG_WRITE)
+@require_device_scope
+def failover_schedule(id):
+    """Plan the failover: raise a change request for THIS cluster.
+
+    Calls ``change_requests.create_change_request`` — the one implementation of
+    "what a legal change is" — exactly as the calendar does. A scheduling path
+    of its own here would be a second author of that rule, and the two would
+    disagree the first time somebody approves from the Change Requests page.
+    """
+    appliance, why = _failover_or_404(id)
+    if why:
+        flash(why, 'warning')
+        return redirect(url_for('appliances.detail', id=id))
+    direction = _failover_direction(request.form.get('direction'))
+    if direction is None:
+        flash('Pick set (hand the role over) or unset (give it back). '
+              'Nothing was created.', 'danger')
+        return redirect(url_for('appliances.failover', id=id))
+
+    from .change_requests import _parse_dt, create_change_request
+    title = (request.form.get('title') or '').strip() or (
+        f'HA failover ({direction}) — {appliance.name}')
+    reason = (request.form.get('reason') or '').strip()
+    reason = (reason + ('\n\n' if reason else '')
+              + f'Planned from the {appliance.name} device page. '
+                f'Direction: {direction}.')
+    cr, error = create_change_request({
+        'title': title,
+        'action': FAILOVER_ACTION,
+        'risk': request.form.get('risk') or 'high',
+        'reason': reason,
+        'device_ids': [appliance.id],
+        'prep_ids': [],
+        # The direction rides on the CHANGE, not on the action row: the bound
+        # action is (re)built from the CR by schedule_change_request, so a
+        # direction stored only on the action would be silently reset to the
+        # default the next time the change is rescheduled.
+        'params': {'direction': direction},
+        'window_start': _parse_dt(request.form.get('window_start')),
+        'window_end': _parse_dt(request.form.get('window_end')),
+        'rollback': request.form.get('rollback'),
+        'notify_to': request.form.get('notify_to'),
+        'owner': request.form.get('owner'),
+        'doc_lang': request.form.get('doc_lang'),
+        'requested_by': getattr(current_user, 'username', ''),
+        'approval_mode': request.form.get('approval_mode'),
+    })
+    if cr is None:
+        flash(error, 'danger')
+        return redirect(url_for('appliances.failover', id=id))
+    log_action('appliance.failover_plan', target=appliance.name,
+               detail=f'{cr.ref} / {direction}')
+    flash(f'{cr.ref} raised as a draft — approve and schedule it to make it run.',
+          'success')
+    return redirect(url_for('change_requests.detail', id=cr.id))

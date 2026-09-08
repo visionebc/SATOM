@@ -373,8 +373,20 @@ def create_change_request(fields: dict):
         seen_preps.add(prep.id)
         preps.append(prep)
 
+    # Executor params ride on the CHANGE. schedule_change_request rebuilds the
+    # bound action from the CR each time, so anything written only onto the
+    # action row is silently reset to the executor default on the next
+    # reschedule. Reserved keys are STRIPPED, never trusted: params carries the
+    # binding the executor reads as its authorization
+    # ('change_request_id'), and a caller that could set it would be
+    # self-approving a change nobody looked at.
+    raw_params = fields.get('params')
+    params = {str(k): v for k, v in raw_params.items()
+              if str(k) != 'change_request_id'} if isinstance(raw_params, dict) else {}
+
     cr = ChangeRequest(
         title=title[:200],
+        params=json.dumps(params),
         reason=(fields.get('reason') or '').strip(),
         status='draft',
         action=action,

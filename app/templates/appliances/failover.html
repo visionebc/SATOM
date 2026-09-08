@@ -1,0 +1,201 @@
+{% extends 'base.html' %}
+{% block title %}HA failover - {{ appliance.name }}{% endblock %}
+{% block content %}
+<div class="fw-page-header d-flex justify-content-between align-items-center">
+  <h4><i class="bi bi-arrow-left-right me-2"></i>{{ _('HA Failover') }} — {{ appliance.name }}</h4>
+  <a href="{{ url_for('appliances.detail', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm">&larr; {{ _('Back') }}</a>
+</div>
+
+<div class="fw-alert fw-alert-danger d-flex align-items-center gap-2">
+  <i class="bi bi-exclamation-octagon-fill"></i>
+  {{ _('A live failover') }} <b>{{ _('breaks every session on the outgoing primary') }}</b>.
+  {{ _('There is no REST call for this on either product, so it drives the appliance CLI over SSH. Run the readiness check first — it sends nothing.') }}
+</div>
+
+{# --- What the command IS on this product, and where that knowledge came from --- #}
+<div class="card shadow-sm mb-3 mt-2">
+  <div class="card-header fw-card-header"><i class="bi bi-hdd-network me-2"></i>{{ _('Transport') }}</div>
+  <div class="card-body">
+    {% if not state.supported %}
+    <div class="fw-alert fw-alert-warning mb-0">
+      <b>{{ _('Not available for') }} {{ state.kind }}.</b>
+      {{ _('No failover command has been verified against a live device of this product, so nothing is offered and nothing would be sent. Verified products:') }}
+      {{ state.products|join(', ') }}.
+    </div>
+    {% else %}
+    <dl class="row mb-0 small">
+      <dt class="col-sm-3">{{ _('Hand the role over') }}</dt>
+      <dd class="col-sm-9"><code>{{ state.set_cmd }}</code></dd>
+      <dt class="col-sm-3">{{ _('Give it back') }}</dt>
+      <dd class="col-sm-9"><code>{{ state.unset_cmd }}</code></dd>
+      <dt class="col-sm-3">{{ _('Minimum firmware') }}</dt>
+      <dd class="col-sm-9">
+        <span class="fw-badge fw-badge-info">{{ state.kind }} {{ state.floor }}</span>
+        {% if state.target_known %}
+          <span class="text-muted ms-2">{{ _('This appliance records') }}
+            <b>{{ state.recorded_firmware or _('nothing — sync it first') }}</b>.</span>
+        {% else %}
+          <span class="text-muted ms-2">{{ _('This cluster resolves its target live (the member reporting primary), so the version that will be checked is only known once the readiness check runs.') }}</span>
+        {% endif %}
+      </dd>
+      {% if state.sticky %}
+      <dt class="col-sm-3 text-warning">{{ _('Sticky state') }}</dt>
+      <dd class="col-sm-9 text-warning">{{ _('On this product a forced failover does NOT clear on reboot — the node stays out of HA election until an unset runs.') }}</dd>
+      {% endif %}
+      <dt class="col-sm-3">{{ _('Evidence') }}</dt>
+      <dd class="col-sm-9 text-muted">{{ state.provenance }}</dd>
+    </dl>
+    {% endif %}
+  </div>
+</div>
+
+{# --- CHANGE CONTROL: a live failover needs an approved, open window --- #}
+<div class="fw-alert fw-alert-{{ 'success' if cr_ok else 'warning' }}">
+  <i class="bi bi-{{ 'shield-check' if cr_ok else 'shield-exclamation' }} me-1"></i>
+  {% if cr_ok %}
+    <b>{{ _('Authorised by') }} {{ cr.ref or ('CR #' ~ cr.id) }}</b> &mdash; &ldquo;{{ cr.title }}&rdquo;,
+    {{ _('window') }} {{ cr.window_start|localtime('%Y-%m-%d %H:%M %Z') }}{% if cr.window_end %} &rarr; {{ cr.window_end|localtime('%Y-%m-%d %H:%M %Z') }}{% endif %}.
+    {{ _('A live failover will move that change to in progress and close it with the real outcome.') }}
+  {% else %}
+    <b>{{ _('Live failover is blocked.') }}</b> {{ cr_reason }}.
+    {{ _('The readiness check still works — it sends nothing to the appliance.') }}
+    {% if cr %}
+      <a class="alert-link" href="{{ url_for('change_requests.detail', id=cr.id) }}">{{ _('Open') }} {{ cr.ref or ('CR #' ~ cr.id) }}</a>.
+    {% endif %}
+  {% endif %}
+</div>
+
+{% if result %}
+<div class="card shadow-sm mb-3">
+  <div class="card-header fw-card-header">{{ _('Result') }} — {{ _('LIVE') }} {{ result_direction }}</div>
+  <div class="card-body">
+    <div class="fw-alert fw-alert-{{ 'success' if result.ok else 'warning' }} mb-2">{{ result.summary }}</div>
+    {% if result.log %}<pre class="fw-pre small mb-0">{{ result.log }}</pre>{% endif %}
+  </div>
+</div>
+{% endif %}
+
+{% if state.supported %}
+{# --- 1. Readiness (dry run) + 2. Live run: one direction choice for both --- #}
+<div class="card shadow-sm mb-3">
+  <div class="card-header fw-card-header"><i class="bi bi-play-circle me-2"></i>{{ _('Run now') }}</div>
+  <div class="card-body">
+    <form method="post" action="{{ url_for('appliances.failover_run', id=appliance.id) }}" id="fo-form"
+          data-fw-confirm-form="{{ _('Fail over') }} {{ appliance.name }} {{ _('now? Every session on the outgoing primary breaks.') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="row g-3">
+        <div class="col-md-4">
+          <label class="form-label small mb-0" for="fo-direction">{{ _('Direction') }}</label>
+          <select class="form-select form-select-sm" name="direction" id="fo-direction">
+            <option value="set">set — {{ _('hand the primary role to the peer') }}</option>
+            <option value="unset">unset — {{ _('give the role back / clear a forced failover') }}</option>
+          </select>
+        </div>
+        <div class="col-md-5">
+          <label class="form-label small mb-0" for="fo-confirm">{{ _('Type the appliance name to confirm a live run') }}</label>
+          <input class="form-control form-control-sm mono" name="confirm_name" id="fo-confirm" placeholder="{{ appliance.name }}" autocomplete="off">
+        </div>
+        <div class="col-md-3 d-flex align-items-end gap-2">
+          <button type="button" class="btn fw-btn-secondary btn-sm" data-js="fo-preflight"><i class="bi bi-clipboard-check me-1"></i>{{ _('Readiness check') }}</button>
+          <button class="btn btn-sm btn-danger" {% if not cr_ok %}disabled title="{{ cr_reason }}"{% endif %}><i class="bi bi-arrow-left-right me-1"></i>{{ _('Fail over') }}</button>
+        </div>
+      </div>
+      <div class="form-text">{{ _('The readiness check is the action\'s own dry run: it resolves the write target, reads the live HA role and validates the firmware floor, and sends no command.') }}</div>
+    </form>
+    <div id="fo-preflight-out" class="mt-3 d-none">
+      <div class="fw-alert mb-2" id="fo-preflight-msg"></div>
+      <pre class="fw-pre small mb-0 d-none" id="fo-preflight-log"></pre>
+    </div>
+  </div>
+</div>
+
+{# --- 3. Plan it: raises a change request, the same one implementation --- #}
+<div class="card shadow-sm">
+  <div class="card-header fw-card-header"><i class="bi bi-calendar-event me-2"></i>{{ _('Plan it (raise a change request)') }}</div>
+  <div class="card-body">
+    <form method="post" action="{{ url_for('appliances.failover_schedule', id=appliance.id) }}" class="row g-3">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="col-md-6">
+        <label class="form-label small mb-0" for="fo-title">{{ _('Title') }}</label>
+        <input class="form-control form-control-sm" name="title" id="fo-title" placeholder="HA failover — {{ appliance.name }}">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small mb-0" for="fo-dir2">{{ _('Direction') }}</label>
+        <select class="form-select form-select-sm" name="direction" id="fo-dir2">
+          <option value="set">set</option><option value="unset">unset</option>
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small mb-0" for="fo-risk">{{ _('Risk') }}</label>
+        <select class="form-select form-select-sm" name="risk" id="fo-risk">
+          <option value="high" selected>high</option><option value="medium">medium</option><option value="low">low</option>
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small mb-0" for="fo-ws">{{ _('Window start') }} ({{ tz_name }})</label>
+        <input type="datetime-local" class="form-control form-control-sm" name="window_start" id="fo-ws">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small mb-0" for="fo-we">{{ _('Window end') }}</label>
+        <input type="datetime-local" class="form-control form-control-sm" name="window_end" id="fo-we">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small mb-0" for="fo-owner">{{ _('Responsible') }}</label>
+        <input class="form-control form-control-sm" name="owner" id="fo-owner" placeholder="{{ current_user.username }}">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small mb-0" for="fo-notify">{{ _('Notify (e-mail)') }}</label>
+        <input class="form-control form-control-sm" name="notify_to" id="fo-notify" placeholder="ops@example.com">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label small mb-0" for="fo-reason">{{ _('Reason') }}</label>
+        <textarea class="form-control form-control-sm" name="reason" id="fo-reason" rows="2"></textarea>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label small mb-0" for="fo-rollback">{{ _('Rollback') }}</label>
+        <textarea class="form-control form-control-sm" name="rollback" id="fo-rollback" rows="2" placeholder="{{ _('Run the same action with direction=unset.') }}"></textarea>
+      </div>
+      <div class="col-12">
+        <button class="btn fw-btn-primary btn-sm"><i class="bi bi-plus-lg me-1"></i>{{ _('Raise change request') }}</button>
+        <span class="form-text ms-2">{{ _('It is created as a draft. Approve and schedule it from the change request page; the calendar shows it on its window.') }}</span>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var btn = document.querySelector('[data-js="fo-preflight"]');
+  if (!btn) return;
+  btn.addEventListener('click', function () {
+    var box = document.getElementById('fo-preflight-out');
+    var msg = document.getElementById('fo-preflight-msg');
+    var log = document.getElementById('fo-preflight-log');
+    var body = new FormData();
+    body.append('csrf_token', document.querySelector('#fo-form [name=csrf_token]').value);
+    body.append('direction', document.getElementById('fo-direction').value);
+    btn.disabled = true;
+    msg.className = 'fw-alert mb-2';
+    msg.textContent = 'Checking the cluster… (this reads the appliance over SSH)';
+    log.classList.add('d-none');
+    box.classList.remove('d-none');
+    fetch('{{ url_for("appliances.failover_preflight", id=appliance.id) }}',
+          { method: 'POST', body: body, credentials: 'same-origin' })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        msg.className = 'fw-alert mb-2 fw-alert-' + (d.ok ? 'success' : 'warning');
+        msg.textContent = d.summary || (d.ok ? 'ready' : 'not ready');
+        if (d.log) { log.textContent = d.log; log.classList.remove('d-none'); }
+      })
+      .catch(function (e) {
+        // A failed CHECK is not a ready cluster: say so, never fall silent.
+        msg.className = 'fw-alert mb-2 fw-alert-danger';
+        msg.textContent = 'The readiness check itself failed: ' + e.message
+          + '. Treat the cluster as NOT ready.';
+      })
+      .then(function () { btn.disabled = false; });
+  });
+})();
+</script>
+{% endblock %}

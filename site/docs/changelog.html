@@ -106,6 +106,51 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="added-fail-a-cluster-over-from-the-device-page-itself-2026-09-08">Added — Fail a cluster over from the device page itself (2026-09-08)</h3>
+<p>The failover was plannable from the calendar; it was not reachable from the box
+an operator actually has open. <strong><code>Appliances → &lt;a cluster&gt; → HA Failover</code></strong>
+(<code>/appliances/&lt;id&gt;/failover</code>) is that surface: it renders on an HA cluster's
+node 0 <em>and</em> on a member node, and offers three things — a readiness check, a
+live run, and a plan.</p>
+<ul>
+<li><strong>"If it is a cluster" is a route decision, not a hidden link.</strong> A standalone
+  row is refused at the URL, not merely left without a button, and the refusal
+  names what to do about it (register the box as a cluster, or attach it to one
+  as a member). A page that only hides a link is decoration; the URL is
+  guessable.</li>
+<li><strong>The readiness check is the action's own dry run.</strong> It resolves the write
+  target, reads the live HA role and validates the firmware floor, and sends
+  nothing. It is deliberately <em>not</em> a page-local copy of those checks: two
+  implementations would eventually disagree, and the operator would be told the
+  cluster is ready by one of them and refused by the other. It is also not
+  gated on a change request — gating a check that writes nothing pushes
+  operators to skip it.</li>
+<li><strong>The button a human clicks carries the same gate as the headless executor.</strong>
+  A live failover runs only inside an approved Change Request's open window, and
+  only after the appliance name is typed exactly. The gate that decides this had
+  hard-coded the action name <code>upgrade</code>; it now takes the action, so <strong>a change
+  approving a firmware flash no longer authorizes a cluster failover of the same
+  box</strong> (and the reverse).</li>
+<li><strong>Planning goes through the one implementation of "raise a change"</strong>
+  (<code>create_change_request</code>), exactly as the calendar does.</li>
+</ul>
+<h3 id="fixed-a-per-node-cluster-could-never-be-failed-over-2026-09-08">Fixed — A per-node cluster could never be failed over (2026-09-08)</h3>
+<p>The firmware floor was checked against the appliance row the action was aimed
+at. For a per-node cluster that row is node 0, a <strong>logical container with no
+host and no firmware string</strong>, so every per-node cluster was refused with "SATOM
+has no recorded firmware version" — and in the other direction a stale version
+left on node 0 could have cleared a floor the live primary does not meet. The
+write target is now resolved first and the floor checked on the box that
+actually receives the command; the refusal names that box.</p>
+<h3 id="fixed-a-scheduled-change-could-not-carry-executor-parameters-2026-09-08">Fixed — A scheduled change could not carry executor parameters (2026-09-08)</h3>
+<p><code>create_change_request</code> never wrote <code>ChangeRequest.params</code>, and
+<code>schedule_change_request</code> rebuilds the bound action from the change every time
+it is scheduled. Anything stored only on the action row was therefore reset to
+the executor default on the next reschedule — which made <code>direction='unset'</code>
+(give the primary role back / clear a forced failover) <strong>unschedulable</strong>.
+Changes now carry their executor params, with <code>change_request_id</code> stripped:
+that key is what the executor reads as its authorization, and a caller able to
+set it would be approving its own change.</p>
 <h3 id="added-schedule-an-ha-failover-and-refuse-it-on-the-firmware-that-cannot-do-it-2026-09-08">Added — Schedule an HA failover, and refuse it on the firmware that cannot do it (2026-09-08)</h3>
 <p>A new automation, <strong><code>ha_failover</code> — HA failover: hand the primary role over</strong>,
 so a cluster handover can be planned from <strong>Fleet → Calendar</strong> (or from Change

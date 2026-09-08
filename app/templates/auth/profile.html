@@ -121,6 +121,39 @@
   </div>
 </div>
 
+<!-- CALENDAR (per-user setting, saved in the DB) -->
+{# Only offered to a user who could otherwise reach the page: the Calendar is
+   gated on user_manage, so a switch shown to anybody else would toggle the
+   visibility of a page they get a 403 from either way. #}
+{% if current_user and current_user.can('user_manage') %}
+<div class="fw-card mb-3" id="calendar">
+  <div class="fw-card-header">
+    <span class="fw-card-title"><i class="bi bi-calendar3 me-2 text-accent"></i>{{ _('Calendar') }}</span>
+  </div>
+  <div class="fw-card-body">
+    <p class="text-muted" style="font-size:13px;">
+      {{ _('The Calendar draws every planned change, upcoming automation and past run on one grid. Switch it off and it disappears from your Fleet menu and stops opening for you \u2014 for you alone. Nobody else\'s console changes.') }}
+    </p>
+    <form method="POST" action="{{ url_for('auth.save_calendar_pref') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="form-check mb-2">
+        <input class="form-check-input" type="checkbox" role="switch" id="calendar_on"
+               name="calendar_on" value="1" {{ 'checked' if calendar_on|default(true) }}>
+        <label class="form-check-label" for="calendar_on" style="font-size:13px;">
+          {{ _('Show the Calendar') }}
+        </label>
+      </div>
+      <div class="fw-alert fw-alert-info mb-2" style="font-size:12px;">
+        <i class="bi bi-info-circle me-1"></i>
+        {{ _('This hides a VIEW. Changes that are already approved and automations that are already scheduled keep running on their windows whether or not you draw them here \u2014 hiding the page does not stop the fleet.') }}
+      </div>
+      <button type="submit" class="btn btn-fw-primary btn-sm">
+        <i class="bi bi-check-lg me-1"></i>{{ _('Save') }}</button>
+    </form>
+  </div>
+</div>
+{% endif %}
+
 <div class="row g-3">
 
   <!-- BRANDING (per-user setting, saved in the DB) -->

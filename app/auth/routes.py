@@ -373,6 +373,36 @@ def save_language():
     return redirect(url_for('auth.profile') + '#language')
 
 
+@bp.route('/profile/calendar', methods=['POST'])
+@login_required
+def save_calendar_pref():
+    """Switch the Calendar page and its nav entry on or off, for this user only.
+
+    Separate from the profile POST for the same reason as the language and
+    bookmark forms: that handler validates the current password, so routing a
+    display preference through it would demand a password to hide a menu entry.
+
+    AN UNCHECKED CHECKBOX SENDS NOTHING. The value is therefore read as
+    "present == on", never as a string compared against 'on'/'1'/'true' -- a
+    comparison would make the OFF direction unreachable from a real browser,
+    which is the half of this switch the user actually asked for.
+
+    THIS HIDES A VIEW. It does not disable anything: the changes on that grid
+    are Change Requests and Scheduled Actions, and they keep being approved and
+    keep firing on their windows whether or not this user draws them. The page
+    and the flash both say so, because "disable the calendar" is a sentence an
+    operator can reasonably read as "stop the scheduled work".
+    """
+    on = 'calendar_on' in request.form
+    now = user_store.save_calendar_enabled(current_user.id, on)
+    log_action('profile.calendar', target=('on' if now else 'off'))
+    flash('Calendar switched on for your account.' if now else
+          'Calendar hidden from your account. Scheduled changes and automations '
+          'are unaffected \u2014 they still run on their windows.',
+          'success')
+    return redirect(url_for('auth.profile') + '#calendar')
+
+
 @bp.route('/profile/bookmark-view', methods=['POST'])
 @login_required
 def save_bookmark_view():

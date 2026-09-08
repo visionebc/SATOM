@@ -138,3 +138,42 @@ def language_usage() -> dict:
         code = _langs.normalize(raw)
         out[code] = out.get(code, 0) + 1
     return out
+
+
+# ---------------------------------------------------------------------------
+# Calendar visibility (per user, DB-backed)
+# ---------------------------------------------------------------------------
+
+K_CALENDAR_OFF = "calendar.disabled"
+
+
+def calendar_enabled(user_id: int) -> bool:
+    """Is the Calendar switched ON for this user? Default: yes.
+
+    THE ROW STORES "SWITCHED OFF", NOT "SWITCHED ON", and that direction is the
+    whole correctness of the default. Every user who has never opened their
+    profile has no row at all; a key meaning "enabled" would read as absent ->
+    false, and the feature would vanish for the entire install the moment this
+    preference shipped. Storing the deviation from the default means a missing
+    row is the default -- the same shape ``wpp.hide_default`` already uses.
+
+    A broken row, a fresh install mid-migration or a missing table degrades to
+    ON: this is a display preference, and the failure that hides a page nobody
+    asked to hide is worse than the failure that shows one.
+    """
+    try:
+        return UserSetting.get(user_id, K_CALENDAR_OFF, "0") != "1"
+    except Exception:  # noqa: BLE001 - a preference must not break the chrome
+        return True
+
+
+def save_calendar_enabled(user_id: int, on: bool) -> bool:
+    """Persist the switch; return what is now in force.
+
+    Writes "0" rather than deleting the row when the calendar is switched back
+    on: the row is the record that this user answered the question, and the
+    audit line beside it is only readable next to a value.
+    """
+    value = "0" if on else "1"
+    UserSetting.set(user_id, K_CALENDAR_OFF, value)
+    return value != "1"

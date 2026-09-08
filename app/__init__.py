@@ -336,6 +336,16 @@ def create_app(config_override: object | None = None) -> Flask:
                        # deleted on 2026-08-02 and the string had been
                        # allowing nothing ever since.)
                        'advisor', 'adom_assets', 'console',
+                       # Calendar, same story, and it shipped broken here:
+                       # partials/nav_calendar.html is included in the Global,
+                       # FortiWeb and FortiADC menus, but 'calendar_plan' was
+                       # only ever reachable in the first two. An ADC operator
+                       # saw the entry and the click landed on /adc/ — a live
+                       # link that goes nowhere, which reads as broken rather
+                       # than absent. NOT added to faz_bps/fac_bps: those two
+                       # menus do not draw the entry, and allowing a page no
+                       # sidebar offers is widening a gate for nobody.
+                       'calendar_plan',
                        # Change Types is an Administration page, mirrored
                        # into every ADOM for the same reason Change Requests
                        # was: the form it configures is offered in every
@@ -945,6 +955,28 @@ def create_app(config_override: object | None = None) -> Flask:
         except Exception:  # noqa: BLE001 - chrome must not break on a preference
             pass
         return {"user_lang": ""}
+
+    @app.context_processor
+    def _inject_calendar_on():
+        """Whether THIS user wants the Calendar shown. Default: yes.
+
+        Resolved once per request rather than inside the nav partial: the Fleet
+        menu is included in three branches of base.html, so reading the
+        preference there would be three identical queries on every page in the
+        product.
+
+        Degrades to True. An anonymous request, a missing table or a broken row
+        must not hide a page nobody switched off -- and must never take down
+        every template that extends base.html.
+        """
+        from flask_login import current_user
+        from .services import user_settings_store as _ustore
+        try:
+            if getattr(current_user, "is_authenticated", False):
+                return {"calendar_on": _ustore.calendar_enabled(current_user.id)}
+        except Exception:  # noqa: BLE001 - chrome must not break on a preference
+            pass
+        return {"calendar_on": True}
 
     @app.context_processor
     def _inject_ui_lang():

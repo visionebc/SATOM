@@ -49,19 +49,73 @@
 
 {% macro daycell(cell, tall=False) -%}
 <td class="fw-cal-cell {{ 'fw-cal-out' if cell.outside }} {{ 'fw-cal-today' if cell.today }} {{ 'fw-cal-sel' if selected and cell.date == selected }}"
+    data-day="{{ cell.date.isoformat() }}"
     {% if tall %}style="height:150px;"{% endif %}>
   <div class="fw-cal-day">
-    <a class="fw-cal-daynum" href="{{ url_for('calendar_plan.index') }}{{ qs(view=view, d=cell.date) }}">{{ cell.date.day }}</a>
+    {# The whole cell picks the day; these two keep their href so the page
+       still works with no JavaScript, and so the link is copyable. #}
+    <a class="fw-cal-daynum" data-cal-pick="{{ cell.date.isoformat() }}" href="{{ url_for('calendar_plan.index') }}{{ qs(view=view, d=cell.date) }}">{{ cell.date.day }}</a>
     {% if cell.counts.change %}<span class="fw-cal-n" title="{{ _('planned changes') }}">{{ cell.counts.change }}</span>{% endif %}
   </div>
   <div class="fw-cal-chips">
     {% for ev in cell.events[:4] %}{{ chip(ev) }}{% endfor %}
     {% if cell.events|length > 4 %}
-      <a class="fw-cal-more" href="{{ url_for('calendar_plan.index') }}{{ qs(view=view, d=cell.date) }}">
+      <a class="fw-cal-more" data-cal-pick="{{ cell.date.isoformat() }}" href="{{ url_for('calendar_plan.index') }}{{ qs(view=view, d=cell.date) }}">
         +{{ cell.events|length - 4 }} {{ _('more') }}</a>
     {% endif %}
   </div>
 </td>
+{%- endmacro %}
+
+
+{#  THE DAY PANEL — ONE definition.  The side card, every pre-rendered day and
+    the modal all render THIS macro; the modal is not a second, richer view of
+    a day, it is the same markup without the compact CSS. Two renderings of one
+    day is two things to keep true, and the one nobody looks at goes stale.
+
+    Compact vs full is therefore a CLASS on the container, never a branch here:
+    ``.fw-cal-clip`` (side card) hides ``.fw-cal-more-only``, ``.fw-cal-full``
+    (modal) hides ``.fw-cal-brief-only``. A warning is in NEITHER set — an
+    unopenable window must not be the detail that only the modal shows.      #}
+{% macro daypanel(events) -%}
+  {% if not events %}
+    <div class="p-2 text-muted" style="font-size:12px;">{{ _('Nothing on this day.') }}</div>
+  {% endif %}
+  {% for ev in events %}
+  <div class="fw-cal-det">
+    <div class="d-flex align-items-center gap-1 flex-wrap">
+      <span class="fw-badge fw-badge-{{ RISK_BADGE.get(ev.risk,'secondary') if ev.kind=='change' else (RUN_BADGE.get(ev.status,'info') if ev.kind=='run' else 'info') }}">
+        <i class="bi bi-{{ KIND_ICON.get(ev.kind,'dot') }} me-1"></i>{{ ev.kind }}</span>
+      <a href="{{ ev.url or '#' }}"><strong>{{ ev.ref }}</strong></a>
+      {% if ev.kind == 'change' %}
+        <span class="fw-badge fw-badge-{{ STATUS_BADGE.get(ev.status,'secondary') }}">{{ ev.status }}</span>
+        {% if ev.window_state == 'invalid' %}<span class="fw-badge fw-badge-danger">{{ _('invalid window') }}</span>{% endif %}
+        {% if ev.window_state == 'open' %}<span class="fw-badge fw-badge-warning">{{ _('no window yet') }}</span>{% endif %}
+      {% endif %}
+    </div>
+    <div class="fw-cal-det-t">{{ ev.title }}</div>
+    <div class="text-muted" style="font-size:11.5px;">
+      {% if ev.action_label %}<div>{{ _('Type') }}: {{ ev.action_label }}</div>{% endif %}
+      {% if ev.start %}<div>{{ _('When') }}: {{ ev.start.strftime('%H:%M') }}{% if ev.end %} → {{ ev.end.strftime('%Y-%m-%d %H:%M') }}{% endif %}</div>{% endif %}
+      {% if ev.owner %}<div>{{ _('Responsible') }}: {{ ev.owner }}</div>{% endif %}
+      {% if ev.devices %}
+        <div class="fw-cal-brief-only">{{ _('Appliances') }}:
+          {{ ev.devices[:3]|join(', ') }}{% if ev.devices|length > 3 %} +{{ ev.devices|length - 3 }}{% endif %}</div>
+        <div class="fw-cal-more-only">{{ _('Appliances') }} ({{ ev.devices|length }}): {{ ev.devices|join(', ') }}</div>
+      {% endif %}
+      {% if ev.wave %}<div class="fw-cal-more-only">{{ _('Wave') }}: {{ ev.wave }} #{{ ev.wave_index }}</div>{% endif %}
+      {% if ev.count and ev.count > 1 %}
+        <div class="fw-cal-brief-only">{{ _('Fires') }}: {{ ev.count }}×</div>
+        <div class="fw-cal-more-only">{{ _('Fires') }}: {{ ev.count }}× —
+          {% for t in ev.times %}{{ t.strftime('%H:%M') }}{% if not loop.last %}, {% endif %}{% endfor %}
+          {% if ev.times_clipped %} … {{ _('(first') }} {{ ev.times|length }}{{ _(' shown)') }}{% endif %}
+        </div>
+      {% endif %}
+      {% if ev.summary %}<div class="fw-cal-more-only">{{ ev.summary }}</div>{% endif %}
+      {% if ev.span_clipped %}<div class="text-danger">{{ _('Window spans more days than the grid paints — only the first 90 are shown.') }}</div>{% endif %}
+    </div>
+  </div>
+  {% endfor %}
 {%- endmacro %}
 
 
@@ -237,41 +291,14 @@
 
     {% if selected %}
     <div class="fw-card mb-3">
-      <div class="fw-card-header"><i class="bi bi-calendar-day me-1"></i>{{ selected.strftime('%A %d %B %Y') }}</div>
-      <div class="fw-card-body p-0">
-        {% if not selected_events %}
-          <div class="p-2 text-muted" style="font-size:12px;">{{ _('Nothing on this day.') }}</div>
-        {% endif %}
-        {% for ev in selected_events %}
-        <div class="fw-cal-det">
-          <div class="d-flex align-items-center gap-1 flex-wrap">
-            <span class="fw-badge fw-badge-{{ RISK_BADGE.get(ev.risk,'secondary') if ev.kind=='change' else (RUN_BADGE.get(ev.status,'info') if ev.kind=='run' else 'info') }}">
-              <i class="bi bi-{{ KIND_ICON.get(ev.kind,'dot') }} me-1"></i>{{ ev.kind }}</span>
-            <a href="{{ ev.url or '#' }}"><strong>{{ ev.ref }}</strong></a>
-            {% if ev.kind == 'change' %}
-              <span class="fw-badge fw-badge-{{ STATUS_BADGE.get(ev.status,'secondary') }}">{{ ev.status }}</span>
-              {% if ev.window_state == 'invalid' %}<span class="fw-badge fw-badge-danger">{{ _('invalid window') }}</span>{% endif %}
-              {% if ev.window_state == 'open' %}<span class="fw-badge fw-badge-warning">{{ _('no window yet') }}</span>{% endif %}
-            {% endif %}
-          </div>
-          <div class="fw-cal-det-t">{{ ev.title }}</div>
-          <div class="text-muted" style="font-size:11.5px;">
-            {% if ev.action_label %}<div>{{ _('Type') }}: {{ ev.action_label }}</div>{% endif %}
-            {% if ev.start %}<div>{{ _('When') }}: {{ ev.start.strftime('%H:%M') }}{% if ev.end %} → {{ ev.end.strftime('%Y-%m-%d %H:%M') }}{% endif %}</div>{% endif %}
-            {% if ev.owner %}<div>{{ _('Responsible') }}: {{ ev.owner }}</div>{% endif %}
-            {% if ev.devices %}<div>{{ _('Appliances') }}: {{ ev.devices|join(', ') }}</div>{% endif %}
-            {% if ev.wave %}<div>{{ _('Wave') }}: {{ ev.wave }} #{{ ev.wave_index }}</div>{% endif %}
-            {% if ev.count and ev.count > 1 %}
-              <div>{{ _('Fires') }}: {{ ev.count }}× —
-                {% for t in ev.times %}{{ t.strftime('%H:%M') }}{% if not loop.last %}, {% endif %}{% endfor %}
-                {% if ev.times_clipped %} … {{ _('(first') }} {{ ev.times|length }}{{ _(' shown)') }}{% endif %}
-              </div>
-            {% endif %}
-            {% if ev.summary %}<div>{{ ev.summary }}</div>{% endif %}
-            {% if ev.span_clipped %}<div class="text-danger">{{ _('Window spans more days than the grid paints — only the first 90 are shown.') }}</div>{% endif %}
-          </div>
-        </div>
-        {% endfor %}
+      <div class="fw-card-header d-flex align-items-center justify-content-between">
+        <span><i class="bi bi-calendar-day me-1"></i><span id="calDayLabel">{{ selected.strftime('%A %d %B %Y') }}</span></span>
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="calExpand"
+                title="{{ _('Open this day in full') }}" aria-label="{{ _('Open this day in full') }}">
+          <i class="bi bi-arrows-angle-expand"></i></button>
+      </div>
+      <div class="fw-card-body p-0 fw-cal-clip" id="calDayBody" data-day="{{ selected.isoformat() }}">
+        {{ daypanel(selected_events) }}
       </div>
     </div>
     {% endif %}
@@ -392,6 +419,36 @@
   </div>
 </div>
 
+
+{#  Every day the page can open without a round trip. Bounded by
+    MAX_PANEL_EVENTS in the view: a day outside the budget is NOT lost, its
+    cell falls back to its own href and the server renders the identical panel
+    one page load later.                                                     #}
+<div id="calPanels" hidden>
+  {% for d in panel_days %}
+  <div data-cal-panel="{{ d.isoformat() }}" data-cal-label="{{ d.strftime('%A %d %B %Y') }}">
+    {{ daypanel(buckets.get(d, [])) }}
+  </div>
+  {% endfor %}
+</div>
+
+<div class="modal fade" id="calDayModal" tabindex="-1" aria-hidden="true" aria-labelledby="calModalLabel">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="calModalLabel"><i class="bi bi-calendar-day me-2"></i></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
+      </div>
+      <div class="modal-body p-0 fw-cal-full" id="calModalBody"></div>
+      <div class="modal-footer">
+        <a class="btn btn-outline-secondary btn-sm" id="calModalLink" href="#">
+          <i class="bi bi-link-45deg me-1"></i>{{ _('Link to this day') }}</a>
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">{{ _('Close') }}</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <style nonce="{{ csp_nonce }}">
 .fw-cal-table { width:100%; table-layout:fixed; border-collapse:collapse; }
 .fw-cal-table th { font-size:11px; font-weight:600; text-transform:uppercase;
@@ -447,6 +504,17 @@
 .fw-cal-agenda-t { text-decoration:none; font-weight:600; }
 .fw-cal-det { padding:6px 10px; border-bottom:1px solid var(--fw-border,#DFE2E7); }
 .fw-cal-det-t { font-size:12.5px; font-weight:600; margin:2px 0; }
+
+/* Picking a day. The cursor is the only thing that says a cell is a control —
+   without it the grid looks like a table that happens to have links in it. */
+.fw-cal-cell[data-day] { cursor:pointer; }
+/* Compact (side card) vs full (modal): ONE markup, two containers. The side
+   card is also height-capped — a day with sixty runs must not push the planner
+   off the bottom of the page, which is the form the panel sits next to. */
+.fw-cal-clip { max-height:560px; overflow-y:auto; }
+.fw-cal-clip .fw-cal-more-only { display:none; }
+.fw-cal-full .fw-cal-brief-only { display:none; }
+.fw-cal-full .fw-cal-det { padding:10px 16px; }
 </style>
 
 <script nonce="{{ csp_nonce }}">
@@ -502,4 +570,97 @@
   }
 })();
 </script>
+
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var panels = document.getElementById('calPanels');
+  var body   = document.getElementById('calDayBody');
+  var label  = document.getElementById('calDayLabel');
+  var table  = document.querySelector('.fw-cal-table');
+  if (!panels || !body || !label) { return; }
+
+  var modalEl = document.getElementById('calDayModal');
+  var mBody   = document.getElementById('calModalBody');
+  var mLabel  = document.getElementById('calModalLabel');
+  var current = body.getAttribute('data-day') || '';
+
+  function href(iso) {
+    var u = new URL(window.location.href);
+    u.searchParams.set('d', iso);
+    return u.pathname + u.search;
+  }
+
+  // Re-anchor the planner on the picked day, KEEPING the time the operator
+  // typed. Only the date half moves: overwriting the time throws away an edit
+  // they made on purpose, and leaving the date alone plans a maintenance
+  // window on a night nobody is looking at — the worse of the two by far.
+  function reanchor(iso) {
+    var ids = ['cal_ws', 'cal_we'], defs = ['22:00', '23:59'];
+    for (var i = 0; i < ids.length; i++) {
+      var el = document.getElementById(ids[i]);
+      if (!el) { continue; }
+      var parts = (el.value || '').split('T');
+      el.value = iso + 'T' + (parts.length > 1 && parts[1] ? parts[1] : defs[i]);
+    }
+    var back = document.querySelector('#calPlanForm input[name="back"]');
+    if (back) { back.value = href(iso); }
+  }
+
+  function pick(iso, cell) {
+    var node = panels.querySelector('[data-cal-panel="' + iso + '"]');
+    // Not pre-rendered — the page bounds how many panels it carries. Fall back
+    // to the ordinary link: the server renders the identical day. Nothing is
+    // dropped, it costs one page load.
+    if (!node) { window.location = href(iso); return; }
+    body.innerHTML = node.innerHTML;
+    body.setAttribute('data-day', iso);
+    label.textContent = node.getAttribute('data-cal-label') || iso;
+    current = iso;
+    if (table) {
+      var on = table.querySelectorAll('td.fw-cal-sel');
+      for (var i = 0; i < on.length; i++) { on[i].classList.remove('fw-cal-sel'); }
+    }
+    var td = cell || (table && table.querySelector('td[data-day="' + iso + '"]'));
+    if (td) { td.classList.add('fw-cal-sel'); }
+    reanchor(iso);
+    // The address bar follows the selection, so a refresh or a pasted link
+    // lands on the day being read. replaceState, not pushState: picking a day
+    // is not a navigation, and forty Back presses to leave the calendar is a
+    // bug report.
+    try { window.history.replaceState({}, '', href(iso)); } catch (e) {}
+  }
+
+  if (table) {
+    table.addEventListener('click', function (ev) {
+      var node = ev.target;
+      var a = node && node.closest ? node.closest('a') : null;
+      if (a) {
+        var iso = a.getAttribute('data-cal-pick');
+        // A chip links to the change itself. Only the day number and the
+        // "+n more" line mean "select this day".
+        if (!iso) { return; }
+        ev.preventDefault();
+        pick(iso, a.closest('td'));
+        return;
+      }
+      var td = node && node.closest ? node.closest('td[data-day]') : null;
+      if (td) { pick(td.getAttribute('data-day'), td); }
+    });
+  }
+
+  var expand = document.getElementById('calExpand');
+  if (expand && modalEl && mBody && window.bootstrap) {
+    expand.addEventListener('click', function () {
+      // The SAME nodes, wider and uncapped. The modal is the day panel without
+      // the compact CSS, never a second rendering of the day.
+      mBody.innerHTML = body.innerHTML;
+      mLabel.textContent = label.textContent;
+      var link = document.getElementById('calModalLink');
+      if (link) { link.href = href(current); }
+      window.bootstrap.Modal.getOrCreateInstance(modalEl).show();
+    });
+  }
+})();
+</script>
 {% endblock %}
+

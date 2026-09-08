@@ -1,0 +1,23 @@
+{# ============================================================================
+   Device Console — Administrator entry. ONE definition, EVERY admin block in
+   base.html (2026-09-08).
+
+   Why a partial and not five inline copies: the admin blocks have drifted
+   before — two of them were even titled differently until this round — and an
+   entry added to Global and forgotten in the other four is invisible without
+   failing anything. tests/test_ssh_console.py fails if any admin block stops
+   including it.
+
+   NOT SCOPED TO ONE PRODUCT, on purpose. Every other SSH page in SATOM
+   (Log Collection, the flash battery) is FortiWeb-only because it sends a
+   FortiWeb command battery. A console has no battery: the operator types what
+   the box in front of them speaks, and the appliance picker behind this link
+   is already scoped to the active ADOM by ``visible_appliances``.
+
+   CONFIG_WRITE, matching the permission ``console.index`` requires — a link
+   that leads to a 403 is a bug report waiting to be filed.
+   ========================================================================= #}
+{% if current_user and current_user.can('config_write') %}
+<a class="fw-nav-item {{ 'active' if request.blueprint == 'console' else '' }}" href="{{ url_for('console.index', _adom=product.key) }}">
+  <i class="bi bi-terminal fw-nav-icon"></i><span>{{ _('Device Console') }}</span></a>
+{% endif %}

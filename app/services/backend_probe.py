@@ -206,30 +206,40 @@ def _rows(client, path: str) -> list:
 
 
 def dst_pool_targets(client, policies: Iterable[str]) -> list:
-    """Read the named policies' pools FROM THE DESTINATION, flattened to targets.
+    """Read the named policies' pools FROM THE BOX, flattened to probe targets.
 
     A policy or pool that cannot be read yields a row carrying ``error`` rather
     than being omitted: a shorter list reads as "fewer backends to worry about",
     which is the opposite of what a failed read means.
+
+    Every such row ALSO carries ``error_kind`` — a stable machine-readable tag
+    (``no_such_policy`` | ``no_pool`` | ``pool_unreadable`` | ``empty_pool``).
+    ``error`` is prose written for an operator; a caller that branches on it is
+    a second author of that prose, and rewording a message would silently
+    change what the caller decides. The tag is the contract, the prose is not.
+
+    The name says ``dst`` for history — the clone check that first needed it
+    only ever asked the destination. It reads whatever client it is handed and
+    :mod:`reach_batch` uses it for the SOURCE too.
     """
     out: list = []
     try:
         pols = {str(p.get("name") or ""): p
                 for p in _rows(client, "server-policy/policy")}
     except Exception as exc:  # noqa: BLE001
-        raise ProbeRefused("could not read the destination's policies: %s" % exc)
+        raise ProbeRefused("could not read the appliance's policies: %s" % exc)
     for name in policies:
         name = str(name)
         blank = {"policy": name, "pool": "", "seq": "", "type": "",
                  "address": "", "port": 0, "ssl": False, "enabled": True}
         pol = pols.get(name)
         if pol is None:
-            out.append(dict(blank,
-                            error="the destination does not list this policy"))
+            out.append(dict(blank, error_kind="no_such_policy",
+                            error="the appliance does not list this policy"))
             continue
         pool = str(pol.get("server-pool") or "").strip()
         if not pool:
-            out.append(dict(blank, error=(
+            out.append(dict(blank, error_kind="no_pool", error=(
                 "the policy names no server pool (deployment mode %r)"
                 % str(pol.get("deployment-mode") or ""))))
             continue
@@ -237,12 +247,12 @@ def dst_pool_targets(client, policies: Iterable[str]) -> list:
             rows = _rows(client, "server-policy/server-pool/pserver-list?mkey=%s"
                                  % quote(pool, safe=""))
         except Exception as exc:  # noqa: BLE001
-            out.append(dict(blank, pool=pool,
+            out.append(dict(blank, pool=pool, error_kind="pool_unreadable",
                             error="could not read the pool members: %s" % exc))
             continue
         found = backend_targets(rows, policy=name, pool=pool)
         if not found:
-            out.append(dict(blank, pool=pool,
+            out.append(dict(blank, pool=pool, error_kind="empty_pool",
                             error="the pool has no real servers"))
             continue
         out.extend(found)
@@ -252,25 +262,46 @@ def dst_pool_targets(client, policies: Iterable[str]) -> list:
 # --------------------------------------------------------------------------- #
 #  Running the probes                                                           #
 # --------------------------------------------------------------------------- #
-_NOT_PROBED = {"replied": False, "loss": None, "rtt_ms": None,
-               "verdict": "not probed",
-               "detail": "no vantage was able to test this backend"}
+NOT_PROBED = {"replied": False, "loss": None, "rtt_ms": None,
+              "verdict": "not probed",
+              "detail": "no vantage was able to test this backend"}
+
+#: Kept for in-module history. Public because a caller that has to synthesise
+#: an unprobed row (a batch that ran out of time budget) must produce the SAME
+#: shape — a second literal of it is how "not probed" quietly becomes a fourth
+#: state that nothing counts.
+_NOT_PROBED = NOT_PROBED
 
 
 def probe_targets(targets: Iterable[dict], *, ssh_session=None,
-                  tcp_timeout: float = 3.0) -> list:
+                  tcp_timeout: float = 3.0, ping_cache: dict | None = None,
+                  tcp_cache: dict | None = None) -> list:
     """Probe every target from both vantages available. Returns enriched rows.
 
     ``ssh_session`` is an OPEN :class:`ssh_ops.FortiWebReadonlySSH` on the
-    DESTINATION, or ``None`` when the operator did not supply SSH — in which
-    case the appliance vantage is reported ``not probed``, not assumed.
+    appliance whose vantage is wanted, or ``None`` when the operator did not
+    supply SSH — in which case the appliance vantage is reported ``not
+    probed``, not assumed.
 
     Each appliance address is pinged ONCE however many ports it exposes: the
     route to a host does not vary per port, and re-pinging is seconds of an
     operator's wall-clock per duplicate.
+
+    ``ping_cache`` / ``tcp_cache`` let a caller that makes SEVERAL calls (a
+    batch over many policies, chunked to keep a deadline) skip work it already
+    did. The caller owns the dicts; this function stays the only author of HOW
+    a target is probed.
+
+    ⚠ ``ping_cache`` is keyed by ADDRESS ALONE and must NEVER be shared between
+    two appliances. "Can it be reached?" is a question about a vantage, and
+    reusing appliance A's answer for appliance B is precisely the confusion
+    this module was written to prevent — it would report B as reaching a
+    backend it has no route to. ``tcp_cache`` is keyed by (address, port) and
+    IS safe to share: its vantage is this node, which does not change.
     """
     out: list = []
-    seen_ping: dict = {}
+    seen_ping: dict = {} if ping_cache is None else ping_cache
+    seen_tcp: dict = {} if tcp_cache is None else tcp_cache
     for t in targets or []:
         row = dict(t)
         addr = str(row.get("address") or "").strip()
@@ -280,7 +311,7 @@ def probe_targets(targets: Iterable[dict], *, ssh_session=None,
                             "detail": row["error"]}
             out.append(row)
             continue
-        # -- vantage 1: the destination appliance ---------------------------
+        # -- vantage 1: the appliance ---------------------------------------
         if ssh_session is None or not addr:
             row["appliance"] = dict(_NOT_PROBED)
         elif addr in seen_ping:
@@ -296,11 +327,34 @@ def probe_targets(targets: Iterable[dict], *, ssh_session=None,
             seen_ping[addr] = res
             row["appliance"] = dict(res)
         # -- vantage 2: this node -------------------------------------------
-        row["local"] = (tcp_check(addr, row.get("port"), tcp_timeout) if addr
-                        else {"ok": False, "verdict": "not probed",
-                              "detail": "the member row carries no address"})
+        if not addr:
+            row["local"] = {"ok": False, "verdict": "not probed",
+                            "detail": "the member row carries no address"}
+        else:
+            key = (addr, row.get("port"))
+            if key not in seen_tcp:
+                seen_tcp[key] = tcp_check(addr, row.get("port"), tcp_timeout)
+            row["local"] = dict(seen_tcp[key])
         out.append(row)
     return out
+
+
+def classify_row(row: dict) -> str:
+    """One backend row → ``reachable`` | ``unreachable`` | ``unknown``.
+
+    THE single author of that judgement. :func:`summarise` counts with it and
+    :mod:`reach_batch` decides a line's verdict with it; two copies of these
+    rules would let a table say "all green" while the verdict beside it said
+    "down", and there would be no way to tell which one was lying.
+    """
+    row = row or {}
+    app_v = str((row.get("appliance") or {}).get("verdict") or "not probed")
+    loc = row.get("local") or {}
+    if app_v == "alive" or loc.get("ok"):
+        return "reachable"
+    if app_v == "no reply" or loc.get("verdict") in ("timeout", "unreachable"):
+        return "unreachable"
+    return "unknown"
 
 
 def summarise(rows: Iterable[dict]) -> dict:
@@ -314,12 +368,10 @@ def summarise(rows: Iterable[dict]) -> dict:
         total += 1
         if not r.get("enabled", True):
             disabled += 1
-        app_v = str((r.get("appliance") or {}).get("verdict") or "not probed")
-        loc = r.get("local") or {}
-        if app_v == "alive" or loc.get("ok"):
+        state = classify_row(r)
+        if state == "reachable":
             ok += 1
-        elif app_v == "no reply" or loc.get("verdict") in ("timeout",
-                                                           "unreachable"):
+        elif state == "unreachable":
             down += 1
         else:
             unknown += 1

@@ -6,6 +6,38 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — Scout: which layer is actually broken (2026-09-09)
+
+**`Operations → Troubleshooting → Scout`** (FortiWeb) and **`Fleet → Scout`**
+(FortiADC). You name one published object — a server policy or a virtual
+server — and Scout walks it down ten rungs in dependency order, stops at the
+first that fails, and names that layer with the evidence that convicted it.
+
+- **The rungs:** appliance health · object exists and is enabled · the
+  published name resolves · the front door answers, decomposed into TCP / TLS /
+  TTFB · the certificate · the pool the device reports · the backends from
+  **two vantages that are never merged** · the border's record of the flow ·
+  front-door-versus-backend (is the appliance *deciding* or merely relaying?) ·
+  the WAF's recent blocks.
+- **Firewall drop, reset and routing are one silence at a socket.** Only the
+  border wrote down which it was, so that rung reads FortiAnalyzer traffic logs
+  rather than opening another connection. An empty result is reported as *"we
+  could not look"* — never as a clean path.
+- **"Could not look" is never health.** A rung that could not run is counted as
+  a blind spot and the verdict says so: a clean walk with five unprobed rungs
+  is reported as a partial walk, not as a healthy service.
+- **Read-only.** No rung writes, and a mutating HTTP method is refused at the
+  entry point.
+- Scout does not open incidents and Sentinel does not diagnose: Sentinel is
+  started by the clock and chooses its own object; Scout is started by an
+  operator and is handed one.
+
+### Changed
+
+- The FortiAnalyzer `logview` search moved to `app/services/faz_logs.py`, so
+  Sentinel's border corroboration and Scout's path rung drive **one** copy of
+  that JSON-RPC route.
+
 ### Added — Pick a day on the calendar, and switch the calendar off (2026-09-08)
 
 Two changes to **`Fleet → Calendar`**, plus one defect it had been shipping.

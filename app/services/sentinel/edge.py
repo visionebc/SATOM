@@ -271,42 +271,26 @@ def _search(analyzer, row, ip: str, start: datetime, end: datetime):
     The FortiWeb license-lock lesson, applied to a second product: a device
     refusal that masquerades as an empty result set is a refusal that gets
     scored as evidence of absence.
-    """
-    from ...clients.fortianalyzer import FortiAnalyzerClient
 
-    adom = (row.adom or "root").strip()
-    limit = int(config.get("edge_max_rows"))
-    client = None
-    try:
-        client = FortiAnalyzerClient(analyzer, timeout=float(
-            config.get("edge_timeout_s")))
-        data, err = client.call(
-            "add", SEARCH_URL.format(adom=adom),
-            device=_device_selector(row),
-            filter=f'srcip="{ip}"',
-            logtype=(row.logtype or "traffic"),
-            **{"time-range": {"start": _fmt(start), "end": _fmt(end)}},
-        )
-        if err:
-            return [], f"logsearch refused: {err}"
-        tid = (data or {}).get("tid") if isinstance(data, dict) else None
-        if not tid:
-            return [], "logsearch returned no task id"
-        out, err = client.call("get", FETCH_URL.format(adom=adom, tid=tid),
-                               offset=0, limit=limit)
-        if err:
-            return [], f"logsearch fetch refused: {err}"
-        if isinstance(out, dict):
-            out = out.get("data") or []
-        return (out if isinstance(out, list) else []), None
-    except Exception as exc:                      # noqa: BLE001 — transport
-        return [], f"{type(exc).__name__}: {exc}"[:280]
-    finally:
-        if client is not None:
-            try:
-                client.logout()
-            except Exception:                     # noqa: BLE001
-                pass
+    The TRANSPORT moved to :mod:`app.services.faz_logs` on 2026-09-08, when
+    Scout became a second caller of the same ``logview`` route with a different
+    filter. The question is this module's; the wire protocol is not, and two
+    authors of one wire protocol is how the second one stops being fixed when a
+    firmware changes shape. The error prefixes are unchanged, because they are
+    read by this module's callers.
+    """
+    from .. import faz_logs
+
+    return faz_logs.search(
+        analyzer,
+        adom=(row.adom or "root").strip(),
+        devices=_device_selector(row),
+        log_filter='srcip="%s"' % ip,
+        logtype=(row.logtype or "traffic"),
+        start=start, end=end,
+        limit=int(config.get("edge_max_rows")),
+        timeout=float(config.get("edge_timeout_s")),
+    )
 
 
 def _summarise(rows: list, ip: str, **common) -> dict:

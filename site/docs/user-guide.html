@@ -1179,6 +1179,30 @@ device.</p>
   (AdGuard/OPNsense/etc., admin-configurable list) and simultaneously match it
   against the fleet's load-balancing config: which policy/virtual server
   publishes it, with a mini policy→pool→backend graph and config deep links.
+- <strong>Backend Reachability</strong> — paste or upload a list of
+  <code>source;policy;destination</code> lines and ask one question per line: <em>do the real
+  servers behind this policy answer, on the source box and then on the
+  destination box?</em> It needs no workspace tab open and no appliance selected,
+  and it <strong>writes nothing</strong> — the pool members are read back from each device
+  and probed, never planned or copied.</p>
+<p>Two vantages, never merged into one word: <strong>this node</strong> over TCP to the
+  member's real port (always available; a refused port proves the host is up),
+  and optionally <strong>each appliance</strong> over <code>execute ping</code> (needs SSH, off by
+  default, and it is the only vantage that says whether <em>that box</em> has a route).
+  Three answers, never two — a backend nobody could probe is reported
+  <code>unknown</code>, never as an outage and never as health.</p>
+<p>Per line you get a verdict — <code>ok</code> · <code>down</code> · <code>mismatch</code> · <code>unknown</code> ·
+  <code>error</code> — plus every finding that earned it: unreachable members, a pool the
+  destination is missing a member from, a policy that is not on one of the
+  boxes. A destination that cannot be resolved or read does <strong>not</strong> void the
+  source half. When the destination does not have the policy at all and SSH is
+  on, the source's backends are pinged <em>from the destination</em> instead — the
+  pre-migration question — and that side is labelled as the different
+  measurement it is.</p>
+<p>Lines starting with <code>#</code> are ignored; a third field left empty checks the
+  source only; up to 200 lines per run. Anything the run could not cover (an
+  expired time budget, the target cap, an over-limit line) is named in the
+  report rather than quietly omitted. The result copies out as TSV.
 - <strong>Monitoring / Metrics</strong> — see §14.</p>
 <h2 id="14-monitoring-fleet-health-metrics-probes">14. Monitoring: fleet health, metrics &amp; probes</h2>
 <p>Monitoring lives in <strong>every</strong> workspace, not only Global. It is scoped by

@@ -1032,6 +1032,33 @@ All in the Global ADOM (also linked from product Fleet groups):
   (AdGuard/OPNsense/etc., admin-configurable list) and simultaneously match it
   against the fleet's load-balancing config: which policy/virtual server
   publishes it, with a mini policy→pool→backend graph and config deep links.
+- **Backend Reachability** — paste or upload a list of
+  `source;policy;destination` lines and ask one question per line: *do the real
+  servers behind this policy answer, on the source box and then on the
+  destination box?* It needs no workspace tab open and no appliance selected,
+  and it **writes nothing** — the pool members are read back from each device
+  and probed, never planned or copied.
+
+  Two vantages, never merged into one word: **this node** over TCP to the
+  member's real port (always available; a refused port proves the host is up),
+  and optionally **each appliance** over `execute ping` (needs SSH, off by
+  default, and it is the only vantage that says whether *that box* has a route).
+  Three answers, never two — a backend nobody could probe is reported
+  `unknown`, never as an outage and never as health.
+
+  Per line you get a verdict — `ok` · `down` · `mismatch` · `unknown` ·
+  `error` — plus every finding that earned it: unreachable members, a pool the
+  destination is missing a member from, a policy that is not on one of the
+  boxes. A destination that cannot be resolved or read does **not** void the
+  source half. When the destination does not have the policy at all and SSH is
+  on, the source's backends are pinged *from the destination* instead — the
+  pre-migration question — and that side is labelled as the different
+  measurement it is.
+
+  Lines starting with `#` are ignored; a third field left empty checks the
+  source only; up to 200 lines per run. Anything the run could not cover (an
+  expired time budget, the target cap, an over-limit line) is named in the
+  report rather than quietly omitted. The result copies out as TSV.
 - **Monitoring / Metrics** — see §14.
 
 ## 14. Monitoring: fleet health, metrics & probes

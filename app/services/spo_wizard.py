@@ -47,6 +47,14 @@ STEP_DNS = "dns"
 STEP_CERT = "certificate"
 STEP_OBJECTS = "objects"
 
+#: How the FortiWeb SERVER pool this policy binds comes to exist. NOT the IPAM
+#: address pool — that is ``SpoPlan.pool``, a different object wearing the same
+#: English word.
+POOL_NEW = "new"            # this plan creates the pool and its members
+POOL_EXISTING = "existing"  # already on THIS device; bind it, create nothing
+POOL_SHARED = "shared"      # a sibling plan in the same batch creates it
+POOL_MODES = (POOL_NEW, POOL_EXISTING, POOL_SHARED)
+
 #: Naming elements every policy needs. These are the REAL keys
 #: ``services.naming`` emits — checked against it by a guard, because inventing
 #: them is exactly how this module first shipped an unnamed policy.
@@ -72,7 +80,19 @@ class SpoPlan:
     names: dict = field(default_factory=dict)
     segment: dict = field(default_factory=dict)
     department: str = ""              # narrows the choice; never invents one
-    pool: str = ""
+    pool: str = ""                    # the IPAM ADDRESS pool
+    #: The FortiWeb SERVER pool the policy binds. A different object from
+    #: ``pool`` above: one hands out IP addresses, the other holds real
+    #: servers. They are spelled out separately everywhere they appear
+    #: because one word for two objects is how a plan describes one and
+    #: allocates from the other.
+    pool_name: str = ""
+    pool_mode: str = POOL_NEW
+    #: When the operator picked a pool that lives on ANOTHER appliance, the
+    #: name of that appliance. Recorded for the summary only — a foreign pool
+    #: is never bound (a server pool is a per-device object), its members are
+    #: copied, so the plan below is a plain ``new``.
+    pool_from: str = ""
     use_ipam: bool = False
     address: str = ""                 # operator-supplied when not using IPAM
     cert_class: str = ""
@@ -116,6 +136,8 @@ class SpoPlan:
             "department": self.department,
             "segment_departments": list(self.segment.get("departments") or []),
             "pool": self.pool,
+            "pool_name": self.pool_name, "pool_mode": self.pool_mode,
+            "pool_from": self.pool_from,
             "use_ipam": self.use_ipam, "address": self.address,
             "cert_class": self.cert_class, "issue_cert": self.issue_cert,
             "wpp_template_id": self.wpp_template_id,
@@ -138,7 +160,8 @@ def build_plan(appliance, *, line: str, web_address: str,
                use_ipam: bool = False, address: str = "",
                issue_cert: bool = False, backends=None,
                ipam_backend_id: object = None, dns_backend_id: object = None,
-               product: str = "") -> SpoPlan:
+               pool_name: str = "", pool_mode: str = POOL_NEW,
+               pool_from: str = "", product: str = "") -> SpoPlan:
     """Everything the run will do, and every reason it cannot. Writes nothing."""
     product = product or getattr(appliance, "kind", "") or "fortiweb"
     web_address = (web_address or "").strip()
@@ -174,6 +197,19 @@ def build_plan(appliance, *, line: str, web_address: str,
             "naming_incomplete",
             "the naming scheme produced no name for: " + ", ".join(missing)
             + " — fix it in Settings -> Naming"))
+
+    # -- which SERVER pool -------------------------------------------------
+    plan.pool_mode = pool_mode if pool_mode in POOL_MODES else POOL_NEW
+    plan.pool_from = (pool_from or "").strip()
+    plan.pool_name = ((pool_name or "").strip()
+                      or (plan.names.get("server_pool") or "").strip())
+    if plan.pool_mode != POOL_NEW and not (pool_name or "").strip():
+        # Binding "" builds a policy whose server-pool field is empty, which
+        # FortiWeb accepts far enough to be confusing — the same failure the
+        # naming guard above exists for.
+        plan.blockers.append(Blocker(
+            "no_pool_name",
+            f"pool mode {plan.pool_mode!r} needs the name of the pool to bind"))
 
     # -- what the line gives us. ONE author; never re-derived here. ---------
     lplan = lp.line_plan(plan.line, product)
@@ -365,10 +401,25 @@ def build_plan(appliance, *, line: str, web_address: str,
     plan.wpp_template_name = lplan.wpp_template_name
 
     # -- backends ---------------------------------------------------------
-    if not plan.backends:
-        plan.blockers.append(Blocker(
-            "no_backends", "a server pool with no members is a policy that "
-                           "answers nothing — add at least one real server"))
+    if plan.pool_mode == POOL_NEW:
+        if not plan.backends:
+            plan.blockers.append(Blocker(
+                "no_backends", "a server pool with no members is a policy that "
+                               "answers nothing — add at least one real server"))
+    elif plan.pool_mode == POOL_EXISTING:
+        if plan.backends:
+            # A control that silently does nothing reads as a control that
+            # worked. These rows are written NOWHERE when an existing pool is
+            # bound: its members are whatever the device already holds.
+            plan.warnings.append(
+                f"the real servers listed are NOT used — this policy binds the "
+                f"existing pool {plan.pool_name!r}, whose members are whatever "
+                f"{getattr(appliance, 'name', 'the device')} already has")
+    else:  # POOL_SHARED — the members ARE used, once, by the first plan
+        plan.warnings.append(
+            f"this policy binds {plan.pool_name!r}, created by the FIRST "
+            "domain of this batch — the real servers are written once, not "
+            "once per domain")
 
     # -- name collision, read from the LIVE device ------------------------
     _collision_check(appliance, plan)
@@ -383,19 +434,38 @@ def _collision_check(appliance, plan: SpoPlan) -> None:
     we cannot read is how a run discovers at step four that step one was
     impossible.
     """
+    from ..views.workspace import EP_POOL
     from .policy_ops import EP_POLICY
     want = (plan.names.get("server_policy") or "").strip()
     if not want:
         return
     try:
-        names = set(appliance.build_client(timeout=15.0)
-                    .cmdb_names(EP_POLICY) or [])
+        client = appliance.build_client(timeout=15.0)
+        names = set(client.cmdb_names(EP_POLICY) or [])
+        # Read in the SAME probe, against the SAME device. "bind one that
+        # exists" and "create one that does not" fail in opposite directions,
+        # and both would otherwise fail at the object step — after the address
+        # was reserved, the record published and the certificate issued.
+        pools = set(client.cmdb_names(EP_POOL) or [])
     except Exception as exc:  # noqa: BLE001 — a probe must not 500 the page
         plan.blockers.append(Blocker(
             "device_unreachable",
             f"cannot read the existing policies to check for a name clash: "
             f"{type(exc).__name__}: {exc}"))
         return
+    if plan.pool_mode == POOL_EXISTING and plan.pool_name not in pools:
+        plan.blockers.append(Blocker(
+            "pool_not_on_device",
+            f"no server pool named {plan.pool_name!r} exists on "
+            f"{getattr(appliance, 'name', 'this device')} — a server pool is "
+            "a per-device object, so one that lives on another appliance "
+            "cannot be bound; copy its members into a new pool instead"))
+    elif plan.pool_mode == POOL_NEW and plan.pool_name in pools:
+        plan.blockers.append(Blocker(
+            "pool_exists",
+            f"a server pool named {plan.pool_name!r} already exists on "
+            f"{getattr(appliance, 'name', 'this device')} — bind it instead "
+            "of creating a second one with the same name"))
     if want in names:
         plan.blockers.append(Blocker(
             "policy_exists",
@@ -615,22 +685,172 @@ def object_payload(plan: SpoPlan, vip: str) -> dict:
     from ..views.workspace import _CREATE_EPS
     n = plan.names
     vserver = n["virtual_server"]
-    pool = n["server_pool"]
+    # The PLAN decides the pool, not the naming scheme: an existing or a
+    # shared pool carries a name nobody derived from this web address.
+    pool = plan.pool_name or n["server_pool"]
     seg = plan.segment or {}
     steps: list[tuple] = [
         ("Virtual Server", _CREATE_EPS["vserver"], {"name": vserver}, None),
         ("VIP", _CREATE_EPS["vip"],
          {"name": n["vip"], "vip": vip,
           "interface": seg.get("interface") or ""}, vserver),
-        ("Server Pool", _CREATE_EPS["pool"], {"name": pool}, None),
     ]
-    for i, b in enumerate(plan.backends, 1):
-        steps.append((f"Pool member {i}", _CREATE_EPS["pserver"],
-                      {"ip": str(b.get("ip") or ""),
-                       "port": str(b.get("port") or "80")}, pool))
+    # ONLY a "new" pool is created. Re-creating one that already exists fails
+    # on the device; re-creating a SHARED one races the sibling plan that owns
+    # it and duplicates its members.
+    if plan.pool_mode == POOL_NEW:
+        steps.append(("Server Pool", _CREATE_EPS["pool"], {"name": pool}, None))
+        for i, b in enumerate(plan.backends, 1):
+            steps.append((f"Pool member {i}", _CREATE_EPS["pserver"],
+                          {"ip": str(b.get("ip") or ""),
+                           "port": str(b.get("port") or "80")}, pool))
     policy = {"name": n["server_policy"], "vserver": vserver,
               "server-pool": pool}
     if plan.wpp_template_name:
         policy["web-protection-profile"] = plan.wpp_template_name
     steps.append(("Server Policy", _CREATE_EPS["policy"], policy, None))
     return {"steps": steps}
+
+
+# --------------------------------------------------------------------------- #
+#  batch — several web addresses, ONE server pool                              #
+# --------------------------------------------------------------------------- #
+def build_batch(appliance, *, rows, existing_pool: str = "",
+                pool_mode: str = POOL_NEW, pool_from: str = "",
+                **common) -> list[SpoPlan]:
+    """One plan per web address, all binding the SAME server pool.
+
+    That single pool is the whole point: "several policies with the same
+    backend" is one pool with N policies bound to it, not N identical pools
+    that then drift apart the first time somebody edits one of them.
+
+    Which pool it is:
+
+    * ``pool_mode=POOL_EXISTING`` — every plan binds ``existing_pool``,
+      nothing is created. The mode is passed EXPLICITLY and not inferred from
+      a non-empty name: "the operator asked for an existing pool and named
+      none" is a refusal (``no_pool_name``), and inferring the mode from the
+      name would silently turn it into "build a new one" — a different pool
+      from the one they were looking at;
+    * otherwise the FIRST row's derived pool — row 1 creates it
+      (``POOL_NEW``), every later row binds it (``POOL_SHARED``).
+
+    Order is therefore load-bearing, not cosmetic: the creator has to run
+    first. It is returned first and :func:`apply_batch` preserves the order.
+    """
+    rows = [r for r in (rows or [])
+            if str((r or {}).get("web_address") or "").strip()]
+    plans: list[SpoPlan] = []
+    if not rows:
+        return plans
+
+    shared = (existing_pool or "").strip()
+    # A bare ``existing_pool`` with no mode still means "existing": that is
+    # what every caller written before the mode existed sends.
+    want_existing = pool_mode == POOL_EXISTING or bool(shared)
+    seen_web: dict[str, int] = {}
+    seen_policy: dict[str, int] = {}
+    seen_addr: dict[str, int] = {}
+
+    for i, row in enumerate(rows):
+        web = str(row.get("web_address") or "").strip()
+        if want_existing:
+            mode, name = POOL_EXISTING, shared
+        elif not plans:
+            mode, name = POOL_NEW, ""
+        else:
+            mode, name = POOL_SHARED, plans[0].pool_name
+        plan = build_plan(appliance, web_address=web,
+                          hostname=str(row.get("hostname") or ""),
+                          address=str(row.get("address") or ""),
+                          pool_name=name, pool_mode=mode,
+                          pool_from=pool_from, **common)
+
+        # -- rows that collide with each other ----------------------------
+        # Checked HERE and not only against the device: two rows of the same
+        # batch clash before either exists, so the live name check cannot see
+        # it. It would surface as "the second one failed" halfway through a
+        # run that had already published DNS for the first.
+        key = web.lower()
+        if key in seen_web:
+            plan.blockers.append(Blocker(
+                "duplicate_web_address",
+                f"{web} is already row {seen_web[key] + 1} of this batch"))
+        else:
+            seen_web[key] = i
+
+        policy_name = (plan.names.get("server_policy") or "").strip()
+        if policy_name:
+            if policy_name in seen_policy:
+                plan.blockers.append(Blocker(
+                    "duplicate_policy_name",
+                    f"row {seen_policy[policy_name] + 1} derives the same "
+                    f"policy name {policy_name!r} — two rows cannot build the "
+                    "same object, even from different-looking addresses"))
+            else:
+                seen_policy[policy_name] = i
+
+        addr = (plan.address or "").strip()
+        if addr and not plan.use_ipam:
+            if addr in seen_addr:
+                # A WARNING and not a blocker: each row builds its own virtual
+                # server, and whether this device accepts two VIP objects on
+                # one address is a property of the device, not something this
+                # module knows. Stating it is honest; refusing it would be a
+                # guess dressed as a rule.
+                plan.warnings.append(
+                    f"row {seen_addr[addr] + 1} uses the same VIP {addr} — "
+                    "each row builds its OWN virtual server, so the device "
+                    "would get two VIP objects on one address")
+            else:
+                seen_addr[addr] = i
+
+        plans.append(plan)
+    return plans
+
+
+def apply_batch(appliance, plans, *, dry_run: bool = True,
+                actor: str = "") -> dict:
+    """Run a batch in order. Refuses ENTIRELY if ANY plan is blocked.
+
+    Not per-plan, and not "skip the bad ones": half a batch is the worst
+    outcome available — a shared pool plus some of the policies, some DNS
+    published, and no single place that says which domains are live. Every
+    blocker in the batch is reported at once so they get fixed in one pass.
+
+    Returns ``{ok, dry_run, runs, built}``. ``runs`` carries one entry per
+    domain in the order they ran; ``built`` names the domains that completed.
+    """
+    plans = list(plans or [])
+    if not plans:
+        return {"ok": False, "dry_run": dry_run, "runs": [], "built": [],
+                "error": "no web address was given"}
+
+    blocked = [(p.web_address, b.detail) for p in plans for b in p.blockers]
+    if blocked:
+        return {"ok": False, "dry_run": dry_run, "runs": [], "built": [],
+                "error": "this batch is blocked: "
+                         + "; ".join("%s: %s" % (w or "(no address)", d)
+                                     for w, d in blocked)}
+
+    runs: list[dict] = []
+    built: list[str] = []
+    for plan in plans:
+        res = apply_plan(appliance, plan, dry_run=dry_run, actor=actor)
+        runs.append({"web_address": plan.web_address,
+                     "pool_name": plan.pool_name,
+                     "pool_mode": plan.pool_mode, "result": res})
+        if not res.get("ok"):
+            if built and not dry_run:
+                # NAMED, never deleted. The earlier domains are real, working
+                # policies; tearing them down because a LATER row failed would
+                # destroy work nobody asked to undo — the same rule that keeps
+                # a certificate from being revoked on a failed run.
+                res.setdefault("stranded", []).append(
+                    "already built and NOT undone: " + ", ".join(built))
+            return {"ok": False, "dry_run": dry_run, "runs": runs,
+                    "built": built,
+                    "error": f"{plan.web_address}: "
+                             f"{res.get('error') or 'failed'}"}
+        built.append(plan.web_address)
+    return {"ok": True, "dry_run": dry_run, "runs": runs, "built": built}

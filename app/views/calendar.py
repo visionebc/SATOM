@@ -43,6 +43,7 @@ from ..models import (Appliance, ChangeRequest, Permission, ScheduledAction,
                       ScheduledActionRun, visible_appliances)
 from ..services import calendar_plan as cal
 from ..services import settings_store
+from ..services import user_settings_store
 from ..services.audit import log_action
 
 bp = Blueprint("calendar_plan", __name__, url_prefix="/calendar")
@@ -64,6 +65,51 @@ GROUP_FIELDS = {
 #: sample of the rest, and says which. An unbounded read here is the page that
 #: times out on the busiest month of the year.
 MAX_RUNS = 400
+
+#: How many event blocks the page pre-renders into hidden day panels so that
+#: picking a day costs nothing. Past this, a day still opens — through the
+#: ordinary link, which server-renders exactly the same panel. The bound is on
+#: BLOCKS, not days: one appliance with four hundred runs on a Tuesday is the
+#: page this exists to keep openable.
+MAX_PANEL_EVENTS = 400
+
+
+def _calendar_on() -> bool:
+    """Has the signed-in user left the Calendar switched on? (Default: yes.)
+
+    A view must not read this from the template context: the context processor
+    exists for the three nav menus, and a route that trusted a rendering
+    variable for a decision would be a second implementation of the answer.
+    """
+    try:
+        return user_settings_store.calendar_enabled(current_user.id)
+    except Exception:  # noqa: BLE001 — a preference must not 500 the page
+        return True
+
+
+def _panel_days(buckets: dict, selected, day_from, day_to) -> list:
+    """The days whose detail panel is pre-rendered into the page.
+
+    THE SELECTED DAY IS ALWAYS FIRST AND ALWAYS INCLUDED. Every other day falls
+    back to a page load when the budget runs out, and that fallback lands on a
+    page where the requested day IS the selected one — so a day that could not
+    be pre-rendered here is still pre-rendered there. Budgeting the selected day
+    like any other would break that: the fallback could arrive and find the day
+    missing again, and the panel would never open.
+    """
+    out = [selected] if selected else []
+    budget = MAX_PANEL_EVENTS - len(buckets.get(selected, [])) if selected else MAX_PANEL_EVENTS
+    for day in sorted(k for k in buckets if day_from <= k <= day_to):
+        if day == selected:
+            continue
+        size = len(buckets[day])
+        # ``continue``, not ``break``: one crowded day must not cost every
+        # quiet day after it in the month.
+        if size > budget:
+            continue
+        budget -= size
+        out.append(day)
+    return sorted(out)
 
 
 # --------------------------------------------------------------------------- #
@@ -254,6 +300,12 @@ def _collect(view: str, anchor: date, kinds: set) -> dict:
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def index():
+    # Switched off in this user's profile. NOT a 403: they hold the permission,
+    # they hid the page, and a refusal that does not name the switch is a dead
+    # end for anybody who arrives from a bookmark or a colleague's link.
+    if not _calendar_on():
+        return render_template("calendar/off.html")
+
     view = (request.args.get("view") or "month").strip().lower()
     if view not in VIEWS:
         view = "month"
@@ -272,8 +324,18 @@ def index():
             selected = date.fromisoformat(sel_raw)
         except ValueError:
             selected = None
+    if selected is None:
+        # A DAY IS ALWAYS SELECTED, so the detail panel is never an empty box
+        # the operator has to discover is clickable. Today when the drawn range
+        # holds it, otherwise the anchor — never ``day_from``, which in a month
+        # view is padding that belongs to the PREVIOUS month, and which would
+        # pre-fill the planner with a window outside the month on screen.
+        selected = (ctx["today"] if ctx["day_from"] <= ctx["today"] <= ctx["day_to"]
+                    else anchor)
     ctx["selected"] = selected
-    ctx["selected_events"] = ctx["buckets"].get(selected, []) if selected else []
+    ctx["selected_events"] = ctx["buckets"].get(selected, [])
+    ctx["panel_days"] = _panel_days(
+        ctx["buckets"], selected, ctx["day_from"], ctx["day_to"])
 
     ctx["types"] = _type_entries()
     ctx["group_fields"] = GROUP_FIELDS
@@ -379,6 +441,15 @@ def _resolve_targets(mode: str, field: str, value: str, kinds) -> tuple:
 @require_permission(Permission.USER_MANAGE)
 def plan():
     from .change_requests import _parse_dt, create_change_request
+
+    # The page is switched off for this user, so this is a stale form or a
+    # replay. Refused BEFORE anything is created: a change raised from a
+    # calendar its author cannot open is a change nobody is watching for.
+    if not _calendar_on():
+        flash("Your Calendar is switched off — nothing was created. "
+              "Switch it back on in your profile to plan from the grid.",
+              "warning")
+        return redirect(url_for("auth.profile") + "#calendar")
 
     back = request.form.get("back") or url_for("calendar_plan.index")
     action = (request.form.get("action") or "").strip()

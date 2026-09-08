@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}Calendar — SATOM{% endblock %}
+
+{#  The user holds the permission and hid the page themselves. This is not a
+    refusal, it is the switch, next to the sentence that says what hiding it
+    did and did NOT do. A gate that says "no" without naming the remedy is a
+    dead end — the rule this module already applies to its device gates.      #}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <span>{{ _('Calendar') }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-calendar3 me-2 text-accent"></i>{{ _('Calendar') }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">{{ _('Switched off for your account') }}</p>
+  </div>
+</div>
+
+<div class="fw-card">
+  <div class="fw-card-body">
+    <p style="font-size:13.5px;">
+      <i class="bi bi-eye-slash me-1 text-accent"></i>
+      {{ _('You switched the Calendar off in your profile, so it is hidden from your Fleet menu and does not open for you. This is your account only — every other operator still sees it.') }}
+    </p>
+    <div class="fw-alert fw-alert-info" style="font-size:12.5px;">
+      <i class="bi bi-info-circle me-1"></i>
+      {{ _('Nothing was stopped. Approved changes and scheduled automations keep running on their windows whether or not this grid draws them — hiding a view does not pause the fleet. Change Requests and Scheduled Actions are still open to you.') }}
+    </div>
+    <form method="POST" action="{{ url_for('auth.save_calendar_pref') }}" class="d-inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="calendar_on" value="1">
+      <button type="submit" class="btn btn-fw-primary btn-sm">
+        <i class="bi bi-calendar-check me-1"></i>{{ _('Switch the Calendar back on') }}</button>
+    </form>
+    <a class="btn btn-outline-secondary btn-sm ms-1" href="{{ url_for('auth.profile') }}#calendar">
+      <i class="bi bi-person-gear me-1"></i>{{ _('Open my profile') }}</a>
+  </div>
+</div>
+{% endblock %}

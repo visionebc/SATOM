@@ -143,6 +143,16 @@ PAGES: tuple[dict, ...] = (
        "days-since-last-push grade, the configuration history split local vs "
        "off-box, firmware, and the identity — serial and every earlier name — "
        "of each device, including the ones that were de-registered."),
+    _p("scout.index", "Scout — Fault Isolation", "monitoring",
+       "scout troubleshoot fault isolation which layer is broken localise "
+       "diagnose service down slow backend firewall drop reset routing "
+       "timeout ttfb connect tls handshake pool members vip virtual server "
+       "server policy why is this broken where is the problem ladder",
+       "Walks one published service down ten rungs — appliance, object, name, "
+       "front door, certificate, pool, backends, border path, decision, WAF — "
+       "and stops at the first that fails, naming that layer with its "
+       "evidence. Operator-started and object-given, which is what separates "
+       "it from Sentinel."),
     _p("sentinel.index", "Sentinel — Incidents", "monitoring",
        "sentinel incident attack detection anomaly correlation score band "
        "respond breach suspicious spike who attacked",

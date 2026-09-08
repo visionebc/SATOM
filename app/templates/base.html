@@ -311,9 +311,11 @@
 
       <!-- FLEET — the Global-ADOM menu, mirrored here but scoped to this
            product's devices/policies (visible_appliances + product_scope). -->
-      <div class="fw-nav-group {{ 'open' if request.blueprint in ['calendar_plan','search','dns_tool','architecture','analysis','fleet_objects','metrics','monitoring','deep_monitor','service_monitor','jobs','waf'] }}" data-nav-group="Fleet">
+      <div class="fw-nav-group {{ 'open' if request.blueprint in ['calendar_plan','scout','search','dns_tool','architecture','analysis','fleet_objects','metrics','monitoring','deep_monitor','service_monitor','jobs','waf'] }}" data-nav-group="Fleet">
         <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-globe2 fw-nav-section-icon" style="color:#3b82f6;"></i><span>{{ _('Fleet') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
         <div class="fw-nav-group-body">
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'scout' else '' }}" href="{{ url_for('scout.index') }}">
+            <i class="bi bi-binoculars fw-nav-icon"></i><span>{{ _('Scout') }}</span></a>
           {% include 'partials/nav_calendar.html' %}
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'search' else '' }}" href="{{ url_for('search.index') }}">
             <i class="bi bi-search fw-nav-icon"></i><span>{{ _('Search') }}</span></a>
@@ -649,7 +651,7 @@
       {% set _g_lb   = request.blueprint in ['workspace','server_objects'] %}
       {% set _g_waf  = request.blueprint in ['web_protection','exceptions','attack_search','artifacts'] or (_sc_cfg and _sc_key in _waf_sc) %}
       {% set _g_cfg  = _sc_cfg and _sc_key not in _waf_sc %}
-      {% set _g_ops  = request.blueprint in ['backups','logs','import_backup','reach_batch','config_compare'] %}
+      {% set _g_ops  = request.blueprint in ['backups','logs','import_backup','scout','reach_batch','config_compare'] %}
       {% set _g_api  = request.blueprint in ['registry','api_explorer','structure'] %}
       {% set _g_adm  = request.blueprint in ['templates','audit','appliances','segments','naming','firmware','capacity','signatures','api_tokens'] %}
 
@@ -930,9 +932,11 @@
              (Search, DNS Lookup, Architecture); these two answer "why is this path
              broken", which is an operational verb.  The Global ADOM keeps its own
              copies under Fleet: it has no Operations group to move them into. #}
-          <div class="fw-nav-subgroup {{ 'open' if request.blueprint in ['reach_batch','config_compare'] }}" data-nav-subgroup="Troubleshooting">
+          <div class="fw-nav-subgroup {{ 'open' if request.blueprint in ['scout','reach_batch','config_compare'] }}" data-nav-subgroup="Troubleshooting">
             <button type="button" class="fw-nav-item fw-nav-subtoggle"><i class="bi bi-life-preserver fw-nav-icon"></i><span>{{ _('Troubleshooting') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
             <div class="fw-nav-subgroup-body">
+              <a class="fw-nav-item {{ 'active' if request.blueprint == 'scout' else '' }}" href="{{ url_for('scout.index') }}">
+                <i class="bi bi-binoculars fw-nav-icon"></i><span>{{ _('Scout') }}</span></a>
               <a class="fw-nav-item {{ 'active' if request.blueprint == 'reach_batch' else '' }}" href="{{ url_for('reach_batch.index') }}">
                 <i class="bi bi-diagram-3 fw-nav-icon"></i><span>{{ _('Backend Reachability') }}</span></a>
               <a class="fw-nav-item {{ 'active' if request.blueprint == 'config_compare' else '' }}" href="{{ url_for('config_compare.index') }}">

@@ -336,6 +336,12 @@ def create_app(config_override: object | None = None) -> Flask:
                        # deleted on 2026-08-02 and the string had been
                        # allowing nothing ever since.)
                        'advisor', 'adom_assets', 'console',
+                       # Scout walks a FortiADC virtual server as well
+                       # as a FortiWeb server policy, and the ADC Fleet
+                       # group draws the entry. Allowing it here is what
+                       # stops that click landing on /adc/ — the defect
+                       # 'calendar_plan' shipped with on 2026-09-08.
+                       'scout',
                        # Calendar, same story, and it shipped broken here:
                        # partials/nav_calendar.html is included in the Global,
                        # FortiWeb and FortiADC menus, but 'calendar_plan' was
@@ -2121,6 +2127,7 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.concept_map", "bp"),
         ("app.views.dns_tool", "bp"),
         ("app.views.reach_batch", "bp"),
+        ("app.views.scout", "bp"),
         ("app.views.config_compare", "bp"),
         ("app.views.calendar", "bp"),
         ("app.views.console", "bp"),

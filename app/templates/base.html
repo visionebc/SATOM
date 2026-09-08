@@ -358,6 +358,7 @@
           {% include "partials/nav_collection.html" %}
           {% include "partials/nav_cr_types.html" %}
           {% include "partials/nav_adom_assets.html" %}
+          {% include "partials/nav_console.html" %}
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'database' else '' }}" href="{{ url_for('database.index') }}">
             <i class="bi bi-hdd fw-nav-icon"></i><span>{{ _('Database') }}</span></a>
           <a class="fw-nav-item {{ 'active' if request.endpoint == 'database.py_console_page' else '' }}" href="{{ url_for('database.py_console_page') }}">
@@ -429,6 +430,7 @@
           {% include "partials/nav_collection.html" %}
           {% include "partials/nav_cr_types.html" %}
           {% include "partials/nav_adom_assets.html" %}
+          {% include "partials/nav_console.html" %}
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'users' else '' }}" href="{{ url_for('users.index') }}">
             <i class="bi bi-people fw-nav-icon"></i><span>{{ _('Users') }}</span></a>
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'appids' else '' }}" href="{{ url_for('appids.index') }}">
@@ -514,12 +516,12 @@
       </div>
       {% endfor %}
 
-      {# Administration — Appliances / Audit log / Firmware / Network segment #}
+      {# Administrator — Appliances / Audit log / Firmware / Network segment #}
       {% include 'partials/nav_automation.html' %}
 
       {% if current_user and current_user.can('user_manage') %}
-      <div class="fw-nav-group {{ 'open' if request.blueprint in ['appliances','audit','firmware','segments'] }}" data-nav-group="Administration">
-        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-person-gear fw-nav-section-icon" style="color:#ef4444;"></i><span>{{ _('Administration') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+      <div class="fw-nav-group {{ 'open' if request.blueprint in ['appliances','audit','firmware','segments'] }}" data-nav-group="Administrator">
+        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-person-gear fw-nav-section-icon" style="color:#ef4444;"></i><span>{{ _('Administrator') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
         <div class="fw-nav-group-body">
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'appliances' else '' }}" href="{{ url_for('appliances.index') }}">
             <i class="bi bi-server fw-nav-icon"></i><span>{{ _('Appliances') }}</span></a>
@@ -528,6 +530,7 @@
           {% include "partials/nav_collection.html" %}
           {% include "partials/nav_cr_types.html" %}
           {% include "partials/nav_adom_assets.html" %}
+          {% include "partials/nav_console.html" %}
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'firmware' else '' }}" href="{{ url_for('firmware.index', _adom='fortianalyzer') }}">
             <i class="bi bi-cpu fw-nav-icon"></i><span>{{ _('Firmware') }}</span></a>
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'segments' else '' }}" href="{{ url_for('segments.index') }}">
@@ -590,12 +593,12 @@
         </div>
       </div>
 
-      {# Administration — Appliances / Audit log / Network segment #}
+      {# Administrator — Appliances / Audit log / Network segment #}
       {% include 'partials/nav_automation.html' %}
 
       {% if current_user and current_user.can('user_manage') %}
-      <div class="fw-nav-group {{ 'open' if request.blueprint in ['appliances','audit','segments'] }}" data-nav-group="Administration">
-        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-person-gear fw-nav-section-icon" style="color:#ef4444;"></i><span>{{ _('Administration') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
+      <div class="fw-nav-group {{ 'open' if request.blueprint in ['appliances','audit','segments'] }}" data-nav-group="Administrator">
+        <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-person-gear fw-nav-section-icon" style="color:#ef4444;"></i><span>{{ _('Administrator') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
         <div class="fw-nav-group-body">
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'appliances' else '' }}" href="{{ url_for('appliances.index') }}">
             <i class="bi bi-server fw-nav-icon"></i><span>{{ _('Appliances') }}</span></a>
@@ -604,6 +607,7 @@
           {% include "partials/nav_collection.html" %}
           {% include "partials/nav_cr_types.html" %}
           {% include "partials/nav_adom_assets.html" %}
+          {% include "partials/nav_console.html" %}
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'segments' else '' }}" href="{{ url_for('segments.index') }}">
             <i class="bi bi-diagram-3 fw-nav-icon"></i><span>{{ _('Network Segment') }}</span></a>
         </div>
@@ -948,6 +952,7 @@
           {% include "partials/nav_collection.html" %}
           {% include "partials/nav_cr_types.html" %}
           {% include "partials/nav_adom_assets.html" %}
+          {% include "partials/nav_console.html" %}
           <a class="fw-nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('firmware.') else '' }}"
              href="{{ url_for('firmware.index') }}">
             <i class="bi bi-hdd-stack fw-nav-icon"></i><span>{{ _('Firmware') }}</span></a>

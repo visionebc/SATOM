@@ -335,7 +335,7 @@ def create_app(config_override: object | None = None) -> Flask:
                        # repeat it. ('docs' left this set: that blueprint was
                        # deleted on 2026-08-02 and the string had been
                        # allowing nothing ever since.)
-                       'advisor', 'adom_assets',
+                       'advisor', 'adom_assets', 'console',
                        # Change Types is an Administration page, mirrored
                        # into every ADOM for the same reason Change Requests
                        # was: the form it configures is offered in every
@@ -392,7 +392,7 @@ def create_app(config_override: object | None = None) -> Flask:
             # scaffolds. RBAC still gates each write.
             faz_bps = {'concept_map', 'faz', 'faz_api', 'appliances', 'settings', 'audit', 'jobs',
                        'notifications', 'profiles', 'users',
-                       'advisor', 'adom_assets',   # see the adc_bps note
+                       'advisor', 'adom_assets', 'console',   # see the adc_bps note
                        'database', 'locks', 'firmware', 'segments',
                        'device_provision',
                        # Change Types is an Administration page, mirrored
@@ -426,7 +426,7 @@ def create_app(config_override: object | None = None) -> Flask:
             # pages. RBAC still gates each write.
             fac_bps = {'concept_map', 'fac', 'fac_api', 'appliances', 'settings', 'audit', 'jobs',
                        'notifications', 'profiles', 'users',
-                       'advisor', 'adom_assets',   # see the adc_bps note
+                       'advisor', 'adom_assets', 'console',   # see the adc_bps note
                        'database', 'locks', 'segments', 'firmware',
                        'device_provision',
                        # Change Types is an Administration page, mirrored
@@ -2090,6 +2090,7 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.dns_tool", "bp"),
         ("app.views.reach_batch", "bp"),
         ("app.views.config_compare", "bp"),
+        ("app.views.console", "bp"),
         ("app.views.users", "bp"),
         ("app.views.profiles", "bp"),
         ("app.views.metrics", "bp"),

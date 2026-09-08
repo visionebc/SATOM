@@ -1,0 +1,303 @@
+{% extends "base.html" %}
+
+{% block title %}Device Console — SATOM{% endblock %}
+
+{#  Light theme only (safeguards §9m). Status colour comes from .fw-badge-*,
+    which is calibrated against white; the pastel pills of a dark theme land at
+    ~1.4:1 here and produce a badge that says "error" and cannot be read.    #}
+{% set TIER_BADGE   = {'safe':'secondary','disruptive':'warning','forbidden':'danger'} %}
+{% set STATUS_BADGE = {'ok':'success','error':'danger','refused':'danger',
+                       'not_run':'secondary'} %}
+{% set STATUS_ICON  = {'ok':'check-circle','error':'x-octagon',
+                       'refused':'shield-exclamation','not_run':'dash-circle'} %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <span>{{ _('Device Console') }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-terminal me-2 text-accent"></i>{{ _('Device Console') }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      Open a CLI session to an appliance, run commands, read every answer, and
+      package the transcript for a Fortinet support ticket. Also tests a single
+      username and password directly against a FortiOS device.
+    </p>
+  </div>
+</div>
+
+<div class="alert alert-warning py-2 px-3" style="font-size:12.5px;">
+  <i class="bi bi-exclamation-triangle me-1"></i>
+  <strong>This console can change the appliance.</strong> It is the only place in
+  SATOM where SSH writes. Two things follow, and neither is a bug:
+  <ul class="mb-0 mt-1">
+    <li>The <strong>delete guard</strong> does not apply here. The web UI refuses to
+      delete an object another policy still references; a CLI <code>delete</code>
+      inside a <code>config</code> block is not something that guard can see.</li>
+    <li>Commands that end an appliance — <code>execute factoryreset</code>,
+      <code>execute formatlogdisk</code>, disk formats — are refused at
+      <em>every</em> permission level and have no path through this page.
+      Reboots, config restores, HA changes and password writes are sent only
+      after you acknowledge them and type the appliance name.</li>
+  </ul>
+</div>
+
+<div class="row g-3">
+  <!-- ── Run ──────────────────────────────────────────────────────────── -->
+  <div class="col-lg-5">
+    <div class="fw-card">
+      <div class="fw-card-header"><i class="bi bi-terminal me-1"></i>{{ _('Run commands') }}</div>
+      <div class="fw-card-body">
+        <form method="POST" action="{{ url_for('console.run') }}" id="consoleForm">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+          <label class="fw-form-label" for="appliance_id">{{ _('Appliance') }}</label>
+          <select class="fw-input mb-2" name="appliance_id" id="appliance_id" required>
+            <option value="">{{ _('— pick one —') }}</option>
+            {% for a in appliances %}
+            <option value="{{ a.id }}" data-name="{{ a.name }}"
+                    {{ 'selected' if selected_id == a.id else '' }}>
+              {{ a.name }} — {{ a.host }}{% if a.kind %} ({{ a.kind }}){% endif %}
+              {%- if a.host and a.host.endswith('.invalid') %} · retired{% endif %}
+            </option>
+            {% endfor %}
+          </select>
+
+          <label class="fw-form-label" for="script">{{ _('Commands') }}
+            <span class="text-muted">— {{ _('one per line, up to') }} {{ max_commands }}</span></label>
+          <textarea class="fw-input" name="script" id="script" rows="9"
+                    spellcheck="false" style="font-family:var(--fw-mono,monospace);font-size:12px;"
+                    placeholder="get system status&#10;diagnose system ha status&#10;config system dns&#10;  set primary 192.0.2.2&#10;end">{{ script }}</textarea>
+          <div class="text-muted mt-1" style="font-size:11.5px;">
+            Lines starting with <code>#</code> are comments. The whole script runs in
+            <strong>one session</strong>, so <code>config</code> / <code>edit</code> /
+            <code>end</code> blocks work as they do on the box.
+          </div>
+
+          <div class="mt-2">
+            <label class="fw-form-label" for="preset">{{ _('Insert a read-only preset') }}</label>
+            <select class="fw-input" id="preset">
+              <option value="">{{ _('— presets —') }}</option>
+              {% for label, cmd in presets.items() %}
+              <option value="{{ cmd }}">{{ label }} — {{ cmd }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="form-check mt-2">
+            <input class="form-check-input" type="checkbox" name="stop_on_error" value="1"
+                   id="stop_on_error" {{ 'checked' if stop_on_error else '' }}>
+            <label class="form-check-label" for="stop_on_error" style="font-size:12.5px;">
+              {{ _('Stop at the first failed command') }}
+              <span class="text-muted d-block" style="font-size:11px;">
+                Recommended. The FortiOS CLI is modal — after a failed
+                <code>config</code> the following <code>set</code> lines land at the
+                top level instead.</span>
+            </label>
+          </div>
+
+          <div class="mt-2 p-2" style="border:1px solid var(--fw-border);border-radius:6px;">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="ack_disruptive" value="1"
+                     id="ack_disruptive" {{ 'checked' if ack else '' }}>
+              <label class="form-check-label" for="ack_disruptive" style="font-size:12.5px;">
+                <strong>{{ _('I understand this script is disruptive') }}</strong>
+                <span class="text-muted d-block" style="font-size:11px;">
+                  Required for reboot, shutdown, config restore, HA changes and
+                  password writes. Leave it off for everything else.</span>
+              </label>
+            </div>
+            <input class="fw-input mt-2" type="text" name="confirm_name"
+                   placeholder="{{ _('type the appliance name to confirm') }}"
+                   autocomplete="off">
+          </div>
+
+          <button class="fw-btn fw-btn-primary mt-3" type="submit">
+            <i class="bi bi-play-fill me-1"></i>{{ _('Run') }}</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Credential test ──────────────────────────────────────────────── -->
+  <div class="col-lg-3">
+    <div class="fw-card">
+      <div class="fw-card-header"><i class="bi bi-key me-1"></i>{{ _('Test a credential') }}</div>
+      <div class="fw-card-body">
+        {% if current_user.can('user_manage') %}
+        <p class="text-muted" style="font-size:12px;">
+          Tests <strong>one</strong> username and password against one FortiOS device
+          over SSH — the device does not have to be registered in SATOM. The
+          password is never stored and never appears in the result. Limited to
+          {{ cred_max }} checks per {{ cred_window }}s per operator, and every
+          attempt is written to the audit log.
+        </p>
+        <form method="POST" action="{{ url_for('console.verify') }}" autocomplete="off">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <label class="fw-form-label" for="cred_host">{{ _('Host or IP') }}</label>
+          <input class="fw-input mb-2" name="cred_host" id="cred_host" required
+                 value="{{ cred.host if cred else '' }}">
+          <label class="fw-form-label" for="cred_port">{{ _('SSH port') }}</label>
+          <input class="fw-input mb-2" name="cred_port" id="cred_port" type="number"
+                 min="1" max="65535" value="22">
+          <label class="fw-form-label" for="cred_username">{{ _('Username') }}</label>
+          <input class="fw-input mb-2" name="cred_username" id="cred_username" required
+                 value="{{ cred.username if cred else '' }}">
+          <label class="fw-form-label" for="cred_password">{{ _('Password') }}</label>
+          <input class="fw-input mb-2" name="cred_password" id="cred_password"
+                 type="password" autocomplete="new-password">
+          <button class="fw-btn fw-btn-secondary" type="submit">
+            <i class="bi bi-shield-check me-1"></i>{{ _('Test login') }}</button>
+        </form>
+        {% else %}
+        <p class="text-muted mb-0" style="font-size:12px;">
+          Credential testing needs the <code>user_manage</code> permission — it
+          accepts an arbitrary host, so it is the one control here that can be
+          aimed at a device SATOM does not manage.
+        </p>
+        {% endif %}
+
+        {% if cred %}
+        <hr>
+        <div style="font-size:12px;">
+          <div class="mb-1"><strong>{{ cred.username }}@{{ cred.host }}</strong></div>
+          <div class="d-flex flex-wrap gap-1 mb-2">
+            <span class="fw-badge fw-badge-{{ 'success' if cred.reachable else 'danger' }}">
+              {{ 'reachable' if cred.reachable else 'unreachable' }}</span>
+            <span class="fw-badge fw-badge-{{ 'success' if cred.authenticated else 'danger' }}">
+              {{ 'authenticated' if cred.authenticated else 'not authenticated' }}</span>
+            <span class="fw-badge fw-badge-{{ 'success' if cred.read_ok else 'secondary' }}">
+              {{ 'can read' if cred.read_ok else 'read not confirmed' }}</span>
+            {% if cred.elapsed_ms %}
+            <span class="fw-badge fw-badge-secondary">{{ cred.elapsed_ms }} ms</span>{% endif %}
+          </div>
+          {% if cred.firmware %}<div>Firmware: <code>{{ cred.firmware }}</code></div>{% endif %}
+          {% if cred.hostname %}<div>Device hostname: <code>{{ cred.hostname }}</code></div>{% endif %}
+          {% if cred.error %}
+          <div class="alert alert-danger py-1 px-2 mt-2 mb-0" style="font-size:11.5px;">
+            {{ cred.error }}</div>{% endif %}
+          {% if cred.write_hint %}
+          <details class="mt-2">
+            <summary style="cursor:pointer;font-size:11.5px;">{{ _('Write-access hint (raw)') }}</summary>
+            <div class="text-muted" style="font-size:11px;">
+              This is what the box answered when the session tried to set the
+              CLI pager. It is <strong>evidence, not a verdict</strong> — a box that
+              refused it for an unrelated reason looks identical to a read-only
+              account.
+            </div>
+            <pre class="mt-1 p-2" style="font-size:11px;background:var(--fw-content-bg);border:1px solid var(--fw-border);border-radius:4px;white-space:pre-wrap;">{{ cred.write_hint }}</pre>
+          </details>
+          {% endif %}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Results ──────────────────────────────────────────────────────── -->
+  <div class="col-lg-4">
+    <div class="fw-card">
+      <div class="fw-card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-card-list me-1"></i>{{ _('Result') }}</span>
+        {% if result %}
+        <span class="d-flex gap-1">
+          <span class="fw-badge fw-badge-secondary">{{ result.rows|length }} cmd</span>
+          <span class="fw-badge fw-badge-{{ 'danger' if result.failed else 'success' }}">
+            {{ result.failed }} failed</span>
+        </span>
+        {% endif %}
+      </div>
+      <div class="fw-card-body">
+        {% if not result %}
+        <p class="text-muted mb-0" style="font-size:12px;">{{ _('Nothing has been run yet.') }}</p>
+        {% else %}
+          {% if result.error %}
+          <div class="alert alert-danger py-1 px-2" style="font-size:11.5px;">
+            <i class="bi bi-x-octagon me-1"></i>{{ result.error }}</div>
+          {% endif %}
+          {% for n in result.notes %}
+          <div class="alert alert-warning py-1 px-2" style="font-size:11.5px;">
+            <i class="bi bi-info-circle me-1"></i>{{ n }}</div>
+          {% endfor %}
+
+          {% for row in result.rows %}
+          <div class="mb-2" style="border:1px solid var(--fw-border);border-radius:6px;">
+            <div class="d-flex justify-content-between align-items-center px-2 py-1"
+                 style="background:var(--fw-content-bg);border-radius:6px 6px 0 0;">
+              <code style="font-size:11.5px;">{{ row.command }}</code>
+              <span class="d-flex gap-1">
+                {% if row.tier != 'safe' %}
+                <span class="fw-badge fw-badge-{{ TIER_BADGE.get(row.tier,'secondary') }}">{{ row.tier }}</span>
+                {% endif %}
+                <span class="fw-badge fw-badge-{{ STATUS_BADGE.get(row.status,'secondary') }}">
+                  <i class="bi bi-{{ STATUS_ICON.get(row.status,'question-circle') }} me-1"></i>{{ row.status }}</span>
+              </span>
+            </div>
+            {% if row.detail %}
+            <div class="px-2 py-1 text-muted" style="font-size:11.5px;">{{ row.detail }}</div>
+            {% endif %}
+            {% if row.output %}
+            <pre class="m-0 p-2" style="font-size:11px;white-space:pre-wrap;max-height:280px;overflow:auto;border-top:1px solid var(--fw-border);">{{ row.output }}</pre>
+            {% elif row.status == 'ok' %}
+            <div class="px-2 py-1 text-muted" style="font-size:11px;">
+              {{ _('no output — normal for a configuration command that succeeded') }}</div>
+            {% endif %}
+          </div>
+          {% endfor %}
+
+          {% if result.transcript %}
+          <hr>
+          <form method="POST" action="{{ url_for('console.bundle') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="appliance_id" value="{{ selected_id }}">
+            <input type="hidden" name="transcript" value="{{ result.transcript }}">
+            <div class="fw-card-header px-0 pt-0" style="background:none;border:0;">
+              <i class="bi bi-life-preserver me-1"></i>{{ _('Send to Fortinet TAC') }}</div>
+            <p class="text-muted" style="font-size:11.5px;">
+              Builds a <code>.tar.gz</code> holding this transcript with every
+              secret redacted, plus the read-only diagnostic battery. Attach it
+              to the ticket.
+            </p>
+            <input class="fw-input mb-2" name="ticket" placeholder="{{ _('TAC ticket number (optional)') }}">
+            <textarea class="fw-input mb-2" name="note" rows="2"
+                      placeholder="{{ _('What you were trying to do (optional)') }}"></textarea>
+            <div class="form-check mb-2">
+              <input class="form-check-input" type="checkbox" name="include_diagnostics"
+                     value="1" id="include_diagnostics" checked>
+              <label class="form-check-label" for="include_diagnostics" style="font-size:12px;">
+                {{ _('Attach the read-only diagnostic battery') }}
+                <span class="text-muted d-block" style="font-size:11px;">
+                  Opens a second session and runs the 32 get/diagnose commands.
+                  If it fails the bundle is still produced, with the transcript
+                  and a note saying so.</span>
+              </label>
+            </div>
+            <button class="fw-btn fw-btn-secondary" type="submit">
+              <i class="bi bi-file-earmark-zip me-1"></i>{{ _('Build bundle') }}</button>
+          </form>
+          {% endif %}
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var preset = document.getElementById('preset');
+  var script = document.getElementById('script');
+  if (!preset || !script) return;
+  preset.addEventListener('change', function () {
+    if (!preset.value) return;
+    script.value = (script.value.replace(/\s*$/, '') + '\n' + preset.value).replace(/^\n/, '');
+    preset.value = '';
+    script.focus();
+  });
+})();
+</script>
+{% endblock %}

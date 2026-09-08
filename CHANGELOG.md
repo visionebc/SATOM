@@ -6,6 +6,56 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — Fail a cluster over from the device page itself (2026-09-08)
+
+The failover was plannable from the calendar; it was not reachable from the box
+an operator actually has open. **`Appliances → <a cluster> → HA Failover`**
+(`/appliances/<id>/failover`) is that surface: it renders on an HA cluster's
+node 0 *and* on a member node, and offers three things — a readiness check, a
+live run, and a plan.
+
+- **"If it is a cluster" is a route decision, not a hidden link.** A standalone
+  row is refused at the URL, not merely left without a button, and the refusal
+  names what to do about it (register the box as a cluster, or attach it to one
+  as a member). A page that only hides a link is decoration; the URL is
+  guessable.
+- **The readiness check is the action's own dry run.** It resolves the write
+  target, reads the live HA role and validates the firmware floor, and sends
+  nothing. It is deliberately *not* a page-local copy of those checks: two
+  implementations would eventually disagree, and the operator would be told the
+  cluster is ready by one of them and refused by the other. It is also not
+  gated on a change request — gating a check that writes nothing pushes
+  operators to skip it.
+- **The button a human clicks carries the same gate as the headless executor.**
+  A live failover runs only inside an approved Change Request's open window, and
+  only after the appliance name is typed exactly. The gate that decides this had
+  hard-coded the action name `upgrade`; it now takes the action, so **a change
+  approving a firmware flash no longer authorizes a cluster failover of the same
+  box** (and the reverse).
+- **Planning goes through the one implementation of "raise a change"**
+  (`create_change_request`), exactly as the calendar does.
+
+### Fixed — A per-node cluster could never be failed over (2026-09-08)
+
+The firmware floor was checked against the appliance row the action was aimed
+at. For a per-node cluster that row is node 0, a **logical container with no
+host and no firmware string**, so every per-node cluster was refused with "SATOM
+has no recorded firmware version" — and in the other direction a stale version
+left on node 0 could have cleared a floor the live primary does not meet. The
+write target is now resolved first and the floor checked on the box that
+actually receives the command; the refusal names that box.
+
+### Fixed — A scheduled change could not carry executor parameters (2026-09-08)
+
+`create_change_request` never wrote `ChangeRequest.params`, and
+`schedule_change_request` rebuilds the bound action from the change every time
+it is scheduled. Anything stored only on the action row was therefore reset to
+the executor default on the next reschedule — which made `direction='unset'`
+(give the primary role back / clear a forced failover) **unschedulable**.
+Changes now carry their executor params, with `change_request_id` stripped:
+that key is what the executor reads as its authorization, and a caller able to
+set it would be approving its own change.
+
 ### Added — Schedule an HA failover, and refuse it on the firmware that cannot do it (2026-09-08)
 
 A new automation, **`ha_failover` — HA failover: hand the primary role over**,

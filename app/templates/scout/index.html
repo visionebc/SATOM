@@ -1,0 +1,210 @@
+{% extends "base.html" %}
+
+{% block title %}Scout — SATOM{% endblock %}
+
+{#  LIGHT THEME (safeguards §9m).  Status colour comes from .fw-badge-* only:
+    the pastel pills of a dark theme land at ~1.4:1 on this product's white
+    cards, which is a badge that says "fail" and cannot be read.
+    No <style> and no <script> in this template ON PURPOSE — every element it
+    needs is server-rendered or native HTML (<details>).  A page added with an
+    un-nonced <style> renders with NO CSS at all under this CSP, and one with
+    an un-nonced <script> silently loses its behaviour; both shipped that way
+    on 2026-09-07 and 2026-09-08.                                            #}
+{% set V_BADGE = {'pass':'success','fail':'danger','warn':'warning',
+                  'unknown':'info','skipped':'secondary'} %}
+{% set V_ICON  = {'pass':'check-circle','fail':'x-octagon',
+                  'warn':'exclamation-triangle','unknown':'question-circle',
+                  'skipped':'dash-circle'} %}
+{% set V_WORD  = {'pass':'pass','fail':'FAULT','warn':'warn',
+                  'unknown':'could not look','skipped':'not walked'} %}
+
+{% block content %}
+<div class="fw-page">
+
+  <div class="fw-page-head">
+    <h1 class="fw-page-title"><i class="bi bi-binoculars me-2"></i>Scout</h1>
+    <p class="fw-page-sub">
+      Walks one published service down ten rungs and stops at the first one that
+      fails, naming that layer. Read-only: no rung writes, and no rung issues a
+      mutating HTTP method.
+    </p>
+  </div>
+
+  {% if error %}
+  <div class="alert alert-danger" role="alert">{{ error }}</div>
+  {% endif %}
+
+  <form method="post" class="fw-card mb-3">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="fw-card-body">
+      <div class="row g-3">
+        <div class="col-md-4">
+          <label class="form-label" for="sc-appl">Appliance</label>
+          <select class="form-select" id="sc-appl" name="appliance_id" required>
+            <option value="">— pick one —</option>
+            {% for a in appliances %}
+            <option value="{{ a.id }}" {{ 'selected' if form.appliance_id == a.id|string }}>
+              {{ a.name }} ({{ a.kind }}{% if a.host %} · {{ a.host }}{% endif %})</option>
+            {% endfor %}
+          </select>
+          {% if not appliances %}
+          <div class="form-text text-danger">
+            This ADOM has no FortiWeb or FortiADC that Scout can walk.
+          </div>
+          {% endif %}
+        </div>
+        <div class="col-md-4">
+          <label class="form-label" for="sc-policy">Server policy / virtual server</label>
+          <input class="form-control" id="sc-policy" name="policy" required
+                 value="{{ form.policy }}" placeholder="the object's exact name">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label" for="sc-window">Log window (min)</label>
+          <input class="form-control" id="sc-window" name="window_minutes"
+                 value="{{ form.window_minutes }}" inputmode="numeric">
+        </div>
+        <div class="col-md-2 d-flex align-items-end">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="sc-ssh"
+                   name="use_ssh" {{ 'checked' if form.use_ssh }}>
+            <label class="form-check-label" for="sc-ssh">Use SSH</label>
+            <div class="form-text">Without it the appliance's own vantage on the
+              backends is reported <em>not probed</em>, never assumed.</div>
+          </div>
+        </div>
+      </div>
+
+      <details class="mt-3">
+        <summary class="fw-muted">Front-end override and border correlation</summary>
+        <div class="row g-3 mt-1">
+          <div class="col-md-4">
+            <label class="form-label" for="sc-host">Published host</label>
+            <input class="form-control" id="sc-host" name="hostname"
+                   value="{{ form.hostname }}" placeholder="derived from the VIP">
+            <div class="form-text">Typed wins over derived — you know which name
+              is in the ticket.</div>
+          </div>
+          <div class="col-md-2">
+            <label class="form-label" for="sc-port">Port</label>
+            <input class="form-control" id="sc-port" name="port" value="{{ form.port }}">
+          </div>
+          <div class="col-md-2">
+            <label class="form-label" for="sc-scheme">Scheme</label>
+            <select class="form-select" id="sc-scheme" name="scheme">
+              <option value="https" {{ 'selected' if form.scheme != 'http' }}>https</option>
+              <option value="http"  {{ 'selected' if form.scheme == 'http' }}>http</option>
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label" for="sc-path">Path</label>
+            <input class="form-control" id="sc-path" name="path" value="{{ form.path }}">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label" for="sc-faz">FortiAnalyzer (layer 7)</label>
+            <select class="form-select" id="sc-faz" name="analyzer_id">
+              <option value="">— none: layer 7 reports "could not look" —</option>
+              {% for z in analyzers %}
+              <option value="{{ z.row.id }}" {{ 'selected' if form.analyzer_id == z.row.id|string }}>
+                {{ z.row.name }}{% if not z.ok %} — {{ z.why }}{% endif %}</option>
+              {% endfor %}
+            </select>
+            <div class="form-text">Firewall drop, reset and routing are one
+              silence at a socket. Only the border wrote down which it was.</div>
+          </div>
+          <div class="col-md-2">
+            <label class="form-label" for="sc-adom">FAZ ADOM</label>
+            <input class="form-control" id="sc-adom" name="faz_adom" value="{{ form.faz_adom }}">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label" for="sc-devid">FortiGate devid</label>
+            <input class="form-control" id="sc-devid" name="faz_devid"
+                   value="{{ form.faz_devid }}" placeholder="blank = every device in the ADOM">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label" for="sc-vdom">VDOM</label>
+            <input class="form-control" id="sc-vdom" name="faz_vdom" value="{{ form.faz_vdom }}">
+          </div>
+        </div>
+      </details>
+
+      <div class="mt-3">
+        <button type="submit" class="btn fw-btn-primary">
+          <i class="bi bi-binoculars me-1"></i>Walk the ladder</button>
+      </div>
+    </div>
+  </form>
+
+  {% if report %}
+  {% set v = report.verdict %}
+  <div class="fw-card mb-3">
+    <div class="fw-card-head">
+      <span class="fw-badge fw-badge-{{ 'danger' if v.localised else 'info' }}">
+        {{ 'FAULT LOCALISED' if v.localised else 'NO FAULT LOCALISED' }}</span>
+      <span class="ms-2">{{ report.target.appliance }} · {{ report.target.noun }}
+        <strong>{{ report.target.policy }}</strong></span>
+    </div>
+    <div class="fw-card-body">
+      <p class="mb-1">{{ v.text }}</p>
+      {% if v.headline %}<p class="mb-1"><strong>{{ v.headline }}</strong></p>{% endif %}
+      {% if report.endpoint %}
+      <p class="fw-muted mb-1">Front-end:
+        {{ report.endpoint.scheme }}://{{ report.endpoint.host }}:{{ report.endpoint.port }}
+        → {{ report.endpoint.ip }}
+        ({{ 'derived from the device' if report.endpoint.derived else 'typed' }})</p>
+      {% elif report.endpoint_error %}
+      <p class="fw-muted mb-1">Front-end refused: {{ report.endpoint_error }}</p>
+      {% endif %}
+      {% if report.timing and report.timing.note %}
+      <p class="fw-muted mb-1">Timing: {{ report.timing.note }}</p>
+      {% endif %}
+      {% if v.blind_spots %}
+      <p class="mb-0 fw-muted">Blind spots (rungs that could not be walked):
+        {{ v.blind_spots|join(', ') }} — this is not health.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="fw-card">
+    <div class="fw-card-head">The ladder</div>
+    <div class="fw-card-body p-0">
+      <table class="table fw-table mb-0">
+        <thead>
+          <tr><th style="width:3rem;">#</th><th style="width:11rem;">Layer</th>
+            <th style="width:8rem;">Vantage</th><th style="width:9rem;">Verdict</th>
+            <th>What it found</th></tr>
+        </thead>
+        <tbody>
+          {% for L in report.layers %}
+          <tr>
+            <td>{{ L.key }}</td>
+            <td><strong>{{ L.title }}</strong><br>
+              <span class="fw-muted small">{{ L.question }}</span></td>
+            <td><span class="fw-muted">{{ L.vantage_label }}</span></td>
+            <td><span class="fw-badge fw-badge-{{ V_BADGE.get(L.verdict,'secondary') }}">
+              <i class="bi bi-{{ V_ICON.get(L.verdict,'dash-circle') }} me-1"></i>
+              {{ V_WORD.get(L.verdict, L.verdict) }}</span></td>
+            <td>
+              <div>{{ L.headline }}</div>
+              {% if L.detail %}<div class="fw-muted small mt-1">{{ L.detail }}</div>{% endif %}
+              {% if L.evidence %}
+              <details class="mt-1">
+                <summary class="fw-muted small">Evidence ({{ L.evidence|length }})</summary>
+                <dl class="row mb-0 mt-1 small">
+                  {% for e in L.evidence %}
+                  <dt class="col-sm-4 fw-muted">{{ e[0] }}</dt>
+                  <dd class="col-sm-8">{{ e[1] }}</dd>
+                  {% endfor %}
+                </dl>
+              </details>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

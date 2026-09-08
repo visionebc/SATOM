@@ -1,0 +1,21 @@
+{# ============================================================================
+   CALENDAR — ONE definition, EVERY Fleet menu.  2026-09-08
+
+   The Fleet group is hand-copied markup in three branches of base.html (Global,
+   FortiWeb, FortiADC). Adding this entry to one of them is how a tool ends up
+   visible in one ADOM and invisible in another, which to the operator reads as
+   broken rather than absent — the exact drift that produced
+   partials/nav_monitoring.html and partials/nav_automation.html.
+
+   GATED ON user_manage, the permission the page itself requires. The calendar
+   draws Change Requests and Scheduled Actions, and both of those pages are
+   gated the same way; a weaker gate here would be a read-side hole into both.
+   A link that leads to a 403 is a bug report waiting to be filed, so the entry
+   is hidden rather than shown-and-refused.
+
+   Placed ABOVE Search in every Fleet menu, per the request that raised it.
+   ========================================================================= #}
+{% if current_user and current_user.can('user_manage') %}
+<a class="fw-nav-item {{ 'active' if request.blueprint == 'calendar_plan' else '' }}" href="{{ url_for('calendar_plan.index') }}">
+  <i class="bi bi-calendar3 fw-nav-icon"></i><span>{{ _('Calendar') }}</span></a>
+{% endif %}

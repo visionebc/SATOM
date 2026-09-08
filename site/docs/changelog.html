@@ -106,6 +106,44 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="added-schedule-an-ha-failover-and-refuse-it-on-the-firmware-that-cannot-do-it-2026-09-08">Added — Schedule an HA failover, and refuse it on the firmware that cannot do it (2026-09-08)</h3>
+<p>A new automation, <strong><code>ha_failover</code> — HA failover: hand the primary role over</strong>,
+so a cluster handover can be planned from <strong>Fleet → Calendar</strong> (or from Change
+Requests) instead of being typed into a console at 02:00. <code>direction='set'</code>
+hands the primary role to the peer; <code>direction='unset'</code> gives it back.</p>
+<p><strong>There is no REST call for this on either product</strong>, and that is a measured
+finding rather than an assumption: FortiWeb's own GUI bundle, downloaded from a
+live 7.6.8 appliance, routes <code>system/ha</code>, <code>ha/node</code>, <code>ha-topology</code> and
+<code>ha-disconnect</code> and contains no failover call at all, and FortiADC has no
+<code>monitor/</code> namespace. So the action drives each product's CLI over the SSH
+console SATOM already owns — the same console that classifies <code>execute ha</code> as
+disruptive and refuses it without an explicit acknowledgement. Here the approved
+Change Request <em>is</em> that acknowledgement.</p>
+<ul>
+<li><strong>The command must exist on the firmware the box is RUNNING.</strong>
+  <code>execute ha failover</code> arrived in <strong>FortiWeb 8.0.0</strong>; a FortiWeb on 7.6 is
+  refused <strong>by name, with both version numbers, and nothing is sent</strong>. FortiADC
+  uses <code>execute ha force failover-standby</code>, evidenced from 7.6.0. A box whose
+  firmware SATOM has never recorded is refused too: absence of evidence is not
+  evidence of support.</li>
+<li><strong><code>set</code> refuses anything not reporting HA primary right now.</strong> Failing over a
+  standby either does nothing and reports success, or pins the standby out of
+  election while the box you meant to drain keeps serving.</li>
+<li><strong><code>unset</code> does not fail the same way.</strong> It refuses only a box with no HA at
+  all. A refused <code>set</code> costs a maintenance window; a refused <code>unset</code> leaves a
+  node pinned out of election — the outage the failover existed to avoid, made
+  permanent.</li>
+<li><strong>The role is never read back through a VIP.</strong> After a handover the VIP lands
+  on the peer, so the read would describe a different box and report success
+  either way. The run says so instead of inventing a verdict.</li>
+<li><strong>A node still reporting primary afterwards is a failure</strong>, not a success.</li>
+<li><strong>Stickiness is a property of the product.</strong> FortiWeb clears the forced state
+  on reboot; nothing documents FortiADC doing so, so it is treated as sticky and
+  every FortiADC run says the node stays out of election until an <code>unset</code>.</li>
+</ul>
+<p>Registered <code>danger</code>, <code>single_target</code>, one-shot and <code>requires_change_request</code>, so
+it arrives on the Change Request / Calendar menu already gated — the executor
+refuses to fire it unbound.</p>
 <h3 id="added-calendar-one-grid-for-everything-this-fleet-is-scheduled-to-receive-2026-09-08">Added — Calendar: one grid for everything this fleet is scheduled to receive (2026-09-08)</h3>
 <p>A new <strong>Fleet → Calendar</strong> page (<code>/calendar/</code>), the first entry of the Fleet
 menu in every ADOM. Month, week, 30-day agenda and whole-year views over the

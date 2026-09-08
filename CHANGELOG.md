@@ -6,6 +6,72 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — Device Console: a write-capable CLI, credential testing and TAC bundles (2026-09-08)
+
+A new Administrator page, **Device Console** (`/console/`), present in **every
+ADOM**. It does three things an operator needs when a box is misbehaving and
+the REST API is not enough: run CLI commands against an appliance and read
+every answer, test a single username and password directly against a FortiOS
+device, and package the transcript for a Fortinet support ticket.
+
+**This is the first SSH write path in SATOM, and it is deliberately confined.**
+`app/services/ssh_ops` documents in its own docstring that the console "is
+locked to read commands", and six services import it on that promise
+(`cert_manager`, `backup`, `backend_probe`, `reach_batch`, `logcollect`,
+`interface_inventory`). Adding a `write=True` flag there would have made that
+sentence false for all of them at once. `assert_readonly` is therefore
+untouched; the write path lives in the new `app/services/ssh_console.py` and is
+reachable from exactly one blueprint.
+
+- **The gate is a denylist, in three tiers.** An allowlist is right for
+  `ssh_ops`, where the question is closed ("is this a pure read?"). Here the
+  question is open — an operator recovering a box at 3 a.m. needs whatever
+  FortiOS spells today, and a capability the authors did not foresee reads as a
+  broken tool, which is how people end up SSHing from a laptop with no audit
+  trail at all. What *is* closed is the set of commands that end an appliance,
+  so that is what is enumerated.
+  - **Forbidden, at every permission level, with no UI path:**
+    `execute factoryreset`, `execute formatlogdisk`, disk erases and formats.
+  - **Disruptive, sent only after the operator acknowledges the effect and
+    types the appliance name:** reboot, shutdown, config/firmware restore, HA
+    changes, clear-text config exports, and password writes.
+  - Everything else, behind `config_write`.
+- **The whole script is gated before the session opens.** A refusal discovered
+  on line 40 after lines 1–39 already landed leaves the appliance in a state
+  the page cannot describe; half a configuration change is worse than none.
+- **A failed command halts the script by default.** The FortiOS CLI is modal:
+  after a failed `config`, the `set` lines that follow land at the top level
+  instead. Commands not reached are reported as `not_run`, never dropped.
+- **Silence is success here**, unlike the reachability probes. A `set` that
+  works prints nothing, so reading an empty answer as failure would mark every
+  correct configuration line red.
+- **Credential testing answers three questions, not one.** Reachable /
+  authenticated / can-actually-read are separated because they send the
+  operator to three different places — and an account that logs in and can read
+  nothing is a real FortiOS state that anything checking only authentication
+  calls a success. Write access is reported as the device's **raw words**, never
+  as a flag: the only free evidence is whether the automatic pager-disable was
+  accepted, and a box that refused it for an unrelated reason is
+  indistinguishable from a read-only account. Throttled per operator and
+  audited on every attempt; the password is never stored.
+- **Nothing secret leaves in a bundle.** Transcripts are redacted before they
+  are stored, audited or packaged. A diagnostic capture that fails does not
+  lose the bundle — the transcript is what TAC asked for, and the failure is
+  named inside the archive instead.
+
+### Fixed — the Administrator group is now named and reachable in every ADOM (2026-09-08)
+
+Two of the five administration blocks in `base.html` were titled
+**Administration** rather than **Administrator**, so the FortiADC and
+FortiAuthenticator sidebars carried a differently-named group holding the same
+pages. They are one name now.
+
+`console` was also added to the FortiADC / FortiAnalyzer / FortiAuthenticator
+blueprint allowlists. Without it the shared nav partial drew a live-looking
+entry that the product gate redirected to the ADOM home — the same defect
+`advisor` and `adom_assets` had on 2026-08-30, and
+`tests/test_adom_menu_reachability.py` is what caught it this time.
+
 ### Added — full source↔destination comparison of a service (2026-09-08)
 
 A new Fleet page, **Config Compare** (`/compare/`), takes the SAME

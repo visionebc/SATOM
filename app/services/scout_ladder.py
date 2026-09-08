@@ -475,63 +475,154 @@ def layer_device(ctx: Ctx) -> dict:
 
 
 # --- 1. the object ---------------------------------------------------------- #
+def _named(rows, name: str):
+    """The row called ``name`` in ``rows``, or ``None``. Never raises."""
+    for r in (rows or []):
+        if isinstance(r, dict) and str(r.get("name") or "") == str(name):
+            return dict(r)
+    return None
+
+
+def _ask_live(ctx: Ctx):
+    """The appliance's OWN list of what it serves, or ``None`` for "not asked".
+
+    ``None`` and ``[]`` are different answers and every caller must keep them
+    apart: one is a question that could not be put, the other is a device that
+    answered "nothing". Collapsing them turns a refused read into an empty
+    appliance.
+    """
+    fn = ctx.port("live_objects")
+    if fn is None:
+        return None
+    try:
+        rows = fn(ctx.target.appliance)
+    except Exception:                             # noqa: BLE001
+        return None
+    if not isinstance(rows, list):
+        return None
+    return [r for r in rows if isinstance(r, dict)]
+
+
 def layer_policy(ctx: Ctx) -> dict:
     """Does the object exist, and is it enabled?
 
-    THE TRAP, and it cost a wrong FAIL against the live fleet before it was
-    caught: ``policy_full_cached`` returns ``None`` for *"not cached"*, which
-    its own docstring says out loud — not for *"not present on the device"*.
-    Objects that exist perfectly well but were never deep-harvested come back
-    ``None``. Reporting that as "the appliance does not list this object" is a
-    confident wrong localisation that sends an operator hunting a policy that
-    is sitting right there, and it would fire for most of this fleet, because
-    only a handful of policies here are in the deep layer.
+    THREE SOURCES, AND THEIR ORDER IS THE WHOLE POINT.
 
-    So a miss falls back to the cached OBJECT LIST, and the three answers stay
-    three answers: found, genuinely absent from a list that has other things in
-    it, or nothing cached at all — which is UNKNOWN, not absence.
+    1. the deep-harvest copy — richest, and absent for most of a real fleet
+    2. **the appliance, live** — its own list of what it is serving right now
+    3. SATOM's cached object list — a fact about the last successful harvest
+
+    Live beats cache for EXISTENCE, and that is not a preference. *"The
+    appliance does not list this object"* is a sentence about the appliance,
+    and saying it out of a cache attributes to the device a statement the
+    device was never asked to make.
+
+    It is not hypothetical. An unlicensed FortiWeb-VM answers ``-20010`` to
+    every ``cmdb`` endpoint while answering the monitor endpoints perfectly, so
+    its object cache freezes at the last good sweep — and every object created
+    after that moment reads as *absent*, with the full confidence of a FAIL,
+    while it sits there serving traffic. Measured on this fleet: a policy built
+    and verified end to end was called non-existent by a six-day-old cache.
+
+    THE EARLIER TRAP, kept because it is the same class of error:
+    ``policy_full_cached`` returns ``None`` for *"not cached"* — its own
+    docstring says so — not for *"not present on the device"*.
+
+    The three answers stay three: found, genuinely absent from a list that
+    holds other things, or nothing readable at all — which is UNKNOWN, never
+    absence.
     """
     fn = ctx.port("read_policy")
     if fn is None:
         return _unavailable("read_policy")
     full = fn(ctx.target.appliance, ctx.target.policy)
+    read_via = "SATOM's deep-harvest copy"
+
     if not full:
+        live = _ask_live(ctx)
         listing = ctx.port("object_list")
-        rows = None
+        cached = None
         if listing is not None:
             try:
-                rows = listing(ctx.target.appliance)
+                cached = listing(ctx.target.appliance)
             except Exception:                     # noqa: BLE001
-                rows = None
-        if rows is None:
+                cached = None
+
+        hit_live = _named(live, ctx.target.policy)
+        hit_cache = _named(cached, ctx.target.policy)
+
+        if hit_live is not None:
+            full, read_via = hit_live, "the appliance, live"
+        elif hit_cache is not None and live:
+            # The two sources DISAGREE: the cache holds it, the appliance --
+            # asked just now -- does not. Neither a silent PASS nor a FAIL is
+            # honest. A FAIL would stop the ladder on a monitor view that can
+            # legitimately omit an object; a silent PASS would hide that the
+            # device no longer admits to it. WARN says both and keeps walking.
+            ctx.state["policy_full"] = dict(hit_cache)
+            ctx.state["policy_read_via"] = "SATOM's cache (contradicted live)"
+            return _r(WARN, "SATOM has this %s cached, but the appliance does "
+                            "not list it right now" % ctx.target.noun,
+                      [("name", ctx.target.policy),
+                       ("cached status", str(hit_cache.get("status")
+                                             or "enable")),
+                       ("objects the appliance lists now", str(len(live))),
+                       ("read", "cache and live disagree")],
+                      "Either it was deleted since the last harvest, or the "
+                      "live view is scoped differently from the harvest. The "
+                      "rungs below are walked against the cached copy, so read "
+                      "them knowing the device did not confirm the object.")
+        elif hit_cache is not None:
+            full, read_via = hit_cache, "SATOM's cached object list"
+        elif live:
+            # The device itself was asked and named other things. This is the
+            # only FAIL on this rung that the appliance actually authored.
+            return _r(FAIL, "the appliance does not list this %s"
+                      % ctx.target.noun,
+                      [("name", ctx.target.policy),
+                       ("objects the appliance lists now", str(len(live))),
+                       ("read", "live from the appliance")],
+                      "The appliance was asked just now and named %d other "
+                      "objects, not this one. Either the name is wrong, or it "
+                      "lives in a different ADOM from the one this workspace "
+                      "is scoped to — both read identically from here, so "
+                      "check the ADOM before the name." % len(live))
+        elif cached:
+            names = [str((r or {}).get("name") or "") for r in cached]
+            return _r(FAIL, "the appliance does not list this %s"
+                      % ctx.target.noun,
+                      [("name", ctx.target.policy),
+                       ("objects cached", str(len(names))),
+                       ("read", "SATOM's cache — the appliance could not be "
+                                "asked live")],
+                      "The device's cached object list holds %d other objects "
+                      "and not this one. Either the name is wrong, or it lives "
+                      "in a different ADOM from the one this workspace is "
+                      "scoped to — both read identically from here, so check "
+                      "the ADOM before the name. Note this was read from the "
+                      "harvest, not from the appliance: if the harvest is "
+                      "stale, an object newer than it looks identical to one "
+                      "that was never there." % len(names))
+        elif live is None and cached is None:
             return _r(UNKNOWN, "SATOM holds no cached copy of this %s and "
                                "could not list the device's objects"
                       % ctx.target.noun, [("name", ctx.target.policy)],
                       "Absence of a cached copy is a fact about the harvest, "
                       "never about the appliance.")
-        names = [str((r or {}).get("name") or "") for r in rows]
-        if not names:
+        else:
             return _r(UNKNOWN, "SATOM has no objects cached for this appliance "
                                "at all, so it cannot say whether this %s exists"
                       % ctx.target.noun,
                       [("name", ctx.target.policy),
                        ("note", "a dead harvest and an empty appliance are the "
                                 "same picture from here")])
-        if ctx.target.policy not in names:
-            return _r(FAIL, "the appliance does not list this %s"
-                      % ctx.target.noun,
-                      [("name", ctx.target.policy),
-                       ("objects cached", str(len(names)))],
-                      "The device's cached object list holds %d other objects "
-                      "and not this one. Either the name is wrong, or it lives "
-                      "in a different ADOM from the one this workspace is "
-                      "scoped to — both read identically from here, so check "
-                      "the ADOM before the name." % len(names))
-        full = dict(rows[names.index(ctx.target.policy)] or {})
+
     ctx.state["policy_full"] = full
+    ctx.state["policy_read_via"] = read_via
     status = str(full.get("status") or "enable").strip().lower()
-    ev = [("name", ctx.target.policy), ("status", status)]
-    for k in ("deployment-mode", "server-pool", "vserver", "web-protection-profile"):
+    ev = [("name", ctx.target.policy), ("status", status), ("read", read_via)]
+    for k in ("deployment-mode", "server-pool", "vserver",
+              "web-protection-profile"):
         if full.get(k):
             ev.append((k, str(full.get(k))))
     if status == "disable":
@@ -1088,6 +1179,74 @@ def default_ports(*, analyzer=None, faz_adom: str = "root", faz_devid: str = "",
         from . import net_guard
         return net_guard.resolve_target(host, int(port), mode=net_guard.MODE_FREE)
 
+    def _live_rows(appliance):
+        """What the appliance says it is serving RIGHT NOW, or ``None``.
+
+        Deliberately a MONITOR read and not a configuration read. On an
+        unlicensed FortiWeb-VM every ``cmdb`` endpoint answers ``-20010`` while
+        the monitor endpoints answer normally — so this is the only source that
+        is both live and available there, and therefore the only one that can
+        honestly carry the sentence "the appliance does not list this object".
+
+        ``None`` means the question could not be put. It never means "none".
+        """
+        if str(getattr(appliance, "kind", "") or "") != "fortiweb":
+            return None
+        try:
+            from ..clients import client_for
+            out = client_for(appliance).policy_status()
+        except Exception:                         # noqa: BLE001
+            return None
+        rows, err = ((out[0], out[1]) if isinstance(out, tuple) and len(out) > 1
+                     else (out, None))
+        if not isinstance(rows, list):
+            return None
+        if err and not rows:
+            # An error with nothing to show is a question that failed, not an
+            # appliance with no policies.
+            return None
+        return [r for r in rows if isinstance(r, dict)]
+
+    def _live_objects(appliance):
+        """Rung 1's live source. Names normalised, nothing interpreted."""
+        rows = _live_rows(appliance)
+        if rows is None:
+            return None
+        out = []
+        for r in rows:
+            name = str(r.get("name") or r.get("_id") or "").strip()
+            if not name:
+                continue
+            row = dict(r)
+            row["name"] = name
+            out.append(row)
+        return out
+
+    def _live_front_end(appliance, policy):
+        """The VIP the appliance says it is listening on, or ``None``.
+
+        The monitor row carries ``vserver`` as an address WITH ITS MASK and a
+        trailing space (``"192.0.2.251/24 "``). Dialling that verbatim fails
+        with a name-resolution error that reads like a DNS fault — the wrong
+        rung entirely — so it is split here, at the edge, and never later.
+        """
+        for r in (_live_objects(appliance) or []):
+            if str(r.get("name") or "") != str(policy):
+                continue
+            host = str(r.get("vserver") or "").strip().split("/")[0].strip()
+            if not host:
+                return None
+            proto = str(r.get("protocol") or "").strip().upper()
+            scheme = "https" if proto.startswith("HTTPS") else "http"
+            try:
+                port = int(str(r.get("httpPort") or "").strip() or 0)
+            except (TypeError, ValueError):
+                port = 0
+            if not port:
+                port = 443 if scheme == "https" else 80
+            return {"host": host, "port": port, "scheme": scheme}
+        return None
+
     def _front_end(appliance, policy):
         """The published front-end of one object, per product.
 
@@ -1095,19 +1254,33 @@ def default_ports(*, analyzer=None, faz_adom: str = "root", faz_devid: str = "",
         owns the resolution, not over which client to build — the client still
         comes from :func:`client_for`, which stays the single kind→client map.
         """
-        client = _client(appliance)
         kind = str(getattr(appliance, "kind", "") or "")
-        if kind == "fortiadc":
-            from . import adc_ops
-            targets = adc_ops.resolve_targets(client)
-        else:
-            from . import service_probe
-            targets = service_probe.resolve_targets_from_client(client)
+        # THE CONFIGURATION READ IS ALLOWED TO FAIL, and on a licence-refused
+        # appliance it always does. Letting it raise out of here loses the live
+        # fallback below and the operator is told there is no front door to
+        # dial — a fact about the read, dressed as a fact about the service.
+        targets = None
+        try:
+            client = _client(appliance)
+            if kind == "fortiadc":
+                from . import adc_ops
+                targets = adc_ops.resolve_targets(client)
+            else:
+                from . import service_probe
+                targets = service_probe.resolve_targets_from_client(client)
+        except Exception:                         # noqa: BLE001
+            targets = None
         for t in targets or []:
             if str(getattr(t, "policy", "")) == str(policy):
                 return {"host": getattr(t, "host", ""),
                         "port": getattr(t, "port", None) or 443,
                         "scheme": getattr(t, "scheme", "https")}
+        # The configuration read found nothing. Ask the appliance what it is
+        # actually listening on before telling the operator there is no front
+        # door to dial — on a licence-refused device the first read returns
+        # empty for every object, and "no VIP" would be a fact about the read.
+        if kind != "fortiadc":
+            return _live_front_end(appliance, policy)
         return None
 
     def _http(ip, port, *, host, scheme, path, method, timeout, leg):
@@ -1168,9 +1341,17 @@ def default_ports(*, analyzer=None, faz_adom: str = "root", faz_devid: str = "",
         from . import backend_probe
         session = None
         if use_ssh:
+            # ``connect()``, not ``open()``. The first version called a method
+            # this class does not have, so EVERY device-vantage probe raised
+            # AttributeError -- and because a rung that raises is reported
+            # UNKNOWN by design, it rendered as "the backends could not be
+            # probed" instead of as a crash. The rule that keeps our bugs from
+            # being read as their outage also keeps them from being read at
+            # all; only probing a live appliance showed it. Every other caller
+            # in this product uses ``connect()`` or the context manager.
             from . import ssh_ops
-            session = ssh_ops.FortiWebReadonlySSH(appliance)
-            session.open()
+            session = ssh_ops.FortiWebReadonlySSH(appliance, timeout=20.0)
+            session.connect()
         try:
             return backend_probe.probe_targets(targets, ssh_session=session)
         finally:
@@ -1219,6 +1400,7 @@ def default_ports(*, analyzer=None, faz_adom: str = "root", faz_devid: str = "",
         "front_end": _front_end,
         "http": _http,
         "diff_legs": _diff_legs,
+        "live_objects": _live_objects,
         "object_list": _object_list,
         "object_count": _object_count,
         "pool_targets": _pool_targets,

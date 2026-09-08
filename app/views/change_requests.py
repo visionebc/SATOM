@@ -342,6 +342,19 @@ def create_change_request(fields: dict):
         return None, (f'{entry["label"]} acts on exactly one appliance; '
                       f'{len(device_ids)} were selected.')
 
+    # An inverted window can never contain an instant, so a change carrying
+    # one can never fire: it sits in 'approved' looking healthy until
+    # somebody notices, on the morning after, that nothing ran. The form
+    # never checked, and CR-0011 was stored ending a DAY before it began.
+    # Refused HERE, in the one implementation of 'raise a change', so the
+    # batched wave route and the calendar inherit it instead of each
+    # growing its own copy of the rule.
+    win_start, win_end = fields.get('window_start'), fields.get('window_end')
+    if win_start is not None and win_end is not None and win_end <= win_start:
+        return None, ('The maintenance window ends at or before it starts, '
+                      'so no instant lies inside it and the change could '
+                      'never fire. Nothing was created.')
+
     from ..services import cr_document, prep_store
     preps = []
     seen_preps: set[int] = set()

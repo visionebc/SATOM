@@ -6,6 +6,54 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — Calendar: one grid for everything this fleet is scheduled to receive (2026-09-08)
+
+A new **Fleet → Calendar** page (`/calendar/`), the first entry of the Fleet
+menu in every ADOM. Month, week, 30-day agenda and whole-year views over the
+three things that answer "what is happening to this fleet, and when":
+
+- **Planned changes** — every Change Request, drawn across every day its window
+  spans, with its type, risk, appliances and the person accountable for it.
+- **Upcoming automations** — the recurring Scheduled Actions, projected forward
+  from the scheduler itself.
+- **What ran** — the recorded runs, so the same grid answers the retrospective
+  question as well as the forward one.
+
+**It invents no planning object.** A calendar with its own "planned item" would
+be a second author of what a planned change is, and the two would disagree the
+first time somebody approved one from the Change Requests page instead. Planning
+from a day cell calls `change_requests.create_change_request` — the one
+implementation, with its device-visibility, product and single-target checks
+intact — and the page never writes anything else.
+
+- **Plan against an ADOM, a group or named devices.** Groups are the dimensions
+  the inventory already carries (tag, department, zone, line), and they are
+  **resolved to a fixed list of appliances the moment the change is raised**,
+  with both the selector and the resolved list recorded on the change. A live
+  selector would let an approval for one set of boxes execute against another.
+  A selector matching nothing is refused rather than saved as an empty change.
+- **Overlapping-change warning.** Two windows that overlap *and* share an
+  appliance are flagged. Sharing a device is the whole test: parallel work on
+  different boxes is ordinary operations, and flagging it would put a warning on
+  most Tuesdays until nobody read it.
+- **Projection is future-only; the past is measured.** Schedule math can say
+  when a job *would have* fired last Tuesday, not whether it did. Past days
+  carry recorded runs and nothing else.
+- **Nothing is dropped in silence.** A capped occurrence series, a disabled
+  automation, a clipped run list and a window spanning more days than the grid
+  paints each say so on the page.
+- Days are bucketed in the timezone configured under Settings → General, not in
+  UTC: a window at 23:30 UTC is tomorrow in Europe/Zurich.
+
+### Fixed — a maintenance window that ends before it starts is refused (2026-09-08)
+
+`create_change_request` accepted `window_end <= window_start`. Such a change can
+never fire, because no instant lies inside its window — it simply sits in
+`approved` looking healthy until somebody notices, the morning after, that
+nothing ran. CR-0011 on the primary node was stored ending a **day** before it
+began. The check lives in the one implementation of "raise a change", so the
+form, the batched wave route and the new calendar all inherit it.
+
 ### Added — Device Console: a write-capable CLI, credential testing and TAC bundles (2026-09-08)
 
 A new Administrator page, **Device Console** (`/console/`), present in **every

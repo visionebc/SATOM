@@ -284,6 +284,7 @@
           {{ _('It runs only once it is approved and scheduled — planning something here never executes it.') }}
         </p>
         <form method="POST" action="{{ url_for('calendar_plan.plan') }}" id="calPlanForm">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="back" value="{{ url_for('calendar_plan.index') }}{{ qs(view=view, d=selected or anchor) }}">
 
           <div class="mb-2">
@@ -391,7 +392,7 @@
   </div>
 </div>
 
-<style>
+<style nonce="{{ csp_nonce }}">
 .fw-cal-table { width:100%; table-layout:fixed; border-collapse:collapse; }
 .fw-cal-table th { font-size:11px; font-weight:600; text-transform:uppercase;
   letter-spacing:.04em; color:var(--fw-text-muted,#5A6270); padding:6px 8px;
@@ -448,7 +449,7 @@
 .fw-cal-det-t { font-size:12.5px; font-weight:600; margin:2px 0; }
 </style>
 
-<script>
+<script nonce="{{ csp_nonce }}">
 (function () {
   var mode = document.getElementById('cal_mode');
   var boxes = {

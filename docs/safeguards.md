@@ -13491,3 +13491,86 @@ read live), no `Appliance` row carries `is_cluster`, and both boxes are on 7.6.8
 refusals; the send path is covered by fixtures and by the mutation harness. The
 FortiWeb CLI syntax comes from Fortinet's 8.0.x reference, not from a box that
 answered it.
+
+## §156 — a disruptive verb on the device page: route gates, not hidden buttons (2026-09-08)
+
+The failover was plannable from the calendar and unreachable from the box an
+operator actually has open. The ask was *"metelo dentro del device ... ahi si es
+un cluster debera venir la opcion de hacer un failover"*. Guarded by
+`tests/test_appliance_failover_page.py` (31 tests, 18/18 mutations bite).
+
+### What the guards protect
+
+1. **"If it is a cluster" is a ROUTE decision.** Every failover route calls the
+   same `_failover_or_404`; a standalone row is refused at the URL, not merely
+   left without a button. Hiding a link is decoration — this module already
+   states that rule for `require_device_scope`, and the URL is guessable.
+   The refusal also NAMES the remedy: a gate that says "no" without saying where
+   the button went is a dead end.
+
+2. **A member node reaches the verb too.** The "HA Cluster — members" card
+   renders only on node 0, so a member opened directly would have no route to
+   the failover that targets it.
+
+3. **The direction is never coerced.** `_failover_direction` returns `None` for
+   anything that is not `set`/`unset`. Defaulting a missing direction to `set`
+   turns a glitched form into the half of this action that takes a cluster down.
+
+4. **The button a human clicks carries the executor's gate.** This module paid
+   for the opposite once: `_upgrade_authorization` exists because the live-flash
+   button went straight to `push_firmware` while the headless path was gated —
+   "a change-control regime that only binds the unused code path is decoration".
+   The same helper, now `_change_authorization(appliance, action)`, decides the
+   live failover.
+
+5. **The gate takes the ACTION.** It hard-coded `action == 'upgrade'`. Reusing
+   it for a second verb without parameterising would have let a change approving
+   a FIRMWARE FLASH authorize a cluster failover of the same box. Both
+   directions are asserted — a parameterisation that only cuts one way moved the
+   hole rather than closing it.
+
+6. **The readiness check is the action's OWN dry run**, not a page-local copy of
+   "is this cluster ready". Two implementations drift, and the operator is then
+   told the cluster is ready by one and refused by the other. It is NOT gated on
+   a change request: gating something that writes nothing pushes operators to
+   skip the validation step entirely (the reasoning the firmware page records).
+
+### Two defects the surface exposed
+
+**A per-node cluster could never be failed over.** The firmware floor was read
+off the appliance row the action was aimed at. For a per-node cluster that row
+is node 0 — a logical container with no host and no firmware string, which
+`models.chassis_key` says in as many words — so every per-node cluster was
+refused with "SATOM has no recorded firmware version". The mirror image is
+worse: a stale version left on node 0 would have CLEARED a floor the live
+primary does not meet. The write target is resolved first now and the floor
+checked on the box that receives the command; the refusal names that box
+(mutation: name the container instead → dies).
+
+**`direction='unset'` was unschedulable.** `create_change_request` never wrote
+`ChangeRequest.params`, and `schedule_change_request` rebuilds the bound action
+from the change every time — so a direction stored only on the action row is
+reset to the executor default on the next reschedule. Changes now carry their
+executor params, with **`change_request_id` stripped**: that key is what
+`execute_and_record` reads as its authorization, and a caller able to set it
+would be approving its own change.
+
+### Recipe
+
+```
+runuser -u satom -- bash -c "cd /opt/satom && venv/bin/python -m pytest \
+  tests/test_appliance_failover_page.py tests/test_ha_failover.py \
+  tests/test_cr_timezone_evidence.py -q"
+```
+
+Mutation harness: `/tmp/mutate.py` (18 mutations, only `rc==1` counts as a kill,
+tree restored by sha256 and re-run green afterwards).
+
+### NOT verified
+
+**Against a real cluster.** There is still no HA pair in the lab and **no
+`Appliance` row carries `is_cluster`** — appliance 22 (`fortiweb12`), the row
+the ask named, is a standalone. So the button does not appear on it, which is
+the correct behaviour and also means the page has only ever been rendered
+against synthetic cluster rows. The live-run path is covered by fixtures and by
+the mutation harness, never by a box that handed a role over.

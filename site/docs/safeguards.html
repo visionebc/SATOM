@@ -13030,6 +13030,85 @@ read live), no <code>Appliance</code> row carries <code>is_cluster</code>, and b
 refusals; the send path is covered by fixtures and by the mutation harness. The
 FortiWeb CLI syntax comes from Fortinet's 8.0.x reference, not from a box that
 answered it.</p>
+<h2 id="156-a-disruptive-verb-on-the-device-page-route-gates-not-hidden-buttons-2026-09-08">§156 — a disruptive verb on the device page: route gates, not hidden buttons (2026-09-08)</h2>
+<p>The failover was plannable from the calendar and unreachable from the box an
+operator actually has open. The ask was <em>"metelo dentro del device ... ahi si es
+un cluster debera venir la opcion de hacer un failover"</em>. Guarded by
+<code>tests/test_appliance_failover_page.py</code> (31 tests, 18/18 mutations bite).</p>
+<h3 id="what-the-guards-protect">What the guards protect</h3>
+<ol>
+<li>
+<p><strong>"If it is a cluster" is a ROUTE decision.</strong> Every failover route calls the
+   same <code>_failover_or_404</code>; a standalone row is refused at the URL, not merely
+   left without a button. Hiding a link is decoration — this module already
+   states that rule for <code>require_device_scope</code>, and the URL is guessable.
+   The refusal also NAMES the remedy: a gate that says "no" without saying where
+   the button went is a dead end.</p>
+</li>
+<li>
+<p><strong>A member node reaches the verb too.</strong> The "HA Cluster — members" card
+   renders only on node 0, so a member opened directly would have no route to
+   the failover that targets it.</p>
+</li>
+<li>
+<p><strong>The direction is never coerced.</strong> <code>_failover_direction</code> returns <code>None</code> for
+   anything that is not <code>set</code>/<code>unset</code>. Defaulting a missing direction to <code>set</code>
+   turns a glitched form into the half of this action that takes a cluster down.</p>
+</li>
+<li>
+<p><strong>The button a human clicks carries the executor's gate.</strong> This module paid
+   for the opposite once: <code>_upgrade_authorization</code> exists because the live-flash
+   button went straight to <code>push_firmware</code> while the headless path was gated —
+   "a change-control regime that only binds the unused code path is decoration".
+   The same helper, now <code>_change_authorization(appliance, action)</code>, decides the
+   live failover.</p>
+</li>
+<li>
+<p><strong>The gate takes the ACTION.</strong> It hard-coded <code>action == 'upgrade'</code>. Reusing
+   it for a second verb without parameterising would have let a change approving
+   a FIRMWARE FLASH authorize a cluster failover of the same box. Both
+   directions are asserted — a parameterisation that only cuts one way moved the
+   hole rather than closing it.</p>
+</li>
+<li>
+<p><strong>The readiness check is the action's OWN dry run</strong>, not a page-local copy of
+   "is this cluster ready". Two implementations drift, and the operator is then
+   told the cluster is ready by one and refused by the other. It is NOT gated on
+   a change request: gating something that writes nothing pushes operators to
+   skip the validation step entirely (the reasoning the firmware page records).</p>
+</li>
+</ol>
+<h3 id="two-defects-the-surface-exposed">Two defects the surface exposed</h3>
+<p><strong>A per-node cluster could never be failed over.</strong> The firmware floor was read
+off the appliance row the action was aimed at. For a per-node cluster that row
+is node 0 — a logical container with no host and no firmware string, which
+<code>models.chassis_key</code> says in as many words — so every per-node cluster was
+refused with "SATOM has no recorded firmware version". The mirror image is
+worse: a stale version left on node 0 would have CLEARED a floor the live
+primary does not meet. The write target is resolved first now and the floor
+checked on the box that receives the command; the refusal names that box
+(mutation: name the container instead → dies).</p>
+<p><strong><code>direction='unset'</code> was unschedulable.</strong> <code>create_change_request</code> never wrote
+<code>ChangeRequest.params</code>, and <code>schedule_change_request</code> rebuilds the bound action
+from the change every time — so a direction stored only on the action row is
+reset to the executor default on the next reschedule. Changes now carry their
+executor params, with <strong><code>change_request_id</code> stripped</strong>: that key is what
+<code>execute_and_record</code> reads as its authorization, and a caller able to set it
+would be approving its own change.</p>
+<h3 id="recipe_7">Recipe</h3>
+<pre><code>runuser -u satom -- bash -c &quot;cd /opt/satom &amp;&amp; venv/bin/python -m pytest \
+  tests/test_appliance_failover_page.py tests/test_ha_failover.py \
+  tests/test_cr_timezone_evidence.py -q&quot;
+</code></pre>
+<p>Mutation harness: <code>/tmp/mutate.py</code> (18 mutations, only <code>rc==1</code> counts as a kill,
+tree restored by sha256 and re-run green afterwards).</p>
+<h3 id="not-verified">NOT verified</h3>
+<p><strong>Against a real cluster.</strong> There is still no HA pair in the lab and <strong>no
+<code>Appliance</code> row carries <code>is_cluster</code></strong> — appliance 22 (<code>{device}</code>), the row
+the ask named, is a standalone. So the button does not appear on it, which is
+the correct behaviour and also means the page has only ever been rendered
+against synthetic cluster rows. The live-run path is covered by fixtures and by
+the mutation harness, never by a box that handed a role over.</p>
     </div>
   </div>
 </section>

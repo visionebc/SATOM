@@ -6,6 +6,38 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — Pick a day on the calendar, and switch the calendar off (2026-09-08)
+
+Two changes to **`Fleet → Calendar`**, plus one defect it had been shipping.
+
+- **A day is always selected, and picking one is instant.** The whole cell is
+  the control now, not just the date in its corner, and the detail panel on the
+  right follows the click without a page load. The page opens on today (on the
+  anchor month's first day when today is not in the range) rather than on an
+  empty box the operator has to discover is clickable. The address bar follows
+  the selection, so a refresh or a pasted link lands on the day being read.
+- **Expand any day into a full-width modal.** The modal is not a second, richer
+  view of a day — it is the same panel without the compact CSS, so the two can
+  never drift. The side card shows the summary (type, time, owner, first three
+  appliances); the modal adds the full appliance list, the individual fire
+  times of a recurring job and the run summary. A warning — a window that can
+  never open, a change whose span the grid clipped — is in **neither** set: it
+  shows in both, because a warning behind "expand for more" is a warning nobody
+  reads.
+- **The calendar can be switched off, per user, from `My Profile → Calendar`.**
+  It disappears from that operator's Fleet menu and the page answers with the
+  switch instead of the grid; every other operator's console is untouched. The
+  page and the flash both say what it did *not* do: **hiding a view does not
+  pause the fleet.** Approved changes and scheduled automations keep firing on
+  their windows whether or not this grid draws them.
+- **Fixed — the Calendar entry went nowhere in the FortiADC console.** The nav
+  partial is included in the Global, FortiWeb and FortiADC menus, but
+  `calendar_plan` was missing from the ADC allowlist, so the click redirected to
+  `/adc/`: a live-looking link that reads as broken rather than absent. It is
+  the same defect `advisor`, `adom_assets`, `scheduled_actions` and
+  `change_requests` each had, and the reachability guard that walks every
+  rendered sidebar caught it.
+
 ### Added — Fail a cluster over from the device page itself (2026-09-08)
 
 The failover was plannable from the calendar; it was not reachable from the box

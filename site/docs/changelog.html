@@ -106,6 +106,37 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="added-pick-a-day-on-the-calendar-and-switch-the-calendar-off-2026-09-08">Added — Pick a day on the calendar, and switch the calendar off (2026-09-08)</h3>
+<p>Two changes to <strong><code>Fleet → Calendar</code></strong>, plus one defect it had been shipping.</p>
+<ul>
+<li><strong>A day is always selected, and picking one is instant.</strong> The whole cell is
+  the control now, not just the date in its corner, and the detail panel on the
+  right follows the click without a page load. The page opens on today (on the
+  anchor month's first day when today is not in the range) rather than on an
+  empty box the operator has to discover is clickable. The address bar follows
+  the selection, so a refresh or a pasted link lands on the day being read.</li>
+<li><strong>Expand any day into a full-width modal.</strong> The modal is not a second, richer
+  view of a day — it is the same panel without the compact CSS, so the two can
+  never drift. The side card shows the summary (type, time, owner, first three
+  appliances); the modal adds the full appliance list, the individual fire
+  times of a recurring job and the run summary. A warning — a window that can
+  never open, a change whose span the grid clipped — is in <strong>neither</strong> set: it
+  shows in both, because a warning behind "expand for more" is a warning nobody
+  reads.</li>
+<li><strong>The calendar can be switched off, per user, from <code>My Profile → Calendar</code>.</strong>
+  It disappears from that operator's Fleet menu and the page answers with the
+  switch instead of the grid; every other operator's console is untouched. The
+  page and the flash both say what it did <em>not</em> do: <strong>hiding a view does not
+  pause the fleet.</strong> Approved changes and scheduled automations keep firing on
+  their windows whether or not this grid draws them.</li>
+<li><strong>Fixed — the Calendar entry went nowhere in the FortiADC console.</strong> The nav
+  partial is included in the Global, FortiWeb and FortiADC menus, but
+  <code>calendar_plan</code> was missing from the ADC allowlist, so the click redirected to
+  <code>/adc/</code>: a live-looking link that reads as broken rather than absent. It is
+  the same defect <code>advisor</code>, <code>adom_assets</code>, <code>scheduled_actions</code> and
+  <code>change_requests</code> each had, and the reachability guard that walks every
+  rendered sidebar caught it.</li>
+</ul>
 <h3 id="added-fail-a-cluster-over-from-the-device-page-itself-2026-09-08">Added — Fail a cluster over from the device page itself (2026-09-08)</h3>
 <p>The failover was plannable from the calendar; it was not reachable from the box
 an operator actually has open. <strong><code>Appliances → &lt;a cluster&gt; → HA Failover</code></strong>

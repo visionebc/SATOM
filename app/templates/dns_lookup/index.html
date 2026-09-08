@@ -153,11 +153,24 @@
                       <div class="d-flex align-items-center justify-content-between mb-1">
                         <span class="fw-semibold" style="font-size:10px; letter-spacing:.05em; color:#3b82f6;">
                           MATCH {{ loop.index }} — {{ m.product }} · {{ m.gateway }}</span>
+                        <span class="d-inline-flex flex-shrink-0">
                         {% if pol_url %}
                         <a href="{{ pol_url }}" target="_blank" rel="noopener"
-                           class="btn btn-sm btn-outline-primary py-0 px-2 ms-2 flex-shrink-0" style="font-size:10px;">
+                           class="btn btn-sm btn-outline-primary py-0 px-2 ms-2" style="font-size:10px;">
                           {{ _('Open policy') }} <i class="bi bi-box-arrow-up-right"></i></a>
                         {% endif %}
+                        {% if can_decommission and m['_aid'] and m['policy']
+                              and m['_kind'] in ('fortiweb', 'fortiadc') %}
+                        <button type="button"
+                                class="btn btn-sm btn-outline-danger py-0 px-2 ms-2 dns-decom-btn"
+                                style="font-size:10px;"
+                                data-aid="{{ m['_aid'] }}"
+                                data-policy="{{ m['policy'] }}"
+                                data-hostname="{{ r.resolved }}"
+                                data-gateway="{{ m.gateway }}">
+                          <i class="bi bi-trash3"></i> {{ _('Decommission') }}</button>
+                        {% endif %}
+                        </span>
                       </div>
                       <div style="display:grid; grid-template-columns:130px 1fr; gap:1px 8px; font-size:11px;">
                         {% for key, label in columns %}
@@ -516,6 +529,236 @@
   el('dnsRecLoadBtn').addEventListener('click', loadRecords);
   el('dnsRecSaveBtn').addEventListener('click', saveRecord);
   el('dnsRecClearBtn').addEventListener('click', clearEditor);
+})();
+</script>
+{% endif %}
+
+{% if can_decommission %}
+<!-- Decommission modal — the preview IS the feature: Apply stays disabled
+     until the plan has been shown, every warning acknowledged, and the policy
+     name typed back. -->
+<div class="modal fade" id="dnsDecomModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-trash3 me-2"></i>{{ _('Decommission service') }}
+          <span class="text-muted" style="font-size:12px;" id="decomTarget"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
+      </div>
+      <div class="modal-body">
+        <div id="decomMsg" class="mb-2" style="font-size:12px;"></div>
+        <div id="decomWarnings"></div>
+        <div id="decomPlan"></div>
+        <div id="decomResults"></div>
+      </div>
+      <div class="modal-footer d-block">
+        <div id="decomConfirmRow" class="d-none">
+          <div class="form-check mb-2" id="decomAckRow">
+            <input class="form-check-input" type="checkbox" id="decomAck">
+            <label class="form-check-label" for="decomAck" style="font-size:12px;">
+              {{ _('I have read the warnings above and accept the shared dependencies they name.') }}</label>
+          </div>
+          <div class="d-flex align-items-center gap-2">
+            <input type="text" class="form-control form-control-sm" id="decomType"
+                   style="max-width:280px;" autocomplete="off"
+                   placeholder="{{ _('type the policy name to confirm') }}">
+            <button type="button" class="btn btn-sm btn-danger" id="decomApplyBtn" disabled>
+              <i class="bi bi-trash3 me-1"></i>{{ _('Delete everything listed') }}</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary ms-auto"
+                    data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var CSRF = "{{ csrf_token() }}";
+  var URLS = {
+    plan: "{{ url_for('dns_tool.decommission_plan') }}",
+    apply: "{{ url_for('dns_tool.decommission_apply') }}"
+  };
+  var STAGE_TITLES = {};
+  var el = function (id) { return document.getElementById(id); };
+  var modalEl = el('dnsDecomModal');
+  if (!modalEl) { return; }
+  var modal = new bootstrap.Modal(modalEl);
+  var current = null;   // {aid, policy, hostname, fingerprint}
+
+  function esc(s) { var d = document.createElement('div'); d.textContent = s == null ? '' : s; return d.innerHTML; }
+
+  function setMsg(text, kind) {
+    var m = el('decomMsg');
+    m.className = kind === 'err' ? 'mb-2 text-danger' : (kind === 'ok' ? 'mb-2 text-success' : 'mb-2 text-muted');
+    m.style.fontSize = '12px';
+    m.textContent = text || '';
+  }
+
+  function post(url, body) {
+    return fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+      body: JSON.stringify(body)
+    }).then(function (r) {
+      return r.json().then(function (d) { d._status = r.status; return d; });
+    });
+  }
+
+  var BADGE = { 'delete': 'text-bg-danger', 'unbind': 'text-bg-warning', 'keep': 'text-bg-secondary' };
+
+  function renderPlan(plan) {
+    STAGE_TITLES = {};
+    (plan.stages || []).forEach(function (s) { STAGE_TITLES[s.key] = s.title; });
+    var host = plan.target.hostname ? (' · ' + plan.target.hostname) : '';
+    el('decomTarget').textContent = plan.target.product + ' · ' + plan.target.appliance +
+      ' · ' + plan.target.policy + host;
+
+    var warn = el('decomWarnings');
+    warn.innerHTML = '';
+    (plan.warnings || []).forEach(function (w) {
+      var div = document.createElement('div');
+      div.className = 'alert ' + (w.blocking ? 'alert-danger' : 'alert-warning') + ' py-2 px-3 mb-2';
+      div.style.fontSize = '12px';
+      div.innerHTML = '<strong>' + esc(w.code) + '</strong> — ' + esc(w.text);
+      warn.appendChild(div);
+    });
+
+    var box = el('decomPlan');
+    box.innerHTML = '';
+    var byStage = {};
+    (plan.items || []).forEach(function (it) {
+      (byStage[it.stage] = byStage[it.stage] || []).push(it);
+    });
+    (plan.stages || []).forEach(function (s) {
+      var rows = byStage[s.key];
+      if (!rows || !rows.length) { return; }
+      var h = document.createElement('div');
+      h.className = 'fw-semibold mt-2 mb-1';
+      h.style.fontSize = '11px';
+      h.style.letterSpacing = '.05em';
+      h.textContent = s.title.toUpperCase();
+      box.appendChild(h);
+      var tbl = document.createElement('table');
+      tbl.className = 'table table-sm mb-0';
+      tbl.style.fontSize = '12px';
+      var body = document.createElement('tbody');
+      rows.forEach(function (it) {
+        var tr = document.createElement('tr');
+        var holders = (it.holders || []).length
+          ? ' <span class="text-muted">(' + esc((it.holders || []).join(', ')) + ')</span>' : '';
+        tr.innerHTML =
+          '<td style="width:92px;"><span class="badge ' + (BADGE[it.action] || 'text-bg-light') + '">' +
+            esc(it.action) + '</span></td>' +
+          '<td>' + esc(it.label) + '</td>' +
+          '<td class="text-muted">' + esc(it.reason || '') + holders + '</td>';
+        body.appendChild(tr);
+      });
+      tbl.appendChild(body);
+      box.appendChild(tbl);
+    });
+
+    var c = plan.counts || {};
+    setMsg((c['delete'] || 0) + ' to delete, ' + (c.unbind || 0) + ' to unbind, ' +
+           (c.keep || 0) + ' kept.');
+
+    el('decomAckRow').className = (plan.warnings || []).length ? 'form-check mb-2' : 'form-check mb-2 d-none';
+    el('decomAck').checked = false;
+    el('decomType').value = '';
+    el('decomConfirmRow').className = '';
+    el('decomApplyBtn').disabled = true;
+    el('decomApplyBtn').className = 'btn btn-sm btn-danger';
+    if (plan.blocked) {
+      el('decomConfirmRow').className = 'd-none';
+      setMsg('This plan is blocked and cannot be applied.', 'err');
+    }
+    current = {
+      aid: plan.target.appliance_id, policy: plan.target.policy,
+      hostname: plan.target.hostname, fingerprint: plan.fingerprint,
+      warned: (plan.warnings || []).length > 0
+    };
+    gate();
+  }
+
+  function gate() {
+    if (!current) { return; }
+    var typed = el('decomType').value.trim() === current.policy;
+    var acked = !current.warned || el('decomAck').checked;
+    el('decomApplyBtn').disabled = !(typed && acked);
+  }
+
+  function renderResults(res) {
+    var box = el('decomResults');
+    box.innerHTML = '';
+    var h = document.createElement('div');
+    h.className = 'fw-semibold mt-3 mb-1';
+    h.style.fontSize = '11px';
+    h.textContent = 'RESULT';
+    box.appendChild(h);
+    var tbl = document.createElement('table');
+    tbl.className = 'table table-sm mb-0';
+    tbl.style.fontSize = '12px';
+    var body = document.createElement('tbody');
+    (res.results || []).forEach(function (r) {
+      var tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td style="width:92px;"><span class="badge ' + (r.ok ? 'text-bg-success' : 'text-bg-danger') + '">' +
+          (r.ok ? 'ok' : 'failed') + '</span></td>' +
+        '<td>' + esc(r.label) + '</td>' +
+        '<td class="text-muted">' + esc(r.error || r.action || '') + '</td>';
+      body.appendChild(tr);
+    });
+    tbl.appendChild(body);
+    box.appendChild(tbl);
+  }
+
+  function loadPlan(btn) {
+    el('decomPlan').innerHTML = '';
+    el('decomResults').innerHTML = '';
+    el('decomWarnings').innerHTML = '';
+    el('decomConfirmRow').className = 'd-none';
+    el('decomTarget').textContent = '';
+    setMsg('Building the plan — reading the device…');
+    modal.show();
+    post(URLS.plan, {
+      appliance_id: btn.getAttribute('data-aid'),
+      policy: btn.getAttribute('data-policy'),
+      hostname: btn.getAttribute('data-hostname')
+    }).then(function (d) {
+      if (!d.ok) { setMsg(d.error || ('HTTP ' + d._status), 'err'); return; }
+      renderPlan(d);
+    }).catch(function (e) { setMsg(String(e), 'err'); });
+  }
+
+  function applyPlan() {
+    if (!current) { return; }
+    el('decomApplyBtn').disabled = true;
+    setMsg('Applying…');
+    post(URLS.apply, {
+      appliance_id: current.aid, policy: current.policy,
+      hostname: current.hostname, confirm: current.fingerprint,
+      acknowledge: el('decomAck').checked
+    }).then(function (d) {
+      if (d.plan) {
+        // The device moved under us (or the acknowledgement was missing):
+        // re-render the NEW plan rather than retrying the stale one.
+        renderPlan(d.plan);
+        setMsg(d.error || 'The plan changed — review it again.', 'err');
+        return;
+      }
+      renderResults(d);
+      setMsg(d.ok ? 'Done.' : (d.error || 'Some steps failed.'), d.ok ? 'ok' : 'err');
+      el('decomConfirmRow').className = 'd-none';
+    }).catch(function (e) { setMsg(String(e), 'err'); gate(); });
+  }
+
+  document.querySelectorAll('.dns-decom-btn').forEach(function (b) {
+    b.addEventListener('click', function () { loadPlan(b); });
+  });
+  el('decomType').addEventListener('input', gate);
+  el('decomAck').addEventListener('change', gate);
+  el('decomApplyBtn').addEventListener('click', applyPlan);
 })();
 </script>
 {% endif %}

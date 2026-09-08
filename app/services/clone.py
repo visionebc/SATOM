@@ -124,6 +124,12 @@ _EXEMPT_FROM_GAPS: frozenset = frozenset(_CERT_URNS) | frozenset(_REST_UNREACHAB
 _VIP_URN = "cmdb/system/vip"
 _WPP_URNS = (_WPP_INLINE, _WPP_OFFLINE)
 
+#: Public alias. The comparison page has to recognise a WPP root so it can
+#: compare the profile as ONE package rather than entry by entry; a second
+#: spelling of these two urns over there would drift the day an offline
+#: variant is added here.
+WPP_URNS = _WPP_URNS
+
 
 def interface_fields() -> frozenset[str]:
     """Every payload field that names a ``system/interface``.
@@ -558,6 +564,12 @@ class ClonePlanner:
         #: reference is a write to the PARENT: a child may only be duplicated
         #: when every object that names it is itself being created.
         self._refs: dict[tuple[str, str], set[tuple[str, str]]] = {}
+        #: ``[(parent_urn, parent_mkey, via, child_urn, child_mkey), …]`` —
+        #: the same edges ``_refs`` records, WITH the field they were
+        #: reached through. ``_refs`` answers "who names this?"; a
+        #: comparison needs "what ROLE does it play?", and only the field
+        #: says that. Written beside every ``_refs`` write, never instead.
+        self.edges: list[tuple[str, str, str, str, str]] = []
 
     def _lg(self, urn: str) -> str | None:
         """Logical name for a urn, matched on the normalised collection so a
@@ -596,6 +608,7 @@ class ClonePlanner:
                     # SECOND parent is exactly the one that makes a re-point
                     # unsafe, and ``visited`` would hide it.
                     self._refs.setdefault((child.urn, ref), set()).add((node.urn, mkey))
+                    self.edges.append((node.urn, mkey, child.via, child.urn, ref))
                     self._visit(_rich(child), ref, depth + 1, items, visited)
 
         # 2) THIS object
@@ -621,6 +634,7 @@ class ClonePlanner:
                             # the row is created with its parent, so the parent
                             # is what has to be created for a re-point to be safe.
                             self._refs.setdefault((g.urn, ref), set()).add((node.urn, mkey))
+                            self.edges.append((node.urn, mkey, g.via, g.urn, ref))
                             self._visit(_rich(g), ref, depth + 2, items, visited)
                 items.append(CloneItem(
                     label="%s · %s" % (node.fortiweb, child.fortiweb), urn=child.urn,
@@ -677,6 +691,7 @@ class ClonePlanner:
         items: list[CloneItem] = []
         self._follow_wpp = follow_wpp
         self._refs = {}
+        self.edges = []
         try:
             self._visit(_rich(root), mkey, 0, items, set())
         finally:
@@ -1513,7 +1528,7 @@ __all__ = [
     "apply_clone", "summarize", "render_plan", "referenced_names",
     "disable_root", "template_body", "registry_urn_index",
     "outcome", "verify_created",
-    "ROOT_SERVER_POLICY", "ROOT_WPP", "validate_completeness",
+    "ROOT_SERVER_POLICY", "ROOT_WPP", "WPP_URNS", "validate_completeness",
     "via_field_index", "classify_scope", "resolve_shared", "deep_rename",
     "wants_by_logical",
     "interface_fields", "interface_refs", "set_interface",

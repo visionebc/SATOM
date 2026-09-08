@@ -52,13 +52,17 @@
         <select class="form-select form-select-sm" id="w-segment"></select>
         <div id="w-segment-note" class="text-muted mt-1" style="font-size:11.5px;"></div>
       </div>
-      <div class="col-md-3">
-        <label class="form-label" style="font-size:12px;">{{ _('Web address') }}</label>
-        <input class="form-control form-control-sm" id="w-address-web" placeholder="shop.example.com">
-      </div>
-      <div class="col-md-3">
-        <label class="form-label" style="font-size:12px;">{{ _('Hostname to publish (DNS)') }}</label>
-        <input class="form-control form-control-sm" id="w-hostname" placeholder="{{ _('blank = do not publish') }}">
+      <div class="col-12">
+        <label class="form-label" style="font-size:12px;">{{ _('Domains to build') }}</label>
+        <div id="w-domains"></div>
+        <div class="d-flex align-items-center gap-2 mt-1 flex-wrap">
+          <button type="button" class="btn btn-fw-outline btn-sm" id="w-add-domain">
+            <i class="bi bi-plus-lg me-1"></i>{{ _('Add another domain') }}
+          </button>
+          <span class="text-muted" style="font-size:11.5px;">
+            {{ _('Each domain gets its OWN server policy, virtual server, VIP, DNS record and certificate. They all share ONE server pool, so the real servers are written once — not once per domain.') }}
+          </span>
+        </div>
       </div>
     </div>
 
@@ -70,8 +74,9 @@
             {{ _('Reserve the VIP from IPAM') }}
           </label>
         </div>
-        <input class="form-control form-control-sm mt-1" id="w-vip"
-               placeholder="{{ _('VIP address (when not using IPAM)') }}">
+        <div class="text-muted mt-1" style="font-size:11.5px;">
+          {{ _('One reservation per domain. With this off, type the VIP on each domain row above.') }}
+        </div>
       </div>
       <div class="col-md-3">
         <div class="form-check">
@@ -83,9 +88,35 @@
         <div id="w-cert-note" class="text-muted mt-1" style="font-size:11.5px;"></div>
       </div>
       <div class="col-md-6">
-        <label class="form-label" style="font-size:12px;">{{ _('Real servers (one ip:port per line)') }}</label>
-        <textarea class="form-control form-control-sm" id="w-backends" rows="3"
-                  placeholder="192.0.2.11:8080&#10;192.0.2.12:8080"></textarea>
+        <label class="form-label" style="font-size:12px;">{{ _('Server pool (the backend)') }}</label>
+        <div class="form-check">
+          <input class="form-check-input" type="radio" name="w-pool-mode"
+                 id="w-pool-new" value="new" checked>
+          <label class="form-check-label" for="w-pool-new" style="font-size:12px;">
+            {{ _('Create a new pool from these real servers (one ip:port per line)') }}
+          </label>
+        </div>
+        <div id="w-pool-new-box">
+          <textarea class="form-control form-control-sm" id="w-backends" rows="3"
+                    placeholder="192.0.2.11:8080&#10;192.0.2.12:8080"></textarea>
+        </div>
+        <div class="form-check mt-2">
+          <input class="form-check-input" type="radio" name="w-pool-mode"
+                 id="w-pool-existing" value="existing">
+          <label class="form-check-label" for="w-pool-existing" style="font-size:12px;">
+            {{ _('Use a server pool that already exists') }}
+          </label>
+        </div>
+        <div id="w-pool-existing-box">
+          <input class="form-control form-control-sm" id="w-pool-search"
+                 placeholder="{{ _('search any FortiWeb — pool name, device or member IP') }}">
+          <select class="form-select form-select-sm mt-1" id="w-pool-pick"></select>
+          <button type="button" class="btn btn-fw-outline btn-sm mt-1"
+                  id="w-pool-copy" style="display:none;">
+            <i class="bi bi-clipboard me-1"></i>{{ _('Copy its members and create a new pool here') }}
+          </button>
+        </div>
+        <div id="w-pool-note" class="text-muted mt-1" style="font-size:11.5px;"></div>
       </div>
     </div>
 
@@ -133,6 +164,11 @@
 (function () {
   const PLANS = {{ line_plans | tojson }};
   const BACKENDS = {{ dns_backends | tojson }};
+  // Cache-only, ADOM-scoped, local pools first. Every row carries ``local``,
+  // which is the ONLY field that decides bind-vs-copy: a FortiWeb server pool
+  // is a per-device object, so a pool on another box can lend its members but
+  // can never be bound by a policy here.
+  const POOLS = {{ pools | tojson }};
   const BASE = "{{ url_for('spo_wizard.plan', appliance_id=appliance.id) }}";
   const APPLY = "{{ url_for('spo_wizard.apply', appliance_id=appliance.id) }}";
   const CSRF = "{{ csrf_token() }}";
@@ -272,6 +308,153 @@
                     BACKENDS.filter(function (b) { return b.role_dns; }));
   }
 
+  // ---- the domain rows ------------------------------------------------
+  // Built in JS and never from a Jinja loop: the list is variable, and a
+  // server-rendered first row plus a JS-rendered second row is two authors of
+  // the same markup — the first thing to drift.
+  function addDomain(seed) {
+    seed = seed || {};
+    const row = document.createElement('div');
+    row.className = 'row g-2 mb-1 w-domain-row';
+    row.innerHTML =
+      '<div class="col-md-4"><input class="form-control form-control-sm w-d-web"></div>' +
+      '<div class="col-md-4"><input class="form-control form-control-sm w-d-host"></div>' +
+      '<div class="col-md-3"><input class="form-control form-control-sm w-d-vip"></div>' +
+      '<div class="col-md-1 d-flex align-items-start">' +
+      '<button type="button" class="btn btn-fw-outline btn-sm w-d-del" ' +
+      'title="remove this domain">\u00d7</button></div>';
+    const web = row.querySelector('.w-d-web');
+    const host = row.querySelector('.w-d-host');
+    const vip = row.querySelector('.w-d-vip');
+    web.placeholder = 'shop.example.com';
+    host.placeholder = 'hostname to publish \u2014 blank = do not publish';
+    vip.placeholder = 'VIP \u2014 blank when using IPAM';
+    web.value = seed.web_address || '';
+    host.value = seed.hostname || '';
+    vip.value = seed.address || '';
+    $('w-domains').appendChild(row);
+    return row;
+  }
+
+  function domainRows() {
+    return Array.prototype.slice.call(
+      $('w-domains').querySelectorAll('.w-domain-row'));
+  }
+
+  function domains() {
+    return domainRows().map(function (r) {
+      return {
+        web_address: r.querySelector('.w-d-web').value.trim(),
+        hostname: r.querySelector('.w-d-host').value.trim(),
+        address: r.querySelector('.w-d-vip').value.trim()
+      };
+    }).filter(function (d) { return d.web_address; });
+  }
+
+  // ---- the existing-pool picker ---------------------------------------
+  function poolMode() {
+    return $('w-pool-existing').checked ? 'existing' : 'new';
+  }
+
+  function pickedPool() {
+    const val = $('w-pool-pick').value;
+    if (!val) { return null; }
+    return POOLS.filter(function (p) {
+      return p.appliance_id + '|' + p.pool === val;
+    })[0] || null;
+  }
+
+  function memberLine(p) {
+    if (!p.members_known) { return 'members not cached'; }
+    return (p.members || []).map(function (m) {
+      return m.ip + ':' + m.port;
+    }).join(', ') || 'no members cached';
+  }
+
+  function fillPools() {
+    const q = ($('w-pool-search').value || '').trim().toLowerCase();
+    const sel = $('w-pool-pick');
+    const had = sel.value;
+    sel.innerHTML = '';
+    const none = document.createElement('option');
+    none.value = '';
+    none.textContent = POOLS.length
+      ? '\u2014 pick a pool \u2014'
+      : 'no server pool is cached for any FortiWeb yet';
+    sel.appendChild(none);
+    POOLS.filter(function (p) {
+      if (!q) { return true; }
+      return p.pool.toLowerCase().indexOf(q) >= 0
+          || p.appliance.toLowerCase().indexOf(q) >= 0
+          || (p.members || []).some(function (m) {
+               return m.ip.indexOf(q) >= 0; });
+    }).forEach(function (p) {
+      const o = document.createElement('option');
+      o.value = p.appliance_id + '|' + p.pool;
+      // The DEVICE is on the option, never just the pool name: which box a
+      // pool lives on is the fact that decides whether this policy can bind
+      // it at all, and two devices routinely carry the same pool name.
+      o.textContent = p.pool + '  \u00b7  ' + p.appliance
+                    + (p.local ? '  \u00b7  this device'
+                               : '  \u00b7  OTHER device')
+                    + '  \u00b7  ' + memberLine(p);
+      sel.appendChild(o);
+    });
+    sel.value = had;
+    if (sel.value !== had) { sel.value = ''; }
+    describePool();
+  }
+
+  // The half the operator did NOT pick is taken OFF the screen, not just
+  // ignored. Two sets of backend controls visible at once is the state
+  // where someone fills the real-server list and then binds a pool that
+  // discards it. Values are kept, never cleared: toggling the radio by
+  // accident must not destroy what was typed.
+  function syncPoolMode() {
+    const existing = poolMode() === 'existing';
+    $('w-pool-new-box').style.display = existing ? 'none' : '';
+    $('w-pool-existing-box').style.display = existing ? '' : 'none';
+  }
+
+  function describePool() {
+    syncPoolMode();
+    const note = $('w-pool-note');
+    const copy = $('w-pool-copy');
+    const row = pickedPool();
+    copy.style.display = 'none';
+    if (poolMode() !== 'existing') {
+      note.textContent = 'A new pool is created from the real servers above '
+        + '\u2014 once for the whole batch, whatever the number of domains.';
+      return;
+    }
+    if (!row) {
+      note.textContent = POOLS.length
+        ? 'Pick one \u2014 ' + POOLS.length + ' cached across the fleet.'
+        : 'Nothing is cached yet: sync a FortiWeb first.';
+      return;
+    }
+    if (row.local) {
+      note.textContent = 'BIND \u2014 the policies point at ' + row.pool
+        + ' on ' + row.appliance + '. No pool and no member is created, and '
+        + 'the real servers above are ignored.';
+      return;
+    }
+    // The honest half of "search any FortiWeb". A server pool is a per-device
+    // object: a foreign one CANNOT be bound, so we say so here and the
+    // planner refuses it as well rather than trusting this note.
+    note.textContent = 'COPY \u2014 ' + row.pool + ' lives on ' + row.appliance
+      + ', not on this device, so no policy here can bind it. '
+      + (row.members_known
+          ? 'Copy its members and a NEW pool is created here instead. Only '
+            + 'ip:port is copied \u2014 weight, SSL and health-check settings '
+            + 'are NOT.'
+          : 'Its members are not cached, so there is nothing to copy: sync '
+            + row.appliance + ' first.');
+    if (row.members_known && (row.members || []).length) {
+      copy.style.display = '';
+    }
+  }
+
   function backends() {
     return $('w-backends').value.split('\n').map(function (l) {
       const t = l.trim();
@@ -282,15 +465,29 @@
   }
 
   function body(extra) {
+    const rows = domains();
+    const first = rows[0] || {};
+    const picked = pickedPool();
     return Object.assign({
       line: $('w-line').value,
       segment: $('w-segment').value,
       department: $('w-department').value,
-      web_address: $('w-address-web').value,
-      hostname: $('w-hostname').value,
+      web_addresses: rows,
+      // The pre-batch triple, still sent and still the server's fallback.
+      // Dropping it would silently break anything holding this page open.
+      web_address: first.web_address || '',
+      hostname: first.hostname || '',
+      address: first.address || '',
       use_ipam: $('w-use-ipam').checked,
-      address: $('w-vip').value,
       issue_cert: $('w-cert').checked,
+      // The mode goes over the wire EXPLICITLY, and the pool name goes with
+      // it even when the pool is on another device: the server must be able
+      // to answer "it lives on <box>, it cannot be bound" instead of quietly
+      // building a new pool the operator never chose.
+      pool_mode: poolMode(),
+      existing_pool: (poolMode() === 'existing' && picked) ? picked.pool : '',
+      pool_from: (poolMode() === 'existing' && picked && !picked.local)
+                 ? picked.appliance : '',
       ipam_backend_id: $('w-ipam-backend').value,
       dns_backend_id: $('w-dns-backend').value,
       backends: backends()
@@ -305,9 +502,10 @@
     }).then(function (r) { return r.json(); });
   }
 
-  function render(plan, result) {
-    const box = $('w-result');
-    const badge = $('w-result-badge');
+  // Builds the fragment for ONE plan. It deliberately does not touch the
+  // page: with several domains the decision "is Apply allowed" belongs to the
+  // batch, not to whichever plan happened to render last.
+  function planHtml(plan, result) {
     let html = '';
     // What this plan is ABOUT, before what is wrong with it. The department
     // is printed because a shared network is otherwise indistinguishable in
@@ -337,6 +535,22 @@
           ? '<span class="fw-badge fw-badge-info">DNS</span> ' +
             plan.dns_backend + (plan.dns_pick ? ' (chosen)' : ' (auto)') : '') +
         '</div>';
+    }
+    // Which pool, and whether it is CREATED or BOUND. With several domains
+    // this is the line that says the backend is written once, not N times.
+    const POOL_WORDS = {
+      'new': 'created by this policy',
+      'existing': 'already on this device \u2014 bound, nothing created',
+      'shared': 'created by the FIRST domain of this batch'
+    };
+    if (plan.pool_name) {
+      html += '<div class="mb-2" style="font-size:12.5px;">' +
+              '<span class="fw-badge fw-badge-info">POOL</span> ' +
+              plan.pool_name + ' &middot; ' +
+              (POOL_WORDS[plan.pool_mode] || plan.pool_mode) +
+              (plan.pool_from
+                ? ' &middot; members copied from ' + plan.pool_from : '') +
+              '</div>';
     }
     if (plan.blockers.length) {
       html += '<div class="mb-2"><strong>Blocked</strong><ul style="font-size:12.5px;">';
@@ -378,13 +592,49 @@
     if (result && result.error) {
       html += '<div class="text-danger mt-2" style="font-size:12.5px;">' + result.error + '</div>';
     }
+    return html;
+  }
+
+  function renderAll(plans, batch) {
+    const box = $('w-result');
+    const badge = $('w-result-badge');
+    plans = plans || [];
+    const runs = (batch && batch.runs) || [];
+    let html = '';
+    plans.forEach(function (plan, i) {
+      const run = runs[i] || {};
+      // A heading per domain ALWAYS, including when there is one. A report
+      // that only names the domain once there are two is a report you have to
+      // count rows in to read.
+      html += '<div class="mt-2 mb-1" style="font-size:13px;"><strong>' +
+              (i + 1) + '. ' + (plan.web_address || '(no web address)') +
+              '</strong> <span class="fw-badge ' +
+              (plan.ok ? 'fw-badge-success' : 'fw-badge-danger') + '">' +
+              (plan.ok ? 'buildable' : 'blocked') + '</span></div>';
+      html += planHtml(plan, run.result);
+    });
+    if (batch && batch.error) {
+      html += '<div class="text-danger mt-2" style="font-size:12.5px;">' +
+              batch.error + '</div>';
+    }
+    if (batch && (batch.built || []).length) {
+      // Which domains are LIVE, named separately from the failure. After a
+      // batch stops halfway this is the only fact that matters.
+      html += '<div class="mt-2" style="font-size:12.5px;">built: ' +
+              batch.built.join(', ') + '</div>';
+    }
     box.innerHTML = html || '<span class="text-muted">nothing to show</span>';
-    badge.innerHTML = plan.ok
-      ? '<span class="fw-badge fw-badge-success">plan is buildable</span>'
+    const ok = plans.length > 0 && plans.every(function (p) { return p.ok; });
+    badge.innerHTML = ok
+      ? '<span class="fw-badge fw-badge-success">' + plans.length +
+        ' plan(s) buildable</span>'
       : '<span class="fw-badge fw-badge-danger">blocked</span>';
     $('w-result-card').style.display = '';
-    lastOk = plan.ok;
-    $('w-apply').disabled = !plan.ok;
+    // All-or-nothing, matching ``apply_batch``: it refuses the WHOLE batch if
+    // any plan is blocked, so an Apply enabled by a partly-good batch would
+    // promise something the server will not do.
+    lastOk = ok;
+    $('w-apply').disabled = !ok;
   }
 
   $('w-ipam-backend').addEventListener('change', refreshBackendNotes);
@@ -393,21 +643,57 @@
   // Only the segment list is rebuilt: changing the department must not
   // reset the department picker it was just set on.
   $('w-department').addEventListener('change', refreshSegments);
+  $('w-add-domain').addEventListener('click', function () { addDomain(); });
+  // Delegated: the rows do not exist when this runs, and the CSP forbids the
+  // inline handler that would otherwise be the obvious way to do it.
+  $('w-domains').addEventListener('click', function (ev) {
+    const btn = ev.target.closest ? ev.target.closest('.w-d-del') : null;
+    if (!btn) { return; }
+    const row = btn.closest('.w-domain-row');
+    // The last row is CLEARED, never removed: a form with zero domain rows
+    // has no way back to one.
+    if (domainRows().length <= 1) {
+      row.querySelectorAll('input').forEach(function (i) { i.value = ''; });
+    } else {
+      row.remove();
+    }
+  });
+  $('w-pool-search').addEventListener('input', fillPools);
+  $('w-pool-pick').addEventListener('change', describePool);
+  $('w-pool-new').addEventListener('change', describePool);
+  $('w-pool-existing').addEventListener('change', describePool);
+  $('w-pool-copy').addEventListener('click', function () {
+    const row = pickedPool();
+    if (!row || !row.members_known) { return; }
+    // Overwrites the list and SAYS so by switching the radio back: a copy
+    // that left the mode on "existing" would leave the operator looking at a
+    // pool that is about to be recreated under a different name.
+    $('w-backends').value = row.members.map(function (m) {
+      return m.ip + ':' + m.port;
+    }).join('\n');
+    $('w-pool-new').checked = true;
+    describePool();
+  });
   $('w-preview').addEventListener('click', function () {
     post(APPLY, body({ apply: false })).then(function (r) {
-      render(r.plan, r.result);
+      renderAll(r.plans, r.batch);
     });
   });
   $('w-apply').addEventListener('click', function () {
     if (!lastOk) { return; }
-    if (!window.confirm('This writes to the device, the IPAM pool, DNS and the CA. Continue?')) { return; }
+    const names = domains().map(function (d) { return d.web_address; });
+    if (!window.confirm('This writes to the device, the IPAM pool, DNS and '
+        + 'the CA for ' + names.length + ' domain(s):\n\n'
+        + names.join('\n') + '\n\nContinue?')) { return; }
     post(APPLY, body({ apply: true })).then(function (r) {
-      render(r.plan, r.result);
+      renderAll(r.plans, r.batch);
       $('w-apply').disabled = true;
     });
   });
   fillBackends('w-ipam-backend', 'w-ipam-note', 'role_ipam', 'pools');
   fillBackends('w-dns-backend', 'w-dns-note', 'role_dns', 'zones');
+  addDomain();
+  fillPools();
   refreshLine();
 })();
 </script>

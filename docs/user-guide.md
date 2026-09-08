@@ -1059,6 +1059,38 @@ All in the Global ADOM (also linked from product Fleet groups):
   source only; up to 200 lines per run. Anything the run could not cover (an
   expired time budget, the target cap, an over-limit line) is named in the
   report rather than quietly omitted. The result copies out as TSV.
+- **Config Compare** — paste or upload the same
+  `source;policy;destination` list and ask the next question about those
+  services: *is this configured the same on both boxes, and if not, what
+  exactly differs?* Every object behind the policy is read on both appliances
+  and subtracted — virtual server, pool and its members, certificates, content
+  routing, allow-lists, the web protection profile. It needs no workspace tab
+  open and no appliance selected, and it **writes nothing**.
+
+  **Objects are matched by the field that references them, not by their name.**
+  A profile or pool that landed on the destination under a derived name still
+  lines up with its counterpart and is reported `renamed` — one finding, rather
+  than one object missing plus another appearing. A rename is never repeated as
+  configuration drift on the parent that points at it.
+
+  **A web protection profile is compared as one package.** You get its
+  fingerprint on each side, how many objects it holds, and which sub-profiles
+  differ (`−removed ~changed +added`) — never a row per signature or entry. The
+  package's own name is outside the fingerprint, so a renamed profile whose
+  contents match reads as `renamed`, not as a wall of differences.
+
+  The comparison is symmetric: a setting only the destination carries is
+  reported exactly like one only the source carries. Per-box bookkeeping is
+  not — a sub-table row's appliance-assigned `id` never decides whether two
+  rows are the same row, and `enable`/`True`, `80`/`"80"`, absent/empty are
+  each one value.
+
+  Per line you get a verdict — `identical` · `differs` · `missing` · `error` —
+  and, for `missing`, which box does not have the policy at all. Lines starting
+  with `#` are ignored; both sides are required (a comparison needs two); up to
+  100 lines per run, because one line is two full dependency-tree reads. Any
+  line the time budget did not reach is named in the report, never dropped.
+  Export is tab-separated, one line per difference.
 - **Monitoring / Metrics** — see §14.
 
 ## 14. Monitoring: fleet health, metrics & probes

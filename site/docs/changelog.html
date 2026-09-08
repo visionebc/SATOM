@@ -106,6 +106,67 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="added-full-sourcedestination-comparison-of-a-service-2026-09-08">Added — full source↔destination comparison of a service (2026-09-08)</h3>
+<p>A new Fleet page, <strong>Config Compare</strong> (<code>/compare/</code>), takes the SAME
+<code>source;policy;destination</code> file the Backend Reachability page takes and
+answers the next question about those services: <strong>is this service configured
+the same on both boxes, and if not, exactly what differs?</strong> Every object behind
+the policy is read on both appliances — virtual server, server pool and its
+members, certificates, content routing, allow-lists, the web protection
+profile — and subtracted. It needs no workspace tab open and no appliance
+selected anywhere, and it <strong>writes nothing</strong>.</p>
+<ul>
+<li><strong>It is not a second clone planner.</strong> The walk is
+  <code>clone.ClonePlanner.collect</code> — the same one the clone dialog and the
+  cascade-delete planner use, and the only thing in the product that knows
+  which fields of a FortiWeb object are references. A second walk here would
+  let this page and the clone report disagree about what a service even
+  <em>consists of</em>. What <code>app/services/config_compare.py</code> owns is the
+  subtraction: pairing, field diffing, the package rule for profiles, and the
+  per-line verdict.</li>
+<li><strong>Counterparts are paired by ROLE, not by name.</strong> A cross-box clone
+  routinely lands the web protection profile under a derived name, and pool or
+  virtual-server names drift too. Objects reached from the same parent through
+  the same reference field are counterparts whatever they are called; the name
+  difference is then reported as <code>renamed</code> — one finding — instead of
+  "missing on the destination" plus "extra on the destination", two false
+  findings that hide the answer. The parent's reference field is not allowed to
+  repeat that rename as configuration drift.</li>
+<li><strong>A web protection profile is compared as ONE PACKAGE, never entry by
+  entry.</strong> An inline profile drags in a dozen sub-profiles and each can hold
+  hundreds of rows. The package is reduced to a fingerprint plus which
+  sub-profiles differ and by how much (<code>−removed ~changed +added</code>); the
+  package's own name is excluded from that fingerprint, so a landed clone under
+  a derived name still reads as <code>renamed</code>, not as five hundred differences.</li>
+<li><strong>The diff is symmetric.</strong> <code>clone.subrow_diff</code> deliberately looks only at the
+  fields the source carries, because it answers "what would I have to write?".
+  This page answers "how do these two differ?", so a setting the DESTINATION
+  carries alone is exactly as much of a difference as one the source carries
+  alone. Reusing the write-shaped diff would have hidden every
+  destination-only setting.</li>
+<li><strong>Per-box bookkeeping is never configuration.</strong> A by-parent row's <code>id</code> is
+  allocated by the appliance that created it, so identical rows on two boxes
+  carry different ids; rows are matched by their declared unique key or by
+  content instead. <code>enable</code>/<code>True</code> and <code>80</code>/<code>"80"</code> are one value, and an absent
+  field and an empty one are the same field.</li>
+<li><strong>An absent policy is absent, not empty.</strong> <code>collect()</code> answers a missing
+  policy with its root item and an empty payload, never an empty list — so a
+  service that is not on one box is reported <code>missing</code> (with the box named),
+  and a service on neither is an error, never two empty trees declared
+  identical.</li>
+<li><strong>Nothing is dropped silently.</strong> Over-limit lines, the format header, lines
+  the time budget never reached, a field list cut by its cap and a by-parent
+  row whose owner could not be matched are each named or re-homed. A comparison
+  that quietly covered less than it was asked to reads exactly like a clean
+  run, which for this tool is the worst possible failure.</li>
+<li>Read-only, audited as <code>config.compare</code>, and registered in the Global ADOM and
+  the FortiWeb ADOM only (it reads FortiWeb server policies). Export is
+  tab-separated, one line per difference.</li>
+<li><code>ClonePlanner</code> now also records the reference <strong>edges</strong> it already walks —
+  <code>(parent, via, child)</code>. <code>_refs</code> answers "who names this?"; a comparison needs
+  "what role does it play?", and only the field says that. Additive: one new
+  list, written beside the two <code>_refs</code> writes that were already there.</li>
+</ul>
 <h3 id="added-batch-backend-reachability-from-a-sourcepolicydestination-list-2026-09-08">Added — batch backend reachability from a <code>source;policy;destination</code> list (2026-09-08)</h3>
 <p>A new Fleet page, <strong>Backend Reachability</strong> (<code>/reachability/</code>), takes a file or a
 pasted list — one <code>source;policy;destination</code> per line — and answers one

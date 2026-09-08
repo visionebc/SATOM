@@ -2089,6 +2089,7 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.concept_map", "bp"),
         ("app.views.dns_tool", "bp"),
         ("app.views.reach_batch", "bp"),
+        ("app.views.config_compare", "bp"),
         ("app.views.users", "bp"),
         ("app.views.profiles", "bp"),
         ("app.views.metrics", "bp"),

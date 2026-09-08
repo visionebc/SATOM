@@ -6,6 +6,68 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — full source↔destination comparison of a service (2026-09-08)
+
+A new Fleet page, **Config Compare** (`/compare/`), takes the SAME
+`source;policy;destination` file the Backend Reachability page takes and
+answers the next question about those services: **is this service configured
+the same on both boxes, and if not, exactly what differs?** Every object behind
+the policy is read on both appliances — virtual server, server pool and its
+members, certificates, content routing, allow-lists, the web protection
+profile — and subtracted. It needs no workspace tab open and no appliance
+selected anywhere, and it **writes nothing**.
+
+- **It is not a second clone planner.** The walk is
+  `clone.ClonePlanner.collect` — the same one the clone dialog and the
+  cascade-delete planner use, and the only thing in the product that knows
+  which fields of a FortiWeb object are references. A second walk here would
+  let this page and the clone report disagree about what a service even
+  *consists of*. What `app/services/config_compare.py` owns is the
+  subtraction: pairing, field diffing, the package rule for profiles, and the
+  per-line verdict.
+- **Counterparts are paired by ROLE, not by name.** A cross-box clone
+  routinely lands the web protection profile under a derived name, and pool or
+  virtual-server names drift too. Objects reached from the same parent through
+  the same reference field are counterparts whatever they are called; the name
+  difference is then reported as `renamed` — one finding — instead of
+  "missing on the destination" plus "extra on the destination", two false
+  findings that hide the answer. The parent's reference field is not allowed to
+  repeat that rename as configuration drift.
+- **A web protection profile is compared as ONE PACKAGE, never entry by
+  entry.** An inline profile drags in a dozen sub-profiles and each can hold
+  hundreds of rows. The package is reduced to a fingerprint plus which
+  sub-profiles differ and by how much (`−removed ~changed +added`); the
+  package's own name is excluded from that fingerprint, so a landed clone under
+  a derived name still reads as `renamed`, not as five hundred differences.
+- **The diff is symmetric.** `clone.subrow_diff` deliberately looks only at the
+  fields the source carries, because it answers "what would I have to write?".
+  This page answers "how do these two differ?", so a setting the DESTINATION
+  carries alone is exactly as much of a difference as one the source carries
+  alone. Reusing the write-shaped diff would have hidden every
+  destination-only setting.
+- **Per-box bookkeeping is never configuration.** A by-parent row's `id` is
+  allocated by the appliance that created it, so identical rows on two boxes
+  carry different ids; rows are matched by their declared unique key or by
+  content instead. `enable`/`True` and `80`/`"80"` are one value, and an absent
+  field and an empty one are the same field.
+- **An absent policy is absent, not empty.** `collect()` answers a missing
+  policy with its root item and an empty payload, never an empty list — so a
+  service that is not on one box is reported `missing` (with the box named),
+  and a service on neither is an error, never two empty trees declared
+  identical.
+- **Nothing is dropped silently.** Over-limit lines, the format header, lines
+  the time budget never reached, a field list cut by its cap and a by-parent
+  row whose owner could not be matched are each named or re-homed. A comparison
+  that quietly covered less than it was asked to reads exactly like a clean
+  run, which for this tool is the worst possible failure.
+- Read-only, audited as `config.compare`, and registered in the Global ADOM and
+  the FortiWeb ADOM only (it reads FortiWeb server policies). Export is
+  tab-separated, one line per difference.
+- `ClonePlanner` now also records the reference **edges** it already walks —
+  `(parent, via, child)`. `_refs` answers "who names this?"; a comparison needs
+  "what role does it play?", and only the field says that. Additive: one new
+  list, written beside the two `_refs` writes that were already there.
+
 ### Added — batch backend reachability from a `source;policy;destination` list (2026-09-08)
 
 A new Fleet page, **Backend Reachability** (`/reachability/`), takes a file or a

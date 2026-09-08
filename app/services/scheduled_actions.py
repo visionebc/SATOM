@@ -125,6 +125,127 @@ REBOOT_TRANSPORT: dict[str, RebootTransport] = {
 }
 
 
+@dataclass(frozen=True)
+class FailoverTransport:
+    """How ONE product is told to hand the primary role over, and where that
+    knowledge came from.
+
+    There is NO REST call for this on either product, and that is a finding, not
+    an assumption. Verified 2026-09-08 against the live lab: fortiweb12's OWN
+    7.6.8 GUI bundle (``main.js`` + ``app.min.js``, downloaded off the box) routes
+    ``system/ha``, ``ha/node``, ``ha-topology`` and ``ha-disconnect`` and contains
+    ZERO failover call; FortiADC has no ``monitor/`` namespace at all. So this
+    action drives the product's CLI over the SSH console SATOM already owns.
+
+    Every entry also records the release its evidence starts at, because the
+    failure mode of getting that wrong is not a 404: it is a parse error sent to
+    a production cluster inside a maintenance window, discovered the next
+    morning. ``role_cmd`` is the product's READ-ONLY role read; an empty string
+    means "no CLI read has been verified for this product" and the caller falls
+    back to that product's REST ``ha_status`` instead of guessing a command.
+    """
+
+    set_cmd: str
+    unset_cmd: str
+    role_cmd: str
+    min_version: tuple[int, ...]
+    clears_on_reboot: bool
+    provenance: str
+
+
+FAILOVER_TRANSPORT: dict[str, FailoverTransport] = {
+    "fortiweb": FailoverTransport(
+        "execute ha failover set",
+        "execute ha failover unset",
+        "diagnose system ha status",
+        (8, 0, 0), True,
+        "Fortinet FortiWeb 8.0.x CLI reference 'ha failover' "
+        "({set|unset|status}) + admin guide 'Manual HA Failover Trigger Support "
+        "(8.0.0)'. The 7.6.0 CLI reference has NO such page and the live 7.6.8 "
+        "GUI bundle has no failover call, so 8.0.0 is where the evidence starts. "
+        "role_cmd verified live on fortiweb12 2026-09-08: the entire answer on a "
+        "standalone box is 'HA is disabled.'. Docs say the failover state is "
+        "cleared by a reboot or by dropping to Standalone mode.",
+    ),
+    "fortiadc": FailoverTransport(
+        "execute ha force failover-standby set",
+        "execute ha force failover-standby unset",
+        "",
+        (7, 6, 0), False,
+        "Fortinet FortiADC 7.6.0 and 7.6.1 CLI reference 'execute ha force "
+        "failover-standby' ({set|unset}, plus status). Releases older than 7.6.0 "
+        "were NOT checked, so the floor is where the EVIDENCE starts, not where "
+        "the command was introduced - a floor that is too high refuses a change; "
+        "one that is too low sends an unknown command to a load balancer. No CLI "
+        "role read has been verified against a live FortiADC, so role_cmd is "
+        "empty on purpose and the REST ha_status the client already implements "
+        "answers instead. Nothing documents this state clearing on reboot, so it "
+        "is treated as STICKY.",
+    ),
+    # fortianalyzer / fortiauthenticator: deliberately absent, same rule as
+    # REBOOT_TRANSPORT. Neither has had a failover command verified against a
+    # live device of that product, and this action's wrong answer is not a
+    # refused call - it is a cluster that hands over, or a node pinned out of
+    # election, at a time nobody was watching.
+}
+
+
+def _appliance_version(appliance) -> tuple[int, int, int] | None:
+    """The (major, minor, patch) the box is RUNNING, or None when unrecorded.
+
+    Reads the firmware string device_sync already stores
+    ('FortiWeb-KVM 7.6.8,build1128(GA.M),260602'). None is NOT "probably fine":
+    an unrecorded version is the absence of evidence, and the caller refuses on
+    it rather than sending a command that may not exist on the box.
+    """
+    text = str(getattr(appliance, "firmware", "") or "")
+    m = re.search(r"(?<![\d.])(\d+)\.(\d+)\.(\d+)(?![\d.])", text)
+    if m:
+        return (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+    m = re.search(r"(?<![\d.])(\d+)\.(\d+)(?![\d.])", text)
+    return (int(m.group(1)), int(m.group(2)), 0) if m else None
+
+
+def _ha_role_vocabulary(text: str) -> dict:
+    """Translate ONE product's HA CLI wording into the vocabulary
+    ``ha.parse_ha_role`` already owns.
+
+    Deliberately NOT a second role parser. ``ha.parse_ha_role`` is the single
+    authority on which words mean primary/secondary/standalone -- including the
+    rule that a bare HA *mode* is 'unknown' and never 'primary' -- and a parallel
+    parser here would drift from it the first time either one is fixed.
+
+    Output that matches nothing yields the literal 'unrecognized', never an empty
+    dict: ``parse_ha_role({})`` answers 'standalone', so handing it an empty dict
+    would turn "the box said something we cannot read" into "the box has no HA" --
+    and 'standalone' is one of the two answers that let an unset through.
+    """
+    blob = " ".join((text or "").split())
+    if re.search(r"HA is disabled", blob, re.I):
+        return {"haStatus": "standalone"}
+    m = re.search(r"\b(master|primary|slave|secondary|standby|backup|standalone)\b",
+                  blob, re.I)
+    return {"haStatus": m.group(1).lower() if m else "unrecognized"}
+
+
+def _live_ha_role(appliance, transport) -> tuple[str, str]:
+    """``(role, evidence)`` read off the box RIGHT NOW, read-only.
+
+    Never raises: an unreachable box is 'unknown', which the caller treats as a
+    refusal for ``set`` and as no obstacle for ``unset``.
+    """
+    from . import ha as ha_svc
+
+    if transport.role_cmd:
+        try:
+            from . import ssh_ops
+            text = ssh_ops.run_command(appliance, transport.role_cmd, timeout=20.0)
+        except Exception as exc:  # noqa: BLE001 - a failed read is 'unknown'
+            return "unknown", f"{transport.role_cmd}: {type(exc).__name__}: {exc}"
+        return ha_svc.parse_ha_role(_ha_role_vocabulary(text)), text[:800]
+    return ha_svc.member_role(appliance), "role read over REST (client.ha_status)"
+
+
 # Admin maintenance automations (read-/file-writers + the gated firmware flow).
 ADMIN_ACTIONS: list[ActionSpec] = [
     ActionSpec(
@@ -325,6 +446,23 @@ ADMIN_ACTIONS: list[ActionSpec] = [
                 "refuses to fire unbound. The reboot URN is per product and is "
                 "sent only where it has been verified against that product's own "
                 "device; an unverified product is refused by name, never guessed.",
+    ),
+    ActionSpec(
+        "ha_failover", "HA failover - hand the primary role over (DISRUPTIVE)",
+        "admin", needs_targets=True, single_target=True, danger=True,
+        forced_schedule_kind="once",
+        products=("fortiweb", "fortiadc"),
+        requires_change_request=True,
+        summary="Make ONE HA cluster hand the primary role to its peer at a FIXED "
+                "date/time (params.direction='set'), or give it back "
+                "(direction='unset'). DISRUPTIVE: every session on the outgoing "
+                "primary breaks. There is NO REST call for this on either product "
+                "- verified against FortiWeb's own GUI bundle - so it drives the "
+                "product's CLI over SSH, and only where that command has been "
+                "verified to exist on the firmware the box is RUNNING: a FortiWeb "
+                "below 8.0.0 is refused BY NAME with nothing sent. Runs ONLY bound "
+                "to an approved Change Request inside its window, and refuses to "
+                "fail over anything that is not reporting HA primary right now.",
     ),
     ActionSpec(
         "health_check", "Health check (system status)", "admin",
@@ -747,6 +885,8 @@ def run_action(spec, appliance, params: dict | None, dry_run: bool = False) -> d
             return _do_upgrade(appliance, params, dry_run)
         if key == "reboot":
             return _do_reboot(appliance, params, dry_run)
+        if key == "ha_failover":
+            return _do_ha_failover(appliance, params, dry_run)
         if key == "health_check":
             return _do_health_check(appliance, dry_run)
         if key == "ha_check":
@@ -1033,6 +1173,140 @@ def _do_reboot(appliance, params: dict, dry_run: bool) -> dict:
                     "call."),
         "log": text,
     }
+
+
+def _do_ha_failover(appliance, params: dict, dry_run: bool) -> dict:
+    """Hand the primary role over on ONE HA cluster, or give it back.
+
+    No REST call exists for this on either product (see :class:`FailoverTransport`),
+    so it runs the product's own CLI over the write-capable SSH console. That
+    console classifies ``execute ha`` as DISRUPTIVE and demands ``allow_disruptive``;
+    here the APPROVED CHANGE REQUEST is the record that a human was told what the
+    command does and said yes -- exactly what the typed confirmation records for an
+    interactive operator. The spec declares ``requires_change_request`` so the gate
+    in ``execute_and_record`` refuses to run it unbound.
+
+    The two directions do NOT fail the same way, and that asymmetry is the point:
+
+    * ``set`` refuses unless the node explicitly reports 'primary'. Failing over a
+      standby either does nothing (reported as success -- a lie) or pins the
+      standby out of election while the box you meant to drain keeps serving.
+    * ``unset`` refuses only when the node has no HA at all. A refused ``set``
+      costs a maintenance window; a refused ``unset`` leaves a node pinned out of
+      election -- the outage the failover existed to avoid, made permanent.
+    """
+    if appliance is None:
+        return {"ok": False, "summary": "ha_failover needs a target cluster.",
+                "log": ""}
+    direction = str(params.get("direction") or "set").strip().lower()
+    if direction not in ("set", "unset"):
+        return {"ok": False,
+                "summary": (f"ha_failover: unknown direction {direction!r} - use "
+                            "'set' (hand the primary role over) or 'unset' (give "
+                            "it back). NOTHING was sent."),
+                "log": ""}
+    name = getattr(appliance, "name", "device")
+    kind = (getattr(appliance, "kind", "") or "fortiweb").strip().lower()
+    transport = FAILOVER_TRANSPORT.get(kind)
+    if transport is None:
+        return {"ok": False,
+                "summary": (f"{name}: HA failover is not implemented for {kind} - "
+                            "no failover command has been verified against a live "
+                            "device of this product. NOTHING was sent."),
+                "log": (f"no FAILOVER_TRANSPORT entry for kind {kind!r}; known: "
+                        f"{', '.join(sorted(FAILOVER_TRANSPORT))}")}
+    floor = ".".join(str(n) for n in transport.min_version)
+    running = _appliance_version(appliance)
+    if running is None:
+        return {"ok": False,
+                "summary": (f"{name}: SATOM has no recorded firmware version, and "
+                            f"this command only exists from {kind} {floor}. Run "
+                            "'Sync device to local source of truth' against it "
+                            "first. NOTHING was sent."),
+                "log": f"firmware={getattr(appliance, 'firmware', None)!r}"}
+    if running < transport.min_version:
+        return {"ok": False,
+                "summary": (f"{name}: {kind} "
+                            f"{'.'.join(str(n) for n in running)} has no failover "
+                            f"command - it exists from {floor}. NOTHING was sent."),
+                "log": transport.provenance}
+
+    # A cluster node 0 is a container, not a box. resolve_write_target is the ONE
+    # implementation of "which appliance does a write land on", and reusing it
+    # here keeps the failover aimed at the same node every other write reaches.
+    from . import ha as ha_svc
+    target = appliance
+    via_vip = False
+    if getattr(appliance, "is_cluster", False):
+        via_vip = (getattr(appliance, "ha_mode", "") or "").strip().lower() == "vip"
+        try:
+            target = ha_svc.resolve_write_target(appliance)
+        except Exception as exc:  # noqa: BLE001 - HAError and anything under it
+            return {"ok": False, "summary": f"{name}: {exc}", "log": ""}
+    tname = getattr(target, "name", name)
+
+    role, evidence = _live_ha_role(target, transport)
+    if direction == "set" and role != "primary":
+        return {"ok": False,
+                "summary": (f"{tname}: refusing to fail over a node that reports "
+                            f"'{role}', not 'primary'. Failing over a standby "
+                            "either does nothing and reports success, or pins the "
+                            "standby out of election while the real primary keeps "
+                            "serving. NOTHING was sent."),
+                "log": evidence}
+    if direction == "unset" and role == "standalone":
+        return {"ok": False,
+                "summary": (f"{tname}: this node has no HA configured, so there is "
+                            "no forced failover to clear. NOTHING was sent."),
+                "log": evidence}
+
+    cmd = transport.set_cmd if direction == "set" else transport.unset_cmd
+    sticky = "" if transport.clears_on_reboot else (
+        " NOTE: on this product the state is sticky - the node stays OUT of HA "
+        "election until an 'unset' runs; a reboot does not clear it.")
+    if dry_run:
+        return {"ok": True,
+                "summary": (f"[dry-run] would send {cmd!r} to {tname} ({kind} "
+                            f"{'.'.join(str(n) for n in running)}) over SSH, which "
+                            f"reports '{role}' right now. Nothing was sent."
+                            + sticky),
+                "log": evidence}
+
+    from . import ssh_console
+    result = ssh_console.run_script(target, [cmd], allow_disruptive=True)
+    if result.error:
+        return {"ok": False,
+                "summary": f"{tname}: {result.error} NOTHING was sent.",
+                "log": result.transcript[:_LOG_MAX]}
+    row = result.rows[0] if result.rows else None
+    if row is None or row.status != "ok":
+        detail = f" ({row.detail})" if row is not None and row.detail else ""
+        return {"ok": False,
+                "summary": f"{tname}: the appliance refused {cmd!r}{detail}.",
+                "log": ((row.output if row is not None else result.transcript)
+                        or "")[:_LOG_MAX]}
+
+    # Reading the role back through a VIP describes whichever node is primary NOW
+    # - which after a successful failover is the PEER. It would report success
+    # whether or not anything happened, so it is not read at all.
+    if via_vip:
+        return {"ok": True,
+                "summary": (f"{tname}: {cmd!r} accepted. The role was NOT read "
+                            "back: this cluster is reached through its VIP, and "
+                            "the VIP now lands on whichever node holds primary, "
+                            "so a read here would describe a different box."
+                            + sticky),
+                "log": (row.output or "")[:_LOG_MAX]}
+    after, after_evidence = _live_ha_role(target, transport)
+    if direction == "set" and after == "primary":
+        return {"ok": False,
+                "summary": (f"{tname}: accepted {cmd!r}, but the node STILL reports "
+                            "primary - the role did not hand over."),
+                "log": f"{row.output}\n--- after ---\n{after_evidence}"[:_LOG_MAX]}
+    return {"ok": True,
+            "summary": (f"{tname}: {cmd!r} accepted; the node now reports "
+                        f"'{after}' (was '{role}')." + sticky),
+            "log": f"{row.output}\n--- after ---\n{after_evidence}"[:_LOG_MAX]}
 
 
 def _do_upgrade(appliance, params: dict, dry_run: bool) -> dict:

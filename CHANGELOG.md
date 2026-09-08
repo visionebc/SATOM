@@ -6,6 +6,47 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — Schedule an HA failover, and refuse it on the firmware that cannot do it (2026-09-08)
+
+A new automation, **`ha_failover` — HA failover: hand the primary role over**,
+so a cluster handover can be planned from **Fleet → Calendar** (or from Change
+Requests) instead of being typed into a console at 02:00. `direction='set'`
+hands the primary role to the peer; `direction='unset'` gives it back.
+
+**There is no REST call for this on either product**, and that is a measured
+finding rather than an assumption: FortiWeb's own GUI bundle, downloaded from a
+live 7.6.8 appliance, routes `system/ha`, `ha/node`, `ha-topology` and
+`ha-disconnect` and contains no failover call at all, and FortiADC has no
+`monitor/` namespace. So the action drives each product's CLI over the SSH
+console SATOM already owns — the same console that classifies `execute ha` as
+disruptive and refuses it without an explicit acknowledgement. Here the approved
+Change Request *is* that acknowledgement.
+
+- **The command must exist on the firmware the box is RUNNING.**
+  `execute ha failover` arrived in **FortiWeb 8.0.0**; a FortiWeb on 7.6 is
+  refused **by name, with both version numbers, and nothing is sent**. FortiADC
+  uses `execute ha force failover-standby`, evidenced from 7.6.0. A box whose
+  firmware SATOM has never recorded is refused too: absence of evidence is not
+  evidence of support.
+- **`set` refuses anything not reporting HA primary right now.** Failing over a
+  standby either does nothing and reports success, or pins the standby out of
+  election while the box you meant to drain keeps serving.
+- **`unset` does not fail the same way.** It refuses only a box with no HA at
+  all. A refused `set` costs a maintenance window; a refused `unset` leaves a
+  node pinned out of election — the outage the failover existed to avoid, made
+  permanent.
+- **The role is never read back through a VIP.** After a handover the VIP lands
+  on the peer, so the read would describe a different box and report success
+  either way. The run says so instead of inventing a verdict.
+- **A node still reporting primary afterwards is a failure**, not a success.
+- **Stickiness is a property of the product.** FortiWeb clears the forced state
+  on reboot; nothing documents FortiADC doing so, so it is treated as sticky and
+  every FortiADC run says the node stays out of election until an `unset`.
+
+Registered `danger`, `single_target`, one-shot and `requires_change_request`, so
+it arrives on the Change Request / Calendar menu already gated — the executor
+refuses to fire it unbound.
+
 ### Added — Calendar: one grid for everything this fleet is scheduled to receive (2026-09-08)
 
 A new **Fleet → Calendar** page (`/calendar/`), the first entry of the Fleet

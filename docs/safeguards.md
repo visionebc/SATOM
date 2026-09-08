@@ -13404,3 +13404,90 @@ An off-box row carries no local mtime, because there is no local file. Its age
 comes from the name (`fmw-backup-YYYYmmdd-HHMMSS`), which is written from the
 same clock. The name is a **fallback**, never the first source: preferring it
 over an explicit timestamp is a separate lie, and both directions have a test.
+
+
+## §155 — a failover with no API, and a command the running firmware does not have (2026-09-08)
+
+The ask was to schedule a cluster failover, with the honest caveat *"no sé si
+haya un api call para eso"*. There isn't one, and finding that out is most of
+this section.
+
+### What was actually checked, and how
+
+`main.a86d971ced4a7ee7.js` and `app.min.js` were downloaded **from the live
+fortiweb12 (7.6.8)** and searched. The console routes `system/ha`,
+`system/ha/basic`, `system/ha/node`, `system/ha-topology` and an
+`fwb-ha-disconnect` module — and **no failover call anywhere**. The only
+`failover` string in either bundle is `failovermethod`, a vendored Ansible yum
+keyword. FortiADC was already known to have no `monitor/` namespace (§ earlier
+rounds). So: **CLI over SSH, or nothing.**
+
+Then the harder half. `execute ha failover {set|unset|status}` is real — and it
+was **introduced in FortiWeb 8.0.0**. The 7.6.0 CLI reference has no such page,
+and the admin-guide entry is titled *Manual HA Failover Trigger Support
+(8.0.0)*. **Every FortiWeb this fleet has registered runs 7.6.8.** An action
+that shipped without a version gate would have delivered a parse error to a
+production cluster inside a maintenance window, and the operator would have
+found out the next morning.
+
+### The rules, each with a mutation that bites
+
+1. **A per-product transport with recorded provenance and a version floor.**
+   Same shape as `REBOOT_TRANSPORT` and for the same reason: a product with no
+   verified entry is refused **by name**, never probed live on a load balancer.
+   The floor is *where the evidence starts*, not where the feature was
+   introduced — FortiADC's is 7.6.0 because 7.6.0 and 7.6.1 are the references
+   that were read, not because 7.5 was checked and found wanting.
+2. **An unrecorded firmware is refused.** Parsing `None` as "probably new
+   enough" is the same class of error as reading an absent HA role as primary.
+3. **`set` requires an explicit 'primary'; `unset` requires only "not
+   standalone".** The asymmetry is deliberate and is the section's real content:
+   the two directions have opposite costs when they are wrong. Over-caution on
+   `set` costs a window. Over-caution on `unset` strands a node outside HA
+   election indefinitely — on FortiADC, where the state is sticky, until a human
+   notices.
+4. **No second role parser.** `ha.parse_ha_role` stays the one authority on
+   which words mean which role, including its rule that a bare HA *mode* is
+   'unknown' and never 'primary'. The new helper only translates a CLI's
+   phrasing into words that parser already knows. **It must never return an
+   empty dict**: `parse_ha_role({})` answers `standalone`, so an empty dict would
+   turn "the box said something we cannot read" into "the box has no HA" — and
+   `standalone` is one of the two answers that decide an `unset`.
+5. **No read-back through a VIP.** The VIP follows the primary, so after a
+   successful handover a role read through it describes the *peer*. It would
+   report success whether or not anything happened. The run states that the role
+   was not read, which is the only honest output available.
+6. **The approved CR is the disruptive acknowledgement.** `ssh_console`
+   classifies `execute ha` as disruptive and demands `allow_disruptive`; that
+   flag "is not a permission — it is the record that a human was told what the
+   command does and said yes anyway". For an interactive operator that record is
+   a typed confirmation; for a scheduled run it is the approval on the change.
+
+### ⚠ TRAPS
+
+- **Two mutations survived the first harness run, and both were genuine test
+  gaps, not false alarms.** `ScriptResult.error` (connect/auth failure) carries
+  **no rows**, so a handler that only inspects `rows` reads "nothing went wrong"
+  — and no test covered it. Likewise no test made the role read *raise*, so
+  turning a dead read into `primary` passed. Both now have a test. 30/30 bite.
+- **One mutation anchor matched zero times** and the harness said so rather than
+  silently scoring it. An anchor that does not match is not a survivor and is
+  not a bite; conflating either with a real result is how a harness starts
+  lying.
+
+### Verification
+
+30/30 mutations bite (rc==1 only; tree restored by sha256, post-restore green) ·
+`tests/test_ha_failover.py` 45 tests rc=0 · adjacent suites (cr_action_catalog,
+cr_types, calendar_plan, calendar_view, ssh_console, the five ha_* files,
+alerts_scheduled_actions, change_request_lifecycle) rc=0 apart from the
+**pre-existing** `test_the_bound_cr_bookkeeping_is_initialised_before_the_try`
+failure already recorded in the previous round.
+
+**NOT verified against a live cluster.** There is no HA pair in this lab: the
+two FortiWebs are standalone (`diagnose system ha status` → *"HA is disabled."*,
+read live), no `Appliance` row carries `is_cluster`, and both boxes are on 7.6.8
+— the release this action refuses by design. So the executed paths are the
+refusals; the send path is covered by fixtures and by the mutation harness. The
+FortiWeb CLI syntax comes from Fortinet's 8.0.x reference, not from a box that
+answered it.

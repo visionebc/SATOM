@@ -396,7 +396,14 @@ def test_this_module_never_writes_to_a_device():
     So: no ``set`` / ``update`` / ``delete`` verb at all, and every ``add``
     must target the logsearch route.
     """
-    src = _uncommented(_read(EDGE_SRC))
+    #  The transport moved to app/services/faz_logs.py on 2026-09-08, when
+    #  Scout became a second caller of the same logview route. Scanning only
+    #  edge.py after that move would leave this guard reading a file with no
+    #  JSON-RPC calls in it — inert, and green. The tripwire below caught
+    #  exactly that, which is why BOTH files are scanned now: the invariant is
+    #  "this engine never writes to a device", and the engine is both halves.
+    src = _uncommented(_read(EDGE_SRC)) + "\n" + _uncommented(
+        _read("app/services/faz_logs.py"))
     calls = re.findall(r'\.(?:call|rpc)\(\s*["\'](\w+)["\']\s*,\s*([^,\n]+)',
                        src)
     assert calls, "no JSON-RPC calls found — the scanner is reading nothing"

@@ -106,6 +106,67 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="added-device-console-a-write-capable-cli-credential-testing-and-tac-bundles-2026-09-08">Added — Device Console: a write-capable CLI, credential testing and TAC bundles (2026-09-08)</h3>
+<p>A new Administrator page, <strong>Device Console</strong> (<code>/console/</code>), present in <strong>every
+ADOM</strong>. It does three things an operator needs when a box is misbehaving and
+the REST API is not enough: run CLI commands against an appliance and read
+every answer, test a single username and password directly against a FortiOS
+device, and package the transcript for a Fortinet support ticket.</p>
+<p><strong>This is the first SSH write path in SATOM, and it is deliberately confined.</strong>
+<code>app/services/ssh_ops</code> documents in its own docstring that the console "is
+locked to read commands", and six services import it on that promise
+(<code>cert_manager</code>, <code>backup</code>, <code>backend_probe</code>, <code>reach_batch</code>, <code>logcollect</code>,
+<code>interface_inventory</code>). Adding a <code>write=True</code> flag there would have made that
+sentence false for all of them at once. <code>assert_readonly</code> is therefore
+untouched; the write path lives in the new <code>app/services/ssh_console.py</code> and is
+reachable from exactly one blueprint.</p>
+<ul>
+<li><strong>The gate is a denylist, in three tiers.</strong> An allowlist is right for
+  <code>ssh_ops</code>, where the question is closed ("is this a pure read?"). Here the
+  question is open — an operator recovering a box at 3 a.m. needs whatever
+  FortiOS spells today, and a capability the authors did not foresee reads as a
+  broken tool, which is how people end up SSHing from a laptop with no audit
+  trail at all. What <em>is</em> closed is the set of commands that end an appliance,
+  so that is what is enumerated.</li>
+<li><strong>Forbidden, at every permission level, with no UI path:</strong>
+    <code>execute factoryreset</code>, <code>execute formatlogdisk</code>, disk erases and formats.</li>
+<li><strong>Disruptive, sent only after the operator acknowledges the effect and
+    types the appliance name:</strong> reboot, shutdown, config/firmware restore, HA
+    changes, clear-text config exports, and password writes.</li>
+<li>Everything else, behind <code>config_write</code>.</li>
+<li><strong>The whole script is gated before the session opens.</strong> A refusal discovered
+  on line 40 after lines 1–39 already landed leaves the appliance in a state
+  the page cannot describe; half a configuration change is worse than none.</li>
+<li><strong>A failed command halts the script by default.</strong> The FortiOS CLI is modal:
+  after a failed <code>config</code>, the <code>set</code> lines that follow land at the top level
+  instead. Commands not reached are reported as <code>not_run</code>, never dropped.</li>
+<li><strong>Silence is success here</strong>, unlike the reachability probes. A <code>set</code> that
+  works prints nothing, so reading an empty answer as failure would mark every
+  correct configuration line red.</li>
+<li><strong>Credential testing answers three questions, not one.</strong> Reachable /
+  authenticated / can-actually-read are separated because they send the
+  operator to three different places — and an account that logs in and can read
+  nothing is a real FortiOS state that anything checking only authentication
+  calls a success. Write access is reported as the device's <strong>raw words</strong>, never
+  as a flag: the only free evidence is whether the automatic pager-disable was
+  accepted, and a box that refused it for an unrelated reason is
+  indistinguishable from a read-only account. Throttled per operator and
+  audited on every attempt; the password is never stored.</li>
+<li><strong>Nothing secret leaves in a bundle.</strong> Transcripts are redacted before they
+  are stored, audited or packaged. A diagnostic capture that fails does not
+  lose the bundle — the transcript is what TAC asked for, and the failure is
+  named inside the archive instead.</li>
+</ul>
+<h3 id="fixed-the-administrator-group-is-now-named-and-reachable-in-every-adom-2026-09-08">Fixed — the Administrator group is now named and reachable in every ADOM (2026-09-08)</h3>
+<p>Two of the five administration blocks in <code>base.html</code> were titled
+<strong>Administration</strong> rather than <strong>Administrator</strong>, so the FortiADC and
+FortiAuthenticator sidebars carried a differently-named group holding the same
+pages. They are one name now.</p>
+<p><code>console</code> was also added to the FortiADC / FortiAnalyzer / FortiAuthenticator
+blueprint allowlists. Without it the shared nav partial drew a live-looking
+entry that the product gate redirected to the ADOM home — the same defect
+<code>advisor</code> and <code>adom_assets</code> had on 2026-08-30, and
+<code>tests/test_adom_menu_reachability.py</code> is what caught it this time.</p>
 <h3 id="added-full-sourcedestination-comparison-of-a-service-2026-09-08">Added — full source↔destination comparison of a service (2026-09-08)</h3>
 <p>A new Fleet page, <strong>Config Compare</strong> (<code>/compare/</code>), takes the SAME
 <code>source;policy;destination</code> file the Backend Reachability page takes and

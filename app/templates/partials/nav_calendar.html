@@ -14,8 +14,18 @@
    is hidden rather than shown-and-refused.
 
    Placed ABOVE Search in every Fleet menu, per the request that raised it.
+
+   SWITCHED OFF PER USER (2026-09-08). ``calendar_on`` comes from a context
+   processor, so all three menus read ONE resolution -- reading the preference
+   here would be three identical queries on every page in the product.
+
+   ``|default(true)`` is not decoration: a template rendered outside a full
+   request context (a partial under test, an error page assembled without the
+   processors) has no such variable, and an undefined in a boolean test is
+   falsey. Without it the entry would disappear for reasons that have nothing
+   to do with what the user chose.
    ========================================================================= #}
-{% if current_user and current_user.can('user_manage') %}
+{% if current_user and current_user.can('user_manage') and calendar_on|default(true) %}
 <a class="fw-nav-item {{ 'active' if request.blueprint == 'calendar_plan' else '' }}" href="{{ url_for('calendar_plan.index') }}">
   <i class="bi bi-calendar3 fw-nav-icon"></i><span>{{ _('Calendar') }}</span></a>
 {% endif %}

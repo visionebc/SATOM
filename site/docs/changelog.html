@@ -106,6 +106,51 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="added-calendar-one-grid-for-everything-this-fleet-is-scheduled-to-receive-2026-09-08">Added — Calendar: one grid for everything this fleet is scheduled to receive (2026-09-08)</h3>
+<p>A new <strong>Fleet → Calendar</strong> page (<code>/calendar/</code>), the first entry of the Fleet
+menu in every ADOM. Month, week, 30-day agenda and whole-year views over the
+three things that answer "what is happening to this fleet, and when":</p>
+<ul>
+<li><strong>Planned changes</strong> — every Change Request, drawn across every day its window
+  spans, with its type, risk, appliances and the person accountable for it.</li>
+<li><strong>Upcoming automations</strong> — the recurring Scheduled Actions, projected forward
+  from the scheduler itself.</li>
+<li><strong>What ran</strong> — the recorded runs, so the same grid answers the retrospective
+  question as well as the forward one.</li>
+</ul>
+<p><strong>It invents no planning object.</strong> A calendar with its own "planned item" would
+be a second author of what a planned change is, and the two would disagree the
+first time somebody approved one from the Change Requests page instead. Planning
+from a day cell calls <code>change_requests.create_change_request</code> — the one
+implementation, with its device-visibility, product and single-target checks
+intact — and the page never writes anything else.</p>
+<ul>
+<li><strong>Plan against an ADOM, a group or named devices.</strong> Groups are the dimensions
+  the inventory already carries (tag, department, zone, line), and they are
+  <strong>resolved to a fixed list of appliances the moment the change is raised</strong>,
+  with both the selector and the resolved list recorded on the change. A live
+  selector would let an approval for one set of boxes execute against another.
+  A selector matching nothing is refused rather than saved as an empty change.</li>
+<li><strong>Overlapping-change warning.</strong> Two windows that overlap <em>and</em> share an
+  appliance are flagged. Sharing a device is the whole test: parallel work on
+  different boxes is ordinary operations, and flagging it would put a warning on
+  most Tuesdays until nobody read it.</li>
+<li><strong>Projection is future-only; the past is measured.</strong> Schedule math can say
+  when a job <em>would have</em> fired last Tuesday, not whether it did. Past days
+  carry recorded runs and nothing else.</li>
+<li><strong>Nothing is dropped in silence.</strong> A capped occurrence series, a disabled
+  automation, a clipped run list and a window spanning more days than the grid
+  paints each say so on the page.</li>
+<li>Days are bucketed in the timezone configured under Settings → General, not in
+  UTC: a window at 23:30 UTC is tomorrow in Europe/Zurich.</li>
+</ul>
+<h3 id="fixed-a-maintenance-window-that-ends-before-it-starts-is-refused-2026-09-08">Fixed — a maintenance window that ends before it starts is refused (2026-09-08)</h3>
+<p><code>create_change_request</code> accepted <code>window_end &lt;= window_start</code>. Such a change can
+never fire, because no instant lies inside its window — it simply sits in
+<code>approved</code> looking healthy until somebody notices, the morning after, that
+nothing ran. CR-0011 on the primary node was stored ending a <strong>day</strong> before it
+began. The check lives in the one implementation of "raise a change", so the
+form, the batched wave route and the new calendar all inherit it.</p>
 <h3 id="added-device-console-a-write-capable-cli-credential-testing-and-tac-bundles-2026-09-08">Added — Device Console: a write-capable CLI, credential testing and TAC bundles (2026-09-08)</h3>
 <p>A new Administrator page, <strong>Device Console</strong> (<code>/console/</code>), present in <strong>every
 ADOM</strong>. It does three things an operator needs when a box is misbehaving and

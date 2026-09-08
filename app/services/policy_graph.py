@@ -268,7 +268,7 @@ def execute_delete_plan(ops, plan: dict, *, dry_run: bool) -> list[dict]:
         })
 
     # ── 3. Always-kept items (informational only) ────────────────────────────
-    for urn, mkey, label, reason in plan["to_keep"]:
+    for urn, mkey, label, reason, _shared in plan["to_keep"]:
         results.append({
             "urn": urn,
             "mkey": mkey,

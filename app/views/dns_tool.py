@@ -12,11 +12,12 @@ from flask_login import login_required, current_user
 
 from ..services import dns_tool
 from ..services import dns_providers
+from ..services import dns_decommission
 from ..services.dns_providers import DnsRecord, ProviderError
 from ..services.product_scope import session_product
 from ..services.audit import log_action
 from ..auth.decorators import require_permission
-from ..models import Permission
+from ..models import Permission, visible_appliance_or_404
 
 bp = Blueprint("dns_tool", __name__, url_prefix="/dns-lookup")
 
@@ -103,7 +104,68 @@ def index():
         dns_backends=[r.public()
                       for r in dns_providers.enabled_backends("dns")],
         can_manage_records=current_user.can("user_manage"),
+        can_decommission=current_user.can("config_write"),
     )
+
+
+# ---------------------------------------------------------- Decommission
+# Retire a whole service from the row the operator is looking at: the LB
+# object and its exclusively-owned dependencies, the SNI member, the
+# certificate, the WAF profile, the carve-outs and the DNS records.
+#
+# Two endpoints, never one. ``/plan`` reads and returns what WOULD go;
+# ``/apply`` re-plans, checks the operator confirmed THAT plan by
+# fingerprint, and only then executes. A single endpoint with a `confirm`
+# flag would let a caller skip the preview entirely, and the preview is the
+# feature.
+
+
+def _decommission_args():
+    body = request.get_json(silent=True) or request.form or {}
+    try:
+        aid = int(body.get("appliance_id") or 0)
+    except (TypeError, ValueError):
+        aid = 0
+    return (aid, str(body.get("policy") or "").strip(),
+            str(body.get("hostname") or "").strip(), body)
+
+
+@bp.route("/decommission/plan", methods=["POST"])
+@login_required
+@require_permission(Permission.CONFIG_WRITE)
+def decommission_plan():
+    aid, policy, hostname, _body = _decommission_args()
+    if not aid or not policy:
+        return jsonify(ok=False,
+                       error="appliance_id and policy are required"), 400
+    appliance = visible_appliance_or_404(aid)
+    res = dns_decommission.plan(appliance, policy=policy, hostname=hostname)
+    return jsonify(**res), (200 if res.get("ok") else 400)
+
+
+@bp.route("/decommission/apply", methods=["POST"])
+@login_required
+@require_permission(Permission.CONFIG_WRITE)
+def decommission_apply():
+    aid, policy, hostname, body = _decommission_args()
+    if not aid or not policy:
+        return jsonify(ok=False,
+                       error="appliance_id and policy are required"), 400
+    appliance = visible_appliance_or_404(aid)
+    res = dns_decommission.apply(
+        appliance, policy=policy, hostname=hostname,
+        confirm=str(body.get("confirm") or ""),
+        acknowledge=bool(body.get("acknowledge")),
+        actor=getattr(current_user, "username", "") or "")
+    # Audited whichever way it went: a refused decommission is exactly the
+    # event an operator will look for afterwards.
+    log_action("dns_decommission.apply",
+               target="%s:%s" % (appliance.name, policy),
+               appliance_id=appliance.id,
+               detail=("ok=%s %s" % (res.get("ok"),
+                                     res.get("error") or
+                                     (res.get("summary") or {})))[:400])
+    return jsonify(**res), (200 if res.get("ok") else res.get("code", 400))
 
 
 # ------------------------------------------------------------- DNS Records

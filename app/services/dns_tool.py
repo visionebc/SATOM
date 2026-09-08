@@ -311,6 +311,47 @@ def _fortiweb_rows(appliance) -> list[dict]:
     return rows
 
 
+def _adc_profile_certs(client) -> dict[str, list[str]]:
+    """``client-SSL profile -> [certificate]`` for one FortiADC.
+
+    Best-effort and read-only: a leg that fails contributes nothing, because a
+    blank Certificate cell is the status quo and a WRONG one would be new.
+    """
+    out: dict[str, list[str]] = {}
+    try:
+        groups, gerr = client.list_with_error(
+            "system_certificate_local_cert_group")
+        if gerr:
+            return out
+        members: dict[str, list[str]] = {}
+        for g in groups or []:
+            gname = str((g or {}).get("mkey") or "").strip()
+            if not gname:
+                continue
+            rows, merr = client.list_with_error(
+                "system_certificate_local_cert_group_child_group_member",
+                pkey=gname)
+            if merr:
+                continue
+            members[gname] = [
+                str(m.get("local_cert") or "").strip() for m in rows or []
+                if isinstance(m, dict) and m.get("local_cert")]
+        profiles, perr = client.list_with_error(
+            "load_balance_client_ssl_profile")
+        if perr:
+            return out
+        for p in profiles or []:
+            if not isinstance(p, dict):
+                continue
+            pname = str(p.get("mkey") or "").strip()
+            grp = str(p.get("local_certificate_group") or "").strip()
+            if pname and grp:
+                out[pname] = members.get(grp, [])
+    except Exception:  # noqa: BLE001 — the sweep never dies on a cert column
+        return out
+    return out
+
+
 def _fortiadc_rows(appliance) -> list[dict]:
     """One row per virtual server — live read-only sweep (no ADC deep cache)."""
     from flask import current_app
@@ -344,6 +385,14 @@ def _fortiadc_rows(appliance) -> list[dict]:
     except Exception:  # noqa: BLE001 — member detail is best-effort
         pass
 
+    # A FortiADC virtual server has NO ``ssl-certificate`` field: the chain is
+    # virtual server -> client-SSL profile -> local-cert group -> certificate
+    # (the shape `cert_adc._bindings` walks; confirmed on a captured fadc
+    # config, where every VS carries `client_ssl_profile` and no cert field).
+    # Reading the missing field left this column permanently blank, so the
+    # Certificate / Cert CN cells lied by omission on every ADC row.
+    profile_certs = _adc_profile_certs(client)
+
     out = []
     for vs in vs_rows or []:
         comment = str(vs.get("comments") or vs.get("comment") or "")
@@ -357,7 +406,8 @@ def _fortiadc_rows(appliance) -> list[dict]:
             "members": ", ".join(
                 f"{b['ip']}:{b['port']}" for b in backends
                 if b["ip"] or b["port"]),
-            "certificate": str(vs.get("ssl-certificate") or ""),
+            "certificate": ", ".join(profile_certs.get(
+                str(vs.get("client_ssl_profile") or "").strip(), [])),
             "type": str(vs.get("type") or ""),
             "waf": str(vs.get("waf-profile") or ""),
             "comment": comment,

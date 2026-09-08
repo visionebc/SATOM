@@ -106,6 +106,63 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="added-batch-backend-reachability-from-a-sourcepolicydestination-list-2026-09-08">Added — batch backend reachability from a <code>source;policy;destination</code> list (2026-09-08)</h3>
+<p>A new Fleet page, <strong>Backend Reachability</strong> (<code>/reachability/</code>), takes a file or a
+pasted list — one <code>source;policy;destination</code> per line — and answers one
+question per line: <strong>do the real servers behind this policy answer, on the
+source box and then on the destination box?</strong> It needs no workspace tab open
+and no appliance selected anywhere, and it <strong>writes nothing</strong>: the only traffic
+it emits is <code>execute ping</code> over the read-only CLI and TCP handshakes from this
+node.</p>
+<ul>
+<li><strong>Read-only by construction.</strong> No clone, no migrate, no config change. The
+  page is still audited (<code>reachability.batch</code>), because "who made these boxes
+  ping our customer's servers?" is a question that gets asked.</li>
+<li><strong><code>app/services/reach_batch.py</code> re-implements none of the probing.</strong> Reading
+  a policy's pool members is <code>backend_probe.dst_pool_targets</code>, probing a target
+  is <code>backend_probe.probe_targets</code>, and deciding whether a backend counts as
+  reachable is the new <code>backend_probe.classify_row</code> — the same call <code>summarise</code>
+  counts with. A second copy of any of those would let this page and the clone
+  report disagree about the same backend.</li>
+<li><strong>Three answers, never two.</strong> <code>reachable</code> / <code>unreachable</code> / <code>unknown</code>, all
+  the way up to the line verdict (<code>ok</code> · <code>down</code> · <code>mismatch</code> · <code>unknown</code> ·
+  <code>error</code>). A probe that could not run is never rendered as an outage and never
+  as health.</li>
+<li><strong>A bad destination never voids the source answer.</strong> An unknown destination
+  name, an unreachable destination box or a policy that is not there still
+  leave the source half read and reported — that half is the reference the
+  operator is comparing against.</li>
+<li><strong>Nothing is dropped silently.</strong> Over-limit lines, the format header, targets
+  cut by the 2000-target cap and backends skipped when the time budget expired
+  are each named in the report. A run that quietly covers less than it was
+  asked to reads exactly like a clean run.</li>
+<li><strong>Source pools are compared against destination pools</strong> by <code>(address, port)</code>
+  — <code>missing_in_destination</code> / <code>extra_in_destination</code> name the member. When the
+  destination does not have the policy at all and an SSH vantage is available,
+  the source's backends are pinged <strong>from the destination</strong> instead (the
+  pre-migration question); that side is flagged as a different measurement and
+  the comparison is skipped <strong>out loud</strong>, never in silence.</li>
+<li><strong>One API read per appliance</strong> however many lines name it, one ping per
+  address per box, one TCP handshake per <code>(address, port)</code> for the whole run.
+  The appliance ping cache is <strong>never</strong> shared between two boxes — reusing one
+  box's answer for another is exactly the confusion the two-vantage design
+  exists to prevent.</li>
+<li>Retired <code>*.invalid</code> registrations and non-FortiWeb devices are refused by
+  name before a client is built, instead of spending a connect timeout per line.</li>
+</ul>
+<h3 id="fixed-backend_probe-additions-used-by-both-callers-2026-09-08">Fixed — <code>backend_probe</code> additions used by both callers (2026-09-08)</h3>
+<ul>
+<li><code>dst_pool_targets</code> rows now carry a stable <code>error_kind</code>
+  (<code>no_such_policy</code> · <code>no_pool</code> · <code>pool_unreadable</code> · <code>empty_pool</code>) next to the
+  operator-facing <code>error</code> prose. A caller that branched on the prose was a
+  second author of it, and rewording a message would have silently changed what
+  the caller decided.</li>
+<li><code>probe_targets</code> accepts caller-owned <code>ping_cache</code> / <code>tcp_cache</code> dicts so a
+  chunked batch can skip work it already did, and a cached TCP result is now
+  <strong>copied</strong> into each row rather than shared.</li>
+<li><code>classify_row</code> is extracted as the single author of "is this backend up?";
+  <code>summarise</code> counts with it and the page's per-row badges are stamped from it.</li>
+</ul>
 <h3 id="added-decommission-a-service-from-the-dns-lb-lookup-page-2026-09-08">Added — decommission a service from the DNS &amp; LB Lookup page (2026-09-08)</h3>
 <p>The operator finds a name in <em>DNS Lookup</em>, and the match that serves it now
 carries a <strong>Decommission</strong> button: one guarded pass that retires the LB object

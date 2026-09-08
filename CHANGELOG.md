@@ -6,6 +6,64 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — batch backend reachability from a `source;policy;destination` list (2026-09-08)
+
+A new Fleet page, **Backend Reachability** (`/reachability/`), takes a file or a
+pasted list — one `source;policy;destination` per line — and answers one
+question per line: **do the real servers behind this policy answer, on the
+source box and then on the destination box?** It needs no workspace tab open
+and no appliance selected anywhere, and it **writes nothing**: the only traffic
+it emits is `execute ping` over the read-only CLI and TCP handshakes from this
+node.
+
+- **Read-only by construction.** No clone, no migrate, no config change. The
+  page is still audited (`reachability.batch`), because "who made these boxes
+  ping our customer's servers?" is a question that gets asked.
+- **`app/services/reach_batch.py` re-implements none of the probing.** Reading
+  a policy's pool members is `backend_probe.dst_pool_targets`, probing a target
+  is `backend_probe.probe_targets`, and deciding whether a backend counts as
+  reachable is the new `backend_probe.classify_row` — the same call `summarise`
+  counts with. A second copy of any of those would let this page and the clone
+  report disagree about the same backend.
+- **Three answers, never two.** `reachable` / `unreachable` / `unknown`, all
+  the way up to the line verdict (`ok` · `down` · `mismatch` · `unknown` ·
+  `error`). A probe that could not run is never rendered as an outage and never
+  as health.
+- **A bad destination never voids the source answer.** An unknown destination
+  name, an unreachable destination box or a policy that is not there still
+  leave the source half read and reported — that half is the reference the
+  operator is comparing against.
+- **Nothing is dropped silently.** Over-limit lines, the format header, targets
+  cut by the 2000-target cap and backends skipped when the time budget expired
+  are each named in the report. A run that quietly covers less than it was
+  asked to reads exactly like a clean run.
+- **Source pools are compared against destination pools** by `(address, port)`
+  — `missing_in_destination` / `extra_in_destination` name the member. When the
+  destination does not have the policy at all and an SSH vantage is available,
+  the source's backends are pinged **from the destination** instead (the
+  pre-migration question); that side is flagged as a different measurement and
+  the comparison is skipped **out loud**, never in silence.
+- **One API read per appliance** however many lines name it, one ping per
+  address per box, one TCP handshake per `(address, port)` for the whole run.
+  The appliance ping cache is **never** shared between two boxes — reusing one
+  box's answer for another is exactly the confusion the two-vantage design
+  exists to prevent.
+- Retired `*.invalid` registrations and non-FortiWeb devices are refused by
+  name before a client is built, instead of spending a connect timeout per line.
+
+### Fixed — `backend_probe` additions used by both callers (2026-09-08)
+
+- `dst_pool_targets` rows now carry a stable `error_kind`
+  (`no_such_policy` · `no_pool` · `pool_unreadable` · `empty_pool`) next to the
+  operator-facing `error` prose. A caller that branched on the prose was a
+  second author of it, and rewording a message would have silently changed what
+  the caller decided.
+- `probe_targets` accepts caller-owned `ping_cache` / `tcp_cache` dicts so a
+  chunked batch can skip work it already did, and a cached TCP result is now
+  **copied** into each row rather than shared.
+- `classify_row` is extracted as the single author of "is this backend up?";
+  `summarise` counts with it and the page's per-row badges are stamped from it.
+
 ### Added — decommission a service from the DNS & LB Lookup page (2026-09-08)
 
 The operator finds a name in *DNS Lookup*, and the match that serves it now

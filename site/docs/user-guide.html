@@ -1203,6 +1203,34 @@ device.</p>
   source only; up to 200 lines per run. Anything the run could not cover (an
   expired time budget, the target cap, an over-limit line) is named in the
   report rather than quietly omitted. The result copies out as TSV.
+- <strong>Config Compare</strong> — paste or upload the same
+  <code>source;policy;destination</code> list and ask the next question about those
+  services: <em>is this configured the same on both boxes, and if not, what
+  exactly differs?</em> Every object behind the policy is read on both appliances
+  and subtracted — virtual server, pool and its members, certificates, content
+  routing, allow-lists, the web protection profile. It needs no workspace tab
+  open and no appliance selected, and it <strong>writes nothing</strong>.</p>
+<p><strong>Objects are matched by the field that references them, not by their name.</strong>
+  A profile or pool that landed on the destination under a derived name still
+  lines up with its counterpart and is reported <code>renamed</code> — one finding, rather
+  than one object missing plus another appearing. A rename is never repeated as
+  configuration drift on the parent that points at it.</p>
+<p><strong>A web protection profile is compared as one package.</strong> You get its
+  fingerprint on each side, how many objects it holds, and which sub-profiles
+  differ (<code>−removed ~changed +added</code>) — never a row per signature or entry. The
+  package's own name is outside the fingerprint, so a renamed profile whose
+  contents match reads as <code>renamed</code>, not as a wall of differences.</p>
+<p>The comparison is symmetric: a setting only the destination carries is
+  reported exactly like one only the source carries. Per-box bookkeeping is
+  not — a sub-table row's appliance-assigned <code>id</code> never decides whether two
+  rows are the same row, and <code>enable</code>/<code>True</code>, <code>80</code>/<code>"80"</code>, absent/empty are
+  each one value.</p>
+<p>Per line you get a verdict — <code>identical</code> · <code>differs</code> · <code>missing</code> · <code>error</code> —
+  and, for <code>missing</code>, which box does not have the policy at all. Lines starting
+  with <code>#</code> are ignored; both sides are required (a comparison needs two); up to
+  100 lines per run, because one line is two full dependency-tree reads. Any
+  line the time budget did not reach is named in the report, never dropped.
+  Export is tab-separated, one line per difference.
 - <strong>Monitoring / Metrics</strong> — see §14.</p>
 <h2 id="14-monitoring-fleet-health-metrics-probes">14. Monitoring: fleet health, metrics &amp; probes</h2>
 <p>Monitoring lives in <strong>every</strong> workspace, not only Global. It is scoped by

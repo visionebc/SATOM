@@ -106,6 +106,52 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="added-decommission-a-service-from-the-dns-lb-lookup-page-2026-09-08">Added — decommission a service from the DNS &amp; LB Lookup page (2026-09-08)</h3>
+<p>The operator finds a name in <em>DNS Lookup</em>, and the match that serves it now
+carries a <strong>Decommission</strong> button: one guarded pass that retires the LB object
+and its exclusively-owned dependencies, the SNI member, the certificate, the
+WAF profile, the WPP carve-outs and the DNS records that point at the name.
+Available in the FortiWeb and FortiADC ADOMs, <code>config_write</code> only, audited
+either way it goes.</p>
+<ul>
+<li><strong>The preview is the feature.</strong> <code>POST /dns-lookup/decommission/plan</code> only
+  reads; <code>POST …/apply</code> re-plans, compares the fingerprint of what the operator
+  confirmed against what the device says NOW, and refuses with the new plan
+  attached when they differ. Between preview and confirmation another session
+  can bind the certificate to a second policy — that binding is the whole
+  question, so a stale confirmation is not "close enough".</li>
+<li><strong><code>app/services/dns_decommission.py</code> is not a second delete engine.</strong> Every
+  destructive step is executed by the module that already owns it:
+  <code>policy_graph</code> for the cascade, <code>cert_manager.remove_device_certificate</code> for
+  a certificate (which re-runs its own fail-closed binder check), 
+  <code>exception_lifecycle.on_server_policy_deleted</code> for carve-outs, and
+  <code>FortiWebOps.delete</code> — hence <code>delete_guard</code> — for everything else.</li>
+<li><strong>Unverifiable means kept.</strong> A binder read that fails, a firmware with no
+  <code>q_ref</code>, an ADC table that will not answer: each leaves the object with
+  <code>action=keep</code> and a reason that says so. Nothing is ever deleted because a
+  box was unreachable while we asked who else uses it.</li>
+<li><strong>Warnings need acknowledging, and they name the dependency</strong>: an SNI policy
+  that still serves other domains through other certificates (the member is
+  removed, the policy is kept), a certificate that also covers names this
+  decommission does not account for, a CNAME that leaves the service.</li>
+<li><strong>DNS runs first</strong>, before the VIP is freed. A record outliving its service
+  is not cosmetic — the address gets reused and the old name lands on a
+  stranger.</li>
+</ul>
+<h3 id="fixed-a-real-cascade-delete-crashed-on-its-own-report-2026-09-08">Fixed — a real cascade delete crashed on its own report (2026-09-08)</h3>
+<p><code>policy_graph.execute_delete_plan</code> unpacked <code>to_keep</code> as 4-tuples while the
+planner has produced 5 (the <code>shared_with</code> list) since sharing was added. Every
+non-dry-run cascade with any kept dependency — which is nearly all of them, a
+bound certificate is enough — raised <code>ValueError</code> <strong>after</strong> the deletes had
+already reached the box, so the operator got a 500 instead of the report of
+what had just been removed. The dry-run path unpacked 5 and was correct, which
+is why a preview never showed it.</p>
+<h3 id="fixed-the-fortiadc-certificate-column-was-always-blank-2026-09-08">Fixed — the FortiADC Certificate column was always blank (2026-09-08)</h3>
+<p><code>dns_tool._fortiadc_rows</code> read <code>ssl-certificate</code> off the virtual server. A
+FortiADC virtual server has no such field: the chain is
+<code>virtual server → client-SSL profile → local-cert group → certificate</code>. The
+column now walks it (read-only, best-effort), which is also what the
+decommission planner needs to decide the ADC certificate.</p>
 <h3 id="changed-every-install-shape-provisions-tls-for-itself-2026-08-31">Changed — every install shape provisions TLS for itself (2026-08-31)</h3>
 <p>The turnkey installer has always issued an internal CA and put nginx in front
 of gunicorn. Three other install paths did not, and one of them is the quick

@@ -6,6 +6,57 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — decommission a service from the DNS & LB Lookup page (2026-09-08)
+
+The operator finds a name in *DNS Lookup*, and the match that serves it now
+carries a **Decommission** button: one guarded pass that retires the LB object
+and its exclusively-owned dependencies, the SNI member, the certificate, the
+WAF profile, the WPP carve-outs and the DNS records that point at the name.
+Available in the FortiWeb and FortiADC ADOMs, `config_write` only, audited
+either way it goes.
+
+- **The preview is the feature.** `POST /dns-lookup/decommission/plan` only
+  reads; `POST …/apply` re-plans, compares the fingerprint of what the operator
+  confirmed against what the device says NOW, and refuses with the new plan
+  attached when they differ. Between preview and confirmation another session
+  can bind the certificate to a second policy — that binding is the whole
+  question, so a stale confirmation is not "close enough".
+- **`app/services/dns_decommission.py` is not a second delete engine.** Every
+  destructive step is executed by the module that already owns it:
+  `policy_graph` for the cascade, `cert_manager.remove_device_certificate` for
+  a certificate (which re-runs its own fail-closed binder check), 
+  `exception_lifecycle.on_server_policy_deleted` for carve-outs, and
+  `FortiWebOps.delete` — hence `delete_guard` — for everything else.
+- **Unverifiable means kept.** A binder read that fails, a firmware with no
+  `q_ref`, an ADC table that will not answer: each leaves the object with
+  `action=keep` and a reason that says so. Nothing is ever deleted because a
+  box was unreachable while we asked who else uses it.
+- **Warnings need acknowledging, and they name the dependency**: an SNI policy
+  that still serves other domains through other certificates (the member is
+  removed, the policy is kept), a certificate that also covers names this
+  decommission does not account for, a CNAME that leaves the service.
+- **DNS runs first**, before the VIP is freed. A record outliving its service
+  is not cosmetic — the address gets reused and the old name lands on a
+  stranger.
+
+### Fixed — a real cascade delete crashed on its own report (2026-09-08)
+
+`policy_graph.execute_delete_plan` unpacked `to_keep` as 4-tuples while the
+planner has produced 5 (the `shared_with` list) since sharing was added. Every
+non-dry-run cascade with any kept dependency — which is nearly all of them, a
+bound certificate is enough — raised `ValueError` **after** the deletes had
+already reached the box, so the operator got a 500 instead of the report of
+what had just been removed. The dry-run path unpacked 5 and was correct, which
+is why a preview never showed it.
+
+### Fixed — the FortiADC Certificate column was always blank (2026-09-08)
+
+`dns_tool._fortiadc_rows` read `ssl-certificate` off the virtual server. A
+FortiADC virtual server has no such field: the chain is
+`virtual server → client-SSL profile → local-cert group → certificate`. The
+column now walks it (read-only, best-effort), which is also what the
+decommission planner needs to decide the ADC certificate.
+
 ### Changed — every install shape provisions TLS for itself (2026-08-31)
 
 The turnkey installer has always issued an internal CA and put nginx in front

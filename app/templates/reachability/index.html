@@ -1,0 +1,304 @@
+{% extends "base.html" %}
+
+{% block title %}Backend Reachability — SATOM{% endblock %}
+
+{#  Colours come from .fw-badge-* only (safeguards §9m): this product is a
+    LIGHT theme and the pastel status pills of a dark one land at ~1.4:1 on
+    white, which is a badge that says "down" and cannot be read.             #}
+{% set VERDICT_BADGE = {'ok':'success','down':'danger','error':'danger',
+                        'mismatch':'warning','unknown':'secondary'} %}
+{% set VERDICT_ICON  = {'ok':'check-circle','down':'x-octagon','error':'exclamation-octagon',
+                        'mismatch':'shuffle','unknown':'question-circle'} %}
+{% set STATE_BADGE   = {'reachable':'success','unreachable':'danger','unknown':'secondary'} %}
+
+{% macro side_table(side, label) %}
+  <div class="fw-card mb-0" style="box-shadow:none;border:1px solid var(--fw-border);">
+    <div class="fw-card-header d-flex justify-content-between align-items-center" style="font-size:12px;">
+      <span><i class="bi bi-hdd-rack me-1"></i>{{ label }}
+        {% if side.appliance %}<span class="opacity-75">— {{ side.appliance }}</span>{% endif %}</span>
+      {% if side.ran %}
+      <span class="d-flex gap-1">
+        <span class="fw-badge fw-badge-success">{{ side.summary.reachable }} up</span>
+        <span class="fw-badge fw-badge-danger">{{ side.summary.unreachable }} down</span>
+        <span class="fw-badge fw-badge-secondary">{{ side.summary.unknown }} unknown</span>
+      </span>
+      {% endif %}
+    </div>
+    <div class="fw-card-body p-0">
+      {% if not side.ran %}
+        <div class="p-2 text-muted" style="font-size:12px;">{{ side.reason or 'not checked' }}</div>
+      {% else %}
+        {% if side.from_source_pool %}
+        <div class="alert alert-warning m-2 mb-0 py-1 px-2" style="font-size:11.5px;">
+          <i class="bi bi-info-circle me-1"></i>{{ side.reason }} — this is a
+          <strong>different measurement</strong> from the other rows, so the pool
+          comparison is skipped for this line.
+        </div>
+        {% endif %}
+        <div class="fw-table-wrapper">
+        <table class="fw-table" style="font-size:11.5px;">
+          <thead><tr>
+            <th>Pool</th><th>Backend</th><th>State</th>
+            <th>From {{ side.appliance or 'appliance' }} (ping)</th><th>From SATOM (TCP)</th>
+          </tr></thead>
+          <tbody>
+          {% for b in side.rows %}
+            <tr>
+              <td class="font-monospace">{{ b.pool or '—' }}</td>
+              <td class="font-monospace">
+                {% if b.error %}<span class="text-muted">{{ b.error }}</span>
+                {% else %}{{ b.address }}:{{ b.port }}
+                  {% if not b.enabled %}<span class="fw-badge fw-badge-secondary ms-1">disabled</span>{% endif %}
+                  {% if b.ssl %}<span class="fw-badge fw-badge-info ms-1">ssl</span>{% endif %}
+                {% endif %}
+              </td>
+              <td><span class="fw-badge fw-badge-{{ STATE_BADGE.get(b.state,'secondary') }}">{{ b.state }}</span></td>
+              <td>{{ b.appliance.verdict }}<div class="text-muted">{{ b.appliance.detail }}</div></td>
+              <td>{{ b.local.verdict }}<div class="text-muted">{{ b.local.detail }}</div></td>
+            </tr>
+          {% else %}
+            <tr><td colspan="5" class="text-muted">no backends were read for this policy</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+{% endmacro %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <span>Backend Reachability</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-diagram-3 me-2 text-accent"></i>Backend Reachability</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      Paste or upload a list of <code>source;policy;destination</code> lines. Each one is
+      read on the <strong>source</strong> first and then on the <strong>destination</strong>:
+      the pool members are read back from each box and probed. <strong>Nothing is written</strong> —
+      no clone, no migrate, no config change of any kind.
+    </p>
+  </div>
+</div>
+
+<div class="row g-3">
+  <!-- Input -->
+  <div class="col-lg-3">
+    <div class="fw-card">
+      <div class="fw-card-header"><i class="bi bi-list-check me-1"></i>{{ _('Lines to check') }}</div>
+      <div class="fw-card-body">
+        <form method="POST" enctype="multipart/form-data" id="reachForm">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <label class="fw-form-label">{{ _('One service per line') }}
+            <span class="text-muted">— <code>source;policy;destination</code></span></label>
+          <textarea name="entries" rows="10" class="form-control fw-form-control font-monospace"
+                    style="font-size:11.5px;"
+                    placeholder="# source;policy;destination&#10;fortiweb12;spo-tienda-mx;fortiweb13&#10;fortiweb12;spo-api-prod;fortiweb13&#10;fortiweb13;spo-solo-origen">{{ entries_raw }}</textarea>
+          <div class="text-muted mt-1" style="font-size:11px;">
+            Lines starting with <code>#</code> are ignored. A third field left empty checks
+            the source only. Up to {{ max_lines }} lines per run.
+          </div>
+
+          <label class="fw-form-label mt-3">{{ _('…or upload the file') }}</label>
+          <input type="file" name="file" accept=".txt,.csv,.tsv,text/plain"
+                 class="form-control fw-form-control" style="font-size:12px;">
+          <div class="text-muted mt-1" style="font-size:11px;">
+            A file replaces the box above, and the box is refilled with it so you can see
+            and edit exactly what ran.
+          </div>
+
+          <hr class="my-3" style="opacity:.15;">
+          <label class="fw-form-label">{{ _('Vantages') }}</label>
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" name="ssh" id="optSsh" {{ 'checked' if opts.ssh }}>
+            <label class="form-check-label" for="optSsh" style="font-size:13px;">
+              Ask each appliance too (<code>execute ping</code> over SSH)</label>
+          </div>
+          <div class="text-muted mb-2" style="font-size:11px;">
+            Off by default: it needs SSH credentials and it is the only vantage that answers
+            whether <em>that box</em> reaches the servers. TCP from SATOM always runs, and a
+            refused port proves the host is up.
+          </div>
+          <div class="row g-2">
+            <div class="col-6">
+              <label class="fw-form-label" style="font-size:11px;">TCP timeout (s)</label>
+              <input type="number" step="0.5" min="0.5" max="10" name="timeout"
+                     value="{{ opts.timeout }}" class="form-control fw-form-control" style="font-size:12px;">
+            </div>
+            <div class="col-6">
+              <label class="fw-form-label" style="font-size:11px;">Time budget (s)</label>
+              <input type="number" step="10" min="10" max="300" name="budget"
+                     value="{{ opts.budget }}" class="form-control fw-form-control" style="font-size:12px;">
+            </div>
+          </div>
+          <div class="d-flex gap-2 mt-3">
+            <a class="btn btn-outline-secondary btn-sm flex-fill" href="{{ url_for('reach_batch.index') }}">{{ _('Reset') }}</a>
+            <button type="submit" class="btn btn-primary btn-sm flex-fill" id="reachRun">
+              <i class="bi bi-broadcast me-1"></i>{{ _('Check') }}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Report -->
+  <div class="col-lg-9">
+    {% if error %}
+    <div class="alert alert-danger" style="font-size:13px;">{{ error }}</div>
+    {% endif %}
+    {% if notice %}
+    <div class="alert alert-warning" style="font-size:13px;">{{ notice }}</div>
+    {% endif %}
+
+    {% if report %}
+    <div class="fw-card">
+      <div class="fw-card-header d-flex align-items-center justify-content-between">
+        <span><i class="bi bi-clipboard-data me-1"></i>{{ _('Report') }}
+          <span class="text-muted ms-2" style="font-size:12px;">
+            {{ report.lines|length }} line(s) in {{ report.elapsed_s }} s —
+            vantages: SATOM TCP{% if report.vantages.appliance %} + appliance ping{% endif %}</span></span>
+        <span class="d-flex gap-2 align-items-center">
+          {% for v in ['error','down','mismatch','unknown','ok'] %}
+            {% if report.totals.get(v) %}
+            <span class="fw-badge fw-badge-{{ VERDICT_BADGE[v] }}">{{ report.totals[v] }} {{ v }}</span>
+            {% endif %}
+          {% endfor %}
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="copyTsvBtn">{{ _('Copy TSV') }}</button>
+        </span>
+      </div>
+      <div class="fw-card-body p-0">
+
+        {% if report.budget_hit or report.capped or report.dropped %}
+        <div class="alert alert-warning m-3 mb-0" style="font-size:12.5px;">
+          <div class="fw-semibold mb-1"><i class="bi bi-exclamation-triangle me-1"></i>This run did not cover everything it was given</div>
+          {% if report.budget_hit %}
+          <div>• The {{ opts.budget }} s time budget expired. The backends it did not reach are
+            marked <em>not probed</em> — that is not evidence they are down. Raise the budget or split the file.</div>
+          {% endif %}
+          {% for c in report.capped %}
+          <div>• {{ c.appliance }}: {{ c.dropped }} backend(s) left unprobed — {{ c.why }}.</div>
+          {% endfor %}
+          {% for d in report.dropped %}
+          <div>• line {{ d.lineno }} <code>{{ d.raw }}</code> — {{ d.why }}.</div>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        {% set appl_problems = report.appliances|selectattr('error')|list
+                             + report.appliances|selectattr('ssh_error')|list %}
+        {% if appl_problems %}
+        <div class="alert alert-danger m-3 mb-0" style="font-size:12.5px;">
+          {% for a in report.appliances %}
+            {% if a.error %}<div>• <strong>{{ a.name }}</strong>: {{ a.error }}</div>{% endif %}
+            {% if a.ssh_error %}<div>• <strong>{{ a.name }}</strong>: no SSH vantage — {{ a.ssh_error }}.
+              The TCP probe from SATOM still ran for this box.</div>{% endif %}
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        <div class="fw-table-wrapper">
+        <table class="fw-table" style="font-size:12.5px;">
+          <thead><tr>
+            <th style="width:1%;">#</th><th>Source</th><th>Policy</th><th>Destination</th>
+            <th style="width:1%;">Verdict</th><th>Findings</th><th style="width:1%;"></th>
+          </tr></thead>
+          <tbody>
+          {% for ln in report.lines %}
+            <tr>
+              <td class="text-muted">{{ ln.lineno }}</td>
+              <td class="font-monospace">{{ ln.source or '—' }}</td>
+              <td class="font-monospace">{{ ln.policy or '—' }}</td>
+              <td class="font-monospace">{{ ln.destination or '—' }}</td>
+              <td><span class="fw-badge fw-badge-{{ VERDICT_BADGE[ln.verdict] }}">
+                <i class="bi bi-{{ VERDICT_ICON[ln.verdict] }} me-1"></i>{{ ln.verdict }}</span></td>
+              <td>
+                {% for f in ln.findings %}
+                <div><span class="fw-badge fw-badge-{{ VERDICT_BADGE.get(f.verdict,'secondary') }}"
+                           style="font-size:10px;">{{ f.code }}</span>
+                  <span class="ms-1">{{ f.text }}</span></div>
+                {% else %}
+                <span class="text-muted">every backend answered on both sides</span>
+                {% endfor %}
+              </td>
+              <td>
+                {% if not ln.error %}
+                <button class="btn btn-sm btn-outline-secondary reach-toggle" type="button"
+                        data-bs-toggle="collapse" data-bs-target="#reachDetail{{ loop.index }}">
+                  <i class="bi bi-chevron-down"></i></button>
+                {% endif %}
+              </td>
+            </tr>
+            {% if not ln.error %}
+            <tr class="p-0"><td colspan="7" class="p-0" style="border-top:none;">
+              <div class="collapse" id="reachDetail{{ loop.index }}">
+                <div class="row g-2 p-2">
+                  <div class="col-xl-6">{{ side_table(ln.src, 'Source') }}</div>
+                  <div class="col-xl-6">{{ side_table(ln.dst, 'Destination') }}</div>
+                </div>
+              </div>
+            </td></tr>
+            {% endif %}
+          {% endfor %}
+          </tbody>
+        </table>
+        </div>
+      </div>
+    </div>
+    <textarea id="reachTsv" class="d-none">{{ tsv }}</textarea>
+    {% elif not error %}
+    <div class="fw-card">
+      <div class="fw-card-body text-muted" style="font-size:13px;">
+        <p class="mb-2"><strong>What this page answers.</strong> A policy can be configured
+        perfectly and still serve nothing, because the real servers behind it sit on a network
+        the box cannot reach. That is a different question from "is the config right?", and it
+        is the only one this page asks.</p>
+        <p class="mb-2"><strong>Three answers, never two.</strong> A backend is
+        <span class="fw-badge fw-badge-success">reachable</span>,
+        <span class="fw-badge fw-badge-danger">unreachable</span>, or
+        <span class="fw-badge fw-badge-secondary">unknown</span>. A probe that could not run is
+        never reported as an outage and never as health.</p>
+        <p class="mb-0"><strong>Example file</strong></p>
+        <pre class="mt-1 mb-0" style="font-size:12px;">source;policy;destination
+fortiweb12;spo-tienda-mx;fortiweb13
+fortiweb12;spo-api-prod;fortiweb13
+fortiweb13;spo-solo-origen</pre>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+(function () {
+  // The run is synchronous and can take up to the time budget. Without this the
+  // operator has no signal at all and double-submits, which doubles the traffic
+  // this page sends to third-party hosts.
+  var form = document.getElementById('reachForm');
+  var btn = document.getElementById('reachRun');
+  if (form && btn) {
+    form.addEventListener('submit', function () {
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Checking…';
+    });
+  }
+  var copy = document.getElementById('copyTsvBtn');
+  var tsv = document.getElementById('reachTsv');
+  if (copy && tsv) {
+    copy.addEventListener('click', function () {
+      navigator.clipboard.writeText(tsv.value).then(function () {
+        var old = copy.textContent;
+        copy.textContent = 'Copied';
+        setTimeout(function () { copy.textContent = old; }, 1500);
+      });
+    });
+  }
+})();
+</script>
+{% endblock %}

@@ -133,9 +133,23 @@
             <strong>{{ _('Arm this run') }}</strong></label>
         </div>
         <div class="form-text">
-          Off, every action step runs as a <strong>rehearsal</strong> and changes
-          nothing. On, the actions in this diagram really fire.
+          Off, nothing is changed: a <strong>Catalogue action</strong> runs as a
+          rehearsal, and a <strong>Console script</strong> or
+          <strong>Integration hook</strong> is <strong>not sent at all</strong>
+          and ends <code>unknown</code> — so a rehearsal stops where the repair
+          would have been. On, this diagram really writes.
         </div>
+        {% if 'console_script' in kinds_used %}
+        {# The gap is named where the decision is made. delete_guard cannot read
+           a delete inside a CLI config block, and an undocumented hole in a
+           safety net is worse than no net — the net is what people trust. #}
+        <div class="alert alert-warning py-2 px-3 mt-2 mb-0" style="font-size:12px;">
+          This diagram sends CLI lines. <strong>Reference protection does not
+          apply to them</strong> — a <code>delete</code> inside a
+          <code>config</code> block can remove a shared object the web UI would
+          have refused to touch.
+        </div>
+        {% endif %}
         {% else %}
         <div class="text-muted" style="font-size:12px;">
           <i class="bi bi-shield-check me-1"></i>{{ _('Every step in this diagram only reads.') }}
@@ -196,6 +210,7 @@
   'saveUrl': url_for('process.save_graph', pid=proc.id),
   'csrf': csrf_token(),
   'actions': actions,
+  'hooks': hooks,
   'kinds': kinds_json
 } | tojson }}
 </script>

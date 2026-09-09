@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+
+{% block title %}Run #{{ run.id }} — {{ run.process_name }} — SATOM{% endblock %}
+
+{#  Light theme only (safeguards §9m). #}
+{% set S_BADGE = {'pass':'success','fail':'danger','unknown':'warning','skipped':'secondary'} %}
+{% set S_ICON  = {'pass':'check-circle','fail':'x-octagon',
+                  'unknown':'question-circle','skipped':'dash-circle'} %}
+{% set V_BADGE = {'ok':'success','partial':'warning','failed':'danger'} %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a><span class="separator">/</span>
+  <a href="{{ url_for('process.index') }}">{{ _('Process') }}</a><span class="separator">/</span>
+  <span>{{ _('Run') }} #{{ run.id }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+{% set c = run.counts() %}
+<div class="fw-page-header">
+  <h1 class="fw-page-title"><i class="bi bi-list-check me-2 text-accent"></i>
+    {{ run.process_name or run.process_key }} <span class="text-muted">#{{ run.id }}</span></h1>
+  <p class="text-muted mb-0" style="font-size:13px;">
+    {{ run.started_at.strftime('%Y-%m-%d %H:%M:%S') }} UTC ·
+    {{ _('by') }} {{ run.started_by or '—' }} ·
+    {{ _('trigger') }} {{ run.trigger }}
+    {% if run.appliance_name %} · {{ _('appliance') }} <strong>{{ run.appliance_name }}</strong>{% endif %}
+  </p>
+</div>
+
+<div class="fw-card mb-3">
+  <div class="fw-card-body">
+    <div class="d-flex align-items-center flex-wrap gap-2 mb-2">
+      {% if run.status == 'waiting' %}
+        <span class="badge bg-warning text-dark" style="font-size:13px;">
+          <i class="bi bi-pause-circle me-1"></i>{{ _('waiting for an operator') }}</span>
+      {% else %}
+        <span class="badge bg-{{ V_BADGE.get(run.verdict,'secondary') }}" style="font-size:13px;">
+          {{ run.verdict or run.status }}</span>
+      {% endif %}
+      {% if run.armed %}
+        <span class="badge bg-danger">{{ _('armed') }}</span>
+      {% else %}
+        <span class="badge bg-light text-dark border">{{ _('rehearsal — nothing was written') }}</span>
+      {% endif %}
+      <span class="text-muted" style="font-size:12.5px;">
+        {{ c['pass'] }} pass · {{ c['fail'] }} fail ·
+        {{ c['unknown'] }} unknown · {{ c['skipped'] }} skipped</span>
+    </div>
+    {% if run.summary %}
+    <div class="mb-0" style="font-size:13px;">{{ run.summary }}</div>
+    {% endif %}
+    {% if c['skipped'] %}
+    <div class="form-text" style="font-size:11.5px;">
+      {#  Said out loud because a reader who does not know it will read the
+          grey rows as "fine". #}
+      Skipped steps were <strong>not reached</strong> — an earlier step stopped
+      that path. They are not passes.
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% if run.status == 'waiting' and can_edit %}
+<div class="fw-card mb-3 border-warning">
+  <div class="fw-card-header"><i class="bi bi-hand-index me-2"></i>{{ _('This run is waiting for you') }}</div>
+  <div class="fw-card-body">
+    <p style="font-size:13px;">{{ gate_prompt or _('Answer the gate to continue.') }}</p>
+    <form method="post" action="{{ url_for('process.run_resume', rid=run.id) }}" class="row g-2 align-items-end">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="col-md-7">
+        <label class="form-label" style="font-size:12px;">{{ _('Note (recorded on the step)') }}</label>
+        <input class="form-control form-control-sm" name="note" maxlength="400">
+      </div>
+      <div class="col-md-5 d-flex gap-2">
+        {#  The answer is an OUTCOME, not a yes/no, so it routes through the
+            same arrows every machine step uses. #}
+        <button class="btn btn-success btn-sm" name="answer" value="pass">
+          <i class="bi bi-check-lg me-1"></i>{{ _('Passed') }}</button>
+        <button class="btn btn-danger btn-sm" name="answer" value="fail">
+          <i class="bi bi-x-lg me-1"></i>{{ _('Failed') }}</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+<div class="fw-card">
+  <div class="fw-card-header"><i class="bi bi-list-ol me-2"></i>{{ _('Steps') }}</div>
+  <div class="fw-card-body p-0">
+    <table class="table table-sm mb-0 align-middle">
+      <thead><tr>
+        <th style="width:44px;">#</th><th style="width:110px;">{{ _('Outcome') }}</th>
+        <th>{{ _('Step') }}</th><th>{{ _('What happened') }}</th>
+      </tr></thead>
+      <tbody>
+      {% for s in run.steps %}
+        <tr>
+          <td class="text-muted">{{ s.seq }}</td>
+          <td><span class="badge bg-{{ S_BADGE.get(s.status,'secondary') }}">
+            <i class="bi bi-{{ S_ICON.get(s.status,'dash-circle') }} me-1"></i>{{ s.status }}</span></td>
+          <td style="font-size:12.5px;">
+            <strong>{{ s.label or s.node_key }}</strong>
+            <div class="text-muted" style="font-size:11.5px;">{{ s.kind }} · {{ s.node_key }}</div>
+          </td>
+          <td style="font-size:12.5px;">
+            {{ s.detail }}
+            {% if s.dry_run %}
+              <span class="badge bg-light text-dark border ms-1">{{ _('rehearsed') }}</span>
+            {% endif %}
+            {% if s.output %}
+            <details class="mt-1">
+              <summary style="font-size:11.5px;cursor:pointer;">{{ _('Output') }}</summary>
+              <pre class="mt-1 mb-0 p-2" style="background:#F4F5F7;color:#172B4D;font-size:11px;
+                   max-height:280px;overflow:auto;border-radius:4px;">{{ s.output }}</pre>
+            </details>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="mt-3">
+  {% if run.process_id %}
+  <a class="btn btn-outline-secondary btn-sm"
+     href="{{ url_for('process.detail', pid=run.process_id) }}">
+    <i class="bi bi-arrow-left me-1"></i>{{ _('Back to the process') }}</a>
+  {% else %}
+  {#  The process was deleted; the run survives with its own copy of the graph
+      and its name. History that vanishes with its definition is not history. #}
+  <span class="text-muted" style="font-size:12.5px;">
+    {{ _('The process this run walked has since been deleted.') }}</span>
+  {% endif %}
+</div>
+{% endblock %}

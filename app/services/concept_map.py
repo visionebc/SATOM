@@ -381,9 +381,27 @@ PAGES: tuple[dict, ...] = (
     _p("cr_types.index", "Change Types", "automation",
        "change type category cr taxonomy workflow definition",
        "The kinds of change request the workflow accepts."),
-    _p("scheduled_actions.index", "Scheduled Actions", "automation",
-       "schedule cron timer recurring job automation periodic task",
-       "Recurring work SATOM runs on its own."),
+    _p("scheduled_actions.index", "System Automations", "automation",
+       "schedule cron timer recurring job automation periodic task system "
+       "maintenance housekeeping backup sync sweep",
+       "SATOM's own housekeeping, on a schedule."),
+    _p("automations.index", "Automations", "automation",
+       "schedule automation cutover planned change policy backend "
+       "certificate swap maintenance window operator",
+       "Fleet work you schedule for a chosen time."),
+    _p("calendar_plan.index", "Change Calendar", "automation",
+       "calendar change window schedule day grid planned upcoming "
+       "maintenance when timeline",
+       "Every scheduled change on one grid, by day."),
+    _p("reach_batch.index", "Backend Reachability", "automation",
+       "reachability backend pool member reachable down batch list "
+       "source destination policy probe ping before clone",
+       "Check a list of services' backends on both boxes, without "
+       "opening a workspace."),
+    _p("config_compare.index", "Config Compare", "automation",
+       "compare difference drift source destination policy pool "
+       "certificate content routing web protection profile package",
+       "Everything behind a service on both boxes, subtracted."),
     _p("jobs.manager", "Job Manager", "automation",
        "job queue running task progress history background worker",
        "Everything SATOM is doing or has done, with its result."),
@@ -527,10 +545,10 @@ EXCLUDED: dict[str, str] = {
     # standing of its own on the map; "where does X live" is answered by
     # process.index.
     "process.create": "form",
-    # Same standing as the New-process form: a door on process.index,
-    # reached from it, and findable through its keywords rather than as a
-    # second concept. "Where do I import a runbook" and "where do processes
-    # live" must not resolve to two different answers.
+    # Same standing as the New-process form: a door on process.index, reached
+    # from it, and findable through its keywords rather than as a second
+    # concept. "Where do I import a runbook" and "where do processes live"
+    # must not resolve to two different answers.
     "process.import_xml": "form",
     # JSON feeds consumed by a page's own JS.
     "advisor.attach_sot_search": "json feed", "advisor.attachable": "json feed",
@@ -616,6 +634,7 @@ EXCLUDED: dict[str, str] = {
     "provisioning.new": "create form of provisioning.index",
     "provisioning.baseline_new": "create form of provisioning.baselines",
     "scheduled_actions.new": "create form of scheduled_actions.index",
+    "automations.new": "create form of automations.index",
     # Auth flow — reachable without a session, never a destination.
     "auth.login": "auth flow", "auth.logout": "auth flow",
     "auth.two_factor": "auth flow", "auth.forgot_password": "auth flow",

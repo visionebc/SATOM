@@ -6,6 +6,70 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — Automations split from System Automations, and a filter that remembers what you want to see (2026-09-09)
+
+`Automation → Automations` (`/automations`) is now a separate page from
+`Automation → System Automations` (`/scheduled-actions`, the historic URL and
+permission, unchanged). One is fleet work somebody planned — a cutover, a
+drained backend, a certificate swap. The other is SATOM maintaining itself —
+backups, source-of-truth syncs, probe sweeps. They shared one list sorted by
+name, so "disable spo-tienda-mx at 02:00 on Saturday" sat between "Nightly
+system backup" and "Sentinel — correlate and score", and the blast radius of a
+mistaken Delete differed between neighbouring rows by an order of magnitude.
+
+- **The merge had made the user half unreachable.** `USER_ACTIONS` has been in
+  the catalog since the beginning, but the only page that can create one was
+  gated on `user_manage`, which the **operator** role does not hold — so the
+  four user-scope actions were offered to exactly the audience that does not
+  schedule cutovers. Every one of the 16 rows on the live node is admin scope;
+  not one user row had ever been created. The new page asks for `config_write`.
+- **The partition is exhaustive, and that is the point.** Splitting a list on a
+  column is how rows disappear: anything the filter does not claim is claimed by
+  nobody, keeps firing on its schedule, and is visible on no page. The user
+  surface takes `scope == 'user'`; the system surface takes **everything else** —
+  NULL, a typo, a scope string from a future version — and flags it in front of
+  the admin, who is the one who can fix it.
+- **The scope is the catalog's, not the stored column's.** The column is a copy
+  taken at write time, so re-scoping an `ActionSpec` would strand old rows.
+- **One implementation, two bindings.** The route bodies are plain functions
+  bound to two blueprints; each surface's permission is declared once, in
+  `SURFACES`, and read by both the gate and the page.
+- The change calendar now links each entry to the page that **owns** that row.
+  Pointing every entry at one page is a 404 for the admin and a 403 for the
+  operator — and both read as "the automation is gone".
+
+Both lists now carry a **filter** — name, action type, status, schedule — that
+can be **saved to your profile** and is restored on your next visit. It is a
+view preference and never a permission:
+
+- **A filter never silently empties a list.** Both pages state `Showing N of M`,
+  and a list emptied by a filter says so, in different words from a list that is
+  empty because nothing was ever created, with a one-click Clear. The hidden
+  rows keep firing either way.
+- **A saved facet the catalog no longer offers is dropped and named**, not
+  applied. Applied, it would match nothing on every future visit, forever, and
+  the page would read as "your automations were deleted". An unreadable saved
+  filter says so too.
+- **One preference key per surface.** A shared key would mean narrowing System
+  Automations while triaging it also re-filters the operator's own page.
+- **Unticking "Remember for me" forgets the stored filter.** Left stored, it
+  comes back on the next visit and contradicts the box just cleared. A GET form
+  submits every field, so an all-empty submission is indistinguishable from a
+  bare visit — the form carries a hidden marker so the two can be told apart.
+- **`Also show <the other page>` is offered only to a viewer who already holds
+  the other surface's permission**, and it widens what is DRAWN, never what may
+  be done: revealed rows are read-only, labelled with their owning page, and
+  linked to it. Their Edit/Run/Delete on this page would resolve to this
+  blueprint, whose by-id guard answers 404 — a button that looks armed and says
+  "gone" reads as a deleted automation. The by-id guard is unchanged.
+- The action dropdown offers only what can match on the page you are on: an
+  option that can never match is the mirror image of a stale facet.
+
+Also mapped three pages that had shipped without a concept-map entry
+(`Change Calendar`, `Backend Reachability`, `Config Compare`). Nothing failed
+when they were missing — they were simply absent from search, which reads as
+"SATOM cannot do that".
+
 ### Added — A procedure as a file: import and export a process as XML (2026-09-09)
 
 **`Administrator → Process → Import XML`**, and **`Export XML`** on any

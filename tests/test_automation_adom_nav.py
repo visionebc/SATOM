@@ -53,7 +53,11 @@ HOME = {
 
 #: In EVERY ADOM. Each one scopes its own rows (ScheduledAction.product,
 #: ProvisionRun.product, the devices a CR names).
-UNIVERSAL = ("Scheduled Actions", "Device Provisioning", "Change Requests")
+# "Scheduled Actions" was renamed to "System Automations" on 2026-09-09
+# when the surface split in two. The label is the ONE thing this guard
+# checks, so leaving the old string here does not merely fail — it makes
+# the guard stop covering the menu it exists for.
+UNIVERSAL = ("System Automations", "Device Provisioning", "Change Requests")
 
 
 def _group(client, adom):
@@ -131,7 +135,7 @@ def test_scheduled_actions_is_reachable_from_every_adom(app, client, adom):
     login(client, admin_user_id(app), product=adom)
     r = client.get(f"/scheduled-actions/?_adom={adom}", follow_redirects=False)
     assert r.status_code == 200, \
-        (f"{adom} bounced off Scheduled Actions "
+        (f"{adom} bounced off System Automations "
          f"({r.status_code} -> {r.headers.get('Location')})")
 
 

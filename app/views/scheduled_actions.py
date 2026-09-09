@@ -1,4 +1,39 @@
-"""Scheduled Actions — the admin automation calendar (Automation subsystem).
+"""Automations — TWO surfaces over one table (Automation subsystem).
+
+    /automations        Automations         scope 'user'   perm config_write
+    /scheduled-actions  System Automations  scope 'admin'  perm user_manage
+
+Until 2026-09-09 both lived in ONE list, sorted by name, behind ``user_manage``.
+That is how "disable spo-tienda-mx at 02:00 on Saturday" — a cutover an operator
+schedules, executed through FortiWebOps with snapshot + audit — came to sit
+between "Nightly system backup" and "Sentinel — correlate and score", which are
+SATOM maintaining ITSELF. The two are not the same object wearing two labels:
+one is fleet work somebody planned, the other is the product's own housekeeping,
+and the blast radius of a mistaken Delete differs by an order of magnitude.
+
+Worse, the merge made the user half UNREACHABLE. ``USER_ACTIONS`` has existed in
+the catalog since the beginning, but the only page that can create one was gated
+on ``user_manage``, which the *operator* role does not hold — so the four
+user-scope actions were offered to exactly the audience that does not schedule
+cutovers. Every one of the 16 rows on the live node is admin scope; not one user
+row was ever created.
+
+THE PARTITION IS EXHAUSTIVE, AND THAT IS THE POINT. Splitting a list on a column
+is how rows disappear: anything the filter does not claim is claimed by nobody,
+keeps firing on its schedule, and is visible on no page. So the user surface
+takes ``scope == 'user'`` and the system surface takes **everything else** —
+NULL, a typo, a scope string from a future version. An unrecognised row lands in
+front of the admin, who is the one who can fix it, and is flagged there.
+
+THE SCOPE IS THE CATALOG'S, NOT THE COLUMN'S. ``ScheduledAction.scope`` is a
+copy taken at write time (``_apply_form``), so re-scoping an ``ActionSpec``
+would leave old rows stranded on the wrong page. ``effective_scope`` asks the
+spec and falls back to the column only for a key the catalog no longer has.
+
+ONE IMPLEMENTATION, TWO BINDINGS. The route bodies below are plain functions;
+``_make_bp`` binds them to a blueprint with its own url_prefix and permission.
+Two copies of this file would drift the first time either was fixed — the defect
+this repo has already paid for in ``base.html`` and in the site footer.
 
 Thin Flask blueprint over :mod:`app.services.scheduled_actions` (the headless
 catalog + executor) and :mod:`app.services.scheduler` (pure schedule math). The
@@ -27,7 +62,80 @@ from ..services.audit import log_action
 from ..services.scheduler import SCHEDULE_KINDS, compute_next_run
 from ..registry.loader import get_all_endpoints
 
-bp = Blueprint('scheduled_actions', __name__, url_prefix='/scheduled-actions')
+# --------------------------------------------------------------------------- #
+#  The two surfaces                                                             #
+# --------------------------------------------------------------------------- #
+USER_SCOPE = 'user'
+ADMIN_SCOPE = 'admin'
+
+#: blueprint name -> how that surface presents itself. ``other`` names the page
+#: a rejected action belongs to: a refusal that does not say where the thing
+#: lives is a dead end, and the operator cannot open the admin page to look.
+SURFACES: dict[str, dict] = {
+    'automations': {
+        'scope': USER_SCOPE,
+        'title': 'Automations',
+        'icon': 'bi-calendar2-check',
+        'blurb': ('Schedule work on the fleet — a cutover, a drained backend, '
+                  'a certificate swap — to happen at a chosen time. Each one '
+                  'changes ONE appliance through the same snapshot + audit + '
+                  'change-history path as a manual edit.'),
+        #: The permission this surface's routes are gated on. It lives
+        #: HERE so the page that offers the cross-scope facet and the
+        #: factory that binds the gate read ONE value: two copies drift
+        #: the first time either moves, and the drift is silent.
+        'permission': Permission.CONFIG_WRITE,
+        'other': ('scheduled_actions', 'System Automations'),
+    },
+    'scheduled_actions': {
+        'scope': ADMIN_SCOPE,
+        'title': 'System Automations',
+        'icon': 'bi-clock-history',
+        'blurb': ('SATOM maintaining itself — backups, source-of-truth syncs, '
+                  'probe sweeps, signature and CVE refreshes. These keep the '
+                  'product\'s own data current; they are not fleet changes.'),
+        'permission': Permission.USER_MANAGE,
+        'other': ('automations', 'Automations'),
+    },
+}
+
+
+def _surface() -> dict:
+    """The surface this request is on.
+
+    Falls back to the SYSTEM surface, never the user one: an unknown blueprint
+    reaching here is a wiring bug, and defaulting it to the page with the lower
+    permission would turn that bug into an access-control hole.
+    """
+    return SURFACES.get(request.blueprint or '', SURFACES['scheduled_actions'])
+
+
+def effective_scope(action: ScheduledAction) -> str:
+    """Which surface owns ``action`` — 'user' or 'admin', never anything else.
+
+    Total by construction: only the catalog's literal ``'user'`` is user scope,
+    everything else is admin. See the module docstring on why the partition may
+    not have a hole.
+    """
+    spec = sa.get_spec(action.action)
+    raw = spec.scope if spec is not None else (action.scope or '')
+    return USER_SCOPE if raw == USER_SCOPE else ADMIN_SCOPE
+
+
+def endpoint_for(action: ScheduledAction) -> str:
+    """The blueprint name whose pages can open ``action``.
+
+    Exported for the pages that LINK to an automation without owning it (the
+    change calendar). A calendar entry that points at the page the row is not on
+    is a 404 for the admin and a 403 for the operator — both read as "the thing
+    is gone" rather than "this link is wrong".
+    """
+    return 'automations' if effective_scope(action) == USER_SCOPE else 'scheduled_actions'
+
+
+def _scope_specs(scope: str) -> list:
+    """The catalog half this surface may schedule."""
+    return list(sa.USER_ACTIONS if scope == USER_SCOPE else sa.ADMIN_ACTIONS)
 
 def _tz() -> str:
     """The timezone the wall-clock schedule fields on this page are expressed in.
@@ -171,6 +279,12 @@ def _action_or_404(id):
         ScheduledAction.product).first()
     if row is None:
         abort(404)
+    # ...and under the SAME SURFACE. Without this the split is decoration: the
+    # user surface answers on ``config_write``, which the operator role holds,
+    # so /automations/11/delete would remove the nightly system backup from a
+    # page that never listed it. Same 404-not-403 reasoning as above.
+    if effective_scope(row) != _surface()['scope']:
+        abort(404)
     return row
 
 
@@ -219,6 +333,16 @@ def _apply_form(action: ScheduledAction) -> bool:
     if spec is None:
         flash('Select a valid action from the catalog.', 'danger')
         return False
+    surface = _surface()
+    if (USER_SCOPE if spec.scope == USER_SCOPE else ADMIN_SCOPE) != surface['scope']:
+        # Known action, wrong surface. Silently accepting it would write a row
+        # that vanishes from the page that created it and reappears on one the
+        # author may not be allowed to open — the exact mixing this split exists
+        # to end. Name the other page: a refusal without a destination is a dead
+        # end (the rule /calendar/ already follows when it is switched off).
+        flash('“%s” is a %s action. Create it on %s.'
+              % (spec.label, spec.scope, surface['other'][1]), 'danger')
+        return False
     if spec.key not in {s.key for s in _adom_specs(sa.ALL_ACTIONS.values())}:
         # Not "unknown" — known, and not this ADOM's to schedule. Saying so is
         # the difference between a typo and a permission answer.
@@ -264,8 +388,11 @@ def _form_context(action: ScheduledAction | None) -> dict:
     appliances = visible_appliances().order_by(Appliance.name).all()
     return dict(
         action=action,
-        admin_actions=_adom_specs(sa.ADMIN_ACTIONS),
-        user_actions=_adom_specs(sa.USER_ACTIONS),
+        # ONE catalog: this surface's half, cut again to the ADOM. Rendering
+        # both halves and rejecting one on POST would advertise work the page
+        # cannot do, which is how the merged list read in the first place.
+        surface=_surface(),
+        catalog=_adom_specs(_scope_specs(_surface()['scope'])),
         all_actions=sa.ALL_ACTIONS,
         appliances=appliances,
         selected_targets=set(action.targets_list) if action else set(),
@@ -282,32 +409,105 @@ def _form_context(action: ScheduledAction | None) -> dict:
 
 
 # --------------------------------------------------------------------------- #
-#  Routes                                                                       #
+#  Route bodies — plain functions, bound to BOTH blueprints by _make_bp         #
 # --------------------------------------------------------------------------- #
-@bp.route('/')
-@login_required
-@require_permission(Permission.USER_MANAGE)
-def index():
+def _index():
+    """The surface's list, filtered by what this viewer asked to see.
+
+    The filter is a VIEW preference persisted on the user's profile
+    (``UserSetting``, ONE KEY PER SURFACE — see ``automation_filters.pref_key``
+    for why a shared key would re-filter a page nobody was looking at). It never
+    decides what anyone may DO: the cross-scope facet is offered only to a
+    viewer who already holds the other surface's permission, and every row it
+    reveals is drawn read-only and linked to the page that owns it.
+    """
     from ..services.product_scope import scope_query
+    from ..services import automation_filters as af
+    from ..models import UserSetting
+
+    surface = _surface()
+    name = request.blueprint or 'scheduled_actions'
+    other_name, other_title = surface['other']
+    allow_cross = bool(getattr(current_user, 'is_authenticated', False)
+                       and current_user.can(SURFACES[other_name]['permission']))
+
+    uid = getattr(current_user, 'id', None)
+    key = af.pref_key(name)
+    saved_raw = UserSetting.get(uid, key) if uid is not None else None
+    choices = {
+        # Validated against the WHOLE catalog, not this surface's half: a key
+        # from the other half is a filter that matches nothing here, which the
+        # count and the filtered-empty state explain. Calling it "stale" would
+        # blame the catalog for a value that is perfectly current.
+        'action': {s.key for s in sa.ADMIN_ACTIONS} | {s.key for s in sa.USER_ACTIONS},
+        'schedule': set(SCHEDULE_KINDS),
+    }
+    flt = af.resolve(request.args, saved_raw, choices=choices, allow_cross=allow_cross)
+
+    # Persisted AFTER resolving, from the RESOLVED filter: a facet the resolver
+    # dropped as stale must never be written back, or a value the catalog no
+    # longer offers survives every future visit and hides the whole list.
+    if uid is not None:
+        if request.args.get('clear'):
+            UserSetting.set(uid, key, '{}')
+        elif flt.saved:
+            UserSetting.set(uid, key, af.to_json(flt.filters))
+        elif flt.from_query and saved_raw:
+            # Submitted with "Remember for me" unticked while a saved filter
+            # existed. Leaving it stored resurrects it on the next visit and
+            # silently contradicts the box the user just cleared.
+            UserSetting.set(uid, key, '{}')
+
     actions = (scope_query(ScheduledAction.query, ScheduledAction.product)
                .order_by(ScheduledAction.name).all())
     rows = []
+    total = 0
     for a in actions:
         spec = sa.get_spec(a.action)
-        rows.append({
+        row = {
             'a': a,
+            'name': a.name,
+            'scope': effective_scope(a),
+            'action_key': a.action,
+            'enabled': bool(a.enabled),
+            'schedule_kind': a.schedule_kind,
             'action_label': spec.label if spec else a.action,
             'danger': bool(spec.danger) if spec else False,
+            # A row whose key is no longer in the catalog still fires. It lands
+            # here (see effective_scope) rather than nowhere, and says so —
+            # an unlabelled orphan reads as a normal action.
+            'orphan': spec is None,
             'schedule': _schedule_summary(a.schedule_kind, a.schedule_dict),
             'target_count': len(a.targets_list),
-        })
-    return render_template('scheduled_actions/index.html', rows=rows)
+        }
+        # The universe this page COULD draw, so "N of M" can never read N > M:
+        # with the cross-scope facet on, the other half is part of M.
+        if row['scope'] == surface['scope'] or flt.cross_scope:
+            total += 1
+        if not af.row_matches(row, flt.filters, surface_scope=surface['scope']):
+            continue
+        row['foreign'] = af.row_is_foreign(row, surface_scope=surface['scope'])
+        row['owner_endpoint'] = endpoint_for(a)
+        row['owner_title'] = other_title if row['foreign'] else surface['title']
+        rows.append(row)
 
+    # Only the specs a viewer can currently SEE are offered: a dropdown entry
+    # that cannot match anything on this page is the mirror of a stale facet.
+    visible_specs = list(_scope_specs(surface['scope']))
+    if flt.cross_scope:
+        visible_specs += list(_scope_specs(SURFACES[other_name]['scope']))
 
-@bp.route('/new', methods=['GET', 'POST'])
-@login_required
-@require_permission(Permission.USER_MANAGE)
-def new():
+    return render_template(
+        'scheduled_actions/index.html',
+        rows=rows, surface=surface, flt=flt, total=total,
+        allow_cross=allow_cross, other_title=other_title,
+        action_choices=sorted({(s.key, s.label) for s in visible_specs},
+                              key=lambda kv: kv[1]),
+        schedule_choices=SCHEDULE_KINDS,
+        status_choices=af.STATUS_CHOICES,
+    )
+
+def _new():
     if request.method == 'POST':
         from ..services.product_scope import stamp
         action = ScheduledAction(created_by=current_user.username,
@@ -317,32 +517,26 @@ def new():
             db.session.commit()
             log_action('scheduled_action.create', target=action.name,
                        detail=f'{action.action} / {action.schedule_kind}')
-            flash(f'Scheduled action "{action.name}" created.', 'success')
-            return redirect(url_for('scheduled_actions.index'))
-        return redirect(url_for('scheduled_actions.new'))
+            flash(f'"{action.name}" created.', 'success')
+            return redirect(url_for('.index'))
+        return redirect(url_for('.new'))
     return render_template('scheduled_actions/form.html', **_form_context(None))
 
 
-@bp.route('/<int:id>/edit', methods=['GET', 'POST'])
-@login_required
-@require_permission(Permission.USER_MANAGE)
-def edit(id):
+def _edit(id):
     action = _action_or_404(id)
     if request.method == 'POST':
         if _apply_form(action):
             db.session.commit()
             log_action('scheduled_action.update', target=action.name,
                        detail=f'{action.action} / {action.schedule_kind}')
-            flash(f'Scheduled action "{action.name}" updated.', 'success')
-            return redirect(url_for('scheduled_actions.index'))
-        return redirect(url_for('scheduled_actions.edit', id=id))
+            flash(f'"{action.name}" updated.', 'success')
+            return redirect(url_for('.index'))
+        return redirect(url_for('.edit', id=id))
     return render_template('scheduled_actions/form.html', **_form_context(action))
 
 
-@bp.route('/<int:id>/toggle', methods=['POST'])
-@login_required
-@require_permission(Permission.USER_MANAGE)
-def toggle(id):
+def _toggle(id):
     action = _action_or_404(id)
     action.enabled = not action.enabled
     if action.enabled:
@@ -352,14 +546,11 @@ def toggle(id):
     db.session.commit()
     state = 'enabled' if action.enabled else 'disabled'
     log_action('scheduled_action.toggle', target=action.name, detail=state)
-    flash(f'Scheduled action "{action.name}" {state}.', 'success')
-    return redirect(url_for('scheduled_actions.index'))
+    flash(f'"{action.name}" {state}.', 'success')
+    return redirect(url_for('.index'))
 
 
-@bp.route('/<int:id>/delete', methods=['POST'])
-@login_required
-@require_permission(Permission.USER_MANAGE)
-def delete(id):
+def _delete(id):
     action = _action_or_404(id)
     name = action.name
     # Remove run history first (FK is ON DELETE CASCADE at the DB level, but
@@ -368,19 +559,16 @@ def delete(id):
     db.session.delete(action)
     db.session.commit()
     log_action('scheduled_action.delete', target=name)
-    flash(f'Scheduled action "{name}" deleted.', 'success')
-    return redirect(url_for('scheduled_actions.index'))
+    flash(f'"{name}" deleted.', 'success')
+    return redirect(url_for('.index'))
 
 
-@bp.route('/<int:id>/run-now', methods=['POST'])
-@login_required
-@require_permission(Permission.USER_MANAGE)
-def run_now(id):
+def _run_now(id):
     action = _action_or_404(id)
     # NOTE: this runs SYNCHRONOUSLY in the request thread — device calls inside
     # execute_and_record may block for the client timeout. That is acceptable for
-    # a deliberate, manual admin trigger; the unattended timer path uses the very
-    # same execute_and_record from the scheduler sidecar.
+    # a deliberate, manual trigger; the unattended timer path uses the very same
+    # execute_and_record from the scheduler sidecar.
     run = sa.execute_and_record(action, trigger="manual")
     if run is None:
         flash('This action is already running — try again shortly.', 'warning')
@@ -390,13 +578,10 @@ def run_now(id):
         flash(f'Run finished ({run.status}): {run.summary or "no summary"}',
               category)
     log_action('scheduled_action.run_now', target=action.name)
-    return redirect(url_for('scheduled_actions.index'))
+    return redirect(url_for('.index'))
 
 
-@bp.route('/<int:id>/history')
-@login_required
-@require_permission(Permission.USER_MANAGE)
-def history(id):
+def _history(id):
     action = _action_or_404(id)
     runs = (ScheduledActionRun.query
             .filter_by(action_id=action.id)
@@ -404,5 +589,45 @@ def history(id):
             .all())
     spec = sa.get_spec(action.action)
     return render_template('scheduled_actions/history.html',
-                           action=action, runs=runs,
+                           action=action, runs=runs, surface=_surface(),
                            action_label=spec.label if spec else action.action)
+
+
+# --------------------------------------------------------------------------- #
+#  The two blueprints                                                           #
+# --------------------------------------------------------------------------- #
+def _make_bp(name: str, url_prefix: str) -> Blueprint:
+    """Bind the route bodies above to one surface.
+
+    The permission is the surface's, not the module's: ``config_write`` is what
+    an operator holds and what every other page that mutates an appliance
+    already asks for, while the product's own housekeeping stays on
+    ``user_manage``. The by-id guard in ``_action_or_404`` is what makes that
+    difference real rather than cosmetic.
+    """
+    permission = SURFACES[name]['permission']
+    blueprint = Blueprint(name, __name__, url_prefix=url_prefix)
+
+    def gate(fn):
+        return login_required(require_permission(permission)(fn))
+
+    blueprint.add_url_rule('/', 'index', gate(_index))
+    blueprint.add_url_rule('/new', 'new', gate(_new), methods=['GET', 'POST'])
+    blueprint.add_url_rule('/<int:id>/edit', 'edit', gate(_edit),
+                           methods=['GET', 'POST'])
+    blueprint.add_url_rule('/<int:id>/toggle', 'toggle', gate(_toggle),
+                           methods=['POST'])
+    blueprint.add_url_rule('/<int:id>/delete', 'delete', gate(_delete),
+                           methods=['POST'])
+    blueprint.add_url_rule('/<int:id>/run-now', 'run_now', gate(_run_now),
+                           methods=['POST'])
+    blueprint.add_url_rule('/<int:id>/history', 'history', gate(_history))
+    return blueprint
+
+
+#: System Automations. Keeps the historic name, URL and permission — every
+#: existing row, bookmark, doc reference and test path lands here unchanged.
+bp = _make_bp('scheduled_actions', '/scheduled-actions')
+
+#: Automations. The new surface; the one an operator can actually reach.
+user_bp = _make_bp('automations', '/automations')

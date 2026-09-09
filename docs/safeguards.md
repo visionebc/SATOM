@@ -13694,3 +13694,109 @@ baseline-green required before scoring, `__pycache__` purged per round (never
 by SHA-256, suite re-run green after the last restore. A negative rc, 124 or 137
 counts as **killed by the resource cap** and is reported as such; a missing
 anchor counts as a **survivor**, never a kill.
+
+## §158 — a procedure as a file: the import that is not a second door (2026-09-09)
+
+A process can now arrive as XML (`Process → Import XML`) and leave as XML
+(`Export XML` on its own page). An import is the one door in this module where
+the *plausible* result is the failure: a parser that drops a parameter,
+flattens a script, widens the ADOM list or truncates a label produces a process
+that opens in the editor, renders green in the diagram and runs — doing
+something other than what the file said. Nothing raises, nothing 500s, nothing
+looks wrong on the page.
+
+### The gate is the editor's gate, asserted as wiring
+
+`import_xml` hands the parsed graph to **`process_kinds.validate_graph`**, the
+same call `save_graph` makes, before a single row is written. A console step
+carrying `execute factoryreset` is refused on import exactly as it is refused
+when drawn. An importer with its own idea of what is allowed would be the
+easiest way past every gate in the product, and it would be attractive
+precisely because a file reads like data rather than like code.
+
+That claim is a claim about **wiring**, so it is tested as wiring: neutering
+`validate_graph` with a monkeypatch must make the forbidden import SUCCEED. If
+it does not, the view is refusing for some private reason of its own and the two
+doors have already drifted.
+
+Two things `validate_graph` does **not** cover, and therefore have their own
+guards: the **process key** (it checks step keys only — without this the import
+would be the one door that writes a key the New-process form rejects, and the
+key is what audit rows and run history reference forever) and the **ADOM list**,
+which is an installation fact the parser deliberately does not know.
+
+### Parameters are elements, and the reason is measured
+
+XML replaces a **literal** newline or tab inside an attribute with a space
+(XML 1.0 §3.3.3); only an escaped `&#10;` survives. So in an attribute the
+readable way to write a console script is the lossy one, and it loses silently —
+the step arrives as one line that is no longer the command its author wrote and
+no longer classifies the same way. Both halves of that rule are pinned by a
+test, against the real parser, so the next reader cannot "simplify" parameters
+into attributes and discover it during a migration.
+
+Hand-written files are de-indented as a **block**: the common indent goes,
+relative indentation stays, because in a CLI script the difference between two
+lines can be the author's.
+
+### Refused whole, and refusals that name themselves
+
+* Any **DOCTYPE or ENTITY** is refused on the raw bytes, before any parse.
+  `xml.etree` does not fetch external entities but it does expand internal ones,
+  which is the whole of the billion-laughs amplification, and a process file has
+  no use for a DTD. A false refusal costs one confused operator; the other
+  direction costs the worker.
+* **draw.io, BPMN, Visio and SVG are named and refused**, never half-read. A
+  drawn box carries a shape and a caption, not the step kind and the parameters
+  that make a step runnable — a shape-only import would produce a diagram that
+  looks like the operator's plan and cannot execute a single check.
+* **Unknown attributes and unknown sections are reported, not ignored.**
+  `brach="fail"` silently becoming `always` is a recovery plan that takes the
+  wrong arrow on the one day it runs, and it renders as a correct diagram.
+* **An ADOM this installation does not have is an error, not a drop.** Moving a
+  process between installations is the case the format exists for, so a missing
+  ADOM is the *likely* mistake; dropping it would import the plan as a draft
+  that looks published.
+* **A label longer than its column is refused, not cut.** A plan whose steps
+  were quietly renamed on the way in no longer matches the runbook it came from.
+* Every structural problem is collected and shown **together**, like
+  `validate_graph`: fixing a file one error per upload is whack-a-mole against a
+  text editor.
+
+### Replacing, and what a replacement must not touch
+
+Re-importing an existing key **replaces** that process and is refused until the
+operator types the key — an acknowledgement, not a confirm dialog. A process
+that exists but is **not offered in this ADOM** cannot be replaced from here at
+all: everywhere else in the module such a process does not exist, and the import
+must not be the one door that edits a record the console cannot list.
+
+Run history is untouched, and that is asserted: each run carries its own copy of
+the graph it walked, so a report saying *"checked the standby"* cannot start
+rendering as whatever that step was later changed into, and a run parked on a
+manual gate resumes through its own snapshot.
+
+### The exporter is the importer's only producer
+
+An importer whose exporter drops a field silently edits every plan that passes
+through it, so **round-trip is asserted**: export → import → export byte-
+identical, including a multi-line console script. A parameter this build does
+not recognise is exported anyway — it is still the author's — and the example
+printed on the import page is itself imported by a test, because a documented
+example that does not validate is a lie told to everyone who copies it.
+
+### One author for the key rule
+
+`process_kinds.KEY_RE` (was `_KEY_RE`) is now the single definition of a usable
+key, used by the node validator, the New-process form and the importer. Three
+copies of "what is a usable key" drift the day one of them grows a rule.
+
+### How to re-run
+
+    python3 -u /root/mutate_process_xml.py        # on satom-node-1, as root
+
+Same harness rules as §157: `ulimit -v 1500000` and `timeout -s KILL 200` on
+every child, `python3 -u`, baseline-green required before scoring,
+`__pycache__` purged per round (never `deploy/__pycache__`), tree restored by
+content and verified by SHA-256, suite re-run green after the last restore, a
+missing anchor scored as a **survivor**.

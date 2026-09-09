@@ -790,7 +790,10 @@ def execute(node: dict, ctx) -> StepResult:
 # save-time validation
 # ---------------------------------------------------------------------------
 
-_KEY_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+#: The one rule for a key in this module's vocabulary — step keys AND the
+#: process key the view checks. Exported so there is a single author: two
+#: copies of "what is a usable key" drift the day one of them grows a rule.
+KEY_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 
 
 def validate_graph(graph: dict) -> list[str]:
@@ -816,7 +819,7 @@ def validate_graph(graph: dict) -> list[str]:
     for d in sorted(dupes):
         errs.append("Two steps share the key %r." % d)
     for k in keys:
-        if not _KEY_RE.match(k):
+        if not KEY_RE.match(k):
             errs.append("%r is not a usable step key (lowercase letters, digits, "
                         "- and _)." % k)
     known = set(keys)

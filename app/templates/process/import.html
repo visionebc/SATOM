@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+
+{% block title %}Import process — SATOM{% endblock %}
+
+{#  Light theme only (safeguards §9m): .fw-card / --fw-* / .fw-badge-*. A
+    dark-theme pastel lands near 1.4:1 on this page and produces an error list
+    that states a refusal and cannot be read.                               #}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a><span class="separator">/</span>
+  <a href="{{ url_for('process.index') }}">{{ _('Process') }}</a><span class="separator">/</span>
+  <span>{{ _('Import') }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <h1 class="fw-page-title"><i class="bi bi-filetype-xml me-2 text-accent"></i>{{ _('Import a process') }}</h1>
+  <p class="text-muted mb-0" style="font-size:13px;">
+    A procedure written outside this console — a customer runbook, a plan kept
+    in version control, a process built on the lab install — loaded as one file.
+    It is checked by the <strong>same validator the editor saves through</strong>:
+    a step this console would refuse to draw is refused here too, and nothing at
+    all is written until every line of the file is accepted.
+  </p>
+</div>
+
+{% if errors %}
+<div class="alert alert-danger py-2 px-3" style="font-size:12.5px;">
+  <i class="bi bi-exclamation-octagon me-1"></i>
+  <strong>{{ _('Nothing was imported.') }}</strong>
+  <ul class="mb-0 mt-1">{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+<div class="row g-3">
+  <div class="col-lg-5">
+    <form method="post" enctype="multipart/form-data" class="fw-card">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="fw-card-header"><i class="bi bi-upload me-2"></i>{{ _('File') }}</div>
+      <div class="fw-card-body">
+        <div class="mb-3">
+          <label class="form-label">{{ _('Process XML') }}</label>
+          <input class="form-control form-control-sm" type="file" name="xml_file"
+                 accept=".xml,text/xml,application/xml" required>
+          <div class="form-text">
+            The key, the name, the ADOMs, every step and every arrow come from
+            the file.
+          </div>
+        </div>
+
+        <div class="mb-0">
+          <label class="form-label">{{ _('Replace an existing process') }}</label>
+          <input class="form-control form-control-sm" name="replace_key"
+                 placeholder="type the key to confirm" autocomplete="off">
+          <div class="form-text">
+            Leave this empty to import a new process. If the file's key is
+            already taken, the import is <strong>refused</strong> until you type
+            that key here — replacing rewrites the steps, the arrows and the
+            settings of a plan somebody else may be about to run.
+            <strong>Run history is kept</strong>: every run carries its own copy
+            of the diagram it walked, so past reports keep saying what they
+            always said, and a run parked on a manual gate resumes through its
+            own snapshot.
+          </div>
+        </div>
+      </div>
+      <div class="fw-card-footer d-flex gap-2">
+        <button class="btn btn-primary btn-sm" type="submit">
+          <i class="bi bi-box-arrow-in-down me-1"></i>{{ _('Import') }}</button>
+        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('process.index') }}">
+          {{ _('Cancel') }}</a>
+      </div>
+    </form>
+
+    <div class="fw-card mt-3">
+      <div class="fw-card-header"><i class="bi bi-info-circle me-2"></i>{{ _('What is not read') }}</div>
+      <div class="fw-card-body" style="font-size:12.5px;">
+        <p class="mb-2">
+          <strong>draw.io, BPMN and Visio files are named and refused</strong>,
+          never half-read. A drawn box carries a shape and a caption; it does
+          not carry the step kind or the parameters that make a step runnable —
+          which URL, which command, which outcome each arrow follows. A
+          shape-only import would produce a diagram that looks like your plan
+          and cannot execute a single check.
+        </p>
+        <p class="mb-0 text-muted">
+          Any process on this install can be downloaded as this exact format
+          from its own page — <em>Export XML</em>.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-7">
+    <div class="fw-card">
+      <div class="fw-card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-code-square me-2"></i>{{ _('The format') }}</span>
+        <span class="text-muted" style="font-weight:400;font-size:12px;">
+          a working plan, not a field table</span>
+      </div>
+      <div class="fw-card-body">
+        <ul style="font-size:12.5px;" class="mb-2">
+          <li><code>key</code> is permanent — run history and audit rows
+            reference it.</li>
+          <li>Ticking no <code>&lt;adom&gt;</code> leaves the process a
+            <strong>draft</strong>, visible in the Global console only. An empty
+            list is never read as "everywhere".</li>
+          <li>Every parameter is an <strong>element</strong>, never an
+            attribute. XML turns a literal newline inside an attribute into
+            a space &mdash; only an escaped <code>&amp;#10;</code> survives
+            &mdash; so the readable way of writing a console script in an
+            attribute is the lossy one, and it would arrive as a single line
+            that is no longer the command its author wrote.</li>
+          <li>An arrow's <code>branch</code> is <code>always</code>,
+            <code>pass</code>, <code>fail</code> or <code>unknown</code> — one
+            arrow per outcome.</li>
+        </ul>
+        <pre class="border rounded p-2 mb-0" style="font-size:11.5px;background:#F4F5F7;max-height:520px;overflow:auto;">{{ example }}</pre>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

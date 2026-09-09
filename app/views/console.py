@@ -138,16 +138,15 @@ def run():
 
     # A retired placeholder host is rejected by NAME, before a client is built.
     # Otherwise every line of the script waits out a connection timeout to
-    # learn what the register already says.
-    if str(appliance.host or "").endswith(".invalid"):
+    # learn what the register already says. The reason text lives in the
+    # service so this page and the Process step say the same thing.
+    retired = sc.retired_placeholder(appliance)
+    if retired:
         result = sc.ScriptResult(
             appliance=appliance.name,
             rows=[sc.CommandRow(command=p["command"], tier=p["tier"],
-                                status="not_run",
-                                detail="the appliance host is a retired "
-                                       "placeholder (*.invalid)") for p in plan],
-            error=f"{appliance.name} has host {appliance.host} — a retired "
-                  f"placeholder, so nothing was sent")
+                                status="not_run", detail=retired) for p in plan],
+            error=f"{appliance.name} — {retired}")
     else:
         result = sc.run_script(appliance, commands, allow_disruptive=allow,
                                stop_on_error=stop_on_error)

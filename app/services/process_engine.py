@@ -50,10 +50,18 @@ MAX_STEPS = 200
 
 @dataclass
 class Ctx:
-    """What an executor may see. Deliberately small."""
+    """What an executor may see. Deliberately small.
+
+    ``run_id`` and ``user`` are provenance, not capability: the write nodes
+    stamp them onto the audit row and the hook payload so a line in the console
+    audit or a request in the integration queue can be traced back to the walk
+    that produced it. Nothing branches on them.
+    """
     appliance: object = None
     armed: bool = False
     results: dict = field(default_factory=dict)
+    run_id: int = 0
+    user: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -196,7 +204,8 @@ def advance(run: ProcessRun, *, appliance=None, resume_from: str = "",
 
     # Outcomes of everything already recorded, so a Decision resumed after a
     # gate can still see the steps that ran before the pause.
-    ctx = Ctx(appliance=appliance, armed=bool(run.armed))
+    ctx = Ctx(appliance=appliance, armed=bool(run.armed), run_id=run.id,
+              user=run.started_by or "")
     for st in run.steps:
         ctx.results[st.node_key] = pk.StepResult(st.status, st.detail, st.output)
 

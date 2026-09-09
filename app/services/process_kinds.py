@@ -35,8 +35,36 @@ production. Actions marked ``requires_change_request`` are refused **when the
 node is saved**, not when it fires: a process is not an approval, and finding
 that out at 3 a.m. mid-walk is finding it out too late.
 
-Console scripts and integration hooks are deliberately NOT here yet. They are
-the generic write door and they get their own round of guards.
+THE GENERIC WRITE DOOR (``console_script`` and ``hook``)
+--------------------------------------------------------
+Both were held back from the first round on purpose and both are here now,
+under one rule that the ``action`` node does NOT share:
+
+    **an unarmed run does not send them at all, and says ``unknown``.**
+
+``action`` may return a verdict on an unarmed run because
+``scheduled_actions.run_action(dry_run=True)`` is a real preview — the spec
+computes what it would do and reports whether that computation worked. Neither
+of the new nodes has such a mode. ``run_script`` has no dry run (classifying
+the text is a fact about the TEXT, not about the appliance) and
+``dispatch_one`` runs the hook for real even with ``sample=True``. So the
+honest verdict differs because the available evidence differs, and a rehearsal
+of a repair plan stops where the repair would have been rather than walking the
+"and then it was fixed" branch against an appliance nobody fixed.
+
+The cost, written down: **a plan whose whole point is the write cannot be
+rehearsed end to end.** A rehearsal proves the script is sendable — validated,
+classified, appliance dialable by name — not that it works.
+
+WHO AGREED, AND TO WHAT
+-----------------------
+The web console asks a human to tick an acknowledgement and type the appliance
+name at the moment of sending. A process has no human at 3 a.m., so the
+agreement is recorded in the PLAN: a disruptive ``console_script`` node carries
+the appliance name it is allowed to disrupt, and at run time that string must
+equal the appliance the run is pointed at. Aiming the same process at a
+different box makes the step refuse. That is strictly stronger than the page,
+where the typed name only proves the operator read the warning.
 """
 from __future__ import annotations
 
@@ -375,6 +403,211 @@ def _run_action(node, ctx) -> StepResult:
                       prefix + (res.get("summary") or key), res.get("log") or "")
 
 
+def _plan_text(plan: list) -> str:
+    return "\n".join("[%s] %s%s" % (r["tier"], r["command"],
+                                    ("  — " + r["reason"]) if r["reason"] else "")
+                     for r in plan)
+
+
+def _run_console_script(node, ctx) -> StepResult:
+    """Send CLI lines to the chosen appliance. THE FIRST WRITE PATH A PROCESS HAS.
+
+    Everything about *what may be sent* belongs to ``ssh_console``: the
+    three-tier blacklist, the whole-script pre-gate, the modal-CLI stop, the
+    transcript redaction. This adapter adds exactly two things the page adds
+    too — who agreed to a disruptive line, and the audit row — and nothing else.
+    """
+    from .audit import log_action
+    from . import ssh_console as sc
+
+    p = node.get("params", {})
+    raw = _s(p, "script")
+    commands = sc.parse_script(raw)
+    if not commands:
+        return StepResult(UNKNOWN, "no commands configured on this step")
+    if ctx.appliance is None:
+        return StepResult(UNKNOWN, "this step needs an appliance and none was chosen")
+
+    plan = sc.classify_script(commands)
+    disruptive = [r for r in plan if r["tier"] == sc.TIER_DISRUPTIVE]
+
+    if not ctx.armed:
+        # NOT SENT. See the module docstring: there is no dry run for a CLI
+        # script, so claiming pass or fail here would be inventing a result.
+        return StepResult(
+            UNKNOWN,
+            "not armed — %d command(s) were validated and NOT sent" % len(plan),
+            _plan_text(plan))
+
+    retired = sc.retired_placeholder(ctx.appliance)
+    if retired:
+        return StepResult(UNKNOWN, retired, _plan_text(plan))
+
+    allow = False
+    if disruptive:
+        want = _s(p, "confirm_name")
+        got = str(getattr(ctx.appliance, "name", "") or "")
+        if not want or want != got:
+            return StepResult(
+                UNKNOWN,
+                "refused: this step is disruptive (%s) and names %r as the only "
+                "appliance it may disrupt, but the run is pointed at %r"
+                % (disruptive[0]["reason"], want or "—", got),
+                _plan_text(plan))
+        allow = True
+
+    res = sc.run_script(ctx.appliance, commands, allow_disruptive=allow,
+                        stop_on_error=_s(p, "stop_on_error", "1") != "0")
+
+    # SAME action name the page uses. An operator auditing "what was sent over
+    # the console" must not have to know there are two doors.
+    log_action("console.run", target=getattr(ctx.appliance, "name", "") or "",
+               extra={"via": "process", "run_id": getattr(ctx, "run_id", 0),
+                      "commands": [sc.redact(c) for c in commands],
+                      "tiers": sorted({r["tier"] for r in plan}),
+                      "disruptive_ack": allow, "failed": res.failed,
+                      "session_error": res.error})
+
+    refused = [r for r in res.rows if r.status == "refused"]
+    if refused:
+        # The save-time gate should make this unreachable, but a node can arrive
+        # by import or by a restored bundle. SATOM declining to send is a fact
+        # about SATOM, so it is a blind spot and NOT a failure of the appliance
+        # — and it must not be reported as "the session did not open", which is
+        # a different event with a different fix.
+        return StepResult(UNKNOWN, "SATOM refused to send: %s" % refused[0].detail,
+                          _plan_text(plan))
+    if res.error and not any(r.status in ("error", "ok") for r in res.rows):
+        # The session never opened: SATOM could not look, so this is a blind
+        # spot, not a verdict about the appliance's configuration.
+        return StepResult(UNKNOWN, "the session did not open: %s" % res.error,
+                          res.transcript or _plan_text(plan))
+    if res.failed:
+        bad = next((r for r in res.rows if r.status in ("error", "refused")), None)
+        return StepResult(FAIL, "%d of %d command(s) failed — first: %s (%s)"
+                          % (res.failed, len(res.rows),
+                             bad.command if bad else "?",
+                             bad.detail if bad else ""),
+                          res.transcript)
+    return StepResult(PASS, "%d command(s) accepted by %s"
+                      % (len(res.rows), getattr(ctx.appliance, "name", "")),
+                      res.transcript)
+
+
+#: Grace added to a hook's own timeout before this step stops waiting. The
+#: runner kills at the hook's timeout, so anything past that plus the time to
+#: write the status file is the runner not being there at all.
+HOOK_GRACE_S = 10.0
+HOOK_POLL_S = 0.5
+
+
+def _run_hook(node, ctx) -> StepResult:
+    """Queue ONE named integration hook and wait for its verdict.
+
+    ``integration_hooks.dispatch_one`` writes JSON; a systemd ``.path`` unit
+    turns that file into a process, in another unit, as another concern. This
+    step therefore does NOT execute anything — it enqueues and then polls the
+    status file the runner writes.
+
+    Waiting at all is a deliberate choice: a step you cannot branch on is not a
+    step. The wait is bounded by the hook's OWN clamped timeout plus
+    :data:`HOOK_GRACE_S`, and it cannot be raised from the diagram, because a
+    longer wait cannot outlive a runner that already killed the job.
+
+    A request still ``queued`` when the budget runs out is ``unknown`` and says
+    which unit is probably not enabled. That exact failure is on record: the
+    standby node sat on ``queued`` updates for weeks in July 2026 because its
+    ``.path`` unit was never enabled, and "queued forever" looked like nothing
+    at all.
+    """
+    import json
+    import time
+
+    from . import integration_hooks as ih
+
+    p = node.get("params", {})
+    slug = _s(p, "slug")
+    if not slug:
+        return StepResult(UNKNOWN, "no hook chosen on this step")
+    try:
+        hook = ih.get_hook(slug)
+    except Exception as exc:  # noqa: BLE001
+        return StepResult(UNKNOWN, "could not read hook %r: %s" % (slug, exc))
+    if hook is None:
+        return StepResult(UNKNOWN, "hook %r no longer exists" % slug)
+
+    raw = _s(p, "payload")
+    try:
+        payload = json.loads(raw) if raw else {}
+    except ValueError as exc:
+        return StepResult(UNKNOWN, "the payload on this step is not JSON: %s" % exc)
+    if not isinstance(payload, dict):
+        return StepResult(UNKNOWN, "the payload on this step is not a JSON object")
+
+    # Provenance the hook can act on, and that a human reading the queue can
+    # trace back to a run without joining two systems. OVERWRITTEN, not
+    # defaulted: this block is SATOM's claim about where the request came from,
+    # and a field the operator can pre-set in the payload is a claim they can
+    # forge. Forgeable provenance is worse than none, because it is believed.
+    payload["satom_process"] = {
+        "run_id": getattr(ctx, "run_id", 0),
+        "step": str(node.get("key") or ""),
+        "appliance": getattr(ctx.appliance, "name", "") or "",
+        "armed": bool(ctx.armed),
+    }
+
+    if not ctx.armed:
+        # A hook is operator-written Python holding real secrets. ``sample``
+        # is not a dry run — it runs the hook with an example payload.
+        return StepResult(
+            UNKNOWN, "not armed — hook %r was NOT queued" % slug,
+            "slug: %s\nevent: %s\ntimeout: %ss\nsecrets: %s"
+            % (slug, hook.get("event"), ih.clamp_timeout(hook.get("timeout")),
+               ", ".join(hook.get("secrets") or []) or "none"))
+
+    try:
+        queued = ih.dispatch_one(slug, sample=False, payload=payload,
+                                 by=getattr(ctx, "user", "") or "process")
+    except Exception as exc:  # noqa: BLE001
+        return StepResult(UNKNOWN, "could not queue hook %r: %s" % (slug, exc))
+    rid = str(queued.get("request_id") or "")
+    if not rid:
+        return StepResult(UNKNOWN, "hook %r produced no request id" % slug)
+
+    if _s(p, "wait", "1") == "0":
+        # The only claim being made is that the request was written, and it was.
+        return StepResult(PASS, "hook %r queued as %s (not waited on)" % (slug, rid),
+                          rid)
+
+    budget = float(ih.clamp_timeout(hook.get("timeout"))) + HOOK_GRACE_S
+    deadline = time.monotonic() + budget
+    status = "queued"
+    row: dict = {}
+    while time.monotonic() < deadline:
+        row = ih.result(rid) or {}
+        status = str(row.get("status") or "queued")
+        if status in ("ok", "failed", "timeout"):
+            break
+        time.sleep(HOOK_POLL_S)
+
+    out = "%s\nexit: %s\n%s" % (rid, row.get("exit_code"), row.get("stdout") or "")
+    if status == "ok":
+        return StepResult(PASS, "hook %r finished in %s ms"
+                          % (slug, row.get("duration_ms")), out)
+    if status == "failed":
+        return StepResult(FAIL, "hook %r failed: %s"
+                          % (slug, row.get("error") or "exit %s" % row.get("exit_code")),
+                          out)
+    if status == "timeout":
+        return StepResult(FAIL, "hook %r was killed at its %ss timeout"
+                          % (slug, ih.clamp_timeout(hook.get("timeout"))), out)
+    return StepResult(
+        UNKNOWN,
+        "hook %r was still %s after %.0fs — the request was written, so the "
+        "runner is what did not pick it up (satom-integrations.path on THIS "
+        "node)" % (slug, status, budget), out)
+
+
 # ---------------------------------------------------------------------------
 # catalogue
 # ---------------------------------------------------------------------------
@@ -448,6 +681,34 @@ _KINDS: tuple[NodeKind, ...] = (
              "approved change request cannot be added.",
              params=(Param("action_key", "Action", "select", required=True),),
              needs_appliance=False, writes=True, colour="#8B1C2A"),
+    NodeKind("console_script", "Console script", "act",
+             "Send CLI lines to the chosen appliance. Nothing is sent unless "
+             "the run is armed. Forbidden commands cannot be saved; disruptive "
+             "ones must name the appliance they may disrupt.",
+             params=(Param("script", "Commands", "textarea", required=True,
+                           help="One per line. # comments and blank lines are "
+                                "ignored, exactly as on the Console page."),
+                     Param("stop_on_error", "On error", "select", default="1",
+                           choices=("1", "0"),
+                           help="1 stops the script — the FortiOS CLI is modal, "
+                                "so lines after a failure run in the wrong "
+                                "context. 0 sends every line regardless."),
+                     Param("confirm_name", "Disruptive only on", "text",
+                           help="Required when any line is disruptive. The run "
+                                "must be pointed at exactly this appliance.")),
+             needs_appliance=True, writes=True, colour="#8B1C2A"),
+    NodeKind("hook", "Integration hook", "act",
+             "Queue one integration hook on this node and wait for its verdict. "
+             "Nothing is queued unless the run is armed.",
+             params=(Param("slug", "Hook", "select", required=True),
+                     Param("payload", "Payload (JSON object)", "textarea",
+                           help="Merged with a satom_process block naming this "
+                                "run and step."),
+                     Param("wait", "Wait for the result", "select", default="1",
+                           choices=("1", "0"),
+                           help="0 passes as soon as the request is written — "
+                                "use it for notifications you cannot branch on.")),
+             needs_appliance=False, writes=True, colour="#8B1C2A"),
 )
 
 _RUNNERS = {
@@ -456,6 +717,7 @@ _RUNNERS = {
     "tcp_check": _run_tcp_check, "dns_check": _run_dns_check,
     "ssh_check": _run_ssh_check, "device_health": _run_device_health,
     "logs_collect": _run_logs_collect, "action": _run_action,
+    "console_script": _run_console_script, "hook": _run_hook,
 }
 
 KIND_KEYS = tuple(k.key for k in _KINDS)
@@ -488,6 +750,17 @@ def needs_appliance(graph: dict) -> bool:
             if spec is not None and spec.needs_targets:
                 return True
     return False
+
+
+def kinds_used(graph: dict) -> set:
+    """The set of step kinds in this diagram.
+
+    Here rather than in the template so a page asking "does this plan send CLI
+    lines" gets the answer from the same module that decides what a step kind
+    is. Two authors for that is the shape of every drift this codebase has paid
+    for.
+    """
+    return {str(n.get("kind") or "") for n in graph.get("nodes", [])}
 
 
 def writes(graph: dict) -> bool:
@@ -602,4 +875,76 @@ def validate_graph(graph: dict) -> list[str]:
             if ref and ref not in known:
                 errs.append("Step %r tests %r, which is not a step."
                             % (n.get("key"), ref))
+        if kind.key == "console_script":
+            errs.extend(_console_script_errors(n, p))
+        if kind.key == "hook":
+            errs.extend(_hook_errors(n, p))
+    return errs
+
+
+def _console_script_errors(n, p) -> list[str]:
+    """Everything wrong with a console step, at SAVE time.
+
+    A forbidden line discovered mid-walk is discovered after the lines above it
+    already changed the appliance. ``run_script`` re-gates before it opens the
+    session for exactly that reason; this gate is earlier still, so the plan
+    cannot be written down in the first place.
+    """
+    from . import ssh_console as sc
+
+    key = n.get("key")
+    errs: list[str] = []
+    commands = sc.parse_script(str(p.get("script") or ""))
+    if not commands:
+        errs.append("Step %r has no commands (blank lines and # comments do not "
+                    "count)." % key)
+        return errs
+    if len(commands) > sc.MAX_COMMANDS:
+        # run_script would TRUNCATE and note it. A note on a run nobody reads is
+        # not the same as refusing to save a plan that is 300 lines long.
+        errs.append("Step %r has %d commands; the console sends at most %d."
+                    % (key, len(commands), sc.MAX_COMMANDS))
+    disruptive = []
+    for row in sc.classify_script(commands):
+        if row["tier"] == sc.TIER_FORBIDDEN:
+            errs.append("Step %r: refused — %s (%r). This has no path through "
+                        "SATOM at any permission level."
+                        % (key, row["reason"], row["command"]))
+        elif row["tier"] == sc.TIER_DISRUPTIVE:
+            disruptive.append(row)
+    if disruptive and not str(p.get("confirm_name") or "").strip():
+        errs.append("Step %r contains a disruptive command (%s) and must name "
+                    "the one appliance it may disrupt in 'Disruptive only on'."
+                    % (key, disruptive[0]["reason"]))
+    return errs
+
+
+def _hook_errors(n, p) -> list[str]:
+    import json
+
+    from . import integration_hooks as ih
+
+    key = n.get("key")
+    errs: list[str] = []
+    slug = str(p.get("slug") or "").strip()
+    if slug:
+        try:
+            hook = ih.get_hook(slug)
+        except Exception as exc:  # noqa: BLE001 — a broken meta file is a save error
+            hook = None
+            errs.append("Step %r names hook %r, which could not be read: %s"
+                        % (key, slug, exc))
+        else:
+            if hook is None:
+                errs.append("Step %r names a hook %r that does not exist."
+                            % (key, slug))
+    raw = str(p.get("payload") or "").strip()
+    if raw:
+        try:
+            body = json.loads(raw)
+        except ValueError as exc:
+            errs.append("Step %r: the payload is not JSON (%s)." % (key, exc))
+        else:
+            if not isinstance(body, dict):
+                errs.append("Step %r: the payload must be a JSON object." % key)
     return errs

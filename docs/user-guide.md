@@ -51,6 +51,7 @@
 39. [Concept Map: where does X live?](#39-concept-map-where-does-x-live)
 40. [Upgrade Flow: a maintenance window as one workflow](#40-upgrade-flow-a-maintenance-window-as-one-workflow)
 41. [Stored Assets: what each ADOM actually holds](#41-stored-assets-what-each-adom-actually-holds)
+42. [Process: procedures the system walks for you](#42-process-procedures-the-system-walks-for-you)
 
 ---
 
@@ -4324,8 +4325,8 @@ Three rules keep the map honest, and each is enforced by a test rather than by
 discipline:
 
 1. **The URL map is the authority on what exists.** Every parameterless page in
-   the console is either **on the map** (100 today) or **excluded with a written
-   reason** (125 today — JSON feeds, downloads, redirects and fragments that
+   the console is either **on the map** (103 today) or **excluded with a written
+   reason** (126 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.
 2. **Nothing here is a second source of truth.** Paths are generated from the
@@ -4700,3 +4701,93 @@ family puts away everything beneath it at once, however deep.
 **The filter card does not fold.** Every other card on this page holds an
 answer; the filter holds the question that decides which rows those answers
 describe, so putting it away would hide the premise of every count below it.
+
+---
+
+## 42. Process: procedures the system walks for you
+
+**Administrator → Process**, in every ADOM.
+
+A recovery plan that lives in a document is a plan nobody has run. Process is
+where you draw one as a diagram and let SATOM walk it: each step asks a
+question of the running system, and the arrows say where to go depending on the
+answer. The same shape covers a disaster-recovery plan, a post-upgrade
+validation, an onboarding check and an incident runbook, so they are one page
+rather than four.
+
+### The parts
+
+A process is a **key**, a **name**, the **ADOMs it is offered in** and a
+**diagram**. Registration is per-process and can name one ADOM or several — the
+same "fail the standby over and prove the service came back" applies whether the
+box in front of you is a FortiWeb or a FortiADC. Ticking no ADOM leaves the
+process a **draft**: it stays visible in the Global console only. A blank list
+is not read as "everywhere", because that default would publish unfinished plans
+into five consoles at once.
+
+### The steps
+
+| Step | What it asks | Writes? |
+| --- | --- | --- |
+| Start / End | where the walk begins, and each way it can finish | no |
+| Decision | did an **earlier** step end pass / fail / unknown? | no |
+| Manual gate | stops and waits for a person | no |
+| HTTP check | status, latency and body of a URL | no |
+| TCP check | one handshake — and it keeps *refused* apart from *timeout*, because a refusal proves the host is up | no |
+| DNS check | resolve a name on a configured server and assert the answer | no |
+| Console read | one read-only CLI command on the chosen appliance, asserted on its output | no |
+| Appliance health | the same grade Monitoring shows — sync, cache, probe, capacity | no |
+| Collect diagnostics | runs the read-only battery over SSH and saves the transcript **on this node** | no |
+| Catalogue action | invokes an automation from the Scheduled Actions catalogue | **yes, when armed** |
+
+No step reimplements a question the product already answers somewhere else.
+That is deliberate: two authors for "is this backend reachable" is how a page
+and an alert mail start disagreeing.
+
+### Arrows
+
+An arrow carries an outcome: `always`, `pass`, `fail` or `unknown`. An explicit
+outcome always wins over `always`, so a recovery branch is reachable in exactly
+the graphs that need it. **A step may have only one arrow per outcome** — which
+is what keeps a run in one place at a time, and therefore what lets a manual
+gate be answered hours later instead of holding a worker open.
+
+A retry loop is allowed. An endless one is stopped after 200 steps and the run
+says so, rather than reporting a verdict about a walk that never finished.
+
+### Rehearsal and arming
+
+A run is a **rehearsal** unless you tick *Arm this run*. Unarmed, every action
+step executes as a dry run, changes nothing, and the row says `rehearsed`. This
+is what makes a recovery plan safe to point at production long before the night
+you need it. Arming is dropped automatically on a diagram that only reads: a run
+stamped "armed" that could never have written anything teaches the wrong thing
+about the badge.
+
+Actions that require an approved change request are **not offered**. A process
+is a plan, not an approval — raise the change request and let it schedule the
+action.
+
+### Reading a run
+
+Four outcomes, and the difference between the last two is the whole point:
+
+* **pass** — the step asked and the answer was good.
+* **fail** — the step asked and something is broken.
+* **unknown** — SATOM *could not look*. No appliance chosen, SSH refused, the
+  target denied. It is never rendered as health and it never counts as a
+  failure; it makes the verdict **partial**, and the summary says so in a
+  sentence: *nothing failed, but N steps could not be looked at — this is a
+  partial walk, not a clean bill of health.*
+* **skipped** — **not reached**, because an earlier step stopped that path.
+  Skipped is not a pass. A branch the plan deliberately did not take is not
+  listed at all; only what the plan wanted to reach and could not.
+
+A run keeps its **own copy of the diagram it walked**. Editing a process
+therefore never rewrites its own past, and deleting one keeps its history —
+each run carries the name, the key and the graph it ran.
+
+### Permissions
+
+Reading a process and its runs needs `view`. Drawing, editing, running and
+answering a gate need `config_write`.

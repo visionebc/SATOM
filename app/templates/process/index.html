@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+
+{% block title %}Process — SATOM{% endblock %}
+
+{#  Light theme only (safeguards §9m): .fw-card / --fw-* / .fw-badge-*, which
+    are calibrated against white. A dark-theme pastel lands at ~1.4:1 here and
+    produces a badge that states a verdict and cannot be read.               #}
+{% set V_BADGE = {'ok':'success','partial':'warning','failed':'danger'} %}
+{% set V_ICON  = {'ok':'check-circle','partial':'question-circle','failed':'x-octagon'} %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <span>{{ _('Process') }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header d-flex justify-content-between align-items-start">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-diagram-3 me-2 text-accent"></i>{{ _('Process') }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      Draw a procedure once — a recovery plan, a post-upgrade check, an
+      onboarding sequence — and SATOM walks it step by step and says which layer
+      stopped it. Steps ask HTTP, TCP, DNS, the appliance's own health and its
+      read-only console; arrows say where to go depending on the answer.
+    </p>
+  </div>
+  {% if current_user.can('config_write') %}
+  <a class="btn btn-primary btn-sm" href="{{ url_for('process.create') }}">
+    <i class="bi bi-plus-lg me-1"></i>{{ _('New process') }}</a>
+  {% endif %}
+</div>
+
+<div class="fw-card mb-3">
+  <div class="fw-card-header"><i class="bi bi-list-check me-2"></i>{{ _('Processes') }}
+    <span class="text-muted" style="font-weight:400;font-size:12px;">
+      &nbsp;— {% if is_global %}every process in the installation{% else %}registered for this ADOM{% endif %}</span>
+  </div>
+  <div class="fw-card-body p-0">
+    {% if not processes %}
+      <div class="p-3 text-muted" style="font-size:13px;">
+        {% if is_global %}
+          No process has been defined yet.
+        {% else %}
+          No process is registered for this ADOM. A process is authored in the
+          Global console and named for one or several ADOMs; it appears here
+          once this one is among them.
+        {% endif %}
+      </div>
+    {% else %}
+    <table class="table table-sm mb-0 align-middle">
+      <thead><tr>
+        <th>{{ _('Process') }}</th><th>{{ _('ADOMs') }}</th>
+        <th>{{ _('Steps') }}</th><th>{{ _('Last run') }}</th><th></th>
+      </tr></thead>
+      <tbody>
+      {% for p in processes %}
+        {% set r = last.get(p.id) %}
+        <tr>
+          <td>
+            <a href="{{ url_for('process.detail', pid=p.id) }}"><strong>{{ p.name }}</strong></a>
+            {% if not p.enabled %}<span class="badge bg-secondary ms-1">{{ _('disabled') }}</span>{% endif %}
+            <div class="text-muted" style="font-size:12px;">{{ p.description[:140] }}</div>
+          </td>
+          <td style="font-size:12px;">
+            {% if p.products %}
+              {% for k in p.products %}<span class="badge bg-light text-dark border me-1">{{ k }}</span>{% endfor %}
+            {% else %}
+              {# Empty is a real state — a draft — and it is not read as
+                 "everywhere". A default that meant everywhere would publish
+                 unfinished plans into five consoles. #}
+              <span class="text-muted">{{ _('draft — no ADOM') }}</span>
+            {% endif %}
+          </td>
+          <td>{{ p.nodes|length }}</td>
+          <td style="font-size:12px;">
+            {% if r %}
+              <a href="{{ url_for('process.run_detail', rid=r.id) }}">
+                <span class="badge bg-{{ V_BADGE.get(r.verdict,'secondary') }}">
+                  <i class="bi bi-{{ V_ICON.get(r.verdict,'dash-circle') }} me-1"></i>{{ r.verdict or r.status }}</span></a>
+              <span class="text-muted ms-1">{{ r.started_at.strftime('%Y-%m-%d %H:%M') }}</span>
+              {% if not r.armed %}<span class="badge bg-light text-dark border ms-1">{{ _('rehearsal') }}</span>{% endif %}
+            {% else %}<span class="text-muted">{{ _('never run') }}</span>{% endif %}
+          </td>
+          <td class="text-end">
+            <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('process.detail', pid=p.id) }}">
+              <i class="bi bi-diagram-3"></i></a>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+</div>
+
+<div class="fw-card">
+  <div class="fw-card-header"><i class="bi bi-clock-history me-2"></i>{{ _('Recent runs') }}</div>
+  <div class="fw-card-body p-0">
+    {% if not runs %}
+      <div class="p-3 text-muted" style="font-size:13px;">{{ _('Nothing has been walked yet.') }}</div>
+    {% else %}
+    <table class="table table-sm mb-0 align-middle">
+      <thead><tr>
+        <th>#</th><th>{{ _('Process') }}</th><th>{{ _('Appliance') }}</th>
+        <th>{{ _('Verdict') }}</th><th>{{ _('Steps') }}</th>
+        <th>{{ _('Started') }}</th><th>{{ _('By') }}</th>
+      </tr></thead>
+      <tbody>
+      {% for r in runs %}
+        {% set c = r.counts() %}
+        <tr>
+          <td><a href="{{ url_for('process.run_detail', rid=r.id) }}">{{ r.id }}</a></td>
+          <td>{{ r.process_name or r.process_key }}
+            {% if not r.armed %}<span class="badge bg-light text-dark border ms-1">{{ _('rehearsal') }}</span>{% endif %}</td>
+          <td style="font-size:12px;">{{ r.appliance_name or '—' }}</td>
+          <td>
+            {% if r.status == 'waiting' %}
+              <span class="badge bg-warning text-dark"><i class="bi bi-pause-circle me-1"></i>{{ _('waiting') }}</span>
+            {% else %}
+              <span class="badge bg-{{ V_BADGE.get(r.verdict,'secondary') }}">
+                <i class="bi bi-{{ V_ICON.get(r.verdict,'dash-circle') }} me-1"></i>{{ r.verdict or r.status }}</span>
+            {% endif %}
+          </td>
+          <td style="font-size:12px;">
+            {{ c['pass'] }} pass · {{ c['fail'] }} fail · {{ c['unknown'] }} unknown · {{ c['skipped'] }} skipped
+          </td>
+          <td style="font-size:12px;">{{ r.started_at.strftime('%Y-%m-%d %H:%M') }}</td>
+          <td style="font-size:12px;">{{ r.started_by or '—' }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

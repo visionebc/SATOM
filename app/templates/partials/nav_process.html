@@ -1,0 +1,21 @@
+{# ============================================================================
+   Process — Administrator entry. ONE definition, EVERY admin block in
+   base.html (2026-09-09).
+
+   Same shape and the same reason as partials/nav_console.html: five inline
+   copies drift, and an entry added to Global and forgotten in the other four
+   is invisible without failing anything.
+
+   NOT SCOPED TO ONE PRODUCT, because a process is not. Registration is
+   per-process (``Process.products``) and the list behind this link is cut by
+   ``process_engine.visible_processes`` — the ONLY authority on that question.
+   A per-ADOM condition here would be a second one.
+
+   VIEW, not config_write: reading a recovery plan and its run history is a
+   read. Drawing, editing and running all require config_write inside the
+   blueprint, so a read-only operator gets a page, not a 403.
+   ========================================================================= #}
+{% if current_user and current_user.can('view') %}
+<a class="fw-nav-item {{ 'active' if request.blueprint == 'process' else '' }}" href="{{ url_for('process.index', _adom=product.key) }}">
+  <i class="bi bi-diagram-3 fw-nav-icon"></i><span>{{ _('Process') }}</span></a>
+{% endif %}

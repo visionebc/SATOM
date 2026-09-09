@@ -153,6 +153,22 @@ PAGES: tuple[dict, ...] = (
        "and stops at the first that fails, naming that layer with its "
        "evidence. Operator-started and object-given, which is what separates "
        "it from Sentinel."),
+    _p("console.index", "Device Console", "config",
+       "console cli ssh command line run command shell terminal type a command "
+       "test password credential wrong login tac bundle support ticket fortinet "
+       "case transcript reboot restore execute get show diagnose",
+       "A CLI session to a registered appliance — the only place SSH writes in "
+       "SATOM — plus a username/password test against any FortiOS device and a "
+       "redacted transcript packaged for a Fortinet support ticket."),
+    _p("process.index", "Process — Procedures & Recovery Plans", "automation",
+       "process procedure runbook recovery plan disaster dr flowchart diagram "
+       "checklist steps validate after upgrade onboarding verify everything "
+       "works automatic check run the plan decision branch manual gate walk",
+       "Operator-drawn procedures SATOM walks step by step: each step asks the "
+       "module that owns the question (HTTP, TCP, DNS, appliance health, the "
+       "read-only console, a catalogue action) and the arrows say where to go "
+       "depending on the answer. A run says which step stopped it, and is a "
+       "rehearsal unless it is armed."),
     _p("sentinel.index", "Sentinel — Incidents", "monitoring",
        "sentinel incident attack detection anomaly correlation score band "
        "respond breach suspicious spike who attacked",
@@ -505,6 +521,10 @@ PAGES: tuple[dict, ...] = (
 # map's coverage claim true instead of aspirational.
 # --------------------------------------------------------------------------
 EXCLUDED: dict[str, str] = {
+    # The New-process form is reached from the Process page and has no
+    # standing of its own on the map; "where does X live" is answered by
+    # process.index.
+    "process.create": "form",
     # JSON feeds consumed by a page's own JS.
     "advisor.attach_sot_search": "json feed", "advisor.attachable": "json feed",
     "advisor.tools": "json feed", "advisor.usage": "json feed",

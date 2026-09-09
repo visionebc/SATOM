@@ -6,7 +6,7 @@
 <div class="fw-breadcrumb mb-1">
   <a href="/">{{ _('Home') }}</a>
   <span class="separator">/</span>
-  <a href="{{ url_for('scheduled_actions.index') }}">{{ _('Scheduled Actions') }}</a>
+  <a href="{{ url_for('.index') }}">{{ _(surface.title) }}</a>
   <span class="separator">/</span>
   <span>{{ action.name }} — History</span>
 </div>
@@ -20,7 +20,7 @@
       <strong>{{ action.name }}</strong> — {{ action_label }}
     </p>
   </div>
-  <a class="btn btn-fw-outline btn-sm" href="{{ url_for('scheduled_actions.index') }}">
+  <a class="btn btn-fw-outline btn-sm" href="{{ url_for('.index') }}">
     <i class="bi bi-chevron-left me-1"></i>{{ _('Back') }}
   </a>
 </div>

@@ -25,10 +25,9 @@ night you need it.
 from __future__ import annotations
 
 import json
-import re
 
-from flask import (Blueprint, abort, flash, jsonify, redirect,
-                   render_template, request, url_for)
+from flask import (Blueprint, Response, abort, flash, jsonify,
+                   redirect, render_template, request, url_for)
 from flask_login import current_user, login_required
 
 from ..auth.decorators import require_permission
@@ -39,6 +38,7 @@ from ..models_process import (PASS, Process, ProcessEdge, ProcessNode,
                               ProcessRun, WAITING)
 from ..services import process_engine as engine
 from ..services import process_kinds as pk
+from ..services import process_xml as pxml
 from ..services.audit import log_action
 from ..services.product_scope import GLOBAL, session_product
 
@@ -47,7 +47,6 @@ bp = Blueprint("process", __name__, url_prefix="/process")
 #: A posted diagram larger than this is not a diagram.
 MAX_GRAPH = 512 * 1024
 
-_KEY_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 
 
 def _adoms():
@@ -154,7 +153,7 @@ def create():
     if request.method == "POST":
         key = (request.form.get("key") or "").strip().lower()
         name = (request.form.get("name") or "").strip()
-        if not _KEY_RE.match(key):
+        if not pk.KEY_RE.match(key):
             flash("The key must be lowercase letters, digits, - or _.", "danger")
         elif Process.query.filter_by(key=key).first():
             flash("A process with the key %r already exists." % key, "danger")
@@ -364,3 +363,167 @@ def run_resume(rid):
     log_action("process.resume", target=row.process_key,
                extra={"run": row.id, "answer": answer})
     return redirect(url_for("process.run_detail", rid=rid))
+
+
+# ---------------------------------------------------------------------------
+# XML — a procedure as a file
+# ---------------------------------------------------------------------------
+#
+# WHY THE IMPORT GOES THROUGH ``validate_graph``
+# ---------------------------------------------
+# It is the SAME call ``save_graph`` makes, on the same dict, before a single
+# row is written. A console step carrying ``factoryreset`` is refused here
+# exactly as it is refused in the editor. An importer with its own idea of what
+# is allowed would be the easiest way past every gate in the product, and it
+# would be attractive precisely because a file reads like data.
+
+@bp.route("/<int:pid>/export.xml")
+@login_required
+@require_permission("view")
+def export_xml(pid):
+    """Download this process as the file :func:`import_xml` reads back."""
+    proc = _proc_or_404(pid)
+    body = pxml.to_xml(key=proc.key, name=proc.name,
+                       description=proc.description or "",
+                       products=proc.products or [], enabled=bool(proc.enabled),
+                       graph=proc.graph())
+    log_action("process.export", target=proc.key,
+               extra={"nodes": len(proc.nodes), "edges": len(proc.edges)})
+    # A whole procedure — console scripts included — leaving as a file is worth
+    # an audit row even though the page it came from is only a read.
+    return Response(body, mimetype="application/xml", headers={
+        "Content-Disposition": 'attachment; filename="process-%s.xml"' % proc.key})
+
+
+@bp.route("/import", methods=["GET", "POST"])
+@login_required
+@require_permission("config_write")
+def import_xml():
+    """Create — or knowingly replace — a process from an XML file.
+
+    Nothing is written unless EVERY check passes: the file parses, its ADOMs
+    exist in this installation, and the graph satisfies the editor's validator.
+    A half-imported procedure would look saved and walk somewhere else, which is
+    the same reason ``save_graph`` refuses a diagram whole.
+    """
+    errors: list = []
+    if request.method == "POST":
+        upload = request.files.get("xml_file")
+        raw = upload.read(pxml.MAX_XML + 1) if upload is not None else b""
+        if not raw:
+            errors.append("Choose an XML file to import.")
+        else:
+            doc, errors = pxml.read_xml(raw)
+            if doc is not None:
+                errors = list(errors)
+                known = {a.key for a in _adoms()}
+                for prod in doc.products:
+                    if prod not in known:
+                        # Refused, never dropped. Dropping would import the plan
+                        # as a draft that looks published — and a process moved
+                        # between installations is the case this whole feature
+                        # exists for, so a missing ADOM is the LIKELY error and
+                        # has to be said out loud.
+                        errors.append(
+                            "This installation has no ADOM %r. It has: %s."
+                            % (prod, ", ".join(sorted(known)) or "none"))
+                existing = (Process.query.filter_by(key=doc.key).first()
+                            if doc.key else None)
+                if existing is not None and not engine.may_run_here(existing):
+                    # Everywhere else in this module such a process does not
+                    # exist. Overwriting it from here would edit a record this
+                    # console cannot even list.
+                    errors.append(
+                        "A process with the key %r already exists but is not "
+                        "offered in this ADOM. Open the Global console to "
+                        "replace it." % doc.key)
+                elif existing is not None and (
+                        request.form.get("replace_key") or "").strip() != doc.key:
+                    errors.append(
+                        "A process with the key %r already exists. To replace "
+                        "it — its steps, its arrows and its settings — type its "
+                        "key in the confirmation box. Its run history is kept "
+                        "either way." % doc.key)
+                errors.extend(pk.validate_graph(doc.graph))
+                if not errors:
+                    proc = _apply_import(doc, existing)
+                    flash("Imported %s: %d steps, %d arrows."
+                          % (proc.name, len(doc.graph.get("nodes") or []),
+                             len(doc.graph.get("edges") or [])), "success")
+                    return redirect(url_for("process.detail", pid=proc.id))
+    return render_template("process/import.html", adoms=_adoms(), errors=errors,
+                           example=_EXAMPLE_XML)
+
+
+def _apply_import(doc, existing):
+    """Write the imported process. Called only when nothing is left to refuse."""
+    replaced = existing is not None
+    proc = existing or Process(key=doc.key,
+                               created_by=getattr(current_user, "username", "") or "")
+    proc.name = doc.name
+    proc.description = doc.description
+    proc.products = list(doc.products)
+    proc.enabled = doc.enabled
+    if not replaced:
+        db.session.add(proc)
+    db.session.flush()
+
+    # Runs are NOT touched: each carries its own copy of the graph it walked, so
+    # replacing a definition cannot rewrite what a past run says it did — and a
+    # run parked on a manual gate resumes through its own snapshot, not through
+    # the steps that just arrived.
+    ProcessNode.query.filter_by(process_id=proc.id).delete()
+    ProcessEdge.query.filter_by(process_id=proc.id).delete()
+    for n in doc.graph.get("nodes") or []:
+        db.session.add(ProcessNode(
+            process_id=proc.id, node_key=str(n.get("key")),
+            kind=str(n.get("kind")), label=str(n.get("label") or "")[:160],
+            params=n.get("params") or {},
+            pos_x=int(n.get("x") or 0), pos_y=int(n.get("y") or 0)))
+    for e in doc.graph.get("edges") or []:
+        db.session.add(ProcessEdge(
+            process_id=proc.id, src_key=str(e.get("src")),
+            dst_key=str(e.get("dst")), branch=str(e.get("branch") or "always")))
+    db.session.commit()
+    log_action("process.import", target=proc.key,
+               extra={"replaced": replaced, "name": proc.name,
+                      "products": proc.products,
+                      "nodes": len(doc.graph.get("nodes") or []),
+                      "edges": len(doc.graph.get("edges") or [])})
+    return proc
+
+
+#: Shown on the import page. Deliberately a WORKING plan rather than a field
+#: reference: the format is learned faster from three steps that check a
+#: service and stop than from a table of element names.
+_EXAMPLE_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<satom-process key="dr-failover-check" name="DR failover check" enabled="yes">
+  <description>Prove the standby answers before anyone is told it does.</description>
+  <adoms>
+    <adom>fortiweb</adom>
+  </adoms>
+  <steps>
+    <step key="start" kind="start" label="Start" x="60" y="40"/>
+    <step key="vip" kind="tcp_check" label="VIP answers" x="60" y="140">
+      <param name="host">192.0.2.249</param>
+      <param name="port">443</param>
+    </step>
+    <step key="health" kind="http_check" label="Service is healthy" x="60" y="240">
+      <param name="url">https://192.0.2.249/healthz</param>
+      <param name="expect_status">200</param>
+      <param name="max_ms">2000</param>
+    </step>
+    <step key="escalate" kind="end" label="Escalate" x="300" y="240">
+      <param name="note">The standby did not answer. Do not switch traffic.</param>
+    </step>
+    <step key="ok" kind="end" label="Standby is serving" x="60" y="340"/>
+  </steps>
+  <arrows>
+    <arrow from="start" to="vip" branch="always"/>
+    <arrow from="vip" to="health" branch="pass"/>
+    <arrow from="vip" to="escalate" branch="fail"/>
+    <arrow from="health" to="ok" branch="pass"/>
+    <arrow from="health" to="escalate" branch="fail"/>
+  </arrows>
+</satom-process>
+"""

@@ -26,8 +26,14 @@
       {% else %}<span class="text-muted">{{ _('draft — no ADOM') }}</span>{% endif %}
     </div>
   </div>
-  {% if can_edit %}
   <div class="d-flex gap-2">
+    {#  Export is OUTSIDE the config_write guard, matching its route, which asks
+        for view: it hands back the content this page already renders. A
+        button hidden from the readers who may fetch its URL teaches the wrong
+        thing about who may do what.                                        #}
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('process.export_xml', pid=proc.id) }}">
+      <i class="bi bi-download me-1"></i>{{ _('Export XML') }}</a>
+  {% if can_edit %}
     <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('process.edit', pid=proc.id) }}">
       <i class="bi bi-pencil me-1"></i>{{ _('Settings') }}</a>
     <form method="post" action="{{ url_for('process.delete', pid=proc.id) }}"
@@ -35,8 +41,8 @@
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button class="btn btn-outline-danger btn-sm"><i class="bi bi-trash"></i></button>
     </form>
-  </div>
   {% endif %}
+  </div>
 </div>
 
 {% if problems %}

@@ -1,0 +1,203 @@
+{% extends "base.html" %}
+
+{% block title %}{{ proc.name }} — Process — SATOM{% endblock %}
+
+{% set V_BADGE = {'ok':'success','partial':'warning','failed':'danger'} %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a><span class="separator">/</span>
+  <a href="{{ url_for('process.index') }}">{{ _('Process') }}</a><span class="separator">/</span>
+  <span>{{ proc.name }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header d-flex justify-content-between align-items-start">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-diagram-3 me-2 text-accent"></i>{{ proc.name }}
+      {% if not proc.enabled %}<span class="badge bg-secondary align-middle ms-2">{{ _('disabled') }}</span>{% endif %}
+    </h1>
+    <p class="text-muted mb-0" style="font-size:13px;">{{ proc.description }}</p>
+    <div class="mt-1" style="font-size:12px;">
+      <span class="text-muted">{{ _('key') }}</span> <code>{{ proc.key }}</code>
+      <span class="text-muted ms-2">{{ _('ADOMs') }}</span>
+      {% if proc.products %}{% for k in proc.products %}<span class="badge bg-light text-dark border ms-1">{{ k }}</span>{% endfor %}
+      {% else %}<span class="text-muted">{{ _('draft — no ADOM') }}</span>{% endif %}
+    </div>
+  </div>
+  {% if can_edit %}
+  <div class="d-flex gap-2">
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('process.edit', pid=proc.id) }}">
+      <i class="bi bi-pencil me-1"></i>{{ _('Settings') }}</a>
+    <form method="post" action="{{ url_for('process.delete', pid=proc.id) }}"
+          onsubmit="return confirm('Delete this process? Its run history is kept.');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn btn-outline-danger btn-sm"><i class="bi bi-trash"></i></button>
+    </form>
+  </div>
+  {% endif %}
+</div>
+
+{% if problems %}
+<div class="alert alert-danger py-2 px-3" style="font-size:12.5px;">
+  <i class="bi bi-exclamation-octagon me-1"></i>
+  <strong>{{ _('This diagram cannot run yet.') }}</strong>
+  <ul class="mb-0 mt-1">{% for p in problems %}<li>{{ p }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+{# ── the diagram ───────────────────────────────────────────────────────── #}
+<div class="fw-card mb-3">
+  <div class="fw-card-header d-flex justify-content-between align-items-center">
+    <span><i class="bi bi-pencil-square me-2"></i>{{ _('Diagram') }}</span>
+    <span id="proc-status" class="text-muted" style="font-weight:400;font-size:12px;"></span>
+  </div>
+  <div class="fw-card-body p-0">
+    <div class="d-flex" style="min-height:520px;">
+
+      {# palette #}
+      <div style="width:190px;border-right:1px solid var(--fw-border,#DFE1E6);padding:10px;">
+        <div class="text-muted mb-1" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;">
+          {{ _('Add a step') }}</div>
+        {% for group, title in [('flow','Flow'),('check','Checks'),('act','Actions')] %}
+          <div class="mt-2 mb-1" style="font-size:11px;font-weight:600;color:#5E6C84;">{{ title }}</div>
+          {% for k in kinds if k.group == group %}
+          <button type="button" class="btn btn-sm btn-outline-secondary w-100 mb-1 text-start proc-add"
+                  data-kind="{{ k.key }}" title="{{ k.summary }}"
+                  {{ 'disabled' if not can_edit else '' }}
+                  style="font-size:12px;">{{ k.label }}</button>
+          {% endfor %}
+        {% endfor %}
+      </div>
+
+      {# canvas #}
+      <div style="flex:1;min-width:0;position:relative;">
+        <div class="p-2 border-bottom d-flex gap-2 align-items-center" style="font-size:12px;">
+          <button type="button" id="proc-connect" class="btn btn-sm btn-outline-primary"
+                  {{ 'disabled' if not can_edit else '' }}>
+            <i class="bi bi-arrow-right me-1"></i>{{ _('Connect') }}</button>
+          <button type="button" id="proc-delete" class="btn btn-sm btn-outline-danger"
+                  {{ 'disabled' if not can_edit else '' }}>
+            <i class="bi bi-trash me-1"></i>{{ _('Delete selected') }}</button>
+          <button type="button" id="proc-fit" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-arrows-fullscreen me-1"></i>{{ _('Fit') }}</button>
+          <span class="text-muted ms-auto" id="proc-hint"></span>
+          <button type="button" id="proc-save" class="btn btn-sm btn-primary"
+                  {{ 'disabled' if not can_edit else '' }}>
+            <i class="bi bi-check-lg me-1"></i>{{ _('Save diagram') }}</button>
+        </div>
+        <div id="proc-canvas" style="height:470px;overflow:hidden;background:#FAFBFC;"></div>
+      </div>
+
+      {# inspector #}
+      <div style="width:300px;border-left:1px solid var(--fw-border,#DFE1E6);padding:10px;overflow:auto;max-height:520px;">
+        <div class="text-muted mb-2" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;">
+          {{ _('Selected step') }}</div>
+        <div id="proc-inspector" class="text-muted" style="font-size:12.5px;">
+          {{ _('Click a step to edit it.') }}</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── run it ────────────────────────────────────────────────────────────── #}
+<div class="fw-card mb-3">
+  <div class="fw-card-header"><i class="bi bi-play-circle me-2"></i>{{ _('Walk this process') }}</div>
+  <div class="fw-card-body">
+    {% if not can_edit %}
+      <div class="text-muted" style="font-size:13px;">
+        {{ _('Running a process needs the config_write permission.') }}</div>
+    {% else %}
+    <form method="post" action="{{ url_for('process.run', pid=proc.id) }}" class="row g-2 align-items-end">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="col-md-5">
+        <label class="form-label" style="font-size:12px;">{{ _('Appliance') }}
+          {% if needs_appliance %}<span class="text-danger">*</span>{% endif %}</label>
+        <select class="form-select form-select-sm" name="appliance_id"
+                {{ 'required' if needs_appliance else '' }}>
+          <option value="">{{ _('— none —') }}</option>
+          {% for a in appliances %}
+          <option value="{{ a.id }}">{{ a.name }} ({{ a.host }})</option>
+          {% endfor %}
+        </select>
+        {% if needs_appliance %}
+        <div class="form-text">This diagram has steps that act on a device.</div>
+        {% endif %}
+      </div>
+      <div class="col-md-4">
+        {% if writes %}
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" name="armed" id="armed">
+          <label class="form-check-label" for="armed">
+            <strong>{{ _('Arm this run') }}</strong></label>
+        </div>
+        <div class="form-text">
+          Off, every action step runs as a <strong>rehearsal</strong> and changes
+          nothing. On, the actions in this diagram really fire.
+        </div>
+        {% else %}
+        <div class="text-muted" style="font-size:12px;">
+          <i class="bi bi-shield-check me-1"></i>{{ _('Every step in this diagram only reads.') }}
+        </div>
+        {% endif %}
+      </div>
+      <div class="col-md-3 text-end">
+        <button class="btn btn-primary btn-sm" {{ 'disabled' if problems else '' }}>
+          <i class="bi bi-play-fill me-1"></i>{{ _('Run now') }}</button>
+      </div>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+{# ── history ───────────────────────────────────────────────────────────── #}
+<div class="fw-card">
+  <div class="fw-card-header"><i class="bi bi-clock-history me-2"></i>{{ _('Runs') }}</div>
+  <div class="fw-card-body p-0">
+    {% if not runs %}
+      <div class="p-3 text-muted" style="font-size:13px;">{{ _('Not walked yet.') }}</div>
+    {% else %}
+    <table class="table table-sm mb-0 align-middle">
+      <thead><tr><th>#</th><th>{{ _('Verdict') }}</th><th>{{ _('Steps') }}</th>
+        <th>{{ _('Appliance') }}</th><th>{{ _('Started') }}</th><th>{{ _('By') }}</th></tr></thead>
+      <tbody>
+      {% for r in runs %}
+        {% set c = r.counts() %}
+        <tr>
+          <td><a href="{{ url_for('process.run_detail', rid=r.id) }}">{{ r.id }}</a></td>
+          <td>{% if r.status == 'waiting' %}
+                <span class="badge bg-warning text-dark">{{ _('waiting') }}</span>
+              {% else %}
+                <span class="badge bg-{{ V_BADGE.get(r.verdict,'secondary') }}">{{ r.verdict or r.status }}</span>
+              {% endif %}
+              {% if not r.armed %}<span class="badge bg-light text-dark border ms-1">{{ _('rehearsal') }}</span>{% endif %}</td>
+          <td style="font-size:12px;">{{ c['pass'] }} pass · {{ c['fail'] }} fail ·
+            {{ c['unknown'] }} unknown · {{ c['skipped'] }} skipped</td>
+          <td style="font-size:12px;">{{ r.appliance_name or '—' }}</td>
+          <td style="font-size:12px;">{{ r.started_at.strftime('%Y-%m-%d %H:%M') }}</td>
+          <td style="font-size:12px;">{{ r.started_by or '—' }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+</div>
+
+{#  The graph, the kind catalogue and the action catalogue are handed to the
+    editor as data, not re-declared in JavaScript. Two copies of "what params
+    does an HTTP check take" is how a form and a validator start disagreeing —
+    the server refusing a save for a field the editor never drew.           #}
+<script type="application/json" id="proc-data" nonce="{{ csp_nonce }}">
+{{ {
+  'graph': graph,
+  'canEdit': can_edit,
+  'saveUrl': url_for('process.save_graph', pid=proc.id),
+  'csrf': csrf_token(),
+  'actions': actions,
+  'kinds': kinds_json
+} | tojson }}
+</script>
+<script src="{{ url_for('static', filename='js/process_editor.js') }}" nonce="{{ csp_nonce }}"></script>
+{% endblock %}

@@ -328,6 +328,28 @@ class ScriptResult:
 MAX_COMMANDS = 200
 
 
+def retired_placeholder(appliance) -> str:
+    """The reason this appliance cannot be dialled, or ``""``.
+
+    RFC 6761 guarantees nothing under ``.invalid`` resolves, so a retired row
+    parked there is not "unreachable" — it is *neutralised on purpose*, and the
+    register already knows. Dialling it anyway spends a full connection timeout
+    per command to rediscover a fact that was one string comparison away.
+
+    Named here rather than inlined at each call site because there are now two
+    console callers (the page and a Process step) and they must give the
+    operator the SAME answer. It does not pretend to unify the eleven other
+    ``.invalid`` checks scattered across the services — those answer different
+    questions (should this be harvested, should it be probed, should it be
+    counted) and merging them would be a refactor, not a fix.
+    """
+    host = str(getattr(appliance, "host", "") or "").strip()
+    if host.lower().endswith(".invalid"):
+        return ("the appliance host is a retired placeholder (%s), so nothing "
+                "was sent" % host)
+    return ""
+
+
 def run_script(appliance, commands: list[str], *, allow_disruptive: bool = False,
                secret: str | None = None, stop_on_error: bool = True,
                session_factory: Callable | None = None,

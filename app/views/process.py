@@ -92,6 +92,29 @@ def _action_catalog():
     return out
 
 
+def _hook_catalog():
+    """Integration hooks offerable to a ``hook`` step.
+
+    DISABLED hooks are listed and marked, not hidden. A hook that is merely
+    switched off is exactly the one an operator writes into a recovery plan and
+    turns on for the drill; hiding it would look like the hook was deleted. The
+    engine does not consult ``enabled`` either — ``dispatch_one`` is the
+    named-hook door and it deliberately queues disabled hooks.
+    """
+    from ..services import integration_hooks as ih
+    try:
+        rows = ih.list_hooks()
+    except Exception:  # noqa: BLE001 — an unreadable hooks dir is an empty list,
+        return []      # not a 500 on the diagram page.
+    out = [{"slug": h.get("slug", ""), "event": h.get("event", ""),
+            "enabled": bool(h.get("enabled")),
+            "timeout": ih.clamp_timeout(h.get("timeout")),
+            "secrets": list(h.get("secrets") or [])}
+           for h in rows]
+    out.sort(key=lambda r: r["slug"])
+    return out
+
+
 def _kinds_json():
     """The kind catalogue as plain data for the editor.
 
@@ -216,9 +239,9 @@ def detail(pid):
     return render_template(
         "process/detail.html", proc=proc, graph=graph, runs=runs,
         kinds=pk.kinds(), kinds_json=_kinds_json(), actions=_action_catalog(),
-        appliances=_appliances(),
+        hooks=_hook_catalog(), appliances=_appliances(),
         needs_appliance=pk.needs_appliance(graph),
-        writes=pk.writes(graph),
+        writes=pk.writes(graph), kinds_used=pk.kinds_used(graph),
         problems=pk.validate_graph(graph),
         can_edit=current_user.can("config_write"),
     )

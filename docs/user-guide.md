@@ -4739,6 +4739,8 @@ into five consoles at once.
 | Appliance health | the same grade Monitoring shows — sync, cache, probe, capacity | no |
 | Collect diagnostics | runs the read-only battery over SSH and saves the transcript **on this node** | no |
 | Catalogue action | invokes an automation from the Scheduled Actions catalogue | **yes, when armed** |
+| Console script | sends CLI lines to the chosen appliance | **yes, when armed** |
+| Integration hook | queues one integration hook on this node and waits for its verdict | **yes, when armed** |
 
 No step reimplements a question the product already answers somewhere else.
 That is deliberate: two authors for "is this backend reachable" is how a page
@@ -4757,12 +4759,62 @@ says so, rather than reporting a verdict about a walk that never finished.
 
 ### Rehearsal and arming
 
-A run is a **rehearsal** unless you tick *Arm this run*. Unarmed, every action
-step executes as a dry run, changes nothing, and the row says `rehearsed`. This
-is what makes a recovery plan safe to point at production long before the night
-you need it. Arming is dropped automatically on a diagram that only reads: a run
-stamped "armed" that could never have written anything teaches the wrong thing
-about the badge.
+A run is a **rehearsal** unless you tick *Arm this run*. Unarmed, nothing is
+changed — but the three writing steps say so differently, and the difference is
+not cosmetic:
+
+* a **Catalogue action** runs as a real dry run, because the automation itself
+  has one: it computes what it would do and reports whether that worked. The row
+  says `rehearsed`.
+* a **Console script** and an **Integration hook** are **not sent at all**, and
+  the step ends `unknown`. Neither has a dry run — classifying CLI text is a
+  fact about the text, not about the appliance, and a hook run "with a sample
+  payload" is still the hook, running, holding its real secrets.
+
+So a rehearsal of a repair plan **stops where the repair would have been**,
+rather than walking the "and then it was fixed" branch against a box nobody
+fixed. What a rehearsal proves is that the plan is *sendable* — validated,
+classified, and pointed at an appliance that can be dialled. Not that it works.
+
+Arming is dropped automatically on a diagram that only reads: a run stamped
+"armed" that could never have written anything teaches the wrong thing about
+the badge.
+
+### The write door
+
+**Console script** is the first path in SATOM that sends a configuration line
+to an appliance from a plan rather than from a person at a keyboard. It reuses
+the Device Console's own rules and relaxes none of them:
+
+* commands that wipe or reformat are **refused outright** — you cannot save a
+  diagram containing one, at any permission level;
+* disruptive commands (reboot, shutdown, restore, HA changes, password changes)
+  require the step to **name the one appliance it may disrupt**. At run time
+  that name must equal the appliance the run is pointed at, or the step refuses
+  and sends nothing. Aiming the same process at another box does not reboot it.
+  This is deliberately stricter than the Console page, where typing the name
+  only proves you read the warning — a process has no human at 3 a.m., so the
+  agreement has to be written into the plan;
+* the whole script is checked **before the session opens**, and a failure stops
+  the rest, because the FortiOS CLI is modal and lines after a failure would run
+  in the wrong context;
+* everything sent is written to the audit trail under the **same** name the
+  Console page uses, marked as having come from a process. Asking "what has
+  been sent over the console" must not require knowing there are two doors.
+
+One thing this step does **not** get you: `delete_guard` cannot see a `delete`
+inside a CLI `config` block, so a shared object the web UI would have refused to
+remove can be removed from here. That is the cost of the level, and it is
+written on the page as well as here.
+
+**Integration hook** queues one hook from *Administrator → Integrations* and
+waits for its verdict. The step never executes anything itself — it writes a
+request file, and a separate privileged unit turns that into a process. The wait
+is bounded by the hook's own timeout and cannot be lengthened from the diagram,
+since a longer wait cannot outlive a job the runner already killed. A request
+still sitting in the queue when the wait runs out ends `unknown` and names the
+unit that did not pick it up — silence there is a fact about this node, not
+about the hook.
 
 Actions that require an approved change request are **not offered**. A process
 is a plan, not an approval — raise the change request and let it schedule the

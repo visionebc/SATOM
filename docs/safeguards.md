@@ -13574,3 +13574,123 @@ the ask named, is a standalone. So the button does not appear on it, which is
 the correct behaviour and also means the page has only ever been rendered
 against synthetic cluster rows. The live-run path is covered by fixtures and by
 the mutation harness, never by a box that handed a role over.
+
+## §157 — the generic write door, and the one thing a rehearsal cannot prove (2026-09-09)
+
+`tests/test_process_write_nodes.py` · `tests/test_process_doc_currency.py`
+
+Process gained the two nodes the first round deliberately held back:
+`console_script` (CLI lines to an appliance) and `hook` (operator-written
+Python holding real secrets). Every other node in the catalogue **asks**; these
+two **change**. So the guards are not about the shape of a `StepResult` — they
+are about **when nothing happens at all**.
+
+### The rule that separates a rehearsal from a repair
+
+An unarmed run does not send them, at all, and the step ends `unknown`.
+
+`action` may return a verdict unarmed because `run_action(dry_run=True)` is a
+real preview: the spec computes what it would do and reports whether that
+computation worked. Neither new node has such a mode — classifying CLI text is
+a fact about the **text**, and `dispatch_one(sample=True)` still runs the hook
+with its real secrets. **The verdict differs because the evidence differs.**
+
+The cost is written on the page, in the manual and in the module: a plan whose
+whole point is the write **cannot be rehearsed end to end**. A rehearsal stops
+where the repair would have been, instead of walking the "and then it was
+fixed" branch against a box nobody fixed. What it proves is that the plan is
+*sendable* — validated, classified, pointed at an appliance that can be
+dialled — not that it works.
+
+**The guard that matters asserts the RECORDER is empty, not the verdict.** A
+verdict can be right while the appliance was changed anyway, and that is the
+failure nobody would ever notice.
+
+### Who agreed, and to what
+
+The Console page asks a human to tick an acknowledgement and type the appliance
+name at the moment of sending. A process has no human at 3 a.m., so the
+agreement moves into the **plan**: a disruptive step names the one appliance it
+may disrupt, and at run time that string must equal the appliance the run is
+pointed at. Aiming the same process at another box refuses and sends nothing.
+
+That is **stricter** than the page, where the typed name only proves the
+operator read the warning. Mutations covering it: name unchecked, prefix match
+instead of equality, blank name accepted, `allow_disruptive` hard-wired on.
+
+### Two failures that look identical in `ScriptResult` and are not
+
+`run_script` sets `error` for **both** a refused command and a dead socket.
+Collapsed, they send an operator to check credentials when the real answer is
+that the command has no path through SATOM at any level. Split explicitly:
+
+* a `refused` row → `unknown`, *"SATOM refused to send"* — a fact about SATOM;
+* `error` with no row that ran → `unknown`, *"the session did not open"*;
+* any row `error` → `fail` — the appliance answered and said no.
+
+### Silence from the hook runner is a fact about THIS node
+
+`dispatch_one` writes a JSON file; a systemd `.path` unit turns it into a
+process. A request still `queued` when the wait budget runs out is `unknown`
+and **names the unit** — silence there is the observer's problem.
+
+That is not hypothetical. Measured 2026-09-09: `satom-integrations.path` is
+`disabled/inactive` on **satom-node-2**, so a hook step on the standby would
+queue forever. Same class as the `satom-updater.path` gap that left enqueued
+updates sitting for weeks in July 2026, and it looked like nothing at all.
+
+The wait is bounded by the hook's **own** clamped timeout and cannot be
+lengthened from the diagram: a longer wait cannot outlive a job the runner
+already killed, it can only hold a web worker open for nothing.
+
+### Provenance is overwritten, never defaulted
+
+The `satom_process` block in a hook payload is SATOM's claim about where the
+request came from. `setdefault` would let the plan pre-set it. **A forgeable
+provenance stamp is worse than none, because it is believed.**
+
+### One audit name for one capability
+
+Everything sent from a process is logged under `console.run`, the same action
+the page uses, marked `via: process`. An operator asking *"what has been sent
+over the console"* must not have to know there are two doors. An unarmed run
+writes **no** row — a row saying a script ran is the same lie as a green step,
+and it is what an auditor reads months later.
+
+### The gap this step does NOT close, named where the arming happens
+
+`delete_guard` cannot see a `delete` inside a CLI `config` block without
+reimplementing the reference graph against FortiOS syntax. A shared object the
+web UI would refuse to remove **can** be removed from here. The warning renders
+only on diagrams that actually contain a console step — the same warning on
+every page is a warning nobody reads, and there is a guard for each half.
+
+### Save time, not run time
+
+A forbidden command, a disruptive one with no named appliance, a comment-only
+script, a script longer than the console sends, an unknown hook slug and a
+payload that is not a JSON object are all refused **when the diagram is saved**.
+`run_script` re-gates before it opens the session; this gate is earlier still,
+so a plan that could never legally run cannot be written down and then trusted.
+The oversize case matters on its own: `run_script` would **truncate and note
+it**, and a note on a run nobody reads is not the same as refusing a 300-line
+plan.
+
+### Doc currency is a guard, not a habit
+
+Nothing fails when a documented surface goes stale; the sentence just stops
+being true and keeps printing. The §42 step table is checked against
+`process_kinds.kinds()` **in both directions and on the Writes column**, because
+an operator planning a recovery reads exactly that column to decide what is safe
+to point at production.
+
+### How to re-run
+
+    python3 -u /root/mutate_write_nodes.py        # on satom-node-1, as root
+
+`ulimit -v 1500000` and `timeout -s KILL 200` on every child, `python3 -u`,
+baseline-green required before scoring, `__pycache__` purged per round (never
+`deploy/__pycache__` — it is root-owned), tree restored by content and verified
+by SHA-256, suite re-run green after the last restore. A negative rc, 124 or 137
+counts as **killed by the resource cap** and is reported as such; a missing
+anchor counts as a **survivor**, never a kill.

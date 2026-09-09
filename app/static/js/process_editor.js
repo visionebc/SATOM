@@ -356,6 +356,10 @@
         insp.appendChild(actionPicker(n, p));
         return;
       }
+      if (n.kind === "hook" && p.name === "slug") {
+        insp.appendChild(hookPicker(n, p));
+        return;
+      }
       if (p.kind === "select") {
         insp.appendChild(selectInput(p.label, p.choices || [],
           n.params[p.name] || p.default, function (v) {
@@ -375,7 +379,9 @@
     var wrap = field(label, help);
     var i = document.createElement(big ? "textarea" : "input");
     i.className = "form-control form-control-sm";
-    if (big) i.rows = 2;
+    /* A CLI script or a JSON payload in a two-row box is a box you cannot read
+       what you typed into. */
+    if (big) i.rows = 4;
     i.value = value === undefined || value === null ? "" : value;
     i.disabled = !CAN_EDIT;
     i.addEventListener("change", function () { onChange(i.value); });
@@ -419,6 +425,33 @@
     s.disabled = !CAN_EDIT;
     s.addEventListener("change", function () {
       n.params.action_key = s.value; markDirty(); draw();
+    });
+    wrap.insertBefore(s, wrap.querySelector(".form-text"));
+    return wrap;
+  }
+
+  function hookPicker(n, p) {
+    var wrap = field(p.label + " *",
+      "Hooks defined in Administrator → Integrations. A disabled hook is " +
+      "offered and labelled: turning one on for a drill is normal, and hiding " +
+      "it would look like it had been deleted.");
+    var s = document.createElement("select");
+    s.className = "form-select form-select-sm";
+    var none = document.createElement("option");
+    none.value = ""; none.textContent = "— choose —";
+    s.appendChild(none);
+    (DATA.hooks || []).forEach(function (h) {
+      var o = document.createElement("option");
+      o.value = h.slug;
+      o.textContent = h.slug + " (" + h.event + ")" + (h.enabled ? "" : "  — disabled");
+      o.title = "timeout " + h.timeout + "s" +
+        (h.secrets && h.secrets.length ? "; secrets: " + h.secrets.join(", ") : "");
+      if (n.params.slug === h.slug) o.selected = true;
+      s.appendChild(o);
+    });
+    s.disabled = !CAN_EDIT;
+    s.addEventListener("change", function () {
+      n.params.slug = s.value; markDirty(); draw();
     });
     wrap.insertBefore(s, wrap.querySelector(".form-text"));
     return wrap;

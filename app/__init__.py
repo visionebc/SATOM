@@ -358,6 +358,13 @@ def create_app(config_override: object | None = None) -> Flask:
                        # console, so pinning its editor to one ADOM would let
                        # four consoles use wording they cannot see or correct.
                        'cr_types',
+                       # Process is drawn into EVERY Administrator block by
+                       # partials/nav_process.html, so it must be reachable in
+                       # every ADOM or the entry is a live link that goes
+                       # nowhere. Which processes a console SEES is a separate
+                       # question, answered once by
+                       # process_engine.visible_processes (Process.products).
+                       'process',
                        # Firmware is product-scoped by row (2026-08-06): each
                        # ADOM sees and uploads only its own images. It used to
                        # be reachable from FortiAnalyzer only, which is why the
@@ -417,6 +424,13 @@ def create_app(config_override: object | None = None) -> Flask:
                        # console, so pinning its editor to one ADOM would let
                        # four consoles use wording they cannot see or correct.
                        'cr_types',
+                       # Process is drawn into EVERY Administrator block by
+                       # partials/nav_process.html, so it must be reachable in
+                       # every ADOM or the entry is a live link that goes
+                       # nowhere. Which processes a console SEES is a separate
+                       # question, answered once by
+                       # process_engine.visible_processes (Process.products).
+                       'process',
                        # Scheduled Actions is mirrored into every ADOM
                        # (2026-08-10). Rows carry ScheduledAction.product
                        # and the catalog is cut to the actions whose
@@ -451,6 +465,13 @@ def create_app(config_override: object | None = None) -> Flask:
                        # console, so pinning its editor to one ADOM would let
                        # four consoles use wording they cannot see or correct.
                        'cr_types',
+                       # Process is drawn into EVERY Administrator block by
+                       # partials/nav_process.html, so it must be reachable in
+                       # every ADOM or the entry is a live link that goes
+                       # nowhere. Which processes a console SEES is a separate
+                       # question, answered once by
+                       # process_engine.visible_processes (Process.products).
+                       'process',
                        # Scheduled Actions is mirrored into every ADOM
                        # (2026-08-10). Rows carry ScheduledAction.product
                        # and the catalog is cut to the actions whose
@@ -2131,6 +2152,7 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.config_compare", "bp"),
         ("app.views.calendar", "bp"),
         ("app.views.console", "bp"),
+        ("app.views.process", "bp"),
         ("app.views.users", "bp"),
         ("app.views.profiles", "bp"),
         ("app.views.metrics", "bp"),
@@ -2155,6 +2177,10 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.segments", "bp"),
         ("app.views.naming", "bp"),
         ("app.views.scheduled_actions", "bp"),
+        # Second surface out of the SAME module (see its docstring):
+        # user-scope Automations. ``web_prefixed`` is keyed by module
+        # path, so this one picks up the /web ADOM prefix too.
+        ("app.views.scheduled_actions", "user_bp"),
         ("app.views.cert_manager", "bp"),
         ("app.views.change_requests", "bp"),
         ("app.views.upgrade_flow", "bp"),

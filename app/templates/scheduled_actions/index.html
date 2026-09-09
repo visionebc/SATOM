@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Scheduled Actions — SATOM{% endblock %}
+{% block title %}{{ surface.title }} — SATOM{% endblock %}
 
 {% block breadcrumb %}
 <div class="fw-breadcrumb mb-1">
@@ -8,22 +8,92 @@
   <span class="separator">/</span>
   <span>{{ _('Automation') }}</span>
   <span class="separator">/</span>
-  <span>{{ _('Scheduled Actions') }}</span>
+  <span>{{ _(surface.title) }}</span>
 </div>
 {% endblock %}
 
 {% block content %}
 <div class="fw-page-header">
   <div>
-    <h1 class="fw-page-title"><i class="bi bi-clock-history me-2 text-accent"></i>{{ _('Scheduled Actions') }}</h1>
+    <h1 class="fw-page-title"><i class="bi {{ surface.icon }} me-2 text-accent"></i>{{ _(surface.title) }}</h1>
     <p class="text-muted mb-0" style="font-size:13px;">
-      {{ _('Automate fleet maintenance — backups, signature syncs and gated changes — on a schedule. Jobs are fired by the scheduler sidecar, never by the web workers.') }}
+      {{ _(surface.blurb) }}
+      {{ _('Jobs are fired by the scheduler sidecar, never by the web workers.') }}
     </p>
   </div>
-  <a class="btn btn-fw-primary" href="{{ url_for('scheduled_actions.new') }}">
+  <a class="btn btn-fw-primary" href="{{ url_for('.new') }}">
     <i class="bi bi-plus-lg me-1"></i>{{ _('New Action') }}
   </a>
 </div>
+
+{# The filter is a VIEW preference, saved per surface on the signed-in user's
+   profile. It can hide a row but never disarm one: every automation below and
+   every one it hides keeps firing on its schedule, which is why the count and
+   the Clear control are not optional chrome. #}
+<form method="GET" action="{{ url_for('.index') }}" class="fw-card p-2 mb-2">
+  {# Marks THIS as a submission. A GET form sends every named field, so
+     clearing every box yields "?q=&action=&..." — indistinguishable from a bare
+     visit once trimmed, and the saved filter the user just emptied comes back. #}
+  <input type="hidden" name="submitted" value="1">
+  <div class="d-flex flex-wrap align-items-center gap-2">
+    <input type="text" class="form-control form-control-sm" name="q" style="max-width:210px;"
+           value="{{ flt.filters.q }}" placeholder="{{ _('Name contains…') }}">
+    <select name="action" class="form-select form-select-sm" style="max-width:220px;">
+      <option value="">{{ _('Any action') }}</option>
+      {% for akey, alabel in action_choices %}
+      <option value="{{ akey }}" {{ 'selected' if flt.filters.action == akey }}>{{ alabel }}</option>
+      {% endfor %}
+    </select>
+    <select name="status" class="form-select form-select-sm" style="max-width:140px;">
+      <option value="">{{ _('Any status') }}</option>
+      {% for s in status_choices %}
+      <option value="{{ s }}" {{ 'selected' if flt.filters.status == s }}>{{ _(s) }}</option>
+      {% endfor %}
+    </select>
+    <select name="schedule" class="form-select form-select-sm" style="max-width:140px;">
+      <option value="">{{ _('Any schedule') }}</option>
+      {% for s in schedule_choices %}
+      <option value="{{ s }}" {{ 'selected' if flt.filters.schedule == s }}>{{ _(s) }}</option>
+      {% endfor %}
+    </select>
+    {% if allow_cross %}
+    {# Offered ONLY to a viewer who already holds the other surface's
+       permission. It widens what is DRAWN, never what may be done: the rows it
+       reveals are read-only and link to the page that owns them. #}
+    <div class="form-check form-check-inline mb-0">
+      <input class="form-check-input" type="checkbox" id="f-scope" name="scope" value="all"
+             {{ 'checked' if flt.cross_scope }}>
+      <label class="form-check-label" for="f-scope" style="font-size:13px;">
+        {{ _('Also show') }} {{ _(other_title) }}</label>
+    </div>
+    {% endif %}
+    <div class="form-check form-check-inline mb-0">
+      <input class="form-check-input" type="checkbox" id="f-save" name="save" value="1"
+             {{ 'checked' if flt.saved }}>
+      <label class="form-check-label" for="f-save" style="font-size:13px;">{{ _('Remember for me') }}</label>
+    </div>
+    <button type="submit" class="btn btn-fw-primary btn-sm">
+      <i class="bi bi-funnel me-1"></i>{{ _('Filter') }}</button>
+    <a class="btn btn-fw-secondary btn-sm" href="{{ url_for('.index', clear=1) }}">
+      <i class="bi bi-x-lg me-1"></i>{{ _('Clear') }}</a>
+    <span class="text-muted ms-auto" style="font-size:12px;">
+      {{ _('Showing') }} <strong>{{ rows|length }}</strong> {{ _('of') }} <strong>{{ total }}</strong>
+      {% if flt.saved %}<span class="fw-badge fw-badge-primary ms-1">{{ _('saved to profile') }}</span>{% endif %}
+    </span>
+  </div>
+  {% if flt.unreadable or flt.stale %}
+  {# A dropped facet is NAMED. A saved filter that quietly matches nothing on
+     every future visit reads as "my automations were deleted". #}
+  <div class="mt-2" style="font-size:12px;">
+    {% if flt.unreadable %}
+    <span class="fw-badge fw-badge-warning me-1">{{ _('Your saved filter could not be read — showing everything.') }}</span>
+    {% endif %}
+    {% for slabel, svalue in flt.stale %}
+    <span class="fw-badge fw-badge-warning me-1">{{ _('Dropped') }}: {{ slabel }} = {{ svalue }} — {{ _('no longer offered') }}</span>
+    {% endfor %}
+  </div>
+  {% endif %}
+</form>
 
 <div class="fw-table-wrapper">
   <table class="fw-table">
@@ -46,6 +116,17 @@
         <tr>
           <td>
             <strong>{{ a.name }}</strong>
+            {# An orphan still FIRES. It is listed here (see effective_scope)
+               rather than nowhere, and it says so: an unlabelled row whose key
+               the catalog no longer has reads as a normal action. #}
+            {% if row.orphan %}
+              <span class="fw-badge fw-badge-warning ms-1"
+                    title="{{ _('This action key is no longer in the catalog. It still fires on its schedule — edit or delete it.') }}">{{ _('unknown action') }}</span>
+            {% endif %}
+            {% if row.foreign %}
+              <span class="fw-badge fw-badge-secondary ms-1"
+                    title="{{ _('This automation lives on the other page. Shown because you asked to see it; open it there to change it.') }}">{{ _(row.owner_title) }}</span>
+            {% endif %}
             {% if row.danger %}
               <span class="fw-badge fw-badge-danger ms-1" title="{{ _('Destructive action') }}">
                 <i class="bi bi-exclamation-triangle-fill"></i>
@@ -89,15 +170,25 @@
             {% endif %}
           </td>
           <td class="actions-col">
+            {% if row.foreign %}
+            {# Its Edit / Run / Delete resolve to THIS blueprint, whose by-id
+               guard 404s a row it does not own. A button that looks armed and
+               answers "gone" reads as a deleted automation. #}
+            <a class="btn btn-sm btn-outline-secondary"
+               href="{{ url_for(row.owner_endpoint ~ '.index') }}"
+               title="{{ _('Open on the page that owns it') }}">
+              <i class="bi bi-box-arrow-up-right me-1"></i>{{ _('Open') }}
+            </a>
+            {% else %}
             <a class="btn btn-sm btn-outline-secondary btn-sm-icon me-1"
-               href="{{ url_for('scheduled_actions.history', id=a.id) }}" title="{{ _('Run history') }}">
+               href="{{ url_for('.history', id=a.id) }}" title="{{ _('Run history') }}">
               <i class="bi bi-list-columns-reverse"></i>
             </a>
             <a class="btn btn-sm btn-outline-primary btn-sm-icon me-1"
-               href="{{ url_for('scheduled_actions.edit', id=a.id) }}" title="{{ _('Edit') }}">
+               href="{{ url_for('.edit', id=a.id) }}" title="{{ _('Edit') }}">
               <i class="bi bi-pencil"></i>
             </a>
-            <form method="POST" action="{{ url_for('scheduled_actions.run_now', id=a.id) }}"
+            <form method="POST" action="{{ url_for('.run_now', id=a.id) }}"
                   style="display:inline;"
                   data-fw-confirm-form="Run '{{ a.name }}' now? This executes synchronously against the live target(s).">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -105,7 +196,7 @@
                 <i class="bi bi-play-fill"></i>
               </button>
             </form>
-            <form method="POST" action="{{ url_for('scheduled_actions.toggle', id=a.id) }}" style="display:inline;">
+            <form method="POST" action="{{ url_for('.toggle', id=a.id) }}" style="display:inline;">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button type="submit"
                       class="btn btn-sm {{ 'btn-outline-warning' if a.enabled else 'btn-outline-success' }} btn-sm-icon me-1"
@@ -113,13 +204,14 @@
                 <i class="bi bi-{{ 'pause-circle' if a.enabled else 'play-circle' }}"></i>
               </button>
             </form>
-            <form method="POST" action="{{ url_for('scheduled_actions.delete', id=a.id) }}" style="display:inline;"
+            <form method="POST" action="{{ url_for('.delete', id=a.id) }}" style="display:inline;"
                   data-fw-confirm-form="Permanently delete scheduled action '{{ a.name }}'? This cannot be undone.">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button type="submit" class="btn btn-sm btn-outline-danger btn-sm-icon" title="{{ _('Delete') }}">
                 <i class="bi bi-trash"></i>
               </button>
             </form>
+            {% endif %}
           </td>
         </tr>
         {% endfor %}
@@ -127,14 +219,30 @@
         <tr>
           <td colspan="8">
             <div class="fw-empty-state">
+              {% if flt.active %}
+              {# Empty because of a FILTER and empty because nothing exists are
+                 one pixel apart on screen and an order of magnitude apart in
+                 consequence: these rows keep firing whether or not this page
+                 draws them. The filtered state must never borrow the
+                 never-created wording, and must offer the way out. #}
+              <div class="fw-empty-state-icon"><i class="bi bi-funnel"></i></div>
+              <div class="fw-empty-state-title">{{ _('No automation matches this filter') }}</div>
+              <div class="fw-empty-state-text">
+                {{ total }} {{ _('are on this page and are still running on their schedule.') }}
+              </div>
+              <a class="btn btn-fw-secondary mt-2" href="{{ url_for('.index', clear=1) }}">
+                <i class="bi bi-x-lg me-1"></i>{{ _('Clear filter') }}
+              </a>
+              {% else %}
               <div class="fw-empty-state-icon"><i class="bi bi-clock-history"></i></div>
               <div class="fw-empty-state-title">{{ _('No scheduled actions yet') }}</div>
               <div class="fw-empty-state-text">
                 {{ _('Create your first automation — a recurring config backup, a signature sync, or a one-shot maintenance task.') }}
               </div>
-              <a class="btn btn-fw-primary mt-2" href="{{ url_for('scheduled_actions.new') }}">
+              <a class="btn btn-fw-primary mt-2" href="{{ url_for('.new') }}">
                 <i class="bi bi-plus-lg me-1"></i>{{ _('New Action') }}
               </a>
+              {% endif %}
             </div>
           </td>
         </tr>

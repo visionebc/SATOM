@@ -13800,3 +13800,57 @@ every child, `python3 -u`, baseline-green required before scoring,
 `__pycache__` purged per round (never `deploy/__pycache__`), tree restored by
 content and verified by SHA-256, suite re-run green after the last restore, a
 missing anchor scored as a **survivor**.
+
+
+## §159 — a filter is a view preference, and a split is a permission (2026-09-09)
+
+Two things that look identical on screen and are not the same object. The
+Automation subsystem now has both, and every guard in
+`tests/test_automation_filter.py` (60) and `tests/test_automation_split.py` (50)
+exists to keep them from being confused for one another.
+
+**The rules the code is held to**
+
+1. A filter may change what a page DRAWS. It may never change what anyone may
+   DO. The cross-scope facet is offered only to a viewer who already holds the
+   other surface's permission, is re-gated on every read (a permission lost
+   since the filter was saved must stop widening the page — the store is not an
+   access-control record), and the by-id route guard is untouched by it.
+2. A filter never silently empties a list. `Showing N of M` on both pages, and
+   the filtered-empty state must not borrow the never-created wording. These
+   rows keep firing whether or not a page draws them.
+3. A saved facet the catalog no longer offers is DROPPED and NAMED, and never
+   written back. Applied, it matches nothing on every future visit forever.
+4. One preference key per surface, keyed by blueprint.
+5. A row revealed by the cross-scope facet is drawn read-only and linked to the
+   page that owns it.
+6. The dropdown offers only values that can match on this page.
+
+**How to check it (the parts that cost time)**
+
+* `runuser -u satom -- venv/bin/python -m pytest tests/test_automation_filter.py
+  tests/test_automation_split.py -q` — 110, rc=0.
+* Mutation harness `/tmp/mut_filter.py` (39 mutations, 39 bite). Only `rc==1`
+  counts as a kill; the runner half is copied verbatim from the split harness so
+  there is one author for "how a mutation is measured".
+* Live render against a1's real database: `/tmp/live_render.py` — 9 URLs, the
+  save/restore/clear round trip, and a scan for dark-theme literals (§9m: this
+  product is light, always).
+
+**Three traps this round paid for**
+
+* **`{% if row.foreign %}` appears twice in the template.** An anchor that
+  matches twice is NEVER APPLIED and scores as a survivor, not a kill. Re-anchor
+  with the enclosing element.
+* **The ninth assert-by-substring to match a string its own document supplied.**
+  `"System Automations"` is the row badge AND the label of the cross-scope
+  checkbox (`Also show System Automations`), so "the revealed row is labelled
+  with its owner" passed with the badge deleted. Slice the table off the form
+  before asserting about rows — the `_table()` helper beside `_split_chrome()`.
+* **`pkill -f 'mut_filter.py'` kills its own SSH session**, because the invoking
+  shell's command line contains the pattern. Use `pgrep -f 'mut_[f]ilter.py' |
+  xargs -r kill`. Same family: a wait loop whose predicate is `pgrep -af
+  'py[t]est'` matches *other sessions' waiter shells*, which contain the word and
+  match themselves — four of them have been spinning since an earlier session and
+  reported a busy tree forever against a node at load 1.3. Match a real
+  invocation: `pgrep -af 'bin/python[0-9.]* -m py[t]est'`.

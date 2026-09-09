@@ -64,6 +64,21 @@ GROUP_FIELDS = {
 #: sweep is ~15k runs; the calendar shows the ones that FAILED plus a bounded
 #: sample of the rest, and says which. An unbounded read here is the page that
 #: times out on the busiest month of the year.
+
+def _owner_endpoint(action) -> str:
+    """Which automation surface owns ``action`` — imported lazily.
+
+    A module-level import would tie two view modules together at import time for
+    one string. ``None`` (a run whose action row is gone) answers with the system
+    surface: the by-id route 404s either way, and sending an operator to the page
+    they cannot open would turn a stale link into a permission error.
+    """
+    from . import scheduled_actions as sa_views
+    if action is None:
+        return "scheduled_actions"
+    return sa_views.endpoint_for(action)
+
+
 MAX_RUNS = 400
 
 #: How many event blocks the page pre-renders into hidden day panels so that
@@ -228,7 +243,11 @@ def _collect(view: str, anchor: date, kinds: set) -> dict:
         auto = cal.automation_events(
             actions, max(start, now), end, tz,
             label_for=_labeller(),
-            url_for_action=lambda a: url_for("scheduled_actions.index"))
+            # PER ROW, not per page: the two surfaces refuse each other's
+            # ids (404) and hold different permissions (403). One hardcoded
+            # endpoint would make every user-scope automation on this grid
+            # look deleted to the very operator who scheduled it.
+            url_for_action=lambda a: url_for(_owner_endpoint(a) + ".index"))
         events += auto
         for act in actions:
             if act.enabled and any(e["id"] == act.id and e.get("truncated")
@@ -254,12 +273,14 @@ def _collect(view: str, anchor: date, kinds: set) -> dict:
             notes.append(
                 f"{total} runs happened in this range; the {len(runs)} most "
                 f"recent are drawn. Open Scheduled Actions → History for the rest.")
-        names = {a.id: (a.name or a.action) for a in ScheduledAction.query.all()}
+        rows_by_id = {a.id: a for a in ScheduledAction.query.all()}
+        names = {i: (a.name or a.action) for i, a in rows_by_id.items()}
         events += cal.run_events(
             runs, tz,
             name_for=lambda r: names.get(r.action_id, f"action #{r.action_id}"),
-            url_for_run=lambda r: url_for("scheduled_actions.history",
-                                          id=r.action_id))
+            url_for_run=lambda r: url_for(
+                _owner_endpoint(rows_by_id.get(r.action_id)) + ".history",
+                id=r.action_id))
 
     buckets = cal.bucket_by_day(events)
     today = cal.local_dt(now, tz).date()

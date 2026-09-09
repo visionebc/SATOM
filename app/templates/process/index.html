@@ -28,8 +28,15 @@
     </p>
   </div>
   {% if current_user.can('config_write') %}
-  <a class="btn btn-primary btn-sm" href="{{ url_for('process.create') }}">
-    <i class="bi bi-plus-lg me-1"></i>{{ _('New process') }}</a>
+  <div class="d-flex gap-2">
+    {#  Import sits beside New because they are the same act: a procedure
+        arrives either drawn here or written elsewhere. Hiding it in a menu is
+        how a feature that exists gets rebuilt by hand.                     #}
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('process.import_xml') }}">
+      <i class="bi bi-filetype-xml me-1"></i>{{ _('Import XML') }}</a>
+    <a class="btn btn-primary btn-sm" href="{{ url_for('process.create') }}">
+      <i class="bi bi-plus-lg me-1"></i>{{ _('New process') }}</a>
+  </div>
   {% endif %}
 </div>
 

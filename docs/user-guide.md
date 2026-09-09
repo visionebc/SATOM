@@ -4839,7 +4839,70 @@ A run keeps its **own copy of the diagram it walked**. Editing a process
 therefore never rewrites its own past, and deleting one keeps its history —
 each run carries the name, the key and the graph it ran.
 
+### Importing and exporting a process (XML)
+
+A procedure is usually written down long before the night it is needed, and
+rarely by the person sitting in this console: it arrives as a customer runbook,
+it is kept in version control beside the rest of the installation's
+documentation, or it was built on the lab install and has to reach production.
+**Process → Import XML** loads one as a file, and any process can be downloaded
+from its own page with **Export XML**. The two are the same format, so a plan
+travels between installations without being drawn twice — which is how two
+installations end up with two different procedures that share a name.
+
+The file is refused **whole or accepted whole**. Nothing at all is written
+unless every check passes, and the graph is handed to the *same validator the
+editor saves through* — a console step carrying a forbidden command is refused
+on import exactly as it is refused when you draw it. The importer is not a
+second door into the appliance.
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<satom-process key="dr-failover-check" name="DR failover check" enabled="yes">
+  <description>Prove the standby answers before anyone is told it does.</description>
+  <adoms>
+    <adom>fortiweb</adom>
+  </adoms>
+  <steps>
+    <step key="start" kind="start" label="Start" x="60" y="40"/>
+    <step key="vip" kind="tcp_check" label="VIP answers" x="60" y="140">
+      <param name="host">192.0.2.249</param>
+      <param name="port">443</param>
+    </step>
+  </steps>
+  <arrows>
+    <arrow from="start" to="vip" branch="always"/>
+  </arrows>
+</satom-process>
+```
+
+Four things are worth knowing before you write one by hand:
+
+* **Every parameter is an element, never an attribute.** XML replaces a literal
+  newline inside an attribute with a space — only an escaped `&#10;` survives —
+  so a console script written as an attribute would arrive as a single line
+  that is no longer the command you wrote. Elements keep it as typed, and a
+  hand-indented script is de-indented as a block, so relative indentation is
+  preserved.
+* **Naming no `<adom>` leaves the process a draft**, visible in the Global
+  console only. An empty list is never read as "everywhere".
+* **An ADOM this installation does not have is an error, not something dropped.**
+  Moving a process between installations is the case the format exists for, so
+  a missing ADOM is the likely mistake and is said out loud rather than
+  silently turning your plan into a draft.
+* **Re-importing an existing key replaces that process** — its steps, its
+  arrows and its settings — and is refused until you type the key in the
+  confirmation box. Run history is kept either way: every run carries its own
+  copy of the diagram it walked, so past reports keep saying what they always
+  said and a run parked on a manual gate resumes through its own snapshot.
+
+draw.io, BPMN and Visio files are **named and refused**, never half-read. A
+drawn box carries a shape and a caption; it does not carry the step kind or the
+parameters that make a step runnable, so importing one would produce a diagram
+that looks like your plan and cannot execute a single check.
+
 ### Permissions
 
-Reading a process and its runs needs `view`. Drawing, editing, running and
-answering a gate need `config_write`.
+Reading a process and its runs needs `view` — that includes **Export XML**,
+which hands back the content the page already shows. Drawing, editing,
+importing, running and answering a gate need `config_write`.

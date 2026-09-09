@@ -163,7 +163,9 @@ PAGES: tuple[dict, ...] = (
     _p("process.index", "Process — Procedures & Recovery Plans", "automation",
        "process procedure runbook recovery plan disaster dr flowchart diagram "
        "checklist steps validate after upgrade onboarding verify everything "
-       "works automatic check run the plan decision branch manual gate walk",
+       "works automatic check run the plan decision branch manual gate walk "
+       "import export xml file load a runbook move a procedure between "
+       "installations drawio bpmn visio",
        "Operator-drawn procedures SATOM walks step by step: each step asks the "
        "module that owns the question (HTTP, TCP, DNS, appliance health, the "
        "read-only console, a catalogue action) and the arrows say where to go "
@@ -525,6 +527,11 @@ EXCLUDED: dict[str, str] = {
     # standing of its own on the map; "where does X live" is answered by
     # process.index.
     "process.create": "form",
+    # Same standing as the New-process form: a door on process.index,
+    # reached from it, and findable through its keywords rather than as a
+    # second concept. "Where do I import a runbook" and "where do processes
+    # live" must not resolve to two different answers.
+    "process.import_xml": "form",
     # JSON feeds consumed by a page's own JS.
     "advisor.attach_sot_search": "json feed", "advisor.attachable": "json feed",
     "advisor.tools": "json feed", "advisor.usage": "json feed",

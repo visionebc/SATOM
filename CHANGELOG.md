@@ -6,6 +6,69 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — A procedure as a file: import and export a process as XML (2026-09-09)
+
+**`Administrator → Process → Import XML`**, and **`Export XML`** on any
+process page. A recovery plan is written down long before the night it is
+needed and rarely by the person at this console: it arrives as a customer
+runbook, lives in version control beside the rest of the installation's
+documentation, or was built on the lab install. The two routes are the same
+format, so a plan travels between installations instead of being drawn twice.
+
+- **The importer is not a second door.** The parsed graph goes to
+  `process_kinds.validate_graph` — the same call the editor's save makes —
+  before a single row is written. A console step carrying a forbidden command
+  is refused on import exactly as it is refused when drawn, and the test that
+  fixes this neuters the validator to prove the refusal really comes from it.
+- **Refused whole or accepted whole**, with every structural problem listed at
+  once. A half-imported procedure would look saved and walk somewhere else.
+- **Parameters are elements, never attributes.** XML replaces a literal newline
+  inside an attribute with a space (only an escaped `&#10;` survives), so a
+  console script written as an attribute would arrive as a single line that is
+  no longer the command its author wrote. Hand-indented files are de-indented
+  as a block, keeping relative indentation.
+- **draw.io, BPMN, Visio and SVG are named and refused, never half-read.** A
+  drawn box carries a shape and a caption, not the step kind and parameters
+  that make a step runnable; a shape-only import would look like the operator's
+  plan and could not execute a single check.
+- **An ADOM this installation does not have is an error, not a drop** —
+  dropping it would import the plan as a draft that looks published. A label
+  longer than its column is refused rather than cut. Any DOCTYPE or ENTITY is
+  refused on the raw bytes, before parsing.
+- **Replacing an existing key** rewrites that process only after the operator
+  types the key, and is impossible for a process not offered in this ADOM. Run
+  history is kept: every run carries its own copy of the diagram it walked.
+- Export round-trips byte-identically, keeps parameters this build does not
+  recognise, and the example printed on the import page is itself imported by a
+  test. Reading and exporting need `view`; importing needs `config_write`.
+
+### Added — Process: procedures the system walks and judges (2026-09-09)
+
+**`Administrator → Process`, in all five ADOM consoles.** An operator draws a
+procedure once — a recovery plan, a post-upgrade check, an onboarding sequence
+— and SATOM walks it step by step and says which layer stopped it. A process is
+registered for one or several ADOMs and appears in each; naming none leaves it
+a draft visible only in Global.
+
+- **Thirteen step kinds**, none of which reimplements a question the product
+  already answers: HTTP, TCP (which keeps *refused* apart from *timeout* — a
+  refusal proves the host is up), DNS, read-only console, appliance health,
+  diagnostics collection, decision, manual gate, and the write-capable
+  catalogue action, console script and integration hook.
+- **Four engine rules, each with its cost written down:** what is below a
+  stopped path is recorded `skipped` and never `pass`; a branch the plan did
+  not take is *not* skipped; `unknown` is neither health nor failure and makes
+  the verdict `partial`; a loop is legitimate and bounded, and hitting the
+  bound aborts with that reason instead of reporting a verdict about a walk
+  that never finished.
+- **A run is a rehearsal unless it is armed.** Unarmed, catalogue actions run
+  `dry_run=True` and the row says so, while console scripts and hooks are not
+  sent at all — neither has a preview, and a rehearsal recorded as a repair is
+  the specific lie the guards exist to prevent.
+- A manual gate parks the run in a database row, answerable hours later; each
+  run keeps its own copy of the graph it walked, so editing a process never
+  rewrites its own past.
+
 ### Added — Scout: which layer is actually broken (2026-09-09)
 
 **`Operations → Troubleshooting → Scout`** (FortiWeb) and **`Fleet → Scout`**

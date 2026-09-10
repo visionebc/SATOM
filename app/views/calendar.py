@@ -231,12 +231,17 @@ def _device_names():
 def _collect(view: str, anchor: date, flt) -> dict:
     """Everything the grid draws, already scoped. Returns the render context.
 
-    ``flt`` is a :class:`services.calendar_filters.Resolved`. Both facets are
+    ``flt`` is a :class:`services.calendar_filters.Resolved`. The filter is
     applied HERE rather than in the template: a row hidden in Jinja is still
     read, still counted in the day badges, and still lands in ``conflicts``,
     so the grid would contradict its own filter.
+
+    Every band is COUNTED whether or not it is drawn. A band the filter
+    switched off is the one case where the grid has nothing to show and a
+    reason for it, so the reason has to reach ``band_notes``; counting only
+    what survives makes "you hid these" and "there are none" the same picture.
     """
-    kinds, owners = flt.kinds, flt.owners
+    owners = flt.owners
     band_counts: dict = {}
     tz = settings_store.tz_name()
     day_from, day_to = _range_for(view, anchor)
@@ -246,7 +251,7 @@ def _collect(view: str, anchor: date, flt) -> dict:
     events: list = []
     notes: list = []
 
-    if "change" in kinds:
+    if flt.draws_changes:
         crs = _cr_scope_filter(
             ChangeRequest.query.order_by(ChangeRequest.created_at.desc()).all())
         events += cal.change_events(
@@ -255,17 +260,18 @@ def _collect(view: str, anchor: date, flt) -> dict:
             names_for=_device_names(),
             url_for_cr=lambda c: url_for("change_requests.detail", id=c.id))
 
-    if "automation" in kinds:
-        from ..services.product_scope import scope_query
-        every = (scope_query(ScheduledAction.query, ScheduledAction.product)
-                 .order_by(ScheduledAction.name).all())
-        # COUNTED BEFORE THE FACET IS APPLIED. A narrowed band and an empty
-        # one are one pixel apart on a month grid and an order of magnitude
-        # apart in consequence, because a hidden automation still fires.
-        scope_of = _scope_of()
-        actions = [a for a in every
-                   if calf.owner_of(a, scope_of=scope_of) in owners]
-        band_counts["automation"] = (len(actions), len(every))
+    from ..services.product_scope import scope_query
+    every = (scope_query(ScheduledAction.query, ScheduledAction.product)
+             .order_by(ScheduledAction.name).all())
+    # COUNTED BEFORE THE FILTER IS APPLIED, and counted even when BOTH
+    # automation bands are off: a narrowed band and an empty one are one pixel
+    # apart on a month grid and an order of magnitude apart in consequence,
+    # because a hidden automation still fires.
+    scope_of = _scope_of()
+    actions = [a for a in every
+               if calf.owner_of(a, scope_of=scope_of) in owners]
+    band_counts["automation"] = (len(actions), len(every))
+    if actions:
         # PROJECTION IS FUTURE-ONLY: a computed dot on a past day would assert a
         # run nobody observed. The past comes from ScheduledActionRun below.
         auto = cal.automation_events(
@@ -290,11 +296,16 @@ def _collect(view: str, anchor: date, flt) -> dict:
                 f"{len(disabled)} disabled automation(s) are not drawn: "
                 + ", ".join(sorted((a.name or a.action) for a in disabled)))
 
-    if "run" in kinds:
-        q = (ScheduledActionRun.query
-             .filter(ScheduledActionRun.started_at >= start,
-                     ScheduledActionRun.started_at < end)
-             .order_by(ScheduledActionRun.started_at.desc()))
+    q = (ScheduledActionRun.query
+         .filter(ScheduledActionRun.started_at >= start,
+                 ScheduledActionRun.started_at < end)
+         .order_by(ScheduledActionRun.started_at.desc()))
+    if not flt.draws_runs:
+        # Not fetched, still counted: MAX_RUNS caps the drawn list, so the
+        # denominator has to be the same cap or the note would compare a
+        # filtered count against an unfiltered total and overstate the hiding.
+        band_counts["run"] = (0, min(q.count(), MAX_RUNS))
+    else:
         total = q.count()
         runs = q.limit(MAX_RUNS).all()
         if total > len(runs):
@@ -332,15 +343,24 @@ def _collect(view: str, anchor: date, flt) -> dict:
         "conflicts": cal.conflicts(events),
         "invalid": [e for e in events
                     if e["kind"] == "change" and e["window_state"] == "invalid"],
-        "kinds": kinds,
-        "all_kinds": cal.KINDS,
-        "owners": owners,
-        "all_owners": calf.OWNERS,
+        "bands": flt.bands,
+        "all_bands": calf.BANDS,
+        # Which chip may be switched off is a RULE, not markup: the resolver
+        # widens a bandless request back to everything, and this is the same
+        # rule expressed as links so the bar cannot offer the state the
+        # resolver would refuse. One author for both.
+        "band_toggle": {b: calf.toggled(flt.bands, b) for b in calf.BANDS},
         "band_counts": band_counts,
         "band_notes": [n for n in (
             calf.counts_note(*band_counts.get("automation", (0, 0)),
                              "automations"),
-            calf.counts_note(*band_counts.get("run", (0, 0)), "runs"),
+            # PAST TENSE ON PURPOSE. The default tail ("they still fire") is
+            # true of a hidden schedule and false of a hidden run: a run is
+            # over, and telling an operator that last week's runs are still
+            # firing is a worse sentence than no sentence.
+            calf.counts_note(*band_counts.get("run", (0, 0)), "runs",
+                             tail="and they still happened."),
+            calf.history_orphan_note(flt.bands),
         ) if n],
         "day_from": day_from,
         "day_to": day_to,
@@ -396,7 +416,7 @@ def index():
             # a value the resolver dropped must not survive into the store,
             # or it hides a band on every future visit with nothing on screen
             # to un-tick.
-            UserSetting.set(uid, key, calf.to_json(flt.kinds, flt.owners))
+            UserSetting.set(uid, key, calf.to_json(flt.bands))
         elif flt.from_query and saved_raw:
             # Filtered with "Remember" unticked while a saved filter existed.
             # Leaving it stored resurrects it next visit and contradicts the

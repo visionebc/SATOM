@@ -14,14 +14,18 @@
                        'skipped':'secondary'} %}
 {% set KIND_ICON    = {'change':'clipboard2-check','automation':'clock-history',
                        'run':'activity'} %}
-{% set KIND_LABEL   = {'change':_('Planned changes'),
-                       'automation':_('Automations (upcoming)'),
-                       'run':_('What ran')} %}
-{#- The two Automation surfaces, named as their own pages name them: a calendar
-    band labelled differently from the page it links to reads as a third kind of
-    thing. -#}
-{% set OWNER_LABEL = {'user':_('Automations (fleet work)'),
-                      'admin':_('System Automations')} %}
+{#- ONE list of the things this grid draws, named as their own pages name them:
+    a calendar band labelled differently from the page it links to reads as a
+    third kind of thing. There is no second row of chips and no second use of
+    the word "Automations" — the bar used to print it four times with three
+    meanings, and two independent facets multiplied into states (family off,
+    owner on) in which half the bar decided nothing. -#}
+{% set BAND_ICON  = {'change':'clipboard2-check','automation':'calendar2-check',
+                     'system':'gear-wide-connected','run':'activity'} %}
+{% set BAND_LABEL = {'change':_('Planned changes'),
+                     'automation':_('Automations'),
+                     'system':_('System Automations'),
+                     'run':_('What already ran')} %}
 
 {% macro qs(view=None, d=None, y=None, m=None) -%}
 {%- set parts = [] -%}
@@ -29,8 +33,7 @@
 {%- if d %}{% set _ = parts.append('d=' ~ d.isoformat()) %}{% endif -%}
 {%- if y %}{% set _ = parts.append('y=' ~ y) %}{% endif -%}
 {%- if m %}{% set _ = parts.append('m=' ~ m) %}{% endif -%}
-{%- for k in kinds|sort %}{% set _ = parts.append('kind=' ~ k) %}{% endfor -%}
-{%- for o in owners|sort %}{% set _ = parts.append('owner=' ~ o) %}{% endfor -%}
+{%- for b in bands|sort %}{% set _ = parts.append('show=' ~ b) %}{% endfor -%}
 {#- The marker is what separates "I widened the filter back to everything"
     from "I arrived with no query string": normalised they are the same URL,
     and without it the first would restore the saved filter the user just
@@ -158,37 +161,34 @@
 <div class="fw-card mb-3">
   <div class="fw-card-body py-2 d-flex flex-wrap gap-3 align-items-center">
     <span class="text-muted" style="font-size:12px;">{{ _('Show') }}:</span>
-    {% for k in all_kinds %}
-      {% set on = k in kinds %}
-      {# Turning the last visible family off would leave an empty grid that looks
-         like a quiet fleet rather than a filter. The last one does not toggle. #}
-      {% set other = (kinds|reject('equalto', k)|list) if (on and kinds|length > 1) else ((kinds|list) + [k]) %}
-      <a class="fw-badge fw-badge-{{ 'primary' if on else 'secondary' }} text-decoration-none" data-facet="kind"
-         href="{{ url_for('calendar_plan.index', view=view, d=anchor.isoformat(), kind=(other|sort), owner=(owners|sort), f=1) }}">
-        <i class="bi bi-{{ KIND_ICON[k] }} me-1"></i>{{ KIND_LABEL[k] }}
+    {%- for b in all_bands %}
+      {% set on = b in bands %}
+      {#- WHICH BAND TOGGLES IS NOT THIS TEMPLATE'S RULE. ``toggled`` returns []
+          for the last band that carries the grid, because turning it off leaves
+          an empty month that looks like a quiet fleet rather than a filter —
+          and the same rule is what the resolver enforces for a hand-typed URL.
+          Deciding it in two places is how a bar and its page start disagreeing.
+          A chip that cannot be switched off is drawn as text, not as a link
+          that would resolve to the state it is refusing. -#}
+      {% set other = band_toggle[b] %}
+      {% if other %}
+      <a class="fw-badge fw-badge-{{ 'primary' if on else 'secondary' }} text-decoration-none" data-band="{{ b }}"
+         href="{{ url_for('calendar_plan.index', view=view, d=anchor.isoformat(), show=other, f=1) }}">
+        <i class="bi bi-{{ BAND_ICON[b] }} me-1"></i>{{ BAND_LABEL[b] }}
         {% if not on %}<i class="bi bi-eye-slash ms-1"></i>{% endif %}
       </a>
-    {% endfor %}
-
-    {#- WHOSE AUTOMATIONS. The same partition the two Automation pages rest on,
-        drawn here as a view preference: this narrows what the grid paints and
-        changes nothing about what the viewer may open — each event still links
-        to the page that owns it, and that page still applies its own gate.
-        Shown even when both automation bands are off, because a saved owner
-        filter the page does not draw is one the user cannot see or clear. -#}
-    <span class="text-muted ms-2" style="font-size:12px;">{{ _('Automations') }}:</span>
-    {% for o in all_owners %}
-      {% set on = o in owners %}
-      {# Turning the last owner off hides every automation AND its history,
-         which on a month grid is indistinguishable from a fleet with nothing
-         scheduled. The last one does not toggle — same rule as the families. #}
-      {% set other = (owners|reject('equalto', o)|list) if (on and owners|length > 1) else ((owners|list) + [o]) %}
-      <a class="fw-badge fw-badge-{{ 'primary' if on else 'secondary' }} text-decoration-none" data-facet="owner"
-         href="{{ url_for('calendar_plan.index', view=view, d=anchor.isoformat(), kind=(kinds|sort), owner=(other|sort), f=1) }}">
-        <i class="bi bi-{{ 'calendar2-check' if o == 'user' else 'clock-history' }} me-1"></i>{{ OWNER_LABEL[o] }}
-        {% if not on %}<i class="bi bi-eye-slash ms-1"></i>{% endif %}
-      </a>
-    {% endfor %}
+      {% else %}
+      <span class="fw-badge fw-badge-primary" data-band="{{ b }}"
+            title="{{ _('The calendar always draws at least one of these.') }}">
+        <i class="bi bi-{{ BAND_ICON[b] }} me-1"></i>{{ BAND_LABEL[b] }}
+      </span>
+      {% endif %}
+      {#- The history switch belongs to the two bands before it, not beside
+          them: it decides whether the past is painted, and the past it paints
+          is the past of whichever automation bands are on. The separator says
+          so; ``history_orphan_note`` says it in words when both are off. -#}
+      {%- if b == 'system' %}<span class="text-muted" style="font-size:12px;">·</span>{% endif %}
+    {%- endfor %}
 
     {#- Remember / forget. ``save`` writes the RESOLVED filter to this user's
         profile; ``clear`` forgets it. Only a strict subset is stored, so
@@ -197,7 +197,7 @@
     {% if flt is defined %}
       {% if flt.active %}
       <a class="fw-badge fw-badge-info text-decoration-none"
-         href="{{ url_for('calendar_plan.index', view=view, d=anchor.isoformat(), kind=(kinds|sort), owner=(owners|sort), f=1, save=1) }}">
+         href="{{ url_for('calendar_plan.index', view=view, d=anchor.isoformat(), show=(bands|sort), f=1, save=1) }}">
         <i class="bi bi-bookmark-plus me-1"></i>{{ _('Remember for me') }}</a>
       {% endif %}
       {% if flt.saved %}

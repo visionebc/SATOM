@@ -6,6 +6,46 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — every control on the Scout form explains itself (2026-09-10)
+
+Each of the **twelve** controls on `/scout/` now carries the product's standard
+`?`: what to put in it, and what the walk does differently because of it. The
+icon is the existing `partials/_hint.html` macro, so it is a focusable
+`<button>` rather than a hover-only `<span>`, its text lives in `title` and
+survives a failed script, and it needs no per-page JavaScript — which on this
+page matters, because an un-nonced `<script>` here would be dropped by the CSP
+in silence.
+
+- **Three fields were explaining nothing and one of them was actively
+  misleading.** `_endpoint()` reads the typed **Port** and **Scheme** only on
+  the branch where a **Published host** was also typed; when the front door is
+  derived from the device, both arrive off the device and anything typed is
+  discarded. The form gave no hint of that, so a port typed beside a blank host
+  looked set and was ignored. Both hints now say so.
+- **The catalog is held against the form by a guard, in both directions.** A
+  thirteenth control with no entry fails the suite, and an entry whose control
+  was removed or renamed fails too. Help does not rot loudly: without this, the
+  next field ships mute and nothing anywhere reports it.
+- **It is a second catalog on purpose, not a reuse of the settings one.**
+  `SPEC` describes a *default* ("Pre-filled into the walk form"), and that same
+  sentence read *on* the walk form tells the operator that the box they are
+  typing in pre-fills the box they are typing in. The two are linked instead:
+  the five controls the site backs name their `SPEC` key, and the "pre-filled
+  from Settings → Scout" sentence is composed once rather than typed five
+  times.
+- The window ceiling in the prose is read from `scout_ladder.MAX_WINDOW_MIN`
+  at render, so it cannot disagree with the clamp.
+
+### Fixed
+
+- `walk_help()` degraded by re-reading the very attribute whose absence it was
+  degrading from, so an unreadable engine constant raised instead of falling
+  back — on the help of a page that is opened during an incident.
+- Two Settings nav-order guards still asserted that **Sentinel** is the last
+  group, which stopped being true when Scout's section was placed below it.
+  Re-expressed over the three-key tail (`monitoring · sentinel · scout`), which
+  is stricter than the two-key one they replace.
+
 ### Added — the Change Calendar hides what you do not want to see (2026-09-10)
 
 The calendar's bar is now ONE list of the things the grid draws, in the order

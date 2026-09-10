@@ -1680,6 +1680,19 @@
     {% endwith %}
   </div>
 
+  {# SCOUT — the site knobs and the read-only criteria, then the ladder.
+     Two panes rather than one because they answer different questions and are
+     read at different moments: "where does this thing look?" while configuring,
+     "what does this verdict mean?" while holding a report.  Both are partials,
+     so neither can drift from the catalog and the ladder they render. #}
+  <div class="tab-pane fade" id="tab-scout">
+    {% if is_admin %}{% include 'settings/_scout.html' %}{% endif %}
+  </div>
+
+  <div class="tab-pane fade" id="tab-scout-docs">
+    {% if is_admin %}{% include 'settings/_scout_docs.html' %}{% endif %}
+  </div>
+
   <div class="tab-pane fade" id="tab-thresholds">
     {% if is_admin %}{% include 'settings/_thresholds.html' %}{% endif %}
   </div>

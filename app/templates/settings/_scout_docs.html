@@ -1,0 +1,100 @@
+{# Scout architecture — the ladder, the vantages, and the four rules.
+
+   The ten rungs are DERIVED from ``scout_ladder.LADDER`` (the same tuple
+   ``run()`` walks), never re-typed here. A hand-written list would be correct
+   on the day it was written and silently wrong on the day a rung was added,
+   renamed or reordered — and a reference document that disagrees with the
+   engine is worse than none: an operator reads it to decide whether a report
+   is complete.
+
+   Deliberately NOT in this page: the lab wiring of any particular site (a VIP,
+   a pool, a backend address). This template ships to every installation, and a
+   worked example baked into it would be one site's inventory presented to
+   everyone else as product documentation.
+#}
+<div class="fw-card">
+  <div class="fw-card-header">
+    <h2 class="fw-card-title">{{ _('Scout — architecture') }}</h2>
+  </div>
+  <div class="fw-card-body">
+    <p class="text-secondary" style="font-size:13px">
+      Scout answers one question — <strong>which layer is broken</strong> — and it answers it by
+      walking down until something fails. It owns the ORDER and the VERDICT and nothing else:
+      every rung delegates to the module that already owns its question, so there is never a
+      second opinion in this product about whether a backend is reachable or a certificate is
+      valid.
+    </p>
+
+    <h6 class="mt-3">{{ _('The ladder') }}</h6>
+    <table class="table table-sm align-middle">
+      <thead>
+        <tr>
+          <th style="width:44px;">#</th>
+          <th style="width:150px;">{{ _('Layer') }}</th>
+          <th>{{ _('Question it asks') }}</th>
+          <th style="width:190px;">{{ _('Vantage') }}</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for r in scout_docs.ladder %}
+        <tr>
+          <td class="small text-muted">{{ r.key }}</td>
+          <td class="small"><strong>{{ r.title }}</strong></td>
+          <td class="small">{{ r.question }}</td>
+          <td class="small">{{ r.vantage_label }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+
+    <h6 class="mt-4">{{ _('Vantages, and why they are never merged') }}</h6>
+    <p class="text-secondary" style="font-size:13px">
+      This node sits on the management network. Its path to a backend is <em>not</em> the
+      appliance's path to that backend, so a probe that succeeds from here proves nothing about
+      the service and one that fails accuses the wrong device. Scout therefore keeps the
+      vantages apart and labels every result with the one it came from; a rung it could only ask
+      from one side says so rather than assuming the other.
+    </p>
+    <table class="table table-sm align-middle">
+      <thead><tr><th style="width:190px;">{{ _('Vantage') }}</th><th>{{ _('What it can prove') }}</th></tr></thead>
+      <tbody>
+        <tr><td class="small">{{ scout_docs.vantages.satom }}</td>
+            <td class="small">That the published front door answers <em>this</em> node, with the phase
+              breakdown (TCP, TLS, time to first byte). It cannot speak for any other client.</td></tr>
+        <tr><td class="small">{{ scout_docs.vantages.device }}</td>
+            <td class="small">What the appliance itself sees and decides: whether the object exists and
+              is enabled, whether its pool has live members, whether it can reach them. Needs the SSH
+              option; without it the appliance vantage is reported as <em>not probed</em>.</td></tr>
+        <tr><td class="small">{{ scout_docs.vantages.edge }}</td>
+            <td class="small">The only witness that separates <strong>firewall</strong> from
+              <strong>reset</strong> from <strong>routing</strong>. From a socket those three are the
+              same silence; the border wrote down which one it was.</td></tr>
+      </tbody>
+    </table>
+
+    <h6 class="mt-4">{{ _('The four rules') }}</h6>
+    <ol class="small" style="line-height:1.6">
+      <li><strong>The first failure stops the walk.</strong> Everything below it is reported as
+        skipped, never as passing — a green rung under a red one is how a report gets read
+        backwards.</li>
+      <li><strong>“I could not look” is never health.</strong> An unknown rung does not stop the
+        walk and does not pass; it counts as a blind spot in the final verdict, which says so in
+        words rather than issuing a clean bill.</li>
+      <li><strong>A rung that crashes is UNKNOWN, not FAIL.</strong> A defect in this module is
+        not the appliance's fault, and painting it as one sends someone to restart a healthy
+        device. The cost of the rule is that it also hides Scout's own bugs — which is why the
+        ladder is walked against real hardware and not only against fixtures.</li>
+      <li><strong>Read only.</strong> Only the methods listed under Settings → Scout → Settings
+        are sent, and the check runs at the entrance, before anything is contacted.</li>
+    </ol>
+
+    <h6 class="mt-4">{{ _('Where Scout ends and Sentinel begins') }}</h6>
+    <p class="text-secondary" style="font-size:13px">
+      Not “security versus troubleshooting” — that line breaks the first time Sentinel raises a
+      health incident. The line that holds is <strong>who starts it and what it owns</strong>:
+      the clock starts Sentinel, it picks its own subject and it produces an <em>incident</em>;
+      an operator starts Scout, hands it the subject and gets back a <em>location</em>. An
+      incident may link into Scout with the object pre-filled. Scout never opens an incident.
+    </p>
+  </div>
+</div>

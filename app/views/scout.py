@@ -24,6 +24,7 @@ from flask_login import login_required
 from ..auth.decorators import require_permission
 from ..models import Appliance, Permission, visible_appliances
 from ..services import faz_logs
+from ..services import scout_config
 from ..services import scout_ladder as sl
 from ..services.audit import log_action
 
@@ -62,14 +63,31 @@ def _int(name: str, default: int) -> int:
         return default
 
 
+def _defaults() -> dict:
+    """The site's answer to "where do I look and how long do I wait".
+
+    Read ONCE per request and used for both halves — the pre-filled form and
+    the values handed to the engine. Reading them twice is how a page ends up
+    showing one window and walking another, with nothing to report the
+    disagreement.
+    """
+    return scout_config.walk_defaults()
+
+
 @bp.route("/", methods=["GET", "POST"])
 @login_required
 @require_permission(Permission.VIEW)
 def index():
     appliances = _candidates()
+    dflt = _defaults()
+    posted = request.method == "POST"
     ctx = {
         "appliances": appliances,
         "analyzers": _analyzers(),
+        # The "?" beside every control, from the same catalog a
+        # guard holds against this template's own field list --
+        # a control added later cannot ship mute.
+        "field_help": scout_config.walk_help(),
         "report": None,
         "error": "",
         "form": {"appliance_id": request.form.get("appliance_id", ""),
@@ -78,13 +96,19 @@ def index():
                  "port": request.form.get("port", ""),
                  "scheme": request.form.get("scheme", "https"),
                  "path": request.form.get("path", "/"),
-                 "use_ssh": bool(request.form.get("use_ssh")),
-                 "window_minutes": request.form.get("window_minutes", str(
-                     sl.DEFAULT_WINDOW_MIN)),
+                 # A checkbox that was cleared and posted sends nothing,
+                 # which is indistinguishable from "not on this form". On a
+                 # POST the absence therefore means OFF; only a GET may fall
+                 # back to the configured default, or an operator could never
+                 # untick a box the site pre-ticks.
+                 "use_ssh": (bool(request.form.get("use_ssh")) if posted
+                             else bool(dflt["use_ssh"])),
+                 "window_minutes": request.form.get(
+                     "window_minutes", str(dflt["window_minutes"])),
                  "analyzer_id": request.form.get("analyzer_id", ""),
-                 "faz_adom": request.form.get("faz_adom", "root"),
-                 "faz_devid": request.form.get("faz_devid", ""),
-                 "faz_vdom": request.form.get("faz_vdom", "")},
+                 "faz_adom": request.form.get("faz_adom", dflt["faz_adom"]),
+                 "faz_devid": request.form.get("faz_devid", dflt["faz_devid"]),
+                 "faz_vdom": request.form.get("faz_vdom", dflt["faz_vdom"])},
         "PASS": sl.PASS, "FAIL": sl.FAIL, "WARN": sl.WARN,
         "UNKNOWN": sl.UNKNOWN, "SKIPPED": sl.SKIPPED,
     }
@@ -126,16 +150,22 @@ def index():
     )
     opts = sl.Options(
         use_ssh=bool(request.form.get("use_ssh")),
-        window_minutes=_int("window_minutes", sl.DEFAULT_WINDOW_MIN),
+        timeout=float(dflt["probe_timeout"]),
+        window_minutes=_int("window_minutes", int(dflt["window_minutes"])),
         analyzer=analyzer,
-        faz_adom=(request.form.get("faz_adom") or "root").strip() or "root",
-        faz_devid=(request.form.get("faz_devid") or "").strip(),
-        faz_vdom=(request.form.get("faz_vdom") or "").strip(),
+        faz_adom=((request.form.get("faz_adom") or dflt["faz_adom"]).strip()
+                  or "root"),
+        faz_devid=(request.form.get("faz_devid")
+                   or dflt["faz_devid"] or "").strip(),
+        faz_vdom=(request.form.get("faz_vdom")
+                  or dflt["faz_vdom"] or "").strip(),
     )
     try:
         report = sl.run(target, opts, sl.default_ports(
             analyzer=analyzer, faz_adom=opts.faz_adom,
-            faz_devid=opts.faz_devid, faz_vdom=opts.faz_vdom))
+            faz_devid=opts.faz_devid, faz_vdom=opts.faz_vdom,
+            faz_limit=int(dflt["faz_limit"]),
+            faz_timeout=float(dflt["faz_timeout"])))
     except sl.ScoutRefused as exc:
         ctx["error"] = str(exc)
         return render_template("scout/index.html", **ctx)

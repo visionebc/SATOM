@@ -13854,3 +13854,95 @@ exists to keep them from being confused for one another.
   match themselves — four of them have been spinning since an earlier session and
   reported a busy tree forever against a node at load 1.3. Match a real
   invocation: `pgrep -af 'bin/python[0-9.]* -m py[t]est'`.
+
+
+## §160 — absent is not stale, and a band that shrinks in silence (2026-09-10)
+
+The Change Calendar's filter. §159 covers the two Automation lists; this covers
+the grid, where the same word means the opposite thing and the failure modes are
+not the same.
+
+**The facet NARROWS here, and that is why it is a separate resolver.** On the
+Automation pages the `scope` facet can only ever WIDEN a page — draw the other
+surface's rows, read-only — because there the split is a permission boundary and
+a stored preference may not move one. The calendar owns no half: it already
+draws every automation the ADOM can see, so its owner facet hides. Same word,
+opposite direction. What IS shared is the key convention
+(`automation_filters.pref_key`): one author for *where a surface saves its
+filter* is what stops two pages writing one row.
+
+### The filter is applied in the view, never in the template
+
+A row hidden in Jinja is still read, still counted into the day badges, and
+still handed to the overlap detector. The grid would contradict its own filter,
+and the contradiction would surface as a badge counting events nobody can find.
+
+### Both bands count BEFORE the facet, or neither does
+
+`band_counts` is taken from the unfiltered set, and `counts_note` renders
+"3 of 11 automations drawn — 8 hidden by the filter, and they still fire."
+The automation band is the obvious one. The **history** band is the dangerous
+one: a "what ran" band that quietly shrinks reads as runs that never happened,
+and unlike a schedule there is nothing on screen to check it against. A mutation
+that counted the run band AFTER the filter survived the first pass, because the
+guard only existed for the other band.
+
+### ABSENT IS NOT STALE (the defect this round actually fixed)
+
+`to_json` writes strict subsets only, so a filter on one facet stores exactly
+one key. The resolver read the missing key as "your stored values are all gone",
+and the page printed *"part of your saved filter no longer exists and was not
+applied"* on **every visit of a filter that was working perfectly**. That banner
+is the only thing that will ever explain the real case — a saved value the
+vocabulary has retired — and a page that cries it on every visit has trained the
+eye to skip it.
+
+The discriminator is `raw is None`, and it has to survive the call:
+`data.get('kind')` is passed through deliberately, so a caller that normalised an
+absent facet to `[]` first would resurrect the banner. Three inputs look alike at
+the point of widening — absent from the query, absent from the store, named in
+the store and all dead — and only the third is a fact worth interrupting for.
+Two mutations pin both halves: dropping the `raw is not None` test puts the false
+banner back, and returning `False` outright leaves the user whose saved values
+really are gone looking at a wider grid with nothing to explain it.
+
+### The vocabulary helpers hand out a FRESH set every call
+
+`all_kinds()` / `all_owners()` are the dataclass defaults. A shared constant is
+mutated by the first caller that edits its own selection and leaks into every
+later request of the same gunicorn worker: one user's filter silently narrows
+another user's grid, and nothing on either page explains it. The guard mutates
+the returned set and calls again, and asserts two `Resolved()` do not share
+their sets — reading the source would never have shown this, and no test that
+merely compares values can.
+
+### The store keeps the RESOLUTION, never the query string
+
+A value the resolver already rejected must not reach the profile: there it
+matches nothing on every future visit and there is no chip on screen to un-tick.
+Same rule as §159, restated because this surface writes its own row.
+
+### The marker, again, and for a different reason than §159
+
+There the controls are a GET form, so an emptied form is byte-identical to a
+bare visit. Here the controls are LINKS, and the link that turns the LAST owner
+back on carries the full set — which normalises to exactly what a bare visit
+resolves to. Without the marker that click would fall through to "restore the
+saved filter" and the filter the user just widened would come straight back.
+
+### Verification recipe
+
+- `tests/test_calendar_filter.py` (45 guards). The page-level ones read the
+  chips by the marker the MARKUP carries (`data-facet`), not by a regex over
+  calendar links: now that every control carries the whole filter, a URL regex
+  cannot tell "the owner chip preserved the family facet" from "a family chip
+  changed it", and the first version of that guard PASSED against a chip that
+  threw the other facet away.
+- `/tmp/mut_cal.py` — 46 mutations. Only `rc==1` counts as a kill; the runner
+  half is copied verbatim from the §159 harness. It restores from a snapshot on
+  SIGTERM/SIGINT/SIGHUP, because a `finally` does not survive a `pkill` and that
+  is how an inverted guard was once left on disk.
+- The harness serialises against other sessions' suites. Match a real pytest
+  (`pgrep -af 'bin/python[0-9.]* -m py[t]est'`), never `py[t]est` alone: orphaned
+  waiter shells contain the word and match themselves, and reported a busy tree
+  forever against a node at load 1.3.

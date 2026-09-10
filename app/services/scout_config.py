@@ -374,7 +374,21 @@ WALK_HELP: dict[str, dict] = {
                 "exists in a DIFFERENT ADOM reads identically to a name that "
                 "does not exist, so check the ADOM before you doubt the "
                 "spelling. This is also what the front door is derived from "
-                "when Published host is left blank.",
+                "when Published host is left blank. The picker beside it "
+                "writes into this field; it offers names, it does not narrow "
+                "what may be walked.",
+    },
+    "object_picker": {
+        "label": "Pick from the appliance",
+        "text": "Asks the appliance what it publishes and fills the name "
+                "field beside it. The list is the UNION of the device's own "
+                "answer and SATOM's last harvest, and every row says which "
+                "one it came from: they disagree in practice -- measured on "
+                "this fleet, a policy built minutes earlier was live on the "
+                "device and absent from a six-day-old harvest -- and the row "
+                "they disagree about is usually the one you opened Scout for. "
+                "It never decides what exists; rung 1 does, and a name this "
+                "list does not hold can still be typed.",
     },
     "window_minutes": {
         "label": "Log window (min)",

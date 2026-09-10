@@ -6,11 +6,13 @@
 {#  LIGHT THEME (safeguards §9m).  Status colour comes from .fw-badge-* only:
     the pastel pills of a dark theme land at ~1.4:1 on this product's white
     cards, which is a badge that says "fail" and cannot be read.
-    No <style> and no <script> in this template ON PURPOSE — every element it
-    needs is server-rendered or native HTML (<details>).  A page added with an
-    un-nonced <style> renders with NO CSS at all under this CSP, and one with
-    an un-nonced <script> silently loses its behaviour; both shipped that way
-    on 2026-09-07 and 2026-09-08.                                            #}
+    No INLINE <style> and no INLINE <script> in this template.  A page added
+    with an un-nonced <style> renders with NO CSS at all under this CSP, and
+    one with an un-nonced <script> silently loses its behaviour; both shipped
+    that way on 2026-09-07 and 2026-09-08.  The object picker's behaviour
+    therefore lives in an EXTERNAL file (script-src 'self'), and the form is
+    written so that losing it costs the convenience and not the page: the
+    select writes into the name field, and the name field is what posts.   #}
 {% set V_BADGE = {'pass':'success','fail':'danger','warn':'warning',
                   'unknown':'info','skipped':'secondary'} %}
 {% set V_ICON  = {'pass':'check-circle','fail':'x-octagon',
@@ -59,10 +61,24 @@
           </div>
           {% endif %}
         </div>
+        {#  The picker carries NO name attribute on purpose.  A control that
+            posts a value nothing reads is exactly the defect documented for
+            Port and Scheme on 2026-09-10: it looks applied and is discarded.
+            This one loads a list and writes into the field below it.      #}
+        <div class="col-md-4">
+          <label class="form-label" for="sc-object">Pick from the appliance</label>{{ hint(field_help.object_picker, "Pick from the appliance") }}
+          <select class="form-select" id="sc-object" data-fw-control="object_picker"
+                  data-objects-url="{{ url_for('scout.objects') }}" disabled>
+            <option value="">— pick an appliance first —</option>
+          </select>
+          <div class="form-text" id="sc-object-note"></div>
+        </div>
         <div class="col-md-4">
           <label class="form-label" for="sc-policy">Server policy / virtual server</label>{{ hint(field_help.policy, "Server policy / virtual server") }}
           <input class="form-control" id="sc-policy" name="policy" required
                  value="{{ form.policy }}" placeholder="the object's exact name">
+          <div class="form-text">Typed or picked, this field is what the walk
+            reads — a name the appliance will not list can still be walked.</div>
         </div>
         <div class="col-md-2">
           <label class="form-label" for="sc-window">Log window (min)</label>{{ hint(field_help.window_minutes, "Log window (min)") }}
@@ -238,4 +254,17 @@
     </div>
   </div>
   {% endif %}
+{% endblock %}
+
+{% block scripts %}
+  {#  External, never inline: an un-nonced inline block is dropped in silence
+      under this CSP, and a picker that silently does nothing is worse than a
+      form with no picker at all.
+      The nonce is not required TODAY -- script-src carries 'self' and the
+      product's other external files (turbo, fw_hints) go without one -- but
+      this page's own guard demands a nonce on every <script>, and satisfying
+      a rule costs less than loosening it. If script-src ever loses 'self',
+      this tag keeps loading and the others stop.                          #}
+  <script nonce="{{ csp_nonce }}"
+          src="{{ url_for('static', filename='js/scout_objects.js') }}"></script>
 {% endblock %}

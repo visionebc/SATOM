@@ -14118,3 +14118,74 @@ passes against a form somebody emptied.
   the reversed button spelling already exists in
   `tests/test_tool_modal_chrome.py`, with a printed budget. The first draft of
   the new guard duplicated it with a file allowlist; it was deleted.
+
+
+## §164 — a picker that quietly narrows what may be walked (2026-09-10)
+
+**Guards:** `tests/test_scout_objects.py` (63 guards), plus the extended identity in
+`tests/test_scout_help.py`.
+
+A dropdown of names is the most trustworthy-looking control on a form: it
+cannot be misspelled, so it reads as authoritative. That is the hazard. Three
+ways a picker narrows what may be walked, all of which render as an ordinary
+list:
+
+1. **An intersection of the two sources.** Measured on `fortiweb13`, 2026-09-10:
+   41 live, 40 harvested, and the odd one out was the policy built minutes
+   earlier. The intersection hides the object the operator came for. The guard
+   holds both directions: a live-only row and a harvest-only row must both be
+   offered.
+2. **A comparative claim against a list nobody obtained.** With one source
+   unreadable, `None` and `[]` collapse and every row looks live-only. The
+   payload marks those rows `sole`; `sole` is not spelled `both`, because the
+   browser reads the payload and would print the lie.
+3. **A picker that replaces the field.** The free-text name is what keeps an
+   unlicensed appliance walkable. The guard reads the template: the select
+   carries **no** `name`, the input still carries `name="policy"`.
+
+**One author.** The picker reads the same two adapters as rung 1. A
+source-level guard forbids `client_for`, `policy_status`, `list_with_error` and
+`policy_full_cached` inside the module, and pins `read_layer` to exactly two
+occurrences — the import and the timestamp call. Membership has one author;
+freshness may have another.
+
+**The identity that could be hidden from.** `test_scout_help.py` matched
+controls by their posted `name`, so a control that posts nothing was invisible
+to it — and the picker deliberately posts nothing. Controls now declare
+themselves by `name` **or** `data-fw-control`, and a third guard fails any
+control that declares neither. Floor raised from twelve to thirteen.
+
+**What only the browser showed.** Both of these passed every test in this
+file before a screenshot was taken, because every test asserts on names, and
+no name is plural or overflows a column.
+
+* *"41 server policys".* The plural of a noun the product owns was being built
+  by appending an "s", on both sides. `plural()` is the authority now and the
+  payload carries `noun_plural`.
+* *A provenance suffix cut off by the column.* An `<option>` does not wrap and
+  cannot mark its own truncation, so §163's rule cannot be applied inside one.
+  The fact became structure — an `<optgroup>` per source, headings held to a
+  measured 34 characters with the count FIRST (the half worth reading when the
+  rest is cut), and the long sentence printed under the control where it wraps.
+  A guard holds both halves: the heading must fit, and the sentence it
+  shortens must still be longer than it.
+
+**Traps paid for in this round.**
+
+* *A negative lookahead that backtracks.* `\.innerHTML\s*=\s*(?!'')` matched
+  the very line it meant to allow: `\s*` collapses to zero and the lookahead
+  then reads a space. Enumerate the assignments and compare the list.
+* *A guard that named a string instead of a verb.* "the endpoint appears once
+  in `adc_ops`" failed against a correct file — `get_object` legitimately names
+  it too. Holding the string would have pushed a fix into unrelated code; the
+  guard holds `list_with_error(...)`, the verb it is about.
+* *The harness refusing to start is the harness working.* `--timeout=300` is a
+  usage error here (pytest-timeout is not installed) and every run returned
+  rc=4; because only `rc==1` counts as a bite and the baseline must be green,
+  it aborted instead of reporting 25 dead mutations against a suite that never
+  ran.
+
+**Verification.** 31 mutations, 31 bite. Baseline green before and after,
+`__pycache__` purged every pass, tree restored and verified by SHA-256, aborts
+if another pytest is alive on the tree.
+

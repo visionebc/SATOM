@@ -74,3 +74,4 @@ publication-rules.local.json
 # reescribir sin romper la tabla de offsets del binario, y un binario
 # roto se publica en silencio.
 app/translations/*/LC_MESSAGES/*.mo
+.python_history

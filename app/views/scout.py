@@ -18,13 +18,14 @@ WHY THE APPLIANCE IS PICKED HERE AND NOT TAKEN FROM THE WORKSPACE
 """
 from __future__ import annotations
 
-from flask import Blueprint, render_template, request
+from flask import Blueprint, jsonify, render_template, request
 from flask_login import login_required
 
 from ..auth.decorators import require_permission
 from ..models import Appliance, Permission, visible_appliances
 from ..services import faz_logs
 from ..services import scout_config
+from ..services import scout_objects
 from ..services import scout_ladder as sl
 from ..services.audit import log_action
 
@@ -72,6 +73,37 @@ def _defaults() -> dict:
     disagreement.
     """
     return scout_config.walk_defaults()
+
+
+@bp.route("/objects")
+@login_required
+@require_permission(Permission.VIEW)
+def objects():
+    """What the picked appliance publishes, as JSON, for the name field.
+
+    Scoped by :func:`visible_appliances` exactly like the walk itself: a by-id
+    read that goes to the table directly is how every ADOM answered 200 for
+    another product's device until 2026-08-06. A device of a kind this ladder
+    cannot walk is a 404 here — from this page's point of view it does not
+    exist, and 403 would tell an operator it does.
+
+    Read-only and cheap by construction: the list comes from the same two
+    adapters rung 1 reads, so the picker can never offer a name the ladder
+    would then fail to look for.
+    """
+    try:
+        aid = int(request.args.get("appliance_id") or 0)
+    except (TypeError, ValueError):
+        aid = 0
+    appl = None
+    if aid:
+        appl = (visible_appliances()
+                .filter(Appliance.id == aid,
+                        Appliance.kind.in_(sl.SUPPORTED_KINDS)).first())
+    if appl is None:
+        return jsonify({"error": "no such appliance in this ADOM",
+                        "appliance_id": aid, "objects": []}), 404
+    return jsonify(scout_objects.offer(appl))
 
 
 @bp.route("/", methods=["GET", "POST"])

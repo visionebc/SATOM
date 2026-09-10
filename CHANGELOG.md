@@ -8,14 +8,31 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ### Added — the Change Calendar hides what you do not want to see (2026-09-10)
 
-The calendar's filter bar already had three chips (*Changes · Automations · What
-ran*). It gained the split the two Automation pages introduced, and it now
-remembers your choice:
+The calendar's bar is now ONE list of the things the grid draws, in the order
+the product names them:
 
-- **Owner chips**: *Automations (fleet work)* and *System Automations*, named
-  after the pages that own those rows, so the calendar and the lists use one
-  vocabulary. Ticking off the system band leaves a month of planned fleet work
-  on screen instead of a wall of nightly backups.
+> **Show:** Planned changes · Automations · System Automations · What already ran
+
+- **The two Automation surfaces are named here exactly as their own pages name
+  them**, so the calendar and the lists use one vocabulary. Ticking off *System
+  Automations* leaves a month of planned fleet work on screen instead of a wall
+  of nightly backups.
+- **One facet, not two.** The bar shipped for a few hours with an event-family
+  row *and* an owner row, which printed the word "Automations" four times with
+  three different meanings and multiplied into states where half the bar decided
+  nothing (`kind=change&owner=user`). Superseded before release; the old
+  `kind=`/`owner=` query strings and any profile written under them still
+  resolve, translated rather than reported stale.
+- **What already ran follows the two groups above it.** It is a time switch, not
+  a fourth kind of thing: hiding *System Automations* hides their history too,
+  because a calendar that paints the past of something it says is not there is
+  worse than one that paints nothing. With both automation groups hidden it has
+  nothing to hang history on, and the page says so in words.
+- **The calendar can never be filtered empty.** At least one of *Planned
+  changes* / *Automations* / *System Automations* always stays on: the chip for
+  the last one is drawn as text rather than as a link, and a hand-typed URL that
+  names none of them is widened back and told so. `toggled()` is the single
+  author of that rule for both the bar and the resolver.
 - **Remember for me** stores the choice on your profile under the calendar's own
   key. Filtering the calendar does not re-filter a list you were not looking at.
 - **This is a preference, never a permission.** The filter changes what the grid
@@ -36,6 +53,13 @@ remembers your choice:
   exists"* on every visit of a filter that was doing its job. Only a facet that
   was NAMED and validated down to nothing is reported now. Found by mutation:
   the guard that should have caught it did not exist.
+- A hidden run is no longer described as one that "still fires". The sentence
+  that keeps a filtered band from reading as an empty one makes a claim about
+  the FUTURE, and only the schedule band has one; on the history band it told an
+  operator that last week's runs were still firing.
+- Both bands are counted whether or not they are drawn. Counting only what
+  survives the filter makes "you hid these" and "there are none" the same
+  picture, and the second is the one that ends a maintenance window badly.
 - Paging the month, *Today* and the day cells all carry the whole filter. The
   navigation links are built by one macro; a macro that dropped a facet would
   have widened the filter on the click that changes month, which reads as more

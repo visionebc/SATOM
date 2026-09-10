@@ -13946,3 +13946,63 @@ saved filter" and the filter the user just widened would come straight back.
   (`pgrep -af 'bin/python[0-9.]* -m py[t]est'`), never `py[t]est` alone: orphaned
   waiter shells contain the word and match themselves, and reported a busy tree
   forever against a node at load 1.3.
+
+## §161 — one list, not two facets: the calendar band filter (2026-09-10)
+
+`tests/test_calendar_filter.py` (71 guards) + `/tmp/mut_bands.py` (40 mutations).
+
+**What went wrong.** The filter shipped with two independent facets — event
+family (`kind`) and automation owner (`owner`). Read aloud, the bar was
+*"Show: Planned changes, Automations (upcoming), What ran · Automations:
+Automations (fleet work), System Automations"*: one word, three meanings, one
+row. Being independent they also multiplied — `kind=change&owner=user` is a
+legal URL in which the owner half decides nothing, so the bar offered states
+that do not exist. The user's verdict was *"no tiene sentido"*, and it was
+right: a filter bar is a LIST OF THE THINGS A PAGE CAN DRAW, and this one had
+stopped being that.
+
+**The rules the rewrite rests on.**
+
+1. **One facet, `show`, whose values are the bands.** `OWNER_OF_BAND` is the
+   whole of what used to be the owner facet: the two automation bands ARE the
+   two Automation surfaces, drawn once, by name.
+2. **History follows its group.** `run` is a TIME switch. `draws_runs` is
+   `HISTORY in bands and bool(owners)` — hiding a group hides its past too.
+   The one state this makes reachable (history on, both groups off) renders as
+   a month with no past at all, so `history_orphan_note` says it in words.
+   Mutation `history-drawn-with-no-band-to-hang-it-on` and its opposite both
+   bite.
+3. **The grid cannot be filtered empty.** One `PRIMARY` band is always on.
+   `toggled()` returns `[]` for the last one so the caller draws TEXT, not a
+   link to a state the resolver would refuse — and `_resolve_bands` enforces the
+   same rule for a hand-typed URL. `test_the_bar_and_the_resolver_agree_on_the_invariant`
+   walks every reachable band combination and every chip in it, because two
+   authors of that rule is how a bar and its page start disagreeing.
+4. **A renamed vocabulary TRANSLATES; it does not go stale.** `_from_legacy`
+   maps yesterday's `kind`/`owner` blob into bands. Telling a user *"part of
+   your saved filter no longer exists"* because WE renamed the vocabulary blames
+   them for our change, and that banner is the only thing that will ever explain
+   the real case. The new facet BEATS the old one rather than merging with it:
+   merging two vocabularies is how a chip stops meaning what it says.
+5. **A count's tail is a parameter.** `counts_note(..., tail=)` — the default is
+   a claim about the future and only the schedule band has one.
+
+**Two traps this round.**
+
+- 🚨 **Tenth assert-by-substring matching something the document supplies
+  itself.** The stale-banner guard asserted `"no longer" not in page`; the bare
+  words are ALSO in a JavaScript comment further down that very page, so the
+  guard passed with the banner deleted. Now anchored on `STALE_BANNER`, the
+  banner's own sentence.
+- 📌 **A nav sweep that swallowed the chips.** `test_paging_the_month_keeps_the_filter`
+  collects every `/calendar/?…` link carrying `view=`; the chips carry `view=`
+  too and a chip's whole job is to change one band, so the sweep was asserting
+  that a toggle does not toggle. Excluded by the `data-band` marker the markup
+  carries, not by URL shape.
+
+**How to re-verify.** `TZ=Europe/Zurich pytest tests/test_calendar_filter.py`
+(the day panel's neighbours are timezone-sensitive; the node runs UTC and the
+app runs Europe/Zurich, so a naive run is red for two hours every night), then
+`/opt/satom/venv/bin/python3 /tmp/mut_bands.py`. The bar must print
+`System Automations` exactly once and must never print `Automations (upcoming)`
+or `Automations (fleet work)` again.

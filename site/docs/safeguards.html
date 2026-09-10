@@ -13109,6 +13109,528 @@ the ask named, is a standalone. So the button does not appear on it, which is
 the correct behaviour and also means the page has only ever been rendered
 against synthetic cluster rows. The live-run path is covered by fixtures and by
 the mutation harness, never by a box that handed a role over.</p>
+<h2 id="157-the-generic-write-door-and-the-one-thing-a-rehearsal-cannot-prove-2026-09-09">§157 — the generic write door, and the one thing a rehearsal cannot prove (2026-09-09)</h2>
+<p><code>tests/test_process_write_nodes.py</code> · <code>tests/test_process_doc_currency.py</code></p>
+<p>Process gained the two nodes the first round deliberately held back:
+<code>console_script</code> (CLI lines to an appliance) and <code>hook</code> (operator-written
+Python holding real secrets). Every other node in the catalogue <strong>asks</strong>; these
+two <strong>change</strong>. So the guards are not about the shape of a <code>StepResult</code> — they
+are about <strong>when nothing happens at all</strong>.</p>
+<h3 id="the-rule-that-separates-a-rehearsal-from-a-repair">The rule that separates a rehearsal from a repair</h3>
+<p>An unarmed run does not send them, at all, and the step ends <code>unknown</code>.</p>
+<p><code>action</code> may return a verdict unarmed because <code>run_action(dry_run=True)</code> is a
+real preview: the spec computes what it would do and reports whether that
+computation worked. Neither new node has such a mode — classifying CLI text is
+a fact about the <strong>text</strong>, and <code>dispatch_one(sample=True)</code> still runs the hook
+with its real secrets. <strong>The verdict differs because the evidence differs.</strong></p>
+<p>The cost is written on the page, in the manual and in the module: a plan whose
+whole point is the write <strong>cannot be rehearsed end to end</strong>. A rehearsal stops
+where the repair would have been, instead of walking the "and then it was
+fixed" branch against a box nobody fixed. What it proves is that the plan is
+<em>sendable</em> — validated, classified, pointed at an appliance that can be
+dialled — not that it works.</p>
+<p><strong>The guard that matters asserts the RECORDER is empty, not the verdict.</strong> A
+verdict can be right while the appliance was changed anyway, and that is the
+failure nobody would ever notice.</p>
+<h3 id="who-agreed-and-to-what">Who agreed, and to what</h3>
+<p>The Console page asks a human to tick an acknowledgement and type the appliance
+name at the moment of sending. A process has no human at 3 a.m., so the
+agreement moves into the <strong>plan</strong>: a disruptive step names the one appliance it
+may disrupt, and at run time that string must equal the appliance the run is
+pointed at. Aiming the same process at another box refuses and sends nothing.</p>
+<p>That is <strong>stricter</strong> than the page, where the typed name only proves the
+operator read the warning. Mutations covering it: name unchecked, prefix match
+instead of equality, blank name accepted, <code>allow_disruptive</code> hard-wired on.</p>
+<h3 id="two-failures-that-look-identical-in-scriptresult-and-are-not">Two failures that look identical in <code>ScriptResult</code> and are not</h3>
+<p><code>run_script</code> sets <code>error</code> for <strong>both</strong> a refused command and a dead socket.
+Collapsed, they send an operator to check credentials when the real answer is
+that the command has no path through SATOM at any level. Split explicitly:</p>
+<ul>
+<li>a <code>refused</code> row → <code>unknown</code>, <em>"SATOM refused to send"</em> — a fact about SATOM;</li>
+<li><code>error</code> with no row that ran → <code>unknown</code>, <em>"the session did not open"</em>;</li>
+<li>any row <code>error</code> → <code>fail</code> — the appliance answered and said no.</li>
+</ul>
+<h3 id="silence-from-the-hook-runner-is-a-fact-about-this-node">Silence from the hook runner is a fact about THIS node</h3>
+<p><code>dispatch_one</code> writes a JSON file; a systemd <code>.path</code> unit turns it into a
+process. A request still <code>queued</code> when the wait budget runs out is <code>unknown</code>
+and <strong>names the unit</strong> — silence there is the observer's problem.</p>
+<p>That is not hypothetical. Measured 2026-09-09: <code>satom-integrations.path</code> is
+<code>disabled/inactive</code> on <strong>{standby-node}</strong>, so a hook step on the standby would
+queue forever. Same class as the <code>satom-updater.path</code> gap that left enqueued
+updates sitting for weeks in July 2026, and it looked like nothing at all.</p>
+<p>The wait is bounded by the hook's <strong>own</strong> clamped timeout and cannot be
+lengthened from the diagram: a longer wait cannot outlive a job the runner
+already killed, it can only hold a web worker open for nothing.</p>
+<h3 id="provenance-is-overwritten-never-defaulted">Provenance is overwritten, never defaulted</h3>
+<p>The <code>satom_process</code> block in a hook payload is SATOM's claim about where the
+request came from. <code>setdefault</code> would let the plan pre-set it. <strong>A forgeable
+provenance stamp is worse than none, because it is believed.</strong></p>
+<h3 id="one-audit-name-for-one-capability">One audit name for one capability</h3>
+<p>Everything sent from a process is logged under <code>console.run</code>, the same action
+the page uses, marked <code>via: process</code>. An operator asking <em>"what has been sent
+over the console"</em> must not have to know there are two doors. An unarmed run
+writes <strong>no</strong> row — a row saying a script ran is the same lie as a green step,
+and it is what an auditor reads months later.</p>
+<h3 id="the-gap-this-step-does-not-close-named-where-the-arming-happens">The gap this step does NOT close, named where the arming happens</h3>
+<p><code>delete_guard</code> cannot see a <code>delete</code> inside a CLI <code>config</code> block without
+reimplementing the reference graph against FortiOS syntax. A shared object the
+web UI would refuse to remove <strong>can</strong> be removed from here. The warning renders
+only on diagrams that actually contain a console step — the same warning on
+every page is a warning nobody reads, and there is a guard for each half.</p>
+<h3 id="save-time-not-run-time">Save time, not run time</h3>
+<p>A forbidden command, a disruptive one with no named appliance, a comment-only
+script, a script longer than the console sends, an unknown hook slug and a
+payload that is not a JSON object are all refused <strong>when the diagram is saved</strong>.
+<code>run_script</code> re-gates before it opens the session; this gate is earlier still,
+so a plan that could never legally run cannot be written down and then trusted.
+The oversize case matters on its own: <code>run_script</code> would <strong>truncate and note
+it</strong>, and a note on a run nobody reads is not the same as refusing a 300-line
+plan.</p>
+<h3 id="doc-currency-is-a-guard-not-a-habit">Doc currency is a guard, not a habit</h3>
+<p>Nothing fails when a documented surface goes stale; the sentence just stops
+being true and keeps printing. The §42 step table is checked against
+<code>process_kinds.kinds()</code> <strong>in both directions and on the Writes column</strong>, because
+an operator planning a recovery reads exactly that column to decide what is safe
+to point at production.</p>
+<h3 id="how-to-re-run">How to re-run</h3>
+<pre><code>python3 -u /root/mutate_write_nodes.py        # on {primary-node}, as root
+</code></pre>
+<p><code>ulimit -v 1500000</code> and <code>timeout -s KILL 200</code> on every child, <code>python3 -u</code>,
+baseline-green required before scoring, <code>__pycache__</code> purged per round (never
+<code>deploy/__pycache__</code> — it is root-owned), tree restored by content and verified
+by SHA-256, suite re-run green after the last restore. A negative rc, 124 or 137
+counts as <strong>killed by the resource cap</strong> and is reported as such; a missing
+anchor counts as a <strong>survivor</strong>, never a kill.</p>
+<h2 id="158-a-procedure-as-a-file-the-import-that-is-not-a-second-door-2026-09-09">§158 — a procedure as a file: the import that is not a second door (2026-09-09)</h2>
+<p>A process can now arrive as XML (<code>Process → Import XML</code>) and leave as XML
+(<code>Export XML</code> on its own page). An import is the one door in this module where
+the <em>plausible</em> result is the failure: a parser that drops a parameter,
+flattens a script, widens the ADOM list or truncates a label produces a process
+that opens in the editor, renders green in the diagram and runs — doing
+something other than what the file said. Nothing raises, nothing 500s, nothing
+looks wrong on the page.</p>
+<h3 id="the-gate-is-the-editors-gate-asserted-as-wiring">The gate is the editor's gate, asserted as wiring</h3>
+<p><code>import_xml</code> hands the parsed graph to <strong><code>process_kinds.validate_graph</code></strong>, the
+same call <code>save_graph</code> makes, before a single row is written. A console step
+carrying <code>execute factoryreset</code> is refused on import exactly as it is refused
+when drawn. An importer with its own idea of what is allowed would be the
+easiest way past every gate in the product, and it would be attractive
+precisely because a file reads like data rather than like code.</p>
+<p>That claim is a claim about <strong>wiring</strong>, so it is tested as wiring: neutering
+<code>validate_graph</code> with a monkeypatch must make the forbidden import SUCCEED. If
+it does not, the view is refusing for some private reason of its own and the two
+doors have already drifted.</p>
+<p>Two things <code>validate_graph</code> does <strong>not</strong> cover, and therefore have their own
+guards: the <strong>process key</strong> (it checks step keys only — without this the import
+would be the one door that writes a key the New-process form rejects, and the
+key is what audit rows and run history reference forever) and the <strong>ADOM list</strong>,
+which is an installation fact the parser deliberately does not know.</p>
+<h3 id="parameters-are-elements-and-the-reason-is-measured">Parameters are elements, and the reason is measured</h3>
+<p>XML replaces a <strong>literal</strong> newline or tab inside an attribute with a space
+(XML 1.0 §3.3.3); only an escaped <code>&amp;#10;</code> survives. So in an attribute the
+readable way to write a console script is the lossy one, and it loses silently —
+the step arrives as one line that is no longer the command its author wrote and
+no longer classifies the same way. Both halves of that rule are pinned by a
+test, against the real parser, so the next reader cannot "simplify" parameters
+into attributes and discover it during a migration.</p>
+<p>Hand-written files are de-indented as a <strong>block</strong>: the common indent goes,
+relative indentation stays, because in a CLI script the difference between two
+lines can be the author's.</p>
+<h3 id="refused-whole-and-refusals-that-name-themselves">Refused whole, and refusals that name themselves</h3>
+<ul>
+<li>Any <strong>DOCTYPE or ENTITY</strong> is refused on the raw bytes, before any parse.
+  <code>xml.etree</code> does not fetch external entities but it does expand internal ones,
+  which is the whole of the billion-laughs amplification, and a process file has
+  no use for a DTD. A false refusal costs one confused operator; the other
+  direction costs the worker.</li>
+<li><strong>draw.io, BPMN, Visio and SVG are named and refused</strong>, never half-read. A
+  drawn box carries a shape and a caption, not the step kind and the parameters
+  that make a step runnable — a shape-only import would produce a diagram that
+  looks like the operator's plan and cannot execute a single check.</li>
+<li><strong>Unknown attributes and unknown sections are reported, not ignored.</strong>
+  <code>brach="fail"</code> silently becoming <code>always</code> is a recovery plan that takes the
+  wrong arrow on the one day it runs, and it renders as a correct diagram.</li>
+<li><strong>An ADOM this installation does not have is an error, not a drop.</strong> Moving a
+  process between installations is the case the format exists for, so a missing
+  ADOM is the <em>likely</em> mistake; dropping it would import the plan as a draft
+  that looks published.</li>
+<li><strong>A label longer than its column is refused, not cut.</strong> A plan whose steps
+  were quietly renamed on the way in no longer matches the runbook it came from.</li>
+<li>Every structural problem is collected and shown <strong>together</strong>, like
+  <code>validate_graph</code>: fixing a file one error per upload is whack-a-mole against a
+  text editor.</li>
+</ul>
+<h3 id="replacing-and-what-a-replacement-must-not-touch">Replacing, and what a replacement must not touch</h3>
+<p>Re-importing an existing key <strong>replaces</strong> that process and is refused until the
+operator types the key — an acknowledgement, not a confirm dialog. A process
+that exists but is <strong>not offered in this ADOM</strong> cannot be replaced from here at
+all: everywhere else in the module such a process does not exist, and the import
+must not be the one door that edits a record the console cannot list.</p>
+<p>Run history is untouched, and that is asserted: each run carries its own copy of
+the graph it walked, so a report saying <em>"checked the standby"</em> cannot start
+rendering as whatever that step was later changed into, and a run parked on a
+manual gate resumes through its own snapshot.</p>
+<h3 id="the-exporter-is-the-importers-only-producer">The exporter is the importer's only producer</h3>
+<p>An importer whose exporter drops a field silently edits every plan that passes
+through it, so <strong>round-trip is asserted</strong>: export → import → export byte-
+identical, including a multi-line console script. A parameter this build does
+not recognise is exported anyway — it is still the author's — and the example
+printed on the import page is itself imported by a test, because a documented
+example that does not validate is a lie told to everyone who copies it.</p>
+<h3 id="one-author-for-the-key-rule">One author for the key rule</h3>
+<p><code>process_kinds.KEY_RE</code> (was <code>_KEY_RE</code>) is now the single definition of a usable
+key, used by the node validator, the New-process form and the importer. Three
+copies of "what is a usable key" drift the day one of them grows a rule.</p>
+<h3 id="how-to-re-run_1">How to re-run</h3>
+<pre><code>python3 -u /root/mutate_process_xml.py        # on {primary-node}, as root
+</code></pre>
+<p>Same harness rules as §157: <code>ulimit -v 1500000</code> and <code>timeout -s KILL 200</code> on
+every child, <code>python3 -u</code>, baseline-green required before scoring,
+<code>__pycache__</code> purged per round (never <code>deploy/__pycache__</code>), tree restored by
+content and verified by SHA-256, suite re-run green after the last restore, a
+missing anchor scored as a <strong>survivor</strong>.</p>
+<h2 id="159-a-filter-is-a-view-preference-and-a-split-is-a-permission-2026-09-09">§159 — a filter is a view preference, and a split is a permission (2026-09-09)</h2>
+<p>Two things that look identical on screen and are not the same object. The
+Automation subsystem now has both, and every guard in
+<code>tests/test_automation_filter.py</code> (60) and <code>tests/test_automation_split.py</code> (50)
+exists to keep them from being confused for one another.</p>
+<p><strong>The rules the code is held to</strong></p>
+<ol>
+<li>A filter may change what a page DRAWS. It may never change what anyone may
+   DO. The cross-scope facet is offered only to a viewer who already holds the
+   other surface's permission, is re-gated on every read (a permission lost
+   since the filter was saved must stop widening the page — the store is not an
+   access-control record), and the by-id route guard is untouched by it.</li>
+<li>A filter never silently empties a list. <code>Showing N of M</code> on both pages, and
+   the filtered-empty state must not borrow the never-created wording. These
+   rows keep firing whether or not a page draws them.</li>
+<li>A saved facet the catalog no longer offers is DROPPED and NAMED, and never
+   written back. Applied, it matches nothing on every future visit forever.</li>
+<li>One preference key per surface, keyed by blueprint.</li>
+<li>A row revealed by the cross-scope facet is drawn read-only and linked to the
+   page that owns it.</li>
+<li>The dropdown offers only values that can match on this page.</li>
+</ol>
+<p><strong>How to check it (the parts that cost time)</strong></p>
+<ul>
+<li><code>runuser -u satom -- venv/bin/python -m pytest tests/test_automation_filter.py
+  tests/test_automation_split.py -q</code> — 110, rc=0.</li>
+<li>Mutation harness <code>/tmp/mut_filter.py</code> (39 mutations, 39 bite). Only <code>rc==1</code>
+  counts as a kill; the runner half is copied verbatim from the split harness so
+  there is one author for "how a mutation is measured".</li>
+<li>Live render against a1's real database: <code>/tmp/live_render.py</code> — 9 URLs, the
+  save/restore/clear round trip, and a scan for dark-theme literals (§9m: this
+  product is light, always).</li>
+</ul>
+<p><strong>Three traps this round paid for</strong></p>
+<ul>
+<li><strong><code>{% if row.foreign %}</code> appears twice in the template.</strong> An anchor that
+  matches twice is NEVER APPLIED and scores as a survivor, not a kill. Re-anchor
+  with the enclosing element.</li>
+<li><strong>The ninth assert-by-substring to match a string its own document supplied.</strong>
+  <code>"System Automations"</code> is the row badge AND the label of the cross-scope
+  checkbox (<code>Also show System Automations</code>), so "the revealed row is labelled
+  with its owner" passed with the badge deleted. Slice the table off the form
+  before asserting about rows — the <code>_table()</code> helper beside <code>_split_chrome()</code>.</li>
+<li><strong><code>pkill -f 'mut_filter.py'</code> kills its own SSH session</strong>, because the invoking
+  shell's command line contains the pattern. Use <code>pgrep -f 'mut_[f]ilter.py' |
+  xargs -r kill</code>. Same family: a wait loop whose predicate is <code>pgrep -af
+  'py[t]est'</code> matches <em>other sessions' waiter shells</em>, which contain the word and
+  match themselves — four of them have been spinning since an earlier session and
+  reported a busy tree forever against a node at load 1.3. Match a real
+  invocation: <code>pgrep -af 'bin/python[0-9.]* -m py[t]est'</code>.</li>
+</ul>
+<h2 id="160-absent-is-not-stale-and-a-band-that-shrinks-in-silence-2026-09-10">§160 — absent is not stale, and a band that shrinks in silence (2026-09-10)</h2>
+<p>The Change Calendar's filter. §159 covers the two Automation lists; this covers
+the grid, where the same word means the opposite thing and the failure modes are
+not the same.</p>
+<p><strong>The facet NARROWS here, and that is why it is a separate resolver.</strong> On the
+Automation pages the <code>scope</code> facet can only ever WIDEN a page — draw the other
+surface's rows, read-only — because there the split is a permission boundary and
+a stored preference may not move one. The calendar owns no half: it already
+draws every automation the ADOM can see, so its owner facet hides. Same word,
+opposite direction. What IS shared is the key convention
+(<code>automation_filters.pref_key</code>): one author for <em>where a surface saves its
+filter</em> is what stops two pages writing one row.</p>
+<h3 id="the-filter-is-applied-in-the-view-never-in-the-template">The filter is applied in the view, never in the template</h3>
+<p>A row hidden in Jinja is still read, still counted into the day badges, and
+still handed to the overlap detector. The grid would contradict its own filter,
+and the contradiction would surface as a badge counting events nobody can find.</p>
+<h3 id="both-bands-count-before-the-facet-or-neither-does">Both bands count BEFORE the facet, or neither does</h3>
+<p><code>band_counts</code> is taken from the unfiltered set, and <code>counts_note</code> renders
+"3 of 11 automations drawn — 8 hidden by the filter, and they still fire."
+The automation band is the obvious one. The <strong>history</strong> band is the dangerous
+one: a "what ran" band that quietly shrinks reads as runs that never happened,
+and unlike a schedule there is nothing on screen to check it against. A mutation
+that counted the run band AFTER the filter survived the first pass, because the
+guard only existed for the other band.</p>
+<h3 id="absent-is-not-stale-the-defect-this-round-actually-fixed">ABSENT IS NOT STALE (the defect this round actually fixed)</h3>
+<p><code>to_json</code> writes strict subsets only, so a filter on one facet stores exactly
+one key. The resolver read the missing key as "your stored values are all gone",
+and the page printed <em>"part of your saved filter no longer exists and was not
+applied"</em> on <strong>every visit of a filter that was working perfectly</strong>. That banner
+is the only thing that will ever explain the real case — a saved value the
+vocabulary has retired — and a page that cries it on every visit has trained the
+eye to skip it.</p>
+<p>The discriminator is <code>raw is None</code>, and it has to survive the call:
+<code>data.get('kind')</code> is passed through deliberately, so a caller that normalised an
+absent facet to <code>[]</code> first would resurrect the banner. Three inputs look alike at
+the point of widening — absent from the query, absent from the store, named in
+the store and all dead — and only the third is a fact worth interrupting for.
+Two mutations pin both halves: dropping the <code>raw is not None</code> test puts the false
+banner back, and returning <code>False</code> outright leaves the user whose saved values
+really are gone looking at a wider grid with nothing to explain it.</p>
+<h3 id="the-vocabulary-helpers-hand-out-a-fresh-set-every-call">The vocabulary helpers hand out a FRESH set every call</h3>
+<p><code>all_kinds()</code> / <code>all_owners()</code> are the dataclass defaults. A shared constant is
+mutated by the first caller that edits its own selection and leaks into every
+later request of the same gunicorn worker: one user's filter silently narrows
+another user's grid, and nothing on either page explains it. The guard mutates
+the returned set and calls again, and asserts two <code>Resolved()</code> do not share
+their sets — reading the source would never have shown this, and no test that
+merely compares values can.</p>
+<h3 id="the-store-keeps-the-resolution-never-the-query-string">The store keeps the RESOLUTION, never the query string</h3>
+<p>A value the resolver already rejected must not reach the profile: there it
+matches nothing on every future visit and there is no chip on screen to un-tick.
+Same rule as §159, restated because this surface writes its own row.</p>
+<h3 id="the-marker-again-and-for-a-different-reason-than-159">The marker, again, and for a different reason than §159</h3>
+<p>There the controls are a GET form, so an emptied form is byte-identical to a
+bare visit. Here the controls are LINKS, and the link that turns the LAST owner
+back on carries the full set — which normalises to exactly what a bare visit
+resolves to. Without the marker that click would fall through to "restore the
+saved filter" and the filter the user just widened would come straight back.</p>
+<h3 id="verification-recipe_8">Verification recipe</h3>
+<ul>
+<li><code>tests/test_calendar_filter.py</code> (45 guards). The page-level ones read the
+  chips by the marker the MARKUP carries (<code>data-facet</code>), not by a regex over
+  calendar links: now that every control carries the whole filter, a URL regex
+  cannot tell "the owner chip preserved the family facet" from "a family chip
+  changed it", and the first version of that guard PASSED against a chip that
+  threw the other facet away.</li>
+<li><code>/tmp/mut_cal.py</code> — 46 mutations. Only <code>rc==1</code> counts as a kill; the runner
+  half is copied verbatim from the §159 harness. It restores from a snapshot on
+  SIGTERM/SIGINT/SIGHUP, because a <code>finally</code> does not survive a <code>pkill</code> and that
+  is how an inverted guard was once left on disk.</li>
+<li>The harness serialises against other sessions' suites. Match a real pytest
+  (<code>pgrep -af 'bin/python[0-9.]* -m py[t]est'</code>), never <code>py[t]est</code> alone: orphaned
+  waiter shells contain the word and match themselves, and reported a busy tree
+  forever against a node at load 1.3.</li>
+</ul>
+<h2 id="161-one-list-not-two-facets-the-calendar-band-filter-2026-09-10">§161 — one list, not two facets: the calendar band filter (2026-09-10)</h2>
+<p><code>tests/test_calendar_filter.py</code> (71 guards) + <code>/tmp/mut_bands.py</code> (40 mutations).</p>
+<p><strong>What went wrong.</strong> The filter shipped with two independent facets — event
+family (<code>kind</code>) and automation owner (<code>owner</code>). Read aloud, the bar was
+<em>"Show: Planned changes, Automations (upcoming), What ran · Automations:
+Automations (fleet work), System Automations"</em>: one word, three meanings, one
+row. Being independent they also multiplied — <code>kind=change&amp;owner=user</code> is a
+legal URL in which the owner half decides nothing, so the bar offered states
+that do not exist. The user's verdict was <em>"no tiene sentido"</em>, and it was
+right: a filter bar is a LIST OF THE THINGS A PAGE CAN DRAW, and this one had
+stopped being that.</p>
+<p><strong>The rules the rewrite rests on.</strong></p>
+<ol>
+<li><strong>One facet, <code>show</code>, whose values are the bands.</strong> <code>OWNER_OF_BAND</code> is the
+   whole of what used to be the owner facet: the two automation bands ARE the
+   two Automation surfaces, drawn once, by name.</li>
+<li><strong>History follows its group.</strong> <code>run</code> is a TIME switch. <code>draws_runs</code> is
+   <code>HISTORY in bands and bool(owners)</code> — hiding a group hides its past too.
+   The one state this makes reachable (history on, both groups off) renders as
+   a month with no past at all, so <code>history_orphan_note</code> says it in words.
+   Mutation <code>history-drawn-with-no-band-to-hang-it-on</code> and its opposite both
+   bite.</li>
+<li><strong>The grid cannot be filtered empty.</strong> One <code>PRIMARY</code> band is always on.
+   <code>toggled()</code> returns <code>[]</code> for the last one so the caller draws TEXT, not a
+   link to a state the resolver would refuse — and <code>_resolve_bands</code> enforces the
+   same rule for a hand-typed URL. <code>test_the_bar_and_the_resolver_agree_on_the_invariant</code>
+   walks every reachable band combination and every chip in it, because two
+   authors of that rule is how a bar and its page start disagreeing.</li>
+<li><strong>A renamed vocabulary TRANSLATES; it does not go stale.</strong> <code>_from_legacy</code>
+   maps yesterday's <code>kind</code>/<code>owner</code> blob into bands. Telling a user <em>"part of
+   your saved filter no longer exists"</em> because WE renamed the vocabulary blames
+   them for our change, and that banner is the only thing that will ever explain
+   the real case. The new facet BEATS the old one rather than merging with it:
+   merging two vocabularies is how a chip stops meaning what it says.</li>
+<li><strong>A count's tail is a parameter.</strong> <code>counts_note(..., tail=)</code> — the default is
+   a claim about the future and only the schedule band has one.</li>
+</ol>
+<p><strong>Two traps this round.</strong></p>
+<ul>
+<li>🚨 <strong>Tenth assert-by-substring matching something the document supplies
+  itself.</strong> The stale-banner guard asserted <code>"no longer" not in page</code>; the bare
+  words are ALSO in a JavaScript comment further down that very page, so the
+  guard passed with the banner deleted. Now anchored on <code>STALE_BANNER</code>, the
+  banner's own sentence.</li>
+<li>📌 <strong>A nav sweep that swallowed the chips.</strong> <code>test_paging_the_month_keeps_the_filter</code>
+  collects every <code>/calendar/?…</code> link carrying <code>view=</code>; the chips carry <code>view=</code>
+  too and a chip's whole job is to change one band, so the sweep was asserting
+  that a toggle does not toggle. Excluded by the <code>data-band</code> marker the markup
+  carries, not by URL shape.</li>
+</ul>
+<p><strong>How to re-verify.</strong> <code>TZ=Europe/Zurich pytest tests/test_calendar_filter.py</code>
+(the day panel's neighbours are timezone-sensitive; the node runs UTC and the
+app runs Europe/Zurich, so a naive run is red for two hours every night), then
+<code>/opt/satom/venv/bin/python3 /tmp/mut_bands.py</code>. The bar must print
+<code>System Automations</code> exactly once and must never print <code>Automations (upcoming)</code>
+or <code>Automations (fleet work)</code> again.</p>
+<h2 id="162-a-form-control-that-explains-nothing-and-the-one-that-explains-wrong-2026-09-10">§162 — a form control that explains nothing, and the one that explains wrong (2026-09-10)</h2>
+<p><code>/scout/</code> asks for twelve things and explained four of them. The gap that
+mattered was not the eight silent ones: it was <strong>Port</strong> and <strong>Scheme</strong>, which
+looked exactly as settable as the rest and are <em>read only when a Published host
+is typed as well</em>. <code>_endpoint()</code> has two branches — typed and derived — and the
+derived one never consults <code>target.port</code> or <code>target.scheme</code>; they arrive off the
+device with the VIP. An operator who fills the port beside a blank host has set
+something the walk discards, and every surface on the page agreed with them.</p>
+<p><strong>The rule.</strong> A control's help states what to enter AND what the engine does
+with it, including the conditions under which it does nothing. "This field is
+ignored unless X" is the single most valuable sentence a form can carry and the
+one nobody writes, because the field still looks like it works.</p>
+<p><strong>The guard, and why it is two-way.</strong> <code>tests/test_scout_help.py</code> reads the
+control names out of the template itself and holds them against
+<code>scout_config.WALK_HELP</code> in BOTH directions:</p>
+<ul>
+<li>a control with no entry fails — a thirteenth field cannot ship mute;</li>
+<li>an entry with no control fails — help for a removed or renamed field reads as
+  coverage while explaining nothing.</li>
+</ul>
+<p>A third test asserts the form still has at least twelve controls, because the
+first two both pass against an emptied template or a regex that stopped
+matching. That third one is the guard on the guards.</p>
+<p><strong>Read the template with its comments stripped.</strong> This one's header discusses
+<code>&lt;style&gt;</code> and <code>&lt;script&gt;</code> by name in order to forbid them; asserted over the raw
+file, the CSP guard matches its own documentation and passes on a page that
+ships an inline block. Tenth occurrence of that class in this repo.</p>
+<p><strong>Escape the probe before looking for it in HTML.</strong> The rendered-hint test
+searched for the raw text and reported a missing hint for <code>policy</code> against a
+page that was rendering it correctly: the text lands in an attribute, so
+<code>object's</code> is <code>object&amp;#39;s</code> and <code>→</code> is <code>&amp;#8594;</code>.</p>
+<p><strong>A fallback must not re-do the thing that failed.</strong> <code>walk_help()</code> substituted
+the window ceiling inside a <code>try</code>, and its <code>except</code> re-read the same module
+attribute — so the degradation path raised for exactly the input it existed to
+survive. Only the degradation test found it; every ordinary render takes the
+happy branch.</p>
+<p><strong>Do not reuse the settings catalog's prose for the form.</strong> <code>SPEC</code> entries are
+written about a <em>default</em> ("Pre-filled into the walk form"). The same string on
+the walk form is circular. Link the two by key and compose the shared sentence
+once.</p>
+<h2 id="163-a-cut-that-does-not-say-it-is-a-cut-and-a-class-nobody-defined-2026-09-10">§163 — a cut that does not say it is a cut, and a class nobody defined (2026-09-10)</h2>
+<p>Two failure modes, one report, and neither of them raises anything.</p>
+<p><strong>A trimmed list is indistinguishable from a short one.</strong> Six Scout rungs sliced
+their evidence (<code>[:4]</code>, <code>[:6]</code>) and printed the survivors with nothing to mark
+the cut. Six of twelve pool members is not "six members", but on the page it
+is: headline, detail and evidence all agree with the smaller number. The rule
+is the one this repo already applies to bounded sweeps — <strong>a bound that is not
+printed reads as completeness</strong> — and the phrasing matters as much as the
+count: the marker says the cut was made <em>by this page, not by the device</em>,
+because "no more" is a claim about the appliance that the renderer has no
+standing to make.</p>
+<p><strong>One author for the sentence.</strong> <code>_capped(ev, pairs, cap, noun)</code> is the only
+place that decides what a cut looks like. Six copies of that sentence is how a
+product ends up with two spellings of one guarantee.</p>
+<p><strong>The denominator must come from whoever counted, not from whoever displays.</strong>
+<code>classify_path_rows</code> keeps at most five rows for display. Measuring the cut
+against that list reports "3 of 5" for a window that held nine hundred flows —
+arithmetically consistent and factually invented. Rung 7 therefore reports
+<code>report["total"]</code> and calls its rows a <em>sample</em>, a word that promises exactly
+what it delivers. Guarded, and the mutation that swaps the denominator dies.</p>
+<p><strong>A class name is a claim about a stylesheet, and an unbacked claim renders as
+nothing.</strong> <code>/scout/</code> shipped with five classes that match no rule in
+<code>fortiweb.css</code>: <code>fw-btn-primary</code> (transposed — the defined spelling is
+<code>btn-fw-primary</code>), <code>fw-page</code>, <code>fw-page-head</code>, <code>fw-card-head</code>, <code>fw-muted</code>. None
+of them existed anywhere else in the product. The submit button of the page
+rendered as bare text with an icon for two days, in a light theme where
+unstyled and styled differ by a background colour nobody misses in a diff.
+Guard: every static <code>fw-*</code>/<code>btn-fw-*</code> token in the template must resolve to a
+rule in the stylesheet, plus every colour the verdict map can emit.</p>
+<p><strong>A control the operator cannot see is a control they cannot decline.</strong> Eight
+of twelve inputs sat inside a collapsed <code>&lt;details&gt;</code>, and the page was reported
+as having had its fields REMOVED — the correct reading of four visible boxes.
+Collapsing is not hiding only when what stays visible says what is inside.
+Three named sections with separators; the guard forbids <code>&lt;details&gt;</code> inside the
+walk form AND requires twelve controls, because the first assertion alone
+passes against a form somebody emptied.</p>
+<p><strong>Traps paid for in this round.</strong></p>
+<ul>
+<li><em>Eleventh assert matching its own comment.</em> The product-wide button guard
+  read raw template source — and this template's new comment names the bad
+  spelling in order to forbid it, so the guard failed against the FIXED file.
+  Strip Jinja comments before asserting; and a comment that quotes a defect
+  spends the debt budget that counts it, so the comment no longer writes it out.</li>
+<li><em>A mutation that cannot fail.</em> The mutation deleting <code>.fw-badge-nowrap</code>
+  replaced it with a comment that NAMED the class, so the guard's substring
+  check still passed: SURVIVED, reported against sound code. A mutation's
+  replacement must not contain the string the guard looks for.</li>
+<li><em>Ambiguous anchors are not mutations.</em> Two anchors appeared twice and were
+  skipped rather than applied. The harness prints <code>ANCHOR xN</code> instead of
+  silently mutating the first hit — a mutation applied to the wrong occurrence
+  is worse than one not applied.</li>
+<li><em>Do not write a second author of an existing rule.</em> A product-wide count of
+  the reversed button spelling already exists in
+  <code>tests/test_tool_modal_chrome.py</code>, with a printed budget. The first draft of
+  the new guard duplicated it with a file allowlist; it was deleted.</li>
+</ul>
+<h2 id="164-a-picker-that-quietly-narrows-what-may-be-walked-2026-09-10">§164 — a picker that quietly narrows what may be walked (2026-09-10)</h2>
+<p><strong>Guards:</strong> <code>tests/test_scout_objects.py</code> (63 guards), plus the extended identity in
+<code>tests/test_scout_help.py</code>.</p>
+<p>A dropdown of names is the most trustworthy-looking control on a form: it
+cannot be misspelled, so it reads as authoritative. That is the hazard. Three
+ways a picker narrows what may be walked, all of which render as an ordinary
+list:</p>
+<ol>
+<li><strong>An intersection of the two sources.</strong> Measured on <code>{device}</code>, 2026-09-10:
+   41 live, 40 harvested, and the odd one out was the policy built minutes
+   earlier. The intersection hides the object the operator came for. The guard
+   holds both directions: a live-only row and a harvest-only row must both be
+   offered.</li>
+<li><strong>A comparative claim against a list nobody obtained.</strong> With one source
+   unreadable, <code>None</code> and <code>[]</code> collapse and every row looks live-only. The
+   payload marks those rows <code>sole</code>; <code>sole</code> is not spelled <code>both</code>, because the
+   browser reads the payload and would print the lie.</li>
+<li><strong>A picker that replaces the field.</strong> The free-text name is what keeps an
+   unlicensed appliance walkable. The guard reads the template: the select
+   carries <strong>no</strong> <code>name</code>, the input still carries <code>name="policy"</code>.</li>
+</ol>
+<p><strong>One author.</strong> The picker reads the same two adapters as rung 1. A
+source-level guard forbids <code>client_for</code>, <code>policy_status</code>, <code>list_with_error</code> and
+<code>policy_full_cached</code> inside the module, and pins <code>read_layer</code> to exactly two
+occurrences — the import and the timestamp call. Membership has one author;
+freshness may have another.</p>
+<p><strong>The identity that could be hidden from.</strong> <code>test_scout_help.py</code> matched
+controls by their posted <code>name</code>, so a control that posts nothing was invisible
+to it — and the picker deliberately posts nothing. Controls now declare
+themselves by <code>name</code> <strong>or</strong> <code>data-fw-control</code>, and a third guard fails any
+control that declares neither. Floor raised from twelve to thirteen.</p>
+<p><strong>What only the browser showed.</strong> Both of these passed every test in this
+file before a screenshot was taken, because every test asserts on names, and
+no name is plural or overflows a column.</p>
+<ul>
+<li><em>"41 server policys".</em> The plural of a noun the product owns was being built
+  by appending an "s", on both sides. <code>plural()</code> is the authority now and the
+  payload carries <code>noun_plural</code>.</li>
+<li><em>A provenance suffix cut off by the column.</em> An <code>&lt;option&gt;</code> does not wrap and
+  cannot mark its own truncation, so §163's rule cannot be applied inside one.
+  The fact became structure — an <code>&lt;optgroup&gt;</code> per source, headings held to a
+  measured 34 characters with the count FIRST (the half worth reading when the
+  rest is cut), and the long sentence printed under the control where it wraps.
+  A guard holds both halves: the heading must fit, and the sentence it
+  shortens must still be longer than it.</li>
+</ul>
+<p><strong>Traps paid for in this round.</strong></p>
+<ul>
+<li><em>A negative lookahead that backtracks.</em> <code>\.innerHTML\s*=\s*(?!'')</code> matched
+  the very line it meant to allow: <code>\s*</code> collapses to zero and the lookahead
+  then reads a space. Enumerate the assignments and compare the list.</li>
+<li><em>A guard that named a string instead of a verb.</em> "the endpoint appears once
+  in <code>adc_ops</code>" failed against a correct file — <code>get_object</code> legitimately names
+  it too. Holding the string would have pushed a fix into unrelated code; the
+  guard holds <code>list_with_error(...)</code>, the verb it is about.</li>
+<li><em>The harness refusing to start is the harness working.</em> <code>--timeout=300</code> is a
+  usage error here (pytest-timeout is not installed) and every run returned
+  rc=4; because only <code>rc==1</code> counts as a bite and the baseline must be green,
+  it aborted instead of reporting 25 dead mutations against a suite that never
+  ran.</li>
+</ul>
+<p><strong>Verification.</strong> 31 mutations, 31 bite. Baseline green before and after,
+<code>__pycache__</code> purged every pass, tree restored and verified by SHA-256, aborts
+if another pytest is alive on the tree.</p>
     </div>
   </div>
 </section>

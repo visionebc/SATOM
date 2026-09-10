@@ -6,6 +6,41 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — the Change Calendar hides what you do not want to see (2026-09-10)
+
+The calendar's filter bar already had three chips (*Changes · Automations · What
+ran*). It gained the split the two Automation pages introduced, and it now
+remembers your choice:
+
+- **Owner chips**: *Automations (fleet work)* and *System Automations*, named
+  after the pages that own those rows, so the calendar and the lists use one
+  vocabulary. Ticking off the system band leaves a month of planned fleet work
+  on screen instead of a wall of nightly backups.
+- **Remember for me** stores the choice on your profile under the calendar's own
+  key. Filtering the calendar does not re-filter a list you were not looking at.
+- **This is a preference, never a permission.** The filter changes what the grid
+  PAINTS and nothing about who may open the page or act on a row: every event
+  still links to the page that owns it, and that page still answers with its own
+  gate. The split between the two Automation pages is the permission boundary;
+  this is not, and a value in `user_settings` may not be asked to be one.
+
+### Fixed
+
+- The calendar applied the filter in the view rather than the template. A row
+  hidden in Jinja is still read, still counted in the day badges and still fed
+  to the overlap detector, so the grid would have contradicted its own filter.
+- A saved filter that names one facet no longer claims the other one is stale.
+  `to_json` stores strict subsets, so an owner-only blob is the ORDINARY shape
+  of a working saved filter; the resolver read the absent facet as "your stored
+  values are all gone" and printed *"part of your saved filter no longer
+  exists"* on every visit of a filter that was doing its job. Only a facet that
+  was NAMED and validated down to nothing is reported now. Found by mutation:
+  the guard that should have caught it did not exist.
+- Paging the month, *Today* and the day cells all carry the whole filter. The
+  navigation links are built by one macro; a macro that dropped a facet would
+  have widened the filter on the click that changes month, which reads as more
+  work being scheduled in the next month than in this one.
+
 ### Added — Automations split from System Automations, and a filter that remembers what you want to see (2026-09-09)
 
 `Automation → Automations` (`/automations`) is now a separate page from

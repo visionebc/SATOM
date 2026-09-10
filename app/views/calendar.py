@@ -41,6 +41,7 @@ from flask_login import current_user, login_required
 from ..auth.decorators import require_permission
 from ..models import (Appliance, ChangeRequest, Permission, ScheduledAction,
                       ScheduledActionRun, visible_appliances)
+from ..services import calendar_filters as calf
 from ..services import calendar_plan as cal
 from ..services import settings_store
 from ..services import user_settings_store
@@ -77,6 +78,18 @@ def _owner_endpoint(action) -> str:
     if action is None:
         return "scheduled_actions"
     return sa_views.endpoint_for(action)
+
+
+def _scope_of():
+    """``action -> 'user'|'admin'``, imported lazily for the same reason
+    :func:`_owner_endpoint` is: one string is not worth tying two view
+    modules together at import time. The SPLITTER answers this question —
+    a second implementation here would disagree with the page each event
+    links to, and the disagreement would surface as an automation missing
+    from the band the operator filtered to.
+    """
+    from . import scheduled_actions as sa_views
+    return sa_views.effective_scope
 
 
 MAX_RUNS = 400
@@ -215,8 +228,16 @@ def _device_names():
     return names_for
 
 
-def _collect(view: str, anchor: date, kinds: set) -> dict:
-    """Everything the grid draws, already scoped. Returns the render context."""
+def _collect(view: str, anchor: date, flt) -> dict:
+    """Everything the grid draws, already scoped. Returns the render context.
+
+    ``flt`` is a :class:`services.calendar_filters.Resolved`. Both facets are
+    applied HERE rather than in the template: a row hidden in Jinja is still
+    read, still counted in the day badges, and still lands in ``conflicts``,
+    so the grid would contradict its own filter.
+    """
+    kinds, owners = flt.kinds, flt.owners
+    band_counts: dict = {}
     tz = settings_store.tz_name()
     day_from, day_to = _range_for(view, anchor)
     start, end = cal.to_utc_bounds(day_from, day_to, tz)
@@ -236,8 +257,15 @@ def _collect(view: str, anchor: date, kinds: set) -> dict:
 
     if "automation" in kinds:
         from ..services.product_scope import scope_query
-        actions = (scope_query(ScheduledAction.query, ScheduledAction.product)
-                   .order_by(ScheduledAction.name).all())
+        every = (scope_query(ScheduledAction.query, ScheduledAction.product)
+                 .order_by(ScheduledAction.name).all())
+        # COUNTED BEFORE THE FACET IS APPLIED. A narrowed band and an empty
+        # one are one pixel apart on a month grid and an order of magnitude
+        # apart in consequence, because a hidden automation still fires.
+        scope_of = _scope_of()
+        actions = [a for a in every
+                   if calf.owner_of(a, scope_of=scope_of) in owners]
+        band_counts["automation"] = (len(actions), len(every))
         # PROJECTION IS FUTURE-ONLY: a computed dot on a past day would assert a
         # run nobody observed. The past comes from ScheduledActionRun below.
         auto = cal.automation_events(
@@ -274,6 +302,15 @@ def _collect(view: str, anchor: date, kinds: set) -> dict:
                 f"{total} runs happened in this range; the {len(runs)} most "
                 f"recent are drawn. Open Scheduled Actions → History for the rest.")
         rows_by_id = {a.id: a for a in ScheduledAction.query.all()}
+        # The owner of a run is the owner of the action that produced it, so
+        # filtering to one band does not leave that band's history behind in
+        # the other. Applied AFTER the MAX_RUNS note, which is about the read
+        # cap and would otherwise start counting the filter.
+        drawn = [r for r in runs
+                 if calf.owner_of(rows_by_id.get(r.action_id),
+                                  scope_of=_scope_of()) in owners]
+        band_counts["run"] = (len(drawn), len(runs))
+        runs = drawn
         names = {i: (a.name or a.action) for i, a in rows_by_id.items()}
         events += cal.run_events(
             runs, tz,
@@ -297,6 +334,14 @@ def _collect(view: str, anchor: date, kinds: set) -> dict:
                     if e["kind"] == "change" and e["window_state"] == "invalid"],
         "kinds": kinds,
         "all_kinds": cal.KINDS,
+        "owners": owners,
+        "all_owners": calf.OWNERS,
+        "band_counts": band_counts,
+        "band_notes": [n for n in (
+            calf.counts_note(*band_counts.get("automation", (0, 0)),
+                             "automations"),
+            calf.counts_note(*band_counts.get("run", (0, 0)), "runs"),
+        ) if n],
         "day_from": day_from,
         "day_to": day_to,
     }
@@ -331,10 +376,35 @@ def index():
     if view not in VIEWS:
         view = "month"
     anchor = _anchor()
-    picked = {k for k in request.args.getlist("kind") if k in cal.KINDS}
-    kinds = picked or set(cal.KINDS)
+    # THE FILTER IS A VIEW PREFERENCE, saved on the profile under this
+    # blueprint's own key (``automation_filters.pref_key`` — one author for
+    # "where a surface saves its filter", so no two pages write one row).
+    # It changes what the grid DRAWS and nothing about what anyone may do:
+    # every event still links to the page that owns it, and that page still
+    # answers with its own permission.
+    from ..models import UserSetting
+    from ..services import automation_filters as af
+    uid = getattr(current_user, "id", None)
+    key = af.pref_key("calendar_plan")
+    saved_raw = UserSetting.get(uid, key) if uid is not None else None
+    flt = calf.resolve(request.args, saved_raw)
+    if uid is not None:
+        if request.args.get("clear"):
+            UserSetting.set(uid, key, "{}")
+        elif flt.saved:
+            # Written from the RESOLVED filter, never from the query string:
+            # a value the resolver dropped must not survive into the store,
+            # or it hides a band on every future visit with nothing on screen
+            # to un-tick.
+            UserSetting.set(uid, key, calf.to_json(flt.kinds, flt.owners))
+        elif flt.from_query and saved_raw:
+            # Filtered with "Remember" unticked while a saved filter existed.
+            # Leaving it stored resurrects it next visit and contradicts the
+            # choice just made.
+            UserSetting.set(uid, key, "{}")
 
-    ctx = _collect(view, anchor, kinds)
+    ctx = _collect(view, anchor, flt)
+    ctx["flt"] = flt
 
     # The day panel. ``?d=`` doubles as the selected day so a link from a cell
     # both centres the view and opens the planner prefilled for that date.

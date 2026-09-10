@@ -19,12 +19,16 @@
 {% set V_WORD  = {'pass':'pass','fail':'FAULT','warn':'warn',
                   'unknown':'could not look','skipped':'not walked'} %}
 
+{#  Chrome names the classes the stylesheet actually defines, and this page
+    got five of them wrong at birth: fw-page, fw-page-head, fw-page-sub,
+    fw-card-head and fw-muted match no rule in fortiweb.css and were used
+    NOWHERE else in the product.  Nothing failed — the elements simply
+    rendered unstyled, which is invisible in a diff and looks, on screen,
+    exactly like chrome somebody removed.  There is a guard.               #}
 {% block content %}
-<div class="fw-page">
-
-  <div class="fw-page-head">
-    <h1 class="fw-page-title"><i class="bi bi-binoculars me-2"></i>Scout</h1>
-    <p class="fw-page-sub">
+  <div class="fw-page-header">
+    <h1 class="fw-page-title"><i class="bi bi-binoculars me-2 text-accent"></i>Scout</h1>
+    <p class="text-muted">
       Walks one published service down ten rungs and stops at the first one that
       fails, naming that layer. Read-only: no rung writes, and no rung issues a
       mutating HTTP method.
@@ -38,6 +42,7 @@
   <form method="post" class="fw-card mb-3">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="fw-card-body">
+      <div class="fw-form-section-title">What to walk</div>
       <div class="row g-3">
         <div class="col-md-4">
           <label class="form-label" for="sc-appl">Appliance</label>{{ hint(field_help.appliance_id, "Appliance") }}
@@ -75,9 +80,18 @@
         </div>
       </div>
 
-      <details class="mt-3">
-        <summary class="fw-muted">Front-end override and border correlation</summary>
-        <div class="row g-3 mt-1">
+      {#  The eight controls below were behind a collapsed <details> until
+          2026-09-10.  Four of twelve visible reads as "this form has four
+          fields", and it was reported as fields having been REMOVED — which is
+          the correct reading of what the page showed.  A criterion an operator
+          cannot see is a criterion the operator cannot decide not to use.   #}
+      <div class="fw-section-separator"></div>
+      <div class="fw-form-section-title">Front door — where rungs 2 to 4 knock</div>
+      <p class="text-muted small mb-2">All four blank: the door is
+        <strong>derived</strong> from the object's own VIP on the appliance.
+        Type a host and the door becomes <strong>yours</strong> — and only then
+        are Port and Scheme read at all.</p>
+        <div class="row g-3">
           <div class="col-md-4">
             <label class="form-label" for="sc-host">Published host</label>{{ hint(field_help.hostname, "Published host") }}
             <input class="form-control" id="sc-host" name="hostname"
@@ -100,6 +114,15 @@
             <label class="form-label" for="sc-path">Path</label>{{ hint(field_help.path, "Path") }}
             <input class="form-control" id="sc-path" name="path" value="{{ form.path }}">
           </div>
+        </div>
+
+      <div class="fw-section-separator"></div>
+      <div class="fw-form-section-title">Border correlation — rung 7, and nothing else</div>
+      <p class="text-muted small mb-2">Firewall drop, reset and routing are one
+        silence at a socket. Only the border wrote down which it was; with no
+        collector named, rung 7 reports <em>could not look</em> — never
+        <em>clean</em>.</p>
+        <div class="row g-3">
           <div class="col-md-4">
             <label class="form-label" for="sc-faz">FortiAnalyzer (layer 7)</label>{{ hint(field_help.analyzer_id, "FortiAnalyzer (layer 7)") }}
             <select class="form-select" id="sc-faz" name="analyzer_id">
@@ -109,8 +132,6 @@
                 {{ z.row.name }}{% if not z.ok %} — {{ z.why }}{% endif %}</option>
               {% endfor %}
             </select>
-            <div class="form-text">Firewall drop, reset and routing are one
-              silence at a socket. Only the border wrote down which it was.</div>
           </div>
           <div class="col-md-2">
             <label class="form-label" for="sc-adom">FAZ ADOM</label>{{ hint(field_help.faz_adom, "FAZ ADOM") }}
@@ -126,10 +147,17 @@
             <input class="form-control" id="sc-vdom" name="faz_vdom" value="{{ form.faz_vdom }}">
           </div>
         </div>
-      </details>
 
+      {#  btn-fw-primary — the order of those two words is load-bearing.  The
+          reversed spelling matches no rule in fortiweb.css, so this button
+          rendered as bare text with an icon from 9b37a02 to 2026-09-10: the
+          control that runs the page did not look like a control.  Guarded
+          here and counted product-wide by tests/test_tool_modal_chrome.py.
+          The bad spelling is NOT written out anywhere in this file — that
+          counter reads source, and a comment quoting the defect would spend
+          the product's debt budget to document it.                          #}
       <div class="mt-3">
-        <button type="submit" class="btn fw-btn-primary">
+        <button type="submit" class="btn btn-fw-primary">
           <i class="bi bi-binoculars me-1"></i>Walk the ladder</button>
       </div>
     </div>
@@ -138,7 +166,7 @@
   {% if report %}
   {% set v = report.verdict %}
   <div class="fw-card mb-3">
-    <div class="fw-card-head">
+    <div class="fw-card-header">
       <span class="fw-badge fw-badge-{{ 'danger' if v.localised else 'info' }}">
         {{ 'FAULT LOCALISED' if v.localised else 'NO FAULT LOCALISED' }}</span>
       <span class="ms-2">{{ report.target.appliance }} · {{ report.target.noun }}
@@ -148,30 +176,30 @@
       <p class="mb-1">{{ v.text }}</p>
       {% if v.headline %}<p class="mb-1"><strong>{{ v.headline }}</strong></p>{% endif %}
       {% if report.endpoint %}
-      <p class="fw-muted mb-1">Front-end:
+      <p class="text-muted mb-1">Front-end:
         {{ report.endpoint.scheme }}://{{ report.endpoint.host }}:{{ report.endpoint.port }}
         → {{ report.endpoint.ip }}
         ({{ 'derived from the device' if report.endpoint.derived else 'typed' }})</p>
       {% elif report.endpoint_error %}
-      <p class="fw-muted mb-1">Front-end refused: {{ report.endpoint_error }}</p>
+      <p class="text-muted mb-1">Front-end refused: {{ report.endpoint_error }}</p>
       {% endif %}
       {% if report.timing and report.timing.note %}
-      <p class="fw-muted mb-1">Timing: {{ report.timing.note }}</p>
+      <p class="text-muted mb-1">Timing: {{ report.timing.note }}</p>
       {% endif %}
       {% if v.blind_spots %}
-      <p class="mb-0 fw-muted">Blind spots (rungs that could not be walked):
+      <p class="mb-0 text-muted">Blind spots (rungs that could not be walked):
         {{ v.blind_spots|join(', ') }} — this is not health.</p>
       {% endif %}
     </div>
   </div>
 
   <div class="fw-card">
-    <div class="fw-card-head">The ladder</div>
+    <div class="fw-card-header">The ladder</div>
     <div class="fw-card-body p-0">
       <table class="table fw-table mb-0">
         <thead>
           <tr><th style="width:3rem;">#</th><th style="width:11rem;">Layer</th>
-            <th style="width:8rem;">Vantage</th><th style="width:9rem;">Verdict</th>
+            <th style="width:8rem;">Vantage</th><th style="width:11rem;">Verdict</th>
             <th>What it found</th></tr>
         </thead>
         <tbody>
@@ -179,20 +207,24 @@
           <tr>
             <td>{{ L.key }}</td>
             <td><strong>{{ L.title }}</strong><br>
-              <span class="fw-muted small">{{ L.question }}</span></td>
-            <td><span class="fw-muted">{{ L.vantage_label }}</span></td>
-            <td><span class="fw-badge fw-badge-{{ V_BADGE.get(L.verdict,'secondary') }}">
+              <span class="text-muted small">{{ L.question }}</span></td>
+            <td><span class="text-muted">{{ L.vantage_label }}</span></td>
+            {#  fw-badge-nowrap: a pill is a rounded box drawn around ONE line.
+                "could not look" wrapped inside an 9rem column and the second
+                word fell outside the tint — five rungs looked like a cut
+                graphic instead of a verdict.                                #}
+            <td><span class="fw-badge fw-badge-nowrap fw-badge-{{ V_BADGE.get(L.verdict,'secondary') }}">
               <i class="bi bi-{{ V_ICON.get(L.verdict,'dash-circle') }} me-1"></i>
               {{ V_WORD.get(L.verdict, L.verdict) }}</span></td>
             <td>
               <div>{{ L.headline }}</div>
-              {% if L.detail %}<div class="fw-muted small mt-1">{{ L.detail }}</div>{% endif %}
+              {% if L.detail %}<div class="text-muted small mt-1">{{ L.detail }}</div>{% endif %}
               {% if L.evidence %}
               <details class="mt-1">
-                <summary class="fw-muted small">Evidence ({{ L.evidence|length }})</summary>
+                <summary class="text-muted small">Evidence ({{ L.evidence|length }})</summary>
                 <dl class="row mb-0 mt-1 small">
                   {% for e in L.evidence %}
-                  <dt class="col-sm-4 fw-muted">{{ e[0] }}</dt>
+                  <dt class="col-sm-4 text-muted">{{ e[0] }}</dt>
                   <dd class="col-sm-8">{{ e[1] }}</dd>
                   {% endfor %}
                 </dl>
@@ -206,6 +238,4 @@
     </div>
   </div>
   {% endif %}
-
-</div>
 {% endblock %}

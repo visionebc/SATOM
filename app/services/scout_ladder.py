@@ -421,6 +421,31 @@ def _r(verdict: str, headline: str, evidence=None, detail: str = "") -> dict:
             "evidence": list(evidence or []), "detail": detail}
 
 
+def _capped(ev: list, pairs, cap: int, noun: str) -> list:
+    """Append at most ``cap`` evidence pairs and, when there are more, SAY SO.
+
+    Six rungs listed their findings ``[:4]`` or ``[:6]`` with nothing to mark
+    the cut.  A list that stops silently does not read as "the first six of
+    twelve" — it reads as "six", which is the whole point of listing them.  The
+    operator then diagnoses a pool whose remaining members were never shown,
+    from a report that looks complete.  Reported as "el reporte está cortado,
+    los campos no están completos" on 2026-09-10, and that was exactly right.
+
+    The cut is named as SCOUT'S — "not shown here" — because the alternative
+    phrasing ("no more") is a claim about the device that this page has no
+    standing to make: the reader must be able to tell a short list from a
+    trimmed one.  ONE author for that sentence; six copies of it is how a
+    product ends up with two spellings of the same fact.
+    """
+    pairs = list(pairs)
+    ev.extend(pairs[:cap])
+    if len(pairs) > cap:
+        ev.append(("not shown",
+                   "%d more %s of %d — trimmed by this page, not by the "
+                   "device" % (len(pairs) - cap, noun, len(pairs))))
+    return ev
+
+
 def _unavailable(capability: str) -> dict:
     return _r(UNKNOWN, "this rung could not be walked",
               [("missing", capability)],
@@ -445,9 +470,8 @@ def layer_device(ctx: Ctx) -> dict:
     ev = [("status", status),
           ("firmware", str(getattr(ctx.target.appliance, "firmware", "") or "")
            or "not recorded")]
-    for r in reasons[:4]:
-        ev.append((str(r.get("label") or r.get("signal") or "signal"),
-                   str(r.get("text") or "")))
+    _capped(ev, [(str(r.get("label") or r.get("signal") or "signal"),
+                  str(r.get("text") or "")) for r in reasons], 4, "signal(s)")
     if h.get("maintenance"):
         # Maintenance is not health, and it is not a fault either. Saying so
         # stops an operator diagnosing a box somebody deliberately parked.
@@ -650,7 +674,7 @@ def layer_dns(ctx: Ctx) -> dict:
     if fn is None:
         return _unavailable("resolve_name")
     addrs = fn(host) or []
-    ev = [("name", host)] + [("answer", a) for a in addrs[:6]]
+    ev = _capped([("name", host)], [("answer", a) for a in addrs], 6, "answer(s)")
     if not addrs:
         return _r(FAIL, "the published name does not resolve", ev,
                   "Every rung below dials an address. There is none.")
@@ -788,10 +812,10 @@ def layer_pool(ctx: Ctx) -> dict:
     ev = [("pool", str((members[0].get("pool") if members else "") or "")),
           ("members", str(len(members))),
           ("enabled", str(len(enabled)))]
-    for r in members[:6]:
-        ev.append(("member", "%s:%s%s" % (r.get("address"), r.get("port"),
-                                          "" if r.get("enabled", True)
-                                          else "  (disabled)")))
+    _capped(ev, [("member", "%s:%s%s" % (r.get("address"), r.get("port"),
+                                         "" if r.get("enabled", True)
+                                         else "  (disabled)"))
+                 for r in members], 6, "member(s)")
     if not members:
         return _r(FAIL, "the pool has no real servers", ev)
     if not enabled:
@@ -825,11 +849,11 @@ def layer_backend(ctx: Ctx) -> dict:
     if not ctx.opts.use_ssh:
         ev.append(("vantage", "SSH was not supplied — the appliance's own "
                               "vantage is reported 'not probed', not assumed"))
-    for r in rows[:6]:
-        appl = (r.get("appliance") or {}).get("verdict") or "not probed"
-        loc = (r.get("local") or {}).get("verdict") or "not probed"
-        ev.append(("%s:%s" % (r.get("address"), r.get("port")),
-                   "appliance=%s · this node=%s" % (appl, loc)))
+    _capped(ev, [("%s:%s" % (r.get("address"), r.get("port")),
+                  "appliance=%s · this node=%s"
+                  % ((r.get("appliance") or {}).get("verdict") or "not probed",
+                     (r.get("local") or {}).get("verdict") or "not probed"))
+                 for r in rows], 6, "backend(s)")
     down = int(summary.get("unreachable") or 0)
     up = int(summary.get("reachable") or 0)
     if down and not up:
@@ -879,10 +903,20 @@ def layer_path(ctx: Ctx) -> dict:
     if report["mixed"]:
         ev.append(("note", "more than one action class in the window — the "
                            "worst is reported and the counts are shown"))
-    for s in report["sample"][:3]:
+    #  NOT _capped(): the classifier already keeps at most five rows, so a
+    #  denominator taken from this list would read "3 of 5" for a window that
+    #  held nine hundred flows.  The honest denominator is report["total"], and
+    #  these lines are a SAMPLE — a word that promises less than a trimmed list
+    #  does, and here promises the right amount.
+    shown = list(report["sample"])
+    for s in shown:
         ev.append(("sample", "%s %s → %s:%s  action=%s  policyid=%s"
                    % (s["date"], s["srcip"], s["dstip"], s["dstport"],
                       s["action"], s["policyid"])))
+    if report["total"] > len(shown):
+        ev.append(("not shown", "%d flow(s) matched in this window; the %d "
+                                "above are a sample of them, not the list"
+                   % (report["total"], len(shown))))
     return _r(verdict, head, ev)
 
 
@@ -956,11 +990,10 @@ def layer_waf(ctx: Ctx) -> dict:
         return _r(UNKNOWN, "the attack log could not be read", [],
                   "%s: %s" % (type(exc).__name__, exc))
     ev = [("blocks in window", str(len(rows)))]
-    for r in rows[:4]:
-        ev.append(("entry", "%s  %s  %s" % (r.get("date") or r.get("time") or "",
-                                            r.get("src") or r.get("srcip") or "",
-                                            r.get("msg") or r.get("main_type")
-                                            or "")))
+    _capped(ev, [("entry", "%s  %s  %s" % (r.get("date") or r.get("time") or "",
+                                           r.get("src") or r.get("srcip") or "",
+                                           r.get("msg") or r.get("main_type")
+                                           or "")) for r in rows], 4, "block(s)")
     status = ((ctx.state.get("leg_a") or {}).get("status"))
     if rows and isinstance(status, int) and 400 <= status < 500:
         return _r(FAIL, "the WAF is blocking: the front door answered %s and "

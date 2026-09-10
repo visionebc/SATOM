@@ -1573,6 +1573,26 @@ body.fw-entering-page {
 .fw-badge-primary   { background: color-mix(in srgb, var(--fw-accent) 16%, transparent);  color: var(--fw-accent-hover); }
 .fw-badge-secondary { background: rgba(108,117,125,0.16);color: #3D4550; }
 
+/* A pill is a rounded box drawn around ONE line. Let a two-word verdict wrap
+   inside a narrow column and the tint stops following the text: the badge
+   reads as a cut graphic, which is worse than no badge, because the operator
+   cannot tell a broken box from a truncated word. Opt-in, so a badge sitting
+   in a genuinely narrow cell can still choose to wrap. */
+.fw-badge-nowrap { white-space: nowrap; }
+
+/* The heading that divides one form into named sections, beside
+   .fw-section-separator. ONE definition: the same six declarations were
+   already inlined on settings/index.html, and a second copy is how this
+   product's chrome drifted apart before (feedback_shared_chrome_css). */
+.fw-form-section-title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--fw-text-secondary);
+  margin-bottom: 10px;
+}
+
 /* Empty state: intentional tinted icon medallion instead of a faded glyph. */
 .fw-empty-state-icon {
   opacity: 1; font-size: 34px; width: 76px; height: 76px;

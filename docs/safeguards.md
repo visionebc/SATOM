@@ -14055,3 +14055,66 @@ happy branch.
 written about a *default* ("Pre-filled into the walk form"). The same string on
 the walk form is circular. Link the two by key and compose the shared sentence
 once.
+
+## §163 — a cut that does not say it is a cut, and a class nobody defined (2026-09-10)
+
+Two failure modes, one report, and neither of them raises anything.
+
+**A trimmed list is indistinguishable from a short one.** Six Scout rungs sliced
+their evidence (`[:4]`, `[:6]`) and printed the survivors with nothing to mark
+the cut. Six of twelve pool members is not "six members", but on the page it
+is: headline, detail and evidence all agree with the smaller number. The rule
+is the one this repo already applies to bounded sweeps — **a bound that is not
+printed reads as completeness** — and the phrasing matters as much as the
+count: the marker says the cut was made *by this page, not by the device*,
+because "no more" is a claim about the appliance that the renderer has no
+standing to make.
+
+**One author for the sentence.** `_capped(ev, pairs, cap, noun)` is the only
+place that decides what a cut looks like. Six copies of that sentence is how a
+product ends up with two spellings of one guarantee.
+
+**The denominator must come from whoever counted, not from whoever displays.**
+`classify_path_rows` keeps at most five rows for display. Measuring the cut
+against that list reports "3 of 5" for a window that held nine hundred flows —
+arithmetically consistent and factually invented. Rung 7 therefore reports
+`report["total"]` and calls its rows a *sample*, a word that promises exactly
+what it delivers. Guarded, and the mutation that swaps the denominator dies.
+
+**A class name is a claim about a stylesheet, and an unbacked claim renders as
+nothing.** `/scout/` shipped with five classes that match no rule in
+`fortiweb.css`: `fw-btn-primary` (transposed — the defined spelling is
+`btn-fw-primary`), `fw-page`, `fw-page-head`, `fw-card-head`, `fw-muted`. None
+of them existed anywhere else in the product. The submit button of the page
+rendered as bare text with an icon for two days, in a light theme where
+unstyled and styled differ by a background colour nobody misses in a diff.
+Guard: every static `fw-*`/`btn-fw-*` token in the template must resolve to a
+rule in the stylesheet, plus every colour the verdict map can emit.
+
+**A control the operator cannot see is a control they cannot decline.** Eight
+of twelve inputs sat inside a collapsed `<details>`, and the page was reported
+as having had its fields REMOVED — the correct reading of four visible boxes.
+Collapsing is not hiding only when what stays visible says what is inside.
+Three named sections with separators; the guard forbids `<details>` inside the
+walk form AND requires twelve controls, because the first assertion alone
+passes against a form somebody emptied.
+
+**Traps paid for in this round.**
+
+* *Eleventh assert matching its own comment.* The product-wide button guard
+  read raw template source — and this template's new comment names the bad
+  spelling in order to forbid it, so the guard failed against the FIXED file.
+  Strip Jinja comments before asserting; and a comment that quotes a defect
+  spends the debt budget that counts it, so the comment no longer writes it out.
+* *A mutation that cannot fail.* The mutation deleting `.fw-badge-nowrap`
+  replaced it with a comment that NAMED the class, so the guard's substring
+  check still passed: SURVIVED, reported against sound code. A mutation's
+  replacement must not contain the string the guard looks for.
+* *Ambiguous anchors are not mutations.* Two anchors appeared twice and were
+  skipped rather than applied. The harness prints `ANCHOR xN` instead of
+  silently mutating the first hit — a mutation applied to the wrong occurrence
+  is worse than one not applied.
+* *Do not write a second author of an existing rule.* A product-wide count of
+  the reversed button spelling already exists in
+  `tests/test_tool_modal_chrome.py`, with a printed budget. The first draft of
+  the new guard duplicated it with a file allowlist; it was deleted.

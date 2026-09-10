@@ -6,6 +6,44 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed — the Scout report stops cutting itself in silence, and its chrome names classes that exist (2026-09-10)
+
+Reported in one sentence — *"quitaste los filtros y divisiones, y el reporte
+está como cortado, los campos no están completos"* — and every clause of it
+described something real, although nothing had been removed and nothing raised.
+
+- **Six rungs trimmed their evidence with no marker.** `layer_device`,
+  `layer_dns`, `layer_pool`, `layer_backend`, `layer_path` and `layer_waf` cut
+  their lists at four or six entries and printed the survivors as if that were
+  all there was. A pool of twelve rendered as six members and reads as a pool
+  of six. One helper, `_capped()`, now appends `not shown — N more of M,
+  trimmed by this page, not by the device`; the wording attributes the cut to
+  SATOM, because "no more" would be a claim about the appliance that this page
+  cannot make.
+- **The border rung is the exception and keeps its own sentence.**
+  `classify_path_rows` already caps its display rows at five, so a denominator
+  taken from that list would report "3 of 5" for a window holding nine hundred
+  flows. It counts the flows it classified and calls the rows a *sample*.
+- **Five class names on the page matched no rule in `fortiweb.css`.**
+  `fw-btn-primary` (the defined spelling is `btn-fw-primary`), plus `fw-page`,
+  `fw-page-head`, `fw-card-head` and `fw-muted` — none used anywhere else in
+  the product. Nothing failed: unstyled is what an undefined class renders as.
+  The submit control of this page had been bare text with an icon since
+  9b37a02. Now `btn-fw-primary`, `fw-page-header`, `fw-card-header` and
+  `text-muted`, all of which the stylesheet defines.
+- **The verdict pill wrapped inside an 8rem column** and the second word fell
+  outside the tint, so five rungs showed what looked like a cut graphic where
+  the verdict should be. New opt-in `.fw-badge-nowrap`, wider column.
+- **Eight of the twelve controls were behind a collapsed `<details>`.** Four
+  visible controls read as a form with four fields. They are now three named
+  sections — *What to walk*, *Front door*, *Border correlation* — divided by
+  `.fw-section-separator` and headed by a new shared `.fw-form-section-title`,
+  which replaces the six declarations that were inlined on `settings/index.html`.
+- **Guards:** `tests/test_scout_chrome.py` (17). Every static `fw-*` class the
+  template names must exist in the stylesheet; every colour `V_BADGE` can emit
+  must exist; no control may hide inside a collapsed section; and each capped
+  rung must mark its cut. 21 mutations, 21 bite.
+
 ### Added — every control on the Scout form explains itself (2026-09-10)
 
 Each of the **twelve** controls on `/scout/` now carries the product's standard

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "partials/_hint.html" import hint %}
 
 {% block title %}Scout — SATOM{% endblock %}
 
@@ -39,7 +40,7 @@
     <div class="fw-card-body">
       <div class="row g-3">
         <div class="col-md-4">
-          <label class="form-label" for="sc-appl">Appliance</label>
+          <label class="form-label" for="sc-appl">Appliance</label>{{ hint(field_help.appliance_id, "Appliance") }}
           <select class="form-select" id="sc-appl" name="appliance_id" required>
             <option value="">— pick one —</option>
             {% for a in appliances %}
@@ -54,12 +55,12 @@
           {% endif %}
         </div>
         <div class="col-md-4">
-          <label class="form-label" for="sc-policy">Server policy / virtual server</label>
+          <label class="form-label" for="sc-policy">Server policy / virtual server</label>{{ hint(field_help.policy, "Server policy / virtual server") }}
           <input class="form-control" id="sc-policy" name="policy" required
                  value="{{ form.policy }}" placeholder="the object's exact name">
         </div>
         <div class="col-md-2">
-          <label class="form-label" for="sc-window">Log window (min)</label>
+          <label class="form-label" for="sc-window">Log window (min)</label>{{ hint(field_help.window_minutes, "Log window (min)") }}
           <input class="form-control" id="sc-window" name="window_minutes"
                  value="{{ form.window_minutes }}" inputmode="numeric">
         </div>
@@ -67,7 +68,7 @@
           <div class="form-check">
             <input class="form-check-input" type="checkbox" id="sc-ssh"
                    name="use_ssh" {{ 'checked' if form.use_ssh }}>
-            <label class="form-check-label" for="sc-ssh">Use SSH</label>
+            <label class="form-check-label" for="sc-ssh">Use SSH</label>{{ hint(field_help.use_ssh, "Use SSH") }}
             <div class="form-text">Without it the appliance's own vantage on the
               backends is reported <em>not probed</em>, never assumed.</div>
           </div>
@@ -78,29 +79,29 @@
         <summary class="fw-muted">Front-end override and border correlation</summary>
         <div class="row g-3 mt-1">
           <div class="col-md-4">
-            <label class="form-label" for="sc-host">Published host</label>
+            <label class="form-label" for="sc-host">Published host</label>{{ hint(field_help.hostname, "Published host") }}
             <input class="form-control" id="sc-host" name="hostname"
                    value="{{ form.hostname }}" placeholder="derived from the VIP">
             <div class="form-text">Typed wins over derived — you know which name
               is in the ticket.</div>
           </div>
           <div class="col-md-2">
-            <label class="form-label" for="sc-port">Port</label>
+            <label class="form-label" for="sc-port">Port</label>{{ hint(field_help.port, "Port") }}
             <input class="form-control" id="sc-port" name="port" value="{{ form.port }}">
           </div>
           <div class="col-md-2">
-            <label class="form-label" for="sc-scheme">Scheme</label>
+            <label class="form-label" for="sc-scheme">Scheme</label>{{ hint(field_help.scheme, "Scheme") }}
             <select class="form-select" id="sc-scheme" name="scheme">
               <option value="https" {{ 'selected' if form.scheme != 'http' }}>https</option>
               <option value="http"  {{ 'selected' if form.scheme == 'http' }}>http</option>
             </select>
           </div>
           <div class="col-md-4">
-            <label class="form-label" for="sc-path">Path</label>
+            <label class="form-label" for="sc-path">Path</label>{{ hint(field_help.path, "Path") }}
             <input class="form-control" id="sc-path" name="path" value="{{ form.path }}">
           </div>
           <div class="col-md-4">
-            <label class="form-label" for="sc-faz">FortiAnalyzer (layer 7)</label>
+            <label class="form-label" for="sc-faz">FortiAnalyzer (layer 7)</label>{{ hint(field_help.analyzer_id, "FortiAnalyzer (layer 7)") }}
             <select class="form-select" id="sc-faz" name="analyzer_id">
               <option value="">— none: layer 7 reports "could not look" —</option>
               {% for z in analyzers %}
@@ -112,16 +113,16 @@
               silence at a socket. Only the border wrote down which it was.</div>
           </div>
           <div class="col-md-2">
-            <label class="form-label" for="sc-adom">FAZ ADOM</label>
+            <label class="form-label" for="sc-adom">FAZ ADOM</label>{{ hint(field_help.faz_adom, "FAZ ADOM") }}
             <input class="form-control" id="sc-adom" name="faz_adom" value="{{ form.faz_adom }}">
           </div>
           <div class="col-md-3">
-            <label class="form-label" for="sc-devid">FortiGate devid</label>
+            <label class="form-label" for="sc-devid">FortiGate devid</label>{{ hint(field_help.faz_devid, "FortiGate devid") }}
             <input class="form-control" id="sc-devid" name="faz_devid"
                    value="{{ form.faz_devid }}" placeholder="blank = every device in the ADOM">
           </div>
           <div class="col-md-3">
-            <label class="form-label" for="sc-vdom">VDOM</label>
+            <label class="form-label" for="sc-vdom">VDOM</label>{{ hint(field_help.faz_vdom, "VDOM") }}
             <input class="form-control" id="sc-vdom" name="faz_vdom" value="{{ form.faz_vdom }}">
           </div>
         </div>

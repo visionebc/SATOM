@@ -33,8 +33,15 @@
    leaves must carry it.
 
    Sentinel is a group of its own -- a pipeline with its own incidents console
-   and architecture, not one knob under Monitoring -- and it sits LAST at the
-   operator's request, below Monitoring & Alerts.
+   and architecture, not one knob under Monitoring -- and it sits below
+   Monitoring & Alerts at the operator's request.
+
+   Scout is a group of its own for the same reason and sits LAST, directly
+   below Sentinel, at the operator's request.  Filing it as one entry under
+   Sentinel would have put a troubleshooting tool inside the security pipeline's
+   section, which is exactly the confusion the two were separated to avoid: the
+   clock starts Sentinel and it opens incidents; an operator starts Scout and it
+   returns a location.  A menu is where that distinction is first read.
 
    "Source of Truth & Backup" is a group for the same reason, added 2026-08-29
    at the operator's request.  It was ONE entry ("SoT & Backup") holding two
@@ -109,7 +116,10 @@
     {'t': 'tab-sentinel-policy',   'icon': 'bi-shield-lock',      'label': _('Response policy')},
     {'t': 'tab-sentinel-blocklist','icon': 'bi-list-columns',     'label': _('Border blocklist')},
     {'t': 'tab-sentinel-docs',     'icon': 'bi-diagram-3',        'label': _('Architecture')},
-    {'t': 'tab-sentinel-console',  'icon': 'bi-activity',         'label': _('Incidents console')}]}
+    {'t': 'tab-sentinel-console',  'icon': 'bi-activity',         'label': _('Incidents console')}]},
+  {'key': 'scout', 'label': _('Scout'), 'icon': 'bi-compass', 'admin': true, 'items': [
+    {'t': 'tab-scout',       'icon': 'bi-sliders',          'label': _('Settings')},
+    {'t': 'tab-scout-docs',  'icon': 'bi-diagram-3',        'label': _('Architecture')}]}
 ] %}
   <aside class="nav fw-settings-nav" id="settingsTabs" role="tablist"
          aria-label="{{ _('Settings sections') }}">

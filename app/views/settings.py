@@ -158,6 +158,12 @@ def index():
         sentinel_policy=_sentinel_policy_context(sentinel_ctx.get('health')),
         sentinel_blocklist=_sentinel_blocklist_context(
             sentinel_ctx.get('health')),
+        # Scout: the site knobs, the read-only criteria and the ladder. Same
+        # posture as Sentinel's builders -- an optional module that will not
+        # import renders an empty section rather than taking /settings/ down.
+        scout_settings=_scout_form(),
+        scout_criteria=_scout_criteria(),
+        scout_docs=_scout_docs_context(),
         platform_options=product_scope.device_products(),
         platform_labels=dict(product_scope.device_products()),
         log_levels_all=store.LOG_LEVELS_ALL,
@@ -3118,6 +3124,53 @@ def _sentinel_blocklist_context(health) -> dict:
 
 
 
+def _scout_form():
+    """Scout's SITE settings, rendered from the catalog its reader indexes.
+
+    Empty list on a broken import: the pane then renders its heading and no
+    fields, which is visibly wrong, rather than 500-ing every other section of
+    the Admin Console alongside it.
+    """
+    try:
+        from ..services import scout_config
+        return scout_config.form_groups()
+    except Exception:                                       # noqa: BLE001
+        return []
+
+
+def _scout_criteria():
+    """The read-only judgement constants, READ OFF the engine at render time."""
+    try:
+        from ..services import scout_config
+        return scout_config.criteria()
+    except Exception:                                       # noqa: BLE001
+        return []
+
+
+def _scout_docs_context() -> dict:
+    """The ladder as the engine defines it -- never a list typed into a page.
+
+    ``LADDER`` is the same tuple ``scout_ladder.run()`` walks, so a rung added,
+    renamed or reordered moves this document in the same commit. A reference
+    that disagrees with the engine is read to decide whether a report is
+    complete, which makes staleness here expensive rather than untidy.
+    """
+    try:
+        from ..services import scout_ladder as sl
+        return {
+            'ladder': [{'key': lay.key, 'title': lay.title,
+                        'question': lay.question, 'vantage': lay.vantage,
+                        'vantage_label': sl.VANTAGE_LABEL.get(lay.vantage,
+                                                              lay.vantage)}
+                       for lay in sl.LADDER],
+            'vantages': {'satom': sl.VANTAGE_LABEL.get(sl.V_SATOM, 'this node'),
+                         'device': sl.VANTAGE_LABEL.get(sl.V_DEVICE, 'the appliance'),
+                         'edge': sl.VANTAGE_LABEL.get(sl.V_EDGE, 'the border')},
+        }
+    except Exception:                                       # noqa: BLE001
+        return {'ladder': [], 'vantages': {'satom': '', 'device': '', 'edge': ''}}
+
+
 @bp.route('/sentinel', methods=['POST'])
 @login_required
 @require_permission('config_write')
@@ -3179,6 +3232,59 @@ def save_sentinel():
     if request.form.get('return_to') == 'pane':
         return redirect(url_for('settings.index') + '#tab-sentinel')
     return redirect(url_for('settings.sentinel_section') + '#config')
+
+
+@bp.route('/scout', methods=['POST'])
+@login_required
+@require_permission('config_write')
+def save_scout():
+    """Persist Scout's SITE settings.
+
+    Only ``scout_config.SPEC`` is walked, so a POST carrying a criterion name
+    changes nothing: the judgement constants are not settings, and the endpoint
+    has to refuse them as flatly as the page does. A form that renders them
+    read-only while the handler happily wrote them would be a lock on the door
+    and none on the window.
+
+    Values go through ``set_value``, which coerces and CLAMPS against the same
+    spec the form was rendered from -- a hand-typed 99999-minute window is
+    corrected here rather than becoming a border query nobody survives.
+    """
+    from ..services import audit
+    from ..services import scout_config
+
+    changed, clamped = [], []
+    for spec in scout_config.SPEC:
+        key = spec['key']
+        if spec['kind'] == 'bool':
+            # An unchecked switch sends nothing. Without the companion marker
+            # it is indistinguishable from "this field was not on the form",
+            # and the setting could be turned on but never off.
+            if not request.form.get(key + '__present'):
+                continue
+            value = bool(request.form.get(key))
+        else:
+            if key not in request.form:
+                continue
+            value = request.form.get(key)
+        before = scout_config.get(key)
+        scout_config.set_value(key, value)
+        after = scout_config.get(key)
+        if after != before:
+            changed.append(key)
+        if spec['kind'] in ('int', 'float') and str(after) != str(value).strip():
+            clamped.append('%s -> %s' % (key, after))
+
+    audit.log_action('scout.settings', target='settings',
+                     detail=', '.join(changed) or 'no change')
+    if changed:
+        flash('Scout settings saved: %d changed.' % len(changed), 'success')
+    else:
+        flash('Scout settings unchanged.', 'info')
+    if clamped:
+        flash('Clamped to their allowed range: ' + ', '.join(clamped),
+              'warning')
+    return redirect(url_for('settings.index') + '#tab-scout')
 
 
 @bp.route('/sentinel', methods=['GET'])

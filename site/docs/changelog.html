@@ -61,6 +61,7 @@
     <aside class="toc">
       <div class="toc-title">On this page</div>
       <a href="#unreleased">[Unreleased]</a>
+      <a href="#200-2026-09-10">[2.0.0] - 2026-09-10</a>
       <a href="#1200-2026-08-24">[1.20.0] - 2026-08-24</a>
       <a href="#1190-2026-08-23">[1.19.0] - 2026-08-23</a>
       <a href="#1180-2026-08-23">[1.18.0] - 2026-08-23</a>
@@ -106,6 +107,362 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h2 id="200-2026-09-10">[2.0.0] - 2026-09-10</h2>
+<h3 id="added-the-scout-name-field-gets-a-picker-and-it-offers-the-union-of-both-sources-2026-09-10">Added — the Scout name field gets a picker, and it offers the UNION of both sources (2026-09-10)</h3>
+<p>Asked for in one line: <em>"al seleccionar el fortiweb o fortiadc, deberá aparecer
+en un select todos los Server policy / virtual server"</em>. The list is the easy
+half; which list, and what it must never claim, is the design.</p>
+<ul>
+<li><strong>Union, never intersection.</strong> Measured on <code>{device}</code> the same day: the
+  appliance's own answer held <strong>41</strong> policies and SATOM's harvest held <strong>40</strong>,
+  and the one they disagreed about was the policy built minutes earlier — the
+  object an operator opens Scout for. An intersection hides exactly that row,
+  so both directions are offered and each carries where it came from.</li>
+<li><strong>A comparative claim is only made when both lists were obtained.</strong> With the
+  harvest unreadable every row is live-only in the set sense, and stamping
+  <em>"not in the last harvest"</em> on all of them states a comparison against a list
+  nobody read. Those rows are marked <code>sole</code>, which is deliberately not a
+  synonym of <code>both</code>.</li>
+<li><strong>The picker offers; rung 1 decides.</strong> <code>app/services/scout_objects.py</code> reads
+  the SAME two adapters rung 1 reads (<code>live_objects</code>, <code>object_list</code> off
+  <code>scout_ladder.default_ports</code>), so the list an operator picks from can never
+  be a different question from the list the ladder searches. Its only direct
+  read is the harvest <strong>timestamp</strong> — never its membership.</li>
+<li><strong>The free-text field stays, and the select writes into it.</strong> An unlicensed
+  FortiWeb-VM answers <code>-20010</code> to every <code>cmdb</code> endpoint; the typed name is what
+  keeps that device walkable, and a picker that is the only way in is a cage.
+  Losing the JavaScript costs the convenience, not the page.</li>
+<li><strong>An empty picker always says which kind of empty it is.</strong> <em>"The appliance
+  answered and lists no server policies"</em> and <em>"neither source would list
+  them"</em> render as the same blank control and mean opposite things.</li>
+<li><strong>A trimmed list says so</strong> — <code>not shown — N more of M, trimmed by this page,
+  not by the device</code>, the same wording as §163, at 400 options.</li>
+<li>New JSON endpoint <code>GET /scout/objects</code>, scoped by <code>visible_appliances()</code>
+  exactly like the walk; an unsupported product is a 404 and not an empty list.</li>
+</ul>
+<p><strong>Two defects only a browser render showed, both found and fixed in this
+round.</strong> Every test asserts on names, and no name is plural or overflows:</p>
+<ul>
+<li>The picker's own label read <strong>"41 server policys"</strong>. Both halves of the
+  feature built the plural by appending an "s" to a noun the product owns.
+  <code>scout_objects.plural()</code> is now that authority and the payload ships
+  <code>noun_plural</code>, so the browser never invents grammar for a word it did not
+  establish.</li>
+<li><strong>Provenance rendered as a suffix was cut off by the column</strong>, in the one
+  control where §163's <em>"say what you trimmed"</em> cannot be applied: an
+  <code>&lt;option&gt;</code> does not wrap and cannot mark its own truncation. Provenance is
+  now STRUCTURE — three <code>&lt;optgroup&gt;</code>s, odd groups first because a row only one
+  source knows about is the reason both are offered — with headings short
+  enough to fit a measured 34-character budget and the full sentence written
+  out under the control, where it wraps.</li>
+</ul>
+<h3 id="fixed-fortiadc-had-no-live-object-source-and-its-object-count-was-a-constant-2026-09-10">Fixed — FortiADC had no live object source, and its object count was a constant (2026-09-10)</h3>
+<ul>
+<li><code>_live_rows</code> answered <code>None</code> for anything that was not a FortiWeb, so on a
+  FortiADC rung 1 had no live opinion at all. It now reads the virtual-server
+  list, which for that product is the configuration list and is authoritative
+  for existence.</li>
+<li><strong><code>_object_count</code> returned 3 for every FortiADC, always.</strong> It measured
+  <code>len(adc_ops.inspect_all(...))</code>, and that function returns a three-key result
+  dict — so the count could never reach zero and rung 5's <em>"the device lists
+  nothing at all"</em> branch, the branch that keeps a refused read from being
+  reported as an empty appliance, was unreachable on that product. It also
+  inspected every virtual server in full merely to count them.</li>
+<li><code>adc_ops.list_virtual_servers()</code> is now the one author of that list; the
+  picker, the live source, the count and <code>resolve_targets</code> all read through it
+  (<code>resolve_targets</code> had its own copy of the same call).</li>
+<li>The Scout template's "no <code>&lt;script&gt;</code>" rule is now expressed as what it always
+  meant: no <strong>inline</strong> script, and no origin but our own static tree.</li>
+</ul>
+<h3 id="fixed-the-scout-report-stops-cutting-itself-in-silence-and-its-chrome-names-classes-that-exist-2026-09-10">Fixed — the Scout report stops cutting itself in silence, and its chrome names classes that exist (2026-09-10)</h3>
+<p>Reported in one sentence — <em>"quitaste los filtros y divisiones, y el reporte
+está como cortado, los campos no están completos"</em> — and every clause of it
+described something real, although nothing had been removed and nothing raised.</p>
+<ul>
+<li><strong>Six rungs trimmed their evidence with no marker.</strong> <code>layer_device</code>,
+  <code>layer_dns</code>, <code>layer_pool</code>, <code>layer_backend</code>, <code>layer_path</code> and <code>layer_waf</code> cut
+  their lists at four or six entries and printed the survivors as if that were
+  all there was. A pool of twelve rendered as six members and reads as a pool
+  of six. One helper, <code>_capped()</code>, now appends <code>not shown — N more of M,
+  trimmed by this page, not by the device</code>; the wording attributes the cut to
+  SATOM, because "no more" would be a claim about the appliance that this page
+  cannot make.</li>
+<li><strong>The border rung is the exception and keeps its own sentence.</strong>
+  <code>classify_path_rows</code> already caps its display rows at five, so a denominator
+  taken from that list would report "3 of 5" for a window holding nine hundred
+  flows. It counts the flows it classified and calls the rows a <em>sample</em>.</li>
+<li><strong>Five class names on the page matched no rule in <code>fortiweb.css</code>.</strong>
+  <code>fw-btn-primary</code> (the defined spelling is <code>btn-fw-primary</code>), plus <code>fw-page</code>,
+  <code>fw-page-head</code>, <code>fw-card-head</code> and <code>fw-muted</code> — none used anywhere else in
+  the product. Nothing failed: unstyled is what an undefined class renders as.
+  The submit control of this page had been bare text with an icon since
+  9b37a02. Now <code>btn-fw-primary</code>, <code>fw-page-header</code>, <code>fw-card-header</code> and
+  <code>text-muted</code>, all of which the stylesheet defines.</li>
+<li><strong>The verdict pill wrapped inside an 8rem column</strong> and the second word fell
+  outside the tint, so five rungs showed what looked like a cut graphic where
+  the verdict should be. New opt-in <code>.fw-badge-nowrap</code>, wider column.</li>
+<li><strong>Eight of the twelve controls were behind a collapsed <code>&lt;details&gt;</code>.</strong> Four
+  visible controls read as a form with four fields. They are now three named
+  sections — <em>What to walk</em>, <em>Front door</em>, <em>Border correlation</em> — divided by
+  <code>.fw-section-separator</code> and headed by a new shared <code>.fw-form-section-title</code>,
+  which replaces the six declarations that were inlined on <code>settings/index.html</code>.</li>
+<li><strong>Guards:</strong> <code>tests/test_scout_chrome.py</code> (17). Every static <code>fw-*</code> class the
+  template names must exist in the stylesheet; every colour <code>V_BADGE</code> can emit
+  must exist; no control may hide inside a collapsed section; and each capped
+  rung must mark its cut. 21 mutations, 21 bite.</li>
+</ul>
+<h3 id="added-every-control-on-the-scout-form-explains-itself-2026-09-10">Added — every control on the Scout form explains itself (2026-09-10)</h3>
+<p>Each of the <strong>twelve</strong> controls on <code>/scout/</code> now carries the product's standard
+<code>?</code>: what to put in it, and what the walk does differently because of it. The
+icon is the existing <code>partials/_hint.html</code> macro, so it is a focusable
+<code>&lt;button&gt;</code> rather than a hover-only <code>&lt;span&gt;</code>, its text lives in <code>title</code> and
+survives a failed script, and it needs no per-page JavaScript — which on this
+page matters, because an un-nonced <code>&lt;script&gt;</code> here would be dropped by the CSP
+in silence.</p>
+<ul>
+<li><strong>Three fields were explaining nothing and one of them was actively
+  misleading.</strong> <code>_endpoint()</code> reads the typed <strong>Port</strong> and <strong>Scheme</strong> only on
+  the branch where a <strong>Published host</strong> was also typed; when the front door is
+  derived from the device, both arrive off the device and anything typed is
+  discarded. The form gave no hint of that, so a port typed beside a blank host
+  looked set and was ignored. Both hints now say so.</li>
+<li><strong>The catalog is held against the form by a guard, in both directions.</strong> A
+  thirteenth control with no entry fails the suite, and an entry whose control
+  was removed or renamed fails too. Help does not rot loudly: without this, the
+  next field ships mute and nothing anywhere reports it.</li>
+<li><strong>It is a second catalog on purpose, not a reuse of the settings one.</strong>
+  <code>SPEC</code> describes a <em>default</em> ("Pre-filled into the walk form"), and that same
+  sentence read <em>on</em> the walk form tells the operator that the box they are
+  typing in pre-fills the box they are typing in. The two are linked instead:
+  the five controls the site backs name their <code>SPEC</code> key, and the "pre-filled
+  from Settings → Scout" sentence is composed once rather than typed five
+  times.</li>
+<li>The window ceiling in the prose is read from <code>scout_ladder.MAX_WINDOW_MIN</code>
+  at render, so it cannot disagree with the clamp.</li>
+</ul>
+<h3 id="fixed">Fixed</h3>
+<ul>
+<li><code>walk_help()</code> degraded by re-reading the very attribute whose absence it was
+  degrading from, so an unreadable engine constant raised instead of falling
+  back — on the help of a page that is opened during an incident.</li>
+<li>Two Settings nav-order guards still asserted that <strong>Sentinel</strong> is the last
+  group, which stopped being true when Scout's section was placed below it.
+  Re-expressed over the three-key tail (<code>monitoring · sentinel · scout</code>), which
+  is stricter than the two-key one they replace.</li>
+</ul>
+<h3 id="added-the-change-calendar-hides-what-you-do-not-want-to-see-2026-09-10">Added — the Change Calendar hides what you do not want to see (2026-09-10)</h3>
+<p>The calendar's bar is now ONE list of the things the grid draws, in the order
+the product names them:</p>
+<blockquote>
+<p><strong>Show:</strong> Planned changes · Automations · System Automations · What already ran</p>
+</blockquote>
+<ul>
+<li><strong>The two Automation surfaces are named here exactly as their own pages name
+  them</strong>, so the calendar and the lists use one vocabulary. Ticking off <em>System
+  Automations</em> leaves a month of planned fleet work on screen instead of a wall
+  of nightly backups.</li>
+<li><strong>One facet, not two.</strong> The bar shipped for a few hours with an event-family
+  row <em>and</em> an owner row, which printed the word "Automations" four times with
+  three different meanings and multiplied into states where half the bar decided
+  nothing (<code>kind=change&amp;owner=user</code>). Superseded before release; the old
+  <code>kind=</code>/<code>owner=</code> query strings and any profile written under them still
+  resolve, translated rather than reported stale.</li>
+<li><strong>What already ran follows the two groups above it.</strong> It is a time switch, not
+  a fourth kind of thing: hiding <em>System Automations</em> hides their history too,
+  because a calendar that paints the past of something it says is not there is
+  worse than one that paints nothing. With both automation groups hidden it has
+  nothing to hang history on, and the page says so in words.</li>
+<li><strong>The calendar can never be filtered empty.</strong> At least one of <em>Planned
+  changes</em> / <em>Automations</em> / <em>System Automations</em> always stays on: the chip for
+  the last one is drawn as text rather than as a link, and a hand-typed URL that
+  names none of them is widened back and told so. <code>toggled()</code> is the single
+  author of that rule for both the bar and the resolver.</li>
+<li><strong>Remember for me</strong> stores the choice on your profile under the calendar's own
+  key. Filtering the calendar does not re-filter a list you were not looking at.</li>
+<li><strong>This is a preference, never a permission.</strong> The filter changes what the grid
+  PAINTS and nothing about who may open the page or act on a row: every event
+  still links to the page that owns it, and that page still answers with its own
+  gate. The split between the two Automation pages is the permission boundary;
+  this is not, and a value in <code>user_settings</code> may not be asked to be one.</li>
+</ul>
+<h3 id="fixed_1">Fixed</h3>
+<ul>
+<li>The calendar applied the filter in the view rather than the template. A row
+  hidden in Jinja is still read, still counted in the day badges and still fed
+  to the overlap detector, so the grid would have contradicted its own filter.</li>
+<li>A saved filter that names one facet no longer claims the other one is stale.
+  <code>to_json</code> stores strict subsets, so an owner-only blob is the ORDINARY shape
+  of a working saved filter; the resolver read the absent facet as "your stored
+  values are all gone" and printed <em>"part of your saved filter no longer
+  exists"</em> on every visit of a filter that was doing its job. Only a facet that
+  was NAMED and validated down to nothing is reported now. Found by mutation:
+  the guard that should have caught it did not exist.</li>
+<li>A hidden run is no longer described as one that "still fires". The sentence
+  that keeps a filtered band from reading as an empty one makes a claim about
+  the FUTURE, and only the schedule band has one; on the history band it told an
+  operator that last week's runs were still firing.</li>
+<li>Both bands are counted whether or not they are drawn. Counting only what
+  survives the filter makes "you hid these" and "there are none" the same
+  picture, and the second is the one that ends a maintenance window badly.</li>
+<li>Paging the month, <em>Today</em> and the day cells all carry the whole filter. The
+  navigation links are built by one macro; a macro that dropped a facet would
+  have widened the filter on the click that changes month, which reads as more
+  work being scheduled in the next month than in this one.</li>
+</ul>
+<h3 id="added-automations-split-from-system-automations-and-a-filter-that-remembers-what-you-want-to-see-2026-09-09">Added — Automations split from System Automations, and a filter that remembers what you want to see (2026-09-09)</h3>
+<p><code>Automation → Automations</code> (<code>/automations</code>) is now a separate page from
+<code>Automation → System Automations</code> (<code>/scheduled-actions</code>, the historic URL and
+permission, unchanged). One is fleet work somebody planned — a cutover, a
+drained backend, a certificate swap. The other is SATOM maintaining itself —
+backups, source-of-truth syncs, probe sweeps. They shared one list sorted by
+name, so "disable spo-tienda-mx at 02:00 on Saturday" sat between "Nightly
+system backup" and "Sentinel — correlate and score", and the blast radius of a
+mistaken Delete differed between neighbouring rows by an order of magnitude.</p>
+<ul>
+<li><strong>The merge had made the user half unreachable.</strong> <code>USER_ACTIONS</code> has been in
+  the catalog since the beginning, but the only page that can create one was
+  gated on <code>user_manage</code>, which the <strong>operator</strong> role does not hold — so the
+  four user-scope actions were offered to exactly the audience that does not
+  schedule cutovers. Every one of the 16 rows on the live node is admin scope;
+  not one user row had ever been created. The new page asks for <code>config_write</code>.</li>
+<li><strong>The partition is exhaustive, and that is the point.</strong> Splitting a list on a
+  column is how rows disappear: anything the filter does not claim is claimed by
+  nobody, keeps firing on its schedule, and is visible on no page. The user
+  surface takes <code>scope == 'user'</code>; the system surface takes <strong>everything else</strong> —
+  NULL, a typo, a scope string from a future version — and flags it in front of
+  the admin, who is the one who can fix it.</li>
+<li><strong>The scope is the catalog's, not the stored column's.</strong> The column is a copy
+  taken at write time, so re-scoping an <code>ActionSpec</code> would strand old rows.</li>
+<li><strong>One implementation, two bindings.</strong> The route bodies are plain functions
+  bound to two blueprints; each surface's permission is declared once, in
+  <code>SURFACES</code>, and read by both the gate and the page.</li>
+<li>The change calendar now links each entry to the page that <strong>owns</strong> that row.
+  Pointing every entry at one page is a 404 for the admin and a 403 for the
+  operator — and both read as "the automation is gone".</li>
+</ul>
+<p>Both lists now carry a <strong>filter</strong> — name, action type, status, schedule — that
+can be <strong>saved to your profile</strong> and is restored on your next visit. It is a
+view preference and never a permission:</p>
+<ul>
+<li><strong>A filter never silently empties a list.</strong> Both pages state <code>Showing N of M</code>,
+  and a list emptied by a filter says so, in different words from a list that is
+  empty because nothing was ever created, with a one-click Clear. The hidden
+  rows keep firing either way.</li>
+<li><strong>A saved facet the catalog no longer offers is dropped and named</strong>, not
+  applied. Applied, it would match nothing on every future visit, forever, and
+  the page would read as "your automations were deleted". An unreadable saved
+  filter says so too.</li>
+<li><strong>One preference key per surface.</strong> A shared key would mean narrowing System
+  Automations while triaging it also re-filters the operator's own page.</li>
+<li><strong>Unticking "Remember for me" forgets the stored filter.</strong> Left stored, it
+  comes back on the next visit and contradicts the box just cleared. A GET form
+  submits every field, so an all-empty submission is indistinguishable from a
+  bare visit — the form carries a hidden marker so the two can be told apart.</li>
+<li><strong><code>Also show &lt;the other page&gt;</code> is offered only to a viewer who already holds
+  the other surface's permission</strong>, and it widens what is DRAWN, never what may
+  be done: revealed rows are read-only, labelled with their owning page, and
+  linked to it. Their Edit/Run/Delete on this page would resolve to this
+  blueprint, whose by-id guard answers 404 — a button that looks armed and says
+  "gone" reads as a deleted automation. The by-id guard is unchanged.</li>
+<li>The action dropdown offers only what can match on the page you are on: an
+  option that can never match is the mirror image of a stale facet.</li>
+</ul>
+<p>Also mapped three pages that had shipped without a concept-map entry
+(<code>Change Calendar</code>, <code>Backend Reachability</code>, <code>Config Compare</code>). Nothing failed
+when they were missing — they were simply absent from search, which reads as
+"SATOM cannot do that".</p>
+<h3 id="added-a-procedure-as-a-file-import-and-export-a-process-as-xml-2026-09-09">Added — A procedure as a file: import and export a process as XML (2026-09-09)</h3>
+<p><strong><code>Administrator → Process → Import XML</code></strong>, and <strong><code>Export XML</code></strong> on any
+process page. A recovery plan is written down long before the night it is
+needed and rarely by the person at this console: it arrives as a customer
+runbook, lives in version control beside the rest of the installation's
+documentation, or was built on the lab install. The two routes are the same
+format, so a plan travels between installations instead of being drawn twice.</p>
+<ul>
+<li><strong>The importer is not a second door.</strong> The parsed graph goes to
+  <code>process_kinds.validate_graph</code> — the same call the editor's save makes —
+  before a single row is written. A console step carrying a forbidden command
+  is refused on import exactly as it is refused when drawn, and the test that
+  fixes this neuters the validator to prove the refusal really comes from it.</li>
+<li><strong>Refused whole or accepted whole</strong>, with every structural problem listed at
+  once. A half-imported procedure would look saved and walk somewhere else.</li>
+<li><strong>Parameters are elements, never attributes.</strong> XML replaces a literal newline
+  inside an attribute with a space (only an escaped <code>&amp;#10;</code> survives), so a
+  console script written as an attribute would arrive as a single line that is
+  no longer the command its author wrote. Hand-indented files are de-indented
+  as a block, keeping relative indentation.</li>
+<li><strong>draw.io, BPMN, Visio and SVG are named and refused, never half-read.</strong> A
+  drawn box carries a shape and a caption, not the step kind and parameters
+  that make a step runnable; a shape-only import would look like the operator's
+  plan and could not execute a single check.</li>
+<li><strong>An ADOM this installation does not have is an error, not a drop</strong> —
+  dropping it would import the plan as a draft that looks published. A label
+  longer than its column is refused rather than cut. Any DOCTYPE or ENTITY is
+  refused on the raw bytes, before parsing.</li>
+<li><strong>Replacing an existing key</strong> rewrites that process only after the operator
+  types the key, and is impossible for a process not offered in this ADOM. Run
+  history is kept: every run carries its own copy of the diagram it walked.</li>
+<li>Export round-trips byte-identically, keeps parameters this build does not
+  recognise, and the example printed on the import page is itself imported by a
+  test. Reading and exporting need <code>view</code>; importing needs <code>config_write</code>.</li>
+</ul>
+<h3 id="added-process-procedures-the-system-walks-and-judges-2026-09-09">Added — Process: procedures the system walks and judges (2026-09-09)</h3>
+<p><strong><code>Administrator → Process</code>, in all five ADOM consoles.</strong> An operator draws a
+procedure once — a recovery plan, a post-upgrade check, an onboarding sequence
+— and SATOM walks it step by step and says which layer stopped it. A process is
+registered for one or several ADOMs and appears in each; naming none leaves it
+a draft visible only in Global.</p>
+<ul>
+<li><strong>Thirteen step kinds</strong>, none of which reimplements a question the product
+  already answers: HTTP, TCP (which keeps <em>refused</em> apart from <em>timeout</em> — a
+  refusal proves the host is up), DNS, read-only console, appliance health,
+  diagnostics collection, decision, manual gate, and the write-capable
+  catalogue action, console script and integration hook.</li>
+<li><strong>Four engine rules, each with its cost written down:</strong> what is below a
+  stopped path is recorded <code>skipped</code> and never <code>pass</code>; a branch the plan did
+  not take is <em>not</em> skipped; <code>unknown</code> is neither health nor failure and makes
+  the verdict <code>partial</code>; a loop is legitimate and bounded, and hitting the
+  bound aborts with that reason instead of reporting a verdict about a walk
+  that never finished.</li>
+<li><strong>A run is a rehearsal unless it is armed.</strong> Unarmed, catalogue actions run
+  <code>dry_run=True</code> and the row says so, while console scripts and hooks are not
+  sent at all — neither has a preview, and a rehearsal recorded as a repair is
+  the specific lie the guards exist to prevent.</li>
+<li>A manual gate parks the run in a database row, answerable hours later; each
+  run keeps its own copy of the graph it walked, so editing a process never
+  rewrites its own past.</li>
+</ul>
+<h3 id="added-scout-which-layer-is-actually-broken-2026-09-09">Added — Scout: which layer is actually broken (2026-09-09)</h3>
+<p><strong><code>Operations → Troubleshooting → Scout</code></strong> (FortiWeb) and <strong><code>Fleet → Scout</code></strong>
+(FortiADC). You name one published object — a server policy or a virtual
+server — and Scout walks it down ten rungs in dependency order, stops at the
+first that fails, and names that layer with the evidence that convicted it.</p>
+<ul>
+<li><strong>The rungs:</strong> appliance health · object exists and is enabled · the
+  published name resolves · the front door answers, decomposed into TCP / TLS /
+  TTFB · the certificate · the pool the device reports · the backends from
+  <strong>two vantages that are never merged</strong> · the border's record of the flow ·
+  front-door-versus-backend (is the appliance <em>deciding</em> or merely relaying?) ·
+  the WAF's recent blocks.</li>
+<li><strong>Firewall drop, reset and routing are one silence at a socket.</strong> Only the
+  border wrote down which it was, so that rung reads FortiAnalyzer traffic logs
+  rather than opening another connection. An empty result is reported as <em>"we
+  could not look"</em> — never as a clean path.</li>
+<li><strong>"Could not look" is never health.</strong> A rung that could not run is counted as
+  a blind spot and the verdict says so: a clean walk with five unprobed rungs
+  is reported as a partial walk, not as a healthy service.</li>
+<li><strong>Read-only.</strong> No rung writes, and a mutating HTTP method is refused at the
+  entry point.</li>
+<li>Scout does not open incidents and Sentinel does not diagnose: Sentinel is
+  started by the clock and chooses its own object; Scout is started by an
+  operator and is handed one.</li>
+</ul>
+<h3 id="changed">Changed</h3>
+<ul>
+<li>The FortiAnalyzer <code>logview</code> search moved to <code>app/services/faz_logs.py</code>, so
+  Sentinel's border corroboration and Scout's path rung drive <strong>one</strong> copy of
+  that JSON-RPC route.</li>
+</ul>
 <h3 id="added-pick-a-day-on-the-calendar-and-switch-the-calendar-off-2026-09-08">Added — Pick a day on the calendar, and switch the calendar off (2026-09-08)</h3>
 <p>Two changes to <strong><code>Fleet → Calendar</code></strong>, plus one defect it had been shipping.</p>
 <ul>
@@ -1010,7 +1367,7 @@ Analyzer do not"</em>. Three separate defects, none of which raised.</p>
   archive, in that order: a month may only leave once its snapshots are
   off-box, and the evacuation is what puts them there.</li>
 </ul>
-<h3 id="changed">Changed</h3>
+<h3 id="changed_1">Changed</h3>
 <ul>
 <li><strong>Per-ADOM SoT settings are gated on the ADOM being active.</strong> An inactive
   device family no longer gets a retention card. An override written before it
@@ -1722,7 +2079,7 @@ an opaque <code>-651</code> at deploy time.</p>
   one counter it fed ("walks that FAILED") is read from the scan rows instead.</p>
 </li>
 </ul>
-<h3 id="fixed">Fixed</h3>
+<h3 id="fixed_2">Fixed</h3>
 <ul>
 <li>
 <p><strong>An EMPTY stored copy is a warned state, everywhere it matters.</strong> <code>blob is
@@ -2029,7 +2386,7 @@ an opaque <code>-651</code> at deploy time.</p>
   cannot be migrated until someone uploads the file).</p>
 </li>
 </ul>
-<h3 id="fixed_1">Fixed</h3>
+<h3 id="fixed_3">Fixed</h3>
 <ul>
 <li>
 <p><strong>The shortcut that would have mislabelled every Lua script.</strong> "The plan
@@ -2113,7 +2470,7 @@ an opaque <code>-651</code> at deploy time.</p>
   console had the sentence that explains it one page away and invisible.
   <code>hint_for()</code> falls through to the settings catalog rather than copying it;
   a guard fails if any <code>health.*</code> key is ever duplicated into <code>PAGE_HINTS</code>.</p>
-<h3 id="changed_1">Changed</h3>
+<h3 id="changed_2">Changed</h3>
 <ul>
 <li>
 <p><code>sn_hint</code> is registered as an <strong>application-wide Jinja global</strong>, not as a key
@@ -2208,7 +2565,7 @@ an opaque <code>-651</code> at deploy time.</p>
   entry.</p>
 </li>
 </ul>
-<h3 id="changed_2">Changed</h3>
+<h3 id="changed_3">Changed</h3>
 <ul>
 <li>
 <p><strong>The published TTL is a property of the data, not of a job.</strong> <code>block_ip</code> on
@@ -2229,7 +2586,7 @@ an opaque <code>-651</code> at deploy time.</p>
   outside this product.</p>
 </li>
 </ul>
-<h3 id="fixed_2">Fixed</h3>
+<h3 id="fixed_4">Fixed</h3>
 <ul>
 <li><code>not_listable()</code> accepted <strong>multicast</strong> addresses. <code>ipaddress</code> answers
   <code>is_global == True</code> for <code>224.0.0.1</code>, because that property asks "outside the
@@ -2319,7 +2676,7 @@ an opaque <code>-651</code> at deploy time.</p>
   zero rows, and only one of the four is an answer.</p>
 </li>
 </ul>
-<h3 id="fixed_3">Fixed</h3>
+<h3 id="fixed_5">Fixed</h3>
 <ul>
 <li>The Admin Console pane for Sentinel → Context re-listed the section's
   context keys by hand, so a key added to the single shared builder reached
@@ -2341,7 +2698,7 @@ an opaque <code>-651</code> at deploy time.</p>
   logsearch route.</li>
 </ul>
 <h2 id="1171-2026-08-23">[1.17.1] - 2026-08-23</h2>
-<h3 id="fixed_4">Fixed</h3>
+<h3 id="fixed_6">Fixed</h3>
 <ul>
 <li><strong>The two buttons that reveal a sibling pane did nothing.</strong> <em>Response engine
   → Response policy</em> (in the Incidents console) and <em>Architecture → Incidents
@@ -2386,7 +2743,7 @@ named modes, and the on-demand sweep is a job over the devices you pick.</p>
   reason rather than hidden. Selecting nothing sweeps every eligible device,
   which is what the button always did.</li>
 </ul>
-<h3 id="changed_3">Changed</h3>
+<h3 id="changed_4">Changed</h3>
 <ul>
 <li><strong>The on-demand sweep runs as a job</strong>, not inside the request. It used to
   hold one gunicorn worker for as long as the slowest appliance took, with no
@@ -2399,7 +2756,7 @@ named modes, and the on-demand sweep is a job over the devices you pick.</p>
   reason they could go: until now the Context button was the <em>only</em> way to
   reach that page.</li>
 </ul>
-<h3 id="fixed_5">Fixed</h3>
+<h3 id="fixed_7">Fixed</h3>
 <ul>
 <li>Every POST form in the Context, Response policy and incidents-console
   sections carries the return marker, so a save or a delete fired inside the
@@ -2410,7 +2767,7 @@ named modes, and the on-demand sweep is a job over the devices you pick.</p>
 <h2 id="1161-2026-08-23">[1.16.1] - 2026-08-23</h2>
 <p>The Admin Console menu could not be opened. Eleven inline blocks were being
 dropped by the browser, silently.</p>
-<h3 id="fixed_6">Fixed</h3>
+<h3 id="fixed_8">Fixed</h3>
 <ul>
 <li><strong>The Admin Console side menu expands again.</strong> The accordion script moved
   into the shared <code>settings/_nav.html</code> partial in 1.14.0 and lost the
@@ -2473,7 +2830,7 @@ dropped by the browser, silently.</p>
   to <code>SPEC</code> without a hint fails here, as does a hint that never reaches the
   HTML on <strong>either</strong> surface. 16 mutations, all biting.</li>
 </ul>
-<h3 id="fixed_7">Fixed</h3>
+<h3 id="fixed_9">Fixed</h3>
 <ul>
 <li>Two of those guards read <code>fw_hints.js</code> for <code>container: 'body'</code> and
   <code>turbo:before-render</code> and were answered by the file's own header comment,
@@ -2503,7 +2860,7 @@ Console, beside its settings.</p>
   builder per section, shared by both surfaces, so the pane and the page
   cannot answer differently.</li>
 </ul>
-<h3 id="changed_4">Changed</h3>
+<h3 id="changed_5">Changed</h3>
 <ul>
 <li><strong>Controls inside the panes stay inside the console.</strong> The sweep and the
   baseline rebuild carry <code>return_to</code> and come back to the pane they were fired
@@ -2544,7 +2901,7 @@ Console, beside its settings.</p>
   panes that are not on that page, and the entry being shown is marked. A tab
   button there would be a row that highlights on hover and then does nothing.</li>
 </ul>
-<h3 id="changed_5">Changed</h3>
+<h3 id="changed_6">Changed</h3>
 <ul>
 <li><strong>Sentinel is the last group in the menu</strong>, below <em>Monitoring &amp; Alerts</em>
   (operator's request). The two configure-once groups now sit together at the
@@ -2558,7 +2915,7 @@ Console, beside its settings.</p>
   order the menu draws them</strong>: every previous guard stayed green while the two
   orders drifted, because each row was still present and still correct.</li>
 </ul>
-<h3 id="fixed_8">Fixed</h3>
+<h3 id="fixed_10">Fixed</h3>
 <ul>
 <li><code>tests/test_settings_nav_groups.py</code> sliced the menu script by anchoring on
   the line that happened to follow it in the console page. With the script in
@@ -2601,7 +2958,7 @@ Console, beside its settings.</p>
   hand-copied second one would put a second <code>id="sn-enabled"</code> on the page and
   point every <code>&lt;label for&gt;</code> at the wrong input.</li>
 </ul>
-<h3 id="changed_6">Changed</h3>
+<h3 id="changed_7">Changed</h3>
 <ul>
 <li><strong>Monitoring &amp; Alerts moved to the bottom of the Settings menu</strong> (operator's
   request): the alert plumbing is configured once and then left alone, unlike
@@ -2702,7 +3059,7 @@ missing half was the half that writes.</strong></p>
   that can be down at the same moment. It is a legible failure, not a fix —
   free space still has to be watched from outside the node.</li>
 </ul>
-<h3 id="fixed_9">Fixed</h3>
+<h3 id="fixed_11">Fixed</h3>
 <ul>
 <li>⚠ <strong>A decline is now honoured in the fields that NAME the declined section.</strong>
   Declining a section removed the item from the plan and stopped there — while
@@ -2825,7 +3182,7 @@ missing half was the half that writes.</strong></p>
   enabled by the installer. Expiry of a live block lives in that tick: a node
   without it can hold a block that nothing will ever lift.</li>
 </ul>
-<h3 id="fixed_10">Fixed</h3>
+<h3 id="fixed_12">Fixed</h3>
 <ul>
 <li><strong>The response runner had no role guard.</strong> Found by reading the standby after
   the rest of this round had shipped: the timer is present there and disabled,
@@ -2994,7 +3351,7 @@ missing half was the half that writes.</strong></p>
   <code>tests/test_secret_backend.py</code> (30 tests, safeguards §103).</p>
 </li>
 </ul>
-<h3 id="fixed_11">Fixed</h3>
+<h3 id="fixed_13">Fixed</h3>
 <ul>
 <li>
 <p><strong>A stale process could send <code>__stored-in-vault__</code> to an appliance as a
@@ -3174,7 +3531,7 @@ missing half was the half that writes.</strong></p>
   ADOMs): <code>server-policy/policy</code> differs per ADOM, while <code>system/interface</code>
   and <code>system/vip</code> are identical from all four. That asymmetry is the whole
   basis for the split above.</p>
-<h3 id="changed_7">Changed</h3>
+<h3 id="changed_8">Changed</h3>
 <ul>
 <li><strong>The manual documents how a change is promoted and how it is tested.</strong>
   <code>docs/engineering.md</code> §2 gains the two-node code path — the standby fetches
@@ -3201,7 +3558,7 @@ missing half was the half that writes.</strong></p>
   unprotected cutover; <code>failed == 0</code> does not cover this, because the
   referencing rule only fails when it is itself in the plan.</li>
 </ul>
-<h3 id="fixed_12">Fixed</h3>
+<h3 id="fixed_14">Fixed</h3>
 <ul>
 <li>The <em>View Backups</em> link is emitted once, not once per branch. Splitting it
   into an owns-the-chassis case and a points-at-the-owner case duplicated the
@@ -3265,13 +3622,13 @@ missing half was the half that writes.</strong></p>
   substring-matching it, because <code>pgrep -f pytest</code> returns any process that
   merely <em>mentions</em> the word.</li>
 </ul>
-<h3 id="changed_8">Changed</h3>
+<h3 id="changed_9">Changed</h3>
 <ul>
 <li><strong><code>SQLAlchemy</code> is pinned to <code>2.0.52</code></strong> in <code>requirements.txt</code> (previously
   unpinned, so an offline bundle built on two different days could ship two
   different ORM versions).</li>
 </ul>
-<h3 id="fixed_13">Fixed</h3>
+<h3 id="fixed_15">Fixed</h3>
 <ul>
 <li>
 <p><strong>Three POST buttons could never be submitted.</strong> The Rebuild button on
@@ -3924,7 +4281,7 @@ missing half was the half that writes.</strong></p>
   breaks the suite in the commit that adds it.</p>
 </li>
 </ul>
-<h3 id="changed_9">Changed</h3>
+<h3 id="changed_10">Changed</h3>
 <ul>
 <li><strong>Pointing at a row in the bookmarks sidebar now lights it in the reader's
   own banner colour</strong> instead of the flat grey it used to take, washed to a
@@ -4056,7 +4413,7 @@ missing half was the half that writes.</strong></p>
   approval gate, and carries any existing ticket reference so a re-request
   updates a ticket instead of opening a second one for the same window.</li>
 </ul>
-<h3 id="fixed_14">Fixed</h3>
+<h3 id="fixed_16">Fixed</h3>
 <ul>
 <li>
 <p><strong>A standby that serves traffic is now restarted by an update, instead of
@@ -4759,7 +5116,7 @@ missing half was the half that writes.</strong></p>
   sign-in. Just-in-time users get the global default instead, which is why that
   default is now <code>readonly</code> and why the approval gate exists.</li>
 </ul>
-<h3 id="changed_10">Changed</h3>
+<h3 id="changed_11">Changed</h3>
 <ul>
 <li><strong>One SATOM mark on every surface — the emblem the product already had.</strong>
   The console, the repo site and the product site each drew something different:
@@ -4934,7 +5291,7 @@ missing half was the half that writes.</strong></p>
   survived three project renames in the first place.</p>
 </li>
 </ul>
-<h3 id="fixed_15">Fixed</h3>
+<h3 id="fixed_17">Fixed</h3>
 <ul>
 <li><strong>The translation layer had never produced a single translation.</strong> It read
   <code>.content</code> off the provider result, whose field is <code>.text</code>, through a
@@ -5177,7 +5534,7 @@ missing half was the half that writes.</strong></p>
   configured platform.</li>
 </ul>
 <h2 id="192-2026-08-09">[1.9.2] - 2026-08-09</h2>
-<h3 id="fixed_16">Fixed</h3>
+<h3 id="fixed_18">Fixed</h3>
 <ul>
 <li><strong>The object editor no longer offers a free text box for a field that only
   accepts the name of an existing object.</strong> Twenty reference fields — eighteen
@@ -5204,7 +5561,7 @@ missing half was the half that writes.</strong></p>
   blocks a save; the affected fields come back as <code>unverified_refs</code>.</li>
 </ul>
 <h2 id="191-2026-08-09">[1.9.1] - 2026-08-09</h2>
-<h3 id="fixed_17">Fixed</h3>
+<h3 id="fixed_19">Fixed</h3>
 <ul>
 <li><strong>A migrated Custom Access Rule now carries the conditions it matches on.</strong>
   A rule was declared in the dependency map as a leaf, so a clone or a
@@ -5304,7 +5661,7 @@ missing half was the half that writes.</strong></p>
   contain it. And it is not a way around ADOM scoping — a FortiWeb session that
   guesses a FortiADC row's number still gets nothing.</p>
 <h2 id="190-2026-08-08">[1.9.0] - 2026-08-08</h2>
-<h3 id="changed_11">Changed</h3>
+<h3 id="changed_12">Changed</h3>
 <ul>
 <li>
 <p><strong>The required scope is ticked, not demanded.</strong> An Allow Method or
@@ -5339,7 +5696,7 @@ missing half was the half that writes.</strong></p>
   single cost chip every other analysis on the page uses.</p>
 </li>
 </ul>
-<h3 id="fixed_18">Fixed</h3>
+<h3 id="fixed_20">Fixed</h3>
 <ul>
 <li>
 <p><strong>A carve-out on a shared profile reported failure for a change it had
@@ -5526,7 +5883,7 @@ missing half was the half that writes.</strong></p>
   operator to another screen to push it.</li>
 </ul>
 <h2 id="180-2026-08-07">[1.8.0] - 2026-08-07</h2>
-<h3 id="fixed_19">Fixed</h3>
+<h3 id="fixed_21">Fixed</h3>
 <ul>
 <li>
 <p><strong>The AI Advisor's replies were saved and never shown.</strong> After Send, the
@@ -5573,7 +5930,7 @@ missing half was the half that writes.</strong></p>
 <li>Errors now render in place of the reply instead of an alert box, and the
   composer keeps what was typed when an external-provider preview is declined.</li>
 </ul>
-<h3 id="changed_12">Changed</h3>
+<h3 id="changed_13">Changed</h3>
 <ul>
 <li>
 <p><code>deploy/satom.service</code> raises the gunicorn worker timeout to 600s. It was
@@ -5705,7 +6062,7 @@ durability problem solved. Anyone who sealed on 1.7.0 should re-run
 <code>satom execute seal recovery</code> on the primary and confirm the check reports the
 envelope as reachable. 1.7.0 stays published; this entry is the public record
 that it carries the defect.</p>
-<h3 id="fixed_20">Fixed</h3>
+<h3 id="fixed_22">Fixed</h3>
 <ul>
 <li><strong>The sealed recovery envelope was unreachable by every mechanism that
   carries it.</strong> <code>satom execute seal recovery</code> runs as root and wrote
@@ -5815,7 +6172,7 @@ that it carries the defect.</p>
   <code>advisor.configure</code>. See <code>docs/ai-advisor.md</code>.</p>
 </li>
 </ul>
-<h3 id="fixed_21">Fixed</h3>
+<h3 id="fixed_23">Fixed</h3>
 <ul>
 <li><strong>Nine probes answered "I could not tell" with a value that means "fine".</strong>
   Scoping resolved to the Global console and showed every product; a malformed
@@ -5932,7 +6289,7 @@ that it carries the defect.</p>
   manual went from 23 sections to 32 and now says where to read what changed
   in a version — it had never mentioned the changelog.</li>
 </ul>
-<h3 id="changed_13">Changed</h3>
+<h3 id="changed_14">Changed</h3>
 <ul>
 <li><strong>The release notes are a rail and a panel, not a wall of cards.</strong> Versions
   on the left, that version's changes on the right, newest first, opening on
@@ -5953,7 +6310,7 @@ that it carries the defect.</p>
   its API, so the page listed zero targets and zero devices. A page that can
   only fail is worse than one that is not offered.</li>
 </ul>
-<h3 id="fixed_22">Fixed</h3>
+<h3 id="fixed_24">Fixed</h3>
 <ul>
 <li><strong>The publication redaction rule was a roster, not a shape.</strong> It enumerated
   the appliances that existed the day it was written, so every unit onboarded
@@ -6219,7 +6576,7 @@ that it carries the defect.</p>
   mode was previously told where each one stops but not what it costs, which
   is the half of the decision that matters.</li>
 </ul>
-<h3 id="changed_14">Changed</h3>
+<h3 id="changed_15">Changed</h3>
 <ul>
 <li><strong>Analysis moved into the Monitoring submenu.</strong> It was a bare Fleet item
   written out five times in <code>base.html</code>, once per ADOM block — the exact drift
@@ -6240,7 +6597,7 @@ that it carries the defect.</p>
   column holding anything else was left alone.</li>
 <li>Alert bodies now name the Thresholds scope that governs the finding.</li>
 </ul>
-<h3 id="fixed_23">Fixed</h3>
+<h3 id="fixed_25">Fixed</h3>
 <ul>
 <li><strong><code>satom diagnose code</code> now sees the artifact gunicorn actually caches.</strong> It
   compared the newest <code>.py</code> against each process start time, so a change that
@@ -6440,7 +6797,7 @@ that it carries the defect.</p>
   shadowing the tracked templates under <code>app/templates/backups/</code>.</li>
 </ul>
 <h2 id="141-2026-08-05">[1.4.1] - 2026-08-05</h2>
-<h3 id="fixed_24">Fixed</h3>
+<h3 id="fixed_26">Fixed</h3>
 <ul>
 <li>
 <p><strong>The installation page was answering a question about the appliances.</strong>
@@ -6466,7 +6823,7 @@ that it carries the defect.</p>
   count nodes is <code>unknown</code>, never <code>standalone</code>. Split-brain is its own badge.</p>
 </li>
 </ul>
-<h3 id="changed_15">Changed</h3>
+<h3 id="changed_16">Changed</h3>
 <ul>
 <li>The HA pill on both pages uses the product's own <code>fw-badge</code> set instead of a
   local palette, so cluster state reads like every other status in the console.</li>
@@ -6603,7 +6960,7 @@ that it carries the defect.</p>
   states that their terms are not superseded.</p>
 </li>
 </ul>
-<h3 id="changed_16">Changed</h3>
+<h3 id="changed_17">Changed</h3>
 <ul>
 <li>
 <p><strong>Collection moved from Monitoring to Administrator.</strong> The other six
@@ -6747,7 +7104,7 @@ that it carries the defect.</p>
   [SATOM-LICENSE-TAGS]</p>
 </li>
 </ul>
-<h3 id="fixed_25">Fixed</h3>
+<h3 id="fixed_27">Fixed</h3>
 <ul>
 <li>
 <p><strong>A missing systemd unit is no longer reported as a failed one.</strong>
@@ -7362,7 +7719,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   reported back in <code>source</code>, and the UI prints which one it drew: an hourly
   average and a five-minute reading are not the same claim about the device.</li>
 </ul>
-<h3 id="changed_17">Changed</h3>
+<h3 id="changed_18">Changed</h3>
 <ul>
 <li><strong>The last <code>fortinet</code> identifiers are gone from the platform itself.</strong> The
   database, the PostgreSQL role, the Linux service account and the PostgreSQL
@@ -7492,7 +7849,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   does not render where it matters. The vendored copy was already in the tree
   and unused.</li>
 </ul>
-<h3 id="fixed_26">Fixed</h3>
+<h3 id="fixed_28">Fixed</h3>
 <ul>
 <li><strong><code>/docs/api</code> was public and served the document unredacted.</strong> The route
   needed no session and rendered <code>docs/api_v1.md</code> verbatim, so a management
@@ -7790,7 +8147,7 @@ openSUSE 15) from this tree and publishes them alongside the changes below.</p>
   <code>Appliance</code>; the column is <code>maintenance</code>.</li>
 </ul>
 <h2 id="122-2026-07-27">[1.2.2] - 2026-07-27</h2>
-<h3 id="fixed_27">Fixed</h3>
+<h3 id="fixed_29">Fixed</h3>
 <ul>
 <li><strong><code>app/services/cert_service.py</code> did not parse.</strong> An <code>import os</code> had been
   placed above <code>from __future__ import annotations</code>, which is a hard
@@ -7833,7 +8190,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
 <li>Public site: <code>site/safeguards.html</code> (linked from the nav and footer of every
   page) and the matching notes on <code>site/install.html</code>.</li>
 </ul>
-<h3 id="changed_18">Changed</h3>
+<h3 id="changed_19">Changed</h3>
 <ul>
 <li>In-app <strong>Documentation</strong> index now curates a title, order and description for
   all 18 manuals; half of them previously fell through to an auto-generated
@@ -7841,7 +8198,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
 <li><strong>Rule recorded in <code>docs/overview.md</code></strong>: a new safeguard lands in
   <code>docs/safeguards.md</code> in the same commit that introduces it.</li>
 </ul>
-<h3 id="fixed_28">Fixed</h3>
+<h3 id="fixed_30">Fixed</h3>
 <ul>
 <li>Offline bundle checksums used an absolute path, so <code>sha256sum -c</code> failed in
   the directory the file was downloaded to. Now basename-only, as the RHEL
@@ -7905,7 +8262,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
   Manager</strong>. Vendor names (FortiWeb, FortiADC, FortiAnalyzer) are untouched:
   the product manages those appliances and has to name them.</li>
 </ul>
-<h3 id="fixed_29">Fixed</h3>
+<h3 id="fixed_31">Fixed</h3>
 <ul>
 <li><strong>Scheduler and git-publish were silently dead</strong> after the privilege drop:
   both guard scripts used <code>runuser</code>, which only works as root. The scheduler
@@ -7965,7 +8322,7 @@ rebuilt so that the shipped tree matches the documentation set.</p>
   bundles), generic package-manager support, public site (GitHub Pages),
   package registry artifacts.</li>
 </ul>
-<h3 id="fixed_30">Fixed</h3>
+<h3 id="fixed_32">Fixed</h3>
 <ul>
 <li>Upgrade-event timestamps now render in local time (<code>| localtime</code>) instead
   of raw UTC.</li>

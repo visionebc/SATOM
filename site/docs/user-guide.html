@@ -102,6 +102,7 @@
       <a href="#39-concept-map-where-does-x-live">39. Concept Map: where does X live?</a>
       <a href="#40-upgrade-flow-a-maintenance-window-as-one-workflow">40. Upgrade Flow: a maintenance window as one workflow</a>
       <a href="#41-stored-assets-what-each-adom-actually-holds">41. Stored Assets: what each ADOM actually holds</a>
+      <a href="#42-process-procedures-the-system-walks-for-you">42. Process: procedures the system walks for you</a>
     </aside>
     <div class="doc-body mdx">
 <h1 id="satom-user-guide">SATOM — User Guide</h1>
@@ -156,6 +157,7 @@ codebase is assumed. For architecture and internals see the
 <li><a href="#39-concept-map-where-does-x-live">Concept Map: where does X live?</a></li>
 <li><a href="#40-upgrade-flow-a-maintenance-window-as-one-workflow">Upgrade Flow: a maintenance window as one workflow</a></li>
 <li><a href="#41-stored-assets-what-each-adom-actually-holds">Stored Assets: what each ADOM actually holds</a></li>
+<li><a href="#42-process-procedures-the-system-walks-for-you">Process: procedures the system walks for you</a></li>
 </ol>
 <hr>
 <h2 id="1-signing-in-accounts">1. Signing in &amp; accounts</h2>
@@ -2590,8 +2592,8 @@ deletes its bindings, and says so.</p>
 <p>The assignment picker spans both FortiWeb and FortiADC appliances — the catalog
 is a single <strong>global</strong> one, not per-ADOM.</p>
 <h2 id="26-settings-tab-by-tab">26. Settings, tab by tab</h2>
-<p><code>Settings</code> is one page with a <strong>grouped sidebar</strong>: <strong>10 groups, 32 panels</strong>.
-Nine of the groups (30 panels) are admin-only (<code>user_manage</code>); the remaining
+<p><code>Settings</code> is one page with a <strong>grouped sidebar</strong>: <strong>11 groups, 34 panels</strong>.
+Ten of the groups (32 panels) are admin-only (<code>user_manage</code>); the remaining
 one — <strong>My Account</strong>, holding <strong>Security</strong> and <strong>Change Password</strong> — is
 self-service and is the only group a non-admin sees. A group with nothing you may see is not
 rendered at all, so the menu never offers a section that is not there.</p>
@@ -2643,10 +2645,27 @@ rendered at all, so the menu never offers a section that is not there.</p>
 <td><strong>Sentinel</strong></td>
 <td>Settings · Context · Response policy · Border blocklist · Architecture · Incidents console</td>
 </tr>
+<tr>
+<td><strong>Scout</strong></td>
+<td>Settings · Architecture</td>
+</tr>
 </tbody>
 </table>
 <p>The <strong>AI Advisor</strong> panel additionally needs <code>advisor.configure</code>; an admin
 without it does not see the entry.</p>
+<p><strong>Scout is its own group, below Sentinel.</strong> Its <em>Settings</em> panel holds only
+<em>where to look and how long to wait</em> — the default look-back window, the
+FortiAnalyzer ADOM and device selector the border rung queries, the two
+timeouts. What a verdict <strong>means</strong> is on the same panel as a read-only table:
+the dominant-phase share and floor, the signals that count as an appliance
+being unfit to serve, the order conflicting border rows are resolved in, and
+the methods Scout is permitted to send. Those are shown rather than offered on
+purpose — editing a threshold makes whoever changed it a second author of every
+report already filed, and an archived report says nothing about the values in
+force when it was written. Each row names the symbol it is read from, and the
+values are read off the engine when the page renders, so the table cannot drift
+from the code. <em>Architecture</em> renders the ten rungs from the same tuple the
+engine walks.</p>
 <p><strong>Three repositories-or-destinations, three separate entries.</strong> Until
 2026-08-29 the System group carried one panel called <em>SoT &amp; Backup</em>, and it
 held a firmware git URL, the SFTP credentials of the backup box and nothing
@@ -5028,8 +5047,8 @@ the page instead of on a manual.</p>
 discipline:</p>
 <ol>
 <li><strong>The URL map is the authority on what exists.</strong> Every parameterless page in
-   the console is either <strong>on the map</strong> (100 today) or <strong>excluded with a written
-   reason</strong> (125 today — JSON feeds, downloads, redirects and fragments that
+   the console is either <strong>on the map</strong> (104 today) or <strong>excluded with a written
+   reason</strong> (127 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.</li>
 <li><strong>Nothing here is a second source of truth.</strong> Paths are generated from the
@@ -5482,6 +5501,239 @@ family puts away everything beneath it at once, however deep.</p>
 <p><strong>The filter card does not fold.</strong> Every other card on this page holds an
 answer; the filter holds the question that decides which rows those answers
 describe, so putting it away would hide the premise of every count below it.</p>
+<hr>
+<h2 id="42-process-procedures-the-system-walks-for-you">42. Process: procedures the system walks for you</h2>
+<p><strong>Administrator → Process</strong>, in every ADOM.</p>
+<p>A recovery plan that lives in a document is a plan nobody has run. Process is
+where you draw one as a diagram and let SATOM walk it: each step asks a
+question of the running system, and the arrows say where to go depending on the
+answer. The same shape covers a disaster-recovery plan, a post-upgrade
+validation, an onboarding check and an incident runbook, so they are one page
+rather than four.</p>
+<h3 id="the-parts">The parts</h3>
+<p>A process is a <strong>key</strong>, a <strong>name</strong>, the <strong>ADOMs it is offered in</strong> and a
+<strong>diagram</strong>. Registration is per-process and can name one ADOM or several — the
+same "fail the standby over and prove the service came back" applies whether the
+box in front of you is a FortiWeb or a FortiADC. Ticking no ADOM leaves the
+process a <strong>draft</strong>: it stays visible in the Global console only. A blank list
+is not read as "everywhere", because that default would publish unfinished plans
+into five consoles at once.</p>
+<h3 id="the-steps">The steps</h3>
+<table>
+<thead>
+<tr>
+<th>Step</th>
+<th>What it asks</th>
+<th>Writes?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Start / End</td>
+<td>where the walk begins, and each way it can finish</td>
+<td>no</td>
+</tr>
+<tr>
+<td>Decision</td>
+<td>did an <strong>earlier</strong> step end pass / fail / unknown?</td>
+<td>no</td>
+</tr>
+<tr>
+<td>Manual gate</td>
+<td>stops and waits for a person</td>
+<td>no</td>
+</tr>
+<tr>
+<td>HTTP check</td>
+<td>status, latency and body of a URL</td>
+<td>no</td>
+</tr>
+<tr>
+<td>TCP check</td>
+<td>one handshake — and it keeps <em>refused</em> apart from <em>timeout</em>, because a refusal proves the host is up</td>
+<td>no</td>
+</tr>
+<tr>
+<td>DNS check</td>
+<td>resolve a name on a configured server and assert the answer</td>
+<td>no</td>
+</tr>
+<tr>
+<td>Console read</td>
+<td>one read-only CLI command on the chosen appliance, asserted on its output</td>
+<td>no</td>
+</tr>
+<tr>
+<td>Appliance health</td>
+<td>the same grade Monitoring shows — sync, cache, probe, capacity</td>
+<td>no</td>
+</tr>
+<tr>
+<td>Collect diagnostics</td>
+<td>runs the read-only battery over SSH and saves the transcript <strong>on this node</strong></td>
+<td>no</td>
+</tr>
+<tr>
+<td>Catalogue action</td>
+<td>invokes an automation from the Scheduled Actions catalogue</td>
+<td><strong>yes, when armed</strong></td>
+</tr>
+<tr>
+<td>Console script</td>
+<td>sends CLI lines to the chosen appliance</td>
+<td><strong>yes, when armed</strong></td>
+</tr>
+<tr>
+<td>Integration hook</td>
+<td>queues one integration hook on this node and waits for its verdict</td>
+<td><strong>yes, when armed</strong></td>
+</tr>
+</tbody>
+</table>
+<p>No step reimplements a question the product already answers somewhere else.
+That is deliberate: two authors for "is this backend reachable" is how a page
+and an alert mail start disagreeing.</p>
+<h3 id="arrows">Arrows</h3>
+<p>An arrow carries an outcome: <code>always</code>, <code>pass</code>, <code>fail</code> or <code>unknown</code>. An explicit
+outcome always wins over <code>always</code>, so a recovery branch is reachable in exactly
+the graphs that need it. <strong>A step may have only one arrow per outcome</strong> — which
+is what keeps a run in one place at a time, and therefore what lets a manual
+gate be answered hours later instead of holding a worker open.</p>
+<p>A retry loop is allowed. An endless one is stopped after 200 steps and the run
+says so, rather than reporting a verdict about a walk that never finished.</p>
+<h3 id="rehearsal-and-arming">Rehearsal and arming</h3>
+<p>A run is a <strong>rehearsal</strong> unless you tick <em>Arm this run</em>. Unarmed, nothing is
+changed — but the three writing steps say so differently, and the difference is
+not cosmetic:</p>
+<ul>
+<li>a <strong>Catalogue action</strong> runs as a real dry run, because the automation itself
+  has one: it computes what it would do and reports whether that worked. The row
+  says <code>rehearsed</code>.</li>
+<li>a <strong>Console script</strong> and an <strong>Integration hook</strong> are <strong>not sent at all</strong>, and
+  the step ends <code>unknown</code>. Neither has a dry run — classifying CLI text is a
+  fact about the text, not about the appliance, and a hook run "with a sample
+  payload" is still the hook, running, holding its real secrets.</li>
+</ul>
+<p>So a rehearsal of a repair plan <strong>stops where the repair would have been</strong>,
+rather than walking the "and then it was fixed" branch against a box nobody
+fixed. What a rehearsal proves is that the plan is <em>sendable</em> — validated,
+classified, and pointed at an appliance that can be dialled. Not that it works.</p>
+<p>Arming is dropped automatically on a diagram that only reads: a run stamped
+"armed" that could never have written anything teaches the wrong thing about
+the badge.</p>
+<h3 id="the-write-door">The write door</h3>
+<p><strong>Console script</strong> is the first path in SATOM that sends a configuration line
+to an appliance from a plan rather than from a person at a keyboard. It reuses
+the Device Console's own rules and relaxes none of them:</p>
+<ul>
+<li>commands that wipe or reformat are <strong>refused outright</strong> — you cannot save a
+  diagram containing one, at any permission level;</li>
+<li>disruptive commands (reboot, shutdown, restore, HA changes, password changes)
+  require the step to <strong>name the one appliance it may disrupt</strong>. At run time
+  that name must equal the appliance the run is pointed at, or the step refuses
+  and sends nothing. Aiming the same process at another box does not reboot it.
+  This is deliberately stricter than the Console page, where typing the name
+  only proves you read the warning — a process has no human at 3 a.m., so the
+  agreement has to be written into the plan;</li>
+<li>the whole script is checked <strong>before the session opens</strong>, and a failure stops
+  the rest, because the FortiOS CLI is modal and lines after a failure would run
+  in the wrong context;</li>
+<li>everything sent is written to the audit trail under the <strong>same</strong> name the
+  Console page uses, marked as having come from a process. Asking "what has
+  been sent over the console" must not require knowing there are two doors.</li>
+</ul>
+<p>One thing this step does <strong>not</strong> get you: <code>delete_guard</code> cannot see a <code>delete</code>
+inside a CLI <code>config</code> block, so a shared object the web UI would have refused to
+remove can be removed from here. That is the cost of the level, and it is
+written on the page as well as here.</p>
+<p><strong>Integration hook</strong> queues one hook from <em>Administrator → Integrations</em> and
+waits for its verdict. The step never executes anything itself — it writes a
+request file, and a separate privileged unit turns that into a process. The wait
+is bounded by the hook's own timeout and cannot be lengthened from the diagram,
+since a longer wait cannot outlive a job the runner already killed. A request
+still sitting in the queue when the wait runs out ends <code>unknown</code> and names the
+unit that did not pick it up — silence there is a fact about this node, not
+about the hook.</p>
+<p>Actions that require an approved change request are <strong>not offered</strong>. A process
+is a plan, not an approval — raise the change request and let it schedule the
+action.</p>
+<h3 id="reading-a-run">Reading a run</h3>
+<p>Four outcomes, and the difference between the last two is the whole point:</p>
+<ul>
+<li><strong>pass</strong> — the step asked and the answer was good.</li>
+<li><strong>fail</strong> — the step asked and something is broken.</li>
+<li><strong>unknown</strong> — SATOM <em>could not look</em>. No appliance chosen, SSH refused, the
+  target denied. It is never rendered as health and it never counts as a
+  failure; it makes the verdict <strong>partial</strong>, and the summary says so in a
+  sentence: <em>nothing failed, but N steps could not be looked at — this is a
+  partial walk, not a clean bill of health.</em></li>
+<li><strong>skipped</strong> — <strong>not reached</strong>, because an earlier step stopped that path.
+  Skipped is not a pass. A branch the plan deliberately did not take is not
+  listed at all; only what the plan wanted to reach and could not.</li>
+</ul>
+<p>A run keeps its <strong>own copy of the diagram it walked</strong>. Editing a process
+therefore never rewrites its own past, and deleting one keeps its history —
+each run carries the name, the key and the graph it ran.</p>
+<h3 id="importing-and-exporting-a-process-xml">Importing and exporting a process (XML)</h3>
+<p>A procedure is usually written down long before the night it is needed, and
+rarely by the person sitting in this console: it arrives as a customer runbook,
+it is kept in version control beside the rest of the installation's
+documentation, or it was built on the lab install and has to reach production.
+<strong>Process → Import XML</strong> loads one as a file, and any process can be downloaded
+from its own page with <strong>Export XML</strong>. The two are the same format, so a plan
+travels between installations without being drawn twice — which is how two
+installations end up with two different procedures that share a name.</p>
+<p>The file is refused <strong>whole or accepted whole</strong>. Nothing at all is written
+unless every check passes, and the graph is handed to the <em>same validator the
+editor saves through</em> — a console step carrying a forbidden command is refused
+on import exactly as it is refused when you draw it. The importer is not a
+second door into the appliance.</p>
+<pre><code class="language-xml">&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?&gt;
+&lt;satom-process key=&quot;dr-failover-check&quot; name=&quot;DR failover check&quot; enabled=&quot;yes&quot;&gt;
+  &lt;description&gt;Prove the standby answers before anyone is told it does.&lt;/description&gt;
+  &lt;adoms&gt;
+    &lt;adom&gt;fortiweb&lt;/adom&gt;
+  &lt;/adoms&gt;
+  &lt;steps&gt;
+    &lt;step key=&quot;start&quot; kind=&quot;start&quot; label=&quot;Start&quot; x=&quot;60&quot; y=&quot;40&quot;/&gt;
+    &lt;step key=&quot;vip&quot; kind=&quot;tcp_check&quot; label=&quot;VIP answers&quot; x=&quot;60&quot; y=&quot;140&quot;&gt;
+      &lt;param name=&quot;host&quot;&gt;{ip}&lt;/param&gt;
+      &lt;param name=&quot;port&quot;&gt;443&lt;/param&gt;
+    &lt;/step&gt;
+  &lt;/steps&gt;
+  &lt;arrows&gt;
+    &lt;arrow from=&quot;start&quot; to=&quot;vip&quot; branch=&quot;always&quot;/&gt;
+  &lt;/arrows&gt;
+&lt;/satom-process&gt;
+</code></pre>
+<p>Four things are worth knowing before you write one by hand:</p>
+<ul>
+<li><strong>Every parameter is an element, never an attribute.</strong> XML replaces a literal
+  newline inside an attribute with a space — only an escaped <code>&amp;#10;</code> survives —
+  so a console script written as an attribute would arrive as a single line
+  that is no longer the command you wrote. Elements keep it as typed, and a
+  hand-indented script is de-indented as a block, so relative indentation is
+  preserved.</li>
+<li><strong>Naming no <code>&lt;adom&gt;</code> leaves the process a draft</strong>, visible in the Global
+  console only. An empty list is never read as "everywhere".</li>
+<li><strong>An ADOM this installation does not have is an error, not something dropped.</strong>
+  Moving a process between installations is the case the format exists for, so
+  a missing ADOM is the likely mistake and is said out loud rather than
+  silently turning your plan into a draft.</li>
+<li><strong>Re-importing an existing key replaces that process</strong> — its steps, its
+  arrows and its settings — and is refused until you type the key in the
+  confirmation box. Run history is kept either way: every run carries its own
+  copy of the diagram it walked, so past reports keep saying what they always
+  said and a run parked on a manual gate resumes through its own snapshot.</li>
+</ul>
+<p>draw.io, BPMN and Visio files are <strong>named and refused</strong>, never half-read. A
+drawn box carries a shape and a caption; it does not carry the step kind or the
+parameters that make a step runnable, so importing one would produce a diagram
+that looks like your plan and cannot execute a single check.</p>
+<h3 id="permissions">Permissions</h3>
+<p>Reading a process and its runs needs <code>view</code> — that includes <strong>Export XML</strong>,
+which hands back the content the page already shows. Drawing, editing,
+importing, running and answering a gate need <code>config_write</code>.</p>
     </div>
   </div>
 </section>

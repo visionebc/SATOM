@@ -6,6 +6,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-09-10
+
 ### Added — the Scout name field gets a picker, and it offers the UNION of both sources (2026-09-10)
 
 Asked for in one line: *"al seleccionar el fortiweb o fortiadc, deberá aparecer

@@ -1127,7 +1127,7 @@ def run(target: Target, opts: Options | None = None, ports: dict | None = None,
 #  Wiring — the ONLY place that knows which module owns which question          #
 # --------------------------------------------------------------------------- #
 def default_ports(*, analyzer=None, faz_adom: str = "root", faz_devid: str = "",
-                  faz_vdom: str = "") -> dict:
+                  faz_vdom: str = "", faz_limit=None, faz_timeout=None) -> dict:
     """Bind the rungs to the services that already own their judgements.
 
     Every import is local. The ladder must stay importable — and testable —
@@ -1378,11 +1378,16 @@ def default_ports(*, analyzer=None, faz_adom: str = "root", faz_devid: str = "",
             parts.append('srcip="%s"' % src)
         if dst:
             parts.append('dstip="%s"' % dst)
+        # None means "whatever faz_logs ships with", not zero: a falsy size
+        # passed through would ask the analyzer for no rows and the rung would
+        # then report UNKNOWN for a border that answered perfectly.
         return faz_logs.search(
             analyzer, adom=faz_adom,
             devices=faz_logs.device_selector(faz_devid, faz_vdom),
             log_filter=" and ".join(parts), logtype="traffic",
-            start=now - timedelta(minutes=int(minutes)), end=now)
+            start=now - timedelta(minutes=int(minutes)), end=now,
+            limit=(faz_limit or faz_logs.DEFAULT_LIMIT),
+            timeout=(faz_timeout or faz_logs.DEFAULT_TIMEOUT))
 
     def _recent_attacks(appliance, policy, minutes):
         from . import attack_log

@@ -2197,8 +2197,8 @@ is a single **global** one, not per-ADOM.
 
 ## 26. Settings, tab by tab
 
-`Settings` is one page with a **grouped sidebar**: **10 groups, 32 panels**.
-Nine of the groups (30 panels) are admin-only (`user_manage`); the remaining
+`Settings` is one page with a **grouped sidebar**: **11 groups, 34 panels**.
+Ten of the groups (32 panels) are admin-only (`user_manage`); the remaining
 one — **My Account**, holding **Security** and **Change Password** — is
 self-service and is the only group a non-admin sees. A group with nothing you may see is not
 rendered at all, so the menu never offers a section that is not there.
@@ -2215,9 +2215,24 @@ rendered at all, so the menu never offers a section that is not there.
 | **My Account** | Security · Change Password |
 | **Monitoring & Alerts** | Email & Alerts · Thresholds |
 | **Sentinel** | Settings · Context · Response policy · Border blocklist · Architecture · Incidents console |
+| **Scout** | Settings · Architecture |
 
 The **AI Advisor** panel additionally needs `advisor.configure`; an admin
 without it does not see the entry.
+
+**Scout is its own group, below Sentinel.** Its *Settings* panel holds only
+*where to look and how long to wait* — the default look-back window, the
+FortiAnalyzer ADOM and device selector the border rung queries, the two
+timeouts. What a verdict **means** is on the same panel as a read-only table:
+the dominant-phase share and floor, the signals that count as an appliance
+being unfit to serve, the order conflicting border rows are resolved in, and
+the methods Scout is permitted to send. Those are shown rather than offered on
+purpose — editing a threshold makes whoever changed it a second author of every
+report already filed, and an archived report says nothing about the values in
+force when it was written. Each row names the symbol it is read from, and the
+values are read off the engine when the page renders, so the table cannot drift
+from the code. *Architecture* renders the ten rungs from the same tuple the
+engine walks.
 
 **Three repositories-or-destinations, three separate entries.** Until
 2026-08-29 the System group carried one panel called *SoT & Backup*, and it
@@ -4325,8 +4340,8 @@ Three rules keep the map honest, and each is enforced by a test rather than by
 discipline:
 
 1. **The URL map is the authority on what exists.** Every parameterless page in
-   the console is either **on the map** (103 today) or **excluded with a written
-   reason** (126 today — JSON feeds, downloads, redirects and fragments that
+   the console is either **on the map** (104 today) or **excluded with a written
+   reason** (127 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.
 2. **Nothing here is a second source of truth.** Paths are generated from the

@@ -45,11 +45,34 @@ def _template() -> str:
 
 
 def _controls() -> set:
-    """Every named control inside the walk form, read off the template."""
+    """Every control inside the walk form, read off the template.
+
+    A control declares itself either by the ``name`` it posts or by an
+    explicit ``data-fw-control`` key. The second half exists because the
+    object picker posts NOTHING -- it loads a list and writes into the field
+    beside it, deliberately, since a control that posts a value nothing reads
+    is the Port/Scheme defect one round earlier. Matching on ``name`` alone
+    made a nameless control invisible to the identity below, which is exactly
+    how a control ships mute.
+    """
     body = _template()
     names = set(re.findall(r'<(?:input|select|textarea)\b[^>]*\bname="([^"]+)"',
                            body))
+    names |= set(re.findall(
+        r'<(?:input|select|textarea)\b[^>]*\bdata-fw-control="([^"]+)"', body))
     return names - NOT_A_FIELD
+
+
+def test_no_control_can_hide_from_the_identity():
+    """A control with neither a posted name nor a declared key is unreachable
+    by both directions above: it could ship with no explanation and nothing
+    would fail. This is the guard on the guard."""
+    tags = re.findall(r'<(?:input|select|textarea)\b[^>]*>', _template())
+    silent = [t for t in tags
+              if 'name="' not in t and 'data-fw-control="' not in t]
+    assert not silent, (
+        "controls that declare neither a name nor a data-fw-control key, and "
+        "so cannot be held to having help: %s" % silent)
 
 
 # --------------------------------------------------------------------------- #
@@ -71,7 +94,7 @@ def test_every_explanation_belongs_to_a_control_that_exists():
 def test_the_form_actually_has_controls():
     """The two tests above both pass against a template that was emptied, or
     against a regex that stopped matching. This is the one that notices."""
-    assert len(_controls()) >= 12
+    assert len(_controls()) >= 13
 
 
 @pytest.mark.parametrize("key", sorted(sc.WALK_HELP))
@@ -241,4 +264,16 @@ def test_the_template_still_ships_no_inline_style_or_script():
     "?" needs neither: fw_hints.js is loaded once in <head> for every page."""
     body = _template()
     assert "<style" not in body
-    assert "<script" not in body
+    #  An EXTERNAL file is served from 'self' and is not the hazard this guard
+    #  was written for; an inline block is, and it fails in silence. The rule
+    #  is therefore the real one -- no inline script, and no origin but our
+    #  own -- rather than the proxy "no script tag at all", which was written
+    #  before this page had any behaviour to load and would now be satisfied
+    #  by deleting the picker.
+    for tag in re.findall(r"<script\b[^>]*>", body):
+        assert " src=" in tag, (
+            "inline <script> in a template whose CSP drops un-nonced blocks "
+            "without a word: %s" % tag)
+        assert "url_for('static'" in tag or 'url_for("static"' in tag, (
+            "script loaded from something other than this app's own static "
+            "tree: %s" % tag)

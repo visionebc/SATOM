@@ -1221,13 +1221,26 @@ def default_ports(*, analyzer=None, faz_adom: str = "root", faz_devid: str = "",
         is both live and available there, and therefore the only one that can
         honestly carry the sentence "the appliance does not list this object".
 
+        FortiADC has no settled monitor equivalent, so there the live source
+        is the CONFIGURATION list of virtual servers — which is authoritative
+        for existence in a way a status widget is not, and which answers with
+        an error rather than an empty list when it is refused. Same reader the
+        object count uses; two readers of "what does this device serve" would
+        be two answers nobody can reconcile.
+
         ``None`` means the question could not be put. It never means "none".
         """
-        if str(getattr(appliance, "kind", "") or "") != "fortiweb":
+        kind = str(getattr(appliance, "kind", "") or "")
+        if kind not in ("fortiweb", "fortiadc"):
             return None
         try:
             from ..clients import client_for
-            out = client_for(appliance).policy_status()
+            client = client_for(appliance)
+            if kind == "fortiadc":
+                from . import adc_ops
+                out = adc_ops.list_virtual_servers(client)
+            else:
+                out = client.policy_status()
         except Exception:                         # noqa: BLE001
             return None
         rows, err = ((out[0], out[1]) if isinstance(out, tuple) and len(out) > 1
@@ -1247,7 +1260,10 @@ def default_ports(*, analyzer=None, faz_adom: str = "root", faz_devid: str = "",
             return None
         out = []
         for r in rows:
-            name = str(r.get("name") or r.get("_id") or "").strip()
+            # FortiADC keys its rows ``mkey``; FortiWeb's monitor rows carry
+            # ``name``. Normalisation, not interpretation.
+            name = str(r.get("name") or r.get("mkey")
+                       or r.get("_id") or "").strip()
             if not name:
                 continue
             row = dict(r)
@@ -1360,8 +1376,16 @@ def default_ports(*, analyzer=None, faz_adom: str = "root", faz_devid: str = "",
         kind = str(getattr(appliance, "kind", "") or "")
         try:
             if kind == "fortiadc":
+                # ``inspect_all`` returns {"policies", "errors", "count"}, so
+                # len() of it was ALWAYS 3 — this count could never reach zero
+                # and rung 5's "the device lists nothing at all" branch was
+                # unreachable on FortiADC, which is the branch that keeps a
+                # refused read from being reported as an empty appliance. It
+                # also inspected every virtual server in full merely to count
+                # them. Same list reader the live source uses.
                 from . import adc_ops
-                return len(adc_ops.inspect_all(client) or {})
+                rows, err = adc_ops.list_virtual_servers(client)
+                return None if err else len(rows or [])
             return len(backend_probe._rows(client, "server-policy/policy"))
         except Exception:                         # noqa: BLE001
             return None

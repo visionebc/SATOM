@@ -6,6 +6,74 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — the Scout name field gets a picker, and it offers the UNION of both sources (2026-09-10)
+
+Asked for in one line: *"al seleccionar el fortiweb o fortiadc, deberá aparecer
+en un select todos los Server policy / virtual server"*. The list is the easy
+half; which list, and what it must never claim, is the design.
+
+- **Union, never intersection.** Measured on `fortiweb13` the same day: the
+  appliance's own answer held **41** policies and SATOM's harvest held **40**,
+  and the one they disagreed about was the policy built minutes earlier — the
+  object an operator opens Scout for. An intersection hides exactly that row,
+  so both directions are offered and each carries where it came from.
+- **A comparative claim is only made when both lists were obtained.** With the
+  harvest unreadable every row is live-only in the set sense, and stamping
+  *"not in the last harvest"* on all of them states a comparison against a list
+  nobody read. Those rows are marked `sole`, which is deliberately not a
+  synonym of `both`.
+- **The picker offers; rung 1 decides.** `app/services/scout_objects.py` reads
+  the SAME two adapters rung 1 reads (`live_objects`, `object_list` off
+  `scout_ladder.default_ports`), so the list an operator picks from can never
+  be a different question from the list the ladder searches. Its only direct
+  read is the harvest **timestamp** — never its membership.
+- **The free-text field stays, and the select writes into it.** An unlicensed
+  FortiWeb-VM answers `-20010` to every `cmdb` endpoint; the typed name is what
+  keeps that device walkable, and a picker that is the only way in is a cage.
+  Losing the JavaScript costs the convenience, not the page.
+- **An empty picker always says which kind of empty it is.** *"The appliance
+  answered and lists no server policies"* and *"neither source would list
+  them"* render as the same blank control and mean opposite things.
+- **A trimmed list says so** — `not shown — N more of M, trimmed by this page,
+  not by the device`, the same wording as §163, at 400 options.
+- New JSON endpoint `GET /scout/objects`, scoped by `visible_appliances()`
+  exactly like the walk; an unsupported product is a 404 and not an empty list.
+
+**Two defects only a browser render showed, both found and fixed in this
+round.** Every test asserts on names, and no name is plural or overflows:
+
+- The picker's own label read **"41 server policys"**. Both halves of the
+  feature built the plural by appending an "s" to a noun the product owns.
+  `scout_objects.plural()` is now that authority and the payload ships
+  `noun_plural`, so the browser never invents grammar for a word it did not
+  establish.
+- **Provenance rendered as a suffix was cut off by the column**, in the one
+  control where §163's *"say what you trimmed"* cannot be applied: an
+  `<option>` does not wrap and cannot mark its own truncation. Provenance is
+  now STRUCTURE — three `<optgroup>`s, odd groups first because a row only one
+  source knows about is the reason both are offered — with headings short
+  enough to fit a measured 34-character budget and the full sentence written
+  out under the control, where it wraps.
+
+### Fixed — FortiADC had no live object source, and its object count was a constant (2026-09-10)
+
+- `_live_rows` answered `None` for anything that was not a FortiWeb, so on a
+  FortiADC rung 1 had no live opinion at all. It now reads the virtual-server
+  list, which for that product is the configuration list and is authoritative
+  for existence.
+- **`_object_count` returned 3 for every FortiADC, always.** It measured
+  `len(adc_ops.inspect_all(...))`, and that function returns a three-key result
+  dict — so the count could never reach zero and rung 5's *"the device lists
+  nothing at all"* branch, the branch that keeps a refused read from being
+  reported as an empty appliance, was unreachable on that product. It also
+  inspected every virtual server in full merely to count them.
+- `adc_ops.list_virtual_servers()` is now the one author of that list; the
+  picker, the live source, the count and `resolve_targets` all read through it
+  (`resolve_targets` had its own copy of the same call).
+- The Scout template's "no `<script>`" rule is now expressed as what it always
+  meant: no **inline** script, and no origin but our own static tree.
+
+
 ### Fixed — the Scout report stops cutting itself in silence, and its chrome names classes that exist (2026-09-10)
 
 Reported in one sentence — *"quitaste los filtros y divisiones, y el reporte

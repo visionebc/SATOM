@@ -279,10 +279,22 @@ def inspect_vs(client, name: str) -> dict:
     return {"name": name, "full": full, "tree": render_tree(build_vs_node(full))}
 
 
+def list_virtual_servers(client):
+    """``(rows, error)`` — the appliance's own list of virtual servers.
+
+    The ONE place that names the endpoint. Scout's object picker, its live
+    existence source and its object count all read through here, so the three
+    can never drift into three different answers to "what does this device
+    serve". ``error`` is passed through untouched: a refused read must stay
+    distinguishable from a device with no virtual servers.
+    """
+    return client.list_with_error("load_balance_virtual_server")
+
+
 def inspect_all(client) -> dict:
     """Inspect every virtual server on the appliance — same result shape as
     :func:`app.services.inspector.inspect_all` so the template is shared."""
-    rows, err = client.list_with_error("load_balance_virtual_server")
+    rows, err = list_virtual_servers(client)
     if err:
         raise RuntimeError(f"virtual-server list failed: {err}")
     vss: list[dict] = []
@@ -309,7 +321,7 @@ def resolve_targets(client) -> list[ServiceTarget]:
     """One :class:`ServiceTarget` per enabled virtual server: URL from the VS
     address + port (scheme https when the profile/client-ssl hints TLS or the
     port is 443), back-end list from the pool members."""
-    rows, err = client.list_with_error("load_balance_virtual_server")
+    rows, err = list_virtual_servers(client)
     if err:
         raise RuntimeError(f"virtual-server list failed: {err}")
     targets: list[ServiceTarget] = []

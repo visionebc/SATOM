@@ -239,24 +239,33 @@ def test_no_sentinel_entry_leaves_the_console(app, client):
         "a Sentinel entry is still marked as leaving the console"
 
 
-def test_sentinel_is_the_last_group(app, client):
-    """The operator asked for Sentinel at the bottom, below Monitoring."""
+def test_scout_is_the_last_group(app, client):
+    """Scout at the bottom, below Sentinel.
+
+    This guard read "sentinel is last", and it was correct until
+    2026-09-10, when the operator asked for Scout's configuration to sit
+    BELOW Sentinel. Renamed rather than deleted: the property worth
+    protecting is that the bottom of this menu is a decision, not wherever
+    the newest group happened to land.
+    """
     login(client, admin_user_id(app))
     _, nav, _ = _page(client)
     keys = [k for k, _ts in _groups(nav)]
-    assert keys[-1] == "sentinel", \
-        "Sentinel is not the last group — the order is %s" % keys
+    assert keys[-1] == "scout", \
+        "Scout is not the last group — the order is %s" % keys
 
 
 def test_monitoring_and_alerts_sits_just_above_sentinel(app, client):
     """It was moved to the bottom for the same reason and kept that position
-    when Sentinel went below it: alert plumbing is configured once and then
-    left alone, unlike the groups above it."""
+    when Sentinel went below it, and again when Scout went below Sentinel:
+    alert plumbing is configured once and then left alone, unlike the
+    groups above it. Asserted as a THREE-key tail rather than a two-key
+    one, so a group inserted between them cannot pass by landing last."""
     login(client, admin_user_id(app))
     _, nav, _ = _page(client)
     keys = [k for k, _ts in _groups(nav)]
-    assert keys[-2:] == ["monitoring", "sentinel"], \
-        "the two configure-once groups are not at the bottom — order is %s" % keys
+    assert keys[-3:] == ["monitoring", "sentinel", "scout"], \
+        "the configure-once groups are not at the bottom — order is %s" % keys
 
 
 # ------------------------------------------------------- one menu, one file --

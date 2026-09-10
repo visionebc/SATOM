@@ -14006,3 +14006,52 @@ app runs Europe/Zurich, so a naive run is red for two hours every night), then
 `/opt/satom/venv/bin/python3 /tmp/mut_bands.py`. The bar must print
 `System Automations` exactly once and must never print `Automations (upcoming)`
 or `Automations (fleet work)` again.
+
+
+## §162 — a form control that explains nothing, and the one that explains wrong (2026-09-10)
+
+`/scout/` asks for twelve things and explained four of them. The gap that
+mattered was not the eight silent ones: it was **Port** and **Scheme**, which
+looked exactly as settable as the rest and are *read only when a Published host
+is typed as well*. `_endpoint()` has two branches — typed and derived — and the
+derived one never consults `target.port` or `target.scheme`; they arrive off the
+device with the VIP. An operator who fills the port beside a blank host has set
+something the walk discards, and every surface on the page agreed with them.
+
+**The rule.** A control's help states what to enter AND what the engine does
+with it, including the conditions under which it does nothing. "This field is
+ignored unless X" is the single most valuable sentence a form can carry and the
+one nobody writes, because the field still looks like it works.
+
+**The guard, and why it is two-way.** `tests/test_scout_help.py` reads the
+control names out of the template itself and holds them against
+`scout_config.WALK_HELP` in BOTH directions:
+
+* a control with no entry fails — a thirteenth field cannot ship mute;
+* an entry with no control fails — help for a removed or renamed field reads as
+  coverage while explaining nothing.
+
+A third test asserts the form still has at least twelve controls, because the
+first two both pass against an emptied template or a regex that stopped
+matching. That third one is the guard on the guards.
+
+**Read the template with its comments stripped.** This one's header discusses
+`<style>` and `<script>` by name in order to forbid them; asserted over the raw
+file, the CSP guard matches its own documentation and passes on a page that
+ships an inline block. Tenth occurrence of that class in this repo.
+
+**Escape the probe before looking for it in HTML.** The rendered-hint test
+searched for the raw text and reported a missing hint for `policy` against a
+page that was rendering it correctly: the text lands in an attribute, so
+`object's` is `object&#39;s` and `→` is `&#8594;`.
+
+**A fallback must not re-do the thing that failed.** `walk_help()` substituted
+the window ceiling inside a `try`, and its `except` re-read the same module
+attribute — so the degradation path raised for exactly the input it existed to
+survive. Only the degradation test found it; every ordinary render takes the
+happy branch.
+
+**Do not reuse the settings catalog's prose for the form.** `SPEC` entries are
+written about a *default* ("Pre-filled into the walk form"). The same string on
+the walk form is circular. Link the two by key and compose the shared sentence
+once.

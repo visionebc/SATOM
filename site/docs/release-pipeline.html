@@ -164,6 +164,36 @@ today, <code>404</code> tomorrow. Before running it, diff both sides (ignoring t
 cache-busting stamp) and list the downloads directory on each. When the node is
 <strong>ahead</strong>, the correct repair is to bring the checkout forward; never publish
 over it to make the two agree.</p>
+<p><strong>Step 3 costs wall clock <em>and</em> disk, and the disk half is the one that bites.</strong>
+The suite is serial: there is no <code>pytest-xdist</code> on the primary, and installing
+one would change what the tests contend over rather than just how fast they run.
+Two things are measured, and only those two are claimed here:</p>
+<ul>
+<li><strong>A full run leaves ~4.9 GB of fixture tmpdirs.</strong> pytest keeps the last three
+  runs under <code>/tmp/pytest-of-&lt;user&gt;</code> and deletes nothing else, so three releases
+  fill a 25 GB root. That is not hypothetical: release 12 died of <code>ENOSPC</code>, and
+  release 13 then overran its budget three times, <em>each retry adding another
+  4.9 GB</em>. The retry made the condition that caused the failure strictly worse.</li>
+<li><strong>The old 3600 s budget was chosen, not measured, and the suite overran it
+  three times running.</strong> A timed partial run (6 % of ~4,965 tests in 487 s) puts
+  a full pass near two hours. The exact total is deliberately <strong>not</strong> written
+  down here — a partial run is a projection — so the figure to trust is the one
+  the pipeline's own <code>suite</code> step records, in <code>satom_releases.steps_json</code>.</li>
+</ul>
+<p>Three rules follow, and all three live in code rather than in habit:</p>
+<ul>
+<li>every pipeline <code>pytest</code> runs under its <strong>own <code>--basetemp</code></strong>, dropped before
+  <em>and</em> after. The verdict stays pytest's own <code>rc</code>: the cleanup is deliberately
+  not chained with <code>&amp;&amp;</code>, or a failed <code>rm</code> would read as a failed suite;</li>
+<li>the step <strong>refuses to start</strong> below <code>SUITE_MIN_FREE_MB</code>. An <code>ENOSPC</code> part-way
+  through surfaces as a test failure, which reads as a code defect and is not
+  one. An unreadable <code>df</code> refuses too — <em>"I could not check"</em> and <em>"there is
+  space"</em> are opposite facts and only one of them is safe to act on;</li>
+<li>a suite <strong>timeout is diagnosed, never retried</strong>. It is not transport
+  contention, which is the only thing <code>retry_transient</code> is for. To raise
+  <code>SUITE_TIMEOUT_S</code>, take the number from a completed <code>suite</code> step — never from
+  a guess, which is how 3600 got there.</li>
+</ul>
 <hr>
 <h2 id="stage-1-sanitization">Stage 1 — Sanitization</h2>
 <p>The full internal history is rewritten into a clean mirror with

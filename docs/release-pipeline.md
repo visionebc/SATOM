@@ -60,6 +60,36 @@ cache-busting stamp) and list the downloads directory on each. When the node is
 **ahead**, the correct repair is to bring the checkout forward; never publish
 over it to make the two agree.
 
+**Step 3 costs wall clock *and* disk, and the disk half is the one that bites.**
+The suite is serial: there is no `pytest-xdist` on the primary, and installing
+one would change what the tests contend over rather than just how fast they run.
+Two things are measured, and only those two are claimed here:
+
+- **A full run leaves ~4.9 GB of fixture tmpdirs.** pytest keeps the last three
+  runs under `/tmp/pytest-of-<user>` and deletes nothing else, so three releases
+  fill a 25 GB root. That is not hypothetical: release 12 died of `ENOSPC`, and
+  release 13 then overran its budget three times, *each retry adding another
+  4.9 GB*. The retry made the condition that caused the failure strictly worse.
+- **The old 3600 s budget was chosen, not measured, and the suite overran it
+  three times running.** A timed partial run (6 % of ~4,965 tests in 487 s) puts
+  a full pass near two hours. The exact total is deliberately **not** written
+  down here — a partial run is a projection — so the figure to trust is the one
+  the pipeline's own `suite` step records, in `satom_releases.steps_json`.
+
+Three rules follow, and all three live in code rather than in habit:
+
+- every pipeline `pytest` runs under its **own `--basetemp`**, dropped before
+  *and* after. The verdict stays pytest's own `rc`: the cleanup is deliberately
+  not chained with `&&`, or a failed `rm` would read as a failed suite;
+- the step **refuses to start** below `SUITE_MIN_FREE_MB`. An `ENOSPC` part-way
+  through surfaces as a test failure, which reads as a code defect and is not
+  one. An unreadable `df` refuses too — *"I could not check"* and *"there is
+  space"* are opposite facts and only one of them is safe to act on;
+- a suite **timeout is diagnosed, never retried**. It is not transport
+  contention, which is the only thing `retry_transient` is for. To raise
+  `SUITE_TIMEOUT_S`, take the number from a completed `suite` step — never from
+  a guess, which is how 3600 got there.
+
 ---
 
 ## Stage 1 — Sanitization

@@ -103,12 +103,14 @@
       <a href="#40-upgrade-flow-a-maintenance-window-as-one-workflow">40. Upgrade Flow: a maintenance window as one workflow</a>
       <a href="#41-stored-assets-what-each-adom-actually-holds">41. Stored Assets: what each ADOM actually holds</a>
       <a href="#42-process-procedures-the-system-walks-for-you">42. Process: procedures the system walks for you</a>
+      <a href="#43-upgrading-to-20">43. Upgrading to 2.0</a>
     </aside>
     <div class="doc-body mdx">
 <h1 id="satom-user-guide">SATOM — User Guide</h1>
 <blockquote>
 <p><strong>Audience:</strong> operators and network/security engineers who use the web UI to
-manage FortiWeb and FortiADC appliances day to day. No knowledge of the
+manage FortiWeb, FortiADC, FortiAuthenticator and FortiAnalyzer appliances day
+to day. No knowledge of the
 codebase is assumed. For architecture and internals see the
 <a href="engineering.html">Engineering Manual</a>; for a non-technical summary see the
 <a href="management-overview.html">Management Overview</a>.</p>
@@ -158,6 +160,7 @@ codebase is assumed. For architecture and internals see the
 <li><a href="#40-upgrade-flow-a-maintenance-window-as-one-workflow">Upgrade Flow: a maintenance window as one workflow</a></li>
 <li><a href="#41-stored-assets-what-each-adom-actually-holds">Stored Assets: what each ADOM actually holds</a></li>
 <li><a href="#42-process-procedures-the-system-walks-for-you">Process: procedures the system walks for you</a></li>
+<li><a href="#43-upgrading-to-20">Upgrading to 2.0</a></li>
 </ol>
 <hr>
 <h2 id="1-signing-in-accounts">1. Signing in &amp; accounts</h2>
@@ -5734,6 +5737,51 @@ that looks like your plan and cannot execute a single check.</p>
 <p>Reading a process and its runs needs <code>view</code> — that includes <strong>Export XML</strong>,
 which hands back the content the page already shows. Drawing, editing,
 importing, running and answering a gate need <code>config_write</code>.</p>
+<hr>
+<h2 id="43-upgrading-to-20">43. Upgrading to 2.0</h2>
+<p><strong>Read this if you are coming from 1.20.0 or earlier.</strong> The upgrade itself is
+the ordinary one (§22) — enqueue it, watch the steps, roll back from the bundle
+if you have to. This section exists because 2.0 is the first major version this
+product has cut, and a major number is a promise that something moved.</p>
+<h3 id="what-actually-breaks">What actually breaks</h3>
+<p>Two routes were <strong>removed</strong>, not deprecated:</p>
+<table>
+<thead>
+<tr>
+<th>Gone</th>
+<th>Where the capability lives now</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/artifacts/manage</code></td>
+<td><strong><code>/artifacts/inventory</code>.</strong> It was a second copy of the inventory — same rows, same verbs, one more place for a scope gate to be fixed on only one of the two. The three add verbs (upload / author / capture) are now three buttons with one dialog each, posting to the <strong>same endpoints</strong>. <code>back=manage</code> is still accepted as an input, so a bookmarked round trip lands on the inventory rather than a 404.</td>
+</tr>
+<tr>
+<td><strong>"Push this version to an appliance"</strong></td>
+<td><strong>Nothing replaces it, on purpose.</strong> Content reaches a device at <em>create</em> time: the clone/migrate engine uploads the bytes for every file-backed object a run creates, under a pre-flight that refuses to proceed unacknowledged when one of them is absent or empty. The standalone button was the one control that wrote to a box with nothing bound to the write — no plan, no policy, no reconciliation report — and its only real use left content SATOM could not tie to anything.</td>
+</tr>
+<tr>
+<td>The migration-coverage table on <code>/artifacts/inventory</code></td>
+<td>The clone/migrate <strong>pre-flight checklist</strong>, and <code>/artifacts/audit</code> per device and exportable. "Which server policies can move today" is asked <em>when migrating</em>, and on a holdings page it cost a blob read per edge on every render to answer a question nobody had asked yet.</td>
+</tr>
+</tbody>
+</table>
+<p>If you have a bookmark or a script that posts to either route, it now returns
+404. <strong>That is the whole of the incompatibility.</strong></p>
+<h3 id="what-does-not-break">What does not break</h3>
+<p>Your data, your credentials, your scheduled actions, your API tokens and your
+stored assets are untouched by the version number. 2.0 carries no migration of
+its own beyond the ordinary ones the updater applies (§22), and the upgrade is
+the same enqueue-and-watch flow it has always been.</p>
+<h3 id="why-20-at-all-then">Why 2.0 at all, then</h3>
+<p>Because a URL that worked stopped working. A minor version promises that it
+will not; this window breaks that promise twice, so the number moves. The rest
+of the release — Process, the Change Calendar, Scout, the container install
+shape, the Device Console, HA failover from the device page, the WAF fleet
+inventory — is additive, and none of it would have justified a major on its
+own. The full list is in the <a href="changelog.html">changelog</a> (§31 reads it inside
+the product).</p>
     </div>
   </div>
 </section>

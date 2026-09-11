@@ -159,6 +159,7 @@ turns one device call into many series. Series identity lives in <em>labels</em>
 <thead>
 <tr>
 <th>collector</th>
+<th>products</th>
 <th>call cost</th>
 <th>default</th>
 <th>what it yields</th>
@@ -167,42 +168,85 @@ turns one device call into many series. Series identity lives in <em>labels</em>
 <tbody>
 <tr>
 <td><code>box</code></td>
+<td>FortiWeb, FortiADC, FortiAuthenticator</td>
 <td>1 per device</td>
 <td>3 min</td>
 <td>CPU, memory, disk, sessions, connection rate</td>
 </tr>
 <tr>
+<td><code>capacity</code></td>
+<td><strong>FortiAuthenticator</strong></td>
+<td>1 per device</td>
+<td>3 min</td>
+<td>licence headroom and FortiToken pools — used / total / percent</td>
+</tr>
+<tr>
 <td><code>policies</code></td>
+<td>FortiWeb</td>
 <td><strong>1 per device</strong></td>
 <td>3 min</td>
 <td>sessions / conn-rate / RTT for EVERY policy</td>
 </tr>
 <tr>
+<td><code>vservers</code></td>
+<td>FortiADC</td>
+<td><strong>1 per device</strong></td>
+<td>3 min</td>
+<td>sessions / RTT / pool health for EVERY virtual server</td>
+</tr>
+<tr>
 <td><code>interfaces</code></td>
+<td>FortiWeb, FortiADC</td>
 <td>1 per device</td>
 <td>3 min</td>
 <td>link state + cumulative byte counters</td>
 </tr>
 <tr>
+<td><code>identity</code></td>
+<td><strong>FortiAuthenticator</strong></td>
+<td>12 counting calls</td>
+<td>15 min</td>
+<td>directory inventory: accounts, groups, tokens, certificates, RADIUS/TACACS+ clients</td>
+</tr>
+<tr>
+<td><code>faz</code></td>
+<td>FortiAnalyzer</td>
+<td>1 per device</td>
+<td>15 min</td>
+<td>log volume, storage, alerts, incidents, devices, tasks</td>
+</tr>
+<tr>
 <td><code>traffic</code></td>
+<td>FortiWeb</td>
 <td>1 per policy</td>
 <td>15 min</td>
 <td>throughput, device total + top-N policies</td>
 </tr>
 <tr>
 <td><code>transactions</code></td>
+<td>FortiWeb</td>
 <td>1 per policy</td>
 <td>60 min</td>
 <td>HTTP transaction counts, top-N policies</td>
 </tr>
 </tbody>
 </table>
+<p>The <strong>products</strong> column is not decoration. A collector declares which appliance
+kinds it applies to, and the sweep skips a target whose kind is not in that
+tuple — so a FortiAuthenticator is never asked for a server policy, and reading
+this table without the column would suggest every device answers every row.</p>
 <p>The two expensive collectors are bounded twice: a longer interval <strong>and</strong> a
 top-N selection by live connection rate. Full fidelity where the traffic is,
 bounded cost where it is not. The device-wide total is always collected, so
 "how much is this box doing" never depends on the top-N cut.</p>
 <p>Every interval and every top-N is editable per target in
 <strong>Monitoring → Collection</strong>. Nothing about cadence is implied by code.</p>
+<p><strong>Not every collector is about traffic.</strong> <code>capacity</code> and <code>identity</code> measure a
+FortiAuthenticator's <em>entitlement</em> and its <em>directory</em>, because an authenticator
+does not run out of bandwidth — it runs out of licence. Why that product needed
+a pair of its own, what the series are called, and the one signal it cannot give
+you at all are in
+<a href="fortiauthenticator.html#9-what-satom-measures-on-it">fortiauthenticator.md §9</a>.</p>
 <h3 id="rules-that-are-load-bearing">Rules that are load-bearing</h3>
 <ul>
 <li><strong><code>maintenance</code> suppresses scheduled collection.</strong> An appliance parked for

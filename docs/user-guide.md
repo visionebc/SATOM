@@ -1,7 +1,8 @@
 # SATOM — User Guide
 
 > **Audience:** operators and network/security engineers who use the web UI to
-> manage FortiWeb and FortiADC appliances day to day. No knowledge of the
+> manage FortiWeb, FortiADC, FortiAuthenticator and FortiAnalyzer appliances day
+> to day. No knowledge of the
 > codebase is assumed. For architecture and internals see the
 > [Engineering Manual](engineering.md); for a non-technical summary see the
 > [Management Overview](management-overview.md).
@@ -52,6 +53,7 @@
 40. [Upgrade Flow: a maintenance window as one workflow](#40-upgrade-flow-a-maintenance-window-as-one-workflow)
 41. [Stored Assets: what each ADOM actually holds](#41-stored-assets-what-each-adom-actually-holds)
 42. [Process: procedures the system walks for you](#42-process-procedures-the-system-walks-for-you)
+43. [Upgrading to 2.0](#43-upgrading-to-20)
 
 ---
 
@@ -4921,3 +4923,43 @@ that looks like your plan and cannot execute a single check.
 Reading a process and its runs needs `view` — that includes **Export XML**,
 which hands back the content the page already shows. Drawing, editing,
 importing, running and answering a gate need `config_write`.
+
+
+---
+
+## 43. Upgrading to 2.0
+
+**Read this if you are coming from 1.20.0 or earlier.** The upgrade itself is
+the ordinary one (§22) — enqueue it, watch the steps, roll back from the bundle
+if you have to. This section exists because 2.0 is the first major version this
+product has cut, and a major number is a promise that something moved.
+
+### What actually breaks
+
+Two routes were **removed**, not deprecated:
+
+| Gone | Where the capability lives now |
+|---|---|
+| `/artifacts/manage` | **`/artifacts/inventory`.** It was a second copy of the inventory — same rows, same verbs, one more place for a scope gate to be fixed on only one of the two. The three add verbs (upload / author / capture) are now three buttons with one dialog each, posting to the **same endpoints**. `back=manage` is still accepted as an input, so a bookmarked round trip lands on the inventory rather than a 404. |
+| **"Push this version to an appliance"** | **Nothing replaces it, on purpose.** Content reaches a device at *create* time: the clone/migrate engine uploads the bytes for every file-backed object a run creates, under a pre-flight that refuses to proceed unacknowledged when one of them is absent or empty. The standalone button was the one control that wrote to a box with nothing bound to the write — no plan, no policy, no reconciliation report — and its only real use left content SATOM could not tie to anything. |
+| The migration-coverage table on `/artifacts/inventory` | The clone/migrate **pre-flight checklist**, and `/artifacts/audit` per device and exportable. "Which server policies can move today" is asked *when migrating*, and on a holdings page it cost a blob read per edge on every render to answer a question nobody had asked yet. |
+
+If you have a bookmark or a script that posts to either route, it now returns
+404. **That is the whole of the incompatibility.**
+
+### What does not break
+
+Your data, your credentials, your scheduled actions, your API tokens and your
+stored assets are untouched by the version number. 2.0 carries no migration of
+its own beyond the ordinary ones the updater applies (§22), and the upgrade is
+the same enqueue-and-watch flow it has always been.
+
+### Why 2.0 at all, then
+
+Because a URL that worked stopped working. A minor version promises that it
+will not; this window breaks that promise twice, so the number moves. The rest
+of the release — Process, the Change Calendar, Scout, the container install
+shape, the Device Console, HA failover from the device page, the WAF fleet
+inventory — is additive, and none of it would have justified a major on its
+own. The full list is in the [changelog](../CHANGELOG.md) (§31 reads it inside
+the product).

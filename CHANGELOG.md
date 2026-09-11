@@ -8,6 +8,15 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [2.0.0] - 2026-09-10
 
+**Why this is 2.0 and not 1.21.** Two routes were *removed*, not deprecated:
+`/artifacts/manage` and the standalone **"Push this version to an appliance"**
+control. A bookmarked URL or a script that posts to either now gets a 404 — the
+one thing a minor version promises will not happen, so the major is the honest
+number rather than a marketing one. The `Removed` entry below names what went
+and where each verb lives now; §43 of the [user guide](docs/user-guide.md) is
+the operator-facing version of the same answer, including the one case where
+nothing replaces the control on purpose.
+
 ### Added — the Scout name field gets a picker, and it offers the UNION of both sources (2026-09-10)
 
 Asked for in one line: *"al seleccionar el fortiweb o fortiadc, deberá aparecer

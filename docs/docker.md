@@ -209,7 +209,7 @@ carries it as `backup`. It takes traffic when the primary stops answering
 cd /opt/satom-docker/deploy/docker
 cp env.example .env && ./satom-docker.sh gen-secrets
 # then edit .env:
-#   SATOM_IMAGE=satom:1.20.0        immutable tag, never :local
+#   SATOM_IMAGE=satom:2.0.0        immutable tag, never :local
 #   SATOM_NODE_ROLE=primary
 #   SATOM_PG_BIND=<this node's address>:5432
 #   TRUSTED_PROXIES=<reverse proxy address>
@@ -264,9 +264,9 @@ already ships installers — as an offline artifact:
 
 ```bash
 # on the build node
-./satom-docker.sh export satom:1.20.0 /tmp/satom-1.20.0.tar.gz
+./satom-docker.sh export satom:2.0.0 /tmp/satom-2.0.0.tar.gz
 # copy the tarball AND its .sha256 to the target, then
-./satom-docker.sh import /tmp/satom-1.20.0.tar.gz
+./satom-docker.sh import /tmp/satom-2.0.0.tar.gz
 ```
 
 `import` verifies the checksum **before** loading. A truncated transfer

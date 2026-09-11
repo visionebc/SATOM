@@ -4342,8 +4342,8 @@ Three rules keep the map honest, and each is enforced by a test rather than by
 discipline:
 
 1. **The URL map is the authority on what exists.** Every parameterless page in
-   the console is either **on the map** (104 today) or **excluded with a written
-   reason** (127 today — JSON feeds, downloads, redirects and fragments that
+   the console is either **on the map** (107 today) or **excluded with a written
+   reason** (129 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.
 2. **Nothing here is a second source of truth.** Paths are generated from the

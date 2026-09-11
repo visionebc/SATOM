@@ -55,7 +55,7 @@ def client_scheme() -> str:
 
     A reverse proxy that terminates TLS speaks plain HTTP to the app, so
     ``request.scheme`` reads ``http`` on a perfectly healthy deployment
-    (measured on satom-node-1-dock, whose HAProxy backend is plain HTTP). The
+    (measured behind an HAProxy front end whose backend is plain HTTP). The
     only witness to the client's real scheme is ``X-Forwarded-Proto``.
 
     This reads that header WITHOUT consulting ``TRUSTED_PROXIES``, on purpose,

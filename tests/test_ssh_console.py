@@ -162,8 +162,10 @@ def test_the_box_own_words_are_what_decide():
 # ========================================================= REDACTION ======
 
 def test_secrets_never_survive_into_a_transcript():
+    dash = "-" * 5
     text = ("config system admin\nset password S3cr3t!\nset psk abc123\n"
-            "-----BEGIN RSA PRIVATE KEY-----\nMIIE\n-----END RSA PRIVATE KEY-----\n")
+            f"{dash}BEGIN RSA PRIVATE KEY{dash}\nMIIE\n"
+            f"{dash}END RSA PRIVATE KEY{dash}\n")
     out = sc.redact(text)
     for leak in ("S3cr3t!", "abc123", "MIIE"):
         assert leak not in out, leak

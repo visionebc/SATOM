@@ -14,6 +14,7 @@ Nothing failed. The page 500'd, the update said ok. These tests make both
 halves of that impossible to reintroduce silently.
 """
 import importlib.util
+import os
 import re
 import subprocess
 import types
@@ -357,7 +358,11 @@ def test_the_snapshot_is_taken_before_any_restart():
         assert all(r > snap for r in restarts), fn
 
 
-def test_the_runner_still_compiles():
+def test_the_runner_still_compiles(tmp_path):
+    # PYTHONPYCACHEPREFIX, not a chmod: deploy/ is root-owned so the web
+    # worker cannot rewrite the updater that runs as root. Compiling in
+    # place would need that property relaxed to satisfy a test.
+    env = dict(os.environ, PYTHONPYCACHEPREFIX=str(tmp_path))
     r = subprocess.run(["python3", "-m", "py_compile", str(RUNNER_PATH)],
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, env=env)
     assert r.returncode == 0, r.stderr

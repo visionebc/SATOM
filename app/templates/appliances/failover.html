@@ -3,7 +3,7 @@
 {% block content %}
 <div class="fw-page-header d-flex justify-content-between align-items-center">
   <h4><i class="bi bi-arrow-left-right me-2"></i>{{ _('HA Failover') }} — {{ appliance.name }}</h4>
-  <a href="{{ url_for('appliances.detail', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm">&larr; {{ _('Back') }}</a>
+  <a href="{{ url_for('appliances.detail', id=appliance.id) }}" class="btn btn-fw-secondary btn-sm">&larr; {{ _('Back') }}</a>
 </div>
 
 <div class="fw-alert fw-alert-danger d-flex align-items-center gap-2">
@@ -96,7 +96,7 @@
           <input class="form-control form-control-sm mono" name="confirm_name" id="fo-confirm" placeholder="{{ appliance.name }}" autocomplete="off">
         </div>
         <div class="col-md-3 d-flex align-items-end gap-2">
-          <button type="button" class="btn fw-btn-secondary btn-sm" data-js="fo-preflight"><i class="bi bi-clipboard-check me-1"></i>{{ _('Readiness check') }}</button>
+          <button type="button" class="btn btn-fw-secondary btn-sm" data-js="fo-preflight"><i class="bi bi-clipboard-check me-1"></i>{{ _('Readiness check') }}</button>
           <button class="btn btn-sm btn-danger" {% if not cr_ok %}disabled title="{{ cr_reason }}"{% endif %}><i class="bi bi-arrow-left-right me-1"></i>{{ _('Fail over') }}</button>
         </div>
       </div>
@@ -156,7 +156,7 @@
         <textarea class="form-control form-control-sm" name="rollback" id="fo-rollback" rows="2" placeholder="{{ _('Run the same action with direction=unset.') }}"></textarea>
       </div>
       <div class="col-12">
-        <button class="btn fw-btn-primary btn-sm"><i class="bi bi-plus-lg me-1"></i>{{ _('Raise change request') }}</button>
+        <button class="btn btn-fw-primary btn-sm"><i class="bi bi-plus-lg me-1"></i>{{ _('Raise change request') }}</button>
         <span class="form-text ms-2">{{ _('It is created as a draft. Approve and schedule it from the change request page; the calendar shows it on its window.') }}</span>
       </div>
     </form>

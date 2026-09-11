@@ -587,6 +587,10 @@ EXCLUDED: dict[str, str] = {
         "a page a person navigates to and must not be offered as one: the URL "
         "is a credential. Sentinel.blocklist is the page that shows it.",
     "search.results": "sub-view of search.index",
+    # The picker feed behind the Scout name field: the same two adapters rung 1
+    # reads, scoped by visible_appliances, so the picker can never offer a name
+    # the ladder would then fail to look for. Its page is scout.index.
+    "scout.objects": "json feed",
     "settings.ai_state": "json feed", "settings.preview_alerts": "json feed",
     "settings.git_info": "json feed", "settings.hypervisor_state": "json feed",
     "settings.dns_backends_state": "json feed",

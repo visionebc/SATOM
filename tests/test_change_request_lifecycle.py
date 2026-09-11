@@ -316,7 +316,13 @@ def test_the_bound_cr_bookkeeping_is_initialised_before_the_try(app):
     """``finally``/tail code that reads a name the ``try`` assigns is a
     NameError waiting for the first statement to raise."""
     fn = _sa_func("execute_and_record")
-    first_try = next(i for i, st in enumerate(fn.body) if isinstance(st, ast.Try))
+    # The try whose tail READS the names, not merely the first one in the
+    # body: an earlier unrelated try (the lease guard) must not move the
+    # goalposts of an invariant that still holds.
+    first_try = next(i for i, st in enumerate(fn.body)
+                     if isinstance(st, ast.Try)
+                     and any(isinstance(n, ast.Name) and n.id == "cr_bound_id"
+                             for n in ast.walk(st)))
     assigned = set()
     for st in fn.body[:first_try]:
         for node in ast.walk(st):

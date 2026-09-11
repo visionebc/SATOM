@@ -177,3 +177,80 @@ column name but a different domain and were left alone.
 fails if any of them narrows again, and it compares against the longest key in
 `branding._FALLBACK` rather than a hardcoded 18, so a longer fifth product is
 caught the day it is declared.
+
+
+---
+
+## 9. What SATOM measures on it
+
+The unit gets **two collectors nothing else in the fleet has**, plus the shared
+`box` one. The cadence model and the full nine-collector table are in
+[metrics-architecture.md §2](metrics-architecture.md); what belongs here is why
+this product needed a pair of its own.
+
+**An authenticator does not run out of bandwidth — it runs out of
+entitlement.** A box sitting at 4 % CPU refuses the sixth local user when the
+licence ships `users_usage_detail {max: 5}`, and that is a cliff no CPU, memory
+or session series would ever show. Measuring it the way a FortiWeb is measured
+would produce a dashboard that is green on the day the product stops working.
+
+### `capacity` — the licence cliff, from ONE call
+
+One `systeminfo` call yields every licence counter and every FortiToken pool:
+
+| series | labels | meaning |
+|---|---|---|
+| `satom_fac_licence_used` / `_total` / `_pct` | `resource=<counter name>` | licence headroom per counter |
+| `satom_fac_token_used` / `_total` / `_pct` | `pool=<pool name>` | FortiToken pool occupancy |
+| `satom_fac_ha_peer` | — | `1` when the unit reports an HA peer serial, `0` otherwise |
+
+The counter name is a **label**, not part of the metric name, so one MetricsQL
+expression covers the whole fleet however many counters a future firmware adds.
+
+Two rules in there are load-bearing:
+
+* **A counter with no ceiling emits `used` and `total` but no percentage.** The
+  store drops a `None`, so a "percent consumed" panel never shows a fabricated
+  0 % for a feature that has no limit — which would read as *plenty of room* for
+  something that has no room concept at all.
+* **`satom_fac_ha_peer` exists because the config harvest cannot carry it.**
+  The unit exposes no HA resource whatsoever across the 58 censused (§2), and
+  `systeminfo.ha_sn` is the only signal it gives; that object is excluded from
+  the source of truth for churn, so the series is the only place HA presence
+  can live.
+
+### `identity` — what the directory CONTAINS, counted not fetched
+
+`satom_fac_inventory`, one series per resource, labelled `resource=`: local /
+RADIUS / LDAP / IAM users, user groups, group memberships, MAC devices,
+FortiTokens, user certificates, RADIUS clients, TACACS+ clients and SSO groups
+— twelve counters.
+
+They are **counting** calls. `limit=1` makes each one a few hundred bytes and
+Tastypie's `meta.total_count` still reports the true total, so a directory with
+50 000 users costs exactly what an empty one costs. Fetching the rows in order
+to count them would be the per-policy mistake in another costume — the same
+mistake the whole collection model was rebuilt to remove.
+
+**A resource that fails is reported, never skipped.** A directory that silently
+returns 11 of 12 counters looks exactly like a directory with one empty
+resource, and those are different facts. If every resource fails the collector
+raises, which surfaces as `satom_scrape_up 0` rather than as an absence.
+
+### The signal it cannot give you
+
+> **There is no authentication-RATE series, and there is not going to be one
+> from this transport.** All 58 resources were censused (2026-08-05) and none
+> reports auth success or failure counters — that lives in syslog, which this
+> product deliberately does not ingest. These series answer **what exists**,
+> never **is it authenticating**. A dashboard built on them must not be labelled
+> "authentication health", because it would be describing the directory's
+> contents while an outage was in progress.
+
+### Where the operator sees this
+
+*Monitoring → Collection* holds the per-target interval and the store's health;
+the built-in **Fleet metrics (store)** board draws from the same series. In the
+FAC ADOM the monitoring kinds are the product-appropriate set — the baseline
+plus entitlement — which is what §17.2 of the
+[user guide](user-guide.md) describes from the operator's side.

@@ -90,7 +90,7 @@ licence.
   ##        ##  ##        ##      ####      ##        ##  ##        ##
   ############  ##        ##      ####      ############  ##        ##
 
-  SATOM operator CLI 1.20.0
+  SATOM operator CLI 2.0.0
   System Automation & Task Orchestration Manager
   Made by VisionEBC  ·  https://visionebc.com
   satom-node-1 · primary · root

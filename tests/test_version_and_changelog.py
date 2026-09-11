@@ -147,6 +147,48 @@ def test_the_stamper_actually_rewrites_the_installer_literal():
     assert 'VERSION="other"' in out
 
 
+CLI_DOC = ROOT / "docs" / "cli.md"
+CLI_GEN = ROOT / "deploy" / "gen_cli_reference.py"
+CLI_BANNER = re.compile(r"^\s*SATOM operator CLI (\d+\.\d+(?:\.\d+)?)\s*$", re.M)
+
+
+def test_the_cli_manual_banner_matches_the_version_file():
+    """docs/cli.md reproduces the console banner, and for 40 releases nothing
+    owned that literal: the generator only rewrites the table between its
+    markers, so the banner declared 1.20.0 on the day 2.0.0 was cut and the
+    generator still printed "is current". Nothing failed; the claim was simply
+    false, which is the failure mode this file exists for."""
+    found = CLI_BANNER.findall(CLI_DOC.read_text(encoding="utf-8"))
+    shipped = VERSION_FILE.read_text(encoding="utf-8").strip()
+    # The minimum matters as much as the value: restyle the banner and a
+    # pattern that finds nothing would report a clean surface.
+    assert found, ("docs/cli.md has no 'SATOM operator CLI <version>' banner -- "
+                   "this surface is UNCHECKED, not clean")
+    for got in found:
+        assert got == shipped, (
+            "docs/cli.md banner says %s, VERSION says %s -- run "
+            "python3 deploy/gen_cli_reference.py" % (got, shipped))
+
+
+def test_the_cli_generator_actually_rewrites_the_banner():
+    """The guard above passes if someone hand-edits the literal once. This one
+    fails unless the generator can still do it, which is what keeps the number
+    correct at the NEXT release rather than only at this one."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("_cligen", CLI_GEN)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    out, n = mod.stamp_banner("  SATOM operator CLI 1.20.0\n  next line\n", "9.9.9")
+    assert n == 1
+    assert out == "  SATOM operator CLI 9.9.9\n  next line\n"
+
+    # A page with no banner must report zero rather than silently succeed.
+    _out, none = mod.stamp_banner("nothing to see\n", "9.9.9")
+    assert none == 0
+
+
 def test_changelog_lives_at_the_repository_root():
     assert CHANGELOG.is_file()
     assert "## [" in CHANGELOG.read_text(encoding="utf-8")

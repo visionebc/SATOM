@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import pathlib
+import re
 import sys
 
 ROOT_DIR = pathlib.Path(__file__).resolve().parents[1]
@@ -36,8 +37,23 @@ sys.path.insert(0, str(ROOT_DIR / "deploy"))
 from satom_cli import tree as cli_tree  # noqa: E402
 
 DOC = ROOT_DIR / "docs" / "cli.md"
+VERSION_FILE = ROOT_DIR / "VERSION"
 BEGIN = "<!-- BEGIN GENERATED COMMAND REFERENCE -->"
 END = "<!-- END GENERATED COMMAND REFERENCE -->"
+
+# The console banner reproduced near the top of docs/cli.md sits OUTSIDE the
+# markers, so for 40 releases nothing regenerated it and nothing failed: the
+# manual simply declared the previous version. It went stale at 1.20.0 and was
+# still saying so on the day 2.0.0 was cut. A literal that no generator owns is
+# a copy, and copies rot -- so this one is derived too.
+BANNER = re.compile(r"^(\s*SATOM operator CLI )\d+\.\d+(?:\.\d+)?[ \t]*$", re.M)
+
+
+def stamp_banner(text: str, version: str):
+    """Rewrite the banner's version. Returns (text, how_many) -- the count is
+    the point: zero means the marker no longer matches the page, which is an
+    UNCHECKED surface, not a clean one."""
+    return BANNER.subn(lambda m: m.group(1) + version, text)
 
 # Blurbs for the top-level verbs. The registry stores one-liners per node; the
 # verb-level framing is editorial and belongs here, next to the renderer.
@@ -147,8 +163,18 @@ def main() -> int:
         print(f"       add {BEGIN} / {END} where the table should go", file=sys.stderr)
         return 2
 
-    if have.strip() == want.strip():
-        print(f"docs/cli.md is current ({len(list(commands()))} commands)")
+    version = VERSION_FILE.read_text(encoding="utf-8").strip()
+    stamped, n_banner = stamp_banner(text, version)
+    if not n_banner:
+        print(f"error: the operator-CLI banner line was not found in {DOC}",
+              file=sys.stderr)
+        print('       expected a line reading "SATOM operator CLI <version>"',
+              file=sys.stderr)
+        return 2
+
+    if have.strip() == want.strip() and stamped == text:
+        print(f"docs/cli.md is current ({len(list(commands()))} commands, "
+              f"banner v{version})")
         return 0
 
     if args.check:
@@ -156,7 +182,7 @@ def main() -> int:
               file=sys.stderr)
         return 1
 
-    DOC.write_text(apply(text, want), encoding="utf-8")
+    DOC.write_text(apply(stamped, want), encoding="utf-8")
     print(f"docs/cli.md regenerated ({len(list(commands()))} commands)")
     return 0
 

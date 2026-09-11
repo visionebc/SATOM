@@ -68,6 +68,7 @@
       <a href="#6-the-snapshot-excludes-the-operational-endpoints">6. The snapshot excludes the operational endpoints</a>
       <a href="#7-two-traps-when-registering-an-appliance">7. Two traps when registering an appliance</a>
       <a href="#8-the-18-character-ceiling-read-this-before-adding-a-fifth-product">8. The 18-character ceiling — read this before adding a fifth product</a>
+      <a href="#9-what-satom-measures-on-it">9. What SATOM measures on it</a>
     </aside>
     <div class="doc-body mdx">
 <h1 id="fortiauthenticator-fac-how-this-product-is-wired">FortiAuthenticator (FAC) — how this product is wired</h1>
@@ -298,6 +299,89 @@ column name but a different domain and were left alone.
 fails if any of them narrows again, and it compares against the longest key in
 <code>branding._FALLBACK</code> rather than a hardcoded 18, so a longer fifth product is
 caught the day it is declared.</p>
+<hr>
+<h2 id="9-what-satom-measures-on-it">9. What SATOM measures on it</h2>
+<p>The unit gets <strong>two collectors nothing else in the fleet has</strong>, plus the shared
+<code>box</code> one. The cadence model and the full nine-collector table are in
+<a href="metrics-architecture.html">metrics-architecture.md §2</a>; what belongs here is why
+this product needed a pair of its own.</p>
+<p><strong>An authenticator does not run out of bandwidth — it runs out of
+entitlement.</strong> A box sitting at 4 % CPU refuses the sixth local user when the
+licence ships <code>users_usage_detail {max: 5}</code>, and that is a cliff no CPU, memory
+or session series would ever show. Measuring it the way a FortiWeb is measured
+would produce a dashboard that is green on the day the product stops working.</p>
+<h3 id="capacity-the-licence-cliff-from-one-call"><code>capacity</code> — the licence cliff, from ONE call</h3>
+<p>One <code>systeminfo</code> call yields every licence counter and every FortiToken pool:</p>
+<table>
+<thead>
+<tr>
+<th>series</th>
+<th>labels</th>
+<th>meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>satom_fac_licence_used</code> / <code>_total</code> / <code>_pct</code></td>
+<td><code>resource=&lt;counter name&gt;</code></td>
+<td>licence headroom per counter</td>
+</tr>
+<tr>
+<td><code>satom_fac_token_used</code> / <code>_total</code> / <code>_pct</code></td>
+<td><code>pool=&lt;pool name&gt;</code></td>
+<td>FortiToken pool occupancy</td>
+</tr>
+<tr>
+<td><code>satom_fac_ha_peer</code></td>
+<td>—</td>
+<td><code>1</code> when the unit reports an HA peer serial, <code>0</code> otherwise</td>
+</tr>
+</tbody>
+</table>
+<p>The counter name is a <strong>label</strong>, not part of the metric name, so one MetricsQL
+expression covers the whole fleet however many counters a future firmware adds.</p>
+<p>Two rules in there are load-bearing:</p>
+<ul>
+<li><strong>A counter with no ceiling emits <code>used</code> and <code>total</code> but no percentage.</strong> The
+  store drops a <code>None</code>, so a "percent consumed" panel never shows a fabricated
+  0 % for a feature that has no limit — which would read as <em>plenty of room</em> for
+  something that has no room concept at all.</li>
+<li><strong><code>satom_fac_ha_peer</code> exists because the config harvest cannot carry it.</strong>
+  The unit exposes no HA resource whatsoever across the 58 censused (§2), and
+  <code>systeminfo.ha_sn</code> is the only signal it gives; that object is excluded from
+  the source of truth for churn, so the series is the only place HA presence
+  can live.</li>
+</ul>
+<h3 id="identity-what-the-directory-contains-counted-not-fetched"><code>identity</code> — what the directory CONTAINS, counted not fetched</h3>
+<p><code>satom_fac_inventory</code>, one series per resource, labelled <code>resource=</code>: local /
+RADIUS / LDAP / IAM users, user groups, group memberships, MAC devices,
+FortiTokens, user certificates, RADIUS clients, TACACS+ clients and SSO groups
+— twelve counters.</p>
+<p>They are <strong>counting</strong> calls. <code>limit=1</code> makes each one a few hundred bytes and
+Tastypie's <code>meta.total_count</code> still reports the true total, so a directory with
+50 000 users costs exactly what an empty one costs. Fetching the rows in order
+to count them would be the per-policy mistake in another costume — the same
+mistake the whole collection model was rebuilt to remove.</p>
+<p><strong>A resource that fails is reported, never skipped.</strong> A directory that silently
+returns 11 of 12 counters looks exactly like a directory with one empty
+resource, and those are different facts. If every resource fails the collector
+raises, which surfaces as <code>satom_scrape_up 0</code> rather than as an absence.</p>
+<h3 id="the-signal-it-cannot-give-you">The signal it cannot give you</h3>
+<blockquote>
+<p><strong>There is no authentication-RATE series, and there is not going to be one
+from this transport.</strong> All 58 resources were censused (2026-08-05) and none
+reports auth success or failure counters — that lives in syslog, which this
+product deliberately does not ingest. These series answer <strong>what exists</strong>,
+never <strong>is it authenticating</strong>. A dashboard built on them must not be labelled
+"authentication health", because it would be describing the directory's
+contents while an outage was in progress.</p>
+</blockquote>
+<h3 id="where-the-operator-sees-this">Where the operator sees this</h3>
+<p><em>Monitoring → Collection</em> holds the per-target interval and the store's health;
+the built-in <strong>Fleet metrics (store)</strong> board draws from the same series. In the
+FAC ADOM the monitoring kinds are the product-appropriate set — the baseline
+plus entitlement — which is what §17.2 of the
+<a href="user-guide.html">user guide</a> describes from the operator's side.</p>
     </div>
   </div>
 </section>

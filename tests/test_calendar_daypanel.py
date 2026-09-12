@@ -18,6 +18,7 @@ import io
 import os
 import re
 from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -250,10 +251,45 @@ def _selected_day(body):
     return m.group(1) if m else None
 
 
-def test_a_day_is_selected_without_being_asked_for(app, client):
+# Two zones far enough from UTC that at ANY instant at least one of them is on
+# a different calendar day than this process: Kiritimati differs from 10:00 UTC
+# onwards, Midway differs before 11:00 UTC, so the pair covers all 24 hours.
+#
+# The page renders "today" in the OPERATOR's configured zone
+# (``settings_store.tz_name()``, default Europe/Zurich); these guards used to
+# expect ``date.today()``, the PROCESS zone, which is UTC on this fleet. That
+# was not a flake -- it made every release whose suite reached this file
+# between 22:00 and 00:00 UTC fail on a CORRECT product (release 18,
+# 2026-09-11 23:25 UTC). Pinning a far zone also makes the guard bite at every
+# hour of the day, instead of only inside the offset window.
+_FAR_ZONES = ("Pacific/Kiritimati", "Pacific/Midway")  # UTC+14 / UTC-11
+
+
+def _pin_zone(app, tz):
+    """Make ``tz`` the configured zone. Safe to leave set: the ``app`` fixture
+    gives every test its own DB file and ``AppSetting`` has no cache, so this
+    cannot leak into the next test -- which is the very class of defect these
+    two guards were suffering from."""
+    from app.services import settings_store as store
+    with app.app_context():
+        store.set_str(store.K_TIMEZONE, tz)
+
+
+def _operator_day(tz):
+    return datetime.now(ZoneInfo(tz)).date()
+
+
+@pytest.mark.parametrize("tz", _FAR_ZONES)
+def test_a_day_is_selected_without_being_asked_for(app, client, tz):
+    _pin_zone(app, tz)
     login(client, admin_user_id(app))
+    before = _operator_day(tz)
     body = client.get("/calendar/").get_data(as_text=True)
-    assert _selected_day(body) == date.today().isoformat()
+    after = _operator_day(tz)
+    # ``before`` and ``after`` differ ONLY if a local midnight fell inside the
+    # request; accepting either is the honest reading of that instant, not a
+    # loosened assert -- they are the same value the rest of the time.
+    assert _selected_day(body) in {before.isoformat(), after.isoformat()}
 
 
 def test_an_explicit_day_still_wins(app, client):
@@ -262,13 +298,15 @@ def test_an_explicit_day_still_wins(app, client):
     assert _selected_day(body) == "2030-05-17"
 
 
-def test_an_explicit_day_wins_inside_the_month_that_holds_today(app, client):
+@pytest.mark.parametrize("tz", _FAR_ZONES)
+def test_an_explicit_day_wins_inside_the_month_that_holds_today(app, client, tz):
     """The 2030 case above cannot see this: with today outside that range the
     default resolves to the anchor, which IS the requested day, so a mutation
     that ignores ``?d=`` entirely still produces the right answer. The day has
     to be one the default would overrule -- a day in the month on screen,
     while today is in it too."""
-    today = date.today()
+    _pin_zone(app, tz)
+    today = _operator_day(tz)
     other = today.replace(day=2) if today.day != 2 else today.replace(day=3)
     login(client, admin_user_id(app))
     body = client.get("/calendar/?d=" + other.isoformat()).get_data(as_text=True)

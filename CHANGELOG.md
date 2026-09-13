@@ -6,6 +6,85 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed — a renderer change on docs.fortinet.com read as "this version has no release notes" (2026-09-13)
+
+Fortinet re-rendered the FortiWeb release notes between **8.0.6** and **8.0.7**:
+MadCap (`id="mc-main-content"`) became a markdown pipeline
+(`document-content src-md`). The harvester looked for the MadCap container, did
+not find it, and skipped the page — the same thing it does for a version that
+publishes nothing. **Every scan since finished green**, the log said
+`· 8.0.7 — no release notes found`, and the corpus silently stopped two releases
+short of the release whose *Supported upgrade paths* announces a mandatory
+two-step upgrade.
+
+- Both containers are now recognised, and the src-md slice closes on the
+  `mobile-content` duplicate (the new pages repeat the whole article, so a naive
+  slice harvested every row twice).
+- **"Not published" and "published but unreadable" are now different states.** A
+  version that was never published has no `document-content` wrapper at all; one
+  that is published always has one. The second state is recorded in the scan
+  result (`unreadable[]`), logged `✗ … UNREADABLE`, and raises a **warning** bell
+  — a scan that could not read a published page never lights a success bell again.
+- An issues page that is genuinely empty says so in prose; that statement is now
+  recognised, so an empty table and an unreadable one are no longer one
+  observation.
+
+### Fixed — the scan ignored the versions you typed (2026-09-13)
+
+The scan panel had a free-text `major.minor` box next to an **All discovered**
+checkbox. The checkbox silently won: with `8.0` in the box, the 2026-09-13 scan
+harvested all **59** versions and nothing said which control had decided. The box
+also could not express a single maintenance release at all — the filter matched on
+`major.minor`, so `8.0.7` matched nothing and the scan died with *"No versions
+matched"*.
+
+- New **Discover versions** step (`POST /release-notes/discover`, one page fetch)
+  lists what the docs site actually publishes, marks what the corpus already
+  holds, and pre-ticks the rest. Only the ticked versions are scanned, verbatim.
+- The legacy `majors` / `all` filter still works for scripted callers, but a
+  request carrying a contradiction is refused with **400** rather than resolving
+  itself.
+- Discovery that returns nothing is a **502**, not an empty picker.
+
+### Added — the rest of the Upgrade instructions branch is harvested (2026-09-13)
+
+`Repartitioning the hard disk`, `Upgrading an HA cluster`, `Downgrading to a
+previous release`, `Image checksums` and `FortiWeb-VM license validation` are
+siblings of *Upgrading from previous releases*, not children of it — so every
+blocking prerequisite lived outside the corpus. All five are now collected and
+searchable in the Notes tab.
+
+### Added — Scout Advisory: the upgrade prose, as verdicts (2026-09-13)
+
+New `services/release_advisor.py` and `GET /release-notes/advisory`, rendered at
+the top of the **Upgrade advisor** tab — above the bug diff, because a blocking
+prerequisite decides whether the window happens at all and a list of fixed bugs
+does not.
+
+Each finding carries a severity, an instruction in our words, and the vendor's
+sentence **verbatim**. Tailored rules cover mandatory intermediate hops, stated
+free-space prerequisites, the pre-5.5 repartition floor, HA cluster behaviour,
+backups that will not restore after the hop, VM licence re-validation, and the
+three downgrade traps; a catch-all carries through every block Fortinet marked
+*Caution* / *Warning* so prose no rule understands still reaches the operator.
+
+- **Absence is never innocence** — missing coverage yields `unknown`, never
+  `clear`, and names the gaps (distinguishing "never harvested" from "harvested
+  before these sections existed — rescan").
+- **Reproducible** — the report is stamped with a digest hashed from the rules'
+  own source, so an archived advisory names the rule set that produced it.
+- Direction-aware: an upgrade advisory never quotes the *Downgrading* page, and a
+  rollback advisory never quotes *Supported upgrade paths*.
+
+### Added — `scout.enabled`: Scout can be switched off (2026-09-13)
+
+Settings → Scout → **Availability**, and a switch beside the advisory in the
+Release Notes modal — the same flag, not a second one. Enforced with a
+`before_request` on the Scout blueprint, because hiding a nav entry closes
+nothing: the URL, the bookmark and the link in a ticket all keep working. Off
+answers **503** (not 404) and the menu entry stays visible but disabled with the
+reason — an absent entry reads as a product that never had the feature.
+
 ## [2.0.0] - 2026-09-10
 
 **Why this is 2.0 and not 1.21.** Two routes were *removed*, not deprecated:

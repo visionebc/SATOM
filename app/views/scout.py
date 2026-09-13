@@ -31,6 +31,26 @@ from ..services.audit import log_action
 
 bp = Blueprint("scout", __name__, url_prefix="/scout")
 
+#: Said once, so the page, the JSON endpoint and the disabled menu entry cannot
+#: drift into three different explanations of the same switch.
+OFF_MESSAGE = ("Scout is switched off for this site. An administrator can turn "
+               "it back on under Settings → Scout → Availability.")
+
+
+@bp.before_request
+def _gate():
+    """Refuse every Scout route while the feature is off.
+
+    On the BLUEPRINT because that is the only place that actually closes it:
+    the nav entry, the bookmark and the link pasted into a ticket all arrive
+    here. 503 and not 404 — the feature exists and is switched off, and those
+    two are different answers to the operator's next question."""
+    if scout_config.enabled():
+        return None
+    if request.path.rstrip("/").endswith("/objects"):
+        return jsonify({"error": OFF_MESSAGE, "disabled": True}), 503
+    return render_template("scout/disabled.html", message=OFF_MESSAGE), 503
+
 
 def _candidates():
     """Appliances this ladder can actually walk, in the current ADOM."""

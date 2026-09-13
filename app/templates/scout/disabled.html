@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Scout') }}{% endblock %}
+{% block content %}
+<div class="fw-card p-4">
+  <h4 class="mb-3"><i class="bi bi-slash-circle me-2"></i>{{ _('Scout is switched off') }}</h4>
+  <p class="mb-2">{{ message }}</p>
+  <p class="text-muted small mb-3">
+    {{ _('Nothing was deleted. The release-notes corpus, the walk defaults and the criteria are all still here and come back exactly as they were.') }}
+  </p>
+  {% if current_user.can('user_manage') %}
+  <a class="btn btn-sm btn-primary" href="{{ url_for('settings.index') }}#scout">
+    <i class="bi bi-gear"></i> {{ _('Open Scout settings') }}
+  </a>
+  {% endif %}
+</div>
+{% endblock %}

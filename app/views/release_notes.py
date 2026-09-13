@@ -36,7 +36,9 @@ from flask_login import current_user, login_required
 
 from ..auth.decorators import require_permission
 from ..models import Permission
+from ..services import release_advisor as ra
 from ..services import release_notes as rn
+from ..services import scout_config
 from ..services import notifications as notify
 from ..services.audit import log_action
 
@@ -191,6 +193,7 @@ def data():
                      for k in rn.PROSE_SECTIONS],
         "is_admin": bool(current_user.can(Permission.USER_MANAGE)),
         "scan_running": bool(scan.get("running")),
+        "scout_enabled": scout_config.enabled(),
         "firecrawl_default": rn.FIRECRAWL_LAN_DEFAULT,
     })
 
@@ -252,6 +255,49 @@ def advise():
     })
 
 
+@bp.route("/advisory")
+@login_required
+@require_permission(Permission.VIEW)
+def advisory():
+    """Scout's verdicts for a move, over the harvested upgrade prose.
+
+    Separate from ``/advise`` on purpose. ``/advise`` answers "which bugs
+    change hands", which is a diff and is always true of the corpus. This
+    answers "what will stop this window", which is a JUDGEMENT — it has a rule
+    set, a seal, and a coverage statement, and it can be switched off."""
+    if not scout_config.enabled():
+        return jsonify({"disabled": True,
+                        "error": "Scout is switched off for this site."}), 503
+    current = (request.args.get("current") or "").strip()
+    target = (request.args.get("target") or "").strip()
+    if not current or not target:
+        return jsonify({"error": "Pick a current and a target version."}), 400
+    if current == target:
+        return jsonify({"error": "Pick two different versions."}), 400
+    product = _product()
+    adv = ra.analyse(_load(product).sections, current, target, product=product)
+    return jsonify(asdict(adv))
+
+
+@bp.route("/scout-switch", methods=["POST"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def scout_switch():
+    """Turn the advisory on or off from where its absence is noticed.
+
+    The same site setting the Scout settings pane writes — NOT a second flag.
+    Two switches for one feature is how a product ends up with a pane that
+    says ON over a page that is off."""
+    body = request.get_json(silent=True) or {}
+    want = bool(body.get("enabled"))
+    scout_config.set_value("enabled", want)
+    try:
+        log_action("scout.switch", target="enabled" if want else "disabled")
+    except Exception:  # noqa: BLE001
+        pass
+    return jsonify({"enabled": scout_config.enabled()})
+
+
 # --------------------------------------------------------------------------- #
 #  ⤓ Sync from git                                                              #
 # --------------------------------------------------------------------------- #
@@ -290,6 +336,19 @@ def _notify_scan_done(user_id, product, *, ok, result=None, error=None, lines=No
     tail = "\n".join((lines or [])[-8:]) or None
     if ok:
         r = result or {}
+        unread = r.get("unreadable") or []
+        if unread:
+            # A scan that harvested something AND failed to read a published
+            # section is not a success: the corpus is now silently incomplete
+            # for those versions, which is the exact failure mode that let the
+            # 8.0.7 docset go unnoticed. Warn, and name the versions.
+            vs = sorted({u.get("version", "?") for u in unread}, key=rn.version_key)
+            notify.push(user_id,
+                        (f"{plabel} release-notes scan INCOMPLETE — "
+                         f"{len(unread)} published section(s) unreadable "
+                         f"({', '.join(vs)})"),
+                        kind="warning", body=tail, product=product)
+            return
         title = (f"{plabel} release-notes scan done — "
                  f"{r.get('scanned', 0)} version(s), {r.get('new_issues', 0)} new issue(s)")
         notify.push(user_id, title, kind="success", body=tail, product=product)
@@ -298,7 +357,8 @@ def _notify_scan_done(user_id, product, *, ok, result=None, error=None, lines=No
                     kind="error", body=(error or tail), product=product)
 
 
-def _do_scan(app, *, product, majors, use_direct, fc_endpoint, fc_key, publish, username, user_id):
+def _do_scan(app, *, product, majors, use_direct, fc_endpoint, fc_key, publish,
+             username, user_id, versions=None):
     with app.app_context():
         path = _scan_path()
         root = _corpus_root()
@@ -309,14 +369,21 @@ def _do_scan(app, *, product, majors, use_direct, fc_endpoint, fc_key, publish, 
         try:
             fetch = rn.make_fetcher(use_direct=use_direct,
                                     firecrawl_endpoint=fc_endpoint, firecrawl_key=fc_key)
-            emit(f"Discovering {product} versions…")
-            all_versions = rn.discover_versions(fetch, product=product)
-            emit(f"Discovered {len(all_versions)} versions.")
-            versions = rn.select_versions(all_versions, majors)
-            if not versions:
-                raise RuntimeError("No versions matched. Check the majors or tick 'All'.")
-            emit(f"Harvesting {len(versions)} version(s)…")
-            new = rn.scan_release_notes(fetch, versions, product=product, on_progress=emit)
+            if versions:
+                # The operator ticked an explicit list (the Discover flow). Do NOT
+                # re-derive it: discovery is a suggestion, the ticks are the order.
+                picked = list(versions)
+                emit(f"Harvesting {len(picked)} selected version(s): "
+                     f"{', '.join(picked)}")
+            else:
+                emit(f"Discovering {product} versions…")
+                all_versions = rn.discover_versions(fetch, product=product)
+                emit(f"Discovered {len(all_versions)} versions.")
+                picked = rn.select_versions(all_versions, majors)
+                if not picked:
+                    raise RuntimeError("No versions matched. Check the majors or tick 'All'.")
+                emit(f"Harvesting {len(picked)} version(s)…")
+            new = rn.scan_release_notes(fetch, picked, product=product, on_progress=emit)
             merged = rn.merge_db(rn.load_db(root=root), new)
             stored = rn.save_db(merged, root=root)
             published = False
@@ -334,10 +401,16 @@ def _do_scan(app, *, product, majors, use_direct, fc_endpoint, fc_key, publish, 
                 except Exception as exc:  # noqa: BLE001 — git is best-effort
                     emit(f"(git publish failed: {exc})")
             counts = _counts(merged)
+            unreadable = [asdict(u) for u in new.unreadable]
+            if unreadable:
+                emit(f"✗ {len(unreadable)} PUBLISHED section(s) could not be read — "
+                     "the corpus is INCOMPLETE for those versions. "
+                     "This usually means docs.fortinet.com changed renderer again.")
             result = {
                 "scanned": len(new.versions), "new_issues": len(new.issues),
                 "total_issues": counts["issues"], "total_sections": counts["sections"],
                 "total_versions": counts["versions"], "published": published,
+                "unreadable": unreadable,
             }
             emit(f"✓ Scanned {len(new.versions)} version(s); {len(new.issues)} issue(s) parsed. "
                  f"Corpus now: {counts['issues']} issues, {counts['sections']} sections, "
@@ -363,6 +436,42 @@ def _do_scan(app, *, product, majors, use_direct, fc_endpoint, fc_key, publish, 
                               lines=st.get("lines"))
 
 
+@bp.route("/discover", methods=["POST"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def discover():
+    """The versions docs.fortinet.com actually publishes, each marked against the
+    corpus we already hold.
+
+    ONE fetch (~1 s) — the version history lives in the seed page. This exists so
+    the operator ticks a real list instead of typing ``major.minor`` blind: the
+    old free-text field could not express 'just 8.0.7' at all (the filter matched
+    on major.minor, so a full version matched nothing and the scan died), and it
+    sat next to an 'All discovered' checkbox that silently overrode it."""
+    product = _product()
+    body = request.get_json(silent=True) or {}
+    use_direct = bool(body.get("use_direct", True))
+    use_fc = bool(body.get("use_firecrawl", True))
+    fc_endpoint = (body.get("firecrawl_endpoint") or "").strip() if use_fc else ""
+    fc_key = (body.get("firecrawl_key") or "").strip()
+    if not (use_direct or fc_endpoint):
+        return jsonify({"error": "Enable at least one transport (direct or Firecrawl)."}), 400
+    fetch = rn.make_fetcher(use_direct=use_direct, firecrawl_endpoint=fc_endpoint,
+                            firecrawl_key=fc_key)
+    try:
+        found = rn.discover_versions(fetch, product=product)
+    except Exception as exc:  # noqa: BLE001 — network is the expected failure
+        return jsonify({"error": f"{type(exc).__name__}: {exc}"}), 502
+    if not found:
+        return jsonify({"error": "Discovery returned nothing — docs.fortinet.com "
+                                 "unreachable, or the seed version was retired."}), 502
+    have = set(_load(product).versions)
+    rows = [{"version": v, "major": rn.major_of(v), "in_corpus": v in have}
+            for v in sorted(found, key=rn.version_key, reverse=True)]
+    return jsonify({"product": product, "versions": rows, "count": len(rows),
+                    "new": sum(1 for r in rows if not r["in_corpus"])})
+
+
 @bp.route("/scan", methods=["POST"])
 @login_required
 @require_permission(Permission.USER_MANAGE)
@@ -374,8 +483,24 @@ def scan():
     body = request.get_json(silent=True) or {}
     scan_all = bool(body.get("all"))
     majors_raw = (body.get("majors") or "").strip()
+    raw_versions = body.get("versions")
+    versions = None
+    if isinstance(raw_versions, list):
+        versions = [str(v).strip() for v in raw_versions if str(v).strip()]
+        if not versions:
+            return jsonify({"error": "Pick at least one version to scan."}), 400
+    # Two controls that disagree must not resolve silently. Before this, ticking
+    # 'All discovered' while 8.0 sat typed in the box scanned all 59 versions and
+    # said nothing — the operator had every reason to believe they had asked for
+    # one line. Make the contradiction impossible to submit instead.
+    if versions is not None and (scan_all or majors_raw):
+        return jsonify({"error": "Pick EITHER an explicit version list OR the "
+                                 "majors/All filter — not both."}), 400
+    if versions is None and scan_all and majors_raw:
+        return jsonify({"error": "'All discovered' and a majors filter contradict "
+                                 "each other. Untick All, or clear the box."}), 400
     majors = None if scan_all else [m.strip() for m in majors_raw.split(",") if m.strip()]
-    if not scan_all and not majors:
+    if versions is None and not scan_all and not majors:
         majors = ["7.0", "7.2", "7.4", "7.6", "8.0"]
     use_direct = bool(body.get("use_direct", True))
     use_fc = bool(body.get("use_firecrawl", True))
@@ -393,7 +518,8 @@ def scan():
     app = current_app._get_current_object()
     t = threading.Thread(
         target=_do_scan, args=(app,),
-        kwargs=dict(product=product, majors=majors, use_direct=use_direct,
+        kwargs=dict(product=product, majors=majors, versions=versions,
+                    use_direct=use_direct,
                     fc_endpoint=fc_endpoint, fc_key=fc_key, publish=publish,
                     username=current_user.username, user_id=current_user.id),
         daemon=True)

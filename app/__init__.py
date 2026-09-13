@@ -1006,6 +1006,21 @@ def create_app(config_override: object | None = None) -> Flask:
         return {"calendar_on": True}
 
     @app.context_processor
+    def _inject_scout_on():
+        """Whether Scout is switched on, for the chrome.
+
+        Resolved once per request for the same reason as calendar_on: the
+        Troubleshooting menu is included in more than one branch of base.html.
+        Degrades to True — a settings read that fails must not withdraw a
+        troubleshooting tool.
+        """
+        from .services import scout_config as _sc
+        try:
+            return {"scout_on": _sc.enabled()}
+        except Exception:  # noqa: BLE001 - chrome must not break on a setting
+            return {"scout_on": True}
+
+    @app.context_processor
     def _inject_ui_lang():
         """The language the page is ACTUALLY rendered in.
 

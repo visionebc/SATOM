@@ -65,6 +65,17 @@ SECTIONS_BY_PRODUCT: dict[str, dict[str, tuple[str, str]]] = {
         "whats_new":           ("639023", "whats-new"),
         "upgrade_notes":       ("745354", "upgrade-notes-and-important-information"),
         "upgrading_from":      ("81434",  "upgrading-from-previous-releases"),
+        # The REST of the *Upgrade instructions* branch (TOC node 489959). These
+        # are SIBLINGS of upgrading_from, not children of it, so harvesting only
+        # the two above left the blocking prerequisites out of the corpus
+        # entirely: disk repartition, HA upgrade order, downgrade support,
+        # image checksums and VM licence validation. Verified live 2026-09-13:
+        # all five answer 200 on every FortiWeb line from 7.6 to 8.0.
+        "repartitioning":      ("159021", "repartitioning-the-hard-disk"),
+        "ha_upgrade":          ("903663", "upgrading-an-ha-cluster"),
+        "downgrading":         ("750287", "downgrading-to-a-previous-release"),
+        "image_checksums":     ("754338", "image-checksums"),
+        "vm_license":          ("439600", "fortiweb-vm-license-validation"),
         "product_integration": ("756870", "product-integration-and-support"),
         "introduction":        ("950216", "introduction"),
     },
@@ -93,8 +104,26 @@ def sections_for(product: str) -> dict[str, tuple[str, str]]:
     """The section map for ``product`` (FortiWeb map as the safe default)."""
     return SECTIONS_BY_PRODUCT.get(product, SECTIONS)
 ISSUE_SECTIONS: tuple[str, ...] = ("known", "resolved")           # Bug ID tables
+
+#: How many article-less sections in a row mean "this version publishes nothing".
+#:
+#: A version that was never released answers EVERY section with the same ~442 KB
+#: landing, so probing all eleven costs ~5 MB to learn what the first two already
+#: said. Two and not one: a single miss could be one section a real release
+#: happens not to carry, and giving up on that would drop the other ten in
+#: silence — the failure mode this whole module was just rebuilt around.
+#: The give-up is ANNOUNCED, never silent, and it only applies while nothing at
+#: all has been found for the version.
+PROBES_BEFORE_GIVING_UP = 2
 PROSE_SECTIONS: tuple[str, ...] = (
-    "whats_new", "upgrade_notes", "upgrading_from", "product_integration")
+    "whats_new", "upgrade_notes", "upgrading_from",
+    "repartitioning", "ha_upgrade", "downgrading", "image_checksums",
+    "vm_license", "product_integration")
+# The subset that carries UPGRADE-BLOCKING prose (as opposed to "what's new" or
+# the support matrix). The advisor reads these; the Notes tab shows them all.
+UPGRADE_SECTIONS: tuple[str, ...] = (
+    "upgrade_notes", "upgrading_from", "repartitioning", "ha_upgrade",
+    "downgrading", "vm_license")
 DEFAULT_SECTIONS: tuple[str, ...] = ISSUE_SECTIONS + PROSE_SECTIONS
 
 SECTION_LABEL: dict[str, str] = {
@@ -103,6 +132,11 @@ SECTION_LABEL: dict[str, str] = {
     "whats_new": "What's new",
     "upgrade_notes": "Upgrade notes & important information",
     "upgrading_from": "Upgrading from previous releases",
+    "repartitioning": "Repartitioning the hard disk",
+    "ha_upgrade": "Upgrading an HA cluster",
+    "downgrading": "Downgrading to a previous release",
+    "image_checksums": "Image checksums",
+    "vm_license": "FortiWeb-VM license validation",
     "product_integration": "Product integration & support",
     "introduction": "Introduction",
 }
@@ -138,6 +172,22 @@ class ReleaseSection:
 
 
 @dataclass
+class UnreadableSection:
+    """A ``(version, section)`` that IS published but yielded nothing.
+
+    The entire point of this record is that it is not a skip. The scanner used
+    to ``continue`` past these, so a renderer change on Fortinet's side read
+    exactly like a version that publishes no release notes — which is how the
+    corpus stopped at 8.0.6 while every scan reported success."""
+
+    product: str
+    version: str
+    section: str
+    url: str
+    reason: str
+
+
+@dataclass
 class ReleaseNotesDB:
     """The whole harvested corpus — the shape of ``reports/_release_notes.json``."""
 
@@ -145,6 +195,9 @@ class ReleaseNotesDB:
     versions: list[str] = field(default_factory=list)
     issues: list[ReleaseIssue] = field(default_factory=list)
     sections: list[ReleaseSection] = field(default_factory=list)
+    # Scan-time diagnostics, never persisted: the corpus records what WAS read,
+    # this records what could not be — and the caller must surface it.
+    unreadable: list[UnreadableSection] = field(default_factory=list)
 
 
 # --------------------------------------------------------------------------- #
@@ -266,33 +319,87 @@ def split_workaround(desc: str) -> tuple[str, str]:
 
 
 _FOOTER_MARKERS = ('id="mc-footer"', "ftnt-footer", 'id="footer"', "</body>")
-_CONTENT_MARKER = 'id="mc-main-content"'   # the MadCap article container
+_CONTENT_MARKER = 'id="mc-main-content"'   # MadCap (src-mc) article container
+_MD_MARKER = "document-content src-md"     # markdown-rendered (src-md) container
+# The src-md docset repeats the WHOLE article a second time inside a
+# ``mobile-content`` wrapper, so this slice must close on the first of these or
+# every row and paragraph would be harvested twice.
+_MD_FOOTER_MARKERS = ('class="mobile-content"', 'id="thin-footer"', "</body>")
+
+# A page that publishes ANY article — in either renderer — carries a
+# ``document-content src-XX`` wrapper. A version that was never published resolves
+# to a 200 *landing* with NO such wrapper at all (verified live 2026-09-13: the
+# 7.0.x / 7.2.x / 7.4.x landings are ~442 KB of pure chrome and contain the string
+# zero times). This is the only reliable way to tell "not published" from
+# "published but this parser could not read it" — and NOT telling them apart is
+# exactly how 8.0.7 went unharvested while every scan finished green.
+_ARTICLE_RE = re.compile(r"document-content\s+src-\w+")
+
+
 
 
 def has_release_content(html: str) -> bool:
-    """True iff the page carries the real release-notes article (not a chrome-only
-    fallback). Verified live: pages that publish the issue tables / prose have the
-    MadCap ``mc-main-content`` container; OLDER maintenance releases whose section
-    ids drifted resolve to a 200 *landing* WITHOUT it — those must be skipped so the
-    nav/version-switcher chrome is never harvested as bogus content."""
-    return _CONTENT_MARKER in (html or "")
+    """True iff the page carries an article this parser knows how to slice.
+
+    Two containers are recognised because Fortinet changed renderers mid-docset:
+    MadCap ``mc-main-content`` (FortiWeb up to 8.0.6, and FortiADC) and the
+    markdown-rendered ``document-content src-md`` (FortiWeb from 8.0.7)."""
+    h = html or ""
+    return _CONTENT_MARKER in h or _MD_MARKER in h
+
+
+def has_article(html: str) -> bool:
+    """True iff the page publishes a release-notes ARTICLE at all.
+
+    Two ways to be sure, and BOTH are needed:
+
+    * a container this parser recognises — recognising it IS proof there is an
+      article, and making the wrapper the sole evidence would skip such a page in
+      silence the day Fortinet drop the wrapper;
+    * failing that, the generic ``document-content src-XX`` wrapper, which is
+      what lets us see an article we cannot yet read.
+
+    ``has_article() and not has_release_content()`` is precisely the *published
+    but unreadable* state :func:`scan_release_notes` must REPORT rather than skip."""
+    h = html or ""
+    return has_release_content(h) or bool(_ARTICLE_RE.search(h))
 
 
 def _main_content(html: str) -> str:
-    """Slice the MadCap ``mc-main-content`` article out of the page chrome (``''``
-    when the container is absent — a fallback page has no real content)."""
+    """Slice the article body out of the page chrome (``''`` when no recognised
+    container is present).
+
+    The MadCap branch is kept byte-for-byte as it was: the 21 versions already in
+    the corpus were harvested through it, and a "harmless tidy-up" here would
+    silently re-cut all of them."""
     i = html.find(_CONTENT_MARKER)
-    if i < 0:
-        return ""
+    if i >= 0:
+        markers = _FOOTER_MARKERS
+    else:
+        i = html.find(_MD_MARKER)
+        if i < 0:
+            return ""
+        markers = _MD_FOOTER_MARKERS
     start = html.rfind("<", 0, i)
     if start < 0:
         start = i
     end = len(html)
-    for mk in _FOOTER_MARKERS:
+    for mk in markers:
         j = html.find(mk, i)
         if j >= 0:
             end = min(end, j)
     return html[start:end]
+
+
+# A Known/Resolved page that legitimately has nothing SAYS so in prose ("There are
+# no known issues in version 8.0.7."). Without this, an empty table and a table
+# this parser cannot read look identical — and only one of them is news.
+_NO_ISSUES_RE = re.compile(r"\bthere (?:are|is) no\b[^.]{0,80}\bissues?\b", re.I)
+
+
+def declares_no_issues(text: str) -> bool:
+    """True iff the article states outright that it has no issues to list."""
+    return bool(_NO_ISSUES_RE.search(text or ""))
 
 
 class _TextExtractor(HTMLParser):
@@ -516,15 +623,31 @@ def scan_release_notes(
 
     issues: list[ReleaseIssue] = []
     sects: list[ReleaseSection] = []
+    unreadable: list[UnreadableSection] = []
     done: list[str] = []
     secmap = sections_for(product)
+
+    def unread(v: str, sec: str, url: str, reason: str) -> None:
+        unreadable.append(UnreadableSection(product=product, version=v, section=sec,
+                                            url=url, reason=reason))
+        emit(f"  ✗ {v}/{sec}: UNREADABLE — {reason}")
 
     for v in versions:
         got = False
         n_iss = 0
+        blank = 0          # consecutive sections with no article at all
+        seen_article = False
+        gave_up = False
         for sec in sections:
             if sec not in secmap:
                 continue
+            # Gated on having seen an ARTICLE, not on having PARSED one. A page
+            # we could not read is still proof the version exists, and spending
+            # it as evidence of absence would be the original bug with a
+            # stopwatch attached.
+            if not seen_article and blank >= PROBES_BEFORE_GIVING_UP:
+                gave_up = True
+                break
             url = section_url(v, sec, product)
             try:
                 html = fetch(url)
@@ -533,11 +656,32 @@ def scan_release_notes(
             except Exception as exc:  # noqa: BLE001
                 emit(f"  ! {v}/{sec}: {exc}")
                 continue
-            if not has_release_content(html):
-                # 200 but a chrome-only landing (older docset / drifted ids) — skip.
+            if not has_article(html):
+                # No article wrapper at all: this version genuinely does not publish
+                # this section (a chrome-only landing). Silent BY DESIGN — this is
+                # the only branch allowed to be silent.
+                blank += 1
                 continue
+            # No need to reset blank: the give-up is gated on seen_article,
+            # which is now permanently true for this version.
+            seen_article = True
+            if not has_release_content(html):
+                unread(v, sec, url,
+                       "the page carries an article this parser cannot slice "
+                       "(unrecognised container — did the renderer change?)")
+                continue
+            text = parse_section_text(html)
             if sec in ISSUE_SECTIONS:
-                for bug_id, desc in parse_issue_table(html):
+                rows = parse_issue_table(html)
+                if not rows:
+                    if declares_no_issues(text):
+                        got = True          # read fine; it is simply empty
+                        continue
+                    unread(v, sec, url,
+                           "an issues article with no table this parser could read "
+                           "and no 'there are no issues' statement")
+                    continue
+                for bug_id, desc in rows:
                     _, wa = split_workaround(desc)
                     issues.append(ReleaseIssue(
                         product=product, version=v, status=sec, bug_id=bug_id,
@@ -546,22 +690,28 @@ def scan_release_notes(
                     n_iss += 1
                 got = True
             else:
-                txt = parse_section_text(html)
-                if txt:
-                    sects.append(ReleaseSection(
-                        product=product, version=v, section=sec,
-                        title=SECTION_LABEL.get(sec, sec), content=txt,
-                        source_url=url))
-                    got = True
+                if not text:
+                    unread(v, sec, url, "a prose article that rendered to empty text")
+                    continue
+                sects.append(ReleaseSection(
+                    product=product, version=v, section=sec,
+                    title=SECTION_LABEL.get(sec, sec), content=text,
+                    source_url=url))
+                got = True
         if got:
             done.append(v)
             emit(f"✓ {v} — {n_iss} issue(s)")
+        elif any(u.version == v for u in unreadable):
+            emit(f"✗ {v} — PUBLISHED BUT UNREADABLE (see above)")
+        elif gave_up:
+            emit(f"·  {v} — no release notes found "
+                 f"(gave up after {PROBES_BEFORE_GIVING_UP} empty probes)")
         else:
             emit(f"·  {v} — no release notes found")
 
     return ReleaseNotesDB(generated_at=_now(),
                           versions=sorted(done, key=version_key),
-                          issues=issues, sections=sects)
+                          issues=issues, sections=sects, unreadable=unreadable)
 
 
 def merge_db(old: ReleaseNotesDB | None, new: ReleaseNotesDB) -> ReleaseNotesDB:
@@ -701,12 +851,14 @@ def load_db(*, root: Path | None = None) -> ReleaseNotesDB | None:
 __all__ = [
     "PRODUCT_DEFAULT", "MIN_SUPPORTED_VERSION", "DB_NAME", "FIRECRAWL_LAN_DEFAULT",
     "SECTIONS", "SECTIONS_BY_PRODUCT", "SEED_VERSION_BY_PRODUCT", "sections_for",
-    "ISSUE_SECTIONS", "PROSE_SECTIONS", "DEFAULT_SECTIONS",
+    "ISSUE_SECTIONS", "PROSE_SECTIONS", "DEFAULT_SECTIONS", "UPGRADE_SECTIONS",
+    "PROBES_BEFORE_GIVING_UP",
     "SECTION_LABEL", "ALL_TOPICS", "TOPIC_RULES",
     "ReleaseIssue", "ReleaseSection", "ReleaseNotesDB", "UpgradeAdvisory",
+    "UnreadableSection",
     "version_tuple", "version_key", "major_of", "section_url",
     "parse_issue_table", "split_workaround", "parse_section_text", "html_to_text",
-    "has_release_content", "classify_topic",
+    "has_release_content", "has_article", "declares_no_issues", "classify_topic",
     "NotFound", "FetchError", "httpx_fetch", "firecrawl_fetch", "make_fetcher",
     "discover_versions", "select_versions", "scan_release_notes", "merge_db",
     "filter_issues", "advise",

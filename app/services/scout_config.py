@@ -44,6 +44,7 @@ PREFIX = "scout."
 
 #: Display order of the settings cards.
 GROUPS = (
+    ("switch", "Availability"),
     ("walk", "Walk defaults"),
     ("border", "Border correlation (FortiAnalyzer)"),
 )
@@ -54,6 +55,20 @@ GROUPS = (
 #: re-typed: a form whose default silently disagrees with the code's default is
 #: a page that documents a product nobody is running.
 SPEC: list[dict] = [
+    # ── switch ──────────────────────────────────────────────────────────────
+    {"key": "enabled", "kind": "bool", "group": "switch", "default": True,
+     "label": "Scout is available",
+     "help": "Off closes the ladder and the upgrade advisory for everyone. The "
+             "menu entry stays, disabled, saying why.",
+     "hint": "The whole feature, on or off, site-wide. Off is enforced on the "
+             "BLUEPRINT, not on the menu: a hidden nav entry switches nothing "
+             "off, and the URL in a ticket keeps walking the ladder. The entry "
+             "is left visible and disabled on purpose — removing it tells the "
+             "operator the product does not have the feature, and they go "
+             "looking for an installer instead of for this checkbox. Turning it "
+             "off does not delete anything: the corpus, the settings and the "
+             "criteria are all still here when it comes back on."},
+
     # ── walk ────────────────────────────────────────────────────────────────
     {"key": "window_minutes", "kind": "int", "group": "walk",
      "default": sl.DEFAULT_WINDOW_MIN, "min": 1, "max": sl.MAX_WINDOW_MIN,
@@ -223,6 +238,19 @@ def form_groups() -> list:
         if rows:
             out.append((gkey, glabel, rows))
     return out
+
+
+def enabled() -> bool:
+    """Whether Scout is switched on for this site.
+
+    Degrades to ON. A settings table that cannot be read is not a decision to
+    withdraw a troubleshooting tool — and Scout is opened during an incident,
+    which is the worst moment to meet a feature that failed closed because a
+    query raised."""
+    try:
+        return bool(get("enabled"))
+    except Exception:                                       # noqa: BLE001
+        return True
 
 
 def walk_defaults() -> dict:

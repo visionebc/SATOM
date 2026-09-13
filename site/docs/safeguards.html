@@ -13567,6 +13567,77 @@ passes against a form somebody emptied.</p>
   <code>tests/test_tool_modal_chrome.py</code>, with a printed budget. The first draft of
   the new guard duplicated it with a file allowlist; it was deleted.</li>
 </ul>
+<h2 id="165-a-renderer-change-that-read-as-an-empty-release-and-two-controls-that-disagreed-in-silence-2026-09-13">§165 — a renderer change that read as an empty release, and two controls that disagreed in silence (2026-09-13)</h2>
+<p><strong>Guards:</strong> <code>tests/test_release_notes_docsets.py</code> (24), <code>tests/test_release_advisor.py</code>
+(34), <code>tests/test_scout_switch.py</code> (16). 38 mutations driven.</p>
+<p>Three failures in one feature, and all three produced output that looks exactly
+like a correct run.</p>
+<h3 id="1-the-scanner-could-not-tell-not-published-from-i-could-not-read-it">1. The scanner could not tell "not published" from "I could not read it"</h3>
+<p>Fortinet re-rendered the FortiWeb release notes between 8.0.6 and 8.0.7: MadCap
+(<code>id="mc-main-content"</code>) became a markdown pipeline (<code>document-content src-md</code>).
+<code>has_release_content()</code> looked for the MadCap container, did not find it, and the
+scanner did what it had always done with a page it could not parse — <code>continue</code>.</p>
+<p>Every scan afterwards finished green. The progress log said <code>· 8.0.7 — no release
+notes found</code>, which is the same line a version that publishes nothing produces.
+The corpus stopped two releases short for <strong>two months</strong>, and the release it
+stopped short of is the one whose <em>Supported upgrade paths</em> announces a mandatory
+intermediate hop.</p>
+<p><strong>The discriminator was measurable and nobody had looked for it.</strong> A version that
+was never published resolves to a 200 landing of ~442 KB with <strong>zero</strong>
+<code>document-content</code> wrappers. A version that IS published always has one, in either
+renderer. So <code>has_article()</code> and <code>has_release_content()</code> are now two different
+questions, and their difference — published but unreadable — is a recorded,
+announced, bell-raising state rather than a <code>continue</code>.</p>
+<p><code>has_article()</code> is deliberately <code>has_release_content() or &lt;generic wrapper&gt;</code> and
+not the wrapper alone: recognising a container <strong>is</strong> proof there is an article,
+and making the generic wrapper the sole evidence would skip a page we parse
+perfectly well, in silence, the day Fortinet drop it. The same bug, mirrored.</p>
+<p>Two more traps in the same state machine:</p>
+<ul>
+<li><strong>an empty table and an unreadable table.</strong> 8.0.7 genuinely has no known issues
+  and says so in prose. Without <code>declares_no_issues()</code>, "the table is empty" and
+  "I could not read the table" are one observation, and one of them is a broken
+  parser. The guard holds both directions: the vendor's sentence present → a
+  successful empty read; absent → unreadable.</li>
+<li><strong>the article rendered twice.</strong> The src-md pages repeat the whole article inside
+  a <code>mobile-content</code> wrapper. A slice that runs to the end of the document
+  harvests every row and paragraph twice — and a doubled corpus reads like a
+  correct one.</li>
+</ul>
+<h3 id="2-two-controls-for-one-decision-resolving-themselves">2. Two controls for one decision, resolving themselves</h3>
+<p>The scan panel had a free-text <code>major.minor</code> box next to an "All discovered"
+checkbox. Measured from the live scan log of 2026-09-13 21:18: <code>Harvesting 59
+version(s)</code> with <code>8.0</code> typed in the box. The checkbox won and nothing said so.</p>
+<p>The box was also incapable of the thing it looked capable of: the filter matched
+on <code>major.minor</code>, so typing a full version matched nothing and the scan died with
+<em>"No versions matched"</em> — the one selection an operator most often wants.</p>
+<p>Replaced by a discovered, tickable list (<code>POST /release-notes/discover</code>, one page
+fetch) with the missing versions pre-ticked, and the explicit list is scanned
+<strong>verbatim</strong> — nothing re-derives it. The legacy filter still works for scripted
+callers, but a contradictory request is now a 400. <em>A contradiction that fails to
+submit beats a contradiction that resolves itself.</em></p>
+<p>Discovery returning <code>[]</code> is a <strong>502</strong>, not an empty picker: an empty list with a
+green tick reads as "Fortinet publish no versions", and it means we could not ask.</p>
+<h3 id="3-a-verdict-with-no-seal-and-a-switch-that-only-hid-a-menu">3. A verdict with no seal, and a switch that only hid a menu</h3>
+<p>The advisory (<code>services/release_advisor.py</code>) is a judgement, so it carries a
+digest <strong>hashed from the rules' own source</strong> — not a hand-bumped version string,
+which is a seal that silently stops sealing. A threshold edited inside a rule
+changes the digest in the same commit.</p>
+<p><code>evidence</code> is verbatim and <code>detail</code> is ours, and they are never mixed. <code>path</code> is
+built from <code>Finding.data["hop"]</code>, never re-parsed out of our own sentence: a route
+an operator follows must not be tied to the wording of a caption.</p>
+<p><code>scout.enabled</code> is enforced with a <code>before_request</code> on the blueprint. A flag that
+only hides a nav entry switches nothing off — the URL, the bookmark and the link
+in a ticket all still walk the ladder, so the administrator believes they closed
+something they did not. Off answers 503 (not 404), and the menu entry stays
+visible but disabled with the reason: an absent entry reads as a product that
+never had the feature, and sends the operator looking for an installer.</p>
+<h3 id="what-the-output-showed-and-no-assertion-did">What the OUTPUT showed and no assertion did</h3>
+<p>The rule suite passed on its first run, and reading its printout found four real
+defects: the catch-all reprinting a block a tailored rule had already turned into
+an instruction; the example upgrade path drawn once per version crossed; the same
+rollback trap stated twice with slightly different wording; and an upgrade
+advisory quoting the <em>Downgrading</em> page. <strong>A green suite is not a read output.</strong></p>
 <h2 id="164-a-picker-that-quietly-narrows-what-may-be-walked-2026-09-10">§164 — a picker that quietly narrows what may be walked (2026-09-10)</h2>
 <p><strong>Guards:</strong> <code>tests/test_scout_objects.py</code> (63 guards), plus the extended identity in
 <code>tests/test_scout_help.py</code>.</p>

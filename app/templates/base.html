@@ -314,8 +314,16 @@
       <div class="fw-nav-group {{ 'open' if request.blueprint in ['calendar_plan','scout','search','dns_tool','architecture','analysis','fleet_objects','metrics','monitoring','deep_monitor','service_monitor','jobs','waf'] }}" data-nav-group="Fleet">
         <button type="button" class="fw-nav-section fw-nav-toggle"><i class="bi bi-globe2 fw-nav-section-icon" style="color:#3b82f6;"></i><span>{{ _('Fleet') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
         <div class="fw-nav-group-body">
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'scout' else '' }}" href="{{ url_for('scout.index') }}">
+          {% if scout_on %}<a class="fw-nav-item {{ 'active' if request.blueprint == 'scout' else '' }}" href="{{ url_for('scout.index') }}">
             <i class="bi bi-binoculars fw-nav-icon"></i><span>{{ _('Scout') }}</span></a>
+          {% else %}{# Switched off: shown, disabled, with the reason. An ABSENT entry
+             reads as 'this product has no Scout' and sends the operator looking
+             for an installer instead of for the checkbox. #}
+          <span class="fw-nav-item disabled text-muted" style="cursor:not-allowed;opacity:.55;"
+                title="{{ _('Scout is switched off for this site (Settings → Scout → Availability).') }}">
+            <i class="bi bi-binoculars fw-nav-icon"></i><span>{{ _('Scout') }}</span>
+            <i class="bi bi-slash-circle ms-1 small"></i></span>
+          {% endif %}
           {% include 'partials/nav_calendar.html' %}
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'search' else '' }}" href="{{ url_for('search.index') }}">
             <i class="bi bi-search fw-nav-icon"></i><span>{{ _('Search') }}</span></a>
@@ -939,8 +947,13 @@
           <div class="fw-nav-subgroup {{ 'open' if request.blueprint in ['scout','reach_batch','config_compare'] }}" data-nav-subgroup="Troubleshooting">
             <button type="button" class="fw-nav-item fw-nav-subtoggle"><i class="bi bi-life-preserver fw-nav-icon"></i><span>{{ _('Troubleshooting') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
             <div class="fw-nav-subgroup-body">
-              <a class="fw-nav-item {{ 'active' if request.blueprint == 'scout' else '' }}" href="{{ url_for('scout.index') }}">
+              {% if scout_on %}<a class="fw-nav-item {{ 'active' if request.blueprint == 'scout' else '' }}" href="{{ url_for('scout.index') }}">
                 <i class="bi bi-binoculars fw-nav-icon"></i><span>{{ _('Scout') }}</span></a>
+              {% else %}<span class="fw-nav-item disabled text-muted" style="cursor:not-allowed;opacity:.55;"
+                    title="{{ _('Scout is switched off for this site (Settings → Scout → Availability).') }}">
+                <i class="bi bi-binoculars fw-nav-icon"></i><span>{{ _('Scout') }}</span>
+                <i class="bi bi-slash-circle ms-1 small"></i></span>
+              {% endif %}
               <a class="fw-nav-item {{ 'active' if request.blueprint == 'reach_batch' else '' }}" href="{{ url_for('reach_batch.index') }}">
                 <i class="bi bi-diagram-3 fw-nav-icon"></i><span>{{ _('Backend Reachability') }}</span></a>
               <a class="fw-nav-item {{ 'active' if request.blueprint == 'config_compare' else '' }}" href="{{ url_for('config_compare.index') }}">

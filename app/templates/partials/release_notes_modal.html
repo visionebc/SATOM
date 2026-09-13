@@ -69,15 +69,30 @@
         {# ---- Scan panel (collapsible, admin only) ---- #}
         <div id="rnScanPanel" class="border rounded p-3 mb-3 d-none bg-body-tertiary">
           <div class="row g-2 align-items-end">
-            <div class="col-md-4">
-              <label class="form-label small mb-1">{{ _('Versions (major.minor)') }}</label>
-              <input type="text" class="form-control form-control-sm" id="rnMajors"
-                     value="7.0,7.2,7.4,7.6,8.0">
-            </div>
-            <div class="col-md-3">
-              <div class="form-check mt-3">
-                <input class="form-check-input" type="checkbox" id="rnAll">
-                <label class="form-check-label small" for="rnAll">{{ _('All discovered (slow)') }}</label>
+            {# Version picker. The old control was a free-text 'major.minor' box
+               next to an 'All discovered' checkbox: the box could not express a
+               single maintenance release (the filter matched on major.minor, so
+               '8.0.7' matched nothing), and the checkbox silently overrode
+               whatever was typed. Both problems disappear when the operator ticks
+               a list that was actually read from docs.fortinet.com. #}
+            <div class="col-12">
+              <div class="d-flex align-items-center gap-2 flex-wrap">
+                <button type="button" class="btn btn-sm btn-outline-primary" id="rnDiscover">
+                  <i class="bi bi-list-check"></i> {{ _('Discover versions') }}
+                </button>
+                <span class="small text-muted" id="rnDiscoverHint">
+                  {{ _('One page fetch — lists what docs.fortinet.com publishes and pre-ticks what the corpus is missing.') }}
+                </span>
+              </div>
+              <div id="rnVersionPick" class="border rounded p-2 mt-2 d-none"
+                   style="max-height:200px;overflow:auto;"></div>
+              <div class="small mt-1 d-none" id="rnVersionBar">
+                <button type="button" class="btn btn-link btn-sm p-0 align-baseline" id="rnPickNew">{{ _('only the new ones') }}</button>
+                <span class="text-muted mx-1">·</span>
+                <button type="button" class="btn btn-link btn-sm p-0 align-baseline" id="rnPickAll">{{ _('all') }}</button>
+                <span class="text-muted mx-1">·</span>
+                <button type="button" class="btn btn-link btn-sm p-0 align-baseline" id="rnPickNone">{{ _('none') }}</button>
+                <span class="ms-2 text-muted" id="rnPickCount"></span>
               </div>
             </div>
             <div class="col-md-5">
@@ -185,7 +200,16 @@
               <label class="small mb-0">{{ _('→ Target:') }}</label>
               <select class="form-select form-select-sm w-auto" id="rnAdvTarget"></select>
               <button type="button" class="btn btn-sm btn-primary" id="rnAdvShow">{{ _('Show advisory') }}</button>
+              <div class="ms-auto form-check form-switch mb-0">
+                <input class="form-check-input" type="checkbox" id="rnScoutOn"
+                       {% if not current_user.can('user_manage') %}disabled{% endif %}>
+                <label class="form-check-label small" for="rnScoutOn">{{ _('Scout advisory') }}</label>
+              </div>
             </div>
+            {# Scout's verdicts sit ABOVE the bug diff on purpose: a blocking
+               prerequisite decides whether the window happens at all, and the
+               list of bugs you gain does not. #}
+            <div id="rnScoutView" class="mb-3"></div>
             <div id="rnAdvView" class="small text-muted">
               {{ _('Pick a current and target version, then Show advisory.') }}
             </div>

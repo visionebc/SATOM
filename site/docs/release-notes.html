@@ -65,7 +65,8 @@
       <a href="#3-the-modal-account-menu-release-notes">3. The modal (account menu → Release Notes)</a>
       <a href="#4-data-model">4. Data model</a>
       <a href="#5-running-a-scan-there-is-no-cli">5. Running a scan (there is no CLI)</a>
-      <a href="#6-tests">6. Tests</a>
+      <a href="#6-scout-advisory-servicesrelease_advisorpy">6. Scout Advisory (services/release_advisor.py)</a>
+      <a href="#7-tests">7. Tests</a>
     </aside>
     <div class="doc-body mdx">
 <h1 id="release-notes-upgrade-planning">Release Notes &amp; Upgrade Planning</h1>
@@ -130,6 +131,36 @@ section ids are <strong>stable</strong> across the recent docsets:</p>
 <td>prose</td>
 </tr>
 <tr>
+<td>Repartitioning the hard disk</td>
+<td><code>159021</code></td>
+<td><code>repartitioning-the-hard-disk</code></td>
+<td>prose</td>
+</tr>
+<tr>
+<td>Upgrading an HA cluster</td>
+<td><code>903663</code></td>
+<td><code>upgrading-an-ha-cluster</code></td>
+<td>prose</td>
+</tr>
+<tr>
+<td>Downgrading to a previous release</td>
+<td><code>750287</code></td>
+<td><code>downgrading-to-a-previous-release</code></td>
+<td>prose</td>
+</tr>
+<tr>
+<td>Image checksums</td>
+<td><code>754338</code></td>
+<td><code>image-checksums</code></td>
+<td>prose</td>
+</tr>
+<tr>
+<td>FortiWeb-VM license validation</td>
+<td><code>439600</code></td>
+<td><code>fortiweb-vm-license-validation</code></td>
+<td>prose</td>
+</tr>
+<tr>
 <td>Product integration &amp; support</td>
 <td><code>756870</code></td>
 <td><code>product-integration-and-support</code></td>
@@ -137,6 +168,12 @@ section ids are <strong>stable</strong> across the recent docsets:</p>
 </tr>
 </tbody>
 </table>
+<p>The five middle rows were added 2026-09-13. They are <strong>siblings</strong> of <em>Upgrading
+from previous releases</em> under the <em>Upgrade instructions</em> TOC node (<code>489959</code>), not
+children of it — so harvesting the two obvious ones left every blocking
+prerequisite (disk repartition, HA upgrade order, downgrade support, VM licence
+re-validation) outside the corpus. <code>UPGRADE_SECTIONS</code> names the subset the
+advisory reads; <code>PROSE_SECTIONS</code> is everything searchable in the Notes tab.</p>
 <p>The issue sections are two-column <code>Bug ID</code> / <code>Description</code> tables (a known issue
 often embeds a <code>Workaround:</code> — split into its own field). The pages are served
 <strong>server-side</strong> (no JS), so a plain <code>httpx</code> GET works headless; a <strong>Firecrawl</strong>
@@ -146,14 +183,53 @@ transport (self-hosted LAN or cloud) is available as a fallback.</p>
 <strong>Known → Resolved</strong> across versions, so "what does upgrading current → target
 fix / leave open" is a pure diff over this data.</p>
 </blockquote>
-<h3 id="coverage-limitation">Coverage / limitation</h3>
-<p>Only pages that carry the MadCap <code>mc-main-content</code> article are harvested
-(<code>has_release_content</code>). <strong>Older maintenance releases</strong> whose section ids drifted
-resolve to a 200 <em>landing</em> (just the version-switcher chrome) — those are skipped
-so nothing bogus is stored. In practice the harvested range is the recent,
-upgrade-relevant releases (validated: FortiWeb <strong>7.6.5–7.6.9</strong> and <strong>8.0.2–8.0.5</strong>,
-181 issues / 36 sections as of 2026-06). Versions that don't publish parseable web
-release notes simply have no data (better than garbage).</p>
+<h3 id="two-renderers-and-the-three-states-a-page-can-be-in">Two renderers, and the three states a page can be in</h3>
+<p>Fortinet changed renderer mid-docset. FortiWeb <strong>up to 8.0.6</strong> (and all of
+FortiADC) is MadCap — the article sits in <code>id="mc-main-content"</code>. FortiWeb <strong>from
+8.0.7</strong> is a markdown pipeline: no MadCap container, no HTML tables on some
+pages, and the whole article repeated a second time inside a <code>mobile-content</code>
+wrapper. <code>has_release_content()</code> recognises both containers; <code>_main_content()</code>
+closes the src-md slice on <code>mobile-content</code> / <code>thin-footer</code>, because a slice that
+runs to the end of the document harvests every row twice.</p>
+<p>Every page therefore falls into exactly one of three states, and the second one
+is the whole reason this section exists:</p>
+<table>
+<thead>
+<tr>
+<th>state</th>
+<th>how it is recognised</th>
+<th>scanner behaviour</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>absent</strong></td>
+<td>no <code>document-content src-XX</code> wrapper at all — a 200 landing of pure chrome (~442 KB)</td>
+<td>skipped, silently. The only branch allowed to be quiet.</td>
+</tr>
+<tr>
+<td><strong>unreadable</strong></td>
+<td>an article is present but the parser produced nothing</td>
+<td>recorded in <code>ReleaseNotesDB.unreadable</code>, logged <code>✗ … UNREADABLE</code>, surfaced in the scan result and as a <strong>warning</strong> bell</td>
+</tr>
+<tr>
+<td><strong>read</strong></td>
+<td>parsed</td>
+<td>stored</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>Why this matters.</strong> Before 2026-09-13 the scanner collapsed <em>unreadable</em> into
+<em>absent</em>: any page it could not parse was <code>continue</code>d. When 8.0.7 switched
+renderer, every scan finished green, the log said <em>"8.0.7 — no release notes
+found"</em>, and the corpus silently stopped two releases short — including the
+release whose <em>Supported upgrade paths</em> announces a mandatory intermediate hop.
+A scan that could not read a published page now never lights a success bell.</p>
+</blockquote>
+<p>An issues page that is <em>genuinely</em> empty says so in prose ("There are no known
+issues in version 8.0.7"); <code>declares_no_issues()</code> recognises that statement, so an
+empty table and an unreadable table are no longer the same observation.</p>
 <h2 id="2-topics-curated">2. Topics (curated)</h2>
 <p>Issues have <strong>no</strong> category column upstream, so each is tagged with a <strong>curated</strong>
 topic by a deterministic, offline keyword classifier (<code>TOPIC_RULES</code> /
@@ -169,18 +245,48 @@ never breaks the UI.</p>
 <ul>
 <li><strong>Issues</strong> — filter by version / status (known·resolved) / topic / keyword;
   double-click a row for the full description + workaround + the source link.</li>
-<li><strong>Upgrade advisor</strong> — pick <strong>current → target</strong>: the issues <em>resolved in the
-  range</em> (gained), the issues <em>still known in the target</em> (inherited), and the
-  upgrade-notes prose (<code>GET /release-notes/advise?current=…&amp;target=…</code> →
-  <code>services.release_notes.advise</code>).</li>
+<li><strong>Upgrade advisor</strong> — pick <strong>current → target</strong>. Two answers, stacked, and
+  they are different KINDS of answer:</li>
+<li><strong>Scout advisory</strong> (top) — the verdicts: what will block or complicate this
+    window, each with the vendor's sentence attached. See §7.</li>
+<li>the bug diff (below) — issues <em>resolved in the range</em> (gained), issues
+    <em>still known in the target</em> (inherited), and the upgrade-notes prose
+    (<code>GET /release-notes/advise?current=…&amp;target=…</code> →
+    <code>services.release_notes.advise</code>).</li>
 <li><strong>Notes</strong> — full-text search the prose sections (What's new / Upgrade notes / …).</li>
 </ul>
 <h3 id="scan-from-fortinet">🔎 Scan from Fortinet</h3>
-<p>Auto-discovers every version from the docs site and harvests the selected
-<code>major.minor</code> families, merging them into <code>reports/_release_notes.json</code>.
-<strong>No appliance needed</strong> — it reads the public docs directly with a Firecrawl
-fallback (both transports on by default). Optionally publishes to git (multiuser-
-safe, like the inspector reports). Admin only (<code>USER_MANAGE</code>).</p>
+<p><strong>Discover first, then tick.</strong> Opening the scan panel fetches the version list
+(one page fetch, ~1 s) and renders it as checkboxes grouped by line, with the
+versions missing from the corpus <strong>pre-ticked</strong>. Only the ticked versions are
+scanned, verbatim — discovery is a suggestion, the ticks are the order.</p>
+<p>This replaced a free-text <code>major.minor</code> box sitting next to an "All discovered"
+checkbox, and it fixed two defects at once:</p>
+<ol>
+<li>the box could not express a single maintenance release — the filter matched on
+   <code>major.minor</code>, so typing <code>8.0.7</code> matched nothing and the scan died with <em>"No
+   versions matched"</em>;</li>
+<li>the checkbox <strong>silently overrode</strong> the box. On 2026-09-13 an operator with
+   <code>8.0</code> typed in the box got all 59 versions harvested, and nothing anywhere
+   said which of the two controls had decided.</li>
+</ol>
+<p>The endpoint still accepts the legacy <code>majors</code> / <code>all</code> filter for scripted use,
+but a request that sends a contradiction (<code>all</code> <strong>and</strong> <code>majors</code>, or <code>versions</code>
+<strong>and</strong> either) is now refused with 400 instead of resolving itself.</p>
+<p><strong>No appliance needed</strong> — it reads the public docs directly with a Firecrawl
+fallback (both transports on by default). Admin only (<code>USER_MANAGE</code>).</p>
+<blockquote>
+<p>⚠ <strong><code>Publish to git</code> cannot work, and has not since 2026-08-05.</strong> The corpus
+lives at <code>reports/_release_notes.json</code>, <code>reports/</code> is a symlink to
+<code>data/reports</code>, and <code>/reports</code> is in <code>.gitignore</code> — the git source-of-truth was
+retired that day on volume grounds (see the metrics-architecture note). The
+checkbox is still ticked by default and every scan logs
+<em>"(git publish reported an issue — corpus saved locally)"</em>. <code>⤓ Sync from git</code>
+has the same problem from the other end: it pulls code, and the corpus is not
+in the pull. Each node harvests its own copy; the standby receives it through
+<code>satom-ha-datasync</code>, not through git. <strong>Fixing the two controls to say so is an
+open decision, not a done change.</strong></p>
+</blockquote>
 <p><code>⤓ Sync from git</code> (<code>POST /release-notes/sync</code>) pulls the shared reference and
 re-reads it, so a fresh clone that pulled the JSON is current on first open.</p>
 <h2 id="4-data-model">4. Data model</h2>
@@ -200,22 +306,78 @@ modal as <code>GET /release-notes/advise?current=…&amp;target=…</code>.</p>
 <h2 id="5-running-a-scan-there-is-no-cli">5. Running a scan (there is no CLI)</h2>
 <p>The harvest runs <strong>in the app</strong>, as a background thread behind the modal's
 🔎 <strong>Scan from Fortinet</strong> button (<code>_do_scan</code> in <code>app/views/release_notes.py</code>):</p>
-<pre><code class="language-http">POST /release-notes/scan
-{&quot;majors&quot;: &quot;7.6,8.0&quot;, &quot;all&quot;: false, &quot;use_direct&quot;: true,
- &quot;use_firecrawl&quot;: true, &quot;firecrawl_endpoint&quot;: &quot;http://{ip}:3002&quot;,
- &quot;publish&quot;: true}
+<pre><code class="language-http">POST /release-notes/discover      → {versions:[{version,major,in_corpus}], count, new}
+{&quot;use_direct&quot;: true, &quot;use_firecrawl&quot;: true}
+
+POST /release-notes/scan          → 202 {started:true}
+{&quot;versions&quot;: [&quot;8.0.7&quot;], &quot;use_direct&quot;: true, &quot;publish&quot;: false}
 
 GET  /release-notes/scan/status   → {running, lines[], result, error}
 POST /release-notes/sync          → git pull + re-read the shared corpus
 </code></pre>
-<p><code>majors</code> defaults to <code>7.0,7.2,7.4,7.6,8.0</code>; <code>all</code> harvests everything the docs
-site lists (slow). The worker writes <code>reports/_release_notes.json</code> and, with
-<code>publish</code>, commits it through <code>services/git_service.git_publish</code> so the team
-shares one corpus.</p>
-<h2 id="6-tests">6. Tests</h2>
-<p><code>tests/test_release_notes.py</code> — HTML-fixture parsing, the content guard, the
-curated topic classifier, <code>version_key</code> ordering, the scan (fake fetcher), merge,
-the advisory diff, and the store projection + range queries (no network, no Qt).</p>
+<p><code>result</code> now carries <code>unreadable[]</code> — the <code>(version, section)</code> pairs that were
+published and could not be parsed. <strong>A non-empty <code>unreadable</code> means the corpus is
+incomplete</strong>, and the UI says so instead of "done".</p>
+<p>Legacy selection (still accepted, one filter at a time): <code>{"majors": "7.6,8.0"}</code>
+or <code>{"all": true}</code>. <code>majors</code> defaults to <code>7.0,7.2,7.4,7.6,8.0</code>.</p>
+<h2 id="6-scout-advisory-servicesrelease_advisorpy">6. Scout Advisory (<code>services/release_advisor.py</code>)</h2>
+<p><code>GET /release-notes/advisory?current=…&amp;target=…</code> → an <code>Advisory</code>:</p>
+<pre><code>verdict        blocker | caution | clear | unknown
+findings[]     {rule, severity, title, detail, evidence, version, section,
+                source_url, data}
+path[]         the required hop sequence, when one was stated
+gaps[]         the (version, section) pairs the advisory NEEDED and does not have
+read[]         the coverage it did have
+rules_digest   a seal over the rules' own source
+</code></pre>
+<p><code>detail</code> is our instruction; <code>evidence</code> is the vendor's sentence <strong>verbatim</strong>. A
+rule that paraphrases a prerequisite and gets it slightly wrong is worse than no
+rule, because it is believed.</p>
+<p><strong>The case it was built for.</strong> FortiWeb 8.0.7 is a maintenance release whose
+<em>Supported upgrade paths</em> states that anything at 7.6.1 or lower must land on
+7.6.2 first, and that 7.6.2 expands the partition and needs 1.5 GB free on the log
+disk. Both sentences sit inside a 13 000-character page — which is exactly the
+page an operator skims when the version number ends in <code>.7</code>.</p>
+<p>Three rules of the house, carried over from Scout's ladder:</p>
+<ul>
+<li><strong>Absence is never innocence.</strong> Missing coverage yields <code>unknown</code>, never
+  <code>clear</code>, and the gaps are named. A gap says WHICH kind it is: a version nobody
+  harvested, or a version harvested before these sections were collected (which
+  is fixed by scanning it again).</li>
+<li><strong>The criteria are not editable.</strong> <code>RULES</code> is the single author of every
+  verdict and <code>rules_digest()</code> hashes the rules' own source onto the report, so an
+  archived advisory names the rule set that produced it. An editable threshold
+  would make a second author of a verdict nobody can reproduce.</li>
+<li><strong>A catch-all beats a complete list.</strong> <code>vendor-marked</code> carries through every
+  block Fortinet themselves flagged <em>Caution</em> / <em>Warning</em>, so prose no tailored
+  rule understands still reaches the operator — with no verdict attached and no
+  pretence of one. Where a tailored rule already cites the same block, the
+  catch-all copy is dropped: printed twice, the weaker one sits under an
+  instruction that already said what to do.</li>
+</ul>
+<p>Rules are direction-aware: an upgrade advisory never quotes the <em>Downgrading</em>
+page, and a rollback advisory never quotes <em>Supported upgrade paths</em>.</p>
+<h3 id="switching-it-off">Switching it off</h3>
+<p><code>scout.enabled</code> (Settings → Scout → <strong>Availability</strong>, and the switch beside the
+advisory in the modal — <strong>the same flag</strong>, not a second one). Off is enforced on
+the <strong>blueprint</strong>: hiding a nav entry closes nothing, because the URL, the
+bookmark and the link in a ticket all still work. <code>/scout/*</code> answers <strong>503</strong>, not
+404 — "switched off" and "does not exist" are different answers to the operator's
+next question — and the menu entry stays visible but disabled with the reason,
+because an absent entry reads as a product that never had the feature.</p>
+<h2 id="7-tests">7. Tests</h2>
+<ul>
+<li><code>tests/test_release_notes.py</code> — HTML-fixture parsing, the content guard, the
+  curated topic classifier, <code>version_key</code> ordering, the scan (fake fetcher),
+  merge, the advisory diff, and the store projection + range queries.</li>
+<li><code>tests/test_release_notes_docsets.py</code> — the two renderers, the mobile-duplicate
+  slice, the absent/unreadable/read trichotomy, the whole upgrade branch, and the
+  selection routes (discover, explicit ticks, the refused contradiction).</li>
+<li><code>tests/test_release_advisor.py</code> — the rules, driven over VERBATIM vendor prose;
+  gating, collapsing, scope, coverage and the seal.</li>
+<li><code>tests/test_scout_switch.py</code> — the switch, enforced on the route.</li>
+</ul>
+<p>No network in any of them.</p>
     </div>
   </div>
 </section>

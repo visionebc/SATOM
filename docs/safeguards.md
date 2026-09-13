@@ -14120,6 +14120,96 @@ passes against a form somebody emptied.
   the new guard duplicated it with a file allowlist; it was deleted.
 
 
+## §165 — a renderer change that read as an empty release, and two controls that disagreed in silence (2026-09-13)
+
+**Guards:** `tests/test_release_notes_docsets.py` (24), `tests/test_release_advisor.py`
+(34), `tests/test_scout_switch.py` (16). 38 mutations driven.
+
+Three failures in one feature, and all three produced output that looks exactly
+like a correct run.
+
+### 1. The scanner could not tell "not published" from "I could not read it"
+
+Fortinet re-rendered the FortiWeb release notes between 8.0.6 and 8.0.7: MadCap
+(`id="mc-main-content"`) became a markdown pipeline (`document-content src-md`).
+`has_release_content()` looked for the MadCap container, did not find it, and the
+scanner did what it had always done with a page it could not parse — `continue`.
+
+Every scan afterwards finished green. The progress log said `· 8.0.7 — no release
+notes found`, which is the same line a version that publishes nothing produces.
+The corpus stopped two releases short for **two months**, and the release it
+stopped short of is the one whose *Supported upgrade paths* announces a mandatory
+intermediate hop.
+
+**The discriminator was measurable and nobody had looked for it.** A version that
+was never published resolves to a 200 landing of ~442 KB with **zero**
+`document-content` wrappers. A version that IS published always has one, in either
+renderer. So `has_article()` and `has_release_content()` are now two different
+questions, and their difference — published but unreadable — is a recorded,
+announced, bell-raising state rather than a `continue`.
+
+`has_article()` is deliberately `has_release_content() or <generic wrapper>` and
+not the wrapper alone: recognising a container **is** proof there is an article,
+and making the generic wrapper the sole evidence would skip a page we parse
+perfectly well, in silence, the day Fortinet drop it. The same bug, mirrored.
+
+Two more traps in the same state machine:
+
+- **an empty table and an unreadable table.** 8.0.7 genuinely has no known issues
+  and says so in prose. Without `declares_no_issues()`, "the table is empty" and
+  "I could not read the table" are one observation, and one of them is a broken
+  parser. The guard holds both directions: the vendor's sentence present → a
+  successful empty read; absent → unreadable.
+- **the article rendered twice.** The src-md pages repeat the whole article inside
+  a `mobile-content` wrapper. A slice that runs to the end of the document
+  harvests every row and paragraph twice — and a doubled corpus reads like a
+  correct one.
+
+### 2. Two controls for one decision, resolving themselves
+
+The scan panel had a free-text `major.minor` box next to an "All discovered"
+checkbox. Measured from the live scan log of 2026-09-13 21:18: `Harvesting 59
+version(s)` with `8.0` typed in the box. The checkbox won and nothing said so.
+
+The box was also incapable of the thing it looked capable of: the filter matched
+on `major.minor`, so typing a full version matched nothing and the scan died with
+*"No versions matched"* — the one selection an operator most often wants.
+
+Replaced by a discovered, tickable list (`POST /release-notes/discover`, one page
+fetch) with the missing versions pre-ticked, and the explicit list is scanned
+**verbatim** — nothing re-derives it. The legacy filter still works for scripted
+callers, but a contradictory request is now a 400. *A contradiction that fails to
+submit beats a contradiction that resolves itself.*
+
+Discovery returning `[]` is a **502**, not an empty picker: an empty list with a
+green tick reads as "Fortinet publish no versions", and it means we could not ask.
+
+### 3. A verdict with no seal, and a switch that only hid a menu
+
+The advisory (`services/release_advisor.py`) is a judgement, so it carries a
+digest **hashed from the rules' own source** — not a hand-bumped version string,
+which is a seal that silently stops sealing. A threshold edited inside a rule
+changes the digest in the same commit.
+
+`evidence` is verbatim and `detail` is ours, and they are never mixed. `path` is
+built from `Finding.data["hop"]`, never re-parsed out of our own sentence: a route
+an operator follows must not be tied to the wording of a caption.
+
+`scout.enabled` is enforced with a `before_request` on the blueprint. A flag that
+only hides a nav entry switches nothing off — the URL, the bookmark and the link
+in a ticket all still walk the ladder, so the administrator believes they closed
+something they did not. Off answers 503 (not 404), and the menu entry stays
+visible but disabled with the reason: an absent entry reads as a product that
+never had the feature, and sends the operator looking for an installer.
+
+### What the OUTPUT showed and no assertion did
+
+The rule suite passed on its first run, and reading its printout found four real
+defects: the catch-all reprinting a block a tailored rule had already turned into
+an instruction; the example upgrade path drawn once per version crossed; the same
+rollback trap stated twice with slightly different wording; and an upgrade
+advisory quoting the *Downgrading* page. **A green suite is not a read output.**
+
 ## §164 — a picker that quietly narrows what may be walked (2026-09-10)
 
 **Guards:** `tests/test_scout_objects.py` (63 guards), plus the extended identity in

@@ -256,7 +256,7 @@ def test_scan_gate_readonly_403_admin_202(app, client, monkeypatch):
 
     login(client, _admin(app))
     r = client.post("/release-notes/scan",
-                    json={"all": True, "use_direct": True, "publish": False})
+                    json={"all": True, "use_direct": True})
     assert r.status_code == 202
 
     # poll status until the background thread finishes
@@ -279,7 +279,7 @@ def test_scan_writes_bell_notification(app, client, monkeypatch):
 
     login(client, _admin(app))
     r = client.post("/release-notes/scan",
-                    json={"all": True, "use_direct": True, "publish": False})
+                    json={"all": True, "use_direct": True})
     assert r.status_code == 202
     for _ in range(50):
         if not client.get("/release-notes/scan/status").get_json().get("running"):
@@ -299,10 +299,16 @@ def test_scan_writes_bell_notification(app, client, monkeypatch):
     assert d["count"] >= 1
 
 
-def test_sync_route(app, client):
+def test_reload_route(app, client):
+    """Was ``test_sync_route``. ``/sync`` ran ``git pull`` over the running code
+    tree for a VIEW user and then reported the LOCAL file's counts as if they
+    had come from git; it is ``/reload`` now, and it only re-reads disk. The
+    behaviour that this test always actually verified — the counts — is
+    unchanged. Full rationale + the negative guards: test_release_notes_nogit.py
+    """
     _seed(app, rn.scan_release_notes(_fake_fetch, ["8.0.5"]))
     login(client, _viewer(app))
-    d = client.post("/release-notes/sync").get_json()
+    d = client.post("/release-notes/reload").get_json()
     assert d["counts"]["issues"] == 3
 
 
@@ -324,6 +330,6 @@ def test_release_notes_reachable_in_fortiadc_adom(app, client, monkeypatch):
     # and the scan endpoint itself must be reachable (202 start / 409 busy), not 302
     r = client.post("/release-notes/scan",
                     json={"all": False, "majors": "8.0",
-                          "use_direct": True, "publish": False},
+                          "use_direct": True},
                     headers={"X-ADOM": "fortiadc"})
     assert r.status_code in (202, 409), f"scan gated out of ADC ADOM: {r.status_code}"

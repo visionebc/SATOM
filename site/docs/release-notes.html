@@ -76,9 +76,11 @@ sections) across firmware versions, harvested from <code>docs.fortinet.com</code
 <em>gain</em> (issues fixed) and <em>inherit</em> (issues still open).</p>
 <ul>
 <li><strong>Service:</strong> <code>app/services/release_notes.py</code> (pure — no Qt, no DB)</li>
-<li><strong>Store:</strong> the git-shared JSON corpus <code>reports/_release_notes.json</code> — read
-  with <code>load_db()</code>, merged with <code>merge_db()</code>, written with <code>save_db()</code>. There
-  are <strong>no</strong> release-notes DB tables.</li>
+<li><strong>Store:</strong> the JSON corpus <code>reports/_release_notes.json</code> — read with
+  <code>load_db()</code>, merged with <code>merge_db()</code>, written with <code>save_db()</code>. There are
+  <strong>no</strong> release-notes DB tables. <code>reports/</code> is a <strong>symlink into the gitignored
+  <code>data/reports/</code></strong>: the corpus is local to each node and reaches the standby
+  through <code>satom-ha-datasync</code>, never through git (§3).</li>
 <li><strong>UI:</strong> account menu (top right) → <strong>Release Notes</strong> — a modal
   (<code>app/templates/partials/release_notes_modal.html</code>,
   <code>app/static/js/release_notes.js</code>) served by <code>app/views/release_notes.py</code>
@@ -275,20 +277,34 @@ but a request that sends a contradiction (<code>all</code> <strong>and</strong> 
 <strong>and</strong> either) is now refused with 400 instead of resolving itself.</p>
 <p><strong>No appliance needed</strong> — it reads the public docs directly with a Firecrawl
 fallback (both transports on by default). Admin only (<code>USER_MANAGE</code>).</p>
-<blockquote>
-<p>⚠ <strong><code>Publish to git</code> cannot work, and has not since 2026-08-05.</strong> The corpus
-lives at <code>reports/_release_notes.json</code>, <code>reports/</code> is a symlink to
-<code>data/reports</code>, and <code>/reports</code> is in <code>.gitignore</code> — the git source-of-truth was
-retired that day on volume grounds (see the metrics-architecture note). The
-checkbox is still ticked by default and every scan logs
-<em>"(git publish reported an issue — corpus saved locally)"</em>. <code>⤓ Sync from git</code>
-has the same problem from the other end: it pulls code, and the corpus is not
-in the pull. Each node harvests its own copy; the standby receives it through
-<code>satom-ha-datasync</code>, not through git. <strong>Fixing the two controls to say so is an
-open decision, not a done change.</strong></p>
-</blockquote>
-<p><code>⤓ Sync from git</code> (<code>POST /release-notes/sync</code>) pulls the shared reference and
-re-reads it, so a fresh clone that pulled the JSON is current on first open.</p>
+<h3 id="the-two-git-controls-were-removed-on-2026-09-14">The two git controls were removed on 2026-09-14</h3>
+<p><code>Publish to git</code> (a checkbox on the scan panel) and <code>⤓ Sync from git</code> (a button
+in the modal header) are <strong>gone</strong>, along with <code>POST /release-notes/sync</code>. Three
+separate defects, one removal:</p>
+<ol>
+<li><strong>Neither could move the corpus.</strong> <code>reports/</code> is a symlink into the
+   gitignored <code>data/reports/</code>; git refuses a path under it outright —
+   <code>fatal: pathspec '…' is beyond a symbolic link</code>. True since the git
+   source-of-truth was retired on 2026-08-05 on volume grounds (see the
+   metrics-architecture note), so <strong>every scan since then logged</strong>
+   <em>"(git publish reported an issue — corpus saved locally)"</em>.</li>
+<li><strong><code>/sync</code> ran <code>git pull</code> over the running code tree, for <code>VIEW</code>.</strong> The same
+   operation is gated behind <code>USER_MANAGE</code> in <code>settings.git_pull</code> and is owned
+   by <code>satom-reconciler</code>. A read-only user could move the application's code
+   out from under the workers. This is why the endpoint was deleted rather
+   than hidden — a hidden button keeps its URL.</li>
+<li><strong>The success message was false either way.</strong> <code>_load()</code> re-reads the JSON on
+   every request, so <em>"Ingested N issues … from the shared reference"</em> always
+   described the local file. Nothing was ever ingested from anywhere.</li>
+</ol>
+<p>In their place, <strong>⟳ Reload corpus</strong> (<code>POST /release-notes/reload</code>, any logged-in
+user) re-reads the JSON from disk and reports <strong>where from</strong> (<code>source</code>) and
+<strong>how old</strong> (<code>generated_at</code>) — which is what the button was reaching for: the
+counts on screen go stale while another gunicorn worker finishes a scan, or
+while <code>satom-ha-datasync</code> drops a fresher corpus in.</p>
+<p><strong>Sharing between nodes is data replication, not git.</strong> The primary harvests;
+<code>satom-ha-datasync</code> carries <code>data/</code> to the standby within 5 minutes. A separate
+installation harvests its own. Guards: <code>tests/test_release_notes_nogit.py</code>.</p>
 <h2 id="4-data-model">4. Data model</h2>
 <p><code>ReleaseIssue(product, version, status, bug_id, description, workaround, topic,
 source_url)</code> and <code>ReleaseSection(product, version, section, title, content,
@@ -310,10 +326,11 @@ modal as <code>GET /release-notes/advise?current=…&amp;target=…</code>.</p>
 {&quot;use_direct&quot;: true, &quot;use_firecrawl&quot;: true}
 
 POST /release-notes/scan          → 202 {started:true}
-{&quot;versions&quot;: [&quot;8.0.7&quot;], &quot;use_direct&quot;: true, &quot;publish&quot;: false}
+{&quot;versions&quot;: [&quot;8.0.7&quot;], &quot;use_direct&quot;: true}
 
 GET  /release-notes/scan/status   → {running, lines[], result, error}
-POST /release-notes/sync          → git pull + re-read the shared corpus
+POST /release-notes/reload        → {counts, message, source, generated_at}
+                                    re-reads the corpus from disk; no git
 </code></pre>
 <p><code>result</code> now carries <code>unreadable[]</code> — the <code>(version, section)</code> pairs that were
 published and could not be parsed. <strong>A non-empty <code>unreadable</code> means the corpus is

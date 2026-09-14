@@ -1,7 +1,7 @@
 /* ============================================================
    SATOM — release_notes.js
    Top-banner Release Notes modal. Same logic as the desktop page:
-   Scan from Fortinet / Sync from git + Issues / Upgrade advisor / Notes.
+   Scan from Fortinet / Reload corpus + Issues / Upgrade advisor / Notes.
    Backend: app/views/release_notes.py
    ============================================================ */
 'use strict';
@@ -50,7 +50,7 @@
   const STATUS_LABEL = { known: 'Known', resolved: 'Resolved' };
   const STATUS_BADGE = { known: 'text-warning', resolved: 'text-success' };
 
-  // ---- data load (first paint + after scan/sync) ----
+  // ---- data load (first paint + after scan/reload) ----
   async function loadData() {
     let d;
     try { d = await get(`${BASE}/data`); }
@@ -68,7 +68,7 @@
     } else {
       $('rnStatus').innerHTML = d.is_admin
         ? 'No release-notes data yet — click <b>Scan from Fortinet</b> to harvest it.'
-        : 'No release-notes data yet — ask an admin to run a scan, or click <b>Sync from git</b>.';
+        : 'No release-notes data yet — ask an admin to run a scan on this node.';
     }
 
     fillSelect($('rnIssueVersion'), d.versions, { firstLabel: '(all versions)' });
@@ -312,18 +312,18 @@
     }).join('');
   }
 
-  // ---- Sync from git ----
-  async function syncFromGit() {
-    const btn = $('rnSyncBtn');
+  // ---- Reload corpus (was 'Sync from git' — see views/release_notes.py) ----
+  async function reloadCorpus() {
+    const btn = $('rnReloadBtn');
     btn.disabled = true;
     const old = btn.innerHTML;
-    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Syncing…';
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Reloading…';
     try {
-      const d = await post(`${BASE}/sync`);
-      window.FW?.toast?.(d.message, 'info');
+      const d = await post(`${BASE}/reload`);
+      window.FW?.toast?.(d.message, d.counts && d.counts.issues ? 'info' : 'warning');
       await loadData();
     } catch (e) {
-      window.FW?.toast?.('Sync failed: ' + e.message, 'danger');
+      window.FW?.toast?.('Reload failed: ' + e.message, 'danger');
     } finally {
       btn.disabled = false; btn.innerHTML = old;
     }
@@ -465,7 +465,6 @@
     const body = {
       versions: picked,
       ...transports(),
-      publish: $('rnPublish').checked,
     };
     const out = $('rnScanOut');
     if (out) { out.classList.remove('d-none'); out.textContent = 'Starting…'; }
@@ -497,7 +496,7 @@
   $('rnNoteVersion').addEventListener('change', searchNotes);
   $('rnNoteSection').addEventListener('change', searchNotes);
   $('rnNoteQuery').addEventListener('input', debounce(searchNotes, 300));
-  $('rnSyncBtn').addEventListener('click', syncFromGit);
+  $('rnReloadBtn').addEventListener('click', reloadCorpus);
 
   const scanToggle = $('rnScanToggle');
   if (scanToggle) scanToggle.addEventListener('click', () => {

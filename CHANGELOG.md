@@ -6,6 +6,34 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Removed — the two git controls in the Release Notes modal (2026-09-14)
+
+`Publish to git` (scan panel) and `⤓ Sync from git` (modal header) are gone, and
+so is `POST /release-notes/sync`. Three defects, one removal — and only the first
+was visible:
+
+1. **Neither could move the corpus, and had not since 2026-08-05.** `reports/` is
+   a symlink into the gitignored `data/reports/`; git refuses a path under it
+   outright (`fatal: pathspec '…' is beyond a symbolic link`). Every scan since
+   the git source-of-truth was retired logged *"(git publish reported an issue —
+   corpus saved locally)"*.
+2. **`/sync` ran `git pull` over the running code tree for any `VIEW` user.** The
+   identical operation is gated behind `USER_MANAGE` in `settings.git_pull` and
+   belongs to `satom-reconciler`. A read-only account could move the
+   application's code out from under the workers. The endpoint was therefore
+   **deleted, not hidden** — hiding a button keeps its URL.
+3. **Its answer was false either way.** The corpus is re-read on every request,
+   so *"Ingested N issues … from the shared reference"* always described the
+   local file.
+
+In their place, **⟳ Reload corpus** (`POST /release-notes/reload`) re-reads the
+JSON from disk and reports **where from** and **how old** — the two facts the old
+button owed you, and the real need behind it: the counts go stale while another
+worker finishes a scan, or while `satom-ha-datasync` drops a fresher corpus in.
+A legacy client still posting `publish: true` is ignored rather than refused;
+failing a valid scan over a dead flag would trade a cosmetic staleness for an
+outage. Sharing between nodes is data replication, never git.
+
 ### Fixed — a renderer change on docs.fortinet.com read as "this version has no release notes" (2026-09-13)
 
 Fortinet re-rendered the FortiWeb release notes between **8.0.6** and **8.0.7**:

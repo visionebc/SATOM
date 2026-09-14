@@ -9,13 +9,12 @@ Two buttons + three tabs, exactly like the standalone:
 
 * **🔎 Scan from Fortinet** — auto-discover every FortiWeb version from
   docs.fortinet.com and harvest the Known/Resolved issue tables + the prose
-  sections into the git-shared ``reports/_release_notes.json`` (httpx direct with
-  a Firecrawl fallback). Admin-only (``USER_MANAGE``); optionally commits+pushes
-  the corpus so the team shares it. Runs in a background thread; progress is
-  written to a small status file so any of the 4 gunicorn workers can serve the
-  poll.
-* **⤓ Sync from git** — ``git pull`` then reload the corpus from disk (any
-  logged-in user).
+  sections into ``reports/_release_notes.json`` (httpx direct with a Firecrawl
+  fallback). Admin-only (``USER_MANAGE``). Runs in a background thread; progress
+  is written to a small status file so any of the 4 gunicorn workers can serve
+  the poll.
+* **⟳ Reload corpus** — re-read the JSON from disk and report its age (any
+  logged-in user). This blueprint does NOT touch git: see :func:`reload_corpus`.
 * **Issues / Upgrade advisor / Notes** — read-only queries over the corpus via
   the pure ``release_notes`` functions (``filter_issues`` / ``advise``); no SQL
   projection is needed on the web (the JSON IS the source of truth here).
@@ -62,8 +61,10 @@ def _product() -> str:
 #  Corpus helpers                                                               #
 # --------------------------------------------------------------------------- #
 def _corpus_root() -> Path:
-    """Where ``_release_notes.json`` lives. Production = the git-tracked
-    ``reports/`` dir (shared with the team). Under tests it is isolated next to
+    """Where ``_release_notes.json`` lives. Production = the ``reports/`` dir,
+    which is a symlink into the gitignored ``data/reports/`` — NOT version
+    controlled and NOT shared by git (see :func:`reload_corpus`); the standby
+    receives it through ``satom-ha-datasync``. Under tests it is isolated next to
     the throwaway SQLite DB so the suite never reads/writes the live corpus —
     same isolation trick as the firmware repository."""
     cfg = current_app.config.get("RELEASE_NOTES_DIR")
@@ -299,30 +300,52 @@ def scout_switch():
 
 
 # --------------------------------------------------------------------------- #
-#  ⤓ Sync from git                                                              #
+#  ⟳ Reload corpus (was: ⤓ Sync from git)                                       #
 # --------------------------------------------------------------------------- #
-@bp.route("/sync", methods=["POST"])
+@bp.route("/reload", methods=["POST"])
 @login_required
 @require_permission(Permission.VIEW)
-def sync():
-    log = ""
-    try:
-        from ..services.git_service import git_pull
-        log = git_pull()
-    except Exception as exc:  # noqa: BLE001 — offline / no remote is fine
-        log = f"(git pull skipped: {exc})"
+def reload_corpus():
+    """Re-read the corpus from disk and say how old it is.
+
+    This was "⤓ Sync from git" until 2026-09-14, and it was wrong three ways
+    at once — only the first of which was visible:
+
+    1. **It could not publish or pull the corpus.** ``reports/`` is a symlink
+       into ``data/reports/`` and ``/reports`` is in ``.gitignore``; git refuses
+       the path outright (``fatal: pathspec ... is beyond a symbolic link``).
+       True since the git SoT was retired on 2026-08-05.
+    2. **It ran ``git pull`` over the RUNNING code tree, for VIEW.** The same
+       operation is gated behind ``USER_MANAGE`` in ``settings.git_pull``, and
+       is owned by ``satom-reconciler``. A read-only user could move the
+       application's code out from under the workers. That is the reason this
+       route had to change even if the corpus HAD been in git.
+    3. **Its answer was false either way.** Nothing was ever 'ingested from the
+       shared reference': :func:`_load` re-reads the JSON on every request, so
+       the counts it printed were always the local file's.
+
+    What the operator actually reached for is real: the counts on screen go
+    stale while another gunicorn worker finishes a scan, or while
+    ``satom-ha-datasync`` drops a fresher corpus in. So this re-reads, and
+    names where from and how old — the two facts a "sync" button owes you."""
     db = _load()
     counts = _counts(db)
+    src = rn.db_path(_corpus_root())
     try:
-        log_action("release_notes.sync", target="git",
+        log_action("release_notes.reload", target="disk",
                    extra={"issues": counts["issues"], "sections": counts["sections"]})
     except Exception:  # noqa: BLE001
         pass
-    return jsonify({"counts": counts, "log": log,
-                    "message": (f"Ingested {counts['issues']} issues and "
-                                f"{counts['sections']} sections from the shared reference."
-                                if counts["issues"] else
-                                "No release-notes reference found in git yet. Run a scan first.")})
+    if counts["issues"]:
+        msg = (f"Reloaded {counts['issues']} issues and {counts['sections']} "
+               f"sections from disk")
+        msg += (f" (harvested {counts['generated_at']})."
+                if counts["generated_at"] else ".")
+    else:
+        msg = ("No corpus on this node yet — an admin has to run a scan here. "
+               "It is not fetched from git: each node harvests its own.")
+    return jsonify({"counts": counts, "message": msg,
+                    "source": str(src), "generated_at": counts["generated_at"]})
 
 
 # --------------------------------------------------------------------------- #
@@ -357,7 +380,7 @@ def _notify_scan_done(user_id, product, *, ok, result=None, error=None, lines=No
                     kind="error", body=(error or tail), product=product)
 
 
-def _do_scan(app, *, product, majors, use_direct, fc_endpoint, fc_key, publish,
+def _do_scan(app, *, product, majors, use_direct, fc_endpoint, fc_key,
              username, user_id, versions=None):
     with app.app_context():
         path = _scan_path()
@@ -386,20 +409,12 @@ def _do_scan(app, *, product, majors, use_direct, fc_endpoint, fc_key, publish,
             new = rn.scan_release_notes(fetch, picked, product=product, on_progress=emit)
             merged = rn.merge_db(rn.load_db(root=root), new)
             stored = rn.save_db(merged, root=root)
-            published = False
-            if publish:
-                try:
-                    from ..services.git_service import git_publish
-                    rel = os.path.relpath(str(stored), os.path.dirname(app.root_path))
-                    log = git_publish(
-                        f"chore(release-notes): scan {product} "
-                        f"{len(new.versions)} version(s) "
-                        f"({len(new.issues)} issues)", [rel])
-                    published = "fatal" not in (log or "").lower()
-                    emit("Published corpus to git." if published
-                         else "(git publish reported an issue — corpus saved locally)")
-                except Exception as exc:  # noqa: BLE001 — git is best-effort
-                    emit(f"(git publish failed: {exc})")
+            # No git leg. The corpus is not version-controlled (reports/ is a
+            # symlink into the gitignored data/reports/), so the publish this
+            # used to attempt could only ever log a failure — which is exactly
+            # what it did, on every scan, since 2026-08-05. The standby gets
+            # this file from satom-ha-datasync within 5 minutes.
+            emit(f"Corpus written to {stored}.")
             counts = _counts(merged)
             unreadable = [asdict(u) for u in new.unreadable]
             if unreadable:
@@ -409,7 +424,7 @@ def _do_scan(app, *, product, majors, use_direct, fc_endpoint, fc_key, publish,
             result = {
                 "scanned": len(new.versions), "new_issues": len(new.issues),
                 "total_issues": counts["issues"], "total_sections": counts["sections"],
-                "total_versions": counts["versions"], "published": published,
+                "total_versions": counts["versions"],
                 "unreadable": unreadable,
             }
             emit(f"✓ Scanned {len(new.versions)} version(s); {len(new.issues)} issue(s) parsed. "
@@ -506,7 +521,10 @@ def scan():
     use_fc = bool(body.get("use_firecrawl", True))
     fc_endpoint = (body.get("firecrawl_endpoint") or "").strip() if use_fc else ""
     fc_key = (body.get("firecrawl_key") or "").strip()
-    publish = bool(body.get("publish", True))
+    # NB: a legacy client may still post "publish": true. It is ignored on
+    # purpose rather than rejected — the corpus cannot be published (see
+    # reload_corpus), and failing an otherwise valid scan over a dead flag
+    # would turn a cosmetic staleness into an outage.
     if not (use_direct or fc_endpoint):
         return jsonify({"error": "Enable at least one transport (direct or Firecrawl)."}), 400
 
@@ -520,7 +538,7 @@ def scan():
         target=_do_scan, args=(app,),
         kwargs=dict(product=product, majors=majors, versions=versions,
                     use_direct=use_direct,
-                    fc_endpoint=fc_endpoint, fc_key=fc_key, publish=publish,
+                    fc_endpoint=fc_endpoint, fc_key=fc_key,
                     username=current_user.username, user_id=current_user.id),
         daemon=True)
     t.start()

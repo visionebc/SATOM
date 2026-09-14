@@ -107,6 +107,32 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="removed-the-two-git-controls-in-the-release-notes-modal-2026-09-14">Removed — the two git controls in the Release Notes modal (2026-09-14)</h3>
+<p><code>Publish to git</code> (scan panel) and <code>⤓ Sync from git</code> (modal header) are gone, and
+so is <code>POST /release-notes/sync</code>. Three defects, one removal — and only the first
+was visible:</p>
+<ol>
+<li><strong>Neither could move the corpus, and had not since 2026-08-05.</strong> <code>reports/</code> is
+   a symlink into the gitignored <code>data/reports/</code>; git refuses a path under it
+   outright (<code>fatal: pathspec '…' is beyond a symbolic link</code>). Every scan since
+   the git source-of-truth was retired logged <em>"(git publish reported an issue —
+   corpus saved locally)"</em>.</li>
+<li><strong><code>/sync</code> ran <code>git pull</code> over the running code tree for any <code>VIEW</code> user.</strong> The
+   identical operation is gated behind <code>USER_MANAGE</code> in <code>settings.git_pull</code> and
+   belongs to <code>satom-reconciler</code>. A read-only account could move the
+   application's code out from under the workers. The endpoint was therefore
+   <strong>deleted, not hidden</strong> — hiding a button keeps its URL.</li>
+<li><strong>Its answer was false either way.</strong> The corpus is re-read on every request,
+   so <em>"Ingested N issues … from the shared reference"</em> always described the
+   local file.</li>
+</ol>
+<p>In their place, <strong>⟳ Reload corpus</strong> (<code>POST /release-notes/reload</code>) re-reads the
+JSON from disk and reports <strong>where from</strong> and <strong>how old</strong> — the two facts the old
+button owed you, and the real need behind it: the counts go stale while another
+worker finishes a scan, or while <code>satom-ha-datasync</code> drops a fresher corpus in.
+A legacy client still posting <code>publish: true</code> is ignored rather than refused;
+failing a valid scan over a dead flag would trade a cosmetic staleness for an
+outage. Sharing between nodes is data replication, never git.</p>
 <h3 id="fixed-a-renderer-change-on-docsfortinetcom-read-as-this-version-has-no-release-notes-2026-09-13">Fixed — a renderer change on docs.fortinet.com read as "this version has no release notes" (2026-09-13)</h3>
 <p>Fortinet re-rendered the FortiWeb release notes between <strong>8.0.6</strong> and <strong>8.0.7</strong>:
 MadCap (<code>id="mc-main-content"</code>) became a markdown pipeline

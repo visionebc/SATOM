@@ -1,5 +1,5 @@
 {# Release Notes — top-banner modal. Same logic as the desktop Release Notes page:
-   two buttons (Scan from Fortinet / Sync from git) + three tabs (Issues / Upgrade
+   two buttons (Scan from Fortinet / Reload corpus) + three tabs (Issues / Upgrade
    advisor / Notes). Backend: app/views/release_notes.py. JS: static/js/release_notes.js #}
 <style nonce="{{ csp_nonce }}">
   /* Bigger by default + user-resizable (drag the bottom-right corner) */
@@ -50,8 +50,12 @@
             <i class="bi bi-search"></i> {{ _('Scan from Fortinet…') }}
           </button>
           {% endif %}
-          <button type="button" class="btn btn-sm btn-outline-secondary" id="rnSyncBtn">
-            <i class="bi bi-arrow-down-circle"></i> {{ _('Sync from git') }}
+          {# Was 'Sync from git'. It could not move the corpus (reports/ is a
+             symlink into the gitignored data/reports/), and what it DID do was
+             run `git pull` over the running code tree for any VIEW user. #}
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="rnReloadBtn"
+                  title="{{ _('Re-read the corpus from disk — useful while another worker is scanning.') }}">
+            <i class="bi bi-arrow-clockwise"></i> {{ _('Reload corpus') }}
           </button>
         </div>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
@@ -60,8 +64,9 @@
       <div class="modal-body">
         <p class="text-muted small">
           Search {{ product.name }} known &amp; resolved issues across versions and plan upgrades.
-          Data is harvested from docs.fortinet.com into the git-shared reference; use the
-          Upgrade advisor to diff your current firmware against a target.
+          Data is harvested from docs.fortinet.com into this node's local corpus (the standby
+          receives it by data replication, not by git); use the Upgrade advisor to diff your
+          current firmware against a target.
         </p>
         <div id="rnStatus" class="small mb-3 text-muted">{{ _('Loading…') }}</div>
 
@@ -110,16 +115,10 @@
               <input type="text" class="form-control form-control-sm" id="rnFcEndpoint"
                      placeholder="{{ _('http://192.0.2.66:3002') }}">
             </div>
-            <div class="col-md-4">
+            <div class="col-md-6">
               <label class="form-label small mb-1">{{ _('Firecrawl key (optional)') }}</label>
               <input type="password" class="form-control form-control-sm" id="rnFcKey"
                      autocomplete="off">
-            </div>
-            <div class="col-md-2">
-              <div class="form-check mt-3">
-                <input class="form-check-input" type="checkbox" id="rnPublish" checked>
-                <label class="form-check-label small" for="rnPublish">{{ _('Publish to git') }}</label>
-              </div>
             </div>
             <div class="col-12">
               <button type="button" class="btn btn-sm btn-primary" id="rnScanStart">

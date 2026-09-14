@@ -34,6 +34,7 @@ from ..models import visible_appliances, visible_appliance_or_404
 from ..registry import loader
 from ..services import adc_menu
 from ..services.audit import log_action
+from . import _clicoverage
 from . import _apiversions, _reconcile
 
 bp = Blueprint('adc_api', __name__, url_prefix='/adc/api')
@@ -79,6 +80,14 @@ def index():
         total=total,
         can_write=current_user.can('registry.execute_write'),
         **_edit_context(),
+        **_clicoverage.context(
+            'fortiadc',
+            block_endpoint='adc_api.cli_coverage_block',
+            capture_endpoint='adc_api.cli_coverage_capture',
+            live_endpoint='adc_api.cli_coverage_live',
+            page_endpoint='adc_api.index',
+            probe_endpoint='adc_api.cli_coverage_probe',
+            registry_save_endpoint='adc_api.registry_save'),
     )
 
 
@@ -254,3 +263,43 @@ def api_versions():
 @require_permission(Permission.REGISTRY_EDIT)
 def api_versions_rebuild():
     return _apiversions.rebuild_page('fortiadc', 'adc_api.api_versions')
+
+
+# ---------------------------------------------------------------------------
+# CLI ↔ API coverage (shared body — see views/_clicoverage.py)
+# ---------------------------------------------------------------------------
+# The counts and the CLI paths render with the page; these three carry
+# Permission.BACKUP because every one of them hands over device CONFIGURATION,
+# and the config vault they read from is gated on exactly that permission.
+
+@bp.route('/cli-coverage/block')
+@login_required
+@require_permission(Permission.BACKUP)
+def cli_coverage_block():
+    return _clicoverage.block_payload('fortiadc')
+
+
+@bp.route('/cli-coverage/live', methods=['POST'])
+@login_required
+@require_permission(Permission.BACKUP)
+def cli_coverage_live():
+    return _clicoverage.live_payload('fortiadc')
+
+
+@bp.route('/cli-coverage/capture', methods=['POST'])
+@login_required
+@require_permission(Permission.BACKUP)
+def cli_coverage_capture():
+    return _clicoverage.capture('fortiadc', 'adc_api.index')
+
+
+@bp.route('/cli-coverage/probe', methods=['POST'])
+@login_required
+def cli_coverage_probe():
+    """Ask the device which candidate REST path exists for a CLI-only block.
+
+    Deliberately NOT gated on Permission.BACKUP — see probe_payload: it returns
+    a verdict and a row count, and the console on this same page already lets
+    this user GET any path directly.
+    """
+    return _clicoverage.probe_payload('fortiadc')

@@ -38,6 +38,7 @@ from ..models import visible_appliances, visible_appliance_or_404
 from ..registry import loader
 from ..services import faz_menu
 from ..services.audit import log_action
+from . import _clicoverage
 
 bp = Blueprint('faz_api', __name__, url_prefix='/faz/api')
 
@@ -86,6 +87,7 @@ def index():
         verbs=_VERBS,
         can_write=current_user.can('registry.execute_write'),
         **_edit_context(),
+        **_clicoverage.context('fortianalyzer', page_endpoint='faz_api.index'),
     )
 
 

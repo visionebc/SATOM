@@ -942,6 +942,45 @@ def _selected_compatible_image(appliance, image_id):
     return FirmwareImage.query.get(iid)
 
 
+def _scout_for(appliance, image, *, asked=True, current=None):
+    """Scout's reading of installing ``image`` on ``appliance``.
+
+    The view's ONLY entry point into the advisory, so the panel rendered beside
+    the button, the panel refreshed when the image changes and the verdict
+    recorded with the flash are the same computation. Three callers building
+    their own arguments is how one of them ends up reviewing a different move
+    than the one that runs."""
+    from ..services import upgrade_scout
+    target = getattr(image, 'version', '') if image is not None else ''
+    cur = current if current is not None else (getattr(appliance, 'firmware', '') or '')
+    return upgrade_scout.review(appliance, target, cur, asked=asked)
+
+
+@bp.route('/<int:id>/upgrade/advisory')
+@login_required
+@require_permission(Permission.CONFIG_WRITE)
+@require_device_scope
+def upgrade_advisory(id):
+    """Scout's panel for ONE candidate image, as an HTML fragment.
+
+    Same permission and same device scope as the page that embeds it — a review
+    of a firmware move names the appliance, its running version and the vendor's
+    warnings about it, so widening the gate here would leak through a fragment
+    what the page itself refuses to show.
+
+    HTML, not JSON, on purpose: the findings carry vendor prose verbatim, and
+    the fragment puts every one of them through the template's autoescape. A
+    JSON feed would need a second renderer in JavaScript and hand it the same
+    strings unescaped."""
+    appliance, _ = _fortiweb_or_404(id)
+    if appliance is None:
+        abort(404)
+    image = _selected_compatible_image(appliance, request.args.get('image_id'))
+    asked = (request.args.get('scout_check') or 'on') in ('on', '1', 'true')
+    return render_template('appliances/_scout_advisory.html', appliance=appliance,
+                           scout=_scout_for(appliance, image, asked=asked))
+
+
 @bp.route('/<int:id>/upgrade')
 @login_required
 @require_permission(Permission.CONFIG_WRITE)
@@ -960,9 +999,15 @@ def upgrade(id):
     images = upg.compatible_images(appliance)
     from ..services import prep_store
     cr, cr_ok, cr_reason = _upgrade_authorization(appliance)
+    # The panel is rendered for images[0] because that is the option the picker
+    # has selected on arrival — reviewing anything else would put a verdict for
+    # one version next to a button that flashes another. JS re-fetches it on
+    # change; with JS off the page still carries a real review of what will post.
+    scout = _scout_for(appliance, images[0] if images else None, current=fw)
     return render_template('appliances/upgrade.html', appliance=appliance,
                            firmware=fw, images=images,
                            cr=cr, cr_ok=cr_ok, cr_reason=cr_reason,
+                           scout=scout,
                            prep=prep_store.latest_for(appliance.id))
 
 
@@ -983,6 +1028,21 @@ def upgrade_push(id):
         return redirect(url_for('appliances.upgrade', id=id))
     dry_run = request.form.get('dry_run') == 'on'
     confirm_maturity = request.form.get('confirm_maturity') == 'on'
+
+    # SCOUT. Runs for a dry run and for a live push alike: the dry run is where
+    # an operator decides, so withholding the vendor's warnings there would put
+    # them on the only screen nobody reads twice. It runs BEFORE the image is
+    # sent — a warning delivered after the reboot is not a warning. It is
+    # advisory and never refuses: see services/upgrade_scout.
+    scout = _scout_for(appliance, image,
+                       asked=request.form.get('scout_check') == 'on')
+    if scout.asked and scout.verdict in ('blocker', 'caution'):
+        # Recorded whether or not the operator reads the panel, so "we were told"
+        # is answerable afterwards from the audit log alone.
+        log_action('appliance.upgrade_scout', target=appliance.name,
+                   detail='%s %s -> %s (%s)' % (scout.verdict, scout.current,
+                                                scout.target,
+                                                'dry run' if dry_run else 'live'))
 
     # CHANGE CONTROL. A live flash needs an approved change request naming this
     # appliance whose maintenance window is open right now. A dry run does not:
@@ -1005,7 +1065,7 @@ def upgrade_push(id):
 
     if _wants_json():
         return _spawn_flash_job(appliance, image, 'upgrade', dry_run,
-                                confirm_maturity, cr=cr)
+                                confirm_maturity, cr=cr, scout=scout)
 
     # A live push requires typing the exact appliance name (defence against a
     # mis-click rebooting the wrong box).
@@ -1041,7 +1101,8 @@ def upgrade_push(id):
     images = upg.compatible_images(appliance)
     return render_template('appliances/upgrade.html', appliance=appliance,
                            firmware=result.get('firmware_before', ''),
-                           result=result, images=images, selected_id=image.id)
+                           result=result, images=images, selected_id=image.id,
+                           scout=scout)
 
 
 @bp.route('/<int:id>/upgrade/schedule', methods=['POST'])
@@ -1414,7 +1475,8 @@ def _flash_worker(app, job_id, appliance_id, image_id, filename,
     return None
 
 
-def _spawn_flash_job(appliance, image, kind, dry_run, confirm_maturity, cr=None):
+def _spawn_flash_job(appliance, image, kind, dry_run, confirm_maturity, cr=None,
+                     scout=None):
     """Create the background flash job and return {job_id} JSON (the toast then
     polls /jobs/<id>). Name-confirm is enforced here for the AJAX path.
 
@@ -1431,10 +1493,18 @@ def _spawn_flash_job(appliance, image, kind, dry_run, confirm_maturity, cr=None)
              else f"{verb} {appliance.name} \u2192 {image.version}")
     user_id = getattr(current_user, 'id', 0) or 0
     link = url_for(f'appliances.{kind}', id=appliance.id)
+    # Computed ONCE and used twice — stamped on the job record and echoed to the
+    # caller. The job meta is the copy that outlives the page: a flash whose
+    # advisory existed only in a browser tab leaves nobody able to answer, after
+    # the reboot, what Scout had said before it. ``summary`` carries the verdict,
+    # the counts and the reason, never the vendor prose — that is rendered
+    # server-side by the fragment route, through the template's autoescape.
+    from ..services import upgrade_scout as _us
+    scout_meta = _us.summary(scout) if scout is not None else None
     job = jobsvc.create_job(f'firmware_{kind}', title, cancelable=False,
                             by=getattr(current_user, 'username', '') or '',
                             meta={"appliance_id": appliance.id, "image_id": image.id,
-                                  "dry_run": dry_run,
+                                  "dry_run": dry_run, "scout": scout_meta,
                                   "change_request_id": (cr.id if cr is not None else None)})
     cr_id = cr.id if cr is not None else None
     jobsvc.run_async(
@@ -1444,7 +1514,7 @@ def _spawn_flash_job(appliance, image, kind, dry_run, confirm_maturity, cr=None)
             lambda: _flash_worker(app, jid, appliance.id, image.id, image.filename,
                                   dry_run, confirm_maturity, kind, user_id, link,
                                   cr_id)))
-    return jsonify({"job_id": job["id"]})
+    return jsonify({"job_id": job["id"], "scout": scout_meta})
 
 
 # -- 6. Downgrade / rollback (real in-app firmware push of an OLDER image) ----

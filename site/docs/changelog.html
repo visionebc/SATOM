@@ -107,6 +107,53 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="added-scout-reads-the-release-notes-before-the-firmware-is-sent-2026-09-14">Added — Scout reads the release notes before the firmware is sent (2026-09-14)</h3>
+<p>Asked for as <em>"cuando se actualice sería bueno que Scout, si es que está
+activado, revise si hay algún problema con la versión a la que se va que pueda
+echar a perder, como lo que vimos en la versión 8.0.7 — agrega esta sección en
+el dry-run y en el upgrade"</em>, plus an explicit opt-in checkbox.</p>
+<p>The verdicts are <strong>not new</strong>. <code>services/release_advisor</code> has answered "what will
+stop this window" over the harvested vendor prose since 2026-09-13; it simply
+lived on the Release-Notes page, four clicks from the button that reboots the
+box. Nothing was re-implemented here — a second rule set would let the screen
+read before a flash and the screen read afterwards disagree about the same
+firmware.</p>
+<ul>
+<li><strong>The panel sits with the picker.</strong> It reviews the image the select has
+  actually got selected, refreshes when that changes, and is rendered for a dry
+  run and a live push alike: the dry run is where an operator decides, so
+  withholding the vendor's warnings there puts them on the only screen nobody
+  reads twice.</li>
+<li><strong><code>GET /appliances/&lt;id&gt;/upgrade/advisory</code></strong> returns the panel as an HTML
+  fragment — same permission (<code>CONFIG_WRITE</code>) and same device scope as the page
+  that embeds it. HTML and not JSON because the findings quote vendor prose
+  verbatim, and the fragment puts every one of them through the template's
+  autoescape; a JSON feed would need a second renderer in JavaScript and hand it
+  the same strings unescaped.</li>
+<li><strong>The verdict outlives the page.</strong> It is stamped on the background flash job's
+  meta and written to the audit log (<code>appliance.upgrade_scout</code>) whenever it is a
+  blocker or a caution, so <em>"we were told"</em> is answerable after the reboot from
+  the record alone.</li>
+<li><strong>Scout advises; it does not authorise.</strong> A <code>blocker</code> does not refuse the
+  flash — change control already decides that. The advisory's own vocabulary
+  includes <code>unknown</code> for "we never harvested that page", and a gate built on it
+  would refuse upgrades over a gap in OUR corpus while looking exactly like a
+  refusal grounded in the vendor's words.</li>
+<li><strong>Nothing that did not run may look clean.</strong> Switched off, not asked,
+  unsupported product, unreadable running version, unreadable corpus — each has
+  its own named reason and reports the verdict <code>unavailable</code>, which is
+  deliberately outside the advisory's vocabulary. A corpus with no rows for the
+  move comes back <code>unknown</code> <strong>with its gaps listed</strong>, never <code>clear</code>.</li>
+</ul>
+<p>Measured against the live corpus on the primary: 7.6.8 → <strong>8.0.7</strong> returns
+<code>blocker</code> — <em>"Fortinet say do not upgrade to 8.0.7 — FortiWeb-VM Upgrade
+Limitation for FortiWeb 8.0.7"</em> — over 42 pages read and 0 gaps. The same move
+to 8.0.5 returns <code>caution</code>, and to the version already installed, "there is no
+move for Scout to review".</p>
+<p><strong>Also:</strong> the corpus loader moved out of <code>views/release_notes</code> into
+<code>services/release_corpus</code>. Two definitions of <em>where the JSON is</em> would fail
+silently — a loader pointed at an empty directory renders exactly like a corpus
+that had nothing to say.</p>
 <h3 id="added-a-change-request-can-be-corrected-while-it-is-still-open-2026-09-14">Added — A change request can be corrected while it is still open (2026-09-14)</h3>
 <p>Asked for as <em>"no puedo editar el change request, debería de poder hacerlo"</em>,
 after CR-2026-0012 sat <strong>approved and un-runnable</strong> with <code>no maintenance window</code>.</p>

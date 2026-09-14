@@ -6,6 +6,57 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — Scout reads the release notes before the firmware is sent (2026-09-14)
+
+Asked for as *"cuando se actualice sería bueno que Scout, si es que está
+activado, revise si hay algún problema con la versión a la que se va que pueda
+echar a perder, como lo que vimos en la versión 8.0.7 — agrega esta sección en
+el dry-run y en el upgrade"*, plus an explicit opt-in checkbox.
+
+The verdicts are **not new**. `services/release_advisor` has answered "what will
+stop this window" over the harvested vendor prose since 2026-09-13; it simply
+lived on the Release-Notes page, four clicks from the button that reboots the
+box. Nothing was re-implemented here — a second rule set would let the screen
+read before a flash and the screen read afterwards disagree about the same
+firmware.
+
+* **The panel sits with the picker.** It reviews the image the select has
+  actually got selected, refreshes when that changes, and is rendered for a dry
+  run and a live push alike: the dry run is where an operator decides, so
+  withholding the vendor's warnings there puts them on the only screen nobody
+  reads twice.
+* **`GET /appliances/<id>/upgrade/advisory`** returns the panel as an HTML
+  fragment — same permission (`CONFIG_WRITE`) and same device scope as the page
+  that embeds it. HTML and not JSON because the findings quote vendor prose
+  verbatim, and the fragment puts every one of them through the template's
+  autoescape; a JSON feed would need a second renderer in JavaScript and hand it
+  the same strings unescaped.
+* **The verdict outlives the page.** It is stamped on the background flash job's
+  meta and written to the audit log (`appliance.upgrade_scout`) whenever it is a
+  blocker or a caution, so *"we were told"* is answerable after the reboot from
+  the record alone.
+* **Scout advises; it does not authorise.** A `blocker` does not refuse the
+  flash — change control already decides that. The advisory's own vocabulary
+  includes `unknown` for "we never harvested that page", and a gate built on it
+  would refuse upgrades over a gap in OUR corpus while looking exactly like a
+  refusal grounded in the vendor's words.
+* **Nothing that did not run may look clean.** Switched off, not asked,
+  unsupported product, unreadable running version, unreadable corpus — each has
+  its own named reason and reports the verdict `unavailable`, which is
+  deliberately outside the advisory's vocabulary. A corpus with no rows for the
+  move comes back `unknown` **with its gaps listed**, never `clear`.
+
+Measured against the live corpus on the primary: 7.6.8 → **8.0.7** returns
+`blocker` — *"Fortinet say do not upgrade to 8.0.7 — FortiWeb-VM Upgrade
+Limitation for FortiWeb 8.0.7"* — over 42 pages read and 0 gaps. The same move
+to 8.0.5 returns `caution`, and to the version already installed, "there is no
+move for Scout to review".
+
+**Also:** the corpus loader moved out of `views/release_notes` into
+`services/release_corpus`. Two definitions of *where the JSON is* would fail
+silently — a loader pointed at an empty directory renders exactly like a corpus
+that had nothing to say.
+
 ### Added — A change request can be corrected while it is still open (2026-09-14)
 
 Asked for as *"no puedo editar el change request, debería de poder hacerlo"*,

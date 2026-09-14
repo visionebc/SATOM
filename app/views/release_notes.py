@@ -37,6 +37,7 @@ from ..auth.decorators import require_permission
 from ..models import Permission
 from ..services import release_advisor as ra
 from ..services import release_notes as rn
+from ..services import release_corpus
 from ..services import scout_config
 from ..services import notifications as notify
 from ..services.audit import log_action
@@ -61,39 +62,20 @@ def _product() -> str:
 #  Corpus helpers                                                               #
 # --------------------------------------------------------------------------- #
 def _corpus_root() -> Path:
-    """Where ``_release_notes.json`` lives. Production = the ``reports/`` dir,
-    which is a symlink into the gitignored ``data/reports/`` — NOT version
-    controlled and NOT shared by git (see :func:`reload_corpus`); the standby
-    receives it through ``satom-ha-datasync``. Under tests it is isolated next to
-    the throwaway SQLite DB so the suite never reads/writes the live corpus —
-    same isolation trick as the firmware repository."""
-    cfg = current_app.config.get("RELEASE_NOTES_DIR")
-    if cfg:
-        p = Path(cfg)
-        p.mkdir(parents=True, exist_ok=True)
-        return p
-    if current_app.config.get("TESTING"):
-        uri = current_app.config.get("SQLALCHEMY_DATABASE_URI", "") or ""
-        if uri.startswith("sqlite:///"):
-            p = Path(os.path.dirname(uri[len("sqlite:///"):])) / "reports"
-            p.mkdir(parents=True, exist_ok=True)
-            return p
-    return rn.reports_root()
+    """Where ``_release_notes.json`` lives — see :func:`app.services.release_corpus.root`.
+
+    Moved out of this view when the Upgrade page started reading the same corpus
+    to ask Scout about a firmware move. Kept as a thin alias because this module
+    already names it in several places, and because a SECOND definition of
+    "where the corpus is" fails silently: a loader pointed at an empty directory
+    renders exactly like a corpus that had nothing to say."""
+    return release_corpus.root()
 
 
 def _load(product: str | None = None) -> rn.ReleaseNotesDB:
-    """The corpus SCOPED to the active product. Issues/sections are filtered by
-    ``product`` and the version list is derived from the surviving rows (not the
-    flat cross-product ``db.versions``), so a FortiADC ADOM never sees FortiWeb
-    rows and vice-versa — even though both live in the one shared JSON."""
-    product = product or _product()
-    db = rn.load_db(root=_corpus_root()) or rn.ReleaseNotesDB(generated_at="")
-    issues = [i for i in db.issues if i.product == product]
-    sections = [s for s in db.sections if s.product == product]
-    versions = sorted({i.version for i in issues} | {s.version for s in sections},
-                      key=rn.version_key)
-    return rn.ReleaseNotesDB(generated_at=db.generated_at, versions=versions,
-                             issues=issues, sections=sections)
+    """The corpus SCOPED to the active product — see
+    :func:`app.services.release_corpus.load`."""
+    return release_corpus.load(product or _product())
 
 
 def _counts(db: rn.ReleaseNotesDB) -> dict:

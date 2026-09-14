@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Fixed — a renderer change on docs.fortinet.com read as &quot;this version has no release notes&quot; (2026-09-13) · 9 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Removed — the two git controls in the Release Notes modal (2026-09-14) · 9 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Fixed — a renderer change on docs.fortinet.com read as &quot;this version has no release notes&quot; (2026-09-13) · 9 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Removed — the two git controls in the Release Notes modal (2026-09-14) · 9 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,7 +59,7 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Fixed — a renderer change on docs.fortinet.com read as &quot;this version has no release notes&quot; (2026-09-13) · 9 entries</span>
+        <span class="rel-nav-meta">unreleased · Removed — the two git controls in the Release Notes modal (2026-09-14) · 9 entries</span>
         <ul class="rel-leads"><li>&quot;Not published&quot; and &quot;published but unreadable&quot; are now different states</li><li>Absence is never innocence</li><li>Reproducible</li><li class="rel-more">… and 6 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v2.0.0.html" data-rel-version="2.0.0">
@@ -260,6 +260,32 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
+<h3 id="removed-the-two-git-controls-in-the-release-notes-modal-2026-09-14">Removed — the two git controls in the Release Notes modal (2026-09-14)</h3>
+<p><code>Publish to git</code> (scan panel) and <code>⤓ Sync from git</code> (modal header) are gone, and
+so is <code>POST /release-notes/sync</code>. Three defects, one removal — and only the first
+was visible:</p>
+<ol>
+<li><strong>Neither could move the corpus, and had not since 2026-08-05.</strong> <code>reports/</code> is
+   a symlink into the gitignored <code>data/reports/</code>; git refuses a path under it
+   outright (<code>fatal: pathspec '…' is beyond a symbolic link</code>). Every scan since
+   the git source-of-truth was retired logged <em>"(git publish reported an issue —
+   corpus saved locally)"</em>.</li>
+<li><strong><code>/sync</code> ran <code>git pull</code> over the running code tree for any <code>VIEW</code> user.</strong> The
+   identical operation is gated behind <code>USER_MANAGE</code> in <code>settings.git_pull</code> and
+   belongs to <code>satom-reconciler</code>. A read-only account could move the
+   application's code out from under the workers. The endpoint was therefore
+   <strong>deleted, not hidden</strong> — hiding a button keeps its URL.</li>
+<li><strong>Its answer was false either way.</strong> The corpus is re-read on every request,
+   so <em>"Ingested N issues … from the shared reference"</em> always described the
+   local file.</li>
+</ol>
+<p>In their place, <strong>⟳ Reload corpus</strong> (<code>POST /release-notes/reload</code>) re-reads the
+JSON from disk and reports <strong>where from</strong> and <strong>how old</strong> — the two facts the old
+button owed you, and the real need behind it: the counts go stale while another
+worker finishes a scan, or while <code>satom-ha-datasync</code> drops a fresher corpus in.
+A legacy client still posting <code>publish: true</code> is ignored rather than refused;
+failing a valid scan over a dead flag would trade a cosmetic staleness for an
+outage. Sharing between nodes is data replication, never git.</p>
 <h3 id="fixed-a-renderer-change-on-docsfortinetcom-read-as-this-version-has-no-release-notes-2026-09-13">Fixed — a renderer change on docs.fortinet.com read as "this version has no release notes" (2026-09-13)</h3>
 <p>Fortinet re-rendered the FortiWeb release notes between <strong>8.0.6</strong> and <strong>8.0.7</strong>:
 MadCap (<code>id="mc-main-content"</code>) became a markdown pipeline

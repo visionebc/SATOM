@@ -6,6 +6,48 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — Scout Advisory reads unmarked admonitions and destination-scoped hazards (2026-09-14)
+
+Reported as *"why doesn't the advisor show this?"* against FortiWeb 8.0.7's
+*"do not upgrade"*. The sentence was in the corpus, correctly harvested, and
+invisible to the rule set for **two independent reasons**.
+
+**1. The catch-all could only read one renderer.** It fired on a line that IS a
+mark word (`Warning`, then the body) — the markdown docset's shape. MadCap glues
+the mark to the sentence (`Note : This issue has been…`). Measured over the live
+corpus: **zero** pure-mark lines in every release from 7.6.5 to 8.0.6, **18** in
+8.0.7. The safety net that exists to carry through what no rule understands had
+been carrying through nothing, for eleven releases, with no test red and no log
+line. `admonitions()` is now the single author of "what the vendor marked" and
+reads both shapes, returning the mark **as Fortinet wrote it** — a vendor
+*Warning* is no longer reprinted as our `caution` bucket.
+
+A `header + paragraph` detector was **measured and rejected**: 28–30 matches per
+version, which would bury the panel it is meant to sharpen. The heading is read
+only to TITLE a finding whose trigger is already the prose below it.
+
+**2. Every rule needed a floor.** They all compare the current version against a
+version the vendor named. *"If you are running FortiWeb in a VM environment and
+the total number of configured server policies exceeds 20, do not upgrade to
+FortiWeb 8.0.7 at this time"* has no floor: it is true from 8.0.6 and from 7.2.1
+alike, so the advisory answered `caution` for every origin anyone could pick. The
+new `target-prohibition` rule is **destination-scoped** — it fires on the version
+being installed, ranks first (*"there is no window"* before *"the window needs
+two halves"*), carries the vendor's own heading for its condition, and still
+respects a floor the vendor stated inside the block.
+
+**3. A coverage guard, which is the part that makes it stay fixed.**
+`admonition_coverage()` counts what the catch-all can see per version, and
+`test_live_corpus_has_no_blind_version` fails when a harvested version yields
+none. Fortinet mark the upgrade pages of every release, so a zero is a parser
+that no longer matches the renderer — not a quiet release. It is the only
+assertion in the file that does not already know what the prose looks like.
+
+Two defects were visible **only** by running the engine against the live corpus,
+with every assertion green: a MadCap admonition titled itself `Note: Note :`
+(its own mark is the first sentence), and the span-based gate raised a blocker
+about a release the route never installs.
+
 ### Fixed — `release_notes.js` was served without a cache key (2026-09-14)
 
 Found while shipping the picker above, and it would have hidden it. The tag was

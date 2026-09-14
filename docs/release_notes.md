@@ -253,6 +253,80 @@ Three rules of the house, carried over from Scout's ladder:
 Rules are direction-aware: an upgrade advisory never quotes the *Downgrading*
 page, and a rollback advisory never quotes *Supported upgrade paths*.
 
+### 6a. Two renderers, one detector (`admonitions()`)
+
+Fortinet mark admonitions in **two shapes**, and until 2026-09-14 the catch-all
+only knew one of them:
+
+| shape | looks like | docset |
+|---|---|---|
+| pure | the mark ALONE on its line, body in the block after it | markdown (`src-md`) |
+| embedded | the mark glued to the sentence — `Note : This issue has been…` | MadCap (`src-mc`) |
+
+Measured over the live corpus the day it was found: **0** pure-mark lines in
+every FortiWeb release from 7.6.5 to 8.0.6, and **18** in 8.0.7. Eleven releases
+of caveats carried by nothing, with nothing red and nothing logged — the same
+class of failure as the harvester's, one layer up.
+
+`admonitions(ctx, *sections)` is the single author of "what the vendor marked".
+It returns `(mark word, body block)` — the word **as Fortinet wrote it**, so a
+vendor *Warning* is not reprinted as our `caution` bucket, which would be a
+classification of ours set in the typography of a quotation.
+
+The `header + paragraph` heuristic was **measured and rejected**: over the same
+corpus it matches **28–30 blocks per version**, which would bury the panel it is
+meant to sharpen. Detection is narrow on purpose; the heading is read only to
+TITLE a finding whose trigger is already the prose below it.
+
+### 6b. Destination-scoped rules (`TARGET_SCOPED`)
+
+Every other rule asks *"does the move start low enough for this to bite?"* — it
+compares the current version against a floor the vendor wrote down. A whole
+class of hazard has **no floor**:
+
+> If you are running FortiWeb in a VM environment and the total number of
+> configured server policies exceeds 20, **do not upgrade to FortiWeb 8.0.7 at
+> this time.**  — *8.0.7, Upgrade notes*
+
+That is true from 8.0.6 and true from 7.2.1 alike. A rule set that can only
+express floors answers "nothing found" for every origin, and this sentence sat
+correctly harvested in the corpus while the advisory said `caution`.
+
+`target-prohibition` fires when the vendor names the version being **installed**
+— the target, not merely a version the span steps over. Gating on "is it inside
+the span" made `7.2.1 → 8.0.7` raise a blocker about a FortiWeb 100D
+incompatibility with 7.6.0, a release that route never lands on.
+
+- It is **conditional by nature and says so**: the title carries the vendor's own
+  heading for the condition, the evidence is their sentence verbatim, and the
+  panel prints *"Applies to the DESTINATION — this holds no matter which version
+  you upgrade from"*. Demoting it to a note because it might not apply would bury
+  the words *do not upgrade* under four other notes; a blocker that names its own
+  condition is a gate an operator clears in one glance.
+- It **respects a floor the vendor stated inside the block** (*"not supported to
+  upgrade to 8.0.5 from versions earlier than 6.3.0"*), via the same
+  `_floor_excludes()` the catch-all filter uses — one author, so the two cannot
+  drift.
+- It ranks **first** in `RULE_ORDER`: "there is no window" is read before "the
+  window needs two halves".
+- **Known limit, stated rather than hidden:** a prohibition attached to a
+  mandatory HOP is not raised, because the hops are derived from the findings and
+  do not exist yet when the rules run. That hop's own advisory shows it.
+
+### 6c. The coverage guard
+
+`admonition_coverage(sections)` counts, per version, the blocks the catch-all can
+actually see. A zero is **never** "that release had nothing to warn about" —
+Fortinet mark the upgrade pages of every FortiWeb release. A zero means the
+parser and the renderer have parted company.
+
+`tests/test_advisor_admonitions.py::test_live_corpus_has_no_blind_version` reads
+whatever corpus is on disk and fails on silence. It is the only assertion in that
+file that does not already know what the prose looks like, and therefore the only
+one that can catch the **next** renderer change. It skips where no corpus exists
+(fresh install, CI), because "never harvested" is a different problem and failing
+on it would train the team to ignore the test.
+
 ### Switching it off
 
 `scout.enabled` (Settings → Scout → **Availability**, and the switch beside the

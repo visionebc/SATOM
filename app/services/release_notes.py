@@ -18,8 +18,11 @@ This module is PURE (no Qt, no DB): it builds URLs from the *stable* section ids
 fetches HTML (a duck-typed ``fetch(url)->str`` — :func:`make_fetcher` chains a
 direct ``httpx`` GET with an optional Firecrawl scrape, self-hosted LAN or cloud),
 parses the tables/prose with the stdlib ``html.parser``, tags each issue with a
-**curated topic**, and serialises to the git-shared ``reports/_release_notes.json``
-(same ethos as ``services.signature_catalog``). The DB projection + the GUI live
+**curated topic**, and serialises to ``reports/_release_notes.json``
+(same ethos as ``services.signature_catalog``). That path is a symlink into
+``data/reports/``: the corpus is NOT in git (the git SoT was retired
+2026-08-05 by volume) — each node harvests its own, and the standby gets
+it from ``satom-ha-datasync``. The DB projection + the GUI live
 elsewhere (``db.store`` / ``ui.pages.release_notes_page``).
 
 Verified live (2026-06): ``docs.fortinet.com`` serves the issue tables server-side
@@ -41,7 +44,7 @@ PRODUCT_DEFAULT = "fortiweb"
 MIN_SUPPORTED_VERSION = (7, 0)   # modern release-notes docset begins at 7.0;
 #  older lines (5.x / 6.x) are listed in the version-history dropdown but have
 #  no resolved/known-issues pages, so they must never be enumerated for a scan.
-DB_NAME = "_release_notes.json"          # git-shared reference (under reports/)
+DB_NAME = "_release_notes.json"          # local corpus (under reports/ -> data/reports/)
 _DOC_HOST = "https://docs.fortinet.com"
 _UA = "Mozilla/5.0 (satom release-notes harvester)"
 
@@ -805,11 +808,19 @@ def advise(issues: list[ReleaseIssue], sections: list[ReleaseSection],
 #  Persistence — the git-shared JSON (loaded into the DB by the store)           #
 # --------------------------------------------------------------------------- #
 def reports_root() -> Path:
-    """The web-app's git-tracked ``reports/`` dir (sibling of ``app/`` and
-    ``wsgi.py``). Mirrors the desktop's git-shared reference location so the
-    corpus is committed + pulled by the two Release-Notes buttons. NOTE: this is
-    the repo's ``reports/`` (NOT the gitignored ``data/``), so it survives a
-    ``git pull`` and can be shared with the team."""
+    """Where the corpus lives: ``reports/`` beside ``app/`` and ``wsgi.py``.
+
+    ⚠ That directory is a **symlink to ``data/reports/``** and ``/reports`` is
+    in ``.gitignore`` — since the git SoT was retired (2026-08-05) this tree is
+    NOT version-controlled and NOT shared by git. ``git add`` on a path under
+    it does not merely get ignored, it is refused outright
+    (``fatal: pathspec ... is beyond a symbolic link``).
+
+    This docstring used to claim the opposite — that the corpus survives a
+    pull and is shared with the team — and that claim is what kept two dead
+    git buttons in the modal for five weeks. The corpus reaches the standby
+    through ``satom-ha-datasync`` (rsync of ``data/``), and reaches a
+    different installation by being scanned there."""
     root = Path(__file__).resolve().parents[2] / "reports"
     root.mkdir(parents=True, exist_ok=True)
     return root

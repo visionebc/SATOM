@@ -6,9 +6,11 @@ sections) across firmware versions, harvested from `docs.fortinet.com` — built
 *gain* (issues fixed) and *inherit* (issues still open).
 
 - **Service:** `app/services/release_notes.py` (pure — no Qt, no DB)
-- **Store:** the git-shared JSON corpus `reports/_release_notes.json` — read
-  with `load_db()`, merged with `merge_db()`, written with `save_db()`. There
-  are **no** release-notes DB tables.
+- **Store:** the JSON corpus `reports/_release_notes.json` — read with
+  `load_db()`, merged with `merge_db()`, written with `save_db()`. There are
+  **no** release-notes DB tables. `reports/` is a **symlink into the gitignored
+  `data/reports/`**: the corpus is local to each node and reaches the standby
+  through `satom-ha-datasync`, never through git (§3).
 - **UI:** account menu (top right) → **Release Notes** — a modal
   (`app/templates/partials/release_notes_modal.html`,
   `app/static/js/release_notes.js`) served by `app/views/release_notes.py`
@@ -134,19 +136,36 @@ but a request that sends a contradiction (`all` **and** `majors`, or `versions`
 **No appliance needed** — it reads the public docs directly with a Firecrawl
 fallback (both transports on by default). Admin only (`USER_MANAGE`).
 
-> ⚠ **`Publish to git` cannot work, and has not since 2026-08-05.** The corpus
-> lives at `reports/_release_notes.json`, `reports/` is a symlink to
-> `data/reports`, and `/reports` is in `.gitignore` — the git source-of-truth was
-> retired that day on volume grounds (see the metrics-architecture note). The
-> checkbox is still ticked by default and every scan logs
-> *"(git publish reported an issue — corpus saved locally)"*. `⤓ Sync from git`
-> has the same problem from the other end: it pulls code, and the corpus is not
-> in the pull. Each node harvests its own copy; the standby receives it through
-> `satom-ha-datasync`, not through git. **Fixing the two controls to say so is an
-> open decision, not a done change.**
+### The two git controls were removed on 2026-09-14
 
-`⤓ Sync from git` (`POST /release-notes/sync`) pulls the shared reference and
-re-reads it, so a fresh clone that pulled the JSON is current on first open.
+`Publish to git` (a checkbox on the scan panel) and `⤓ Sync from git` (a button
+in the modal header) are **gone**, along with `POST /release-notes/sync`. Three
+separate defects, one removal:
+
+1. **Neither could move the corpus.** `reports/` is a symlink into the
+   gitignored `data/reports/`; git refuses a path under it outright —
+   `fatal: pathspec '…' is beyond a symbolic link`. True since the git
+   source-of-truth was retired on 2026-08-05 on volume grounds (see the
+   metrics-architecture note), so **every scan since then logged**
+   *"(git publish reported an issue — corpus saved locally)"*.
+2. **`/sync` ran `git pull` over the running code tree, for `VIEW`.** The same
+   operation is gated behind `USER_MANAGE` in `settings.git_pull` and is owned
+   by `satom-reconciler`. A read-only user could move the application's code
+   out from under the workers. This is why the endpoint was deleted rather
+   than hidden — a hidden button keeps its URL.
+3. **The success message was false either way.** `_load()` re-reads the JSON on
+   every request, so *"Ingested N issues … from the shared reference"* always
+   described the local file. Nothing was ever ingested from anywhere.
+
+In their place, **⟳ Reload corpus** (`POST /release-notes/reload`, any logged-in
+user) re-reads the JSON from disk and reports **where from** (`source`) and
+**how old** (`generated_at`) — which is what the button was reaching for: the
+counts on screen go stale while another gunicorn worker finishes a scan, or
+while `satom-ha-datasync` drops a fresher corpus in.
+
+**Sharing between nodes is data replication, not git.** The primary harvests;
+`satom-ha-datasync` carries `data/` to the standby within 5 minutes. A separate
+installation harvests its own. Guards: `tests/test_release_notes_nogit.py`.
 
 ## 4. Data model
 
@@ -176,10 +195,11 @@ POST /release-notes/discover      → {versions:[{version,major,in_corpus}], cou
 {"use_direct": true, "use_firecrawl": true}
 
 POST /release-notes/scan          → 202 {started:true}
-{"versions": ["8.0.7"], "use_direct": true, "publish": false}
+{"versions": ["8.0.7"], "use_direct": true}
 
 GET  /release-notes/scan/status   → {running, lines[], result, error}
-POST /release-notes/sync          → git pull + re-read the shared corpus
+POST /release-notes/reload        → {counts, message, source, generated_at}
+                                    re-reads the corpus from disk; no git
 ```
 
 `result` now carries `unreadable[]` — the `(version, section)` pairs that were

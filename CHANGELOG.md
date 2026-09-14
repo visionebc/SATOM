@@ -6,6 +6,74 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — A change request can be corrected while it is still open (2026-09-14)
+
+Asked for as *"no puedo editar el change request, debería de poder hacerlo"*,
+after CR-2026-0012 sat **approved and un-runnable** with `no maintenance window`.
+
+`window_start` is **optional when a change is raised** and **required before it
+can run** (`cr_runnable` refuses "no maintenance window"), and the blueprint
+offered approve / schedule / cancel / mark-notified and **nothing that could
+write a window**. A change saved with that field blank was therefore un-runnable
+*forever*: the Schedule button does not set a window, it binds a one-shot action
+**to** one, so it refused with "set a maintenance-window start first" while the
+record went on looking like a change somebody had approved. Nothing ever failed,
+and the only remedy was to cancel the change and retype it.
+
+**`GET|POST /change-requests/<id>/edit`** — same permission (`USER_MANAGE`) and
+the same ADOM scoping as every other route on the blueprint (404, never 403).
+
+What it may touch, and what it deliberately may not:
+
+* **Editable**: title, reason, rollback plan, owner, notify-to, risk, document
+  language, approval mode and **the window**.
+* **Fixed**: the **action** and the **devices**. The frozen service inventory,
+  the bound pre-flight evidence and any document already circulating all
+  describe *those* devices doing *that* thing; re-pointing them would leave a
+  signed document certifying a change nobody planned. Raise a new change
+  instead — the old record stays true.
+* **Closed changes are never rewritten.** A terminal CR is refused on `GET` as
+  well as `POST`: rendering the form and failing on save invites somebody to
+  retype a change that was never going to be written.
+
+**An approval covers what it was given for.** Changing the window, the risk
+level or the approval mode sends the change back to `draft`, clears
+`approved_by`/`approved_at` **and the external approver's stamp**, and
+**disables the bound one-shot** — a one-shot fires at the window start it was
+*bound* with, and `catch_up` would let it run at an instant nobody scheduled if
+the old start happened to fall inside the new window. Every other field saves
+without touching the approval: a route that voided on every save would train
+operators to re-approve without reading, which is the control failing quietly.
+
+The inverted-window rule moved to **`svc.validate_window`** — one author, so
+raising a change and editing one cannot disagree about what a legal window is.
+It was written inline in the create path, which is exactly the hole this form
+would have walked into. (CR-2026-0011 is still stored ending a **day** before it
+begins; the rule that refuses it postdates the row.)
+
+Found by the guards, not by hand: a `datetime-local` field has **minute**
+resolution, so a window stored with seconds — written by any other path: a
+batched wave, the API, a restore — could not be typed into it, and comparing the
+posted value verbatim reported a change on every save. Correcting a change's
+**title** would have voided its approval.
+
+### Fixed — A button label is one phrase, never prose (2026-09-14)
+
+Reported as *"el botón de cancel no se ve bien, está como en doble línea"*.
+Measured in a real browser: the **Cancel CR** button on a change request
+rendered **80px wide and 73px tall — three lines** — at 1600px, 1280px and
+1024px alike. Not a narrow-viewport problem: the reason input beside it claimed
+`width:100%` of their shared form, leaving the button whatever was left over.
+
+Bootstrap 4 shipped `.btn{white-space:nowrap}`; **Bootstrap 5 dropped it**, so
+*any* button squeezed by a flex sibling breaks its label instead of staying one
+control, and nothing errors. Fixed in both halves — the class of bug in
+`fortiweb.css` (`.btn{white-space:nowrap}`; an explicit `<br>` still breaks, so
+the API-explorer method chips are unaffected) and the squeeze itself in the
+markup (`flex:0 1 220px` on the input, `flex-shrink-0` on the button). Verified
+by measurement: **31px, one line, no overflow, zero multi-line buttons** on the
+detail page and the new editor at both widths.
+
 ### Added — Maintenance mode as a verb, on the inventory row and the device page (2026-09-14)
 
 Asked for as *"inside the table where the devices appear I want to be able to

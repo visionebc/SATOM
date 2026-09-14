@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Added — Maintenance mode as a verb, on the inventory row and the device page (2026-09-14) · 14 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Added — A change request can be corrected while it is still open (2026-09-14) · 14 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Added — Maintenance mode as a verb, on the inventory row and the device page (2026-09-14) · 14 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Added — A change request can be corrected while it is still open (2026-09-14) · 14 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,7 +59,7 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Added — Maintenance mode as a verb, on the inventory row and the device page (2026-09-14) · 14 entries</span>
+        <span class="rel-nav-meta">unreleased · Added — A change request can be corrected while it is still open (2026-09-14) · 14 entries</span>
         <ul class="rel-leads"><li>Keyed to the source by plain columns</li><li>Asymmetric foreign keys</li><li>migrate_to keeps its own verb</li><li class="rel-more">… and 11 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v2.0.0.html" data-rel-version="2.0.0">
@@ -260,6 +260,64 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
+<h3 id="added-a-change-request-can-be-corrected-while-it-is-still-open-2026-09-14">Added — A change request can be corrected while it is still open (2026-09-14)</h3>
+<p>Asked for as <em>"no puedo editar el change request, debería de poder hacerlo"</em>,
+after CR-2026-0012 sat <strong>approved and un-runnable</strong> with <code>no maintenance window</code>.</p>
+<p><code>window_start</code> is <strong>optional when a change is raised</strong> and <strong>required before it
+can run</strong> (<code>cr_runnable</code> refuses "no maintenance window"), and the blueprint
+offered approve / schedule / cancel / mark-notified and <strong>nothing that could
+write a window</strong>. A change saved with that field blank was therefore un-runnable
+<em>forever</em>: the Schedule button does not set a window, it binds a one-shot action
+<strong>to</strong> one, so it refused with "set a maintenance-window start first" while the
+record went on looking like a change somebody had approved. Nothing ever failed,
+and the only remedy was to cancel the change and retype it.</p>
+<p><strong><code>GET|POST /change-requests/&lt;id&gt;/edit</code></strong> — same permission (<code>USER_MANAGE</code>) and
+the same ADOM scoping as every other route on the blueprint (404, never 403).</p>
+<p>What it may touch, and what it deliberately may not:</p>
+<ul>
+<li><strong>Editable</strong>: title, reason, rollback plan, owner, notify-to, risk, document
+  language, approval mode and <strong>the window</strong>.</li>
+<li><strong>Fixed</strong>: the <strong>action</strong> and the <strong>devices</strong>. The frozen service inventory,
+  the bound pre-flight evidence and any document already circulating all
+  describe <em>those</em> devices doing <em>that</em> thing; re-pointing them would leave a
+  signed document certifying a change nobody planned. Raise a new change
+  instead — the old record stays true.</li>
+<li><strong>Closed changes are never rewritten.</strong> A terminal CR is refused on <code>GET</code> as
+  well as <code>POST</code>: rendering the form and failing on save invites somebody to
+  retype a change that was never going to be written.</li>
+</ul>
+<p><strong>An approval covers what it was given for.</strong> Changing the window, the risk
+level or the approval mode sends the change back to <code>draft</code>, clears
+<code>approved_by</code>/<code>approved_at</code> <strong>and the external approver's stamp</strong>, and
+<strong>disables the bound one-shot</strong> — a one-shot fires at the window start it was
+<em>bound</em> with, and <code>catch_up</code> would let it run at an instant nobody scheduled if
+the old start happened to fall inside the new window. Every other field saves
+without touching the approval: a route that voided on every save would train
+operators to re-approve without reading, which is the control failing quietly.</p>
+<p>The inverted-window rule moved to <strong><code>svc.validate_window</code></strong> — one author, so
+raising a change and editing one cannot disagree about what a legal window is.
+It was written inline in the create path, which is exactly the hole this form
+would have walked into. (CR-2026-0011 is still stored ending a <strong>day</strong> before it
+begins; the rule that refuses it postdates the row.)</p>
+<p>Found by the guards, not by hand: a <code>datetime-local</code> field has <strong>minute</strong>
+resolution, so a window stored with seconds — written by any other path: a
+batched wave, the API, a restore — could not be typed into it, and comparing the
+posted value verbatim reported a change on every save. Correcting a change's
+<strong>title</strong> would have voided its approval.</p>
+<h3 id="fixed-a-button-label-is-one-phrase-never-prose-2026-09-14">Fixed — A button label is one phrase, never prose (2026-09-14)</h3>
+<p>Reported as <em>"el botón de cancel no se ve bien, está como en doble línea"</em>.
+Measured in a real browser: the <strong>Cancel CR</strong> button on a change request
+rendered <strong>80px wide and 73px tall — three lines</strong> — at 1600px, 1280px and
+1024px alike. Not a narrow-viewport problem: the reason input beside it claimed
+<code>width:100%</code> of their shared form, leaving the button whatever was left over.</p>
+<p>Bootstrap 4 shipped <code>.btn{white-space:nowrap}</code>; <strong>Bootstrap 5 dropped it</strong>, so
+<em>any</em> button squeezed by a flex sibling breaks its label instead of staying one
+control, and nothing errors. Fixed in both halves — the class of bug in
+<code>fortiweb.css</code> (<code>.btn{white-space:nowrap}</code>; an explicit <code>&lt;br&gt;</code> still breaks, so
+the API-explorer method chips are unaffected) and the squeeze itself in the
+markup (<code>flex:0 1 220px</code> on the input, <code>flex-shrink-0</code> on the button). Verified
+by measurement: <strong>31px, one line, no overflow, zero multi-line buttons</strong> on the
+detail page and the new editor at both widths.</p>
 <h3 id="added-maintenance-mode-as-a-verb-on-the-inventory-row-and-the-device-page-2026-09-14">Added — Maintenance mode as a verb, on the inventory row and the device page (2026-09-14)</h3>
 <p>Asked for as <em>"inside the table where the devices appear I want to be able to
 put the device into maintenance from those rows, and when inside the device, on

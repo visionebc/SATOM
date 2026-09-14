@@ -346,14 +346,14 @@ def create_change_request(fields: dict):
     # one can never fire: it sits in 'approved' looking healthy until
     # somebody notices, on the morning after, that nothing ran. The form
     # never checked, and CR-0011 was stored ending a DAY before it began.
-    # Refused HERE, in the one implementation of 'raise a change', so the
-    # batched wave route and the calendar inherit it instead of each
-    # growing its own copy of the rule.
-    win_start, win_end = fields.get('window_start'), fields.get('window_end')
-    if win_start is not None and win_end is not None and win_end <= win_start:
-        return None, ('The maintenance window ends at or before it starts, '
-                      'so no instant lies inside it and the change could '
-                      'never fire. Nothing was created.')
+    # The rule itself lives in svc.validate_window - ONE author, so raising a
+    # change and EDITING one cannot disagree about what a legal window is. A
+    # second copy here is exactly how the edit form would have been free to
+    # store the window this check refuses.
+    window_error = svc.validate_window(fields.get('window_start'),
+                                       fields.get('window_end'))
+    if window_error:
+        return None, window_error + ' Nothing was created.'
 
     from ..services import cr_document, prep_store
     preps = []
@@ -522,6 +522,210 @@ def new():
                            action_prompt={code: cr_document.action_placeholder(code)
                                           for code in lang_codes},
                            defaults=defaults,
+                           tz_name=_tz_name())
+
+
+# What an edit may touch. ACTION and DEVICE_IDS are deliberately absent: the
+# frozen inventory, the bound pre-flight evidence and the printed document all
+# describe THOSE devices doing THAT thing, and a form that quietly re-pointed
+# them would leave a document in circulation that certifies a change nobody
+# planned. Re-target by raising a new change; the record of the old one stays
+# true.
+EDITABLE_FIELDS = ('title', 'risk', 'reason', 'window_start', 'window_end',
+                   'rollback', 'notify_to', 'owner', 'doc_lang',
+                   'approval_mode')
+
+# Changing one of these makes an existing approval a statement about something
+# that is no longer the case, so the change goes back to 'draft' and must be
+# approved again. The window is the obvious one - an approval is a human saying
+# yes to a specific outage at a specific time. 'risk' is here because the
+# approver weighed it; 'approval_mode' because switching a change off external
+# authorisation after the fact would silently REMOVE the gate it is running
+# under.
+APPROVAL_CRITICAL = ('window_start', 'window_end', 'risk', 'approval_mode')
+
+
+def _shown(field, value):
+    """A field value as the timeline should print it (windows in local time)."""
+    if field in ('window_start', 'window_end'):
+        if value is None:
+            return '(none)'
+        from ..services import settings_store
+        return settings_store.to_local(value)
+    text = '' if value is None else str(value)
+    text = ' '.join(text.split())
+    return (text[:60] + '...') if len(text) > 60 else (text or '(empty)')
+
+
+def _unchanged(field, before, after) -> bool:
+    """Is this field the SAME after the edit?
+
+    Windows compare at MINUTE resolution, because minutes are the resolution a
+    ``datetime-local`` field has. A window carrying seconds (written by any
+    other path - a batched wave, the API, a restore) cannot be expressed in
+    that field at all, so treating the truncation as an edit would void the
+    approval of an approved change every time somebody corrected its TITLE -
+    the approval control firing on a change nobody made, which trains people to
+    re-approve without reading.
+    """
+    if field in ('window_start', 'window_end'):
+        def _minute(value):
+            return value.replace(second=0, microsecond=0) if value else None
+        return _minute(before) == _minute(after)
+    return before == after
+
+
+def update_change_request(cr, fields: dict, by: str):
+    """Apply an edit to an EXISTING change. ``(changed, error)``.
+
+    ``changed`` is the list of human-readable field diffs actually written, so
+    the caller can say nothing happened rather than claim a save that changed
+    nothing.
+
+    Every refusal returns a message that says the record is untouched: this
+    runs against a row somebody may already have circulated a document for.
+    """
+    if cr.status in ChangeRequest.TERMINAL:
+        return [], (f'This change request is {cr.status}; a closed record is '
+                    f'history and is never rewritten. Nothing was changed.')
+
+    title = (fields.get('title') or '').strip()
+    if not title:
+        return [], 'A title is required. Nothing was changed.'
+
+    risk = (fields.get('risk') or '').strip()
+    if risk not in svc.RISKS:
+        return [], (f'{risk or "(none)"} is not a risk level. '
+                    f'Nothing was changed.')
+
+    # Validated through the SAME function the create path uses, against the two
+    # values as they would be AFTER the edit - not against the one the operator
+    # happened to touch. Checking only the changed half is how an edit that
+    # moves the start past an untouched end stores an unfireable window.
+    window_error = svc.validate_window(fields.get('window_start'),
+                                       fields.get('window_end'))
+    if window_error:
+        return [], window_error + ' Nothing was changed.'
+
+    from ..services import cr_document
+    proposed = {
+        'title': title[:200],
+        'risk': risk,
+        'reason': (fields.get('reason') or '').strip(),
+        'window_start': fields.get('window_start'),
+        'window_end': fields.get('window_end'),
+        'rollback': (fields.get('rollback') or '').strip(),
+        'notify_to': (fields.get('notify_to') or '').strip(),
+        'owner': (fields.get('owner') or '').strip()[:64],
+        'doc_lang': cr_document.normalize_lang(fields.get('doc_lang')),
+        # Same fallback as creation, and for the same reason: an unrecognised
+        # value must not bind a change to an approver nobody configured.
+        'approval_mode': ('external'
+                          if (fields.get('approval_mode') or '').strip() == 'external'
+                          else 'manual'),
+    }
+
+    changed, critical = [], []
+    for field in EDITABLE_FIELDS:
+        before = getattr(cr, field)
+        after = proposed[field]
+        if _unchanged(field, before, after):
+            continue
+        setattr(cr, field, after)
+        changed.append(f'{field}: {_shown(field, before)} -> {_shown(field, after)}')
+        if field in APPROVAL_CRITICAL:
+            critical.append(field)
+    if not changed:
+        return [], ''
+
+    db.session.add(ChangeRequestEvent(
+        cr_id=cr.id, kind='edited', by=by, detail='; '.join(changed),
+        ts=datetime.utcnow()))
+    db.session.commit()
+
+    if critical and cr.status in ('approved', 'scheduled'):
+        svc.revoke_approval(
+            cr, by,
+            detail=('Approval voided: ' + ', '.join(critical)
+                    + ' changed after approval. Re-approve and re-schedule.'))
+    log_action('change_request.update', target=cr.title,
+               detail=f'{cr.ref or cr.id} / ' + '; '.join(changed))
+    return changed, ''
+
+
+@bp.route('/<int:id>/edit', methods=['GET', 'POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def edit(id):
+    """Correct a change that is still open.
+
+    This route exists because ``window_start`` is optional at creation while
+    :func:`svc.cr_runnable` refuses a change without one - so a change raised
+    with the field left blank was un-runnable FOREVER, with no way back: the
+    blueprint had approve / schedule / cancel / notify and nothing that could
+    set a window. CR-2026-0012 was stored that way, and the only remedy was to
+    cancel it and re-type the whole change.
+    """
+    cr = _cr_in_scope_or_404(id)
+    if cr.status in ChangeRequest.TERMINAL:
+        # A closed change is the record of what happened. Refused on GET too:
+        # rendering the form and failing on save is an invitation to retype a
+        # change that was never going to be written.
+        flash(f'This change request is {cr.status} and can no longer be edited.',
+              'warning')
+        return redirect(url_for('change_requests.detail', id=id))
+
+    if request.method == 'POST':
+        changed, error = update_change_request(cr, {
+            'title': request.form.get('title'),
+            'risk': request.form.get('risk'),
+            'reason': request.form.get('reason'),
+            'window_start': _parse_dt(request.form.get('window_start')),
+            'window_end': _parse_dt(request.form.get('window_end')),
+            'rollback': request.form.get('rollback'),
+            'notify_to': request.form.get('notify_to'),
+            'owner': request.form.get('owner'),
+            'doc_lang': request.form.get('doc_lang'),
+            'approval_mode': request.form.get('approval_mode'),
+        }, getattr(current_user, 'username', '') or '')
+        if error:
+            flash(error, 'danger')
+            return redirect(url_for('change_requests.edit', id=id))
+        if not changed:
+            flash('Nothing to save — no field was changed.', 'info')
+            return redirect(url_for('change_requests.detail', id=id))
+        if cr.status == 'draft' and any(f.split(':')[0] in APPROVAL_CRITICAL
+                                        for f in changed):
+            flash(f'Change request {cr.ref or cr.id} updated. It is a draft '
+                  f'again and needs approval before it can be scheduled.',
+                  'warning')
+        else:
+            flash(f'Change request {cr.ref or cr.id} updated.', 'success')
+        return redirect(url_for('change_requests.detail', id=id))
+
+    from ..services import cr_document, settings_store
+    device_ids = cr.device_ids_list
+    devices = (Appliance.query.filter(Appliance.id.in_(device_ids)).all()
+               if device_ids else [])
+
+    def _field_value(dt):
+        """A stored (naive UTC) window as the operator's clock reads it.
+
+        Through settings_store.to_local - the ONE conversion path parse_local
+        inverts. Formatting here with strftime would put the operator's own
+        window back into the form shifted by the console's offset, which is the
+        defect parse_local exists to stop, arriving from the other side."""
+        return settings_store.to_local(dt, '%Y-%m-%dT%H:%M') if dt else ''
+
+    return render_template('change_requests/edit.html',
+                           cr=cr,
+                           devices=devices,
+                           risks=svc.RISKS,
+                           langs=cr_document.document_langs(),
+                           window_start_value=_field_value(cr.window_start),
+                           window_end_value=_field_value(cr.window_end),
+                           approval_critical=APPROVAL_CRITICAL,
+                           will_void_approval=cr.status in ('approved', 'scheduled'),
                            tz_name=_tz_name())
 
 

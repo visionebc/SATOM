@@ -1069,7 +1069,7 @@
 
   document.getElementById('actionApplyBtn').addEventListener('click', function () {
     var action = current.action, n = current.policies.length, many = n !== 1;
-    if (!confirm(LABELS[action] + ': apply to ' + n + ' server polic' + (many ? 'ies' : 'y') + ' for real?')) return;
+    // Confirm removed on request (2026-09-14): Apply is already gated by a mandatory dry-run preview.
     var btn = this; btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Starting…';
     post(applyUrl, collectPayload()).then(function (d) {
       btn.disabled = false; btn.innerHTML = '<i class="bi bi-lightning-charge me-1"></i>Apply for real';

@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Added — Scout reads the release notes before the firmware is sent (2026-09-14) · 14 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Added — What the CLI serves and the catalog does not know: coverage on the API hub (2026-09-15) · 14 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Added — Scout reads the release notes before the firmware is sent (2026-09-14) · 14 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Added — What the CLI serves and the catalog does not know: coverage on the API hub (2026-09-15) · 14 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,7 +59,7 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Added — Scout reads the release notes before the firmware is sent (2026-09-14) · 14 entries</span>
+        <span class="rel-nav-meta">unreleased · Added — What the CLI serves and the catalog does not know: coverage on the API hub (2026-09-15) · 14 entries</span>
         <ul class="rel-leads"><li>Keyed to the source by plain columns</li><li>Asymmetric foreign keys</li><li>migrate_to keeps its own verb</li><li class="rel-more">… and 11 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v2.0.0.html" data-rel-version="2.0.0">
@@ -260,6 +260,141 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
+<h3 id="added-what-the-cli-serves-and-the-catalog-does-not-know-coverage-on-the-api-hub-2026-09-15">Added — What the CLI serves and the catalog does not know: coverage on the API hub (2026-09-15)</h3>
+<p>Asked for as <em>"hay elementos en el fortiweb que no estan en el api, y que solo se
+ven por ejemplo cuando sea conecta via ssh y se hace un comando full… comparar
+que se tiene via api y que no y poner esto tambien en la libreria"</em>, scoped to
+<em>"hazlo en la misma pagina el proceso solo amplialo"</em>.</p>
+<p><strong>The premise was half right, and the wrong half was the useful one.</strong> The CLI
+dump was already being captured: <code>backup.ssh_config_backup</code> has run
+<code>show full-configuration</code> since 2026-07-04 and stored the text in the config
+vault, replicated to the standby and carried inside the system bundles. <strong>Nobody
+read it</strong> — the same thing <code>api_matrix</code> found true of the sweep ledger. So this
+is a parser and a differ, not a new path to a device: no new verb, no new
+transport, nothing that can write to an appliance.</p>
+<p>Measured against the real artifacts, not estimated:</p>
+<table>
+<thead>
+<tr>
+<th>evidence</th>
+<th>blocks</th>
+<th>in the catalog</th>
+<th><strong>CLI only</strong></th>
+<th>near match</th>
+<th>no block in this dump</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>{device} — FortiWeb-KVM 7.6.8, 690 KB</td>
+<td>434</td>
+<td>377</td>
+<td><strong>55</strong> (26 hold configuration)</td>
+<td>2</td>
+<td>94</td>
+</tr>
+<tr>
+<td>fadc — FortiADC-KVM 8.0.3, 176 KB</td>
+<td>300</td>
+<td>215</td>
+<td><strong>84</strong></td>
+<td>1</td>
+<td>29</td>
+</tr>
+</tbody>
+</table>
+<p>The findings are specific: <code>system automation-stitch action_member</code>,
+<code>system automation-webhook</code>, <code>system automation-slack|teams|jira</code>,
+<code>system credential-stuffing-online-check</code>, <code>system one-click-gslb</code>,
+<code>waf data-mining</code>, <code>log cloud</code>, <code>user oauth-user request custom-parameters</code>
+(69 rows on that box), and on FortiADC the whole <code>router bgp|ospf|ospf6</code>
+neighbour/area/network family.</p>
+<p><strong>Where it lives.</strong> A section on the API hub of <strong>every</strong> ADOM — API-Registry
+Explorer (FortiWeb), <code>/adc/api</code>, <code>/faz/api</code>, <code>/fac/api</code> — rendered from one
+partial, <code>partials/_cli_coverage.html</code>, and one shared body,
+<code>views/_clicoverage.py</code>. Not a new page: the question comes up while the
+operator is already in the explorer, and the console that answers it ("does this
+URN actually work?") is on the same screen.</p>
+<p><strong>Phase B — reading the element the API does not expose.</strong> A CLI-only row opens
+its block straight out of the stored dump, and a second button runs
+<code>show &lt;path&gt;</code> against a live appliance right now (verified on {device}: the
+stitch that {device}'s dump shows and no catalog endpoint names). <code>show</code> is
+already an allowed verb in <code>ssh_ops.assert_readonly</code>, so <code>set</code> and <code>execute</code>
+smuggled through the path parameter are refused before any connect.</p>
+<p><strong>Four buckets, separated by WHY</strong> — because the ways this could be precise and
+wrong all look like a number:</p>
+<ul>
+<li><strong>CLI only</strong> — the finding. Split into tables that hold configuration on this
+  box and tables that are empty here.</li>
+<li><strong>Same object, different path</strong> — the CLI and REST spell child tables
+  differently (<code>waf graphql-validation policy graphql-rule-list</code> vs
+  <code>…/graphql-validation.policy/rule-list</code>). Neither a match nor a gap: SATOM
+  cannot tell from a config file which spelling the device serves, so it hands
+  the URN to the console instead of picking one.</li>
+<li><strong>In the catalog, no block in this dump</strong> — <strong>not absence.</strong> A config table
+  with nothing in it prints no block at all, so an unconfigured feature and a
+  missing one are indistinguishable here. 94 rows on FortiWeb; presenting them
+  as removals would have been the page's biggest number and a fabrication. The
+  page says so and points at the sweep verdicts, which ask the device directly.</li>
+<li><strong>Cannot have a CLI block at all</strong> — the 42 FortiWeb monitor/runtime
+  endpoints, excluded from every count rather than reported as permanent gaps.</li>
+</ul>
+<p><strong>FortiAnalyzer and FortiAuthenticator state a reason instead of rendering an
+empty page.</strong> FAZ speaks JSON-RPC and its <code>/sys/proxy/json</code> reaches objects the
+CLI never names — the gap runs the <em>other</em> way. FAC's CLI is a minimal network
+shell whose GUI/API is the superset. Neither has ever been read over SSH by
+SATOM, so there is nothing to diff and the page says that rather than showing a
+clean zero.</p>
+<p><strong>Evidence is one device, one date, one product.</strong> Every dump in the vault today
+belongs to an appliance that has since been deleted, so the vault row's recorded
+firmware string is the only surviving statement of what kind of box it came from
+— and a dump without one is <strong>never diffed</strong>, because guessing would compare a
+FortiADC config against the FortiWeb catalog and invent ~300 findings. Four
+orphan dumps on disk with no vault row are listed, never parsed. A dump whose
+blocks do not balance is called out above the counts: a capture cut short by a
+read timeout looks exactly like a small configuration.</p>
+<p><strong>Field-level answers are delegated, not recomputed.</strong> <code>api_matrix.preflight</code>
+already knows that comparing sweep field sets against harvested schema fields
+reports 56 removals that are only a noise filter, and it already tells
+<code>unmeasured</code> from <code>ok</code>. One author for that answer.</p>
+<p><strong>The dump is a device configuration and it carries credentials.</strong> Block text is
+gated on <code>Permission.BACKUP</code> — the same permission that gates the vault the
+dumps live in — while the counts and the CLI paths, which are catalog metadata,
+render for anyone who may see the hub. Values are scrubbed before they reach a
+browser and <strong>field names are kept</strong>, because the names are the finding:
+<code>ENC</code> secrets, PEM keys and certificate chains are redacted as whole quoted
+values, while <code>set forbid-password-reuse disable</code> and <code>set key-max-length 1024</code>
+survive — a name-only rule would hide real configuration in the name of hiding
+nothing.</p>
+<p>Nothing is persisted: the report is derived per request (20 ms for the 690 KB
+FortiWeb dump, measured), so there is no artifact to go stale and no derived view
+sitting in a different backup path from the evidence it summarises.</p>
+<p>Guards: <code>tests/test_cli_coverage.py</code> (60), <code>docs/safeguards.md</code> §169.</p>
+<p><strong>And then into the library, without inventing a path.</strong> A CLI-only row can be
+promoted to a catalog endpoint — but the REST path for a CLI block <strong>cannot be
+derived</strong>, only guessed and then asked. FortiWeb joins the segments below the
+family with <code>.</code> for a sub-table (<code>system/certificate.local</code>) and with <code>/</code> for a
+child list (<code>server-policy/policy/http-content-routing-list</code>), and the CLI spells
+both exactly the same way. So SATOM offers <em>every</em> combination (capped at 8, and
+it says when it capped), probes them against an appliance, and shows what the
+device answered: <code>ok</code>, <code>absent</code>, or <code>error</code> — the same three verdicts the sweep
+and the reconciler already act on, taken from the same code
+(<code>rediscovery.probe_endpoint</code>, now public for this).</p>
+<p>Only a URN the appliance <strong>served</strong> can be armed into the Register form, and the
+write itself is the <strong>existing</strong> catalog editor (<code>registry.save</code> /
+<code>adc_api.registry_save</code>): same validation, same duplicate check, same loader-cache
+invalidation, same audit line. Nothing here writes a registry row — a guard
+asserts the section never so much as imports <code>RegistryEndpoint</code>, because a
+guessed path behind a friendly key would surface later, somewhere else, as a
+phantom endpoint that every service resolves through <code>loader.resolve</code>.</p>
+<p>When the device serves none of the candidates, that is the answer and the page
+says so: the element really is CLI-only on that firmware, and there is nothing
+to register.</p>
+<p>The derivation is checked against paths the catalogs <strong>already hold</strong> —
+<code>system snmp community</code> → <code>…/system/snmp.community</code>, <code>server-policy allow-hosts
+host-list</code> → <code>…/allow-hosts/host-list</code>, <code>load-balance pool pool_member</code> →
+<code>/api/load_balance_pool_child_pool_member</code> — because a derivation that cannot
+reproduce the endpoints we know would not find the ones we do not.</p>
 <h3 id="added-scout-reads-the-release-notes-before-the-firmware-is-sent-2026-09-14">Added — Scout reads the release notes before the firmware is sent (2026-09-14)</h3>
 <p>Asked for as <em>"cuando se actualice sería bueno que Scout, si es que está
 activado, revise si hay algún problema con la versión a la que se va que pueda

@@ -14318,3 +14318,50 @@ the one line that breaks.
 * *A mutation that mutates nothing.* `X if False else Y` where `Y` is the
   original expression is a no-op dressed as a change; it would have reported a
   surviving guard against a tree that was never modified.
+
+## §166 — a four-click flag on a one-click decision (2026-09-14)
+
+**Guard:** `tests/test_appliance_maintenance_toggle.py` (25 tests).
+
+`Appliance.maintenance` hides a device from operators and read-only users and
+drops it from the scheduled probe/metric sweeps. It was reachable only from the
+full edit form. Putting the same verb on the inventory row and on the device
+header creates a second and a third writer of one fact — and this repo has
+already paid for that twice (the sidebar accordion's hand-written blueprint
+lists, §9-nav; the status badge written by both `api.js` and `main.js`).
+
+**What the guard asserts is the RELATIONSHIP, not the presence of a button:**
+
+1. **One author.** Exactly one template in `app/templates/**` may name
+   `appliances.set_maintenance` — the macro partial. Both pages must *import*
+   it. Inlining a copy into `detail.html` is a mutation that dies.
+2. **The same permission pair as `edit_save`.** `config_write` **and**
+   `appliances.view_maintenance`. The file first asserts that the seeded
+   `operator` profile holds the former and not the latter — without that
+   premise the 403 guards would be vacuous, passing because the user was
+   rejected one gate earlier.
+3. **404, not 403, for a device already hidden** from the caller. 403 confirms
+   the row exists, which is the leak the feature closes.
+4. **The re-provision seam.** Clearing the flag must call
+   `_provision_monitoring`, exactly as `edit_save` does; a no-op post must not.
+   Without this the button leaves a device visible and silently uncollected.
+5. **Desired state, not a flip.** The hidden field carries the state the
+   operator saw. Hard-coding it to `"on"` dies; replacing the read with
+   `not appliance.maintenance` dies on the no-op test.
+6. **The destination is whitelisted.** `back` is attacker-supplied;
+   `https://evil.example/x`, `//evil.example` and any unlisted path must all
+   land on the inventory. Never `request.referrer`.
+7. **The header, not the card.** The *Appliance Actions* card renders only for
+   `fortiweb`/`fortiadc`, so the guard renders a `fortiauthenticator` device
+   (in its own ADOM — from the FortiWeb ADOM it is a 404, and a 404 page also
+   happens not to contain the button) and asserts the card is absent while the
+   control is present.
+8. **CSRF is asserted in the MARKUP.** `WTF_CSRF_ENABLED=False` in the test
+   config, so posting proves nothing about the token.
+
+**Mutations: 15 run, 15 kill, 0 survive, 0 void, `restore-ok=True`,
+control green before and after.** The harness measures by **return code with no
+pipe** on the run being measured, and treats only `rc==1` as a failure — piping
+pytest into `tail` measures `tail`, which is how this repo has reported
+"SURVIVED" against obviously-fatal mutations eleven times.
+

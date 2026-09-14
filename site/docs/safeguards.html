@@ -13737,6 +13737,48 @@ the one line that breaks.</p>
   original expression is a no-op dressed as a change; it would have reported a
   surviving guard against a tree that was never modified.</li>
 </ul>
+<h2 id="166-a-four-click-flag-on-a-one-click-decision-2026-09-14">§166 — a four-click flag on a one-click decision (2026-09-14)</h2>
+<p><strong>Guard:</strong> <code>tests/test_appliance_maintenance_toggle.py</code> (25 tests).</p>
+<p><code>Appliance.maintenance</code> hides a device from operators and read-only users and
+drops it from the scheduled probe/metric sweeps. It was reachable only from the
+full edit form. Putting the same verb on the inventory row and on the device
+header creates a second and a third writer of one fact — and this repo has
+already paid for that twice (the sidebar accordion's hand-written blueprint
+lists, §9-nav; the status badge written by both <code>api.js</code> and <code>main.js</code>).</p>
+<p><strong>What the guard asserts is the RELATIONSHIP, not the presence of a button:</strong></p>
+<ol>
+<li><strong>One author.</strong> Exactly one template in <code>app/templates/**</code> may name
+   <code>appliances.set_maintenance</code> — the macro partial. Both pages must <em>import</em>
+   it. Inlining a copy into <code>detail.html</code> is a mutation that dies.</li>
+<li><strong>The same permission pair as <code>edit_save</code>.</strong> <code>config_write</code> <strong>and</strong>
+   <code>appliances.view_maintenance</code>. The file first asserts that the seeded
+   <code>operator</code> profile holds the former and not the latter — without that
+   premise the 403 guards would be vacuous, passing because the user was
+   rejected one gate earlier.</li>
+<li><strong>404, not 403, for a device already hidden</strong> from the caller. 403 confirms
+   the row exists, which is the leak the feature closes.</li>
+<li><strong>The re-provision seam.</strong> Clearing the flag must call
+   <code>_provision_monitoring</code>, exactly as <code>edit_save</code> does; a no-op post must not.
+   Without this the button leaves a device visible and silently uncollected.</li>
+<li><strong>Desired state, not a flip.</strong> The hidden field carries the state the
+   operator saw. Hard-coding it to <code>"on"</code> dies; replacing the read with
+   <code>not appliance.maintenance</code> dies on the no-op test.</li>
+<li><strong>The destination is whitelisted.</strong> <code>back</code> is attacker-supplied;
+   <code>https://evil.example/x</code>, <code>//evil.example</code> and any unlisted path must all
+   land on the inventory. Never <code>request.referrer</code>.</li>
+<li><strong>The header, not the card.</strong> The <em>Appliance Actions</em> card renders only for
+   <code>fortiweb</code>/<code>fortiadc</code>, so the guard renders a <code>fortiauthenticator</code> device
+   (in its own ADOM — from the FortiWeb ADOM it is a 404, and a 404 page also
+   happens not to contain the button) and asserts the card is absent while the
+   control is present.</li>
+<li><strong>CSRF is asserted in the MARKUP.</strong> <code>WTF_CSRF_ENABLED=False</code> in the test
+   config, so posting proves nothing about the token.</li>
+</ol>
+<p><strong>Mutations: 15 run, 15 kill, 0 survive, 0 void, <code>restore-ok=True</code>,
+control green before and after.</strong> The harness measures by <strong>return code with no
+pipe</strong> on the run being measured, and treats only <code>rc==1</code> as a failure — piping
+pytest into <code>tail</code> measures <code>tail</code>, which is how this repo has reported
+"SURVIVED" against obviously-fatal mutations eleven times.</p>
     </div>
   </div>
 </section>

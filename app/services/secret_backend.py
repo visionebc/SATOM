@@ -44,6 +44,8 @@ import time
 import urllib.error
 import urllib.request
 
+from flask import has_app_context
+
 from ..models import AppSetting
 from . import encryption
 
@@ -93,13 +95,36 @@ class VaultError(RuntimeError):
     """The vault was asked for something and could not answer."""
 
 
+class VaultConfigUnavailable(RuntimeError):
+    """This process cannot READ where the secret lives, so it must not guess.
+
+    Deliberately NOT a ``VaultError``: ``get_appliance_password`` catches that
+    one and falls back to the local copy, which is exactly the silent
+    degradation this class exists to stop.
+    """
+
+
 # ---------------------------------------------------------------------------
 # configuration
 # ---------------------------------------------------------------------------
 def _raw() -> dict:
+    # "No puedo leer la configuracion" NO es "el vault esta apagado", y hasta
+    # 2026-09-14 este `except` las confundia. Un hilo sin app context (el pool
+    # del badge en api/appliances.py) recibia {} -> active() False ->
+    # get_appliance_password() None = "usa la copia local" -> la copia local es
+    # el centinela -> el getter lanza -> probe_status devuelve "offline". Todo
+    # el inventario marcado offline, 3,5 semanas, sin una linea de log.
+    #
+    # Que se rompa RUIDOSAMENTE es el arreglo: el sintoma reaparece en la
+    # proxima ruta que use hilos, y ahi tampoco habria log.
+    if not has_app_context():
+        raise VaultConfigUnavailable(
+            "vault configuration was read with no Flask app context, so this "
+            "process cannot tell whether a vault owns the secret; push an "
+            "app_context() inside the worker instead of guessing")
     try:
         val = AppSetting.get(K_CONFIG)
-    except Exception:  # no app context / table not migrated yet
+    except Exception:  # table not migrated yet (fresh install, pre-Alembic)
         return {}
     if not val:
         return {}

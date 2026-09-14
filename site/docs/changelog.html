@@ -107,6 +107,103 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="fixed-every-status-badge-read-offline-against-appliances-that-answered-2026-09-14">Fixed — Every status badge read "offline" against appliances that answered (2026-09-14)</h3>
+<p>Reported as <em>"why does SATOM mark {device} as offline?"</em>. It was not
+{device}: <strong>the whole inventory was mislabelled</strong>, and had been for ~3.5
+weeks.</p>
+<p><strong>Measured before anything was changed.</strong> From the node itself, as the service
+user, with the same code and the same 6 s timeout the badge uses, {device}
+answered <code>online</code> in <strong>0.08 s</strong> (<code>hostName=FortiWeb, 7.6.8 build1128</code>). Through
+the badge's real path — <code>GET /api/appliances</code>, which probes inside a
+<code>ThreadPoolExecutor</code> — the same three appliances came back
+<code>{'{device}': 'offline', '{device}': 'offline', '{device}': 'offline'}</code> while
+the main thread returned all three <code>online</code>.</p>
+<p><strong>Root cause: two correct pieces, one wrong combination.</strong> A worker thread
+starts with empty ContextVars, so it has no Flask app context. Since credentials
+may live in an external vault (2026-08-19), the credential path reaches the
+database: <code>secret_backend._raw()</code> called <code>AppSetting.get()</code> and swallowed the
+failure with <code>except Exception: return {}</code>. An empty config means "no vault", so
+<code>get_appliance_password()</code> returned <code>None</code> — <em>"use the local copy"</em> — and the
+local copy of a vault-owned credential is the sentinel, whose getter raises.
+<code>probe_status()</code> swallowed that too and answered <code>"offline"</code>. The pool had
+existed since the initial commit and was harmless while the credential path was
+env + column (no DB at all); the vault made it a defect without either side
+knowing.</p>
+<p>Nothing failed loudly because <strong>"offline" is a perfectly credible answer</strong>. No
+log line, no red test, no alert. Every other view (tables, reports, <code>analysis*</code>,
+<code>advisor</code>, <code>api_v1</code>) reads the <code>last_status</code> column this one poller writes, so a
+single broken writer poisoned all of them.</p>
+<p><strong>Fixed, four ways.</strong></p>
+<ul>
+<li><code>api/appliances.py</code> pushes an app context inside each worker and re-reads the
+  row by id (<code>_probe_in_own_context</code>) — sharing the request's ORM instance
+  across sessions would leave it detached. This is the only context-less thread
+  in the tree: <code>deep_jobs</code>, <code>bulk</code>, <code>policy_ops</code>, <code>metrics_collect</code>,
+  <code>rediscovery</code> and <code>jobs</code> all already pushed one, and <code>logcollect</code> captures the
+  credential in the request thread on purpose.</li>
+<li><code>secret_backend._raw()</code> now <strong>raises <code>VaultConfigUnavailable</code></strong> when there is
+  no app context instead of degrading to "no vault". "I cannot read the
+  configuration" is not "the vault is off", and conflating them makes the same
+  symptom reappear in the next route that uses threads. The class deliberately
+  does <strong>not</strong> inherit <code>VaultError</code>, which <code>get_appliance_password</code> catches and
+  falls back on — that would restore the silent degradation through the back
+  door. An unmigrated settings table is still tolerated (fresh install).</li>
+<li><code>Appliance.probe_status()</code> logs the failure at WARNING <strong>naming the
+  appliance</strong> — a warning that does not say which one sends the operator to
+  check all nine — and stays silent on success so the line keeps meaning
+  something.</li>
+<li>A status poll no longer bumps <code>updated_at</code>, on <strong>both</strong> write paths (the badge
+  poller and the ⚡ test button). The docstring already claimed this and was
+  false: <code>updated_at</code> has <code>onupdate=datetime.utcnow</code>, which a Core
+  <code>query.update()</code> fires, so every poll marked the row as edited every 60 s and
+  <em>"when was this configuration last changed"</em> had no answer. <code>updated_at</code> is
+  now assigned to itself explicitly.</li>
+</ul>
+<p><strong>Verified.</strong> 14 new guards in <code>tests/test_probe_thread_context.py</code>
+(<code>safeguards.md</code> §9p), <strong>10 mutations, 10 bite</strong>, 343 targeted tests rc=0. On
+the live node: all three appliances <code>online</code> through the real thread pool in
+1.55 s, <code>last_checked_at</code> advancing while <code>updated_at</code> stands still in Postgres,
+and a context-less thread raising instead of answering "off".</p>
+<h3 id="added-clonemigrate-registry-with-a-hover-flag-on-the-policy-row-2026-09-14">Added — Clone/migrate registry with a hover flag on the policy row (2026-09-14)</h3>
+<p>Asked for as <em>"when an SPO is cloned you cannot see, from inside the device,
+whether it was cloned and where it went"</em>. The dato did not exist durably, so
+the round created it before it could show it.</p>
+<p><strong>What was measured first.</strong> A clone left two traces and neither could render a
+row: the job file under <code>data/jobs/&lt;id&gt;.json</code> carries the destination but
+<code>jobs.prune()</code> deletes it after 7 days, and the per-policy audit line records
+the destination <strong>appliance</strong> and never the name the copy landed under — which
+for a same-box <code>clone_here</code> is the entire point, since source and destination
+are the same box. A <code>clone_here</code> older than a week left nothing at all.</p>
+<p>New table <code>policy_clone_events</code>: one row per EXECUTED clone/migrate, holding the
+verb, the destination appliance (name captured <strong>at the time</strong>, next to the live
+id), the landing policy name, ok/error, timestamp and user.</p>
+<ul>
+<li><strong>Keyed to the source by plain columns</strong>, never into <code>device_server_policies</code>
+  — that projection is rebuilt from scratch on every ingest, so a row hanging
+  off it would be destroyed by the next harvest.</li>
+<li><strong>Asymmetric foreign keys.</strong> Source <code>CASCADE</code> (without it every row is
+  unreachable by construction); destination <code>SET NULL</code>, because <em>"cloned to
+  {device}"</em> stays true after {device} is retired.</li>
+<li><strong><code>migrate_to</code> keeps its own verb</strong> and is worded as a MOVE. Collapsing it
+  into "clone" would tell the operator he still has a live original that the
+  migrate disabled.</li>
+<li>Written from the <strong>one</strong> real-execution call site; <code>preview()</code> and
+  <code>perform_one()</code> run under <code>dry_run</code> and must never write. The landing name is
+  computed once and fed to <strong>both</strong> the device write and the registry.</li>
+<li><strong>Failed attempts are recorded, with their reason, but not counted</strong> by the
+  badge. Finding half a copy on a destination with no trace that anyone tried is
+  the worse outcome; counting it as a copy that exists is simply wrong.</li>
+</ul>
+<p>UI: a compact flag beside the policy name — icon plus the number of copies that
+actually landed, red when every attempt failed — with the full history in a
+hover/focus popover. The popover body is <strong>server-rendered</strong> into a hidden
+sibling, so every value passes through Jinja autoescaping and no device-supplied
+policy name reaches <code>innerHTML</code> unescaped.</p>
+<p>Guards in <code>tests/test_policy_clone_lineage.py</code> (21 tests). <strong>21 mutations, 21
+kill</strong>, 0 survive, 0 void. Verified by rendering the real page in chromium
+against a seeded cache — which is what caught the popover printing <em>failed</em>
+while swallowing the reason the row had already stored.</p>
+<p>No backfill: the flag is empty until the first clone made after this change.</p>
 <h3 id="added-scout-advisory-reads-unmarked-admonitions-and-destination-scoped-hazards-2026-09-14">Added — Scout Advisory reads unmarked admonitions and destination-scoped hazards (2026-09-14)</h3>
 <p>Reported as <em>"why doesn't the advisor show this?"</em> against FortiWeb 8.0.7's
 <em>"do not upgrade"</em>. The sentence was in the corpus, correctly harvested, and

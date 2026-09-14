@@ -14279,3 +14279,42 @@ no name is plural or overflows a column.
 `__pycache__` purged every pass, tree restored and verified by SHA-256, aborts
 if another pytest is alive on the tree.
 
+
+## §9p — The status badge: a thread that cannot read where the secret lives
+
+**What it defends.** `GET /api/appliances` probes inside a `ThreadPoolExecutor`,
+and the credential path reads the database. A worker thread has no app context,
+so that read failed and `secret_backend._raw()` answered `{}` = "no vault" —
+which resolves a vault-owned credential to the local sentinel, whose getter
+raises, which `probe_status` turns into `"offline"`. Every badge in the product
+was wrong for ~3.5 weeks and nothing complained, because **"offline" is
+credible**.
+
+**Two classes of guard, and both are needed.** Behavioural ones assert the badge
+route says `online` for a vault-backed appliance and that the probe still runs
+**off** the request thread (serialising would also go green and turn the page
+into N × 6 s). Structural ones assert `_raw()`/`active()` **break** in a
+context-less thread rather than answering "off" — without those, the same
+symptom returns in the next route that uses threads, and again with no log.
+
+**Recipe.** `venv/bin/python -m pytest tests/test_probe_thread_context.py -q`
+(14 tests, seconds). The double client must actually read
+`appliance.password`: a stub that skips it passes the guard without exercising
+the one line that breaks.
+
+**Traps this file already paid for.**
+
+* *An assertion satisfied by the wrong text.* `"fortiweb15" in caplog.text`
+  passed with the name **removed** from the log format, because the sentinel's
+  `RuntimeError` already contains the appliance name. The mutation survived and
+  said so. The fix is a guard whose failure is **anonymous** (a `TimeoutError`
+  naming nothing), so only the format string can put the name there.
+* *Two anchors where one is a substring of the other.* The poll's
+  `'updated_at': Appliance.updated_at},` is indented 17 spaces and the test
+  button's 9; the shorter string matches **inside** the longer line, so both
+  mutations counted x2 and went VOID. Anchor on the leading newline.
+* *Piping the run you are measuring.* `pytest ... | tail` returns `tail`'s exit
+  code. Measure by rc with no pipe, and only `rc==1` is a bite.
+* *A mutation that mutates nothing.* `X if False else Y` where `Y` is the
+  original expression is a no-op dressed as a change; it would have reported a
+  surviving guard against a tree that was never modified.

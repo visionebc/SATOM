@@ -14428,3 +14428,63 @@ The product was innocent and the guard said otherwise.
 **Mutations: 23 run, 23 kill, 0 survive, 0 void, `restore-ok=True`,** control
 green before and after, measured **by return code with no pipe** on the run
 being measured.
+
+## §168 — a verdict that already existed, four clicks from the button that reboots the box (2026-09-14)
+
+`tests/test_upgrade_scout.py` — 32 guards. Scout's upgrade advisory now renders
+on the Upgrade page and runs for every dry run and every live push.
+
+**What is defended, in order of how badly it fails.** Every failure mode here is
+the same shape: *a review that did not happen must not look like a review that
+came back clean*. An empty green panel above a live-flash button converts
+"nobody checked" into "somebody checked and it was fine", on the one screen
+where that sentence reboots an appliance.
+
+1. **`unavailable` is outside the advisory's vocabulary.** `Review.verdict`
+   returns it whenever there is no advisory, and the guard asserts it is not a
+   severity `release_advisor` can emit. A mutation degrading that fallback to
+   `clear` dies.
+2. **Each negative case has its OWN reason, spelled once.** Off / not asked /
+   unsupported product / unknown running version / unreadable corpus. The
+   uniqueness guard counts **parsed string constants**, never substrings of the
+   source: these are hard-wrapped with implicit concatenation, so a text count
+   is `0` for most of them and the guard would have passed for the wrong reason.
+   *(The seventh assert-by-substring trap in this repo.)*
+3. **An empty corpus is `unknown` WITH its gaps**, never `clear`.
+4. **An exception while reading the corpus names itself** in the reason. A
+   mutation that blanks it — the shape of the 2026-09-14 status-badge defect,
+   where `except Exception: return {}` turned "cannot read the vault" into "there
+   is no vault" — dies.
+5. **The panel reviews the option the picker has selected.** `images[0]` is what
+   a plain submit posts; a verdict for another image sitting above that button
+   is a lie told in the most expensive place available. Mutating it to
+   `images[-1]` dies.
+6. **The running version is normalised before the verdict, not after.**
+   Appliances report `FortiWeb-KVM 7.6.8,build1128(GA.M),260602`; handed to the
+   analyser unparsed it produces a confident empty result.
+7. **Scout is not a gate.** A guard asserts a `blocker` still spawns the job.
+   Adding a refusal dies — which is the point: the check exists so that an
+   accidental future gate is a test failure, not a silent policy change.
+8. **The fragment route is not a wider door than the page** (`CONFIG_WRITE`,
+   device scope, 404 not 403), and it honours the opt-in.
+9. **One author per fact.** The view never contains the panel's markup; the page
+   *includes* the fragment rather than copying it; the fragment's `id` and the
+   selector that swaps it are asserted **separately** (`_in_class_or_id_attr`
+   vs. the `getElementById`/`querySelector` call) — renaming one side only has
+   passed in this repo ten times; and `views/release_notes` must **delegate** to
+   `services/release_corpus` rather than re-implement the loader.
+10. **Ordering is read off the AST**, not off a comment: `_scout_for` must be
+    called before `push_firmware` and before `_spawn_flash_job`. A warning
+    delivered after the reboot is not a warning.
+
+**Trap paid for in this round:** the blanket assertion `"rn.load_db(" not in
+code` failed against a **correct** file — `load_db` legitimately survives in the
+scanner, which merges a fresh harvest into the corpus. A ban on the *name* would
+have been satisfied by deleting the wrong call. The guard now unparses the two
+reader functions and asserts *they* delegate.
+
+**Recipe.** `venv/bin/python -m pytest tests/test_upgrade_scout.py -q` →
+32 passed. Mutation harness: **26 mutations, 26 kill**, 0 survive, 0 void,
+`restore-ok=True`. Measured **by return code and without a pipe** — piping pytest
+into `grep`/`tail` measures `grep`, for the eleventh time in this repo; `rc==1`
+is a failure, `rc==4` is a usage error and counts as void, not as a kill.

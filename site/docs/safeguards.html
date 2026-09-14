@@ -13837,6 +13837,62 @@ The product was innocent and the guard said otherwise.</p>
 <p><strong>Mutations: 23 run, 23 kill, 0 survive, 0 void, <code>restore-ok=True</code>,</strong> control
 green before and after, measured <strong>by return code with no pipe</strong> on the run
 being measured.</p>
+<h2 id="168-a-verdict-that-already-existed-four-clicks-from-the-button-that-reboots-the-box-2026-09-14">§168 — a verdict that already existed, four clicks from the button that reboots the box (2026-09-14)</h2>
+<p><code>tests/test_upgrade_scout.py</code> — 32 guards. Scout's upgrade advisory now renders
+on the Upgrade page and runs for every dry run and every live push.</p>
+<p><strong>What is defended, in order of how badly it fails.</strong> Every failure mode here is
+the same shape: <em>a review that did not happen must not look like a review that
+came back clean</em>. An empty green panel above a live-flash button converts
+"nobody checked" into "somebody checked and it was fine", on the one screen
+where that sentence reboots an appliance.</p>
+<ol>
+<li><strong><code>unavailable</code> is outside the advisory's vocabulary.</strong> <code>Review.verdict</code>
+   returns it whenever there is no advisory, and the guard asserts it is not a
+   severity <code>release_advisor</code> can emit. A mutation degrading that fallback to
+   <code>clear</code> dies.</li>
+<li><strong>Each negative case has its OWN reason, spelled once.</strong> Off / not asked /
+   unsupported product / unknown running version / unreadable corpus. The
+   uniqueness guard counts <strong>parsed string constants</strong>, never substrings of the
+   source: these are hard-wrapped with implicit concatenation, so a text count
+   is <code>0</code> for most of them and the guard would have passed for the wrong reason.
+   <em>(The seventh assert-by-substring trap in this repo.)</em></li>
+<li><strong>An empty corpus is <code>unknown</code> WITH its gaps</strong>, never <code>clear</code>.</li>
+<li><strong>An exception while reading the corpus names itself</strong> in the reason. A
+   mutation that blanks it — the shape of the 2026-09-14 status-badge defect,
+   where <code>except Exception: return {}</code> turned "cannot read the vault" into "there
+   is no vault" — dies.</li>
+<li><strong>The panel reviews the option the picker has selected.</strong> <code>images[0]</code> is what
+   a plain submit posts; a verdict for another image sitting above that button
+   is a lie told in the most expensive place available. Mutating it to
+   <code>images[-1]</code> dies.</li>
+<li><strong>The running version is normalised before the verdict, not after.</strong>
+   Appliances report <code>FortiWeb-KVM 7.6.8,build1128(GA.M),260602</code>; handed to the
+   analyser unparsed it produces a confident empty result.</li>
+<li><strong>Scout is not a gate.</strong> A guard asserts a <code>blocker</code> still spawns the job.
+   Adding a refusal dies — which is the point: the check exists so that an
+   accidental future gate is a test failure, not a silent policy change.</li>
+<li><strong>The fragment route is not a wider door than the page</strong> (<code>CONFIG_WRITE</code>,
+   device scope, 404 not 403), and it honours the opt-in.</li>
+<li><strong>One author per fact.</strong> The view never contains the panel's markup; the page
+   <em>includes</em> the fragment rather than copying it; the fragment's <code>id</code> and the
+   selector that swaps it are asserted <strong>separately</strong> (<code>_in_class_or_id_attr</code>
+   vs. the <code>getElementById</code>/<code>querySelector</code> call) — renaming one side only has
+   passed in this repo ten times; and <code>views/release_notes</code> must <strong>delegate</strong> to
+   <code>services/release_corpus</code> rather than re-implement the loader.</li>
+<li><strong>Ordering is read off the AST</strong>, not off a comment: <code>_scout_for</code> must be
+    called before <code>push_firmware</code> and before <code>_spawn_flash_job</code>. A warning
+    delivered after the reboot is not a warning.</li>
+</ol>
+<p><strong>Trap paid for in this round:</strong> the blanket assertion <code>"rn.load_db(" not in
+code</code> failed against a <strong>correct</strong> file — <code>load_db</code> legitimately survives in the
+scanner, which merges a fresh harvest into the corpus. A ban on the <em>name</em> would
+have been satisfied by deleting the wrong call. The guard now unparses the two
+reader functions and asserts <em>they</em> delegate.</p>
+<p><strong>Recipe.</strong> <code>venv/bin/python -m pytest tests/test_upgrade_scout.py -q</code> →
+32 passed. Mutation harness: <strong>26 mutations, 26 kill</strong>, 0 survive, 0 void,
+<code>restore-ok=True</code>. Measured <strong>by return code and without a pipe</strong> — piping pytest
+into <code>grep</code>/<code>tail</code> measures <code>grep</code>, for the eleventh time in this repo; <code>rc==1</code>
+is a failure, <code>rc==4</code> is a usage error and counts as void, not as a kill.</p>
     </div>
   </div>
 </section>

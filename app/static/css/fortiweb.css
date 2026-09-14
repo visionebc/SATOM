@@ -1580,6 +1580,17 @@ body.fw-entering-page {
    in a genuinely narrow cell can still choose to wrap. */
 .fw-badge-nowrap { white-space: nowrap; }
 
+/* BUTTON LABELS NEVER WRAP.
+   Bootstrap 4 shipped .btn{white-space:nowrap}; Bootstrap 5 dropped it. In a
+   flex row that means a button squeezed by a sibling breaks its LABEL across
+   lines instead of staying one control, and nothing errors - the Cancel CR
+   button on a change request rendered 80px wide and THREE lines tall at every
+   viewport width, because the reason input beside it claimed width:100% of
+   their shared form. A button label is one phrase; prose belongs in .form-text.
+   An explicit <br> still breaks, so the API-explorer method chips are
+   unaffected. */
+.btn { white-space: nowrap; }
+
 /* The heading that divides one form into named sections, beside
    .fw-section-separator. ONE definition: the same six declarations were
    already inlined on settings/index.html, and a second copy is how this

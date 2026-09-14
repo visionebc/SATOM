@@ -13779,6 +13779,64 @@ control green before and after.</strong> The harness measures by <strong>return 
 pipe</strong> on the run being measured, and treats only <code>rc==1</code> as a failure — piping
 pytest into <code>tail</code> measures <code>tail</code>, which is how this repo has reported
 "SURVIVED" against obviously-fatal mutations eleven times.</p>
+<hr>
+<h2 id="167-a-field-that-is-optional-to-write-and-required-to-run-2026-09-14">§167 — a field that is optional to write and required to run (2026-09-14)</h2>
+<p><code>tests/test_cr_edit.py</code> — 42 guards behind <code>/change-requests/&lt;id&gt;/edit</code>.</p>
+<p><strong>The shape of the defect.</strong> <code>window_start</code> is optional at creation and required
+by <code>cr_runnable</code>, and the blueprint had no route that could write one. Nothing
+errors: the change sits in <code>approved</code> looking healthy and simply never fires.
+CR-2026-0012 was stored that way.</p>
+<p>What the file asserts, and why each line is the relationship rather than a case:</p>
+<ol>
+<li><strong>The window rule has ONE author.</strong> A parametrised matrix of six
+   start/end pairs is put through <em>both</em> <code>create_change_request</code> and
+   <code>update_change_request</code>, and the two must return the same verdict. The rule
+   was inline in the create path, so every other writer of a window was free to
+   disagree with it. A second copy of the refusal sentence in the view is
+   asserted absent <strong>against <code>ast.unparse</code> output</strong>, never raw text: the comment
+   that explains the rule quotes the sentence it emits, so a text scan is
+   satisfied by its own documentation. (Ninth time in this repo.)</li>
+<li><strong>Approval-critical vs the rest, both directions.</strong> Five parametrised fields
+   must void the approval; five others must leave it alone. Only the first half
+   would pass a route that voided on every save.</li>
+<li><strong>The bound one-shot is disabled</strong> when an approval is voided. <code>cr_runnable</code>
+   re-gates at fire time, so this is not "it would run outside the window" — it
+   is that <code>catch_up</code> can fire it at an instant nobody scheduled, and that the
+   scheduler's answer to <em>when does this run</em> is otherwise false.</li>
+<li><strong>Minute resolution.</strong> A window carrying seconds cannot be expressed in a
+   <code>datetime-local</code> field. Comparing verbatim charges the operator with an edit
+   they cannot even type — and voids the approval when they correct the title.
+   <strong>This defect was found by the guard, with the other twenty in green.</strong></li>
+<li><strong>The window round-trips through the console timezone</strong>, read out of the
+   <em>rendered page</em> and posted back: the prefill is the same shift, arriving from
+   the other side of <code>parse_local</code>.</li>
+<li><strong>Scope and permission</strong> match the rest of the blueprint — 404 on a CR
+   outside the ADOM, on <code>GET</code> <strong>and</strong> on <code>POST</code>.</li>
+<li><strong>A button label is one phrase.</strong> The stylesheet rule and the markup are
+   asserted separately: <code>.btn{white-space:nowrap}</code> alone only trades a wrapped
+   label for an overflowing one, because the 80px width came from the sibling
+   input, not from the wrapping.</li>
+</ol>
+<p><strong>Three traps this round, all caught by the mutation pass.</strong></p>
+<ul>
+<li>The CSS guard was satisfied by <strong>its own comment</strong>: the comment above
+  <code>.btn{white-space:nowrap}</code> quotes the declaration verbatim, so flipping the
+  real one to <code>normal</code> <strong>survived</strong>. Strip <code>/* ... */</code> before asserting — tenth
+  time in this repo, first time in a stylesheet.</li>
+<li>The terminal-status check inside <code>update_change_request</code> is <strong>unreachable over
+  HTTP</strong> (the route refuses first), so removing it survived. It is not
+  decoration — the function is the one implementation of <em>edit a change</em> — so it
+  is now asserted <strong>directly</strong>, not through the route.</li>
+<li>An assertion that a diff did not mention the window was satisfied by the word
+  <em>window</em> inside the <strong>title being edited</strong>. Assert on the field prefix, never
+  the substring.</li>
+</ul>
+<p>And one the harness invented itself: a two-hour shift caused by formatting the
+form values <strong>outside an app context</strong>, where <code>to_local</code> degrades to raw UTC.
+The product was innocent and the guard said otherwise.</p>
+<p><strong>Mutations: 23 run, 23 kill, 0 survive, 0 void, <code>restore-ok=True</code>,</strong> control
+green before and after, measured <strong>by return code with no pipe</strong> on the run
+being measured.</p>
     </div>
   </div>
 </section>

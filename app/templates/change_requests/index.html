@@ -74,6 +74,12 @@
                  href="{{ url_for('change_requests.detail', id=cr.id) }}" title="{{ _('Open') }}">
                 <i class="bi bi-box-arrow-up-right"></i>
               </a>
+              {% if cr.status not in ['completed', 'failed', 'cancelled'] %}
+              <a class="btn btn-sm btn-outline-secondary btn-sm-icon"
+                 href="{{ url_for('change_requests.edit', id=cr.id) }}" title="{{ _('Edit') }}">
+                <i class="bi bi-pencil-square"></i>
+              </a>
+              {% endif %}
             </td>
           </tr>
           {% endfor %}

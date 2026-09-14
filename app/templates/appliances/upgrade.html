@@ -82,6 +82,8 @@
 </select>
 {% endmacro %}
 
+{% if scout is defined %}{% include 'appliances/_scout_advisory.html' %}{% endif %}
+
 <div class="card shadow-sm mb-3">
   <div class="card-header fw-card-header"><i class="bi bi-check2-circle me-1"></i>{{ _('Apply now') }}</div>
   <div class="card-body">
@@ -92,6 +94,14 @@
       <div class="form-check mb-2">
         <input class="form-check-input" type="checkbox" name="dry_run" id="dry_run" checked>
         <label class="form-check-label" for="dry_run">{{ _('Dry run (validate the image only — nothing is sent)') }}</label>
+      </div>
+      <div class="form-check mb-2">
+        <input class="form-check-input" type="checkbox" name="scout_check" id="scout_check"
+               {{ 'checked' if scout_on else '' }}{{ ' disabled' if not scout_on else '' }}>
+        <label class="form-check-label" for="scout_check">
+          {{ _('Ask Scout to review the release notes for this version') }}
+          {% if not scout_on %}<span class="text-muted">&mdash; {{ _('Scout is switched off for this site.') }}</span>{% endif %}
+        </label>
       </div>
       <div id="live-fields" class="d-none border rounded p-3 mb-3" style="background:rgba(248,113,113,.06)">
         <div class="form-check mb-2">
@@ -175,6 +185,34 @@
         alert('Network error starting the task.');
       });
   });
+})();
+/* Keep the panel describing the move that is actually selected. Swapping the
+   SERVER's fragment (rather than building rows from JSON) is what keeps vendor
+   prose inside Jinja's autoescape — there is one renderer for these findings. */
+(function () {
+  var form = document.getElementById('flash-form');
+  if (!form) return;
+  var sel = form.querySelector('select[name="image_id"]');
+  var box = document.getElementById('scout_check');
+  var url = {{ url_for('appliances.upgrade_advisory', id=appliance.id)|tojson }};
+  function refresh() {
+    var panel = document.getElementById('scout-panel');
+    if (!panel || !sel) return;
+    fetch(url + '?image_id=' + encodeURIComponent(sel.value) +
+          '&scout_check=' + ((box && box.checked) ? 'on' : 'off'),
+          { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(function (r) { return r.ok ? r.text() : null; })
+      .then(function (html) {
+        if (html === null) return;
+        var d = document.createElement('div');
+        d.innerHTML = html;
+        var fresh = d.querySelector('#scout-panel');
+        if (fresh && panel.parentNode) panel.parentNode.replaceChild(fresh, panel);
+      })
+      .catch(function () { /* the panel keeps its last honest answer */ });
+  }
+  if (sel) sel.addEventListener('change', refresh);
+  if (box) box.addEventListener('change', refresh);
 })();
 // CSP: former inline onchange on #dry_run, re-bound here (Turbo-safe immediate IIFE)
 (function () {

@@ -55,6 +55,7 @@ _SEV_RANK = {s: i for i, s in enumerate(SEVERITIES)}
 #: says the upgrade is not a supported path sat underneath it. Anything not
 #: listed sorts after everything listed, in a stable order.
 RULE_ORDER: tuple[str, ...] = (
+    "target-prohibition",        # there is no window at all
     "mandatory-hop",             # you cannot get there from here
     "repartition",               # …and here is the other way you cannot
     "downgrade-discouraged",
@@ -157,6 +158,22 @@ class Ctx:
 
     def of(self, *sections: str) -> list[Block]:
         return [b for b in self.blocks if b.section in sections]
+
+    def prev_block(self, b: Block) -> Block | None:
+        """The block immediately before ``b``, within its own section.
+
+        Same flat-list indexing as :meth:`next_block`, and for the same reason.
+        Used for the HEADING a vendor puts above a paragraph — read for a title
+        only, never as a trigger: measured against the live corpus, "a short
+        line followed by a long one" matches 28-30 times per version, so a
+        detector built on it would bury the panel it is meant to sharpen."""
+        prv = b.index - 1
+        if prv < 0:
+            return None
+        other = self.blocks[prv]
+        if other.version != b.version or other.section != b.section:
+            return None
+        return other
 
     def next_block(self, b: Block) -> Block | None:
         """The block immediately after ``b``, within its own section.
@@ -412,6 +429,97 @@ def _rule_vm_license(ctx: Ctx) -> list[Finding]:
 _MARKS = {"caution": "caution", "warning": "caution", "important": "caution",
           "note": "note"}
 
+#: Rules whose SCOPE is the destination, not the span below it.
+#:
+#: Every other rule in this module answers "does the move start low enough for
+#: this to bite?" — they compare ``ctx.cur_t`` against a floor the vendor wrote
+#: down. A whole class of hazard has no floor: *"do not upgrade to 8.0.7"* is
+#: true from 8.0.6 and true from 7.2.1 alike, and a motor that can only express
+#: floors answers "nothing found" for every single origin. That is exactly what
+#: 8.0.7 did, with the sentence sitting in the corpus the whole time.
+TARGET_SCOPED: frozenset = frozenset({"target-prohibition"})
+
+#: An explicit vendor instruction NOT to make a move, naming the version. Kept
+#: narrow on purpose: this promotes a finding to *blocker*, so it matches an
+#: imperative aimed at upgrading/installing a NAMED version and nothing looser.
+#: "Do not use a lower patch" and "we do not recommend…" are deliberately out —
+#: the first names no version, the second is a recommendation and already lands
+#: as a caution through the catch-all.
+_RE_PROHIBITION = re.compile(
+    r"(?:do not|don't|must not|should not)\s+(?:upgrade|install|update)"
+    r"[^.]{0,60}?\bto\s+(?:FortiWeb[\s-]*)?(" + _VER + r")"
+    r"|not supported to upgrade to\s+(?:FortiWeb[\s-]*)?(" + _VER + r")", re.I)
+
+#: A vendor heading: short, unpunctuated, more than one word. Read ONLY to title
+#: a finding whose trigger is already the prose below it.
+_RE_HEADINGISH = re.compile(r"^(?!.*[.!?]$)(?=(?:\S+\s+){1,}\S)[^\n]{4,79}$")
+
+
+def _condition_label(ctx: Ctx, b: Block) -> str:
+    """The vendor's own heading above ``b``, when there is one."""
+    prev = ctx.prev_block(b)
+    if prev and _RE_HEADINGISH.match(prev.text.strip()):
+        return prev.text.strip()
+    return ""
+
+
+def _rule_target_prohibition(ctx: Ctx) -> list[Finding]:
+    """The vendor says *do not make this move*, and says it about the TARGET.
+
+    The rule this module was missing. FortiWeb 8.0.7's *Upgrade notes* carry
+    'If you are running FortiWeb in a VM environment and the total number of
+    configured server policies exceeds 20, do not upgrade to FortiWeb 8.0.7 at
+    this time' — unmarked prose, no floor, and therefore invisible both to the
+    catch-all (which needs a vendor mark) and to every tailored rule (which
+    needs a floor).
+
+    CONDITIONAL BY NATURE, and the finding says so rather than pretending
+    otherwise: the condition is the vendor's, it is quoted verbatim, and the
+    title carries their own heading for it. Emitting this as a note because it
+    might not apply would bury the words 'do not upgrade' under four other
+    notes; emitting it as a blocker that NAMES its condition is a gate the
+    operator clears in one glance."""
+    out = []
+    if not ctx.is_upgrade:
+        return out
+    for b in ctx.of("upgrade_notes", "upgrading_from", "ha_upgrade"):
+        m = _RE_PROHIBITION.search(b.text)
+        if not m:
+            continue
+        named = m.group(1) or m.group(2)
+        # THE DESTINATION, not merely a version the span steps over. Measured:
+        # gating on ``crossed`` made 7.2.1 -> 8.0.7 emit a blocker about a
+        # FortiWeb 100D incompatibility with 7.6.0 — a release that move never
+        # installs, because its supported route lands on 7.6.2. A prohibition
+        # is an instruction not to RUN a version, so the only version it can
+        # bind is the one being installed.
+        #
+        # KNOWN LIMIT, stated rather than hidden: a prohibition attached to a
+        # mandatory HOP (7.6.2 here) is not raised, because the hops are derived
+        # from the findings and so do not exist yet when the rules run. The
+        # hop's own advisory shows it; a second pass here would have to re-enter
+        # the rule set, and guessing the route instead is how the 7.6.0 false
+        # blocker above happened.
+        if version_tuple(named) != ctx.tgt_t:
+            continue
+        if _floor_excludes(b.text, ctx):
+            continue
+        label = _condition_label(ctx, b)
+        f = _finding(
+            "target-prohibition", "blocker",
+            f"Fortinet say do not upgrade to {named}"
+            + (f" — {label}" if label else ""),
+            f"This is not a prerequisite you can satisfy: the vendor publishes "
+            f"an instruction not to install {named} at all. It is CONDITIONAL — "
+            f"the condition is in their words below"
+            + (f", under their own heading \u201c{label}\u201d" if label else "")
+            + f". Confirm your appliance does not meet it before booking the "
+            f"window; if it does, there is no window until Fortinet withdraw "
+            f"this.", b)
+        f.data = {"scope": "target", "named": named, "condition": label}
+        out.append(f)
+    return out
+
 
 def _headline(mark: str, text: str, section: str, limit: int = 88) -> str:
     """A title taken from the block's OWN first sentence.
@@ -421,12 +529,80 @@ def _headline(mark: str, text: str, section: str, limit: int = 88) -> str:
     sentence of ours underneath. A list where every row has the same name is a
     list nobody reads — and the one row that mattered was in it."""
     word = mark.strip().rstrip(":").title() or "Note"
-    first = re.split(r"(?<=[.:;])\s", (text or "").strip(), maxsplit=1)[0].strip()
+    body = (text or "").strip()
+    # A MadCap admonition carries its own mark INSIDE the body ("Note : This
+    # issue has been resolved…"), and the body is the evidence, so it must stay
+    # verbatim. Strip the mark for the TITLE only — otherwise the first
+    # "sentence" is the word "Note :" and every such row is called "Note: Note :".
+    body = _RE_MARK_EMBEDDED.sub("", body, count=1)
+    first = re.split(r"(?<=[.:;])\s", body, maxsplit=1)[0].strip()
     if len(first) > limit:
         first = first[:limit].rsplit(" ", 1)[0] + "…"
     if not first:
         return f"{word} in {SECTION_LABEL.get(section, section)}"
     return f"{word}: {first}"
+
+
+#: A mark word sitting ALONE on its line — the markdown renderer's shape, where
+#: the admonition body is the next block.
+_RE_MARK_PURE = re.compile(r"^(caution|warning|important|note)\s*:?$", re.I)
+
+#: The SAME admonition as MadCap renders it: the mark is glued to the sentence
+#: ("Note : This issue has been resolved…"). Measured over the live corpus:
+#: pure-mark lines number 0 in every FortiWeb version from 7.6.5 to 8.0.6 and 18
+#: in 8.0.7 — because Fortinet changed renderers, not because eleven releases
+#: shipped without a single caveat. A catch-all that only knows one of the two
+#: shapes is not a catch-all; it is a catch-all for the current renderer, and it
+#: goes quiet the day that changes without anything failing.
+_RE_MARK_EMBEDDED = re.compile(
+    r"^(caution|warning|important|note)\s*[:\-\u2013\u2014]\s*(?=\S)", re.I)
+
+
+def admonitions(ctx: Ctx, *sections: str) -> list[tuple[str, Block]]:
+    """Every ``(mark word, body block)`` the VENDOR marked, in either renderer.
+
+    The mark comes back AS FORTINET WROTE IT — ``Warning``, not the ``caution``
+    severity it maps to. Returning the severity instead reprinted a vendor
+    *Warning* as "Caution: …" in the panel: a classification of ours, wearing
+    the typography of a quotation. Callers map it through :data:`_MARKS` when
+    they need a severity.
+
+    The single author of that notion. The catch-all rule consumes it and so does
+    the coverage guard, on purpose: a corpus the catch-all cannot read is the
+    defect, so the thing that measures readability has to be the thing that
+    reads. Two authors for this would let the guard stay green over a catch-all
+    that had gone blind — which is the exact failure it exists to catch."""
+    out: list[tuple[str, Block]] = []
+    for b in (ctx.of(*sections) if sections else ctx.blocks):
+        text = b.text.strip()
+        m = _RE_MARK_PURE.match(text)
+        if m:
+            nxt = ctx.next_block(b)
+            if nxt is None or not nxt.text.strip():
+                continue
+            out.append((m.group(1), nxt))
+            continue
+        m = _RE_MARK_EMBEDDED.match(text)
+        if m and len(text) > len(m.group(0)) + 20:
+            out.append((m.group(1), b))
+    return out
+
+
+def admonition_coverage(sections: list[ReleaseSection], *,
+                        product: str = "fortiweb") -> dict[str, int]:
+    """Per-version count of vendor-marked blocks the catch-all can actually see.
+
+    A zero here is never "that release had nothing to warn about": Fortinet mark
+    the upgrade pages of every FortiWeb release. A zero means the corpus is
+    being read by a parser that no longer matches the renderer."""
+    rows = [s for s in sections
+            if s.product == product and s.section in UPGRADE_SECTIONS]
+    out: dict[str, int] = {}
+    for v in sorted({s.version for s in rows}, key=version_key):
+        ctx = Ctx(current=v, target=v, is_upgrade=True,
+                  blocks=_split_blocks([s for s in rows if s.version == v]))
+        out[v] = len(admonitions(ctx))
+    return out
 
 
 #: What the catch-all reads, per direction. An upgrade advisory that quotes the
@@ -446,19 +622,14 @@ def _rule_marked_caution(ctx: Ctx) -> list[Finding]:
     not — prose Fortinet added after this file was written still reaches the
     operator, with no verdict attached and no pretence of one."""
     out = []
-    for b in ctx.of(*_MARKED_SECTIONS[ctx.is_upgrade]):
-        mark = _MARKS.get(b.text.strip().lower().rstrip(":"))
-        if not mark:
-            continue
-        nxt = ctx.next_block(b)
-        if nxt is None or not nxt.text.strip():
-            continue
-        if mark == "note" and len(nxt.text) < 60:
+    for word, body in admonitions(ctx, *_MARKED_SECTIONS[ctx.is_upgrade]):
+        severity = _MARKS[word.lower().rstrip(":")]
+        if severity == "note" and len(body.text) < 60:
             continue          # a one-line aside is not an upgrade decision
         out.append(_finding(
-            "vendor-marked", mark, _headline(b.text, nxt.text, b.section),
+            "vendor-marked", severity, _headline(word, body.text, body.section),
             "Fortinet flagged this themselves. SATOM has no tailored verdict for "
-            "it — read the vendor's words and decide.", nxt))
+            "it — read the vendor's words and decide.", body))
     return out
 
 
@@ -480,6 +651,31 @@ SECTION_GATED_BY: dict[str, str] = {
 _RE_FLOOR = re.compile(
     r"(?:previous to|prior to|earlier than|lower than)\s+(" + _VER + r")", re.I)
 
+#: The same floor written the other way round: "To upgrade from 4.0 MR4, Patch x
+#: or earlier, please contact Support". Without this spelling, that Note rode
+#: along on every advisory in the corpus as a caveat about a firmware line
+#: retired a decade ago — and noise is what gets the row that matters skipped.
+_RE_FLOOR_SUFFIX = re.compile(
+    r"(" + _VER + r")\b[^.]{0,40}?\bor (?:earlier|lower|below)\b", re.I)
+
+
+def _floor_excludes(text: str, ctx: Ctx) -> bool:
+    """True when the vendor named a floor the move never goes near.
+
+    Compared against the LOWER endpoint of the move — the current version on an
+    upgrade, the target on a rollback — so one comparison serves both
+    directions. One author for this, shared by the catch-all filter and by the
+    destination-scoped rule: a prohibition that carries its own floor
+    ("not supported to upgrade to 8.0.5 from versions earlier than 6.3.0") is a
+    blocker for an appliance below that floor and a false alarm for every other
+    one, and a second copy of this comparison is how those drift apart."""
+    lo = min(ctx.cur_t, ctx.tgt_t)
+    for rx in (_RE_FLOOR, _RE_FLOOR_SUFFIX):
+        m = rx.search(text)
+        if m and lo >= version_tuple(m.group(1)):
+            return True
+    return False
+
 #: The MIRROR of a floor: "Version 7.6.2 introduces an expanded partition size".
 #: This one applies when the named version IS crossed, not when the move starts
 #: below it — the opposite comparison, so it cannot share the regex above. The
@@ -494,7 +690,6 @@ def _drop_inapplicable(found: list[Finding], ctx: Ctx) -> list[Finding]:
     applicability; this is for the blocks we carry through without a verdict,
     where the only thing we can read is the floor the vendor wrote down."""
     fired = {f.rule for f in found}
-    lo = min(ctx.cur_t, ctx.tgt_t)
     out = []
     for f in found:
         if f.rule != "vendor-marked":
@@ -503,8 +698,7 @@ def _drop_inapplicable(found: list[Finding], ctx: Ctx) -> list[Finding]:
         gate = SECTION_GATED_BY.get(f.section)
         if gate and gate not in fired:
             continue
-        m = _RE_FLOOR.search(f.evidence)
-        if m and lo >= version_tuple(m.group(1)):
+        if _floor_excludes(f.evidence, ctx):
             continue
         m = _RE_INTRODUCED.search(f.evidence)
         if m and not ctx.crossed(m.group(1)):
@@ -515,6 +709,7 @@ def _drop_inapplicable(found: list[Finding], ctx: Ctx) -> list[Finding]:
 
 #: The single author of every verdict, in evaluation order.
 RULES: tuple = (
+    _rule_target_prohibition,
     _rule_mandatory_hop,
     _rule_free_space,
     _rule_repartition,
@@ -621,7 +816,8 @@ def analyse(sections: list[ReleaseSection], current: str, target: str, *,
 #: ``evidence`` — the rule carries the vendor's blocks through, so each distinct
 #:                block is its own item. Collapsing these would silently drop
 #:                warnings.
-COLLAPSE: dict[str, str] = {"vendor-marked": "evidence"}
+COLLAPSE: dict[str, str] = {"vendor-marked": "evidence",
+                            "target-prohibition": "evidence"}
 
 
 def _dedupe(found: list[Finding]) -> list[Finding]:
@@ -682,4 +878,5 @@ __all__ = [
     "SEVERITIES", "Block", "Finding", "Gap", "Advisory", "Ctx",
     "GAP_ABSENT", "GAP_STALE", "span_versions", "RULE_ORDER", "SECTION_GATED_BY",
     "RULES", "rules_digest", "analyse",
+    "TARGET_SCOPED", "admonitions", "admonition_coverage",
 ]

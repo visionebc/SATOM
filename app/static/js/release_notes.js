@@ -177,6 +177,18 @@
       + `<div class="flex-grow-1">`
       + `<div><b>${esc(f.title)}</b></div>`
       + `<div class="small">${esc(f.detail)}</div>`
+      // A destination-scoped finding is true from EVERY origin. Saying so is
+      // not decoration: the rest of this panel is floors ("you are below
+      // 7.6.1"), so an operator who reads a blocker here and assumes it is
+      // about how old their appliance is will try to clear it by hopping —
+      // and there is no hop that clears "do not install this version".
+      + (f.data && f.data.scope === 'target'
+        ? `<div class="small text-muted mt-1">Applies to the DESTINATION`
+          + `${f.data.named ? ` (${esc(f.data.named)})` : ''} — this holds no `
+          + `matter which version you upgrade from.`
+          + `${f.data.condition
+            ? ` It is conditional: ${esc(f.data.condition)}.` : ''}</div>`
+        : '')
       + `<details class="small mt-1"><summary class="text-muted">`
       + `Fortinet's words — ${esc(f.version)} · `
       + `${esc(SECTION_LABEL[f.section] || f.section)}${link}</summary>`

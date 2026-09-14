@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Fixed — release_notes.js was served without a cache key (2026-09-14) · 9 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Added — Scout Advisory reads unmarked admonitions and destination-scoped hazards (2026-09-14) · 9 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Fixed — release_notes.js was served without a cache key (2026-09-14) · 9 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Added — Scout Advisory reads unmarked admonitions and destination-scoped hazards (2026-09-14) · 9 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,7 +59,7 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Fixed — release_notes.js was served without a cache key (2026-09-14) · 9 entries</span>
+        <span class="rel-nav-meta">unreleased · Added — Scout Advisory reads unmarked admonitions and destination-scoped hazards (2026-09-14) · 9 entries</span>
         <ul class="rel-leads"><li>&quot;Not published&quot; and &quot;published but unreadable&quot; are now different states</li><li>Absence is never innocence</li><li>Reproducible</li><li class="rel-more">… and 6 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v2.0.0.html" data-rel-version="2.0.0">
@@ -260,6 +260,41 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
+<h3 id="added-scout-advisory-reads-unmarked-admonitions-and-destination-scoped-hazards-2026-09-14">Added — Scout Advisory reads unmarked admonitions and destination-scoped hazards (2026-09-14)</h3>
+<p>Reported as <em>"why doesn't the advisor show this?"</em> against FortiWeb 8.0.7's
+<em>"do not upgrade"</em>. The sentence was in the corpus, correctly harvested, and
+invisible to the rule set for <strong>two independent reasons</strong>.</p>
+<p><strong>1. The catch-all could only read one renderer.</strong> It fired on a line that IS a
+mark word (<code>Warning</code>, then the body) — the markdown docset's shape. MadCap glues
+the mark to the sentence (<code>Note : This issue has been…</code>). Measured over the live
+corpus: <strong>zero</strong> pure-mark lines in every release from 7.6.5 to 8.0.6, <strong>18</strong> in
+8.0.7. The safety net that exists to carry through what no rule understands had
+been carrying through nothing, for eleven releases, with no test red and no log
+line. <code>admonitions()</code> is now the single author of "what the vendor marked" and
+reads both shapes, returning the mark <strong>as Fortinet wrote it</strong> — a vendor
+<em>Warning</em> is no longer reprinted as our <code>caution</code> bucket.</p>
+<p>A <code>header + paragraph</code> detector was <strong>measured and rejected</strong>: 28–30 matches per
+version, which would bury the panel it is meant to sharpen. The heading is read
+only to TITLE a finding whose trigger is already the prose below it.</p>
+<p><strong>2. Every rule needed a floor.</strong> They all compare the current version against a
+version the vendor named. <em>"If you are running FortiWeb in a VM environment and
+the total number of configured server policies exceeds 20, do not upgrade to
+FortiWeb 8.0.7 at this time"</em> has no floor: it is true from 8.0.6 and from 7.2.1
+alike, so the advisory answered <code>caution</code> for every origin anyone could pick. The
+new <code>target-prohibition</code> rule is <strong>destination-scoped</strong> — it fires on the version
+being installed, ranks first (<em>"there is no window"</em> before <em>"the window needs
+two halves"</em>), carries the vendor's own heading for its condition, and still
+respects a floor the vendor stated inside the block.</p>
+<p><strong>3. A coverage guard, which is the part that makes it stay fixed.</strong>
+<code>admonition_coverage()</code> counts what the catch-all can see per version, and
+<code>test_live_corpus_has_no_blind_version</code> fails when a harvested version yields
+none. Fortinet mark the upgrade pages of every release, so a zero is a parser
+that no longer matches the renderer — not a quiet release. It is the only
+assertion in the file that does not already know what the prose looks like.</p>
+<p>Two defects were visible <strong>only</strong> by running the engine against the live corpus,
+with every assertion green: a MadCap admonition titled itself <code>Note: Note :</code>
+(its own mark is the first sentence), and the span-based gate raised a blocker
+about a release the route never installs.</p>
 <h3 id="fixed-release_notesjs-was-served-without-a-cache-key-2026-09-14">Fixed — <code>release_notes.js</code> was served without a cache key (2026-09-14)</h3>
 <p>Found while shipping the picker above, and it would have hidden it. The tag was
 a bare <code>url_for('static', …)</code> while <code>SEND_FILE_MAX_AGE_DEFAULT</code> is <strong>86400</strong> and

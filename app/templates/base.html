@@ -170,6 +170,32 @@
           <i class="bi bi-shield-exclamation me-2"></i>{{ _('False-positive explainer') }}</a></li>
         <li><a class="dropdown-item" href="#" data-fw-txntrace-open="">
           <i class="bi bi-diagram-3 me-2"></i>{{ _('Transaction tracer') }}</a></li>
+        {# Support group — moved here from the user menu (2026-09-14). The
+           per-profile gates travel WITH the items: Release Notes stays
+           product-scoped and Bug Reports stays behind user_manage. #}
+        <li><hr class="dropdown-divider"></li>
+        <li>
+          <a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#bugReportModal">
+            <i class="bi bi-bug me-2"></i>{{ _('Report a problem') }}
+          </a>
+        </li>
+        {% if product.key in ('fortiweb', 'fortiadc') %}
+        <li>
+          <a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#releaseNotesModal">
+            <i class="bi bi-journal-richtext me-2"></i>{{ _('Release Notes') }}
+          </a>
+        </li>
+        {% endif %}
+        {% if current_user and current_user.can('user_manage') %}
+        <li>
+          <a class="dropdown-item" href="{{ url_for('reports.inbox') }}">
+            <i class="bi bi-bug me-2"></i>Bug Reports
+            {% if open_report_count|default(0) %}
+            <span class="badge rounded-pill bg-danger ms-1">{{ open_report_count }}</span>
+            {% endif %}
+          </a>
+        </li>
+        {% endif %}
       </ul>
     </div>
 
@@ -252,28 +278,8 @@
             <span class="text-muted ms-1">{{ user_lang|upper if user_lang else 'not set' }}</span>
           </a>
         </li>
-        <li>
-          <a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#bugReportModal">
-            <i class="bi bi-bug me-2"></i>{{ _('Report a problem') }}
-          </a>
-        </li>
-        {% if product.key in ('fortiweb', 'fortiadc') %}
-        <li>
-          <a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#releaseNotesModal">
-            <i class="bi bi-journal-richtext me-2"></i>{{ _('Release Notes') }}
-          </a>
-        </li>
-        {% endif %}
-        {% if current_user and current_user.can('user_manage') %}
-        <li>
-          <a class="dropdown-item" href="{{ url_for('reports.inbox') }}">
-            <i class="bi bi-bug me-2"></i>Bug Reports
-            {% if open_report_count|default(0) %}
-            <span class="badge rounded-pill bg-danger ms-1">{{ open_report_count }}</span>
-            {% endif %}
-          </a>
-        </li>
-        {% endif %}
+        {# Report a problem / Release Notes / Bug Reports live in the Tools
+           menu (bi-tools) since 2026-09-14 — do not re-add them here. #}
         <li><hr class="dropdown-divider"></li>
         <li>
           <a class="dropdown-item text-danger" href="{{ url_for('auth.logout') }}">

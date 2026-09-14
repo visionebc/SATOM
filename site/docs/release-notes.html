@@ -374,6 +374,86 @@ page an operator skims when the version number ends in <code>.7</code>.</p>
 </ul>
 <p>Rules are direction-aware: an upgrade advisory never quotes the <em>Downgrading</em>
 page, and a rollback advisory never quotes <em>Supported upgrade paths</em>.</p>
+<h3 id="6a-two-renderers-one-detector-admonitions">6a. Two renderers, one detector (<code>admonitions()</code>)</h3>
+<p>Fortinet mark admonitions in <strong>two shapes</strong>, and until 2026-09-14 the catch-all
+only knew one of them:</p>
+<table>
+<thead>
+<tr>
+<th>shape</th>
+<th>looks like</th>
+<th>docset</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>pure</td>
+<td>the mark ALONE on its line, body in the block after it</td>
+<td>markdown (<code>src-md</code>)</td>
+</tr>
+<tr>
+<td>embedded</td>
+<td>the mark glued to the sentence — <code>Note : This issue has been…</code></td>
+<td>MadCap (<code>src-mc</code>)</td>
+</tr>
+</tbody>
+</table>
+<p>Measured over the live corpus the day it was found: <strong>0</strong> pure-mark lines in
+every FortiWeb release from 7.6.5 to 8.0.6, and <strong>18</strong> in 8.0.7. Eleven releases
+of caveats carried by nothing, with nothing red and nothing logged — the same
+class of failure as the harvester's, one layer up.</p>
+<p><code>admonitions(ctx, *sections)</code> is the single author of "what the vendor marked".
+It returns <code>(mark word, body block)</code> — the word <strong>as Fortinet wrote it</strong>, so a
+vendor <em>Warning</em> is not reprinted as our <code>caution</code> bucket, which would be a
+classification of ours set in the typography of a quotation.</p>
+<p>The <code>header + paragraph</code> heuristic was <strong>measured and rejected</strong>: over the same
+corpus it matches <strong>28–30 blocks per version</strong>, which would bury the panel it is
+meant to sharpen. Detection is narrow on purpose; the heading is read only to
+TITLE a finding whose trigger is already the prose below it.</p>
+<h3 id="6b-destination-scoped-rules-target_scoped">6b. Destination-scoped rules (<code>TARGET_SCOPED</code>)</h3>
+<p>Every other rule asks <em>"does the move start low enough for this to bite?"</em> — it
+compares the current version against a floor the vendor wrote down. A whole
+class of hazard has <strong>no floor</strong>:</p>
+<blockquote>
+<p>If you are running FortiWeb in a VM environment and the total number of
+configured server policies exceeds 20, <strong>do not upgrade to FortiWeb 8.0.7 at
+this time.</strong>  — <em>8.0.7, Upgrade notes</em></p>
+</blockquote>
+<p>That is true from 8.0.6 and true from 7.2.1 alike. A rule set that can only
+express floors answers "nothing found" for every origin, and this sentence sat
+correctly harvested in the corpus while the advisory said <code>caution</code>.</p>
+<p><code>target-prohibition</code> fires when the vendor names the version being <strong>installed</strong>
+— the target, not merely a version the span steps over. Gating on "is it inside
+the span" made <code>7.2.1 → 8.0.7</code> raise a blocker about a FortiWeb 100D
+incompatibility with 7.6.0, a release that route never lands on.</p>
+<ul>
+<li>It is <strong>conditional by nature and says so</strong>: the title carries the vendor's own
+  heading for the condition, the evidence is their sentence verbatim, and the
+  panel prints <em>"Applies to the DESTINATION — this holds no matter which version
+  you upgrade from"</em>. Demoting it to a note because it might not apply would bury
+  the words <em>do not upgrade</em> under four other notes; a blocker that names its own
+  condition is a gate an operator clears in one glance.</li>
+<li>It <strong>respects a floor the vendor stated inside the block</strong> (<em>"not supported to
+  upgrade to 8.0.5 from versions earlier than 6.3.0"</em>), via the same
+  <code>_floor_excludes()</code> the catch-all filter uses — one author, so the two cannot
+  drift.</li>
+<li>It ranks <strong>first</strong> in <code>RULE_ORDER</code>: "there is no window" is read before "the
+  window needs two halves".</li>
+<li><strong>Known limit, stated rather than hidden:</strong> a prohibition attached to a
+  mandatory HOP is not raised, because the hops are derived from the findings and
+  do not exist yet when the rules run. That hop's own advisory shows it.</li>
+</ul>
+<h3 id="6c-the-coverage-guard">6c. The coverage guard</h3>
+<p><code>admonition_coverage(sections)</code> counts, per version, the blocks the catch-all can
+actually see. A zero is <strong>never</strong> "that release had nothing to warn about" —
+Fortinet mark the upgrade pages of every FortiWeb release. A zero means the
+parser and the renderer have parted company.</p>
+<p><code>tests/test_advisor_admonitions.py::test_live_corpus_has_no_blind_version</code> reads
+whatever corpus is on disk and fails on silence. It is the only assertion in that
+file that does not already know what the prose looks like, and therefore the only
+one that can catch the <strong>next</strong> renderer change. It skips where no corpus exists
+(fresh install, CI), because "never harvested" is a different problem and failing
+on it would train the team to ignore the test.</p>
 <h3 id="switching-it-off">Switching it off</h3>
 <p><code>scout.enabled</code> (Settings → Scout → <strong>Availability</strong>, and the switch beside the
 advisory in the modal — <strong>the same flag</strong>, not a second one). Off is enforced on

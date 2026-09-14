@@ -146,7 +146,7 @@ def appliance(appliance_id):
     # OTHER FortiWebs (clone-to / migrate-to targets). Both are DB-first — the
     # facets read the deep cache, the target list is pure config. Best-effort so a
     # cold cache never breaks the page (backend/VIP filters just show nothing).
-    facets, other_appliances = {}, []
+    facets, other_appliances, clone_events = {}, [], {}
     if appl.kind == 'fortiweb':
         names = [(p.get('name') if isinstance(p, dict) else getattr(p, 'name', ''))
                  for p in (policies or [])]
@@ -155,6 +155,11 @@ def appliance(appliance_id):
             facets = _rl.policy_filter_facets(appl.id, names)
         except Exception as exc:  # noqa: BLE001
             log_exception(exc, context='workspace.appliance.facets')
+        # Clone/migrate history for every row on the page — ONE query, keyed by
+        # (appliance, policy name). Deliberately NOT joined onto the cache
+        # projection: device_server_policies is rebuilt on every ingest.
+        from ..services import policy_lineage as _lin
+        clone_events = _lin.for_policies(appl.id, names)
         other_appliances = [a for a in visible_appliances()
                             .filter(Appliance.kind == 'fortiweb')
                             .order_by(Appliance.name).all() if a.id != appl.id]
@@ -168,6 +173,7 @@ def appliance(appliance_id):
                            policies=policies, error=error, cache_meta=meta,
                            facets=facets, other_appliances=other_appliances,
                            clone_cfg=clone_cfg,
+                           clone_events=clone_events,
                            clone_rules_summary=clone_rules_summary,
                            cache_freshness=_rl.freshness_label(meta) if appl.kind == 'fortiweb' else '')
 

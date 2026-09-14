@@ -6,6 +6,133 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — What the CLI serves and the catalog does not know: coverage on the API hub (2026-09-15)
+
+Asked for as *"hay elementos en el fortiweb que no estan en el api, y que solo se
+ven por ejemplo cuando sea conecta via ssh y se hace un comando full… comparar
+que se tiene via api y que no y poner esto tambien en la libreria"*, scoped to
+*"hazlo en la misma pagina el proceso solo amplialo"*.
+
+**The premise was half right, and the wrong half was the useful one.** The CLI
+dump was already being captured: `backup.ssh_config_backup` has run
+`show full-configuration` since 2026-07-04 and stored the text in the config
+vault, replicated to the standby and carried inside the system bundles. **Nobody
+read it** — the same thing `api_matrix` found true of the sweep ledger. So this
+is a parser and a differ, not a new path to a device: no new verb, no new
+transport, nothing that can write to an appliance.
+
+Measured against the real artifacts, not estimated:
+
+| evidence | blocks | in the catalog | **CLI only** | near match | no block in this dump |
+|---|---|---|---|---|---|
+| fortiweb08 — FortiWeb-KVM 7.6.8, 690 KB | 434 | 377 | **55** (26 hold configuration) | 2 | 94 |
+| fadc — FortiADC-KVM 8.0.3, 176 KB | 300 | 215 | **84** | 1 | 29 |
+
+The findings are specific: `system automation-stitch action_member`,
+`system automation-webhook`, `system automation-slack|teams|jira`,
+`system credential-stuffing-online-check`, `system one-click-gslb`,
+`waf data-mining`, `log cloud`, `user oauth-user request custom-parameters`
+(69 rows on that box), and on FortiADC the whole `router bgp|ospf|ospf6`
+neighbour/area/network family.
+
+**Where it lives.** A section on the API hub of **every** ADOM — API-Registry
+Explorer (FortiWeb), `/adc/api`, `/faz/api`, `/fac/api` — rendered from one
+partial, `partials/_cli_coverage.html`, and one shared body,
+`views/_clicoverage.py`. Not a new page: the question comes up while the
+operator is already in the explorer, and the console that answers it ("does this
+URN actually work?") is on the same screen.
+
+**Phase B — reading the element the API does not expose.** A CLI-only row opens
+its block straight out of the stored dump, and a second button runs
+`show <path>` against a live appliance right now (verified on fortiweb16: the
+stitch that FortiWeb08's dump shows and no catalog endpoint names). `show` is
+already an allowed verb in `ssh_ops.assert_readonly`, so `set` and `execute`
+smuggled through the path parameter are refused before any connect.
+
+**Four buckets, separated by WHY** — because the ways this could be precise and
+wrong all look like a number:
+
+* **CLI only** — the finding. Split into tables that hold configuration on this
+  box and tables that are empty here.
+* **Same object, different path** — the CLI and REST spell child tables
+  differently (`waf graphql-validation policy graphql-rule-list` vs
+  `…/graphql-validation.policy/rule-list`). Neither a match nor a gap: SATOM
+  cannot tell from a config file which spelling the device serves, so it hands
+  the URN to the console instead of picking one.
+* **In the catalog, no block in this dump** — **not absence.** A config table
+  with nothing in it prints no block at all, so an unconfigured feature and a
+  missing one are indistinguishable here. 94 rows on FortiWeb; presenting them
+  as removals would have been the page's biggest number and a fabrication. The
+  page says so and points at the sweep verdicts, which ask the device directly.
+* **Cannot have a CLI block at all** — the 42 FortiWeb monitor/runtime
+  endpoints, excluded from every count rather than reported as permanent gaps.
+
+**FortiAnalyzer and FortiAuthenticator state a reason instead of rendering an
+empty page.** FAZ speaks JSON-RPC and its `/sys/proxy/json` reaches objects the
+CLI never names — the gap runs the *other* way. FAC's CLI is a minimal network
+shell whose GUI/API is the superset. Neither has ever been read over SSH by
+SATOM, so there is nothing to diff and the page says that rather than showing a
+clean zero.
+
+**Evidence is one device, one date, one product.** Every dump in the vault today
+belongs to an appliance that has since been deleted, so the vault row's recorded
+firmware string is the only surviving statement of what kind of box it came from
+— and a dump without one is **never diffed**, because guessing would compare a
+FortiADC config against the FortiWeb catalog and invent ~300 findings. Four
+orphan dumps on disk with no vault row are listed, never parsed. A dump whose
+blocks do not balance is called out above the counts: a capture cut short by a
+read timeout looks exactly like a small configuration.
+
+**Field-level answers are delegated, not recomputed.** `api_matrix.preflight`
+already knows that comparing sweep field sets against harvested schema fields
+reports 56 removals that are only a noise filter, and it already tells
+`unmeasured` from `ok`. One author for that answer.
+
+**The dump is a device configuration and it carries credentials.** Block text is
+gated on `Permission.BACKUP` — the same permission that gates the vault the
+dumps live in — while the counts and the CLI paths, which are catalog metadata,
+render for anyone who may see the hub. Values are scrubbed before they reach a
+browser and **field names are kept**, because the names are the finding:
+`ENC` secrets, PEM keys and certificate chains are redacted as whole quoted
+values, while `set forbid-password-reuse disable` and `set key-max-length 1024`
+survive — a name-only rule would hide real configuration in the name of hiding
+nothing.
+
+Nothing is persisted: the report is derived per request (20 ms for the 690 KB
+FortiWeb dump, measured), so there is no artifact to go stale and no derived view
+sitting in a different backup path from the evidence it summarises.
+
+Guards: `tests/test_cli_coverage.py` (60), `docs/safeguards.md` §169.
+
+**And then into the library, without inventing a path.** A CLI-only row can be
+promoted to a catalog endpoint — but the REST path for a CLI block **cannot be
+derived**, only guessed and then asked. FortiWeb joins the segments below the
+family with `.` for a sub-table (`system/certificate.local`) and with `/` for a
+child list (`server-policy/policy/http-content-routing-list`), and the CLI spells
+both exactly the same way. So SATOM offers *every* combination (capped at 8, and
+it says when it capped), probes them against an appliance, and shows what the
+device answered: `ok`, `absent`, or `error` — the same three verdicts the sweep
+and the reconciler already act on, taken from the same code
+(`rediscovery.probe_endpoint`, now public for this).
+
+Only a URN the appliance **served** can be armed into the Register form, and the
+write itself is the **existing** catalog editor (`registry.save` /
+`adc_api.registry_save`): same validation, same duplicate check, same loader-cache
+invalidation, same audit line. Nothing here writes a registry row — a guard
+asserts the section never so much as imports `RegistryEndpoint`, because a
+guessed path behind a friendly key would surface later, somewhere else, as a
+phantom endpoint that every service resolves through `loader.resolve`.
+
+When the device serves none of the candidates, that is the answer and the page
+says so: the element really is CLI-only on that firmware, and there is nothing
+to register.
+
+The derivation is checked against paths the catalogs **already hold** —
+`system snmp community` → `…/system/snmp.community`, `server-policy allow-hosts
+host-list` → `…/allow-hosts/host-list`, `load-balance pool pool_member` →
+`/api/load_balance_pool_child_pool_member` — because a derivation that cannot
+reproduce the endpoints we know would not find the ones we do not.
+
 ### Added — Scout reads the release notes before the firmware is sent (2026-09-14)
 
 Asked for as *"cuando se actualice sería bueno que Scout, si es que está

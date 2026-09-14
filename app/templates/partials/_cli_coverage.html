@@ -1,0 +1,550 @@
+{# ─────────────────────────────────────────────────────────────────────────────
+   CLI ↔ API coverage — ONE author for this section's markup.
+
+   Included by every ADOM's API hub (api_explorer, adc_api, faz_api, fac_api)
+   and fed by views/_clicoverage.context(). It is a SECTION of those pages, not
+   a page: the question it answers ("is this thing even in the catalog?") comes
+   up while the operator is already in the explorer.
+
+   Copying this markup per hub instead of including it is what made the sidebar
+   accordion and the status badge drift in this repo — two authors of one
+   string. Style comes from the light FortiWeb theme (.fw-card, --fw-*,
+   .fw-badge-*): this product has no dark mode (safeguards §9m).
+   ──────────────────────────────────────────────────────────────────────────── #}
+{% set R = cc_report %}
+{% set D = R.diff if R else none %}
+
+<div class="fw-card mt-3" id="cliCoverage">
+  <div class="fw-card-header">
+    <span class="fw-card-title">
+      <i class="bi bi-terminal me-2 text-accent"></i>{{ _('CLI ↔ API coverage') }}
+    </span>
+    <div class="d-flex align-items-center gap-2">
+      {% if D and D.supported and not D.no_evidence %}
+        <span class="fw-badge {{ 'fw-badge-warning' if D.counts.cli_only else 'fw-badge-success' }}">
+          {{ D.counts.cli_only }} {{ _('CLI-only') }}
+        </span>
+      {% endif %}
+      <button class="btn btn-sm btn-fw-outline" type="button" data-bs-toggle="collapse"
+              data-bs-target="#cliCoverageBody" aria-expanded="true" aria-controls="cliCoverageBody">
+        <i class="bi bi-chevron-expand"></i>
+      </button>
+    </div>
+  </div>
+
+  <div class="collapse show" id="cliCoverageBody">
+  <div class="fw-card-body">
+
+    <p class="text-muted" style="font-size:13px;">
+      {{ _('Some configuration only exists over the CLI: the REST catalog never names it, and it shows up only in') }}
+      <code>show full-configuration</code>.
+      {{ _('This compares the config tree a device actually serves over SSH against the') }}
+      <strong>{{ cc_product }}</strong> {{ _('endpoint catalog on the left, so a gap becomes a row you can act on instead of something you find by accident.') }}
+      {{ _('The dumps were already being captured and stored in the config vault — nothing here opens a new path to a device.') }}
+    </p>
+
+    {% if cc_error %}
+      <div class="alert alert-danger" style="font-size:13px;">
+        <strong>{{ _('The coverage diff failed to build.') }}</strong>
+        <code>{{ cc_error }}</code>
+        {{ _('Nothing below is trustworthy until this is fixed — an empty section and a crashed parse look the same.') }}
+      </div>
+
+    {% elif not D.supported %}
+      {# FAZ / FAC: stated, not rendered as an empty page. #}
+      <div class="alert alert-warning mb-0" style="font-size:13px;">
+        <strong>{{ _('No CLI evidence path exists for') }} {{ cc_product }}.</strong><br>
+        {{ D.reason }}
+      </div>
+
+    {% else %}
+
+      {# ── evidence: which dump, from which box, when ───────────────────── #}
+      <div class="d-flex flex-wrap align-items-end gap-2 mb-3">
+        <form method="get" action="{{ url_for(cc_page_endpoint) }}" class="d-flex align-items-end gap-2">
+          <div>
+            <label class="fw-form-label mb-1" for="ccDump">{{ _('Evidence (stored CLI dump)') }}</label>
+            <select class="form-select fw-form-control" id="ccDump" name="dump"
+                    style="min-width:340px;" onchange="this.form.submit()">
+              {% for e in R.evidence if e.usable %}
+                <option value="{{ e.backup_id }}"
+                        {{ 'selected' if R.chosen and R.chosen.backup_id == e.backup_id else '' }}>
+                  {{ e.appliance }} — {{ e.line or '?' }} — {{ e.created_at }} ({{ e.size_kb }} KB)
+                </option>
+              {% else %}
+                <option value="">{{ _('no usable dump') }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <noscript><button class="btn btn-sm btn-fw-outline" type="submit">{{ _('Load') }}</button></noscript>
+        </form>
+
+        {% if cc_probe_endpoint and cc_probe_appliances %}
+        <div>
+          <label class="fw-form-label mb-1" for="ccProbeAppliance">{{ _('Probe / read against') }}</label>
+          <select class="form-select fw-form-control" id="ccProbeAppliance" style="min-width:220px;">
+            {% for a in cc_probe_appliances %}
+              <option value="{{ a.id }}">{{ a.name }} — {{ a.host }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        {% endif %}
+
+        {% if cc_can_read and cc_appliances %}
+        <form method="post" action="{{ url_for(cc_capture_endpoint) }}"
+              class="d-flex align-items-end gap-2"
+              data-js="cc-capture">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div>
+            <label class="fw-form-label mb-1" for="ccCaptureAppliance">{{ _('Capture a fresh dump over SSH') }}</label>
+            <select class="form-select fw-form-control" id="ccCaptureAppliance" name="appliance_id">
+              {% for a in cc_appliances %}
+                <option value="{{ a.id }}">{{ a.name }} — {{ a.host }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <button class="btn btn-sm btn-fw-primary" type="submit">
+            <i class="bi bi-hdd-network me-1"></i>{{ _('Capture') }}
+          </button>
+        </form>
+        {% endif %}
+      </div>
+
+      {% if D.no_evidence %}
+        <div class="alert alert-warning mb-0" style="font-size:13px;">
+          <strong>{{ _('No CLI dump has ever been captured for a') }} {{ cc_product }}.</strong>
+          {{ _('There is nothing to diff — and that is a gap in evidence, not a clean result.') }}
+          {% if cc_can_read and cc_appliances %}
+            {{ _('Capture one above; it is a read-only SSH session.') }}
+          {% elif not cc_can_read %}
+            {{ _('Capturing one needs the Backup permission.') }}
+          {% else %}
+            {{ _('No appliance of this product is visible in this ADOM to capture from.') }}
+          {% endif %}
+        </div>
+      {% else %}
+
+        {# ── the dump's own structural health, BEFORE its numbers ───────── #}
+        {% if not D.health.balanced or D.health.open_quote %}
+        <div class="alert alert-danger" style="font-size:13px;">
+          <strong>{{ _('This dump does not parse cleanly') }}</strong>
+          ({{ _('unclosed blocks:') }} {{ D.health.unclosed }}{% if D.health.open_quote %}, {{ _('a quoted value never closed') }}{% endif %}).
+          {{ _('A truncated capture looks exactly like a small configuration, so the counts below are wrong in an unknown direction. Capture it again before using them.') }}
+        </div>
+        {% endif %}
+
+        <div class="d-flex flex-wrap gap-3 mb-3" style="font-size:12.5px;">
+          <div><span class="fw-badge fw-badge-secondary">{{ D.counts.cli_blocks }}</span>
+            {{ _('config tables in the dump') }}</div>
+          <div><span class="fw-badge fw-badge-success">{{ D.counts.both }}</span>
+            {{ _('also in the catalog') }}</div>
+          <div><span class="fw-badge fw-badge-warning">{{ D.counts.cli_only }}</span>
+            {{ _('CLI only — not in the catalog') }}
+            {% if D.counts.cli_only %}
+              <span class="text-muted">({{ D.counts.cli_only_configured }} {{ _('hold configuration on this box') }})</span>
+            {% endif %}</div>
+          <div><span class="fw-badge fw-badge-info">{{ D.counts.near_match }}</span>
+            {{ _('name differs — verify') }}</div>
+          <div><span class="fw-badge fw-badge-secondary">{{ D.counts.no_block }}</span>
+            {{ _('in the catalog, no block in this dump') }}</div>
+        </div>
+
+        <p class="text-muted" style="font-size:12px;">
+          <i class="bi bi-info-circle me-1"></i>
+          {{ _('Evidence:') }} <code>{{ R.chosen.appliance }}</code>,
+          {{ R.chosen.firmware or _('firmware unknown') }},
+          {{ _('captured') }} {{ R.chosen.created_at }}.
+          {{ _('One dump is one device on one date — not a statement about the product.') }}
+        </p>
+
+        {# ── THE ANSWER: config the CLI serves and the catalog does not ─── #}
+        <h6 class="mt-3 mb-2" style="font-size:13px; font-weight:600;">
+          <i class="bi bi-exclamation-triangle me-1 text-warning"></i>
+          {{ _('CLI only — the catalog has no endpoint for these') }}
+          <span class="fw-badge fw-badge-warning">{{ D.counts.cli_only }}</span>
+        </h6>
+        <div class="table-responsive" style="max-height:420px; overflow-y:auto;">
+          <table class="table fw-table mb-0" style="font-size:12.5px;">
+            <thead><tr>
+              <th>{{ _('CLI path') }}</th>
+              <th class="text-end">{{ _('rows') }}</th>
+              <th class="text-end">{{ _('settings') }}</th>
+              <th>{{ _('state') }}</th>
+              <th class="text-end">{{ _('read it') }}</th>
+            </tr></thead>
+            <tbody>
+            {% for r in D.cli_only[:cc_row_cap] %}
+              <tr>
+                <td><code>{{ r.path }}</code></td>
+                <td class="text-end">{{ r.instances or '—' }}</td>
+                <td class="text-end">{{ r.settings|length or '—' }}</td>
+                <td>
+                  {% if r.configured %}
+                    <span class="fw-badge fw-badge-warning">{{ _('configured') }}</span>
+                  {% else %}
+                    <span class="fw-badge fw-badge-secondary">{{ _('empty here') }}</span>
+                  {% endif %}
+                </td>
+                <td class="text-end">
+                  {% if cc_can_read %}
+                    <button type="button" class="btn btn-sm btn-fw-outline"
+                            data-js="cc-block" data-path="{{ r.path }}"
+                            title="{{ _('Show this block from the stored dump') }}"
+                            style="padding:1px 7px;">
+                      <i class="bi bi-file-earmark-text" style="font-size:11px;"></i>
+                    </button>
+                    {% if cc_appliances %}
+                    <button type="button" class="btn btn-sm btn-fw-outline"
+                            data-js="cc-live" data-path="{{ r.path }}"
+                            title="{{ _('Run show <path> against a live appliance now') }}"
+                            style="padding:1px 7px;">
+                      <i class="bi bi-lightning-charge" style="font-size:11px;"></i>
+                    </button>
+                    {% endif %}
+                  {% else %}
+                    <span class="text-muted" title="{{ _('Reading device configuration needs the Backup permission') }}">—</span>
+                  {% endif %}
+                  {% if cc_probe_endpoint and cc_probe_appliances %}
+                    <button type="button" class="btn btn-sm btn-fw-outline"
+                            data-js="cc-probe" data-path="{{ r.path }}"
+                            title="{{ _('Ask a device which REST path serves this, then register it') }}"
+                            style="padding:1px 7px;">
+                      <i class="bi bi-search" style="font-size:11px;"></i>
+                    </button>
+                  {% endif %}
+                </td>
+              </tr>
+            {% else %}
+              <tr><td colspan="5" class="text-muted">
+                {{ _('Every config table in this dump has a catalog endpoint. That is the good outcome — for this device, on this firmware, on this date.') }}
+              </td></tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% if D.cli_only|length > cc_row_cap %}
+          <p class="text-muted mb-0 mt-1" style="font-size:11.5px;">
+            {{ _('Showing the first') }} {{ cc_row_cap }} {{ _('of') }} {{ D.cli_only|length }}.
+          </p>
+        {% endif %}
+
+        {# ── near matches: the catalog knows it under a different path ──── #}
+        {% if D.near_match %}
+        <h6 class="mt-4 mb-2" style="font-size:13px; font-weight:600;">
+          <i class="bi bi-question-circle me-1 text-info"></i>
+          {{ _('Same object, different path — verify before editing the catalog') }}
+          <span class="fw-badge fw-badge-info">{{ D.near_match|length }}</span>
+        </h6>
+        <p class="text-muted" style="font-size:12px;">
+          {{ _('The CLI and the REST API do not always spell a child table the same way. SATOM cannot tell from a config file which spelling the device serves — execute the URN in the console above and find out.') }}
+        </p>
+        <div class="table-responsive">
+          <table class="table fw-table mb-0" style="font-size:12.5px;">
+            <thead><tr><th>{{ _('CLI path') }}</th><th>{{ _('catalog endpoint') }}</th><th>{{ _('catalog URN') }}</th></tr></thead>
+            <tbody>
+            {% for r in D.near_match %}
+              <tr>
+                <td><code>{{ r.path }}</code></td>
+                <td>{{ r.catalog }}</td>
+                <td><code class="text-muted">{{ r.urn }}</code></td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% endif %}
+
+        {# ── the honest negative space ──────────────────────────────────── #}
+        <div class="mt-4">
+          <button class="btn btn-sm btn-fw-outline" type="button" data-bs-toggle="collapse"
+                  data-bs-target="#ccNegative" aria-expanded="false" aria-controls="ccNegative">
+            <i class="bi bi-eye me-1"></i>{{ _('What this dump does NOT prove') }}
+          </button>
+          <div class="collapse mt-2" id="ccNegative">
+            <div class="alert alert-secondary" style="font-size:12.5px;">
+              <strong>{{ D.counts.no_block }} {{ _('catalog endpoints have no block in this dump.') }}</strong>
+              {{ _('That is NOT evidence the firmware lacks them: a config table with nothing in it prints no block at all, so an unconfigured feature and a missing feature look identical here. Use the') }}
+              <a href="{{ url_for('registry.api_versions') if cc_product == 'fortiweb' else url_for(cc_page_endpoint) }}">{{ _('sweep verdicts') }}</a>
+              {{ _('for absence — that asks the device directly.') }}
+              <ul class="mb-0 mt-2" style="max-height:200px; overflow-y:auto;">
+                {% for r in D.no_block[:cc_row_cap] %}
+                  <li><code>{{ r.urn }}</code> <span class="text-muted">({{ r.catalog }})</span></li>
+                {% endfor %}
+              </ul>
+              {% if D.no_block|length > cc_row_cap %}
+                <div class="text-muted mt-1">{{ _('Showing the first') }} {{ cc_row_cap }} {{ _('of') }} {{ D.no_block|length }}.</div>
+              {% endif %}
+            </div>
+
+            {% if D.monitor_only %}
+            <div class="alert alert-secondary" style="font-size:12.5px;">
+              <strong>{{ D.monitor_only|length }} {{ _('catalog endpoints cannot have a CLI block at all') }}</strong>
+              — {{ _('they are runtime readouts, not configuration, so they are excluded from every count above rather than reported as gaps.') }}
+            </div>
+            {% endif %}
+
+            {% if D.aliases %}
+            <div class="alert alert-secondary" style="font-size:12.5px;">
+              <strong>{{ _('Catalog aliases:') }}</strong>
+              {{ _('more than one endpoint name resolves to the same config table. Not an error, but every count above picks one of them.') }}
+              <ul class="mb-0 mt-1">
+                {% for a in D.aliases %}<li><code>{{ a.tokens|join(' ') }}</code> — {{ a.names|join(', ') }}</li>{% endfor %}
+              </ul>
+            </div>
+            {% endif %}
+
+            {% if R.orphans %}
+            <div class="alert alert-warning" style="font-size:12.5px;">
+              <strong>{{ R.orphans|length }} {{ _('config dump(s) on disk with no vault row.') }}</strong>
+              {{ _('With no row there is no recorded firmware, so there is no way to know which catalog to compare them against. They are never parsed — listed because a device configuration nothing in the app knows about is worth seeing.') }}
+              <ul class="mb-0 mt-1">
+                {% for o in R.orphans %}<li><code>{{ o.path }}</code> — {{ o.size_kb }} KB</li>{% endfor %}
+              </ul>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+
+        {# ── candidates: what the DEVICE says exists, and only then a write ─ #}
+        <div class="mt-3 d-none" id="ccProbeWrap">
+          <div class="d-flex align-items-center justify-content-between mb-1">
+            <div style="font-size:12.5px;">
+              <strong>{{ _('Candidate REST paths for') }}</strong>
+              <code id="ccProbePath"></code>
+              <span class="text-muted ms-2" id="ccProbeMeta"></span>
+            </div>
+            <button class="btn btn-sm btn-fw-outline" type="button" data-js="cc-probe-close">
+              <i class="bi bi-x-lg"></i>
+            </button>
+          </div>
+          <p class="text-muted mb-2" style="font-size:11.5px;">
+            {{ _('The CLI spells a sub-table and a child list the same way and REST does not, so the path cannot be derived — only guessed and then asked. Register the one the appliance actually served; every service resolves catalog names through it.') }}
+          </p>
+          <div class="table-responsive">
+            <table class="table fw-table mb-0" style="font-size:12.5px;">
+              <thead><tr>
+                <th>{{ _('candidate URN') }}</th><th>{{ _('device says') }}</th>
+                <th class="text-end">{{ _('rows') }}</th><th>{{ _('detail') }}</th>
+                <th class="text-end">{{ _('catalog') }}</th>
+              </tr></thead>
+              <tbody id="ccProbeRows"></tbody>
+            </table>
+          </div>
+          {% if can_edit and cc_registry_save_endpoint %}
+          {# The catalog write is the EXISTING registry editor — same validation,
+             de-duplication, cache invalidation and audit line as the New Endpoint
+             modal. A second writer here would be a second author of one row. #}
+          <form method="post" action="{{ url_for(cc_registry_save_endpoint) }}"
+                class="d-none mt-2" id="ccRegisterForm">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="next" value="{{ request.full_path }}">
+            <input type="hidden" name="urn" id="ccRegUrn" value="">
+            <div class="d-flex align-items-end gap-2">
+              <div>
+                <label class="fw-form-label mb-1" for="ccRegName">{{ _('Register as') }}</label>
+                <input type="text" class="form-control fw-form-control" name="name"
+                       id="ccRegName" pattern="[A-Za-z0-9_.\-]+" required
+                       style="min-width:280px;">
+              </div>
+              <div style="font-size:12px;" class="text-muted pb-2">
+                <code id="ccRegUrnEcho"></code>
+              </div>
+              <button class="btn btn-sm btn-fw-primary" type="submit">
+                <i class="bi bi-plus-lg me-1"></i>{{ _('Add to catalog') }}
+              </button>
+            </div>
+          </form>
+          {% elif not can_edit %}
+          <p class="text-muted mb-0 mt-2" style="font-size:11.5px;">
+            <i class="bi bi-lock me-1"></i>{{ _('Adding an endpoint to the catalog needs the Registry edit permission.') }}
+          </p>
+          {% endif %}
+        </div>
+
+        {# ── the block viewer ───────────────────────────────────────────── #}
+        <div class="mt-3 d-none" id="ccBlockWrap">
+          <div class="d-flex align-items-center justify-content-between mb-1">
+            <div style="font-size:12.5px;">
+              <code id="ccBlockPath"></code>
+              <span class="text-muted ms-2" id="ccBlockMeta"></span>
+            </div>
+            <button class="btn btn-sm btn-fw-outline" type="button" data-js="cc-block-close">
+              <i class="bi bi-x-lg"></i>
+            </button>
+          </div>
+          <pre class="fw-code-block m-0" id="ccBlockText"
+               style="max-height:340px; overflow:auto; font-size:12px;"></pre>
+          <p class="text-muted mb-0 mt-1" style="font-size:11.5px;">
+            <i class="bi bi-shield-lock me-1"></i>
+            {{ _('Credential values are redacted before this reaches the browser; field names are kept.') }}
+          </p>
+        </div>
+
+      {% endif %}{# no_evidence #}
+    {% endif %}{# supported #}
+
+  </div>
+  </div>
+</div>
+
+{% if D and D.supported and not D.no_evidence and cc_probe_endpoint
+      and cc_block_endpoint and cc_live_endpoint %}
+<script nonce="{{ csp_nonce }}">
+(function () {
+  // Scoped to this section on purpose. The API hub pages already carry their own
+  // click handlers on table cells; a document-level listener here would fire on
+  // theirs and a guard asserting "this file calls stopPropagation" would pass on
+  // code that has nothing to do with this section.
+  var root = document.getElementById('cliCoverage');
+  if (!root) return;
+
+  var wrap = document.getElementById('ccBlockWrap');
+  var pathEl = document.getElementById('ccBlockPath');
+  var metaEl = document.getElementById('ccBlockMeta');
+  var textEl = document.getElementById('ccBlockText');
+  var dumpSel = document.getElementById('ccDump');
+  var applSel = document.getElementById('ccProbeAppliance') ||
+                document.getElementById('ccCaptureAppliance');
+  var pWrap = document.getElementById('ccProbeWrap');
+  var pRows = document.getElementById('ccProbeRows');
+  var pPath = document.getElementById('ccProbePath');
+  var pMeta = document.getElementById('ccProbeMeta');
+  var regForm = document.getElementById('ccRegisterForm');
+  var CSRF = document.querySelector('meta[name="csrf-token"]');
+
+  function show(path, meta, body) {
+    pathEl.textContent = path;
+    metaEl.textContent = meta || '';
+    // textContent, never innerHTML: this is device configuration text and it
+    // contains whatever an operator typed into the box.
+    textEl.textContent = body;
+    wrap.classList.remove('d-none');
+    wrap.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+
+  function fail(path, msg) { show(path, '', '— ' + msg); }
+
+  root.addEventListener('click', function (ev) {
+    var btn = ev.target.closest('[data-js]');
+    if (!btn || !root.contains(btn)) return;
+    var kind = btn.dataset.js;
+
+    if (kind === 'cc-block-close') { wrap.classList.add('d-none'); return; }
+    if (kind === 'cc-probe-close') { pWrap.classList.add('d-none'); return; }
+
+    if (kind === 'cc-pick-urn') {
+      // Arm the register form with a URN the DEVICE served. The form is only
+      // ever filled from a row the probe marked ok, never from the raw guess.
+      if (!regForm) return;
+      document.getElementById('ccRegUrn').value = btn.dataset.urn || '';
+      document.getElementById('ccRegUrnEcho').textContent = btn.dataset.urn || '';
+      document.getElementById('ccRegName').value = btn.dataset.name || '';
+      regForm.classList.remove('d-none');
+      return;
+    }
+
+    if (kind === 'cc-probe') {
+      ev.preventDefault();
+      ev.stopPropagation();
+      var ppath = btn.dataset.path || '';
+      pPath.textContent = ppath;
+      pMeta.textContent = 'probing…';
+      pRows.textContent = '';
+      if (regForm) regForm.classList.add('d-none');
+      pWrap.classList.remove('d-none');
+      var pfd = new FormData();
+      pfd.append('appliance_id', applSel ? applSel.value : '');
+      pfd.append('path', ppath);
+      pfd.append('csrf_token', CSRF ? CSRF.content : '');
+      fetch('{{ url_for(cc_probe_endpoint) }}', {
+        method: 'POST', body: pfd,
+        headers: { 'X-CSRFToken': CSRF ? CSRF.content : '' }
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (!d.ok) { pMeta.textContent = '— ' + (d.error || 'unavailable'); return; }
+          pMeta.textContent = d.device + (d.capped ? ' · candidate list capped' : '');
+          d.candidates.forEach(function (c) {
+            var tr = document.createElement('tr');
+            var cls = c.verdict === 'ok' ? 'fw-badge-success'
+                    : (c.verdict === 'absent' ? 'fw-badge-secondary' : 'fw-badge-danger');
+            // Every cell via textContent: these strings come off an appliance.
+            var td1 = document.createElement('td');
+            var code = document.createElement('code');
+            code.textContent = c.urn; td1.appendChild(code);
+            var td2 = document.createElement('td');
+            var b = document.createElement('span');
+            b.className = 'fw-badge ' + cls; b.textContent = c.verdict;
+            td2.appendChild(b);
+            var td3 = document.createElement('td');
+            td3.className = 'text-end'; td3.textContent = c.rows;
+            var td4 = document.createElement('td');
+            td4.className = 'text-muted'; td4.textContent = c.detail || '';
+            var td5 = document.createElement('td');
+            td5.className = 'text-end';
+            if (c.verdict === 'ok' && regForm) {
+              var pick = document.createElement('button');
+              pick.type = 'button';
+              pick.className = 'btn btn-sm btn-fw-outline';
+              pick.style.padding = '1px 7px';
+              pick.dataset.js = 'cc-pick-urn';
+              pick.dataset.urn = c.urn;
+              pick.dataset.name = d.name;
+              pick.textContent = 'use';
+              td5.appendChild(pick);
+            }
+            [td1, td2, td3, td4, td5].forEach(function (td) { tr.appendChild(td); });
+            pRows.appendChild(tr);
+          });
+          if (!d.served.length) {
+            var tr2 = document.createElement('tr');
+            var td = document.createElement('td');
+            td.colSpan = 5; td.className = 'text-muted';
+            td.textContent = 'The appliance served none of these paths — this ' +
+              'element really is CLI-only on this firmware. Nothing to register.';
+            tr2.appendChild(td); pRows.appendChild(tr2);
+          }
+        })
+        .catch(function (e) { pMeta.textContent = '— ' + e.message; });
+      return;
+    }
+
+    if (kind !== 'cc-block' && kind !== 'cc-live') return;
+
+    ev.preventDefault();
+    ev.stopPropagation();
+    var path = btn.dataset.path || '';
+    show(path, '', 'Loading…');
+
+    if (kind === 'cc-block') {
+      var url = '{{ url_for(cc_block_endpoint) }}?dump=' +
+                encodeURIComponent(dumpSel ? dumpSel.value : '') +
+                '&path=' + encodeURIComponent(path);
+      fetch(url, { headers: { 'X-CSRFToken': CSRF ? CSRF.content : '' } })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (!d.ok) { fail(path, d.error || 'unavailable'); return; }
+          show(d.path, d.device + ' · ' + (d.firmware || '?') + ' · ' + d.captured, d.text);
+        })
+        .catch(function (e) { fail(path, e.message); });
+      return;
+    }
+
+    var fd = new FormData();
+    fd.append('appliance_id', applSel ? applSel.value : '');
+    fd.append('path', path);
+    fd.append('csrf_token', CSRF ? CSRF.content : '');
+    fetch('{{ url_for(cc_live_endpoint) }}', {
+      method: 'POST', body: fd,
+      headers: { 'X-CSRFToken': CSRF ? CSRF.content : '' }
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d.ok) { fail(path, d.error || 'unavailable'); return; }
+        show(d.path, d.device + ' · live', d.text || '(the appliance returned nothing)');
+      })
+      .catch(function (e) { fail(path, e.message); });
+  });
+})();
+</script>
+{% endif %}

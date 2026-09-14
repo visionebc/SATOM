@@ -14488,3 +14488,289 @@ reader functions and asserts *they* delegate.
 `restore-ok=True`. Measured **by return code and without a pipe** — piping pytest
 into `grep`/`tail` measures `grep`, for the eleventh time in this repo; `rc==1`
 is a failure, `rc==4` is a usage error and counts as void, not as a kill.
+
+## §169 — evidence that was already on disk, and the bucket that must never be called absent (2026-09-15)
+
+`tests/test_cli_coverage.py` (60 guards) covers `services/cli_coverage.py`,
+`views/_clicoverage.py` and `partials/_cli_coverage.html`: the CLI ↔ API
+coverage section on every ADOM's API hub.
+
+### What this feature is, and what it is not
+
+It is a **parser and a differ**. The material — `show full-configuration` text
+in the config vault — has been captured by `backup.ssh_config_backup` since
+2026-07-04, replicated by `satom-ha-datasync` and carried in the system bundles.
+Nobody read it, exactly as `api_matrix` found of the sweep ledger. So there is
+no new network path, no new CLI verb and nothing that can write to an appliance.
+
+That shapes the whole risk profile: **this cannot break loudly.** It can only
+produce a plausible, precise, wrong number. Every guard below closes one route
+to that.
+
+### The four ways it could lie, and the guard for each
+
+**1. "In the catalog, absent from this dump" is not absence.** A config table
+with nothing in it prints **no block at all**, so an unconfigured feature and a
+feature the firmware lacks are indistinguishable in a config dump. 94 FortiWeb
+endpoints land here against the live fortiweb08 dump — it would have been the
+page's biggest number and a fabrication. The bucket is `no_block`, and the guard
+fixes **both** the bucket name and the page wording (`NOT evidence the firmware
+lacks them`), because a rename on one side only is how the two drift back apart.
+The page points at the sweep verdicts for real absence: that asks the device.
+
+> Same failure `api_matrix` RULE 1 exists to prevent (`fields=None` is not
+> `fields=[]`). Third time this repo has had to encode "no data" ≠ "no".
+
+**2. A dump is ONE device, ONE date, ONE product.** Every dump in the vault today
+belongs to an appliance that has since been deleted (`fw1`, `fw6`, `fw7`, `fadc`,
+`fortiweb08` — verified on 248), so the vault row's recorded `firmware` string is
+the only surviving statement of what kind of box it came from. A dump without one
+is **never diffed**: guessing would compare a FortiADC config against the
+FortiWeb catalog and report ~300 fabricated findings. Guarded on both halves —
+`product_of_firmware` returns `""` for the unknown case, and `read_dump` refuses
+anything `evidence_index` called unusable.
+
+**3. CLI and REST spell child tables differently.** Two real cases in the live
+dump (`waf graphql-validation policy graphql-rule-list` vs
+`…/graphql-validation.policy/rule-list`). Neither a match nor a gap — SATOM
+cannot tell from a config file which spelling the device serves. `near_match`
+carries the catalog URN so the operator can execute it in the console, and the
+guards assert it appears in **no other bucket**: an early version double-counted
+it as a missing block as well.
+
+**4. Field-level answers are delegated.** `api_matrix.preflight` already carries
+the rule that comparing sweep field sets against harvested schema fields reports
+56 removals which are only a noise filter, and it already distinguishes
+`unmeasured` from `ok`. `field_gap` hands the question over; the guard
+monkeypatches `preflight` and asserts the exact call, so a second local
+implementation cannot grow back and get it wrong the same way.
+
+### The parser: a quoted value is not a line
+
+FortiWeb puts PEM bodies inside multi-line quoted values, so a continuation line
+is arbitrary text — and a line that happens to read `end` inside one pops a
+block that never closed and reparents every block after it. The fixture puts a
+bare `end` inside two PEM bodies on purpose. Quote state is tracked; the guard
+asserts the blocks that come *after* the certificate block are still keyed
+correctly, not merely that parsing did not crash.
+
+Two more parser rules, each with its own guard:
+
+* **Scope containers are stripped by matching the OUTERMOST block exactly**, on
+  the raw words, *before* hyphen splitting. `config global` is a scope;
+  `config system global` is a real table (`/api/v2.0/cmdb/system/global`) and a
+  rule that dropped any token named `global` would erase it. A top-level
+  FortiADC `config global-dns-server` is not a container either.
+* **A per-VDOM table is counted once.** Otherwise every total depends on how
+  many VDOMs the box has.
+
+And `parse_report` gives the dump a structural verdict that the page prints
+*above* the counts: `ssh_config_backup` only refuses dumps that fail its
+header/footer check, so a capture cut short by a read timeout looks exactly like
+a small configuration.
+
+### The scrubber: the unit of work is the quoted value, not the line
+
+A first version walked PEM markers and produced two visible defects against the
+real `system admin-certificate local` block of fortiweb08 — a certificate
+**chain** holds several `-----BEGIN` blocks inside ONE value, so every block
+after the first was emitted as its own half-line of leaked structure, and the
+closing `"` sits on its own line after `-----END`, so it survived as a stray
+quote. Cosmetic, but a scrubber whose output looks corrupted is one nobody
+believes is complete.
+
+The guarded contract:
+
+* `ENC` values and PEM bodies out; **field names always kept** — the names are
+  the finding this page exists to surface.
+* `set forbid-password-reuse disable`, `set force-password-change disable` and
+  `set key-max-length 1024` all match the credential-shaped NAME pattern and
+  none is a secret. The name rule is therefore paired with a value test, and
+  there is a guard for each direction: secrets redacted, enums kept.
+* A multi-line value that is *not* a secret is kept verbatim — but consumed as a
+  unit either way, so the surrounding structure can never be broken by whatever
+  is inside it.
+
+### The permission split IS the design
+
+Table **names** are catalog metadata and render for anyone who may see the hub.
+Block **text**, the live `show` and the capture all hand over device
+configuration, so all three carry `Permission.BACKUP` — the same permission that
+gates the config vault the dumps live in (`views/backups.py`, every route).
+Without that, this section would be a way to read a device config without the
+permission that exists to gate exactly that.
+
+Two guard-design notes worth keeping:
+
+* the readonly fixture's profile is **asserted** (`not u.can(BACKUP)`) and so is
+  its ability to render the page at 200. Without both, every 403 guard here
+  would be **vacuous** — passing because the user was stopped one door earlier;
+* `WTF_CSRF_ENABLED=False` in tests, so posting proves nothing about CSRF. The
+  live routes were exercised against the production app with a real token
+  instead (and a POST without one returns 302, which is how that was found).
+
+### The second door that HTTP cannot reach — measured, not assumed
+
+`live` and `capture` both check `appliance.kind == product`. Over HTTP that check
+is **unreachable**: the `/web` URL scope stamps `product=fortiweb` on the request
+regardless of the session, so `visible_appliance_or_404` answers **404** first
+(and 404 rather than 403 is deliberate — confirming the row exists is the leak
+scoping closes). Probed across `fortiweb` / `global` / no-product / `fortiadc`
+sessions to establish that, rather than inferred.
+
+The check is kept as defence in depth, so the guards exercise it **directly**
+with the scope lifted (`monkeypatch` on `visible_appliance_or_404`). Two doors
+with one behaviour is exactly the code that rots untested — the alternative was
+an untestable branch, and the alternative to *that* was deleting a gate that
+would be needed the day the URL scope changed.
+
+### One author for the section
+
+Four hubs include `partials/_cli_coverage.html`; none of them may contain
+`id="cliCoverage"` itself, and a sweep over the whole template tree asserts no
+third copy exists. Sharing a partial and then copying its markup per page is
+what made the sidebar accordion and the status badge drift in this repo.
+
+Two traps this file had to work around, both recurring:
+
+1. **The section's JS is sliced out before being asserted on.** The hub pages
+   already carry click handlers on table cells and tree leaves, so
+   `"stopPropagation" in page` is satisfied by *their* code and the mutation
+   that deletes this section's handler **survives**. `_section_js()` extracts
+   only the partial's own `<script>`. Eleventh time this mirror has bitten.
+2. **Comments are stripped before asserting absence.** The comment that forbids
+   `innerHTML` names `innerHTML`; the module docstring that explains the
+   no-writes rule names `db.session.commit`. Tenth time.
+
+### Verification recipe
+
+```bash
+# guards (targeted — the full suite is not run by default, user rule 2026-08-09)
+runuser -u satom -- bash -c 'cd /opt/satom && venv/bin/python -m pytest \
+  tests/test_cli_coverage.py -q'          # measure rc, never through a pipe
+
+# the numbers, against the real vault on this node
+set -a; . /opt/satom/.env; set +a
+venv/bin/python - <<'PY'
+from app import create_app
+from app.services import cli_coverage as cc
+with create_app().app_context():
+    for p in ("fortiweb", "fortiadc"):
+        print(p, cc.report(p)["diff"]["counts"])
+PY
+```
+
+Measured against the **fortiweb08** dump (7.6.8, 690 KB): `both=377 cli_only=55
+near_match=2 no_block=94`; FortiADC **fadc** (8.0.3): `both=215 cli_only=84
+near_match=1 no_block=29`.
+
+These are not constants and no test pins them — the report uses the NEWEST usable
+dump, and it changed under this very session: another session captured
+`fortiweb17` at 22:46 on 2026-09-14 (a pre-upgrade backup), so the FortiWeb
+section immediately re-based onto it and read `both=306 cli_only=50 near_match=0
+no_block=167`. Nothing broke; a box with less configured prints fewer blocks and
+lands more endpoints in `no_block`, which is exactly why that bucket may never be
+read as absence. When reproducing, select the dump by `?dump=<backup_id>` rather
+than comparing against a number written down here.
+
+### Known and deliberate
+
+* **No dump exists for FortiAnalyzer or FortiAuthenticator, and none is
+  parsed.** The reason is stated on the page, not discovered as an empty table.
+* **The capture button is not wired into the rediscovery sweep.**
+  `show full-configuration` is a single SSH session that reads for up to 300 s;
+  folding it into `rediscovery._run` would triple every sweep — including the
+  ones inside inventory apply — and would let an SSH failure sink a REST sweep
+  that had already succeeded. Exposed as an explicit operator action instead.
+* **The FortiADC catalog is 244 canonical keys, not 255 rows.** The `_child_`
+  infix is a catalog convention with no CLI counterpart and is dropped on the
+  catalog side only; aliases that collapse onto one key are listed on the page,
+  because every count otherwise silently picks one of them.
+
+### Phase C — promoting a finding, without inventing a path
+
+The REST path for a CLI block **cannot be derived**. FortiWeb joins the segments
+below the family with `.` for a sub-table and `/` for a child list, and the CLI
+spells both identically, so a single derived path is a coin flip — and it would
+be written into the catalog, which every service resolves names through
+(`loader.resolve`). So `candidate_urns` returns a **list**: all 2^(n-1) joiner
+combinations (capped at `MAX_CANDIDATES = 8`, and the payload reports that it
+capped), and the **device** decides.
+
+Proved against paths the shipped catalogs already hold, because a derivation that
+cannot reproduce the endpoints we know would not find the ones we do not:
+
+| CLI path | catalog URN |
+|---|---|
+| `system snmp community` | `…/cmdb/system/snmp.community` |
+| `system admin-certificate local` | `…/cmdb/system/admin-certificate.local` |
+| `server-policy allow-hosts host-list` | `…/allow-hosts/host-list` |
+| `waf graphql-validation policy graphql-rule-list` | `…/graphql-validation.policy/graphql-rule-list` |
+| `load-balance pool pool_member` (ADC) | `/api/load_balance_pool_child_pool_member` |
+
+Measured live against fortiweb16 (7.6.8), which is what the feature is for:
+
+* `system admin-certificate local` → the dot form answers **ok, 2 rows**; the
+  slash form answers **absent, errcode -20001**. The ambiguity is resolved by the
+  box, not by us.
+* `system automation-stitch action_member` → dot form **absent**, slash form
+  **HTTP 500**. Neither exists: a genuine CLI-only element, confirmed.
+* `system automation-slack` → **ok**. That endpoint is served by 7.6.8 and is
+  **not in the 517-entry catalog** — the first real catalog gap this page closed.
+
+Three rules with guards:
+
+1. **Only a URN the device SERVED can arm the register form.** The `use` button
+   is created solely inside the `verdict === 'ok'` branch, and the form takes its
+   URN from that button's dataset. Guarded on the JS, comment-stripped.
+2. **The catalog write is the EXISTING editor.** `registry.save` /
+   `adc_api.registry_save` already validate, de-duplicate, invalidate the loader
+   cache and audit. A guard asserts neither `cli_coverage.py` nor
+   `_clicoverage.py` so much as names `RegistryEndpoint` — a second writer of one
+   row is the failure this repo already paid for in the sidebar accordion, the
+   status badge and the Authentik group naming.
+3. **The verdicts come from the sweep.** `rediscovery.probe_endpoint` is new only
+   as a *public door* onto the two private probes: `absent` is a claim about the
+   catalog, `error` is a claim about the device, and the reconciler acts on that
+   distinction. A fourth local reading of an HTTP status would eventually
+   disagree with it.
+
+And one permission asymmetry that is deliberate: the probe is **not** gated on
+`Permission.BACKUP`, while block text is. A probe returns a verdict and a row
+COUNT; the console two panels to the left already lets the same user GET any path
+and read the rows. Gating the strictly smaller read harder than the bigger one
+beside it would be theatre. Guarded in both directions in one test, so the
+asymmetry cannot be "simplified" away in either.
+
+### Mutation record
+
+52 mutations over the final tree. The first pass over the phase-A/B set is worth
+recording because **10 survived**, and each survivor was a real hole in the
+guards rather than a hole in the code:
+
+* **two guards had been DELETED** by a region-based patch that replaced a span of
+  the test file and only re-added its endpoints — the capture transport and
+  capture failure-reason guards were simply gone, and the mutations sailed
+  through. `pytest -k` returning **rc=5 (nothing collected)** is what exposed it.
+  A green suite proves nothing about tests that no longer exist;
+* **key identity could not see a corrupted parse.** With quote tracking off, the
+  bare `end` inside a PEM pops the `config global` CONTAINER — which is stripped
+  from the key anyway — so every later block resolved to the same tuple. Only
+  block **depth** and block **extent** can see it;
+* **a dict cannot hold a duplicate key**, so "counting the keys" passed either
+  way. The observable is that the second occurrence must *accumulate* into the
+  first record;
+* **`<=` is satisfied by counting everything.** The configured/empty split needed
+  a fixture with an empty CLI-only block and a **strict** inequality;
+* **all 8 ENC-valued field names in the live dump are credential-shaped**, so the
+  name-based fallback covered every one and the value-based rule was untested.
+  Guarded now with a field name the fallback cannot match — which is the only
+  case that rule exists for;
+* **two statuses that agree do not prove the branch runs.** `field_gap` with no
+  firmware line and `api_matrix.preflight` with an unknown line both answer
+  `unmeasured`; only the REASON differs, so the reason is what the guard asserts;
+* **a comment satisfied its own assertion, twice.** The include-tag guard passed
+  on the Jinja comment that documents the include, and the row-cap guard passed
+  on the sentence that was left behind when its `{% if %}` was disabled. Assert
+  the *tag* and the *condition*, on comment-stripped source. Eleventh and twelfth
+  time in this repo.

@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Added — Scout Advisory reads unmarked admonitions and destination-scoped hazards (2026-09-14) · 9 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Added — Maintenance mode as a verb, on the inventory row and the device page (2026-09-14) · 14 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Added — Scout Advisory reads unmarked admonitions and destination-scoped hazards (2026-09-14) · 9 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Added — Maintenance mode as a verb, on the inventory row and the device page (2026-09-14) · 14 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,8 +59,8 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Added — Scout Advisory reads unmarked admonitions and destination-scoped hazards (2026-09-14) · 9 entries</span>
-        <ul class="rel-leads"><li>&quot;Not published&quot; and &quot;published but unreadable&quot; are now different states</li><li>Absence is never innocence</li><li>Reproducible</li><li class="rel-more">… and 6 more</li></ul>
+        <span class="rel-nav-meta">unreleased · Added — Maintenance mode as a verb, on the inventory row and the device page (2026-09-14) · 14 entries</span>
+        <ul class="rel-leads"><li>Keyed to the source by plain columns</li><li>Asymmetric foreign keys</li><li>migrate_to keeps its own verb</li><li class="rel-more">… and 11 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v2.0.0.html" data-rel-version="2.0.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 2.0.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
@@ -260,6 +260,149 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
+<h3 id="added-maintenance-mode-as-a-verb-on-the-inventory-row-and-the-device-page-2026-09-14">Added — Maintenance mode as a verb, on the inventory row and the device page (2026-09-14)</h3>
+<p>Asked for as <em>"inside the table where the devices appear I want to be able to
+put the device into maintenance from those rows, and when inside the device, on
+the line where the actions section is, to also be able to put the device into
+maintenance"</em>.</p>
+<p>Until now the flag could only be changed through the <strong>full edit form</strong> — the
+modal on the appliance table or <code>/appliances/&lt;id&gt;/edit</code>. Nothing was broken; the
+verb was simply four clicks and a save away from where an operator decides to
+use it.</p>
+<p><strong>Maintenance mode is not a label.</strong> Setting it makes the device vanish for
+operators and read-only users (<code>visible_appliances</code>), and takes it out of the
+scheduled probe and metric sweeps. A one-click version of that verb is a second
+and a third writer of one fact, so the new control is a single Jinja macro
+(<code>templates/partials/_maintenance_toggle.html</code>) rendered by both pages, backed by
+one route (<code>POST /appliances/&lt;id&gt;/maintenance</code>).</p>
+<p>What the route keeps in step with <code>edit_save</code>, because they are now two writers:</p>
+<ul>
+<li><strong>The same permission pair</strong> — <code>config_write</code> to change the row, and
+  <code>appliances.view_maintenance</code> to touch this particular field. A user who
+  cannot <em>see</em> maintenance devices must not be able to make one, or they hide a
+  device from themselves with no way back. The route answers <strong>403</strong>; a device
+  already hidden from that user still answers <strong>404</strong>, because confirming the
+  row exists is the leak maintenance mode closes.</li>
+<li><strong>The same monitoring re-provision.</strong> Clearing the flag can make a device
+  collectable that was not, which is why <code>edit_save</code> calls
+  <code>_provision_monitoring</code> after an edit. A button that skipped it would leave
+  the device visible and <strong>silently uncollected</strong> — the exact failure shape
+  maintenance mode already specialises in.</li>
+</ul>
+<p>Two details that are deliberate, not incidental:</p>
+<ul>
+<li><strong>The form posts the desired state, never a flip.</strong> A stale tab — or a second
+  operator — toggling "the other way" is an invisible state change on a device
+  that hides itself. Re-posting the state a row is already in is a no-op: no
+  write, no audit row, no monitoring pass.</li>
+<li><strong>The device-page control lives in the page header</strong>, not in the <em>Appliance
+  Actions</em> card. That card renders only for <code>fortiweb</code>/<code>fortiadc</code>, so a
+  FortiAuthenticator or FortiAnalyzer row would have been maintainable from the
+  table but not from its own page. Verified live against a1: <code>{device}</code> renders the
+  control with no Appliance Actions card present.</li>
+</ul>
+<p>Entering maintenance asks for one confirmation (it hides a device from a whole
+class of users); leaving it does not — that direction <em>is</em> the undo.</p>
+<p>Guarded by <code>tests/test_appliance_maintenance_toggle.py</code> (25 tests, safeguards
+§166), including a "one author" test that fails if either page grows its own
+copy of the form instead of importing the macro.</p>
+<h3 id="fixed-every-status-badge-read-offline-against-appliances-that-answered-2026-09-14">Fixed — Every status badge read "offline" against appliances that answered (2026-09-14)</h3>
+<p>Reported as <em>"why does SATOM mark {device} as offline?"</em>. It was not
+{device}: <strong>the whole inventory was mislabelled</strong>, and had been for ~3.5
+weeks.</p>
+<p><strong>Measured before anything was changed.</strong> From the node itself, as the service
+user, with the same code and the same 6 s timeout the badge uses, {device}
+answered <code>online</code> in <strong>0.08 s</strong> (<code>hostName=FortiWeb, 7.6.8 build1128</code>). Through
+the badge's real path — <code>GET /api/appliances</code>, which probes inside a
+<code>ThreadPoolExecutor</code> — the same three appliances came back
+<code>{'{device}': 'offline', '{device}': 'offline', '{device}': 'offline'}</code> while
+the main thread returned all three <code>online</code>.</p>
+<p><strong>Root cause: two correct pieces, one wrong combination.</strong> A worker thread
+starts with empty ContextVars, so it has no Flask app context. Since credentials
+may live in an external vault (2026-08-19), the credential path reaches the
+database: <code>secret_backend._raw()</code> called <code>AppSetting.get()</code> and swallowed the
+failure with <code>except Exception: return {}</code>. An empty config means "no vault", so
+<code>get_appliance_password()</code> returned <code>None</code> — <em>"use the local copy"</em> — and the
+local copy of a vault-owned credential is the sentinel, whose getter raises.
+<code>probe_status()</code> swallowed that too and answered <code>"offline"</code>. The pool had
+existed since the initial commit and was harmless while the credential path was
+env + column (no DB at all); the vault made it a defect without either side
+knowing.</p>
+<p>Nothing failed loudly because <strong>"offline" is a perfectly credible answer</strong>. No
+log line, no red test, no alert. Every other view (tables, reports, <code>analysis*</code>,
+<code>advisor</code>, <code>api_v1</code>) reads the <code>last_status</code> column this one poller writes, so a
+single broken writer poisoned all of them.</p>
+<p><strong>Fixed, four ways.</strong></p>
+<ul>
+<li><code>api/appliances.py</code> pushes an app context inside each worker and re-reads the
+  row by id (<code>_probe_in_own_context</code>) — sharing the request's ORM instance
+  across sessions would leave it detached. This is the only context-less thread
+  in the tree: <code>deep_jobs</code>, <code>bulk</code>, <code>policy_ops</code>, <code>metrics_collect</code>,
+  <code>rediscovery</code> and <code>jobs</code> all already pushed one, and <code>logcollect</code> captures the
+  credential in the request thread on purpose.</li>
+<li><code>secret_backend._raw()</code> now <strong>raises <code>VaultConfigUnavailable</code></strong> when there is
+  no app context instead of degrading to "no vault". "I cannot read the
+  configuration" is not "the vault is off", and conflating them makes the same
+  symptom reappear in the next route that uses threads. The class deliberately
+  does <strong>not</strong> inherit <code>VaultError</code>, which <code>get_appliance_password</code> catches and
+  falls back on — that would restore the silent degradation through the back
+  door. An unmigrated settings table is still tolerated (fresh install).</li>
+<li><code>Appliance.probe_status()</code> logs the failure at WARNING <strong>naming the
+  appliance</strong> — a warning that does not say which one sends the operator to
+  check all nine — and stays silent on success so the line keeps meaning
+  something.</li>
+<li>A status poll no longer bumps <code>updated_at</code>, on <strong>both</strong> write paths (the badge
+  poller and the ⚡ test button). The docstring already claimed this and was
+  false: <code>updated_at</code> has <code>onupdate=datetime.utcnow</code>, which a Core
+  <code>query.update()</code> fires, so every poll marked the row as edited every 60 s and
+  <em>"when was this configuration last changed"</em> had no answer. <code>updated_at</code> is
+  now assigned to itself explicitly.</li>
+</ul>
+<p><strong>Verified.</strong> 14 new guards in <code>tests/test_probe_thread_context.py</code>
+(<code>safeguards.md</code> §9p), <strong>10 mutations, 10 bite</strong>, 343 targeted tests rc=0. On
+the live node: all three appliances <code>online</code> through the real thread pool in
+1.55 s, <code>last_checked_at</code> advancing while <code>updated_at</code> stands still in Postgres,
+and a context-less thread raising instead of answering "off".</p>
+<h3 id="added-clonemigrate-registry-with-a-hover-flag-on-the-policy-row-2026-09-14">Added — Clone/migrate registry with a hover flag on the policy row (2026-09-14)</h3>
+<p>Asked for as <em>"when an SPO is cloned you cannot see, from inside the device,
+whether it was cloned and where it went"</em>. The dato did not exist durably, so
+the round created it before it could show it.</p>
+<p><strong>What was measured first.</strong> A clone left two traces and neither could render a
+row: the job file under <code>data/jobs/&lt;id&gt;.json</code> carries the destination but
+<code>jobs.prune()</code> deletes it after 7 days, and the per-policy audit line records
+the destination <strong>appliance</strong> and never the name the copy landed under — which
+for a same-box <code>clone_here</code> is the entire point, since source and destination
+are the same box. A <code>clone_here</code> older than a week left nothing at all.</p>
+<p>New table <code>policy_clone_events</code>: one row per EXECUTED clone/migrate, holding the
+verb, the destination appliance (name captured <strong>at the time</strong>, next to the live
+id), the landing policy name, ok/error, timestamp and user.</p>
+<ul>
+<li><strong>Keyed to the source by plain columns</strong>, never into <code>device_server_policies</code>
+  — that projection is rebuilt from scratch on every ingest, so a row hanging
+  off it would be destroyed by the next harvest.</li>
+<li><strong>Asymmetric foreign keys.</strong> Source <code>CASCADE</code> (without it every row is
+  unreachable by construction); destination <code>SET NULL</code>, because <em>"cloned to
+  {device}"</em> stays true after {device} is retired.</li>
+<li><strong><code>migrate_to</code> keeps its own verb</strong> and is worded as a MOVE. Collapsing it
+  into "clone" would tell the operator he still has a live original that the
+  migrate disabled.</li>
+<li>Written from the <strong>one</strong> real-execution call site; <code>preview()</code> and
+  <code>perform_one()</code> run under <code>dry_run</code> and must never write. The landing name is
+  computed once and fed to <strong>both</strong> the device write and the registry.</li>
+<li><strong>Failed attempts are recorded, with their reason, but not counted</strong> by the
+  badge. Finding half a copy on a destination with no trace that anyone tried is
+  the worse outcome; counting it as a copy that exists is simply wrong.</li>
+</ul>
+<p>UI: a compact flag beside the policy name — icon plus the number of copies that
+actually landed, red when every attempt failed — with the full history in a
+hover/focus popover. The popover body is <strong>server-rendered</strong> into a hidden
+sibling, so every value passes through Jinja autoescaping and no device-supplied
+policy name reaches <code>innerHTML</code> unescaped.</p>
+<p>Guards in <code>tests/test_policy_clone_lineage.py</code> (21 tests). <strong>21 mutations, 21
+kill</strong>, 0 survive, 0 void. Verified by rendering the real page in chromium
+against a seeded cache — which is what caught the popover printing <em>failed</em>
+while swallowing the reason the row had already stored.</p>
+<p>No backfill: the flag is empty until the first clone made after this change.</p>
 <h3 id="added-scout-advisory-reads-unmarked-admonitions-and-destination-scoped-hazards-2026-09-14">Added — Scout Advisory reads unmarked admonitions and destination-scoped hazards (2026-09-14)</h3>
 <p>Reported as <em>"why doesn't the advisor show this?"</em> against FortiWeb 8.0.7's
 <em>"do not upgrade"</em>. The sentence was in the corpus, correctly harvested, and

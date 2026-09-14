@@ -24,6 +24,53 @@
     overflow-y:auto;
   }
   #releaseNotesModal .modal-header{ flex:0 0 auto; }
+  /* ---- version picker: one column per release line ----
+     59 versions over 5 lines cannot be read as a wrapping inline run: the
+     entries are variable-width, so nothing aligns and a wrapped row continues
+     under the numbers of the line above it. A grid makes the release line the
+     unit of reading, which is how a version matrix is actually scanned. */
+  #rnVersionPick{
+    display:grid;
+    grid-template-columns:repeat(auto-fit, minmax(152px, 1fr));
+    gap:.5rem;
+    align-items:start;
+    /* No max-height here on purpose: this grid sits inside .modal-body, which
+       already scrolls. A cap made the grid a second scroll region, and once the
+       columns wrapped to a second row it clipped a whole release line to just
+       its header. */
+  }
+  #rnVersionPick .rn-vcol{
+    border:1px solid var(--fw-border, #DCE4F3);
+    border-radius:var(--fw-radius, 4px);
+    background:var(--fw-surface, #fff);
+    overflow:hidden;
+  }
+  #rnVersionPick .rn-vcol-head{
+    display:flex; align-items:center; gap:.4rem;
+    padding:.3rem .5rem;
+    background:var(--fw-surface-alt, #F8FAFE);
+    border-bottom:1px solid var(--fw-border, #DCE4F3);
+  }
+  #rnVersionPick .rn-vcol-head .rn-vmaj-label{
+    font-weight:600; color:var(--fw-text-primary, #0C1B33);
+  }
+  #rnVersionPick .rn-vcol-count{
+    margin-left:auto; font-size:.75rem; color:var(--fw-text-secondary, #51607F);
+    font-variant-numeric:tabular-nums;
+  }
+  #rnVersionPick .rn-vrow{
+    display:flex; align-items:center; gap:.4rem;
+    padding:.12rem .5rem; margin:0; cursor:pointer; line-height:1.5;
+  }
+  #rnVersionPick .rn-vrow:hover{ background:var(--fw-accent-light, rgba(10,63,159,.10)); }
+  #rnVersionPick .rn-vnum{ font-variant-numeric:tabular-nums; }
+  /* The mark rides the MINORITY (12 of 59 are harvested) and keeps its own
+     column so the numbers stay flush no matter which rows carry it. */
+  #rnVersionPick .rn-vhas{
+    margin-left:auto; font-size:.8rem; color:var(--fw-success, #28A745);
+  }
+  #rnVersionPick .rn-vcol-body{ padding:.2rem 0; }
+
   /* visual affordance for the resize corner */
   #releaseNotesModal .modal-content::after{
     content:"";
@@ -89,8 +136,7 @@
                   {{ _('One page fetch — lists what docs.fortinet.com publishes and pre-ticks what the corpus is missing.') }}
                 </span>
               </div>
-              <div id="rnVersionPick" class="border rounded p-2 mt-2 d-none"
-                   style="max-height:200px;overflow:auto;"></div>
+              <div id="rnVersionPick" class="mt-2 d-none"></div>
               <div class="small mt-1 d-none" id="rnVersionBar">
                 <button type="button" class="btn btn-link btn-sm p-0 align-baseline" id="rnPickNew">{{ _('only the new ones') }}</button>
                 <span class="text-muted mx-1">·</span>
@@ -98,6 +144,7 @@
                 <span class="text-muted mx-1">·</span>
                 <button type="button" class="btn btn-link btn-sm p-0 align-baseline" id="rnPickNone">{{ _('none') }}</button>
                 <span class="ms-2 text-muted" id="rnPickCount"></span>
+                <span class="ms-2 text-muted"><i class="bi bi-check-circle-fill text-success"></i> {{ _('= already in the corpus') }}</span>
               </div>
             </div>
             <div class="col-md-5">

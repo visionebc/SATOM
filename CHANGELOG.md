@@ -6,6 +6,52 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — Clone/migrate registry with a hover flag on the policy row (2026-09-14)
+
+Asked for as *"when an SPO is cloned you cannot see, from inside the device,
+whether it was cloned and where it went"*. The dato did not exist durably, so
+the round created it before it could show it.
+
+**What was measured first.** A clone left two traces and neither could render a
+row: the job file under `data/jobs/<id>.json` carries the destination but
+`jobs.prune()` deletes it after 7 days, and the per-policy audit line records
+the destination **appliance** and never the name the copy landed under — which
+for a same-box `clone_here` is the entire point, since source and destination
+are the same box. A `clone_here` older than a week left nothing at all.
+
+New table `policy_clone_events`: one row per EXECUTED clone/migrate, holding the
+verb, the destination appliance (name captured **at the time**, next to the live
+id), the landing policy name, ok/error, timestamp and user.
+
+- **Keyed to the source by plain columns**, never into `device_server_policies`
+  — that projection is rebuilt from scratch on every ingest, so a row hanging
+  off it would be destroyed by the next harvest.
+- **Asymmetric foreign keys.** Source `CASCADE` (without it every row is
+  unreachable by construction); destination `SET NULL`, because *"cloned to
+  fortiweb15"* stays true after fortiweb15 is retired.
+- **`migrate_to` keeps its own verb** and is worded as a MOVE. Collapsing it
+  into "clone" would tell the operator he still has a live original that the
+  migrate disabled.
+- Written from the **one** real-execution call site; `preview()` and
+  `perform_one()` run under `dry_run` and must never write. The landing name is
+  computed once and fed to **both** the device write and the registry.
+- **Failed attempts are recorded, with their reason, but not counted** by the
+  badge. Finding half a copy on a destination with no trace that anyone tried is
+  the worse outcome; counting it as a copy that exists is simply wrong.
+
+UI: a compact flag beside the policy name — icon plus the number of copies that
+actually landed, red when every attempt failed — with the full history in a
+hover/focus popover. The popover body is **server-rendered** into a hidden
+sibling, so every value passes through Jinja autoescaping and no device-supplied
+policy name reaches `innerHTML` unescaped.
+
+Guards in `tests/test_policy_clone_lineage.py` (21 tests). **21 mutations, 21
+kill**, 0 survive, 0 void. Verified by rendering the real page in chromium
+against a seeded cache — which is what caught the popover printing *failed*
+while swallowing the reason the row had already stored.
+
+No backfill: the flag is empty until the first clone made after this change.
+
 ### Added — Scout Advisory reads unmarked admonitions and destination-scoped hazards (2026-09-14)
 
 Reported as *"why doesn't the advisor show this?"* against FortiWeb 8.0.7's

@@ -107,6 +107,89 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="added-scout-advisory-reads-unmarked-admonitions-and-destination-scoped-hazards-2026-09-14">Added — Scout Advisory reads unmarked admonitions and destination-scoped hazards (2026-09-14)</h3>
+<p>Reported as <em>"why doesn't the advisor show this?"</em> against FortiWeb 8.0.7's
+<em>"do not upgrade"</em>. The sentence was in the corpus, correctly harvested, and
+invisible to the rule set for <strong>two independent reasons</strong>.</p>
+<p><strong>1. The catch-all could only read one renderer.</strong> It fired on a line that IS a
+mark word (<code>Warning</code>, then the body) — the markdown docset's shape. MadCap glues
+the mark to the sentence (<code>Note : This issue has been…</code>). Measured over the live
+corpus: <strong>zero</strong> pure-mark lines in every release from 7.6.5 to 8.0.6, <strong>18</strong> in
+8.0.7. The safety net that exists to carry through what no rule understands had
+been carrying through nothing, for eleven releases, with no test red and no log
+line. <code>admonitions()</code> is now the single author of "what the vendor marked" and
+reads both shapes, returning the mark <strong>as Fortinet wrote it</strong> — a vendor
+<em>Warning</em> is no longer reprinted as our <code>caution</code> bucket.</p>
+<p>A <code>header + paragraph</code> detector was <strong>measured and rejected</strong>: 28–30 matches per
+version, which would bury the panel it is meant to sharpen. The heading is read
+only to TITLE a finding whose trigger is already the prose below it.</p>
+<p><strong>2. Every rule needed a floor.</strong> They all compare the current version against a
+version the vendor named. <em>"If you are running FortiWeb in a VM environment and
+the total number of configured server policies exceeds 20, do not upgrade to
+FortiWeb 8.0.7 at this time"</em> has no floor: it is true from 8.0.6 and from 7.2.1
+alike, so the advisory answered <code>caution</code> for every origin anyone could pick. The
+new <code>target-prohibition</code> rule is <strong>destination-scoped</strong> — it fires on the version
+being installed, ranks first (<em>"there is no window"</em> before <em>"the window needs
+two halves"</em>), carries the vendor's own heading for its condition, and still
+respects a floor the vendor stated inside the block.</p>
+<p><strong>3. A coverage guard, which is the part that makes it stay fixed.</strong>
+<code>admonition_coverage()</code> counts what the catch-all can see per version, and
+<code>test_live_corpus_has_no_blind_version</code> fails when a harvested version yields
+none. Fortinet mark the upgrade pages of every release, so a zero is a parser
+that no longer matches the renderer — not a quiet release. It is the only
+assertion in the file that does not already know what the prose looks like.</p>
+<p>Two defects were visible <strong>only</strong> by running the engine against the live corpus,
+with every assertion green: a MadCap admonition titled itself <code>Note: Note :</code>
+(its own mark is the first sentence), and the span-based gate raised a blocker
+about a release the route never installs.</p>
+<h3 id="fixed-release_notesjs-was-served-without-a-cache-key-2026-09-14">Fixed — <code>release_notes.js</code> was served without a cache key (2026-09-14)</h3>
+<p>Found while shipping the picker above, and it would have hidden it. The tag was
+a bare <code>url_for('static', …)</code> while <code>SEND_FILE_MAX_AGE_DEFAULT</code> is <strong>86400</strong> and
+nothing revalidates inside that window — so any browser that had loaded a page in
+the previous 24 h replayed the <strong>old</strong> file. Every change to the Release Notes
+modal since that <code>&lt;script&gt;</code> was written could land invisible for a day, which
+does not read as a slow rollout: the operator opens the modal, sees the previous
+build, and reports the fix as not deployed. It now uses the house <code>asset()</code>
+helper (<code>?v=&lt;mtime&gt;</code>, already on ~20 other tags). Guarded for every app-owned
+<code>js/</code> tag in <code>base.html</code>, with the vendored bundle named as the one exception.</p>
+<h3 id="changed-the-release-notes-version-picker-is-a-grid-of-release-lines-2026-09-14">Changed — the Release Notes version picker is a grid of release lines (2026-09-14)</h3>
+<p>After <strong>Discover versions</strong>, the picker listed each major as a wrapping inline
+run inside a 200 px scroll box. Measured against the live payload — <strong>59
+versions over 5 release lines, 8 to 14 each</strong> — that is unreadable for reasons
+that are structural, not cosmetic:</p>
+<ul>
+<li>entries are <strong>variable-width</strong> (the <code>new</code> badge is ~34 px), so nothing lines up
+  and a line that wraps continues <strong>under the numbers of the line above it</strong>;</li>
+<li>the major label was <strong>inline</strong>, so a wrapped continuation row was orphaned from
+  the header that names it;</li>
+<li>the <code>new</code> badge sat on <strong>47 of 59</strong> rows. Straight after Discover,
+  <code>checked === !in_corpus</code> — so those 47 badges repeated exactly what 47 ticked
+  checkboxes already said, while the 12 rows actually worth distinguishing
+  carried no mark at all;</li>
+<li>there was no way to take a whole release line: only <em>new</em> / <em>all</em> / <em>none</em>.</li>
+</ul>
+<p>It is now <strong>one column per release line</strong>, in an <code>auto-fit</code> grid. Each column
+carries a <strong>tri-state tick that takes or drops the whole line</strong> (half-taken
+renders as indeterminate — a partly-selected line must not read as an unselected
+one) and a count of what is selected in it. The corpus marker moved to the
+<strong>minority</strong>: the ~12 already-harvested releases carry one aligned check, the
+rest stay clean, and a legend on the bulk-pick bar says what the glyph means.</p>
+<p>Two defects here were caught <strong>only by rendering</strong>, with every assertion green:</p>
+<ol>
+<li>the column count shipped as <em>held / total</em> while sitting flush against the
+   take-the-line tick, so it read as a <strong>selection</strong> count — and the two numbers
+   genuinely differ (8.0 is 6 held, 2 selected, right after Discover). It now
+   counts ticks, recomputed wherever ticks change;</li>
+<li>at <strong>880 px</strong> the grid wraps to a second row and the old <code>max-height</code> cap
+   <strong>sliced the 7.0 column off below its header</strong> — a column showing a header and
+   no releases says <em>"this release line publishes nothing"</em>. <code>.modal-body</code>
+   already scrolls, so the grid no longer opens a second scroll region.</li>
+</ol>
+<p>Guards in <code>tests/test_release_notes_picker.py</code> (<strong>16 mutations, 16 bite</strong>). Two
+of them only started biting after the guards themselves were fixed: a class-name
+assertion matched its own mutant (<code>rn-vmaj</code> is a substring of <code>rn-vmaj-gone</code>, and
+<code>\b</code> does not help — a hyphen is already a word boundary), and the markup class
+and the selector that binds it were being checked as if they were one fact.</p>
 <h3 id="removed-the-two-git-controls-in-the-release-notes-modal-2026-09-14">Removed — the two git controls in the Release Notes modal (2026-09-14)</h3>
 <p><code>Publish to git</code> (scan panel) and <code>⤓ Sync from git</code> (modal header) are gone, and
 so is <code>POST /release-notes/sync</code>. Three defects, one removal — and only the first

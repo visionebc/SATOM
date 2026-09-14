@@ -107,6 +107,52 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="added-maintenance-mode-as-a-verb-on-the-inventory-row-and-the-device-page-2026-09-14">Added — Maintenance mode as a verb, on the inventory row and the device page (2026-09-14)</h3>
+<p>Asked for as <em>"inside the table where the devices appear I want to be able to
+put the device into maintenance from those rows, and when inside the device, on
+the line where the actions section is, to also be able to put the device into
+maintenance"</em>.</p>
+<p>Until now the flag could only be changed through the <strong>full edit form</strong> — the
+modal on the appliance table or <code>/appliances/&lt;id&gt;/edit</code>. Nothing was broken; the
+verb was simply four clicks and a save away from where an operator decides to
+use it.</p>
+<p><strong>Maintenance mode is not a label.</strong> Setting it makes the device vanish for
+operators and read-only users (<code>visible_appliances</code>), and takes it out of the
+scheduled probe and metric sweeps. A one-click version of that verb is a second
+and a third writer of one fact, so the new control is a single Jinja macro
+(<code>templates/partials/_maintenance_toggle.html</code>) rendered by both pages, backed by
+one route (<code>POST /appliances/&lt;id&gt;/maintenance</code>).</p>
+<p>What the route keeps in step with <code>edit_save</code>, because they are now two writers:</p>
+<ul>
+<li><strong>The same permission pair</strong> — <code>config_write</code> to change the row, and
+  <code>appliances.view_maintenance</code> to touch this particular field. A user who
+  cannot <em>see</em> maintenance devices must not be able to make one, or they hide a
+  device from themselves with no way back. The route answers <strong>403</strong>; a device
+  already hidden from that user still answers <strong>404</strong>, because confirming the
+  row exists is the leak maintenance mode closes.</li>
+<li><strong>The same monitoring re-provision.</strong> Clearing the flag can make a device
+  collectable that was not, which is why <code>edit_save</code> calls
+  <code>_provision_monitoring</code> after an edit. A button that skipped it would leave
+  the device visible and <strong>silently uncollected</strong> — the exact failure shape
+  maintenance mode already specialises in.</li>
+</ul>
+<p>Two details that are deliberate, not incidental:</p>
+<ul>
+<li><strong>The form posts the desired state, never a flip.</strong> A stale tab — or a second
+  operator — toggling "the other way" is an invisible state change on a device
+  that hides itself. Re-posting the state a row is already in is a no-op: no
+  write, no audit row, no monitoring pass.</li>
+<li><strong>The device-page control lives in the page header</strong>, not in the <em>Appliance
+  Actions</em> card. That card renders only for <code>fortiweb</code>/<code>fortiadc</code>, so a
+  FortiAuthenticator or FortiAnalyzer row would have been maintainable from the
+  table but not from its own page. Verified live against a1: <code>{device}</code> renders the
+  control with no Appliance Actions card present.</li>
+</ul>
+<p>Entering maintenance asks for one confirmation (it hides a device from a whole
+class of users); leaving it does not — that direction <em>is</em> the undo.</p>
+<p>Guarded by <code>tests/test_appliance_maintenance_toggle.py</code> (25 tests, safeguards
+§166), including a "one author" test that fails if either page grows its own
+copy of the form instead of importing the macro.</p>
 <h3 id="fixed-every-status-badge-read-offline-against-appliances-that-answered-2026-09-14">Fixed — Every status badge read "offline" against appliances that answered (2026-09-14)</h3>
 <p>Reported as <em>"why does SATOM mark {device} as offline?"</em>. It was not
 {device}: <strong>the whole inventory was mislabelled</strong>, and had been for ~3.5

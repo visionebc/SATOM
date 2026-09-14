@@ -407,6 +407,64 @@ def edit_save(id):
     return redirect(url_for('appliances.detail', id=appliance.id))
 
 
+# ---------------------------------------------------------------------------
+# Maintenance mode as a verb of its own (inventory row + device page)
+# ---------------------------------------------------------------------------
+
+@bp.route('/<int:id>/maintenance', methods=['POST'])
+@login_required
+@require_permission(Permission.CONFIG_WRITE)
+def set_maintenance(id):
+    """Set or clear ``Appliance.maintenance`` without going through the edit form.
+
+    Two things this route MUST keep in step with :func:`edit_save`, because the
+    two are now writers of one fact:
+
+    * the same permission PAIR gates it — ``config_write`` to change the row,
+      ``appliances.view_maintenance`` to touch this particular field. A user who
+      cannot SEE maintenance devices must not be able to make one, or they hide
+      a device from themselves with no way back.
+    * clearing the flag can make a device collectable that was not, so the same
+      ``_provision_monitoring`` seam runs here. Without it this button would
+      leave a device visible but silently uncollected — which is the exact
+      failure mode maintenance mode already specialises in.
+
+    The form posts the DESIRED state, never a flip: a stale tab (or a second
+    operator) toggling "the other way" is a silent state change on a device that
+    hides itself from operators. Re-posting the state a row is already in is a
+    no-op — no write, no audit row, no monitoring pass.
+    """
+    appliance = visible_appliance_or_404(id)
+    if not current_user.can('appliances.view_maintenance'):
+        # The row is visible to this caller either way, so 403 leaks nothing
+        # that a 404 would hide — and it says what actually went wrong.
+        abort(403)
+
+    want = request.form.get('maintenance') == 'on'
+    # Whitelist the destination. NEVER request.referrer / a raw next= value:
+    # it is attacker-supplied and this is a POST that already passed CSRF.
+    dest = (url_for('appliances.detail', id=appliance.id)
+            if (request.form.get('back') or '').strip() == 'detail'
+            else url_for('appliances.index'))
+
+    if bool(appliance.maintenance) == want:
+        flash(f'{appliance.name} is already '
+              f'{"in" if want else "out of"} maintenance mode.', 'info')
+        return redirect(dest)
+
+    appliance.maintenance = want
+    db.session.commit()
+    log_action('appliance.maintenance', target=appliance.name,
+               extra={'maintenance': want})
+    _provision_monitoring(appliance)
+    if want:
+        flash(f'{appliance.name} is now in maintenance mode — hidden from '
+              f'operators and read-only users, and skipped by scheduled probes '
+              f'and metric collection.', 'success')
+    else:
+        flash(f'{appliance.name} is out of maintenance mode.', 'success')
+    return redirect(dest)
+
 @bp.route('/<int:id>/delete', methods=['POST'])
 @login_required
 @require_permission(Permission.CONFIG_WRITE)

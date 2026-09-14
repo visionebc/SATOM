@@ -1,0 +1,43 @@
+{# ---------------------------------------------------------------------------
+   ONE author for the maintenance verb.
+
+   The flag was reachable only from the full edit form (the modal in the
+   appliance table and /appliances/<id>/edit). This macro is the single place
+   that renders the one-click version of it, so the table row, the ADOM rows
+   and the device page cannot drift into offering different permissions,
+   different confirmations or different destinations — which is exactly how
+   the sidebar accordion and the status badge ended up with two authors.
+
+   The posted ``maintenance`` value is the DESIRED STATE read at render time,
+   never a blind flip: a stale tab (or a second operator) flipping "the other
+   way" is a silent state change on a device that hides itself from operators.
+   The route treats a no-op as a no-op and reports the state that actually
+   resulted.
+   --------------------------------------------------------------------------- #}
+{% macro maintenance_toggle(a, back, variant='icon') %}
+{%- if current_user.can('appliances.view_maintenance') and current_user.can('config_write') %}
+{%- set on = a.maintenance %}
+            <form method="POST"
+                  action="{{ url_for('appliances.set_maintenance', id=a.id) }}"
+                  style="display:inline;"
+                  {%- if not on %}
+                  data-fw-confirm-form="Put '{{ a.name }}' into maintenance mode? It disappears for operators and read-only users, and scheduled probes and metric collection skip it until you take it out."
+                  {%- endif %}>
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="back" value="{{ back }}">
+              {# desired state, not a toggle — see the note above #}
+              <input type="hidden" name="maintenance" value="{{ 'off' if on else 'on' }}">
+              {%- if variant == 'labeled' %}
+              <button type="submit" class="btn btn-sm {{ 'btn-warning' if on else 'btn-outline-warning' }}"
+                      title="{{ _('Maintenance mode hides this device from operators and read-only users; scheduled probes and metric collection skip it.') }}">
+                <i class="bi bi-tools me-1"></i>{{ _('Leave maintenance') if on else _('Enter maintenance') }}
+              </button>
+              {%- else %}
+              <button type="submit" class="btn btn-sm {{ 'btn-warning' if on else 'btn-outline-warning' }} btn-sm-icon me-1"
+                      title="{{ _('Leave maintenance mode') if on else _('Put into maintenance mode') }}">
+                <i class="bi bi-tools"></i>
+              </button>
+              {%- endif %}
+            </form>
+{%- endif %}
+{% endmacro %}

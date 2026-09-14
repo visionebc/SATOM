@@ -369,6 +369,24 @@ def _probe_fortiweb(client, ep: dict) -> tuple[list, str, str]:
     return client._results_list(resp.json()), VERDICT_OK, ""
 
 
+def probe_endpoint(appliance, urn: str) -> tuple[list, str, str]:
+    """GET one URN and classify it the way a sweep does — ``(rows, verdict, detail)``.
+
+    The public door onto the two private probes, so a caller outside the sweep
+    (the CLI-coverage section, promoting a finding into the catalog) gets the
+    SAME three verdicts with the same meanings instead of inventing a fourth
+    reading of an HTTP status. ``absent`` in particular is a claim about the
+    catalog and ``error`` is a claim about the device; anything that re-derived
+    that distinction would eventually disagree with the reconciler, which acts
+    on it.
+    """
+    snap = _client_snapshot(appliance)
+    if getattr(snap, "kind", "") == "fortiadc":
+        from . import adc_ops
+        return adc_ops.make_probe(snap)({"urn": urn})
+    return _probe_fortiweb(FortiWebClient(snap, timeout=20.0), {"urn": urn})
+
+
 def _client_snapshot(appliance) -> SimpleNamespace:
     """A DB-detached copy of just the fields FortiWebClient reads, so the worker
     thread never touches the SQLAlchemy session."""

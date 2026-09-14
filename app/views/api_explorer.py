@@ -5,6 +5,7 @@ from ..models import Appliance, db, Permission
 from ..models import visible_appliances, visible_appliance_or_404
 from ..clients.fortiweb import FortiWebClient
 from ..services.audit import log_action
+from . import _clicoverage
 from ..registry import loader, tree
 # The catalog editor (New / Edit / Disable) lives on the Registry blueprint and
 # writes through registry.save / registry.toggle. The API-Registry Explorer
@@ -32,6 +33,14 @@ def index():
         api_tree=api_tree,
         can_write=current_user.can('registry.execute_write'),
         **_edit_context(),
+        **_clicoverage.context(
+            'fortiweb',
+            block_endpoint='api_explorer.cli_coverage_block',
+            capture_endpoint='api_explorer.cli_coverage_capture',
+            live_endpoint='api_explorer.cli_coverage_live',
+            page_endpoint='api_explorer.index',
+            probe_endpoint='api_explorer.cli_coverage_probe',
+            registry_save_endpoint='registry.save'),
     )
 
 
@@ -71,3 +80,43 @@ def execute():
         return jsonify({'ok': True, 'status': resp.status_code, 'result': result})
     except Exception as exc:
         return jsonify({'ok': False, 'error': str(exc)})
+
+
+# ---------------------------------------------------------------------------
+# CLI ↔ API coverage (shared body — see views/_clicoverage.py)
+# ---------------------------------------------------------------------------
+# The counts and the CLI paths render with the page; these three carry
+# Permission.BACKUP because every one of them hands over device CONFIGURATION,
+# and the config vault they read from is gated on exactly that permission.
+
+@bp.route('/cli-coverage/block')
+@login_required
+@require_permission(Permission.BACKUP)
+def cli_coverage_block():
+    return _clicoverage.block_payload('fortiweb')
+
+
+@bp.route('/cli-coverage/live', methods=['POST'])
+@login_required
+@require_permission(Permission.BACKUP)
+def cli_coverage_live():
+    return _clicoverage.live_payload('fortiweb')
+
+
+@bp.route('/cli-coverage/capture', methods=['POST'])
+@login_required
+@require_permission(Permission.BACKUP)
+def cli_coverage_capture():
+    return _clicoverage.capture('fortiweb', 'api_explorer.index')
+
+
+@bp.route('/cli-coverage/probe', methods=['POST'])
+@login_required
+def cli_coverage_probe():
+    """Ask the device which candidate REST path exists for a CLI-only block.
+
+    Deliberately NOT gated on Permission.BACKUP — see probe_payload: it returns
+    a verdict and a row count, and the console on this same page already lets
+    this user GET any path directly.
+    """
+    return _clicoverage.probe_payload('fortiweb')

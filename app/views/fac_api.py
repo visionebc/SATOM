@@ -43,6 +43,7 @@ from ..models import (Appliance, Permission, RegistryEndpoint,
 from ..registry import loader
 from ..services import fac_menu
 from ..services.audit import log_action
+from . import _clicoverage
 
 bp = Blueprint('fac_api', __name__, url_prefix='/fac/api')
 
@@ -91,6 +92,7 @@ def index():
         methods=_METHODS,
         can_write=current_user.can('registry.execute_write'),
         **_edit_context(),
+        **_clicoverage.context('fortiauthenticator', page_endpoint='fac_api.index'),
     )
 
 

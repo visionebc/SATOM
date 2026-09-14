@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+
+{% block title %}Edit {{ cr.ref or cr.title }} — SATOM{% endblock %}
+
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('change_requests.index') }}">{{ _('Change Requests') }}</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('change_requests.detail', id=cr.id) }}">{{ cr.ref or cr.id }}</a>
+  <span class="separator">/</span>
+  <span>{{ _('Edit') }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title">
+      <i class="bi bi-pencil-square me-2 text-accent"></i>{{ _('Edit') }} {{ cr.ref or cr.title }}
+    </h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      {{ _('Corrects a change that is still open — above all the maintenance window, which is optional when the change is raised and required before it can run.') }}
+    </p>
+  </div>
+  <a class="btn btn-fw-outline btn-sm" href="{{ url_for('change_requests.detail', id=cr.id) }}">
+    <i class="bi bi-chevron-left me-1"></i>{{ _('Back to change') }}
+  </a>
+</div>
+
+{% if will_void_approval %}
+<div class="fw-alert fw-alert-warning">
+  <div>
+    <strong><i class="bi bi-exclamation-triangle me-1"></i>{{ _('This change is already approved.') }}</strong>
+    {{ _('Changing the window, the risk level or the approval mode sends it back to') }}
+    <strong>{{ _('draft') }}</strong>{{ _(', clears the approval and disables its bound scheduled action — it will need approving and scheduling again.') }}
+    {{ _('An approval is somebody saying yes to a specific outage at a specific time; carrying it over to a different one would be answering in their name. Every other field saves without touching the approval.') }}
+  </div>
+</div>
+{% endif %}
+
+<form method="POST" action="{{ url_for('change_requests.edit', id=cr.id) }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+  <div class="row g-3">
+    <div class="col-lg-7">
+      <div class="fw-card mb-3">
+        <div class="fw-card-header">
+          <span class="fw-card-title">
+            <i class="bi bi-calendar-range me-2 text-accent"></i>{{ _('Maintenance window') }}
+          </span>
+        </div>
+        <div class="fw-card-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="fw-form-label">{{ _('Window start') }}
+                <span class="text-muted">({{ tz_name }})</span></label>
+              <input type="datetime-local" class="form-control" name="window_start"
+                     value="{{ window_start_value }}">
+            </div>
+            <div class="col-md-6">
+              <label class="fw-form-label">{{ _('Window end') }}
+                <span class="text-muted">({{ tz_name }})</span></label>
+              <input type="datetime-local" class="form-control" name="window_end"
+                     value="{{ window_end_value }}">
+            </div>
+          </div>
+          <div class="form-text mt-2">
+            {{ _('Both times are read in') }} <strong>{{ tz_name }}</strong> &mdash;
+            {{ _('the timezone set under Settings → General — and stored as UTC. A browser field carries no timezone of its own, so this label is the only thing that says which clock you are typing in.') }}
+            {{ _('A window that ends at or before it starts is refused: no instant lies inside it, so the change could never fire.') }}
+          </div>
+        </div>
+      </div>
+
+      <div class="fw-card mb-3">
+        <div class="fw-card-header">
+          <span class="fw-card-title">
+            <i class="bi bi-card-text me-2 text-accent"></i>{{ _('Change record') }}
+          </span>
+        </div>
+        <div class="fw-card-body">
+          <div class="mb-3">
+            <label class="fw-form-label">{{ _('Title') }} <span class="text-danger">*</span></label>
+            <input type="text" class="form-control" name="title" required autocomplete="off"
+                   value="{{ cr.title }}">
+          </div>
+          <div class="mb-3">
+            <label class="fw-form-label">{{ _('Reason') }}</label>
+            <textarea class="form-control" name="reason" rows="4">{{ cr.reason or '' }}</textarea>
+          </div>
+          <div class="mb-3">
+            <label class="fw-form-label">{{ _('Rollback plan') }}</label>
+            <textarea class="form-control" name="rollback" rows="4">{{ cr.rollback or '' }}</textarea>
+          </div>
+          <div class="row g-3">
+            <div class="col-md-7">
+              <label class="fw-form-label">{{ _('Change owner (Verantwortlicher)') }}</label>
+              <input type="text" class="form-control" name="owner" value="{{ cr.owner or '' }}">
+            </div>
+            <div class="col-md-5">
+              <label class="fw-form-label">{{ _('Notify on completion') }}</label>
+              <input type="text" class="form-control" name="notify_to"
+                     value="{{ cr.notify_to or '' }}" placeholder="{{ _('ops@example.com') }}">
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-5">
+      <div class="fw-card mb-3">
+        <div class="fw-card-header">
+          <span class="fw-card-title">
+            <i class="bi bi-sliders me-2 text-accent"></i>{{ _('Classification') }}
+          </span>
+        </div>
+        <div class="fw-card-body">
+          <div class="mb-3">
+            <label class="fw-form-label">{{ _('Risk') }}</label>
+            <select class="form-select" name="risk">
+              {% for r in risks %}
+              <option value="{{ r }}" {{ 'selected' if r == cr.risk else '' }}>{{ r|capitalize }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="fw-form-label">{{ _('Document language') }}</label>
+            <select class="form-select" name="doc_lang">
+              {% for code, label in langs %}
+              <option value="{{ code }}" {{ 'selected' if code == cr.doc_lang else '' }}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-1">
+            <label class="fw-form-label">{{ _('Approval') }}</label>
+            <select class="form-select" name="approval_mode">
+              <option value="manual" {{ 'selected' if cr.approval_mode != 'external' else '' }}>{{ _('Manual — approved here in SATOM') }}</option>
+              <option value="external" {{ 'selected' if cr.approval_mode == 'external' else '' }}>{{ _('External — an integration must approve it') }}</option>
+            </select>
+            <div class="form-text">
+              <strong>{{ _('External') }}</strong>
+              {{ _('is fail-closed: this change cannot run until your change-management system explicitly approves it.') }}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="fw-card mb-3">
+        <div class="fw-card-header">
+          <span class="fw-card-title">
+            <i class="bi bi-lock me-2 text-accent"></i>{{ _('Fixed when the change was raised') }}
+          </span>
+        </div>
+        <div class="fw-card-body">
+          <table class="fw-table">
+            <tbody>
+              <tr>
+                <td class="text-muted" style="width:38%;">{{ _('Action') }}</td>
+                <td>{{ cr.action }}</td>
+              </tr>
+              <tr>
+                <td class="text-muted">{{ _('Devices') }}</td>
+                <td>
+                  {% if devices %}{% for d in devices %}<span class="fw-badge fw-badge-secondary me-1">{{ d.name }}</span>{% endfor %}
+                  {% else %}<span class="text-muted">{{ _('none') }}</span>{% endif %}
+                </td>
+              </tr>
+              <tr>
+                <td class="text-muted">{{ _('Status') }}</td>
+                <td class="text-capitalize">{{ cr.status|replace('_', ' ') }}</td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="form-text mt-2">
+            {{ _('The action and the devices cannot be edited. The frozen service inventory, the bound pre-flight evidence and any document already circulating all describe these devices doing this thing — re-pointing them here would leave a signed document certifying a change nobody planned. Raise a new change request instead; this one stays true.') }}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="d-flex justify-content-end gap-2 mt-3">
+    <a class="btn btn-secondary" href="{{ url_for('change_requests.detail', id=cr.id) }}">{{ _('Discard') }}</a>
+    <button type="submit" class="btn btn-fw-primary">
+      <i class="bi bi-check-lg me-1"></i>{{ _('Save changes') }}
+    </button>
+  </div>
+</form>
+{% endblock %}

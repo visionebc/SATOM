@@ -14365,3 +14365,66 @@ pipe** on the run being measured, and treats only `rc==1` as a failure — pipin
 pytest into `tail` measures `tail`, which is how this repo has reported
 "SURVIVED" against obviously-fatal mutations eleven times.
 
+---
+
+## §167 — a field that is optional to write and required to run (2026-09-14)
+
+`tests/test_cr_edit.py` — 42 guards behind `/change-requests/<id>/edit`.
+
+**The shape of the defect.** `window_start` is optional at creation and required
+by `cr_runnable`, and the blueprint had no route that could write one. Nothing
+errors: the change sits in `approved` looking healthy and simply never fires.
+CR-2026-0012 was stored that way.
+
+What the file asserts, and why each line is the relationship rather than a case:
+
+1. **The window rule has ONE author.** A parametrised matrix of six
+   start/end pairs is put through *both* `create_change_request` and
+   `update_change_request`, and the two must return the same verdict. The rule
+   was inline in the create path, so every other writer of a window was free to
+   disagree with it. A second copy of the refusal sentence in the view is
+   asserted absent **against `ast.unparse` output**, never raw text: the comment
+   that explains the rule quotes the sentence it emits, so a text scan is
+   satisfied by its own documentation. (Ninth time in this repo.)
+2. **Approval-critical vs the rest, both directions.** Five parametrised fields
+   must void the approval; five others must leave it alone. Only the first half
+   would pass a route that voided on every save.
+3. **The bound one-shot is disabled** when an approval is voided. `cr_runnable`
+   re-gates at fire time, so this is not "it would run outside the window" — it
+   is that `catch_up` can fire it at an instant nobody scheduled, and that the
+   scheduler's answer to *when does this run* is otherwise false.
+4. **Minute resolution.** A window carrying seconds cannot be expressed in a
+   `datetime-local` field. Comparing verbatim charges the operator with an edit
+   they cannot even type — and voids the approval when they correct the title.
+   **This defect was found by the guard, with the other twenty in green.**
+5. **The window round-trips through the console timezone**, read out of the
+   *rendered page* and posted back: the prefill is the same shift, arriving from
+   the other side of `parse_local`.
+6. **Scope and permission** match the rest of the blueprint — 404 on a CR
+   outside the ADOM, on `GET` **and** on `POST`.
+7. **A button label is one phrase.** The stylesheet rule and the markup are
+   asserted separately: `.btn{white-space:nowrap}` alone only trades a wrapped
+   label for an overflowing one, because the 80px width came from the sibling
+   input, not from the wrapping.
+
+**Three traps this round, all caught by the mutation pass.**
+
+* The CSS guard was satisfied by **its own comment**: the comment above
+  `.btn{white-space:nowrap}` quotes the declaration verbatim, so flipping the
+  real one to `normal` **survived**. Strip `/* ... */` before asserting — tenth
+  time in this repo, first time in a stylesheet.
+* The terminal-status check inside `update_change_request` is **unreachable over
+  HTTP** (the route refuses first), so removing it survived. It is not
+  decoration — the function is the one implementation of *edit a change* — so it
+  is now asserted **directly**, not through the route.
+* An assertion that a diff did not mention the window was satisfied by the word
+  *window* inside the **title being edited**. Assert on the field prefix, never
+  the substring.
+
+And one the harness invented itself: a two-hour shift caused by formatting the
+form values **outside an app context**, where `to_local` degrades to raw UTC.
+The product was innocent and the guard said otherwise.
+
+**Mutations: 23 run, 23 kill, 0 survive, 0 void, `restore-ok=True`,** control
+green before and after, measured **by return code with no pipe** on the run
+being measured.

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from 'partials/_maintenance_toggle.html' import maintenance_toggle with context %}
 
 {% block title %}Appliances — SATOM{% endblock %}
 
@@ -155,6 +156,7 @@
                title="{{ _('Firmware, the backup vault and the console act on the whole appliance — they live on') }} {{ owner.name }}"><i class="bi bi-hdd-network"></i></a>
             {% endif %}
             {% endif %}
+{{ maintenance_toggle(a, 'index') }}
             <button class="btn btn-sm btn-outline-primary btn-sm-icon me-1"
                     title="{{ _('Edit') }}"
                     data-js="edit-appliance"

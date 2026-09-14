@@ -6,6 +6,58 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — Maintenance mode as a verb, on the inventory row and the device page (2026-09-14)
+
+Asked for as *"inside the table where the devices appear I want to be able to
+put the device into maintenance from those rows, and when inside the device, on
+the line where the actions section is, to also be able to put the device into
+maintenance"*.
+
+Until now the flag could only be changed through the **full edit form** — the
+modal on the appliance table or `/appliances/<id>/edit`. Nothing was broken; the
+verb was simply four clicks and a save away from where an operator decides to
+use it.
+
+**Maintenance mode is not a label.** Setting it makes the device vanish for
+operators and read-only users (`visible_appliances`), and takes it out of the
+scheduled probe and metric sweeps. A one-click version of that verb is a second
+and a third writer of one fact, so the new control is a single Jinja macro
+(`templates/partials/_maintenance_toggle.html`) rendered by both pages, backed by
+one route (`POST /appliances/<id>/maintenance`).
+
+What the route keeps in step with `edit_save`, because they are now two writers:
+
+* **The same permission pair** — `config_write` to change the row, and
+  `appliances.view_maintenance` to touch this particular field. A user who
+  cannot *see* maintenance devices must not be able to make one, or they hide a
+  device from themselves with no way back. The route answers **403**; a device
+  already hidden from that user still answers **404**, because confirming the
+  row exists is the leak maintenance mode closes.
+* **The same monitoring re-provision.** Clearing the flag can make a device
+  collectable that was not, which is why `edit_save` calls
+  `_provision_monitoring` after an edit. A button that skipped it would leave
+  the device visible and **silently uncollected** — the exact failure shape
+  maintenance mode already specialises in.
+
+Two details that are deliberate, not incidental:
+
+* **The form posts the desired state, never a flip.** A stale tab — or a second
+  operator — toggling "the other way" is an invisible state change on a device
+  that hides itself. Re-posting the state a row is already in is a no-op: no
+  write, no audit row, no monitoring pass.
+* **The device-page control lives in the page header**, not in the *Appliance
+  Actions* card. That card renders only for `fortiweb`/`fortiadc`, so a
+  FortiAuthenticator or FortiAnalyzer row would have been maintainable from the
+  table but not from its own page. Verified live against a1: `fac01` renders the
+  control with no Appliance Actions card present.
+
+Entering maintenance asks for one confirmation (it hides a device from a whole
+class of users); leaving it does not — that direction *is* the undo.
+
+Guarded by `tests/test_appliance_maintenance_toggle.py` (25 tests, safeguards
+§166), including a "one author" test that fails if either page grows its own
+copy of the form instead of importing the macro.
+
 ### Fixed — Every status badge read "offline" against appliances that answered (2026-09-14)
 
 Reported as *"why does SATOM mark fortiweb16 as offline?"*. It was not

@@ -2379,6 +2379,7 @@ class AppIdPolicy(db.Model):
 # Device-structure cache models (source-of-truth substrate) — import so
 # create_all()/Alembic register them.
 from . import models_cache  # noqa: E402,F401
+from . import models_lineage  # noqa: E402,F401
 
 
 # ---------------------------------------------------------------------------

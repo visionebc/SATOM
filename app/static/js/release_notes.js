@@ -400,10 +400,29 @@
     if (btn) btn.disabled = !n;
   }
 
+  function syncMajorBoxes() {
+    document.querySelectorAll('#rnVersionPick .rn-vmaj').forEach((box) => {
+      const rows = discovered.filter((r) => r.major === box.dataset.major);
+      const on = rows.filter((r) => r.checked).length;
+      box.checked = on === rows.length && rows.length > 0;
+      // A half-taken line must not read as an untaken one.
+      box.indeterminate = on > 0 && on < rows.length;
+      const cnt = document.querySelector(
+        `#rnVersionPick .rn-vcol-count[data-major="${box.dataset.major}"]`);
+      if (cnt) {
+        cnt.textContent = `${on}/${cnt.dataset.total}`;
+        cnt.title = `${on} of ${cnt.dataset.total} selected in the ${box.dataset.major} line`;
+      }
+    });
+  }
+
   function renderVersions() {
     const box = $('rnVersionPick'); const bar = $('rnVersionBar');
     if (!box || !bar) return;
     if (!discovered.length) { box.classList.add('d-none'); bar.classList.add('d-none'); return; }
+    // One column per release line. The old render wrapped each line inline, so
+    // variable-width entries never aligned and a wrapped row continued under
+    // the numbers of the line above it.
     const byMajor = new Map();
     discovered.forEach((r) => {
       if (!byMajor.has(r.major)) byMajor.set(r.major, []);
@@ -411,21 +430,43 @@
     });
     const parts = [];
     byMajor.forEach((rows, maj) => {
-      const cells = rows.map((r) => (
-        `<label class="form-check-label small me-3 text-nowrap">`
-        + `<input class="form-check-input rn-ver me-1" type="checkbox" value="${esc(r.version)}"`
-        + `${r.checked ? ' checked' : ''}> ${esc(r.version)}`
-        + (r.in_corpus ? '' : ' <span class="badge text-bg-warning">new</span>')
-        + `</label>`)).join(' ');
-      parts.push(`<div class="mb-1"><strong class="small me-2">${esc(maj)}</strong>${cells}</div>`);
+      const body = rows.map((r) => (
+        `<label class="rn-vrow">`
+        + `<input class="form-check-input rn-ver m-0" type="checkbox" value="${esc(r.version)}"`
+        + `${r.checked ? ' checked' : ''}>`
+        + `<span class="rn-vnum small">${esc(r.version)}</span>`
+        + (r.in_corpus
+          ? `<i class="bi bi-check-circle-fill rn-vhas" title="Already in the corpus — re-scanning it merges, it does not duplicate."></i>`
+          : '')
+        + `</label>`)).join('');
+      parts.push(
+        `<div class="rn-vcol">`
+        + `<div class="rn-vcol-head">`
+        + `<input class="form-check-input rn-vmaj m-0" type="checkbox" data-major="${esc(maj)}"`
+        + ` title="Take or drop the whole ${esc(maj)} line">`
+        + `<span class="rn-vmaj-label small">${esc(maj)}</span>`
+        + `<span class="rn-vcol-count" data-major="${esc(maj)}" data-total="${rows.length}"></span>`
+        + `</div><div class="rn-vcol-body">${body}</div></div>`);
     });
     box.innerHTML = parts.join('');
     box.classList.remove('d-none'); bar.classList.remove('d-none');
     box.querySelectorAll('.rn-ver').forEach((cb) => cb.addEventListener('change', () => {
       const row = discovered.find((r) => r.version === cb.value);
       if (row) row.checked = cb.checked;
+      syncMajorBoxes();
       updatePickCount();
     }));
+    box.querySelectorAll('.rn-vmaj').forEach((cb) => cb.addEventListener('change', () => {
+      const maj = cb.dataset.major;
+      discovered.forEach((r) => { if (r.major === maj) r.checked = cb.checked; });
+      box.querySelectorAll('.rn-ver').forEach((c) => {
+        const row = discovered.find((r) => r.version === c.value);
+        if (row && row.major === maj) c.checked = cb.checked;
+      });
+      syncMajorBoxes();
+      updatePickCount();
+    }));
+    syncMajorBoxes();
     updatePickCount();
   }
 

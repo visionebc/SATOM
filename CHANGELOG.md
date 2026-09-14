@@ -6,6 +6,59 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed — `release_notes.js` was served without a cache key (2026-09-14)
+
+Found while shipping the picker above, and it would have hidden it. The tag was
+a bare `url_for('static', …)` while `SEND_FILE_MAX_AGE_DEFAULT` is **86400** and
+nothing revalidates inside that window — so any browser that had loaded a page in
+the previous 24 h replayed the **old** file. Every change to the Release Notes
+modal since that `<script>` was written could land invisible for a day, which
+does not read as a slow rollout: the operator opens the modal, sees the previous
+build, and reports the fix as not deployed. It now uses the house `asset()`
+helper (`?v=<mtime>`, already on ~20 other tags). Guarded for every app-owned
+`js/` tag in `base.html`, with the vendored bundle named as the one exception.
+
+### Changed — the Release Notes version picker is a grid of release lines (2026-09-14)
+
+After **Discover versions**, the picker listed each major as a wrapping inline
+run inside a 200 px scroll box. Measured against the live payload — **59
+versions over 5 release lines, 8 to 14 each** — that is unreadable for reasons
+that are structural, not cosmetic:
+
+* entries are **variable-width** (the `new` badge is ~34 px), so nothing lines up
+  and a line that wraps continues **under the numbers of the line above it**;
+* the major label was **inline**, so a wrapped continuation row was orphaned from
+  the header that names it;
+* the `new` badge sat on **47 of 59** rows. Straight after Discover,
+  `checked === !in_corpus` — so those 47 badges repeated exactly what 47 ticked
+  checkboxes already said, while the 12 rows actually worth distinguishing
+  carried no mark at all;
+* there was no way to take a whole release line: only *new* / *all* / *none*.
+
+It is now **one column per release line**, in an `auto-fit` grid. Each column
+carries a **tri-state tick that takes or drops the whole line** (half-taken
+renders as indeterminate — a partly-selected line must not read as an unselected
+one) and a count of what is selected in it. The corpus marker moved to the
+**minority**: the ~12 already-harvested releases carry one aligned check, the
+rest stay clean, and a legend on the bulk-pick bar says what the glyph means.
+
+Two defects here were caught **only by rendering**, with every assertion green:
+
+1. the column count shipped as *held / total* while sitting flush against the
+   take-the-line tick, so it read as a **selection** count — and the two numbers
+   genuinely differ (8.0 is 6 held, 2 selected, right after Discover). It now
+   counts ticks, recomputed wherever ticks change;
+2. at **880 px** the grid wraps to a second row and the old `max-height` cap
+   **sliced the 7.0 column off below its header** — a column showing a header and
+   no releases says *"this release line publishes nothing"*. `.modal-body`
+   already scrolls, so the grid no longer opens a second scroll region.
+
+Guards in `tests/test_release_notes_picker.py` (**16 mutations, 16 bite**). Two
+of them only started biting after the guards themselves were fixed: a class-name
+assertion matched its own mutant (`rn-vmaj` is a substring of `rn-vmaj-gone`, and
+`\b` does not help — a hyphen is already a word boundary), and the markup class
+and the selector that binds it were being checked as if they were one fact.
+
 ### Removed — the two git controls in the Release Notes modal (2026-09-14)
 
 `Publish to git` (scan panel) and `⤓ Sync from git` (modal header) are gone, and

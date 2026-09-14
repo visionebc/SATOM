@@ -51,6 +51,64 @@ def _transition(cr, status: str, by: str = "", detail: str = "", **fields) -> No
     db.session.commit()
 
 
+WINDOW_INVERTED = ("The maintenance window ends at or before it starts, so no "
+                   "instant lies inside it and the change could never fire.")
+
+
+def validate_window(start, end) -> str:
+    """``""`` if this pair is a window a change could fire inside, else why not.
+
+    THE one author of that rule. It was written inline in the create path, so
+    every OTHER way of putting a window on a change - the edit form, a batched
+    wave, a future calendar drag - was free to store one that can never contain
+    an instant. CR-0011 is stored ending a DAY before it begins: nothing failed,
+    it simply sits in 'approved' looking healthy and never runs.
+
+    A half-open window (an end with no start, or neither) is NOT refused here:
+    'no window yet' is a legal state for a draft, and the run-gate refuses it
+    at fire time with a reason of its own.
+    """
+    if start is not None and end is not None and end <= start:
+        return WINDOW_INVERTED
+    return ""
+
+
+def revoke_approval(cr_id, by: str, detail: str = "") -> bool:
+    """Send an approved/scheduled CR back to ``draft`` and unbind its one-shot.
+
+    Returns True if there was an approval to void. Used when an edit changes
+    something the approver decided ON - the window above all: an approval is a
+    human saying yes to a specific outage at a specific time, and silently
+    carrying it over to a different time is forging that answer.
+
+    Disabling the bound action is the load-bearing half. A one-shot fires at the
+    window start it was BOUND with; :func:`cr_runnable` re-checks the CR's
+    CURRENT window at fire time, so a stale action cannot run outside the new
+    window - but with ``catch_up`` it CAN fire at an instant nobody scheduled,
+    if the old start happens to fall inside the new window. Forcing an explicit
+    re-Schedule is what makes the scheduler's answer to "when does this run"
+    true again.
+
+    The EXTERNAL approval is cleared too. Keeping it would leave a change
+    carrying a foreign authority's yes over a window that authority never saw.
+    """
+    cr = db.session.get(ChangeRequest, cr_id) if not isinstance(
+        cr_id, ChangeRequest) else cr_id
+    if cr is None:
+        raise ValueError("change request not found")
+    if cr.status not in ("approved", "scheduled"):
+        return False
+    if cr.scheduled_action_id:
+        action = db.session.get(ScheduledAction, cr.scheduled_action_id)
+        if action is not None:
+            action.enabled = False  # committed by _transition below
+    _transition(cr, "draft", by=by,
+                detail=detail or "Approval voided by an edit; re-approval required",
+                approved_by="", approved_at=None,
+                external_approved_at=None, external_approved_by="")
+    return True
+
+
 def approve(cr_id: int, by: str) -> ChangeRequest:
     """Approve a CR (stamps ``approved_by`` / ``approved_at``)."""
     cr = db.session.get(ChangeRequest, cr_id)
@@ -510,6 +568,9 @@ def _as_int(value) -> int | None:
 
 __all__ = [
     "RISKS",
+    "WINDOW_INVERTED",
+    "validate_window",
+    "revoke_approval",
     "approve",
     "cancel",
     "schedule_change_request",

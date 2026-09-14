@@ -74,13 +74,23 @@
     {% endif %}
 
     {% if not terminal %}
+    <a class="btn btn-sm btn-fw-outline" href="{{ url_for('change_requests.edit', id=cr.id) }}">
+      <i class="bi bi-pencil-square me-1"></i>{{ _('Edit') }}
+    </a>
     <form method="POST" action="{{ url_for('change_requests.cancel', id=cr.id) }}"
-          class="d-flex align-items-center gap-2" style="display:inline-flex;"
+          class="d-inline-flex align-items-center gap-2 flex-nowrap"
           data-fw-confirm-form="Cancel this change request? Its bound scheduled action will be disabled.">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <input type="text" class="form-control form-control-sm" name="reason" placeholder="{{ _('Cancel reason (optional)') }}"
-             style="max-width:220px;">
-      <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-x-circle me-1"></i>{{ _('Cancel CR') }}</button>
+      <!-- flex:0 1 220px, NOT the .form-control default width:100%: inside this
+           form that 100% resolves against the form's own width, leaving the
+           button whatever is left over - 80px, which broke the two-word label
+           across THREE lines at every viewport width. -->
+      <input type="text" class="form-control form-control-sm" name="reason"
+             placeholder="{{ _('Cancel reason (optional)') }}"
+             style="flex:0 1 220px; width:auto; min-width:110px;">
+      <button type="submit" class="btn btn-sm btn-outline-danger flex-shrink-0">
+        <i class="bi bi-x-circle me-1"></i>{{ _('Cancel CR') }}
+      </button>
     </form>
     {% endif %}
   </div>

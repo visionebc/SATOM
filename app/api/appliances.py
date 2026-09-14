@@ -1,4 +1,4 @@
-from flask import request, jsonify
+from flask import request, jsonify, current_app
 from flask_login import login_required, current_user
 from . import bp
 from ..models import Appliance, db, Permission, visible_appliances, visible_appliance_or_404
@@ -17,6 +17,29 @@ def _is_stale(a):
     return (datetime.utcnow() - a.last_checked_at).total_seconds() >= _STATUS_TTL_SECONDS
 
 
+def _probe_in_own_context(app, appliance_id):
+    """Sonda UN appliance desde un hilo del pool, con su propio contexto.
+
+    Un hilo nuevo arranca con las ContextVars VACIAS, asi que no hereda el app
+    context de la peticion — y el camino de la credencial llega a la BD
+    (services.secret_backend, desde que un secreto puede vivir en un vault).
+    Sin contexto esa lectura falla, el vault parece apagado, y una credencial
+    que solo vive en el vault resuelve al centinela local: probe_status se
+    traga el error y TODOS los badges salen "offline". Medido el 2026-09-14
+    contra la BD viva: los 3 appliances offline en el pool, los 3 online en el
+    hilo principal, con el mismo codigo y el mismo timeout.
+
+    La fila se RELEE por id en vez de compartir la instancia ORM de la
+    peticion: cada app_context() tiene su propia sesion y un objeto de otra
+    llega aqui desacoplado.
+    """
+    with app.app_context():
+        a = db.session.get(Appliance, appliance_id)
+        if a is None:  # borrado entre el listado y el sondeo
+            return "unknown"
+        return a.probe_status(timeout=6.0)
+
+
 @bp.route('/appliances', methods=['GET'])
 @login_required
 def list_appliances():
@@ -24,24 +47,34 @@ def list_appliances():
 
     ``status`` is what the badge poller (main.js) renders. Stale appliances are
     probed concurrently (network only -- no DB writes inside the threads); the
-    cache is then persisted with a single bulk UPDATE that intentionally does
-    NOT bump ``updated_at`` (a status poll must not look like a config edit)."""
+    cache is then persisted with a single bulk UPDATE that does NOT bump
+    ``updated_at`` (a status poll must not look like a config edit — this
+    docstring claimed it before it was true; see the explicit self-assign
+    below)."""
     appliances = visible_appliances().order_by(Appliance.name).all()
     status_map = {a.id: (a.last_status or 'unknown') for a in appliances}
 
     stale = [a for a in appliances if _is_stale(a)]
     if stale:
+        # El objeto de aplicacion, no el proxy: el proxy se resuelve por
+        # ContextVar y dentro del hilo no apunta a nada.
+        app = current_app._get_current_object()
+        ids = [a.id for a in stale]
         with ThreadPoolExecutor(max_workers=min(8, len(stale))) as pool:
-            probed = dict(zip(
-                [a.id for a in stale],
-                pool.map(lambda a: a.probe_status(timeout=6.0), stale),
-            ))
+            probed = dict(zip(ids, pool.map(
+                lambda i: _probe_in_own_context(app, i), ids)))
         now = datetime.utcnow()
         for a in stale:
             st = probed.get(a.id, 'unknown')
             status_map[a.id] = st
             db.session.query(Appliance).filter(Appliance.id == a.id).update(
-                {'last_status': st, 'last_checked_at': now},
+                {'last_status': st, 'last_checked_at': now,
+                 # updated_at se asigna a SI MISMO para que NO dispare el
+                 # onupdate de la columna: un sondeo de estado no es una
+                 # edicion de configuracion. Sin esto cada poll marcaba la
+                 # fila como editada cada 60 s y 'cuando se cambio esta
+                 # config' dejaba de tener respuesta.
+                 'updated_at': Appliance.updated_at},
                 synchronize_session=False,
             )
         db.session.commit()
@@ -175,7 +208,10 @@ def test_appliance(id):
         status, ok, detail = 'offline', False, str(exc)
 
     db.session.query(Appliance).filter(Appliance.id == id).update(
-        {'last_status': status, 'last_checked_at': datetime.utcnow()},
+        {'last_status': status, 'last_checked_at': datetime.utcnow(),
+         # Mismo motivo que en list_appliances: pulsar el boton de test es
+         # mirar el aparato, no editar su configuracion.
+         'updated_at': Appliance.updated_at},
         synchronize_session=False,
     )
     db.session.commit()

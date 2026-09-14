@@ -6,6 +6,69 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed — Every status badge read "offline" against appliances that answered (2026-09-14)
+
+Reported as *"why does SATOM mark fortiweb16 as offline?"*. It was not
+fortiweb16: **the whole inventory was mislabelled**, and had been for ~3.5
+weeks.
+
+**Measured before anything was changed.** From the node itself, as the service
+user, with the same code and the same 6 s timeout the badge uses, fortiweb16
+answered `online` in **0.08 s** (`hostName=FortiWeb, 7.6.8 build1128`). Through
+the badge's real path — `GET /api/appliances`, which probes inside a
+`ThreadPoolExecutor` — the same three appliances came back
+`{'fac01': 'offline', 'fortiweb15': 'offline', 'fortiweb16': 'offline'}` while
+the main thread returned all three `online`.
+
+**Root cause: two correct pieces, one wrong combination.** A worker thread
+starts with empty ContextVars, so it has no Flask app context. Since credentials
+may live in an external vault (2026-08-19), the credential path reaches the
+database: `secret_backend._raw()` called `AppSetting.get()` and swallowed the
+failure with `except Exception: return {}`. An empty config means "no vault", so
+`get_appliance_password()` returned `None` — *"use the local copy"* — and the
+local copy of a vault-owned credential is the sentinel, whose getter raises.
+`probe_status()` swallowed that too and answered `"offline"`. The pool had
+existed since the initial commit and was harmless while the credential path was
+env + column (no DB at all); the vault made it a defect without either side
+knowing.
+
+Nothing failed loudly because **"offline" is a perfectly credible answer**. No
+log line, no red test, no alert. Every other view (tables, reports, `analysis*`,
+`advisor`, `api_v1`) reads the `last_status` column this one poller writes, so a
+single broken writer poisoned all of them.
+
+**Fixed, four ways.**
+
+* `api/appliances.py` pushes an app context inside each worker and re-reads the
+  row by id (`_probe_in_own_context`) — sharing the request's ORM instance
+  across sessions would leave it detached. This is the only context-less thread
+  in the tree: `deep_jobs`, `bulk`, `policy_ops`, `metrics_collect`,
+  `rediscovery` and `jobs` all already pushed one, and `logcollect` captures the
+  credential in the request thread on purpose.
+* `secret_backend._raw()` now **raises `VaultConfigUnavailable`** when there is
+  no app context instead of degrading to "no vault". "I cannot read the
+  configuration" is not "the vault is off", and conflating them makes the same
+  symptom reappear in the next route that uses threads. The class deliberately
+  does **not** inherit `VaultError`, which `get_appliance_password` catches and
+  falls back on — that would restore the silent degradation through the back
+  door. An unmigrated settings table is still tolerated (fresh install).
+* `Appliance.probe_status()` logs the failure at WARNING **naming the
+  appliance** — a warning that does not say which one sends the operator to
+  check all nine — and stays silent on success so the line keeps meaning
+  something.
+* A status poll no longer bumps `updated_at`, on **both** write paths (the badge
+  poller and the ⚡ test button). The docstring already claimed this and was
+  false: `updated_at` has `onupdate=datetime.utcnow`, which a Core
+  `query.update()` fires, so every poll marked the row as edited every 60 s and
+  *"when was this configuration last changed"* had no answer. `updated_at` is
+  now assigned to itself explicitly.
+
+**Verified.** 14 new guards in `tests/test_probe_thread_context.py`
+(`safeguards.md` §9p), **10 mutations, 10 bite**, 343 targeted tests rc=0. On
+the live node: all three appliances `online` through the real thread pool in
+1.55 s, `last_checked_at` advancing while `updated_at` stands still in Postgres,
+and a context-less thread raising instead of answering "off".
+
 ### Added — Clone/migrate registry with a hover flag on the policy row (2026-09-14)
 
 Asked for as *"when an SPO is cloned you cannot see, from inside the device,

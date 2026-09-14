@@ -437,12 +437,26 @@ class Appliance(db.Model):
         return self._own_client(timeout=timeout)
 
     def probe_status(self, timeout: float = 6.0) -> str:
-        """Live connectivity probe -> 'online' | 'offline'. No DB writes, so it
-        is safe to call from a worker thread."""
+        """Live connectivity probe -> 'online' | 'offline'.
+
+        No DB WRITES, so it is safe to call from a worker thread — but the
+        CREDENTIAL path does READ the database (services.secret_backend, to
+        learn whether a vault owns this password), so the caller still owes
+        this method an app context. That distinction is what the old one-line
+        docstring got wrong; see ``_probe_in_own_context`` in
+        ``app/api/appliances.py``.
+        """
         try:
             self.build_client(timeout=timeout).status_check()
             return "online"
-        except Exception:
+        except Exception as exc:
+            # "offline" es una respuesta perfectamente creible, y por eso un
+            # sondeo roto sobrevivio 3,5 semanas sin que nadie lo notara. Se
+            # nombra el appliance: un aviso que no dice CUAL fallo manda al
+            # operador a revisar los nueve.
+            import logging as _logging
+            _logging.getLogger(__name__).warning(
+                "probe: %s reported offline: %s", self.name or "?", exc)
             return "offline"
 
     @property

@@ -2310,3 +2310,31 @@ a.bm-dev:hover { background: var(--fw-accent-light); color: var(--fw-accent); }
   .fw-hint-tip { --bs-tooltip-max-width: 92vw; }
   .fw-hint-tip .tooltip-inner { max-width: 92vw; }
 }
+
+
+/* --- Clone-history flag + popover (workspace policy list) ------------------
+   Light chrome only: colours come from --fw-* tokens and .fw-badge-*, which are
+   calibrated against white (safeguards 9m). No dark-theme slabs here. */
+.fw-clone-flag {
+  display: inline-flex; align-items: center; gap: 3px;
+  margin-left: 6px; padding: 1px 6px; border-radius: 10px;
+  font-size: 11px; font-weight: 600; line-height: 1.5; cursor: help;
+  background: var(--fw-accent-light); color: var(--fw-accent);
+  border: 1px solid transparent; vertical-align: middle;
+}
+.fw-clone-flag:hover, .fw-clone-flag:focus {
+  border-color: var(--fw-accent); outline: none;
+}
+/* Every recorded attempt failed: the flag must not read as "a copy exists". */
+.fw-clone-flag-empty { background: rgba(220,53,69,0.12); color: #8B1C2A; }
+.fw-clone-pop { --bs-popover-max-width: 520px; }
+.fw-clone-pop .popover-body { padding: 6px 8px; }
+.fw-clone-tbl { width: 100%; border-collapse: collapse; font-size: 12px; }
+.fw-clone-tbl td { padding: 3px 8px 3px 0; vertical-align: top; white-space: nowrap; }
+.fw-clone-tbl tr + tr td { border-top: 1px solid var(--fw-border-light); }
+.fw-clone-name { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.fw-clone-when, .fw-clone-who { color: var(--fw-text-secondary); }
+.fw-clone-bad td { color: #8B1C2A; }
+
+/* Why a recorded attempt failed — shown next to the failed badge. */
+.fw-clone-err { color: #8B1C2A; font-size: 11px; }

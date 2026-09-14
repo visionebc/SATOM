@@ -1825,6 +1825,7 @@ def start_policy_job(flask_app, *, action: str, source_appl, dest_appl=None,
         with app.app_context():
             from ..models import Appliance
             from .audit import log_action
+            from . import policy_lineage as lineage
             from . import notifications as notify
             src = Appliance.query.get(src_id)
             dst = Appliance.query.get(dest_id) if dest_id else None
@@ -1855,13 +1856,32 @@ def start_policy_job(flask_app, *, action: str, source_appl, dest_appl=None,
                                      str(opts.get("wpp_new_name") or ""))
                        if dedup_ok and action in _CLONE_ACTIONS else ())
                 pol_opts = dedup_opts(opts, key, carried_wpp)
+                # The name the copy actually lands under. Computed ONCE and both
+                # passed to the write and recorded, so the registry can never
+                # name something other than what was created.
+                landed = _name_for(action, pol, new_name, policies)
                 rec = perform_one(
                     action, source_appl=src, dest_appl=dst, policy=pol,
-                    new_name=_name_for(action, pol, new_name, policies),
+                    new_name=landed,
                     dry_run=False, opts=pol_opts)
                 if key and rec.get("ok"):
                     carried_wpp.add(key)
                 results.append(rec)
+                # Durable lineage — ONLY here. This is the single real-execution
+                # call site (the other two perform_one() calls live in analyse()
+                # and are always dry_run=True), so a preview cannot write a row.
+                # A same-box clone records THIS appliance as the destination:
+                # the copy does live here, and leaving it blank would make the
+                # row indistinguishable from a cross-box clone to an unknown box.
+                if action in _CLONE_ACTIONS:
+                    same_box = action == "clone_here"
+                    lineage.record(
+                        src_appliance_id=src_id, src_policy=pol, action=action,
+                        dst_appliance_id=(src_id if same_box else dest_id),
+                        dst_appliance=(src_name if same_box else dest_name),
+                        dst_policy=landed, ok=bool(rec.get("ok")),
+                        error=str(rec.get("error") or ""), by=by,
+                        job_id=str(job_id))
                 # Clear, per-object audit line for THIS policy.
                 log_action(
                     "policy.%s" % action, target="%s/%s" % (src_name, pol),

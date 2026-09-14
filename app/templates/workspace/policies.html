@@ -13,6 +13,38 @@
 {% endblock %}
 
 {% block content %}
+{#- One flag per policy row: an icon + the number of copies that ACTUALLY
+    landed, with the full history in a hover popover. The wording of each verb
+    lives HERE and nowhere else, so gettext sees literal msgids and there is a
+    single author for the phrase. A migrate is worded as a MOVE because it is
+    one — it disables the source. -#}
+{% macro clone_flag(events) %}
+  {%- set ok_n = events | selectattr('ok') | list | length -%}
+  <span class="fw-clone-flag{{ ' fw-clone-flag-empty' if not ok_n }}"
+        tabindex="0" role="button" aria-label="{{ _('Clone history') }}"
+        ><i class="bi bi-files"></i>{{ ok_n }}</span
+  ><span class="fw-clone-src d-none">
+    <table class="fw-clone-tbl"><tbody>
+      {%- for e in events %}
+      <tr class="{{ 'fw-clone-bad' if not e.ok else '' }}">
+        <td>
+          {%- if e.action == 'clone_here' %}{{ _('Cloned here as') }}
+          {%- elif e.action == 'clone_to' %}{{ _('Cloned to') }} <strong>{{ e.where }}</strong>
+          {%- else %}{{ _('Migrated to') }} <strong>{{ e.where }}</strong>{% endif -%}
+        </td>
+        <td class="fw-clone-name">{{ e.dst_policy }}</td>
+        <td class="fw-clone-when">{{ e.at }}</td>
+        <td class="fw-clone-who">{{ e.by }}</td>
+        <td>{% if not e.ok %}<span class="fw-badge fw-badge-danger">{{ _('failed') }}</span>{#-
+          The REASON, not just the verdict. "failed" alone leaves the operator
+          who just found half a copy on the destination with nothing to act on,
+          and the reason is already recorded. -#}
+          {%- if e.error %} <span class="fw-clone-err">{{ e.error }}</span>{% endif %}{% endif %}</td>
+      </tr>
+      {%- endfor %}
+    </tbody></table>
+  </span>
+{% endmacro %}
 {% set has_deep = facets is defined and facets and (facets.values()|selectattr('backends')|list|length > 0) %}
 <div class="fw-page-header">
   <div>
@@ -183,6 +215,8 @@
           <td class="check-col"><input type="checkbox" class="fw-pol-check" value="{{ pname }}"></td>
           <td>
             <strong>{{ pname or '—' }}</strong>
+            {%- set _cl = (clone_events.get(pname) if clone_events is defined else []) or [] %}
+            {%- if _cl %} {{ clone_flag(_cl) }}{% endif %}
             {% if p.get('comment') %}<br><small class="text-muted">{{ p.get('comment','') }}</small>{% endif %}
           </td>
           <td>
@@ -583,6 +617,26 @@
   });
   document.querySelectorAll('#policiesTable tbody tr[data-policy-row]').forEach(function (row) {
     row.addEventListener('click', function () { var h = row.dataset.href; if (h && h !== '#') window.location = h; });
+  });
+
+  // ── Clone-history flag ──────────────────────────────────────────────────────
+  // The body is SERVER-rendered into the hidden sibling, not built here: every
+  // value then passes through Jinja autoescaping, and no policy name from a
+  // device reaches innerHTML unescaped. sanitize:false is required because
+  // Bootstrap's default allowList drops <table>, which would silently empty the
+  // popover; it is safe for exactly the reason above.
+  document.querySelectorAll('#policiesTable .fw-clone-flag').forEach(function (el) {
+    var src = el.nextElementSibling;
+    if (!src || !src.classList.contains('fw-clone-src')) return;
+    if (!window.bootstrap || !bootstrap.Popover) return;
+    new bootstrap.Popover(el, {
+      html: true, sanitize: false, trigger: 'hover focus', placement: 'right',
+      container: 'body', customClass: 'fw-clone-pop',
+      title: el.getAttribute('aria-label'), content: src.innerHTML
+    });
+    // The whole row navigates on click (handler above). A click aimed at the
+    // flag must not also open the policy detail.
+    el.addEventListener('click', function (e) { e.stopPropagation(); e.preventDefault(); });
   });
 
   // ── Action modal ────────────────────────────────────────────────────────────

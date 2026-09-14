@@ -298,6 +298,10 @@
 
   <!-- SIDEBAR -->
   <aside id="fw-sidebar" class="fw-sidebar">
+    {# The section holding the active item is opened by the filter, from this
+       markup — NOT by the per-group blueprint lists below, which cannot be
+       kept in sync by hand and had already drifted. See app/nav_state.py. #}
+    {% filter nav_autoopen %}
     <nav class="fw-nav">
       <div class="fw-nav-top">
 
@@ -1065,6 +1069,7 @@
       </div>
 
     </nav>
+    {% endfilter %}
   </aside>
 
   <!-- MAIN CONTENT -->

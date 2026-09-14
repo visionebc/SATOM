@@ -860,6 +860,15 @@ def create_app(config_override: object | None = None) -> Flask:
             'notification_preview': _notif_preview,
         }
 
+    # -- sidebar accordion: derive the open section from the markup ------
+    # See app/nav_state.py. The blueprint lists in base.html could not state
+    # which section holds a page without being kept in sync by hand, and had
+    # already drifted for five blueprints.
+    @app.template_filter('nav_autoopen')
+    def _nav_autoopen(html):  # noqa: ANN001
+        from .nav_state import autoopen
+        return autoopen(str(html))
+
     # -- timezone-aware timestamp filter ---------------------------------
     @app.template_filter('localtime')
     def _localtime(dt, fmt='%Y-%m-%d %H:%M:%S'):

@@ -1,0 +1,121 @@
+{#
+  Scout's reading of the move about to be flashed.
+
+  ONE author for this markup. The Upgrade page includes it server-side and the
+  /upgrade/advisory endpoint renders this same file as a fragment, so the panel
+  an operator sees before pressing the button and the panel that refreshes when
+  they change the image cannot drift apart. It is also why the fragment is HTML
+  and not JSON: every string below is vendor prose harvested from a release-notes
+  page, and rendering it here puts all of it through Jinja's autoescape instead
+  of through a second renderer written in JavaScript.
+
+  Expects: scout (services.upgrade_scout.Review), appliance.
+#}
+{% set _vb = {'blocker': 'danger', 'caution': 'warning', 'clear': 'success',
+              'unknown': 'secondary', 'unavailable': 'secondary'} %}
+{% set _vi = {'blocker': 'x-octagon', 'caution': 'exclamation-triangle',
+              'clear': 'check2-circle', 'unknown': 'question-circle',
+              'unavailable': 'dash-circle'} %}
+<div class="card shadow-sm mb-3" id="scout-panel">
+  <div class="card-header fw-card-header d-flex align-items-center justify-content-between">
+    <span><i class="bi bi-binoculars me-1"></i>{{ _('Scout — release-notes review') }}</span>
+    <span class="fw-badge fw-badge-{{ _vb.get(scout.verdict, 'secondary') }} fw-badge-nowrap">
+      <i class="bi bi-{{ _vi.get(scout.verdict, 'dash-circle') }} me-1"></i>{{ scout.verdict }}
+    </span>
+  </div>
+  <div class="card-body">
+
+    {% if scout.advisory is none %}
+      <div class="fw-alert fw-alert-info mb-0 small">
+        <i class="bi bi-info-circle me-1"></i>{{ scout.reason }}
+      </div>
+    {% else %}
+      {% set adv = scout.advisory %}
+      <p class="small text-muted mb-2">
+        {{ _('Move reviewed:') }} <b>{{ adv.current }}</b> &rarr; <b>{{ adv.target }}</b>
+        {% if not adv.is_upgrade %}<span class="fw-badge fw-badge-warning ms-1">{{ _('downgrade') }}</span>{% endif %}
+      </p>
+
+      {% if adv.verdict == 'clear' %}
+        <div class="fw-alert fw-alert-success small mb-2">
+          <i class="bi bi-check2-circle me-1"></i>
+          {{ _('Nothing in the harvested upgrade prose stops this move. Every page Scout needed was read.') }}
+        </div>
+      {% elif adv.verdict == 'unknown' %}
+        <div class="fw-alert fw-alert-warning small mb-2">
+          <i class="bi bi-question-circle me-1"></i>
+          {{ _('Scout cannot clear this move: part of the vendor prose it needed is not in the corpus. An unread page reads exactly like a page that said nothing — see the coverage below.') }}
+        </div>
+      {% endif %}
+
+      {% if adv.path %}
+      <div class="fw-alert fw-alert-danger small mb-2">
+        <i class="bi bi-signpost-split me-1"></i>
+        {{ _('The vendor requires hops:') }}
+        <b>{{ adv.path|join(' → ') }}</b> —
+        {{ _('flashing the target directly is not a supported path.') }}
+      </div>
+      {% endif %}
+
+      {% if adv.findings %}
+      <div class="table-responsive">
+        <table class="table table-sm fw-table align-middle mb-2">
+          <thead><tr>
+            <th style="width:7rem">{{ _('Severity') }}</th>
+            <th>{{ _('Finding') }}</th>
+            <th style="width:9rem">{{ _('From') }}</th>
+          </tr></thead>
+          <tbody>
+          {% for f in adv.findings %}
+            <tr>
+              <td><span class="fw-badge fw-badge-{{ {'blocker':'danger','caution':'warning','note':'info'}.get(f.severity,'secondary') }} fw-badge-nowrap">{{ f.severity }}</span></td>
+              <td>
+                <div class="fw-semibold">{{ f.title }}</div>
+                <div class="small">{{ f.detail }}</div>
+                {% if f.evidence %}
+                <details class="small mt-1">
+                  <summary class="text-muted">{{ _('Vendor wording') }}</summary>
+                  <blockquote class="border-start ps-2 mt-1 mb-0 text-muted">{{ f.evidence }}</blockquote>
+                </details>
+                {% endif %}
+              </td>
+              <td class="small">
+                {{ f.version }}<br>
+                {% if f.source_url %}
+                  <a href="{{ f.source_url }}" target="_blank" rel="noopener noreferrer">{{ f.section }}</a>
+                {% else %}{{ f.section }}{% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+
+      {# Coverage is not a footnote. A verdict over prose nobody harvested and a
+         verdict over prose that said nothing render identically without it. #}
+      <p class="small text-muted mb-1">
+        <i class="bi bi-journal-check me-1"></i>
+        {{ _('Coverage:') }} {{ adv.read|length }} {{ _('page(s) read') }}{% if adv.gaps %},
+        <span class="text-danger">{{ adv.gaps|length }} {{ _('missing') }}</span>{% endif %}.
+      </p>
+      {% if adv.gaps %}
+      <details class="small mb-1">
+        <summary class="text-muted">{{ _('What Scout could not read') }}</summary>
+        <ul class="mb-0 mt-1">
+          {% for g in adv.gaps %}<li>{{ g.version }} — {{ g.section }} <span class="text-muted">({{ g.reason }})</span></li>{% endfor %}
+        </ul>
+      </details>
+      {% endif %}
+      <p class="small text-muted mb-0">
+        <i class="bi bi-shield-lock me-1"></i>
+        {{ _('Rules seal') }} <code>{{ adv.rules_digest[:12] }}</code> · {{ adv.generated_at }}
+      </p>
+    {% endif %}
+
+    <p class="small text-muted mt-2 mb-0">
+      <i class="bi bi-info-circle me-1"></i>
+      {{ _('Scout advises; it does not authorise. Whether a live flash may run is decided by change control above.') }}
+    </p>
+  </div>
+</div>

@@ -13702,6 +13702,41 @@ no name is plural or overflows a column.</p>
 <p><strong>Verification.</strong> 31 mutations, 31 bite. Baseline green before and after,
 <code>__pycache__</code> purged every pass, tree restored and verified by SHA-256, aborts
 if another pytest is alive on the tree.</p>
+<h2 id="9p-the-status-badge-a-thread-that-cannot-read-where-the-secret-lives">§9p — The status badge: a thread that cannot read where the secret lives</h2>
+<p><strong>What it defends.</strong> <code>GET /api/appliances</code> probes inside a <code>ThreadPoolExecutor</code>,
+and the credential path reads the database. A worker thread has no app context,
+so that read failed and <code>secret_backend._raw()</code> answered <code>{}</code> = "no vault" —
+which resolves a vault-owned credential to the local sentinel, whose getter
+raises, which <code>probe_status</code> turns into <code>"offline"</code>. Every badge in the product
+was wrong for ~3.5 weeks and nothing complained, because <strong>"offline" is
+credible</strong>.</p>
+<p><strong>Two classes of guard, and both are needed.</strong> Behavioural ones assert the badge
+route says <code>online</code> for a vault-backed appliance and that the probe still runs
+<strong>off</strong> the request thread (serialising would also go green and turn the page
+into N × 6 s). Structural ones assert <code>_raw()</code>/<code>active()</code> <strong>break</strong> in a
+context-less thread rather than answering "off" — without those, the same
+symptom returns in the next route that uses threads, and again with no log.</p>
+<p><strong>Recipe.</strong> <code>venv/bin/python -m pytest tests/test_probe_thread_context.py -q</code>
+(14 tests, seconds). The double client must actually read
+<code>appliance.password</code>: a stub that skips it passes the guard without exercising
+the one line that breaks.</p>
+<p><strong>Traps this file already paid for.</strong></p>
+<ul>
+<li><em>An assertion satisfied by the wrong text.</em> <code>"{device}" in caplog.text</code>
+  passed with the name <strong>removed</strong> from the log format, because the sentinel's
+  <code>RuntimeError</code> already contains the appliance name. The mutation survived and
+  said so. The fix is a guard whose failure is <strong>anonymous</strong> (a <code>TimeoutError</code>
+  naming nothing), so only the format string can put the name there.</li>
+<li><em>Two anchors where one is a substring of the other.</em> The poll's
+  <code>'updated_at': Appliance.updated_at},</code> is indented 17 spaces and the test
+  button's 9; the shorter string matches <strong>inside</strong> the longer line, so both
+  mutations counted x2 and went VOID. Anchor on the leading newline.</li>
+<li><em>Piping the run you are measuring.</em> <code>pytest ... | tail</code> returns <code>tail</code>'s exit
+  code. Measure by rc with no pipe, and only <code>rc==1</code> is a bite.</li>
+<li><em>A mutation that mutates nothing.</em> <code>X if False else Y</code> where <code>Y</code> is the
+  original expression is a no-op dressed as a change; it would have reported a
+  surviving guard against a tree that was never modified.</li>
+</ul>
     </div>
   </div>
 </section>

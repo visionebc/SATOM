@@ -6,6 +6,67 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed — one appliance for the discovery run, and the firmware it is running (2026-09-15)
+
+Asked for as *"no es redundante? … abajo volver a seleccionar un fortiweb no
+tiene caso"*, then *"checa que en automatico detecte la version del fortiweb o
+fortidevice y guarde la version"*.
+
+**The redundancy was real and it was hiding something worse.** The card had two
+appliance pickers — *Load API catalog + CLI configuration from* and *Ask this
+appliance* — and **nothing compared them**, while the candidates come from a
+third thing entirely: the CLI dump the coverage section chose. Load from
+`fortiweb16`, probe `fortiweb15`, and every `absent` the run prints is literally
+true and completely misleading — *"that device does not have it"* read as
+*"that path does not exist"*. The payload already carried the evidence
+appliance (`"evidence": rep["chosen"]["appliance"]`) and **the screen never used
+it**.
+
+- **ONE selector** for the whole card. It sits outside the load `<form>` and is
+  tied to it with `form="drLoadForm"`, which is what makes it genuinely one
+  control instead of two that agree by convention.
+- **Asking elsewhere is still possible, as a deliberate detour** behind a
+  `<details>`: the legitimate case is real — capture the production box over
+  SSH, fire the hundreds of GETs at its laboratory twin. It was previously
+  indistinguishable from the mistake.
+- **The evidence is on screen**, always: which dump, which firmware line, which
+  date — next to which appliance was asked.
+
+**The version half.** The run now reads the running firmware **off the device**
+and **stores it**, before asking anything, through
+`services.firmware_probe.refresh` — the one author of that write and the only
+thing that stamps `firmware_checked_at` alongside it. The *Load both* pass does
+the same. Then it compares that line with the line the dump was captured on.
+
+- 🚨 **Three verdicts that never merge.** `same` · `different` · **`unknown`**,
+  and `unknown` is the load-bearing one: our read failing, or a dump that never
+  recorded a line, must **not** render as agreement. A comparison nobody could
+  make would otherwise be indistinguishable from one that agreed.
+- 🚨 **It warns. It does not gate.** A run is never refused on a version
+  verdict — a gate built on this vocabulary would reject a legitimate run
+  because *our* read failed. Same rule as the upgrade advisory. There is a
+  guard that fails if anyone turns it into a gate.
+- `same_device` is compared **by id, never by name** (two boxes can carry one
+  name), and "there is no evidence" is `None`, never `False`.
+- The firmware, the line, the evidence and the verdict ride into the **audit
+  row** with the run: the page can be closed, and re-deriving the answer later
+  reads *today's* version off a box that may since have been upgraded.
+- The plan route still costs the device **nothing** — no status call — and
+  there is a guard that keeps it that way.
+
+**Found while measuring, not touched:** `rediscovery.apply_inventory` writes
+`appliance.firmware` **without** stamping `firmware_checked_at`, so the sweep
+leaves a version no consumer can date. That is why the load pass reads it
+properly instead of trusting the worker's merge.
+
+Guards: `tests/test_discovery_version.py` — 33 guards, **32 mutations, 32
+bite**. The first pass left **3 survivors and all three were gaps in my own
+assertions**: two key-name checks satisfied by the *other* occurrence of the
+same word (the audit row also spells `evidence_line`) — the tenth
+assert-by-substring in this repo — and an `askId()` guard that accepted the
+override being declared and then ignored.
+
+
 ### Fixed — the discovery run is the FIRST card, and its buttons actually run (2026-09-15)
 
 Asked for as *"ponlo hasta arriba"*, after *"donde pusiste el boton?"*.

@@ -14405,6 +14405,41 @@ them <em>"the coverage partial mounts it again"</em> (double render), <em>"api_e
 mounts it at the bottom"</em>, <em>"faz_api promotes the not-applicable card"</em>, <em>"the
 card collapses again"</em>, <em>"the chevron lies about the state"</em>, and each script
 losing its nonce.</p>
+<h2 id="174-two-pickers-one-question-and-a-firmware-nobody-established-teststest_discovery_versionpy-2026-09-15">§174 — two pickers, one question, and a firmware nobody established (<code>tests/test_discovery_version.py</code>, 2026-09-15)</h2>
+<p><strong>What went wrong.</strong> The discovery run took its candidates from a CLI dump and
+its verdicts from an appliance, and those were selected by two different
+controls that nothing compared. A run pointed at the wrong box prints <code>absent</code>
+next to every block, and each one of those is a true sentence about the wrong
+device. The response already named its evidence; the page threw it away.</p>
+<p><strong>The sharper half is the firmware line.</strong> Two 7.6 boxes answer about the same
+API surface; a 7.6 dump and an 8.0 device do not. So the run reads the version
+off the device, stores it (via <code>firmware_probe.refresh</code>, which is the only
+writer that also stamps <code>firmware_checked_at</code>) and compares the two lines.</p>
+<p><strong>The rules the guards encode</strong></p>
+<ol>
+<li><strong><code>unknown</code> is not a quiet <code>same</code>.</strong> A failed read, a version string with no
+   parsable line, or a dump that never recorded one ⇒ <code>unknown</code>, with its own
+   badge and its own words. Guard: <code>test_an_unreadable_version_is_unknown_never_same</code>.</li>
+<li><strong>It advises; it does not authorise.</strong> No branch in <code>run_payload</code> may test
+   the verdict. <code>unknown</code> describes US, so a gate on it refuses a legitimate
+   run because of our own outage. Guard: <code>test_no_branch_in_run_payload_tests_the_version_verdict</code>
+   walks the function's <code>ast.If</code> tests.</li>
+<li><strong>The plan costs the device nothing.</strong> Its whole contract. "One harmless
+   status call" is how that stops being true. Guard: <code>test_plan_never_touches_the_device</code>.</li>
+<li><strong><code>same_device</code> by id, and <code>None</code> ≠ <code>False</code>.</strong> Names repeat and dumps keep
+   the name the box had at capture time; and "no evidence" is not "another
+   device".</li>
+<li><strong>One reader of the selector.</strong> <code>askId()</code> — and the guard asserts the
+   override appears in what it RETURNS, because the surviving mutation left the
+   variable declared and simply stopped using it.</li>
+</ol>
+<p><strong>Recipe.</strong> <code>grep -c "getElementById('drAppliance').value" app/templates/partials/_discovery_run.html</code>
+→ exactly <strong>1</strong>. <code>grep -c "&lt;select" …/_discovery_run.html</code> → exactly <strong>2</strong> (the
+picker and the explicit override).</p>
+<p>⚠ <strong>Trap, tenth occurrence.</strong> Two assertions checked a key NAME against the
+whole function; the audit row a few lines below spells the same word, so
+dropping the key from the payload left them green. Scope assertions to the dict
+literal / the row / the sheet — never to "somewhere in this function".</p>
     </div>
   </div>
 </section>

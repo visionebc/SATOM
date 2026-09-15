@@ -19,6 +19,10 @@ habit:
                  the single ``probe`` next to it. The single probe stays
                  ungated — one verdict is strictly less than the console on the
                  same page already gives.
+
+                 It also READS AND STORES the running firmware version first,
+                 and reports how it compares with the line the evidence dump
+                 was captured on. That comparison WARNS; it never refuses.
 * ``register`` — the write. ``REGISTRY_EDIT``, through the ONE catalog writer
                  (:mod:`app.services.registry_write`), never a third copy of it.
 * ``plan``     — what a run WOULD ask, with zero device contact, so the cost is
@@ -82,7 +86,11 @@ def plan_payload(product: str):
         # operator has to be the ceiling, not the hope.
         "max_gets": gets,
         "budget": min(_int_arg("budget", discovery_run.DEFAULT_BUDGET), MAX_BUDGET),
+        # The plan names its evidence and STOPS there. No version read: this
+        # route's whole contract is that it costs the device nothing, and
+        # "one harmless status call" is how that contract stops being true.
         "evidence": (rep.get("chosen") or {}).get("appliance") or "",
+        "evidence_line": (rep.get("chosen") or {}).get("line") or "",
         "captured": (rep.get("chosen") or {}).get("created_at") or "",
         "findings": [f.to_dict() for f in rows],
     })
@@ -104,15 +112,31 @@ def run_payload(product: str):
 
     budget = max(1, min(_int_arg("budget", discovery_run.DEFAULT_BUDGET), MAX_BUDGET))
     limit = _int_arg("limit", 0) or None
-    _rep, rows, _n, by_urn = _findings_for(
+    rep, rows, _n, by_urn = _findings_for(
         product, configured_only=_truthy("configured_only"), limit=limit)
+    chosen = rep.get("chosen") or {}
+    # Read the running version off the device and STORE it before asking
+    # anything. A page of verdicts whose firmware nobody established is a page
+    # of answers about no firmware at all -- and the candidates come from a
+    # dump that belongs to ONE line, which may not be this box's. It warns; it
+    # never refuses (see discovery_run.version_check).
+    version = discovery_run.version_check(appliance, chosen)
+    provenance = {
+        "evidence": chosen.get("appliance") or "",
+        "evidence_line": chosen.get("line") or "",
+        "evidence_captured": chosen.get("created_at") or "",
+        "same_device": version.get("same_device"),
+        "version": version,
+    }
     if not rows:
-        return jsonify({"ok": True, "product": product, "findings": [],
-                        "spent": 0, "budget": budget, "exhausted": False,
-                        "served": 0, "absent": 0, "errors": 0, "not_probed": 0,
-                        "registerable": 0, "name_taken": 0, "urn_known": 0,
-                        "device": appliance.name,
-                        "note": "no CLI-only block to ask about"})
+        return jsonify(dict({"ok": True, "product": product, "findings": [],
+                             "spent": 0, "budget": budget, "exhausted": False,
+                             "served": 0, "absent": 0, "errors": 0,
+                             "not_probed": 0, "registerable": 0,
+                             "name_taken": 0, "urn_known": 0,
+                             "device": appliance.name,
+                             "note": "no CLI-only block to ask about"},
+                            **provenance))
 
     from ..services import rediscovery
 
@@ -120,13 +144,23 @@ def run_payload(product: str):
         return rediscovery.probe_endpoint(appliance, urn)
 
     result = discovery_run.run(rows, _probe, budget=budget, by_urn=by_urn)
+    # The firmware and the evidence ride into the audit row with the run. The
+    # page can be closed; the question "which firmware were those verdicts
+    # about?" outlives it, and re-deriving the answer later reads TODAY's
+    # version off a box that may since have been upgraded.
     log_action("discovery_run.probe", target=appliance.name,
                extra={"product": product, "blocks": len(rows),
+                      "firmware": version.get("firmware") or "",
+                      "line": version.get("line") or "",
+                      "evidence": provenance["evidence"],
+                      "evidence_line": provenance["evidence_line"],
+                      "version_verdict": version.get("verdict"),
                       "summary": discovery_run.summary_line(result)})
     out = {k: v for k, v in result.items() if k != "findings"}
     out.update({"ok": True, "product": product, "device": appliance.name,
                 "findings": [f.to_dict() for f in result["findings"]],
                 "summary": discovery_run.summary_line(result)})
+    out.update(provenance)
     return jsonify(out)
 
 
@@ -234,15 +268,34 @@ def load(product: str, page_endpoint: str):
               % (appliance.name, res.get("reason") or "unknown reason"), "danger")
         return redirect(url_for(page_endpoint))
 
+    # One status call, synchronous, AFTER the sweep is safely started: the
+    # version is what dates everything the sweep is about to write, and the
+    # worker's own inventory merge stores it WITHOUT stamping when it was
+    # observed. A failure here is reported and costs the sweep nothing.
+    ver = discovery_run.detect_version(appliance)
     log_action("discovery_run.load", target=appliance.name,
-               extra={"product": product, "cli": bool(want_cli)})
+               extra={"product": product, "cli": bool(want_cli),
+                      "firmware": ver.get("firmware") or "",
+                      "firmware_error": ver.get("error") or ""})
     msg = ("Sweeping the API catalog on %s%s. The coverage diff below updates "
            "when it finishes." % (appliance.name,
                                   " and capturing its CLI configuration" if want_cli
                                   else " (API only)"))
+    if ver.get("checked"):
+        msg += (" Running version read and stored: %s%s."
+                % (ver["firmware"],
+                   " (was %s)" % ver["previous"] if ver.get("changed")
+                   and ver.get("previous") else ""))
+    else:
+        # Named, never silent: an unread version leaves the stored one in
+        # place, and a stale version that nobody flagged is the reason this
+        # read exists at all.
+        msg += (" The running version could NOT be read (%s), so the stored "
+                "one is whatever it was before this sweep."
+                % (ver.get("error") or "unknown"))
     if refused:
         msg += " The CLI capture was skipped: %s." % refused
-    flash(msg, "warning" if refused else "success")
+    flash(msg, "warning" if (refused or not ver.get("checked")) else "success")
     return redirect(url_for(page_endpoint))
 
 

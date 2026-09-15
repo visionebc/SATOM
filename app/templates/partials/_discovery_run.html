@@ -9,6 +9,18 @@
 
    Fed by views/_discovery.context(). Included by the API hub of each product
    that HAS a CLI configuration dump; the others render their reason and stop.
+
+   ONE appliance selector for the whole card. There were two — "load from" and
+   "ask" — and nothing compared them, so the candidates could come from one
+   box's dump while the verdicts came from another: every `absent` then true
+   about the wrong device. Asking elsewhere is still possible (capture the
+   production box, probe its laboratory twin) but it is now a deliberate choice
+   that announces itself, and the server answers with the firmware line of BOTH
+   halves.
+
+   `cc_report.chosen` is READ here, never recomputed: a second
+   cli_coverage.report() in this partial would be a second answer to "which
+   dump", which is the class of defect this card was just fixed for.
    Light FortiWeb theme only (.fw-card / --fw-* / .fw-badge-*) — no dark-theme
    colours in this product (safeguards §9m).
    ──────────────────────────────────────────────────────────────────────────── #}
@@ -36,47 +48,89 @@
       {{ _('The catalog is what every part of SATOM resolves a name through, so a path that was GUESSED and written here fails later, somewhere else. This run only ever asks the appliance: it derives the candidate paths for each CLI-only block, probes them, and offers for registration only the ones the device served.') }}
     </p>
 
-    {# ── 1. load both halves of the diff ──────────────────────────────────── #}
-    {% if dr_can_load and dr_load_endpoint %}
+    {# ── 1. the appliance — ONE selector, used by every action on this card ─
+       The control lives outside the load <form> and is tied to it with
+       form="drLoadForm", the same trick the object editor uses for inputs that
+       cannot sit inside their form. That is what makes it genuinely one
+       control instead of two that agree by convention. #}
+    {% set dr_ev = (cc_report.chosen if cc_report else None) %}
+    {# Rendered only when SOMETHING on this card can use it. A picker with no
+       action behind it is a control that silently does nothing. #}
+    {% if (dr_can_load and dr_load_endpoint) or (dr_can_run and dr_run_endpoint) %}
     <div class="fw-subcard p-2 mb-3" style="background:var(--fw-subtle-bg,#FAFBFC);border:1px solid var(--fw-border,#E3E6EA);border-radius:6px;">
-      <form method="post" action="{{ url_for(dr_load_endpoint) }}"
-            class="d-flex flex-wrap align-items-end gap-2" id="drLoadForm">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="d-flex flex-wrap align-items-end gap-2">
         <div>
-          <label class="fw-form-label mb-1" for="drLoadAppliance">{{ _('Load API catalog + CLI configuration from') }}</label>
-          <select class="form-select fw-form-control" name="appliance_id" id="drLoadAppliance" required>
+          <label class="fw-form-label mb-1" for="drAppliance">{{ _('Appliance') }}</label>
+          <select class="form-select fw-form-control" name="appliance_id" id="drAppliance"
+                  form="drLoadForm" required
+                  data-dr-evidence-id="{{ dr_ev.appliance_id if dr_ev and dr_ev.appliance_id else '' }}">
             <option value="">{{ _('choose an appliance…') }}</option>
             {% for a in cc_probe_appliances %}
               <option value="{{ a.id }}">{{ a.name }}{% if a.host %} ({{ a.host }}){% endif %}</option>
             {% endfor %}
           </select>
         </div>
+        {% if dr_can_load and dr_load_endpoint %}
         <div class="form-check pb-2">
-          <input class="form-check-input" type="checkbox" name="api_only" value="1" id="drApiOnly">
+          <input class="form-check-input" type="checkbox" name="api_only" value="1"
+                 id="drApiOnly" form="drLoadForm">
           <label class="form-check-label" for="drApiOnly" style="font-size:12.5px;">{{ _('API only (skip the CLI dump)') }}</label>
         </div>
-        <button class="btn btn-sm btn-fw-outline" type="submit">
-          <i class="bi bi-arrow-repeat me-1"></i>{{ _('Load both') }}
+        <button class="btn btn-sm btn-fw-outline" type="submit" form="drLoadForm">
+          <i class="bi bi-arrow-repeat me-1"></i>{{ _('Load API catalog + CLI configuration') }}
         </button>
+        {% endif %}
+      </div>
+      {% if dr_can_load and dr_load_endpoint %}
+      <form method="post" action="{{ url_for(dr_load_endpoint) }}" id="drLoadForm" class="d-none">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       </form>
       <p class="text-muted mb-0 mt-1" style="font-size:11.5px;">
-        {{ _('One action, because a diff between a catalog swept today and a dump captured in July describes two different afternoons. The REST sweep runs first and the CLI capture follows it as a separate pass, so an SSH failure cannot cost a sweep that already succeeded.') }}
+        {{ _('Loading is one action, because a diff between a catalog swept today and a dump captured in July describes two different afternoons. The REST sweep runs first and the CLI capture follows it as a separate pass, so an SSH failure cannot cost a sweep that already succeeded. The running firmware version is read off the device and stored in the same pass.') }}
       </p>
+      {% endif %}
+
+      {# The evidence, on screen and never implied: these candidates are
+         derived from THIS dump, and the answers below will come from whatever
+         device is asked. Two facts, printed side by side, because the whole
+         defect this replaces was that only one of them was visible. #}
+      <div class="mt-2" style="font-size:11.5px;" id="drEvidence">
+        {% if dr_ev %}
+          <span class="fw-badge fw-badge-info">{{ _('evidence') }}</span>
+          <code>{{ dr_ev.appliance }}</code>
+          · {{ dr_ev.line or _('no firmware line recorded') }}
+          · {{ dr_ev.created_at }}
+          <span class="text-muted">{{ _('— the CLI dump the candidates are derived from.') }}</span>
+        {% else %}
+          <span class="fw-badge fw-badge-warning">{{ _('no CLI evidence') }}</span>
+          <span class="text-muted">{{ _('No usable dump for this product, so a run has nothing to derive candidates from.') }}</span>
+        {% endif %}
+      </div>
+      <div class="mt-1" id="drMismatch" style="font-size:11.5px;"></div>
+
+      <details class="mt-2">
+        <summary style="font-size:12px;cursor:pointer;">{{ _('Ask a different appliance than the one above') }}</summary>
+        <div class="d-flex flex-wrap align-items-end gap-2 mt-2">
+          <div>
+            <label class="fw-form-label mb-1" for="drAskOther">{{ _('send the GETs to this one instead') }}</label>
+            <select class="form-select fw-form-control" id="drAskOther">
+              <option value="">{{ _('same appliance as above') }}</option>
+              {% for a in cc_probe_appliances %}
+                <option value="{{ a.id }}">{{ a.name }}{% if a.host %} ({{ a.host }}){% endif %}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <p class="text-muted mb-0 mt-1" style="font-size:11.5px;">
+          {{ _('The legitimate case: the dump comes from a production box you do not want to fire hundreds of GETs at, so the questions go to its laboratory twin. It stays a deliberate choice because the answers then describe a different device — and if that device is on a different firmware line, a block missing there is not a block that does not exist.') }}
+        </p>
+      </details>
     </div>
     {% endif %}
 
     {# ── 2. the run ───────────────────────────────────────────────────────── #}
     {% if dr_can_run and dr_run_endpoint %}
     <div class="d-flex flex-wrap align-items-end gap-2 mb-2">
-      <div>
-        <label class="fw-form-label mb-1" for="drAppliance">{{ _('Ask this appliance') }}</label>
-        <select class="form-select fw-form-control" id="drAppliance">
-          <option value="">{{ _('choose an appliance…') }}</option>
-          {% for a in cc_probe_appliances %}
-            <option value="{{ a.id }}">{{ a.name }}{% if a.host %} ({{ a.host }}){% endif %}</option>
-          {% endfor %}
-        </select>
-      </div>
       <div style="max-width:130px;">
         <label class="fw-form-label mb-1" for="drBudget">{{ _('GET budget') }}</label>
         <input type="number" class="form-control fw-form-control" id="drBudget"
@@ -160,10 +214,17 @@
   function note(html, kind) {
     statusEl.innerHTML = '<span class="fw-badge fw-badge-' + (kind || 'info') + '">' + html + '</span>';
   }
+  // The appliance every action uses. The override is an EXPLICIT second
+  // choice, so an empty override means "the one above" — never an empty id.
+  function askId() {
+    var other = document.getElementById('drAskOther');
+    return (other && other.value) || document.getElementById('drAppliance').value || '';
+  }
+
   function body(extra) {
     var fd = new URLSearchParams();
     fd.append('csrf_token', tok);
-    fd.append('appliance_id', document.getElementById('drAppliance').value || '');
+    fd.append('appliance_id', askId());
     fd.append('budget', document.getElementById('drBudget').value || '');
     if (document.getElementById('drConfigured').checked) { fd.append('configured_only', '1'); }
     {% if request.args.get('dump') %}fd.append('dump', '{{ request.args.get("dump")|e }}');{% endif %}
@@ -229,6 +290,49 @@
       shown + ' / ' + last.length + ' {{ _("blocks") }}';
   }
 
+  // Three verdicts, three badges, and 'unknown' is NOT a quiet 'same': it
+  // means our read failed or the dump never recorded a line. A comparison
+  // nobody could make must not look like a comparison that agreed.
+  var VERBADGE = {
+    'same':      ['success', '{{ _("same firmware line") }}'],
+    'different': ['warning', '{{ _("DIFFERENT firmware line") }}'],
+    'unknown':   ['neutral', '{{ _("firmware line not established") }}']
+  };
+
+  function provenance(d) {
+    var v = d.version || {};
+    var b = VERBADGE[v.verdict] || VERBADGE.unknown;
+    var html =
+      '<span class="fw-badge fw-badge-info">{{ _("evidence") }}</span> <code>' +
+        esc(d.evidence || '—') + '</code>' +
+        (d.evidence_line ? ' · ' + esc(d.evidence_line) : '') +
+        (d.evidence_captured ? ' · ' + esc(d.evidence_captured) : '') +
+      ' &nbsp; <span class="fw-badge fw-badge-info">{{ _("asked") }}</span> <code>' +
+        esc(d.device || '—') + '</code>' +
+        (v.firmware ? ' · ' + esc(v.firmware) : '') +
+      ' &nbsp; <span class="fw-badge fw-badge-' + b[0] + '">' + b[1] + '</span>';
+    if (v.reason) { html += '<div class="text-muted mt-1">' + esc(v.reason) + '</div>'; }
+    if (d.same_device === false) {
+      html += '<div class="text-muted mt-1">' +
+        '{{ _("The candidates come from a dump captured on a different appliance than the one just asked.") }}' +
+        '</div>';
+    }
+    document.getElementById('drMismatch').innerHTML = html;
+  }
+
+  // Said BEFORE the run, from what the page already knows. The server's answer
+  // replaces it and stays the authority — this is a hint, not a verdict.
+  function hint() {
+    var el = document.getElementById('drMismatch');
+    var evId = document.getElementById('drAppliance').getAttribute('data-dr-evidence-id') || '';
+    var ask = askId();
+    if (!evId || !ask || String(evId) === String(ask)) { el.innerHTML = ''; return; }
+    el.innerHTML = '<span class="fw-badge fw-badge-warning">' +
+      '{{ _("the evidence came off another appliance") }}</span> ' +
+      '<span class="text-muted">' +
+      '{{ _("Run it and the answer will say which firmware line each half is on.") }}</span>';
+  }
+
   function footnote(d) {
     var bits = [];
     bits.push('{{ _("Asked") }} ' + d.spent + ' {{ _("GETs of a budget of") }} ' + d.budget + '.');
@@ -276,7 +380,7 @@
     {% endif %}
 
     if (run) {
-      if (!document.getElementById('drAppliance').value) {
+      if (!askId()) {
         note('{{ _("choose an appliance first") }}', 'warning'); return;
       }
       note('{{ _("asking the appliance… this fires one GET per candidate") }}');
@@ -286,6 +390,7 @@
           if (!d.ok) { note(esc(d.error || 'failed'), 'danger'); return; }
           note(esc(d.device) + ': ' + esc(d.summary || ''),
                d.errors ? 'warning' : 'success');
+          provenance(d);
           render(d.findings);
           footnote(d);
         })
@@ -297,7 +402,7 @@
     if (reg) {
       var fd = new URLSearchParams();
       fd.append('csrf_token', tok);
-      fd.append('appliance_id', document.getElementById('drAppliance').value || '');
+      fd.append('appliance_id', askId());
       var n = 0;
       Array.prototype.forEach.call(rowsEl.querySelectorAll('[data-dr-pick]:checked'), function (cb) {
         var i = cb.getAttribute('data-dr-pick');
@@ -329,6 +434,10 @@
   });
 
   document.getElementById('drFilter').addEventListener('input', filter);
+  document.getElementById('drAppliance').addEventListener('change', hint);
+  var drOther = document.getElementById('drAskOther');
+  if (drOther) { drOther.addEventListener('change', hint); }
+  hint();
 })();
 </script>
 {% endif %}

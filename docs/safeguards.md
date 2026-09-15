@@ -15061,3 +15061,44 @@ mounts it at the bottom"*, *"faz_api promotes the not-applicable card"*, *"the
 card collapses again"*, *"the chevron lies about the state"*, and each script
 losing its nonce.
 
+
+
+## §174 — two pickers, one question, and a firmware nobody established (`tests/test_discovery_version.py`, 2026-09-15)
+
+**What went wrong.** The discovery run took its candidates from a CLI dump and
+its verdicts from an appliance, and those were selected by two different
+controls that nothing compared. A run pointed at the wrong box prints `absent`
+next to every block, and each one of those is a true sentence about the wrong
+device. The response already named its evidence; the page threw it away.
+
+**The sharper half is the firmware line.** Two 7.6 boxes answer about the same
+API surface; a 7.6 dump and an 8.0 device do not. So the run reads the version
+off the device, stores it (via `firmware_probe.refresh`, which is the only
+writer that also stamps `firmware_checked_at`) and compares the two lines.
+
+**The rules the guards encode**
+
+1. **`unknown` is not a quiet `same`.** A failed read, a version string with no
+   parsable line, or a dump that never recorded one ⇒ `unknown`, with its own
+   badge and its own words. Guard: `test_an_unreadable_version_is_unknown_never_same`.
+2. **It advises; it does not authorise.** No branch in `run_payload` may test
+   the verdict. `unknown` describes US, so a gate on it refuses a legitimate
+   run because of our own outage. Guard: `test_no_branch_in_run_payload_tests_the_version_verdict`
+   walks the function's `ast.If` tests.
+3. **The plan costs the device nothing.** Its whole contract. "One harmless
+   status call" is how that stops being true. Guard: `test_plan_never_touches_the_device`.
+4. **`same_device` by id, and `None` ≠ `False`.** Names repeat and dumps keep
+   the name the box had at capture time; and "no evidence" is not "another
+   device".
+5. **One reader of the selector.** `askId()` — and the guard asserts the
+   override appears in what it RETURNS, because the surviving mutation left the
+   variable declared and simply stopped using it.
+
+**Recipe.** `grep -c "getElementById('drAppliance').value" app/templates/partials/_discovery_run.html`
+→ exactly **1**. `grep -c "<select" …/_discovery_run.html` → exactly **2** (the
+picker and the explicit override).
+
+⚠ **Trap, tenth occurrence.** Two assertions checked a key NAME against the
+whole function; the audit row a few lines below spells the same word, so
+dropping the key from the payload left them green. Scope assertions to the dict
+literal / the row / the sheet — never to "somewhere in this function".

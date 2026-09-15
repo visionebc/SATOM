@@ -36,7 +36,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable
 
-from . import cli_coverage
+from . import api_matrix, cli_coverage
 
 #: Verdicts a candidate row can carry. The first three come straight from
 #: ``rediscovery`` (never re-spelled here — a second vocabulary for the same
@@ -299,6 +299,128 @@ def summary_line(result: dict) -> str:
     return "%d GETs: %s" % (result.get("spent", 0), ", ".join(bits))
 
 
+# ---------------------------------------------------------------------------
+# which firmware these answers describe
+# ---------------------------------------------------------------------------
+# A run has TWO sources and they are not necessarily the same box: the
+# candidates are derived from a CLI dump (the evidence the coverage section
+# chose) and the verdicts come from whatever appliance is asked. Let those
+# diverge and every ``absent`` is literally true and completely misleading —
+# "that device does not have it" read as "that path does not exist". The
+# firmware LINE is the sharper half of the divergence: two 7.6 boxes answer
+# about the same API surface, a 7.6 dump and an 8.0 device do not.
+#
+# So the running version is read off the device and STORED — through
+# ``firmware_probe.refresh``, which is the one author of that write and the one
+# thing that stamps ``firmware_checked_at`` with it. A version persisted
+# without its attestation is a row that cannot say whether it was ever checked.
+#
+# THIS WARNS. IT DOES NOT GATE. The vocabulary below contains ``unknown`` for
+# "we could not establish it", so a gate built on it would refuse a legitimate
+# run because OUR read failed — the same reason the upgrade advisory advises
+# and never refuses. There is a guard that fails if anyone turns it into a
+# gate.
+SAME_LINE = "same"
+OTHER_LINE = "different"
+#: Deliberately outside the two answers above: it describes OUR read, not the
+#: device. Folding it into either one would state a comparison nobody made.
+UNKNOWN_LINE = "unknown"
+
+
+def detect_version(appliance, *, probe=None) -> dict:
+    """Read the running firmware off *appliance* and persist it. NEVER raises.
+
+    The write is delegated to :func:`app.services.firmware_probe.refresh`
+    whole — version, model, hostname, serial and the ``firmware_checked_at``
+    attestation — rather than assigning ``appliance.firmware`` here, which is
+    how ``rediscovery.apply_inventory`` came to store a version with no
+    timestamp saying when it was observed.
+
+    ``probe`` is injected so the guards can drive this with no device, no
+    network and no Flask.
+    """
+    if probe is None:
+        from . import firmware_probe
+        probe = firmware_probe.refresh
+    try:
+        res = probe(appliance)
+    except Exception as exc:  # noqa: BLE001 — a version read must not 500 a run
+        res = {"ok": False, "error": "unreachable",
+               "detail": "%s: %s" % (type(exc).__name__, exc)}
+    name = getattr(appliance, "name", "") or "?"
+    out = {"checked": bool(res.get("ok")), "firmware": "", "line": "",
+           "checked_at": "", "changed": False, "previous": "",
+           "error": "", "detail": "", "device": name}
+    if not res.get("ok"):
+        out["error"] = res.get("error") or "unreadable"
+        out["detail"] = str(res.get("detail") or "")[:200]
+        return out
+    out["firmware"] = res.get("firmware") or ""
+    out["line"] = api_matrix.firmware_line(out["firmware"])
+    out["checked_at"] = res.get("checked_at") or ""
+    out["changed"] = bool(res.get("changed"))
+    out["previous"] = res.get("previous") or ""
+    return out
+
+
+def version_check(appliance, evidence=None, *, probe=None) -> dict:
+    """:func:`detect_version` + the comparison against the dump's firmware line.
+
+    Returns the detection dict extended with ``verdict`` (:data:`SAME_LINE` /
+    :data:`OTHER_LINE` / :data:`UNKNOWN_LINE`), a ``reason`` written for the
+    operator, and ``same_device`` — whether the dump came off the very box
+    being asked, compared by **id**, because two appliances can carry the same
+    name and a stale name is not a device.
+    """
+    ev = evidence or {}
+    out = detect_version(appliance, probe=probe)
+    ev_line = str(ev.get("line") or "").strip()
+    ev_id = ev.get("appliance_id")
+    out.update({
+        "evidence_line": ev_line,
+        "evidence_appliance": ev.get("appliance") or "",
+        "evidence_firmware": ev.get("firmware") or "",
+        "evidence_captured": ev.get("created_at") or "",
+        # None, not False: "there is no evidence" is not "a different device".
+        "same_device": (bool(ev_id is not None
+                             and ev_id == getattr(appliance, "id", None))
+                        if ev_id is not None else None),
+        "verdict": UNKNOWN_LINE,
+        "reason": "",
+    })
+    name = out["device"]
+    if not out["checked"]:
+        out["reason"] = (
+            "the running version could not be read off %s (%s), so nothing "
+            "here establishes which firmware these answers describe"
+            % (name, out["error"]))
+        return out
+    if not out["line"]:
+        out["reason"] = (
+            "%s answered with a version string no firmware line could be read "
+            "from (%r)" % (name, out["firmware"][:60]))
+        return out
+    if not ev_line:
+        out["reason"] = (
+            "%s is running %s, but the dump does not record which firmware "
+            "line it was captured on, so the two cannot be compared"
+            % (name, out["line"]))
+        return out
+    if ev_line == out["line"]:
+        out["verdict"] = SAME_LINE
+        out["reason"] = ("the dump was captured on %s and %s is running %s"
+                         % (ev_line, name, out["line"]))
+        return out
+    out["verdict"] = OTHER_LINE
+    out["reason"] = (
+        "the dump was captured on %s and %s is running %s: a block that is "
+        "missing on one line is not a block that does not exist, so read every "
+        "verdict below as an answer about %s"
+        % (ev_line, name, out["line"], out["line"]))
+    return out
+
+
 __all__ = ["SERVED", "ABSENT", "ERROR", "NOT_PROBED", "DEFAULT_BUDGET",
+           "SAME_LINE", "OTHER_LINE", "UNKNOWN_LINE",
            "Candidate", "Finding", "catalog_index", "plan", "run",
-           "summary_line"]
+           "detect_version", "version_check", "summary_line"]

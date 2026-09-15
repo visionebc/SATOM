@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from flask import flash, redirect, render_template, request, url_for
 
-from ..services import api_matrix
+from ..services import api_matrix, cli_coverage
 
 
 def _pick_lines(matrix: dict) -> tuple[str, str]:
@@ -53,10 +53,33 @@ def render_page(product: str, hub_endpoint: str, rebuild_endpoint: str,
     if base and target and base != target:
         delta = api_matrix.diff(product, base, target, matrix=matrix)
 
+    # CLI provenance is PER FIRMWARE LINE here, never per product. A dump
+    # is captured from one box running one firmware, so answering "does
+    # 8.0 have this in its CLI?" with a 7.6 capture would be the page's
+    # only way to lie, and it would look like a confident answer.
+    # ``cli_coverage.report`` owns that selection (``line=``); a line with
+    # no capture comes back unmeasured and every badge for it is "—".
+    line_prov = {ln: cli_coverage.provenance(product, line=ln) for ln in lines}
+    base_prov = line_prov.get(base)
+    target_prov = line_prov.get(target)
+
+    # Until now the page printed only COUNTS of endpoints added/removed.
+    # A provenance column needs the rows, so they are rendered — annotated
+    # in the view rather than looked up in the template, so the lookup has
+    # exactly one call site.
+    if delta:
+        for row in delta.get("endpoints_added") or []:
+            row["cli_base"] = base_prov.for_name(row["endpoint"]) if base_prov else None
+            row["cli_target"] = target_prov.for_name(row["endpoint"]) if target_prov else None
+        for row in delta.get("endpoints_removed") or []:
+            row["cli_base"] = base_prov.for_name(row["endpoint"]) if base_prov else None
+            row["cli_target"] = target_prov.for_name(row["endpoint"]) if target_prov else None
+
     return render_template(
         "registry/versions.html", product=product, matrix=matrix, lines=lines,
         base=base, target=target, delta=delta, hub_endpoint=hub_endpoint,
         rebuild_endpoint=rebuild_endpoint, page_endpoint=page_endpoint,
+        line_prov=line_prov, base_prov=base_prov, target_prov=target_prov,
     )
 
 

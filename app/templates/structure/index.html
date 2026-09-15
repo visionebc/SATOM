@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "partials/_cli_provenance.html" import prov_badge, prov_legend with context %}
 
 {% block title %}Structure{% endblock %}
 
@@ -107,7 +108,12 @@
     <div class="fw-card">
       <div class="fw-card-header">
         <span class="fw-card-title"><i class="bi bi-table me-2"></i>{{ _('Registry Cross-Reference') }}</span>
-        <span class="fw-badge fw-badge-secondary">{{ rows|length }} objects</span>
+        <span>
+          <span class="fw-badge fw-badge-secondary">{{ rows|length }} objects</span>
+          {%- for bucket, n in cli_counts|dictsort(by='value', reverse=True) %}
+            {{ prov_badge({'bucket': bucket, 'why': ''}) }}<span class="text-muted" style="font-size:11px;">&times;{{ n }}</span>
+          {%- endfor %}
+        </span>
       </div>
       <div class="fw-card-header" style="background:#FAFBFC; border-top:none; padding:10px 16px;">
         <div class="fw-search-box" style="max-width:100%;">
@@ -116,6 +122,7 @@
                  style="max-width:420px;">
         </div>
       </div>
+      <div class="px-3 pt-3">{{ prov_legend(prov) }}</div>
       <div class="fw-card-body p-0">
         <table class="fw-table" id="xrefTable">
           <thead>
@@ -123,6 +130,7 @@
               <th style="width:34%;">{{ _('FortiWeb object') }}</th>
               <th>{{ _('URN (REST)') }}</th>
               <th style="width:130px;">{{ _('In registry?') }}</th>
+              <th style="width:150px;">{{ _('Served by') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -153,6 +161,7 @@
                   <span class="fw-badge fw-badge-secondary">{{ _('grouping') }}</span>
                 {% endif %}
               </td>
+              <td>{{ prov_badge(r.cli) }}</td>
             </tr>
             {% endfor %}
           </tbody>

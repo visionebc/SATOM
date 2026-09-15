@@ -6,6 +6,108 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — Every page that lists an endpoint now says which transport serves it (2026-09-15)
+
+Asked for as *"aquí debería de verse también qué cosas son del CLI y qué cosas
+son vía API"*, naming `/web/registry/versions`, `/web/api-explorer/` and
+`/web/structure/`.
+
+**One authority, not three.** `cli_coverage.provenance()` projects the diff those
+pages already have into a per-entry verdict, and one Jinja macro
+(`partials/_cli_provenance.html`) is the only place the wording exists. Three
+copies of a badge is how the appliance status badge ended up with two authors
+(`api.js:43` and `main.js:141`) that disagree.
+
+The vocabulary separates four things that a naive implementation would collapse
+into "API only":
+
+* **API + CLI** — the catalog serves it and the dump prints its block;
+* **API + CLI · other path** — both carry it, spelled differently;
+* **API only** — a runtime readout with no configuration table behind it, so it
+  *cannot* have a CLI block. The one case where "API only" is a fact;
+* **API · no CLI block here** — in the catalog, absent from *this* dump. An
+  empty table prints no block, so this is **not** evidence the CLI lacks it.
+
+**And a fifth state with no badge at all: unmeasured.** With no dump,
+`compare()` still returns a full result in which *every* catalog entry lands in
+`no_block` — rendered as-is that reads "the CLI has none of this", the exact
+opposite of what absent evidence means. So an unmeasured product answers `—`
+with the reason in its tooltip, and the em dash is deliberately not a grey pill:
+a grey "unknown" badge and the grey "no CLI block here" badge are the pair this
+whole design exists to keep apart.
+
+**On the firmware-line comparison the provenance is per LINE.** A dump comes
+from one box running one firmware, so `report(..., line=)` is a filter and never
+a fallback. Measured on this fleet: all six usable FortiWeb dumps are 7.6, none
+is 8.0 — so the 8.0 column is honestly blank while the 7.6 column carries
+verdicts, and the page now renders the endpoint rows (it printed only counts
+before) so that difference is visible per row.
+
+FortiADC gets the same badges (its hub, and the shared body of the versions
+page). FortiAnalyzer and FortiAuthenticator deliberately do not: neither has a
+config CLI to diff, and their coverage section already states that once, which
+is the right place for a fact about the whole product rather than each row.
+
+### Added — The sweep can now capture what the CLI serves, in the same pass (2026-09-15)
+
+Asked for as *"si hazlo"* on the one item the previous round left needing an
+explicit OK: hooking the CLI capture onto the rediscovery sweep.
+
+**It is hooked as a third pass, not folded inline.** The sweep's own snapshot
+(`_config.json`) is written to disk *before* the capture opens a session, so
+nothing the capture does — including hanging on a dead SSH port until its 300 s
+ceiling — can cost the operator a sweep that already succeeded. Three measured
+reasons for keeping it separate and opt-in:
+
+* an SSH dump is one session bounded at 300 s, against a REST sweep that
+  finishes in seconds. Folding it in would make **every** sweep minutes long,
+  including the silent one that runs behind device registration;
+* SSH can fail on a box whose REST just answered perfectly. A successful sweep
+  must not be reported as failed because a second transport could not connect;
+* it writes ~700 KB of device configuration into the vault. That is a state
+  change, and a state change nobody asked for is not a default.
+
+**Why it is worth doing at all:** until now the CLI-coverage report compared the
+catalog against whatever dump happened to be in the vault — on this fleet, dumps
+belonging to appliances that have since been deleted. Captured by the sweep, the
+report describes the box *as swept*: same box, same firmware line, same minute.
+
+One function, `rediscovery.cli_capture_decision()`, answers "will this capture,
+and if not, why not" — and **both** callers obey it: the worker that acts on it
+and the rediscovery page that previews it. A page computing its own preview is
+how a UI ends up promising a dump the worker then declines to take. Every "no"
+carries its own sentence, because a single generic refusal is indistinguishable
+from a capture that ran and found nothing:
+
+* not requested;
+* the product has no CLI configuration dump — FortiAnalyzer speaks JSON-RPC,
+  FortiAuthenticator has no `show full-configuration` (the reason comes from
+  `cli_coverage.UNSUPPORTED_REASON`, never a second sentence written here);
+* the user may not write the configuration vault;
+* the appliance is in maintenance mode, where scheduled collection is
+  suppressed;
+* a **usable** dump captured inside the 24 h budget already exists.
+
+`usable` is load-bearing in that last one. An encrypted dump (the box has a
+backup password set) can never be parsed, so counting it as freshness would
+suppress every future capture and leave the coverage section permanently empty
+on exactly the appliances that need it most. Same for a dump belonging to
+another appliance, and for one whose age cannot be established — unknown age
+never suppresses.
+
+**A permission the sweep endpoint never asked for.** `rediscover/start` requires
+`appliances.apply`; the vault requires `backup`. The flag is honoured only with
+the vault permission, and the refusal is **returned in the response**, not
+swallowed — dropping it silently would let a user create vault rows through a
+door that never mentions the vault, and leave them waiting for a dump that was
+never going to be taken.
+
+Skipped and failed never share a key or a word (`cli_skipped` vs `cli_error`):
+"no dump was taken" and "a dump was attempted and lost" send the operator to
+opposite places.
+
+Guards: `tests/test_rediscovery_cli_capture.py` (§170), `docs/safeguards.md`.
+
 ### Added — What the CLI serves and the catalog does not know: coverage on the API hub (2026-09-15)
 
 Asked for as *"hay elementos en el fortiweb que no estan en el api, y que solo se

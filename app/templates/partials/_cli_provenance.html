@@ -1,0 +1,74 @@
+{#
+  Transport provenance badge — the ONE place the CLI↔API vocabulary is spelled.
+
+  Imported by the API hub menu tree, the firmware-line comparison and the object
+  Structure cross-reference. Three pages were asked the same question, so they
+  get one answer and one wording; a copy per page is how the status badge ended
+  up with two authors (api.js:43 and main.js:141).
+
+  Colours come from the .fw-badge-* set, which is calibrated against white —
+  this product is light chrome, never the fleet's dark glassmorphism
+  (safeguards §9m).
+
+  `rec` is whatever cli_coverage.Provenance.for_name/for_urn returned.
+#}
+
+{% macro prov_badge(rec, show_path=False) -%}
+  {%- if not rec -%}
+    <span class="text-muted" style="font-size:11px;">—</span>
+  {%- elif rec.bucket == 'unknown' -%}
+    {#- No badge on purpose: a grey "unknown" pill sits in the same visual
+        family as the grey "no CLI block here" pill, and those two are exactly
+        the pair that must not be confused. -#}
+    <span class="text-muted" style="font-size:11px; border-bottom:1px dotted #B9BFC7; cursor:help;"
+          title="{{ rec.why }}">—</span>
+  {%- elif rec.bucket == 'both' -%}
+    <span class="fw-badge fw-badge-success fw-badge-nowrap" title="{{ rec.why }}{% if rec.path %} — CLI: {{ rec.path }}{% endif %}">API + CLI</span>
+    {%- if show_path and rec.path %} <code class="text-muted" style="font-size:10.5px;">{{ rec.path }}</code>{% endif -%}
+  {%- elif rec.bucket == 'near_match' -%}
+    <span class="fw-badge fw-badge-warning fw-badge-nowrap" title="{{ rec.why }}{% if rec.path %} — CLI: {{ rec.path }}{% endif %}">API + CLI · other path</span>
+    {%- if show_path and rec.path %} <code class="text-muted" style="font-size:10.5px;">{{ rec.path }}</code>{% endif -%}
+  {%- elif rec.bucket == 'monitor_only' -%}
+    <span class="fw-badge fw-badge-info fw-badge-nowrap" title="{{ rec.why }}">API only</span>
+  {%- elif rec.bucket == 'no_block' -%}
+    <span class="fw-badge fw-badge-secondary fw-badge-nowrap" title="{{ rec.why }}">API · no CLI block here</span>
+  {%- elif rec.bucket == 'cli_only' -%}
+    <span class="fw-badge fw-badge-danger fw-badge-nowrap" title="{{ rec.why }}{% if rec.path %} — CLI: {{ rec.path }}{% endif %}">CLI only</span>
+    {%- if show_path and rec.path %} <code class="text-muted" style="font-size:10.5px;">{{ rec.path }}</code>{% endif -%}
+  {%- else -%}
+    <span class="text-muted" style="font-size:11px;">—</span>
+  {%- endif -%}
+{%- endmacro %}
+
+
+{#
+  The legend + the provenance of the evidence itself. Every page that badges
+  rows must say WHICH capture it is badging them from, or the reader cannot tell
+  a fresh answer from a two-month-old one.
+#}
+{% macro prov_legend(prov, compact=False) -%}
+<div class="p-2 mb-2" style="background:#FAFBFC; border:1px solid var(--fw-border, #E4E7EB); border-radius:4px; font-size:11.5px;">
+  {% if prov and prov.measured %}
+    <div class="text-muted mb-1">
+      CLI evidence: <strong>{{ prov.device }}</strong>
+      {% if prov.line %}(firmware line <code>{{ prov.line }}</code>){% endif %}
+      captured {{ prov.captured_at }}.
+    </div>
+  {% else %}
+    <div class="text-muted mb-1">
+      <i class="bi bi-exclamation-triangle me-1"></i>
+      {{ prov.reason if prov else 'no CLI evidence' }}
+      — every row below is marked <span style="border-bottom:1px dotted #B9BFC7;">—</span>,
+      <strong>not</strong> &ldquo;API only&rdquo;.
+    </div>
+  {% endif %}
+  {% if not compact %}
+  <div class="d-flex flex-wrap gap-2 align-items-center">
+    {{ prov_badge({'bucket': 'both', 'why': ''}) }}<span class="text-muted">served by both transports</span>
+    {{ prov_badge({'bucket': 'cli_only', 'why': ''}) }}<span class="text-muted">the dump has it, the catalog does not</span>
+    {{ prov_badge({'bucket': 'monitor_only', 'why': ''}) }}<span class="text-muted">runtime readout — cannot have a CLI block</span>
+    {{ prov_badge({'bucket': 'no_block', 'why': ''}) }}<span class="text-muted">in the catalog; this dump printed no block (an empty table prints none)</span>
+  </div>
+  {% endif %}
+</div>
+{%- endmacro %}

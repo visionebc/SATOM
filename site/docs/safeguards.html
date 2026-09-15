@@ -14170,6 +14170,121 @@ guards rather than a hole in the code:</p>
   the <em>tag</em> and the <em>condition</em>, on comment-stripped source. Eleventh and twelfth
   time in this repo.</li>
 </ul>
+<h2 id="170-the-sweeps-cli-capture-pass-teststest_rediscovery_cli_capturepy">§170 — The sweep's CLI-capture pass (<code>tests/test_rediscovery_cli_capture.py</code>)</h2>
+<p><strong>What can go wrong here looks exactly like success.</strong> A capture that never ran,
+a capture that ran against a stale credential, a budget that silently stopped
+firing — all of them render as a page with no error on it. The guards fix
+relations, not the presence of a switch.</p>
+<p><strong>The invariants:</strong></p>
+<ol>
+<li><strong>Order is the safety property.</strong> <code>_config.json</code> is written before the
+   capture opens a session. Verify by source order inside <code>_run</code>, not by a
+   comment: <code>code.index("_config.json") &lt; code.index("_run_cli")</code>.</li>
+<li><strong>Off by default in both entry points</strong> (<code>_run</code>, <code>start</code>), and the inline
+   sweep behind device registration must never pass <code>cli=True</code> — a 300 s SSH
+   session inside a registration round-trip looks like a hung form.</li>
+<li><strong>One authority for the decision.</strong> <code>cli_capture_decision()</code> is called by the
+   worker <em>and</em> by the page. Two answers to "will this capture?" is how a UI
+   promises a dump that never arrives.</li>
+<li><strong>Five distinct refusals</strong>, all non-empty; a capture answers with an empty
+   reason. Asserted as a set of size 5.</li>
+<li><strong>Unusable is never fresh</strong> — encrypted dump, another appliance's dump,
+   unestablishable age. Each one suppresses forever if counted.</li>
+<li><strong>The age comes from <code>created_iso</code>, never <code>created_at</code>.</strong> The latter is
+   formatted for a table cell; a budget derived from a presentation format is
+   one column change away from never firing again. Guarded at source level with
+   comments and docstring stripped.</li>
+<li><strong>The vault permission is enforced at the route and the refusal is
+   returned</strong>, since <code>rediscover/start</code> only asks for <code>appliances.apply</code>.</li>
+<li><strong>Skipped and failed never share a key.</strong></li>
+<li><strong><code>cli-running</code> appears everywhere the other in-flight states appear.</strong>
+   Asserted as an equality of counts against <code>'deep-running'</code>. Missing it in
+   <code>poll()</code> is invisible in review and fatal in use: polling stops the moment
+   the capture starts and the operator never learns the outcome.</li>
+</ol>
+<p><strong>Recipe:</strong></p>
+<pre><code class="language-bash">cd /opt/satom
+venv/bin/python -m pytest tests/test_rediscovery_cli_capture.py -q --no-header
+</code></pre>
+<p>Measure mutations <strong>by rc and without a pipe</strong> — piping pytest into <code>tail</code>
+measures <code>tail</code>, which has now cost a wrong result eleven times in this repo.
+Only <code>rc == 1</code> is a failure; <code>rc == 5</code> means <em>nothing was collected</em> and is how
+the previous round discovered a patcher had deleted two tests.</p>
+<h2 id="171-the-word-api-only-and-the-four-things-it-must-not-mean-2026-09-15">§171 — the word "API only", and the four things it must not mean (2026-09-15)</h2>
+<p><code>tests/test_cli_provenance.py</code> (30 guards). Covers
+<code>cli_coverage.provenance()</code> / <code>provenance_from()</code> / <code>Provenance</code>,
+<code>partials/_cli_provenance.html</code>, and the four pages that consume them
+(<code>api_explorer</code>, <code>adc_api</code>, <code>registry/versions</code> via <code>_apiversions</code>,
+<code>structure</code>).</p>
+<p><strong>The hinge.</strong> <code>compare(product, "")</code> is a perfectly well-formed result in which
+every catalog entry sits in <code>no_block</code>, because an absent dump has no blocks.
+Publishing that verbatim prints "the CLI has none of this" over an entire
+catalog — a confident, precise, wrong page. <code>Provenance.measured</code> is the single
+line that prevents it, and <code>provenance_from</code> honours <code>diff["no_evidence"]</code> over
+any evidence record a caller hands in, because that flag is also how "the vault
+row exists but the file would not open" arrives.</p>
+<p><code>monitor_only</code> is the deliberate exception: it follows from the URN shape, not
+from evidence, so it is still answered with no dump in hand. Withholding it
+would be false modesty rather than honesty.</p>
+<p><strong>The firmware line.</strong> <code>report(..., line=)</code> filters and never falls back. A 7.6
+capture relabelled as evidence for 8.0 would render as a confident answer about
+firmware nobody captured, and the comparison page is the one surface where that
+is easy to do by accident. Two guards: the report must choose <code>None</code> for a line
+with no dump, and the rendered ROW must carry a badge in the measured column and
+an em dash in the other. The page-level assertion alone is not enough — the
+legend would satisfy it while every row was wrong.</p>
+<p><strong>The vocabulary has one author.</strong> Guards assert that every label declared in
+<code>PROV_LABEL</code> is rendered by the macro, that no consumer page spells any label
+itself, that every bucket in <code>PROV_ORDER</code> has a branch in the macro (a bucket
+with no branch falls through to the em dash, which is invisible because it looks
+exactly like honest ignorance), and that <code>PROV_UNKNOWN</code> carries <strong>no</strong> badge
+class.</p>
+<p><strong>Permission.</strong> The badge is catalog metadata — table names, never block text —
+so it renders without <code>Permission.BACKUP</code>, matching the split §169 already drew.
+A guard asserts a readonly user sees the badges and that no <code>set</code> line, no <code>ENC</code>
+value and no PEM reaches the page.</p>
+<h3 id="traps-this-round_2">Traps this round</h3>
+<ol>
+<li><code>render_template_string</code> drags in every context processor, including the one
+   that 500s on <code>/api-tokens/</code> today. A macro is rendered through
+   <code>app.jinja_env.get_template(...).module</code>, so the guard fails only for its own
+   reason.</li>
+<li>A first draft asserted that the built-in Structure seed contains a node the
+   registry misses. It does not — the guard was measuring the seed, not the
+   lookup. The node is now planted through the supported admin overlay, and its
+   URN is derived by <code>candidate_urns()</code> rather than spelled by hand.</li>
+<li><code>provenance_from</code> must stay a projection; a guard unparses it from the AST
+   and fails if it grows a call to <code>read_dump</code> / <code>report</code> / <code>parse_config_dump</code>.
+   A hidden second parse of a 690 KB dump per page load is how this becomes the
+   page nobody opens.</li>
+</ol>
+<h3 id="verification_9">Verification</h3>
+<p>30 guards RC=0, measured without a pipe. 28 mutations, 28 bite.</p>
+<p>Two of those 28 survived the first pass, and both were the same defect in the
+guard rather than in the code: <code>"CLI only" in page</code> and <code>"API + CLI" in page</code>
+were satisfied by the LEGEND this round added, which renders one sample of
+every badge. A mutation that stripped the badge off every row left the words on
+the page and walked. Both assertions are now scoped to the row / the leaf that
+must carry the badge. Eighth assert-satisfied-by-the-wrong-text in this repo,
+and the first one caused by new chrome rather than by a comment.</p>
+<h3 id="found-in-passing-running-the-suite-clobbers-dataapi_matrix">Found in passing — running the suite CLOBBERS <code>data/api_matrix/</code></h3>
+<p>Not introduced by this round; demonstrated by it. <code>api_matrix.MATRIX_ROOT</code> is a
+repo-relative path with no app-config or test override, and
+<code>rediscovery.py:543</code> rebuilds the matrix at the end of every sweep. So
+<code>tests/test_rediscovery_*</code> running a sweep against the <strong>test</strong> database
+overwrites the <strong>production</strong> <code>data/api_matrix/fortiweb.json</code> — on 2026-09-15 it
+replaced 326 swept endpoints and the witnesses <code>{device}/16/17</code> with
+<code>swept: 0, devices: []</code>, which silently emptied the firmware-line comparison.</p>
+<p>Two things make it hard to notice: the file is <strong>untracked</strong>, so <code>git status</code>
+says nothing, and an empty matrix renders as a page with no differences rather
+than as an error. Recovery is <code>api_matrix.rebuild(product)</code> from the live app
+context (the same call the page's Rebuild button makes) — the matrix is derived
+from <code>data/rediscovery/&lt;id&gt;/_config.json</code> plus the live appliance table, so
+nothing is lost permanently. The same run also wrote a fixture device
+(<code>fw-noflag</code>) into <code>data/rediscovery/1/_config.json</code>; appliance 1 does not exist
+in production, so that copy is inert.</p>
+<p><strong>Until <code>MATRIX_ROOT</code> takes an override, re-check the matrix after any run that
+includes the rediscovery tests.</strong></p>
     </div>
   </div>
 </section>

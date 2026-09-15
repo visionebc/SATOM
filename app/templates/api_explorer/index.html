@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "partials/_cli_provenance.html" import prov_badge, prov_legend with context %}
 
 {% block title %}API-Registry Explorer{% endblock %}
 
@@ -73,6 +74,7 @@
           <input type="text" id="apiTreeSearch" placeholder="{{ _('Filter endpoints…') }}"
                  style="padding-left:34px; font-size:13px;">
         </div>
+        <div class="px-2 pt-2">{{ prov_legend(cc_prov) }}</div>
         <div id="apiTree" style="max-height:640px; overflow-y:auto;">
           {% if api_tree and api_tree.child_nodes() %}
             {% for section in api_tree.child_nodes() %}
@@ -99,6 +101,8 @@
                         <span class="fw-api-method fw-api-method-{{ method|lower }} me-1" style="font-size:9px;">{{ method }}</span>
                         <span style="font-size:12.5px;">{{ ep.name }}</span>
                         <br><code class="text-muted" style="font-size:10.5px;">{{ ep.urn or ep.path }}</code>
+                        {% set pv = cc_prov.by_name.get(ep.name) if cc_prov else none %}
+                        {% if cc_prov %}<br>{{ prov_badge(pv or cc_prov.for_name(ep.name), show_path=True) }}{% endif %}
                       </button>
                       {% if row %}
                       <button type="button" class="btn btn-sm btn-fw-outline border-0 api-tree-copy me-1"

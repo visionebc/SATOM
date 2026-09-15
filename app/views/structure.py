@@ -24,6 +24,7 @@ from flask_login import login_required
 from ..auth.decorators import require_permission
 from ..models import Permission
 from ..registry import loader
+from ..services import cli_coverage
 from ..services import settings_store as store
 from ..services import structure
 from ..services.audit import log_action
@@ -50,10 +51,28 @@ def index():
     tree = cat.tree()
     matched, fetchable, missing = structure.coverage(tree)
 
+    # Which transport serves each node. Resolved by REGISTRY NAME when the
+    # URN is in the catalog and by URN when it is not — and the second case
+    # is the interesting one: a node the registry does not cover but the CLI
+    # dump does is a gap this table exists to expose, and a name-only lookup
+    # would print '—' over it.
+    prov = cli_coverage.provenance('fortiweb')
+    rows = structure.cross_reference(tree)
+    cli_counts = {}
+    for r in rows:
+        if not r['urn']:
+            r['cli'] = None          # a grouping node addresses nothing
+            continue
+        r['cli'] = (prov.for_name(r['endpoint']) if r['endpoint']
+                    else prov.for_urn(r['urn']))
+        cli_counts[r['cli']['bucket']] = cli_counts.get(r['cli']['bucket'], 0) + 1
+
     return render_template(
         'structure/index.html',
         box=structure.render_box(tree, show_urn=show_urn),
-        rows=structure.cross_reference(tree),
+        rows=rows,
+        prov=prov,
+        cli_counts=cli_counts,
         functions=cat.functions(),
         matched=matched,
         fetchable=fetchable,

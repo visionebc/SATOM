@@ -25,12 +25,32 @@
         {% endif %}
       </div>
       {% endif %}
+      {% if allow_cli %}
+      <div class="small mt-1">
+        {% if cli_decision and cli_decision.existing %}
+          <span class="badge bg-info-subtle text-info-emphasis"><i class="bi bi-terminal me-1"></i>{{ _('CLI dump') }}: {{ cli_decision.existing.created_at }}</span>
+        {% else %}
+          <span class="badge bg-secondary-subtle text-secondary-emphasis"><i class="bi bi-terminal me-1"></i>{{ _('CLI dump: none captured') }}</span>
+        {% endif %}
+      </div>
+      {% endif %}
     </div>
     <div class="d-flex align-items-center gap-3 flex-wrap">
       {% if allow_deep is not defined or allow_deep %}
       <div class="form-check form-switch mb-0" title="{{ _('Also walk every WPP + Server Policy dependency graph (sub-tables, rule-lists, disabled signatures, exceptions) and cache it for the Analysis page. Slower — reads more from the box.') }}">
         <input class="form-check-input" type="checkbox" id="redisc-deep">
         <label class="form-check-label small" for="redisc-deep">{{ _('Capture full WPP + policy depth') }} <span class="text-muted">{{ _('(slow)') }}</span></label>
+      </div>
+      {% endif %}
+      {% if allow_cli %}
+      <div class="mb-0" title="{{ _('Opens one read-only SSH session and stores show full-configuration in the configuration vault, so the CLI-coverage report compares the catalog against this box as swept rather than against an older dump.') }}">
+        <div class="form-check form-switch mb-0">
+          <input class="form-check-input" type="checkbox" id="redisc-cli"{% if cli_decision and not cli_decision.capture and not cli_decision.age_h %} disabled{% endif %}>
+          <label class="form-check-label small" for="redisc-cli">{{ _('Also capture the CLI configuration') }} <span class="text-muted">{{ _('(SSH, slow)') }}</span></label>
+        </div>
+        {% if cli_decision and not cli_decision.capture %}
+        <div class="small text-muted mt-1" style="max-width:34rem">{{ cli_decision.reason }}</div>
+        {% endif %}
       </div>
       {% endif %}
       <button id="redisc-start" class="btn fw-btn-primary"><i class="bi bi-play-fill me-1"></i>Start {{ 'rediscovery' if snapshot else 'discovery' }}</button>
@@ -73,11 +93,21 @@
       bar.classList.remove('bg-success');
       bar.classList.add('progress-bar-striped', 'progress-bar-animated');
       line.textContent = 'Deep capture (WPP + policy graph) running…';
+    } else if (p.state === 'cli-running') {
+      bar.classList.remove('bg-success');
+      bar.classList.add('progress-bar-striped', 'progress-bar-animated');
+      line.textContent = 'CLI capture (show full-configuration) running… up to 5 min';
     } else if (p.state === 'done') {
       bar.classList.remove('progress-bar-striped', 'progress-bar-animated');
       let txt = p.summary || `${p.objects} objects across ${p.section_count} sections`;
       if (p.deep_objects != null) txt += ` · depth: ${p.deep_objects} object(s)`;
       if (p.deep_error) txt += ` · depth error: ${p.deep_error}`;
+      // Skipped and failed are DIFFERENT outcomes and are never collapsed:
+      // "no dump was taken" and "a dump was attempted and lost" send the
+      // operator to opposite places.
+      if (p.cli_kb != null) txt += ` · CLI dump: ${p.cli_kb} KB captured`;
+      if (p.cli_skipped) txt += ` · CLI capture skipped: ${p.cli_skipped}`;
+      if (p.cli_error) txt += ` · CLI capture failed: ${p.cli_error}`;
       line.textContent = txt;
       startBtn.disabled = false;
     }
@@ -94,7 +124,7 @@
       const r = await fetch('{{ url_for("appliances.rediscover_status", id=appliance.id) }}');
       const p = await r.json();
       paint(p);
-      if (p.state === 'running' || p.state === 'deep-running') return;
+      if (p.state === 'running' || p.state === 'deep-running' || p.state === 'cli-running') return;
     } catch (e) { /* keep polling */ return; }
     clearInterval(timer); timer = null;
   }
@@ -103,12 +133,14 @@
     errs.textContent = '';
     const deepEl = document.getElementById('redisc-deep');   // absent on FortiADC
     const deep = deepEl ? deepEl.checked : false;
+    const cliEl = document.getElementById('redisc-cli');     // absent on FAZ/FAC
+    const cli = (cliEl && !cliEl.disabled) ? cliEl.checked : false;
     const freshToken = document.querySelector('meta[name="csrf-token"]').content;
     try {
       const r = await fetch('{{ url_for("appliances.rediscover_start", id=appliance.id) }}', {
         method: 'POST',
         headers: {'X-CSRFToken': freshToken, 'Content-Type': 'application/x-www-form-urlencoded'},
-        body: 'deep=' + (deep ? '1' : '0')
+        body: 'deep=' + (deep ? '1' : '0') + '&cli=' + (cli ? '1' : '0')
       });
       if (!r.ok) {
         errs.textContent = 'Server error ' + r.status + ' — check permissions or try refreshing.';
@@ -116,6 +148,7 @@
         return;
       }
       const j = await r.json();
+      if (j.cli_skipped) { errs.textContent = 'CLI capture not started: ' + j.cli_skipped; }
       if (!j.started) {
         line.textContent = j.reason || 'could not start';
         startBtn.disabled = false;
@@ -129,7 +162,7 @@
     }
   }
   startBtn.addEventListener('click', start);
-  {% if progress and progress.state in ['running', 'deep-running'] %}if (!timer) timer = setInterval(poll, 1500); startBtn.disabled = true;{% endif %}
+  {% if progress and progress.state in ['running', 'deep-running', 'cli-running'] %}if (!timer) timer = setInterval(poll, 1500); startBtn.disabled = true;{% endif %}
 })();
 </script>
 {% endblock %}

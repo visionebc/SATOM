@@ -672,10 +672,22 @@ def rediscover(id):
     is_adc = appliance.kind == 'fortiadc'
     deep_fresh = None if is_adc \
         else analysis.deep_freshness([appliance.id]).get(str(appliance.id))
+    # What the CLI switch will ACTUALLY do, answered by the same function the
+    # worker obeys. Asking it here is the whole point: a page that computed its
+    # own preview could promise a capture the sweep then declines to take.
+    from ..services import cli_coverage
+    cli_decision = rediscovery.cli_capture_decision(
+        requested=True, kind=appliance.kind or 'fortiweb',
+        appliance_id=appliance.id,
+        maintenance=bool(getattr(appliance, 'maintenance', False)),
+        may_write_vault=current_user.can(Permission.BACKUP))
     return render_template('appliances/rediscover.html', appliance=appliance,
                            progress=rediscovery.status(appliance.id),
                            snapshot=rediscovery.latest_snapshot_meta(appliance.id),
                            deep_fresh=deep_fresh, allow_deep=not is_adc,
+                           cli_decision=cli_decision,
+                           allow_cli=(appliance.kind or 'fortiweb')
+                                     in cli_coverage.SUPPORTED_PRODUCTS,
                            plan_size=len(rediscovery.plan_for(appliance)))
 
 
@@ -690,10 +702,23 @@ def rediscover_start(id):
     from flask_login import current_user
     deep = (request.form.get('deep') or request.args.get('deep') or '').lower() \
         in ('1', 'true', 'on', 'yes')
+    cli = (request.form.get('cli') or request.args.get('cli') or '').lower() \
+        in ('1', 'true', 'on', 'yes')
+    # The route gates ONE thing the worker cannot: the CLI dump is written to
+    # the configuration vault, and this endpoint only requires
+    # ``appliances.apply``. Dropping the flag SILENTLY would let a user create
+    # vault rows through a door that never mentions the vault — so the refusal
+    # is returned, not swallowed.
+    cli_refused = ''
+    if cli and not current_user.can(Permission.BACKUP):
+        cli, cli_refused = False, rediscovery.CLI_SKIP_NO_PERMISSION
     res = rediscovery.start(appliance, by=getattr(current_user, 'username', ''),
-                            deep=deep)
+                            deep=deep, cli=cli)
+    if cli_refused:
+        res['cli_skipped'] = cli_refused
     if res.get('started'):
-        log_action('appliance.rediscover', target=appliance.name)
+        log_action('appliance.rediscover', target=appliance.name,
+                   extra={'deep': bool(deep), 'cli': bool(cli)})
     return jsonify(res)
 
 

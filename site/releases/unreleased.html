@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Fixed — the discovery run is the FIRST card, and its buttons actually run (2026-09-15) · 16 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Fixed — one appliance for the discovery run, and the firmware it is running (2026-09-15) · 24 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Fixed — the discovery run is the FIRST card, and its buttons actually run (2026-09-15) · 16 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Fixed — one appliance for the discovery run, and the firmware it is running (2026-09-15) · 24 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,8 +59,8 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Fixed — the discovery run is the FIRST card, and its buttons actually run (2026-09-15) · 16 entries</span>
-        <ul class="rel-leads"><li>First card</li><li>Last card</li><li>Keyed to the source by plain columns</li><li class="rel-more">… and 13 more</li></ul>
+        <span class="rel-nav-meta">unreleased · Fixed — one appliance for the discovery run, and the firmware it is running (2026-09-15) · 24 entries</span>
+        <ul class="rel-leads"><li>ONE selector</li><li>Asking elsewhere is still possible, as a deliberate detour</li><li>The evidence is on screen</li><li class="rel-more">… and 21 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v2.0.0.html" data-rel-version="2.0.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 2.0.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
@@ -260,6 +260,62 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
+<h3 id="fixed-one-appliance-for-the-discovery-run-and-the-firmware-it-is-running-2026-09-15">Fixed — one appliance for the discovery run, and the firmware it is running (2026-09-15)</h3>
+<p>Asked for as <em>"no es redundante? … abajo volver a seleccionar un fortiweb no
+tiene caso"</em>, then <em>"checa que en automatico detecte la version del fortiweb o
+fortidevice y guarde la version"</em>.</p>
+<p><strong>The redundancy was real and it was hiding something worse.</strong> The card had two
+appliance pickers — <em>Load API catalog + CLI configuration from</em> and <em>Ask this
+appliance</em> — and <strong>nothing compared them</strong>, while the candidates come from a
+third thing entirely: the CLI dump the coverage section chose. Load from
+<code>{device}</code>, probe <code>{device}</code>, and every <code>absent</code> the run prints is literally
+true and completely misleading — <em>"that device does not have it"</em> read as
+<em>"that path does not exist"</em>. The payload already carried the evidence
+appliance (<code>"evidence": rep["chosen"]["appliance"]</code>) and <strong>the screen never used
+it</strong>.</p>
+<ul>
+<li><strong>ONE selector</strong> for the whole card. It sits outside the load <code>&lt;form&gt;</code> and is
+  tied to it with <code>form="drLoadForm"</code>, which is what makes it genuinely one
+  control instead of two that agree by convention.</li>
+<li><strong>Asking elsewhere is still possible, as a deliberate detour</strong> behind a
+  <code>&lt;details&gt;</code>: the legitimate case is real — capture the production box over
+  SSH, fire the hundreds of GETs at its laboratory twin. It was previously
+  indistinguishable from the mistake.</li>
+<li><strong>The evidence is on screen</strong>, always: which dump, which firmware line, which
+  date — next to which appliance was asked.</li>
+</ul>
+<p><strong>The version half.</strong> The run now reads the running firmware <strong>off the device</strong>
+and <strong>stores it</strong>, before asking anything, through
+<code>services.firmware_probe.refresh</code> — the one author of that write and the only
+thing that stamps <code>firmware_checked_at</code> alongside it. The <em>Load both</em> pass does
+the same. Then it compares that line with the line the dump was captured on.</p>
+<ul>
+<li>🚨 <strong>Three verdicts that never merge.</strong> <code>same</code> · <code>different</code> · <strong><code>unknown</code></strong>,
+  and <code>unknown</code> is the load-bearing one: our read failing, or a dump that never
+  recorded a line, must <strong>not</strong> render as agreement. A comparison nobody could
+  make would otherwise be indistinguishable from one that agreed.</li>
+<li>🚨 <strong>It warns. It does not gate.</strong> A run is never refused on a version
+  verdict — a gate built on this vocabulary would reject a legitimate run
+  because <em>our</em> read failed. Same rule as the upgrade advisory. There is a
+  guard that fails if anyone turns it into a gate.</li>
+<li><code>same_device</code> is compared <strong>by id, never by name</strong> (two boxes can carry one
+  name), and "there is no evidence" is <code>None</code>, never <code>False</code>.</li>
+<li>The firmware, the line, the evidence and the verdict ride into the <strong>audit
+  row</strong> with the run: the page can be closed, and re-deriving the answer later
+  reads <em>today's</em> version off a box that may since have been upgraded.</li>
+<li>The plan route still costs the device <strong>nothing</strong> — no status call — and
+  there is a guard that keeps it that way.</li>
+</ul>
+<p><strong>Found while measuring, not touched:</strong> <code>rediscovery.apply_inventory</code> writes
+<code>appliance.firmware</code> <strong>without</strong> stamping <code>firmware_checked_at</code>, so the sweep
+leaves a version no consumer can date. That is why the load pass reads it
+properly instead of trusting the worker's merge.</p>
+<p>Guards: <code>tests/test_discovery_version.py</code> — 33 guards, <strong>32 mutations, 32
+bite</strong>. The first pass left <strong>3 survivors and all three were gaps in my own
+assertions</strong>: two key-name checks satisfied by the <em>other</em> occurrence of the
+same word (the audit row also spells <code>evidence_line</code>) — the tenth
+assert-by-substring in this repo — and an <code>askId()</code> guard that accepted the
+override being declared and then ignored.</p>
 <h3 id="fixed-the-discovery-run-is-the-first-card-and-its-buttons-actually-run-2026-09-15">Fixed — the discovery run is the FIRST card, and its buttons actually run (2026-09-15)</h3>
 <p>Asked for as <em>"ponlo hasta arriba"</em>, after <em>"donde pusiste el boton?"</em>.</p>
 <p><strong>Position was the request; the defect found while moving it is the bigger

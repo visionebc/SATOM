@@ -52,7 +52,26 @@
 {# Discovery run — FIRST card on purpose. The catalog only ever shrank by
    itself; this is its growth path, and it was unfindable at the foot of the
    page. ONE author for the markup (partials/_discovery_run.html). #}
-{% include "partials/_discovery_run.html" %}
+{# The Discovery run MOVED to the API-versions page (2026-09-16). Here it had
+   no firmware to be about: the candidates came from whichever CLI dump sorted
+   first, the appliance came from a second picker, and nothing tied either to a
+   build — so every `absent` it reported was true of that pairing and useless
+   as a statement about a firmware. On the versions page the row IS the build.
+   ONE author for the markup (partials/_discovery_run.html), now included
+   there. #}
+<div class="fw-card mt-3">
+  <div class="fw-card-body d-flex flex-wrap align-items-center gap-2"
+       style="font-size:13px;">
+    <i class="bi bi-binoculars text-accent"></i>
+    <strong>{{ _('Discovery run') }}</strong>
+    <span class="text-muted">
+      {{ _('moved to the API-versions page, where each row is a firmware build. A run derives its candidates from a CLI dump captured on ONE build and probes a box running THAT build — neither of which this page can name.') }}
+    </span>
+    <a class="btn btn-sm btn-fw-outline ms-auto" href="{{ url_for('adc_api.api_versions') }}">
+      <i class="bi bi-diagram-2 me-1"></i>{{ _('API versions') }}</a>
+  </div>
+</div>
+
 
 <style nonce="{{ csp_nonce }}">
   /* API Menu tree (left sidebar) — caret rotates with Bootstrap collapse state */

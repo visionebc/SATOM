@@ -44,7 +44,26 @@
 {# Discovery run — FIRST card on purpose. The catalog only ever shrank by
    itself; this is its growth path, and it was unfindable at the foot of the
    page. ONE author for the markup (partials/_discovery_run.html). #}
-{% include "partials/_discovery_run.html" %}
+{# The Discovery run MOVED to the API-versions page (2026-09-16). Here it had
+   no firmware to be about: the candidates came from whichever CLI dump sorted
+   first, the appliance came from a second picker, and nothing tied either to a
+   build — so every `absent` it reported was true of that pairing and useless
+   as a statement about a firmware. On the versions page the row IS the build.
+   ONE author for the markup (partials/_discovery_run.html), now included
+   there. #}
+<div class="fw-card mt-3">
+  <div class="fw-card-body d-flex flex-wrap align-items-center gap-2"
+       style="font-size:13px;">
+    <i class="bi bi-binoculars text-accent"></i>
+    <strong>{{ _('Discovery run') }}</strong>
+    <span class="text-muted">
+      {{ _('moved to the API-versions page, where each row is a firmware build. A run derives its candidates from a CLI dump captured on ONE build and probes a box running THAT build — neither of which this page can name.') }}
+    </span>
+    <a class="btn btn-sm btn-fw-outline ms-auto" href="{{ url_for('registry.api_versions') }}">
+      <i class="bi bi-diagram-2 me-1"></i>{{ _('API versions') }}</a>
+  </div>
+</div>
+
 
 <style nonce="{{ csp_nonce }}">
   /* API Menu tree (left sidebar) — caret rotates with Bootstrap collapse state */
@@ -60,6 +79,28 @@
 
 <div class="row g-3">
   <!-- API Menu: registry-backed section > endpoint tree; editable in place when can_edit -->
+{# Which BUILD the transport badges below were measured on. They are derived
+   from one CLI dump, and until 2026-09-16 the page never said which — so a
+   `cli` badge was a build-specific claim made out of anonymous evidence.
+   Narrow it with ?version=<build> (or ?line=<line>); the choice is a FILTER,
+   so a build with no dump reports no evidence rather than borrowing another
+   build's. #}
+{% if cc_prov is defined %}
+<p class="text-muted mb-2" style="font-size:12px;">
+  {% if cc_prov and cc_prov.measured %}
+    {{ _('CLI evidence:') }} <code>{{ cc_prov.device }}</code>
+    · <code>{{ cc_report.chosen.version or cc_report.chosen.line or _('version not recorded') }}</code>
+    · {{ cc_prov.captured_at }}
+    {% if cc_scope %}<span class="fw-badge fw-badge-info ms-1">{{ _('scoped to') }} {{ cc_scope }}</span>{% endif %}
+  {% elif cc_scope %}
+    <span class="fw-badge fw-badge-warning">{{ _('no CLI dump captured on build') }} {{ cc_scope }}</span>
+    {{ _('Transport badges fall back to what the URN alone can prove; nothing here is inferred from another build.') }}
+  {% else %}
+    <span class="fw-badge fw-badge-warning">{{ _('no CLI evidence') }}</span>
+  {% endif %}
+</p>
+{% endif %}
+
   <div class="col-lg-3">
     <div class="fw-card mb-3">
       <div class="fw-card-header">

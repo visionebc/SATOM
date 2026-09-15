@@ -63,13 +63,23 @@ def context(product: str, *, page_endpoint: str, block_endpoint: str = "",
     empty name is never handed to ``url_for``.
     """
     backup_id = request.args.get("dump", type=int)
+    # The firmware build this section is answering about. It comes from the URL
+    # so it is shareable and shows up in the audit trail of whoever followed
+    # the link, and it is NORMALISED here rather than trusted: an unnormalised
+    # string matches no dump, which renders as "no evidence for this build" —
+    # a sentence that would then be false.
+    from ..services import firmware_versions as _fv
+    scope = _fv.normalize(request.args.get("version") or "")
+    scope_line = "" if scope else (request.args.get("line") or "")
     try:
-        rep = cli_coverage.report(product, backup_id)
+        rep = cli_coverage.report(product, backup_id, version=scope,
+                                  line=scope_line)
     except Exception as exc:  # noqa: BLE001 — the API hub must not 500 on this
         # A failure here is reported as a failure. An empty section and "the
         # parse blew up" look identical and mean opposite things.
         return {
             "cc_product": product, "cc_error": "%s: %s" % (type(exc).__name__, exc),
+            "cc_scope": scope, "cc_scope_line": scope_line,
             "cc_report": None, "cc_can_read": False, "cc_appliances": [],
             "cc_block_endpoint": block_endpoint,
             "cc_capture_endpoint": capture_endpoint,
@@ -89,6 +99,10 @@ def context(product: str, *, page_endpoint: str, block_endpoint: str = "",
     return {
         "cc_product": product,
         "cc_error": "",
+        # Printed by the section header. A page that shows transport badges
+        # without naming the build they were measured on is making a
+        # build-specific claim out of anonymous evidence.
+        "cc_scope": scope, "cc_scope_line": scope_line,
         "cc_report": rep,
         "cc_can_read": can_read,
         # Two lists on purpose. ``cc_appliances`` feeds the CAPTURE form, which

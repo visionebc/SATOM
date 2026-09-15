@@ -44,6 +44,7 @@
   <div class="fw-card-header">
     <span class="fw-card-title">
       <i class="bi bi-binoculars me-2 text-accent"></i>{{ _('Discovery run — API + CLI') }}
+      {%- if dr_scope %} <code class="ms-1">{{ dr_scope }}</code>{% endif %}
     </span>
     <button class="btn btn-sm btn-fw-outline" type="button" data-bs-toggle="collapse"
             data-bs-target="#discoveryRunBody" aria-expanded="true" aria-controls="discoveryRunBody">
@@ -64,6 +65,28 @@
       {{ _('The catalog is what every part of SATOM resolves a name through, so a path that was GUESSED and written here fails later, somewhere else. This run only ever asks the appliance: it derives the candidate paths for each CLI-only block, probes them, and offers for registration only the ones the device served.') }}
     </p>
 
+    {# ── 0. the build ─────────────────────────────────────────────────────
+       A run answers about ONE firmware build or about nothing in particular,
+       and until 2026-09-16 it was always the second while looking like the
+       first: candidates were derived from whichever CLI dump sorted first, the
+       page never named it, and the GETs went to whatever box the operator
+       picked. Every `absent` that came back was true of that pairing and
+       useless as a statement about a firmware.
+
+       With a scope, both halves are pinned and printed. Without one, the card
+       behaves exactly as it did — which is what the hubs with no version axis
+       still need. #}
+    {% if dr_scope %}
+    <div class="alert alert-info py-2 mb-3" style="font-size:12.5px;">
+      <strong>{{ _('Scoped to build') }} <code>{{ dr_scope }}</code>.</strong>
+      {{ _('The candidates come from a CLI dump captured on this exact build, and the appliances offered below are the ones running it. A dump from another build cannot stand in: 8.0.4 and 8.0.7 are both "8.0" and their CLI is not the same.') }}
+      {% if not dr_scope_appliances %}
+        <br><span class="fw-badge fw-badge-warning">{{ _('no appliance runs this build') }}</span>
+        {{ _('You can still ask another box through the override below, but its answers then describe a different firmware.') }}
+      {% endif %}
+    </div>
+    {% endif %}
+
     {# ── 1. the appliance — ONE selector, used by every action on this card ─
        The control lives outside the load <form> and is tied to it with
        form="drLoadForm", the same trick the object editor uses for inputs that
@@ -82,7 +105,10 @@
                   data-dr-watch="{{ request.args.get('dr_watch') or '' }}"
                   data-dr-evidence-id="{{ dr_ev.appliance_id if dr_ev and dr_ev.appliance_id else '' }}">
             <option value="">{{ _('choose an appliance…') }}</option>
-            {% for a in cc_probe_appliances %}
+            {# Scoped: only the boxes actually running this build. Offering the
+               rest here would make the wrong answer the easy one; they stay
+               reachable through the deliberate override further down. #}
+            {% for a in (dr_scope_appliances if dr_scope else cc_probe_appliances) %}
               <option value="{{ a.id }}"{% if request.args.get('dr_watch') == a.id|string %} selected{% endif %}>{{ a.name }}{% if a.host %} ({{ a.host }}){% endif %}</option>
             {% endfor %}
           </select>
@@ -101,6 +127,7 @@
       {% if dr_can_load and dr_load_endpoint %}
       <form method="post" action="{{ url_for(dr_load_endpoint) }}" id="drLoadForm" class="d-none">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% if dr_scope %}<input type="hidden" name="version" value="{{ dr_scope }}">{% endif %}
       </form>
       <p class="text-muted mb-0 mt-1" style="font-size:11.5px;">
         {{ _('Loading is one action, because a diff between a catalog swept today and a dump captured in July describes two different afternoons. The REST sweep runs first and the CLI capture follows it as a separate pass, so an SSH failure cannot cost a sweep that already succeeded. The running firmware version is read off the device and stored in the same pass.') }}
@@ -130,7 +157,7 @@
         {% if dr_ev %}
           <span class="fw-badge fw-badge-info">{{ _('evidence') }}</span>
           <code>{{ dr_ev.appliance }}</code>
-          · {{ dr_ev.line or _('no firmware line recorded') }}
+          · {{ dr_ev.version or dr_ev.line or _('no firmware version recorded') }}
           · {{ dr_ev.created_at }}
           <span class="text-muted">{{ _('— the CLI dump the candidates are derived from.') }}</span>
         {% else %}
@@ -381,6 +408,10 @@
     fd.append('budget', document.getElementById('drBudget').value || '');
     if (document.getElementById('drConfigured').checked) { fd.append('configured_only', '1'); }
     {% if request.args.get('dump') %}fd.append('dump', '{{ request.args.get("dump")|e }}');{% endif %}
+    {# The build travels with every plan and every run. Leaving it to the URL
+       would mean the cost quoted by "What would it cost?" and the GETs the run
+       actually spends could be derived from two different dumps. #}
+    {% if dr_scope %}fd.append('version', '{{ dr_scope|e }}');{% endif %}
     Object.keys(extra || {}).forEach(function (k) { fd.append(k, extra[k]); });
     return fd;
   }

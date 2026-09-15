@@ -3497,37 +3497,70 @@ restorable from the explorer. Submitting a name the evidence does not condemn is
 answered `rejected` — the form filters the proposals, it does not authorise
 them.
 
-### 30.5 API versions: what each firmware line actually takes
+### 30.5 API versions: what each firmware build actually takes
 
 **API explorer → API versions** (`/web/registry/versions`, and the FortiADC
 twin at `/adc/api/versions`). Also `registry_edit`.
 
-**Two firmware lines can speak the same API version and still not accept the
-same payload.** FortiWeb 7.6 and 8.0 are both `v2.0`; measured on this fleet's
-own data, `admin` has 40 fields on 7.6 and 42 on 8.0, `system_global` 60 versus
-63, `ntp` 3 versus 4. If nothing tracks that, a payload built against one line
-and written to the other fails on the appliance — which is the wrong place to
-find out.
+**Two firmware builds can speak the same API version and still not accept the
+same payload — and so can two builds of the same line.** FortiWeb 7.6 and 8.0
+are both `v2.0`; measured on this fleet's own data, `admin` has 40 fields on 7.6
+and 42 on 8.0, `system_global` 60 versus 63, `ntp` 3 versus 4. And `8.0.4` and
+`8.0.7` are both "8.0" while their CLI is not the same. If nothing tracks that,
+a payload built against one build and written to another fails on the appliance
+— which is the wrong place to find out.
 
-The page has four parts:
+So **the unit of evidence here is the full version** (`8.0.5`). The line
+(`8.0`) survives as a rollup, and it always declares which builds it merged.
 
-1. **Firmware lines** — every line SATOM has evidence for, whether any appliance
-   in the fleet still runs it, which appliances witnessed it, and how much was
-   measured. A line marked **not in fleet** is archived evidence, and says so;
-   FortiWeb 8.0 is in exactly that state today.
-2. **Witnesses excluded** — the same honesty as §30.4: an unhealthy device is
+The page has five parts:
+
+1. **Firmware versions** — one row per build SATOM knows of: what it was
+   measured to serve, which appliances witnessed it, which CLI dump was
+   captured on it, and *why SATOM knows about it at all* — an uploaded firmware
+   image, an appliance running it, or an operator declaring it by hand. A build
+   that is registered and never swept reads **`declared · unmeasured`**, which
+   is not the same as a measured build that turned out empty.
+   Each row also carries a **Discovery run** button, scoped to that build.
+2. **Firmware lines** — the rollup. Every row lists the builds it merged, flags
+   itself **heterogeneous** when there is more than one, and lists separately
+   the endpoints only *some* of those builds served. Those are reported as
+   **partial**, never as "the line serves it".
+3. **Witnesses excluded** — the same honesty as §30.4: an unhealthy device is
    not evidence.
-3. **Compare two lines** — endpoints added and removed, fields added and
-   removed per object, plus two buckets that are *not* changes: **known on one
-   side only** (nobody measured the other) and **incomparable** (the two sides
-   were measured by different means). Those exist because a naive subtraction
-   reported 56 phantom removals on the first draft of this page.
-4. **Preflight** — name an object and the fields you intend to send, and get
-   `ok`, `unknown_fields`, `absent`, `fields_unknown` or `unmeasured`.
+4. **Compare two of them** — build against build, or rollup against rollup:
+   endpoints added and removed, fields added and removed per object, plus two
+   buckets that are *not* changes: **known on one side only** (nobody measured
+   the other) and **incomparable** (the two sides were measured by different
+   means). Those exist because a naive subtraction reported 56 phantom removals
+   on the first draft of this page. Comparing a rollup says so, and names the
+   builds inside it.
+5. **Preflight** — name an object and the fields you intend to send, and get
+   `ok`, `unknown_fields`, `absent`, `fields_unknown`, `version_unmeasured` or
+   `unmeasured`.
 
-**`unmeasured` is an answer, never a yes.** If SATOM has never seen that line,
+**`unmeasured` is an answer, never a yes.** If SATOM has never seen that build,
 it says so rather than guessing; the fix is to sweep an appliance running it, or
 harvest its field schemas, and press **Rebuild**.
+
+**`version_unmeasured` is the narrower one, and it is the whole point of the
+build axis.** It means *that build* has no evidence while other builds of its
+line do — and SATOM will not answer for it out of theirs, because 8.0.4 is not
+8.0.7. It is not a refusal either: the line-granular answer is printed beside
+it, labelled, so you can see what *is* known and decide.
+
+**Registering a build.** Versions already proved by an uploaded firmware image
+or by an appliance in the fleet appear on their own — they are derived on every
+read, so no upload path can forget to register one. The form at the foot of the
+table is for the builds nothing proves yet ("8.0.7 is coming and I want to see
+its column"). Forgetting one only removes the hand-written note; a build an
+image or an appliance proves stays listed.
+
+**A matrix built before 2026-09-16** has no per-build rows, and the page says so
+rather than reinterpreting it. It is deliberately *not* rebuilt for you: a
+rebuild drops every witness whose appliance row has since been deleted, and
+doing that as a side effect of opening a page would destroy evidence. Press
+**Rebuild** when that is what you want.
 
 The same answers are available on a node whose web interface is down:
 

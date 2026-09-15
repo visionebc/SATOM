@@ -366,6 +366,10 @@
 
 {# CLI ↔ API coverage — ONE author for this section (partials/_cli_coverage.html) #}
 {% include 'partials/_cli_coverage.html' %}
+
+{# Last card here, unlike the FortiWeb/FortiADC hubs: this product has no CLI
+   configuration dump, so the section renders its reason and stops. #}
+{% include "partials/_discovery_run.html" %}
 {% endblock %}
 
 {% block scripts %}

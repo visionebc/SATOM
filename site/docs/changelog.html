@@ -107,6 +107,45 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="fixed-the-discovery-run-is-the-first-card-and-its-buttons-actually-run-2026-09-15">Fixed — the discovery run is the FIRST card, and its buttons actually run (2026-09-15)</h3>
+<p>Asked for as <em>"ponlo hasta arriba"</em>, after <em>"donde pusiste el boton?"</em>.</p>
+<p><strong>Position was the request; the defect found while moving it is the bigger
+half.</strong> The app-wide CSP (<code>app/__init__.py</code> <code>after_request</code>) sends
+<code>script-src-elem 'self' 'nonce-…'</code> with <strong>no</strong> <code>'unsafe-inline'</code>, and three
+<code>&lt;script&gt;</code> blocks shipped in the previous round without the nonce
+(<code>partials/_discovery_run.html</code>, and both blocks of
+<code>partials/_cli_probe_tools.html</code>). The browser <strong>refuses</strong> such a block, and a
+refused block looks exactly like a button that does nothing: <em>What would it
+cost?</em>, <em>Run discovery</em>, <em>Register selected</em>, the filter boxes and the per-row
+CLI/API test buttons on <code>/web/structure/</code> and <code>/web/registry/versions</code> rendered
+perfectly and were <strong>inert</strong>. Nothing failed, nothing logged. (<em>Load both</em>
+survived — it is a plain form POST, not fetch.) All three now carry
+<code>nonce="{{ csp_nonce }}"</code>.</p>
+<p><strong>The guard for this already existed and was never run</strong> —
+<code>tests/test_csp_nonce.py</code> (2026-08-23) scans the whole template tree and, when
+the defect is reintroduced, names <code>partials/_discovery_run.html:144</code> exactly.
+Targeted test selection never picked it, because a cross-cutting guard has no
+module name to match. It is now part of the standing targeted set for any round
+that edits a template, and the feature suite carries a local copy scoped to the
+partials these pages mount.</p>
+<p><strong>The card moved out of <code>partials/_cli_coverage.html</code> and is mounted per hub</strong>,
+because the right position differs by product and the difference carries
+meaning:</p>
+<ul>
+<li><strong>First card</strong> on the hubs that can act on it (<code>api_explorer</code>, <code>adc_api</code>) —
+  it is the affordance those pages exist to offer, and at the foot of the page
+  it was unfindable.</li>
+<li><strong>Last card</strong> on the hubs that cannot (<code>faz_api</code>, <code>fac_api</code>) — the section
+  renders its reason and stops there, and spending the most valuable slot on
+  <em>"not applicable"</em> is worse than the problem being fixed.</li>
+</ul>
+<p>It also <strong>starts open</strong>: a collapsed card at the top of a page is still a hidden
+feature, which is the complaint this change answers.</p>
+<p>Still exactly <strong>one author of the markup</strong> — <code>partials/_discovery_run.html</code>,
+included once per hub. Guards assert the include statement appears exactly once
+per hub, that no hub copies <code>id="discoveryRun"</code> (a second mount would duplicate
+the DOM ids the JS binds to and break it silently), and that the ordering
+relative to <code>_cli_coverage.html</code> is first-where-it-acts / last-where-it-cannot.</p>
 <h3 id="added-the-catalog-can-finally-grow-from-what-a-device-serves-2026-09-15">Added — The catalog can finally GROW from what a device serves (2026-09-15)</h3>
 <p>Asked for as <em>"al final dónde tenemos el botón o función para generar esa
 biblioteca del <code>/api-explorer/</code>?"</em>, then <em>"sí hazlo, y debe de cargar tanto el

@@ -14967,3 +14967,97 @@ exactly once **before** starting, restores in a `finally` that also runs on
 SIGTERM/SIGINT, and verifies the restore against its own table rather than a
 grep of convenience — an interrupted harness left a live mutation in the tree
 twice.
+
+## §173 — a button the browser refuses to run (tests/test_discovery_run.py)
+
+**A `<script>` without the CSP nonce is not an error — it is a dead button.**
+
+`app/__init__.py` (`after_request`) sets the app-wide policy
+
+```
+script-src-elem 'self' 'nonce-<per-session>' https://cdn.jsdelivr.net;
+script-src-attr 'none';
+```
+
+with **no `'unsafe-inline'`**. Three inline blocks shipped on 2026-09-15 without
+the nonce, so *Run discovery*, *What would it cost?*, *Register selected*, the
+filter boxes and every per-row test button on `/web/structure/` and
+`/web/registry/versions` **rendered correctly and did nothing when clicked**.
+
+🚨 **THE GUARD ALREADY EXISTED AND WAS NEVER RUN. That is the whole finding.**
+
+`tests/test_csp_nonce.py` was written on 2026-08-23 for exactly this class (the
+Admin Console menu, `settings/_nav.html`). It walks the **entire** template
+tree, strips comments so prose about the rule is not reported as a violation,
+asserts the census (a scan that reads nothing passes otherwise), and asserts
+that the policy still names a nonce so the scan cannot go vacuous. Measured on
+2026-09-15 by reintroducing the defect: it fails and prints
+`partials/_discovery_run.html:144`. It is the right guard, correctly built.
+
+It stayed green for three days because **targeted test selection never selected
+it.** The rule of 2026-08-09 (run only the tests of the zone you touched) picks
+suites by *name overlap with the module*, and nothing about
+`discovery_run` / `cli_probe_tools` / `api_explorer` looks like `csp_nonce`.
+A cross-cutting guard has no name to match.
+
+📌 **Rule: any round that edits a `.html` under `app/templates/` runs
+`tests/test_csp_nonce.py` in its targeted set** — unconditionally, alongside
+`test_template_blocks` and `test_route_audit`. It is 8 tests and a few seconds.
+Same reasoning as the `data/api_matrix/` check of §171: a guard whose trigger
+is *"someone remembers"* is not a guard.
+
+The failure is silent by construction, which is why nothing else substitutes
+for running it: the routes are fine, the template renders, the markup is valid,
+the element IS in the DOM, and every server-side test passes. CSP refusal goes
+to the browser console — not to a log, not to a status code. ⚠ The live-render
+recipe of §9 (chromium + `test_client`) does **not** cover it either: that
+harness rewrites paths to absolute and stubs `window.fetch`, so it never serves
+the real CSP header, and the block it would have blocked runs fine.
+
+The feature suite now carries a **local** copy of the assertion, scoped to the
+partials these pages mount:
+
+```python
+opens = re.findall(r"<script(?![-\w])([^>]*)>", src)
+for attrs in opens:
+    assert "csp_nonce" in attrs
+```
+
+That is deliberate duplication, not drift: the tree-wide scan is the authority,
+and this one exists only so the check runs **when this feature's tests run**.
+⚠ `<script` needs the `(?![-\w])` guard or it also matches `<scriptlet`-style
+names, and the attribute list must be captured — asserting `"csp_nonce" in src`
+over the whole file passes as long as **one** block has it.
+
+### Position carries meaning, so it is asserted
+
+The card mounted at the foot of `partials/_cli_coverage.html` was unfindable —
+the reason the user had to ask where the button was. It is now the **first**
+card of the hubs that can act on it and the **last** card of the hubs that
+cannot (`faz_api`/`fac_api` only ever render *"this product has no CLI
+configuration dump"*; promoting that to the top spends the best slot on a
+non-answer). Guards pin both directions against `_cli_coverage.html`.
+
+### One author, four mounts
+
+Moving the mount out of the coverage partial means four `{% include %}`
+statements instead of one. That is only safe while the **markup** still has a
+single author: a copied card is two authors of one string (how the status badge
+and the sidebar accordion drifted here), and it also duplicates
+`id="discoveryRun"` / `id="drRows"`, so the second copy would break the JS
+bindings silently. Guards: exactly one include statement per hub, and
+`id="discoveryRun"` never appears in a hub template.
+
+⚠ **Tenth "assertion satisfied by the prose", and this time it was INFLATED not
+satisfied:** `src.count("_discovery_run.html") == 1` read **2** against a
+correct template, because the comment explaining the mount names the file. Count
+the **include statement**, not the file name.
+
+### Verification
+
+`tests/test_discovery_run.py` RC=0 (measured by rc, no pipe). 9 mutations, 9 bite — among
+them *"the coverage partial mounts it again"* (double render), *"api_explorer
+mounts it at the bottom"*, *"faz_api promotes the not-applicable card"*, *"the
+card collapses again"*, *"the chevron lies about the state"*, and each script
+losing its nonce.
+

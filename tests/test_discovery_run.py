@@ -551,8 +551,16 @@ def test_versions_delta_rows_offer_a_test(app):
 INC = '{% include "partials/_discovery_run.html" %}'
 CC_INC = "partials/_cli_coverage.html' %}"
 HUBS = ("api_explorer", "adc_api", "faz_api", "fac_api")
-ACTS = ("api_explorer", "adc_api")          # have a CLI dump to diff
+#: Hubs that used to mount the card and now POINT at it. It moved to the
+#: API-versions page on 2026-09-16 because on a hub a run had no firmware to be
+#: about: candidates came from whichever CLI dump sorted first, the appliance
+#: came from a second, unrelated picker, and the page named neither. On the
+#: versions page the row IS the build.
+MOVED = ("api_explorer", "adc_api")
+#: Hubs that still mount it, because they have no versions page to move it to.
 CANNOT = ("faz_api", "fac_api")             # render their reason and stop
+#: Where it lives now.
+MOUNTS = (os.path.join(REPO, "app", "templates", "registry", "versions.html"),)
 
 
 def _hub(name):
@@ -574,14 +582,24 @@ def test_discovery_partial_is_included_not_copied(app):
     assert INC not in cc, (
         "the coverage partial must not mount it any more — it would render "
         "twice on the hubs that now mount it at the top")
-    for hub in HUBS:
-        src = _hub(hub)
+    for hub in CANNOT + MOUNTS:
+        src = _hub(hub) if not hub.endswith(".html") else _read(hub)
         # count the INCLUDE STATEMENT, not the file name: the comment that
         # explains the mount names the file too, and counting the name made
         # this guard read 2 against a correct template.
         assert src.count(INC) == 1, hub
         assert 'id="discoveryRun"' not in src, (
             "%s copies the card instead of including it" % hub)
+    # The hubs it LEFT must not mount it and must not silently drop it either.
+    # A card that simply vanishes teaches the operator the feature was removed;
+    # a pointer teaches them the question needed a firmware to be asked about.
+    for hub in MOVED:
+        src = _hub(hub)
+        assert INC not in src, "%s still mounts the card" % hub
+        assert 'id="discoveryRun"' not in src, hub
+        assert "moved to the API-versions page" in src, (
+            "%s dropped the card without saying where it went" % hub)
+        assert "api_versions" in src, hub
 
 
 def test_discovery_card_is_first_where_it_can_act_and_last_where_it_cannot(app):
@@ -592,12 +610,21 @@ def test_discovery_card_is_first_where_it_can_act_and_last_where_it_cannot(app):
     card can only say "not applicable" — spending the first slot on a
     non-answer is worse than the problem being fixed.
     """
-    for hub in ACTS:
-        src = _hub(hub)
-        assert src.index(INC) < src.index(CC_INC), hub
+    # On a hub WITHOUT a dump the card can only say "not applicable", and
+    # spending the first slot on a non-answer is worse than the problem being
+    # fixed. That half of the rule is unchanged.
     for hub in CANNOT:
         src = _hub(hub)
         assert src.index(INC) > src.index(CC_INC), hub
+    # On the versions page the rule INVERTS, and deliberately: the affordance
+    # the page exists to offer is the table of builds, and the card answers
+    # about the row you clicked. A card above the rows that feed it would be a
+    # control with nothing chosen.
+    for path in MOUNTS:
+        src = _read(path)
+        assert src.index("Firmware versions") < src.index(INC), path
+        assert "discover=" in src.split(INC)[0], (
+            "%s mounts the card but no row scopes it" % path)
 
 
 def test_discovery_card_starts_open(app):

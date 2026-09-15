@@ -4006,34 +4006,63 @@ upgrade needs.</p>
 restorable from the explorer. Submitting a name the evidence does not condemn is
 answered <code>rejected</code> — the form filters the proposals, it does not authorise
 them.</p>
-<h3 id="305-api-versions-what-each-firmware-line-actually-takes">30.5 API versions: what each firmware line actually takes</h3>
+<h3 id="305-api-versions-what-each-firmware-build-actually-takes">30.5 API versions: what each firmware build actually takes</h3>
 <p><strong>API explorer → API versions</strong> (<code>/web/registry/versions</code>, and the FortiADC
 twin at <code>/adc/api/versions</code>). Also <code>registry_edit</code>.</p>
-<p><strong>Two firmware lines can speak the same API version and still not accept the
-same payload.</strong> FortiWeb 7.6 and 8.0 are both <code>v2.0</code>; measured on this fleet's
-own data, <code>admin</code> has 40 fields on 7.6 and 42 on 8.0, <code>system_global</code> 60 versus
-63, <code>ntp</code> 3 versus 4. If nothing tracks that, a payload built against one line
-and written to the other fails on the appliance — which is the wrong place to
-find out.</p>
-<p>The page has four parts:</p>
+<p><strong>Two firmware builds can speak the same API version and still not accept the
+same payload — and so can two builds of the same line.</strong> FortiWeb 7.6 and 8.0
+are both <code>v2.0</code>; measured on this fleet's own data, <code>admin</code> has 40 fields on 7.6
+and 42 on 8.0, <code>system_global</code> 60 versus 63, <code>ntp</code> 3 versus 4. And <code>8.0.4</code> and
+<code>8.0.7</code> are both "8.0" while their CLI is not the same. If nothing tracks that,
+a payload built against one build and written to another fails on the appliance
+— which is the wrong place to find out.</p>
+<p>So <strong>the unit of evidence here is the full version</strong> (<code>8.0.5</code>). The line
+(<code>8.0</code>) survives as a rollup, and it always declares which builds it merged.</p>
+<p>The page has five parts:</p>
 <ol>
-<li><strong>Firmware lines</strong> — every line SATOM has evidence for, whether any appliance
-   in the fleet still runs it, which appliances witnessed it, and how much was
-   measured. A line marked <strong>not in fleet</strong> is archived evidence, and says so;
-   FortiWeb 8.0 is in exactly that state today.</li>
+<li><strong>Firmware versions</strong> — one row per build SATOM knows of: what it was
+   measured to serve, which appliances witnessed it, which CLI dump was
+   captured on it, and <em>why SATOM knows about it at all</em> — an uploaded firmware
+   image, an appliance running it, or an operator declaring it by hand. A build
+   that is registered and never swept reads <strong><code>declared · unmeasured</code></strong>, which
+   is not the same as a measured build that turned out empty.
+   Each row also carries a <strong>Discovery run</strong> button, scoped to that build.</li>
+<li><strong>Firmware lines</strong> — the rollup. Every row lists the builds it merged, flags
+   itself <strong>heterogeneous</strong> when there is more than one, and lists separately
+   the endpoints only <em>some</em> of those builds served. Those are reported as
+   <strong>partial</strong>, never as "the line serves it".</li>
 <li><strong>Witnesses excluded</strong> — the same honesty as §30.4: an unhealthy device is
    not evidence.</li>
-<li><strong>Compare two lines</strong> — endpoints added and removed, fields added and
-   removed per object, plus two buckets that are <em>not</em> changes: <strong>known on one
-   side only</strong> (nobody measured the other) and <strong>incomparable</strong> (the two sides
-   were measured by different means). Those exist because a naive subtraction
-   reported 56 phantom removals on the first draft of this page.</li>
+<li><strong>Compare two of them</strong> — build against build, or rollup against rollup:
+   endpoints added and removed, fields added and removed per object, plus two
+   buckets that are <em>not</em> changes: <strong>known on one side only</strong> (nobody measured
+   the other) and <strong>incomparable</strong> (the two sides were measured by different
+   means). Those exist because a naive subtraction reported 56 phantom removals
+   on the first draft of this page. Comparing a rollup says so, and names the
+   builds inside it.</li>
 <li><strong>Preflight</strong> — name an object and the fields you intend to send, and get
-   <code>ok</code>, <code>unknown_fields</code>, <code>absent</code>, <code>fields_unknown</code> or <code>unmeasured</code>.</li>
+   <code>ok</code>, <code>unknown_fields</code>, <code>absent</code>, <code>fields_unknown</code>, <code>version_unmeasured</code> or
+   <code>unmeasured</code>.</li>
 </ol>
-<p><strong><code>unmeasured</code> is an answer, never a yes.</strong> If SATOM has never seen that line,
+<p><strong><code>unmeasured</code> is an answer, never a yes.</strong> If SATOM has never seen that build,
 it says so rather than guessing; the fix is to sweep an appliance running it, or
 harvest its field schemas, and press <strong>Rebuild</strong>.</p>
+<p><strong><code>version_unmeasured</code> is the narrower one, and it is the whole point of the
+build axis.</strong> It means <em>that build</em> has no evidence while other builds of its
+line do — and SATOM will not answer for it out of theirs, because 8.0.4 is not
+8.0.7. It is not a refusal either: the line-granular answer is printed beside
+it, labelled, so you can see what <em>is</em> known and decide.</p>
+<p><strong>Registering a build.</strong> Versions already proved by an uploaded firmware image
+or by an appliance in the fleet appear on their own — they are derived on every
+read, so no upload path can forget to register one. The form at the foot of the
+table is for the builds nothing proves yet ("8.0.7 is coming and I want to see
+its column"). Forgetting one only removes the hand-written note; a build an
+image or an appliance proves stays listed.</p>
+<p><strong>A matrix built before 2026-09-16</strong> has no per-build rows, and the page says so
+rather than reinterpreting it. It is deliberately <em>not</em> rebuilt for you: a
+rebuild drops every witness whose appliance row has since been deleted, and
+doing that as a side effect of opening a page would destroy evidence. Press
+<strong>Rebuild</strong> when that is what you want.</p>
 <p>The same answers are available on a node whose web interface is down:</p>
 <pre><code>satom get api versions
 satom get api preflight {device} admin fortiai old-password

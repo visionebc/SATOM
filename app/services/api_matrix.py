@@ -115,6 +115,37 @@ def firmware_line(version: str | None) -> str:
     return f"{m.group(1)}.{m.group(2)}" if m else ""
 
 
+def firmware_version(version: str | None) -> str:
+    """``"8.0.3,build0123"`` → ``"8.0.3"``. The ATOMIC evidence key.
+
+    Delegates to :func:`app.services.firmware_versions.normalize` so the app
+    has exactly one definition of what a version string means. Two definitions
+    is how ``8.0`` and ``8.0.0`` would end up as separate columns describing
+    the same evidence.
+    """
+    from . import firmware_versions as fv
+    return fv.normalize(version)
+
+
+def resolve_scope(matrix: dict, scope: str) -> tuple:
+    """``(doc, kind)`` for a version or line key. ``kind`` is the honest label.
+
+    It NEVER falls back from one kind to the other. A caller that asked about
+    ``8.0.3`` and silently got the ``8.0`` rollup is the bug this module spent
+    a round removing: the rollup merges builds, and merging is what produced
+    *"compatible"* for an endpoint the asking box does not serve.
+    """
+    if not scope:
+        return None, None
+    versions = matrix.get("versions") or {}
+    lines = matrix.get("lines") or {}
+    if scope in versions:
+        return versions[scope], "version"
+    if scope in lines:
+        return lines[scope], "line"
+    return None, None
+
+
 def _read_json(path: str):
     try:
         with open(path) as fh:
@@ -153,14 +184,19 @@ def matrix_path(product: str) -> str:
 # ---------------------------------------------------------------------------
 
 def _live_appliances(product: str) -> dict:
-    """``{appliance_id: {"name","firmware","line"}}`` for appliances that exist.
+    """``{appliance_id: {"name","firmware","version","line"}}`` for live boxes.
 
     Half of ``data/rediscovery/`` belongs to appliances that were deleted, and
     four more are the retired ``*.invalid`` hosts. A firmware line justified by
     a device nobody can re-probe is a claim nobody can reproduce, so the
     witness list is built from the table and the snapshots are filtered by it.
+
+    ``version`` is the FULL string (``8.0.3``); ``line`` is its rollup. Both
+    are carried because they answer different questions and collapsing them is
+    what this round exists to undo.
     """
     from ..models import Appliance
+    from . import firmware_versions as fv
 
     kind = _KIND_FOR.get(product, product)
     out: dict = {}
@@ -169,8 +205,10 @@ def _live_appliances(product: str) -> dict:
             continue
         if str(getattr(ap, "host", "") or "").endswith(".invalid"):
             continue
+        raw = getattr(ap, "fw_version", "") or ap.firmware
         out[ap.id] = {"name": ap.name, "firmware": ap.firmware or "",
-                      "line": firmware_line(getattr(ap, "fw_version", "") or ap.firmware)}
+                      "version": fv.normalize(raw),
+                      "line": firmware_line(raw)}
     return out
 
 
@@ -179,17 +217,29 @@ def _live_appliances(product: str) -> dict:
 # ---------------------------------------------------------------------------
 
 def _sweep_evidence(product: str, witnesses: dict) -> tuple[dict, list]:
-    """``({line: {endpoint: record}}, [device_note, ...])`` from the snapshots.
+    """``({version: {endpoint: record}}, [note, ...])`` from the snapshot archive.
 
-    A record accumulates across every witness on that line:
-    ``verdict`` (worst-case is never used — see below), ``fields`` (union of
-    the keys of every object read back, or ``None`` if no witness ever saw a
-    row) and the devices that contributed.
+    The key changed from LINE to FULL VERSION, and that is the whole point of
+    this round. Measured on this fleet on 2026-09-15: ``fortiweb16`` and
+    ``fortiweb17`` report **8.0.3**, appliance 34 reports **8.0.5**, all three
+    were folded into ``8.0``, and the merge rule below is *"OK from any healthy
+    witness wins"* — so an endpoint served only by 8.0.5 was attributed to the
+    line, and ``preflight`` answered **compatible** for a 8.0.3 box about
+    something that box does not serve.
+
+    Evidence is read from ``<id>/by-version/<version>.json`` (every version that
+    device was ever swept at) and falls back to ``<id>/_config.json`` for a
+    device whose archive has not been backfilled yet. The fallback is a
+    fallback, never a merge: when the archive holds the same version, the
+    archive wins, because ``_config.json`` is whatever the last sweep left and
+    the archive entry is that version's own file.
     """
-    lines: dict = {}
+    from . import firmware_versions as fv
+
+    versions: dict = {}
     notes: list = []
     if not os.path.isdir(REDISCOVERY_ROOT):
-        return lines, notes
+        return versions, notes
 
     for entry in sorted(os.listdir(REDISCOVERY_ROOT)):
         try:
@@ -199,78 +249,96 @@ def _sweep_evidence(product: str, witnesses: dict) -> tuple[dict, list]:
         wit = witnesses.get(aid)
         if wit is None:
             continue
-        snap = _read_json(os.path.join(REDISCOVERY_ROOT, entry, "_config.json"))
-        if not isinstance(snap, dict):
-            continue
-        ledger = snap.get("endpoint_status") or {}
-        if not ledger:
-            notes.append({"device": wit["name"], "skipped": "pre-ledger snapshot"})
-            continue
 
-        # The line comes from the SNAPSHOT, not from the appliance row: the
-        # snapshot records the firmware the sweep actually measured against,
-        # and the row can have been upgraded since.
-        line = firmware_line(snap.get("firmware") or wit["firmware"])
-        if not line:
-            notes.append({"device": wit["name"], "skipped": "snapshot has no firmware"})
-            continue
-
-        errs = sum(1 for v in ledger.values() if v.get("verdict") == VERDICT_ERROR)
-        if errs and errs / max(len(ledger), 1) > MAX_ERROR_RATIO:
-            notes.append({"device": wit["name"], "line": line,
-                          "skipped": "%d/%d endpoints errored — the device is "
-                                     "unhealthy, not the catalog" % (errs, len(ledger))})
-            continue
-
-        at = str(snap.get("generated_at") or "")[:19]
-        bucket = lines.setdefault(line, {})
-
-        # field keys, per endpoint, out of the objects the sweep read back
-        seen_fields: dict = {}
-        for _section, eps in (snap.get("sections") or {}).items():
-            if not isinstance(eps, dict):
-                continue
-            for ep_name, rows in eps.items():
-                if not isinstance(rows, list):
+        snaps: dict = {}
+        vdir = os.path.join(REDISCOVERY_ROOT, entry, "by-version")
+        if os.path.isdir(vdir):
+            for fname in sorted(os.listdir(vdir)):
+                if not fname.endswith(".json"):
                     continue
-                keys: set = set()
-                for row in rows:
-                    if isinstance(row, dict):
-                        keys.update(str(k) for k in row.keys())
-                if keys:
-                    seen_fields.setdefault(ep_name, set()).update(keys)
+                doc = _read_json(os.path.join(vdir, fname))
+                if isinstance(doc, dict):
+                    snaps[fname[:-5]] = doc
+        latest = _read_json(os.path.join(REDISCOVERY_ROOT, entry, "_config.json"))
+        if isinstance(latest, dict):
+            v = fv.normalize(latest.get("firmware"))
+            if v and v not in snaps:
+                snaps[v] = latest
+            elif not v and not snaps:
+                # A snapshot that never recorded its firmware cannot be filed
+                # under a version, and guessing one would credit this evidence
+                # to a build nobody measured.
+                notes.append({"device": wit["name"],
+                              "skipped": "snapshot has no firmware"})
 
-        for ep_name, info in ledger.items():
-            verdict = info.get("verdict") or VERDICT_ERROR
-            rec = bucket.setdefault(ep_name, {
-                "endpoint": ep_name, "urn": info.get("urn") or "",
-                "section": info.get("section") or "",
-                "verdict": None, "fields": None, "origin": "sweep",
-                "devices": [], "measured_at": at,
-            })
-            rec["devices"].append(wit["name"])
-            if at > (rec["measured_at"] or ""):
-                rec["measured_at"] = at
+        for version, snap in sorted(snaps.items(), key=lambda kv: fv.sort_key(kv[0])):
+            _absorb_snapshot(versions, notes, wit, version, snap)
 
-            # Verdict merge: OK from ANY healthy witness on the line wins.
-            # Absence is a claim about the firmware, so one device that served
-            # it disproves every device that did not. An error contributes
-            # nothing either way — it is a statement about that box.
-            if verdict == VERDICT_OK:
-                rec["verdict"] = VERDICT_OK
-            elif verdict == VERDICT_ABSENT and rec["verdict"] != VERDICT_OK:
-                rec["verdict"] = VERDICT_ABSENT
-            elif rec["verdict"] is None:
-                rec["verdict"] = VERDICT_ERROR
+    return versions, notes
 
-            keys = seen_fields.get(ep_name)
+
+def _absorb_snapshot(versions: dict, notes: list, wit: dict,
+                     version: str, snap: dict) -> None:
+    """Fold one device-at-one-version snapshot into the version bucket."""
+    ledger = snap.get("endpoint_status") or {}
+    if not ledger:
+        notes.append({"device": wit["name"], "version": version,
+                      "skipped": "pre-ledger snapshot"})
+        return
+
+    errs = sum(1 for v in ledger.values() if v.get("verdict") == VERDICT_ERROR)
+    if errs and errs / max(len(ledger), 1) > MAX_ERROR_RATIO:
+        notes.append({"device": wit["name"], "version": version,
+                      "line": version.rsplit(".", 1)[0] if version.count(".") > 1 else version,
+                      "skipped": "%d/%d endpoints errored — the device is "
+                                 "unhealthy, not the catalog" % (errs, len(ledger))})
+        return
+
+    at = str(snap.get("generated_at") or "")[:19]
+    bucket = versions.setdefault(version, {})
+
+    seen_fields: dict = {}
+    for _section, eps in (snap.get("sections") or {}).items():
+        if not isinstance(eps, dict):
+            continue
+        for ep_name, rows in eps.items():
+            if not isinstance(rows, list):
+                continue
+            keys: set = set()
+            for row in rows:
+                if isinstance(row, dict):
+                    keys.update(str(k) for k in row.keys())
             if keys:
-                # RULE 1: only a row with keys creates a field set. ``ok`` with
-                # zero rows leaves ``fields`` at None = "exists, contents
-                # unknown" — the diff must not read that as "has no fields".
-                rec["fields"] = sorted(set(rec["fields"] or []) | keys)
+                seen_fields.setdefault(ep_name, set()).update(keys)
 
-    return lines, notes
+    for ep_name, info in ledger.items():
+        verdict = info.get("verdict") or VERDICT_ERROR
+        rec = bucket.setdefault(ep_name, {
+            "endpoint": ep_name, "urn": info.get("urn") or "",
+            "section": info.get("section") or "",
+            "verdict": None, "fields": None, "origin": "sweep",
+            "devices": [], "measured_at": at,
+        })
+        if wit["name"] not in rec["devices"]:
+            rec["devices"].append(wit["name"])
+        if at > (rec["measured_at"] or ""):
+            rec["measured_at"] = at
+
+        # Verdict merge, now WITHIN one version. Two boxes running the same
+        # build are genuinely interchangeable evidence; two boxes running
+        # different builds are not, and that distinction is what this key
+        # change buys.
+        if verdict == VERDICT_OK:
+            rec["verdict"] = VERDICT_OK
+        elif verdict == VERDICT_ABSENT and rec["verdict"] != VERDICT_OK:
+            rec["verdict"] = VERDICT_ABSENT
+        elif rec["verdict"] is None:
+            rec["verdict"] = VERDICT_ERROR
+
+        keys = seen_fields.get(ep_name)
+        if keys:
+            # RULE 1: only a row with keys creates a field set.
+            rec["fields"] = sorted(set(rec["fields"] or []) | keys)
 
 
 # ---------------------------------------------------------------------------
@@ -317,37 +385,141 @@ def _schema_evidence(product: str) -> dict:
 # ---------------------------------------------------------------------------
 
 def build(product: str) -> dict:
-    """Derive the whole matrix for one product. Pure read — writes nothing."""
+    """Derive the whole matrix for one product. Pure read — writes nothing.
+
+    Two axes come out of here and they are not the same kind of thing:
+
+    * ``versions`` — the ATOMIC evidence, one bucket per full firmware version
+      (``8.0.3``). Nothing is merged across builds.
+    * ``lines`` — the ``major.minor`` ROLLUP. The aggregation argument that
+      shaped the first version of this module is still right *for aggregating*;
+      what was wrong was aggregating in silence. A rollup now always declares
+      ``versions`` it is made of, ``heterogeneous``, and — per endpoint —
+      ``attested_on`` / ``silent_on``, so "8.0 serves this" can never again be
+      read as "every 8.0.x serves this".
+    """
+    from . import firmware_versions as fv
+
     witnesses = _live_appliances(product)
     sweep, notes = _sweep_evidence(product, witnesses)
     schema = _schema_evidence(product)
 
+    # Declarations are NOT baked in here. The file this builds is DERIVED
+    # evidence; a declaration is authored data in Postgres, and
+    # ``firmware_versions.overlay`` merges the two on read. Persisting one into
+    # the other was a measured defect: forgetting a declaration left its row on
+    # the page forever, because the next ``load`` read it back out of the file
+    # that had captured it. Two stores, one merge point, and the merge point is
+    # the reader.
+    fleet_versions = sorted({w["version"] for w in witnesses.values() if w["version"]},
+                            key=fv.sort_key)
     fleet_lines = sorted({w["line"] for w in witnesses.values() if w["line"]})
-    all_lines = sorted(set(sweep) | set(schema))
 
-    lines: dict = {}
-    for line in all_lines:
-        eps = {}
-        for name, rec in (sweep.get(line) or {}).items():
-            eps[name] = dict(rec)
+    # --- the atomic axis ---------------------------------------------------
+    versions: dict = {}
+    for version in sorted(sweep, key=fv.sort_key):
+        eps = {name: dict(rec) for name, rec in (sweep.get(version) or {}).items()}
+        line = fv.line_of(version)
+        # Schema evidence is harvested per LINE (``data/field_schemas/<product>/
+        # <line>/``), so it cannot be attributed to one build. It is carried
+        # here LABELLED ``granularity: line`` rather than dropped — dropping it
+        # would make every version look field-blind — and never silently, so a
+        # reader can tell a build-level measurement from a line-level one.
         objects = {}
         for obj, rec in (schema.get(line) or {}).items():
-            objects[obj] = dict(rec)
+            objects[obj] = dict(rec, granularity="line", line=line)
+        meta = {"version": version, "line": line,
+                "line_only": fv.is_line_only(version),
+                "sources": [fv.SOURCE_EVIDENCE], "manual": False,
+                "declared": False, "measured": True}
         ok = sum(1 for r in eps.values() if r["verdict"] == VERDICT_OK)
         absent = sum(1 for r in eps.values() if r["verdict"] == VERDICT_ABSENT)
-        with_fields = sum(1 for r in eps.values() if r["fields"])
-        lines[line] = {
-            "line": line,
-            "in_fleet": line in fleet_lines,
+        versions[version] = {
+            **meta,
+            "version": version, "line": line,
+            "in_fleet": version in fleet_versions,
+            "measured": bool(eps),
             "devices": sorted({d for r in eps.values() for d in r["devices"]}),
-            "endpoints": eps,
-            "objects": objects,
+            "endpoints": eps, "objects": objects,
             "counts": {
                 "swept": len(eps), "ok": ok, "absent": absent,
                 "error": len(eps) - ok - absent,
-                "endpoints_with_fields": with_fields,
+                "endpoints_with_fields": sum(1 for r in eps.values() if r["fields"]),
                 "schema_objects": len(objects),
                 "schema_fields": sum(len(r["fields"] or []) for r in objects.values()),
+            },
+        }
+
+    # --- the rollup --------------------------------------------------------
+    all_lines = sorted({fv.line_of(v) for v in versions if fv.line_of(v)} | set(schema))
+    lines: dict = {}
+    for line in all_lines:
+        members = sorted([v for v in versions if fv.line_of(v) == line], key=fv.sort_key)
+        measured_members = [v for v in members if versions[v]["measured"]]
+
+        eps: dict = {}
+        for version in measured_members:
+            for name, rec in versions[version]["endpoints"].items():
+                agg = eps.setdefault(name, {
+                    "endpoint": name, "urn": rec.get("urn") or "",
+                    "section": rec.get("section") or "",
+                    "verdict": None, "fields": None, "origin": "sweep",
+                    "devices": [], "measured_at": rec.get("measured_at") or "",
+                    "attested_on": [], "silent_on": [],
+                })
+                for d in rec["devices"]:
+                    if d not in agg["devices"]:
+                        agg["devices"].append(d)
+                if (rec.get("measured_at") or "") > (agg["measured_at"] or ""):
+                    agg["measured_at"] = rec.get("measured_at") or ""
+                if rec["verdict"] == VERDICT_OK:
+                    agg["verdict"] = VERDICT_OK
+                    agg["attested_on"].append(version)
+                else:
+                    agg["silent_on"].append(version)
+                    if rec["verdict"] == VERDICT_ABSENT and agg["verdict"] != VERDICT_OK:
+                        agg["verdict"] = VERDICT_ABSENT
+                    elif agg["verdict"] is None:
+                        agg["verdict"] = VERDICT_ERROR
+                if rec.get("fields"):
+                    agg["fields"] = sorted(set(agg["fields"] or []) | set(rec["fields"]))
+
+        # An endpoint attested by SOME but not ALL measured builds of the line
+        # is the exact shape of the false positive. It is counted and listed,
+        # never folded into "the line serves it".
+        partial = [
+            {"endpoint": name, "attested_on": r["attested_on"],
+             "silent_on": r["silent_on"], "urn": r.get("urn", "")}
+            for name, r in sorted(eps.items())
+            if r["attested_on"] and r["silent_on"]
+        ]
+
+        objects = {obj: dict(rec) for obj, rec in (schema.get(line) or {}).items()}
+        ok = sum(1 for r in eps.values() if r["verdict"] == VERDICT_OK)
+        absent = sum(1 for r in eps.values() if r["verdict"] == VERDICT_ABSENT)
+        lines[line] = {
+            "line": line,
+            "in_fleet": line in fleet_lines,
+            "versions": members,
+            "measured_versions": measured_members,
+            "declared_versions": [v for v in members if versions[v].get("declared")],
+            # A line built from more than one measured build cannot speak for
+            # any single one of them without saying so.
+            "heterogeneous": len(measured_members) > 1,
+            "measured": bool(eps) or bool(objects),
+            "devices": sorted({d for r in eps.values() for d in r["devices"]}),
+            "endpoints": eps,
+            "objects": objects,
+            "partial_endpoints": partial,
+            "counts": {
+                "swept": len(eps), "ok": ok, "absent": absent,
+                "error": len(eps) - ok - absent,
+                "endpoints_with_fields": sum(1 for r in eps.values() if r["fields"]),
+                "schema_objects": len(objects),
+                "schema_fields": sum(len(r["fields"] or []) for r in objects.values()),
+                "versions": len(members),
+                "measured_versions": len(measured_members),
+                "partial": len(partial),
             },
         }
 
@@ -356,8 +528,10 @@ def build(product: str) -> dict:
         "built_at": datetime.utcnow().isoformat(timespec="seconds"),
         "sweepable": product in SWEPT_PRODUCTS,
         "fleet_lines": fleet_lines,
+        "fleet_versions": fleet_versions,
         "witnesses": [{"id": k, **v} for k, v in sorted(witnesses.items())],
         "notes": notes,
+        "versions": versions,
         "lines": lines,
     }
 
@@ -369,10 +543,42 @@ def rebuild(product: str) -> dict:
     return matrix
 
 
+def _adapt_pre_version(doc: dict) -> dict:
+    """Make a line-only matrix (written before 2026-09-16) safe to read.
+
+    It is deliberately NOT rebuilt here. ``build`` filters witnesses through
+    the live appliance table, so a rebuild silently drops every line whose
+    witnesses have since been deleted — ``fortiadc``'s whole 8.0 line is in
+    that position today. Destroying evidence as a side effect of somebody
+    opening a page is not an upgrade path.
+
+    So the old document is served as-is, with an empty version axis and
+    ``stale_format`` set. The page can then say "rebuild me" and
+    :func:`preflight` can refuse to answer a BUILD-scoped question out of
+    LINE-scoped data — which is the whole point of the round that introduced
+    the axis.
+    """
+    doc = dict(doc, versions={}, fleet_versions=[], stale_format=True)
+    for ln in (doc.get("lines") or {}).values():
+        ln.setdefault("versions", [])
+        ln.setdefault("measured_versions", [])
+        ln.setdefault("declared_versions", [])
+        ln.setdefault("heterogeneous", False)
+        ln.setdefault("partial_endpoints", [])
+        ln.setdefault("measured", True)
+        counts = ln.setdefault("counts", {})
+        counts.setdefault("partial", 0)
+        counts.setdefault("versions", 0)
+        counts.setdefault("measured_versions", 0)
+    return doc
+
+
 def load(product: str, rebuild_if_missing: bool = True) -> dict | None:
     """The stored matrix, rebuilt on first access when absent."""
     doc = _read_json(matrix_path(product))
     if isinstance(doc, dict) and doc.get("product") == product:
+        if "versions" not in doc:
+            return _adapt_pre_version(doc)
         return doc
     if rebuild_if_missing:
         try:
@@ -389,14 +595,21 @@ def load(product: str, rebuild_if_missing: bool = True) -> dict | None:
 def diff(product: str, base_line: str, target_line: str, matrix: dict | None = None) -> dict:
     """What ``target_line`` adds/removes relative to ``base_line``.
 
+    Both arguments may name a full version (``8.0.3``) or a line (``8.0``);
+    :func:`resolve_scope` decides which, and the answer reports ``base_kind`` /
+    ``target_kind`` so a reader is never left guessing whether a difference was
+    measured between two builds or between two merged rollups.
+
     Every bucket here is separated by WHY, because "8.0 has a field 7.6 does
     not" and "nobody ever measured that endpoint on 7.6" look identical in a
     naive set difference and mean opposite things to whoever is about to write
     a payload.
     """
-    matrix = matrix or load(product) or {"lines": {}}
-    a = (matrix.get("lines") or {}).get(base_line) or {}
-    b = (matrix.get("lines") or {}).get(target_line) or {}
+    matrix = matrix or load(product) or {"lines": {}, "versions": {}}
+    a, a_kind = resolve_scope(matrix, base_line)
+    b, b_kind = resolve_scope(matrix, target_line)
+    a = a or {}
+    b = b or {}
     a_eps, b_eps = a.get("endpoints") or {}, b.get("endpoints") or {}
     a_obj, b_obj = a.get("objects") or {}, b.get("objects") or {}
 
@@ -412,9 +625,13 @@ def diff(product: str, base_line: str, target_line: str, matrix: dict | None = N
                                       "measured_on": base_line if ra else target_line})
             continue
         if _served(rb) and not _served(ra) and ra.get("verdict") == VERDICT_ABSENT:
-            endpoints_added.append({"endpoint": name, "urn": rb.get("urn", "")})
+            endpoints_added.append({"endpoint": name, "urn": rb.get("urn", ""),
+                                    "attested_on": rb.get("attested_on") or [],
+                                    "silent_on": rb.get("silent_on") or []})
         elif _served(ra) and not _served(rb) and rb.get("verdict") == VERDICT_ABSENT:
-            endpoints_removed.append({"endpoint": name, "urn": ra.get("urn", "")})
+            endpoints_removed.append({"endpoint": name, "urn": ra.get("urn", ""),
+                                      "attested_on": ra.get("attested_on") or [],
+                                      "silent_on": ra.get("silent_on") or []})
 
     # --- field deltas, compared ONLY within one kind of evidence ------------
     fields_changed, fields_unknown, fields_incomparable = [], [], []
@@ -474,9 +691,17 @@ def diff(product: str, base_line: str, target_line: str, matrix: dict | None = N
                     "base_count": len(ia[origin]), "target_count": len(ib[origin]),
                 })
 
+    # A delta computed between two ROLLUPS carries every build each rollup
+    # merged. Without it "8.0 adds X" is unfalsifiable: the reader cannot tell
+    # whether X was seen on one build or on all of them.
     return {
         "product": product, "base": base_line, "target": target_line,
+        "base_kind": a_kind, "target_kind": b_kind,
         "base_known": bool(a), "target_known": bool(b),
+        "base_versions": a.get("measured_versions") or ([base_line] if a_kind == "version" else []),
+        "target_versions": b.get("measured_versions") or ([target_line] if b_kind == "version" else []),
+        "base_heterogeneous": bool(a.get("heterogeneous")),
+        "target_heterogeneous": bool(b.get("heterogeneous")),
         "endpoints_added": endpoints_added,
         "endpoints_removed": endpoints_removed,
         "endpoints_unknown": endpoints_unknown,
@@ -499,12 +724,81 @@ STATUS_UNMEASURED = "unmeasured"
 STATUS_ABSENT = "absent"
 STATUS_FIELDS_UNKNOWN = "fields_unknown"
 STATUS_UNKNOWN_FIELDS = "unknown_fields"
+#: The caller asked about a BUILD nobody measured. Deliberately not folded into
+#: ``unmeasured``: that word also covers "this product has no evidence at all",
+#: and the two demand different next actions — one needs any sweep, the other
+#: needs a sweep of THAT build while its siblings already have one.
+STATUS_VERSION_UNMEASURED = "version_unmeasured"
+
+
+def _answer(doc: dict, kind: str, scope: str, key: str, keys: list) -> dict:
+    """The verdict for one already-resolved scope. Never resolves anything."""
+    base = {"status": None, "line": scope, "scope": scope, "scope_kind": kind,
+            "key": key, "unknown": [], "known": []}
+    if kind == "line":
+        base["rollup"] = True
+        base["rollup_versions"] = doc.get("measured_versions") or []
+        base["heterogeneous"] = bool(doc.get("heterogeneous"))
+
+    ep = (doc.get("endpoints") or {}).get(key)
+    obj = (doc.get("objects") or {}).get(key)
+    if ep is None and obj is None:
+        return {**base, "status": STATUS_UNMEASURED,
+                "reason": "%r was never measured on %s" % (key, scope)}
+
+    if ep is not None:
+        # A rollup answer that rests on SOME of its builds says which. The
+        # caller is about to write to one specific box, and "the line serves
+        # it" is not the same claim as "the build you are writing to serves
+        # it" — folding them is the false positive this module was rebuilt to
+        # remove.
+        if ep.get("attested_on") is not None:
+            base["attested_on"] = ep.get("attested_on") or []
+            base["silent_on"] = ep.get("silent_on") or []
+            base["partial"] = bool(base["attested_on"] and base["silent_on"])
+
+    if ep is not None and ep.get("verdict") == VERDICT_ABSENT and not (obj and obj.get("fields")):
+        return {**base, "status": STATUS_ABSENT, "unknown": keys,
+                "reason": "%r is not served by %s (the appliance rejected the "
+                          "URN)" % (key, scope)}
+
+    known: set = set()
+    origins = []
+    line_granular = []
+    if obj and obj.get("fields"):
+        known |= set(obj["fields"])
+        origins.append("schema")
+        # Field schemas are harvested per LINE, so on a VERSION scope they are
+        # the weaker claim. Labelled rather than dropped: dropping would make
+        # every build look field-blind, and silence would make a line-granular
+        # fact read as a build-granular one.
+        if kind == "version" and obj.get("granularity") == "line":
+            line_granular.append("schema")
+    if ep and ep.get("fields"):
+        known |= set(ep["fields"])
+        origins.append("sweep")
+    if not known:
+        return {**base, "status": STATUS_FIELDS_UNKNOWN, "origins": origins,
+                "reason": "%r exists on %s but no evidence records its fields "
+                          "(the endpoint answered with an empty collection)"
+                          % (key, scope)}
+
+    unknown = [k for k in keys if k not in known]
+    return {
+        **base,
+        "status": STATUS_UNKNOWN_FIELDS if unknown else STATUS_OK,
+        "origins": origins, "line_granular_origins": line_granular,
+        "unknown": unknown, "known": [k for k in keys if k in known],
+        "reason": ("%d field(s) not present on %s: %s"
+                   % (len(unknown), scope, ", ".join(unknown))) if unknown else "",
+    }
 
 
 def preflight(product: str, line: str, key: str, keys,
               matrix: dict | None = None) -> dict:
     """Would a payload of ``keys`` for ``key`` be understood on ``line``?
 
+    ``line`` may name a full firmware version (``8.0.3``) or a line (``8.0``).
     ``key`` is an endpoint name (sweep evidence) or a provisioning object name
     (schema evidence) — the two namespaces overlap and both are consulted.
 
@@ -512,73 +806,79 @@ def preflight(product: str, line: str, key: str, keys,
     different answers and the caller must be able to tell them apart, because
     one of them means "go ahead" and the other means "you are about to write
     to a device on the basis of nothing".
+
+    RULE 4, added this round: **a version with no evidence is never answered
+    from its line.** ``8.0.5`` is not ``8.0.3``, the fleet holds both, and the
+    old code merged them — so an endpoint measured only on 8.0.3 came back
+    ``ok`` for a 8.0.5 box. The new answer is ``version_unmeasured``, and it
+    **carries the line-granular answer beside it, labelled**, rather than
+    withholding it: a refusal that hides what IS known is how a correct guard
+    gets routed around.
     """
+    from . import firmware_versions as fv
+
     keys = sorted({str(k) for k in (keys or [])})
-    matrix = matrix or load(product) or {"lines": {}}
-    doc = (matrix.get("lines") or {}).get(line)
-    if not doc:
-        return {"status": STATUS_UNMEASURED, "line": line, "key": key,
-                "unknown": [], "known": [],
-                "reason": "no evidence for %s line %s — sweep an appliance on "
-                          "that line, or harvest its field schemas, before "
-                          "trusting a payload built for another line"
-                          % (product, line or "?")}
+    matrix = matrix or load(product) or {"lines": {}, "versions": {}}
+    doc, kind = resolve_scope(matrix, line)
 
-    ep = (doc.get("endpoints") or {}).get(key)
-    obj = (doc.get("objects") or {}).get(key)
-    if ep is None and obj is None:
-        return {"status": STATUS_UNMEASURED, "line": line, "key": key,
-                "unknown": [], "known": [],
-                "reason": "%r was never measured on %s" % (key, line)}
+    if doc is not None:
+        return _answer(doc, kind, line, key, keys)
 
-    if ep is not None and ep.get("verdict") == VERDICT_ABSENT and not (obj and obj.get("fields")):
-        return {"status": STATUS_ABSENT, "line": line, "key": key,
-                "unknown": keys, "known": [],
-                "reason": "%r is not served by %s (the appliance rejected the "
-                          "URN)" % (key, line)}
+    if line and not fv.is_line_only(line):
+        parent = fv.line_of(line)
+        ldoc = (matrix.get("lines") or {}).get(parent)
+        if ldoc:
+            siblings = ldoc.get("measured_versions") or []
+            stale = (" The stored matrix predates version indexing — rebuild "
+                     "it before reading this as a fact about %s."
+                     % parent) if matrix.get("stale_format") else ""
+            return {
+                "status": STATUS_VERSION_UNMEASURED, "line": line, "scope": line,
+                "stale_format": bool(matrix.get("stale_format")),
+                "scope_kind": "version", "key": key, "unknown": [], "known": [],
+                "measured_siblings": siblings, "rollup_line": parent,
+                "line_answer": _answer(ldoc, "line", parent, key, keys),
+                "reason": "%s has no evidence of its own. The %s line was "
+                          "measured on %s — what those builds serve is not "
+                          "proof about this one. The line-granular answer is "
+                          "reported beside this one, labelled."
+                          % (line, parent, ", ".join(siblings) or "nothing") + stale,
+            }
 
-    known: set = set()
-    origins = []
-    if obj and obj.get("fields"):
-        known |= set(obj["fields"])
-        origins.append("schema")
-    if ep and ep.get("fields"):
-        known |= set(ep["fields"])
-        origins.append("sweep")
-    if not known:
-        return {"status": STATUS_FIELDS_UNKNOWN, "line": line, "key": key,
-                "unknown": [], "known": [],
-                "reason": "%r exists on %s but no evidence records its fields "
-                          "(the endpoint answered with an empty collection)"
-                          % (key, line)}
-
-    unknown = [k for k in keys if k not in known]
-    return {
-        "status": STATUS_UNKNOWN_FIELDS if unknown else STATUS_OK,
-        "line": line, "key": key, "origins": origins,
-        "unknown": unknown, "known": [k for k in keys if k in known],
-        "reason": ("%d field(s) not present on %s: %s"
-                   % (len(unknown), line, ", ".join(unknown))) if unknown else "",
-    }
+    return {"status": STATUS_UNMEASURED, "line": line, "scope": line,
+            "scope_kind": None, "key": key, "unknown": [], "known": [],
+            "reason": "no evidence for %s %s — sweep an appliance on "
+                      "that version, or harvest its field schemas, before "
+                      "trusting a payload built for another one"
+                      % (product, line or "?")}
 
 
 def preflight_for_appliance(appliance, key: str, keys) -> dict:
-    """``preflight`` with the line taken from the appliance's running firmware."""
+    """``preflight`` scoped to the appliance's EXACT running firmware.
+
+    The full version, not the line. This is the call site the false positive
+    came out of: the box reports ``8.0.3``, the line rollup held evidence from
+    ``8.0.5``, and the merge answered ``ok``.
+    """
+    from . import firmware_versions as fv
+
     product = _KIND_FOR.get(getattr(appliance, "kind", ""), getattr(appliance, "kind", ""))
-    line = firmware_line(getattr(appliance, "fw_version", "") or
-                         getattr(appliance, "firmware", ""))
-    if not line:
-        return {"status": STATUS_UNMEASURED, "line": "", "key": key,
-                "unknown": [], "known": [],
+    raw = (getattr(appliance, "fw_version", "") or
+           getattr(appliance, "firmware", ""))
+    version = fv.normalize(raw)
+    if not version:
+        return {"status": STATUS_UNMEASURED, "line": "", "scope": "",
+                "scope_kind": None, "key": key, "unknown": [], "known": [],
                 "reason": "%s has no known firmware — SATOM cannot tell which "
                           "API surface it serves" % getattr(appliance, "name", "?")}
-    return preflight(product, line, key, keys)
+    return preflight(product, version, key, keys)
 
 
 __all__ = [
-    "firmware_line", "build", "rebuild", "load", "diff", "preflight",
-    "preflight_for_appliance", "matrix_path", "MATRIX_ROOT",
-    "MATRIX_ROOT_DEFAULT", "REDISCOVERY_ROOT_DEFAULT", "SWEPT_PRODUCTS",
-    "STATUS_OK", "STATUS_UNMEASURED", "STATUS_ABSENT", "STATUS_FIELDS_UNKNOWN",
-    "STATUS_UNKNOWN_FIELDS",
+    "firmware_line", "firmware_version", "resolve_scope", "build", "rebuild",
+    "load", "diff", "preflight", "preflight_for_appliance", "matrix_path",
+    "MATRIX_ROOT", "MATRIX_ROOT_DEFAULT", "REDISCOVERY_ROOT_DEFAULT",
+    "SWEPT_PRODUCTS", "STATUS_OK", "STATUS_UNMEASURED", "STATUS_ABSENT",
+    "STATUS_FIELDS_UNKNOWN", "STATUS_UNKNOWN_FIELDS",
+    "STATUS_VERSION_UNMEASURED",
 ]

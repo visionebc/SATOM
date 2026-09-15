@@ -15174,3 +15174,91 @@ contract are mutated instead.
 - **Slicing a JS object literal on the first `}` cuts inside `{{ _("…") }}`.**
   The phase-label window closed before a single state was in it, and the guard
   failed against correct code. Slice on `};`.
+
+## §176 — evidence per BUILD, and a rollup that declares itself (`tests/test_firmware_version_axis.py`, 2026-09-16)
+
+The failure is silent by construction. `api_matrix` merged every witness on a
+firmware **line** with *"OK from any healthy witness wins"*, so an endpoint
+served by one build was attributed to the line and `preflight` answered
+**compatible** about a box that does not serve it. The page fills, the table
+renders, the answer is wrong — and the caller's next action is a write to a
+production appliance.
+
+### The rules
+
+1. **`8.0` is not `8.0.0`.** A version with no patch component means *the line
+   is known and the build is not*. Widening it mints a build nobody runs and
+   then files real evidence under it.
+2. **Declared is not measured.** An empty MEASURED row reads as *"we asked and
+   there is nothing there"*, which is the opposite of *"nobody ever asked"*.
+3. **Derived declarations are derived, never stored.** Two code paths create
+   `FirmwareImage` rows; hooking both would be one refactor away from a build
+   that silently never appears. The table holds only hand-authored rows.
+4. **A build is never answered from its line.** `version_unmeasured` is a
+   fourth word beside `ok` / `absent` / `unmeasured`, and it carries the
+   line-granular answer **labelled** rather than withholding it.
+5. **A pre-version matrix is adapted, never auto-rebuilt.** A rebuild drops
+   every witness whose appliance row was deleted.
+
+### Verification recipe
+
+```
+runuser -u satom -- ./venv/bin/python -m pytest tests/test_firmware_version_axis.py -q
+python3 /root/r1/mutate1.py     # 45 mutations, rc-measured, restore verified
+```
+
+The mutation that matters most is #29: make `preflight` fall back from a build
+to its line. That is the original defect, and it must turn the suite red.
+
+### Traps paid for here
+
+* `build()` used to bake declarations into the derived matrix file, so
+  **forgetting a declaration left its row on the page forever** — the next
+  `load` read it back out of the file that had captured it. Two stores, one
+  merge point, and the merge point is the reader (`firmware_versions.overlay`).
+* An assertion on `"8.0.9" not in body` is satisfied by the *flash banner* that
+  legitimately names the build. Assert on the ROW (`<code>8.0.9</code>`).
+* A guard run harness that buffers its own stdout shows no progress for an
+  hour. `flush=True`, or `python3 -u`.
+
+
+## §177 — three pages that answered about a firmware nobody chose (`tests/test_version_scoped_pages.py`, 2026-09-16)
+
+One defect, three pages, one line of code each: `cli_coverage.report(product)`
+with no firmware argument returns whichever stored dump sorts first, and none
+of the three said which.
+
+* the **API hub**'s transport badges — all ~517 of them;
+* the **discovery run**, which derived candidate paths from that dump and
+  probed them against whatever appliance a second, unrelated picker offered, so
+  every `absent` it reported was true of that pairing and useless as a
+  statement about a firmware;
+* **`/web/structure/`**, whose whole cross-reference, CLI-only subtree and
+  clone gap come out of the same object.
+
+### The rules
+
+1. **The scope is a FILTER, never a fallback.** No dump on a build means *no
+   evidence for that build*.
+2. **An unknown scope scopes to NOTHING.** Silently widening it is the original
+   defect with a friendlier name.
+3. **"Nobody asked" is not "unmeasured".** With no scope the structure page's
+   *Serves it?* column is blank; rendering it as a verdict puts a claim where a
+   question mark belongs.
+4. **One card, not one per row.** Per-row discovery panels would mean N
+   pollers, N Stop buttons and N jobs competing for one appliance's session
+   limit. The row supplies the scope; the card answers.
+5. **The dependency tree stays unversioned.** It is hand-authored, not
+   measured.
+
+### How the forwarding is asserted
+
+On the **call**, never on the rendered page: a page can look right while
+resting on the wrong dump, and that is the entire failure mode. The `recorder`
+fixture patches `cli_coverage.report` on the MODULE (all three views reach the
+same object) and the guards assert the kwargs it was called with.
+
+The structure guard goes further and walks the AST, requiring **both**
+`version=` and `line=` keywords on every `cli_coverage.report` call in the
+view — because the words appear in the surrounding prose either way.
+

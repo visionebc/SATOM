@@ -435,6 +435,45 @@ removed) recomputes it.
 
 ---
 
+
+### 7.5 The build axis (2026-09-16)
+
+Evidence is keyed by the **full firmware version**, not by the `major.minor`
+line. The line is still computed and still shown, as a **rollup** — and a
+rollup now always declares what it merged.
+
+The reason is a measured false positive. The merge rule for a line is *"OK from
+any healthy witness on the line wins"*, because two appliances on one line were
+assumed interchangeable. They are not: `8.0.4` and `8.0.7` are both "8.0" and
+can differ in both REST and CLI. Under the old key, an endpoint served only by
+one build was attributed to the whole line, and `preflight` answered
+**compatible** for a box that does not serve it — in the one place whose next
+action is a write to a production appliance.
+
+| concept | key | notes |
+| --- | --- | --- |
+| build | `8.0.5` | the atomic unit; one sweep, one dump, one box |
+| line | `8.0` | a rollup; declares `measured_versions` and `heterogeneous` |
+| patch unknown | `8.0` *as a build* | evidence whose patch level was never recorded. **Not** `8.0.0` — that would mint a build nobody runs |
+
+Sweeps are archived per build under
+`data/rediscovery/<appliance_id>/by-version/<version>.json`. `_config.json`
+stays what it always was — the latest sweep — so every existing consumer is
+untouched. There is deliberately **no retention cap**: a cap would drop the
+evidence for a build somebody is still running, which is the failure this
+directory exists to prevent.
+
+`preflight` gains one status:
+
+| status | means |
+| --- | --- |
+| `version_unmeasured` | *that build* has no evidence while siblings of its line do. Never answered from them. The line-granular answer travels beside it, labelled — a guard that hides what is known is a guard people route around. |
+
+CLI dumps carry their build as well as their line, and both filters are
+**filters, never fallbacks**: no dump on `8.0.5` means *no evidence for 8.0.5*,
+not the `8.0.3` dump relabelled.
+
+
 ## 8. Limits & gotchas
 
 - **A "not found" is usually the truth.** The catalog is a cross-firmware

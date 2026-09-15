@@ -35,6 +35,27 @@
     </p>
   </div>
   <div class="d-flex align-items-center gap-2">
+    {# The firmware this page is about. The TREE is the same for every build —
+       it is a hand-authored dependency map, not a measurement, and minting a
+       per-build structure nobody measured would be inventing evidence. What
+       changes per build is what that build SERVES and what its CLI holds, and
+       those are the two columns this selector drives. #}
+    <form method="get" action="{{ url_for('structure.index') }}"
+          class="d-flex align-items-center gap-1 mb-0">
+      {% if show_urn %}<input type="hidden" name="urns" value="1">{% endif %}
+      <label class="text-muted mb-0" style="font-size:12px;">{{ _('Firmware') }}</label>
+      <select name="scope" class="form-select form-select-sm" style="width:auto;"
+              onchange="this.form.submit()">
+        <option value="">{{ _('none chosen — CLI evidence unfiltered') }}</option>
+        {% for v in scope_versions %}
+          <option value="{{ v }}" {% if scope == v %}selected{% endif %}>{{ v }}</option>
+        {% endfor %}
+        {% for ln in scope_lines %}
+          <option value="{{ ln }}" {% if scope == ln %}selected{% endif %}>{{ ln }} ({{ _('line rollup') }})</option>
+        {% endfor %}
+      </select>
+      <noscript><button class="btn btn-sm btn-fw-outline" type="submit">{{ _('Apply') }}</button></noscript>
+    </form>
     {% if show_urn %}
       <a class="btn btn-fw-outline btn-sm" href="{{ url_for('structure.index') }}">
         <i class="bi bi-eye-slash me-1"></i>{{ _('Hide URNs') }}
@@ -123,7 +144,24 @@
                  style="max-width:420px;">
         </div>
       </div>
-      <div class="px-3 pt-3">{{ prov_legend(prov) }}</div>
+      <div class="px-3 pt-3">
+        {# Named, always. A page whose every transport badge comes from one
+           dump, without saying which, is an unattributed claim about an
+           unknown build — and it reads exactly like a confident one. #}
+        {% if not scope %}
+        <div class="alert alert-warning py-2 mb-2" style="font-size:12.5px;">
+          <strong>{{ _('No firmware chosen.') }}</strong>
+          {{ _('The CLI evidence below is whichever stored dump sorted first, and the "serves it" column is blank because nothing was asked about a build. Pick one above to make both columns answerable.') }}
+        </div>
+        {% elif scope_kind == 'line' and scope_heterogeneous %}
+        <div class="alert alert-warning py-2 mb-2" style="font-size:12.5px;">
+          <strong>{{ _('This is a line rollup') }} (<code>{{ scope }}</code>),</strong>
+          {{ _('merging') }} {{ scope_members|join(', ') }}.
+          {{ _('"Served" here means at least one of those builds served it — not the box you are about to write to.') }}
+        </div>
+        {% endif %}
+        {{ prov_legend(prov) }}
+      </div>
       <div class="fw-card-body p-0">
         <table class="fw-table" id="xrefTable">
           <thead>
@@ -131,6 +169,7 @@
               <th style="width:34%;">{{ _('FortiWeb object') }}</th>
               <th>{{ _('URN (REST)') }}</th>
               <th style="width:130px;">{{ _('In registry?') }}</th>
+              <th style="width:150px;">{{ _('Serves it?') }}</th>
               <th style="width:150px;">{{ _('Served by') }}</th>
               <th style="width:90px;">{{ _('Test') }}</th>
             </tr>
@@ -161,6 +200,26 @@
                   <span class="fw-badge fw-badge-danger"><i class="bi bi-x-lg"></i> {{ _('Missing') }}</span>
                 {% else %}
                   <span class="fw-badge fw-badge-secondary">{{ _('grouping') }}</span>
+                {% endif %}
+              </td>
+              {# Whether THIS BUILD serves the endpoint. Three words that never
+                 merge: an endpoint the registry names and the build rejects is
+                 a different problem from one nobody has measured, and both are
+                 different from one the build serves. #}
+              <td>
+                {% if not r.api %}
+                  <span class="text-muted">—</span>
+                {% elif r.api.verdict == 'ok' %}
+                  <span class="fw-badge fw-badge-success">{{ _('served') }}</span>
+                  {% if r.api.silent_on %}<br><span class="fw-badge fw-badge-warning"
+                    title="{{ _('Only some builds of this rollup served it:') }} {{ r.api.attested_on|join(', ') }}">{{ _('partial') }}</span>{% endif %}
+                {% elif r.api.verdict == 'absent' %}
+                  <span class="fw-badge fw-badge-danger">{{ _('absent on this build') }}</span>
+                {% elif r.api.verdict == 'error' %}
+                  <span class="fw-badge fw-badge-warning">{{ _('could not ask') }}</span>
+                {% else %}
+                  <span class="fw-badge fw-badge-secondary"
+                        title="{{ _('No sweep of this build has ever asked about this endpoint.') }}">{{ _('unmeasured') }}</span>
                 {% endif %}
               </td>
               <td>{{ prov_badge(r.cli) }}</td>
@@ -206,7 +265,7 @@
       {% if cli_rows %}<span class="fw-badge fw-badge-warning">{{ cli_rows|selectattr('cli_path')|list|length }}</span>{% endif %}
       {% if cli_evidence %}
         <span class="text-muted" style="font-size:11px;">
-          {{ cli_evidence.appliance }} · {{ cli_evidence.firmware or '?' }} · {{ cli_evidence.created_at }}
+          {{ cli_evidence.appliance }} · {{ cli_evidence.version or cli_evidence.firmware or '?' }} · {{ cli_evidence.created_at }}
         </span>
       {% endif %}
     </span>

@@ -454,9 +454,19 @@ def test_the_run_handler_renders_the_provenance():
 
 
 def test_the_page_renders_with_the_new_card(app, client):
+    """The card moved to the API-versions page on 2026-09-16.
+
+    Retargeted rather than deleted: the rule it protects — ONE appliance
+    selector, and the two-picker regression stays dead — is exactly as
+    load-bearing on the page the card lives on now.
+    """
     login(client, admin_user_id(app))
-    r = client.get("/web/api-explorer/")
+    r = client.get("/web/registry/versions")
     assert r.status_code == 200
     page = r.get_data(as_text=True)
     assert 'id="drAppliance"' in page
     assert "drLoadAppliance" not in page
+    # ...and the hub it left points at it instead of having silently lost it.
+    hub = client.get("/web/api-explorer/").get_data(as_text=True)
+    assert 'id="drAppliance"' not in hub
+    assert "moved to the API-versions page" in hub

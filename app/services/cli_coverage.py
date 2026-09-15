@@ -604,6 +604,12 @@ def evidence_index(product: str | None = None) -> list:
             "firmware": row.firmware or "",
             "product": prod,
             "line": api_matrix.firmware_line(row.firmware),
+            # The FULL version, beside the line. A dump is captured from ONE
+            # box running ONE build, and labelling it only ``8.0`` throws away
+            # the only thing that could ever distinguish 8.0.3's CLI from
+            # 8.0.7's — which is exactly the difference the operator asked
+            # this page to make visible.
+            "version": api_matrix.firmware_version(row.firmware),
             "size_kb": (row.size_bytes or 0) // 1024,
             "source": row.source,
             "usable": False, "reason": "",
@@ -690,7 +696,7 @@ def orphan_dumps() -> list:
 
 
 def report(product: str, backup_id: int | None = None, *,
-           line: str = "") -> dict:
+           line: str = "", version: str = "") -> dict:
     """The whole page payload for one product: evidence list + the diff.
 
     With no ``backup_id`` the newest usable dump for the product is used, so
@@ -706,7 +712,13 @@ def report(product: str, backup_id: int | None = None, *,
     """
     evidence = evidence_index(product) if product in SUPPORTED_PRODUCTS else []
     usable = [e for e in evidence if e["usable"]]
-    if line:
+    # ``version`` is the stricter filter and wins when both are given. Same
+    # never-a-fallback rule as ``line``: no dump on 8.0.5 means *no evidence
+    # for 8.0.5*, not the 8.0.3 dump relabelled. Answering a question about one
+    # build with a capture from another looks exactly like a confident answer.
+    if version:
+        usable = [e for e in usable if e.get("version") == version]
+    elif line:
         usable = [e for e in usable if e.get("line") == line]
     chosen = None
     if backup_id:
@@ -717,17 +729,17 @@ def report(product: str, backup_id: int | None = None, *,
     if chosen is None:
         diff = compare(product, "") if product in SUPPORTED_PRODUCTS else compare(product, "")
         diff["no_evidence"] = True
-        diff["evidence_line"] = line
+        diff["evidence_line"] = version or line
         return {"product": product, "evidence": evidence, "chosen": None,
-                "line_filter": line,
+                "line_filter": line, "version_filter": version,
                 "diff": diff, "orphans": orphan_dumps()}
 
     text, rec = read_dump(chosen["backup_id"])
     diff = compare(product, text, line=chosen.get("line", ""))
     diff["no_evidence"] = not text
-    diff["evidence_line"] = line
+    diff["evidence_line"] = version or line
     return {"product": product, "evidence": evidence, "chosen": rec or chosen,
-            "line_filter": line,
+            "line_filter": line, "version_filter": version,
             "diff": diff, "orphans": orphan_dumps()}
 
 
@@ -1017,13 +1029,14 @@ def provenance_from(diff: dict, evidence: dict | None) -> Provenance:
 
 
 def provenance(product: str, backup_id: int | None = None, *,
-               line: str = "") -> Provenance:
+               line: str = "", version: str = "") -> Provenance:
     """Transport provenance for ``product``, from the best evidence available.
 
-    ``line`` selects evidence captured on one firmware line — see
-    :func:`report`, which owns evidence selection for every caller.
+    ``line`` selects evidence captured on one firmware line and ``version``
+    on one exact build — see :func:`report`, which owns evidence selection for
+    every caller. ``version`` is the stricter of the two and wins.
     """
-    rep = report(product, backup_id, line=line)
+    rep = report(product, backup_id, line=line, version=version)
     return provenance_from(rep["diff"], rep.get("chosen"))
 
 

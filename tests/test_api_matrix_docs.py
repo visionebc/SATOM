@@ -125,7 +125,10 @@ def guide_reconcile_table() -> str:
 
 def guide_matrix_parts() -> str:
     """The numbered walkthrough of the API-versions page, same reason."""
-    return bounded(guide_matrix(), 'The page has four parts:', '\n\n**')
+    # "four" became "five" when the per-BUILD table was added above the line
+    # rollup (2026-09-16). The marker is a literal on both sides on purpose:
+    # a regex here would keep matching while the walkthrough drifted.
+    return bounded(guide_matrix(), 'The page has five parts:', '\n\n**')
 
 
 def guide_exit_codes() -> str:

@@ -69,10 +69,31 @@ def _truthy(name: str) -> bool:
     return (request.form.get(name) or "").strip().lower() in ("1", "true", "on", "yes")
 
 
-def _findings_for(product: str, *, configured_only: bool, limit: int | None):
-    """The plan rows, built from the SAME report the page is showing."""
+def _scope_arg() -> str:
+    """The firmware build this run is about, normalised, or ``""``.
+
+    It arrives from the version row the operator clicked. Normalising here
+    rather than trusting the form is the point: the value chooses which CLI
+    dump the candidates are derived from, and an unnormalised string silently
+    matches nothing, which renders as *"no evidence for this build"* — a
+    sentence that would then be false.
+    """
+    from ..services import firmware_versions
+    return firmware_versions.normalize(request.form.get("version") or "")
+
+
+def _findings_for(product: str, *, configured_only: bool, limit: int | None,
+                  version: str = ""):
+    """The plan rows, built from the SAME report the page is showing.
+
+    ``version`` restricts the evidence to a dump captured on that exact build.
+    It is a FILTER and never a fallback (``cli_coverage.report`` owns that
+    rule): with no dump on 8.0.5 the answer is *no evidence for 8.0.5*, not the
+    8.0.3 dump relabelled. An explicit ``dump`` id still wins, because picking
+    one by hand is a deliberate act and this argument is a default.
+    """
     backup_id = request.form.get("dump", type=int)
-    rep = cli_coverage.report(product, backup_id)
+    rep = cli_coverage.report(product, backup_id, version=version)
     by_name, by_urn = discovery_run.catalog_index(product)
     rows = discovery_run.plan(product, rep["diff"], configured_only=configured_only,
                              by_name=by_name, by_urn=by_urn, limit=limit)
@@ -86,8 +107,9 @@ def plan_payload(product: str):
                         "error": cli_coverage.UNSUPPORTED_REASON.get(
                             product, "this product has no CLI configuration dump")}), 400
     limit = _int_arg("limit", 0) or None
+    scope = _scope_arg()
     rep, rows, _n, _u = _findings_for(product, configured_only=_truthy("configured_only"),
-                                      limit=limit)
+                                      limit=limit, version=scope)
     gets = sum(len(f.candidates) for f in rows)
     return jsonify({
         "ok": True, "product": product,
@@ -100,8 +122,13 @@ def plan_payload(product: str):
         # The plan names its evidence and STOPS there. No version read: this
         # route's whole contract is that it costs the device nothing, and
         # "one harmless status call" is how that contract stops being true.
+        "scope": scope,
         "evidence": (rep.get("chosen") or {}).get("appliance") or "",
         "evidence_line": (rep.get("chosen") or {}).get("line") or "",
+        # The build the dump was captured on, beside its line. A plan whose
+        # cost is quoted against a build it never names is a number the
+        # operator cannot check.
+        "evidence_version": (rep.get("chosen") or {}).get("version") or "",
         "captured": (rep.get("chosen") or {}).get("created_at") or "",
         "findings": [f.to_dict() for f in rows],
     })
@@ -143,8 +170,10 @@ def run_payload(product: str):
                         "job_id": live["id"], "product": product,
                         "device": appliance.name})
 
+    scope = _scope_arg()
     rep, rows, _n, by_urn = _findings_for(
-        product, configured_only=_truthy("configured_only"), limit=limit)
+        product, configured_only=_truthy("configured_only"), limit=limit,
+        version=scope)
     chosen = rep.get("chosen") or {}
     if not rows:
         # Nothing to ask about is a COMPLETE answer that costs the device
@@ -160,8 +189,10 @@ def run_payload(product: str):
                         "not_probed": 0, "registerable": 0,
                         "name_taken": 0, "urn_known": 0,
                         "device": appliance.name,
+                        "scope": scope,
                         "evidence": chosen.get("appliance") or "",
                         "evidence_line": chosen.get("line") or "",
+                        "evidence_version": chosen.get("version") or "",
                         "evidence_captured": chosen.get("created_at") or "",
                         "same_device": None, "version": {},
                         "note": "no CLI-only block to ask about"})
@@ -177,11 +208,16 @@ def run_payload(product: str):
     log_action("discovery_run.start", target=appliance.name,
                extra={"product": product, "blocks": len(rows),
                       "budget": budget, "job": job["id"],
+                      # The scope travels to the audit log with the run. The
+                      # page closes; "which build were those verdicts about?"
+                      # does not stop being asked.
+                      "scope": scope,
                       "evidence": chosen.get("appliance") or "",
-                      "evidence_line": chosen.get("line") or ""})
+                      "evidence_line": chosen.get("line") or "",
+                      "evidence_version": chosen.get("version") or ""})
     return jsonify({"ok": True, "started": True, "job_id": job["id"],
                     "product": product, "device": appliance.name,
-                    "blocks": len(rows), "budget": budget})
+                    "scope": scope, "blocks": len(rows), "budget": budget})
 
 
 def register_payload(product: str):
@@ -324,7 +360,8 @@ def load(product: str, page_endpoint: str):
 
 
 def context(product: str, *, run_endpoint: str = "", plan_endpoint: str = "",
-            register_endpoint: str = "", load_endpoint: str = "") -> dict:
+            register_endpoint: str = "", load_endpoint: str = "",
+            scope: str = "", scope_appliances=None) -> dict:
     """Template context for ``partials/_discovery_run.html``.
 
     Empty endpoint names mean the section renders its reason and stops — the
@@ -341,6 +378,12 @@ def context(product: str, *, run_endpoint: str = "", plan_endpoint: str = "",
                             and current_user.can("appliances.apply")),
         "dr_budget": discovery_run.DEFAULT_BUDGET,
         "dr_max_budget": MAX_BUDGET,
+        # The build this card is answering about, and the boxes that are
+        # actually running it. Empty means "no build chosen" — the card then
+        # behaves exactly as it did before, which is what the hubs that have no
+        # version axis still need.
+        "dr_scope": scope,
+        "dr_scope_appliances": list(scope_appliances or []),
         "dr_run_endpoint": run_endpoint,
         "dr_plan_endpoint": plan_endpoint,
         "dr_register_endpoint": register_endpoint,

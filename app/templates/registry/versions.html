@@ -8,18 +8,39 @@
   {%- else -%}<span class="fw-badge fw-badge-secondary">schema</span>{%- endif -%}
 {%- endmacro %}
 
+{# A build's CLI evidence. Rendered from the per-VERSION provenance, so a
+   capture taken on another build can never appear in this cell. #}
+{% macro cli_cell(P, kind='build') -%}
+  {% if P and P.measured %}
+    <span class="fw-badge fw-badge-success">{{ P.counts.cli_blocks }} blocks</span>
+    <span class="text-muted">{{ P.device }} · {{ P.captured_at }}</span>
+    {% if P.counts.cli_only %}<br><span class="fw-badge fw-badge-danger">{{ P.counts.cli_only }} CLI-only</span>{% endif %}
+  {% else %}
+    {# The row says what IT is. One macro serves both tables, and saying
+       "build" in the rollup would describe a line as something it is not —
+       which is the whole class of confusion these two tables exist to end. #}
+    <span class="text-muted" title="{{ P.reason if P else '' }}">no dump captured on this {{ kind }}</span>
+  {% endif %}
+{%- endmacro %}
+
 {% block content %}
 <div class="fw-page-header">
   <div>
     <h1 class="fw-page-title"><i class="bi bi-diagram-2 me-2 text-accent"></i>API versions
       <span class="fw-badge fw-badge-secondary">{{ product }}</span></h1>
     <p class="text-muted mb-0" style="font-size:13px;">
-      Two firmware lines can speak the <strong>same API version</strong> and still
-      not accept the same payload.
+      Two firmware builds can speak the <strong>same API version</strong> and still
+      not accept the same payload — and so can two builds of the <em>same line</em>:
+      <code>8.0.4</code> and <code>8.0.7</code> are both &ldquo;8.0&rdquo;.
+      {#- The example names a PRODUCT, so it is scoped to that product's page.
+          It is also the reason this condition is guarded: an early version lost
+          its quotes and became ``{% raw %}{% if product == fortiweb %}{% endraw %}`` — an undefined
+          name, which Jinja renders as falsy, so the sentence vanished from both
+          pages and nothing failed. -#}
       {%- if product == 'fortiweb' %} FortiWeb 7.6 and 8.0 are both <code>v2.0</code>,
       and 8.0 has more fields.{% endif %}
-      This page is what SATOM has actually <em>measured</em> per firmware line for
-      <strong>{{ product }}</strong>, and where it has measured nothing.
+      So the unit of evidence on this page is the <strong>full version</strong>, and the
+      line below it is a <em>rollup</em> that always says which builds it merged.
       Built {{ matrix.built_at or '—' }} (UTC).
     </p>
   </div>
@@ -34,6 +55,19 @@
   </div>
 </div>
 
+{% if stale_format %}
+<div class="alert alert-warning" style="font-size:13px;">
+  <strong>This matrix was built before evidence was indexed by build.</strong>
+  It is shown exactly as it was stored — nothing has been reinterpreted — but it
+  has no per-version rows, and <code>preflight</code> will refuse to answer a
+  build-scoped question out of it rather than guess.
+  It is <em>not</em> rebuilt automatically: a rebuild drops every witness whose
+  appliance row has since been deleted, and destroying evidence as a side effect
+  of opening a page is not an upgrade path. Press <strong>Rebuild</strong> when
+  you have decided that is what you want.
+</div>
+{% endif %}
+
 {% if not matrix.sweepable %}
 <div class="alert alert-warning" style="font-size:13px;">
   <strong>{{ product }} has no rediscovery sweep.</strong> Its catalog can only ever be
@@ -42,17 +76,116 @@
 </div>
 {% endif %}
 
-{# ── the lines ─────────────────────────────────────────────────────────── #}
+{# ── the builds ────────────────────────────────────────────────────────── #}
+<div class="fw-card mb-3">
+  <div class="fw-card-header"><i class="bi bi-hdd-stack me-2"></i>Firmware versions
+    <span class="text-muted" style="font-weight:400;">— evidence held per build</span></div>
+  <div class="table-responsive">
+    <table class="table fw-table mb-0" id="fwVersions">
+      <thead><tr>
+        <th>Version</th><th>Line</th><th>Known because</th><th>Witnesses</th>
+        <th class="text-end">Endpoints swept</th><th class="text-end">served</th>
+        <th class="text-end">absent</th><th class="text-end">with field evidence</th>
+        <th class="text-end">Schema objects</th>
+        <th>CLI evidence</th><th style="width:1%;"></th>
+      </tr></thead>
+      <tbody>
+      {% for v in versions %}
+        {% set V = vdocs[v] %}
+        <tr>
+          <td><code>{{ v }}</code>
+            {% if V.line_only %}<br><span class="fw-badge fw-badge-secondary"
+              title="Only the line was ever recorded for this evidence — the patch level is unknown. It is not the patch .0.">patch unknown</span>{% endif %}
+          </td>
+          <td><code class="text-muted">{{ V.line }}</code></td>
+          <td style="font-size:12px;">
+            {% for s in V.sources %}
+              <span class="fw-badge {% if s == 'evidence' %}fw-badge-info{% else %}fw-badge-secondary{% endif %} me-1"
+                    title="{{ source_label.get(s, s) }}">{{ s }}</span>
+            {% endfor %}
+            {% if V.in_fleet %}<span class="fw-badge fw-badge-success">in fleet</span>{% endif %}
+            {# RULE: declared is not measured. A build somebody registered and
+               nobody swept must never render as a measured build that happens
+               to be empty — an empty measured row reads as "no differences". #}
+            {% if not V.measured %}
+              <span class="fw-badge fw-badge-warning">declared · unmeasured</span>
+            {% endif %}
+            {% if V.note %}<div class="text-muted">{{ V.note }}</div>{% endif %}
+          </td>
+          <td style="font-size:12px;">{{ V.devices|join(', ') or '—' }}</td>
+          {% if V.measured %}
+            <td class="text-end">{{ V.counts.swept }}</td>
+            <td class="text-end">{{ V.counts.ok }}</td>
+            <td class="text-end">{{ V.counts.absent }}</td>
+            <td class="text-end">{{ V.counts.endpoints_with_fields }}</td>
+          {% else %}
+            <td class="text-end text-muted" colspan="4">never swept — nothing has been
+              asked of a box running this build</td>
+          {% endif %}
+          <td class="text-end">{{ V.counts.schema_objects }}
+            {% if V.counts.schema_objects %}<br><span class="text-muted" style="font-size:11px;"
+              title="Field schemas are harvested per line, so they describe {{ V.line }}, not this build specifically.">line-granular</span>{% endif %}</td>
+          <td style="font-size:12px;">{{ cli_cell(ver_prov.get(v)) }}</td>
+          <td class="text-nowrap">
+            {# The row IS the build, so this is where a discovery run belongs.
+               On the API hub it sat beside a dump picker and an appliance
+               picker that nothing tied to a firmware; here the link carries the
+               build, and the card below answers about that one. #}
+            {% if dr_run_endpoint %}
+            <a class="btn btn-sm {% if discover == v %}btn-primary{% else %}btn-outline-primary{% endif %}"
+               href="{{ url_for(page_endpoint, discover=v, base=base, target=target) }}#discoveryRun"
+               title="{{ _('Derive and probe candidate API paths for the CLI-only blocks of this build') }}">
+              <i class="bi bi-binoculars"></i></a>
+            {% endif %}
+            {% if V.manual and forget_endpoint %}
+            <form method="post" action="{{ url_for(forget_endpoint) }}" class="d-inline">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="version" value="{{ v }}">
+              <button class="btn btn-sm btn-outline-secondary" type="submit"
+                      title="Forget the hand-written declaration. A build an image or an appliance proves stays listed.">
+                <i class="bi bi-x-lg"></i></button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="11" class="text-muted">No firmware version is known yet.
+          Sweep an appliance, upload a firmware image, or declare one below.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if declare_endpoint %}
+  <div class="p-3 border-top">
+    <form method="post" action="{{ url_for(declare_endpoint) }}"
+          class="d-flex gap-2 align-items-center flex-wrap mb-0">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label class="text-muted mb-0" style="font-size:12.5px;">Declare a version</label>
+      <input name="version" class="form-control form-control-sm" style="width:130px;"
+             placeholder="8.0.7" required>
+      <input name="note" class="form-control form-control-sm" style="max-width:340px;"
+             placeholder="why it matters (optional)">
+      <button class="btn btn-sm btn-outline-primary" type="submit">Declare</button>
+      <span class="text-muted" style="font-size:12px;">
+        Versions already proved by an uploaded image or by a box in the fleet appear
+        above on their own — they are derived on every read, so no upload path can
+        forget to register one. This form is for the builds nothing proves yet.
+      </span>
+    </form>
+  </div>
+  {% endif %}
+</div>
+
+{# ── the rollup ────────────────────────────────────────────────────────── #}
 <div class="fw-card mb-3">
   <div class="fw-card-header"><i class="bi bi-layers me-2"></i>Firmware lines
-    <span class="text-muted" style="font-weight:400;">— evidence held per line</span></div>
+    <span class="text-muted" style="font-weight:400;">— the rollup, and what it merged</span></div>
   <div class="table-responsive">
     <table class="table fw-table mb-0">
       <thead><tr>
-        <th>Line</th><th>In fleet</th><th>Witnesses</th>
-        <th class="text-end">Endpoints swept</th><th class="text-end">served</th>
-        <th class="text-end">absent</th><th class="text-end">with field evidence</th>
-        <th class="text-end">Schema objects</th><th class="text-end">Schema fields</th>
+        <th>Line</th><th>In fleet</th><th>Builds merged</th>
+        <th class="text-end">Endpoints</th><th class="text-end">served</th>
+        <th class="text-end">partial</th><th class="text-end">Schema fields</th>
         <th>CLI evidence</th>
       </tr></thead>
       <tbody>
@@ -62,28 +195,37 @@
           <td><code>{{ ln }}</code></td>
           <td>{% if L.in_fleet %}<span class="fw-badge fw-badge-success">yes</span>
               {% else %}<span class="fw-badge fw-badge-warning">no appliance runs it</span>{% endif %}</td>
-          <td style="font-size:12px;">{{ L.devices|join(', ') or '—' }}</td>
-          <td class="text-end">{{ L.counts.swept }}</td>
-          <td class="text-end">{{ L.counts.ok }}</td>
-          <td class="text-end">{{ L.counts.absent }}</td>
-          <td class="text-end">{{ L.counts.endpoints_with_fields }}</td>
-          <td class="text-end">{{ L.counts.schema_objects }}</td>
-          <td class="text-end">{{ L.counts.schema_fields }}</td>
-          {# A CLI dump belongs to ONE firmware line. A line with no capture
-             says so here, once, instead of every row below implying it. #}
-          {% set P = line_prov.get(ln) if line_prov else none %}
           <td style="font-size:12px;">
-            {% if P and P.measured %}
-              <span class="fw-badge fw-badge-success">{{ P.counts.cli_blocks }} blocks</span>
-              <span class="text-muted">{{ P.device }} · {{ P.captured_at }}</span>
-              {% if P.counts.cli_only %}<br><span class="fw-badge fw-badge-danger">{{ P.counts.cli_only }} CLI-only</span>{% endif %}
-            {% else %}
-              <span class="text-muted" title="{{ P.reason if P else '' }}">no dump captured on this line</span>
+            {{ L.measured_versions|join(', ') or '—' }}
+            {% if L.heterogeneous %}
+              <br><span class="fw-badge fw-badge-warning"
+                title="More than one build backs this row. &quot;The line serves it&quot; is then a claim about a merge, not about any one box.">heterogeneous</span>
             {% endif %}
           </td>
+          <td class="text-end">{{ L.counts.swept }}</td>
+          <td class="text-end">{{ L.counts.ok }}</td>
+          {# The exact shape of the false positive this page was rebuilt to
+             remove: attested by SOME builds of the line and not others. Counted
+             and listed, never folded into "served". #}
+          <td class="text-end">
+            {% if L.counts.partial %}<span class="fw-badge fw-badge-danger">{{ L.counts.partial }}</span>
+            {% else %}0{% endif %}</td>
+          <td class="text-end">{{ L.counts.schema_fields }}</td>
+          <td style="font-size:12px;">{{ cli_cell(line_prov.get(ln), 'line') }}</td>
         </tr>
+        {% if L.partial_endpoints %}
+        <tr><td colspan="8" class="bg-light" style="font-size:12px;">
+          <strong>Attested by only some builds of {{ ln }}</strong> — never reported as served by the line:
+          <ul class="mb-0 mt-1">
+          {% for p in L.partial_endpoints %}
+            <li><code>{{ p.endpoint }}</code> — served on {{ p.attested_on|join(', ') }},
+                not on {{ p.silent_on|join(', ') }}</li>
+          {% endfor %}
+          </ul>
+        </td></tr>
+        {% endif %}
       {% else %}
-        <tr><td colspan="10" class="text-muted">No firmware line has any evidence yet.
+        <tr><td colspan="8" class="text-muted">No firmware line has any evidence yet.
           Run a rediscovery sweep on an appliance, or harvest its field schemas.</td></tr>
       {% endfor %}
       </tbody>
@@ -96,33 +238,44 @@
   <strong>Witnesses excluded from the evidence:</strong>
   <ul class="mb-0">
     {% for n in matrix.notes %}
-      <li><code>{{ n.device }}</code>{% if n.line %} ({{ n.line }}){% endif %} — {{ n.skipped }}</li>
+      <li><code>{{ n.device }}</code>{% if n.version %} ({{ n.version }}){% elif n.line %} ({{ n.line }}){% endif %} — {{ n.skipped }}</li>
     {% endfor %}
   </ul>
 </div>
 {% endif %}
 
 {# ── the comparison ────────────────────────────────────────────────────── #}
-{% if lines|length > 1 %}
+{% if scopes|length > 1 %}
 <div class="fw-card mb-3">
   <div class="fw-card-header d-flex justify-content-between align-items-center">
-    <span><i class="bi bi-arrow-left-right me-2"></i>What changes between two lines</span>
+    <span><i class="bi bi-arrow-left-right me-2"></i>What changes between two of them</span>
     <form method="get" action="{{ url_for(page_endpoint) }}" class="d-flex gap-2 align-items-center mb-0">
       <select name="base" class="form-select form-select-sm" style="width:auto;">
-        {% for ln in lines %}<option value="{{ ln }}" {% if ln == base %}selected{% endif %}>{{ ln }}</option>{% endfor %}
+        {% for s in scopes %}<option value="{{ s.key }}" {% if s.key == base %}selected{% endif %}>{{ s.key }}{% if s.kind == 'line' %} (line rollup){% endif %}</option>{% endfor %}
       </select>
       <span class="text-muted">→</span>
       <select name="target" class="form-select form-select-sm" style="width:auto;">
-        {% for ln in lines %}<option value="{{ ln }}" {% if ln == target %}selected{% endif %}>{{ ln }}</option>{% endfor %}
+        {% for s in scopes %}<option value="{{ s.key }}" {% if s.key == target %}selected{% endif %}>{{ s.key }}{% if s.kind == 'line' %} (line rollup){% endif %}</option>{% endfor %}
       </select>
       <button class="btn btn-sm btn-outline-secondary" type="submit">Compare</button>
     </form>
   </div>
 
   {% if not delta %}
-    <div class="p-3 text-muted" style="font-size:13px;">Pick two different lines to compare.</div>
+    <div class="p-3 text-muted" style="font-size:13px;">Pick two different builds (or rollups) to compare.</div>
   {% else %}
   <div class="p-3">
+    {% if delta.base_kind == 'line' or delta.target_kind == 'line' %}
+    <div class="alert alert-warning py-2" style="font-size:12.5px;">
+      At least one side of this comparison is a <strong>line rollup</strong>, not a build.
+      {% if delta.base_heterogeneous %}<code>{{ delta.base }}</code> merges
+        {{ delta.base_versions|join(', ') }}.{% endif %}
+      {% if delta.target_heterogeneous %}<code>{{ delta.target }}</code> merges
+        {{ delta.target_versions|join(', ') }}.{% endif %}
+      A difference found against a merge is a difference against the union of those
+      builds, not against any single box you might write to.
+    </div>
+    {% endif %}
     <p class="mb-3" style="font-size:13px;">
       <strong>{{ delta.totals.fields_added }}</strong> field(s) added and
       <strong>{{ delta.totals.fields_removed }}</strong> removed going
@@ -156,9 +309,9 @@
     </div>
     {% else %}
       <div class="text-muted mb-3" style="font-size:13px;">
-        No object is described by the same kind of evidence on both lines, so no
+        No object is described by the same kind of evidence on both sides, so no
         field delta can be computed. That is a gap in the evidence, not a
-        statement that the two lines are identical.
+        statement that the two are identical.
       </div>
     {% endif %}
 
@@ -170,7 +323,7 @@
             <div>added on {{ delta.target }}: <strong>{{ delta.endpoints_added|length }}</strong></div>
             <div>removed: <strong>{{ delta.endpoints_removed|length }}</strong></div>
             <div class="text-muted mt-2">
-              not measured on one of the two lines:
+              not measured on one of the two:
               <strong>{{ delta.endpoints_unknown|length }}</strong>
               — never counted as a change.
             </div>
@@ -182,7 +335,7 @@
           <div class="fw-card-header" style="font-size:13px;">Fields known on one side only</div>
           <div class="p-3" style="font-size:13px;">
             <strong>{{ delta.fields_unknown|length }}</strong> object(s).
-            <div class="text-muted mt-2">Measured on one line and never on the other —
+            <div class="text-muted mt-2">Measured on one and never on the other —
               the missing side proves nothing.</div>
           </div>
         </div>
@@ -192,7 +345,7 @@
           <div class="fw-card-header" style="font-size:13px;">Incomparable</div>
           <div class="p-3" style="font-size:13px;">
             <strong>{{ delta.fields_incomparable|length }}</strong> object(s).
-            <div class="text-muted mt-2">Known on both lines, but by different kinds of
+            <div class="text-muted mt-2">Known on both, but by different kinds of
               evidence. Reported, never subtracted.</div>
           </div>
         </div>
@@ -203,8 +356,8 @@
     {% if delta.endpoints_added or delta.endpoints_removed %}
     <div class="mt-3">
       <div class="text-muted mb-2" style="font-size:12.5px;">
-        Which transport serves each endpoint, measured separately on each line —
-        a CLI dump comes from one box running one firmware, so
+        Which transport serves each endpoint, measured separately on each side —
+        a CLI dump comes from one box running one build, so
         <code>{{ delta.base }}</code> evidence can never answer for
         <code>{{ delta.target }}</code>.
       </div>
@@ -220,7 +373,16 @@
           {% for r in delta.endpoints_added %}
             <tr><td><code>{{ r.endpoint }}</code></td>
               <td><code class="text-muted" style="font-size:11px;">{{ r.urn }}</code></td>
-              <td><span class="fw-badge fw-badge-success">added on {{ delta.target }}</span></td>
+              {# Whitespace control is load-bearing: with no partial badge this
+                 cell must close EXACTLY as it did before, because
+                 test_cli_provenance matches the row structurally (cell by
+                 cell) to prove each column answers from its own capture. A
+                 stray newline from a false {% raw %}{% if %}{% endraw %} is enough to make that
+                 guard report "no row rendered" against a correct page. #}
+              <td><span class="fw-badge fw-badge-success">added on {{ delta.target }}</span>
+                {%- if r.silent_on %}<br><span class="fw-badge fw-badge-warning"
+                  title="Only some builds of the target rollup attested this.">partial</span>{% endif -%}
+              </td>
               <td>{{ prov_badge(r.cli_base) }}</td>
               <td>{{ prov_badge(r.cli_target) }}</td>
               <td>{{ test_btn(urn=r.urn) }}</td></tr>
@@ -264,22 +426,37 @@
     <span class="text-muted" style="font-weight:400;">— would this payload be understood?</span></div>
   <div class="p-3" style="font-size:13px;">
     <p class="text-muted">
-      Before writing a payload built against one line to an appliance running another,
+      Before writing a payload built against one build to an appliance running another,
       ask. <code>satom get api preflight &lt;appliance&gt; &lt;object&gt; &lt;field&gt;…</code>
-      answers from this matrix, and the answer <strong>unmeasured</strong> is a real
-      answer — it is never reported as compatible.
+      answers from this matrix <strong>at the appliance's exact running build</strong>,
+      and the answer <strong>unmeasured</strong> is a real answer — it is never
+      reported as compatible.
     </p>
     <ul class="mb-0">
-      <li><code>ok</code> — every field is present on that line.</li>
-      <li><code>unknown_fields</code> — named fields that line has never been seen to serve.</li>
-      <li><code>absent</code> — the appliance rejected that URN on that line.</li>
+      <li><code>ok</code> — every field is present on that build.</li>
+      <li><code>unknown_fields</code> — named fields that build has never been seen to serve.</li>
+      <li><code>absent</code> — the appliance rejected that URN on that build.</li>
       <li><code>fields_unknown</code> — the endpoint exists, but it answered with an empty
           collection, so nothing is known about its fields.</li>
-      <li><code>unmeasured</code> — no evidence at all for that line. Sweep an appliance
-          on it, or harvest its field schemas, before trusting a cross-line payload.</li>
+      <li><code>version_unmeasured</code> — <strong>that build</strong> has no evidence,
+          while other builds of its line do. It is never answered from them: 8.0.4 is not
+          8.0.7. The line-granular answer is reported <em>beside</em> it, labelled, so the
+          guard informs instead of merely blocking.</li>
+      <li><code>unmeasured</code> — no evidence at all. Sweep an appliance on that build,
+          or harvest its field schemas, before trusting a cross-build payload.</li>
     </ul>
   </div>
 </div>
+
+{# ── the discovery run ──────────────────────────────────────────────────
+   ONE author for this markup (partials/_discovery_run.html), and ONE instance
+   on the page. Per-row panels would mean N pollers, N Stop buttons and N jobs
+   competing for one appliance's session limit; the row supplies the SCOPE and
+   this card answers about it. It moved here from the API hub because there a
+   run had no firmware to be about — see the scope banner inside. #}
+{% if dr_run_endpoint or dr_load_endpoint %}
+{% include "partials/_discovery_run.html" %}
+{% endif %}
 
 {# Rendered once: the appliance picker and the output panel every Test button
    on this page writes into. A row with a Test button and no bar would look

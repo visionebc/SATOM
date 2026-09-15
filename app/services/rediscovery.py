@@ -89,6 +89,116 @@ def _write_json(path: Path, obj: Any) -> None:
     os.replace(tmp, path)
 
 
+#: Sub-directory of a device's sweep dir holding ONE SNAPSHOT PER FIRMWARE
+#: VERSION. ``_config.json`` stays exactly what it was — the latest sweep, read
+#: by ``registry_reconcile`` and by every existing consumer — and this is the
+#: history beside it.
+#:
+#: The defect it closes, measured on this fleet: the sweep wrote one file per
+#: APPLIANCE and overwrote it every run, so the first sweep after a firmware
+#: upgrade DESTROYED the only evidence backing the previous line. Nothing
+#: reported a loss; ``/web/registry/versions`` simply showed the old line with
+#: fewer endpoints, which reads as "that line has less API", not as "we deleted
+#: the proof".
+#:
+#: There is deliberately NO retention cap here. A cap would reintroduce the
+#: exact failure being fixed — silently dropping the evidence for a version
+#: somebody is still running — and the growth is bounded by how often a box is
+#: upgraded, not by traffic.
+VERSION_DIR = "by-version"
+
+
+def _version_of(snapshot: dict) -> str:
+    """The full firmware version a snapshot was measured against, or ``""``.
+
+    Read from the SNAPSHOT, never from the appliance row: the row can have been
+    upgraded since, and attributing old evidence to the new version is the
+    error this whole directory exists to prevent.
+    """
+    from . import firmware_versions
+    return firmware_versions.normalize(snapshot.get("firmware") if isinstance(snapshot, dict) else "")
+
+
+def _version_dir(appliance_id: int) -> Path:
+    d = _dev_dir(appliance_id) / VERSION_DIR
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def archive_snapshot(appliance_id: int, snapshot: dict) -> Path | None:
+    """Persist ``snapshot`` under its own firmware version. Returns the path.
+
+    ``None`` when the snapshot records no firmware: a snapshot that cannot say
+    which version it measured must NOT be filed under a guess. It stays
+    reachable as ``_config.json`` and ``api_matrix`` reports it as a witness
+    with no version rather than crediting it to one.
+    """
+    version = _version_of(snapshot)
+    if not version:
+        return None
+    path = _version_dir(appliance_id) / ("%s.json" % version)
+    _write_json(path, snapshot)
+    return path
+
+
+def version_snapshots(appliance_id: int) -> dict:
+    """``{version: Path}`` of every archived sweep for one appliance."""
+    d = _dev_dir(appliance_id) / VERSION_DIR
+    if not d.is_dir():
+        return {}
+    out: dict = {}
+    for p in sorted(d.glob("*.json")):
+        out[p.stem] = p
+    return out
+
+
+def migrate_version_archive() -> list[dict]:
+    """File every existing ``_config.json`` under its own version. Idempotent.
+
+    Runs at boot beside the stale-sweep reconcile. It is a pure BACKFILL: an
+    archive entry that already exists is left alone unless the ``_config.json``
+    beside it is strictly newer for the SAME version, because overwriting a
+    version's evidence with a different version's is the bug, and overwriting
+    it with older evidence of its own version is pointless churn on a tree the
+    standby rsyncs every five minutes.
+    """
+    from . import firmware_versions  # noqa: F401  (import guard: same module)
+
+    moved: list[dict] = []
+    root = _data_dir()
+    if not root.is_dir():
+        return moved
+    for devdir in sorted(root.iterdir()):
+        if not devdir.is_dir() or not devdir.name.isdigit():
+            continue
+        cfg = devdir / "_config.json"
+        if not cfg.exists():
+            continue
+        try:
+            snap = json.loads(cfg.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001 — an unreadable snapshot is not fatal
+            continue
+        version = _version_of(snap)
+        if not version:
+            continue
+        target = devdir / VERSION_DIR / ("%s.json" % version)
+        if target.exists():
+            try:
+                existing = json.loads(target.read_text(encoding="utf-8"))
+            except Exception:  # noqa: BLE001
+                existing = {}
+            if str(existing.get("generated_at") or "") >= str(snap.get("generated_at") or ""):
+                continue
+        try:
+            archive_snapshot(int(devdir.name), snap)
+        except OSError:
+            continue
+        moved.append({"appliance_id": int(devdir.name),
+                      "device": snap.get("device") or "",
+                      "version": version})
+    return moved
+
+
 def _normalize(urn: str) -> str:
     """Drop a leading ``/api/v2.X/`` so URNs compare uniformly."""
     return (urn or "").lstrip("/").split("/", 2)[-1] if "/api/" in (urn or "") else (urn or "").lstrip("/")
@@ -553,6 +663,10 @@ def _sweep(appliance_snap: SimpleNamespace, by: str, deep: bool = False,
         },
     }
     _write_json(devdir / "_config.json", snapshot)
+    # ...and beside it, the same snapshot filed under the version it measured.
+    # ``_config.json`` is the LATEST; this is the history, and it is what makes
+    # a firmware upgrade stop destroying the evidence for the previous version.
+    archive_snapshot(aid, snapshot)
     state.update(state="done", done=total, percent=100, objects=total_objects,
                  section_count=len(sections), errors=errors, finished=generated_at,
                  absent_count=len(absent),
@@ -936,6 +1050,8 @@ def reconcile_stale_runs(*, no_pid_stale_after_s: int = 900) -> list[dict]:
 
 __all__ = ["sweep_plan", "sweep_plan_adc", "plan_for", "status",
            "reconcile_stale_runs", "INTERRUPTED", "FAILED",
+           "VERSION_DIR", "archive_snapshot", "version_snapshots",
+           "migrate_version_archive",
            "latest_snapshot_meta", "start", "apply_inventory",
            "maybe_apply_inventory", "_run_deep", "_run_cli", "_probe_fortiweb",
            "cli_capture_decision", "CLI_CAPTURE_MAX_AGE_H",

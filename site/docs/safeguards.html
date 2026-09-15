@@ -14440,6 +14440,71 @@ picker and the explicit override).</p>
 whole function; the audit row a few lines below spells the same word, so
 dropping the key from the payload left them green. Scope assertions to the dict
 literal / the row / the sheet — never to "somewhere in this function".</p>
+<h2 id="175-a-job-with-no-reader-and-a-running-that-outlived-its-process-teststest_discovery_asyncpy-2026-09-15">§175 — a job with no reader, and a "running" that outlived its process (<code>tests/test_discovery_async.py</code>, 2026-09-15)</h2>
+<p><strong>What this protects.</strong> Four defects with one shape: <em>a screen reporting a state
+nobody is in</em>.</p>
+<h3 id="the-rules_7">The rules</h3>
+<ol>
+<li><strong><code>run_payload</code> does no device I/O.</strong> Not a probe, not a version read. If
+   that function can talk to an appliance it can also outlive nginx's 120 s
+   proxy timeout, and the browser then gets a 504 while the budget keeps being
+   spent. Asserted on the function's source, docstring- and comment-stripped.</li>
+<li><strong>The findings are persisted on the job.</strong> Registration reads that table; a
+   result that lives only in the browser means closing the tab throws away GETs
+   fired at a production appliance. Asserted end-to-end through the route with
+   the worker dispatched inline.</li>
+<li><strong>Stop leaves the unasked blocks <code>not_probed</code>.</strong> Never <code>absent</code> — that is the
+   device denying a path, and the device was never asked. Same three-negatives
+   rule as §172.</li>
+<li><strong>A stopped run still hands back what it learned.</strong> Otherwise Stop costs more
+   than letting the run finish.</li>
+<li><strong>Progress is reported BEFORE a block is asked.</strong> A run that dies mid-GET then
+   names the block it was asking about, not the one it had finished.</li>
+<li><strong>The worker never gates on the version verdict</strong> (<code>ast.If</code> scan). <code>unknown</code>
+   is a statement about <em>our</em> read failing; a gate on it would refuse a
+   legitimate run on the strength of our own outage. Moved here from §174 with
+   the code it protects.</li>
+<li><strong>The worker's audit row carries <code>by</code> explicitly.</strong> <code>log_action</code> reads
+   <code>current_user</code>, and a daemon thread has none: without this every async run is
+   attributed to <code>"system"</code>. The <em>dispatch</em> is audited in the request, where the
+   real operator is.</li>
+<li><strong><code>interrupted</code> is its own word.</strong> Not <code>done</code> (no snapshot was written), not
+   <code>failed</code> (nothing reported an error). Rendered apart in both the card and the
+   Rediscover page.</li>
+<li><strong>A live pid is never reconciled, and another host's file is never judged.</strong>
+   Any booting gunicorn worker runs the reconciler while another worker may be
+   mid-sweep; and <code>satom-ha-datasync</code> puts the peer's progress files in this
+   tree every five minutes.</li>
+<li><strong>A pid-less file is judged by age, not assumed dead.</strong> Files predating the
+    field exist; the 74-day ghost is retired, a fresh one is not.</li>
+<li><strong>The suite cannot write into <code>data/</code>.</strong> Asserted on behaviour
+    (<code>_data_dir()</code> is outside the repo, <code>MATRIX_ROOT</code> is outside the repo, and
+    both env overrides are actually honoured) — not merely on conftest
+    containing the variable names.</li>
+</ol>
+<h3 id="verification-recipe_10">Verification recipe</h3>
+<pre><code>venv/bin/python -m pytest tests/test_discovery_async.py -q -p no:randomly   # rc, never a pipe
+venv/bin/python /tmp/mutate_async_r2.py                                     # 39 mutations
+</code></pre>
+<p>The harness <strong>snapshots <code>data/rediscovery/</code> and <code>data/api_matrix/fortiweb.json</code>
+around every mutation and restores them</strong>, because two of the mutations
+deliberately break the isolation and the suite would otherwise write into the
+production tree — the very defect rule 11 exists to prevent.</p>
+<p><strong>Two mutations are excluded, with the reason written down rather than silently
+dropped:</strong> removing either <code>SATOM_*_DIR</code> line from <code>tests/conftest.py</code> would run
+the whole suite against the production tree. Both code-side halves of that
+contract are mutated instead.</p>
+<h3 id="traps-paid-for-here">Traps paid for here</h3>
+<ul>
+<li><strong>The job ledger is one directory for the whole session while each test gets a
+  fresh database</strong>, so appliance ids repeat and a job left active by one test
+  makes the next one <em>reconnect</em> to it. Isolated with an autouse purge — the
+  reconnect rule itself is what stops one appliance being asked twice and must
+  not be weakened to make tests pass.</li>
+<li><strong>Slicing a JS object literal on the first <code>}</code> cuts inside <code>{{ _("…") }}</code>.</strong>
+  The phase-label window closed before a single state was in it, and the guard
+  failed against correct code. Slice on <code>};</code>.</li>
+</ul>
     </div>
   </div>
 </section>

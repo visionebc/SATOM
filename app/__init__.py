@@ -2101,6 +2101,21 @@ def create_app(config_override: object | None = None) -> Flask:
                                    len(swept), [j["id"] for j in swept])
         except Exception:  # noqa: BLE001 — never block boot on housekeeping
             app.logger.exception("orphaned-job sweep failed")
+        # The rediscovery sweep keeps its own progress FILE (it predates the
+        # job ledger), so the sweep above cannot see it: a restart left every
+        # in-flight sweep reading "running" forever -- appliance 4 sat at 71 %
+        # from 2026-07-03 to 2026-09-15 because nothing ever corrected the file.
+        # Same pid/host rules, and the peer's files (pulled here every 5 min by
+        # satom-ha-datasync) are never judged.
+        try:
+            from .services import rediscovery as _redisc
+            stale = _redisc.reconcile_stale_runs()
+            if stale:
+                app.logger.warning(
+                    "marked %d interrupted rediscovery sweep(s): %s", len(stale),
+                    [s.get("appliance") for s in stale])
+        except Exception:  # noqa: BLE001 — never block boot on housekeeping
+            app.logger.exception("stale rediscovery reconcile failed")
 
     # -- legacy URL compatibility: the FortiWeb area moved under /web/ ------
     # (2026-07-07 ADOM split). Old deep-links, hardcoded JS fetches and the

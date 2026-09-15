@@ -13,16 +13,26 @@ habit:
                  Gated ``appliances.apply`` + ``Permission.BACKUP`` for the CLI
                  half — and the CLI half is DROPPED WITH ITS REASON RETURNED
                  rather than silently, mirroring ``appliances.rediscover_start``.
-* ``run``      — fires up to ``DEFAULT_BUDGET`` read-only GETs at one appliance.
+* ``run``      — STARTS A JOB that fires up to ``DEFAULT_BUDGET`` read-only
+                 GETs at one appliance, and returns its id. It does NOT do the
+                 asking itself: nginx cuts a proxied request at 120 s and
+                 gunicorn at 600 s, so a run against a slow or degraded box —
+                 the case whose answer matters most — returned a 504 while the
+                 worker kept spending the budget for minutes more, and the
+                 findings those GETs bought died with the response nobody
+                 received. The work, the progress, the Stop and the persisted
+                 result all live in :mod:`app.services.discovery_jobs`.
                  Gated ``REGISTRY_EDIT``, for the same reason the reconcile page
                  is: it exists to drive a catalog write, and it is a hundredfold
                  the single ``probe`` next to it. The single probe stays
                  ungated — one verdict is strictly less than the console on the
                  same page already gives.
 
-                 It also READS AND STORES the running firmware version first,
-                 and reports how it compares with the line the evidence dump
-                 was captured on. That comparison WARNS; it never refuses.
+                 The PLAN is still built here, in the request: deriving
+                 candidates reads the catalog and the dump through ADOM-scoped,
+                 request-bound services, and doing that in a daemon thread is
+                 how a background task quietly answers about the wrong ADOM.
+                 The worker only ever asks the device.
 * ``register`` — the write. ``REGISTRY_EDIT``, through the ONE catalog writer
                  (:mod:`app.services.registry_write`), never a third copy of it.
 * ``plan``     — what a run WOULD ask, with zero device contact, so the cost is
@@ -36,11 +46,12 @@ the catalog is what ``loader.resolve`` hands every other service.
 """
 from __future__ import annotations
 
-from flask import flash, jsonify, redirect, request, url_for
+from flask import current_app, flash, jsonify, redirect, request, url_for
 from flask_login import current_user
 
 from ..models import Permission, visible_appliance_or_404
-from ..services import cli_coverage, discovery_run, registry_write
+from ..services import (cli_coverage, discovery_jobs, discovery_run,
+                        registry_write)
 from ..services.audit import log_action
 
 #: Hard ceiling the form may not exceed, whatever it posts. The form's own
@@ -97,7 +108,15 @@ def plan_payload(product: str):
 
 
 def run_payload(product: str):
-    """JSON: probe every CLI-only block's candidates against one appliance."""
+    """JSON: START a discovery run as a background job and return its id.
+
+    This route does no device I/O beyond nothing at all. Everything it used to
+    do inline -- the version read, the GETs, the audit outcome -- now happens in
+    :func:`app.services.discovery_jobs.start`'s worker, because a run that
+    outlives nginx's 120 s proxy timeout used to return a 504 while the GETs
+    kept being spent, leaving the operator with a broken page and the appliance
+    with the load.
+    """
     if product not in cli_coverage.SUPPORTED_PRODUCTS:
         return jsonify({"ok": False,
                         "error": cli_coverage.UNSUPPORTED_REASON.get(
@@ -112,56 +131,57 @@ def run_payload(product: str):
 
     budget = max(1, min(_int_arg("budget", discovery_run.DEFAULT_BUDGET), MAX_BUDGET))
     limit = _int_arg("limit", 0) or None
+    actor = getattr(current_user, "username", "")
+
+    # Never a SECOND run against the same appliance: that is twice the budget
+    # for one answer, and both runs then compete for the same device's session
+    # limit. The caller is reconnected to the live one instead -- which is only
+    # possible because the run is a job with a persisted result.
+    live = discovery_jobs.active_for(appliance.id, by=actor)
+    if live is not None:
+        return jsonify({"ok": True, "started": False, "reconnected": True,
+                        "job_id": live["id"], "product": product,
+                        "device": appliance.name})
+
     rep, rows, _n, by_urn = _findings_for(
         product, configured_only=_truthy("configured_only"), limit=limit)
     chosen = rep.get("chosen") or {}
-    # Read the running version off the device and STORE it before asking
-    # anything. A page of verdicts whose firmware nobody established is a page
-    # of answers about no firmware at all -- and the candidates come from a
-    # dump that belongs to ONE line, which may not be this box's. It warns; it
-    # never refuses (see discovery_run.version_check).
-    version = discovery_run.version_check(appliance, chosen)
-    provenance = {
-        "evidence": chosen.get("appliance") or "",
-        "evidence_line": chosen.get("line") or "",
-        "evidence_captured": chosen.get("created_at") or "",
-        "same_device": version.get("same_device"),
-        "version": version,
-    }
     if not rows:
-        return jsonify(dict({"ok": True, "product": product, "findings": [],
-                             "spent": 0, "budget": budget, "exhausted": False,
-                             "served": 0, "absent": 0, "errors": 0,
-                             "not_probed": 0, "registerable": 0,
-                             "name_taken": 0, "urn_known": 0,
-                             "device": appliance.name,
-                             "note": "no CLI-only block to ask about"},
-                            **provenance))
+        # Nothing to ask about is a COMPLETE answer that costs the device
+        # nothing, so it is not a job -- and it reads no version, because a
+        # status call here would be device contact on the one path whose entire
+        # content is "there was nothing to ask". ``version`` is empty and
+        # ``same_device`` is None, never False: "no comparison was made" is not
+        # "the comparison disagreed".
+        return jsonify({"ok": True, "started": False, "job_id": "",
+                        "product": product, "findings": [],
+                        "spent": 0, "budget": budget, "exhausted": False,
+                        "served": 0, "absent": 0, "errors": 0,
+                        "not_probed": 0, "registerable": 0,
+                        "name_taken": 0, "urn_known": 0,
+                        "device": appliance.name,
+                        "evidence": chosen.get("appliance") or "",
+                        "evidence_line": chosen.get("line") or "",
+                        "evidence_captured": chosen.get("created_at") or "",
+                        "same_device": None, "version": {},
+                        "note": "no CLI-only block to ask about"})
 
-    from ..services import rediscovery
-
-    def _probe(urn):
-        return rediscovery.probe_endpoint(appliance, urn)
-
-    result = discovery_run.run(rows, _probe, budget=budget, by_urn=by_urn)
-    # The firmware and the evidence ride into the audit row with the run. The
-    # page can be closed; the question "which firmware were those verdicts
-    # about?" outlives it, and re-deriving the answer later reads TODAY's
-    # version off a box that may since have been upgraded.
-    log_action("discovery_run.probe", target=appliance.name,
+    job = discovery_jobs.start(
+        current_app._get_current_object(), product=product,
+        appliance_id=appliance.id, appliance_name=appliance.name,
+        rows=rows, by_urn=by_urn, budget=budget, evidence=chosen, by=actor)
+    # Attribution belongs to the REQUEST. A worker thread has no
+    # ``current_user``, so an audit row written there says "system"; the
+    # dispatch is recorded here with the real operator, and the worker logs the
+    # OUTCOME carrying ``by`` explicitly.
+    log_action("discovery_run.start", target=appliance.name,
                extra={"product": product, "blocks": len(rows),
-                      "firmware": version.get("firmware") or "",
-                      "line": version.get("line") or "",
-                      "evidence": provenance["evidence"],
-                      "evidence_line": provenance["evidence_line"],
-                      "version_verdict": version.get("verdict"),
-                      "summary": discovery_run.summary_line(result)})
-    out = {k: v for k, v in result.items() if k != "findings"}
-    out.update({"ok": True, "product": product, "device": appliance.name,
-                "findings": [f.to_dict() for f in result["findings"]],
-                "summary": discovery_run.summary_line(result)})
-    out.update(provenance)
-    return jsonify(out)
+                      "budget": budget, "job": job["id"],
+                      "evidence": chosen.get("appliance") or "",
+                      "evidence_line": chosen.get("line") or ""})
+    return jsonify({"ok": True, "started": True, "job_id": job["id"],
+                    "product": product, "device": appliance.name,
+                    "blocks": len(rows), "budget": budget})
 
 
 def register_payload(product: str):
@@ -296,12 +316,15 @@ def load(product: str, page_endpoint: str):
     if refused:
         msg += " The CLI capture was skipped: %s." % refused
     flash(msg, "warning" if (refused or not ver.get("checked")) else "success")
-    return redirect(url_for(page_endpoint))
+    # ``dr_watch`` is how the card attaches to the sweep it just started. The
+    # sweep has ALWAYS been a background job with a status endpoint; this page
+    # was simply never told which appliance to poll, so its only feedback was a
+    # flash message and the operator had to guess when to reload.
+    return redirect(url_for(page_endpoint, dr_watch=appliance.id))
 
 
 def context(product: str, *, run_endpoint: str = "", plan_endpoint: str = "",
-            register_endpoint: str = "", load_endpoint: str = "",
-            status_endpoint: str = "") -> dict:
+            register_endpoint: str = "", load_endpoint: str = "") -> dict:
     """Template context for ``partials/_discovery_run.html``.
 
     Empty endpoint names mean the section renders its reason and stops — the
@@ -322,7 +345,6 @@ def context(product: str, *, run_endpoint: str = "", plan_endpoint: str = "",
         "dr_plan_endpoint": plan_endpoint,
         "dr_register_endpoint": register_endpoint,
         "dr_load_endpoint": load_endpoint,
-        "dr_status_endpoint": status_endpoint,
     }
 
 

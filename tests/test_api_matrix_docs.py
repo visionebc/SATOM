@@ -313,7 +313,10 @@ def test_the_matrix_is_documented_as_derived_not_authored():
     """Someone will eventually look for this in a database backup."""
     low = ref_matrix().lower()
     assert 'derived' in low
-    assert am.MATRIX_ROOT.split('data/')[-1] in ref_matrix()
+    # MATRIX_ROOT_DEFAULT, not MATRIX_ROOT: the suite redirects the live one
+    # into a temp dir (conftest), and documentation describes where the data
+    # lives in a real installation.
+    assert am.MATRIX_ROOT_DEFAULT.split('data/')[-1] in ref_matrix()
 
 
 # ---------------------------------------------------------------------------

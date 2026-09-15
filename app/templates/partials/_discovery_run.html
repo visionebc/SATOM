@@ -18,6 +18,22 @@
    that announces itself, and the server answers with the firmware line of BOTH
    halves.
 
+   NOTHING ON THIS CARD IS SYNCHRONOUS ANY MORE, and that is the point of the
+   2026-09-15 round. Both actions are background work with a live status:
+
+   * "Load API catalog + CLI configuration" has ALWAYS been a background job
+     (rediscovery.start spawns a thread and writes progress.json) — this card
+     simply never read it, so a flash message was the whole feedback and the
+     operator had to guess when to reload. It now polls the SAME endpoint the
+     Rediscover page polls, and prints the same phases: REST sweep, deep
+     capture, CLI capture.
+   * "Run discovery" USED to fire every GET inside the HTTP request. nginx cuts
+     a proxied request at 120 s and gunicorn at 600 s, so a run against a slow
+     box returned 504 while the worker kept spending the budget — and the
+     findings those GETs bought died with the response. It is now a job in the
+     shared ledger (services/jobs.py): progress, Stop, the toast dock, the bell,
+     and a result that survives closing the tab.
+
    `cc_report.chosen` is READ here, never recomputed: a second
    cli_coverage.report() in this partial would be a second answer to "which
    dump", which is the class of defect this card was just fixed for.
@@ -63,10 +79,11 @@
           <label class="fw-form-label mb-1" for="drAppliance">{{ _('Appliance') }}</label>
           <select class="form-select fw-form-control" name="appliance_id" id="drAppliance"
                   form="drLoadForm" required
+                  data-dr-watch="{{ request.args.get('dr_watch') or '' }}"
                   data-dr-evidence-id="{{ dr_ev.appliance_id if dr_ev and dr_ev.appliance_id else '' }}">
             <option value="">{{ _('choose an appliance…') }}</option>
             {% for a in cc_probe_appliances %}
-              <option value="{{ a.id }}">{{ a.name }}{% if a.host %} ({{ a.host }}){% endif %}</option>
+              <option value="{{ a.id }}"{% if request.args.get('dr_watch') == a.id|string %} selected{% endif %}>{{ a.name }}{% if a.host %} ({{ a.host }}){% endif %}</option>
             {% endfor %}
           </select>
         </div>
@@ -89,6 +106,21 @@
         {{ _('Loading is one action, because a diff between a catalog swept today and a dump captured in July describes two different afternoons. The REST sweep runs first and the CLI capture follows it as a separate pass, so an SSH failure cannot cost a sweep that already succeeded. The running firmware version is read off the device and stored in the same pass.') }}
       </p>
       {% endif %}
+
+      {# ── the sweep's own progress. It was ALWAYS a background job; the only
+         thing missing was a reader. Each phase names itself, and the three CLI
+         outcomes stay three: captured / skipped (with the reason) / failed
+         (with the error) — folding them would hide either a real breakage or a
+         decision the worker made deliberately. #}
+      <div class="mt-2 d-none" id="drSweep">
+        <div class="d-flex align-items-center gap-2">
+          <div class="progress flex-grow-1" style="height:8px;max-width:360px;">
+            <div class="progress-bar" id="drSweepBar" role="progressbar" style="width:0%"></div>
+          </div>
+          <span id="drSweepPct" style="font-size:11.5px;" class="text-muted"></span>
+        </div>
+        <div id="drSweepLine" style="font-size:11.5px;" class="mt-1"></div>
+      </div>
 
       {# The evidence, on screen and never implied: these candidates are
          derived from THIS dump, and the answers below will come from whatever
@@ -146,7 +178,24 @@
       <button class="btn btn-sm btn-fw-primary" type="button" data-js="dr-run">
         <i class="bi bi-play-fill me-1"></i>{{ _('Run discovery') }}
       </button>
+      <button class="btn btn-sm btn-fw-outline d-none" type="button" data-js="dr-stop">
+        <i class="bi bi-stop-fill me-1"></i>{{ _('Stop') }}
+      </button>
     </div>
+
+    {# The run's own progress. A job, not a request: closing this page no longer
+       throws the run away, and the toast dock plus the bell report it finishing
+       even from another page. #}
+    <div class="mb-2 d-none" id="drJob">
+      <div class="d-flex align-items-center gap-2">
+        <div class="progress flex-grow-1" style="height:8px;max-width:360px;">
+          <div class="progress-bar" id="drJobBar" role="progressbar" style="width:0%"></div>
+        </div>
+        <span id="drJobPct" style="font-size:11.5px;" class="text-muted"></span>
+      </div>
+      <div id="drJobLine" style="font-size:11.5px;" class="mt-1 text-muted"></div>
+    </div>
+
     <div id="drStatus" class="mb-2" style="font-size:12.5px;"></div>
 
     {# ── 3. results ───────────────────────────────────────────────────────── #}
@@ -194,23 +243,127 @@
   </div>
 </div>
 
-{% if dr_supported and dr_can_run and dr_run_endpoint %}
+{% if dr_supported and ((dr_can_run and dr_run_endpoint) or (dr_can_load and dr_load_endpoint)) %}
 <script nonce="{{ csp_nonce }}">
 (function () {
   var root = document.getElementById('discoveryRun');
   if (!root) { return; }
   var CSRF = document.querySelector('meta[name="csrf-token"]');
   var tok  = CSRF ? CSRF.content : '';
-  var rowsEl = document.getElementById('drRows');
-  var statusEl = document.getElementById('drStatus');
-  var wrap = document.getElementById('drResultWrap');
-  var last = [];   // the findings of the last run, as returned
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
       return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];
     });
   }
+
+  // ── the LOAD job (rediscovery sweep) ──────────────────────────────────────
+  // Polls the endpoint the Rediscover page has always polled. One status
+  // authority for one worker; this card simply stopped ignoring it.
+  var SWEEP_URL = '{{ url_for("appliances.rediscover_status", id=0) }}';
+  var sweepTimer = null;
+
+  // Five states, five sentences. `interrupted` is NOT `failed` and neither is
+  // `done`: a sweep killed by a restart wrote no snapshot and reported no
+  // error, so both other words would be a claim nobody can support.
+  var SWEEP_PHASE = {
+    'running':      '{{ _("REST sweep — asking the catalog endpoints") }}',
+    'deep-running': '{{ _("deep capture — WPP + policy graph") }}',
+    'cli-running':  '{{ _("CLI capture — show full-configuration over SSH") }}'
+  };
+  function sweepActive(s) { return !!SWEEP_PHASE[s]; }
+
+  function paintSweep(p) {
+    var box = document.getElementById('drSweep');
+    if (!box || !p || !p.state || p.state === 'idle') { return; }
+    box.classList.remove('d-none');
+    var bar = document.getElementById('drSweepBar');
+    var pct = typeof p.percent === 'number' ? p.percent : 0;
+    bar.style.width = (sweepActive(p.state) ? Math.max(pct, 2) : 100) + '%';
+    document.getElementById('drSweepPct').textContent =
+      sweepActive(p.state) ? (pct + '%') : '';
+    var html = '';
+    if (sweepActive(p.state)) {
+      html = '<span class="fw-badge fw-badge-info">' + SWEEP_PHASE[p.state] + '</span> ' +
+             esc(p.section || '') +
+             (p.total ? ' · ' + p.done + '/' + p.total + ' {{ _("endpoints") }}' : '') +
+             (p.objects ? ' · ' + p.objects + ' {{ _("objects") }}' : '');
+    } else if (p.state === 'done') {
+      html = '<span class="fw-badge fw-badge-success">{{ _("load finished") }}</span> ' +
+             esc(p.summary || '');
+      // Captured / skipped / failed are three outcomes and stay three: "no
+      // dump was taken" and "a dump was attempted and lost" send the operator
+      // to opposite places.
+      if (p.cli_kb != null) {
+        html += ' · <span class="fw-badge fw-badge-success">{{ _("CLI dump captured") }}</span> ' +
+                esc(p.cli_kb) + ' KB';
+      }
+      if (p.cli_skipped) {
+        html += ' · <span class="fw-badge fw-badge-neutral">{{ _("CLI capture skipped") }}</span> ' +
+                esc(p.cli_skipped);
+      }
+      if (p.cli_error) {
+        html += ' · <span class="fw-badge fw-badge-danger">{{ _("CLI capture failed") }}</span> ' +
+                esc(p.cli_error);
+      }
+      html += ' <span class="text-muted">{{ _("— reload the page to see the refreshed diff.") }}</span>';
+    } else if (p.state === 'interrupted') {
+      html = '<span class="fw-badge fw-badge-warning">{{ _("interrupted") }}</span> ' +
+             esc(p.error || '{{ _("the service restarted while this sweep was running") }}');
+    } else if (p.state === 'failed') {
+      html = '<span class="fw-badge fw-badge-danger">{{ _("load failed") }}</span> ' +
+             esc(p.error || '');
+    }
+    document.getElementById('drSweepLine').innerHTML = html;
+  }
+
+  function pollSweep(id) {
+    if (!id) { return; }
+    fetch(SWEEP_URL.replace('/0/', '/' + encodeURIComponent(id) + '/'))
+      .then(function (r) { return r.json(); })
+      .then(function (p) {
+        paintSweep(p);
+        if (!sweepActive(p.state)) {
+          clearInterval(sweepTimer); sweepTimer = null;
+        }
+      })
+      .catch(function () { /* a dropped poll is not a finished sweep */ });
+  }
+
+  function watchSweep(id) {
+    if (!id) { return; }
+    pollSweep(id);
+    if (!sweepTimer) {
+      sweepTimer = setInterval(function () { pollSweep(id); }, 1500);
+    }
+  }
+
+  var sel = document.getElementById('drAppliance');
+  if (sel) {
+    // After a Load the server redirects with ?dr_watch=<id>, so the card
+    // attaches to the run it just started instead of asking the operator to
+    // guess when to reload.
+    var watch = sel.getAttribute('data-dr-watch');
+    if (watch) { watchSweep(watch); }
+    sel.addEventListener('change', function () {
+      clearInterval(sweepTimer); sweepTimer = null;
+      var box = document.getElementById('drSweep');
+      if (box) { box.classList.add('d-none'); }
+      if (sel.value) { pollSweep(sel.value); }
+    });
+  }
+
+{% if dr_can_run and dr_run_endpoint %}
+  // ── the RUN job ───────────────────────────────────────────────────────────
+  var JOB_URL = '{{ url_for("jobs.get", job_id="DRJOBID") }}';
+  var JOB_CANCEL = '{{ url_for("jobs.cancel", job_id="DRJOBID") }}';
+  var rowsEl = document.getElementById('drRows');
+  var statusEl = document.getElementById('drStatus');
+  var wrap = document.getElementById('drResultWrap');
+  var last = [];   // the findings of the last run, as returned
+  var jobTimer = null;
+  var jobId = '';
+
   function note(html, kind) {
     statusEl.innerHTML = '<span class="fw-badge fw-badge-' + (kind || 'info') + '">' + html + '</span>';
   }
@@ -336,6 +489,10 @@
   function footnote(d) {
     var bits = [];
     bits.push('{{ _("Asked") }} ' + d.spent + ' {{ _("GETs of a budget of") }} ' + d.budget + '.');
+    if (d.stopped) {
+      bits.push('<strong>{{ _("The run was stopped.") }}</strong> ' +
+        '{{ _("What it had already asked is kept; everything after it stayed unasked.") }}');
+    }
     if (d.not_probed) {
       bits.push('<strong>' + d.not_probed + ' {{ _("blocks were never asked") }}</strong> — ' +
         '{{ _("the budget ran out. That is not the same as the device denying them; raise the budget and run again.") }}');
@@ -346,9 +503,62 @@
     document.getElementById('drFootnote').innerHTML = bits.join(' ');
   }
 
+  function paintJob(j) {
+    var box = document.getElementById('drJob');
+    box.classList.remove('d-none');
+    var pct = typeof j.percent === 'number' ? j.percent : 0;
+    document.getElementById('drJobBar').style.width = Math.max(pct, 2) + '%';
+    document.getElementById('drJobPct').textContent = pct + '%';
+    document.getElementById('drJobLine').textContent = j.message || '';
+  }
+
+  function stopWatching() {
+    clearInterval(jobTimer); jobTimer = null; jobId = '';
+    document.querySelector('[data-js="dr-stop"]').classList.add('d-none');
+  }
+
+  // A finished run is RENDERED from the job's stored result, which is why the
+  // result is persisted at all: the tab can be closed and reopened and the
+  // findings are still there to register from.
+  function finishJob(j) {
+    stopWatching();
+    var d = j.result || {};
+    if (j.status === 'error' || !d.findings) {
+      note(esc(j.error || '{{ _("the run ended without a result") }}'), 'danger');
+      return;
+    }
+    note(esc(d.device || '') + ': ' + esc(d.summary || ''),
+         j.status === 'cancelled' ? 'warning' : (d.errors ? 'warning' : 'success'));
+    provenance(d);
+    render(d.findings);
+    footnote(d);
+  }
+
+  function pollJob() {
+    if (!jobId) { return; }
+    fetch(JOB_URL.replace('DRJOBID', encodeURIComponent(jobId)))
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (!j || !j.status) { return; }
+        paintJob(j);
+        if (j.status === 'success' || j.status === 'error' || j.status === 'cancelled') {
+          finishJob(j);
+        }
+      })
+      .catch(function () { /* a dropped poll is not a finished run */ });
+  }
+
+  function watchJob(id) {
+    jobId = id;
+    document.querySelector('[data-js="dr-stop"]').classList.remove('d-none');
+    pollJob();
+    if (!jobTimer) { jobTimer = setInterval(pollJob, 1500); }
+  }
+
   root.addEventListener('click', function (ev) {
     var plan = ev.target.closest('[data-js="dr-plan"]');
     var run  = ev.target.closest('[data-js="dr-run"]');
+    var stop = ev.target.closest('[data-js="dr-stop"]');
     var all  = ev.target.closest('[data-js="dr-select-all"]');
     var reg  = ev.target.closest('[data-js="dr-register"]');
 
@@ -356,6 +566,17 @@
       Array.prototype.forEach.call(rowsEl.querySelectorAll('[data-dr-pick]'), function (cb) {
         if (cb.closest('tr').style.display !== 'none') { cb.checked = true; }
       });
+      return;
+    }
+
+    if (stop) {
+      if (!jobId) { return; }
+      fetch(JOB_CANCEL.replace('DRJOBID', encodeURIComponent(jobId)),
+            { method: 'POST', headers: { 'X-CSRFToken': tok } })
+        .then(function () {
+          note('{{ _("stopping at the next block — a GET already in flight is never cut") }}', 'warning');
+        })
+        .catch(function (e) { note(esc(String(e)), 'danger'); });
       return;
     }
 
@@ -383,16 +604,25 @@
       if (!askId()) {
         note('{{ _("choose an appliance first") }}', 'warning'); return;
       }
-      note('{{ _("asking the appliance… this fires one GET per candidate") }}');
+      note('{{ _("starting the run…") }}');
       fetch('{{ url_for(dr_run_endpoint) }}', { method: 'POST', body: body({}) })
         .then(function (r) { return r.json(); })
         .then(function (d) {
           if (!d.ok) { note(esc(d.error || 'failed'), 'danger'); return; }
-          note(esc(d.device) + ': ' + esc(d.summary || ''),
-               d.errors ? 'warning' : 'success');
-          provenance(d);
-          render(d.findings);
-          footnote(d);
+          if (!d.job_id) {
+            // Nothing to ask about: a complete answer, and it is NOT a job.
+            note(esc(d.device || '') + ': ' + esc(d.note || d.summary || ''), 'info');
+            provenance(d);
+            render(d.findings || []);
+            return;
+          }
+          if (d.reconnected) {
+            note('{{ _("a run is already in flight against this appliance — reconnected to it") }}',
+                 'warning');
+          } else {
+            note('{{ _("running in the background — you can leave this page") }}');
+          }
+          watchJob(d.job_id);
         })
         .catch(function (e) { note(esc(String(e)), 'danger'); });
       return;
@@ -438,6 +668,7 @@
   var drOther = document.getElementById('drAskOther');
   if (drOther) { drOther.addEventListener('change', hint); }
   hint();
+{% endif %}
 })();
 </script>
 {% endif %}

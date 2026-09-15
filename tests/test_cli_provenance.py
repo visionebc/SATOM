@@ -508,8 +508,76 @@ def test_versions_page_badges_each_line_from_its_own_capture(app, client, seeded
         "the unmeasured column must name the line it could not answer for"
 
 
+@pytest.fixture()
+def two_line_matrix(app, seeded):
+    """A matrix with an endpoint that 8.0 adds — written by this test.
+
+    Until 2026-09-15 this guard had NO fixture: it read the API matrix of the
+    LIVE INSTALLATION (``data/api_matrix/fortiweb.json``) and passed because
+    that file happened to contain an 8.0 witness. It was measuring production
+    state, so it would fail on a fresh checkout and pass or fail depending on
+    what the last real sweep had found — and it broke the moment the suite was
+    correctly isolated from that tree.
+    """
+    import json
+
+    from app.services import api_matrix, cli_coverage
+
+    # The endpoint the row is about is TAKEN FROM THE DUMP, not invented: the
+    # base column must carry a real CLI verdict, and a made-up name is "not an
+    # entry in the fortiweb catalog, so there is nothing to compare a CLI block
+    # against" — an em dash, which is exactly what this guard forbids.
+    with app.app_context():
+        rep = cli_coverage.report("fortiweb")
+        both = rep["diff"][cli_coverage.BUCKET_BOTH]
+        assert both, "premise: the seeded dump matches at least one catalog entry"
+        rec = both[0]
+        # ``catalog``/``urn`` — the keys a BOTH record actually carries. The
+        # first attempt read ``name``/``endpoint``, got None, and the page then
+        # said "'null' is not an entry in the fortiweb catalog": the fixture was
+        # wrong in a way that looked like the code being wrong.
+        ep_name, ep_urn = rec["catalog"], rec["urn"]
+
+    def _ep(name, devices, verdict="ok", urn=None):
+        return {"endpoint": name,
+                "urn": urn if urn is not None else "/api/v2.0/cmdb/system/%s" % name,
+                "section": "System", "verdict": verdict, "fields": None,
+                "origin": "sweep", "devices": devices,
+                "measured_at": "2026-09-15T00:00:00"}
+
+    def _line(line, devices, endpoints):
+        return {"line": line, "devices": devices, "in_fleet": True,
+                "endpoints": endpoints, "objects": {},
+                "counts": {"swept": len(endpoints), "ok": len(endpoints),
+                           "absent": 0, "error": 0, "endpoints_with_fields": 0,
+                           "schema_fields": 0, "schema_objects": 0}}
+
+    # "added" means MEASURED ON BOTH and absent on the base line. A name that
+    # simply does not appear on 7.6 is UNKNOWN, not added — the distinction the
+    # diff exists to make — so the fixture carries the absent record too, or it
+    # tests nothing.
+    absent76 = _ep(ep_name, ["fwA"], verdict="absent", urn=ep_urn)
+    only80 = _ep(ep_name, ["fwB"], urn=ep_urn)
+    matrix = {
+        "product": "fortiweb",
+        "built_at": "2026-09-15T00:00:00",
+        "sweepable": True,
+        "fleet_lines": ["7.6", "8.0"],
+        "witnesses": [{"id": 1, "name": "fwA", "firmware": "7.6.8", "line": "7.6"},
+                      {"id": 2, "name": "fwB", "firmware": "8.0.1", "line": "8.0"}],
+        "notes": [],
+        "lines": {"7.6": _line("7.6", ["fwA"], {ep_name: absent76}),
+                  "8.0": _line("8.0", ["fwB"], {ep_name: only80})},
+    }
+    pathlib.Path(api_matrix.MATRIX_ROOT).mkdir(parents=True, exist_ok=True)
+    with io.open(api_matrix.matrix_path("fortiweb"), "w", encoding="utf-8") as fh:
+        json.dump(matrix, fh)
+    return matrix
+
+
 def test_versions_row_badges_the_measured_line_and_blanks_the_other(app, client,
-                                                                   seeded):
+                                                                   seeded,
+                                                                   two_line_matrix):
     """Per-ROW, not just per-page.
 
     The two columns are the whole point: one line was captured and one was not,

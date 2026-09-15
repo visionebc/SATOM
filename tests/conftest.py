@@ -59,6 +59,17 @@ os.environ["SATOM_VAULT_DIR"] = f"{_TMPDIR}/vault"
 # pki/trust bundle — the same contamination pytest caused in the job
 # ledger on 2026-07-28.
 os.environ["SATOM_TRUST_DIR"] = f"{_TMPDIR}/trust"
+# The LAST two un-isolated stores, and the pair that caused measured damage on
+# 2026-09-15: tests/test_rediscovery_* drive real sweeps against the TEST
+# database while writing progress + _config.json into the PRODUCTION tree, and
+# api_matrix rebuilds itself FROM that tree at the end of every sweep. The live
+# data/api_matrix/fortiweb.json went from 326 swept endpoints and three
+# witnesses to `swept: 0, devices: []`. Both files are untracked, so git
+# reported nothing, and an empty matrix renders as a page with NO DIFFERENCES
+# rather than as an error -- the failure mode that makes this worse than a
+# crash.
+os.environ["SATOM_REDISCOVERY_DIR"] = f"{_TMPDIR}/rediscovery"
+os.environ["SATOM_API_MATRIX_DIR"] = f"{_TMPDIR}/api_matrix"
 os.environ.setdefault("FORTINET_REPORTS_DIR", f"{_TMPDIR}/reports")
 os.environ.setdefault("SECRET_KEY", "test-secret-key-not-for-prod")
 # A valid Fernet key so models.py encryption helpers import cleanly.

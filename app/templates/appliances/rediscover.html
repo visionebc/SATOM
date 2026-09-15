@@ -110,6 +110,18 @@
       if (p.cli_error) txt += ` · CLI capture failed: ${p.cli_error}`;
       line.textContent = txt;
       startBtn.disabled = false;
+    } else if (p.state === 'interrupted' || p.state === 'failed') {
+      // Three terminal states, three sentences. A sweep killed by a restart
+      // wrote no snapshot and reported no error, so it is neither 'done' nor
+      // 'failed' -- and a frozen bar with no words is how this page used to
+      // show a run that had already died.
+      bar.classList.remove('progress-bar-striped', 'progress-bar-animated');
+      bar.classList.add('bg-warning');
+      line.textContent = (p.state === 'interrupted'
+        ? 'Interrupted — the service restarted while this sweep was running. '
+          + 'It wrote no snapshot; run it again.'
+        : 'Failed — ' + (p.error || 'the sweep did not finish.'));
+      startBtn.disabled = false;
     }
     if (p.errors && p.errors.length) {
       const seen = {};

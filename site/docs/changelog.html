@@ -107,6 +107,78 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="fixed-nothing-on-the-discovery-card-is-a-synchronous-request-any-more-and-no-running-outlives-its-worker-2026-09-15">Fixed — nothing on the discovery card is a synchronous request any more, and no "running" outlives its worker (2026-09-15)</h3>
+<p>Asked for as <em>"cuando se crea y ejecuta, ¿cómo sabe el usuario que está
+corriendo? … se debería de crear un job y avisar al usuario cuando este job
+finalice"</em>, then <em>"arréglalo para que ya quede"</em>.</p>
+<p><strong>Four defects, and they are four shapes of the same lie: a screen reporting a
+state nobody is in.</strong></p>
+<p><strong>1. The run was synchronous, and the numbers say it could not stay.</strong>
+<code>POST /discovery/run</code> fired up to 960 read-only GETs <em>inside</em> the HTTP request.
+nginx cuts a proxied request at <strong>120 s</strong> and gunicorn kills a worker at
+<strong>600 s</strong> — five times apart — and the run that crosses that gap is the one
+against a <em>degraded</em> appliance, which is exactly when the answer matters most.
+The browser got a <strong>504</strong> while the worker kept asking the device for up to
+eight more minutes; the findings those GETs bought existed only in a response
+body nobody received, so <strong>nothing could be registered</strong> and the audit row said
+the run went fine. With four gunicorn workers, one such run also held 25 % of
+the application for its whole duration.</p>
+<p>The run is now a <strong>job</strong> in the shared ledger (<code>services/jobs.py</code>), through the
+new <code>services/discovery_jobs.py</code>. That buys, without inventing a second
+mechanism: live progress, a <strong>Stop</strong> that is cooperative (a GET already in
+flight is never cut), the toast dock, the <strong>bell when it finishes</strong>, the Job
+Manager, and the boot-time orphan sweep. The <strong>findings are persisted on the
+job</strong>, which is the part that matters operationally — the operator registers
+from that table, and closing the tab used to throw away GETs fired at a
+production box. A second run against the same appliance <strong>reconnects</strong> to the
+live one instead of spending the budget twice.</p>
+<p>The <strong>plan is still built in the request</strong>: deriving candidates reads the
+catalog and the dump through ADOM-scoped, request-bound services, and doing
+that in a daemon thread is how a background task quietly answers about the
+wrong ADOM. The worker only ever asks the device.</p>
+<p><strong>2. The load job already had progress — and no reader.</strong> <code>rediscovery.start()</code>
+has always been a background thread with a <code>progress.json</code> and a status
+endpoint the Rediscover page polls. This card started the <em>same</em> worker and
+showed a flash message, so <em>"is it still running?"</em> was answered by guessing.
+It now polls that same endpoint and names each phase — <strong>REST sweep</strong>, <strong>deep
+capture</strong>, <strong>CLI capture</strong> — and keeps the three CLI outcomes three: captured
+(with the size), skipped (with the reason), failed (with the error).</p>
+<p><strong>3. A <code>running</code> state could outlive its process, forever.</strong> The sweep's state
+is a file and its worker is a daemon thread, so <code>systemctl restart satom</code> left
+every in-flight sweep reading <code>running</code> with nobody behind it. Appliance 4 read
+<strong>71 %</strong> from <strong>2026-07-03</strong> to 2026-09-15 — 74 days. The guard in <code>start()</code>
+only stopped <em>blocking</em> a new run after 15 minutes, which unblocked the
+operator and left the page lying. Now:</p>
+<ul>
+<li>the sweep records <strong>pid + host</strong> with its progress, and
+  <code>reconcile_stale_runs()</code> runs at boot next to the existing job sweep;</li>
+<li>a sweep whose worker is gone becomes <strong><code>interrupted</code></strong> — <em>neither</em> <code>done</code>
+  <em>nor</em> <code>failed</code>. It wrote no snapshot and reported no error, so both other
+  words would be claims nobody can support;</li>
+<li>a sweep that <strong>crashes</strong> now writes <code>failed</code> with the exception and re-raises,
+  instead of leaving <code>running</code> behind;</li>
+<li><strong>a file from another host is never judged.</strong> <code>satom-ha-datasync</code> pulls this
+  whole <code>data/</code> tree onto the standby every five minutes, so a2 sees a1's
+  progress files and a1's pids mean nothing there.</li>
+</ul>
+<p><strong>4. The test suite wrote into the production data tree.</strong>
+<code>tests/test_rediscovery_*</code> drive real sweeps against the <em>test</em> database while
+writing progress and <code>_config.json</code> into the <strong>production</strong> <code>data/rediscovery/</code>,
+and <code>api_matrix</code> rebuilds itself from that tree at the end of every sweep. On
+2026-09-15 that reduced the live <code>data/api_matrix/fortiweb.json</code> from <strong>326
+swept endpoints and three witnesses</strong> to <code>swept: 0, devices: []</code>. The file is
+untracked, so git reported nothing, and <strong>an empty matrix renders as a page
+with no differences rather than as an error</strong> — which is what made it worse
+than a crash. <code>SATOM_REDISCOVERY_DIR</code> and <code>SATOM_API_MATRIX_DIR</code> now redirect
+both, the same isolation pattern <code>SATOM_JOBS_DIR</code> and <code>SATOM_SOT_DIR</code> already
+use, and <code>tests/conftest.py</code> sets them.</p>
+<p><strong>Also fixed, found while measuring:</strong> <code>rediscovery.apply_inventory</code> wrote
+<code>appliance.firmware</code> <strong>without</strong> stamping <code>firmware_checked_at</code>, so the sweep
+left behind a version no consumer could date. It is now stamped with the
+moment the snapshot <strong>observed</strong> it — not with "now", because an attestation
+dated later than its observation is a lie about freshness — and a snapshot with
+no readable time leaves the previous attestation alone rather than inventing
+one.</p>
 <h3 id="fixed-one-appliance-for-the-discovery-run-and-the-firmware-it-is-running-2026-09-15">Fixed — one appliance for the discovery run, and the firmware it is running (2026-09-15)</h3>
 <p>Asked for as <em>"no es redundante? … abajo volver a seleccionar un fortiweb no
 tiene caso"</em>, then <em>"checa que en automatico detecte la version del fortiweb o

@@ -1,0 +1,334 @@
+{# ─────────────────────────────────────────────────────────────────────────────
+   Discovery run — the catalog's missing GROWTH path. ONE author for this markup.
+
+   The registry could only shrink by itself (reconcile proposes disabling names
+   no appliance serves); growing it meant one form per entry, so a diff finding
+   50 CLI-only blocks produced 50 forms nobody fills in. This section asks the
+   DEVICE about every derived candidate in one run and offers, for registration,
+   ONLY the paths it actually served.
+
+   Fed by views/_discovery.context(). Included by the API hub of each product
+   that HAS a CLI configuration dump; the others render their reason and stop.
+   Light FortiWeb theme only (.fw-card / --fw-* / .fw-badge-*) — no dark-theme
+   colours in this product (safeguards §9m).
+   ──────────────────────────────────────────────────────────────────────────── #}
+<div class="fw-card mt-3" id="discoveryRun">
+  <div class="fw-card-header">
+    <span class="fw-card-title">
+      <i class="bi bi-binoculars me-2 text-accent"></i>{{ _('Discovery run — API + CLI') }}
+    </span>
+    <button class="btn btn-sm btn-fw-outline" type="button" data-bs-toggle="collapse"
+            data-bs-target="#discoveryRunBody" aria-expanded="false" aria-controls="discoveryRunBody">
+      <i class="bi bi-chevron-expand"></i>
+    </button>
+  </div>
+
+  <div class="collapse" id="discoveryRunBody">
+  <div class="fw-card-body">
+
+    {% if not dr_supported %}
+      <p class="text-muted mb-0" style="font-size:13px;">
+        <i class="bi bi-slash-circle me-1"></i>{{ dr_reason or _('This product has no CLI configuration dump to compare against.') }}
+      </p>
+    {% else %}
+
+    <p class="text-muted" style="font-size:13px;">
+      {{ _('The catalog is what every part of SATOM resolves a name through, so a path that was GUESSED and written here fails later, somewhere else. This run only ever asks the appliance: it derives the candidate paths for each CLI-only block, probes them, and offers for registration only the ones the device served.') }}
+    </p>
+
+    {# ── 1. load both halves of the diff ──────────────────────────────────── #}
+    {% if dr_can_load and dr_load_endpoint %}
+    <div class="fw-subcard p-2 mb-3" style="background:var(--fw-subtle-bg,#FAFBFC);border:1px solid var(--fw-border,#E3E6EA);border-radius:6px;">
+      <form method="post" action="{{ url_for(dr_load_endpoint) }}"
+            class="d-flex flex-wrap align-items-end gap-2" id="drLoadForm">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div>
+          <label class="fw-form-label mb-1" for="drLoadAppliance">{{ _('Load API catalog + CLI configuration from') }}</label>
+          <select class="form-select fw-form-control" name="appliance_id" id="drLoadAppliance" required>
+            <option value="">{{ _('choose an appliance…') }}</option>
+            {% for a in cc_probe_appliances %}
+              <option value="{{ a.id }}">{{ a.name }}{% if a.host %} ({{ a.host }}){% endif %}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-check pb-2">
+          <input class="form-check-input" type="checkbox" name="api_only" value="1" id="drApiOnly">
+          <label class="form-check-label" for="drApiOnly" style="font-size:12.5px;">{{ _('API only (skip the CLI dump)') }}</label>
+        </div>
+        <button class="btn btn-sm btn-fw-outline" type="submit">
+          <i class="bi bi-arrow-repeat me-1"></i>{{ _('Load both') }}
+        </button>
+      </form>
+      <p class="text-muted mb-0 mt-1" style="font-size:11.5px;">
+        {{ _('One action, because a diff between a catalog swept today and a dump captured in July describes two different afternoons. The REST sweep runs first and the CLI capture follows it as a separate pass, so an SSH failure cannot cost a sweep that already succeeded.') }}
+      </p>
+    </div>
+    {% endif %}
+
+    {# ── 2. the run ───────────────────────────────────────────────────────── #}
+    {% if dr_can_run and dr_run_endpoint %}
+    <div class="d-flex flex-wrap align-items-end gap-2 mb-2">
+      <div>
+        <label class="fw-form-label mb-1" for="drAppliance">{{ _('Ask this appliance') }}</label>
+        <select class="form-select fw-form-control" id="drAppliance">
+          <option value="">{{ _('choose an appliance…') }}</option>
+          {% for a in cc_probe_appliances %}
+            <option value="{{ a.id }}">{{ a.name }}{% if a.host %} ({{ a.host }}){% endif %}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div style="max-width:130px;">
+        <label class="fw-form-label mb-1" for="drBudget">{{ _('GET budget') }}</label>
+        <input type="number" class="form-control fw-form-control" id="drBudget"
+               value="{{ dr_budget }}" min="1" max="{{ dr_max_budget }}">
+      </div>
+      <div class="form-check pb-2">
+        <input class="form-check-input" type="checkbox" id="drConfigured">
+        <label class="form-check-label" for="drConfigured" style="font-size:12.5px;">{{ _('only blocks that hold configuration here') }}</label>
+      </div>
+      <button class="btn btn-sm btn-fw-outline" type="button" data-js="dr-plan">
+        <i class="bi bi-calculator me-1"></i>{{ _('What would it cost?') }}
+      </button>
+      <button class="btn btn-sm btn-fw-primary" type="button" data-js="dr-run">
+        <i class="bi bi-play-fill me-1"></i>{{ _('Run discovery') }}
+      </button>
+    </div>
+    <div id="drStatus" class="mb-2" style="font-size:12.5px;"></div>
+
+    {# ── 3. results ───────────────────────────────────────────────────────── #}
+    <div class="d-none" id="drResultWrap">
+      <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+        <input type="search" class="form-control fw-form-control" id="drFilter"
+               placeholder="{{ _('filter by block, URN or catalog name…') }}"
+               style="max-width:320px;font-size:12.5px;">
+        <span class="text-muted" id="drFilterCount" style="font-size:11.5px;"></span>
+        <div class="ms-auto d-flex align-items-center gap-2">
+          <button class="btn btn-sm btn-fw-outline" type="button" data-js="dr-select-all">
+            <i class="bi bi-check2-square me-1"></i>{{ _('Select all registerable') }}
+          </button>
+          {% if dr_register_endpoint %}
+          <button class="btn btn-sm btn-fw-primary" type="button" data-js="dr-register">
+            <i class="bi bi-plus-lg me-1"></i>{{ _('Register selected') }}
+          </button>
+          {% endif %}
+        </div>
+      </div>
+      <div class="table-responsive" style="max-height:460px;overflow:auto;">
+        <table class="table fw-table mb-0" style="font-size:12.5px;">
+          <thead><tr>
+            <th style="width:28px;"></th>
+            <th>{{ _('CLI block') }}</th>
+            <th>{{ _('device says') }}</th>
+            <th>{{ _('served URN') }}</th>
+            <th class="text-end">{{ _('rows') }}</th>
+            <th class="text-end">{{ _('asked') }}</th>
+            <th>{{ _('register as') }}</th>
+          </tr></thead>
+          <tbody id="drRows"></tbody>
+        </table>
+      </div>
+      <p class="text-muted mb-0 mt-2" style="font-size:11.5px;" id="drFootnote"></p>
+    </div>
+    {% elif not dr_can_run %}
+      <p class="text-muted mb-0" style="font-size:12px;">
+        <i class="bi bi-lock me-1"></i>{{ _('A discovery run fires read-only GETs at an appliance in order to drive a catalog write, so it needs the Registry edit permission — the same one the reconcile page requires.') }}
+      </p>
+    {% endif %}
+
+    {% endif %}
+  </div>
+  </div>
+</div>
+
+{% if dr_supported and dr_can_run and dr_run_endpoint %}
+<script>
+(function () {
+  var root = document.getElementById('discoveryRun');
+  if (!root) { return; }
+  var CSRF = document.querySelector('meta[name="csrf-token"]');
+  var tok  = CSRF ? CSRF.content : '';
+  var rowsEl = document.getElementById('drRows');
+  var statusEl = document.getElementById('drStatus');
+  var wrap = document.getElementById('drResultWrap');
+  var last = [];   // the findings of the last run, as returned
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];
+    });
+  }
+  function note(html, kind) {
+    statusEl.innerHTML = '<span class="fw-badge fw-badge-' + (kind || 'info') + '">' + html + '</span>';
+  }
+  function body(extra) {
+    var fd = new URLSearchParams();
+    fd.append('csrf_token', tok);
+    fd.append('appliance_id', document.getElementById('drAppliance').value || '');
+    fd.append('budget', document.getElementById('drBudget').value || '');
+    if (document.getElementById('drConfigured').checked) { fd.append('configured_only', '1'); }
+    {% if request.args.get('dump') %}fd.append('dump', '{{ request.args.get("dump")|e }}');{% endif %}
+    Object.keys(extra || {}).forEach(function (k) { fd.append(k, extra[k]); });
+    return fd;
+  }
+
+  // Each verdict gets its OWN badge and its OWN words. "absent" is the device
+  // saying no; "error" is us failing to ask; "not reached" is the budget. They
+  // are three different next steps, so they must never share a colour.
+  var BADGE = {
+    'ok':         ['success', '{{ _("served") }}'],
+    'absent':     ['neutral', '{{ _("no such path") }}'],
+    'error':      ['danger',  '{{ _("could not ask") }}'],
+    'not_probed': ['warning', '{{ _("not reached — budget") }}'],
+    'underivable':['neutral', '{{ _("no path derivable") }}']
+  };
+
+  function render(findings) {
+    last = findings || [];
+    rowsEl.innerHTML = '';
+    last.forEach(function (f, i) {
+      var b  = BADGE[f.status] || ['neutral', esc(f.status)];
+      var tr = document.createElement('tr');
+      tr.setAttribute('data-dr-row', String(i));
+      tr.setAttribute('data-dr-hay',
+        (f.path + ' ' + f.name + ' ' + (f.served_urn || '') + ' ' +
+         f.candidates.map(function (c) { return c.urn; }).join(' ')).toLowerCase());
+      var blocked = '';
+      if (f.urn_known)  { blocked = '{{ _("already in the catalog as") }} <code>' + esc(f.urn_known) + '</code>'; }
+      else if (f.name_taken) { blocked = '{{ _("name already taken by") }} <code>' + esc(f.name_taken) + '</code>'; }
+      tr.innerHTML =
+        '<td>' + (f.registerable
+            ? '<input type="checkbox" class="form-check-input" data-dr-pick="' + i + '">'
+            : '') + '</td>' +
+        '<td><code>' + esc(f.path) + '</code>' +
+          (f.configured ? ' <span class="fw-badge fw-badge-info">' + f.instances +
+             ' {{ _("rows") }}</span>' : '') + '</td>' +
+        '<td><span class="fw-badge fw-badge-' + b[0] + '">' + b[1] + '</span>' +
+          (blocked ? '<div class="text-muted" style="font-size:11px;">' + blocked + '</div>' : '') + '</td>' +
+        '<td>' + (f.served_urn ? '<code>' + esc(f.served_urn) + '</code>' : '—') + '</td>' +
+        '<td class="text-end">' + (f.served_urn ? f.served_rows : '') + '</td>' +
+        '<td class="text-end">' + f.probed + '/' + f.candidates.length + '</td>' +
+        '<td>' + (f.registerable
+            ? '<input type="text" class="form-control fw-form-control" data-dr-name="' + i +
+              '" value="' + esc(f.name) + '" pattern="[A-Za-z0-9_.\\-]+" style="min-width:210px;font-size:12px;">'
+            : '<span class="text-muted">—</span>') + '</td>';
+      rowsEl.appendChild(tr);
+    });
+    wrap.classList.remove('d-none');
+    filter();
+  }
+
+  function filter() {
+    var q = (document.getElementById('drFilter').value || '').trim().toLowerCase();
+    var shown = 0;
+    Array.prototype.forEach.call(rowsEl.querySelectorAll('tr[data-dr-hay]'), function (tr) {
+      var hit = !q || tr.getAttribute('data-dr-hay').indexOf(q) !== -1;
+      tr.style.display = hit ? '' : 'none';
+      if (hit) { shown++; }
+    });
+    document.getElementById('drFilterCount').textContent =
+      shown + ' / ' + last.length + ' {{ _("blocks") }}';
+  }
+
+  function footnote(d) {
+    var bits = [];
+    bits.push('{{ _("Asked") }} ' + d.spent + ' {{ _("GETs of a budget of") }} ' + d.budget + '.');
+    if (d.not_probed) {
+      bits.push('<strong>' + d.not_probed + ' {{ _("blocks were never asked") }}</strong> — ' +
+        '{{ _("the budget ran out. That is not the same as the device denying them; raise the budget and run again.") }}');
+    }
+    if (d.errors) { bits.push(d.errors + ' {{ _("could not be asked at all.") }}'); }
+    if (d.urn_known) { bits.push(d.urn_known + ' {{ _("served a path the catalog already has under another name.") }}'); }
+    if (d.name_taken) { bits.push(d.name_taken + ' {{ _("would take a catalog name that is already in use — rename before registering.") }}'); }
+    document.getElementById('drFootnote').innerHTML = bits.join(' ');
+  }
+
+  root.addEventListener('click', function (ev) {
+    var plan = ev.target.closest('[data-js="dr-plan"]');
+    var run  = ev.target.closest('[data-js="dr-run"]');
+    var all  = ev.target.closest('[data-js="dr-select-all"]');
+    var reg  = ev.target.closest('[data-js="dr-register"]');
+
+    if (all) {
+      Array.prototype.forEach.call(rowsEl.querySelectorAll('[data-dr-pick]'), function (cb) {
+        if (cb.closest('tr').style.display !== 'none') { cb.checked = true; }
+      });
+      return;
+    }
+
+    {% if dr_plan_endpoint %}
+    if (plan) {
+      note('{{ _("measuring…") }}');
+      fetch('{{ url_for(dr_plan_endpoint) }}', { method: 'POST', body: body({}) })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (!d.ok) { note(esc(d.error || 'failed'), 'danger'); return; }
+          note(d.blocks + ' {{ _("CLI-only blocks") }} · {{ _("at most") }} ' + d.max_gets +
+               ' {{ _("GETs") }} · {{ _("budget") }} ' + d.budget +
+               (d.max_gets > d.budget ? ' — <strong>{{ _("the budget stops it early") }}</strong>' : ''),
+               d.max_gets > d.budget ? 'warning' : 'info');
+          render(d.findings);
+          document.getElementById('drFootnote').innerHTML =
+            '{{ _("Nothing has been asked yet — this is the plan, not a result.") }}';
+        })
+        .catch(function (e) { note(esc(String(e)), 'danger'); });
+      return;
+    }
+    {% endif %}
+
+    if (run) {
+      if (!document.getElementById('drAppliance').value) {
+        note('{{ _("choose an appliance first") }}', 'warning'); return;
+      }
+      note('{{ _("asking the appliance… this fires one GET per candidate") }}');
+      fetch('{{ url_for(dr_run_endpoint) }}', { method: 'POST', body: body({}) })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (!d.ok) { note(esc(d.error || 'failed'), 'danger'); return; }
+          note(esc(d.device) + ': ' + esc(d.summary || ''),
+               d.errors ? 'warning' : 'success');
+          render(d.findings);
+          footnote(d);
+        })
+        .catch(function (e) { note(esc(String(e)), 'danger'); });
+      return;
+    }
+
+    {% if dr_register_endpoint %}
+    if (reg) {
+      var fd = new URLSearchParams();
+      fd.append('csrf_token', tok);
+      fd.append('appliance_id', document.getElementById('drAppliance').value || '');
+      var n = 0;
+      Array.prototype.forEach.call(rowsEl.querySelectorAll('[data-dr-pick]:checked'), function (cb) {
+        var i = cb.getAttribute('data-dr-pick');
+        var nameEl = rowsEl.querySelector('[data-dr-name="' + i + '"]');
+        fd.append('name', nameEl ? nameEl.value : last[i].name);
+        fd.append('urn', last[i].served_urn);
+        n++;
+      });
+      if (!n) { note('{{ _("nothing selected") }}', 'warning'); return; }
+      note('{{ _("re-asking the appliance about each one, then writing…") }}');
+      fetch('{{ url_for(dr_register_endpoint) }}', { method: 'POST', body: fd })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (!d.ok) { note(esc(d.error || 'failed'), 'danger'); return; }
+          var msg = d.created + ' {{ _("registered") }}';
+          if (d.rejected) { msg += ' · ' + d.rejected + ' {{ _("rejected") }}'; }
+          note(msg, d.rejected ? 'warning' : 'success');
+          var bad = (d.results || []).filter(function (r) { return !r.ok; });
+          if (bad.length) {
+            document.getElementById('drFootnote').innerHTML =
+              bad.map(function (r) {
+                return '<code>' + esc(r.name) + '</code> — ' + esc(r.error);
+              }).join('<br>');
+          }
+        })
+        .catch(function (e) { note(esc(String(e)), 'danger'); });
+    }
+    {% endif %}
+  });
+
+  document.getElementById('drFilter').addEventListener('input', filter);
+})();
+</script>
+{% endif %}

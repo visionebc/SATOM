@@ -6,6 +6,52 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed — the discovery run is the FIRST card, and its buttons actually run (2026-09-15)
+
+Asked for as *"ponlo hasta arriba"*, after *"donde pusiste el boton?"*.
+
+**Position was the request; the defect found while moving it is the bigger
+half.** The app-wide CSP (`app/__init__.py` `after_request`) sends
+`script-src-elem 'self' 'nonce-…'` with **no** `'unsafe-inline'`, and three
+`<script>` blocks shipped in the previous round without the nonce
+(`partials/_discovery_run.html`, and both blocks of
+`partials/_cli_probe_tools.html`). The browser **refuses** such a block, and a
+refused block looks exactly like a button that does nothing: *What would it
+cost?*, *Run discovery*, *Register selected*, the filter boxes and the per-row
+CLI/API test buttons on `/web/structure/` and `/web/registry/versions` rendered
+perfectly and were **inert**. Nothing failed, nothing logged. (*Load both*
+survived — it is a plain form POST, not fetch.) All three now carry
+`nonce="{{ csp_nonce }}"`.
+
+**The guard for this already existed and was never run** —
+`tests/test_csp_nonce.py` (2026-08-23) scans the whole template tree and, when
+the defect is reintroduced, names `partials/_discovery_run.html:144` exactly.
+Targeted test selection never picked it, because a cross-cutting guard has no
+module name to match. It is now part of the standing targeted set for any round
+that edits a template, and the feature suite carries a local copy scoped to the
+partials these pages mount.
+
+**The card moved out of `partials/_cli_coverage.html` and is mounted per hub**,
+because the right position differs by product and the difference carries
+meaning:
+
+- **First card** on the hubs that can act on it (`api_explorer`, `adc_api`) —
+  it is the affordance those pages exist to offer, and at the foot of the page
+  it was unfindable.
+- **Last card** on the hubs that cannot (`faz_api`, `fac_api`) — the section
+  renders its reason and stops there, and spending the most valuable slot on
+  *"not applicable"* is worse than the problem being fixed.
+
+It also **starts open**: a collapsed card at the top of a page is still a hidden
+feature, which is the complaint this change answers.
+
+Still exactly **one author of the markup** — `partials/_discovery_run.html`,
+included once per hub. Guards assert the include statement appears exactly once
+per hub, that no hub copies `id="discoveryRun"` (a second mount would duplicate
+the DOM ids the JS binds to and break it silently), and that the ordering
+relative to `_cli_coverage.html` is first-where-it-acts / last-where-it-cannot.
+
+
 ### Added — The catalog can finally GROW from what a device serves (2026-09-15)
 
 Asked for as *"al final dónde tenemos el botón o función para generar esa

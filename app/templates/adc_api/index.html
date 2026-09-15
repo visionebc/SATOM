@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "partials/_cli_provenance.html" import prov_badge, prov_legend with context %}
 
 {% block title %}FortiADC API-Registry Explorer{% endblock %}
 
@@ -105,6 +106,7 @@
                       <span class="fw-api-method fw-api-method-get me-1" style="font-size:9px;">GET</span>
                       <span style="font-size:12.5px;">{{ t.label }}</span>
                       <br><code class="text-muted" style="font-size:10.5px;">{{ t.urn }}</code>
+                      {% if cc_prov %}<br>{{ prov_badge(cc_prov.for_name(t.logical), show_path=True) }}{% endif %}
                     </button>
                     {% if row %}
                     <button type="button" class="btn btn-sm btn-fw-outline border-0 api-tree-copy me-1"
@@ -155,6 +157,7 @@
                       <span class="fw-api-method fw-api-method-get me-1" style="font-size:9px;">GET</span>
                       <span style="font-size:12.5px;">{{ e.name }}</span>
                       <br><code class="text-muted" style="font-size:10.5px;">{{ e.urn }}</code>
+                      {% if cc_prov %}<br>{{ prov_badge(cc_prov.for_name(e.name), show_path=True) }}{% endif %}
                     </button>
                     {% if row %}
                     <button type="button" class="btn btn-sm btn-fw-outline border-0 api-tree-copy me-1"

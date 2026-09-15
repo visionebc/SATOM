@@ -77,6 +77,11 @@ def context(product: str, *, page_endpoint: str, block_endpoint: str = "",
             "cc_probe_appliances": [], "cc_probe_endpoint": "",
             "cc_registry_save_endpoint": "",
             "cc_row_cap": ROW_CAP,
+            # No diff means no provenance. ``None`` makes every badge on
+            # the page render as "—"; a bare Provenance built from an
+            # empty diff would render 500 rows of "no CLI block here",
+            # which is a claim, not a blank.
+            "cc_prov": None,
         }
 
     can_read = bool(current_user.is_authenticated
@@ -100,6 +105,11 @@ def context(product: str, *, page_endpoint: str, block_endpoint: str = "",
         "cc_probe_endpoint": probe_endpoint,
         "cc_registry_save_endpoint": registry_save_endpoint,
         "cc_row_cap": ROW_CAP,
+        # Projected from the report ALREADY computed above — the menu
+        # tree's badges cost no second parse of a 690 KB dump, and they
+        # cannot disagree with the coverage table underneath them,
+        # because both are the same diff.
+        "cc_prov": cli_coverage.provenance_from(rep["diff"], rep.get("chosen")),
     }
 
 

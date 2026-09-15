@@ -596,6 +596,11 @@ def evidence_index(product: str | None = None) -> list:
             "filename": row.filename,
             "created_at": row.created_at.strftime("%Y-%m-%d %H:%M")
                           if row.created_at else "",
+            # The machine-readable twin of ``created_at``. The display string
+            # is formatted for a table cell; anything deriving a BUDGET from it
+            # (see rediscovery.CLI_CAPTURE_MAX_AGE_H) would be one column
+            # change away from silently never firing again.
+            "created_iso": row.created_at.isoformat() if row.created_at else "",
             "firmware": row.firmware or "",
             "product": prod,
             "line": api_matrix.firmware_line(row.firmware),
@@ -684,15 +689,25 @@ def orphan_dumps() -> list:
     return out
 
 
-def report(product: str, backup_id: int | None = None) -> dict:
+def report(product: str, backup_id: int | None = None, *,
+           line: str = "") -> dict:
     """The whole page payload for one product: evidence list + the diff.
 
     With no ``backup_id`` the newest usable dump for the product is used, so
     the section is never blank when there IS evidence — and when there is none
     it says which appliance to capture, not "0".
+
+    ``line`` restricts the choice to dumps captured on one firmware line, for
+    the firmware-line comparison page. It is a FILTER, never a fallback: with
+    no dump on that line the answer is *no evidence for 8.0*, not the 7.6 dump
+    relabelled. Answering a question about one firmware with a capture from
+    another is the single way this page could mislead, and it would look
+    exactly like a confident answer.
     """
     evidence = evidence_index(product) if product in SUPPORTED_PRODUCTS else []
     usable = [e for e in evidence if e["usable"]]
+    if line:
+        usable = [e for e in usable if e.get("line") == line]
     chosen = None
     if backup_id:
         chosen = next((e for e in usable if e["backup_id"] == backup_id), None)
@@ -702,13 +717,17 @@ def report(product: str, backup_id: int | None = None) -> dict:
     if chosen is None:
         diff = compare(product, "") if product in SUPPORTED_PRODUCTS else compare(product, "")
         diff["no_evidence"] = True
+        diff["evidence_line"] = line
         return {"product": product, "evidence": evidence, "chosen": None,
+                "line_filter": line,
                 "diff": diff, "orphans": orphan_dumps()}
 
     text, rec = read_dump(chosen["backup_id"])
     diff = compare(product, text, line=chosen.get("line", ""))
     diff["no_evidence"] = not text
+    diff["evidence_line"] = line
     return {"product": product, "evidence": evidence, "chosen": rec or chosen,
+            "line_filter": line,
             "diff": diff, "orphans": orphan_dumps()}
 
 
@@ -772,6 +791,242 @@ def candidate_urns(product: str, path: str) -> list:
     return []
 
 
+# ---------------------------------------------------------------------------
+# provenance — which transport serves one catalog entry
+# ---------------------------------------------------------------------------
+# Three pages list catalog entries — the API hub's menu tree, the firmware-line
+# comparison and the object Structure cross-reference — and all three were asked
+# the same question: *is this served by the API, by the CLI, or by both?*
+#
+# ONE derivation, from the diff those pages already compute. A second one would
+# be the ``api.js`` / ``main.js`` status-badge split repeated: two authors of one
+# badge, drifting apart at the first edit. Everything below is a projection of
+# :func:`compare` — it never re-parses a dump and never re-reads the catalog.
+
+PROV_UNKNOWN = "unknown"
+
+#: Every value :meth:`Provenance.for_name` / :meth:`Provenance.for_urn` can
+#: return. Finding-first, so a page that groups by bucket leads with the gap.
+PROV_ORDER = (BUCKET_CLI_ONLY, BUCKET_NEAR, BUCKET_BOTH, BUCKET_NO_BLOCK,
+              BUCKET_MONITOR, PROV_UNKNOWN)
+
+#: ``bucket -> (label, css class, why)``. The vocabulary lives here rather than
+#: in three templates so the three pages cannot disagree about what a word
+#: means. ``PROV_UNKNOWN`` deliberately has NO badge class: a page renders it as
+#: an em dash, because a grey badge saying "unknown" sits in the same visual
+#: family as a grey badge saying "no CLI block", and those two are precisely the
+#: pair that must never be confused.
+PROV_LABEL = {
+    BUCKET_BOTH: ("API + CLI", "fw-badge-success",
+                  "the catalog serves it over REST and the CLI dump has its "
+                  "configuration block"),
+    BUCKET_NEAR: ("API + CLI · other path", "fw-badge-warning",
+                  "both transports carry it, but the CLI spells the path "
+                  "differently from the REST URN — neither a match nor a gap"),
+    BUCKET_MONITOR: ("API only", "fw-badge-info",
+                     "a runtime readout with no configuration table behind it, "
+                     "so it cannot have a CLI block by construction"),
+    BUCKET_NO_BLOCK: ("API · no CLI block here", "fw-badge-secondary",
+                      "the catalog serves it, and this dump has no block for "
+                      "it — an EMPTY table prints no block, so this is not "
+                      "evidence that the CLI lacks it"),
+    BUCKET_CLI_ONLY: ("CLI only", "fw-badge-danger",
+                      "the dump has a configuration block for it and the "
+                      "catalog has no endpoint that matches"),
+    PROV_UNKNOWN: ("—", "", "no CLI evidence has been measured for this"),
+}
+
+
+class Provenance:
+    """Transport provenance for a product's catalog, against ONE CLI dump.
+
+    Built by :func:`provenance`; consumed by the API hub, the firmware-line
+    comparison and the Structure cross-reference through :meth:`for_name` and
+    :meth:`for_urn`.
+
+    The rule that makes it trustworthy is :attr:`measured`. With no usable dump
+    :func:`compare` still returns a full result — and in it **every** catalog
+    entry lands in ``no_block``, because an absent dump has no blocks. Rendered
+    naively that reads *"the CLI has none of this"*, which is the exact opposite
+    of what an empty evidence set means. So when nothing was measured the only
+    answers this object will give are ``monitor_only`` — which follows from the
+    URN alone and holds with or without a dump — and ``unknown``.
+    """
+
+    __slots__ = ("product", "supported", "reason", "evidence", "counts",
+                 "by_name", "by_tokens", "cli_only")
+
+    def __init__(self, product, *, supported, reason, evidence, counts,
+                 by_name, by_tokens, cli_only):
+        self.product = product
+        self.supported = supported
+        self.reason = reason
+        self.evidence = evidence
+        self.counts = counts
+        self.by_name = by_name
+        self.by_tokens = by_tokens
+        self.cli_only = cli_only
+
+    # -- state ------------------------------------------------------------
+    @property
+    def measured(self) -> bool:
+        """True only when a usable dump backed this object."""
+        return bool(self.supported) and self.evidence is not None
+
+    @property
+    def device(self) -> str:
+        return (self.evidence or {}).get("appliance", "")
+
+    @property
+    def captured_at(self) -> str:
+        return (self.evidence or {}).get("created_at", "")
+
+    @property
+    def line(self) -> str:
+        return (self.evidence or {}).get("line", "")
+
+    # -- lookups ----------------------------------------------------------
+    def _unknown(self, why: str = "") -> dict:
+        return {"bucket": PROV_UNKNOWN, "why": why or self.reason,
+                "path": "", "catalog": "", "urn": "", "configured": False}
+
+    def for_name(self, name: str) -> dict:
+        """Provenance of a catalog entry addressed by its friendly name."""
+        if not name:
+            return self._unknown("no catalog name")
+        rec = self.by_name.get(name)
+        if rec is not None:
+            return rec
+        if not self.measured:
+            return self._unknown()
+        return self._unknown(
+            "%r is not an entry in the %s catalog, so there is nothing to "
+            "compare a CLI block against" % (name, self.product))
+
+    def for_urn(self, urn: str) -> dict:
+        """Provenance of a REST URN, for rows that carry a URN and no name.
+
+        A URN that cannot host a CLI block at all (a monitor/runtime path) is
+        answered from the URN alone — that fact does not depend on holding a
+        dump, so withholding it would be false modesty rather than honesty.
+        """
+        if not urn:
+            return self._unknown("no URN")
+        tokens = _catalog_tokens(self.product, urn)
+        if tokens is None:
+            return {"bucket": BUCKET_MONITOR, "why": PROV_LABEL[BUCKET_MONITOR][2],
+                    "path": "", "catalog": "", "urn": urn, "configured": False}
+        rec = self.by_tokens.get(tokens)
+        if rec is not None:
+            return rec
+        if not self.measured:
+            return self._unknown()
+        return {"bucket": BUCKET_NO_BLOCK, "why": PROV_LABEL[BUCKET_NO_BLOCK][2],
+                "path": "", "catalog": "", "urn": urn, "configured": False}
+
+
+def provenance_from(diff: dict, evidence: dict | None) -> Provenance:
+    """Project one :func:`compare` result into a :class:`Provenance`.
+
+    Pure and cheap on purpose: the API hub already holds a ``compare`` result
+    when it renders, so its badges cost no second parse of a 690 KB dump.
+    """
+    product = diff.get("product", "")
+    supported = bool(diff.get("supported"))
+    # ``no_evidence`` is set by ``report`` when nothing could be read. It is the
+    # hinge of this whole module — see Provenance.measured.
+    if diff.get("no_evidence"):
+        evidence = None
+    reason = diff.get("reason") or ""
+    if supported and evidence is None:
+        line = diff.get("evidence_line") or ""
+        reason = ("no usable CLI dump has been captured for %s%s, so nothing "
+                  "here can be called API-only" %
+                  (product, " on firmware line %s" % line if line else ""))
+
+    by_name: dict = {}
+    by_tokens: dict = {}
+
+    def _put(rec, names):
+        for nm in names:
+            if nm:
+                by_name.setdefault(nm, rec)
+        toks = rec.get("tokens")
+        if toks:
+            by_tokens.setdefault(tuple(toks), rec)
+
+    # monitor_only survives an absent dump: it is derived from the URN shape,
+    # not from evidence.
+    for ent in diff.get(BUCKET_MONITOR) or []:
+        by_name.setdefault(ent["name"], {
+            "bucket": BUCKET_MONITOR, "why": PROV_LABEL[BUCKET_MONITOR][2],
+            "path": "", "catalog": ent["name"], "urn": ent.get("urn", ""),
+            "configured": False})
+
+    if evidence is not None:
+        for bucket in (BUCKET_BOTH, BUCKET_NEAR):
+            for r in diff.get(bucket) or []:
+                rec = {"bucket": bucket, "why": PROV_LABEL[bucket][2],
+                       "path": r.get("path", ""), "catalog": r.get("catalog", ""),
+                       "urn": r.get("urn", ""), "tokens": r.get("tokens") or [],
+                       "instances": r.get("instances", 0),
+                       "settings": r.get("settings") or [],
+                       "configured": bool(r.get("instances") or r.get("settings"))}
+                _put(rec, [r.get("catalog")] + list(r.get("aliases") or []))
+        for r in diff.get(BUCKET_CLI_ONLY) or []:
+            rec = {"bucket": BUCKET_CLI_ONLY, "why": PROV_LABEL[BUCKET_CLI_ONLY][2],
+                   "path": r.get("path", ""), "catalog": "", "urn": "",
+                   "tokens": r.get("tokens") or [],
+                   "instances": r.get("instances", 0),
+                   "settings": r.get("settings") or [],
+                   "configured": bool(r.get("configured"))}
+            _put(rec, [])
+        for r in diff.get(BUCKET_NO_BLOCK) or []:
+            rec = {"bucket": BUCKET_NO_BLOCK, "why": PROV_LABEL[BUCKET_NO_BLOCK][2],
+                   "path": "", "catalog": r.get("catalog", ""),
+                   "urn": r.get("urn", ""), "tokens": r.get("tokens") or [],
+                   "configured": False}
+            _put(rec, [r.get("catalog")])
+
+    # Completeness. ``compare`` drops a catalog entry from ``no_block`` when ANY
+    # near-match shares its token SET, but only the FIRST entry of that set is
+    # named as the near candidate — so an entry could end up in no bucket, and
+    # ``for_name`` would then answer "that is not in the catalog" about
+    # something that is. The sweep is over the same ``_catalog`` the diff was
+    # built from, so it cannot introduce a name the diff never considered.
+    if evidence is not None:
+        near_sets = {frozenset(r.get("tokens") or [])
+                     for r in diff.get(BUCKET_NEAR) or []}
+        keyed, _monitor, _aliases = _catalog(product)
+        for tokens, entries in keyed.items():
+            bucket = (BUCKET_NEAR if frozenset(tokens) in near_sets
+                      else BUCKET_NO_BLOCK)
+            for ent in entries:
+                if ent["name"] in by_name:
+                    continue
+                by_name[ent["name"]] = {
+                    "bucket": bucket, "why": PROV_LABEL[bucket][2], "path": "",
+                    "catalog": ent["name"], "urn": ent.get("urn", ""),
+                    "tokens": list(tokens), "configured": False}
+
+    return Provenance(
+        product, supported=supported, reason=reason, evidence=evidence,
+        counts=diff.get("counts") or {}, by_name=by_name, by_tokens=by_tokens,
+        cli_only=list(diff.get(BUCKET_CLI_ONLY) or []) if evidence is not None else [],
+    )
+
+
+def provenance(product: str, backup_id: int | None = None, *,
+               line: str = "") -> Provenance:
+    """Transport provenance for ``product``, from the best evidence available.
+
+    ``line`` selects evidence captured on one firmware line — see
+    :func:`report`, which owns evidence selection for every caller.
+    """
+    rep = report(product, backup_id, line=line)
+    return provenance_from(rep["diff"], rep.get("chosen"))
+
+
 __all__ = [
     "SUPPORTED_PRODUCTS", "UNSUPPORTED_REASON", "REDACTED", "MAX_CANDIDATES",
     "catalog_name_for", "candidate_urns",
@@ -780,4 +1035,6 @@ __all__ = [
     "CliBlock", "parse_config_dump", "parse_report", "scrub_block",
     "extract_block", "compare", "field_gap", "product_of_firmware",
     "evidence_index", "read_dump", "orphan_dumps", "report",
+    "PROV_UNKNOWN", "PROV_ORDER", "PROV_LABEL", "Provenance",
+    "provenance", "provenance_from",
 ]

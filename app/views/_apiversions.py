@@ -1,96 +1,175 @@
-"""Shared body of the API Versions page (firmware-line matrix).
+"""Shared body of the API Versions page (firmware evidence, per BUILD).
 
 Mounted twice — FortiWeb (``/web/registry/versions``) and FortiADC
 (``/adc/api/versions``) — for the same reason ``_reconcile`` is: the catalog is
 product-scoped and each product's API hub is its own ADOM page. One
 implementation, two thin routes.
 
-Read-only except ``rebuild``, and ``rebuild`` writes only the DERIVED matrix
-file (``data/api_matrix/<product>.json``) — it never touches the registry, an
-appliance, or any authored data. That is why it is gated on REGISTRY_EDIT
-rather than something stronger: it is the same audience as the reconcile page
-and strictly less dangerous.
+What changed on 2026-09-16: the page used to have one axis, the firmware
+**line** (``8.0``). A line merges builds, and ``api_matrix``'s merge rule is
+*"OK from any healthy witness wins"* — so an endpoint served only by one build
+was attributed to the whole line, and ``preflight`` could answer *compatible*
+about a box that does not serve it. The atomic axis is now the full version
+(``8.0.5``); the line survives as a rollup that always DECLARES which builds it
+merged and which endpoints only some of them attested.
+
+Read-only except ``rebuild`` / ``declare`` / ``forget``. ``rebuild`` writes only
+the DERIVED matrix file (``data/api_matrix/<product>.json``); the other two
+write one row of operator-authored text. All three are gated on REGISTRY_EDIT:
+the same audience as the reconcile page and strictly less dangerous than it.
 """
 from __future__ import annotations
 
 from flask import flash, redirect, render_template, request, url_for
+from flask_login import current_user
 
-from ..services import api_matrix, cli_coverage
+from ..services import api_matrix, cli_coverage, firmware_versions
+from ..services.audit import log_action
 
 
-def _pick_lines(matrix: dict) -> tuple[str, str]:
-    """Default (base, target) for the comparison: oldest → newest known line.
+def _scopes(matrix: dict) -> list:
+    """Everything comparable on this page, builds first then rollups.
+
+    Builds and rollups share one selector because the operator's question is
+    the same shape ("what changes between these two?"), and they are LABELLED
+    apart in the option text because the answers are not the same kind of
+    claim.
+    """
+    versions = sorted((matrix.get("versions") or {}), key=firmware_versions.sort_key)
+    lines = sorted(matrix.get("lines") or {})
+    return [{"key": v, "kind": "version"} for v in versions] + \
+           [{"key": ln, "kind": "line"} for ln in lines]
+
+
+def _pick(matrix: dict) -> tuple:
+    """Default (base, target): oldest → newest MEASURED build.
 
     Newest-as-target is the direction an operator actually asks about ("what
-    does the upgrade add?"). With fewer than two lines both come back empty and
-    the template renders the single-line case instead of a diff against itself.
+    does the upgrade add?"). Builds are preferred over lines for the default
+    because a build-to-build answer is the stronger one; with fewer than two
+    measured builds it falls back to lines, and with fewer than two of those
+    both come back empty and the template renders the single-scope case.
     """
+    measured = sorted([v for v, d in (matrix.get("versions") or {}).items()
+                       if d.get("measured")], key=firmware_versions.sort_key)
+    if len(measured) >= 2:
+        return measured[0], measured[-1]
     lines = sorted(matrix.get("lines") or {})
-    if len(lines) < 2:
-        return "", ""
-    return lines[0], lines[-1]
+    if len(lines) >= 2:
+        return lines[0], lines[-1]
+    return "", ""
+
+
+def _empty(product: str) -> dict:
+    return {"product": product, "lines": {}, "versions": {}, "fleet_lines": [],
+            "fleet_versions": [], "witnesses": [], "notes": [], "built_at": "",
+            "sweepable": product in api_matrix.SWEPT_PRODUCTS}
 
 
 def render_page(product: str, hub_endpoint: str, rebuild_endpoint: str,
-                page_endpoint: str):
-    matrix = api_matrix.load(product) or {"product": product, "lines": {},
-                                          "fleet_lines": [], "witnesses": [],
-                                          "notes": [], "built_at": "",
-                                          "sweepable": product in api_matrix.SWEPT_PRODUCTS}
+                page_endpoint: str, declare_endpoint: str = "",
+                forget_endpoint: str = ""):
+    # Read-time merge of the DERIVED matrix (a file on disk) with the AUTHORED
+    # declarations (rows in Postgres). Two stores on purpose — one is rebuilt
+    # from evidence, the other is typed by a person — and merged here so a
+    # declaration is visible the moment it is made, without a rebuild that
+    # would drop evidence from deleted witnesses.
+    matrix = firmware_versions.overlay(product, api_matrix.load(product) or _empty(product))
+    vdocs = matrix.get("versions") or {}
+    versions = sorted(vdocs, key=firmware_versions.sort_key)
     lines = sorted(matrix.get("lines") or {})
-    d_base, d_target = _pick_lines(matrix)
+    scopes = _scopes(matrix)
+    scope_keys = {s["key"] for s in scopes}
+
+    d_base, d_target = _pick(matrix)
     base = request.args.get("base") or d_base
     target = request.args.get("target") or d_target
-    # A base/target that is not a known line is silently dropped rather than
+    # A base/target that is not a known scope is silently dropped rather than
     # rendered as an empty diff: an empty diff and "you asked about a firmware
     # nobody has ever measured" look identical and mean opposite things.
-    if base not in lines:
+    if base not in scope_keys:
         base = d_base
-    if target not in lines:
+    if target not in scope_keys:
         target = d_target
 
     delta = None
     if base and target and base != target:
         delta = api_matrix.diff(product, base, target, matrix=matrix)
 
-    # CLI provenance is PER FIRMWARE LINE here, never per product. A dump
-    # is captured from one box running one firmware, so answering "does
-    # 8.0 have this in its CLI?" with a 7.6 capture would be the page's
+    # CLI provenance is per BUILD here, never per product and no longer merely
+    # per line. A dump comes from one box running one build, so answering "does
+    # 8.0.5 have this in its CLI?" with an 8.0.3 capture would be this page's
     # only way to lie, and it would look like a confident answer.
-    # ``cli_coverage.report`` owns that selection (``line=``); a line with
-    # no capture comes back unmeasured and every badge for it is "—".
+    # ``cli_coverage.report`` owns that selection; a build with no capture comes
+    # back unmeasured and every badge for it is "—".
+    ver_prov = {v: cli_coverage.provenance(product, version=v) for v in versions}
     line_prov = {ln: cli_coverage.provenance(product, line=ln) for ln in lines}
-    base_prov = line_prov.get(base)
-    target_prov = line_prov.get(target)
+    prov = dict(line_prov)
+    prov.update(ver_prov)
+    base_prov = prov.get(base)
+    target_prov = prov.get(target)
 
     # Until now the page printed only COUNTS of endpoints added/removed.
     # A provenance column needs the rows, so they are rendered — annotated
     # in the view rather than looked up in the template, so the lookup has
     # exactly one call site.
     if delta:
-        for row in delta.get("endpoints_added") or []:
-            row["cli_base"] = base_prov.for_name(row["endpoint"]) if base_prov else None
-            row["cli_target"] = target_prov.for_name(row["endpoint"]) if target_prov else None
-        for row in delta.get("endpoints_removed") or []:
-            row["cli_base"] = base_prov.for_name(row["endpoint"]) if base_prov else None
-            row["cli_target"] = target_prov.for_name(row["endpoint"]) if target_prov else None
+        for bucket in ("endpoints_added", "endpoints_removed"):
+            for row in delta.get(bucket) or []:
+                row["cli_base"] = base_prov.for_name(row["endpoint"]) if base_prov else None
+                row["cli_target"] = target_prov.for_name(row["endpoint"]) if target_prov else None
 
-    # The console and the ``show`` runner live on this product's API hub, and
-    # the caller already told us which blueprint that is. Deriving the two route
-    # names from ``hub_endpoint`` keeps this body product-agnostic without
-    # introducing a second product->blueprint map to drift against the first.
     _hub_bp = (hub_endpoint or "").split(".")[0]
     from ..models import Appliance, visible_appliances
     probe_appliances = (visible_appliances().filter(Appliance.kind == product)
                         .order_by(Appliance.name).all()) if _hub_bp else []
+
+    # --- the discovery run, scoped to the row the operator clicked ----------
+    # ``?discover=8.0.5`` is the whole mechanism: no JavaScript, the scope is
+    # in the URL so it is shareable and it reaches the audit log of whoever
+    # follows the link. An UNKNOWN build scopes to nothing rather than to
+    # "whatever dump sorted first" — silently widening it is the exact defect
+    # this move exists to end.
+    discover = firmware_versions.normalize(request.args.get("discover") or "")
+    if discover and discover not in vdocs:
+        discover = ""
+    scope_boxes = [a for a in probe_appliances
+                   if firmware_versions.normalize(
+                       getattr(a, "fw_version", "") or a.firmware) == discover
+                   ] if discover else []
+
+    dr_ctx, cc_ctx = {}, {}
+    if _hub_bp:
+        from . import _clicoverage, _discovery
+        cc_ctx = _clicoverage.context(
+            product, page_endpoint=page_endpoint,
+            block_endpoint="%s.cli_coverage_block" % _hub_bp,
+            capture_endpoint="%s.cli_coverage_capture" % _hub_bp,
+            live_endpoint="%s.cli_coverage_live" % _hub_bp,
+            probe_endpoint="%s.cli_coverage_probe" % _hub_bp,
+            registry_save_endpoint="registry.save")
+        dr_ctx = _discovery.context(
+            product,
+            run_endpoint="%s.discovery_run" % _hub_bp,
+            plan_endpoint="%s.discovery_plan" % _hub_bp,
+            register_endpoint="%s.discovery_register" % _hub_bp,
+            load_endpoint="%s.discovery_load" % _hub_bp,
+            scope=discover, scope_appliances=scope_boxes)
+
     return render_template(
         "registry/versions.html", product=product, matrix=matrix, lines=lines,
+        versions=versions, vdocs=vdocs, scopes=scopes,
+        discover=discover, **cc_ctx, **dr_ctx,
+        stale_format=bool(matrix.get("stale_format")),
         probe_appliances=probe_appliances,
         exec_endpoint=("%s.execute" % _hub_bp) if _hub_bp else "",
         live_endpoint=("%s.cli_coverage_live" % _hub_bp) if _hub_bp else "",
         base=base, target=target, delta=delta, hub_endpoint=hub_endpoint,
         rebuild_endpoint=rebuild_endpoint, page_endpoint=page_endpoint,
-        line_prov=line_prov, base_prov=base_prov, target_prov=target_prov,
+        declare_endpoint=declare_endpoint, forget_endpoint=forget_endpoint,
+        line_prov=line_prov, ver_prov=ver_prov, prov=prov,
+        base_prov=base_prov, target_prov=target_prov,
+        source_label=firmware_versions.SOURCE_LABEL,
     )
 
 
@@ -100,9 +179,22 @@ def rebuild_page(product: str, page_endpoint: str):
     except Exception as exc:  # noqa: BLE001 — a rebuild failure must be visible
         flash("Rebuild failed: %s: %s" % (type(exc).__name__, exc), "danger")
         return redirect(url_for(page_endpoint))
-    counts = matrix.get("lines") or {}
-    flash("Matrix rebuilt from evidence on disk — %d firmware line(s): %s."
-          % (len(counts), ", ".join(sorted(counts)) or "none"), "success")
+    vers = matrix.get("versions") or {}
+    measured = [v for v, d in vers.items() if d.get("measured")]
+    flash("Matrix rebuilt from evidence on disk — %d firmware version(s), %d of "
+          "them measured: %s."
+          % (len(vers), len(measured),
+             ", ".join(sorted(measured, key=firmware_versions.sort_key)) or "none"),
+          "success")
+    # A rollup made of more than one build is the thing an operator most needs
+    # told, because every "the line serves it" on this page is then a claim
+    # about a merge.
+    for ln, doc in sorted((matrix.get("lines") or {}).items()):
+        if doc.get("heterogeneous"):
+            flash("Line %s merges %s — %d endpoint(s) are attested by only some "
+                  "of them and are listed as partial, never as served."
+                  % (ln, ", ".join(doc.get("measured_versions") or []),
+                     (doc.get("counts") or {}).get("partial", 0)), "warning")
     # Every skipped witness is surfaced. A device dropped for being unhealthy
     # is the single most useful thing on this page and the easiest to lose in
     # a success banner.
@@ -112,4 +204,35 @@ def rebuild_page(product: str, page_endpoint: str):
     return redirect(url_for(page_endpoint))
 
 
-__all__ = ["render_page", "rebuild_page"]
+def declare_page(product: str, page_endpoint: str):
+    """Author a firmware version by hand.
+
+    This is the half of "versions get registered when a firmware is uploaded or
+    by hand" that has nowhere else to live. The upload half is DERIVED from the
+    ``FirmwareImage`` table on every read — see
+    ``firmware_versions._image_versions`` — because two separate code paths
+    create those rows and hooking both would be one refactor away from a
+    version that silently never appears here.
+    """
+    ok, msg, version = firmware_versions.declare(
+        product, request.form.get("version") or "",
+        note=request.form.get("note") or "",
+        by=getattr(current_user, "username", "") or "")
+    flash(msg, "success" if ok else "danger")
+    if ok:
+        log_action("api_versions.declare", target="%s %s" % (product, version),
+                   extra={"note": (request.form.get("note") or "")[:200]})
+    return redirect(url_for(page_endpoint))
+
+
+def forget_page(product: str, page_endpoint: str):
+    """Drop a hand-authored declaration. Never unmakes a derived one."""
+    version = request.form.get("version") or ""
+    ok, msg = firmware_versions.forget(product, version)
+    flash(msg, "success" if ok else "warning")
+    if ok:
+        log_action("api_versions.forget", target="%s %s" % (product, version))
+    return redirect(url_for(page_endpoint))
+
+
+__all__ = ["render_page", "rebuild_page", "declare_page", "forget_page"]

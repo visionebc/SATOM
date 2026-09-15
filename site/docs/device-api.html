@@ -651,6 +651,67 @@ so both commands print its <code>built_at</code>, and a matrix nobody rebuilt re
 was true then. <strong>Rebuild</strong> on the page (or the first access after the file is
 removed) recomputes it.</p>
 <hr>
+<h3 id="75-the-build-axis-2026-09-16">7.5 The build axis (2026-09-16)</h3>
+<p>Evidence is keyed by the <strong>full firmware version</strong>, not by the <code>major.minor</code>
+line. The line is still computed and still shown, as a <strong>rollup</strong> — and a
+rollup now always declares what it merged.</p>
+<p>The reason is a measured false positive. The merge rule for a line is <em>"OK from
+any healthy witness on the line wins"</em>, because two appliances on one line were
+assumed interchangeable. They are not: <code>8.0.4</code> and <code>8.0.7</code> are both "8.0" and
+can differ in both REST and CLI. Under the old key, an endpoint served only by
+one build was attributed to the whole line, and <code>preflight</code> answered
+<strong>compatible</strong> for a box that does not serve it — in the one place whose next
+action is a write to a production appliance.</p>
+<table>
+<thead>
+<tr>
+<th>concept</th>
+<th>key</th>
+<th>notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>build</td>
+<td><code>8.0.5</code></td>
+<td>the atomic unit; one sweep, one dump, one box</td>
+</tr>
+<tr>
+<td>line</td>
+<td><code>8.0</code></td>
+<td>a rollup; declares <code>measured_versions</code> and <code>heterogeneous</code></td>
+</tr>
+<tr>
+<td>patch unknown</td>
+<td><code>8.0</code> <em>as a build</em></td>
+<td>evidence whose patch level was never recorded. <strong>Not</strong> <code>8.0.0</code> — that would mint a build nobody runs</td>
+</tr>
+</tbody>
+</table>
+<p>Sweeps are archived per build under
+<code>data/rediscovery/&lt;appliance_id&gt;/by-version/&lt;version&gt;.json</code>. <code>_config.json</code>
+stays what it always was — the latest sweep — so every existing consumer is
+untouched. There is deliberately <strong>no retention cap</strong>: a cap would drop the
+evidence for a build somebody is still running, which is the failure this
+directory exists to prevent.</p>
+<p><code>preflight</code> gains one status:</p>
+<table>
+<thead>
+<tr>
+<th>status</th>
+<th>means</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>version_unmeasured</code></td>
+<td><em>that build</em> has no evidence while siblings of its line do. Never answered from them. The line-granular answer travels beside it, labelled — a guard that hides what is known is a guard people route around.</td>
+</tr>
+</tbody>
+</table>
+<p>CLI dumps carry their build as well as their line, and both filters are
+<strong>filters, never fallbacks</strong>: no dump on <code>8.0.5</code> means <em>no evidence for 8.0.5</em>,
+not the <code>8.0.3</code> dump relabelled.</p>
 <h2 id="8-limits-gotchas">8. Limits &amp; gotchas</h2>
 <ul>
 <li><strong>A "not found" is usually the truth.</strong> The catalog is a cross-firmware

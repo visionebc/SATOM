@@ -75,8 +75,19 @@ def render_page(product: str, hub_endpoint: str, rebuild_endpoint: str,
             row["cli_base"] = base_prov.for_name(row["endpoint"]) if base_prov else None
             row["cli_target"] = target_prov.for_name(row["endpoint"]) if target_prov else None
 
+    # The console and the ``show`` runner live on this product's API hub, and
+    # the caller already told us which blueprint that is. Deriving the two route
+    # names from ``hub_endpoint`` keeps this body product-agnostic without
+    # introducing a second product->blueprint map to drift against the first.
+    _hub_bp = (hub_endpoint or "").split(".")[0]
+    from ..models import Appliance, visible_appliances
+    probe_appliances = (visible_appliances().filter(Appliance.kind == product)
+                        .order_by(Appliance.name).all()) if _hub_bp else []
     return render_template(
         "registry/versions.html", product=product, matrix=matrix, lines=lines,
+        probe_appliances=probe_appliances,
+        exec_endpoint=("%s.execute" % _hub_bp) if _hub_bp else "",
+        live_endpoint=("%s.cli_coverage_live" % _hub_bp) if _hub_bp else "",
         base=base, target=target, delta=delta, hub_endpoint=hub_endpoint,
         rebuild_endpoint=rebuild_endpoint, page_endpoint=page_endpoint,
         line_prov=line_prov, base_prov=base_prov, target_prov=target_prov,

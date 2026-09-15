@@ -6,6 +6,108 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — The catalog can finally GROW from what a device serves (2026-09-15)
+
+Asked for as *"al final dónde tenemos el botón o función para generar esa
+biblioteca del `/api-explorer/`?"*, then *"sí hazlo, y debe de cargar tanto el
+api como el cli"*.
+
+**The premise was inverted, and that is the finding.** The library is not
+produced by scanning a FortiWeb — the scan is *driven by* the library:
+`rediscovery` GETs every endpoint **in the registry**, so a path the catalog
+does not name is never requested and no sweep can ever discover it. Measured on
+the live catalog: FortiWeb 517 entries, FortiADC 244, FAZ 64, FAC 40. Of the
+four ways the catalog could change, three only ever **removed** things
+(`registry/toggle`, `registry/reconcile`, and the 2026-09-15 probe, which
+promotes one block at a time). Growing it meant one form per entry, and the
+coverage diff routinely finds 50 CLI-only blocks — so in practice it never grew.
+
+**The discovery run** (`services/discovery_run.py`, mounted in the CLI↔API
+section of both supported hubs) takes the `cli_only` bucket the page already
+computed, derives every candidate REST path for each block, asks the appliance,
+and offers for registration **only the paths the appliance served**. It cannot
+write a derived path: the catalog is what every service resolves names through
+(`loader.resolve`), so a guess behind a friendly key does not fail here — it
+fails later, somewhere else, as a phantom endpoint.
+
+**Three negatives that never merge**, because each is a different next step:
+
+* `absent` — the device answered, and the answer is no;
+* `error` — we failed to **ask**; says nothing about the path;
+* `not_probed` — the budget stopped the run before this block. Says nothing
+  about anything, and must never render as "no REST path exists" — the one
+  sentence this run could tell that would be both confident and false.
+
+The GET budget (240 by default, clamped server-side) is **reported**, never
+silently applied, and the run **stops at the first served candidate** while
+recording how many were actually asked, so an unasked candidate is never
+printed as denied.
+
+**"Load both"** runs the REST sweep and the CLI capture in one action, because
+a diff between a catalog swept today and a dump captured in July describes two
+different afternoons. It delegates to `rediscovery.start(cli=True)` — the same
+worker, obeying the same `cli_capture_decision` authority — so this page cannot
+promise a dump the worker would decline, and the CLI half is dropped **with its
+reason returned** when the user lacks the vault permission.
+
+**Registration re-asks the device inside the same request.** A checkbox list is
+replayable and a name may have been edited between the run and the submit; the
+browser is not the authority on what exists.
+
+### Added — One catalog writer (2026-09-15)
+
+`services/registry_write.py` is now the only code that writes a
+`RegistryEndpoint` row. There were two — `registry.save` and
+`adc_api.registry_save` — and they had **already drifted**: the FortiADC one
+re-checked `row.product` before editing a row by id and the FortiWeb one did
+not, so a `registry.save` POST carrying a FortiADC row id rewrote that row from
+the FortiWeb page. Fixed by construction, with a guard. The bulk registration
+would have been a third copy.
+
+The writer also owns cache invalidation, including the one that is easy to
+forget: FortiADC has a **second** cache (`adc_menu`) and invalidating only the
+loader leaves a freshly registered endpoint present in the catalog and invisible
+in the menu — which reads as a failed write.
+
+### Added — The CLI-only elements now appear in `/web/structure/` (2026-09-15)
+
+Asked for as *"lo que necesito es que los elementos del spo también … von der
+cli que no aparecen en la estructura aparezcan"*.
+
+The dependency tree was captured by walking REST, so anything REST never names
+is missing from it **by construction** — not because the box lacks it. Those
+blocks now render as their own root, with the CLI path, whether the block holds
+configuration on the dumped box, a filter and a per-row `show` test.
+
+**They get their own root, and that is the load-bearing decision.** A CLI block
+carries no `via` — no field on a parent references it, because these are global
+tables, not children of a Server Policy. Grafting them into the WPP subtree
+would mean inventing that edge, and `dependencies.py` records what an invented
+edge costs, measured: the appliance rejects the payload with HTTP 500 and no
+message. They also carry **no URN**: printing a derived path in the same column
+as the measured ones is how a guess becomes a fact.
+
+**The clone gap is now printed instead of silent.** A clone recreates objects
+over REST, so a block with no REST endpoint cannot be carried by it — and a
+block that is not in the dependency tree is never even visited. The page lists
+the blocks that hold configuration and would therefore be missing from a cloned
+device. Making one of them clonable is a two-step the operator drives: register
+a path the appliance serves (discovery run), then declare its parent field in
+the structure overlay. The snippet leaves `via` **blank on purpose** — only
+someone who has read the parent's schema knows it, and a plausible guess would
+produce a tree that looks complete and a clone the appliance rejects.
+
+### Added — Search and test on all three endpoint listings (2026-09-15)
+
+`partials/_cli_probe_tools.html` is the single author of the filter box and the
+test buttons now carried by `/web/structure/`, `/web/registry/versions` and the
+API hubs. **Two buttons, never one**: "test over REST" and "test over the CLI"
+answer different questions and can disagree — and that disagreement is the
+finding these pages exist to show. The filter wires itself inside its own macro
+because the API hub does not mount the test bar, and a search box whose
+JavaScript lives elsewhere is a search box that silently does nothing, which
+reads as "no rows matched".
+
 ### Added — Every page that lists an endpoint now says which transport serves it (2026-09-15)
 
 Asked for as *"aquí debería de verse también qué cosas son del CLI y qué cosas

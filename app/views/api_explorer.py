@@ -5,7 +5,7 @@ from ..models import Appliance, db, Permission
 from ..models import visible_appliances, visible_appliance_or_404
 from ..clients.fortiweb import FortiWebClient
 from ..services.audit import log_action
-from . import _clicoverage
+from . import _clicoverage, _discovery
 from ..registry import loader, tree
 # The catalog editor (New / Edit / Disable) lives on the Registry blueprint and
 # writes through registry.save / registry.toggle. The API-Registry Explorer
@@ -41,7 +41,45 @@ def index():
             page_endpoint='api_explorer.index',
             probe_endpoint='api_explorer.cli_coverage_probe',
             registry_save_endpoint='registry.save'),
+        **_discovery.context(
+            'fortiweb',
+            run_endpoint='api_explorer.discovery_run',
+            plan_endpoint='api_explorer.discovery_plan',
+            register_endpoint='api_explorer.discovery_register',
+            load_endpoint='api_explorer.discovery_load'),
     )
+
+
+# ---------------------------------------------------------------------------
+# Discovery run — the catalog's growth path (shared body in views/_discovery.py)
+# ---------------------------------------------------------------------------
+
+@bp.route('/discovery/plan', methods=['POST'])
+@login_required
+@require_permission(Permission.REGISTRY_EDIT)
+def discovery_plan():
+    return _discovery.plan_payload('fortiweb')
+
+
+@bp.route('/discovery/run', methods=['POST'])
+@login_required
+@require_permission(Permission.REGISTRY_EDIT)
+def discovery_run():
+    return _discovery.run_payload('fortiweb')
+
+
+@bp.route('/discovery/register', methods=['POST'])
+@login_required
+@require_permission(Permission.REGISTRY_EDIT)
+def discovery_register():
+    return _discovery.register_payload('fortiweb')
+
+
+@bp.route('/discovery/load', methods=['POST'])
+@login_required
+@require_permission('appliances.apply')
+def discovery_load():
+    return _discovery.load('fortiweb', 'api_explorer.index')
 
 
 @bp.route('/execute', methods=['POST'])

@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "partials/_cli_provenance.html" import prov_badge, prov_legend with context %}
+{% from "partials/_cli_probe_tools.html" import filter_box, test_btn, probe_bar with context %}
 
 {% block title %}Structure{% endblock %}
 
@@ -131,6 +132,7 @@
               <th>{{ _('URN (REST)') }}</th>
               <th style="width:130px;">{{ _('In registry?') }}</th>
               <th style="width:150px;">{{ _('Served by') }}</th>
+              <th style="width:90px;">{{ _('Test') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -162,6 +164,7 @@
                 {% endif %}
               </td>
               <td>{{ prov_badge(r.cli) }}</td>
+              <td>{% if r.urn %}{{ test_btn(urn=r.urn) }}{% endif %}</td>
             </tr>
             {% endfor %}
           </tbody>
@@ -191,6 +194,108 @@
   </div>
 </div>
 {% endif %}
+
+
+<!-- CLI-only elements: what the dependency tree cannot contain -->
+<div class="fw-card mt-3" id="cliOnlyCard">
+  <div class="fw-card-header">
+    <span class="fw-card-title">
+      <i class="bi bi-terminal me-2"></i>{{ _('CLI-only elements (not in the dependency tree)') }}
+    </span>
+    <span>
+      {% if cli_rows %}<span class="fw-badge fw-badge-warning">{{ cli_rows|selectattr('cli_path')|list|length }}</span>{% endif %}
+      {% if cli_evidence %}
+        <span class="text-muted" style="font-size:11px;">
+          {{ cli_evidence.appliance }} · {{ cli_evidence.firmware or '?' }} · {{ cli_evidence.created_at }}
+        </span>
+      {% endif %}
+    </span>
+  </div>
+  <div class="fw-card-body">
+    {% if not cli_supported %}
+      <p class="text-muted mb-0" style="font-size:12.5px;">
+        <i class="bi bi-slash-circle me-1"></i>{{ cli_reason }}
+      </p>
+    {% elif not cli_rows %}
+      <p class="text-muted mb-0" style="font-size:12.5px;">
+        {{ _('No CLI configuration dump has been captured for FortiWeb yet, so there is nothing to compare the tree against. This is an absence of evidence, not a finding: capture a dump from the API hub and this section fills in.') }}
+      </p>
+    {% else %}
+      <p class="text-muted" style="font-size:12.5px;">
+        {{ _('The tree above was captured by walking REST, so anything the REST catalog never names is missing from it by construction — not because the box lacks it. These blocks come from') }}
+        <code>show full-configuration</code>.
+        {{ _('They hang from their own root on purpose: a CLI block carries no') }} <code>via</code>
+        {{ _('edge, and inventing one would produce a tree that looks complete and a clone the appliance rejects.') }}
+      </p>
+
+      {% if clone_gap %}
+      <div class="alert alert-warning py-2 px-3" style="font-size:12.5px;">
+        <strong>{{ _('A clone of this device would not carry') }} {{ clone_gap|length }}
+        {{ _('of these.') }}</strong>
+        {{ _('They hold configuration here and have no REST endpoint, and a clone writes over REST. Until a discovery run registers a path the appliance serves for them, their absence from a cloned device is silent — this list is that silence, printed.') }}
+        <div class="mt-1">
+          {% for g in clone_gap[:20] %}
+            <code style="font-size:11px;">{{ g.path }}</code>
+            {# A configured block is not always a block with ROWS: a singleton
+               table carries settings and no instances, and printing "0 rows"
+               next to it reads as "there is nothing here" — the opposite of why
+               it is on this list. #}
+            <span class="text-muted" style="font-size:10.5px;">({% if g.instances %}{{ g.instances }} {{ _('rows') }}{% else %}{{ g.settings }} {{ _('settings') }}{% endif %})</span>{% if not loop.last %} · {% endif %}
+          {% endfor %}
+          {% if clone_gap|length > 20 %}
+            <span class="text-muted" style="font-size:10.5px;">
+              … {{ clone_gap|length - 20 }} {{ _('more — the list is capped for reading, not truncated in the data below.') }}
+            </span>
+          {% endif %}
+        </div>
+      </div>
+      {% endif %}
+
+      {% if cli_box %}
+      <pre style="background:#F4F5F7;border:1px solid #E3E6EA;border-radius:4px;
+                  padding:10px;font-size:11.5px;max-height:240px;overflow:auto;">{{ cli_box }}</pre>
+      {% endif %}
+
+      <div class="mb-2">{{ filter_box('cliOnlyTable', _('Filter CLI blocks…')) }}</div>
+      <div class="table-responsive" style="max-height:420px;overflow:auto;">
+        <table class="fw-table" id="cliOnlyTable">
+          <thead><tr>
+            <th style="width:38%;">{{ _('Element') }}</th>
+            <th>{{ _('CLI block') }}</th>
+            <th style="width:110px;">{{ _('Configured here') }}</th>
+            <th style="width:120px;">{{ _('Test') }}</th>
+          </tr></thead>
+          <tbody>
+            {% for r in cli_rows %}
+            <tr>
+              <td style="padding-left:{{ 6 + r.depth * 18 }}px;">
+                <span style="font-size:13px; {{ 'font-weight:600;' if r.depth < 2 else '' }}">{{ r.label }}</span>
+              </td>
+              <td>{% if r.cli_path %}<code style="background:#F4F5F7;padding:2px 6px;border-radius:3px;font-size:11px;">{{ r.cli_path }}</code>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+              <td>
+                {% if not r.cli_path %}<span class="text-muted">—</span>
+                {% elif r.configured %}
+                  <span class="fw-badge fw-badge-info">{{ r.instances }} {{ _('rows') }} · {{ r.settings }} {{ _('set') }}</span>
+                {% else %}
+                  <span class="fw-badge fw-badge-secondary">{{ _('empty here') }}</span>
+                {% endif %}
+              </td>
+              <td>{% if r.cli_path %}{{ test_btn(cli_path=r.cli_path) }}{% endif %}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p class="text-muted mb-0 mt-2" style="font-size:11.5px;">
+        {{ _('“Empty here” means this box has no rows in that table — it is still a catalog gap, but it is not a clone gap: there is nothing on the source to carry. To make one of these clonable, register a REST path the appliance serves for it from the API hub’s discovery run, then declare its parent field in the structure overlay below.') }}
+      </p>
+    {% endif %}
+  </div>
+</div>
+
+{{ probe_bar(probe_appliances,
+             live_endpoint='api_explorer.cli_coverage_live',
+             exec_endpoint='api_explorer.execute') }}
 
 <!-- Exporter function inventory -->
 <div class="fw-card mt-3">

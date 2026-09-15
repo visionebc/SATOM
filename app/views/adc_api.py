@@ -32,9 +32,9 @@ from ..extensions import db
 from ..models import Appliance, Permission, RegistryEndpoint
 from ..models import visible_appliances, visible_appliance_or_404
 from ..registry import loader
-from ..services import adc_menu
+from ..services import adc_menu, registry_write
 from ..services.audit import log_action
-from . import _clicoverage
+from . import _clicoverage, _discovery
 from . import _apiversions, _reconcile
 
 bp = Blueprint('adc_api', __name__, url_prefix='/adc/api')
@@ -88,7 +88,45 @@ def index():
             page_endpoint='adc_api.index',
             probe_endpoint='adc_api.cli_coverage_probe',
             registry_save_endpoint='adc_api.registry_save'),
+        **_discovery.context(
+            'fortiadc',
+            run_endpoint='adc_api.discovery_run',
+            plan_endpoint='adc_api.discovery_plan',
+            register_endpoint='adc_api.discovery_register',
+            load_endpoint='adc_api.discovery_load'),
     )
+
+
+# ---------------------------------------------------------------------------
+# Discovery run (shared body in views/_discovery.py)
+# ---------------------------------------------------------------------------
+
+@bp.route('/discovery/plan', methods=['POST'])
+@login_required
+@require_permission(Permission.REGISTRY_EDIT)
+def discovery_plan():
+    return _discovery.plan_payload('fortiadc')
+
+
+@bp.route('/discovery/run', methods=['POST'])
+@login_required
+@require_permission(Permission.REGISTRY_EDIT)
+def discovery_run():
+    return _discovery.run_payload('fortiadc')
+
+
+@bp.route('/discovery/register', methods=['POST'])
+@login_required
+@require_permission(Permission.REGISTRY_EDIT)
+def discovery_register():
+    return _discovery.register_payload('fortiadc')
+
+
+@bp.route('/discovery/load', methods=['POST'])
+@login_required
+@require_permission('appliances.apply')
+def discovery_load():
+    return _discovery.load('fortiadc', 'adc_api.index')
 
 
 @bp.route('/execute', methods=['POST'])
@@ -159,41 +197,22 @@ def registry_save():
     urn = (request.form.get('urn') or '').strip()
     api_version = (request.form.get('api_version') or 'v1').strip() or 'v1'
 
-    if not name or not urn:
-        flash('Name and URN are both required.', 'danger')
-        return _back()
-    if not _NAME_RE.match(name):
-        flash('Endpoint name may only contain letters, digits, "_", "-" and ".".', 'danger')
-        return _back()
-    if not urn.startswith('/'):
-        flash('URN must be an absolute API path (e.g. /api/load_balance_pool).', 'danger')
-        return _back()
-
-    row = None
+    before, action = None, 'registry.adc_endpoint_create'
     if rid:
-        row = db.session.get(RegistryEndpoint, rid)
-        if row is None or row.product != 'fortiadc':
+        existing = db.session.get(RegistryEndpoint, rid)
+        if existing is None or existing.product != 'fortiadc':
             abort(404)
+        action = 'registry.adc_endpoint_update'
+        before = {'name': existing.name, 'urn': existing.urn,
+                  'api_version': existing.api_version}
 
-    dup = RegistryEndpoint.query.filter_by(
-        product='fortiadc', api_version=api_version, name=name).first()
-    if dup is not None and (row is None or dup.id != row.id):
-        flash(f'An endpoint named "{name}" already exists ({dup.urn}).', 'danger')
+    ok, msg, _row = registry_write.save_endpoint(
+        product='fortiadc', name=name, urn=urn, api_version=api_version,
+        row_id=rid, actor=current_user.username)
+    if not ok:
+        flash(msg, 'danger')
         return _back()
 
-    if row is None:
-        row = RegistryEndpoint(product='fortiadc', api_version=api_version)
-        db.session.add(row)
-        action, before = 'registry.adc_endpoint_create', None
-    else:
-        action = 'registry.adc_endpoint_update'
-        before = {'name': row.name, 'urn': row.urn, 'api_version': row.api_version}
-
-    row.name, row.urn, row.api_version = name, urn, api_version
-    row.updated_by = current_user.username
-    db.session.commit()
-    loader.invalidate_adc_cache()
-    adc_menu.invalidate()
     log_action(action, target=name, extra={'urn': urn, 'api_version': api_version,
                                            'before': before})
     flash(f'FortiADC endpoint "{name}" saved.', 'success')

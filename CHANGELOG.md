@@ -6,6 +6,99 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Changed — evidence is indexed by firmware BUILD, and three pages stopped answering about a firmware nobody chose (2026-09-16)
+
+Asked for as *"no vale la pena tenerlo ahí porque no sabremos por versión qué
+es… mejor es establecer con las versiones que tenemos"*, and then, precisely:
+*"dentro de una misma versión 8.0 puede haber un 8.0.4 y un 8.0.7 y dentro de
+esas puede haber ya diferencias en el CLI"*. That is the whole defect, and it
+was load-bearing.
+
+**The mechanism.** `api_matrix` keyed its evidence by firmware **line**
+(`8.0`), by an explicit decision whose reasoning is still in the docstring: *a
+patch release is not a new API surface*. Its merge rule is **"OK from ANY
+healthy witness on the line wins"**. Put the two together and an endpoint
+served by one build of a line is attributed to the whole line — so
+`preflight`, whose caller's next action is a write to a production appliance,
+could answer **compatible** about a box that does not serve it. Nothing errors.
+The page fills, the table renders, the answer is wrong.
+
+**The store made it permanent.** A sweep wrote
+`data/rediscovery/<appliance>/_config.json` and **overwrote it every run**, so
+the first sweep after a firmware upgrade *destroyed* the only evidence backing
+the previous build — silently, because nothing compares the two. The page did
+not report a loss; it reported that the old line had fewer endpoints.
+
+#### What changed
+
+* **The atomic unit is the full version.** Sweeps are archived per build under
+  `data/rediscovery/<appliance>/by-version/<version>.json`; `_config.json`
+  stays exactly what it was (the latest), so every existing consumer is
+  untouched. A boot-time backfill files the existing snapshots under the
+  firmware each one recorded. There is deliberately **no retention cap** — a cap
+  would reintroduce the failure being fixed.
+* **The line survives as a rollup that declares itself.** Every line row lists
+  the builds it merged, flags itself `heterogeneous`, and lists the endpoints
+  only *some* of those builds attested as **partial** — never as "the line
+  serves it".
+* **`version_unmeasured` is its own word.** A build with no evidence is never
+  answered from its line. It is also never merely refused: the line-granular
+  answer travels beside it, **labelled**, because a guard that hides what is
+  known is a guard people route around.
+* **`8.0` is not `8.0.0`.** A version string with no patch component means *the
+  line is known and the build is not* — a third thing, and widening it would
+  mint a build nobody runs.
+* **Versions get registered.** Derived on read from uploaded `FirmwareImage`
+  rows and from the fleet's running firmware (so no upload path can forget
+  one), plus a hand-authored table (`firmware_version_decls`) for the builds
+  nothing proves yet. A registered build with no evidence renders
+  **`declared · unmeasured`**, never as a measured row that happens to be empty.
+* **A pre-version matrix on disk is adapted, never auto-rebuilt.** `build`
+  filters witnesses through the live appliance table, so rebuilding drops every
+  line whose witnesses were deleted — `fortiadc`'s entire 8.0 line is in that
+  position today. Destroying evidence as a side effect of opening a page is not
+  an upgrade path, so the old document is served as-is, flagged, and
+  build-scoped questions against it are refused with the reason.
+* **CLI dumps carry their build**, and the filter is a filter: no dump on 8.0.5
+  means *no evidence for 8.0.5*, not the 8.0.3 dump relabelled.
+
+#### The discovery run moved to where the build is (round 2)
+
+On `/web/api-explorer/` a run had no firmware to be about: candidates came from
+whichever dump sorted first, the appliance came from a second, unrelated
+picker, and the page never named either. It now lives on the API-versions page,
+where **the row is the build** — `?discover=8.0.5` scopes the dump, the
+appliances offered, and the audit entry. One card, not one per row: N panels
+would mean N pollers and N jobs competing for one appliance's session limit.
+The hubs keep a pointer saying where it went and why.
+
+The API hub also now **names the build behind its transport badges**. All ~517
+of them were derived from an unnamed dump.
+
+#### `/web/structure/` gains the axis it never had (round 3)
+
+`services/structure.py` does not contain the words version, line or firmware
+once, and the view called `cli_coverage.report('fortiweb')` with no filter — so
+the whole dependency cross-reference, the CLI-only subtree and the clone gap
+all came out of an unnamed dump. There is now a firmware selector, and a new
+**"Serves it?"** column sourced from the version-indexed matrix, whose three
+outcomes never merge: *served* / *absent on this build* / *unmeasured*. With no
+scope chosen the column is blank — "nobody asked about a firmware" is not
+"there is no evidence".
+
+The **tree itself stays unversioned on purpose**: `dependencies.ROOTS` is a
+hand-authored map, not a measurement, and minting a per-build structure nobody
+swept would be inventing evidence that looks measured.
+
+#### Measured while doing it
+
+`fortiweb15` and `fortiweb16` run **7.6.8**, `fortiweb17` runs **8.0.5**; 326
+endpoints swept on each, **287** served on 7.6.8 and **290** on 8.0.5. Every
+FortiWeb line on this fleet is homogeneous *today*, so the false positive was
+not currently firing — the mechanism is what is fixed, and the guards are what
+prove it, because production data cannot.
+
+
 ### Fixed — nothing on the discovery card is a synchronous request any more, and no "running" outlives its worker (2026-09-15)
 
 Asked for as *"cuando se crea y ejecuta, ¿cómo sabe el usuario que está

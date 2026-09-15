@@ -2116,6 +2116,22 @@ def create_app(config_override: object | None = None) -> Flask:
                     [s.get("appliance") for s in stale])
         except Exception:  # noqa: BLE001 — never block boot on housekeeping
             app.logger.exception("stale rediscovery reconcile failed")
+        # Backfill the per-BUILD snapshot archive. Until 2026-09-16 a sweep
+        # wrote one file per appliance and overwrote it every run, so the first
+        # sweep after a firmware upgrade DESTROYED the evidence backing the
+        # previous version — silently, because nothing compares the two. This
+        # is additive and idempotent: it never deletes and never overwrites a
+        # version's own file with a different version's.
+        try:
+            from .services import rediscovery as _redisc2
+            filed = _redisc2.migrate_version_archive()
+            if filed:
+                app.logger.info(
+                    "filed %d sweep snapshot(s) under their firmware version: %s",
+                    len(filed), ["%s@%s" % (f.get("device"), f.get("version"))
+                                 for f in filed])
+        except Exception:  # noqa: BLE001 — never block boot on housekeeping
+            app.logger.exception("version archive backfill failed")
 
     # -- legacy URL compatibility: the FortiWeb area moved under /web/ ------
     # (2026-07-07 ADOM split). Old deep-links, hardcoded JS fetches and the

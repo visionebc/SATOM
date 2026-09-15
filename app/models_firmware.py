@@ -45,3 +45,38 @@ class FirmwareImage(db.Model):
 
     def size_mb(self) -> int:
         return (self.size_bytes or 0) // (1024 * 1024)
+
+
+class FirmwareVersionDecl(db.Model):
+    """A firmware version an operator declared BY HAND. Authored data only.
+
+    Versions that come from a ``FirmwareImage`` row or from an appliance's
+    running firmware are derived on read by
+    :func:`app.services.firmware_versions.catalog` and deliberately do NOT get
+    a row here: two upload paths create ``FirmwareImage`` rows, and hooking
+    both would be one refactor away from a version that silently never appears
+    on the API-versions page. A derived fact has a source; this table is for
+    the facts that have nowhere else to live — "8.0.5 exists and we intend to
+    measure it" before any image or box proves it.
+
+    Deleting a row forgets the NOTE, never the version: a version that is also
+    derived stays on the page afterwards.
+    """
+
+    __tablename__ = "firmware_version_decls"
+    __table_args__ = (
+        db.UniqueConstraint("product", "version", name="uq_fwverdecl_product_version"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    product = db.Column(db.String(32), nullable=False, default="fortiweb")
+    #: Normalised by ``firmware_versions.normalize`` before it ever gets here —
+    #: ``8.0.3``, or ``8.0`` when only the line is known. A line-only string is
+    #: NOT the patch ``.0`` and must never be widened into one.
+    version = db.Column(db.String(32), nullable=False)
+    note = db.Column(db.String(500), default="")
+    declared_by = db.Column(db.String(64), nullable=False, default="")
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    def __repr__(self):  # pragma: no cover - debugging aid
+        return "<FirmwareVersionDecl %s %s>" % (self.product, self.version)

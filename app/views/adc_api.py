@@ -274,7 +274,9 @@ def reconcile_apply():
 def api_versions():
     return _apiversions.render_page('fortiadc', 'adc_api.index',
                                     'adc_api.api_versions_rebuild',
-                                    'adc_api.api_versions')
+                                    'adc_api.api_versions',
+                                    'adc_api.api_versions_declare',
+                                    'adc_api.api_versions_forget')
 
 
 @bp.route('/versions/rebuild', methods=['POST'])
@@ -322,3 +324,27 @@ def cli_coverage_probe():
     this user GET any path directly.
     """
     return _clicoverage.probe_payload('fortiadc')
+
+
+@bp.route('/versions/declare', methods=['POST'])
+@login_required
+@require_permission(Permission.REGISTRY_EDIT)
+def api_versions_declare():
+    """Register a firmware version by hand.
+
+    The other half of registration — "a version exists because its image was
+    uploaded" — is DERIVED from the FirmwareImage table on every read, never
+    written here. Two code paths create those rows; hooking both would be one
+    refactor away from a version that silently never appears on the page.
+    """
+    return _apiversions.declare_page('fortiadc', 'adc_api.api_versions')
+
+
+@bp.route('/versions/forget', methods=['POST'])
+@login_required
+@require_permission(Permission.REGISTRY_EDIT)
+def api_versions_forget():
+    """Drop a hand-authored declaration. A version that is also derived (an
+    image is in the vault, or a box runs it) stays on the page afterwards —
+    forgetting a note cannot unmake a fact."""
+    return _apiversions.forget_page('fortiadc', 'adc_api.api_versions')

@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import threading
 import time
 from datetime import datetime
@@ -44,8 +45,33 @@ def _get_flask_app():
     return current_app._get_current_object()
 
 
+#: Terminal state for a sweep whose worker process no longer exists. It is
+#: NEITHER ``done`` NOR ``failed`` on purpose: a run killed mid-flight produced
+#: no snapshot and reported no error, so calling it done would claim a result
+#: that was never written and calling it failed would blame the device for a
+#: service restart. Three outcomes, three words — the same rule the CLI capture
+#: and the probe verdicts already follow.
+INTERRUPTED = "interrupted"
+FAILED = "failed"
+
+_HOST = socket.gethostname()
+
+
 def _data_dir() -> Path:
-    d = Path(__file__).resolve().parents[2] / "data" / "rediscovery"
+    """Where sweep state lives.
+
+    ``SATOM_REDISCOVERY_DIR`` overrides the in-tree default, and it exists for
+    one measured reason: ``tests/test_rediscovery_*`` drive real sweeps against
+    the TEST database while writing their progress and ``_config.json`` into
+    the PRODUCTION tree. On 2026-09-15 that also wiped
+    ``data/api_matrix/fortiweb.json`` (which is rebuilt from this directory)
+    down to ``swept: 0`` — untracked, so git said nothing, and an empty matrix
+    renders as a page with no differences rather than as an error. Same
+    isolation pattern as ``SATOM_JOBS_DIR`` / ``SATOM_SOT_DIR``.
+    """
+    override = os.environ.get("SATOM_REDISCOVERY_DIR")
+    d = (Path(override) if override
+         else Path(__file__).resolve().parents[2] / "data" / "rediscovery")
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -254,11 +280,30 @@ def apply_inventory(appliance) -> dict:
         appliance.hw_type = hw
     if fw:
         appliance.firmware = fw
+        # Stamped with the moment the sweep OBSERVED the version, never with
+        # "now": the snapshot can be minutes old by the time this merge runs,
+        # and an attestation dated later than its observation is a lie about
+        # freshness. Until 2026-09-15 this branch wrote the version and NO
+        # timestamp at all, so the sweep left behind a firmware no consumer
+        # (CVE correlation, the Upgrade Scout) could date.
+        observed = _parse_iso(snapshot.get("generated_at"))
+        if observed is not None:
+            appliance.firmware_checked_at = observed
 
     db.session.commit()
     return {"applied": True, "interfaces_added": added, "interfaces_updated": updated,
             "model": appliance.model, "hw_type": appliance.hw_type,
             "generated_at": snapshot.get("generated_at")}
+
+
+def _parse_iso(value) -> datetime | None:
+    """An ISO stamp, or None. None is returned rather than ``utcnow()`` so a
+    snapshot with no readable time leaves the previous attestation alone
+    instead of inventing one."""
+    try:
+        return datetime.fromisoformat(str(value))
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def maybe_apply_inventory(appliance) -> dict | None:
@@ -400,6 +445,32 @@ def _client_snapshot(appliance) -> SimpleNamespace:
 
 def _run(appliance_snap: SimpleNamespace, by: str, deep: bool = False,
          plan: list[dict] | None = None, cli: bool = False) -> None:
+    """Thread entry point: :func:`_sweep` plus the one thing a file-backed
+    status owes its readers — a TERMINAL state when the worker dies.
+
+    Without this, an exception anywhere in the sweep left ``running`` on disk
+    forever, indistinguishable on screen from a sweep still in flight, and the
+    only thing that ever cleared it was a restart (and, until 2026-09-15, not
+    even that: appliance 4 sat at 71 % from 2026-07-03).
+    """
+    try:
+        _sweep(appliance_snap, by, deep, plan, cli)
+    except BaseException as exc:  # noqa: BLE001 — record, then let it propagate
+        try:
+            p = _dev_dir(appliance_snap.id) / "progress.json"
+            st = status(appliance_snap.id) or {}
+            st.update(state=FAILED,
+                      error="%s: %s" % (type(exc).__name__, exc),
+                      finished=datetime.utcnow().isoformat(),
+                      heartbeat=datetime.utcnow().isoformat())
+            _write_json(p, st)
+        except Exception:  # noqa: BLE001 — never mask the original failure
+            pass
+        raise
+
+
+def _sweep(appliance_snap: SimpleNamespace, by: str, deep: bool = False,
+           plan: list[dict] | None = None, cli: bool = False) -> None:
     aid = appliance_snap.id
     devdir = _dev_dir(aid)
     progress_path = devdir / "progress.json"
@@ -414,6 +485,11 @@ def _run(appliance_snap: SimpleNamespace, by: str, deep: bool = False,
         "firmware": firmware,
         "total": total, "done": 0, "percent": 0, "objects": 0,
         "started": started, "by": by, "section": "", "errors": [], "finished": None,
+        # WHO is running this, so a boot-time reconciler can tell a live sweep
+        # from the ghost of one. ``host`` matters as much as ``pid``: the
+        # standby PULLS this whole data/ tree every 5 minutes, so a2 sees a1's
+        # progress files and must never judge a pid that is not its own.
+        "pid": os.getpid(), "host": _HOST, "heartbeat": started,
     }
     _write_json(progress_path, state)
 
@@ -453,7 +529,8 @@ def _run(appliance_snap: SimpleNamespace, by: str, deep: bool = False,
         if i % 5 == 0 or i == total:
             state.update(done=i, percent=int(i * 100 / total) if total else 100,
                          objects=total_objects, section=ep["section"],
-                         errors=errors[-25:], absent_count=len(absent))
+                         errors=errors[-25:], absent_count=len(absent),
+                         heartbeat=datetime.utcnow().isoformat())
             _write_json(progress_path, state)
 
     generated_at = datetime.utcnow().isoformat()
@@ -764,17 +841,101 @@ def start(appliance, by: str = "", deep: bool = False,
     # Resolve the plan HERE (request context): the registry is DB-first and the
     # worker thread has no app context to fall back through.
     plan = plan_for(appliance)
+    _now = datetime.utcnow().isoformat()
     init = {"state": "running", "appliance_id": appliance.id, "appliance": appliance.name,
             "total": 0, "done": 0, "percent": 0, "objects": 0, "deep": bool(deep),
             "cli": bool(cli),
-            "started": datetime.utcnow().isoformat(), "by": by, "errors": [], "finished": None}
+            "started": _now, "by": by, "errors": [], "finished": None,
+            "pid": os.getpid(), "host": _HOST, "heartbeat": _now}
     _write_json(_dev_dir(appliance.id) / "progress.json", init)
     threading.Thread(target=_run, args=(snap, by, deep, plan, cli),
                      daemon=True).start()
     return {"started": True, "progress": init}
 
 
+def _pid_alive(pid) -> bool:
+    """True when ``pid`` exists AND still looks like one of our processes.
+
+    Deliberately identical to ``jobs._pid_alive``: "the worker is gone" must
+    have ONE definition in this product, not two that drift apart. The cmdline
+    check guards against PID reuse after a reboot.
+    """
+    try:
+        os.kill(int(pid), 0)
+    except (OSError, TypeError, ValueError):
+        return False
+    try:
+        cmd = Path("/proc/%s/cmdline" % int(pid)).read_bytes().decode(errors="replace")
+        return ("python" in cmd) or ("gunicorn" in cmd)
+    except Exception:  # noqa: BLE001 — no /proc: liveness alone decides
+        return True
+
+
+def reconcile_stale_runs(*, no_pid_stale_after_s: int = 900) -> list[dict]:
+    """Retire ``running`` sweeps whose worker process no longer exists.
+
+    The sweep runs in a daemon thread and its state lives in a file, so a
+    ``systemctl restart satom`` kills the thread without touching the file and
+    every live run becomes a permanent ``running``. Nothing corrected that: the
+    guard in :func:`start` only stops BLOCKING a new run after 15 minutes,
+    which unblocks the operator and leaves the page reading 71 % forever.
+
+    Rules, mirroring ``jobs.sweep_orphans``:
+
+    * a file from ANOTHER host is never touched — ``satom-ha-datasync`` pulls
+      this whole tree onto the standby every 5 minutes, so the peer's progress
+      files are visible here and its pids mean nothing on this machine;
+    * a recorded pid that is alive → left alone (another gunicorn worker may be
+      running the sweep right now, and booting workers run this too);
+    * no pid recorded (a file written before this field existed) → judged by
+      age, because such a file can only predate the current process.
+
+    Never raises: housekeeping must not be able to block boot.
+    """
+    out: list[dict] = []
+    base = _data_dir()
+    try:
+        entries = sorted(os.listdir(base))
+    except OSError:
+        return out
+    for entry in entries:
+        p = base / entry / "progress.json"
+        if not p.exists():
+            continue
+        try:
+            st = json.loads(p.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            continue
+        if st.get("state") != "running":
+            continue
+        if (st.get("host") or _HOST) != _HOST:
+            continue
+        pid = st.get("pid")
+        if pid:
+            if _pid_alive(pid):
+                continue
+        else:
+            stamp = st.get("heartbeat") or st.get("started")
+            try:
+                age = time.time() - datetime.fromisoformat(stamp).timestamp()
+            except Exception:  # noqa: BLE001 — unreadable stamp is not evidence of life
+                age = no_pid_stale_after_s + 1
+            if age <= no_pid_stale_after_s:
+                continue
+        st.update(state=INTERRUPTED,
+                  finished=datetime.utcnow().isoformat(),
+                  error="Interrupted — the service restarted while this sweep "
+                        "was running. It wrote no snapshot; run it again.")
+        try:
+            _write_json(p, st)
+        except Exception:  # noqa: BLE001
+            continue
+        out.append(st)
+    return out
+
+
 __all__ = ["sweep_plan", "sweep_plan_adc", "plan_for", "status",
+           "reconcile_stale_runs", "INTERRUPTED", "FAILED",
            "latest_snapshot_meta", "start", "apply_inventory",
            "maybe_apply_inventory", "_run_deep", "_run_cli", "_probe_fortiweb",
            "cli_capture_decision", "CLI_CAPTURE_MAX_AGE_H",

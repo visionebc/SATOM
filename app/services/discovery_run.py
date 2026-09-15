@@ -228,7 +228,9 @@ def plan(product: str, diff: dict, *, configured_only: bool = False,
 
 def run(findings: Iterable[Finding], probe: Callable[[str], tuple],
         *, budget: int = DEFAULT_BUDGET,
-        by_urn: dict | None = None) -> dict[str, Any]:
+        by_urn: dict | None = None,
+        on_progress: Callable[[int, int, int, str], None] | None = None
+        ) -> dict[str, Any]:
     """Probe each finding's candidates until one is served, or the budget ends.
 
     ``probe(urn) -> (rows, verdict, detail)`` — the shape
@@ -243,11 +245,21 @@ def run(findings: Iterable[Finding], probe: Callable[[str], tuple],
 
     A probe that RAISES sinks that candidate, never the run: one unreachable
     collection must not cost the other 83 findings their answer.
+
+    ``on_progress(index, total, spent, path)`` is called BEFORE each block is
+    asked about, never after: a run that dies mid-GET then leaves the last
+    message naming the block it was asking about rather than the one it had
+    already finished. It is also where the job worker puts its cancellation
+    checkpoint, so raising out of it is a supported way to stop — the blocks
+    after it keep their NOT_PROBED verdict, which is the honest state.
     """
     findings = list(findings)
     by_urn = {} if by_urn is None else by_urn
     spent = 0
-    for f in findings:
+    _total = len(findings)
+    for _idx, f in enumerate(findings, 1):
+        if on_progress is not None:
+            on_progress(_idx, _total, spent, f.path)
         if f.underivable:
             continue
         for cand in f.candidates:

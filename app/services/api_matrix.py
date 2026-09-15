@@ -59,9 +59,23 @@ from datetime import datetime
 # ---------------------------------------------------------------------------
 
 _ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-REDISCOVERY_ROOT = os.path.join(_ROOT, "data", "rediscovery")
 SCHEMA_ROOT = os.path.join(_ROOT, "data", "field_schemas")
-MATRIX_ROOT = os.path.join(_ROOT, "data", "api_matrix")
+
+#: The in-tree locations, kept as their own names so documentation guards can
+#: assert where this data lives WITHOUT reading whatever a test run redirected
+#: it to.
+REDISCOVERY_ROOT_DEFAULT = os.path.join(_ROOT, "data", "rediscovery")
+MATRIX_ROOT_DEFAULT = os.path.join(_ROOT, "data", "api_matrix")
+
+# Redirected by the same env vars ``rediscovery`` honours, resolved at IMPORT so
+# the existing monkeypatch-the-constant tests keep working. This is the fix for
+# a measured contamination: a sweep driven against the TEST database rebuilt the
+# PRODUCTION matrix from the test tree and left ``swept: 0, devices: []`` where
+# 326 endpoints and three witnesses had been (2026-09-15). The file is
+# untracked, so git reported nothing, and an empty matrix renders as a page
+# with no differences rather than as an error.
+REDISCOVERY_ROOT = os.environ.get("SATOM_REDISCOVERY_DIR") or REDISCOVERY_ROOT_DEFAULT
+MATRIX_ROOT = os.environ.get("SATOM_API_MATRIX_DIR") or MATRIX_ROOT_DEFAULT
 
 # Products that have a sweep plan (``rediscovery.plan_for``). FAZ and FAC have
 # a catalog but no sweep, so their matrix can only ever be schema-derived —
@@ -563,7 +577,8 @@ def preflight_for_appliance(appliance, key: str, keys) -> dict:
 
 __all__ = [
     "firmware_line", "build", "rebuild", "load", "diff", "preflight",
-    "preflight_for_appliance", "matrix_path", "MATRIX_ROOT", "SWEPT_PRODUCTS",
+    "preflight_for_appliance", "matrix_path", "MATRIX_ROOT",
+    "MATRIX_ROOT_DEFAULT", "REDISCOVERY_ROOT_DEFAULT", "SWEPT_PRODUCTS",
     "STATUS_OK", "STATUS_UNMEASURED", "STATUS_ABSENT", "STATUS_FIELDS_UNKNOWN",
     "STATUS_UNKNOWN_FIELDS",
 ]

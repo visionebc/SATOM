@@ -548,13 +548,89 @@ def test_versions_delta_rows_offer_a_test(app):
     assert "test_btn(urn=" in delta
 
 
+INC = '{% include "partials/_discovery_run.html" %}'
+CC_INC = "partials/_cli_coverage.html' %}"
+HUBS = ("api_explorer", "adc_api", "faz_api", "fac_api")
+ACTS = ("api_explorer", "adc_api")          # have a CLI dump to diff
+CANNOT = ("faz_api", "fac_api")             # render their reason and stop
+
+
+def _hub(name):
+    return _read(os.path.join(REPO, "app", "templates", name, "index.html"))
+
+
 def test_discovery_partial_is_included_not_copied(app):
-    """One author for the section's markup, mounted by the coverage partial."""
+    """One author for the markup; each hub mounts it EXACTLY once.
+
+    The mount moved out of the coverage partial so the card could sit at the
+    top of the hubs that can act on it. Mounting it in four places is only safe
+    while the markup itself still has a single author: a copied card means two
+    authors of one string, which is how the status badge and the sidebar
+    accordion drifted in this repo. It also means duplicate DOM ids
+    (#discoveryRun / #drRows), so a second mount would silently break the JS.
+    """
     cc = _read(os.path.join(REPO, "app", "templates", "partials",
                             "_cli_coverage.html"))
-    assert 'include "partials/_discovery_run.html"' in cc
-    for hub in ("api_explorer", "adc_api"):
-        pass  # both hubs include _cli_coverage.html, which mounts it once
+    assert INC not in cc, (
+        "the coverage partial must not mount it any more — it would render "
+        "twice on the hubs that now mount it at the top")
+    for hub in HUBS:
+        src = _hub(hub)
+        # count the INCLUDE STATEMENT, not the file name: the comment that
+        # explains the mount names the file too, and counting the name made
+        # this guard read 2 against a correct template.
+        assert src.count(INC) == 1, hub
+        assert 'id="discoveryRun"' not in src, (
+            "%s copies the card instead of including it" % hub)
+
+
+def test_discovery_card_is_first_where_it_can_act_and_last_where_it_cannot(app):
+    """Position carries meaning, so it is asserted rather than left to taste.
+
+    On a hub with a CLI dump the run is the affordance the page exists to
+    offer; at the foot of the page it was unfindable. On a hub WITHOUT one the
+    card can only say "not applicable" — spending the first slot on a
+    non-answer is worse than the problem being fixed.
+    """
+    for hub in ACTS:
+        src = _hub(hub)
+        assert src.index(INC) < src.index(CC_INC), hub
+    for hub in CANNOT:
+        src = _hub(hub)
+        assert src.index(INC) > src.index(CC_INC), hub
+
+
+def test_discovery_card_starts_open(app):
+    """A collapsed card at the top of the page is still a hidden feature."""
+    src = _read(DRTPL)
+    head = src.split("fw-card-body")[0]
+    assert 'class="collapse show" id="discoveryRunBody"' in head
+    assert 'aria-expanded="true"' in head
+    assert 'aria-expanded="false"' not in head
+
+
+def test_every_inline_script_carries_the_csp_nonce(app):
+    """A <script> without the nonce is REFUSED, and refusal looks like a dead
+    button, not like an error.
+
+    app/__init__.py sends ``script-src-elem 'self' 'nonce-…'`` app-wide with no
+    'unsafe-inline'. Three blocks shipped without it, so Run discovery /
+    Register selected / the filter boxes / the per-row test buttons rendered
+    perfectly and did nothing when clicked. Nothing failed — the feature was
+    simply inert. This guard covers every partial these pages mount.
+    """
+    parts = ("_discovery_run.html", "_cli_coverage.html", "_cli_probe_tools.html",
+             "_cli_provenance.html")
+    for name in parts:
+        p = os.path.join(REPO, "app", "templates", "partials", name)
+        if not os.path.exists(p):
+            continue
+        src = _read(p)
+        opens = re.findall(r"<script(?![-\w])([^>]*)>", src)
+        for attrs in opens:
+            assert "csp_nonce" in attrs, (
+                "%s has an inline <script%s> with no CSP nonce — the browser "
+                "will refuse to run it" % (name, attrs))
 
 
 def test_discovery_template_never_prints_not_probed_as_absent(app):

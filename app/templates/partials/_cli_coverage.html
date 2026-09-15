@@ -552,7 +552,9 @@
 </script>
 {% endif %}
 
-{# The discovery run lives directly under the diff it acts on: its input IS the
-   cli_only bucket of the table above, and separating them would let an operator
-   act on one page's findings while reading another page's evidence. #}
-{% include "partials/_discovery_run.html" %}
+{# The discovery run is NOT mounted here any more: it is the first card of the
+   hubs that can act on it (api_explorer, adc_api) so the operator meets the
+   affordance before the evidence, and the LAST card of the hubs that cannot
+   (faz_api, fac_api) — a top-of-page card whose only content is "not
+   applicable" spends the most valuable slot on a non-answer. Still exactly one
+   author of the markup: partials/_discovery_run.html, included once per hub. #}

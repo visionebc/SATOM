@@ -14334,6 +14334,77 @@ exactly once <strong>before</strong> starting, restores in a <code>finally</code
 SIGTERM/SIGINT, and verifies the restore against its own table rather than a
 grep of convenience — an interrupted harness left a live mutation in the tree
 twice.</p>
+<h2 id="173-a-button-the-browser-refuses-to-run-teststest_discovery_runpy">§173 — a button the browser refuses to run (tests/test_discovery_run.py)</h2>
+<p><strong>A <code>&lt;script&gt;</code> without the CSP nonce is not an error — it is a dead button.</strong></p>
+<p><code>app/__init__.py</code> (<code>after_request</code>) sets the app-wide policy</p>
+<pre><code>script-src-elem 'self' 'nonce-&lt;per-session&gt;' https://cdn.jsdelivr.net;
+script-src-attr 'none';
+</code></pre>
+<p>with <strong>no <code>'unsafe-inline'</code></strong>. Three inline blocks shipped on 2026-09-15 without
+the nonce, so <em>Run discovery</em>, <em>What would it cost?</em>, <em>Register selected</em>, the
+filter boxes and every per-row test button on <code>/web/structure/</code> and
+<code>/web/registry/versions</code> <strong>rendered correctly and did nothing when clicked</strong>.</p>
+<p>🚨 <strong>THE GUARD ALREADY EXISTED AND WAS NEVER RUN. That is the whole finding.</strong></p>
+<p><code>tests/test_csp_nonce.py</code> was written on 2026-08-23 for exactly this class (the
+Admin Console menu, <code>settings/_nav.html</code>). It walks the <strong>entire</strong> template
+tree, strips comments so prose about the rule is not reported as a violation,
+asserts the census (a scan that reads nothing passes otherwise), and asserts
+that the policy still names a nonce so the scan cannot go vacuous. Measured on
+2026-09-15 by reintroducing the defect: it fails and prints
+<code>partials/_discovery_run.html:144</code>. It is the right guard, correctly built.</p>
+<p>It stayed green for three days because <strong>targeted test selection never selected
+it.</strong> The rule of 2026-08-09 (run only the tests of the zone you touched) picks
+suites by <em>name overlap with the module</em>, and nothing about
+<code>discovery_run</code> / <code>cli_probe_tools</code> / <code>api_explorer</code> looks like <code>csp_nonce</code>.
+A cross-cutting guard has no name to match.</p>
+<p>📌 <strong>Rule: any round that edits a <code>.html</code> under <code>app/templates/</code> runs
+<code>tests/test_csp_nonce.py</code> in its targeted set</strong> — unconditionally, alongside
+<code>test_template_blocks</code> and <code>test_route_audit</code>. It is 8 tests and a few seconds.
+Same reasoning as the <code>data/api_matrix/</code> check of §171: a guard whose trigger
+is <em>"someone remembers"</em> is not a guard.</p>
+<p>The failure is silent by construction, which is why nothing else substitutes
+for running it: the routes are fine, the template renders, the markup is valid,
+the element IS in the DOM, and every server-side test passes. CSP refusal goes
+to the browser console — not to a log, not to a status code. ⚠ The live-render
+recipe of §9 (chromium + <code>test_client</code>) does <strong>not</strong> cover it either: that
+harness rewrites paths to absolute and stubs <code>window.fetch</code>, so it never serves
+the real CSP header, and the block it would have blocked runs fine.</p>
+<p>The feature suite now carries a <strong>local</strong> copy of the assertion, scoped to the
+partials these pages mount:</p>
+<pre><code class="language-python">opens = re.findall(r&quot;&lt;script(?![-\w])([^&gt;]*)&gt;&quot;, src)
+for attrs in opens:
+    assert &quot;csp_nonce&quot; in attrs
+</code></pre>
+<p>That is deliberate duplication, not drift: the tree-wide scan is the authority,
+and this one exists only so the check runs <strong>when this feature's tests run</strong>.
+⚠ <code>&lt;script</code> needs the <code>(?![-\w])</code> guard or it also matches <code>&lt;scriptlet</code>-style
+names, and the attribute list must be captured — asserting <code>"csp_nonce" in src</code>
+over the whole file passes as long as <strong>one</strong> block has it.</p>
+<h3 id="position-carries-meaning-so-it-is-asserted">Position carries meaning, so it is asserted</h3>
+<p>The card mounted at the foot of <code>partials/_cli_coverage.html</code> was unfindable —
+the reason the user had to ask where the button was. It is now the <strong>first</strong>
+card of the hubs that can act on it and the <strong>last</strong> card of the hubs that
+cannot (<code>faz_api</code>/<code>fac_api</code> only ever render <em>"this product has no CLI
+configuration dump"</em>; promoting that to the top spends the best slot on a
+non-answer). Guards pin both directions against <code>_cli_coverage.html</code>.</p>
+<h3 id="one-author-four-mounts">One author, four mounts</h3>
+<p>Moving the mount out of the coverage partial means four <code>{% include %}</code>
+statements instead of one. That is only safe while the <strong>markup</strong> still has a
+single author: a copied card is two authors of one string (how the status badge
+and the sidebar accordion drifted here), and it also duplicates
+<code>id="discoveryRun"</code> / <code>id="drRows"</code>, so the second copy would break the JS
+bindings silently. Guards: exactly one include statement per hub, and
+<code>id="discoveryRun"</code> never appears in a hub template.</p>
+<p>⚠ <strong>Tenth "assertion satisfied by the prose", and this time it was INFLATED not
+satisfied:</strong> <code>src.count("_discovery_run.html") == 1</code> read <strong>2</strong> against a
+correct template, because the comment explaining the mount names the file. Count
+the <strong>include statement</strong>, not the file name.</p>
+<h3 id="verification_10">Verification</h3>
+<p><code>tests/test_discovery_run.py</code> RC=0 (measured by rc, no pipe). 9 mutations, 9 bite — among
+them <em>"the coverage partial mounts it again"</em> (double render), <em>"api_explorer
+mounts it at the bottom"</em>, <em>"faz_api promotes the not-applicable card"</em>, <em>"the
+card collapses again"</em>, <em>"the chevron lies about the state"</em>, and each script
+losing its nonce.</p>
     </div>
   </div>
 </section>

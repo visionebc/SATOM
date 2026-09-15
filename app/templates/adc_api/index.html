@@ -49,6 +49,11 @@
   </div>
 </div>
 
+{# Discovery run — FIRST card on purpose. The catalog only ever shrank by
+   itself; this is its growth path, and it was unfindable at the foot of the
+   page. ONE author for the markup (partials/_discovery_run.html). #}
+{% include "partials/_discovery_run.html" %}
+
 <style nonce="{{ csp_nonce }}">
   /* API Menu tree (left sidebar) — caret rotates with Bootstrap collapse state */
   #apiTree .api-tree-section-header .api-tree-caret { transition: transform .15s ease; }

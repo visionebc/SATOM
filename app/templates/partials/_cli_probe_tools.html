@@ -31,7 +31,7 @@
   <span class="text-muted ms-2" data-cli-filter-count="{{ table_id }}"
         style="font-size:11px;"></span>
 </div>
-<script>
+<script nonce="{{ csp_nonce }}">
 (function () {
   var input = document.querySelector('[data-cli-filter="{{ table_id }}"]');
   var table = document.getElementById('{{ table_id }}');
@@ -115,7 +115,7 @@
   </div>
 </div>
 
-<script>
+<script nonce="{{ csp_nonce }}">
 (function () {
   var CSRF = document.querySelector('meta[name="csrf-token"]');
   var tok  = CSRF ? CSRF.content : '';

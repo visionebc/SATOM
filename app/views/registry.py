@@ -20,6 +20,7 @@ from ..auth.decorators import require_permission
 from ..extensions import db
 from ..models import Permission, RegistryEndpoint
 from ..registry import loader
+from ..services import registry_write
 from ..services.audit import log_action
 from . import _apiversions, _reconcile
 
@@ -98,43 +99,26 @@ def save():
     urn = (request.form.get('urn') or '').strip()
     api_version = (request.form.get('api_version') or 'v2.0').strip() or 'v2.0'
 
-    if not name or not urn:
-        flash('Name and URN are both required.', 'danger')
-        return _redirect_back()
-    if not _NAME_RE.match(name):
-        flash('Endpoint name may only contain letters, digits, "_", "-" and ".".', 'danger')
-        return _redirect_back()
-    if not urn.startswith('/'):
-        flash('URN must be an absolute API path (e.g. /api/v2.0/cmdb/...).', 'danger')
-        return _redirect_back()
-
-    row = None
+    before = None
     if rid:
-        row = db.session.get(RegistryEndpoint, rid)
-        if row is None:
+        existing = db.session.get(RegistryEndpoint, rid)
+        if existing is None or existing.product != 'fortiweb':
+            # An edit may only touch a row of THIS product. Before the shared
+            # writer, this page would happily rewrite a FortiADC row by id.
             abort(404)
+        before = {'name': existing.name, 'urn': existing.urn,
+                  'api_version': existing.api_version}
 
-    dup = RegistryEndpoint.query.filter_by(
-        product='fortiweb', api_version=api_version, name=name).first()
-    if dup is not None and (row is None or dup.id != row.id):
-        flash(f'An endpoint named "{name}" already exists ({dup.urn}).', 'danger')
+    ok, msg, _row = registry_write.save_endpoint(
+        product='fortiweb', name=name, urn=urn, api_version=api_version,
+        row_id=rid, actor=current_user.username)
+    if not ok:
+        flash(msg, 'danger')
         return _redirect_back()
 
-    if row is None:
-        row = RegistryEndpoint(product='fortiweb', api_version=api_version)
-        db.session.add(row)
-        action = 'registry.endpoint_create'
-        before = None
-    else:
-        action = 'registry.endpoint_update'
-        before = {'name': row.name, 'urn': row.urn, 'api_version': row.api_version}
-
-    row.name, row.urn, row.api_version = name, urn, api_version
-    row.updated_by = current_user.username
-    db.session.commit()
-    loader.invalidate_cache()
-    log_action(action, target=name, extra={'urn': urn, 'api_version': api_version,
-                                           'before': before})
+    log_action('registry.endpoint_update' if rid else 'registry.endpoint_create',
+               target=name, extra={'urn': urn, 'api_version': api_version,
+                                   'before': before})
     flash(f'Endpoint "{name}" saved.', 'success')
     return _redirect_back()
 

@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "partials/_cli_provenance.html" import prov_badge, prov_legend with context %}
+{% from "partials/_cli_probe_tools.html" import filter_box, test_btn, probe_bar with context %}
 {% block title %}API Versions{% endblock %}
 
 {% macro origin_badge(o) -%}
@@ -209,24 +210,28 @@
       </div>
       {{ prov_legend(base_prov, compact=True) }}
       {% if base != target %}{{ prov_legend(target_prov, compact=True) }}{% endif %}
+      <div class="mb-2">{{ filter_box('versionDelta', _('Filter endpoints by name or URN…')) }}</div>
       <div class="table-responsive">
-        <table class="table fw-table mb-0">
+        <table class="table fw-table mb-0" id="versionDelta">
           <thead><tr><th>Endpoint</th><th>URN</th><th>Change</th>
-            <th>CLI on {{ delta.base }}</th><th>CLI on {{ delta.target }}</th></tr></thead>
+            <th>CLI on {{ delta.base }}</th><th>CLI on {{ delta.target }}</th>
+            <th style="width:120px;">Test</th></tr></thead>
           <tbody>
           {% for r in delta.endpoints_added %}
             <tr><td><code>{{ r.endpoint }}</code></td>
               <td><code class="text-muted" style="font-size:11px;">{{ r.urn }}</code></td>
               <td><span class="fw-badge fw-badge-success">added on {{ delta.target }}</span></td>
               <td>{{ prov_badge(r.cli_base) }}</td>
-              <td>{{ prov_badge(r.cli_target) }}</td></tr>
+              <td>{{ prov_badge(r.cli_target) }}</td>
+              <td>{{ test_btn(urn=r.urn) }}</td></tr>
           {% endfor %}
           {% for r in delta.endpoints_removed %}
             <tr><td><code>{{ r.endpoint }}</code></td>
               <td><code class="text-muted" style="font-size:11px;">{{ r.urn }}</code></td>
               <td><span class="fw-badge fw-badge-danger">gone on {{ delta.target }}</span></td>
               <td>{{ prov_badge(r.cli_base) }}</td>
-              <td>{{ prov_badge(r.cli_target) }}</td></tr>
+              <td>{{ prov_badge(r.cli_target) }}</td>
+              <td>{{ test_btn(urn=r.urn) }}</td></tr>
           {% endfor %}
           </tbody>
         </table>
@@ -275,4 +280,11 @@
     </ul>
   </div>
 </div>
+
+{# Rendered once: the appliance picker and the output panel every Test button
+   on this page writes into. A row with a Test button and no bar would look
+   broken rather than unmounted. #}
+{{ probe_bar(probe_appliances, live_endpoint=live_endpoint,
+             exec_endpoint=exec_endpoint) }}
+
 {% endblock %}

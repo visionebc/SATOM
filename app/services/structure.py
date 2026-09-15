@@ -62,6 +62,16 @@ class StructureNode:
     endpoint: str = ""
     builtin: bool = False
     children: list["StructureNode"] = field(default_factory=list)
+    #: Set only on nodes synthesised from a CLI configuration dump. ``cli_path``
+    #: is the ``config …`` block that produced the node; the others describe how
+    #: much configuration it actually holds on the box that was dumped. They are
+    #: real fields rather than attributes bolted on at build time so that a
+    #: template asking for them on a seed node gets the neutral default instead
+    #: of an AttributeError at render time.
+    cli_path: str = ""
+    cli_configured: bool = False
+    cli_instances: int = 0
+    cli_settings: int = 0
 
     @property
     def in_registry(self) -> bool:
@@ -526,6 +536,165 @@ def load_catalog(overlay: dict[str, Any] | None = None) -> StructureCatalog:
     return StructureCatalog(loader.get_all_endpoints(), overlay or {})
 
 
+# --------------------------------------------------------------------------- #
+#  CLI-only elements — the part of the shape the dependency tree cannot see     #
+# --------------------------------------------------------------------------- #
+# The seed tree was captured from the exporter, which walks REST. Anything the
+# REST catalog never names is therefore absent from it BY CONSTRUCTION — not
+# because it does not exist on the box, but because the instrument that built
+# the tree could not see it. ``cli_coverage`` measures exactly that set.
+#
+# THEY GET THEIR OWN ROOT, and this is the load-bearing decision. A CLI block
+# has no ``via`` — no field on a parent object references it — because these are
+# global/system tables, not children of a Server Policy. Grafting them into the
+# WPP or Server-Policy subtree would mean INVENTING that edge, and this repo
+# already measured what an invented edge costs: ``dependencies.py`` records that
+# a payload carrying a reference the destination cannot resolve is rejected by
+# the appliance with HTTP 500 and no message. A separate root says "these exist,
+# and we do not know where they hang" — which is the truth.
+
+#: Key/label of the synthetic root the CLI-only elements hang from.
+CLI_ROOT_KEY = "cli-only"
+CLI_ROOT_LABEL = "CLI-only configuration (no REST endpoint in the catalog)"
+
+#: Status a cross-reference row carries when it came from the CLI dump. A value
+#: of its own, never ``missing``: ``missing`` means "the tree names a URN the
+#: catalog lacks", and this means "there is no URN at all".
+STATUS_CLI = "cli-only"
+
+
+def tree_urns(nodes: list[StructureNode]) -> set[str]:
+    """Every normalised URN the tree addresses (for de-duplication)."""
+    out: set[str] = set()
+    for _d, n in iter_nodes(nodes):
+        if n.urn:
+            out.add(_normalize_urn(n.urn))
+            out.add(_base_urn(_normalize_urn(n.urn)))
+    return out
+
+
+def cli_only_nodes(diff: dict[str, Any], *,
+                   configured_only: bool = False) -> list[StructureNode]:
+    """The CLI-only blocks of a coverage diff, as one synthetic root.
+
+    Grouped by CLI family (``system``, ``waf``, ``router``…) so ~50 blocks read
+    as a shape instead of a flat list. ``urn`` is left EMPTY on purpose: these
+    blocks have no REST path, and writing a derived one here would put a guess
+    in the same column as the measured URNs above it. The CLI path travels in
+    ``section``, which is where the tree already carries "where does this live".
+    """
+    rows = list((diff or {}).get("cli_only") or [])
+    if configured_only:
+        rows = [r for r in rows if r.get("configured")]
+    if not rows:
+        return []
+
+    families: dict[str, StructureNode] = {}
+    order: list[str] = []
+    for rec in sorted(rows, key=lambda r: r.get("path") or ""):
+        path = rec.get("path") or ""
+        words = path.split()
+        if not words:
+            continue
+        fam = words[0]
+        if fam not in families:
+            families[fam] = StructureNode(key=_slug(fam), label=fam,
+                                          section="CLI family")
+            order.append(fam)
+        leaf = StructureNode(
+            key=_slug(" ".join(words[1:]) or fam),
+            label=" ".join(words[1:]) or fam,
+            section=path,
+        )
+        # Carried as plain attributes so the template can badge them without a
+        # parallel dict keyed by label — two containers for one row is how a
+        # table starts showing another row's numbers.
+        leaf.cli_path = path
+        leaf.cli_configured = bool(rec.get("configured"))
+        leaf.cli_instances = int(rec.get("instances") or 0)
+        leaf.cli_settings = len(rec.get("settings") or ())
+        families[fam].children.append(leaf)
+
+    root = StructureNode(key=CLI_ROOT_KEY, label=CLI_ROOT_LABEL,
+                         section="from the CLI configuration dump")
+    root.children = [families[f] for f in order]
+    return [root]
+
+
+def cli_cross_reference(nodes: list[StructureNode]) -> list[dict[str, Any]]:
+    """Display rows for the CLI-only subtree.
+
+    Same shape as :func:`cross_reference` plus the CLI-specific columns, so one
+    template macro renders both tables and they cannot drift into describing the
+    same thing two ways.
+    """
+    rows: list[dict[str, Any]] = []
+    for depth, node in iter_nodes(nodes):
+        cli_path = getattr(node, "cli_path", "")
+        rows.append({
+            "depth": depth,
+            "label": node.label,
+            "urn": "",
+            "via": "",
+            "section": node.section,
+            "endpoint": "",
+            "builtin": False,
+            "status": STATUS_CLI if cli_path else "none",
+            "cli_path": cli_path,
+            "configured": bool(getattr(node, "cli_configured", False)),
+            "instances": int(getattr(node, "cli_instances", 0)),
+            "settings": int(getattr(node, "cli_settings", 0)),
+        })
+    return rows
+
+
+def clone_gap(diff: dict[str, Any]) -> list[dict[str, Any]]:
+    """What a clone of this device would NOT carry, and why — stated, not implied.
+
+    A clone recreates objects over REST (``clone.apply_clone`` writes through
+    ``FortiWebOps``). A block with no REST endpoint therefore cannot be written
+    by it at all, and a block that is not in the dependency tree is never even
+    VISITED — so today its absence from a cloned device is silent. This list is
+    that silence, printed.
+
+    Only blocks that HOLD configuration are listed. An empty table is a catalog
+    gap but not a clone gap: there is nothing on the source to carry.
+    """
+    out: list[dict[str, Any]] = []
+    for rec in sorted((diff or {}).get("cli_only") or [],
+                      key=lambda r: r.get("path") or ""):
+        if not rec.get("configured"):
+            continue
+        out.append({
+            "path": rec.get("path") or "",
+            "instances": int(rec.get("instances") or 0),
+            "settings": len(rec.get("settings") or ()),
+            "reason": ("no REST endpoint in the catalog — a clone writes over "
+                       "REST, so this is not carried"),
+        })
+    return out
+
+
+def overlay_snippet(cli_path: str, urn: str, *, via: str = "",
+                    label: str = "") -> dict[str, Any]:
+    """The overlay entry that would move a promoted block INTO the tree.
+
+    Deliberately a snippet the operator pastes and edits rather than a write:
+    the missing piece is ``via`` — the field on the parent that references this
+    object — and only a human who has read the parent's schema knows it. A tool
+    that filled it in with a plausible guess would produce a tree that looks
+    complete and a clone that the appliance rejects.
+    """
+    words = (cli_path or "").split()
+    return {
+        "path": "",
+        "label": label or (" ".join(words[1:]) or cli_path),
+        "urn": urn,
+        "via": via,
+        "section": "promoted from the CLI dump (%s)" % cli_path,
+    }
+
+
 __all__ = [
     "StructureNode",
     "FunctionEntry",
@@ -543,4 +712,12 @@ __all__ = [
     "cross_reference",
     "validate_overlay",
     "load_catalog",
+    "CLI_ROOT_KEY",
+    "CLI_ROOT_LABEL",
+    "STATUS_CLI",
+    "tree_urns",
+    "cli_only_nodes",
+    "cli_cross_reference",
+    "clone_gap",
+    "overlay_snippet",
 ]

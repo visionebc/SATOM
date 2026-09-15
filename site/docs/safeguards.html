@@ -14285,6 +14285,55 @@ nothing is lost permanently. The same run also wrote a fixture device
 in production, so that copy is inert.</p>
 <p><strong>Until <code>MATRIX_ROOT</code> takes an override, re-check the matrix after any run that
 includes the rediscovery tests.</strong></p>
+<h2 id="172-the-catalogs-growth-path-and-the-three-ways-to-say-no-2026-09-15">§172 — the catalog's growth path, and the three ways to say "no" (2026-09-15)</h2>
+<p><code>tests/test_discovery_run.py</code> — 36 guards over
+<code>services/discovery_run.py</code>, <code>services/registry_write.py</code>,
+<code>views/_discovery.py</code>, the CLI half of <code>services/structure.py</code> and the shared
+search/test macros.</p>
+<p><strong>What the guards are actually defending.</strong> Every failure mode this feature has
+is the same shape: <em>a question that was never asked must not look like a
+question that came back with an answer.</em> Nothing here fails loudly — a block
+the budget never reached renders exactly like a block the device denied, and
+both render exactly like a block nobody has evidence for. So the guards spend
+most of their weight on the negative space:</p>
+<ul>
+<li>budget exhaustion produces <code>not_probed</code>, never <code>absent</code>;</li>
+<li>a probe that RAISED produces <code>error</code>, never <code>absent</code>;</li>
+<li><code>absent</code> requires that every candidate was asked <strong>and</strong> answered;</li>
+<li>an empty diff produces <strong>no</strong> CLI subtree and <strong>no</strong> clone gap — an empty
+  measured result and "there is no evidence" are opposite claims;</li>
+<li>the run stops at the first served candidate and the unasked ones stay
+  <code>not_probed</code>, so the row cannot print them as denied.</li>
+</ul>
+<p><strong>The write.</strong> <code>register</code> re-probes every submitted pair against the appliance
+inside the same request and writes only what the device served; a guard posts a
+made-up URN with a stubbed <code>absent</code> verdict and asserts the row is not created.
+Another asserts that neither registry editor nor the bulk path constructs a
+<code>RegistryEndpoint</code> itself — one writer, checked over <code>ast.unparse</code> output so
+the prose in this file cannot satisfy it.</p>
+<p><strong>The cross-product hole, closed with its own guard.</strong> <code>save_endpoint</code> refuses
+a <code>row_id</code> whose product differs from the caller's, and the guard writes a
+FortiADC row, tries to rewrite it as FortiWeb, and asserts the name is
+unchanged.</p>
+<p><strong>Premise asserted, not assumed.</strong> The 403 guards first assert that the
+<code>readonly</code> profile really lacks <code>registry.edit</code>; without that the 403 could be
+vacuous (rejected one door earlier). And the cross-product route guards expect
+<strong>404, not 403</strong>: the <code>/web</code> ADOM scope hides a FortiADC before the kind check
+is reached, and confirming that a row exists is exactly the leak the scope
+closes. The kind check behind it is a second lock, asserted separately.</p>
+<p><strong>Trap notes.</strong> Assertions about source run over a docstring/comment-stripped
+<code>ast.unparse</code>, because the prose quotes the identifiers it forbids — the ninth
+occurrence in this repo. Assertions about a page are scoped to the row or to the
+macro file: a legend that renders a sample of each badge satisfies a naive
+<code>"CLI only" in page</code> with the badge removed from every row, which is how two
+mutations survived on 2026-09-15.</p>
+<p><strong>Verification recipe.</strong> <code>venv/bin/python -m pytest tests/test_discovery_run.py
+-q</code> measured <strong>by rc and with no pipe</strong> (piping into <code>tail</code> measures <code>tail</code> —
+eleven times in this repo). The mutation harness checks every anchor appears
+exactly once <strong>before</strong> starting, restores in a <code>finally</code> that also runs on
+SIGTERM/SIGINT, and verifies the restore against its own table rather than a
+grep of convenience — an interrupted harness left a live mutation in the tree
+twice.</p>
     </div>
   </div>
 </section>

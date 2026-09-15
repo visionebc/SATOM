@@ -56,7 +56,13 @@ def index():
     # is the interesting one: a node the registry does not cover but the CLI
     # dump does is a gap this table exists to expose, and a name-only lookup
     # would print '—' over it.
-    prov = cli_coverage.provenance('fortiweb')
+    # ONE report for the whole page. ``cli_coverage.provenance()`` would parse
+    # the dump a second time to answer a question this diff already contains,
+    # and two parses of one 690 KB file can disagree the moment a capture lands
+    # between them.
+    rep = cli_coverage.report('fortiweb')
+    diff = rep['diff']
+    prov = cli_coverage.provenance_from(diff, rep.get('chosen'))
     rows = structure.cross_reference(tree)
     cli_counts = {}
     for r in rows:
@@ -67,9 +73,30 @@ def index():
                     else prov.for_urn(r['urn']))
         cli_counts[r['cli']['bucket']] = cli_counts.get(r['cli']['bucket'], 0) + 1
 
+    # The elements the dependency tree CANNOT contain: the seed was captured by
+    # walking REST, so anything REST never names is missing from it by
+    # construction. They render as their own root — never grafted into the
+    # Server Policy / WPP subtree, because a CLI block has no ``via`` edge and
+    # inventing one produces a tree that looks complete and a clone the
+    # appliance rejects (dependencies.py records that failure, measured).
+    cli_tree = structure.cli_only_nodes(diff)
+    cli_rows = structure.cli_cross_reference(cli_tree)
+    clone_gap = structure.clone_gap(diff)
+    from ..models import Appliance, visible_appliances
+    probe_appliances = (visible_appliances()
+                        .filter(Appliance.kind == 'fortiweb')
+                        .order_by(Appliance.name).all())
+
     return render_template(
         'structure/index.html',
         box=structure.render_box(tree, show_urn=show_urn),
+        cli_box=(structure.render_box(cli_tree, show_urn=False) if cli_tree else ''),
+        cli_rows=cli_rows,
+        cli_evidence=rep.get('chosen'),
+        cli_supported=bool(diff.get('supported')),
+        cli_reason=diff.get('reason') or '',
+        clone_gap=clone_gap,
+        probe_appliances=probe_appliances,
         rows=rows,
         prov=prov,
         cli_counts=cli_counts,

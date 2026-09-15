@@ -14774,3 +14774,140 @@ guards rather than a hole in the code:
   on the sentence that was left behind when its `{% if %}` was disabled. Assert
   the *tag* and the *condition*, on comment-stripped source. Eleventh and twelfth
   time in this repo.
+
+
+## §170 — The sweep's CLI-capture pass (`tests/test_rediscovery_cli_capture.py`)
+
+**What can go wrong here looks exactly like success.** A capture that never ran,
+a capture that ran against a stale credential, a budget that silently stopped
+firing — all of them render as a page with no error on it. The guards fix
+relations, not the presence of a switch.
+
+**The invariants:**
+
+1. **Order is the safety property.** `_config.json` is written before the
+   capture opens a session. Verify by source order inside `_run`, not by a
+   comment: `code.index("_config.json") < code.index("_run_cli")`.
+2. **Off by default in both entry points** (`_run`, `start`), and the inline
+   sweep behind device registration must never pass `cli=True` — a 300 s SSH
+   session inside a registration round-trip looks like a hung form.
+3. **One authority for the decision.** `cli_capture_decision()` is called by the
+   worker *and* by the page. Two answers to "will this capture?" is how a UI
+   promises a dump that never arrives.
+4. **Five distinct refusals**, all non-empty; a capture answers with an empty
+   reason. Asserted as a set of size 5.
+5. **Unusable is never fresh** — encrypted dump, another appliance's dump,
+   unestablishable age. Each one suppresses forever if counted.
+6. **The age comes from `created_iso`, never `created_at`.** The latter is
+   formatted for a table cell; a budget derived from a presentation format is
+   one column change away from never firing again. Guarded at source level with
+   comments and docstring stripped.
+7. **The vault permission is enforced at the route and the refusal is
+   returned**, since `rediscover/start` only asks for `appliances.apply`.
+8. **Skipped and failed never share a key.**
+9. **`cli-running` appears everywhere the other in-flight states appear.**
+   Asserted as an equality of counts against `'deep-running'`. Missing it in
+   `poll()` is invisible in review and fatal in use: polling stops the moment
+   the capture starts and the operator never learns the outcome.
+
+**Recipe:**
+
+```bash
+cd /opt/satom
+venv/bin/python -m pytest tests/test_rediscovery_cli_capture.py -q --no-header
+```
+
+Measure mutations **by rc and without a pipe** — piping pytest into `tail`
+measures `tail`, which has now cost a wrong result eleven times in this repo.
+Only `rc == 1` is a failure; `rc == 5` means *nothing was collected* and is how
+the previous round discovered a patcher had deleted two tests.
+
+
+## §171 — the word "API only", and the four things it must not mean (2026-09-15)
+
+`tests/test_cli_provenance.py` (30 guards). Covers
+`cli_coverage.provenance()` / `provenance_from()` / `Provenance`,
+`partials/_cli_provenance.html`, and the four pages that consume them
+(`api_explorer`, `adc_api`, `registry/versions` via `_apiversions`,
+`structure`).
+
+**The hinge.** `compare(product, "")` is a perfectly well-formed result in which
+every catalog entry sits in `no_block`, because an absent dump has no blocks.
+Publishing that verbatim prints "the CLI has none of this" over an entire
+catalog — a confident, precise, wrong page. `Provenance.measured` is the single
+line that prevents it, and `provenance_from` honours `diff["no_evidence"]` over
+any evidence record a caller hands in, because that flag is also how "the vault
+row exists but the file would not open" arrives.
+
+`monitor_only` is the deliberate exception: it follows from the URN shape, not
+from evidence, so it is still answered with no dump in hand. Withholding it
+would be false modesty rather than honesty.
+
+**The firmware line.** `report(..., line=)` filters and never falls back. A 7.6
+capture relabelled as evidence for 8.0 would render as a confident answer about
+firmware nobody captured, and the comparison page is the one surface where that
+is easy to do by accident. Two guards: the report must choose `None` for a line
+with no dump, and the rendered ROW must carry a badge in the measured column and
+an em dash in the other. The page-level assertion alone is not enough — the
+legend would satisfy it while every row was wrong.
+
+**The vocabulary has one author.** Guards assert that every label declared in
+`PROV_LABEL` is rendered by the macro, that no consumer page spells any label
+itself, that every bucket in `PROV_ORDER` has a branch in the macro (a bucket
+with no branch falls through to the em dash, which is invisible because it looks
+exactly like honest ignorance), and that `PROV_UNKNOWN` carries **no** badge
+class.
+
+**Permission.** The badge is catalog metadata — table names, never block text —
+so it renders without `Permission.BACKUP`, matching the split §169 already drew.
+A guard asserts a readonly user sees the badges and that no `set` line, no `ENC`
+value and no PEM reaches the page.
+
+### Traps this round
+
+1. `render_template_string` drags in every context processor, including the one
+   that 500s on `/api-tokens/` today. A macro is rendered through
+   `app.jinja_env.get_template(...).module`, so the guard fails only for its own
+   reason.
+2. A first draft asserted that the built-in Structure seed contains a node the
+   registry misses. It does not — the guard was measuring the seed, not the
+   lookup. The node is now planted through the supported admin overlay, and its
+   URN is derived by `candidate_urns()` rather than spelled by hand.
+3. `provenance_from` must stay a projection; a guard unparses it from the AST
+   and fails if it grows a call to `read_dump` / `report` / `parse_config_dump`.
+   A hidden second parse of a 690 KB dump per page load is how this becomes the
+   page nobody opens.
+
+### Verification
+
+30 guards RC=0, measured without a pipe. 28 mutations, 28 bite.
+
+Two of those 28 survived the first pass, and both were the same defect in the
+guard rather than in the code: `"CLI only" in page` and `"API + CLI" in page`
+were satisfied by the LEGEND this round added, which renders one sample of
+every badge. A mutation that stripped the badge off every row left the words on
+the page and walked. Both assertions are now scoped to the row / the leaf that
+must carry the badge. Eighth assert-satisfied-by-the-wrong-text in this repo,
+and the first one caused by new chrome rather than by a comment.
+
+### Found in passing — running the suite CLOBBERS `data/api_matrix/`
+
+Not introduced by this round; demonstrated by it. `api_matrix.MATRIX_ROOT` is a
+repo-relative path with no app-config or test override, and
+`rediscovery.py:543` rebuilds the matrix at the end of every sweep. So
+`tests/test_rediscovery_*` running a sweep against the **test** database
+overwrites the **production** `data/api_matrix/fortiweb.json` — on 2026-09-15 it
+replaced 326 swept endpoints and the witnesses `fortiweb15/16/17` with
+`swept: 0, devices: []`, which silently emptied the firmware-line comparison.
+
+Two things make it hard to notice: the file is **untracked**, so `git status`
+says nothing, and an empty matrix renders as a page with no differences rather
+than as an error. Recovery is `api_matrix.rebuild(product)` from the live app
+context (the same call the page's Rebuild button makes) — the matrix is derived
+from `data/rediscovery/<id>/_config.json` plus the live appliance table, so
+nothing is lost permanently. The same run also wrote a fixture device
+(`fw-noflag`) into `data/rediscovery/1/_config.json`; appliance 1 does not exist
+in production, so that copy is inert.
+
+**Until `MATRIX_ROOT` takes an override, re-check the matrix after any run that
+includes the rediscovery tests.**

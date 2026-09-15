@@ -107,6 +107,95 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="added-every-page-that-lists-an-endpoint-now-says-which-transport-serves-it-2026-09-15">Added — Every page that lists an endpoint now says which transport serves it (2026-09-15)</h3>
+<p>Asked for as <em>"aquí debería de verse también qué cosas son del CLI y qué cosas
+son vía API"</em>, naming <code>/web/registry/versions</code>, <code>/web/api-explorer/</code> and
+<code>/web/structure/</code>.</p>
+<p><strong>One authority, not three.</strong> <code>cli_coverage.provenance()</code> projects the diff those
+pages already have into a per-entry verdict, and one Jinja macro
+(<code>partials/_cli_provenance.html</code>) is the only place the wording exists. Three
+copies of a badge is how the appliance status badge ended up with two authors
+(<code>api.js:43</code> and <code>main.js:141</code>) that disagree.</p>
+<p>The vocabulary separates four things that a naive implementation would collapse
+into "API only":</p>
+<ul>
+<li><strong>API + CLI</strong> — the catalog serves it and the dump prints its block;</li>
+<li><strong>API + CLI · other path</strong> — both carry it, spelled differently;</li>
+<li><strong>API only</strong> — a runtime readout with no configuration table behind it, so it
+  <em>cannot</em> have a CLI block. The one case where "API only" is a fact;</li>
+<li><strong>API · no CLI block here</strong> — in the catalog, absent from <em>this</em> dump. An
+  empty table prints no block, so this is <strong>not</strong> evidence the CLI lacks it.</li>
+</ul>
+<p><strong>And a fifth state with no badge at all: unmeasured.</strong> With no dump,
+<code>compare()</code> still returns a full result in which <em>every</em> catalog entry lands in
+<code>no_block</code> — rendered as-is that reads "the CLI has none of this", the exact
+opposite of what absent evidence means. So an unmeasured product answers <code>—</code>
+with the reason in its tooltip, and the em dash is deliberately not a grey pill:
+a grey "unknown" badge and the grey "no CLI block here" badge are the pair this
+whole design exists to keep apart.</p>
+<p><strong>On the firmware-line comparison the provenance is per LINE.</strong> A dump comes
+from one box running one firmware, so <code>report(..., line=)</code> is a filter and never
+a fallback. Measured on this fleet: all six usable FortiWeb dumps are 7.6, none
+is 8.0 — so the 8.0 column is honestly blank while the 7.6 column carries
+verdicts, and the page now renders the endpoint rows (it printed only counts
+before) so that difference is visible per row.</p>
+<p>FortiADC gets the same badges (its hub, and the shared body of the versions
+page). FortiAnalyzer and FortiAuthenticator deliberately do not: neither has a
+config CLI to diff, and their coverage section already states that once, which
+is the right place for a fact about the whole product rather than each row.</p>
+<h3 id="added-the-sweep-can-now-capture-what-the-cli-serves-in-the-same-pass-2026-09-15">Added — The sweep can now capture what the CLI serves, in the same pass (2026-09-15)</h3>
+<p>Asked for as <em>"si hazlo"</em> on the one item the previous round left needing an
+explicit OK: hooking the CLI capture onto the rediscovery sweep.</p>
+<p><strong>It is hooked as a third pass, not folded inline.</strong> The sweep's own snapshot
+(<code>_config.json</code>) is written to disk <em>before</em> the capture opens a session, so
+nothing the capture does — including hanging on a dead SSH port until its 300 s
+ceiling — can cost the operator a sweep that already succeeded. Three measured
+reasons for keeping it separate and opt-in:</p>
+<ul>
+<li>an SSH dump is one session bounded at 300 s, against a REST sweep that
+  finishes in seconds. Folding it in would make <strong>every</strong> sweep minutes long,
+  including the silent one that runs behind device registration;</li>
+<li>SSH can fail on a box whose REST just answered perfectly. A successful sweep
+  must not be reported as failed because a second transport could not connect;</li>
+<li>it writes ~700 KB of device configuration into the vault. That is a state
+  change, and a state change nobody asked for is not a default.</li>
+</ul>
+<p><strong>Why it is worth doing at all:</strong> until now the CLI-coverage report compared the
+catalog against whatever dump happened to be in the vault — on this fleet, dumps
+belonging to appliances that have since been deleted. Captured by the sweep, the
+report describes the box <em>as swept</em>: same box, same firmware line, same minute.</p>
+<p>One function, <code>rediscovery.cli_capture_decision()</code>, answers "will this capture,
+and if not, why not" — and <strong>both</strong> callers obey it: the worker that acts on it
+and the rediscovery page that previews it. A page computing its own preview is
+how a UI ends up promising a dump the worker then declines to take. Every "no"
+carries its own sentence, because a single generic refusal is indistinguishable
+from a capture that ran and found nothing:</p>
+<ul>
+<li>not requested;</li>
+<li>the product has no CLI configuration dump — FortiAnalyzer speaks JSON-RPC,
+  FortiAuthenticator has no <code>show full-configuration</code> (the reason comes from
+  <code>cli_coverage.UNSUPPORTED_REASON</code>, never a second sentence written here);</li>
+<li>the user may not write the configuration vault;</li>
+<li>the appliance is in maintenance mode, where scheduled collection is
+  suppressed;</li>
+<li>a <strong>usable</strong> dump captured inside the 24 h budget already exists.</li>
+</ul>
+<p><code>usable</code> is load-bearing in that last one. An encrypted dump (the box has a
+backup password set) can never be parsed, so counting it as freshness would
+suppress every future capture and leave the coverage section permanently empty
+on exactly the appliances that need it most. Same for a dump belonging to
+another appliance, and for one whose age cannot be established — unknown age
+never suppresses.</p>
+<p><strong>A permission the sweep endpoint never asked for.</strong> <code>rediscover/start</code> requires
+<code>appliances.apply</code>; the vault requires <code>backup</code>. The flag is honoured only with
+the vault permission, and the refusal is <strong>returned in the response</strong>, not
+swallowed — dropping it silently would let a user create vault rows through a
+door that never mentions the vault, and leave them waiting for a dump that was
+never going to be taken.</p>
+<p>Skipped and failed never share a key or a word (<code>cli_skipped</code> vs <code>cli_error</code>):
+"no dump was taken" and "a dump was attempted and lost" send the operator to
+opposite places.</p>
+<p>Guards: <code>tests/test_rediscovery_cli_capture.py</code> (§170), <code>docs/safeguards.md</code>.</p>
 <h3 id="added-what-the-cli-serves-and-the-catalog-does-not-know-coverage-on-the-api-hub-2026-09-15">Added — What the CLI serves and the catalog does not know: coverage on the API hub (2026-09-15)</h3>
 <p>Asked for as <em>"hay elementos en el fortiweb que no estan en el api, y que solo se
 ven por ejemplo cuando sea conecta via ssh y se hace un comando full… comparar

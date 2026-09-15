@@ -399,7 +399,7 @@ def _client_snapshot(appliance) -> SimpleNamespace:
 
 
 def _run(appliance_snap: SimpleNamespace, by: str, deep: bool = False,
-         plan: list[dict] | None = None) -> None:
+         plan: list[dict] | None = None, cli: bool = False) -> None:
     aid = appliance_snap.id
     devdir = _dev_dir(aid)
     progress_path = devdir / "progress.json"
@@ -491,6 +491,12 @@ def _run(appliance_snap: SimpleNamespace, by: str, deep: bool = False,
     if deep and not is_adc:  # deep capture is the FortiWeb WPP/policy layer
         _run_deep(appliance_snap, progress_path, state)
 
+    # LAST, and only when asked. ``cli`` defaults to False so the post-
+    # registration sweep (views.appliances) and every other internal caller
+    # keep their current cost and their current side effects.
+    if cli:
+        _run_cli(appliance_snap, progress_path, state)
+
 
 def _persist_firmware(appliance_id: int, firmware: str) -> None:
     """Write the firmware the sweep just measured onto the appliance row.
@@ -562,7 +568,174 @@ def _run_deep(appliance_snap: SimpleNamespace, progress_path, state: dict) -> No
     _write_json(progress_path, state)
 
 
-def start(appliance, by: str = "", deep: bool = False) -> dict:
+# --------------------------------------------------------------------------- #
+# Third pass — capture what the CLI serves                                     #
+# --------------------------------------------------------------------------- #
+# The sweep reads what REST serves. ``show full-configuration`` reads what the
+# CLI serves, and the gap between the two IS the CLI-coverage report
+# (:mod:`app.services.cli_coverage`). Capturing it HERE is what makes that
+# report describe the box *as swept* — same box, same firmware, same minute —
+# instead of whatever dump happened to already be sitting in the vault.
+#
+# It is a SEPARATE, OPT-IN pass appended after ``_config.json`` is already on
+# disk, for three measured reasons:
+#   * an SSH dump is a single session bounded at 300 s against a REST sweep
+#     that finishes in seconds, so folding it inline would make EVERY sweep
+#     minutes long — including the silent one behind device registration;
+#   * SSH can fail on a box whose REST just answered perfectly, and a sweep
+#     that SUCCEEDED must not be reported as failed because a second transport
+#     could not connect;
+#   * it writes ~700 KB of device configuration into the vault. That is a state
+#     change, and a state change nobody asked for is not a default.
+CLI_CAPTURE_MAX_AGE_H = 24
+
+#: Every skip carries its OWN reason. A single generic "no" would be
+#: indistinguishable from a capture that ran and found nothing — precisely the
+#: confusion the coverage report exists to remove.
+CLI_SKIP_NOT_REQUESTED = "not requested for this sweep"
+CLI_SKIP_NO_PERMISSION = ("the CLI dump is written to the configuration vault, "
+                          "which this user may not write")
+CLI_SKIP_MAINTENANCE = ("the appliance is in maintenance mode, where scheduled "
+                        "collection is suppressed")
+
+
+def _latest_usable_dump(appliance_id: int, evidence: list | None = None) -> dict | None:
+    """Newest vault dump for THIS appliance that the coverage report would accept.
+
+    ``usable`` is not decoration. An encrypted dump (the box has a backup
+    password set) can never be parsed, so counting it as freshness would
+    suppress every future capture and leave the coverage section permanently
+    empty on exactly the appliances that need it most.
+    """
+    from . import cli_coverage
+
+    rows = cli_coverage.evidence_index() if evidence is None else evidence
+    for rec in rows:                     # evidence_index is newest-first
+        if rec.get("appliance_id") == appliance_id and rec.get("usable"):
+            return rec
+    return None
+
+
+def _dump_age_hours(rec: dict | None, now: datetime) -> float | None:
+    """Age of an evidence row in hours, or ``None`` when it cannot be established.
+
+    Reads ``created_iso``, never the ``created_at`` display string.
+    """
+    stamp = (rec or {}).get("created_iso") or ""
+    if not stamp:
+        return None
+    try:
+        when = datetime.fromisoformat(stamp)
+    except ValueError:
+        return None
+    return max(0.0, (now - when).total_seconds() / 3600.0)
+
+
+def cli_capture_decision(*, requested: bool, kind: str, appliance_id: int,
+                         evidence: list | None = None, maintenance: bool = False,
+                         may_write_vault: bool = True,
+                         max_age_h: float = CLI_CAPTURE_MAX_AGE_H,
+                         now: datetime | None = None) -> dict:
+    """Decide — BEFORE any session is opened — whether this sweep captures a dump.
+
+    ONE authority for the question, because it has two callers that must never
+    disagree: the worker (which acts on it) and the rediscovery page (which
+    tells the operator in advance what the checkbox will do). Two answers to
+    "will this capture?" is how a UI ends up promising a dump that the worker
+    then silently declines to take.
+
+    Returns ``{"capture", "reason", "existing", "age_h"}``. ``reason`` is empty
+    only when ``capture`` is True.
+    """
+    from . import cli_coverage
+
+    now = now or datetime.utcnow()
+    if not requested:
+        return {"capture": False, "reason": CLI_SKIP_NOT_REQUESTED,
+                "existing": None, "age_h": None}
+    kind = (kind or "fortiweb").lower()
+    if kind not in cli_coverage.SUPPORTED_PRODUCTS:
+        # FortiAnalyzer and FortiAuthenticator do not answer this question with
+        # a configuration dump; say which one and why, never a bare False.
+        return {"capture": False,
+                "reason": cli_coverage.UNSUPPORTED_REASON.get(
+                    kind, "this product has no CLI configuration dump to capture"),
+                "existing": None, "age_h": None}
+    if not may_write_vault:
+        return {"capture": False, "reason": CLI_SKIP_NO_PERMISSION,
+                "existing": None, "age_h": None}
+    if maintenance:
+        return {"capture": False, "reason": CLI_SKIP_MAINTENANCE,
+                "existing": None, "age_h": None}
+
+    fresh = _latest_usable_dump(appliance_id, evidence)
+    age_h = _dump_age_hours(fresh, now)
+    if fresh is not None and age_h is not None and age_h < max_age_h:
+        return {"capture": False, "existing": fresh, "age_h": round(age_h, 1),
+                "reason": (f"a usable dump captured {age_h:.1f} h ago is inside "
+                           f"the {max_age_h:g} h budget - re-reading the same "
+                           f"configuration would only cost the box another "
+                           f"300 s session")}
+    return {"capture": True, "reason": "", "existing": fresh, "age_h": age_h}
+
+
+def _run_cli(appliance_snap: SimpleNamespace, progress_path, state: dict) -> None:
+    """Opt-in CLI-dump pass, appended after the sweep snapshot is already on disk.
+
+    Best-effort BY CONSTRUCTION: ``_config.json`` is written before this runs,
+    so nothing here — including hanging on a dead SSH port until the 300 s
+    ceiling — can cost the operator the sweep that already succeeded. The
+    outcome lands in ``progress.json`` beside the sweep's own, under separate
+    keys, because a capture that was SKIPPED and a capture that FAILED must
+    never look alike.
+    """
+    aid = appliance_snap.id
+    state.update(state="cli-running",
+                 section="CLI capture (show full-configuration)", finished=None)
+    _write_json(progress_path, state)
+    outcome: dict = {}
+    try:
+        from ..extensions import db
+        from ..models import Appliance
+        from . import backup as backup_svc
+        from .audit import log_action
+
+        app = _get_flask_app()
+        with app.app_context():
+            # Re-read the row inside THIS thread's context, by id. Carrying a
+            # request's ORM instance into a worker thread is what made every
+            # status badge read "offline" on 2026-09-14 — and the credential
+            # this capture needs may live in the vault, which reads the DB.
+            row = db.session.get(Appliance, aid)
+            if row is None:
+                raise RuntimeError("the appliance row disappeared mid-sweep")
+            decision = cli_capture_decision(
+                requested=True, kind=getattr(row, "kind", "") or "fortiweb",
+                appliance_id=aid,
+                maintenance=bool(getattr(row, "maintenance", False)))
+            if not decision["capture"]:
+                outcome = {"cli_skipped": decision["reason"]}
+                if decision.get("existing"):
+                    outcome["cli_backup_id"] = decision["existing"].get("backup_id")
+            else:
+                rec = backup_svc.fetch_device_backup_auto(
+                    row, created_by=(state.get("by") or "rediscovery")[:64],
+                    method="ssh")
+                outcome = {"cli_backup_id": rec.id,
+                           "cli_kb": (rec.size_bytes or 0) // 1024,
+                           "cli_firmware": rec.firmware or ""}
+                log_action("appliance.cli_capture", target=row.name or "",
+                           extra={"backup_id": rec.id, "by": "rediscovery sweep",
+                                  "kb": (rec.size_bytes or 0) // 1024,
+                                  "firmware": rec.firmware or ""})
+    except Exception as exc:  # noqa: BLE001 — never sink a sweep that succeeded
+        outcome = {"cli_error": f"{type(exc).__name__}: {exc}"[:200]}
+    state.update(state="done", finished=datetime.utcnow().isoformat(), **outcome)
+    _write_json(progress_path, state)
+
+
+def start(appliance, by: str = "", deep: bool = False,
+          cli: bool = False) -> dict:
     """Kick off a rediscovery sweep in a background thread.
 
     Refuses to start a second concurrent run for the same appliance. Returns the
@@ -593,13 +766,18 @@ def start(appliance, by: str = "", deep: bool = False) -> dict:
     plan = plan_for(appliance)
     init = {"state": "running", "appliance_id": appliance.id, "appliance": appliance.name,
             "total": 0, "done": 0, "percent": 0, "objects": 0, "deep": bool(deep),
+            "cli": bool(cli),
             "started": datetime.utcnow().isoformat(), "by": by, "errors": [], "finished": None}
     _write_json(_dev_dir(appliance.id) / "progress.json", init)
-    threading.Thread(target=_run, args=(snap, by, deep, plan), daemon=True).start()
+    threading.Thread(target=_run, args=(snap, by, deep, plan, cli),
+                     daemon=True).start()
     return {"started": True, "progress": init}
 
 
 __all__ = ["sweep_plan", "sweep_plan_adc", "plan_for", "status",
            "latest_snapshot_meta", "start", "apply_inventory",
-           "maybe_apply_inventory", "_run_deep", "_probe_fortiweb",
+           "maybe_apply_inventory", "_run_deep", "_run_cli", "_probe_fortiweb",
+           "cli_capture_decision", "CLI_CAPTURE_MAX_AGE_H",
+           "CLI_SKIP_NOT_REQUESTED", "CLI_SKIP_NO_PERMISSION",
+           "CLI_SKIP_MAINTENANCE",
            "VERDICT_OK", "VERDICT_ABSENT", "VERDICT_ERROR"]

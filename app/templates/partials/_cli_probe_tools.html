@@ -1,0 +1,186 @@
+{# ─────────────────────────────────────────────────────────────────────────────
+   Search + test, for every page that lists endpoints. ONE author.
+
+   Three pages list catalog entries — the API hub, the firmware-line comparison
+   and the object Structure cross-reference — and all three were asked for the
+   same two affordances: FIND a row, and TEST it against a live box. Writing the
+   filter and the test button once per page is how this repo's status badge
+   ended up with two authors (api.js:43 and main.js:141) disagreeing about one
+   device.
+
+   TWO TRANSPORTS, TWO BUTTONS, NEVER ONE. "Test" over REST and "Test" over the
+   CLI answer different questions and can disagree — that disagreement IS the
+   finding these pages exist to show. A single button that silently picked one
+   would hide it.
+
+   Both reads are read-only by construction: the REST side is a GET through the
+   existing api_explorer.execute route, and the CLI side runs ``show`` through
+   ssh_ops.assert_readonly, which refuses every mutating verb.
+   ──────────────────────────────────────────────────────────────────────────── #}
+
+{# SELF-WIRING on purpose. The filter has to work on pages that do NOT mount the
+   test bar (the API hub already has its own console), so hanging its JavaScript
+   off the bar would have shipped a search box that silently does nothing —
+   which is worse than no search box, because it looks like the data matched. #}
+{% macro filter_box(table_id, placeholder='') -%}
+<div class="fw-search-box" style="max-width:420px;">
+  <i class="bi bi-search search-icon"></i>
+  <input type="search" data-cli-filter="{{ table_id }}"
+         placeholder="{{ placeholder or _('Filter rows by name, URN or path…') }}"
+         style="max-width:420px;">
+  <span class="text-muted ms-2" data-cli-filter-count="{{ table_id }}"
+        style="font-size:11px;"></span>
+</div>
+<script>
+(function () {
+  var input = document.querySelector('[data-cli-filter="{{ table_id }}"]');
+  var table = document.getElementById('{{ table_id }}');
+  if (!input || !table || input.dataset.cliWired) { return; }
+  input.dataset.cliWired = '1';
+  var count = document.querySelector('[data-cli-filter-count="{{ table_id }}"]');
+  input.addEventListener('input', function () {
+    var q = (input.value || '').trim().toLowerCase();
+    var body = table.tBodies[0];
+    if (!body) { return; }
+    var shown = 0, total = 0;
+    Array.prototype.forEach.call(body.rows, function (tr) {
+      total++;
+      // Match on the row's TEXT: a filter bound to one column silently stops
+      // covering every column added after it.
+      var hit = !q || (tr.textContent || '').toLowerCase().indexOf(q) !== -1;
+      tr.style.display = hit ? '' : 'none';
+      if (hit) { shown++; }
+    });
+    if (count) { count.textContent = shown + ' / ' + total; }
+  });
+})();
+</script>
+{%- endmacro %}
+
+
+{# One button. ``urn`` makes it a REST GET, ``cli_path`` a ``show``; a row may
+   legitimately offer both, and then it offers two buttons, not a toggle. #}
+{% macro test_btn(urn='', cli_path='', label='') -%}
+  {%- if urn %}
+  <button type="button" class="btn btn-sm btn-fw-outline py-0 px-1"
+          data-cli-test="api" data-cli-target="{{ urn }}"
+          title="{{ _('GET this path on a live appliance') }}"
+          style="font-size:10.5px;">
+    <i class="bi bi-plug"></i>{% if label %} {{ label }}{% endif %} API
+  </button>
+  {%- endif %}
+  {%- if cli_path %}
+  <button type="button" class="btn btn-sm btn-fw-outline py-0 px-1"
+          data-cli-test="cli" data-cli-target="{{ cli_path }}"
+          title="{{ _('Run show <path> on a live appliance') }}"
+          style="font-size:10.5px;">
+    <i class="bi bi-terminal"></i>{% if label %} {{ label }}{% endif %} CLI
+  </button>
+  {%- endif %}
+{%- endmacro %}
+
+
+{# Rendered ONCE per page. Owns the appliance picker, the output panel and the
+   only copy of the JavaScript; the buttons above are inert markup until it is
+   on the page, which is deliberate — a test button with nowhere to send the
+   answer would look like a broken feature instead of a missing section. #}
+{% macro probe_bar(appliances, live_endpoint='', exec_endpoint='', can_cli=True) -%}
+<div class="fw-card mt-3" id="cliProbeBar">
+  <div class="fw-card-header">
+    <span class="fw-card-title">
+      <i class="bi bi-plug me-2 text-accent"></i>{{ _('Test against a live appliance') }}
+    </span>
+    <span class="text-muted" style="font-size:11px;">
+      {{ _('read-only: a GET, or show — never a write') }}
+    </span>
+  </div>
+  <div class="fw-card-body">
+    <div class="d-flex flex-wrap align-items-end gap-2">
+      <div>
+        <label class="fw-form-label mb-1" for="cliProbeAppliance">{{ _('Appliance') }}</label>
+        <select class="form-select fw-form-control" id="cliProbeAppliance">
+          <option value="">{{ _('choose…') }}</option>
+          {% for a in appliances %}
+            <option value="{{ a.id }}">{{ a.name }}{% if a.host %} ({{ a.host }}){% endif %}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="text-muted pb-2" style="font-size:11.5px;" id="cliProbeWhat">
+        {{ _('Pick a box, then press API or CLI on any row.') }}
+      </div>
+    </div>
+    <pre id="cliProbeOut" class="mt-2 mb-0 d-none"
+         style="max-height:320px;overflow:auto;background:#F4F5F7;border:1px solid #E3E6EA;
+                border-radius:4px;padding:10px;font-size:11.5px;color:#1F2933;"></pre>
+  </div>
+</div>
+
+<script>
+(function () {
+  var CSRF = document.querySelector('meta[name="csrf-token"]');
+  var tok  = CSRF ? CSRF.content : '';
+  var out  = document.getElementById('cliProbeOut');
+  var what = document.getElementById('cliProbeWhat');
+  var pick = document.getElementById('cliProbeAppliance');
+
+  // The filter wires itself inside filter_box — ONE author, and it has to keep
+  // working on pages that never mount this bar.
+
+  // ── test ────────────────────────────────────────────────────────────────
+  function show(text, bad) {
+    out.classList.remove('d-none');
+    out.textContent = text;
+    out.style.borderColor = bad ? '#8B1C2A' : '#E3E6EA';
+  }
+
+  document.addEventListener('click', function (ev) {
+    var btn = ev.target.closest('[data-cli-test]');
+    if (!btn) { return; }
+    var kind   = btn.getAttribute('data-cli-test');
+    var target = btn.getAttribute('data-cli-target') || '';
+    if (!pick.value) { show('{{ _("Choose an appliance first.") }}', true); return; }
+    what.textContent = (kind === 'cli' ? 'show ' : 'GET ') + target;
+    show('…');
+
+    var fd = new URLSearchParams();
+    fd.append('csrf_token', tok);
+    fd.append('appliance_id', pick.value);
+
+    if (kind === 'cli') {
+      {% if live_endpoint and can_cli %}
+      fd.append('path', target);
+      fetch('{{ url_for(live_endpoint) }}', { method: 'POST', body: fd })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          show(d.ok ? (d.device + ' — show ' + d.path + '\n\n' + (d.text || '(empty)'))
+                    : ('error: ' + (d.error || 'failed')), !d.ok);
+        })
+        .catch(function (e) { show('error: ' + e, true); });
+      {% else %}
+      show('{{ _("Reading a device configuration over the CLI needs the Backup permission — the same one that gates the configuration vault these dumps are stored in.") }}', true);
+      {% endif %}
+      return;
+    }
+
+    {% if exec_endpoint %}
+    fd.append('endpoint', target);
+    fd.append('method', 'GET');
+    fetch('{{ url_for(exec_endpoint) }}', { method: 'POST', body: fd })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d.ok) { show('error: ' + (d.error || 'failed'), true); return; }
+        var txt = typeof d.result === 'string' ? d.result
+                                               : JSON.stringify(d.result, null, 2);
+        // The status code is part of the answer: a 200 with an empty list and a
+        // 404 look identical once the body is pretty-printed, and they mean
+        // opposite things about whether the path exists.
+        show('HTTP ' + d.status + '  ' + target + '\n\n' + txt, d.status >= 400);
+      })
+      .catch(function (e) { show('error: ' + e, true); });
+    {% else %}
+    show('{{ _("No REST console is mounted on this page.") }}', true);
+    {% endif %}
+  });
+})();
+</script>
+{%- endmacro %}

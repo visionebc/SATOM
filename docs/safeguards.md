@@ -14911,3 +14911,59 @@ in production, so that copy is inert.
 
 **Until `MATRIX_ROOT` takes an override, re-check the matrix after any run that
 includes the rediscovery tests.**
+
+## §172 — the catalog's growth path, and the three ways to say "no" (2026-09-15)
+
+`tests/test_discovery_run.py` — 36 guards over
+`services/discovery_run.py`, `services/registry_write.py`,
+`views/_discovery.py`, the CLI half of `services/structure.py` and the shared
+search/test macros.
+
+**What the guards are actually defending.** Every failure mode this feature has
+is the same shape: *a question that was never asked must not look like a
+question that came back with an answer.* Nothing here fails loudly — a block
+the budget never reached renders exactly like a block the device denied, and
+both render exactly like a block nobody has evidence for. So the guards spend
+most of their weight on the negative space:
+
+* budget exhaustion produces `not_probed`, never `absent`;
+* a probe that RAISED produces `error`, never `absent`;
+* `absent` requires that every candidate was asked **and** answered;
+* an empty diff produces **no** CLI subtree and **no** clone gap — an empty
+  measured result and "there is no evidence" are opposite claims;
+* the run stops at the first served candidate and the unasked ones stay
+  `not_probed`, so the row cannot print them as denied.
+
+**The write.** `register` re-probes every submitted pair against the appliance
+inside the same request and writes only what the device served; a guard posts a
+made-up URN with a stubbed `absent` verdict and asserts the row is not created.
+Another asserts that neither registry editor nor the bulk path constructs a
+`RegistryEndpoint` itself — one writer, checked over `ast.unparse` output so
+the prose in this file cannot satisfy it.
+
+**The cross-product hole, closed with its own guard.** `save_endpoint` refuses
+a `row_id` whose product differs from the caller's, and the guard writes a
+FortiADC row, tries to rewrite it as FortiWeb, and asserts the name is
+unchanged.
+
+**Premise asserted, not assumed.** The 403 guards first assert that the
+`readonly` profile really lacks `registry.edit`; without that the 403 could be
+vacuous (rejected one door earlier). And the cross-product route guards expect
+**404, not 403**: the `/web` ADOM scope hides a FortiADC before the kind check
+is reached, and confirming that a row exists is exactly the leak the scope
+closes. The kind check behind it is a second lock, asserted separately.
+
+**Trap notes.** Assertions about source run over a docstring/comment-stripped
+`ast.unparse`, because the prose quotes the identifiers it forbids — the ninth
+occurrence in this repo. Assertions about a page are scoped to the row or to the
+macro file: a legend that renders a sample of each badge satisfies a naive
+`"CLI only" in page` with the badge removed from every row, which is how two
+mutations survived on 2026-09-15.
+
+**Verification recipe.** `venv/bin/python -m pytest tests/test_discovery_run.py
+-q` measured **by rc and with no pipe** (piping into `tail` measures `tail` —
+eleven times in this repo). The mutation harness checks every anchor appears
+exactly once **before** starting, restores in a `finally` that also runs on
+SIGTERM/SIGINT, and verifies the restore against its own table rather than a
+grep of convenience — an interrupted harness left a live mutation in the tree
+twice.

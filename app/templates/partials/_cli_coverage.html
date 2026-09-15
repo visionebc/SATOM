@@ -1,3 +1,4 @@
+{% from "partials/_cli_probe_tools.html" import filter_box with context %}
 {# ─────────────────────────────────────────────────────────────────────────────
    CLI ↔ API coverage — ONE author for this section's markup.
 
@@ -163,8 +164,9 @@
           {{ _('CLI only — the catalog has no endpoint for these') }}
           <span class="fw-badge fw-badge-warning">{{ D.counts.cli_only }}</span>
         </h6>
+        <div class="mb-2">{{ filter_box('ccCliOnlyTable', _('Filter CLI blocks…')) }}</div>
         <div class="table-responsive" style="max-height:420px; overflow-y:auto;">
-          <table class="table fw-table mb-0" style="font-size:12.5px;">
+          <table class="table fw-table mb-0" id="ccCliOnlyTable" style="font-size:12.5px;">
             <thead><tr>
               <th>{{ _('CLI path') }}</th>
               <th class="text-end">{{ _('rows') }}</th>
@@ -238,8 +240,9 @@
         <p class="text-muted" style="font-size:12px;">
           {{ _('The CLI and the REST API do not always spell a child table the same way. SATOM cannot tell from a config file which spelling the device serves — execute the URN in the console above and find out.') }}
         </p>
+        <div class="mb-2">{{ filter_box('ccNearTable', _('Filter near matches…')) }}</div>
         <div class="table-responsive">
-          <table class="table fw-table mb-0" style="font-size:12.5px;">
+          <table class="table fw-table mb-0" id="ccNearTable" style="font-size:12.5px;">
             <thead><tr><th>{{ _('CLI path') }}</th><th>{{ _('catalog endpoint') }}</th><th>{{ _('catalog URN') }}</th></tr></thead>
             <tbody>
             {% for r in D.near_match %}
@@ -548,3 +551,8 @@
 })();
 </script>
 {% endif %}
+
+{# The discovery run lives directly under the diff it acts on: its input IS the
+   cli_only bucket of the table above, and separating them would let an operator
+   act on one page's findings while reading another page's evidence. #}
+{% include "partials/_discovery_run.html" %}

@@ -6,6 +6,87 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed — nothing on the discovery card is a synchronous request any more, and no "running" outlives its worker (2026-09-15)
+
+Asked for as *"cuando se crea y ejecuta, ¿cómo sabe el usuario que está
+corriendo? … se debería de crear un job y avisar al usuario cuando este job
+finalice"*, then *"arréglalo para que ya quede"*.
+
+**Four defects, and they are four shapes of the same lie: a screen reporting a
+state nobody is in.**
+
+**1. The run was synchronous, and the numbers say it could not stay.**
+`POST /discovery/run` fired up to 960 read-only GETs *inside* the HTTP request.
+nginx cuts a proxied request at **120 s** and gunicorn kills a worker at
+**600 s** — five times apart — and the run that crosses that gap is the one
+against a *degraded* appliance, which is exactly when the answer matters most.
+The browser got a **504** while the worker kept asking the device for up to
+eight more minutes; the findings those GETs bought existed only in a response
+body nobody received, so **nothing could be registered** and the audit row said
+the run went fine. With four gunicorn workers, one such run also held 25 % of
+the application for its whole duration.
+
+The run is now a **job** in the shared ledger (`services/jobs.py`), through the
+new `services/discovery_jobs.py`. That buys, without inventing a second
+mechanism: live progress, a **Stop** that is cooperative (a GET already in
+flight is never cut), the toast dock, the **bell when it finishes**, the Job
+Manager, and the boot-time orphan sweep. The **findings are persisted on the
+job**, which is the part that matters operationally — the operator registers
+from that table, and closing the tab used to throw away GETs fired at a
+production box. A second run against the same appliance **reconnects** to the
+live one instead of spending the budget twice.
+
+The **plan is still built in the request**: deriving candidates reads the
+catalog and the dump through ADOM-scoped, request-bound services, and doing
+that in a daemon thread is how a background task quietly answers about the
+wrong ADOM. The worker only ever asks the device.
+
+**2. The load job already had progress — and no reader.** `rediscovery.start()`
+has always been a background thread with a `progress.json` and a status
+endpoint the Rediscover page polls. This card started the *same* worker and
+showed a flash message, so *"is it still running?"* was answered by guessing.
+It now polls that same endpoint and names each phase — **REST sweep**, **deep
+capture**, **CLI capture** — and keeps the three CLI outcomes three: captured
+(with the size), skipped (with the reason), failed (with the error).
+
+**3. A `running` state could outlive its process, forever.** The sweep's state
+is a file and its worker is a daemon thread, so `systemctl restart satom` left
+every in-flight sweep reading `running` with nobody behind it. Appliance 4 read
+**71 %** from **2026-07-03** to 2026-09-15 — 74 days. The guard in `start()`
+only stopped *blocking* a new run after 15 minutes, which unblocked the
+operator and left the page lying. Now:
+
+- the sweep records **pid + host** with its progress, and
+  `reconcile_stale_runs()` runs at boot next to the existing job sweep;
+- a sweep whose worker is gone becomes **`interrupted`** — *neither* `done`
+  *nor* `failed`. It wrote no snapshot and reported no error, so both other
+  words would be claims nobody can support;
+- a sweep that **crashes** now writes `failed` with the exception and re-raises,
+  instead of leaving `running` behind;
+- **a file from another host is never judged.** `satom-ha-datasync` pulls this
+  whole `data/` tree onto the standby every five minutes, so a2 sees a1's
+  progress files and a1's pids mean nothing there.
+
+**4. The test suite wrote into the production data tree.**
+`tests/test_rediscovery_*` drive real sweeps against the *test* database while
+writing progress and `_config.json` into the **production** `data/rediscovery/`,
+and `api_matrix` rebuilds itself from that tree at the end of every sweep. On
+2026-09-15 that reduced the live `data/api_matrix/fortiweb.json` from **326
+swept endpoints and three witnesses** to `swept: 0, devices: []`. The file is
+untracked, so git reported nothing, and **an empty matrix renders as a page
+with no differences rather than as an error** — which is what made it worse
+than a crash. `SATOM_REDISCOVERY_DIR` and `SATOM_API_MATRIX_DIR` now redirect
+both, the same isolation pattern `SATOM_JOBS_DIR` and `SATOM_SOT_DIR` already
+use, and `tests/conftest.py` sets them.
+
+**Also fixed, found while measuring:** `rediscovery.apply_inventory` wrote
+`appliance.firmware` **without** stamping `firmware_checked_at`, so the sweep
+left behind a version no consumer could date. It is now stamped with the
+moment the snapshot **observed** it — not with "now", because an attestation
+dated later than its observation is a lie about freshness — and a snapshot with
+no readable time leaves the previous attestation alone rather than inventing
+one.
+
 ### Fixed — one appliance for the discovery run, and the firmware it is running (2026-09-15)
 
 Asked for as *"no es redundante? … abajo volver a seleccionar un fortiweb no

@@ -289,7 +289,11 @@ def test_the_capture_runs_after_the_snapshot_is_already_on_disk(app):
     ceiling, can cost the operator the sweep that already succeeded.
     """
     from app.services import rediscovery
-    code = _code_of(rediscovery._run)
+    # ``_sweep``, not ``_run``: on 2026-09-15 ``_run`` became a thin guarded
+    # wrapper whose only job is to write a TERMINAL state when the worker dies
+    # (a crash used to leave "running" on disk forever). The ordering rule this
+    # guard protects lives in the body, which is now ``_sweep``.
+    code = _code_of(rediscovery._sweep)
     assert code.index("_config.json") < code.index("_run_cli")
     assert "if cli:" in code
 

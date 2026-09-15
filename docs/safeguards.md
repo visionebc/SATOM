@@ -15102,3 +15102,75 @@ picker and the explicit override).
 whole function; the audit row a few lines below spells the same word, so
 dropping the key from the payload left them green. Scope assertions to the dict
 literal / the row / the sheet — never to "somewhere in this function".
+
+## §175 — a job with no reader, and a "running" that outlived its process (`tests/test_discovery_async.py`, 2026-09-15)
+
+**What this protects.** Four defects with one shape: *a screen reporting a state
+nobody is in*.
+
+### The rules
+
+1. **`run_payload` does no device I/O.** Not a probe, not a version read. If
+   that function can talk to an appliance it can also outlive nginx's 120 s
+   proxy timeout, and the browser then gets a 504 while the budget keeps being
+   spent. Asserted on the function's source, docstring- and comment-stripped.
+2. **The findings are persisted on the job.** Registration reads that table; a
+   result that lives only in the browser means closing the tab throws away GETs
+   fired at a production appliance. Asserted end-to-end through the route with
+   the worker dispatched inline.
+3. **Stop leaves the unasked blocks `not_probed`.** Never `absent` — that is the
+   device denying a path, and the device was never asked. Same three-negatives
+   rule as §172.
+4. **A stopped run still hands back what it learned.** Otherwise Stop costs more
+   than letting the run finish.
+5. **Progress is reported BEFORE a block is asked.** A run that dies mid-GET then
+   names the block it was asking about, not the one it had finished.
+6. **The worker never gates on the version verdict** (`ast.If` scan). `unknown`
+   is a statement about *our* read failing; a gate on it would refuse a
+   legitimate run on the strength of our own outage. Moved here from §174 with
+   the code it protects.
+7. **The worker's audit row carries `by` explicitly.** `log_action` reads
+   `current_user`, and a daemon thread has none: without this every async run is
+   attributed to `"system"`. The *dispatch* is audited in the request, where the
+   real operator is.
+8. **`interrupted` is its own word.** Not `done` (no snapshot was written), not
+   `failed` (nothing reported an error). Rendered apart in both the card and the
+   Rediscover page.
+9. **A live pid is never reconciled, and another host's file is never judged.**
+   Any booting gunicorn worker runs the reconciler while another worker may be
+   mid-sweep; and `satom-ha-datasync` puts the peer's progress files in this
+   tree every five minutes.
+10. **A pid-less file is judged by age, not assumed dead.** Files predating the
+    field exist; the 74-day ghost is retired, a fresh one is not.
+11. **The suite cannot write into `data/`.** Asserted on behaviour
+    (`_data_dir()` is outside the repo, `MATRIX_ROOT` is outside the repo, and
+    both env overrides are actually honoured) — not merely on conftest
+    containing the variable names.
+
+### Verification recipe
+
+```
+venv/bin/python -m pytest tests/test_discovery_async.py -q -p no:randomly   # rc, never a pipe
+venv/bin/python /tmp/mutate_async_r2.py                                     # 39 mutations
+```
+
+The harness **snapshots `data/rediscovery/` and `data/api_matrix/fortiweb.json`
+around every mutation and restores them**, because two of the mutations
+deliberately break the isolation and the suite would otherwise write into the
+production tree — the very defect rule 11 exists to prevent.
+
+**Two mutations are excluded, with the reason written down rather than silently
+dropped:** removing either `SATOM_*_DIR` line from `tests/conftest.py` would run
+the whole suite against the production tree. Both code-side halves of that
+contract are mutated instead.
+
+### Traps paid for here
+
+- **The job ledger is one directory for the whole session while each test gets a
+  fresh database**, so appliance ids repeat and a job left active by one test
+  makes the next one *reconnect* to it. Isolated with an autouse purge — the
+  reconnect rule itself is what stops one appliance being asked twice and must
+  not be weakened to make tests pass.
+- **Slicing a JS object literal on the first `}` cuts inside `{{ _("…") }}`.**
+  The phase-label window closed before a single state was in it, and the guard
+  failed against correct code. Slice on `};`.

@@ -44,6 +44,11 @@ from conftest import admin_user_id, login
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 VIEW = os.path.join(REPO, "app", "views", "_discovery.py")
 SVC = os.path.join(REPO, "app", "services", "discovery_run.py")
+# The run moved off the request thread on 2026-09-15 (nginx cuts a proxied
+# request at 120 s; the GETs kept being spent behind a 504). The version rules
+# below moved WITH it, so the guards follow the code they protect rather than
+# keeping watch over an address it no longer lives at.
+JOBS = os.path.join(REPO, "app", "services", "discovery_jobs.py")
 TPL = os.path.join(REPO, "app", "templates", "partials", "_discovery_run.html")
 
 
@@ -238,10 +243,10 @@ def test_missing_evidence_id_is_none_not_false(dr):
 # --------------------------------------------------------------------------- #
 #  4. it WARNS — it must never become a gate                                   #
 # --------------------------------------------------------------------------- #
-def test_no_branch_in_run_payload_tests_the_version_verdict():
+def test_no_branch_in_the_run_worker_tests_the_version_verdict():
     """A refusal built on this vocabulary would reject a legitimate run because
     OUR read failed: ``unknown`` is a statement about us, not about the box."""
-    node = _func(VIEW, "run_payload")
+    node = _func(JOBS, "_execute")
     tests = [ast.unparse(n.test) for n in ast.walk(node) if isinstance(n, ast.If)]
     for t in tests:
         assert "verdict" not in t, t
@@ -250,9 +255,15 @@ def test_no_branch_in_run_payload_tests_the_version_verdict():
 
 
 def test_a_divergent_line_still_runs_the_probes(app, client, monkeypatch, dr):
-    """End to end: the verdict is reported, the run happens anyway."""
+    """End to end: the verdict is reported, the run happens anyway.
+
+    Now through the JOB, because that is where the run lives. The worker is
+    dispatched inline so this stays a guard about the version rule and not a
+    race with a daemon thread.
+    """
     from app.models import Appliance, db
-    from app.services import firmware_probe
+    from app.services import firmware_probe, jobs
+    from app.views import _discovery as view
 
     with app.app_context():
         a = Appliance(name="fw-diverge", host="192.0.2.222", port=443,
@@ -262,14 +273,34 @@ def test_a_divergent_line_still_runs_the_probes(app, client, monkeypatch, dr):
         db.session.commit()
         aid = a.id
     monkeypatch.setattr(firmware_probe, "refresh", _probe_ok())
+    monkeypatch.setattr("app.services.rediscovery.probe_endpoint",
+                        lambda _a, urn: ([], dr.ABSENT, "-20001"))
+    # The dump says 8.0; the box answers 7.6. The run must still happen.
+    rep = {"chosen": {"appliance": "fortiweb17", "appliance_id": 4242,
+                      "line": "8.0", "created_at": "2026-09-14 22:46"},
+           "diff": {}}
+    rows = [dr.Finding(path="log alertmail", name="log.alertmail",
+                       candidates=[dr.Candidate(urn="log/alertmail")])]
+    monkeypatch.setattr(view, "_findings_for", lambda *a, **k: (rep, rows, {}, {}))
+
+    def _inline(flask_app, job_id, worker):
+        result = worker(flask_app, job_id)
+        st = jobs.get_job(job_id) or {}
+        if st.get("status") in jobs._ACTIVE:
+            jobs.finish_success(job_id, result=result)
+
+    monkeypatch.setattr(jobs, "run_async", _inline)
     login(client, admin_user_id(app))
     r = client.post("/web/api-explorer/discovery/run",
-                    data={"appliance_id": aid, "budget": 1})
+                    data={"appliance_id": aid, "budget": 2})
     assert r.status_code == 200
-    body = r.get_json()
+    jid = r.get_json()["job_id"]
+    body = jobs.get_job(jid)["result"]
     assert body["ok"] is True
-    assert "version" in body and body["version"]["firmware"]
     assert body["version"]["line"] == "7.6"
+    assert body["version"]["verdict"] == dr.OTHER_LINE
+    # reported, NOT refused: the probes ran anyway
+    assert body["spent"] == 1
     for key in ("evidence", "evidence_line", "evidence_captured", "same_device"):
         assert key in body, key
 
@@ -282,7 +313,7 @@ def test_the_payload_names_its_evidence_and_its_firmware():
     ``evidence_line`` too, so a whole-function assertion stayed green with the
     key dropped from the payload.
     """
-    code = _body(VIEW, "run_payload")
+    code = _body(JOBS, "_execute")
     prov = code[code.index("provenance = {"):]
     prov = prov[:prov.index("}") + 1]
     for key in ("'evidence'", "'evidence_line'", "'same_device'", "'version'"):
@@ -293,7 +324,7 @@ def test_the_provenance_reaches_the_non_empty_answer_too():
     """Two returns, two chances to forget it. The early one (no CLI-only block
     to ask about) builds the payload WITH the provenance; the real one has to
     merge it in, and that is the path a run with findings takes."""
-    code = _body(VIEW, "run_payload")
+    code = _body(JOBS, "_execute")
     assert "out.update(provenance)" in code
 
 
@@ -301,7 +332,7 @@ def test_the_audit_row_records_the_firmware_and_the_verdict():
     """The page can be closed; 'which firmware were those verdicts about?'
     outlives it, and re-deriving it later reads TODAY's version off a box that
     may since have been upgraded."""
-    code = _body(VIEW, "run_payload")
+    code = _body(JOBS, "_execute")
     log = code[code.index("log_action"):]
     assert "'firmware'" in log
     assert "'version_verdict'" in log

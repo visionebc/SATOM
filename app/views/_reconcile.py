@@ -19,8 +19,13 @@ from ..services import registry_reconcile
 
 def render_page(product: str, apply_endpoint: str, hub_endpoint: str):
     report = registry_reconcile.reconcile(product)
+    # NOT ``product=``: that name is taken by the branding context processor,
+    # which puts the ADOM's branding DICT in every template so the chrome can
+    # print ``product.title``. A view passing the product KEY shadows it, and
+    # ``.title`` on a str resolves to the bound method — which is what the
+    # topbar printed beside the logo until 2026-09-16.
     return render_template("registry/reconcile.html", report=report,
-                           product=product, apply_endpoint=apply_endpoint,
+                           product_key=product, apply_endpoint=apply_endpoint,
                            hub_endpoint=hub_endpoint)
 
 

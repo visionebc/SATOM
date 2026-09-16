@@ -2395,21 +2395,15 @@ a.bm-dev:hover { background: var(--fw-accent-light); color: var(--fw-accent); }
 #versionDelta td .dv-cli-scope,
 #versionDelta td .dv-unmeasured { border-bottom: 1px dotted #B9BFC7; cursor: help; }
 
-#versionDelta details.dv-names { margin-top: 3px; font-size: 12px; }
-#versionDelta details.dv-names > summary {
-  cursor: pointer; list-style: none; display: inline-flex; align-items: center; gap: 2px;
-}
-#versionDelta details.dv-names > summary::-webkit-details-marker { display: none; }
-#versionDelta details.dv-names > summary::before {
-  content: "\25B8"; color: var(--fw-text-secondary); font-size: 11px; margin-right: 3px;
-}
-#versionDelta details.dv-names[open] > summary::before { content: "\25BE"; }
-#versionDelta details.dv-names .dv-names-row { margin-top: 3px; padding-left: 12px; }
+/* The names fold is gone (2026-09-16): both halves open the one window
+   instead. Its rules went with it rather than sitting here unreferenced —
+   dead CSS is how a later reader concludes the fold still exists. */
 #versionDelta .dv-fold-hint { color: var(--fw-text-secondary); }
 /* The CLI half's numbers. Same calibration as the API half's counts — this
    product is light chrome (safeguards §9m), so state colour comes from the
    .fw-badge-* set and never from a dark-theme pastel. */
 #versionDelta td .dv-cli-count { border-bottom: 1px dotted #B9BFC7; cursor: help; }
 #versionDelta td .dv-cli-gap { font-variant-numeric: tabular-nums; cursor: help; }
-#versionDelta td .dv-cli-more { line-height: 1.2; vertical-align: baseline; }
+#versionDelta td .dv-api-gap { font-variant-numeric: tabular-nums; }
+#versionDelta td .dv-names-more { line-height: 1.2; vertical-align: baseline; }
 #dvCliNames .modal-body { max-height: 60vh; overflow-y: auto; }

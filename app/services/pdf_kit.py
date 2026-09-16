@@ -36,6 +36,10 @@ PALETTE: list[str] = ["#3b82f6", "#8b5cf6", "#10b981", "#fbbf24", "#ef4444",
 DEFAULT_MAX_POINTS = 24
 #: Past this many rows a PDF table stops being something a human reads.
 DEFAULT_MAX_ROWS = 40
+#: Past this many columns each one is narrower than a word on portrait A4.
+DEFAULT_MAX_COLS = 10
+#: Characters kept per cell. A dashboard cell past this is a wall, not a value.
+DEFAULT_CELL_CAP = 300
 
 
 def esc(s: Any) -> str:
@@ -51,28 +55,36 @@ def esc(s: Any) -> str:
 
 def table_flowable(widget: dict, avail_w: float, cell_style, *,
                    max_rows: int = DEFAULT_MAX_ROWS,
+                   max_cols: int = DEFAULT_MAX_COLS,
+                   cell_cap: int = DEFAULT_CELL_CAP,
                    accent: str = ACCENT,
                    header_bg: str = "#eef2ff"):
     """A table from ``{columns: [...], rows: [[...], ...]}``.
 
-    Columns beyond the tenth are dropped rather than squeezed: eleven columns
-    across A4 gives each one ~16mm, which renders as a column of single
+    Columns beyond ``max_cols`` are dropped rather than squeezed: eleven
+    columns across A4 gives each one ~16mm, which renders as a column of single
     characters. The caller is expected to say so in a footnote — this function
     returns the flowable, not the caveat.
+
+    ``max_cols`` and ``cell_cap`` are opt-in overrides for the same reason this
+    module exists at all: a caller whose page is landscape, or whose cells
+    legitimately hold a long list, needs different limits and must NOT get them
+    by growing a second copy of this renderer. The defaults are the dashboard
+    figures the original two callers were written against, so they are
+    unaffected.
     """
     from reportlab.lib import colors
     from reportlab.platypus import Paragraph, Table, TableStyle
 
     cols = list(widget["columns"])
     rows = list(widget["rows"][:max_rows])
-    max_cols = 10
     if len(cols) > max_cols:
         cols = cols[:max_cols]
         rows = [r[:max_cols] for r in rows]
 
     data = [[Paragraph("<b>%s</b>" % esc(c), cell_style) for c in cols]]
     for r in rows:
-        data.append([Paragraph(esc(v)[:300], cell_style) for v in r])
+        data.append([Paragraph(esc(v)[:cell_cap], cell_style) for v in r])
 
     t = Table(data, colWidths=[avail_w / len(cols)] * len(cols), repeatRows=1)
     t.setStyle(TableStyle([

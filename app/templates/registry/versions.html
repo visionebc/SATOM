@@ -511,6 +511,16 @@
        title="{{ _('Download every row of this comparison as CSV — including the field names that live behind the [+] windows.') }}"><i
        class="bi bi-download me-1"></i>{{ _('Export CSV') }}</a>
     {% endif %}
+    {# Same rendered pair, same rows, same column legend — a document instead
+       of a sheet. Both hrefs carry delta.base/delta.target for the reason
+       above: a changed selector must not be able to export a pair the table
+       on screen is not showing. #}
+    {% if delta and export_pdf_endpoint %}
+    <a class="btn btn-sm btn-fw-outline"
+       href="{{ url_for(export_pdf_endpoint, base=delta.base, target=delta.target) }}"
+       title="{{ _('Download this comparison as a PDF — every row, the field names behind the [+] windows, and a legend explaining every column.') }}"><i
+       class="bi bi-file-earmark-pdf me-1"></i>{{ _('Export PDF') }}</a>
+    {% endif %}
   </div>
 
   {% if not delta %}

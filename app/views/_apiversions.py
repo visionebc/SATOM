@@ -27,7 +27,7 @@ from flask import (Response, flash, redirect, render_template, request,
                    url_for)
 from flask_login import current_user
 
-from ..services import api_matrix, cli_coverage, firmware_versions
+from ..services import api_matrix, cli_coverage, firmware_versions, pdf_kit
 from ..services.audit import log_action
 
 
@@ -210,7 +210,8 @@ def _resolved(product: str) -> dict:
 
 def render_page(product: str, hub_endpoint: str, rebuild_endpoint: str,
                 page_endpoint: str, declare_endpoint: str = "",
-                forget_endpoint: str = "", export_endpoint: str = ""):
+                forget_endpoint: str = "", export_endpoint: str = "",
+                export_pdf_endpoint: str = ""):
     R = _resolved(product)
     matrix, vdocs = R["matrix"], R["vdocs"]
     versions, lines, scopes = R["versions"], R["lines"], R["scopes"]
@@ -272,6 +273,7 @@ def render_page(product: str, hub_endpoint: str, rebuild_endpoint: str,
         rebuild_endpoint=rebuild_endpoint, page_endpoint=page_endpoint,
         declare_endpoint=declare_endpoint, forget_endpoint=forget_endpoint,
         export_endpoint=export_endpoint,
+        export_pdf_endpoint=export_pdf_endpoint,
         line_prov=line_prov, ver_prov=ver_prov, prov=prov,
         base_prov=base_prov, target_prov=target_prov,
         source_label=firmware_versions.SOURCE_LABEL,
@@ -413,31 +415,8 @@ def export_page(product: str, page_endpoint: str):
     cols = _columns(base, target, bp, tp)
     w.writerow([h for h, _ in cols])
     n = 0
-    for r in _rows(delta):
-        label, is_change = _BUCKET_LABEL[r["_bucket"]]
-        if r["_bucket"] == "fields_incomparable":
-            evidence = "%s=%s; %s=%s" % (base, r.get("base_origin") or "",
-                                         target, r.get("target_origin") or "")
-        else:
-            evidence = r.get("origin") or ""
-        b_api, b_n = _api_cell(r, "base")
-        t_api, t_n = _api_cell(r, "target")
-        cd = r.get("cli_delta")
-        # The CLI verdict is the raw BUCKET key, never the display vocabulary:
-        # that vocabulary is spelled in ``_cli_provenance.html`` and nowhere
-        # else, and a second author of it is how a label drifts out of sync
-        # with the badge it is supposed to mirror.
-        cb, ct = r.get("cli_base"), r.get("cli_target")
-        w.writerow([
-            label, is_change, r.get("endpoint") or r.get("key") or "",
-            evidence, r.get("urn") or "",
-            b_api, b_n, " ".join(r.get("removed") or []),
-            (cb or {}).get("bucket") or "", (cd or {}).get("base_count", ""),
-            " ".join((cd or {}).get("removed") or []),
-            t_api, t_n, " ".join(r.get("added") or []),
-            (ct or {}).get("bucket") or "", (cd or {}).get("target_count", ""),
-            " ".join((cd or {}).get("added") or []),
-        ])
+    for cells in _export_rows(delta, base, target):
+        w.writerow(cells)
         n += 1
 
     # The column legend, BELOW the findings and below a blank row. A blank row
@@ -456,6 +435,146 @@ def export_page(product: str, page_endpoint: str):
     fn = "satom-api-delta-%s-%s-to-%s.csv" % (product, base, target)
     return Response(buf.getvalue(), mimetype="text/csv; charset=utf-8",
                     headers={"Content-Disposition": 'attachment; filename="%s"' % fn})
+
+def _export_rows(delta: dict, base: str, target: str):
+    """One cell list per finding, in ``_columns`` order. ONE author.
+
+    The CSV and the PDF render the same 17 values. Building them twice is how
+    two exports of "the same table" start disagreeing, and of a drifting pair
+    it is always the copy nobody opens that goes wrong first.
+    """
+    for r in _rows(delta):
+        label, is_change = _BUCKET_LABEL[r["_bucket"]]
+        if r["_bucket"] == "fields_incomparable":
+            evidence = "%s=%s; %s=%s" % (base, r.get("base_origin") or "",
+                                         target, r.get("target_origin") or "")
+        else:
+            evidence = r.get("origin") or ""
+        b_api, b_n = _api_cell(r, "base")
+        t_api, t_n = _api_cell(r, "target")
+        cd = r.get("cli_delta")
+        # The CLI verdict is the raw BUCKET key, never the display vocabulary:
+        # that vocabulary is spelled in ``_cli_provenance.html`` and nowhere
+        # else, and a second author of it is how a label drifts out of sync
+        # with the badge it is supposed to mirror.
+        cb, ct = r.get("cli_base"), r.get("cli_target")
+        yield [
+            label, is_change, r.get("endpoint") or r.get("key") or "",
+            evidence, r.get("urn") or "",
+            b_api, b_n, " ".join(r.get("removed") or []),
+            (cb or {}).get("bucket") or "", (cd or {}).get("base_count", ""),
+            " ".join((cd or {}).get("removed") or []),
+            t_api, t_n, " ".join(r.get("added") or []),
+            (ct or {}).get("bucket") or "", (cd or {}).get("target_count", ""),
+            " ".join((cd or {}).get("added") or []),
+        ]
+
+
+#: How the 17 columns are split across the PDF's two tables, by INDEX into
+#: ``_columns``. Two tables because the shared renderer drops everything past
+#: the tenth column, and seventeen columns across a landscape page renders as
+#: columns of single characters either way. Index 2 (the object name) is
+#: repeated as the second table's join key — it is the only cell that may
+#: appear twice, and the legend says so.
+_PDF_TABLE_A = (0, 1, 2, 3, 4, 5, 6, 11, 12)
+_PDF_TABLE_B = (2, 7, 8, 9, 10, 13, 14, 15, 16)
+
+
+def export_pdf_page(product: str, page_endpoint: str):
+    """The rendered comparison as a PDF, columns documented in the document.
+
+    Reads the SAME resolved comparison and the SAME ``_columns`` pairs as the
+    CSV, so the two downloads cannot describe their columns differently.
+    """
+    R = _resolved(product)
+    delta, base, target = R["delta"], R["base"], R["target"]
+    if not delta:
+        # An empty PDF reads as "nothing differs", which is not the same claim
+        # as "you have not picked two comparable builds".
+        flash("Pick two different builds (or rollups) before exporting.", "warning")
+        return redirect(url_for(page_endpoint))
+
+    bp, tp = R["base_prov"], R["target_prov"]
+    cols = _columns(base, target, bp, tp)
+    rows = list(_export_rows(delta, base, target))
+
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.lib.units import mm
+    from reportlab.platypus import (HRFlowable, Paragraph, SimpleDocTemplate,
+                                    Spacer)
+
+    buf = _io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=landscape(A4),
+                            leftMargin=12 * mm, rightMargin=12 * mm,
+                            topMargin=12 * mm, bottomMargin=12 * mm,
+                            title="SATOM API delta %s %s to %s" % (product, base, target))
+    sty = getSampleStyleSheet()
+    h1 = ParagraphStyle("H1", parent=sty["Title"], fontSize=17, spaceAfter=4)
+    h2 = ParagraphStyle("H2", parent=sty["Heading2"], fontSize=11, spaceBefore=8,
+                        spaceAfter=3)
+    body = ParagraphStyle("Body", parent=sty["Normal"], fontSize=8.4, leading=11)
+    small = ParagraphStyle("Small", parent=sty["Normal"], fontSize=7, leading=9)
+    cell = ParagraphStyle("Cell", parent=sty["Normal"], fontSize=6.4, leading=7.8)
+
+    def _cap(prov, scope):
+        if prov is not None and getattr(prov, "measured", False):
+            return "%s: CLI dump from %s, captured %s" % (scope, prov.device,
+                                                          prov.captured_at)
+        return "%s: no CLI dump captured on this build" % scope
+
+    story = [
+        Paragraph("SATOM &mdash; API delta", h1),
+        Paragraph("%s &nbsp;&middot;&nbsp; <b>%s</b> &rarr; <b>%s</b> &nbsp;&middot;&nbsp; "
+                  "%d finding(s)" % (pdf_kit.esc(product), pdf_kit.esc(base),
+                                     pdf_kit.esc(target), len(rows)), body),
+        # The two captures are named on the cover, not only inside the CLI
+        # column headings: a reader who skips the legend must still not be able
+        # to read the two CLI columns as one box measured at two firmwares.
+        Paragraph(pdf_kit.esc(_cap(bp, base)), small),
+        Paragraph(pdf_kit.esc(_cap(tp, target)), small),
+        Paragraph("The two CLI columns are two different appliances. Their "
+                  "difference measures operator configuration, not firmware.", small),
+        Spacer(1, 5 * mm),
+    ]
+
+    avail = doc.width
+    for title, idx in (("Findings &mdash; identity and API evidence", _PDF_TABLE_A),
+                       ("Field names and CLI evidence", _PDF_TABLE_B)):
+        story.append(Paragraph(title, h2))
+        story.append(pdf_kit.table_flowable(
+            {"columns": [cols[i][0] for i in idx],
+             "rows": [[r[i] for i in idx] for r in rows]},
+            avail, cell,
+            # Every finding, whole. The renderer's defaults (40 rows, 10
+            # columns, 300 characters) exist to keep a dashboard widget
+            # readable; here a dropped row or a clipped name list is the
+            # evidence this download exists to carry.
+            max_rows=len(rows) or 1, max_cols=len(idx), cell_cap=4000))
+        story.append(Spacer(1, 4 * mm))
+
+    # The legend, LAST and behind a rule. In a PDF there is no auto-detected
+    # range to poison the way a spreadsheet has, but the ordering claim is the
+    # same one: these lines describe the findings, they are not findings.
+    story.append(HRFlowable(width="100%", thickness=0.6, color="#94a3b8",
+                            spaceBefore=4, spaceAfter=4))
+    story.append(Paragraph("What each column means", h2))
+    for head, note in cols:
+        story.append(Paragraph("<b>%s</b> &mdash; %s" % (pdf_kit.esc(head),
+                                                         pdf_kit.esc(note)), small))
+    story.append(Spacer(1, 2 * mm))
+    story.append(Paragraph(
+        "&ldquo;endpoint / object&rdquo; appears in both tables; it is the key "
+        "that joins a finding's two halves and is the only column printed twice.",
+        small))
+
+    doc.build(story)
+    log_action("api_versions.export_pdf", target="%s %s -> %s" % (product, base, target),
+               extra={"rows": len(rows)})
+    fn = "satom-api-delta-%s-%s-to-%s.pdf" % (product, base, target)
+    return Response(buf.getvalue(), mimetype="application/pdf",
+                    headers={"Content-Disposition": 'attachment; filename="%s"' % fn})
+
 
 def rebuild_page(product: str, page_endpoint: str):
     try:

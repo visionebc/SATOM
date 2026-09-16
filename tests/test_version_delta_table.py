@@ -96,6 +96,11 @@ def two_builds(isolated, app):
     return a, b
 
 
+TEMPLATE = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "app", "templates", "registry", "versions.html")
+
+
 def _page(client, app, base=BASE, target=TARGET):
     login(client, admin_user_id(app))
     return client.get("/web/registry/versions?base=%s&target=%s"
@@ -112,6 +117,18 @@ def _table(body):
     i = body.find('id="versionDelta"')
     assert i != -1, "the comparison rendered no table"
     return body[i:body.find("</table>", i)]
+
+
+def _tbody(body):
+    """The ROWS only.
+
+    ``_table`` starts at the opening tag, so it carries the header — and the
+    Evidence header legitimately spells ``incomparable`` while explaining what
+    the column means. A guard that the rows no longer print a class label has
+    to look below the header or it fails against a correct page.
+    """
+    tbl = _table(body)
+    return tbl[tbl.find("<tbody>"):]
 
 
 def _row(body, key):
@@ -189,10 +206,15 @@ def test_the_old_split_headings_do_not_come_back(two_builds, client, app, gone):
     # Was ``2 → 3`` until the identity cell lost it. A field delta is now
     # recognised by the only markup a COMPUTED delta earns: the signed tally.
     ("fielded", "dv-api-gap"),
-    ("onesided", "fields known only on 7.6.8"),
-    ("mixed", "incomparable"),
+    # The last three labels went the same way on 2026-09-16 at the operator's
+    # request (``measured only on X``, ``fields known only on X``,
+    # ``incomparable``): each restated a cell already beside it. So each of
+    # these buckets is now asserted by the marker that REPLACED its label —
+    # the one piece of markup its class alone can render.
+    ("onesided", "dv-unmeasured"),
+    ("mixed", "dv-ev-side"),
     ("schemaonly", "dv-api-gap"),
-    ("onlyhere", "measured only on 8.0.5"),
+    ("onlyhere", "dv-unmeasured"),
 ])
 def test_every_bucket_reaches_the_one_table(two_builds, client, app, key, phrase):
     assert phrase in _row(_page(client, app), key).lower()
@@ -217,11 +239,39 @@ def test_the_two_endpoint_changes_are_read_off_their_own_columns(
         assert "not measured" not in base_col + target_col, (key, base_col)
 
 
-@pytest.mark.parametrize("gone", ["added on", "gone on"])
+@pytest.mark.parametrize("gone", [
+    "added on", "gone on",                      # removed 2026-09-16, first pass
+    "measured only on", "known only on",        # removed 2026-09-16, this pass
+    "incomparable", "dv-kind", "dv-meta",
+])
 def test_the_class_labels_the_operator_removed_do_not_come_back(
         two_builds, client, app, gone):
-    """Inverted, because the removal is the deliverable."""
-    assert gone not in _table(_page(client, app)).lower()
+    """Inverted, because the removal is the deliverable.
+
+    Scoped to the ROWS, not the table: the Evidence column header explains what
+    an incomparable row is and has every right to say the word. The rule is
+    about the identity cell, and the identity cell is in the body.
+    """
+    assert gone not in _tbody(_page(client, app)).lower()
+
+
+def test_the_identity_cell_holds_the_name_and_nothing_else(two_builds, client, app):
+    """What ``no labels under the object`` MEANS, for every bucket at once.
+
+    Worded as "no ``dv-kind``" it would pass on a page that grew some other
+    line under the name — which is how the slot filled up the first time (a
+    badge, then a measure line, then eighteen inline field-name pills). So the
+    cell is pinned by what it may CONTAIN: one ``<code>`` and no markup after
+    it.
+    """
+    body = _page(client, app)
+    for key in ("arrives", "goes_away", "fielded", "schemaonly",
+                "onesided", "mixed", "onlyhere"):
+        cell = _cells(_row(body, key))[0]
+        after = cell[cell.find("</code>") + len("</code>"):]
+        assert cell.count("<code>") == 1, (key, cell)
+        assert "<" not in after, \
+            "%s regrew something under its name: %r" % (key, after)
 
 
 @pytest.mark.parametrize("key", ["onesided", "mixed", "onlyhere"])
@@ -255,17 +305,70 @@ def test_a_gap_is_never_worded_as_a_change(two_builds, client, app, key):
     assert "<details" not in row, "a gap grew a delta's field fold: %s" % row
     assert "dv-api-gap" not in row, "a gap rendered a signed field tally: %s" % row
     assert "dv-names-more" not in row, "a gap grew a names window: %s" % row
-    assert "dv-kind" in row, \
-        "a gap lost the badge that is now the ONLY thing marking it as one: %s" % row
+    # FIFTH rewording, same trap. It was ``"fields changed" not in row``, then
+    # ``"added on" not in row``, then ``"<details" not in row``, then
+    # ``"dv-kind" in row`` — and that last one would have gone VACUOUS this
+    # round exactly like the three before it, since the operator removed the
+    # badge from every row. What marks a gap now is the cell that IS the gap:
+    # a build column that was never asked, or an Evidence cell holding two
+    # different kinds. One of the two, never neither.
+    assert ("dv-unmeasured" in row) or ("dv-ev-side" in row), \
+        "a gap lost the ONLY thing marking it as one: %s" % row
 
 
-def test_the_two_gaps_do_not_share_one_word(two_builds, client, app):
+def _all(s, sub):
+    i, out = s.find(sub), []
+    while i != -1:
+        out.append(i)
+        i = s.find(sub, i + 1)
+    return out
+
+
+def test_the_partial_caveat_moved_to_its_column_and_was_not_dropped(
+        two_builds, client, app):
+    """The one thing under the object name that was NOT a restatement.
+
+    ``partial`` says some builds of a rollup attested the URN and some stayed
+    silent — a fact about that column, not a class of finding, and stated
+    nowhere else on the page. Clearing the identity cell could have taken it
+    with it and NOTHING would have failed: the fixture has no partial rollup,
+    so the loss would only have shown on a live page, as silence where a
+    qualified answer used to be.
+
+    Asserted against the TEMPLATE, because the template is where the move is:
+    exactly one call, inside a build column, and never under the name again.
+    """
+    tpl = io.open(TEMPLATE, encoding="utf-8").read()
+    body = tpl[tpl.find("<tbody>"):]
+    assert body.count("api_partial(") == 1, \
+        "the partial caveat was dropped or duplicated when the cell was cleared"
+    before = body[:body.find("api_partial(")]
+    cell = before[before.rfind("<td>"):]
+    assert "build_cell(" in cell, \
+        "partial is back outside a build column: %s" % cell[-200:]
+    for row_start in ("<tr><td><code>{{ r.endpoint }}</code>",
+                      "<tr><td><code>{{ c.key }}</code>"):
+        for i in _all(body, row_start):
+            ident = body[i:body.find("</td>", i)]
+            assert "api_partial" not in ident and "dv-meta" not in ident, ident
+
+
+def test_the_two_gaps_do_not_share_one_marker(two_builds, client, app):
     """``known on one side only`` and ``incomparable`` are different gaps: one
-    needs a sweep, the other cannot be closed by one."""
+    needs a sweep, the other cannot be closed by one. Merging them is the
+    phantom-removal defect wearing a different hat.
+
+    The two labels that used to say it went this round, so the distinction is
+    pinned where it now lives — and pinned BOTH WAYS, because a guard that only
+    checked each row for its own marker would pass on a page where every row
+    grew both.
+    """
     body = _page(client, app)
-    assert "known only on" in _row(body, "onesided").lower()
-    assert "incomparable" in _row(body, "mixed").lower()
-    assert "incomparable" not in _row(body, "onesided").lower()
+    onesided, mixed = _row(body, "onesided"), _row(body, "mixed")
+    # unasked: exactly one build column was never measured.
+    assert "dv-unmeasured" in onesided and "dv-ev-side" not in onesided, onesided
+    # unsubtractable: both sides measured, by kinds that may not be subtracted.
+    assert "dv-ev-side" in mixed and "dv-unmeasured" not in mixed, mixed
 
 
 def test_an_unmeasured_side_is_reported_as_proving_nothing(two_builds, client, app):
@@ -618,44 +721,55 @@ def test_nothing_to_report_says_so_instead_of_an_empty_table(isolated, client, a
 def _kind_title(row):
     """The sentence that says whether this row is a change or a gap.
 
-    It hangs off slot 1's badge — except on a field delta, which has no badge
-    since 2026-09-16: the label ``fields changed`` was removed as a restatement
-    of the line under it. The sentence did NOT go with it, because "a gap
-    worded like a change" is the single misreading this column exists to
-    prevent, so there it hangs off the measure line instead.
+    It has moved three times, always FOLLOWING the finding rather than staying
+    in a slot: off the ``fields changed`` label, then off slot 1's kind badge,
+    and now — with the identity cell emptied on 2026-09-16 — off the cell that
+    embodies the class. Deleting it was never on the table: a gap worded like a
+    change is the single misreading this table exists to prevent, and an
+    unnamed one is a phantom removal.
+
+    Addressable on purpose. A bare ``phrase in row`` cannot tell "moved into a
+    title" from "deleted, with the words left behind in a comment".
     """
-    m = re.search(r'<div class="dv-kind"><span class="fw-badge[^"]*" title="([^"]*)"',
-                  row)
-    if not m:
-        # A field delta has no badge AND, since the operator emptied the
-        # identity cell this round, no measure line either. The sentence
-        # followed the finding: it hangs off the signed tally, in the column
-        # that measured the side which moved.
-        m = re.search(r'<span class="fw-badge[^"]*dv-api-gap" title="([^"]*)"', row)
-    assert m, "neither a titled kind badge nor a titled measure line: %s" % row
-    return m.group(1)
+    for pat in (
+            # a gap: the cell that IS the gap — the side nobody asked.
+            r'<span class="text-muted dv-unmeasured" title="([^"]*)"',
+            # an incomparable pair: the Evidence cell holding the disagreement.
+            r'<div class="dv-ev" title="([^"]*)"',
+            # a computed delta: the signed tally, in the column that moved.
+            r'<span class="fw-badge[^"]*dv-api-gap" title="([^"]*)"'):
+        m = re.search(pat, row)
+        if m:
+            return m.group(1)
+    raise AssertionError("nothing on this row carries the sentence: %s" % row)
 
 
-def test_no_change_carries_a_kind_badge_and_every_gap_does(two_builds, client, app):
+def test_no_change_looks_like_a_gap_and_every_gap_says_so(two_builds, client, app):
     """The rule the table is read by, guarded from BOTH directions.
 
-    It inverted on 2026-09-16. It used to be "every row badges its class";
-    with ``added on`` / ``gone on`` removed it is now **a badge in column 1
-    means the row is not a change**. Half a guard would be worse than none
-    here: checking only that the four change rows lost their badge passes on a
-    page where the three gaps lost theirs too, and then nothing on the page
-    distinguishes a measured difference from an unasked question.
+    Third anchor for one rule. It was "every row badges its class", then "a
+    badge in column 1 means the row is NOT a change", and now the identity cell
+    is empty so the rule lives in the columns: a gap is a row with an unasked
+    side or a split Evidence cell, and a change is a row with NEITHER, because
+    a change is a difference between two things that were both measured.
+
+    Half a guard is worse than none here. Checking only that the four change
+    rows carry no gap marker passes on a page where the three gaps lost theirs
+    too — and then nothing at all separates a measured difference from a
+    question nobody asked, which is the 56-phantom-removals defect.
     """
     body = _page(client, app)
     for key in ("arrives", "goes_away", "fielded", "schemaonly"):
         row = _row(body, key)
-        assert "dv-kind" not in row, \
-            "the label the operator removed is back on %s: %s" % (key, row)
+        assert "dv-unmeasured" not in row, \
+            "%s is a CHANGE and one of its sides says nobody measured it: %s" \
+            % (key, row)
+        assert "dv-ev-side" not in row, \
+            "%s is a CHANGE and its Evidence cell split in two: %s" % (key, row)
         assert "fields changed" not in row.lower(), row
-        assert "dv-meta" not in _cells(row)[0], \
-            "%s regrew a line under its name: %s" % (key, row)
     for key in ("onesided", "mixed", "onlyhere"):
-        assert "dv-kind" in _row(body, key), \
+        row = _row(body, key)
+        assert ("dv-unmeasured" in row) or ("dv-ev-side" in row), \
             "%s is not a change and nothing on its row says so" % key
 
 
@@ -1020,6 +1134,19 @@ def _csv(client, app, base=BASE, target=TARGET):
     return r, list(csv.reader(io.StringIO(r.get_data(as_text=True))))
 
 
+def _split(rows):
+    """``(data including its header, legend)``.
+
+    The legend sits BELOW a blank row on purpose: a blank row ends a
+    spreadsheet's auto-detected range, so documentation cannot be summed or
+    pivoted as if it were findings.
+    """
+    for i, r in enumerate(rows):
+        if not any((c or "").strip() for c in r):
+            return rows[:i], rows[i + 1:]
+    return rows, []
+
+
 def test_the_export_carries_every_row_the_table_shows(two_builds, client, app):
     """The defect this page was rebuilt to end, in its export form.
 
@@ -1029,7 +1156,8 @@ def test_the_export_carries_every_row_the_table_shows(two_builds, client, app):
     that, to a reader who cannot see the page to notice.
     """
     _, rows = _csv(client, app)
-    keys = {r[2] for r in rows[1:]}
+    data, legend = _split(rows)
+    keys = {r[2] for r in data[1:]}
     for k in ("arrives", "goes_away", "fielded", "schemaonly",
               "onesided", "mixed", "onlyhere"):
         assert k in keys, "%s never reached the CSV: %s" % (k, sorted(keys))
@@ -1037,8 +1165,34 @@ def test_the_export_carries_every_row_the_table_shows(two_builds, client, app):
     # no row on screen is a finding nobody can check.
     # -1 on both sides: the CSV's first line is its header and the
     # table's first <tr> is its <thead> row.
+    #
+    # Counted over the DATA REGION since the column legend shipped. The point
+    # of the blank separator is that the legend is not in this count — so the
+    # legend has to be non-empty here, or this guard would go quiet the day
+    # somebody moved the documentation back up among the findings.
+    assert legend, "no column legend below the data"
     body_rows = len(re.findall(r"<tr>", _table(_page(client, app)))) - 1
-    assert len(rows) - 1 == body_rows, (len(rows) - 1, body_rows)
+    assert len(data) - 1 == body_rows, (len(data) - 1, body_rows)
+
+
+def test_every_column_explains_itself_in_the_legend(two_builds, client, app):
+    """Heading and explanation are emitted from one list, and this is what
+    keeps them that way: a legend that documents a column the file no longer
+    has — or skips one it grew — is worse than no legend, because it is read
+    as authoritative. The CLI headings are compared verbatim, so the capture
+    they name cannot drift away from the note that qualifies it."""
+    _, rows = _csv(client, app)
+    data, legend = _split(rows)
+    assert legend[0][:3] == ["#", "column", "what it means"], legend[0]
+    documented = [r[1] for r in legend[1:]]
+    assert documented == data[0], (documented, data[0])
+    for r in legend[1:]:
+        assert r[0] == "#", r          # filterable by code, ignorable by eye
+        assert len(r[2].strip()) > 20, r
+    # and the one caveat a CSV has no tooltip for
+    cli = [r for r in legend[1:] if re.match(r"^\S+ CLI (verdict|sets)\b", r[1])]
+    assert cli, documented
+    assert any("two different boxes" in r[2] for r in cli), cli
 
 
 @pytest.mark.parametrize("key,change", [
@@ -1055,13 +1209,13 @@ def test_the_export_says_outright_whether_a_row_is_a_change(
     the gaps say ``no`` passes on a file where the changes say ``no`` too.
     """
     _, rows = _csv(client, app)
-    row = next(r for r in rows[1:] if r[2] == key)
+    row = next(r for r in _split(rows)[0][1:] if r[2] == key)
     assert row[1] == change, "%s is marked %r: %s" % (key, row[1], row)
 
 
 def test_the_export_names_which_bucket_each_row_came_from(two_builds, client, app):
     _, rows = _csv(client, app)
-    got = {r[2]: r[0] for r in rows[1:]}
+    got = {r[2]: r[0] for r in _split(rows)[0][1:]}
     assert got["arrives"] == "endpoint added"
     assert got["goes_away"] == "endpoint gone"
     assert got["fielded"] == "field delta"
@@ -1078,7 +1232,7 @@ def test_the_export_carries_the_names_that_live_behind_the_window(
     them would be the page's own loss, shipped.
     """
     _, rows = _csv(client, app)
-    row = next(r for r in rows[1:] if r[2] == "fielded")
+    row = next(r for r in _split(rows)[0][1:] if r[2] == "fielded")
     assert "gamma" in " ".join(row), "the gained field name is not in the CSV: %s" % row
 
 
@@ -1087,7 +1241,7 @@ def test_neither_export_column_states_the_other_builds_count(
     """The same invariant the two columns keep on screen. Flattened into one
     line of CSV it is easier to lose, not harder."""
     _, rows = _csv(client, app)
-    head, row = rows[0], next(r for r in rows[1:] if r[2] == "fielded")
+    head, row = rows[0], next(r for r in _split(rows)[0][1:] if r[2] == "fielded")
     b = head.index("%s API fields" % BASE)
     t = head.index("%s API fields" % TARGET)
     assert row[b] == "2" and row[t] == "3", row

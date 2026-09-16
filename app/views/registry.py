@@ -187,7 +187,8 @@ def api_versions():
                                     'registry.api_versions',
                                     'registry.api_versions_declare',
                                     'registry.api_versions_forget',
-                                    'registry.api_versions_export')
+                                    'registry.api_versions_export',
+                                    'registry.api_versions_export_pdf')
 
 
 # GET, and read-only: it renders the same comparison the page does, so it is
@@ -197,6 +198,15 @@ def api_versions():
 @require_permission(Permission.REGISTRY_EDIT)
 def api_versions_export():
     return _apiversions.export_page('fortiweb', 'registry.api_versions')
+
+
+# Same gate, same resolved comparison, different container. The two exports
+# share their row builder and their column legend; only the file format differs.
+@bp.route('/versions/export.pdf')
+@login_required
+@require_permission(Permission.REGISTRY_EDIT)
+def api_versions_export_pdf():
+    return _apiversions.export_pdf_page('fortiweb', 'registry.api_versions')
 
 
 @bp.route('/versions/rebuild', methods=['POST'])

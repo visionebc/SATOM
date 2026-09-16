@@ -560,24 +560,67 @@ def test_report_and_provenance_both_accept_the_build(isolated, app):
 TPL = os.path.join(ROOT, "app/templates/registry/versions.html")
 
 
-def test_the_page_renders_a_row_per_build_and_a_rollup_beneath_it(isolated, client, app):
+def test_the_page_renders_a_row_per_build_and_no_second_table_of_lines(isolated, client, app):
+    """The rollup TABLE was removed on 2026-09-16 at the operator's request:
+    with one measured build per line it repeated the build table row for row.
+
+    The half of the old rule that still holds — one row per build — is kept,
+    and the half that changed is inverted rather than dropped, so the duplicate
+    cannot come back unnoticed. What the table uniquely said is guarded by
+    ``test_the_page_names_a_heterogeneous_rollup_and_lists_its_partials``.
+    """
     _two_builds_one_line(isolated)
     am.rebuild("fortiweb")
     login(client, admin_user_id(app))
     body = client.get("/web/registry/versions").get_data(as_text=True)
     assert "evidence held per build" in body
-    assert "the rollup, and what it merged" in body
     assert "<code>8.0.3</code>" in body and "<code>8.0.5</code>" in body
+    assert "the rollup, and what it merged" not in body
+    assert "Firmware lines" not in body, \
+        "the duplicated rollup table is back"
 
 
 def test_the_page_names_a_heterogeneous_rollup_and_lists_its_partials(isolated, client, app):
+    """What the removed rollup table uniquely said, and still says.
+
+    Scoped to the disclosure BLOCK: ``"only_on_five" in body`` is answered by
+    the endpoint's other appearances on the page, and a mutation proved it —
+    the name could be blanked inside the disclosure with the guard still green.
+    """
     _two_builds_one_line(isolated)
     am.rebuild("fortiweb")
     login(client, admin_user_id(app))
     body = client.get("/web/registry/versions").get_data(as_text=True)
-    assert "heterogeneous" in body
-    assert "Attested by only some builds" in body
-    assert "only_on_five" in body
+    head = body.find("More than one build backs a line")
+    assert head != -1, "the page does not disclose that a line merges two builds"
+    # Bounded by the next card, so no assertion below can be paid for by the
+    # comparison table further down the page.
+    stop = body.find('<div class="fw-card', head)
+    block = body[head:stop if stop != -1 else len(body)]
+    assert "heterogeneous" in block
+    assert "Attested by only some builds" in block
+    assert "only_on_five" in block, \
+        "the endpoint only one build served must be named: %s" % block[:600]
+
+
+def test_a_homogeneous_line_adds_nothing_to_the_page(isolated, client, app):
+    """The premise of the 2026-09-16 removal, pinned.
+
+    The rollup table went away because with ONE measured build per line it
+    repeated the build rows. If the line ever starts saying something again on
+    a homogeneous fleet, that premise is broken and this fails — which is the
+    only way anyone would notice.
+    """
+    a = _appliance("boxA", firmware="8.0.5")
+    _archive(isolated, a, "8.0.5", _ledger(shared="ok"))
+    am.rebuild("fortiweb")
+    login(client, admin_user_id(app))
+    body = client.get("/web/registry/versions").get_data(as_text=True)
+    assert "<code>8.0.5</code>" in body
+    assert "heterogeneous" not in body, \
+        "one build backs this line — nothing may claim otherwise"
+    assert "Attested by only some builds" not in body, \
+        "there is no disagreement to disclose on a single-build line"
 
 
 def test_the_page_marks_a_declared_build_unmeasured(isolated, client, app):

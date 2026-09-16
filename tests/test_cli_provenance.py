@@ -498,14 +498,41 @@ def test_structure_answers_by_urn_when_the_registry_does_not_cover_a_node(app, c
         "own row, not left as an em dash: %s" % row.group(0)[:400])
 
 
-def test_versions_page_badges_each_line_from_its_own_capture(app, client, seeded):
-    """The headline behaviour: one column measured, the other honestly blank."""
+def test_versions_page_badges_each_build_from_its_own_capture(app, client, seeded):
+    """The headline behaviour: one row measured, the other honestly blank.
+
+    Read off the BUILD table since 2026-09-16 — the line table that used to
+    carry this cell was removed as a duplicate of it. The rule is unchanged: a
+    scope with no capture of its own says so rather than borrowing one.
+
+    The fixture is new and is the point. This guard never wrote a matrix: it
+    passed on whatever an earlier test in the session had left in the isolated
+    matrix dir, so it was measuring test order. Per ROW, not per page — the
+    page-level count was satisfied while the table was EMPTY.
+    """
+    from app.services import firmware_versions as fv
+
+    with app.app_context():
+        fv.declare("fortiweb", "7.6.8")   # the build the seeded dump came from
+        fv.declare("fortiweb", "8.0.5")   # nothing was ever captured on this one
     login(client, admin_user_id(app))
-    page = client.get("/web/registry/versions?base=7.6&target=8.0").get_data(as_text=True)
-    assert page.count("no dump captured on this line") >= 1, \
-        "the 8.0 line holds no capture and the lines table must say so"
-    assert "firmware line 8.0" in page, \
-        "the unmeasured column must name the line it could not answer for"
+    page = client.get("/web/registry/versions").get_data(as_text=True)
+
+    def row(build):
+        m = re.search(r"<tr>\s*<td><code>%s</code>.*?</tr>" % re.escape(build),
+                      page, re.S)
+        assert m, "no row rendered for build %s" % build
+        return m.group(0)
+
+    assert "blocks</span>" in row("7.6.8"), \
+        "the build the dump was taken on must badge its own capture: %s" \
+        % row("7.6.8")[-400:]
+    blank = row("8.0.5")
+    assert "no dump captured on this build" in blank, \
+        "a build with no capture must say so, never borrow 7.6.8's: %s" % blank[-400:]
+    why = re.search(r'title="(no usable CLI dump[^"]*)"', blank)
+    assert why and "8.0.5" in why.group(1), \
+        "the unmeasured cell must name the firmware it could not answer for"
 
 
 @pytest.fixture()

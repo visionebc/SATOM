@@ -189,22 +189,28 @@ def test_choosing_a_row_scopes_the_appliance_picker_to_that_build(isolated, clie
     am.rebuild("fortiweb")
     login(client, admin_user_id(app))
     body = client.get("/web/registry/versions?discover=8.0.5").get_data(as_text=True)
-    head = body.split('id="drAskOther"')[0]   # before the deliberate override
-    assert "new80" in head
-    assert "old76" not in head.split('id="drAppliance"')[1].split("</select>")[0]
+    picker = body.split('id="drAppliance"')[1].split("</select>")[0]
+    assert "new80" in picker
+    assert "old76" not in picker
 
 
-def test_the_override_still_offers_every_box_because_the_case_is_real(isolated, client, app):
-    """Capture the production box by SSH, fire the GETs at its laboratory twin.
-    It stays possible and it announces itself."""
+def test_NO_control_in_the_card_can_aim_the_gets_at_another_build(isolated, client, app):
+    """The override that sent the GETs to a box on another build is gone. This
+    replaces the guard that required it: a box off the build is now offered
+    nowhere in the card, so an answer can no longer describe a firmware the
+    evidence was never captured on. The whole control area is read, not just
+    the picker — the defect this forbids is a SECOND control, which by
+    definition would not be inside the first one."""
     _box("old76", firmware="7.6.8")
     b = _box("new80", firmware="8.0.5")
     _sweep(isolated, b, "8.0.5", shared="ok")
     am.rebuild("fortiweb")
     login(client, admin_user_id(app))
     body = client.get("/web/registry/versions?discover=8.0.5").get_data(as_text=True)
-    tail = body.split('id="drAskOther"')[1]
-    assert "old76" in tail
+    controls = body.split('id="discoveryRun"')[1].split('id="drResultWrap"')[0]
+    assert "new80" in controls
+    assert "old76" not in controls
+    assert "drAskOther" not in body
 
 
 def test_an_unknown_build_scopes_to_NOTHING_not_to_whatever_sorted_first(isolated, client, app):

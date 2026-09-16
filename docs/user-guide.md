@@ -3511,9 +3511,12 @@ a payload built against one build and written to another fails on the appliance
 — which is the wrong place to find out.
 
 So **the unit of evidence here is the full version** (`8.0.5`). The line
-(`8.0`) survives as a rollup, and it always declares which builds it merged.
+(`8.0`) survives as a rollup you can compare against, but it is no longer
+tabulated on its own: with one measured build per line that table repeated the
+build table row for row. It is called out only when it says something a build
+row cannot — see *heterogeneous lines* below.
 
-The page has five parts:
+The page has four parts:
 
 1. **Firmware versions** — one row per build SATOM knows of: what it was
    measured to serve, which appliances witnessed it, which CLI dump was
@@ -3522,22 +3525,24 @@ The page has five parts:
    that is registered and never swept reads **`declared · unmeasured`**, which
    is not the same as a measured build that turned out empty.
    Each row also carries a **Discovery run** button, scoped to that build.
-2. **Firmware lines** — the rollup. Every row lists the builds it merged, flags
-   itself **heterogeneous** when there is more than one, and lists separately
-   the endpoints only *some* of those builds served. Those are reported as
-   **partial**, never as "the line serves it".
-3. **Witnesses excluded** — the same honesty as §30.4: an unhealthy device is
+2. **Witnesses excluded** — the same honesty as §30.4: an unhealthy device is
    not evidence.
-4. **Compare two of them** — build against build, or rollup against rollup:
+3. **Compare two of them** — build against build, or rollup against rollup:
    endpoints added and removed, fields added and removed per object, plus two
    buckets that are *not* changes: **known on one side only** (nobody measured
    the other) and **incomparable** (the two sides were measured by different
    means). Those exist because a naive subtraction reported 56 phantom removals
    on the first draft of this page. Comparing a rollup says so, and names the
    builds inside it.
-5. **Preflight** — name an object and the fields you intend to send, and get
+4. **Preflight** — name an object and the fields you intend to send, and get
    `ok`, `unknown_fields`, `absent`, `fields_unknown`, `version_unmeasured` or
    `unmeasured`.
+
+**Heterogeneous lines.** When two or more *measured* builds share a line, the
+page says so above the comparison: it names the builds the line merges and lists
+the endpoints only *some* of them served. Those are reported as **partial**,
+never as "the line serves it" — a merge is not a box. When every line holds a
+single measured build there is nothing to say and nothing is shown.
 
 **`unmeasured` is an answer, never a yes.** If SATOM has never seen that build,
 it says so rather than guessing; the fix is to sweep an appliance running it, or

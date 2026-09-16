@@ -4017,8 +4017,11 @@ and 42 on 8.0, <code>system_global</code> 60 versus 63, <code>ntp</code> 3 versu
 a payload built against one build and written to another fails on the appliance
 — which is the wrong place to find out.</p>
 <p>So <strong>the unit of evidence here is the full version</strong> (<code>8.0.5</code>). The line
-(<code>8.0</code>) survives as a rollup, and it always declares which builds it merged.</p>
-<p>The page has five parts:</p>
+(<code>8.0</code>) survives as a rollup you can compare against, but it is no longer
+tabulated on its own: with one measured build per line that table repeated the
+build table row for row. It is called out only when it says something a build
+row cannot — see <em>heterogeneous lines</em> below.</p>
+<p>The page has four parts:</p>
 <ol>
 <li><strong>Firmware versions</strong> — one row per build SATOM knows of: what it was
    measured to serve, which appliances witnessed it, which CLI dump was
@@ -4027,10 +4030,6 @@ a payload built against one build and written to another fails on the appliance
    that is registered and never swept reads <strong><code>declared · unmeasured</code></strong>, which
    is not the same as a measured build that turned out empty.
    Each row also carries a <strong>Discovery run</strong> button, scoped to that build.</li>
-<li><strong>Firmware lines</strong> — the rollup. Every row lists the builds it merged, flags
-   itself <strong>heterogeneous</strong> when there is more than one, and lists separately
-   the endpoints only <em>some</em> of those builds served. Those are reported as
-   <strong>partial</strong>, never as "the line serves it".</li>
 <li><strong>Witnesses excluded</strong> — the same honesty as §30.4: an unhealthy device is
    not evidence.</li>
 <li><strong>Compare two of them</strong> — build against build, or rollup against rollup:
@@ -4044,6 +4043,11 @@ a payload built against one build and written to another fails on the appliance
    <code>ok</code>, <code>unknown_fields</code>, <code>absent</code>, <code>fields_unknown</code>, <code>version_unmeasured</code> or
    <code>unmeasured</code>.</li>
 </ol>
+<p><strong>Heterogeneous lines.</strong> When two or more <em>measured</em> builds share a line, the
+page says so above the comparison: it names the builds the line merges and lists
+the endpoints only <em>some</em> of them served. Those are reported as <strong>partial</strong>,
+never as "the line serves it" — a merge is not a box. When every line holds a
+single measured build there is nothing to say and nothing is shown.</p>
 <p><strong><code>unmeasured</code> is an answer, never a yes.</strong> If SATOM has never seen that build,
 it says so rather than guessing; the fix is to sweep an appliance running it, or
 harvest its field schemas, and press <strong>Rebuild</strong>.</p>

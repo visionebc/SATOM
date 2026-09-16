@@ -278,7 +278,8 @@ def api_versions():
                                     'adc_api.api_versions',
                                     'adc_api.api_versions_declare',
                                     'adc_api.api_versions_forget',
-                                    'adc_api.api_versions_export')
+                                    'adc_api.api_versions_export',
+                                    'adc_api.api_versions_export_pdf')
 
 
 @bp.route('/versions/export.csv')
@@ -286,6 +287,13 @@ def api_versions():
 @require_permission(Permission.REGISTRY_EDIT)
 def api_versions_export():
     return _apiversions.export_page('fortiadc', 'adc_api.api_versions')
+
+
+@bp.route('/versions/export.pdf')
+@login_required
+@require_permission(Permission.REGISTRY_EDIT)
+def api_versions_export_pdf():
+    return _apiversions.export_pdf_page('fortiadc', 'adc_api.api_versions')
 
 
 @bp.route('/versions/rebuild', methods=['POST'])

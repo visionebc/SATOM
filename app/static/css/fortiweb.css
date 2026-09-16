@@ -2406,3 +2406,10 @@ a.bm-dev:hover { background: var(--fw-accent-light); color: var(--fw-accent); }
 #versionDelta details.dv-names[open] > summary::before { content: "\25BE"; }
 #versionDelta details.dv-names .dv-names-row { margin-top: 3px; padding-left: 12px; }
 #versionDelta .dv-fold-hint { color: var(--fw-text-secondary); }
+/* The CLI half's numbers. Same calibration as the API half's counts — this
+   product is light chrome (safeguards §9m), so state colour comes from the
+   .fw-badge-* set and never from a dark-theme pastel. */
+#versionDelta td .dv-cli-count { border-bottom: 1px dotted #B9BFC7; cursor: help; }
+#versionDelta td .dv-cli-gap { font-variant-numeric: tabular-nums; cursor: help; }
+#versionDelta td .dv-cli-more { line-height: 1.2; vertical-align: baseline; }
+#dvCliNames .modal-body { max-height: 60vh; overflow-y: auto; }

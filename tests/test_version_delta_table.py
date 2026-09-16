@@ -407,24 +407,26 @@ def test_a_field_row_answers_its_transports_from_its_own_provenance(
                 "annotated: %r" % (key, verdict))
 
 
-def test_the_cli_half_is_a_verdict_and_never_a_field_list():
-    """The one thing the operator's sketch asked for that is not rendered.
+def test_the_template_never_does_the_subtraction_itself():
+    """Repaired 2026-09-16, not relaxed.
 
-    "CLI added / CLI removed" has no evidence behind it. The dump DOES carry
-    every block's ``set`` names (``CliBlock.sets``, reaching a page as
-    ``rec.settings``) and subtracting them column to column is one line of
-    Jinja away — which is exactly why this is guarded rather than merely
-    commented. They are the fields somebody CONFIGURED on one appliance, and
-    the two columns are two DIFFERENT appliances: the difference measures the
-    operators, not the firmware. They are also device configuration, which this
-    page is not the permission to read — the same split
-    ``test_badges_render_without_backup_but_carry_no_device_configuration``
-    draws on the API hub.
+    This guard used to forbid rendering the CLI's configured field names AT
+    ALL. The operator asked for them — counts under each build's CLI head and a
+    window listing the names — so the refusal is gone and what survives it is
+    the reason the refusal existed: the two dumps come from two DIFFERENT
+    appliances, so the subtraction measures two operators' configuration and
+    not the firmware. A caveat that has to travel with a number cannot be
+    re-derived at twelve call sites in Jinja, so the delta is computed once in
+    ``_apiversions._cli_field_delta`` and arrives carrying its own note.
+
+    Left as an assertion rather than a comment for the same reason as before:
+    ``rec.settings`` is in the template's reach and the subtraction is one line
+    of Jinja away.
     """
     src = io.open(TPL, encoding="utf-8").read()
     body = re.sub(r"\{#.*?#\}", "", src, flags=re.S)   # comments may NAME it
     assert ".settings" not in body, \
-        "the page reads the CLI's configured field names: %s" % \
+        "the page does its own CLI field arithmetic: %s" % \
         [ln for ln in body.splitlines() if ".settings" in ln]
 
 
@@ -773,3 +775,101 @@ def test_diff_stamps_the_evidence_kind_on_every_bucket(two_builds, app):
             assert r.get("origin") in ("sweep", "schema"), (bucket, r)
     for r in d["fields_incomparable"]:
         assert r["base_origin"] != r["target_origin"], r
+
+
+# ---------------------------------------------------------------------------
+# 6. the CLI half prints numbers (2026-09-16, at the operator's request)
+# ---------------------------------------------------------------------------
+
+def _cli_half_macro():
+    """The macro's source with its comments stripped.
+
+    Stripped because this repo has now paid eight times for an assertion
+    answered by the comment that EXPLAINS it.
+    """
+    src = io.open(TPL, encoding="utf-8").read()
+    m = re.search(r"\{% macro cli_half\(.*?\{%- endmacro %\}", src, re.S)
+    assert m, "the CLI half is no longer a macro of its own"
+    return re.sub(r"\{#.*?#\}", "", m.group(0), flags=re.S)
+
+
+def test_a_build_that_printed_no_block_gets_a_verdict_and_never_a_zero():
+    """An absent block is not an empty one.
+
+    A config table with nothing in it prints NO block at all — that is RULE 1
+    of this whole module, and the 56 phantom removals behind it. So "no block"
+    must not arrive at the page as ``0 set(s)``: it has no count, and the cell
+    falls back to the transport verdict.
+    """
+    from app.views._apiversions import _cli_field_delta as d
+    assert d(None, None, "note") is None
+    assert d({"bucket": "no_block"}, {"bucket": "monitor_only"}, "note") is None
+
+    one = d({"bucket": "both", "settings": ["a", "b"]}, {"bucket": "no_block"}, "note")
+    assert one["base_count"] == 2
+    assert one["target_count"] is None, "a side with no block was given a count"
+    assert one["comparable"] is False
+    assert one["added"] == [] and one["removed"] == [], \
+        "subtracted against a side that never answered"
+
+
+def test_the_subtraction_runs_only_when_both_builds_printed_a_block():
+    from app.views._apiversions import _cli_field_delta as d
+    both = d({"bucket": "both", "settings": ["a", "b"]},
+             {"bucket": "both", "settings": ["b", "c"]}, "note")
+    assert both["comparable"] is True
+    assert both["removed"] == ["a"] and both["added"] == ["c"]
+    assert both["base_count"] == 2 and both["target_count"] == 2
+
+
+def test_the_cli_numbers_carry_the_two_appliance_warning():
+    """Without it ``+3`` reads as "this firmware gained three fields"."""
+    from app.views._apiversions import _cli_pair_note, _cli_field_delta
+
+    class _P:
+        measured = True
+
+        def __init__(self, dev):
+            self.device = dev
+
+    note = _cli_pair_note("7.6.8", _P("boxA"), "8.0.5", _P("boxB"))
+    for token in ("boxA", "boxB", "7.6.8", "8.0.5"):
+        assert token in note, "the note does not name %s: %r" % (token, note)
+    assert "firmware" in note, "the note never says what it is NOT measuring"
+    assert _cli_field_delta({"bucket": "both", "settings": ["a"]},
+                            {"bucket": "both", "settings": ["a"]},
+                            note)["note"] == note
+
+    # and both surfaces that print a number hang it in a title
+    mac = _cli_half_macro()
+    titled = [h for h in re.findall(r'title="([^"]*)"', mac) if "cd.note" in h]
+    assert len(titled) >= 2, \
+        "a number without the caveat: %r" % re.findall(r'title="([^"]*)"', mac)
+
+
+def test_the_names_ride_in_an_attribute_and_not_in_the_row_text():
+    """The row filter matches ``tr.textContent``.
+
+    A fold whose contents match is OPENED by the filter, because a row counted
+    as a hit on text the operator cannot see is worse than a miss. A modal
+    cannot be opened that way — so the names must not be in the matchable text
+    at all, and they are not: they ride in ``data-cli-names`` and the window is
+    built from it.
+    """
+    mac = _cli_half_macro()
+    assert "data-cli-names=" in mac, "the window has nothing to render from"
+    assert "{% for" not in mac and "{%- for" not in mac, \
+        "the names are being printed into the cell: %s" % mac
+
+
+def test_the_plus_button_exists_only_when_there_is_something_to_list():
+    """A window that opens on nothing reads as evidence withheld."""
+    mac = _cli_half_macro()
+    i = mac.find("dv-cli-more")
+    assert i != -1, "the window button is gone"
+    guard = mac[:i]
+    assert "{%- if names %}" in guard or "{% if names %}" in guard, \
+        "the button is not conditioned on there being names: %s" % guard
+    # and the signed number is conditioned on the comparison having run
+    assert "cd.comparable" in mac, \
+        "a signed number is printed for a comparison that never ran"

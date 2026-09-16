@@ -652,10 +652,18 @@ def test_versions_row_badges_the_measured_line_and_blanks_the_other(app, client,
 
     base_hint, base_cell = _cli(m.group(1))
     target_hint, target_cell = _cli(m.group(2))
-    assert "fw-badge" in base_cell, \
-        "7.6 holds a capture, so its line must carry a real verdict: %r" % base_cell
-    assert "fw-badge" not in target_cell, \
-        "8.0 holds no capture; a badge there is an answer nobody measured: %r" % target_cell
+    # Repaired 2026-09-16, not relaxed: a build whose dump printed a block now
+    # answers with its field COUNT rather than a transport badge (the operator
+    # asked for numbers under the CLI head). What the guard was always about
+    # survives the change and is what it asserts -- the captured build gives a
+    # MEASURED answer of some shape, the uncaptured one gives none at all. A
+    # count on the uncaptured side would be the merge this whole test exists
+    # to forbid, so it is named here too and not only the badge.
+    assert ("fw-badge" in base_cell or "dv-cli-count" in base_cell), \
+        "7.6 holds a capture, so its column must carry a measured answer: %r" % base_cell
+    assert "fw-badge" not in target_cell and "dv-cli-count" not in target_cell, \
+        "8.0 holds no capture; a verdict or a count there is an answer nobody " \
+        "measured: %r" % target_cell
     assert "firmware line 8.0" in target_cell, target_cell
     assert base_hint != target_hint, \
         "both build columns cite the SAME capture — the merge a column per " \

@@ -178,6 +178,24 @@
   {% endif %}
 </div>
 
+{# ── the discovery run ────────────────────────────────────────
+   DIRECTLY under the table, because the table is what scopes it: a row's
+   Discovery-run link sets ?discover=<build> and this card answers about that
+   build. At the foot of the page — below the comparison and the preflight —
+   the operator had to scroll past two long cards to reach the control the row
+   had just aimed, and this card is also where the run's PROGRESS is read, so
+   distance from the row that starts a sweep was distance from its status.
+   Reported 2026-09-16.
+
+   ONE author for this markup (partials/_discovery_run.html), and ONE instance
+   on the page. Per-row panels would mean N pollers, N Stop buttons and N jobs
+   competing for one appliance's session limit; the row supplies the SCOPE and
+   this card answers about it. It moved here from the API hub because there a
+   run had no firmware to be about — see the scope banner inside. #}
+{% if dr_run_endpoint or dr_load_endpoint %}
+{% include "partials/_discovery_run.html" %}
+{% endif %}
+
 {# ── what the rollup did NOT duplicate ─────────────────────── #}
 {# The "Firmware lines" table was removed on 2026-09-16: with one measured
    build per line it repeated the table above row for row, which is what the
@@ -429,16 +447,6 @@
     </ul>
   </div>
 </div>
-
-{# ── the discovery run ──────────────────────────────────────────────────
-   ONE author for this markup (partials/_discovery_run.html), and ONE instance
-   on the page. Per-row panels would mean N pollers, N Stop buttons and N jobs
-   competing for one appliance's session limit; the row supplies the SCOPE and
-   this card answers about it. It moved here from the API hub because there a
-   run had no firmware to be about — see the scope banner inside. #}
-{% if dr_run_endpoint or dr_load_endpoint %}
-{% include "partials/_discovery_run.html" %}
-{% endif %}
 
 {# Rendered once: the appliance picker and the output panel every Test button
    on this page writes into. A row with a Test button and no bar would look

@@ -105,9 +105,11 @@
                   data-dr-watch="{{ request.args.get('dr_watch') or '' }}"
                   data-dr-evidence-id="{{ dr_ev.appliance_id if dr_ev and dr_ev.appliance_id else '' }}">
             <option value="">{{ _('choose an appliance…') }}</option>
-            {# Scoped: only the boxes actually running this build. Offering the
-               rest here would make the wrong answer the easy one; they stay
-               reachable through the deliberate override further down. #}
+            {# Scoped: only the boxes actually running this build, and there is
+               no second picker behind it. A box on another build cannot be
+               asked from here at all — the answers would describe a different
+               firmware, and a block missing there is not a block that does not
+               exist. #}
             {% for a in (dr_scope_appliances if dr_scope else cc_probe_appliances) %}
               <option value="{{ a.id }}"{% if request.args.get('dr_watch') == a.id|string %} selected{% endif %}>{{ a.name }}{% if a.host %} ({{ a.host }}){% endif %}</option>
             {% endfor %}
@@ -166,39 +168,12 @@
         {% endif %}
       </div>
       <div class="mt-1" id="drMismatch" style="font-size:11.5px;"></div>
-
-      <details class="mt-2">
-        <summary style="font-size:12px;cursor:pointer;">{{ _('Ask a different appliance than the one above') }}</summary>
-        <div class="d-flex flex-wrap align-items-end gap-2 mt-2">
-          <div>
-            <label class="fw-form-label mb-1" for="drAskOther">{{ _('send the GETs to this one instead') }}</label>
-            <select class="form-select fw-form-control" id="drAskOther">
-              <option value="">{{ _('same appliance as above') }}</option>
-              {% for a in cc_probe_appliances %}
-                <option value="{{ a.id }}">{{ a.name }}{% if a.host %} ({{ a.host }}){% endif %}</option>
-              {% endfor %}
-            </select>
-          </div>
-        </div>
-        <p class="text-muted mb-0 mt-1" style="font-size:11.5px;">
-          {{ _('The legitimate case: the dump comes from a production box you do not want to fire hundreds of GETs at, so the questions go to its laboratory twin. It stays a deliberate choice because the answers then describe a different device — and if that device is on a different firmware line, a block missing there is not a block that does not exist.') }}
-        </p>
-      </details>
     </div>
     {% endif %}
 
     {# ── 2. the run ───────────────────────────────────────────────────────── #}
     {% if dr_can_run and dr_run_endpoint %}
     <div class="d-flex flex-wrap align-items-end gap-2 mb-2">
-      <div style="max-width:130px;">
-        <label class="fw-form-label mb-1" for="drBudget">{{ _('GET budget') }}</label>
-        <input type="number" class="form-control fw-form-control" id="drBudget"
-               value="{{ dr_budget }}" min="1" max="{{ dr_max_budget }}">
-      </div>
-      <div class="form-check pb-2">
-        <input class="form-check-input" type="checkbox" id="drConfigured">
-        <label class="form-check-label" for="drConfigured" style="font-size:12.5px;">{{ _('only blocks that hold configuration here') }}</label>
-      </div>
       <button class="btn btn-sm btn-fw-outline" type="button" data-js="dr-plan">
         <i class="bi bi-calculator me-1"></i>{{ _('What would it cost?') }}
       </button>
@@ -394,19 +369,21 @@
   function note(html, kind) {
     statusEl.innerHTML = '<span class="fw-badge fw-badge-' + (kind || 'info') + '">' + html + '</span>';
   }
-  // The appliance every action uses. The override is an EXPLICIT second
-  // choice, so an empty override means "the one above" — never an empty id.
+  // The appliance every action uses, read in ONE place. Plan, run and
+  // register asking the same function is what makes them incapable of
+  // disagreeing about which box was questioned.
   function askId() {
-    var other = document.getElementById('drAskOther');
-    return (other && other.value) || document.getElementById('drAppliance').value || '';
+    return document.getElementById('drAppliance').value || '';
   }
 
   function body(extra) {
     var fd = new URLSearchParams();
     fd.append('csrf_token', tok);
     fd.append('appliance_id', askId());
-    fd.append('budget', document.getElementById('drBudget').value || '');
-    if (document.getElementById('drConfigured').checked) { fd.append('configured_only', '1'); }
+    {# No budget field travels: the ceiling is the server's default and the
+       server still clamps it. Appending an empty one would not mean "use the
+       default" — it parses as a number, and the run would stop after a single
+       GET while reporting itself finished. #}
     {% if request.args.get('dump') %}fd.append('dump', '{{ request.args.get("dump")|e }}');{% endif %}
     {# The build travels with every plan and every run. Leaving it to the URL
        would mean the cost quoted by "What would it cost?" and the GETs the run
@@ -526,7 +503,7 @@
     }
     if (d.not_probed) {
       bits.push('<strong>' + d.not_probed + ' {{ _("blocks were never asked") }}</strong> — ' +
-        '{{ _("the budget ran out. That is not the same as the device denying them; raise the budget and run again.") }}');
+        '{{ _("the run reached its ceiling of") }} ' + d.budget + ' {{ _("GETs first. That is not the same as the device denying them: nobody asked.") }}');
     }
     if (d.errors) { bits.push(d.errors + ' {{ _("could not be asked at all.") }}'); }
     if (d.urn_known) { bits.push(d.urn_known + ' {{ _("served a path the catalog already has under another name.") }}'); }
@@ -696,8 +673,6 @@
 
   document.getElementById('drFilter').addEventListener('input', filter);
   document.getElementById('drAppliance').addEventListener('change', hint);
-  var drOther = document.getElementById('drAskOther');
-  if (drOther) { drOther.addEventListener('change', hint); }
   hint();
 {% endif %}
 })();

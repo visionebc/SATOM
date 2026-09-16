@@ -98,7 +98,7 @@ def index():
     if tpl is None:
         # An ADOM nobody wrote a page for gets told so. Handing it the FortiWeb
         # dashboard would be a page that cannot answer, dressed as one that can.
-        return render_template('analysis/unavailable.html', product=product)
+        return render_template('analysis/unavailable.html', product_key=product)
     ctx = {'options': svc.filter_options()}
     if product in ANALYSIS_SERVICE:
         # These pages render server-side: the numbers are DB-first and cheap,

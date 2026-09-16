@@ -123,7 +123,7 @@
    one confusion this page exists to prevent. #}
 {% macro api_names(names, cls, word, scope) -%}
   {%- if names -%}
-  <span class="fw-badge fw-badge-{{ cls }} dv-api-gap">{% if cls == 'success' %}+{% else %}&minus;{% endif %}{{ names|length }}</span> <span class="dv-fold-hint">{{ word }}</span> <button type="button" class="btn btn-sm btn-fw-outline py-0 px-1 dv-names-more"
+  <span class="fw-badge fw-badge-{{ cls }} dv-api-gap" title="Both builds were measured with the same kind of evidence and their field sets differ. This one is a change — not a gap in the evidence.">{% if cls == 'success' %}+{% else %}&minus;{% endif %}{{ names|length }}</span> <span class="dv-fold-hint">{{ word }}</span> <button type="button" class="btn btn-sm btn-fw-outline py-0 px-1 dv-names-more"
           data-names-list="{{ names|join(' ') }}"
           data-names-heading="{{ scope }} &middot; {{ word }}"
           data-names-note="Fields the {{ scope }} catalog serves for this object, measured by that build's own sweep — what the firmware exposes, not what an operator configured."
@@ -239,7 +239,7 @@
 <div class="fw-page-header">
   <div>
     <h1 class="fw-page-title"><i class="bi bi-diagram-2 me-2 text-accent"></i>API versions
-      <span class="fw-badge fw-badge-secondary">{{ product }}</span></h1>
+      <span class="fw-badge fw-badge-secondary">{{ product_key }}</span></h1>
     <p class="text-muted mb-0" style="font-size:13px;">
       Two firmware builds can speak the <strong>same API version</strong> and still
       not accept the same payload — and so can two builds of the <em>same line</em>:
@@ -249,7 +249,7 @@
           its quotes and became ``{% raw %}{% if product == fortiweb %}{% endraw %}`` — an undefined
           name, which Jinja renders as falsy, so the sentence vanished from both
           pages and nothing failed. -#}
-      {%- if product == 'fortiweb' %} FortiWeb 7.6 and 8.0 are both <code>v2.0</code>,
+      {%- if product_key == 'fortiweb' %} FortiWeb 7.6 and 8.0 are both <code>v2.0</code>,
       and 8.0 has more fields.{% endif %}
       So the unit of evidence on this page is the <strong>full version</strong>.
       The line (<code>8.0</code>) survives as a rollup you can still compare
@@ -284,7 +284,7 @@
 
 {% if not matrix.sweepable %}
 <div class="alert alert-warning" style="font-size:13px;">
-  <strong>{{ product }} has no rediscovery sweep.</strong> Its catalog can only ever be
+  <strong>{{ product_key }} has no rediscovery sweep.</strong> Its catalog can only ever be
   described here by harvested field schemas — no appliance of this product has ever
   been asked, endpoint by endpoint, what it serves.
 </div>
@@ -459,7 +459,7 @@
 {# ── the comparison ────────────────────────────────────────────────────── #}
 {% if scopes|length > 1 %}
 <div class="fw-card mb-3">
-  <div class="fw-card-header d-flex justify-content-between align-items-center">
+  <div class="fw-card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
     <span><i class="bi bi-arrow-left-right me-2"></i>What changes between two of them</span>
     <form method="get" action="{{ url_for(page_endpoint) }}" class="d-flex gap-2 align-items-center mb-0">
       <select name="base" class="form-select form-select-sm" style="width:auto;">
@@ -471,6 +471,21 @@
       </select>
       <button class="btn btn-sm btn-outline-secondary" type="submit">Compare</button>
     </form>
+    {# OUTSIDE the form on purpose, with the RENDERED pair baked into the href.
+       As a submit button with ``formaction`` it would export whatever the two
+       selects happen to say — and a select changed without pressing Compare
+       says something the table on screen does not. The export is of the table
+       you are looking at, or it is a different report wearing its name.
+
+       Only offered when there IS a comparison: a download that yields a header
+       row and nothing else reads as "no differences", which is the opposite of
+       "you have not picked two builds". #}
+    {% if delta and export_endpoint %}
+    <a class="btn btn-sm btn-fw-outline"
+       href="{{ url_for(export_endpoint, base=delta.base, target=delta.target) }}"
+       title="{{ _('Download every row of this comparison as CSV — including the field names that live behind the [+] windows.') }}"><i
+       class="bi bi-download me-1"></i>{{ _('Export CSV') }}</a>
+    {% endif %}
   </div>
 
   {% if not delta %}
@@ -534,9 +549,9 @@
          the point: it was thirteen copies of it. #}
       A row with <strong>no badge</strong> in the first column is a change, and
       which change it is, is read off the two build columns —
-      <em>absent</em> on one side and <em>served</em> on the other, or the
-      subtraction printed beside the name. A badge there means the row is
-      <strong>not</strong> a change.
+      <em>absent</em> on one side and <em>served</em> on the other, or a field
+      count on each side with the signed difference beside the one that moved.
+      A badge there means the row is <strong>not</strong> a change.
       {% if not delta.fields_changed %}
         No object here is described by the same kind of evidence on both sides,
         so no field delta could be computed — that is a gap, not a statement
@@ -596,17 +611,20 @@
             <td>{{ test_btn(urn=r.urn) }}</td></tr>
         {% endfor %}
         {% for c in delta.fields_changed %}
-          {# NO kind badge: ``fields changed`` was removed at the operator's
-             request (2026-09-16) as a label restating the line under it. The
-             sentence it carried did not go with it — a gap worded like a
-             change is the one misreading this table exists to prevent — so it
-             hangs off the subtraction, which is the finding itself and which
-             stays HERE, in the identity column: it is a fact about the pair,
-             and neither build's column can hold it without implying the other
-             one's number. #}
+          {# NOTHING under the name. The identity cell carried ``8 → 14`` until
+             the operator removed it this round: both of its numbers are already
+             printed, each in the column that measured it, and a third copy in
+             between was the only place on the page where one cell stated two
+             builds' numbers at once.
+
+             What is NOT lost with it — and what the guards now pin instead —
+             is the change/gap split. It never depended on the arrow: a gap row
+             carries a BADGE here and a change row does not, and a signed tally
+             (``dv-api-gap``) is rendered only by a delta that was actually
+             computed. Those two are the signal; the arrow was a third voice
+             saying what they already said. The rule is stated once, in the
+             legend above the table. #}
           <tr><td><code>{{ c.key }}</code>
-              <div class="dv-meta" title="Both builds were measured with the same kind of evidence and their field sets differ. This one is a change.">
-                <span class="dv-count">{{ c.base_count }} → {{ c.target_count }}</span></div>
             </td>
             <td>{{ evidence_slot(c.origin) }}</td>
             <td><code class="text-muted" style="font-size:11px;">{{ c.urn }}</code></td>

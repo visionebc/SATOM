@@ -406,8 +406,6 @@ def context(product: str, *, run_endpoint: str = "", plan_endpoint: str = "",
         "dr_can_run": can_edit,
         "dr_can_load": bool(current_user.is_authenticated
                             and current_user.can("appliances.apply")),
-        "dr_budget": discovery_run.DEFAULT_BUDGET,
-        "dr_max_budget": MAX_BUDGET,
         # The build this card is answering about, and the boxes that are
         # actually running it. Empty means "no build chosen" — the card then
         # behaves exactly as it did before, which is what the hubs that have no

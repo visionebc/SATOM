@@ -379,15 +379,15 @@ def test_the_second_appliance_selector_is_gone():
     assert "drLoadAppliance" not in _tpl_code()
 
 
-def test_the_card_has_exactly_two_selects_and_they_are_not_peers():
-    """One picker, plus the explicit override behind a <details>. A third
-    would be the defect coming back."""
+def test_the_card_has_exactly_one_select_and_no_second_picker():
+    """ONE picker. This card has grown a second one twice — a peer that
+    disagreed with it, and an override that aimed the GETs at a box on another
+    build — so both are guarded by name, not just by the count."""
     code = _tpl_code()
-    assert code.count("<select") == 2, code.count("<select")
-    assert 'id="drAppliance"' in code and 'id="drAskOther"' in code
-    # The override is a deliberate detour, not a second equal control.
-    assert "<details" in code
-    assert code.index("<details") < code.index('id="drAskOther"')
+    assert code.count("<select") == 1, code.count("<select")
+    assert 'id="drAppliance"' in code
+    assert "drLoadAppliance" not in code
+    assert "drAskOther" not in code
 
 
 def test_the_one_selector_drives_the_load_form_too():
@@ -407,14 +407,12 @@ def test_only_ask_id_reads_the_selector():
     code = _tpl_code()
     assert code.count("getElementById('drAppliance').value") == 1
     fn = re.search(r"function askId\(\)\s*\{(.*?)\n  \}", code, re.S).group(1)
-    var = re.search(r"var (\w+) = document\.getElementById\(\'drAskOther\'\)",
-                    fn).group(1)
     ret = [ln for ln in fn.splitlines() if "return" in ln]
     assert len(ret) == 1, ret
-    # Declared-and-unused is not "used": the override has to appear in what the
-    # function RETURNS, falling back with || and never to an empty id.
-    assert var in ret[0], ret[0]
-    assert "drAppliance" in ret[0] and "||" in ret[0], ret[0]
+    assert "drAppliance" in ret[0], ret[0]
+    # Never an empty id: the run route answers that with a 400, which on screen
+    # is indistinguishable from a button that does nothing.
+    assert "|| ''" in ret[0], ret[0]
 
 
 def test_register_and_run_both_go_through_ask_id():
@@ -470,3 +468,35 @@ def test_the_page_renders_with_the_new_card(app, client):
     hub = client.get("/web/api-explorer/").get_data(as_text=True)
     assert 'id="drAppliance"' not in hub
     assert "moved to the API-versions page" in hub
+
+
+# --------------------------------------------------------------------------- #
+#  10. the three scan controls are gone, and stay gone                         #
+# --------------------------------------------------------------------------- #
+def test_the_card_carries_no_override_budget_or_configured_only_control():
+    code = _tpl_code()
+    for gone in ("drAskOther", "drBudget", "drConfigured",
+                 "Ask a different appliance", "GET budget",
+                 "only blocks that hold configuration here"):
+        assert gone not in code, gone
+
+
+def test_the_run_sends_no_budget_field_AT_ALL():
+    """Not "sends an empty one". ``_int_arg`` parses whatever arrives, so an
+    empty budget is a number, not an absence: the run would stop after a single
+    GET and still report itself finished. Absent is the only safe form, because
+    absent is what makes the server's own default apply."""
+    import re as _re
+    code = _tpl_code()
+    fn = _re.search(r"function body\(extra\)\s*\{(.*?)\n  \}", code, _re.S).group(1)
+    assert "budget" not in fn, fn
+    assert "configured_only" not in fn, fn
+
+
+def test_the_footnote_does_not_point_at_a_control_that_is_gone():
+    """A page that tells the operator to raise a budget it no longer shows is a
+    dead end. The DISTINCTION the sentence exists for has to survive the edit:
+    a block nobody asked about is not a block the device denied."""
+    code = _tpl_code()
+    assert "raise the budget" not in code
+    assert "nobody asked" in code

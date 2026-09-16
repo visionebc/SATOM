@@ -27,7 +27,7 @@
 {%- endmacro %}
 
 {% macro evidence_split(base, base_origin, target, target_origin) -%}
-  <div class="dv-ev" title="The two builds are known here by different kinds of evidence. That disagreement IS the finding: the page reports both and subtracts neither.">
+  <div class="dv-ev" title="The two builds are known here by different kinds of evidence. That disagreement IS the finding: both are reported and they are never subtracted — a gap a sweep cannot close, not a change.">
     <div class="dv-ev-side"><span class="dv-ev-scope">{{ base }}</span> {{ origin_badge(base_origin) }}</div>
     <div class="dv-ev-side"><span class="dv-ev-scope">{{ target }}</span> {{ origin_badge(target_origin) }}</div>
   </div>
@@ -52,14 +52,37 @@
      its own in second position. On every row but *incomparable* both sides
      hold the same kind — that is the precondition for subtracting them — so
      printing it per column was printing one word twice.
-   * the class labels ``added on X`` / ``gone on X`` left the identity column.
-     They restated what the two build columns already measure: a row whose
-     base column says ``absent`` and whose target column says ``served`` IS
-     the addition. **A class badge in column 1 now means the row is NOT a
-     change** — a gap, a one-sided field set, or an incomparable pair. That is
-     the rule this table is read by, and it inverts the old one, so it is
-     guarded from both directions: no change row may badge a class, and every
-     gap row must.
+   * the class labels left the identity column, in two steps. First
+     ``added on X`` / ``gone on X``, then — this round — the last three,
+     ``measured only on X``, ``fields known only on X`` and ``incomparable``,
+     with the ``partial`` caveat that shared the slot. **The first column is
+     the name and nothing else.** Every one of those labels restated a cell
+     already beside it: a row whose base column says ``absent`` and whose
+     target column says ``served`` IS the addition, and a row with ``not
+     measured on 7.6.8`` in a build column IS the one-sided set.
+
+     So the class of a row is now read off the columns, and each class has
+     exactly one marker that no other class can render:
+
+       change      both sides measured — ``absent``/``served`` opposed, or a
+                   field count on each side, and on a computed delta the
+                   signed tally ``dv-api-gap``.
+       gap         ONE build column says ``not measured on X`` (``dv-unmeasured``).
+                   No change row may ever show it: a change is a difference
+                   between two measurements.
+       incomparable the Evidence cell splits, naming a different kind per
+                   build (``dv-ev-side``). Nothing else in the table does.
+
+     Guarded from BOTH directions, as the badge rule was: half of it is worse
+     than none, because "no row says it is a gap" and "no row says it is a
+     change" look identical on a page that lost the distinction.
+
+     The three WORDS were not deleted from the page — that would merge a gap
+     into a change, the one misreading this table exists to prevent. They are
+     stated once, in the summary line above the table, instead of once per row
+     (eleven copies of one of them on the live matrix), and the sentence that
+     spells out "this proves nothing" rides in the ``title`` of the very cell
+     that is the gap.
 
    Two things the split may NOT do.
 
@@ -93,10 +116,6 @@
      * each column's CLI head names the capture it answers from, and the two
        columns can never cite the same one. A dump comes from one box running
        one build; that is the whole reason this page has two columns. #}
-{% macro kind_slot(cls, label, why) -%}
-  <div class="dv-kind"><span class="fw-badge fw-badge-{{ cls }}" title="{{ why }}">{{ label }}</span></div>
-{%- endmacro %}
-
 {# The field names, behind the same [+] window the CLI half uses.
 
    ONE SIDE PER CALL since the columns split: the base column can only ever
@@ -233,7 +252,13 @@
    every row whose sides agree — and on the row whose sides DISAGREE the kind
    is the finding, which belongs in the column that states findings. #}
 {% macro api_fields(n) -%}<span class="dv-count">{{ n }} field(s)</span>{%- endmacro %}
-{% macro api_blank(scope) -%}<span class="text-muted dv-unmeasured" title="Nothing has ever been measured for this on {{ scope }}. An unasked side is not a negative answer.">not measured on {{ scope }}</span>{%- endmacro %}
+{% macro api_blank(scope) -%}<span class="text-muted dv-unmeasured" title="Nothing has ever been measured for this on {{ scope }}. An unasked side is not a negative answer: the side nobody measured proves nothing, so this row is a gap in the evidence and not a change.">not measured on {{ scope }}</span>{%- endmacro %}
+
+{# The one caveat that used to sit under the object name. It is a fact about
+   THIS column — some builds of the rollup attested the URN and some stayed
+   silent — so it rides beside the verdict it qualifies, not in the identity
+   cell where it read as a class of finding. #}
+{% macro api_partial(silent_on) -%}{% if silent_on %} <span class="fw-badge fw-badge-warning dv-partial" title="Only some builds of this rollup attested this. The column is a rollup of several builds and not every one of them answered.">partial</span>{% endif %}{%- endmacro %}
 
 {% block content %}
 <div class="fw-page-header">
@@ -543,15 +568,19 @@
       The last two are <strong>not</strong> changes and are never counted as
       one: the side nobody measured proves nothing, and two different kinds of
       evidence are reported side by side, never subtracted.
-      {# How to read a row, now that ``added on X`` / ``gone on X`` no longer
-         repeat per row what the two build columns already measure. The rule
-         has to be stated ONCE somewhere or it is not learnable — and once is
-         the point: it was thirteen copies of it. #}
-      A row with <strong>no badge</strong> in the first column is a change, and
-      which change it is, is read off the two build columns —
-      <em>absent</em> on one side and <em>served</em> on the other, or a field
-      count on each side with the signed difference beside the one that moved.
-      A badge there means the row is <strong>not</strong> a change.
+      {# How to read a row. The first column carries the NAME and nothing
+         else since the operator emptied it (2026-09-16): every class label
+         that used to sit under the object restated a cell already beside it.
+         The rule has to be stated ONCE somewhere or it is not learnable — and
+         once is the point: in the rows it was thirteen copies of it. #}
+      The first column is the <strong>name only</strong>. What kind of finding a
+      row is, is read off the columns that measured it: a <strong>change</strong>
+      shows <em>absent</em> on one side and <em>served</em> on the other, or a
+      field count on each side with the signed difference beside the one that
+      moved. A row where one build column says <em>not measured on</em> is a
+      <strong>gap</strong> — nobody asked that side. A row whose Evidence cell
+      names a <em>different kind per build</em> is <strong>incomparable</strong>
+      and is never subtracted.
       {% if not delta.fields_changed %}
         No object here is described by the same kind of evidence on both sides,
         so no field delta could be computed — that is a gap, not a statement
@@ -592,13 +621,11 @@
              no) and ``not measured on X`` (nobody asked) are different words
              with different titles. #}
           <tr><td><code>{{ r.endpoint }}</code>
-              {%- if r.silent_on %}<div class="dv-meta"><span class="fw-badge fw-badge-warning"
-                title="Only some builds of the target rollup attested this.">partial</span></div>{% endif -%}
             </td>
             <td>{{ evidence_slot(r.origin) }}</td>
             <td><code class="text-muted" style="font-size:11px;">{{ r.urn }}</code></td>
             <td>{% call build_cell(delta.base, base_prov, r.cli_base, r.cli_delta, 'base') %}{{ api_absent() }}{% endcall %}</td>
-            <td>{% call build_cell(delta.target, target_prov, r.cli_target, r.cli_delta, 'target') %}{{ api_served() }}{% endcall %}</td>
+            <td>{% call build_cell(delta.target, target_prov, r.cli_target, r.cli_delta, 'target') %}{{ api_served() }}{{ api_partial(r.silent_on) }}{% endcall %}</td>
             <td>{{ test_btn(urn=r.urn) }}</td></tr>
         {% endfor %}
         {% for r in delta.endpoints_removed %}
@@ -634,7 +661,6 @@
         {% endfor %}
         {% for r in delta.endpoints_unknown %}
           <tr><td><code>{{ r.endpoint }}</code>
-              {{ kind_slot('secondary', 'measured only on ' ~ r.measured_on, 'The other side was never asked, so this is not a change — the side nobody measured proves nothing.') }}
             </td>
             <td>{{ evidence_slot(r.origin) }}</td>
             <td><code class="text-muted" style="font-size:11px;">{{ r.urn }}</code></td>
@@ -646,7 +672,6 @@
           {# No fold and no arrow, on purpose: only a computed delta earns
              either, and this side was never compared against anything. #}
           <tr><td><code>{{ c.key }}</code>
-              {{ kind_slot('secondary', 'fields known only on ' ~ c.known_on, 'Measured on one side and never on the other — the missing side proves nothing. This is a gap, not a change.') }}
             </td>
             <td>{{ evidence_slot(c.origin) }}</td>
             <td><code class="text-muted" style="font-size:11px;">{{ c.urn }}</code></td>
@@ -658,7 +683,6 @@
           {# Both columns full, and NOTHING between them. Each side names the
              kind of evidence it holds; the page refuses to subtract them. #}
           <tr><td><code>{{ c.key }}</code>
-              {{ kind_slot('warning', 'incomparable', 'Known on both builds, by different kinds of evidence. Reported, never subtracted — a gap a sweep cannot close.') }}
             </td>
             {# The one row where the two sides hold DIFFERENT kinds, which is
                why it is incomparable. The Evidence cell names both and says

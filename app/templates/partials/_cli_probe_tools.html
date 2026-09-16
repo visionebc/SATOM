@@ -99,33 +99,45 @@
    on the page, which is deliberate — a test button with nowhere to send the
    answer would look like a broken feature instead of a missing section. #}
 {% macro probe_bar(appliances, live_endpoint='', exec_endpoint='', can_cli=True) -%}
-<div class="fw-card mt-3" id="cliProbeBar">
-  <div class="fw-card-header">
-    <span class="fw-card-title">
-      <i class="bi bi-plug me-2 text-accent"></i>{{ _('Test against a live appliance') }}
-    </span>
-    <span class="text-muted" style="font-size:11px;">
-      {{ _('read-only: a GET, or show — never a write') }}
-    </span>
-  </div>
-  <div class="fw-card-body">
-    <div class="d-flex flex-wrap align-items-end gap-2">
-      <div>
-        <label class="fw-form-label mb-1" for="cliProbeAppliance">{{ _('Appliance') }}</label>
-        <select class="form-select fw-form-control" id="cliProbeAppliance">
-          <option value="">{{ _('choose…') }}</option>
-          {% for a in appliances %}
-            <option value="{{ a.id }}">{{ a.name }}{% if a.host %} ({{ a.host }}){% endif %}</option>
-          {% endfor %}
-        </select>
+{# A DIALOG since 2026-09-16, opened by the row's own API/CLI button.
+
+   As a card at the foot of the page it was one screenful away from the row
+   that filled it: pressing Test on row 31 of 43 wrote the answer off-screen,
+   which reads exactly like a button that does nothing. It is still ONE per
+   page and still the only copy of the JavaScript. #}
+<div class="modal fade" id="cliProbeBar" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title mb-0">
+          <i class="bi bi-plug me-2 text-accent"></i>{{ _('Test against a live appliance') }}
+        </h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"
+                aria-label="{{ _('Close') }}"></button>
       </div>
-      <div class="text-muted pb-2" style="font-size:11.5px;" id="cliProbeWhat">
-        {{ _('Pick a box, then press API or CLI on any row.') }}
+      <div class="modal-body">
+        <div class="text-muted mb-2" style="font-size:11px;">
+          {{ _('read-only: a GET, or show — never a write') }}
+        </div>
+        <div class="d-flex flex-wrap align-items-end gap-2">
+          <div>
+            <label class="fw-form-label mb-1" for="cliProbeAppliance">{{ _('Appliance') }}</label>
+            <select class="form-select fw-form-control" id="cliProbeAppliance">
+              <option value="">{{ _('choose…') }}</option>
+              {% for a in appliances %}
+                <option value="{{ a.id }}">{{ a.name }}{% if a.host %} ({{ a.host }}){% endif %}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="text-muted pb-2" style="font-size:11.5px;" id="cliProbeWhat">
+            {{ _('Pick a box, then press API or CLI on any row.') }}
+          </div>
+        </div>
+        <pre id="cliProbeOut" class="mt-2 mb-0 d-none"
+             style="max-height:320px;overflow:auto;background:#F4F5F7;border:1px solid #E3E6EA;
+                    border-radius:4px;padding:10px;font-size:11.5px;color:#1F2933;"></pre>
       </div>
     </div>
-    <pre id="cliProbeOut" class="mt-2 mb-0 d-none"
-         style="max-height:320px;overflow:auto;background:#F4F5F7;border:1px solid #E3E6EA;
-                border-radius:4px;padding:10px;font-size:11.5px;color:#1F2933;"></pre>
   </div>
 </div>
 
@@ -147,12 +159,20 @@
     out.style.borderColor = bad ? '#8B1C2A' : '#E3E6EA';
   }
 
-  document.addEventListener('click', function (ev) {
-    var btn = ev.target.closest('[data-cli-test]');
-    if (!btn) { return; }
-    var kind   = btn.getAttribute('data-cli-test');
-    var target = btn.getAttribute('data-cli-target') || '';
-    if (!pick.value) { show('{{ _("Choose an appliance first.") }}', true); return; }
+  var dlg = document.getElementById('cliProbeBar');
+  function open_() {
+    if (window.bootstrap && bootstrap.Modal && dlg) {
+      bootstrap.Modal.getOrCreateInstance(dlg).show();
+    }
+  }
+
+  // The request the operator asked for, held while the dialog is open. The
+  // picker lives INSIDE the dialog now, so without this "choose an appliance
+  // first" would be a dead end: answering it would mean closing the dialog and
+  // hunting the row down again.
+  var pending = null;
+
+  function run(kind, target) {
     what.textContent = (kind === 'cli' ? 'show ' : 'GET ') + target;
     show('…');
 
@@ -194,6 +214,26 @@
     {% else %}
     show('{{ _("No REST console is mounted on this page.") }}', true);
     {% endif %}
+  }
+
+  document.addEventListener('click', function (ev) {
+    var btn = ev.target.closest('[data-cli-test]');
+    if (!btn) { return; }
+    var kind   = btn.getAttribute('data-cli-test');
+    var target = btn.getAttribute('data-cli-target') || '';
+    pending = { kind: kind, target: target };
+    open_();
+    // The dialog opens either way: the answer to "which box?" is in it.
+    if (!pick.value) {
+      what.textContent = (kind === 'cli' ? 'show ' : 'GET ') + target;
+      show('{{ _("Choose an appliance first.") }}', true);
+      return;
+    }
+    run(kind, target);
+  });
+
+  pick.addEventListener('change', function () {
+    if (pick.value && pending) { run(pending.kind, pending.target); }
   });
 })();
 </script>

@@ -186,7 +186,17 @@ def api_versions():
                                     'registry.api_versions_rebuild',
                                     'registry.api_versions',
                                     'registry.api_versions_declare',
-                                    'registry.api_versions_forget')
+                                    'registry.api_versions_forget',
+                                    'registry.api_versions_export')
+
+
+# GET, and read-only: it renders the same comparison the page does, so it is
+# gated exactly like the page and not one notch looser.
+@bp.route('/versions/export.csv')
+@login_required
+@require_permission(Permission.REGISTRY_EDIT)
+def api_versions_export():
+    return _apiversions.export_page('fortiweb', 'registry.api_versions')
 
 
 @bp.route('/versions/rebuild', methods=['POST'])

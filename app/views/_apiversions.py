@@ -20,7 +20,11 @@ the same audience as the reconcile page and strictly less dangerous than it.
 """
 from __future__ import annotations
 
-from flask import flash, redirect, render_template, request, url_for
+import csv
+import io as _io
+
+from flask import (Response, flash, redirect, render_template, request,
+                   url_for)
 from flask_login import current_user
 
 from ..services import api_matrix, cli_coverage, firmware_versions
@@ -121,9 +125,14 @@ def _empty(product: str) -> dict:
             "sweepable": product in api_matrix.SWEPT_PRODUCTS}
 
 
-def render_page(product: str, hub_endpoint: str, rebuild_endpoint: str,
-                page_endpoint: str, declare_endpoint: str = "",
-                forget_endpoint: str = ""):
+def _resolved(product: str) -> dict:
+    """Everything the comparison rests on, resolved ONCE.
+
+    The page and its CSV export read the SAME object. Recomputing the delta on
+    the export side would give this table two authors, and of a drifting pair
+    it is always the one nobody looks at that goes wrong first — here that is
+    the download, which is also the copy that leaves the building.
+    """
     # Read-time merge of the DERIVED matrix (a file on disk) with the AUTHORED
     # declarations (rows in Postgres). Two stores on purpose — one is rebuilt
     # from evidence, the other is typed by a person — and merged here so a
@@ -192,6 +201,23 @@ def render_page(product: str, hub_endpoint: str, rebuild_endpoint: str,
                 row["cli_delta"] = _cli_field_delta(
                     row["cli_base"], row["cli_target"], _pair_note)
 
+    return {"matrix": matrix, "vdocs": vdocs, "versions": versions,
+            "lines": lines, "scopes": scopes, "base": base, "target": target,
+            "delta": delta, "prov": prov, "ver_prov": ver_prov,
+            "line_prov": line_prov, "base_prov": base_prov,
+            "target_prov": target_prov}
+
+
+def render_page(product: str, hub_endpoint: str, rebuild_endpoint: str,
+                page_endpoint: str, declare_endpoint: str = "",
+                forget_endpoint: str = "", export_endpoint: str = ""):
+    R = _resolved(product)
+    matrix, vdocs = R["matrix"], R["vdocs"]
+    versions, lines, scopes = R["versions"], R["lines"], R["scopes"]
+    base, target, delta = R["base"], R["target"], R["delta"]
+    prov, ver_prov, line_prov = R["prov"], R["ver_prov"], R["line_prov"]
+    base_prov, target_prov = R["base_prov"], R["target_prov"]
+
     _hub_bp = (hub_endpoint or "").split(".")[0]
     from ..models import Appliance, visible_appliances
     probe_appliances = (visible_appliances().filter(Appliance.kind == product)
@@ -230,7 +256,12 @@ def render_page(product: str, hub_endpoint: str, rebuild_endpoint: str,
             scope=discover, scope_appliances=scope_boxes)
 
     return render_template(
-        "registry/versions.html", product=product, matrix=matrix, lines=lines,
+        # NOT ``product=``: the branding context processor already puts the
+        # ADOM's branding DICT under that name in every template, and the
+        # chrome prints ``product.title`` from it. Passing the product KEY
+        # shadows the dict; ``.title`` on a str is the bound METHOD, which the
+        # topbar rendered verbatim beside the logo until 2026-09-16.
+        "registry/versions.html", product_key=product, matrix=matrix, lines=lines,
         versions=versions, vdocs=vdocs, scopes=scopes,
         discover=discover, **cc_ctx, **dr_ctx,
         stale_format=bool(matrix.get("stale_format")),
@@ -240,11 +271,139 @@ def render_page(product: str, hub_endpoint: str, rebuild_endpoint: str,
         base=base, target=target, delta=delta, hub_endpoint=hub_endpoint,
         rebuild_endpoint=rebuild_endpoint, page_endpoint=page_endpoint,
         declare_endpoint=declare_endpoint, forget_endpoint=forget_endpoint,
+        export_endpoint=export_endpoint,
         line_prov=line_prov, ver_prov=ver_prov, prov=prov,
         base_prov=base_prov, target_prov=target_prov,
         source_label=firmware_versions.SOURCE_LABEL,
     )
 
+
+
+# ---------------------------------------------------------------------------
+#  CSV export of the comparison                                              #
+# ---------------------------------------------------------------------------
+# Three things the screen says with affordances a CSV does not have, and which
+# therefore have to be said in COLUMNS or the file means something else than
+# the page it came from:
+#
+# * **Which finding a row is.** On screen it is read off a badge and the two
+#   build columns. A spreadsheet gets pivoted, so the bucket is a column.
+# * **Whether it is a change at all.** ``known on one side only`` and
+#   ``incomparable`` are gaps in the evidence. Summed into a change count they
+#   become the phantom removals the sweep/schema split exists to prevent, so
+#   the answer is its own column rather than something to infer from the
+#   bucket name.
+# * **Where a CLI number comes from.** The two CLI columns are two different
+#   appliances' configuration, not one firmware measured twice. On screen that
+#   caveat is a tooltip; here it is written into the column heading, where it
+#   cannot be detached from the numbers it qualifies.
+#
+# The field NAMES are included in full. They live behind a [+] window on the
+# page, and an export of "the whole table" that quietly dropped them would be
+# the one thing a download is for.
+
+_BUCKET_LABEL = {
+    "endpoints_added": ("endpoint added", "yes"),
+    "endpoints_removed": ("endpoint gone", "yes"),
+    "fields_changed": ("field delta", "yes"),
+    "endpoints_unknown": ("endpoint measured on one side only", "no"),
+    "fields_unknown": ("fields known on one side only", "no"),
+    "fields_incomparable": ("incomparable", "no"),
+}
+
+
+def _cli_head(scope: str, prov, what: str) -> str:
+    """A CLI column heading that carries its own capture.
+
+    A bare ``7.6.8 CLI sets`` invites the reader to subtract it from the other
+    column as if both were the same box at two firmwares. They are two boxes.
+    """
+    if prov is not None and getattr(prov, "measured", False):
+        return "%s CLI %s (%s, captured %s — operator configuration, not firmware)" % (
+            scope, what, prov.device, prov.captured_at)
+    return "%s CLI %s (no dump captured on this build)" % (scope, what)
+
+
+def _api_cell(row, side: str):
+    """(verdict, field count) for one build's API half, mirroring the page."""
+    b = row.get("_bucket")
+    scope = row["_base"] if side == "base" else row["_target"]
+    if b == "endpoints_added":
+        return ("absent" if side == "base" else "served", "")
+    if b == "endpoints_removed":
+        return ("served" if side == "base" else "absent", "")
+    if b == "endpoints_unknown":
+        return ("served", "") if row.get("measured_on") == scope else ("", "")
+    if b == "fields_unknown":
+        return ("served", row.get("count")) if row.get("known_on") == scope else ("", "")
+    n = row.get("base_count") if side == "base" else row.get("target_count")
+    return ("served", n)
+
+
+def _rows(delta: dict):
+    for bucket, rows in ((b, delta.get(b) or []) for b in _BUCKET_LABEL):
+        for r in rows:
+            r["_bucket"] = bucket
+            r["_base"], r["_target"] = delta["base"], delta["target"]
+            yield r
+
+
+def export_page(product: str, page_endpoint: str):
+    R = _resolved(product)
+    delta, base, target = R["delta"], R["base"], R["target"]
+    if not delta:
+        # An empty CSV reads as "nothing differs". It is not the same claim as
+        # "you have not picked two comparable builds", so it is not served.
+        flash("Pick two different builds (or rollups) before exporting.", "warning")
+        return redirect(url_for(page_endpoint))
+
+    bp, tp = R["base_prov"], R["target_prov"]
+    buf = _io.StringIO()
+    w = csv.writer(buf)
+    w.writerow([
+        "finding", "is a change", "endpoint / object", "evidence", "urn",
+        "%s API" % base, "%s API fields" % base,
+        "fields only on %s" % base,
+        _cli_head(base, bp, "verdict"), _cli_head(base, bp, "sets"),
+        "CLI fields only on %s" % base,
+        "%s API" % target, "%s API fields" % target,
+        "fields only on %s" % target,
+        _cli_head(target, tp, "verdict"), _cli_head(target, tp, "sets"),
+        "CLI fields only on %s" % target,
+    ])
+    n = 0
+    for r in _rows(delta):
+        label, is_change = _BUCKET_LABEL[r["_bucket"]]
+        if r["_bucket"] == "fields_incomparable":
+            evidence = "%s=%s; %s=%s" % (base, r.get("base_origin") or "",
+                                         target, r.get("target_origin") or "")
+        else:
+            evidence = r.get("origin") or ""
+        b_api, b_n = _api_cell(r, "base")
+        t_api, t_n = _api_cell(r, "target")
+        cd = r.get("cli_delta")
+        # The CLI verdict is the raw BUCKET key, never the display vocabulary:
+        # that vocabulary is spelled in ``_cli_provenance.html`` and nowhere
+        # else, and a second author of it is how a label drifts out of sync
+        # with the badge it is supposed to mirror.
+        cb, ct = r.get("cli_base"), r.get("cli_target")
+        w.writerow([
+            label, is_change, r.get("endpoint") or r.get("key") or "",
+            evidence, r.get("urn") or "",
+            b_api, b_n, " ".join(r.get("removed") or []),
+            (cb or {}).get("bucket") or "", (cd or {}).get("base_count", ""),
+            " ".join((cd or {}).get("removed") or []),
+            t_api, t_n, " ".join(r.get("added") or []),
+            (ct or {}).get("bucket") or "", (cd or {}).get("target_count", ""),
+            " ".join((cd or {}).get("added") or []),
+        ])
+        n += 1
+
+    log_action("api_versions.export", target="%s %s -> %s" % (product, base, target),
+               extra={"rows": n})
+    fn = "satom-api-delta-%s-%s-to-%s.csv" % (product, base, target)
+    return Response(buf.getvalue(), mimetype="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": 'attachment; filename="%s"' % fn})
 
 def rebuild_page(product: str, page_endpoint: str):
     try:

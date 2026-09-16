@@ -17,7 +17,7 @@
   <p style="margin:0 0 .7rem">
     The Analysis area answers product-specific questions, so each ADOM needs a
     page written against the objects that product actually has. There is none
-    for <code>{{ product or 'this ADOM' }}</code>.
+    for <code>{{ product_key or 'this ADOM' }}</code>.
   </p>
   <p style="margin:0;opacity:.75;font-size:.87rem">
     {{ _('You are seeing this instead of another product’s dashboard on purpose. A page scoped to objects this product does not have renders every panel empty, and an empty panel reads as “nothing is wrong” rather than “nothing was measured”.') }}

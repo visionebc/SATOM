@@ -27,6 +27,7 @@ Targeted suite: no network, no appliance.
 from __future__ import annotations
 
 import io
+import csv
 import json
 import os
 import re
@@ -128,7 +129,16 @@ def test_a_key_whose_only_finding_is_a_field_delta_is_a_row(two_builds, client, 
     """The reported bug, pinned. ``fielded`` is served on both builds — the
     endpoint buckets say nothing about it — and it gained a field."""
     row = _row(_page(client, app), "fielded")
-    assert "2 → 3" in row, "the subtraction that IS the finding is gone: %s" % row
+    # The subtraction used to be printed whole in the identity cell (``2 → 3``)
+    # and the operator removed it this round: both numbers were already in the
+    # build columns that measured them. So the finding is asserted where it now
+    # lives — a count in each column and the signed difference beside the side
+    # that moved — which is the same fact with nothing restating it.
+    base_col, target_col = _build_cols(row)
+    assert "2 field(s)" in _api_half(base_col), base_col
+    assert "3 field(s)" in _api_half(target_col), target_col
+    assert "dv-api-gap" in target_col, \
+        "the signed difference that IS the finding is gone: %s" % target_col
     assert "gamma" in row, "the field it gained must be named: %s" % row
 
 
@@ -176,10 +186,12 @@ def test_the_old_split_headings_do_not_come_back(two_builds, client, app, gone):
     # The two field-delta rows lost their label in the same pass, so what they
     # are asserted BY is the subtraction itself — the only place on this page
     # where two numbers are subtracted.
-    ("fielded", "2 → 3"),
+    # Was ``2 → 3`` until the identity cell lost it. A field delta is now
+    # recognised by the only markup a COMPUTED delta earns: the signed tally.
+    ("fielded", "dv-api-gap"),
     ("onesided", "fields known only on 7.6.8"),
     ("mixed", "incomparable"),
-    ("schemaonly", "2 → 3"),
+    ("schemaonly", "dv-api-gap"),
     ("onlyhere", "measured only on 8.0.5"),
 ])
 def test_every_bucket_reaches_the_one_table(two_builds, client, app, key, phrase):
@@ -234,7 +246,12 @@ def test_a_gap_is_never_worded_as_a_change(two_builds, client, app, key):
     replaced the fold.
     """
     row = _row(_page(client, app), key)
-    assert "→" not in row, "a gap rendered a subtraction: %s" % row
+    # ``"→" not in row`` lived here and is GONE on purpose, not relaxed: the
+    # arrow was removed from every row this round, so asserting its absence on
+    # a gap would pass on any page at all — the fourth wording of this guard to
+    # go vacuous the same way. The arrow is pinned page-wide instead, by
+    # ``test_no_row_prints_the_subtraction_whole``; what stays here is what
+    # still separates a gap from a change.
     assert "<details" not in row, "a gap grew a delta's field fold: %s" % row
     assert "dv-api-gap" not in row, "a gap rendered a signed field tally: %s" % row
     assert "dv-names-more" not in row, "a gap grew a names window: %s" % row
@@ -444,21 +461,48 @@ def test_the_template_never_does_the_subtraction_itself():
         [ln for ln in body.splitlines() if ".settings" in ln]
 
 
-def test_the_subtraction_stays_in_the_identity_cell(two_builds, client, app):
-    """``2 → 3`` is a fact about the PAIR.
+def test_no_row_prints_the_subtraction_whole(two_builds, client, app):
+    """The operator's removal, pinned — and pinned PAGE-WIDE.
 
-    Put in a build column it states the other column's number, and the two
-    columns exist precisely because neither build may answer for the other.
-    Pushing both counts into the columns and leaving the arrow nowhere is how
-    the operator lost that number the first time — it had to be counted by eye
-    off a row of pills.
+    ``8 → 14`` was a third voice: both numbers are printed by the columns that
+    measured them, and the cell that held the pair was the only one on the
+    page stating two builds' numbers at once. Scoped to one row this would be
+    a weak guard; the thing worth preventing is it creeping back into any of
+    the six row loops.
+    """
+    body = _page(client, app)
+    table = _table(body)
+    assert "→" not in table, \
+        "the identity cell's subtraction is back: %s" % \
+        [ln for ln in table.splitlines() if "→" in ln][:4]
+
+
+def test_neither_build_column_states_the_other_ones_count(two_builds, client, app):
+    """What the removed arrow was protecting, kept without it.
+
+    The two columns exist precisely because neither build may answer for the
+    other. With the pair-fact gone from column 1 this is the whole invariant:
+    each column prints ITS number and never the other's.
     """
     cells = _cells(_row(_page(client, app), "fielded"))
-    assert "2 → 3" in cells[0], \
-        "the finding left the identity cell: %s" % cells[0]
-    for i, side in ((3, BASE), (4, TARGET)):
-        assert "→" not in cells[i], \
-            "the %s column subtracted the other one's number: %s" % (side, cells[i])
+    base_col, target_col = _api_half(cells[3]), _api_half(cells[4])
+    assert "2 field(s)" in base_col and "3 field(s)" not in base_col, \
+        "the %s column states the other one's count: %s" % (BASE, base_col)
+    assert "3 field(s)" in target_col and "2 field(s)" not in target_col, \
+        "the %s column states the other one's count: %s" % (TARGET, target_col)
+
+
+def test_the_identity_cell_holds_the_name_and_nothing_numeric(
+        two_builds, client, app):
+    """Guarded from the other direction too, or the round is half pinned: a
+    field delta's first cell is the object's name and no measurement."""
+    for key in ("fielded", "schemaonly"):
+        cell = _cells(_row(_page(client, app), key))[0]
+        assert key in cell
+        assert "dv-count" not in cell, \
+            "a count crept back under the object name: %s" % cell
+        assert "dv-meta" not in cell, \
+            "the measure line is back under the object name: %s" % cell
 
 
 def test_each_build_column_carries_its_own_field_count(two_builds, client, app):
@@ -583,7 +627,11 @@ def _kind_title(row):
     m = re.search(r'<div class="dv-kind"><span class="fw-badge[^"]*" title="([^"]*)"',
                   row)
     if not m:
-        m = re.search(r'<div class="dv-meta" title="([^"]*)"', row)
+        # A field delta has no badge AND, since the operator emptied the
+        # identity cell this round, no measure line either. The sentence
+        # followed the finding: it hangs off the signed tally, in the column
+        # that measured the side which moved.
+        m = re.search(r'<span class="fw-badge[^"]*dv-api-gap" title="([^"]*)"', row)
     assert m, "neither a titled kind badge nor a titled measure line: %s" % row
     return m.group(1)
 
@@ -604,6 +652,8 @@ def test_no_change_carries_a_kind_badge_and_every_gap_does(two_builds, client, a
         assert "dv-kind" not in row, \
             "the label the operator removed is back on %s: %s" % (key, row)
         assert "fields changed" not in row.lower(), row
+        assert "dv-meta" not in _cells(row)[0], \
+            "%s regrew a line under its name: %s" % (key, row)
     for key in ("onesided", "mixed", "onlyhere"):
         assert "dv-kind" in _row(body, key), \
             "%s is not a change and nothing on its row says so" % key
@@ -952,3 +1002,144 @@ def test_the_api_names_are_never_printed_into_the_cell():
     mac = _api_names_macro()
     assert "{% for" not in mac and "{%- for" not in mac, \
         "the names are being printed into the cell: %s" % mac
+
+
+# ===========================================================================
+#  the CSV export                                                           #
+# ===========================================================================
+# What a download has to carry that the screen does not: the screen says which
+# KIND of finding a row is with a badge and two columns, and it says "this is
+# not a change" with a tooltip. A CSV gets pivoted, so both have to be values.
+
+
+def _csv(client, app, base=BASE, target=TARGET):
+    login(client, admin_user_id(app))
+    r = client.get("/web/registry/versions/export.csv?base=%s&target=%s"
+                   % (base, target))
+    assert r.status_code == 200, r.status_code
+    return r, list(csv.reader(io.StringIO(r.get_data(as_text=True))))
+
+
+def test_the_export_carries_every_row_the_table_shows(two_builds, client, app):
+    """The defect this page was rebuilt to end, in its export form.
+
+    ``antivirus`` — a row whose only finding is a field delta — was ABSENT
+    from one of the three tables that used to say this, and an absent row
+    reads as "no finding here". A download that drops a bucket does exactly
+    that, to a reader who cannot see the page to notice.
+    """
+    _, rows = _csv(client, app)
+    keys = {r[2] for r in rows[1:]}
+    for k in ("arrives", "goes_away", "fielded", "schemaonly",
+              "onesided", "mixed", "onlyhere"):
+        assert k in keys, "%s never reached the CSV: %s" % (k, sorted(keys))
+    # ...and exactly the table's rows, not a superset: a row in the file with
+    # no row on screen is a finding nobody can check.
+    # -1 on both sides: the CSV's first line is its header and the
+    # table's first <tr> is its <thead> row.
+    body_rows = len(re.findall(r"<tr>", _table(_page(client, app)))) - 1
+    assert len(rows) - 1 == body_rows, (len(rows) - 1, body_rows)
+
+
+@pytest.mark.parametrize("key,change", [
+    ("arrives", "yes"), ("goes_away", "yes"),
+    ("fielded", "yes"), ("schemaonly", "yes"),
+    ("onesided", "no"), ("mixed", "no"), ("onlyhere", "no"),
+])
+def test_the_export_says_outright_whether_a_row_is_a_change(
+        two_builds, client, app, key, change):
+    """Guarded from BOTH directions, because half of it is worse than none.
+
+    A gap summed into a change count is the phantom-removal defect all over
+    again — and a spreadsheet is where someone sums things. Checking only that
+    the gaps say ``no`` passes on a file where the changes say ``no`` too.
+    """
+    _, rows = _csv(client, app)
+    row = next(r for r in rows[1:] if r[2] == key)
+    assert row[1] == change, "%s is marked %r: %s" % (key, row[1], row)
+
+
+def test_the_export_names_which_bucket_each_row_came_from(two_builds, client, app):
+    _, rows = _csv(client, app)
+    got = {r[2]: r[0] for r in rows[1:]}
+    assert got["arrives"] == "endpoint added"
+    assert got["goes_away"] == "endpoint gone"
+    assert got["fielded"] == "field delta"
+    assert got["mixed"] == "incomparable"
+    assert "one side only" in got["onesided"]
+
+
+def test_the_export_carries_the_names_that_live_behind_the_window(
+        two_builds, client, app):
+    """The one thing a download is for.
+
+    The field names left the row's text when the fold became a modal — they
+    ride in a data- attribute now. An export of "the whole table" that dropped
+    them would be the page's own loss, shipped.
+    """
+    _, rows = _csv(client, app)
+    row = next(r for r in rows[1:] if r[2] == "fielded")
+    assert "gamma" in " ".join(row), "the gained field name is not in the CSV: %s" % row
+
+
+def test_neither_export_column_states_the_other_builds_count(
+        two_builds, client, app):
+    """The same invariant the two columns keep on screen. Flattened into one
+    line of CSV it is easier to lose, not harder."""
+    _, rows = _csv(client, app)
+    head, row = rows[0], next(r for r in rows[1:] if r[2] == "fielded")
+    b = head.index("%s API fields" % BASE)
+    t = head.index("%s API fields" % TARGET)
+    assert row[b] == "2" and row[t] == "3", row
+
+
+def test_a_cli_column_heading_names_its_own_capture(two_builds, client, app):
+    """A bare ``7.6.8 CLI sets`` invites the reader to subtract two columns as
+    if they were one box measured twice. They are two boxes. On screen that
+    caveat is a tooltip; a CSV has none, so it is in the heading, where it
+    cannot be detached from the numbers it qualifies."""
+    _, rows = _csv(client, app)
+    # Only the headings that carry a VERDICT or a NUMBER. CLI fields only
+    # on <build> is a names column and qualifies nothing on its own.
+    cli = [h for h in rows[0] if re.match(r"^\S+ CLI (verdict|sets)\b", h)]
+    assert cli, rows[0]
+    for h in cli:
+        assert ("operator configuration" in h) or ("no dump captured" in h), h
+
+
+def test_the_export_refuses_rather_than_hand_back_an_empty_file(
+        two_builds, client, app):
+    """A header row and nothing else reads as "nothing differs". That is a
+    different claim from "you have not picked two comparable builds", and the
+    file cannot tell them apart, so it is not served."""
+    login(client, admin_user_id(app))
+    r = client.get("/web/registry/versions/export.csv?base=%s&target=%s"
+                   % (BASE, BASE))
+    assert r.status_code in (302, 303), r.status_code
+
+
+def test_the_export_does_not_respell_the_transport_vocabulary(
+        two_builds, client, app):
+    """The CLI verdict words are spelled in ``_cli_provenance.html`` and
+    nowhere else. The CSV carries the raw bucket key instead — a second author
+    of that vocabulary is how a label drifts out of step with the badge it is
+    supposed to mirror."""
+    body = io.open(os.path.join(ROOT, "app/views/_apiversions.py"),
+                   encoding="utf-8").read()
+    body = re.sub(r"#[^\n]*", "", body)          # comments may NAME them
+    for label in ("API + CLI", "API only", "CLI only"):
+        assert label not in body, "the export spells %r itself" % label
+
+
+def test_the_export_button_points_at_the_pair_on_screen(two_builds, client, app):
+    """Not at whatever the two selects happen to say.
+
+    As a ``formaction`` submit it would export the selects, and a select
+    changed without pressing Compare says something the table does not. The
+    href carries the RENDERED pair.
+    """
+    body = _page(client, app)
+    m = re.search(r'href="([^"]*export\.csv[^"]*)"', body)
+    assert m, "no export link on the page"
+    assert ("base=%s" % BASE) in m.group(1) and ("target=%s" % TARGET) in m.group(1), \
+        m.group(1)

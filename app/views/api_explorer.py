@@ -79,7 +79,11 @@ def discovery_register():
 @login_required
 @require_permission('appliances.apply')
 def discovery_load():
-    return _discovery.load('fortiweb', 'api_explorer.index')
+    # The page to come back to is the one that MOUNTS the card, which since
+    # 2026-09-16 is the API-versions page — not this hub, which now carries
+    # only a pointer to it. Returning here left the operator watching a page
+    # with no card while their sweep ran to completion elsewhere.
+    return _discovery.load('fortiweb', 'registry.api_versions')
 
 
 @bp.route('/execute', methods=['POST'])

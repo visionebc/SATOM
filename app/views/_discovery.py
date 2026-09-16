@@ -51,7 +51,7 @@ from flask_login import current_user
 
 from ..models import Permission, visible_appliance_or_404
 from ..services import (cli_coverage, discovery_jobs, discovery_run,
-                        registry_write)
+                        firmware_versions, registry_write)
 from ..services.audit import log_action
 
 #: Hard ceiling the form may not exceed, whatever it posts. The form's own
@@ -296,6 +296,37 @@ def register_payload(product: str):
                     "rejected": sum(1 for r in results if not r["ok"])})
 
 
+def _load_back(page_endpoint: str, dr_watch=None):
+    """Back to the page that MOUNTS the card, scoped to the build it asked about.
+
+    The card moved to the API-versions page on 2026-09-16 and this redirect did
+    not follow it: every capture landed on the API hub, which no longer mounts
+    the card. The sweep itself was never affected — it is a background worker
+    and it ran to completion — but its phases, its percentage and its Stop
+    button are rendered BY the card, so the operator was returned to a page
+    that could not show the thing they had just started. What the stale
+    endpoint cost was visibility, not the job, and that is the harder kind of
+    breakage to see: nothing errored.
+
+    ``version`` is the scope the form declares; it is normalised here and the
+    page validates it again against the builds it knows, so an unknown one
+    widens to nothing rather than to "whatever dump sorts first". Dropping it
+    on the way back would land the operator on an UNSCOPED card — the defect
+    the build axis exists to end — one redirect after they chose a build.
+
+    ``dr_watch`` is how the card attaches to the sweep that was just started:
+    the sweep has always had a status endpoint, and this argument is the only
+    thing that tells the page which appliance to poll.
+    """
+    args = {}
+    version = firmware_versions.normalize(request.form.get("version") or "")
+    if version:
+        args["discover"] = version
+    if dr_watch:
+        args["dr_watch"] = dr_watch
+    return redirect(url_for(page_endpoint, _anchor="discoveryRun", **args))
+
+
 def load(product: str, page_endpoint: str):
     """Refresh BOTH halves of the diff: the REST sweep and the CLI dump.
 
@@ -308,7 +339,7 @@ def load(product: str, page_endpoint: str):
     appliance = visible_appliance_or_404(appliance_id)
     if getattr(appliance, "kind", "") != product:
         flash("%s is not a %s." % (appliance.name, product), "danger")
-        return redirect(url_for(page_endpoint))
+        return _load_back(page_endpoint)
 
     from ..services import rediscovery
 
@@ -322,7 +353,7 @@ def load(product: str, page_endpoint: str):
     if not res.get("started"):
         flash("Could not start the sweep on %s: %s"
               % (appliance.name, res.get("reason") or "unknown reason"), "danger")
-        return redirect(url_for(page_endpoint))
+        return _load_back(page_endpoint)
 
     # One status call, synchronous, AFTER the sweep is safely started: the
     # version is what dates everything the sweep is about to write, and the
@@ -352,11 +383,10 @@ def load(product: str, page_endpoint: str):
     if refused:
         msg += " The CLI capture was skipped: %s." % refused
     flash(msg, "warning" if (refused or not ver.get("checked")) else "success")
-    # ``dr_watch`` is how the card attaches to the sweep it just started. The
-    # sweep has ALWAYS been a background job with a status endpoint; this page
-    # was simply never told which appliance to poll, so its only feedback was a
-    # flash message and the operator had to guess when to reload.
-    return redirect(url_for(page_endpoint, dr_watch=appliance.id))
+    # Back to the card, watching the sweep it just started and still scoped to
+    # the build the row chose. ``_load_back`` owns both halves so the two error
+    # exits above cannot land somewhere else than the success one.
+    return _load_back(page_endpoint, dr_watch=appliance.id)
 
 
 def context(product: str, *, run_endpoint: str = "", plan_endpoint: str = "",

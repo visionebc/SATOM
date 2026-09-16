@@ -224,12 +224,20 @@ def test_a_gap_is_never_worded_as_a_change(two_builds, client, app, key):
     row``; those labels went too (2026-09-16), and that half would have gone
     vacuous in exactly the same way — passing on a page where the wording had
     been merged after all. So a gap is now pinned by what it may not show
-    (a subtraction, a field fold) AND by what it must: the badge that says it
-    is not a change. A badge in column 1 is the whole signal now.
+    (a subtraction, a field tally, a names window) AND by what it must: the
+    badge that says it is not a change. A badge in column 1 is the whole
+    signal now.
+
+    Third rewording, same trap: the fold became a window on 2026-09-16, so
+    ``"<details" not in row`` would have gone vacuous exactly like the two
+    labels before it. What a gap may not show is now named by the markup that
+    replaced the fold.
     """
     row = _row(_page(client, app), key)
     assert "→" not in row, "a gap rendered a subtraction: %s" % row
     assert "<details" not in row, "a gap grew a delta's field fold: %s" % row
+    assert "dv-api-gap" not in row, "a gap rendered a signed field tally: %s" % row
+    assert "dv-names-more" not in row, "a gap grew a names window: %s" % row
     assert "dv-kind" in row, \
         "a gap lost the badge that is now the ONLY thing marking it as one: %s" % row
 
@@ -320,6 +328,12 @@ def _cli_half(col):
                   r'<div class="dv-t-body">(.*?)</div>', col, re.S)
     assert m, "no CLI half in this build column: %r" % col[:300]
     return m.group(1), m.group(2)
+
+
+def _visible(markup):
+    """What the operator can actually read. A name inside ``data-names-list``
+    is stored, not shown, and the two are the whole point of the window."""
+    return re.sub(r"<[^>]+>", " ", markup)
 
 
 def _api_half(col):
@@ -466,17 +480,22 @@ def test_each_build_column_carries_its_own_field_count(two_builds, client, app):
             "the evidence kind grew a second author inside a build column: %s" % col
 
 
-def test_the_gained_names_fold_under_the_build_that_gained_them(
+def test_the_gained_names_belong_to_the_build_that_gained_them(
         two_builds, client, app):
     """``gamma`` is on 8.0.5 and not on 7.6.8. A column IS a build, so the name
-    may only appear under the build that has it — printed in both it would read
-    as a field both builds serve."""
+    may only appear under the build that has it — carried by both it would read
+    as a field both builds serve.
+
+    Since the fold became a window the name rides in ``data-names-list``, so
+    this asserts on the column's MARKUP for presence and on its VISIBLE TEXT
+    for absence — a name in the attribute is not on the page, and testing the
+    raw string for both would let a printed name pass as a stored one."""
     base_col, target_col = _build_cols(_row(_page(client, app), "fielded"))
     assert "gamma" in target_col, target_col
     assert "gamma" not in base_col, \
-        "a field the base build does not have was printed in its column: %s" % base_col
-    assert "<details" not in base_col, \
-        "the base column grew a fold with nothing to disclose: %s" % base_col
+        "a field the base build does not have was carried in its column: %s" % base_col
+    assert "dv-names-more" not in base_col, \
+        "the base column grew a window with nothing to list: %s" % base_col
 
 
 def test_an_unmeasured_side_is_not_worded_as_a_measured_no(
@@ -644,27 +663,32 @@ def test_both_sides_of_an_endpoint_change_say_they_were_measured(
             assert "measured" in m.group(1), (key, m.group(1))
 
 
-def test_the_names_fold_but_the_tally_stays_on_the_fold(two_builds, client, app):
-    """Folding hides the NAMES. ``+1`` is the number the rows are compared on
-    — it was the one thing the old inline dump made you count by eye — so it
-    sits on the summary, outside the fold, and the names stay in the row."""
+def test_the_api_tally_stays_in_the_cell_and_the_names_go_to_the_window(
+        two_builds, client, app):
+    """The window hides the NAMES. ``+1`` is the number the rows are compared
+    on — the one thing the old inline dump made you count by eye — so it stays
+    printed in the cell while the names move behind the button.
+
+    Scoped to the TARGET column's API half: the row carries a tally per build
+    and per half, and an unscoped search would be answered by whichever one
+    happened to render."""
     _, target_col = _build_cols(_row(_page(client, app), "fielded"))
-    row = target_col
-    # Scoped to the TARGET column: the row can hold two folds now, one per
-    # build, and a bare ``first <summary> in the row`` would be answered by
-    # whichever build happened to render one.
-    m = re.search(r"<summary>(.*?)</summary>", row, re.S)
-    assert m, "the field names are not folded: %s" % row
-    assert "+1" in m.group(1), "the tally is not on the fold: %s" % m.group(1)
-    assert "gamma" not in m.group(1), \
-        "the names are ON the fold, which is what folding was supposed to stop"
-    assert "gamma" in row, "the name left the row entirely: %s" % row
+    half = _api_half(target_col)
+    assert "dv-api-gap" in half, "the API tally is gone: %s" % half
+    assert "+1" in _visible(half), \
+        "the tally is not printed in the cell: %s" % _visible(half)
+    assert "gamma" not in _visible(half), \
+        "the name is printed in the cell, which is what the window replaced"
+    assert 'data-names-list="gamma"' in half, \
+        "the window has nothing to render from: %s" % half
 
 
-def test_a_row_with_no_field_names_grows_no_empty_fold(two_builds, client, app):
+def test_a_row_with_no_field_names_grows_no_empty_window(two_builds, client, app):
     """An endpoint row has no field list. A disclosure that opens onto nothing
     reads as evidence withheld."""
-    assert "<details" not in _row(_page(client, app), "arrives")
+    row = _row(_page(client, app), "arrives")
+    assert "<details" not in row
+    assert "dv-names-more" not in row, "a window that would open on nothing: %s" % row
 
 
 def test_the_filter_can_reach_inside_a_fold():
@@ -853,11 +877,11 @@ def test_the_names_ride_in_an_attribute_and_not_in_the_row_text():
     A fold whose contents match is OPENED by the filter, because a row counted
     as a hit on text the operator cannot see is worse than a miss. A modal
     cannot be opened that way — so the names must not be in the matchable text
-    at all, and they are not: they ride in ``data-cli-names`` and the window is
-    built from it.
+    at all, and they are not: they ride in ``data-names-list`` and the window
+    is built from it.
     """
     mac = _cli_half_macro()
-    assert "data-cli-names=" in mac, "the window has nothing to render from"
+    assert "data-names-list=" in mac, "the window has nothing to render from"
     assert "{% for" not in mac and "{%- for" not in mac, \
         "the names are being printed into the cell: %s" % mac
 
@@ -865,7 +889,7 @@ def test_the_names_ride_in_an_attribute_and_not_in_the_row_text():
 def test_the_plus_button_exists_only_when_there_is_something_to_list():
     """A window that opens on nothing reads as evidence withheld."""
     mac = _cli_half_macro()
-    i = mac.find("dv-cli-more")
+    i = mac.find("dv-names-more")
     assert i != -1, "the window button is gone"
     guard = mac[:i]
     assert "{%- if names %}" in guard or "{% if names %}" in guard, \
@@ -873,3 +897,58 @@ def test_the_plus_button_exists_only_when_there_is_something_to_list():
     # and the signed number is conditioned on the comparison having run
     assert "cd.comparable" in mac, \
         "a signed number is printed for a comparison that never ran"
+
+
+# ---------------------------------------------------------------------------
+# 8. the API half opens the same window (2026-09-16, at the operator's request)
+# ---------------------------------------------------------------------------
+
+def _api_names_macro():
+    """``api_names`` with its comments stripped — this repo has paid nine times
+    for an assertion answered by the comment that explains it."""
+    src = io.open(TPL, encoding="utf-8").read()
+    m = re.search(r"\{% macro api_names\(.*?\{%- endmacro %\}", src, re.S)
+    assert m, "the API names are no longer a macro of their own"
+    return re.sub(r"\{#.*?#\}", "", m.group(0), flags=re.S)
+
+
+def test_the_api_window_is_never_handed_the_cli_caveat():
+    """The two halves count different things and must not share one sentence.
+
+    The CLI number is two operators' configuration on two boxes — that caveat
+    is the reason the number is allowed on the page at all. The API number is
+    what a build's catalog serves, measured on that build. Pasting the CLI note
+    onto the API window would relabel a firmware fact as somebody's config;
+    pasting the API note onto the CLI window would do the reverse, which is
+    worse.
+    """
+    mac = _api_names_macro()
+    assert "cd.note" not in mac, \
+        "the API window was handed the two-appliance caveat: %s" % mac
+    note = re.search(r'data-names-note="([^"]*)"', mac)
+    assert note, "the API window opens with no note at all: %s" % mac
+    assert "not what an operator configured" in note.group(1), \
+        "the API note does not say what it is NOT measuring: %r" % note.group(1)
+    # and the CLI half still carries its own
+    assert 'data-names-note="{{ cd.note }}"' in _cli_half_macro(), \
+        "the CLI window lost the caveat that lets it print a number"
+
+
+def test_one_window_serves_both_halves():
+    """Two windows is two authors of one behaviour, which is how this page lost
+    an anchor before. Both halves hang off the same hook and there is one
+    modal on the page."""
+    src = io.open(TPL, encoding="utf-8").read()
+    assert src.count('id="dvNames"') == 1, "not exactly one names window"
+    assert "dv-names-more" in _api_names_macro()
+    assert "dv-names-more" in _cli_half_macro()
+    assert "dv-cli-more" not in src, "a second window hook survived"
+
+
+def test_the_api_names_are_never_printed_into_the_cell():
+    """Same rule as the CLI half: a loop in the macro means the names are back
+    in ``tr.textContent``, where the filter would count a row as a hit on text
+    the window keeps shut."""
+    mac = _api_names_macro()
+    assert "{% for" not in mac and "{%- for" not in mac, \
+        "the names are being printed into the cell: %s" % mac

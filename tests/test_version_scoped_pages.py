@@ -445,3 +445,178 @@ def test_an_unscoped_structure_page_renders_NO_verdict_at_all(isolated, client, 
     body = client.get("/web/structure/").get_data(as_text=True)
     assert "No firmware chosen" in body
     assert "unmeasured" not in body
+
+
+# ===========================================================================
+# round 4 — the capture comes BACK to the card (2026-09-16)
+# ===========================================================================
+# The card moved to this page on 2026-09-16; the redirect that follows a
+# capture did not move with it, so every "Load API catalog + CLI configuration"
+# landed on the API hub — which now carries only a pointer. The sweep ran to
+# completion (measured: 326 endpoints and a 479 KB dump, archived under
+# by-version/8.0.5.json) while the operator watched a page that cannot render
+# a single one of its phases. Nothing errored; the work simply became
+# invisible. These guards pin the return.
+
+LOAD_URL = "/web/api-explorer/discovery/load"
+
+
+@pytest.fixture()
+def no_device(monkeypatch):
+    """The sweep is STARTED and never run: this round is about where the
+    browser lands, and a real start reaches for a REST session and SSH."""
+    from app.services import rediscovery
+    from app.views import _discovery as dv
+
+    seen = {"started": 0}
+
+    def fake_start(appliance, by="", cli=True):
+        seen["started"] += 1
+        seen["appliance"] = appliance.id
+        seen["cli"] = cli
+        return {"started": True}
+
+    monkeypatch.setattr(rediscovery, "start", fake_start, raising=True)
+    monkeypatch.setattr(dv.discovery_run, "detect_version",
+                        lambda a: {"checked": True, "firmware": "8.0.5"},
+                        raising=True)
+    return seen
+
+
+def _fw17(isolated, client, app):
+    box = _box("fw17", firmware="8.0.5")
+    _sweep(isolated, box, "8.0.5", shared="ok")
+    am.rebuild("fortiweb")
+    login(client, admin_user_id(app))
+    return box
+
+
+def test_the_capture_returns_to_the_page_that_MOUNTS_the_card(isolated, client, app, no_device):
+    box = _fw17(isolated, client, app)
+    r = client.post(LOAD_URL, data={"appliance_id": box.id, "version": "8.0.5"})
+    assert r.status_code == 302
+    loc = r.headers["Location"]
+    assert "/web/registry/versions" in loc, loc
+    assert "/api-explorer" not in loc, (
+        "the capture landed back on the hub the card LEFT — %s" % loc)
+    assert loc.endswith("#discoveryRun"), loc
+
+
+def test_the_build_the_row_chose_survives_the_capture(isolated, client, app, no_device):
+    """Without it the operator returns to an UNSCOPED card: candidates derived
+    from whichever dump sorts first, one redirect after choosing a build."""
+    box = _fw17(isolated, client, app)
+    r = client.post(LOAD_URL, data={"appliance_id": box.id, "version": "8.0.5"})
+    assert "discover=8.0.5" in r.headers["Location"]
+
+
+def test_the_return_tells_the_card_which_sweep_to_watch(isolated, client, app, no_device):
+    box = _fw17(isolated, client, app)
+    r = client.post(LOAD_URL, data={"appliance_id": box.id, "version": "8.0.5"})
+    assert "dr_watch=%d" % box.id in r.headers["Location"]
+
+
+def test_the_landing_page_can_actually_SHOW_the_run(isolated, client, app, no_device):
+    """The whole point, and asserted on the rendered page rather than on the
+    Location header: a redirect to a page without the card is exactly the bug."""
+    box = _fw17(isolated, client, app)
+    body = client.post(LOAD_URL, data={"appliance_id": box.id, "version": "8.0.5"},
+                       follow_redirects=True).get_data(as_text=True)
+    assert 'id="discoveryRun"' in body
+    assert "Scoped to build" in body
+    assert 'data-dr-watch="%d"' % box.id in body, (
+        "the poller was not handed the appliance, so the card renders idle "
+        "while the sweep it just started runs")
+
+
+def test_a_sweep_that_never_STARTED_comes_back_the_same_way(isolated, client, app,
+                                                            monkeypatch, no_device):
+    """The failure exits used to redirect somewhere else than the success one,
+    which is how a 'could not start' message arrived on a page with no card to
+    explain it against."""
+    from app.services import rediscovery
+    monkeypatch.setattr(rediscovery, "start",
+                        lambda appliance, by="", cli=True: {
+                            "started": False, "reason": "a sweep is already running"},
+                        raising=True)
+    box = _fw17(isolated, client, app)
+    r = client.post(LOAD_URL, data={"appliance_id": box.id, "version": "8.0.5"})
+    loc = r.headers["Location"]
+    assert "/web/registry/versions" in loc and "discover=8.0.5" in loc, loc
+    assert "dr_watch" not in loc, (
+        "nothing was started, so nothing must be polled — a watcher on a sweep "
+        "that never began prints an empty status for ever")
+
+
+def _fn_source(module: str, name: str) -> str:
+    tree = ast.parse(io.open(os.path.join(ROOT, "app", "views", "%s.py" % module),
+                             encoding="utf-8").read())
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef) and node.name == name:
+            return ast.unparse(node)
+    raise AssertionError("%s.%s does not exist" % (module, name))
+
+
+def _load_target(hub: str) -> str:
+    """The page endpoint a hub's load route hands to ``_discovery.load``."""
+    tree = ast.parse(io.open(os.path.join(ROOT, "app", "views", "%s.py" % hub),
+                             encoding="utf-8").read())
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and ast.unparse(node.func) == "_discovery.load":
+            return node.args[1].value
+    raise AssertionError("%s never calls _discovery.load" % hub)
+
+
+@pytest.mark.parametrize("hub", ["api_explorer", "adc_api"])
+def test_every_load_route_returns_to_a_page_that_MOUNTS_the_card(hub):
+    """Derived in two hops, because a hard-coded endpoint name is exactly what
+    went stale: the card moved and this string kept naming the hub it left.
+
+    Hop 1: the only template that mounts the card is the shared API-versions
+    page. Hop 2: the endpoint the route names must be served by a view that
+    renders that shared page. FortiADC is covered by the same parametrisation
+    because its twin route had the identical bug.
+    """
+    inc = '{% include "partials/_discovery_run.html" %}'
+    assert inc in io.open(os.path.join(ROOT, "app", "templates", "registry",
+                                       "versions.html"), encoding="utf-8").read()
+    target = _load_target(hub)
+    module, fn = target.split(".")
+    assert "_apiversions.render_page" in _fn_source(module, fn), (
+        "%s sends the operator to %s, which does not render the page that "
+        "mounts the discovery card" % (hub, target))
+
+
+def test_an_appliance_of_the_WRONG_product_comes_back_the_same_way(isolated, client,
+                                                                   app, no_device):
+    """The third exit of ``load``, and the one a mutation proved unguarded.
+
+    All three exits — wrong product, sweep refused, sweep started — have to
+    land on the page that mounts the card, because all three carry a flash
+    message that only means something next to the control it is about. This
+    one is the easiest to leave behind: it fires before any device work, so it
+    was written as a bare ``redirect(url_for(page_endpoint))`` and nothing
+    followed it when the card moved.
+
+    Reaching it takes an UNSTAMPED row, not another product's: the URL scope
+    wins over the session (``product_scope.session_product``), so a FortiADC
+    box posted to a ``/web/`` route is 404'd by the loader and never reaches
+    this branch. The FortiWeb ADOM does, however, see rows with no ``kind`` —
+    they predate stamping — and those arrive here. That is what the branch is
+    for, and it is why it cannot be deleted instead of guarded.
+
+    Nothing was started, so nothing may be polled.
+    """
+    _fw17(isolated, client, app)
+    legacy = _box("legacy01", firmware="8.0.5", kind="")
+    r = client.post(LOAD_URL, data={"appliance_id": legacy.id, "version": "8.0.5"})
+    assert r.status_code == 302, (r.status_code, r.get_data(as_text=True)[:400])
+    loc = r.headers["Location"]
+    assert "/web/registry/versions" in loc, loc
+    assert "/api-explorer" not in loc, (
+        "the wrong-product refusal landed on the hub the card LEFT — %s" % loc)
+    assert "discover=8.0.5" in loc, loc
+    assert "dr_watch" not in loc, (
+        "no sweep was started, so the card must not poll one")
+    assert no_device["started"] == 0, (
+        "the product check must refuse BEFORE the device is touched")

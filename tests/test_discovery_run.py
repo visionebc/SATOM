@@ -627,6 +627,29 @@ def test_discovery_card_is_first_where_it_can_act_and_last_where_it_cannot(app):
             "%s mounts the card but no row scopes it" % path)
 
 
+def test_the_card_sits_directly_under_the_table_that_scopes_it(app):
+    """Under the rows, and ABOVE the comparison and the preflight.
+
+    Reported by the operator on 2026-09-16: at the foot of the page the card
+    was two long cards below the row that aims it. That distance is not only
+    cosmetic — the row's link is how a run is scoped, and this same card is
+    where that run's phases, percentage and Stop button are read, so being far
+    from the row was being far from the status of what the row started.
+
+    The lower bound stays (a control above the rows that feed it has nothing
+    chosen); the upper bound is new and is what the report was about.
+    """
+    for path in MOUNTS:
+        src = _read(path)
+        assert src.index("Firmware versions") < src.index(INC), path
+        for later, what in (("bi-arrow-left-right", "the comparison"),
+                            ("bi-shield-check", "preflight")):
+            assert src.index(INC) < src.index(later), (
+                "the card must render before %s — it did not, and an operator "
+                "who clicked a row had to scroll past it to reach the control "
+                "that row aimed" % what)
+
+
 def test_discovery_card_starts_open(app):
     """A collapsed card at the top of the page is still a hidden feature."""
     src = _read(DRTPL)

@@ -3524,7 +3524,11 @@ The page has four parts:
    image, an appliance running it, or an operator declaring it by hand. A build
    that is registered and never swept reads **`declared · unmeasured`**, which
    is not the same as a measured build that turned out empty.
-   Each row also carries a **Discovery run** button, scoped to that build.
+   Each row also carries a **Discovery run** link, scoped to that build: it
+   aims the **Discovery run — API + CLI** card directly below this table, so
+   the candidates, the appliances offered and the findings all answer about
+   the build whose row you clicked. Starting a capture from it returns you
+   here — still on that build, and watching the sweep it just started.
 2. **Witnesses excluded** — the same honesty as §30.4: an unhealthy device is
    not evidence.
 3. **Compare two of them** — build against build, or rollup against rollup:

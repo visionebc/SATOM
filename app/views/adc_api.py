@@ -126,7 +126,8 @@ def discovery_register():
 @login_required
 @require_permission('appliances.apply')
 def discovery_load():
-    return _discovery.load('fortiadc', 'adc_api.index')
+    # Back to the page that mounts the card (see api_explorer.discovery_load).
+    return _discovery.load('fortiadc', 'adc_api.api_versions')
 
 
 @bp.route('/execute', methods=['POST'])

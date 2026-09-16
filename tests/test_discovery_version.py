@@ -401,54 +401,83 @@ def test_the_one_selector_drives_the_load_form_too():
     assert 'id="drLoadForm"' in code
 
 
-def test_only_ask_id_reads_the_selector():
-    """Every action (plan, run, register) asks the same function. A second
-    reader is how the two selectors disagreed in the first place."""
+def test_the_selector_is_STILL_one_control_with_one_reader():
+    """``askId()`` went with the actions it fed on 2026-09-17. The rule it
+    carried is older and outlives it: ONE appliance control, read in ONE place.
+    Two readers is exactly how the card's two pickers came to disagree about
+    which box had been questioned.
+
+    What reads it now is the load <form> (via ``form="drLoadForm"``, so the
+    control can sit outside it) and the sweep poller. That is one element and
+    one JS lookup — asserted as counts, because "a second picker" and "a second
+    reader" are both defects this file has actually shipped.
+    """
     code = _tpl_code()
-    assert code.count("getElementById('drAppliance').value") == 1
-    fn = re.search(r"function askId\(\)\s*\{(.*?)\n  \}", code, re.S).group(1)
-    ret = [ln for ln in fn.splitlines() if "return" in ln]
-    assert len(ret) == 1, ret
-    assert "drAppliance" in ret[0], ret[0]
-    # Never an empty id: the run route answers that with a 400, which on screen
-    # is indistinguishable from a button that does nothing.
-    assert "|| ''" in ret[0], ret[0]
+    assert code.count('id="drAppliance"') == 1, "a second appliance control"
+    assert code.count("getElementById('drAppliance')") == 1, "a second reader"
+    assert "function askId" not in code
 
 
-def test_register_and_run_both_go_through_ask_id():
+def test_no_control_on_the_card_posts_to_a_probe_route():
+    """*What would it cost?*, *Run discovery* and *Register selected* are gone,
+    and with them every fetch() that spent a GET on an appliance or wrote a URN
+    into the catalog. The card posts exactly one form — the capture — and that
+    form goes to the load endpoint.
+
+    Asserted on the ENDPOINT NAMES, not on the button labels: a button can be
+    relabelled while still posting to the route, which is the version of this
+    regression nobody would see.
+    """
     code = _tpl_code()
-    assert code.count("askId()") >= 3
+    for token in ("dr_run_endpoint", "dr_plan_endpoint", "dr_register_endpoint",
+                  'data-js="dr-run"', 'data-js="dr-plan"',
+                  'data-js="dr-register"', 'data-js="dr-select-all"'):
+        assert token not in code, token
+    assert code.count("url_for(dr_load_endpoint)") == 1
+    assert code.count("<form ") == 1, "the capture is the only form on the card"
 
 
 # --------------------------------------------------------------------------- #
 #  8. the page shows both halves, and 'unknown' gets its own badge             #
 # --------------------------------------------------------------------------- #
 def test_the_evidence_is_rendered_not_implied():
+    """``drMismatch`` was painted by ``hint()`` and ``provenance()`` — both of
+    them halves of the run, both gone on 2026-09-17. Requiring an element that
+    nothing can ever fill would make this guard vacuous, so it now requires the
+    evidence block that IS filled, and requires it to name the BUILD and not
+    only the firmware line: "8.0.4" and "8.0.7" are both "8.0" and their CLI is
+    not the same dump.
+    """
     code = _tpl_code()
     assert 'id="drEvidence"' in code
-    assert 'id="drMismatch"' in code
+    assert "dr_ev.version" in code
+    assert 'id="drMismatch"' not in code
 
 
-def test_three_verdicts_three_badges():
+def test_three_line_verdicts_stay_three_where_they_now_live():
+    """``VERBADGE`` rendered the run's firmware-line comparison and went with
+    the run on 2026-09-17. The rule survives it: ``unknown`` is NOT a quiet
+    ``same``. A comparison nobody could make must never be indistinguishable
+    from one that agreed, and folding the two is how a dump from the wrong
+    build gets read as corroboration.
+
+    Re-anchored to the service that computes the verdict — the only place left
+    that draws the distinction at all.
+    """
+    from app.services import discovery_run as dr
+
+    verdicts = [dr.SAME_LINE, dr.OTHER_LINE, dr.UNKNOWN_LINE]
+    assert len(set(verdicts)) == 3, verdicts
+    assert dr.UNKNOWN_LINE != dr.SAME_LINE
+
+
+def test_the_card_renders_no_verdict_it_did_not_obtain():
+    """The inverted half. Nothing on this card asks a device, so any of these
+    words appearing here would be a page printing an answer it never got."""
     code = _tpl_code()
-    block = code[code.index("var VERBADGE"):]
-    block = block[:block.index("};") + 2]
-    for word in ("'same'", "'different'", "'unknown'"):
-        assert word in block, word
-    classes = set(re.findall(r"\['(\w+)',", block))
-    assert len(classes) == 3, classes
-    # 'unknown' must not borrow the success colour: a comparison nobody could
-    # make would then be indistinguishable from one that agreed.
-    assert "success" not in block[block.index("'unknown'"):]
-
-
-def test_the_run_handler_renders_the_provenance():
-    """The verdict is computed server-side and then has to reach the screen.
-    A payload nobody renders is a comparison nobody sees."""
-    code = _tpl_code()
-    handler = code[code.index("if (run) {"):]
-    handler = handler[:handler.index("{% if dr_register_endpoint %}")]
-    assert "provenance(d)" in handler
+    for token in ("var VERBADGE", "function provenance", "function hint",
+                  "same firmware line", "DIFFERENT firmware line"):
+        assert token not in code, token
 
 
 def test_the_page_renders_with_the_new_card(app, client):
@@ -481,22 +510,31 @@ def test_the_card_carries_no_override_budget_or_configured_only_control():
         assert gone not in code, gone
 
 
-def test_the_run_sends_no_budget_field_AT_ALL():
-    """Not "sends an empty one". ``_int_arg`` parses whatever arrives, so an
-    empty budget is a number, not an absence: the run would stop after a single
-    GET and still report itself finished. Absent is the only safe form, because
-    absent is what makes the server's own default apply."""
-    import re as _re
+def test_the_one_post_the_card_makes_carries_no_budget_AT_ALL():
+    """``body()`` went with the run. The rule it enforced is re-aimed at the
+    only POST left — the capture form — because the reason is unchanged:
+    ``_int_arg`` parses whatever arrives, so an empty budget is a NUMBER, not
+    an absence, and a route that receives one runs to a ceiling of nothing
+    while reporting itself finished. Absent is the only safe form.
+    """
     code = _tpl_code()
-    fn = _re.search(r"function body\(extra\)\s*\{(.*?)\n  \}", code, _re.S).group(1)
-    assert "budget" not in fn, fn
-    assert "configured_only" not in fn, fn
+    form = code[code.index('id="drLoadForm"'):]
+    form = form[:form.index("</form>")]
+    for token in ("budget", "configured_only", "limit"):
+        assert token not in form, token
+    # ...and the build DOES travel, because a capture that does not say which
+    # build it is for is what the scope axis exists to end.
+    assert 'name="version"' in form
 
 
-def test_the_footnote_does_not_point_at_a_control_that_is_gone():
-    """A page that tells the operator to raise a budget it no longer shows is a
-    dead end. The DISTINCTION the sentence exists for has to survive the edit:
-    a block nobody asked about is not a block the device denied."""
+def test_no_sentence_on_the_card_points_at_a_control_that_is_gone():
+    """A page that tells the operator to raise a budget, run a discovery or
+    register a finding it no longer shows is a dead end — and this card has now
+    lost three rounds' worth of controls, so the prose is checked as a whole
+    rather than one phrase at a time.
+    """
     code = _tpl_code()
-    assert "raise the budget" not in code
-    assert "nobody asked" in code
+    for phrase in ("raise the budget", "override below", "Run discovery",
+                   "What would it cost", "Register selected",
+                   "Select all registerable", "nobody asked"):
+        assert phrase not in code, phrase

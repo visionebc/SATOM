@@ -1,38 +1,32 @@
 {# ─────────────────────────────────────────────────────────────────────────────
-   Discovery run — the catalog's missing GROWTH path. ONE author for this markup.
+   Capture — the ONE action that refreshes BOTH halves of the CLI coverage
+   diff. ONE author for this markup.
 
-   The registry could only shrink by itself (reconcile proposes disabling names
-   no appliance serves); growing it meant one form per entry, so a diff finding
-   50 CLI-only blocks produced 50 forms nobody fills in. This section asks the
-   DEVICE about every derived candidate in one run and offers, for registration,
-   ONLY the paths it actually served.
-
-   Fed by views/_discovery.context(). Included by the API hub of each product
-   that HAS a CLI configuration dump; the others render their reason and stop.
+   Fed by views/_discovery.context(). Included by the API-versions page of each
+   product that HAS a CLI configuration dump; the others render their reason
+   and stop.
 
    ONE appliance selector for the whole card. There were two — "load from" and
    "ask" — and nothing compared them, so the candidates could come from one
    box's dump while the verdicts came from another: every `absent` then true
-   about the wrong device. Asking elsewhere is still possible (capture the
-   production box, probe its laboratory twin) but it is now a deliberate choice
-   that announces itself, and the server answers with the firmware line of BOTH
-   halves.
+   about the wrong device.
 
-   NOTHING ON THIS CARD IS SYNCHRONOUS ANY MORE, and that is the point of the
-   2026-09-15 round. Both actions are background work with a live status:
+   WHAT THIS CARD NO LONGER DOES (2026-09-17, at the operator's request): it no
+   longer PROBES. "What would it cost?" and "Run discovery" are gone, and with
+   them every control that ONLY their results could fill — Stop, the job
+   progress bar, the findings table, its filter, "Select all registerable" and
+   "Register selected". Deleting the two buttons and leaving that markup would
+   have left a table no code path can populate and a Register button with
+   nothing to register: markup that reads as broken rather than as removed.
+   The three server routes (plan / run / register) still exist and are now
+   unreachable from any page — see the note in views/_discovery.py.
 
-   * "Load API catalog + CLI configuration" has ALWAYS been a background job
-     (rediscovery.start spawns a thread and writes progress.json) — this card
-     simply never read it, so a flash message was the whole feedback and the
-     operator had to guess when to reload. It now polls the SAME endpoint the
-     Rediscover page polls, and prints the same phases: REST sweep, deep
-     capture, CLI capture.
-   * "Run discovery" USED to fire every GET inside the HTTP request. nginx cuts
-     a proxied request at 120 s and gunicorn at 600 s, so a run against a slow
-     box returned 504 while the worker kept spending the budget — and the
-     findings those GETs bought died with the response. It is now a job in the
-     shared ledger (services/jobs.py): progress, Stop, the toast dock, the bell,
-     and a result that survives closing the tab.
+   "Load API catalog + CLI configuration" has ALWAYS been a background job
+   (rediscovery.start spawns a thread and writes progress.json) — this card
+   simply never read it, so a flash message was the whole feedback and the
+   operator had to guess when to reload. It polls the SAME endpoint the
+   Rediscover page polls, and prints the same phases: REST sweep, deep
+   capture, CLI capture.
 
    `cc_report.chosen` is READ here, never recomputed: a second
    cli_coverage.report() in this partial would be a second answer to "which
@@ -43,7 +37,7 @@
 <div class="fw-card mt-3" id="discoveryRun">
   <div class="fw-card-header">
     <span class="fw-card-title">
-      <i class="bi bi-binoculars me-2 text-accent"></i>{{ _('Discovery run — API + CLI') }}
+      <i class="bi bi-binoculars me-2 text-accent"></i>{{ _('Capture — API catalog + CLI configuration') }}
       {%- if dr_scope %} <code class="ms-1">{{ dr_scope }}</code>{% endif %}
     </span>
     <button class="btn btn-sm btn-fw-outline" type="button" data-bs-toggle="collapse"
@@ -62,7 +56,7 @@
     {% else %}
 
     <p class="text-muted" style="font-size:13px;">
-      {{ _('The catalog is what every part of SATOM resolves a name through, so a path that was GUESSED and written here fails later, somewhere else. This run only ever asks the appliance: it derives the candidate paths for each CLI-only block, probes them, and offers for registration only the ones the device served.') }}
+      {{ _('The coverage diff is only ever as good as the older of its two halves, so this card refreshes both in ONE action: a REST sweep of the API catalog and an SSH capture of the CLI configuration, off the same appliance in the same pass. Nothing here probes a candidate path or writes to the catalog.') }}
     </p>
 
     {# ── 0. the build ─────────────────────────────────────────────────────
@@ -82,7 +76,7 @@
       {{ _('The candidates come from a CLI dump captured on this exact build, and the appliances offered below are the ones running it. A dump from another build cannot stand in: 8.0.4 and 8.0.7 are both "8.0" and their CLI is not the same.') }}
       {% if not dr_scope_appliances %}
         <br><span class="fw-badge fw-badge-warning">{{ _('no appliance runs this build') }}</span>
-        {{ _('You can still ask another box through the override below, but its answers then describe a different firmware.') }}
+        {{ _('There is nothing here to capture from, then: the selector below lists only the boxes on this build, and a dump taken on another one cannot stand in for it.') }}
       {% endif %}
     </div>
     {% endif %}
@@ -95,15 +89,14 @@
     {% set dr_ev = (cc_report.chosen if cc_report else None) %}
     {# Rendered only when SOMETHING on this card can use it. A picker with no
        action behind it is a control that silently does nothing. #}
-    {% if (dr_can_load and dr_load_endpoint) or (dr_can_run and dr_run_endpoint) %}
+    {% if dr_can_load and dr_load_endpoint %}
     <div class="fw-subcard p-2 mb-3" style="background:var(--fw-subtle-bg,#FAFBFC);border:1px solid var(--fw-border,#E3E6EA);border-radius:6px;">
       <div class="d-flex flex-wrap align-items-end gap-2">
         <div>
           <label class="fw-form-label mb-1" for="drAppliance">{{ _('Appliance') }}</label>
           <select class="form-select fw-form-control" name="appliance_id" id="drAppliance"
                   form="drLoadForm" required
-                  data-dr-watch="{{ request.args.get('dr_watch') or '' }}"
-                  data-dr-evidence-id="{{ dr_ev.appliance_id if dr_ev and dr_ev.appliance_id else '' }}">
+                  data-dr-watch="{{ request.args.get('dr_watch') or '' }}">
             <option value="">{{ _('choose an appliance…') }}</option>
             {# Scoped: only the boxes actually running this build, and there is
                no second picker behind it. A box on another build cannot be
@@ -115,7 +108,6 @@
             {% endfor %}
           </select>
         </div>
-        {% if dr_can_load and dr_load_endpoint %}
         <div class="form-check pb-2">
           <input class="form-check-input" type="checkbox" name="api_only" value="1"
                  id="drApiOnly" form="drLoadForm">
@@ -124,9 +116,7 @@
         <button class="btn btn-sm btn-fw-outline" type="submit" form="drLoadForm">
           <i class="bi bi-arrow-repeat me-1"></i>{{ _('Load API catalog + CLI configuration') }}
         </button>
-        {% endif %}
       </div>
-      {% if dr_can_load and dr_load_endpoint %}
       <form method="post" action="{{ url_for(dr_load_endpoint) }}" id="drLoadForm" class="d-none">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         {% if dr_scope %}<input type="hidden" name="version" value="{{ dr_scope }}">{% endif %}
@@ -134,7 +124,6 @@
       <p class="text-muted mb-0 mt-1" style="font-size:11.5px;">
         {{ _('Loading is one action, because a diff between a catalog swept today and a dump captured in July describes two different afternoons. The REST sweep runs first and the CLI capture follows it as a separate pass, so an SSH failure cannot cost a sweep that already succeeded. The running firmware version is read off the device and stored in the same pass.') }}
       </p>
-      {% endif %}
 
       {# ── the sweep's own progress. It was ALWAYS a background job; the only
          thing missing was a reader. Each phase names itself, and the three CLI
@@ -161,82 +150,16 @@
           <code>{{ dr_ev.appliance }}</code>
           · {{ dr_ev.version or dr_ev.line or _('no firmware version recorded') }}
           · {{ dr_ev.created_at }}
-          <span class="text-muted">{{ _('— the CLI dump the candidates are derived from.') }}</span>
+          <span class="text-muted">{{ _('— the CLI dump the coverage diff above is built from. A capture replaces it.') }}</span>
         {% else %}
           <span class="fw-badge fw-badge-warning">{{ _('no CLI evidence') }}</span>
-          <span class="text-muted">{{ _('No usable dump for this product, so a run has nothing to derive candidates from.') }}</span>
+          <span class="text-muted">{{ _('No usable dump for this product, so the CLI half of the diff above has nothing to rest on until a capture runs.') }}</span>
         {% endif %}
       </div>
-      <div class="mt-1" id="drMismatch" style="font-size:11.5px;"></div>
     </div>
-    {% endif %}
-
-    {# ── 2. the run ───────────────────────────────────────────────────────── #}
-    {% if dr_can_run and dr_run_endpoint %}
-    <div class="d-flex flex-wrap align-items-end gap-2 mb-2">
-      <button class="btn btn-sm btn-fw-outline" type="button" data-js="dr-plan">
-        <i class="bi bi-calculator me-1"></i>{{ _('What would it cost?') }}
-      </button>
-      <button class="btn btn-sm btn-fw-primary" type="button" data-js="dr-run">
-        <i class="bi bi-play-fill me-1"></i>{{ _('Run discovery') }}
-      </button>
-      <button class="btn btn-sm btn-fw-outline d-none" type="button" data-js="dr-stop">
-        <i class="bi bi-stop-fill me-1"></i>{{ _('Stop') }}
-      </button>
-    </div>
-
-    {# The run's own progress. A job, not a request: closing this page no longer
-       throws the run away, and the toast dock plus the bell report it finishing
-       even from another page. #}
-    <div class="mb-2 d-none" id="drJob">
-      <div class="d-flex align-items-center gap-2">
-        <div class="progress flex-grow-1" style="height:8px;max-width:360px;">
-          <div class="progress-bar" id="drJobBar" role="progressbar" style="width:0%"></div>
-        </div>
-        <span id="drJobPct" style="font-size:11.5px;" class="text-muted"></span>
-      </div>
-      <div id="drJobLine" style="font-size:11.5px;" class="mt-1 text-muted"></div>
-    </div>
-
-    <div id="drStatus" class="mb-2" style="font-size:12.5px;"></div>
-
-    {# ── 3. results ───────────────────────────────────────────────────────── #}
-    <div class="d-none" id="drResultWrap">
-      <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
-        <input type="search" class="form-control fw-form-control" id="drFilter"
-               placeholder="{{ _('filter by block, URN or catalog name…') }}"
-               style="max-width:320px;font-size:12.5px;">
-        <span class="text-muted" id="drFilterCount" style="font-size:11.5px;"></span>
-        <div class="ms-auto d-flex align-items-center gap-2">
-          <button class="btn btn-sm btn-fw-outline" type="button" data-js="dr-select-all">
-            <i class="bi bi-check2-square me-1"></i>{{ _('Select all registerable') }}
-          </button>
-          {% if dr_register_endpoint %}
-          <button class="btn btn-sm btn-fw-primary" type="button" data-js="dr-register">
-            <i class="bi bi-plus-lg me-1"></i>{{ _('Register selected') }}
-          </button>
-          {% endif %}
-        </div>
-      </div>
-      <div class="table-responsive" style="max-height:460px;overflow:auto;">
-        <table class="table fw-table mb-0" style="font-size:12.5px;">
-          <thead><tr>
-            <th style="width:28px;"></th>
-            <th>{{ _('CLI block') }}</th>
-            <th>{{ _('device says') }}</th>
-            <th>{{ _('served URN') }}</th>
-            <th class="text-end">{{ _('rows') }}</th>
-            <th class="text-end">{{ _('asked') }}</th>
-            <th>{{ _('register as') }}</th>
-          </tr></thead>
-          <tbody id="drRows"></tbody>
-        </table>
-      </div>
-      <p class="text-muted mb-0 mt-2" style="font-size:11.5px;" id="drFootnote"></p>
-    </div>
-    {% elif not dr_can_run %}
+    {% else %}
       <p class="text-muted mb-0" style="font-size:12px;">
-        <i class="bi bi-lock me-1"></i>{{ _('A discovery run fires read-only GETs at an appliance in order to drive a catalog write, so it needs the Registry edit permission — the same one the reconcile page requires.') }}
+        <i class="bi bi-lock me-1"></i>{{ _('Capturing a catalog sweep and a CLI configuration dump drives a write against the appliance record, so it needs the appliance apply permission.') }}
       </p>
     {% endif %}
 
@@ -245,14 +168,11 @@
   </div>
 </div>
 
-{% if dr_supported and ((dr_can_run and dr_run_endpoint) or (dr_can_load and dr_load_endpoint)) %}
+{% if dr_supported and dr_can_load and dr_load_endpoint %}
 <script nonce="{{ csp_nonce }}">
 (function () {
   var root = document.getElementById('discoveryRun');
   if (!root) { return; }
-  var CSRF = document.querySelector('meta[name="csrf-token"]');
-  var tok  = CSRF ? CSRF.content : '';
-
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
       return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];
@@ -355,326 +275,6 @@
     });
   }
 
-{% if dr_can_run and dr_run_endpoint %}
-  // ── the RUN job ───────────────────────────────────────────────────────────
-  var JOB_URL = '{{ url_for("jobs.get", job_id="DRJOBID") }}';
-  var JOB_CANCEL = '{{ url_for("jobs.cancel", job_id="DRJOBID") }}';
-  var rowsEl = document.getElementById('drRows');
-  var statusEl = document.getElementById('drStatus');
-  var wrap = document.getElementById('drResultWrap');
-  var last = [];   // the findings of the last run, as returned
-  var jobTimer = null;
-  var jobId = '';
-
-  function note(html, kind) {
-    statusEl.innerHTML = '<span class="fw-badge fw-badge-' + (kind || 'info') + '">' + html + '</span>';
-  }
-  // The appliance every action uses, read in ONE place. Plan, run and
-  // register asking the same function is what makes them incapable of
-  // disagreeing about which box was questioned.
-  function askId() {
-    return document.getElementById('drAppliance').value || '';
-  }
-
-  function body(extra) {
-    var fd = new URLSearchParams();
-    fd.append('csrf_token', tok);
-    fd.append('appliance_id', askId());
-    {# No budget field travels: the ceiling is the server's default and the
-       server still clamps it. Appending an empty one would not mean "use the
-       default" — it parses as a number, and the run would stop after a single
-       GET while reporting itself finished. #}
-    {% if request.args.get('dump') %}fd.append('dump', '{{ request.args.get("dump")|e }}');{% endif %}
-    {# The build travels with every plan and every run. Leaving it to the URL
-       would mean the cost quoted by "What would it cost?" and the GETs the run
-       actually spends could be derived from two different dumps. #}
-    {% if dr_scope %}fd.append('version', '{{ dr_scope|e }}');{% endif %}
-    Object.keys(extra || {}).forEach(function (k) { fd.append(k, extra[k]); });
-    return fd;
-  }
-
-  // Each verdict gets its OWN badge and its OWN words. "absent" is the device
-  // saying no; "error" is us failing to ask; "not reached" is the budget. They
-  // are three different next steps, so they must never share a colour.
-  var BADGE = {
-    'ok':         ['success', '{{ _("served") }}'],
-    'absent':     ['neutral', '{{ _("no such path") }}'],
-    'error':      ['danger',  '{{ _("could not ask") }}'],
-    'not_probed': ['warning', '{{ _("not reached — budget") }}'],
-    'underivable':['neutral', '{{ _("no path derivable") }}']
-  };
-
-  function render(findings) {
-    last = findings || [];
-    rowsEl.innerHTML = '';
-    last.forEach(function (f, i) {
-      var b  = BADGE[f.status] || ['neutral', esc(f.status)];
-      var tr = document.createElement('tr');
-      tr.setAttribute('data-dr-row', String(i));
-      tr.setAttribute('data-dr-hay',
-        (f.path + ' ' + f.name + ' ' + (f.served_urn || '') + ' ' +
-         f.candidates.map(function (c) { return c.urn; }).join(' ')).toLowerCase());
-      var blocked = '';
-      if (f.urn_known)  { blocked = '{{ _("already in the catalog as") }} <code>' + esc(f.urn_known) + '</code>'; }
-      else if (f.name_taken) { blocked = '{{ _("name already taken by") }} <code>' + esc(f.name_taken) + '</code>'; }
-      tr.innerHTML =
-        '<td>' + (f.registerable
-            ? '<input type="checkbox" class="form-check-input" data-dr-pick="' + i + '">'
-            : '') + '</td>' +
-        '<td><code>' + esc(f.path) + '</code>' +
-          (f.configured ? ' <span class="fw-badge fw-badge-info">' + f.instances +
-             ' {{ _("rows") }}</span>' : '') + '</td>' +
-        '<td><span class="fw-badge fw-badge-' + b[0] + '">' + b[1] + '</span>' +
-          (blocked ? '<div class="text-muted" style="font-size:11px;">' + blocked + '</div>' : '') + '</td>' +
-        '<td>' + (f.served_urn ? '<code>' + esc(f.served_urn) + '</code>' : '—') + '</td>' +
-        '<td class="text-end">' + (f.served_urn ? f.served_rows : '') + '</td>' +
-        '<td class="text-end">' + f.probed + '/' + f.candidates.length + '</td>' +
-        '<td>' + (f.registerable
-            ? '<input type="text" class="form-control fw-form-control" data-dr-name="' + i +
-              '" value="' + esc(f.name) + '" pattern="[A-Za-z0-9_.\\-]+" style="min-width:210px;font-size:12px;">'
-            : '<span class="text-muted">—</span>') + '</td>';
-      rowsEl.appendChild(tr);
-    });
-    wrap.classList.remove('d-none');
-    filter();
-  }
-
-  function filter() {
-    var q = (document.getElementById('drFilter').value || '').trim().toLowerCase();
-    var shown = 0;
-    Array.prototype.forEach.call(rowsEl.querySelectorAll('tr[data-dr-hay]'), function (tr) {
-      var hit = !q || tr.getAttribute('data-dr-hay').indexOf(q) !== -1;
-      tr.style.display = hit ? '' : 'none';
-      if (hit) { shown++; }
-    });
-    document.getElementById('drFilterCount').textContent =
-      shown + ' / ' + last.length + ' {{ _("blocks") }}';
-  }
-
-  // Three verdicts, three badges, and 'unknown' is NOT a quiet 'same': it
-  // means our read failed or the dump never recorded a line. A comparison
-  // nobody could make must not look like a comparison that agreed.
-  var VERBADGE = {
-    'same':      ['success', '{{ _("same firmware line") }}'],
-    'different': ['warning', '{{ _("DIFFERENT firmware line") }}'],
-    'unknown':   ['neutral', '{{ _("firmware line not established") }}']
-  };
-
-  function provenance(d) {
-    var v = d.version || {};
-    var b = VERBADGE[v.verdict] || VERBADGE.unknown;
-    var html =
-      '<span class="fw-badge fw-badge-info">{{ _("evidence") }}</span> <code>' +
-        esc(d.evidence || '—') + '</code>' +
-        (d.evidence_line ? ' · ' + esc(d.evidence_line) : '') +
-        (d.evidence_captured ? ' · ' + esc(d.evidence_captured) : '') +
-      ' &nbsp; <span class="fw-badge fw-badge-info">{{ _("asked") }}</span> <code>' +
-        esc(d.device || '—') + '</code>' +
-        (v.firmware ? ' · ' + esc(v.firmware) : '') +
-      ' &nbsp; <span class="fw-badge fw-badge-' + b[0] + '">' + b[1] + '</span>';
-    if (v.reason) { html += '<div class="text-muted mt-1">' + esc(v.reason) + '</div>'; }
-    if (d.same_device === false) {
-      html += '<div class="text-muted mt-1">' +
-        '{{ _("The candidates come from a dump captured on a different appliance than the one just asked.") }}' +
-        '</div>';
-    }
-    document.getElementById('drMismatch').innerHTML = html;
-  }
-
-  // Said BEFORE the run, from what the page already knows. The server's answer
-  // replaces it and stays the authority — this is a hint, not a verdict.
-  function hint() {
-    var el = document.getElementById('drMismatch');
-    var evId = document.getElementById('drAppliance').getAttribute('data-dr-evidence-id') || '';
-    var ask = askId();
-    if (!evId || !ask || String(evId) === String(ask)) { el.innerHTML = ''; return; }
-    el.innerHTML = '<span class="fw-badge fw-badge-warning">' +
-      '{{ _("the evidence came off another appliance") }}</span> ' +
-      '<span class="text-muted">' +
-      '{{ _("Run it and the answer will say which firmware line each half is on.") }}</span>';
-  }
-
-  function footnote(d) {
-    var bits = [];
-    bits.push('{{ _("Asked") }} ' + d.spent + ' {{ _("GETs of a budget of") }} ' + d.budget + '.');
-    if (d.stopped) {
-      bits.push('<strong>{{ _("The run was stopped.") }}</strong> ' +
-        '{{ _("What it had already asked is kept; everything after it stayed unasked.") }}');
-    }
-    if (d.not_probed) {
-      bits.push('<strong>' + d.not_probed + ' {{ _("blocks were never asked") }}</strong> — ' +
-        '{{ _("the run reached its ceiling of") }} ' + d.budget + ' {{ _("GETs first. That is not the same as the device denying them: nobody asked.") }}');
-    }
-    if (d.errors) { bits.push(d.errors + ' {{ _("could not be asked at all.") }}'); }
-    if (d.urn_known) { bits.push(d.urn_known + ' {{ _("served a path the catalog already has under another name.") }}'); }
-    if (d.name_taken) { bits.push(d.name_taken + ' {{ _("would take a catalog name that is already in use — rename before registering.") }}'); }
-    document.getElementById('drFootnote').innerHTML = bits.join(' ');
-  }
-
-  function paintJob(j) {
-    var box = document.getElementById('drJob');
-    box.classList.remove('d-none');
-    var pct = typeof j.percent === 'number' ? j.percent : 0;
-    document.getElementById('drJobBar').style.width = Math.max(pct, 2) + '%';
-    document.getElementById('drJobPct').textContent = pct + '%';
-    document.getElementById('drJobLine').textContent = j.message || '';
-  }
-
-  function stopWatching() {
-    clearInterval(jobTimer); jobTimer = null; jobId = '';
-    document.querySelector('[data-js="dr-stop"]').classList.add('d-none');
-  }
-
-  // A finished run is RENDERED from the job's stored result, which is why the
-  // result is persisted at all: the tab can be closed and reopened and the
-  // findings are still there to register from.
-  function finishJob(j) {
-    stopWatching();
-    var d = j.result || {};
-    if (j.status === 'error' || !d.findings) {
-      note(esc(j.error || '{{ _("the run ended without a result") }}'), 'danger');
-      return;
-    }
-    note(esc(d.device || '') + ': ' + esc(d.summary || ''),
-         j.status === 'cancelled' ? 'warning' : (d.errors ? 'warning' : 'success'));
-    provenance(d);
-    render(d.findings);
-    footnote(d);
-  }
-
-  function pollJob() {
-    if (!jobId) { return; }
-    fetch(JOB_URL.replace('DRJOBID', encodeURIComponent(jobId)))
-      .then(function (r) { return r.json(); })
-      .then(function (j) {
-        if (!j || !j.status) { return; }
-        paintJob(j);
-        if (j.status === 'success' || j.status === 'error' || j.status === 'cancelled') {
-          finishJob(j);
-        }
-      })
-      .catch(function () { /* a dropped poll is not a finished run */ });
-  }
-
-  function watchJob(id) {
-    jobId = id;
-    document.querySelector('[data-js="dr-stop"]').classList.remove('d-none');
-    pollJob();
-    if (!jobTimer) { jobTimer = setInterval(pollJob, 1500); }
-  }
-
-  root.addEventListener('click', function (ev) {
-    var plan = ev.target.closest('[data-js="dr-plan"]');
-    var run  = ev.target.closest('[data-js="dr-run"]');
-    var stop = ev.target.closest('[data-js="dr-stop"]');
-    var all  = ev.target.closest('[data-js="dr-select-all"]');
-    var reg  = ev.target.closest('[data-js="dr-register"]');
-
-    if (all) {
-      Array.prototype.forEach.call(rowsEl.querySelectorAll('[data-dr-pick]'), function (cb) {
-        if (cb.closest('tr').style.display !== 'none') { cb.checked = true; }
-      });
-      return;
-    }
-
-    if (stop) {
-      if (!jobId) { return; }
-      fetch(JOB_CANCEL.replace('DRJOBID', encodeURIComponent(jobId)),
-            { method: 'POST', headers: { 'X-CSRFToken': tok } })
-        .then(function () {
-          note('{{ _("stopping at the next block — a GET already in flight is never cut") }}', 'warning');
-        })
-        .catch(function (e) { note(esc(String(e)), 'danger'); });
-      return;
-    }
-
-    {% if dr_plan_endpoint %}
-    if (plan) {
-      note('{{ _("measuring…") }}');
-      fetch('{{ url_for(dr_plan_endpoint) }}', { method: 'POST', body: body({}) })
-        .then(function (r) { return r.json(); })
-        .then(function (d) {
-          if (!d.ok) { note(esc(d.error || 'failed'), 'danger'); return; }
-          note(d.blocks + ' {{ _("CLI-only blocks") }} · {{ _("at most") }} ' + d.max_gets +
-               ' {{ _("GETs") }} · {{ _("budget") }} ' + d.budget +
-               (d.max_gets > d.budget ? ' — <strong>{{ _("the budget stops it early") }}</strong>' : ''),
-               d.max_gets > d.budget ? 'warning' : 'info');
-          render(d.findings);
-          document.getElementById('drFootnote').innerHTML =
-            '{{ _("Nothing has been asked yet — this is the plan, not a result.") }}';
-        })
-        .catch(function (e) { note(esc(String(e)), 'danger'); });
-      return;
-    }
-    {% endif %}
-
-    if (run) {
-      if (!askId()) {
-        note('{{ _("choose an appliance first") }}', 'warning'); return;
-      }
-      note('{{ _("starting the run…") }}');
-      fetch('{{ url_for(dr_run_endpoint) }}', { method: 'POST', body: body({}) })
-        .then(function (r) { return r.json(); })
-        .then(function (d) {
-          if (!d.ok) { note(esc(d.error || 'failed'), 'danger'); return; }
-          if (!d.job_id) {
-            // Nothing to ask about: a complete answer, and it is NOT a job.
-            note(esc(d.device || '') + ': ' + esc(d.note || d.summary || ''), 'info');
-            provenance(d);
-            render(d.findings || []);
-            return;
-          }
-          if (d.reconnected) {
-            note('{{ _("a run is already in flight against this appliance — reconnected to it") }}',
-                 'warning');
-          } else {
-            note('{{ _("running in the background — you can leave this page") }}');
-          }
-          watchJob(d.job_id);
-        })
-        .catch(function (e) { note(esc(String(e)), 'danger'); });
-      return;
-    }
-
-    {% if dr_register_endpoint %}
-    if (reg) {
-      var fd = new URLSearchParams();
-      fd.append('csrf_token', tok);
-      fd.append('appliance_id', askId());
-      var n = 0;
-      Array.prototype.forEach.call(rowsEl.querySelectorAll('[data-dr-pick]:checked'), function (cb) {
-        var i = cb.getAttribute('data-dr-pick');
-        var nameEl = rowsEl.querySelector('[data-dr-name="' + i + '"]');
-        fd.append('name', nameEl ? nameEl.value : last[i].name);
-        fd.append('urn', last[i].served_urn);
-        n++;
-      });
-      if (!n) { note('{{ _("nothing selected") }}', 'warning'); return; }
-      note('{{ _("re-asking the appliance about each one, then writing…") }}');
-      fetch('{{ url_for(dr_register_endpoint) }}', { method: 'POST', body: fd })
-        .then(function (r) { return r.json(); })
-        .then(function (d) {
-          if (!d.ok) { note(esc(d.error || 'failed'), 'danger'); return; }
-          var msg = d.created + ' {{ _("registered") }}';
-          if (d.rejected) { msg += ' · ' + d.rejected + ' {{ _("rejected") }}'; }
-          note(msg, d.rejected ? 'warning' : 'success');
-          var bad = (d.results || []).filter(function (r) { return !r.ok; });
-          if (bad.length) {
-            document.getElementById('drFootnote').innerHTML =
-              bad.map(function (r) {
-                return '<code>' + esc(r.name) + '</code> — ' + esc(r.error);
-              }).join('<br>');
-          }
-        })
-        .catch(function (e) { note(esc(String(e)), 'danger'); });
-    }
-    {% endif %}
-  });
-
-  document.getElementById('drFilter').addEventListener('input', filter);
-  document.getElementById('drAppliance').addEventListener('change', hint);
-  hint();
-{% endif %}
 })();
 </script>
 {% endif %}

@@ -4037,30 +4037,42 @@ row cannot — see <em>heterogeneous lines</em> below.</p>
 <li><strong>Witnesses excluded</strong> — the same honesty as §30.4: an unhealthy device is
    not evidence.</li>
 <li><strong>Compare two of them</strong> — build against build, or rollup against rollup,
-   in <strong>one table with one column per build</strong>: one row per finding, the finding
-   itself beside the name, and then everything measured <em>on 7.6.8</em> next to
-   everything measured <em>on 8.0.5</em>.</li>
+   in <strong>one table with one column per build</strong>: <code>Endpoint / object</code>,
+   <code>Evidence</code>, <code>URN</code>, then <code>7.6.8</code>, <code>8.0.5</code>, <code>Test</code>. One row per finding, and
+   then everything measured <em>on 7.6.8</em> next to everything measured <em>on 8.0.5</em>.</li>
 </ol>
 <ul>
-<li><strong>The finding sits with the name</strong>, because it is a fact about the pair
-     and not about either build: an endpoint <strong>added on</strong> the target or <strong>gone
-     on</strong> it; <strong>known on one side only</strong> and <strong>incomparable</strong>, which are
-     deliberately <em>not</em> changes; or, on an object whose field set changed, the
-     subtraction itself — <code>8 → 14</code>. That arrow is the only place on this page
-     where one number is taken from another, and it cannot sit in either column
-     without that column stating the other one's number. Hover the badge — or
-     the subtraction, on a field delta, which carries no badge — for the
-     sentence that says whether this kind of finding <em>is</em> a change or a gap.
-     The two gaps keep their own wording so they can never be read as a
-     measurement: a naive subtraction reported 56 phantom removals on the first
-     draft of this page.</li>
+<li><strong>A badge beside the name means the row is <em>not</em> a change.</strong> That is the
+     rule the table is read by, and it is the reverse of what it was before
+     2026-09-16. <strong><code>added on</code></strong> and <strong><code>gone on</code></strong> were removed as labels: they
+     restated the two build columns beside them, where a row that is <code>absent</code>
+     on one side and <code>served</code> on the other <em>is</em> the addition. What keeps its
+     badge is everything that is <strong>not</strong> a change — <strong>known on one side only</strong>,
+     <strong>measured only on</strong> one build, and <strong>incomparable</strong> — and hovering that
+     badge gives the sentence saying so. The two gaps keep their own wording so
+     they can never be read as a measurement: a naive subtraction reported 56
+     phantom removals on the first draft of this page.</li>
+<li><strong>The subtraction still sits with the name</strong>, because it is a fact about
+     the pair and not about either build — <code>8 → 14</code>. That arrow is the only
+     place on this page where one number is taken from another, and it cannot
+     sit in either column without that column stating the other one's number.
+     Hover it for the sentence that says this one <em>is</em> a change.</li>
+<li><strong><code>Evidence</code>, in second position, says which kind of evidence the row
+     rests on</strong> — <code>sweep</code> (the raw collection the appliance put on the wire) or
+     <code>schema</code> (a harvested field schema, which strips the wire-only companion
+     of every enum). The two are never subtracted from one another. It sits in
+     one column because on every row but one <em>both</em> sides hold the same kind —
+     that is the precondition for comparing them at all — so printing it inside
+     both build columns printed one word twice. The exception is an
+     <strong>incomparable</strong> row, which is incomparable <em>because</em> the sides disagree:
+     there the cell names both kinds and which build holds which.</li>
 <li><strong>Each build column is indented under the transport that produced its
      evidence</strong> — <code>API</code> first, then <code>CLI</code>, with that transport's answer
      beneath it.</li>
 <li>The <strong>API</strong> half says whether that build was measured to serve the object
      (<code>served</code>, <code>absent</code>, or <code>not measured on 8.0.5</code> — a rejection and an
-     unasked question never share a word), how many fields its evidence
-     carries, and which kind of evidence that is (<code>sweep</code> or <code>schema</code>). The
+     unasked question never share a word) and how many fields its evidence
+     carries. The
      field names <strong>fold</strong>, with the tally (<code>+6</code>) on the fold, and they appear
      only under the build that has them: the base column lists what was lost,
      the target column what was gained. Typing a field name into the filter
@@ -4084,8 +4096,10 @@ row cannot — see <em>heterogeneous lines</em> below.</p>
    from the other — an absent row reads as "nothing to report about it". The
    single Change cell that replaced them carried six different shapes and one
    object printed eighteen field names inline; it became fixed slots, then lost
-   the "fields changed" label, then absorbed the two transport columns, and
-   then split into a column per build — all in the same week.</em>
+   the "fields changed" label, then absorbed the two transport columns, then
+   split into a column per build, and finally gave up the evidence kind to a
+   column of its own and the <code>added on</code> / <code>gone on</code> labels to the two build
+   columns that already measured them — all in the same week.</em>
 4. <strong>Preflight</strong> — name an object and the fields you intend to send, and get
    <code>ok</code>, <code>unknown_fields</code>, <code>absent</code>, <code>fields_unknown</code>, <code>version_unmeasured</code> or
    <code>unmeasured</code>.</p>

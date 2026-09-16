@@ -155,12 +155,51 @@
    Every argument is explicit. A macro that reached for ``delta`` or
    ``base_prov`` from the block around it would resolve them from wherever it
    was called, and this one is called from twelve places. #}
-{% macro build_cell(scope, prov, rec) -%}
+{# The CLI half of one build's column: numbers, and a window for the names.
+
+   Three things it is not allowed to say, in the order they would be believed:
+
+   * **A zero.** An empty config table prints NO block, so "nothing was
+     configured" and "this build has no such block" arrive as the same absence.
+     With no block the cell keeps the transport verdict; only a build whose
+     dump really printed one gets a count.
+   * **A firmware change.** ``cd.note`` names both appliances, on the count, on
+     the signed number and again at the top of the window. The subtraction is
+     between two operators' configuration.
+   * **A comparison that never ran.** The signed number appears only when BOTH
+     builds printed a block — and then it appears even at zero, because
+     "compared, nothing differs" and "could not be compared" are the pair this
+     whole table keeps apart.
+
+   The names ride in a data- attribute and NOT in the row's text: the row
+   filter matches ``tr.textContent``, and a row counted as a hit on a name the
+   operator cannot see is worse than a miss. A fold can be opened for that
+   reason; a window cannot, so the names stay out of the match. #}
+{% macro cli_half(rec, cd, side, scope) -%}
+  {%- set n = (cd.base_count if side == 'base' else cd.target_count) if cd else None -%}
+  {%- if n is none -%}
+    {{ prov_badge(rec) }}
+  {%- else -%}
+    {%- set names = (cd.removed if side == 'base' else cd.added) -%}
+    {%- set cls = 'danger' if side == 'base' else 'success' -%}
+    <span class="dv-count dv-cli-count" title="{{ n }} field(s) set directly in this block on this build{% if rec and rec.instances %}; {{ rec.instances }} edit row(s), whose own fields are nested a level deeper and are not counted here{% endif %}. {{ cd.note }}{% if rec and rec.why %} — {{ rec.why }}{% endif %}">{{ n }} set(s)</span>
+    {%- if cd.comparable %} <span class="fw-badge fw-badge-{{ cls }} dv-cli-gap" title="{{ cd.note }}">{% if side == 'base' %}&minus;{% else %}+{% endif %}{{ names|length }}</span>
+      {%- if names %} <button type="button" class="btn btn-sm btn-fw-outline py-0 px-1 dv-cli-more"
+              data-cli-names="{{ names|join(' ') }}"
+              data-cli-heading="{{ scope }}"
+              data-cli-note="{{ cd.note }}"
+              title="{{ _('List the field names') }}"
+              style="font-size:10.5px;"><i class="bi bi-plus-lg"></i></button>{% endif -%}
+    {%- endif -%}
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro build_cell(scope, prov, rec, cd, side) -%}
   <div class="dv-tree">
     <div class="dv-t-head" title="Measured on {{ scope }} over REST: whether the catalog serves it there and how many fields that evidence carries.">API</div>
     <div class="dv-t-body">{{ caller() }}</div>
     <div class="dv-t-head dv-cli-scope" title="{{ prov_hint(prov, scope) }}">CLI</div>
-    <div class="dv-t-body">{{ prov_badge(rec) }}</div>
+    <div class="dv-t-body">{{ cli_half(rec, cd, side, scope) }}</div>
   </div>
 {%- endmacro %}
 
@@ -524,8 +563,8 @@
             </td>
             <td>{{ evidence_slot(r.origin) }}</td>
             <td><code class="text-muted" style="font-size:11px;">{{ r.urn }}</code></td>
-            <td>{% call build_cell(delta.base, base_prov, r.cli_base) %}{{ api_absent() }}{% endcall %}</td>
-            <td>{% call build_cell(delta.target, target_prov, r.cli_target) %}{{ api_served() }}{% endcall %}</td>
+            <td>{% call build_cell(delta.base, base_prov, r.cli_base, r.cli_delta, 'base') %}{{ api_absent() }}{% endcall %}</td>
+            <td>{% call build_cell(delta.target, target_prov, r.cli_target, r.cli_delta, 'target') %}{{ api_served() }}{% endcall %}</td>
             <td>{{ test_btn(urn=r.urn) }}</td></tr>
         {% endfor %}
         {% for r in delta.endpoints_removed %}
@@ -533,8 +572,8 @@
             </td>
             <td>{{ evidence_slot(r.origin) }}</td>
             <td><code class="text-muted" style="font-size:11px;">{{ r.urn }}</code></td>
-            <td>{% call build_cell(delta.base, base_prov, r.cli_base) %}{{ api_served() }}{% endcall %}</td>
-            <td>{% call build_cell(delta.target, target_prov, r.cli_target) %}{{ api_absent() }}{% endcall %}</td>
+            <td>{% call build_cell(delta.base, base_prov, r.cli_base, r.cli_delta, 'base') %}{{ api_served() }}{% endcall %}</td>
+            <td>{% call build_cell(delta.target, target_prov, r.cli_target, r.cli_delta, 'target') %}{{ api_absent() }}{% endcall %}</td>
             <td>{{ test_btn(urn=r.urn) }}</td></tr>
         {% endfor %}
         {% for c in delta.fields_changed %}
@@ -552,8 +591,8 @@
             </td>
             <td>{{ evidence_slot(c.origin) }}</td>
             <td><code class="text-muted" style="font-size:11px;">{{ c.urn }}</code></td>
-            <td>{% call build_cell(delta.base, base_prov, c.cli_base) %}{{ api_fields(c.base_count) }}{{ names_fold(c.removed, 'danger', 'removed') }}{% endcall %}</td>
-            <td>{% call build_cell(delta.target, target_prov, c.cli_target) %}{{ api_fields(c.target_count) }}{{ names_fold(c.added, 'success', 'added') }}{% endcall %}</td>
+            <td>{% call build_cell(delta.base, base_prov, c.cli_base, c.cli_delta, 'base') %}{{ api_fields(c.base_count) }}{{ names_fold(c.removed, 'danger', 'removed') }}{% endcall %}</td>
+            <td>{% call build_cell(delta.target, target_prov, c.cli_target, c.cli_delta, 'target') %}{{ api_fields(c.target_count) }}{{ names_fold(c.added, 'success', 'added') }}{% endcall %}</td>
             <td>{{ test_btn(urn=c.urn) }}</td></tr>
         {% endfor %}
         {% for r in delta.endpoints_unknown %}
@@ -562,8 +601,8 @@
             </td>
             <td>{{ evidence_slot(r.origin) }}</td>
             <td><code class="text-muted" style="font-size:11px;">{{ r.urn }}</code></td>
-            <td>{% call build_cell(delta.base, base_prov, r.cli_base) %}{% if r.measured_on == delta.base %}{{ api_served() }}{% else %}{{ api_blank(delta.base) }}{% endif %}{% endcall %}</td>
-            <td>{% call build_cell(delta.target, target_prov, r.cli_target) %}{% if r.measured_on == delta.target %}{{ api_served() }}{% else %}{{ api_blank(delta.target) }}{% endif %}{% endcall %}</td>
+            <td>{% call build_cell(delta.base, base_prov, r.cli_base, r.cli_delta, 'base') %}{% if r.measured_on == delta.base %}{{ api_served() }}{% else %}{{ api_blank(delta.base) }}{% endif %}{% endcall %}</td>
+            <td>{% call build_cell(delta.target, target_prov, r.cli_target, r.cli_delta, 'target') %}{% if r.measured_on == delta.target %}{{ api_served() }}{% else %}{{ api_blank(delta.target) }}{% endif %}{% endcall %}</td>
             <td>{{ test_btn(urn=r.urn) }}</td></tr>
         {% endfor %}
         {% for c in delta.fields_unknown %}
@@ -574,8 +613,8 @@
             </td>
             <td>{{ evidence_slot(c.origin) }}</td>
             <td><code class="text-muted" style="font-size:11px;">{{ c.urn }}</code></td>
-            <td>{% call build_cell(delta.base, base_prov, c.cli_base) %}{% if c.known_on == delta.base %}{{ api_fields(c.count) }}{% else %}{{ api_blank(delta.base) }}{% endif %}{% endcall %}</td>
-            <td>{% call build_cell(delta.target, target_prov, c.cli_target) %}{% if c.known_on == delta.target %}{{ api_fields(c.count) }}{% else %}{{ api_blank(delta.target) }}{% endif %}{% endcall %}</td>
+            <td>{% call build_cell(delta.base, base_prov, c.cli_base, c.cli_delta, 'base') %}{% if c.known_on == delta.base %}{{ api_fields(c.count) }}{% else %}{{ api_blank(delta.base) }}{% endif %}{% endcall %}</td>
+            <td>{% call build_cell(delta.target, target_prov, c.cli_target, c.cli_delta, 'target') %}{% if c.known_on == delta.target %}{{ api_fields(c.count) }}{% else %}{{ api_blank(delta.target) }}{% endif %}{% endcall %}</td>
             <td>{{ test_btn(urn=c.urn) }}</td></tr>
         {% endfor %}
         {% for c in delta.fields_incomparable %}
@@ -590,8 +629,8 @@
                finding. #}
             <td>{{ evidence_split(delta.base, c.base_origin, delta.target, c.target_origin) }}</td>
             <td><code class="text-muted" style="font-size:11px;">{{ c.urn }}</code></td>
-            <td>{% call build_cell(delta.base, base_prov, c.cli_base) %}{{ api_fields(c.base_count) }}{% endcall %}</td>
-            <td>{% call build_cell(delta.target, target_prov, c.cli_target) %}{{ api_fields(c.target_count) }}{% endcall %}</td>
+            <td>{% call build_cell(delta.base, base_prov, c.cli_base, c.cli_delta, 'base') %}{{ api_fields(c.base_count) }}{% endcall %}</td>
+            <td>{% call build_cell(delta.target, target_prov, c.cli_target, c.cli_delta, 'target') %}{{ api_fields(c.target_count) }}{% endcall %}</td>
             <td>{{ test_btn(urn=c.urn) }}</td></tr>
         {% endfor %}
         </tbody>
@@ -642,5 +681,48 @@
    broken rather than unmounted. #}
 {{ probe_bar(probe_appliances, live_endpoint=live_endpoint,
              exec_endpoint=exec_endpoint) }}
+
+{# The names window. ONE per page, filled from the clicked button's data-
+   attributes — 43 rows with a modal each is 43 copies of the same markup and
+   the same chance for two of them to drift. #}
+<div class="modal fade" id="dvCliNames" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title mb-0" id="dvCliNamesTitle"></h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted" id="dvCliNamesNote" style="font-size:11.5px;"></p>
+        <div id="dvCliNamesBody"></div>
+      </div>
+    </div>
+  </div>
+</div>
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var el = document.getElementById('dvCliNames');
+  if (!el || !window.bootstrap) { return; }
+  document.addEventListener('click', function (ev) {
+    var btn = ev.target && ev.target.closest ? ev.target.closest('.dv-cli-more') : null;
+    if (!btn) { return; }
+    var names = (btn.dataset.cliNames || '').split(' ').filter(Boolean);
+    document.getElementById('dvCliNamesTitle').textContent =
+      btn.dataset.cliHeading + ' \u00b7 ' + names.length + ' field(s)';
+    // The note is not decoration: without it the list reads as a firmware
+    // change instead of two boxes' configuration.
+    document.getElementById('dvCliNamesNote').textContent = btn.dataset.cliNote || '';
+    var body = document.getElementById('dvCliNamesBody');
+    body.textContent = '';
+    names.forEach(function (nm) {
+      var s = document.createElement('span');
+      s.className = 'fw-badge fw-badge-secondary me-1 mb-1 d-inline-block';
+      s.textContent = nm;   // textContent, never innerHTML: device dump text
+      body.appendChild(s);
+    });
+    bootstrap.Modal.getOrCreateInstance(el).show();
+  });
+})();
+</script>
 
 {% endblock %}

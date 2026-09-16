@@ -41,6 +41,61 @@ def _scopes(matrix: dict) -> list:
            [{"key": ln, "kind": "line"} for ln in lines]
 
 
+# --- the CLI field delta, per row -----------------------------------------
+# Buckets whose rec came from a block the dump actually printed. The other
+# three (no_block, monitor_only, unknown) have NO block, and an absent block is
+# not an empty one: a config table with nothing in it prints no block at all,
+# so counting it as zero would fabricate "the CLI lost every field here".
+_CLI_HAS_BLOCK = (cli_coverage.BUCKET_BOTH, cli_coverage.BUCKET_NEAR,
+                  cli_coverage.BUCKET_CLI_ONLY)
+
+
+def _cli_pair_note(base, base_prov, target, target_prov):
+    """The sentence every CLI number on the page has to carry.
+
+    The two dumps were taken on TWO DIFFERENT APPLIANCES. Rendered bare, a
+    ``+3`` under a build column reads as "this firmware gained three CLI
+    fields" — it did not; three more fields were CONFIGURED on the other box.
+    That is the single misreading this page exists to prevent (RULE 1 in
+    api_matrix, and the 56 phantom removals behind it), so the note travels
+    with the data instead of being retyped per surface.
+    """
+    bdev = (base_prov.device if base_prov and base_prov.measured else "")
+    tdev = (target_prov.device if target_prov and target_prov.measured else "")
+    return ("CLI field names come from two different appliances — %s on %s, "
+            "%s on %s. They are what an operator CONFIGURED on each box, so "
+            "this subtraction measures the two configurations, not the "
+            "firmware." % (bdev or "?", base, tdev or "?", target))
+
+
+def _cli_field_delta(base_rec, target_rec, note):
+    """``set`` names each build's dump printed for this block, and the gap.
+
+    ``None`` when neither side printed a block — the caller then falls back to
+    the transport verdict. Only a side that printed one gets a count, and the
+    subtraction is offered only when BOTH did: subtracting against a side that
+    was never answered is the "gap worded as a change" this table already
+    separates everywhere else.
+    """
+    def has(rec):
+        return bool(rec) and rec.get("bucket") in _CLI_HAS_BLOCK
+
+    hb, ht = has(base_rec), has(target_rec)
+    if not hb and not ht:
+        return None
+    b = set((base_rec or {}).get("settings") or ())
+    t = set((target_rec or {}).get("settings") or ())
+    both = hb and ht
+    return {
+        "base_count": len(b) if hb else None,
+        "target_count": len(t) if ht else None,
+        "comparable": both,
+        "removed": sorted(b - t) if both else [],
+        "added": sorted(t - b) if both else [],
+        "note": note,
+    }
+
+
 def _pick(matrix: dict) -> tuple:
     """Default (base, target): oldest → newest MEASURED build.
 
@@ -124,12 +179,18 @@ def render_page(product: str, hub_endpoint: str, rebuild_endpoint: str,
     # A key that names no catalog entry answers ``unknown`` (an em dash
     # carrying its reason), never a badge.
     if delta:
+        _pair_note = _cli_pair_note(base, base_prov, target, target_prov)
         for bucket in ("endpoints_added", "endpoints_removed", "endpoints_unknown",
                        "fields_changed", "fields_unknown", "fields_incomparable"):
             for row in delta.get(bucket) or []:
                 name = row.get("endpoint") or row.get("key") or ""
                 row["cli_base"] = base_prov.for_name(name) if base_prov else None
                 row["cli_target"] = target_prov.for_name(name) if target_prov else None
+                # The field delta is computed HERE, never in the template: one
+                # author for the subtraction, and the template cannot reach the
+                # configured field names at all (guarded).
+                row["cli_delta"] = _cli_field_delta(
+                    row["cli_base"], row["cli_target"], _pair_note)
 
     _hub_bp = (hub_endpoint or "").split(".")[0]
     from ..models import Appliance, visible_appliances

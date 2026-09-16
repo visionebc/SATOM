@@ -1297,3 +1297,242 @@ def test_the_export_button_points_at_the_pair_on_screen(two_builds, client, app)
     assert m, "no export link on the page"
     assert ("base=%s" % BASE) in m.group(1) and ("target=%s" % TARGET) in m.group(1), \
         m.group(1)
+
+
+# ===========================================================================
+#  the PDF export                                                           #
+# ===========================================================================
+# Same resolved comparison, same rows, same column legend — a document instead
+# of a sheet. What it has to survive that the CSV does not: the shared PDF
+# renderer DROPS columns past the tenth and CLIPS cells at 300 characters.
+# This table has seventeen columns and one cell holding eighteen field names,
+# so both defaults would delete evidence and leave a document that still looks
+# complete.
+
+
+def _sq(text: str) -> str:
+    """Whitespace squashed out.
+
+    A PDF cell wraps, and reportlab will split a long token across lines when
+    it overflows its column. Searching the extracted text for a field name
+    therefore has to ignore layout entirely, or the guard fails against a
+    correct document.
+    """
+    return re.sub(r"\s+", "", text or "")
+
+
+def _pdf(client, app, base=BASE, target=TARGET):
+    """``(response, page text, squashed CELL text)``.
+
+    The third value is the one to search for a value that lives in a table:
+    a long identifier wraps inside its column, and flattening the whole PAGE
+    interleaves the continuation lines of every cell on that row — so
+    ``system_certificate_eab_credentials`` looks absent from a document that
+    prints it whole. Cells are read individually (the table is drawn with a
+    grid, which is what ``extract_tables`` keys off) and squashed one by one.
+    That distinction cost a false negative on 9 of 43 live rows.
+    """
+    login(client, admin_user_id(app))
+    r = client.get("/web/registry/versions/export.pdf?base=%s&target=%s"
+                   % (base, target))
+    assert r.status_code == 200, r.status_code
+    import pdfplumber
+    with pdfplumber.open(io.BytesIO(r.get_data())) as doc:
+        text = "\n".join(p.extract_text() or "" for p in doc.pages)
+        cells = [c for p in doc.pages for t in (p.extract_tables() or [])
+                 for row in t for c in row]
+    return r, text, "\n".join(_sq(c) for c in cells)
+
+
+def test_the_pdf_is_served_as_a_pdf_attachment(two_builds, client, app):
+    r, _text, _cells = _pdf(client, app)
+    assert r.mimetype == "application/pdf", r.mimetype
+    cd = r.headers.get("Content-Disposition") or ""
+    assert "attachment" in cd and cd.endswith('.pdf"'), cd
+    assert BASE in cd and TARGET in cd, cd
+
+
+def test_the_pdf_explains_every_column_it_prints(two_builds, client, app):
+    """The ask this export exists to answer, and the pair that keeps it true.
+
+    A legend that documents a column the file no longer has — or skips one it
+    grew — is worse than no legend, because it is read as authoritative. So the
+    headings and the explanations come from ONE list and this guard compares
+    the document against that list, not against a copy of it.
+    """
+    from app.views import _apiversions
+    _, text, _cells = _pdf(client, app)
+    flat = _sq(text)
+    assert _sq("What each column means") in flat, "no legend section in the PDF"
+
+    with app.test_request_context("/web/registry/versions?base=%s&target=%s"
+                                  % (BASE, TARGET)):
+        R = _apiversions._resolved("fortiweb")
+        cols = _apiversions._columns(R["base"], R["target"],
+                                     R["base_prov"], R["target_prov"])
+    assert len(cols) == 17, len(cols)
+    for head, note in cols:
+        assert _sq(head) in flat, "column %r is not named in the PDF" % head
+        # The explanation, not merely the heading. A document that printed the
+        # headings twice would pass a heading-only check while explaining
+        # nothing.
+        assert _sq(note) in flat, "column %r has no explanation in the PDF" % head
+
+
+def test_the_pdf_tables_between_them_print_every_column_once(two_builds, client, app):
+    """Seventeen columns, split across two tables of nine.
+
+    The split is the whole reason nothing is dropped, so it is fixed here by
+    INDEX: every column in exactly one table, except the object name, which is
+    the key joining a finding's two halves and is allowed to repeat.
+    """
+    from app.views import _apiversions
+    a, b = _apiversions._PDF_TABLE_A, _apiversions._PDF_TABLE_B
+    assert len(a) <= 10 and len(b) <= 10, (len(a), len(b))
+    both = sorted(a + b)
+    assert sorted(set(both)) == list(range(17)), both
+    dupes = sorted(i for i in set(both) if both.count(i) > 1)
+    assert dupes == [2], dupes
+
+
+def test_the_pdf_carries_every_finding_the_csv_does(two_builds, client, app):
+    """The defect this page was rebuilt to end, in its PDF form.
+
+    A download that drops a bucket reads as "no finding here" to a reader who
+    cannot see the page to notice.
+    """
+    _, rows = _csv(client, app)
+    data, _legend = _split(rows)
+    names = [r[2] for r in data[1:] if (r[2] or "").strip()]
+    assert names, "no findings in the CSV to compare against"
+    _, _text, cells = _pdf(client, app)
+    missing = [n for n in names if _sq(n) not in cells]
+    assert not missing, "%d finding(s) missing from the PDF: %s" % (
+        len(missing), missing[:5])
+
+
+def test_the_pdf_caps_nothing_the_comparison_measured(
+        two_builds, client, app, monkeypatch):
+    """The two renderer defaults that would delete evidence silently.
+
+    ``table_flowable`` keeps 40 rows and 300 characters per cell, which is
+    right for a dashboard widget and wrong here: the live FortiWeb matrix is
+    past both, and one object alone carries eighteen field names. Truncated,
+    the document still looks complete — so the caps are exercised here rather
+    than left to whatever size the fixture happens to be.
+    """
+    from app.views import _apiversions
+
+    field_names = ["synthetic_field_%02d" % i for i in range(40)]
+    joined = " ".join(field_names)
+    assert len(joined) > 300, len(joined)
+    objects = ["synthobj%02d" % i for i in range(60)]
+    assert len(objects) > 40
+
+    def _fake(delta, base, target):
+        for name in objects:
+            yield ["field delta", "yes", name, "sweep", "/api/v2/x/" + name,
+                   "served", 8, joined, "present", 5, joined,
+                   "served", 14, joined, "present", 10, joined]
+
+    monkeypatch.setattr(_apiversions, "_export_rows", _fake)
+    _, _text, cells = _pdf(client, app)
+    lost_rows = [o for o in objects if _sq(o) not in cells]
+    assert not lost_rows, "%d row(s) dropped: %s" % (len(lost_rows), lost_rows[:5])
+    lost_names = [n for n in field_names if _sq(n) not in cells]
+    assert not lost_names, "%d name(s) clipped: %s" % (len(lost_names),
+                                                       lost_names[:5])
+
+
+def test_the_pdf_puts_the_legend_after_the_findings(two_builds, client, app):
+    """Documentation is not a finding.
+
+    Above the table, or as a second header row, the explanations become the one
+    thing they must never be: rows that count.
+    """
+    _, text, _cells = _pdf(client, app)
+    flat = _sq(text)
+    legend = flat.index(_sq("What each column means"))
+    heads = flat.index(_sq("Findings"))
+    assert heads < legend, (heads, legend)
+
+
+def test_the_pdf_names_both_captures_and_says_they_are_two_boxes(
+        two_builds, client, app):
+    """On the cover, not only inside the CLI column headings.
+
+    A reader who skips the legend must still be unable to read the two CLI
+    columns as one appliance measured at two firmwares.
+    """
+    from app.views import _apiversions
+    with app.test_request_context("/web/registry/versions?base=%s&target=%s"
+                                  % (BASE, TARGET)):
+        R = _apiversions._resolved("fortiweb")
+        bp, tp = R["base_prov"], R["target_prov"]
+    _, text, _cells = _pdf(client, app)
+    flat = _sq(text)
+    assert _sq("two different appliances") in flat
+    for prov in (bp, tp):
+        if prov is not None and getattr(prov, "measured", False):
+            assert _sq(prov.device) in flat, prov.device
+            assert _sq(str(prov.captured_at)) in flat, prov.captured_at
+    if (bp is not None and getattr(bp, "measured", False)
+            and tp is not None and getattr(tp, "measured", False)):
+        assert bp.device != tp.device, "fixture no longer uses two boxes"
+
+
+def test_both_exports_are_built_from_one_row_generator(two_builds, client, app):
+    """Not two loops that happen to agree today.
+
+    Of a drifting pair it is always the copy nobody opens that goes wrong
+    first, and here both copies leave the building.
+    """
+    body = io.open(os.path.join(ROOT, "app/views/_apiversions.py"),
+                   encoding="utf-8").read()
+    body = re.sub(r"#[^\n]*", "", body)
+    assert body.count("def _export_rows(") == 1
+    for fn in ("export_page", "export_pdf_page"):
+        seg = body[body.index("def %s(" % fn):]
+        seg = seg[:seg.index("\ndef ", 1)] if "\ndef " in seg[1:] else seg
+        assert "_export_rows(" in seg, "%s builds its own rows" % fn
+        assert "_columns(" in seg, "%s builds its own legend" % fn
+
+
+def test_the_pdf_refuses_rather_than_hand_back_an_empty_document(
+        two_builds, client, app):
+    """An empty PDF reads as "nothing differs", which is a different claim
+    from "you have not picked two comparable builds"."""
+    login(client, admin_user_id(app))
+    r = client.get("/web/registry/versions/export.pdf?base=%s&target=%s"
+                   % (BASE, BASE))
+    assert r.status_code == 302, r.status_code
+    assert "export" not in (r.headers.get("Location") or "")
+
+
+def test_the_shared_renderer_keeps_its_dashboard_defaults(two_builds):
+    """The overrides are opt-in.
+
+    ``db_reports`` and the WAF export were written against 40 rows, 10 columns
+    and 300 characters; growing a second renderer for this page — or changing
+    those numbers for everyone — are the two ways this goes wrong.
+    """
+    import inspect
+
+    from app.services import pdf_kit
+    sig = inspect.signature(pdf_kit.table_flowable)
+    assert sig.parameters["max_rows"].default == 40
+    assert sig.parameters["max_cols"].default == 10
+    assert sig.parameters["cell_cap"].default == 300
+    for mod in ("app/services/db_reports.py", "app/services/waf_export.py"):
+        body = io.open(os.path.join(ROOT, mod), encoding="utf-8").read()
+        assert "max_cols=" not in body and "cell_cap=" not in body, mod
+
+
+def test_the_pdf_button_points_at_the_pair_on_screen(two_builds, client, app):
+    """Same reason as the CSV button: a selector changed without pressing
+    Compare says something the table on screen does not."""
+    body = _page(client, app)
+    m = re.search(r'href="([^"]*export\.pdf[^"]*)"', body)
+    assert m, "no PDF export link on the page"
+    assert ("base=%s" % BASE) in m.group(1) and ("target=%s" % TARGET) in m.group(1), \
+        m.group(1)

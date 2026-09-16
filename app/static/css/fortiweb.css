@@ -2360,8 +2360,6 @@ a.bm-dev:hover { background: var(--fw-accent-light); color: var(--fw-accent); }
 
    Styled here rather than inline because twelve loops render these cells, and
    a second author of one rule is how this page lost a link once already. */
-#versionDelta td .dv-kind { margin-top: 3px; }
-#versionDelta td .dv-meta { font-size: 12px; color: var(--fw-text-secondary); line-height: 1.5; }
 #versionDelta td .dv-count { color: var(--fw-text-secondary); font-variant-numeric: tabular-nums; }
 #versionDelta th.dv-build { min-width: 210px; }
 

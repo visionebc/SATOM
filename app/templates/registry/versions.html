@@ -8,45 +8,67 @@
   {%- else -%}<span class="fw-badge fw-badge-secondary">schema</span>{%- endif -%}
 {%- endmacro %}
 
-{# ── the Change cell: fixed slots, in the same order in every row ──────────
-   The column carried six different shapes -- a bare badge on one row, a
-   badge plus counts plus two sentences plus eighteen inline pills on the
-   next -- so it could only be read a row at a time. The slots are:
+{# ── the row: ONE COLUMN PER BUILD ──────────────────────────
+   Every finding used to be crammed into one *Change* cell. The operator asked
+   (2026-09-16) for a column per build with the evidence indented under the
+   transport that produced it:
 
-     1. KIND      one badge, alone on its line. Which class of finding it is.
-                  A FIELD DELTA has none: the operator asked for that label
-                  gone (2026-09-16) and the measure line below already reads
-                  ``sweep 8 -> 14``, which is the finding itself. The sentence
-                  that badge carried moves onto the measure line, because it
-                  is the one thing that may never be dropped -- see below.
-     2. MEASURE   the kind of evidence and the numbers, muted, one line.
-     3. NAMES     the fields themselves, folded, with the TALLY on the fold.
-     4. TRANSPORT one line per build: which transports serve it on THAT build.
+     Endpoint / object │ URN │ 7.6.8              │ 8.0.5               │ Test
+       antivirus       │     │ API                │ API                 │
+       sweep 8 → 14    │     │   sweep · 8 fields │   sweep · 14 fields │
+                       │     │ CLI                │   +6 added — names  │
+                       │     │   <verdict>        │ CLI                 │
+                       │     │                    │   <verdict>         │
 
-   Slot 3 folds because the live 7.6.8→8.0.5 delta prints 115 field names
-   across 19 rows and one object alone accounts for 18 of them. Folding
-   hides the NAMES, never the finding: the +N/−M tally sits on the summary,
-   which is the number the rows are actually compared on and which until now
-   had to be counted by eye. The filter opens a fold whose names match, so a
-   search can still reach inside one.
+   Two things the split may NOT do.
 
-   Slot 1's sentence rides in a title. There is one sentence per kind and 43
-   rows; printed per row it was 43 copies of four sentences -- the same
-   duplication this table was merged to stop. The sentence is not dropped: a
-   gap worded like a change is the one misreading this column exists to
-   prevent, so a guard pins each sentence to a title -- the kind badge's
-   where there is one, the measure line's on a field delta. #}
+   1. **The CLI half is a VERDICT, never a field list.** The dump does carry
+      the ``set`` names of every block (``CliBlock.sets``, reaching the page as
+      ``rec.settings``) and it is tempting to subtract them column to column.
+      It would be a lie twice over: those are the fields somebody CONFIGURED on
+      one appliance, and the two columns are two different appliances —
+      subtracting them measures the operators, not the firmware; and a
+      configured field name is device configuration, which this page is not the
+      permission to read (``test_badges_render_without_backup…``). So there is
+      no "CLI added / CLI removed" here: that evidence does not exist.
+
+   2. **The finding stays in the identity column**, because it is about the
+      PAIR and not about either build: the class badge, or — on a field delta,
+      which carries no badge since the operator removed the ``fields changed``
+      label — the subtraction ``8 → 14``. That arrow is the only place on this
+      page where one number is taken from another. Pushing the two counts into
+      the two columns and leaving the arrow nowhere is exactly how that number
+      went missing the first time.
+
+   What survives the move, unchanged in force:
+
+     * a GAP never grows an arrow or a field fold. Only a computed delta earns
+       either, and since the label went that is the whole of what tells a
+       measurement from a gap.
+     * the sentence saying whether a row is a change or a gap rides in a
+       ``title`` — one sentence per class against 43 rows; printed per row it
+       was eleven copies of one of them.
+     * the names FOLD, tally on the fold: the live 7.6.8→8.0.5 delta prints 115
+       field names across 19 rows and one object accounts for 18 of them.
+     * each column's CLI head names the capture it answers from, and the two
+       columns can never cite the same one. A dump comes from one box running
+       one build; that is the whole reason this page has two columns. #}
 {% macro kind_slot(cls, label, why) -%}
   <div class="dv-kind"><span class="fw-badge fw-badge-{{ cls }}" title="{{ why }}">{{ label }}</span></div>
 {%- endmacro %}
 
-{% macro names_fold(added, removed) -%}
-  {%- if added or removed -%}
-  <details class="dv-names"><summary>{% if added %}<span class="fw-badge fw-badge-success">+{{ added|length }}</span>{% endif %}{% if removed %} <span class="fw-badge fw-badge-danger">&minus;{{ removed|length }}</span>{% endif %} <span class="dv-fold-hint">field(s) — names</span></summary>
-    {%- if added %}<div class="dv-names-row"><span class="dv-fold-hint">added:</span>
-      {% for f in added %}<span class="fw-badge fw-badge-success me-1">{{ f }}</span>{% endfor %}</div>{% endif -%}
-    {%- if removed %}<div class="dv-names-row"><span class="dv-fold-hint">removed:</span>
-      {% for f in removed %}<span class="fw-badge fw-badge-danger me-1">{{ f }}</span>{% endfor %}</div>{% endif -%}
+{# The field names, folded, with the tally ON the fold.
+
+   ONE SIDE PER CALL since the columns split: the base column can only ever
+   show what the target LOST and the target what it GAINED, so the word is
+   decided by the column and never guessed from the data. The word is printed
+   as well as the colour — "added" and "removed" as two shades of one pill is
+   the distinction that disappears on a projector and for a colour-blind
+   reader. #}
+{% macro names_fold(names, cls, word) -%}
+  {%- if names -%}
+  <details class="dv-names"><summary><span class="fw-badge fw-badge-{{ cls }}">{% if cls == 'success' %}+{% else %}&minus;{% endif %}{{ names|length }}</span> <span class="dv-fold-hint">{{ word }} — names</span></summary>
+    <div class="dv-names-row">{% for f in names %}<span class="fw-badge fw-badge-{{ cls }} me-1">{{ f }}</span>{% endfor %}</div>
   </details>
   {%- endif -%}
 {%- endmacro %}
@@ -84,27 +106,32 @@
   {%- endif -%}
 {%- endmacro %}
 
-{# Slot 4 — which transports serve the row, ONE LINE PER BUILD.
-   Until 2026-09-16 these two verdicts were two adjacent table columns; the
-   operator asked for them inside Change and stacked rather than side by side.
+{# ── one build's own column ────────────────────────────────────
+   Everything inside was measured ON THIS BUILD. The API half is passed in by
+   the caller — it is the only part that differs per bucket; the CLI half is
+   always one shape: a verdict read from THIS build's capture, with the capture
+   named in the head's title.
 
-   What the move may NOT do is merge them. The two verdicts come from two
-   different dumps taken on two different boxes, and a row that answered for
-   both builds from one capture is the exact lie this page exists to prevent —
-   so each line still NAMES its build and carries its own capture in the
-   scope's title. Every argument is passed in: a macro that reached for
-   ``delta`` or ``base_prov`` from the surrounding block would resolve them
-   from wherever it was called, and this one is called from six loops. #}
-{% macro cli_stack(base_rec, target_rec, delta, base_prov, target_prov) -%}
-  <div class="dv-cli">
-    <div class="dv-cli-row"><span class="dv-cli-scope"
-      title="{{ prov_hint(base_prov, delta.base) }}">CLI on {{ delta.base }}</span>
-      {{- prov_badge(base_rec) }}</div>
-    <div class="dv-cli-row"><span class="dv-cli-scope"
-      title="{{ prov_hint(target_prov, delta.target) }}">CLI on {{ delta.target }}</span>
-      {{- prov_badge(target_rec) }}</div>
+   Every argument is explicit. A macro that reached for ``delta`` or
+   ``base_prov`` from the block around it would resolve them from wherever it
+   was called, and this one is called from twelve places. #}
+{% macro build_cell(scope, prov, rec) -%}
+  <div class="dv-tree">
+    <div class="dv-t-head" title="Measured on {{ scope }} over REST: whether the catalog serves it there and how many fields that evidence carries.">API</div>
+    <div class="dv-t-body">{{ caller() }}</div>
+    <div class="dv-t-head dv-cli-scope" title="{{ prov_hint(prov, scope) }}">CLI</div>
+    <div class="dv-t-body">{{ prov_badge(rec) }}</div>
   </div>
 {%- endmacro %}
+
+{# The API half, one macro per shape of evidence, so the twelve call sites
+   cannot drift apart. ``api_blank`` is NOT ``api_absent``: "the build rejected
+   the URN" is a measured no and "nobody asked" is not an answer at all — the
+   pair this whole page exists to keep apart. #}
+{% macro api_served() -%}<span class="fw-badge fw-badge-success">served</span>{%- endmacro %}
+{% macro api_absent() -%}<span class="fw-badge fw-badge-danger" title="This build was asked and rejected the URN — a measured no.">absent</span>{%- endmacro %}
+{% macro api_fields(origin, n) -%}{{ origin_badge(origin) }} <span class="dv-count">{{ n }} field(s)</span>{%- endmacro %}
+{% macro api_blank(scope) -%}<span class="text-muted dv-unmeasured" title="Nothing has ever been measured for this on {{ scope }}. An unasked side is not a negative answer.">not measured on {{ scope }}</span>{%- endmacro %}
 
 {% block content %}
 <div class="fw-page-header">
@@ -410,92 +437,90 @@
     <div class="mb-2">{{ filter_box('versionDelta', _('Filter rows by name, URN or field…')) }}</div>
     <div class="table-responsive">
       <table class="table fw-table mb-0" id="versionDelta">
-        {# The capture behind each transport verdict travels in that verdict's
-           own scope label, inside the cell. It used to be two legend blocks
-           above the table, then two column headers; the operator asked for
-           the verdicts to move into Change and to stack (2026-09-16).
-           Dropping the capture ALTOGETHER was never on the table: a badge
-           whose capture is unnamed cannot be told from a two-month-old one,
-           and an unmeasured build has to say why its verdict is an em dash. #}
+        {# The capture behind each CLI verdict travels in that column's own CLI
+           head, inside the cell. It was two legend blocks above the table, then
+           two column headers, then two stacked lines in Change; it is now one
+           per build column (operator, 2026-09-16). Dropping it was never on the
+           table: a badge whose capture is unnamed cannot be told from a
+           two-month-old one, and an unmeasured build has to say why its verdict
+           is an em dash. #}
         <thead><tr><th>Endpoint / object</th><th>URN</th>
-          <th style="min-width:330px;" title="Every cell has the same slots, in the same order: what kind of finding it is (a field delta has no badge — its measure line is the finding), the measurement behind it, the field names (folded), then one line per build saying which transports serve it there. Rows come in the order the summary above counts them: added, gone, field delta, known on one side only, incomparable.">Change</th>
+          <th class="dv-build" title="Everything in this column was measured on {{ delta.base }} and none of it is borrowed from the other column: what the catalog was measured to serve there over REST, the fields only this build has, and the CLI verdict read from this build's own capture. The finding itself — which class it is, or the field subtraction — is in the first column, because it is about the pair and not about either build.">{{ delta.base }}{% if delta.base_kind == 'line' %} <span class="fw-badge fw-badge-secondary">line rollup</span>{% endif %}</th>
+          <th class="dv-build" title="Everything in this column was measured on {{ delta.target }} and none of it is borrowed from the other column: what the catalog was measured to serve there over REST, the fields only this build has, and the CLI verdict read from this build's own capture. The finding itself — which class it is, or the field subtraction — is in the first column, because it is about the pair and not about either build.">{{ delta.target }}{% if delta.target_kind == 'line' %} <span class="fw-badge fw-badge-secondary">line rollup</span>{% endif %}</th>
           <th style="width:120px;">Test</th></tr></thead>
         <tbody>
         {% for r in delta.endpoints_added %}
-          <tr><td><code>{{ r.endpoint }}</code></td>
-            <td><code class="text-muted" style="font-size:11px;">{{ r.urn }}</code></td>
-            {# Whitespace control is load-bearing: test_cli_provenance matches
-               this row structurally (cell by cell, and the two transport
-               lines inside the Change cell) to prove each build answers from
-               its own capture. A stray newline from a false {% raw %}{% if %}{% endraw %} is
-               enough to make that guard report "no row rendered" against a
-               correct page. #}
-            <td>{{ kind_slot('success', 'added on ' ~ delta.target,
-                  'The target build serves an endpoint the base build was measured not to serve. This one is a change.') }}
+          {# Whitespace control is load-bearing: test_cli_provenance matches
+             this row structurally, cell by cell and both build columns, to
+             prove each column answers from its own capture. A stray newline
+             from a false {% raw %}{% if %}{% endraw %} is enough to make that
+             guard report "no row rendered" against a correct page. #}
+          <tr><td><code>{{ r.endpoint }}</code>
+              {{ kind_slot('success', 'added on ' ~ delta.target, 'The target build serves an endpoint the base build was measured not to serve. This one is a change.') }}
               {%- if r.silent_on %}<div class="dv-meta"><span class="fw-badge fw-badge-warning"
                 title="Only some builds of the target rollup attested this.">partial</span></div>{% endif -%}
-              {{ cli_stack(r.cli_base, r.cli_target, delta, base_prov, target_prov) }}
             </td>
+            <td><code class="text-muted" style="font-size:11px;">{{ r.urn }}</code></td>
+            <td>{% call build_cell(delta.base, base_prov, r.cli_base) %}{{ api_absent() }}{% endcall %}</td>
+            <td>{% call build_cell(delta.target, target_prov, r.cli_target) %}{{ api_served() }}{% endcall %}</td>
             <td>{{ test_btn(urn=r.urn) }}</td></tr>
         {% endfor %}
         {% for r in delta.endpoints_removed %}
-          <tr><td><code>{{ r.endpoint }}</code></td>
+          <tr><td><code>{{ r.endpoint }}</code>
+              {{ kind_slot('danger', 'gone on ' ~ delta.target, 'The base build served this endpoint and the target build was measured to reject it. This one is a change.') }}
+            </td>
             <td><code class="text-muted" style="font-size:11px;">{{ r.urn }}</code></td>
-            <td>{{ kind_slot('danger', 'gone on ' ~ delta.target,
-                  'The base build served this endpoint and the target build was measured to reject it. This one is a change.') }}
-              {{ cli_stack(r.cli_base, r.cli_target, delta, base_prov, target_prov) }}</td>
+            <td>{% call build_cell(delta.base, base_prov, r.cli_base) %}{{ api_served() }}{% endcall %}</td>
+            <td>{% call build_cell(delta.target, target_prov, r.cli_target) %}{{ api_absent() }}{% endcall %}</td>
             <td>{{ test_btn(urn=r.urn) }}</td></tr>
         {% endfor %}
         {% for c in delta.fields_changed %}
-          <tr><td><code>{{ c.key }}</code></td>
-            <td><code class="text-muted" style="font-size:11px;">{{ c.urn }}</code></td>
-            {# NO kind badge: "fields changed" was removed at the operator's
-               request (2026-09-16) as a label that restates the line under
-               it — ``sweep 8 → 14`` IS the finding, and the arrow is the
-               only place on this page where one number is subtracted from
-               another. The sentence the badge carried moves onto the measure
-               line's title, so the one distinction this column may never
-               lose — a measurement against a gap — is still addressable.
-
-               The word, not just the colour, inside the fold: "added" and
-               "removed" as two shades of the same pill is the kind of
-               distinction that disappears on a projector and for a
-               colour-blind reader. #}
-            <td><div class="dv-meta" title="Both builds were measured with the same kind of evidence and their field sets differ. This one is a change.">{{ origin_badge(c.origin) }}
+          {# NO kind badge: ``fields changed`` was removed at the operator's
+             request (2026-09-16) as a label restating the line under it. The
+             sentence it carried did not go with it — a gap worded like a
+             change is the one misreading this table exists to prevent — so it
+             hangs off the subtraction, which is the finding itself and which
+             stays HERE, in the identity column: it is a fact about the pair,
+             and neither build's column can hold it without implying the other
+             one's number. #}
+          <tr><td><code>{{ c.key }}</code>
+              <div class="dv-meta" title="Both builds were measured with the same kind of evidence and their field sets differ. This one is a change.">{{ origin_badge(c.origin) }}
                 <span class="dv-count">{{ c.base_count }} → {{ c.target_count }}</span></div>
-              {{ names_fold(c.added, c.removed) }}
-              {{ cli_stack(c.cli_base, c.cli_target, delta, base_prov, target_prov) }}
             </td>
+            <td><code class="text-muted" style="font-size:11px;">{{ c.urn }}</code></td>
+            <td>{% call build_cell(delta.base, base_prov, c.cli_base) %}{{ api_fields(c.origin, c.base_count) }}{{ names_fold(c.removed, 'danger', 'removed') }}{% endcall %}</td>
+            <td>{% call build_cell(delta.target, target_prov, c.cli_target) %}{{ api_fields(c.origin, c.target_count) }}{{ names_fold(c.added, 'success', 'added') }}{% endcall %}</td>
             <td>{{ test_btn(urn=c.urn) }}</td></tr>
         {% endfor %}
         {% for r in delta.endpoints_unknown %}
-          <tr><td><code>{{ r.endpoint }}</code></td>
+          <tr><td><code>{{ r.endpoint }}</code>
+              {{ kind_slot('secondary', 'measured only on ' ~ r.measured_on, 'The other side was never asked, so this is not a change — the side nobody measured proves nothing.') }}
+            </td>
             <td><code class="text-muted" style="font-size:11px;">{{ r.urn }}</code></td>
-            <td>{{ kind_slot('secondary', 'measured only on ' ~ r.measured_on,
-                  'The other side was never asked, so this is not a change — the side nobody measured proves nothing.') }}
-              {{ cli_stack(r.cli_base, r.cli_target, delta, base_prov, target_prov) }}</td>
+            <td>{% call build_cell(delta.base, base_prov, r.cli_base) %}{% if r.measured_on == delta.base %}{{ api_served() }}{% else %}{{ api_blank(delta.base) }}{% endif %}{% endcall %}</td>
+            <td>{% call build_cell(delta.target, target_prov, r.cli_target) %}{% if r.measured_on == delta.target %}{{ api_served() }}{% else %}{{ api_blank(delta.target) }}{% endif %}{% endcall %}</td>
             <td>{{ test_btn(urn=r.urn) }}</td></tr>
         {% endfor %}
         {% for c in delta.fields_unknown %}
-          <tr><td><code>{{ c.key }}</code></td>
+          {# No fold and no arrow, on purpose: only a computed delta earns
+             either, and this side was never compared against anything. #}
+          <tr><td><code>{{ c.key }}</code>
+              {{ kind_slot('secondary', 'fields known only on ' ~ c.known_on, 'Measured on one side and never on the other — the missing side proves nothing. This is a gap, not a change.') }}
+            </td>
             <td><code class="text-muted" style="font-size:11px;">{{ c.urn }}</code></td>
-            <td>{{ kind_slot('secondary', 'fields known only on ' ~ c.known_on,
-                  'Measured on one side and never on the other — the missing side proves nothing. This is a gap, not a change.') }}
-              <div class="dv-meta">{{ origin_badge(c.origin) }}
-                <span class="dv-count">{{ c.count }} field(s) on {{ c.known_on }}</span></div>
-              {{ cli_stack(c.cli_base, c.cli_target, delta, base_prov, target_prov) }}</td>
+            <td>{% call build_cell(delta.base, base_prov, c.cli_base) %}{% if c.known_on == delta.base %}{{ api_fields(c.origin, c.count) }}{% else %}{{ api_blank(delta.base) }}{% endif %}{% endcall %}</td>
+            <td>{% call build_cell(delta.target, target_prov, c.cli_target) %}{% if c.known_on == delta.target %}{{ api_fields(c.origin, c.count) }}{% else %}{{ api_blank(delta.target) }}{% endif %}{% endcall %}</td>
             <td>{{ test_btn(urn=c.urn) }}</td></tr>
         {% endfor %}
         {% for c in delta.fields_incomparable %}
-          <tr><td><code>{{ c.key }}</code></td>
+          {# Both columns full, and NOTHING between them. Each side names the
+             kind of evidence it holds; the page refuses to subtract them. #}
+          <tr><td><code>{{ c.key }}</code>
+              {{ kind_slot('warning', 'incomparable', 'Known on both builds, by different kinds of evidence. Reported, never subtracted — a gap a sweep cannot close.') }}
+            </td>
             <td><code class="text-muted" style="font-size:11px;">{{ c.urn }}</code></td>
-            <td>{{ kind_slot('warning', 'incomparable',
-                  'Known on both builds, by different kinds of evidence. Reported, never subtracted — a gap a sweep cannot close.') }}
-              <div class="dv-meta">{{ origin_badge(c.base_origin) }}
-                <span class="dv-count">{{ c.base_count }} on {{ delta.base }}</span> ·
-                {{ origin_badge(c.target_origin) }}
-                <span class="dv-count">{{ c.target_count }} on {{ delta.target }}</span></div>
-              {{ cli_stack(c.cli_base, c.cli_target, delta, base_prov, target_prov) }}</td>
+            <td>{% call build_cell(delta.base, base_prov, c.cli_base) %}{{ api_fields(c.base_origin, c.base_count) }}{% endcall %}</td>
+            <td>{% call build_cell(delta.target, target_prov, c.cli_target) %}{{ api_fields(c.target_origin, c.target_count) }}{% endcall %}</td>
             <td>{{ test_btn(urn=c.urn) }}</td></tr>
         {% endfor %}
         </tbody>

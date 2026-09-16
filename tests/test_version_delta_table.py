@@ -251,77 +251,189 @@ def test_the_page_no_longer_renders_the_legend_blocks():
 
 
 def _cells(row):
-    """The row's four cells. Cells nest tags but never another ``<td>``."""
+    """The row's FIVE cells. Cells nest tags but never another ``<td>``.
+
+    Five since 2026-09-16: the identity (name, and the finding itself), the
+    URN, then ONE COLUMN PER BUILD, then the Test button.
+    """
     return [c.split("</td>")[0] for c in row.split("<td")[1:]]
 
 
-def _transport(row):
-    """The per-build transport lines inside the Change cell, in order."""
-    return re.findall(
-        r'<div class="dv-cli-row"><span class="dv-cli-scope"\s*'
-        r'title="([^"]*)">CLI on ([\w.]+)</span>(.*?)</div>', row, re.S)
+def _build_cols(row):
+    """``(base column, target column)`` — cells 3 and 4, never 2 and 3."""
+    cells = _cells(row)
+    assert len(cells) == 5, "the row is not five cells (%d): %s" % (len(cells), row)
+    return cells[2], cells[3]
 
 
-def test_the_transport_verdicts_moved_into_change_and_are_stacked(
-        two_builds, client, app):
-    """What the operator asked for on 2026-09-16: the two verdicts inside the
-    *Change* cell, one per line, instead of two columns beside each other.
+def _cli_half(col):
+    """``(capture hint, verdict markup)`` of one build column's CLI half."""
+    m = re.search(r'<div class="dv-t-head dv-cli-scope" title="([^"]*)">CLI</div>\s*'
+                  r'<div class="dv-t-body">(.*?)</div>', col, re.S)
+    assert m, "no CLI half in this build column: %r" % col[:300]
+    return m.group(1), m.group(2)
 
-    Both halves are asserted. That they are IN the Change cell (cell 3 of
-    four, not a column of their own) and that they are two SEPARATE blocks —
-    put on one line they read as a single answer, and they are two answers
-    from two different dumps.
+
+def _api_half(col):
+    """One build column's API half, up to where its CLI half begins."""
+    m = re.search(r'>API</div>\s*<div class="dv-t-body">(.*)'
+                  r'<div class="dv-t-head dv-cli-scope"', col, re.S)
+    assert m, "no API half in this build column: %r" % col[:300]
+    return m.group(1)
+
+
+#: Every key the fixture puts in the table — one per bucket.
+KEYS = ("arrives", "goes_away", "fielded", "onesided", "mixed",
+        "schemaonly", "onlyhere")
+
+
+def test_every_finding_gets_one_column_per_build(two_builds, client, app):
+    """What the operator asked for on 2026-09-16: a column headed 7.6.8 and one
+    headed 8.0.5, in place of the single *Change* cell, with each column's
+    evidence indented under the transport that produced it.
+
+    Both halves are asserted. Counting columns alone would pass on a table that
+    merely renamed *Change* and kept its contents, so the old cell's absence is
+    guarded too — the replacement is the deliverable.
     """
     body = _page(client, app)
-    tbl = _table(body)
-    head = tbl.split("</thead>")[0]
-    assert "CLI on" not in head, \
-        "the transport verdicts are back as columns of their own: %s" % head
+    head = _table(body).split("</thead>")[0]
     # ``</th>``, not ``<th``: the latter is also a substring of ``<thead>``,
-    # which is how the first draft of this guard counted five.
-    assert head.count("</th>") == 4, "the table is not four columns: %s" % head
-    for key in ("arrives", "goes_away", "fielded", "onesided", "mixed",
-                "schemaonly", "onlyhere"):
-        cells = _cells(_row(body, key))
-        assert len(cells) == 4, (key, len(cells))
-        lines = _transport(cells[2])
-        assert len(lines) == 2, (
-            "%s: the Change cell must carry exactly two transport lines, one "
-            "per build: %r" % (key, cells[2]))
-        assert [scope for _, scope, _ in lines] == [BASE, TARGET], (key, lines)
-        assert "dv-cli-row" not in cells[3], \
-            "%s: a transport verdict leaked out of the Change cell" % key
+    # which is how an earlier draft of this guard counted one column too many.
+    assert head.count("</th>") == 5, "the table is not five columns: %s" % head
+    assert ">Change<" not in head, \
+        "the cell the operator replaced is back as a column: %s" % head
+    assert ">%s<" % BASE in head and ">%s<" % TARGET in head, \
+        "the two columns are not headed by the two builds: %s" % head
+    for key in KEYS:
+        for col in _build_cols(_row(body, key)):
+            assert ">API</div>" in col and ">CLI</div>" in col, \
+                "%s: a build column is missing one of its two halves: %r" \
+                % (key, col[:300])
 
 
-def test_each_transport_line_still_names_the_capture_it_answers_from(
-        two_builds, client, app):
-    """Removed from the page body, then from the column headers, NOT dropped.
-    A badge whose capture is unnamed cannot be told from a two-month-old one,
-    and a build with no capture at all has to say why its verdict is an em
-    dash rather than a measured one."""
-    lines = _transport(_row(_page(client, app), "arrives"))
-    assert len(lines) == 2
-    for hint, scope, _ in lines:
-        assert hint.strip(), scope
-        assert "em dash" in hint or "captured" in hint, (scope, hint)
+def test_each_build_column_answers_from_its_own_capture(two_builds, client, app):
+    """The rule the columns exist for.
+
+    A dump comes from one box running one build, so the two columns can never
+    cite the same capture. Side by side this is easy to get right and easy to
+    stop checking — and on the day it breaks, both columns still look measured.
+    """
+    body = _page(client, app)
+    for key in KEYS:
+        base_col, target_col = _build_cols(_row(body, key))
+        base_hint, _ = _cli_half(base_col)
+        target_hint, _ = _cli_half(target_col)
+        for hint, scope in ((base_hint, BASE), (target_hint, TARGET)):
+            assert hint.strip(), (key, scope)
+            assert scope in hint, (
+                "%s: the %s column's CLI half does not name its own build: %r"
+                % (key, scope, hint))
+            # Measured or not, it has to say WHICH: a badge whose capture is
+            # unnamed cannot be told from a two-month-old one, and a build with
+            # no capture has to say why its verdict is an em dash.
+            assert "em dash" in hint or "captured" in hint, (key, scope, hint)
+        assert base_hint != target_hint, (
+            "%s: both columns cite the SAME capture — the merge two columns "
+            "must never make: %r" % (key, base_hint))
 
 
 def test_a_field_row_answers_its_transports_from_its_own_provenance(
         two_builds, client, app):
     """The view annotates EVERY bucket, not only the two endpoint ones.
 
-    Without it those verdicts render ``prov_badge(None)`` — a bare em dash
-    with NO title, which is visually identical to the honest "nobody captured
-    anything on this build" and to a measured "no CLI block here". Same glyph,
-    three meanings; the title is the only thing that separates them, so the
-    guard is on the title and not on the dash.
+    Without it those verdicts render ``prov_badge(None)`` — a bare em dash with
+    NO title, visually identical to the honest "nobody captured anything on
+    this build" and to a measured "no CLI block here". Same glyph, three
+    meanings; the title is the only thing separating them, so the guard is on
+    the title and not on the dash.
     """
     body = _page(client, app)
     for key in ("fielded", "onesided", "mixed", "schemaonly", "onlyhere"):
-        for _, scope, verdict in _transport(_row(body, key)):
+        for col in _build_cols(_row(body, key)):
+            _, verdict = _cli_half(col)
             assert "title=" in verdict, (
-                "%s / CLI on %s: an em dash with no reason behind it — the "
-                "bucket was not annotated: %r" % (key, scope, verdict))
+                "%s: an em dash with no reason behind it — the bucket was not "
+                "annotated: %r" % (key, verdict))
+
+
+def test_the_cli_half_is_a_verdict_and_never_a_field_list():
+    """The one thing the operator's sketch asked for that is not rendered.
+
+    "CLI added / CLI removed" has no evidence behind it. The dump DOES carry
+    every block's ``set`` names (``CliBlock.sets``, reaching a page as
+    ``rec.settings``) and subtracting them column to column is one line of
+    Jinja away — which is exactly why this is guarded rather than merely
+    commented. They are the fields somebody CONFIGURED on one appliance, and
+    the two columns are two DIFFERENT appliances: the difference measures the
+    operators, not the firmware. They are also device configuration, which this
+    page is not the permission to read — the same split
+    ``test_badges_render_without_backup_but_carry_no_device_configuration``
+    draws on the API hub.
+    """
+    src = io.open(TPL, encoding="utf-8").read()
+    body = re.sub(r"\{#.*?#\}", "", src, flags=re.S)   # comments may NAME it
+    assert ".settings" not in body, \
+        "the page reads the CLI's configured field names: %s" % \
+        [ln for ln in body.splitlines() if ".settings" in ln]
+
+
+def test_the_subtraction_stays_in_the_identity_cell(two_builds, client, app):
+    """``2 → 3`` is a fact about the PAIR.
+
+    Put in a build column it states the other column's number, and the two
+    columns exist precisely because neither build may answer for the other.
+    Pushing both counts into the columns and leaving the arrow nowhere is how
+    the operator lost that number the first time — it had to be counted by eye
+    off a row of pills.
+    """
+    cells = _cells(_row(_page(client, app), "fielded"))
+    assert "2 → 3" in cells[0], \
+        "the finding left the identity cell: %s" % cells[0]
+    for i, side in ((2, BASE), (3, TARGET)):
+        assert "→" not in cells[i], \
+            "the %s column subtracted the other one's number: %s" % (side, cells[i])
+
+
+def test_each_build_column_carries_its_own_field_count(two_builds, client, app):
+    """Splitting the arrow out only works if each column still says how many
+    fields IT holds — otherwise the row states a difference and neither side
+    says of what."""
+    base_col, target_col = _build_cols(_row(_page(client, app), "fielded"))
+    assert "2 field(s)" in _api_half(base_col), base_col
+    assert "3 field(s)" in _api_half(target_col), target_col
+    assert ">sweep<" in _api_half(base_col), \
+        "a count with no evidence kind behind it: %s" % base_col
+
+
+def test_the_gained_names_fold_under_the_build_that_gained_them(
+        two_builds, client, app):
+    """``gamma`` is on 8.0.5 and not on 7.6.8. A column IS a build, so the name
+    may only appear under the build that has it — printed in both it would read
+    as a field both builds serve."""
+    base_col, target_col = _build_cols(_row(_page(client, app), "fielded"))
+    assert "gamma" in target_col, target_col
+    assert "gamma" not in base_col, \
+        "a field the base build does not have was printed in its column: %s" % base_col
+    assert "<details" not in base_col, \
+        "the base column grew a fold with nothing to disclose: %s" % base_col
+
+
+def test_an_unmeasured_side_is_not_worded_as_a_measured_no(
+        two_builds, client, app):
+    """``absent`` is the appliance rejecting a URN; ``not measured`` is nobody
+    having asked. One wording for both is the confusion this whole page exists
+    to end, and it becomes newly tempting once both are just "the thin
+    column"."""
+    body = _page(client, app)
+    base_col, _ = _build_cols(_row(body, "onlyhere"))
+    assert "not measured on %s" % BASE in base_col, base_col
+    assert ">absent<" not in base_col, \
+        "an unasked side was badged as a measured rejection: %s" % base_col
+    # Premise: the page DOES say ``absent`` where a build really rejected the
+    # URN, or the assertion above is satisfied by a page that never says it.
+    really_absent, _ = _build_cols(_row(body, "arrives"))
+    assert ">absent<" in really_absent, really_absent
 
 
 # ---------------------------------------------------------------------------
@@ -450,7 +562,11 @@ def test_the_names_fold_but_the_tally_stays_on_the_fold(two_builds, client, app)
     """Folding hides the NAMES. ``+1`` is the number the rows are compared on
     — it was the one thing the old inline dump made you count by eye — so it
     sits on the summary, outside the fold, and the names stay in the row."""
-    row = _row(_page(client, app), "fielded")
+    _, target_col = _build_cols(_row(_page(client, app), "fielded"))
+    row = target_col
+    # Scoped to the TARGET column: the row can hold two folds now, one per
+    # build, and a bare ``first <summary> in the row`` would be answered by
+    # whichever build happened to render one.
     m = re.search(r"<summary>(.*?)</summary>", row, re.S)
     assert m, "the field names are not folded: %s" % row
     assert "+1" in m.group(1), "the tally is not on the fold: %s" % m.group(1)
@@ -477,12 +593,12 @@ def test_the_filter_can_reach_inside_a_fold():
         "folds opened by hand must survive clearing the box"
 
 
-def test_the_change_column_does_not_style_itself_row_by_row():
-    """Six loops render this cell. Inline styles repeated per loop is how this
-    page ended up with two authors of one rule before."""
+def test_the_build_columns_do_not_style_themselves_row_by_row():
+    """Twelve cells are rendered by six loops. Inline styles repeated per loop
+    is how this page ended up with two authors of one rule before."""
     src = io.open(TPL, encoding="utf-8").read()
     i = src.find('id="versionDelta"')
     assert i != -1
     body = src[i:]
     assert 'style="font-size:12px;"' not in body, \
-        "the Change cell is styling itself inline again"
+        "a build column is styling itself inline again"

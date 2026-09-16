@@ -612,36 +612,41 @@ def test_versions_row_badges_the_measured_line_and_blanks_the_other(app, client,
     this page is built to avoid. A page-level assertion cannot see that — the
     legend would satisfy it while every row was wrong.
 
-    Since 2026-09-16 the two verdicts are not two columns but two STACKED
-    lines inside the Change cell, at the operator's request. The move made
-    this guard more necessary, not less: side by side under two headers they
-    could not be mistaken for one answer, and stacked they can. So the
-    boundaries below stay exact — a looser ``<td>.*?</td>`` would swallow both
-    lines into one match and prove nothing about either.
+    Since 2026-09-16 the two verdicts are not two columns of their own, then
+    not two stacked lines in *Change* either: the table now has ONE COLUMN PER
+    BUILD and each column carries its own CLI half. Every move made this guard
+    more necessary, not less — the closer the two verdicts sit, the easier it
+    is for one to answer for both. So the boundaries below stay exact: a looser
+    ``<td>.*?</td>`` would swallow both columns into one match and prove
+    nothing about either.
     """
     login(client, admin_user_id(app))
     page = client.get("/web/registry/versions?base=7.6&target=8.0").get_data(as_text=True)
     m = re.search(
-        r"<tr><td><code>[\w.-]+</code></td>\s*"
+        r"<tr><td><code>[\w.-]+</code>\s*"
+        r"<div class=\"dv-kind\"><span class=\"fw-badge fw-badge-success\"[^>]*>"
+        r"added on 8\.0</span></div>\s*</td>\s*"
         r"<td><code[^>]*>[^<]*</code></td>\s*"
-        r"<td><div class=\"dv-kind\"><span class=\"fw-badge fw-badge-success\"[^>]*>"
-        r"added on 8\.0</span></div>\s*"
-        r"<div class=\"dv-cli\">\s*"
-        r"<div class=\"dv-cli-row\"><span class=\"dv-cli-scope\"\s*"
-        r"title=\"([^\"]*)\">CLI on 7\.6</span>(.*?)</div>\s*"
-        r"<div class=\"dv-cli-row\"><span class=\"dv-cli-scope\"\s*"
-        r"title=\"([^\"]*)\">CLI on 8\.0</span>(.*?)</div>\s*"
-        r"</div>\s*</td>", page, re.S)
-    assert m, "no 'added on 8.0' row with two stacked transport lines"
-    base_hint, base_cell, target_hint, target_cell = m.groups()
+        r"<td>(.*?)</td>\s*<td>(.*?)</td>\s*<td>", page, re.S)
+    assert m, "no 'added on 8.0' row with a column per build"
+
+    def _cli(col):
+        """One column's CLI half — hint and verdict, with exact boundaries."""
+        got = re.search(r'<div class="dv-t-head dv-cli-scope" title="([^"]*)">'
+                        r'CLI</div>\s*<div class="dv-t-body">(.*?)</div>', col, re.S)
+        assert got, "no CLI half in this build column: %r" % col[:300]
+        return got.group(1), got.group(2)
+
+    base_hint, base_cell = _cli(m.group(1))
+    target_hint, target_cell = _cli(m.group(2))
     assert "fw-badge" in base_cell, \
         "7.6 holds a capture, so its line must carry a real verdict: %r" % base_cell
     assert "fw-badge" not in target_cell, \
         "8.0 holds no capture; a badge there is an answer nobody measured: %r" % target_cell
     assert "firmware line 8.0" in target_cell, target_cell
     assert base_hint != target_hint, \
-        "both stacked lines cite the SAME capture — the merge the stack must " \
-        "not make: %r" % base_hint
+        "both build columns cite the SAME capture — the merge a column per " \
+        "build must never make: %r" % base_hint
 
 
 def test_versions_lines_table_names_the_capture_behind_each_number(app, client, seeded):

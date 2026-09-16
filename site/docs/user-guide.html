@@ -4046,16 +4046,31 @@ row cannot — see <em>heterogeneous lines</em> below.</p>
    different means). Those last two exist because a naive subtraction reported
    56 phantom removals on the first draft of this page, and they keep their own
    wording so they can never be read as a measurement.
-   Each row carries the REST path when its evidence has one, the CLI verdict on
-   each side, and a <strong>Test</strong> button. A row derived from a harvested object
-   schema has no REST path of its own, so it offers no button rather than a
-   button that cannot work. Which CLI capture each column answers from is named
-   in that column's header tooltip. Comparing a rollup says so, and names the
-   builds inside it.</li>
+   Every <em>Change</em> cell has the <strong>same three slots, in the same order</strong>, so the
+   column can be read straight down instead of a row at a time:</li>
 </ol>
+<ul>
+<li>the <strong>kind</strong> — one badge, alone on its line. Hover it for the sentence
+     that says whether this kind of finding <em>is</em> a change or a gap;</li>
+<li>the <strong>measurement</strong> — the kind of evidence (<code>sweep</code> or <code>schema</code>) and the
+     numbers behind the finding, e.g. <code>8 → 14</code>;</li>
+<li>the <strong>field names</strong> — folded, with the tally (<code>+6</code>, <code>−0</code>) on the fold.
+     Only the names fold; the tally, which is what you actually compare on,
+     stays in plain sight. Typing a field name into the filter opens the folds
+     that contain it, so a search still reaches inside one. Rows with no field
+     list — endpoints added or gone — grow no fold at all.</li>
+</ul>
+<p>Each row also carries the REST path when its evidence has one, the CLI
+   verdict on each side, and a <strong>Test</strong> button. A row derived from a harvested
+   object schema has no REST path of its own, so it offers no button rather
+   than a button that cannot work. Which CLI capture each column answers from
+   is named in that column's header tooltip. Comparing a rollup says so, and
+   names the builds inside it.</p>
 <p><em>Before 2026-09-16 these findings were split across three tables, and a key
    whose only finding was a field delta was listed in one of them and absent
-   from the other — an absent row reads as "nothing to report about it".</em>
+   from the other — an absent row reads as "nothing to report about it". The
+   column's three slots date from the same day: merged, it carried six
+   different shapes, and one object printed eighteen field names inline.</em>
 4. <strong>Preflight</strong> — name an object and the fields you intend to send, and get
    <code>ok</code>, <code>unknown_fields</code>, <code>absent</code>, <code>fields_unknown</code>, <code>version_unmeasured</code> or
    <code>unmeasured</code>.</p>

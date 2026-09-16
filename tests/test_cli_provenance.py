@@ -617,7 +617,11 @@ def test_versions_row_badges_the_measured_line_and_blanks_the_other(app, client,
     m = re.search(
         r"<tr><td><code>[\w.-]+</code></td>\s*"
         r"<td><code[^>]*>[^<]*</code></td>\s*"
-        r"<td><span class=\"fw-badge fw-badge-success\">added on 8\.0</span></td>\s*"
+        # Slot 1 of the Change cell (2026-09-16): the badge is wrapped and
+        # titled now. The boundaries stay exact — a looser ``<td>.*?</td>``
+        # here would swallow the two CLI cells this test exists to separate.
+        r"<td><div class=\"dv-kind\"><span class=\"fw-badge fw-badge-success\"[^>]*>"
+        r"added on 8\.0</span></div></td>\s*"
         r"<td>(.*?)</td>\s*<td>(.*?)</td></tr>", page, re.S)
     assert m, "the endpoint provenance table rendered no 'added on 8.0' row"
     base_cell, target_cell = m.group(1), m.group(2)

@@ -90,9 +90,6 @@ def index():
             registry_save_endpoint='adc_api.registry_save'),
         **_discovery.context(
             'fortiadc',
-            run_endpoint='adc_api.discovery_run',
-            plan_endpoint='adc_api.discovery_plan',
-            register_endpoint='adc_api.discovery_register',
             load_endpoint='adc_api.discovery_load'),
     )
 

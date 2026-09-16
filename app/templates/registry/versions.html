@@ -10,16 +10,16 @@
 
 {# A build's CLI evidence. Rendered from the per-VERSION provenance, so a
    capture taken on another build can never appear in this cell. #}
-{% macro cli_cell(P, kind='build') -%}
+{% macro cli_cell(P) -%}
   {% if P and P.measured %}
     <span class="fw-badge fw-badge-success">{{ P.counts.cli_blocks }} blocks</span>
     <span class="text-muted">{{ P.device }} · {{ P.captured_at }}</span>
     {% if P.counts.cli_only %}<br><span class="fw-badge fw-badge-danger">{{ P.counts.cli_only }} CLI-only</span>{% endif %}
   {% else %}
-    {# The row says what IT is. One macro serves both tables, and saying
-       "build" in the rollup would describe a line as something it is not —
-       which is the whole class of confusion these two tables exist to end. #}
-    <span class="text-muted" title="{{ P.reason if P else '' }}">no dump captured on this {{ kind }}</span>
+    {# The row IS a build, and the cell says so. The reason travels in the
+       title, because "no dump" and "a dump taken on another build" are
+       different facts and only one of them is fixable by capturing here. #}
+    <span class="text-muted" title="{{ P.reason if P else '' }}">no dump captured on this build</span>
   {% endif %}
 {%- endmacro %}
 
@@ -39,8 +39,10 @@
           pages and nothing failed. -#}
       {%- if product == 'fortiweb' %} FortiWeb 7.6 and 8.0 are both <code>v2.0</code>,
       and 8.0 has more fields.{% endif %}
-      So the unit of evidence on this page is the <strong>full version</strong>, and the
-      line below it is a <em>rollup</em> that always says which builds it merged.
+      So the unit of evidence on this page is the <strong>full version</strong>.
+      The line (<code>8.0</code>) survives as a rollup you can still compare
+      against below, but it is not tabulated twice: it is called out only when
+      more than one build backs it.
       Built {{ matrix.built_at or '—' }} (UTC).
     </p>
   </div>
@@ -176,62 +178,42 @@
   {% endif %}
 </div>
 
-{# ── the rollup ────────────────────────────────────────────────────────── #}
-<div class="fw-card mb-3">
-  <div class="fw-card-header"><i class="bi bi-layers me-2"></i>Firmware lines
-    <span class="text-muted" style="font-weight:400;">— the rollup, and what it merged</span></div>
-  <div class="table-responsive">
-    <table class="table fw-table mb-0">
-      <thead><tr>
-        <th>Line</th><th>In fleet</th><th>Builds merged</th>
-        <th class="text-end">Endpoints</th><th class="text-end">served</th>
-        <th class="text-end">partial</th><th class="text-end">Schema fields</th>
-        <th>CLI evidence</th>
-      </tr></thead>
-      <tbody>
-      {% for ln in lines %}
-        {% set L = matrix.lines[ln] %}
-        <tr>
-          <td><code>{{ ln }}</code></td>
-          <td>{% if L.in_fleet %}<span class="fw-badge fw-badge-success">yes</span>
-              {% else %}<span class="fw-badge fw-badge-warning">no appliance runs it</span>{% endif %}</td>
-          <td style="font-size:12px;">
-            {{ L.measured_versions|join(', ') or '—' }}
-            {% if L.heterogeneous %}
-              <br><span class="fw-badge fw-badge-warning"
-                title="More than one build backs this row. &quot;The line serves it&quot; is then a claim about a merge, not about any one box.">heterogeneous</span>
-            {% endif %}
-          </td>
-          <td class="text-end">{{ L.counts.swept }}</td>
-          <td class="text-end">{{ L.counts.ok }}</td>
-          {# The exact shape of the false positive this page was rebuilt to
-             remove: attested by SOME builds of the line and not others. Counted
-             and listed, never folded into "served". #}
-          <td class="text-end">
-            {% if L.counts.partial %}<span class="fw-badge fw-badge-danger">{{ L.counts.partial }}</span>
-            {% else %}0{% endif %}</td>
-          <td class="text-end">{{ L.counts.schema_fields }}</td>
-          <td style="font-size:12px;">{{ cli_cell(line_prov.get(ln), 'line') }}</td>
-        </tr>
-        {% if L.partial_endpoints %}
-        <tr><td colspan="8" class="bg-light" style="font-size:12px;">
-          <strong>Attested by only some builds of {{ ln }}</strong> — never reported as served by the line:
-          <ul class="mb-0 mt-1">
-          {% for p in L.partial_endpoints %}
-            <li><code>{{ p.endpoint }}</code> — served on {{ p.attested_on|join(', ') }},
-                not on {{ p.silent_on|join(', ') }}</li>
-          {% endfor %}
-          </ul>
-        </td></tr>
-        {% endif %}
-      {% else %}
-        <tr><td colspan="8" class="text-muted">No firmware line has any evidence yet.
-          Run a rediscovery sweep on an appliance, or harvest its field schemas.</td></tr>
+{# ── what the rollup did NOT duplicate ─────────────────────── #}
+{# The "Firmware lines" table was removed on 2026-09-16: with one measured
+   build per line it repeated the table above row for row, which is what the
+   operator reported. What it did NOT repeat is the disclosure below — an
+   endpoint attested by SOME builds of a line and not by others. That case can
+   only exist once a line holds two measured builds, which is exactly when the
+   table stopped being a duplicate, so the disclosure stays and renders only
+   when it has something to say. Deleting it along with the table would have
+   reinstated the false positive the per-build index was built to remove:
+   "the line serves it", asserted from one build's evidence. #}
+{% set mixed = (matrix.lines or {}).items()|selectattr('1.heterogeneous')|list %}
+{% if mixed %}
+<div class="alert alert-warning" style="font-size:13px;">
+  <strong>More than one build backs a line.</strong> Anything said about the
+  <em>line</em> is then a claim about a merge, not about any single box you
+  might write to.
+  {% for ln, L in mixed %}
+    <div class="mt-2"><code>{{ ln }}</code>
+      <span class="fw-badge fw-badge-warning">heterogeneous</span>
+      — merges {{ L.measured_versions|join(', ') }}.</div>
+    {% if L.partial_endpoints %}
+      <div><strong>Attested by only some builds of {{ ln }}</strong> — never
+        reported as served by the line:</div>
+      <ul class="mb-0">
+      {% for p in L.partial_endpoints %}
+        <li><code>{{ p.endpoint }}</code> — served on {{ p.attested_on|join(', ') }},
+            not on {{ p.silent_on|join(', ') }}</li>
       {% endfor %}
-      </tbody>
-    </table>
-  </div>
+      </ul>
+    {% else %}
+      <div class="text-muted">Every endpoint measured on these builds agrees, so
+        the line asserts nothing that a single build does not.</div>
+    {% endif %}
+  {% endfor %}
 </div>
+{% endif %}
 
 {% if matrix.notes %}
 <div class="alert alert-warning" style="font-size:13px;">

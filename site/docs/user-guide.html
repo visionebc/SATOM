@@ -4039,38 +4039,47 @@ row cannot — see <em>heterogeneous lines</em> below.</p>
 <li><strong>Compare two of them</strong> — build against build, or rollup against rollup,
    in <strong>one table</strong>: one row per finding, and the <em>Change</em> column says which
    kind of finding it is. An endpoint <strong>added on</strong> the target or <strong>gone on</strong>
-   it; an object whose <strong>fields changed</strong>, with the fields it gained and lost
+   it; an object with a <strong>field delta</strong>, with the fields it gained and lost
    named and the kind of evidence (<code>sweep</code> or <code>schema</code>) stated; and two things
    that are deliberately <em>not</em> changes — <strong>known on one side only</strong> (nobody
    measured the other) and <strong>incomparable</strong> (the two sides were measured by
    different means). Those last two exist because a naive subtraction reported
    56 phantom removals on the first draft of this page, and they keep their own
    wording so they can never be read as a measurement.
-   Every <em>Change</em> cell has the <strong>same three slots, in the same order</strong>, so the
+   Every <em>Change</em> cell has the <strong>same slots, in the same order</strong>, so the
    column can be read straight down instead of a row at a time:</li>
 </ol>
 <ul>
 <li>the <strong>kind</strong> — one badge, alone on its line. Hover it for the sentence
-     that says whether this kind of finding <em>is</em> a change or a gap;</li>
+     that says whether this kind of finding <em>is</em> a change or a gap. <strong>A field
+     delta carries no badge</strong>: the measurement below it already <em>is</em> the
+     finding, and the arrow is the only subtraction on the page. Its sentence
+     has not gone anywhere — hover the measurement instead;</li>
 <li>the <strong>measurement</strong> — the kind of evidence (<code>sweep</code> or <code>schema</code>) and the
      numbers behind the finding, e.g. <code>8 → 14</code>;</li>
 <li>the <strong>field names</strong> — folded, with the tally (<code>+6</code>, <code>−0</code>) on the fold.
      Only the names fold; the tally, which is what you actually compare on,
      stays in plain sight. Typing a field name into the filter opens the folds
      that contain it, so a search still reaches inside one. Rows with no field
-     list — endpoints added or gone — grow no fold at all.</li>
+     list — endpoints added or gone — grow no fold at all;</li>
+<li>the <strong>transport, one line per build</strong> — <code>CLI on 7.6.8</code> and <code>CLI on 8.0.5</code>,
+     each with what that build's own dump says serves the object. They are
+     <strong>stacked, never merged</strong>: the two verdicts come from two dumps taken on
+     two different appliances, and each line names the capture it answers from
+     in its tooltip. A build with no dump of its own shows an em dash and says
+     why — it never borrows the other build's answer.</li>
 </ul>
-<p>Each row also carries the REST path when its evidence has one, the CLI
-   verdict on each side, and a <strong>Test</strong> button. A row derived from a harvested
-   object schema has no REST path of its own, so it offers no button rather
-   than a button that cannot work. Which CLI capture each column answers from
-   is named in that column's header tooltip. Comparing a rollup says so, and
-   names the builds inside it.</p>
+<p>Each row also carries the REST path when its evidence has one and a <strong>Test</strong>
+   button. A row derived from a harvested object schema has no REST path of its
+   own, so it offers no button rather than a button that cannot work. Comparing
+   a rollup says so, and names the builds inside it.</p>
 <p><em>Before 2026-09-16 these findings were split across three tables, and a key
    whose only finding was a field delta was listed in one of them and absent
    from the other — an absent row reads as "nothing to report about it". The
-   column's three slots date from the same day: merged, it carried six
-   different shapes, and one object printed eighteen field names inline.</em>
+   column's fixed slots date from the same day: merged, it carried six
+   different shapes, and one object printed eighteen field names inline. The
+   transport verdicts were two columns of their own until they were folded
+   into this one, and the <code>fields changed</code> label went at the same time.</em>
 4. <strong>Preflight</strong> — name an object and the fields you intend to send, and get
    <code>ok</code>, <code>unknown_fields</code>, <code>absent</code>, <code>fields_unknown</code>, <code>version_unmeasured</code> or
    <code>unmeasured</code>.</p>

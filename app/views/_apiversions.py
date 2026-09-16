@@ -250,9 +250,6 @@ def render_page(product: str, hub_endpoint: str, rebuild_endpoint: str,
             registry_save_endpoint="registry.save")
         dr_ctx = _discovery.context(
             product,
-            run_endpoint="%s.discovery_run" % _hub_bp,
-            plan_endpoint="%s.discovery_plan" % _hub_bp,
-            register_endpoint="%s.discovery_register" % _hub_bp,
             load_endpoint="%s.discovery_load" % _hub_bp,
             scope=discover, scope_appliances=scope_boxes)
 

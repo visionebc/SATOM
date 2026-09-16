@@ -366,14 +366,19 @@
               title="Field schemas are harvested per line, so they describe {{ V.line }}, not this build specifically.">line-granular</span>{% endif %}</td>
           <td style="font-size:12px;">{{ cli_cell(ver_prov.get(v)) }}</td>
           <td class="text-nowrap">
-            {# The row IS the build, so this is where a discovery run belongs.
-               On the API hub it sat beside a dump picker and an appliance
-               picker that nothing tied to a firmware; here the link carries the
-               build, and the card below answers about that one. #}
-            {% if dr_run_endpoint %}
+            {# The row IS the build, so this is where the capture card is aimed
+               from: the link carries the build and the card below scopes its
+               evidence and its appliance list to it. It USED to promise a probe
+               of every candidate path; that half of the card was removed on
+               2026-09-17, so the tooltip says what the click still does rather
+               than what it used to. Guarded on the LOAD endpoint — the run
+               endpoint it named is no longer wired to anything on the page, so
+               reading it here would have hidden the link the day that route
+               goes. #}
+            {% if dr_load_endpoint %}
             <a class="btn btn-sm {% if discover == v %}btn-primary{% else %}btn-outline-primary{% endif %}"
                href="{{ url_for(page_endpoint, discover=v, base=base, target=target) }}#discoveryRun"
-               title="{{ _('Derive and probe candidate API paths for the CLI-only blocks of this build') }}">
+               title="{{ _('Scope the capture card below to this build: its CLI evidence and the appliances it offers') }}">
               <i class="bi bi-binoculars"></i></a>
             {% endif %}
             {% if V.manual and forget_endpoint %}
@@ -429,7 +434,7 @@
    competing for one appliance's session limit; the row supplies the SCOPE and
    this card answers about it. It moved here from the API hub because there a
    run had no firmware to be about — see the scope banner inside. #}
-{% if dr_run_endpoint or dr_load_endpoint %}
+{% if dr_load_endpoint %}
 {% include "partials/_discovery_run.html" %}
 {% endif %}
 

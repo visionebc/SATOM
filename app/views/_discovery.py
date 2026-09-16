@@ -13,7 +13,16 @@ habit:
                  Gated ``appliances.apply`` + ``Permission.BACKUP`` for the CLI
                  half — and the CLI half is DROPPED WITH ITS REASON RETURNED
                  rather than silently, mirroring ``appliances.rediscover_start``.
-* ``run``      — STARTS A JOB that fires up to ``DEFAULT_BUDGET`` read-only
+* ``run``      — UNREACHABLE FROM ANY PAGE since 2026-09-17: the operator asked
+                 for *Run discovery* and *What would it cost?* to be removed, and
+                 with them went the findings table that *Register selected* fed
+                 from. The routes below are still registered and still gated, but
+                 no template posts to them. They are kept because deleting a
+                 route is a change to the server's surface and nobody asked for
+                 that; if they are to go, they go with
+                 ``services/discovery_run.py`` and ``services/discovery_jobs.py``
+                 in one deliberate pass.
+                 STARTS A JOB that fires up to ``DEFAULT_BUDGET`` read-only
                  GETs at one appliance, and returns its id. It does NOT do the
                  asking itself: nginx cuts a proxied request at 120 s and
                  gunicorn at 600 s, so a run against a slow or degraded box —
@@ -389,21 +398,23 @@ def load(product: str, page_endpoint: str):
     return _load_back(page_endpoint, dr_watch=appliance.id)
 
 
-def context(product: str, *, run_endpoint: str = "", plan_endpoint: str = "",
-            register_endpoint: str = "", load_endpoint: str = "",
+def context(product: str, *, load_endpoint: str = "",
             scope: str = "", scope_appliances=None) -> dict:
     """Template context for ``partials/_discovery_run.html``.
 
     Empty endpoint names mean the section renders its reason and stops — the
     same contract ``_clicoverage.context`` uses for FortiAnalyzer and
     FortiAuthenticator, which have no configuration dump to diff at all.
+
+    ``run_endpoint``, ``plan_endpoint`` and ``register_endpoint`` are GONE
+    (2026-09-17): the card no longer renders a control that posts to any of
+    them, so keeping the keys would have left three template variables no
+    template reads — the quiet kind of dead code that outlives the feature
+    and then gets wired to something else by mistake.
     """
-    can_edit = bool(current_user.is_authenticated
-                    and current_user.can(Permission.REGISTRY_EDIT))
     return {
         "dr_supported": product in cli_coverage.SUPPORTED_PRODUCTS,
         "dr_reason": cli_coverage.UNSUPPORTED_REASON.get(product, ""),
-        "dr_can_run": can_edit,
         "dr_can_load": bool(current_user.is_authenticated
                             and current_user.can("appliances.apply")),
         # The build this card is answering about, and the boxes that are
@@ -412,9 +423,6 @@ def context(product: str, *, run_endpoint: str = "", plan_endpoint: str = "",
         # version axis still need.
         "dr_scope": scope,
         "dr_scope_appliances": list(scope_appliances or []),
-        "dr_run_endpoint": run_endpoint,
-        "dr_plan_endpoint": plan_endpoint,
-        "dr_register_endpoint": register_endpoint,
         "dr_load_endpoint": load_endpoint,
     }
 

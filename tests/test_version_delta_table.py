@@ -323,3 +323,92 @@ def test_nothing_to_report_says_so_instead_of_an_empty_table(isolated, client, a
     body = _page(client, app)
     assert "Nothing differs between" in body
     assert 'id="versionDelta"' not in body
+
+
+# ===========================================================================
+# 6. the Change column's three slots (2026-09-16)
+#
+# The column carried six different shapes and one row printed eighteen field
+# names inline. It is three fixed slots now — kind badge, measurement, folded
+# names — and two things moved out of plain sight. Neither may go quiet:
+# a ``phrase in row`` cannot tell "moved into the badge's title" from "gone
+# altogether", and a fold cannot be allowed to swallow the tally.
+# ===========================================================================
+
+def _kind_title(row):
+    m = re.search(r'<div class="dv-kind"><span class="fw-badge[^"]*" title="([^"]*)"',
+                  row)
+    assert m, "slot 1 is not a titled badge: %s" % row
+    return m.group(1)
+
+
+@pytest.mark.parametrize("key,phrase", [
+    ("onesided", "proves nothing"),
+    ("mixed", "never subtracted"),
+    ("onlyhere", "proves nothing"),
+])
+def test_the_sentence_that_stops_a_gap_reading_as_a_change_is_on_its_badge(
+        two_builds, client, app, key, phrase):
+    """One sentence per kind, against 43 rows on the live matrix — printed per
+    row it was eleven copies of one of them. It moved to the badge's title and
+    it has to STAY somewhere addressable: worded as a bare ``in row`` this
+    would also pass with the sentence sitting in a stray comment."""
+    assert phrase in _kind_title(_row(_page(client, app), key))
+
+
+@pytest.mark.parametrize("key,verb", [
+    ("arrives", "is a change"),
+    ("goes_away", "is a change"),
+    ("fielded", "is a change"),
+    ("onesided", "not a change"),
+    ("onlyhere", "not a change"),
+    ("mixed", "never subtracted"),
+])
+def test_each_kind_badge_says_in_its_title_whether_it_is_a_change(
+        two_builds, client, app, key, verb):
+    """The split the merged table must keep. Three kinds ARE changes and three
+    are gaps; once they share a column the only thing left carrying that is
+    the wording."""
+    assert verb in _kind_title(_row(_page(client, app), key))
+
+
+def test_the_names_fold_but_the_tally_stays_on_the_fold(two_builds, client, app):
+    """Folding hides the NAMES. ``+1`` is the number the rows are compared on
+    — it was the one thing the old inline dump made you count by eye — so it
+    sits on the summary, outside the fold, and the names stay in the row."""
+    row = _row(_page(client, app), "fielded")
+    m = re.search(r"<summary>(.*?)</summary>", row, re.S)
+    assert m, "the field names are not folded: %s" % row
+    assert "+1" in m.group(1), "the tally is not on the fold: %s" % m.group(1)
+    assert "gamma" not in m.group(1), \
+        "the names are ON the fold, which is what folding was supposed to stop"
+    assert "gamma" in row, "the name left the row entirely: %s" % row
+
+
+def test_a_row_with_no_field_names_grows_no_empty_fold(two_builds, client, app):
+    """An endpoint row has no field list. A disclosure that opens onto nothing
+    reads as evidence withheld."""
+    assert "<details" not in _row(_page(client, app), "arrives")
+
+
+def test_the_filter_can_reach_inside_a_fold():
+    """A row counted as a hit while the text that matched stays folded away is
+    worse than a miss — the operator sees a row with no visible reason to be
+    there. The filter is ONE author (filter_box), so the opening lives there."""
+    src = io.open(os.path.join(ROOT, "app/templates/partials/_cli_probe_tools.html"),
+                  encoding="utf-8").read()
+    assert "querySelectorAll('details')" in src, \
+        "the filter no longer opens folds whose contents matched"
+    assert "cliFilterOpened" in src, \
+        "folds opened by hand must survive clearing the box"
+
+
+def test_the_change_column_does_not_style_itself_row_by_row():
+    """Six loops render this cell. Inline styles repeated per loop is how this
+    page ended up with two authors of one rule before."""
+    src = io.open(TPL, encoding="utf-8").read()
+    i = src.find('id="versionDelta"')
+    assert i != -1
+    body = src[i:]
+    assert 'style="font-size:12px;"' not in body, \
+        "the Change cell is styling itself inline again"

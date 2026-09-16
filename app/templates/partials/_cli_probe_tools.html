@@ -50,6 +50,20 @@
       var hit = !q || (tr.textContent || '').toLowerCase().indexOf(q) !== -1;
       tr.style.display = hit ? '' : 'none';
       if (hit) { shown++; }
+      // A fold whose CONTENTS matched must open, or the row counts as shown
+      // while the text that matched stays folded away -- a hit the operator
+      // cannot see is worse than a miss. Only folds this filter opened are
+      // closed again, so a fold opened by hand survives clearing the box.
+      Array.prototype.forEach.call(tr.querySelectorAll('details'), function (d) {
+        if (!q) {
+          if (d.dataset.cliFilterOpened) { d.open = false; delete d.dataset.cliFilterOpened; }
+          return;
+        }
+        if (hit && !d.open && (d.textContent || '').toLowerCase().indexOf(q) !== -1) {
+          d.open = true;
+          d.dataset.cliFilterOpened = '1';
+        }
+      });
     });
     if (count) { count.textContent = shown + ' / ' + total; }
   });

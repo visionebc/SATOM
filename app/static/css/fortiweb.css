@@ -2349,3 +2349,23 @@ a.bm-dev:hover { background: var(--fw-accent-light); color: var(--fw-accent); }
 
 /* Why a recorded attempt failed — shown next to the failed badge. */
 .fw-clone-err { color: #8B1C2A; font-size: 11px; }
+
+
+/* ── #versionDelta Change column ──────────────────────────────────────────
+   Three fixed slots per cell: kind badge, measurement, folded names. The
+   fold is styled here rather than inline because six loops render it and a
+   second author of one rule is how this page lost a link once already. */
+#versionDelta td .dv-kind { margin-bottom: 3px; }
+#versionDelta td .dv-meta { font-size: 12px; color: var(--fw-text-secondary); line-height: 1.5; }
+#versionDelta td .dv-count { color: var(--fw-text-secondary); font-variant-numeric: tabular-nums; }
+#versionDelta details.dv-names { margin-top: 3px; font-size: 12px; }
+#versionDelta details.dv-names > summary {
+  cursor: pointer; list-style: none; display: inline-flex; align-items: center; gap: 2px;
+}
+#versionDelta details.dv-names > summary::-webkit-details-marker { display: none; }
+#versionDelta details.dv-names > summary::before {
+  content: "\25B8"; color: var(--fw-text-secondary); font-size: 11px; margin-right: 3px;
+}
+#versionDelta details.dv-names[open] > summary::before { content: "\25BE"; }
+#versionDelta details.dv-names .dv-names-row { margin-top: 3px; }
+#versionDelta .dv-fold-hint { color: var(--fw-text-secondary); }

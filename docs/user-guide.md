@@ -3541,16 +3541,31 @@ The page has four parts:
    different means). Those last two exist because a naive subtraction reported
    56 phantom removals on the first draft of this page, and they keep their own
    wording so they can never be read as a measurement.
-   Each row carries the REST path when its evidence has one, the CLI verdict on
-   each side, and a **Test** button. A row derived from a harvested object
-   schema has no REST path of its own, so it offers no button rather than a
-   button that cannot work. Which CLI capture each column answers from is named
-   in that column's header tooltip. Comparing a rollup says so, and names the
-   builds inside it.
+   Every *Change* cell has the **same three slots, in the same order**, so the
+   column can be read straight down instead of a row at a time:
+
+   * the **kind** — one badge, alone on its line. Hover it for the sentence
+     that says whether this kind of finding *is* a change or a gap;
+   * the **measurement** — the kind of evidence (`sweep` or `schema`) and the
+     numbers behind the finding, e.g. `8 → 14`;
+   * the **field names** — folded, with the tally (`+6`, `−0`) on the fold.
+     Only the names fold; the tally, which is what you actually compare on,
+     stays in plain sight. Typing a field name into the filter opens the folds
+     that contain it, so a search still reaches inside one. Rows with no field
+     list — endpoints added or gone — grow no fold at all.
+
+   Each row also carries the REST path when its evidence has one, the CLI
+   verdict on each side, and a **Test** button. A row derived from a harvested
+   object schema has no REST path of its own, so it offers no button rather
+   than a button that cannot work. Which CLI capture each column answers from
+   is named in that column's header tooltip. Comparing a rollup says so, and
+   names the builds inside it.
 
    *Before 2026-09-16 these findings were split across three tables, and a key
    whose only finding was a field delta was listed in one of them and absent
-   from the other — an absent row reads as "nothing to report about it".*
+   from the other — an absent row reads as "nothing to report about it". The
+   column's three slots date from the same day: merged, it carried six
+   different shapes, and one object printed eighteen field names inline.*
 4. **Preflight** — name an object and the fields you intend to send, and get
    `ok`, `unknown_fields`, `absent`, `fields_unknown`, `version_unmeasured` or
    `unmeasured`.

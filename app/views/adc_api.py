@@ -277,7 +277,15 @@ def api_versions():
                                     'adc_api.api_versions_rebuild',
                                     'adc_api.api_versions',
                                     'adc_api.api_versions_declare',
-                                    'adc_api.api_versions_forget')
+                                    'adc_api.api_versions_forget',
+                                    'adc_api.api_versions_export')
+
+
+@bp.route('/versions/export.csv')
+@login_required
+@require_permission(Permission.REGISTRY_EDIT)
+def api_versions_export():
+    return _apiversions.export_page('fortiadc', 'adc_api.api_versions')
 
 
 @bp.route('/versions/rebuild', methods=['POST'])

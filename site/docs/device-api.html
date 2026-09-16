@@ -616,6 +616,13 @@ appliance puts on the wire, carrying the <code>_val</code> companion of every en
 are not operator-settable. An object known by different evidence kinds on the
 two lines is reported as <strong>incomparable</strong>, in its own bucket. A page whose
 headline number is noise is a page the operator learns to ignore.</p>
+<p>Every row of every delta bucket carries a <code>urn</code>, and it is <code>""</code> whenever the key
+came from the harvested object schemas rather than from a sweep — an object is
+not an endpoint and has no REST path of its own. The page renders one table over
+all the buckets, so this is what decides whether a row gets a <strong>Test</strong> button:
+an invented path would put a control on screen that cannot work and would assert
+that the path exists. The <code>urn</code> is taken from the <em>target</em> side first, because
+that is the build a caller is about to write to.</p>
 <h3 id="73-three-rules">7.3 Three rules</h3>
 <ol>
 <li><strong><code>fields = none</code> is not <code>fields = []</code>.</strong> An endpoint that answered <code>ok</code> with

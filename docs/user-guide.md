@@ -3531,13 +3531,26 @@ The page has four parts:
    here — still on that build, and watching the sweep it just started.
 2. **Witnesses excluded** — the same honesty as §30.4: an unhealthy device is
    not evidence.
-3. **Compare two of them** — build against build, or rollup against rollup:
-   endpoints added and removed, fields added and removed per object, plus two
-   buckets that are *not* changes: **known on one side only** (nobody measured
-   the other) and **incomparable** (the two sides were measured by different
-   means). Those exist because a naive subtraction reported 56 phantom removals
-   on the first draft of this page. Comparing a rollup says so, and names the
+3. **Compare two of them** — build against build, or rollup against rollup,
+   in **one table**: one row per finding, and the *Change* column says which
+   kind of finding it is. An endpoint **added on** the target or **gone on**
+   it; an object whose **fields changed**, with the fields it gained and lost
+   named and the kind of evidence (`sweep` or `schema`) stated; and two things
+   that are deliberately *not* changes — **known on one side only** (nobody
+   measured the other) and **incomparable** (the two sides were measured by
+   different means). Those last two exist because a naive subtraction reported
+   56 phantom removals on the first draft of this page, and they keep their own
+   wording so they can never be read as a measurement.
+   Each row carries the REST path when its evidence has one, the CLI verdict on
+   each side, and a **Test** button. A row derived from a harvested object
+   schema has no REST path of its own, so it offers no button rather than a
+   button that cannot work. Which CLI capture each column answers from is named
+   in that column's header tooltip. Comparing a rollup says so, and names the
    builds inside it.
+
+   *Before 2026-09-16 these findings were split across three tables, and a key
+   whose only finding was a field delta was listed in one of them and absent
+   from the other — an absent row reads as "nothing to report about it".*
 4. **Preflight** — name an object and the fields you intend to send, and get
    `ok`, `unknown_fields`, `absent`, `fields_unknown`, `version_unmeasured` or
    `unmeasured`.

@@ -616,12 +616,31 @@ def diff(product: str, base_line: str, target_line: str, matrix: dict | None = N
     def _served(rec):
         return bool(rec) and rec.get("verdict") == VERDICT_OK
 
+    def _urn(key):
+        """The REST path for a key, or ``""`` when the key is not an endpoint.
+
+        The comparison renders ONE table since 2026-09-16, so a field-delta row
+        now sits beside an endpoint row and offers the same Test button. That
+        button needs a URN and only ENDPOINT evidence carries one: a key that
+        reached this function from the harvested OBJECT schemas has no REST
+        path of its own. It gets an empty string, which renders no button at
+        all — fabricating a plausible path would put a control on the page that
+        cannot work and, worse, would assert that the path exists.
+
+        The target side is asked first: it is the build being written to.
+        """
+        for src in (b_eps, a_eps):
+            rec = src.get(key)
+            if rec and rec.get("urn"):
+                return rec["urn"]
+        return ""
+
     endpoints_added, endpoints_removed, endpoints_unknown = [], [], []
     for name in sorted(set(a_eps) | set(b_eps)):
         ra, rb = a_eps.get(name), b_eps.get(name)
         if ra is None or rb is None:
             # RULE 3: not measured on one side is UNKNOWN, not a change.
-            endpoints_unknown.append({"endpoint": name,
+            endpoints_unknown.append({"endpoint": name, "urn": _urn(name),
                                       "measured_on": base_line if ra else target_line})
             continue
         if _served(rb) and not _served(ra) and ra.get("verdict") == VERDICT_ABSENT:
@@ -669,7 +688,7 @@ def diff(product: str, base_line: str, target_line: str, matrix: dict | None = N
         if not shared:
             if ia and ib:
                 fields_incomparable.append({
-                    "key": key,
+                    "key": key, "urn": _urn(key),
                     "base_origin": sorted(ia)[0], "target_origin": sorted(ib)[0],
                     "base_count": len(next(iter(ia.values()))),
                     "target_count": len(next(iter(ib.values()))),
@@ -677,7 +696,8 @@ def diff(product: str, base_line: str, target_line: str, matrix: dict | None = N
             else:
                 side = ia or ib
                 fields_unknown.append({
-                    "key": key, "known_on": base_line if ia else target_line,
+                    "key": key, "urn": _urn(key),
+                    "known_on": base_line if ia else target_line,
                     "origin": sorted(side)[0], "count": len(next(iter(side.values()))),
                 })
             continue
@@ -686,7 +706,7 @@ def diff(product: str, base_line: str, target_line: str, matrix: dict | None = N
             removed = sorted(ia[origin] - ib[origin])
             if added or removed:
                 fields_changed.append({
-                    "key": key, "origin": origin,
+                    "key": key, "urn": _urn(key), "origin": origin,
                     "added": added, "removed": removed,
                     "base_count": len(ia[origin]), "target_count": len(ib[origin]),
                 })

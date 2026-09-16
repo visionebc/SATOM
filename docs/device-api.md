@@ -391,6 +391,14 @@ are not operator-settable. An object known by different evidence kinds on the
 two lines is reported as **incomparable**, in its own bucket. A page whose
 headline number is noise is a page the operator learns to ignore.
 
+Every row of every delta bucket carries a `urn`, and it is `""` whenever the key
+came from the harvested object schemas rather than from a sweep — an object is
+not an endpoint and has no REST path of its own. The page renders one table over
+all the buckets, so this is what decides whether a row gets a **Test** button:
+an invented path would put a control on screen that cannot work and would assert
+that the path exists. The `urn` is taken from the *target* side first, because
+that is the build a caller is about to write to.
+
 ### 7.3 Three rules
 
 1. **`fields = none` is not `fields = []`.** An endpoint that answered `ok` with

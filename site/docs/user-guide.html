@@ -4036,17 +4036,29 @@ row cannot — see <em>heterogeneous lines</em> below.</p>
    here — still on that build, and watching the sweep it just started.</li>
 <li><strong>Witnesses excluded</strong> — the same honesty as §30.4: an unhealthy device is
    not evidence.</li>
-<li><strong>Compare two of them</strong> — build against build, or rollup against rollup:
-   endpoints added and removed, fields added and removed per object, plus two
-   buckets that are <em>not</em> changes: <strong>known on one side only</strong> (nobody measured
-   the other) and <strong>incomparable</strong> (the two sides were measured by different
-   means). Those exist because a naive subtraction reported 56 phantom removals
-   on the first draft of this page. Comparing a rollup says so, and names the
+<li><strong>Compare two of them</strong> — build against build, or rollup against rollup,
+   in <strong>one table</strong>: one row per finding, and the <em>Change</em> column says which
+   kind of finding it is. An endpoint <strong>added on</strong> the target or <strong>gone on</strong>
+   it; an object whose <strong>fields changed</strong>, with the fields it gained and lost
+   named and the kind of evidence (<code>sweep</code> or <code>schema</code>) stated; and two things
+   that are deliberately <em>not</em> changes — <strong>known on one side only</strong> (nobody
+   measured the other) and <strong>incomparable</strong> (the two sides were measured by
+   different means). Those last two exist because a naive subtraction reported
+   56 phantom removals on the first draft of this page, and they keep their own
+   wording so they can never be read as a measurement.
+   Each row carries the REST path when its evidence has one, the CLI verdict on
+   each side, and a <strong>Test</strong> button. A row derived from a harvested object
+   schema has no REST path of its own, so it offers no button rather than a
+   button that cannot work. Which CLI capture each column answers from is named
+   in that column's header tooltip. Comparing a rollup says so, and names the
    builds inside it.</li>
-<li><strong>Preflight</strong> — name an object and the fields you intend to send, and get
-   <code>ok</code>, <code>unknown_fields</code>, <code>absent</code>, <code>fields_unknown</code>, <code>version_unmeasured</code> or
-   <code>unmeasured</code>.</li>
 </ol>
+<p><em>Before 2026-09-16 these findings were split across three tables, and a key
+   whose only finding was a field delta was listed in one of them and absent
+   from the other — an absent row reads as "nothing to report about it".</em>
+4. <strong>Preflight</strong> — name an object and the fields you intend to send, and get
+   <code>ok</code>, <code>unknown_fields</code>, <code>absent</code>, <code>fields_unknown</code>, <code>version_unmeasured</code> or
+   <code>unmeasured</code>.</p>
 <p><strong>Heterogeneous lines.</strong> When two or more <em>measured</em> builds share a line, the
 page says so above the comparison: it names the builds the line merges and lists
 the endpoints only <em>some</em> of them served. Those are reported as <strong>partial</strong>,

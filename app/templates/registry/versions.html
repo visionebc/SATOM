@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "partials/_cli_provenance.html" import prov_badge, prov_legend with context %}
+{% from "partials/_cli_provenance.html" import prov_badge with context %}
 {% from "partials/_cli_probe_tools.html" import filter_box, test_btn, probe_bar with context %}
 {% block title %}API Versions{% endblock %}
 
@@ -21,6 +21,24 @@
        different facts and only one of them is fixable by capturing here. #}
     <span class="text-muted" title="{{ P.reason if P else '' }}">no dump captured on this build</span>
   {% endif %}
+{%- endmacro %}
+
+{# Which capture a CLI column answers from. It rides in the column HEADER's
+   title since 2026-09-16 — the two legend blocks that used to say it above the
+   table were removed at the operator's request. It is not dropped: a badge
+   whose capture is unnamed cannot be told from a stale one, and a column with
+   no capture at all must say why every cell in it is an em dash rather than
+   a verdict. (The badge VOCABULARY is spelled in _cli_provenance.html and
+   nowhere else — naming one of its labels here, even inside a comment, is
+   what test_no_consumer_page_spells_the_vocabulary_itself catches.) #}
+{% macro prov_hint(P, scope) -%}
+  {%- if P and P.measured -%}
+    CLI evidence for {{ scope }}: {{ P.device }}
+    {%- if P.line %} (firmware line {{ P.line }}){% endif %}, captured {{ P.captured_at }}.
+  {%- else -%}
+    {{ P.reason if P else 'no CLI evidence' }} — every cell in this column is an
+    em dash: absent evidence, never a measured verdict.
+  {%- endif -%}
 {%- endmacro %}
 
 {% block content %}
@@ -288,131 +306,143 @@
       differences that are nothing but that filter.
     </p>
 
-    {% if delta.fields_changed %}
-    <div class="table-responsive mb-3">
-      <table class="table fw-table mb-0">
-        <thead><tr><th>Object</th><th>Evidence</th><th class="text-end">{{ delta.base }}</th>
-          <th class="text-end">{{ delta.target }}</th><th>Added on {{ delta.target }}</th><th>Removed</th></tr></thead>
+    {# ── every difference, in ONE table ──────────────────────────────────
+       Three tables used to say this: the field deltas, then the endpoint
+       provenance table, then the incomparable objects. Split like that,
+       `antivirus` (a sweep field set of 8 against 14) appeared in the first
+       and was simply ABSENT from the second — and an absent row reads as
+       "no finding here", which is the opposite of what it meant. Reported
+       2026-09-16. One row per finding now, and the Change column says which
+       KIND of finding it is.
+
+       The kinds stay apart in their WORDING, which is the part that matters:
+       a field delta is a measurement, "known on one side only" is a gap in
+       the evidence, and "incomparable" is a refusal to subtract two kinds of
+       evidence. Collapsing those words would reinstate the 56 phantom
+       removals that the sweep↔schema split exists to prevent; collapsing the
+       table does not — it only stops hiding rows from each other. #}
+    {% set one_sided = (delta.fields_unknown|length) + (delta.endpoints_unknown|length) %}
+    {% set has_rows = delta.endpoints_added or delta.endpoints_removed
+                      or delta.fields_changed or delta.fields_unknown
+                      or delta.endpoints_unknown or delta.fields_incomparable %}
+    <div class="text-muted mb-2" style="font-size:12.5px;">
+      <strong>{{ delta.endpoints_added|length }}</strong> endpoint(s) added ·
+      <strong>{{ delta.endpoints_removed|length }}</strong> gone ·
+      <strong>{{ delta.fields_changed|length }}</strong> with a field delta ·
+      <strong>{{ one_sided }}</strong> known on one side only ·
+      <strong>{{ delta.fields_incomparable|length }}</strong> incomparable.
+      The last two are <strong>not</strong> changes and are never counted as
+      one: the side nobody measured proves nothing, and two different kinds of
+      evidence are reported side by side, never subtracted.
+      {% if not delta.fields_changed %}
+        No object here is described by the same kind of evidence on both sides,
+        so no field delta could be computed — that is a gap, not a statement
+        that the two builds are identical.
+      {% endif %}
+    </div>
+
+    {% if has_rows %}
+    <div class="mb-2">{{ filter_box('versionDelta', _('Filter rows by name, URN or field…')) }}</div>
+    <div class="table-responsive">
+      <table class="table fw-table mb-0" id="versionDelta">
+        {# The capture behind each CLI column travels in the column's own
+           title. It used to be two legend blocks above the table; the
+           operator asked for them gone (2026-09-16) and they were three
+           lines of chrome for a fact that is read once. Dropping it
+           ALTOGETHER was not on the table: a badge whose capture is unnamed
+           cannot be told from a two-month-old one, and an unmeasured column
+           has to say why its cells are em dashes rather than verdicts. #}
+        <thead><tr><th>Endpoint / object</th><th>URN</th><th>Change</th>
+          <th title="{{ prov_hint(base_prov, delta.base) }}">CLI on {{ delta.base }}</th>
+          <th title="{{ prov_hint(target_prov, delta.target) }}">CLI on {{ delta.target }}</th>
+          <th style="width:120px;">Test</th></tr></thead>
         <tbody>
+        {% for r in delta.endpoints_added %}
+          <tr><td><code>{{ r.endpoint }}</code></td>
+            <td><code class="text-muted" style="font-size:11px;">{{ r.urn }}</code></td>
+            {# Whitespace control is load-bearing: with no partial badge this
+               cell must close EXACTLY as it did before, because
+               test_cli_provenance matches the row structurally (cell by
+               cell) to prove each column answers from its own capture. A
+               stray newline from a false {% raw %}{% if %}{% endraw %} is enough to make that
+               guard report "no row rendered" against a correct page. #}
+            <td><span class="fw-badge fw-badge-success">added on {{ delta.target }}</span>
+              {%- if r.silent_on %}<br><span class="fw-badge fw-badge-warning"
+                title="Only some builds of the target rollup attested this.">partial</span>{% endif -%}
+            </td>
+            <td>{{ prov_badge(r.cli_base) }}</td>
+            <td>{{ prov_badge(r.cli_target) }}</td>
+            <td>{{ test_btn(urn=r.urn) }}</td></tr>
+        {% endfor %}
+        {% for r in delta.endpoints_removed %}
+          <tr><td><code>{{ r.endpoint }}</code></td>
+            <td><code class="text-muted" style="font-size:11px;">{{ r.urn }}</code></td>
+            <td><span class="fw-badge fw-badge-danger">gone on {{ delta.target }}</span></td>
+            <td>{{ prov_badge(r.cli_base) }}</td>
+            <td>{{ prov_badge(r.cli_target) }}</td>
+            <td>{{ test_btn(urn=r.urn) }}</td></tr>
+        {% endfor %}
         {% for c in delta.fields_changed %}
-          <tr>
-            <td><code>{{ c.key }}</code></td>
-            <td>{{ origin_badge(c.origin) }}</td>
-            <td class="text-end">{{ c.base_count }}</td>
-            <td class="text-end">{{ c.target_count }}</td>
-            <td style="font-size:12px;">{% for f in c.added %}<span class="fw-badge fw-badge-success me-1">{{ f }}</span>{% endfor %}</td>
-            <td style="font-size:12px;">{% for f in c.removed %}<span class="fw-badge fw-badge-danger me-1">{{ f }}</span>{% endfor %}</td>
-          </tr>
+          <tr><td><code>{{ c.key }}</code></td>
+            <td><code class="text-muted" style="font-size:11px;">{{ c.urn }}</code></td>
+            <td><span class="fw-badge fw-badge-info">fields changed</span>
+              {{ origin_badge(c.origin) }}
+              <span class="text-muted">{{ c.base_count }} → {{ c.target_count }}</span>
+              {# The word, not just the colour: "added" and "removed" as two
+                 shades of the same pill is the kind of distinction that
+                 disappears on a projector and for a colour-blind reader. #}
+              {% if c.added %}<div style="font-size:12px;"><span class="text-muted">added:</span>
+                {% for f in c.added %}<span class="fw-badge fw-badge-success me-1">{{ f }}</span>{% endfor %}</div>{% endif %}
+              {% if c.removed %}<div style="font-size:12px;"><span class="text-muted">removed:</span>
+                {% for f in c.removed %}<span class="fw-badge fw-badge-danger me-1">{{ f }}</span>{% endfor %}</div>{% endif %}
+            </td>
+            <td>{{ prov_badge(c.cli_base) }}</td>
+            <td>{{ prov_badge(c.cli_target) }}</td>
+            <td>{{ test_btn(urn=c.urn) }}</td></tr>
+        {% endfor %}
+        {% for r in delta.endpoints_unknown %}
+          <tr><td><code>{{ r.endpoint }}</code></td>
+            <td><code class="text-muted" style="font-size:11px;">{{ r.urn }}</code></td>
+            <td><span class="fw-badge fw-badge-secondary">measured only on {{ r.measured_on }}</span>
+              <div class="text-muted" style="font-size:12px;">the other side was never
+                asked, so this is not a change.</div></td>
+            <td>{{ prov_badge(r.cli_base) }}</td>
+            <td>{{ prov_badge(r.cli_target) }}</td>
+            <td>{{ test_btn(urn=r.urn) }}</td></tr>
+        {% endfor %}
+        {% for c in delta.fields_unknown %}
+          <tr><td><code>{{ c.key }}</code></td>
+            <td><code class="text-muted" style="font-size:11px;">{{ c.urn }}</code></td>
+            <td><span class="fw-badge fw-badge-secondary">fields known only on {{ c.known_on }}</span>
+              {{ origin_badge(c.origin) }}
+              <span class="text-muted">{{ c.count }} field(s)</span>
+              <div class="text-muted" style="font-size:12px;">measured on one side and
+                never on the other — the missing side proves nothing.</div></td>
+            <td>{{ prov_badge(c.cli_base) }}</td>
+            <td>{{ prov_badge(c.cli_target) }}</td>
+            <td>{{ test_btn(urn=c.urn) }}</td></tr>
+        {% endfor %}
+        {% for c in delta.fields_incomparable %}
+          <tr><td><code>{{ c.key }}</code></td>
+            <td><code class="text-muted" style="font-size:11px;">{{ c.urn }}</code></td>
+            <td><span class="fw-badge fw-badge-warning">incomparable</span>
+              <span class="text-muted">{{ origin_badge(c.base_origin) }} {{ c.base_count }}
+                field(s) on {{ delta.base }} · {{ origin_badge(c.target_origin) }}
+                {{ c.target_count }} on {{ delta.target }}</span>
+              <div class="text-muted" style="font-size:12px;">known on both, by different
+                kinds of evidence. Reported, never subtracted.</div></td>
+            <td>{{ prov_badge(c.cli_base) }}</td>
+            <td>{{ prov_badge(c.cli_target) }}</td>
+            <td>{{ test_btn(urn=c.urn) }}</td></tr>
         {% endfor %}
         </tbody>
       </table>
     </div>
     {% else %}
-      <div class="text-muted mb-3" style="font-size:13px;">
-        No object is described by the same kind of evidence on both sides, so no
-        field delta can be computed. That is a gap in the evidence, not a
-        statement that the two are identical.
-      </div>
-    {% endif %}
-
-    <div class="row g-3">
-      <div class="col-md-4">
-        <div class="fw-card h-100">
-          <div class="fw-card-header" style="font-size:13px;">Endpoints</div>
-          <div class="p-3" style="font-size:13px;">
-            <div>added on {{ delta.target }}: <strong>{{ delta.endpoints_added|length }}</strong></div>
-            <div>removed: <strong>{{ delta.endpoints_removed|length }}</strong></div>
-            <div class="text-muted mt-2">
-              not measured on one of the two:
-              <strong>{{ delta.endpoints_unknown|length }}</strong>
-              — never counted as a change.
-            </div>
-          </div>
-        </div>
-      </div>
-      <div class="col-md-4">
-        <div class="fw-card h-100">
-          <div class="fw-card-header" style="font-size:13px;">Fields known on one side only</div>
-          <div class="p-3" style="font-size:13px;">
-            <strong>{{ delta.fields_unknown|length }}</strong> object(s).
-            <div class="text-muted mt-2">Measured on one and never on the other —
-              the missing side proves nothing.</div>
-          </div>
-        </div>
-      </div>
-      <div class="col-md-4">
-        <div class="fw-card h-100">
-          <div class="fw-card-header" style="font-size:13px;">Incomparable</div>
-          <div class="p-3" style="font-size:13px;">
-            <strong>{{ delta.fields_incomparable|length }}</strong> object(s).
-            <div class="text-muted mt-2">Known on both, but by different kinds of
-              evidence. Reported, never subtracted.</div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    {# ── the endpoints, with the transport that serves each one ──────── #}
-    {% if delta.endpoints_added or delta.endpoints_removed %}
-    <div class="mt-3">
-      <div class="text-muted mb-2" style="font-size:12.5px;">
-        Which transport serves each endpoint, measured separately on each side —
-        a CLI dump comes from one box running one build, so
-        <code>{{ delta.base }}</code> evidence can never answer for
-        <code>{{ delta.target }}</code>.
-      </div>
-      {{ prov_legend(base_prov, compact=True) }}
-      {% if base != target %}{{ prov_legend(target_prov, compact=True) }}{% endif %}
-      <div class="mb-2">{{ filter_box('versionDelta', _('Filter endpoints by name or URN…')) }}</div>
-      <div class="table-responsive">
-        <table class="table fw-table mb-0" id="versionDelta">
-          <thead><tr><th>Endpoint</th><th>URN</th><th>Change</th>
-            <th>CLI on {{ delta.base }}</th><th>CLI on {{ delta.target }}</th>
-            <th style="width:120px;">Test</th></tr></thead>
-          <tbody>
-          {% for r in delta.endpoints_added %}
-            <tr><td><code>{{ r.endpoint }}</code></td>
-              <td><code class="text-muted" style="font-size:11px;">{{ r.urn }}</code></td>
-              {# Whitespace control is load-bearing: with no partial badge this
-                 cell must close EXACTLY as it did before, because
-                 test_cli_provenance matches the row structurally (cell by
-                 cell) to prove each column answers from its own capture. A
-                 stray newline from a false {% raw %}{% if %}{% endraw %} is enough to make that
-                 guard report "no row rendered" against a correct page. #}
-              <td><span class="fw-badge fw-badge-success">added on {{ delta.target }}</span>
-                {%- if r.silent_on %}<br><span class="fw-badge fw-badge-warning"
-                  title="Only some builds of the target rollup attested this.">partial</span>{% endif -%}
-              </td>
-              <td>{{ prov_badge(r.cli_base) }}</td>
-              <td>{{ prov_badge(r.cli_target) }}</td>
-              <td>{{ test_btn(urn=r.urn) }}</td></tr>
-          {% endfor %}
-          {% for r in delta.endpoints_removed %}
-            <tr><td><code>{{ r.endpoint }}</code></td>
-              <td><code class="text-muted" style="font-size:11px;">{{ r.urn }}</code></td>
-              <td><span class="fw-badge fw-badge-danger">gone on {{ delta.target }}</span></td>
-              <td>{{ prov_badge(r.cli_base) }}</td>
-              <td>{{ prov_badge(r.cli_target) }}</td>
-              <td>{{ test_btn(urn=r.urn) }}</td></tr>
-          {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    </div>
-    {% endif %}
-
-    {% if delta.fields_incomparable %}
-    <div class="table-responsive mt-3">
-      <table class="table fw-table mb-0">
-        <thead><tr><th>Object</th><th>{{ delta.base }}</th><th>{{ delta.target }}</th></tr></thead>
-        <tbody>
-        {% for c in delta.fields_incomparable %}
-          <tr><td><code>{{ c.key }}</code></td>
-            <td>{{ origin_badge(c.base_origin) }} {{ c.base_count }} field(s)</td>
-            <td>{{ origin_badge(c.target_origin) }} {{ c.target_count }} field(s)</td></tr>
-        {% endfor %}
-        </tbody>
-      </table>
+    <div class="text-muted" style="font-size:13px;">
+      Nothing differs between <code>{{ delta.base }}</code> and
+      <code>{{ delta.target }}</code> in the evidence held for them — which is
+      not the same as nothing differing on the appliances.
     </div>
     {% endif %}
   </div>

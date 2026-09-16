@@ -113,11 +113,21 @@ def render_page(product: str, hub_endpoint: str, rebuild_endpoint: str,
     # A provenance column needs the rows, so they are rendered — annotated
     # in the view rather than looked up in the template, so the lookup has
     # exactly one call site.
+    #
+    # EVERY bucket, not just the two endpoint ones: the comparison renders a
+    # single table since 2026-09-16, and a row that reached it through the
+    # field buckets has the same two CLI columns as its neighbours. Annotating
+    # only some buckets would leave those cells empty — indistinguishable on
+    # screen from "the CLI does not serve it", which is the one confusion this
+    # whole column exists to prevent. A key that names no catalog entry answers
+    # ``unknown`` (an em dash carrying its reason), never a badge.
     if delta:
-        for bucket in ("endpoints_added", "endpoints_removed"):
+        for bucket in ("endpoints_added", "endpoints_removed", "endpoints_unknown",
+                       "fields_changed", "fields_unknown", "fields_incomparable"):
             for row in delta.get(bucket) or []:
-                row["cli_base"] = base_prov.for_name(row["endpoint"]) if base_prov else None
-                row["cli_target"] = target_prov.for_name(row["endpoint"]) if target_prov else None
+                name = row.get("endpoint") or row.get("key") or ""
+                row["cli_base"] = base_prov.for_name(name) if base_prov else None
+                row["cli_target"] = target_prov.for_name(name) if target_prov else None
 
     _hub_bp = (hub_endpoint or "").split(".")[0]
     from ..models import Appliance, visible_appliances

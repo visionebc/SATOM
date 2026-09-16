@@ -134,7 +134,11 @@ def test_a_key_whose_only_finding_is_a_field_delta_is_a_row(two_builds, client, 
 
 def test_the_field_delta_row_says_which_evidence_and_how_many(two_builds, client, app):
     row = _row(_page(client, app), "fielded")
-    assert ">sweep<" in row, "a delta must name the kind of evidence it is: %s" % row
+    # Scoped to the Evidence cell since 2026-09-16: a row-wide search would be
+    # answered by any stray occurrence, and the point of the new column is
+    # that there is exactly one place that answers this.
+    assert ">sweep<" in _ev_cell(row), \
+        "a delta must name the kind of evidence it is: %s" % row
     assert "2" in row and "3" in row, row
 
 
@@ -162,11 +166,16 @@ def test_the_old_split_headings_do_not_come_back(two_builds, client, app, gone):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("key,phrase", [
-    ("arrives", "added on 8.0.5"),
-    ("goes_away", "gone on 8.0.5"),
-    # The two field-delta rows lost their label on 2026-09-16 at the
-    # operator's request, so what they are asserted BY is the subtraction
-    # itself — the only place on this page where two numbers are subtracted.
+    # ``arrives`` and ``goes_away`` are not here any more: their labels
+    # (``added on 8.0.5`` / ``gone on 8.0.5``) were removed on 2026-09-16 at
+    # the operator's request as a restatement of the two build columns beside
+    # them. They are asserted instead by
+    # ``test_the_two_endpoint_changes_are_read_off_their_own_columns``, which
+    # checks the thing that replaced the label rather than the label.
+    #
+    # The two field-delta rows lost their label in the same pass, so what they
+    # are asserted BY is the subtraction itself — the only place on this page
+    # where two numbers are subtracted.
     ("fielded", "2 → 3"),
     ("onesided", "fields known only on 7.6.8"),
     ("mixed", "incomparable"),
@@ -177,21 +186,52 @@ def test_every_bucket_reaches_the_one_table(two_builds, client, app, key, phrase
     assert phrase in _row(_page(client, app), key).lower()
 
 
+def test_the_two_endpoint_changes_are_read_off_their_own_columns(
+        two_builds, client, app):
+    """What replaced ``added on 8.0.5`` / ``gone on 8.0.5``.
+
+    The labels went because the two build columns already measure the thing
+    they named. That is only true if the columns really do say it, and say it
+    in OPPOSITE directions for the two buckets — a guard that merely checked
+    the labels were gone would pass on a table that lost the finding too.
+    """
+    body = _page(client, app)
+    for key, want in (("arrives", ("absent", "served")),
+                      ("goes_away", ("served", "absent"))):
+        base_col, target_col = _build_cols(_row(body, key))
+        assert ">%s<" % want[0] in base_col, (key, base_col)
+        assert ">%s<" % want[1] in target_col, (key, target_col)
+        # Both sides MEASURED, which is what makes it a change and not a gap.
+        assert "not measured" not in base_col + target_col, (key, base_col)
+
+
+@pytest.mark.parametrize("gone", ["added on", "gone on"])
+def test_the_class_labels_the_operator_removed_do_not_come_back(
+        two_builds, client, app, gone):
+    """Inverted, because the removal is the deliverable."""
+    assert gone not in _table(_page(client, app)).lower()
+
+
 @pytest.mark.parametrize("key", ["onesided", "mixed", "onlyhere"])
 def test_a_gap_is_never_worded_as_a_change(two_builds, client, app, key):
     """The half of the old split that was load-bearing. "Nobody measured the
     other side" and "the other side does not have it" look identical once they
-    share a table, and only one of them is a fact about the appliance."""
-    row = _row(_page(client, app), key).lower()
-    assert "added on" not in row and "gone on" not in row, row
-    # Was ``"fields changed" not in row`` until that label was removed
-    # (2026-09-16) — which would have left this half of the guard VACUOUS,
-    # passing on a page where the wording had been merged after all. A gap is
-    # now told from a measurement by the subtraction, so that is what it is
-    # forbidden to show: no ``N → M`` arrow, and no field-name fold, which
-    # only a computed delta earns.
+    share a table, and only one of them is a fact about the appliance.
+
+    Reworded twice now, because the thing that told the two apart keeps
+    moving. It was ``"fields changed" not in row``; that label went, which
+    would have left the assertion VACUOUS. Then it was ``"added on" not in
+    row``; those labels went too (2026-09-16), and that half would have gone
+    vacuous in exactly the same way — passing on a page where the wording had
+    been merged after all. So a gap is now pinned by what it may not show
+    (a subtraction, a field fold) AND by what it must: the badge that says it
+    is not a change. A badge in column 1 is the whole signal now.
+    """
+    row = _row(_page(client, app), key)
     assert "→" not in row, "a gap rendered a subtraction: %s" % row
     assert "<details" not in row, "a gap grew a delta's field fold: %s" % row
+    assert "dv-kind" in row, \
+        "a gap lost the badge that is now the ONLY thing marking it as one: %s" % row
 
 
 def test_the_two_gaps_do_not_share_one_word(two_builds, client, app):
@@ -251,19 +291,27 @@ def test_the_page_no_longer_renders_the_legend_blocks():
 
 
 def _cells(row):
-    """The row's FIVE cells. Cells nest tags but never another ``<td>``.
+    """The row's SIX cells. Cells nest tags but never another ``<td>``.
 
-    Five since 2026-09-16: the identity (name, and the finding itself), the
-    URN, then ONE COLUMN PER BUILD, then the Test button.
+    Six since 2026-09-16: the identity (name, and the subtraction when there is
+    one), the EVIDENCE KIND, the URN, then ONE COLUMN PER BUILD, then the Test
+    button.
     """
     return [c.split("</td>")[0] for c in row.split("<td")[1:]]
 
 
 def _build_cols(row):
-    """``(base column, target column)`` — cells 3 and 4, never 2 and 3."""
+    """``(base column, target column)`` — cells 4 and 5, never 3 and 4."""
     cells = _cells(row)
-    assert len(cells) == 5, "the row is not five cells (%d): %s" % (len(cells), row)
-    return cells[2], cells[3]
+    assert len(cells) == 6, "the row is not six cells (%d): %s" % (len(cells), row)
+    return cells[3], cells[4]
+
+
+def _ev_cell(row):
+    """The *Evidence* cell — second, where the operator asked for it."""
+    cells = _cells(row)
+    assert len(cells) == 6, "the row is not six cells (%d): %s" % (len(cells), row)
+    return cells[1]
 
 
 def _cli_half(col):
@@ -300,9 +348,11 @@ def test_every_finding_gets_one_column_per_build(two_builds, client, app):
     head = _table(body).split("</thead>")[0]
     # ``</th>``, not ``<th``: the latter is also a substring of ``<thead>``,
     # which is how an earlier draft of this guard counted one column too many.
-    assert head.count("</th>") == 5, "the table is not five columns: %s" % head
+    assert head.count("</th>") == 6, "the table is not six columns: %s" % head
     assert ">Change<" not in head, \
         "the cell the operator replaced is back as a column: %s" % head
+    assert ">Evidence</th>" in head, \
+        "the Evidence column the operator asked for is gone: %s" % head
     assert ">%s<" % BASE in head and ">%s<" % TARGET in head, \
         "the two columns are not headed by the two builds: %s" % head
     for key in KEYS:
@@ -390,7 +440,7 @@ def test_the_subtraction_stays_in_the_identity_cell(two_builds, client, app):
     cells = _cells(_row(_page(client, app), "fielded"))
     assert "2 → 3" in cells[0], \
         "the finding left the identity cell: %s" % cells[0]
-    for i, side in ((2, BASE), (3, TARGET)):
+    for i, side in ((3, BASE), (4, TARGET)):
         assert "→" not in cells[i], \
             "the %s column subtracted the other one's number: %s" % (side, cells[i])
 
@@ -399,11 +449,19 @@ def test_each_build_column_carries_its_own_field_count(two_builds, client, app):
     """Splitting the arrow out only works if each column still says how many
     fields IT holds — otherwise the row states a difference and neither side
     says of what."""
-    base_col, target_col = _build_cols(_row(_page(client, app), "fielded"))
+    row = _row(_page(client, app), "fielded")
+    base_col, target_col = _build_cols(row)
     assert "2 field(s)" in _api_half(base_col), base_col
     assert "3 field(s)" in _api_half(target_col), target_col
-    assert ">sweep<" in _api_half(base_col), \
-        "a count with no evidence kind behind it: %s" % base_col
+    # The kind behind those counts is in the Evidence column since
+    # 2026-09-16 — once per row, not once per column. Guarded from both
+    # sides: a count with no kind anywhere is unjudgeable, and the kind
+    # printed in both columns is the duplication the column removed.
+    assert ">sweep<" in _ev_cell(row), \
+        "a count with no evidence kind behind it: %s" % row
+    for col in (base_col, target_col):
+        assert ">sweep<" not in col and ">schema<" not in col, \
+            "the evidence kind grew a second author inside a build column: %s" % col
 
 
 def test_the_gained_names_fold_under_the_build_that_gained_them(
@@ -509,22 +567,25 @@ def _kind_title(row):
     return m.group(1)
 
 
-def test_a_field_delta_carries_no_kind_badge_at_all(two_builds, client, app):
-    """The removal is the deliverable, so it is guarded inverted too.
+def test_no_change_carries_a_kind_badge_and_every_gap_does(two_builds, client, app):
+    """The rule the table is read by, guarded from BOTH directions.
 
-    Scoped to the ROW: ``dv-kind`` is legitimately all over the table — five
-    other buckets still badge their kind — so a table-wide search would be
-    answered by any of them.
+    It inverted on 2026-09-16. It used to be "every row badges its class";
+    with ``added on`` / ``gone on`` removed it is now **a badge in column 1
+    means the row is not a change**. Half a guard would be worse than none
+    here: checking only that the four change rows lost their badge passes on a
+    page where the three gaps lost theirs too, and then nothing on the page
+    distinguishes a measured difference from an unasked question.
     """
     body = _page(client, app)
-    for key in ("fielded", "schemaonly"):
+    for key in ("arrives", "goes_away", "fielded", "schemaonly"):
         row = _row(body, key)
         assert "dv-kind" not in row, \
             "the label the operator removed is back on %s: %s" % (key, row)
         assert "fields changed" not in row.lower(), row
-    assert "dv-kind" in _row(body, "arrives"), \
-        "premise: the other buckets still badge their kind, or the guard above " \
-        "proves nothing"
+    for key in ("onesided", "mixed", "onlyhere"):
+        assert "dv-kind" in _row(body, key), \
+            "%s is not a change and nothing on its row says so" % key
 
 
 @pytest.mark.parametrize("key,phrase", [
@@ -542,8 +603,11 @@ def test_the_sentence_that_stops_a_gap_reading_as_a_change_is_on_its_badge(
 
 
 @pytest.mark.parametrize("key,verb", [
-    ("arrives", "is a change"),
-    ("goes_away", "is a change"),
+    # ``arrives`` and ``goes_away`` carry nothing titled in column 1 any more:
+    # their badge went with the label. Their change-ness is stated by the two
+    # build columns, and BOTH of those badges carry their own title — which is
+    # what ``test_both_sides_of_an_endpoint_change_say_they_were_measured``
+    # pins, so the sentence did not simply evaporate.
     ("fielded", "is a change"),
     ("onesided", "not a change"),
     ("onlyhere", "not a change"),
@@ -551,11 +615,31 @@ def test_the_sentence_that_stops_a_gap_reading_as_a_change_is_on_its_badge(
 ])
 def test_each_kind_badge_says_in_its_title_whether_it_is_a_change(
         two_builds, client, app, key, verb):
-    """The split the merged table must keep. Three kinds ARE changes and three
-    are gaps; once they share a column the only thing left carrying that is
-    the wording — and on a field delta the badge that used to carry it is
-    gone, so this is the guard that stops the sentence going with it."""
+    """The split the merged table must keep. Once every finding shares a table
+    the only thing left carrying "this one is a change" is the wording — and
+    on a field delta the badge that used to carry it is gone, so this is the
+    guard that stops the sentence going with it."""
     assert verb in _kind_title(_row(_page(client, app), key))
+
+
+def test_both_sides_of_an_endpoint_change_say_they_were_measured(
+        two_builds, client, app):
+    """Where the sentence went when the ``added on`` badge was removed.
+
+    A label that disappears usually takes its explanation with it — that is
+    how ``fields changed`` nearly took "this one is a change" with it. Here
+    the explanation had somewhere true to go: both build columns hold a
+    MEASURED verdict, and each says so in its own title, which is precisely
+    what makes the row a change rather than a gap. If those titles go, the
+    removal did lose something after all.
+    """
+    body = _page(client, app)
+    for key in ("arrives", "goes_away"):
+        for col in _build_cols(_row(body, key)):
+            half = _api_half(col)
+            m = re.search(r'<span class="fw-badge[^"]*" title="([^"]*)"', half)
+            assert m, "%s: a verdict with no reason behind it: %s" % (key, half)
+            assert "measured" in m.group(1), (key, m.group(1))
 
 
 def test_the_names_fold_but_the_tally_stays_on_the_fold(two_builds, client, app):
@@ -602,3 +686,90 @@ def test_the_build_columns_do_not_style_themselves_row_by_row():
     body = src[i:]
     assert 'style="font-size:12px;"' not in body, \
         "a build column is styling itself inline again"
+
+
+# ===========================================================================
+# 7. the Evidence column (2026-09-16)
+#
+# Second position, at the operator's request. It is the ONLY author of the
+# sweep↔schema distinction now — it used to be printed inside both build
+# columns, which on every row but one is the same word twice.
+# ===========================================================================
+
+@pytest.mark.parametrize("key,kind", [
+    ("arrives", "sweep"), ("goes_away", "sweep"), ("onlyhere", "sweep"),
+    ("fielded", "sweep"), ("onesided", "sweep"),
+    ("schemaonly", "schema"),
+])
+def test_every_row_names_its_evidence_kind_in_the_second_cell(
+        two_builds, client, app, key, kind):
+    """Including the ENDPOINT rows, which never carried a kind before.
+
+    They are sweep evidence and the record says so; the point of asserting it
+    per bucket is that the template must not be the one deciding — an endpoint
+    loop that hardcodes the word would print a kind for a record that has
+    none, the same fabrication as inventing a URN for a schema object.
+    """
+    assert ">%s<" % kind in _ev_cell(_row(_page(client, app), key))
+
+
+def test_an_incomparable_row_names_both_kinds_and_which_build_holds_which(
+        two_builds, client, app):
+    """The one row the column cannot collapse to a single badge.
+
+    ``mixed`` is incomparable BECAUSE the two sides hold different kinds of
+    evidence. One badge there would erase the finding, and two badges with no
+    build beside them would leave the reader to guess which side is which —
+    on a page whose entire premise is that neither build answers for the
+    other.
+    """
+    cell = _ev_cell(_row(_page(client, app), "mixed"))
+    assert ">sweep<" in cell and ">schema<" in cell, cell
+    assert BASE in cell and TARGET in cell, \
+        "two kinds and no way to tell which build holds which: %s" % cell
+    assert "never subtracted" in cell or "subtracts neither" in cell, \
+        "the disagreement is stated without saying what follows from it: %s" % cell
+
+
+def test_the_evidence_kind_comes_from_the_record_not_from_the_loop():
+    """One author, and it is the service.
+
+    Six loops render these rows. A literal ``sweep`` in any of them is a claim
+    the template is not entitled to make — and it would keep rendering
+    confidently against a record that lost its ``origin``.
+    """
+    src = io.open(TPL, encoding="utf-8").read()
+    delta = src.split('id="versionDelta"')[1].split("</table>")[0]
+    delta = re.sub(r"\{#.*?#\}", "", delta, flags=re.S)
+    assert "evidence_slot(" in delta and "evidence_split(" in delta
+    assert "'sweep'" not in delta and '"sweep"' not in delta, \
+        "a row loop spells the evidence kind instead of reading it: %s" % \
+        [ln for ln in delta.splitlines() if "sweep" in ln]
+
+
+def test_a_record_with_no_evidence_kind_is_not_called_schema():
+    """The latent defect the new column would have made visible on every row.
+
+    ``origin_badge`` was ``if sweep / else schema`` — so anything that was not
+    a sweep, INCLUDING an empty or missing origin, was badged as harvested
+    schema evidence. Two branches turned a silence into a claim. Now there are
+    three and the third says nothing.
+    """
+    src = io.open(TPL, encoding="utf-8").read()
+    macro = src.split("{% macro origin_badge")[1].split("{%- endmacro %}")[0]
+    assert "== 'schema'" in macro, \
+        "schema is still the fall-through for every value that is not sweep"
+
+
+def test_diff_stamps_the_evidence_kind_on_every_bucket(two_builds, app):
+    """Because the template is forbidden from inventing it, the service has to
+    supply it — for the endpoint buckets too, which had no ``origin`` key at
+    all until the column was asked for."""
+    with app.app_context():
+        d = am.diff("fortiweb", BASE, TARGET)
+    for bucket in ("endpoints_added", "endpoints_removed", "endpoints_unknown",
+                   "fields_changed", "fields_unknown"):
+        for r in d[bucket]:
+            assert r.get("origin") in ("sweep", "schema"), (bucket, r)
+    for r in d["fields_incomparable"]:
+        assert r["base_origin"] != r["target_origin"], r

@@ -3532,29 +3532,41 @@ The page has four parts:
 2. **Witnesses excluded** — the same honesty as §30.4: an unhealthy device is
    not evidence.
 3. **Compare two of them** — build against build, or rollup against rollup,
-   in **one table with one column per build**: one row per finding, the finding
-   itself beside the name, and then everything measured *on 7.6.8* next to
-   everything measured *on 8.0.5*.
+   in **one table with one column per build**: `Endpoint / object`,
+   `Evidence`, `URN`, then `7.6.8`, `8.0.5`, `Test`. One row per finding, and
+   then everything measured *on 7.6.8* next to everything measured *on 8.0.5*.
 
-   * **The finding sits with the name**, because it is a fact about the pair
-     and not about either build: an endpoint **added on** the target or **gone
-     on** it; **known on one side only** and **incomparable**, which are
-     deliberately *not* changes; or, on an object whose field set changed, the
-     subtraction itself — `8 → 14`. That arrow is the only place on this page
-     where one number is taken from another, and it cannot sit in either column
-     without that column stating the other one's number. Hover the badge — or
-     the subtraction, on a field delta, which carries no badge — for the
-     sentence that says whether this kind of finding *is* a change or a gap.
-     The two gaps keep their own wording so they can never be read as a
-     measurement: a naive subtraction reported 56 phantom removals on the first
-     draft of this page.
+   * **A badge beside the name means the row is *not* a change.** That is the
+     rule the table is read by, and it is the reverse of what it was before
+     2026-09-16. **`added on`** and **`gone on`** were removed as labels: they
+     restated the two build columns beside them, where a row that is `absent`
+     on one side and `served` on the other *is* the addition. What keeps its
+     badge is everything that is **not** a change — **known on one side only**,
+     **measured only on** one build, and **incomparable** — and hovering that
+     badge gives the sentence saying so. The two gaps keep their own wording so
+     they can never be read as a measurement: a naive subtraction reported 56
+     phantom removals on the first draft of this page.
+   * **The subtraction still sits with the name**, because it is a fact about
+     the pair and not about either build — `8 → 14`. That arrow is the only
+     place on this page where one number is taken from another, and it cannot
+     sit in either column without that column stating the other one's number.
+     Hover it for the sentence that says this one *is* a change.
+   * **`Evidence`, in second position, says which kind of evidence the row
+     rests on** — `sweep` (the raw collection the appliance put on the wire) or
+     `schema` (a harvested field schema, which strips the wire-only companion
+     of every enum). The two are never subtracted from one another. It sits in
+     one column because on every row but one *both* sides hold the same kind —
+     that is the precondition for comparing them at all — so printing it inside
+     both build columns printed one word twice. The exception is an
+     **incomparable** row, which is incomparable *because* the sides disagree:
+     there the cell names both kinds and which build holds which.
    * **Each build column is indented under the transport that produced its
      evidence** — `API` first, then `CLI`, with that transport's answer
      beneath it.
    * The **API** half says whether that build was measured to serve the object
      (`served`, `absent`, or `not measured on 8.0.5` — a rejection and an
-     unasked question never share a word), how many fields its evidence
-     carries, and which kind of evidence that is (`sweep` or `schema`). The
+     unasked question never share a word) and how many fields its evidence
+     carries. The
      field names **fold**, with the tally (`+6`) on the fold, and they appear
      only under the build that has them: the base column lists what was lost,
      the target column what was gained. Typing a field name into the filter
@@ -3579,8 +3591,10 @@ The page has four parts:
    from the other — an absent row reads as "nothing to report about it". The
    single Change cell that replaced them carried six different shapes and one
    object printed eighteen field names inline; it became fixed slots, then lost
-   the "fields changed" label, then absorbed the two transport columns, and
-   then split into a column per build — all in the same week.*
+   the "fields changed" label, then absorbed the two transport columns, then
+   split into a column per build, and finally gave up the evidence kind to a
+   column of its own and the `added on` / `gone on` labels to the two build
+   columns that already measured them — all in the same week.*
 4. **Preflight** — name an object and the fields you intend to send, and get
    `ok`, `unknown_fields`, `absent`, `fields_unknown`, `version_unmeasured` or
    `unmeasured`.

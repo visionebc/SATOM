@@ -635,20 +635,41 @@ def diff(product: str, base_line: str, target_line: str, matrix: dict | None = N
                 return rec["urn"]
         return ""
 
+    def _origin(*recs):
+        """The evidence kind a record was BUILT with, never one inferred here.
+
+        The comparison grows an *Evidence* column on 2026-09-16 and it has to
+        answer for endpoint rows too, not only for field rows. The template
+        must not be the one to decide: hardcoding ``sweep`` in its endpoint
+        loops would print a kind for a record that never carried one, which is
+        the same class of fabrication as inventing a URN for a schema object.
+        Every endpoint record gets ``origin`` at build time (``"sweep"``) and
+        every object record gets ``"schema"``; a record from an older matrix
+        that carries neither yields ``""`` and the page says so rather than
+        guessing.
+        """
+        for rec in recs:
+            if rec and rec.get("origin"):
+                return rec["origin"]
+        return ""
+
     endpoints_added, endpoints_removed, endpoints_unknown = [], [], []
     for name in sorted(set(a_eps) | set(b_eps)):
         ra, rb = a_eps.get(name), b_eps.get(name)
         if ra is None or rb is None:
             # RULE 3: not measured on one side is UNKNOWN, not a change.
             endpoints_unknown.append({"endpoint": name, "urn": _urn(name),
+                                      "origin": _origin(ra, rb),
                                       "measured_on": base_line if ra else target_line})
             continue
         if _served(rb) and not _served(ra) and ra.get("verdict") == VERDICT_ABSENT:
             endpoints_added.append({"endpoint": name, "urn": rb.get("urn", ""),
+                                    "origin": _origin(rb, ra),
                                     "attested_on": rb.get("attested_on") or [],
                                     "silent_on": rb.get("silent_on") or []})
         elif _served(ra) and not _served(rb) and rb.get("verdict") == VERDICT_ABSENT:
             endpoints_removed.append({"endpoint": name, "urn": ra.get("urn", ""),
+                                      "origin": _origin(ra, rb),
                                       "attested_on": ra.get("attested_on") or [],
                                       "silent_on": ra.get("silent_on") or []})
 

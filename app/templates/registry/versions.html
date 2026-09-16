@@ -3,9 +3,34 @@
 {% from "partials/_cli_probe_tools.html" import filter_box, test_btn, probe_bar with context %}
 {% block title %}API Versions{% endblock %}
 
+{# The kind of evidence a number rests on. THREE outcomes, not two: a record
+   that carries no ``origin`` at all is not schema evidence, and the ``else``
+   that used to say so turned a silence into a claim. #}
 {% macro origin_badge(o) -%}
-  {%- if o == 'sweep' -%}<span class="fw-badge fw-badge-info">sweep</span>
-  {%- else -%}<span class="fw-badge fw-badge-secondary">schema</span>{%- endif -%}
+  {%- if o == 'sweep' -%}<span class="fw-badge fw-badge-info" title="Read off a live sweep: the raw collection the appliance put on the wire.">sweep</span>
+  {%- elif o == 'schema' -%}<span class="fw-badge fw-badge-secondary" title="Read off a harvested field schema, which strips the wire-only companions a sweep carries. That is why the two kinds are never subtracted from one another.">schema</span>
+  {%- else -%}<span class="text-muted dv-unmeasured" title="This record carries no evidence kind. Naming one would be a guess.">&mdash;</span>{%- endif -%}
+{%- endmacro %}
+
+{# ── column 2: WHICH KIND OF EVIDENCE (2026-09-16, operator's request) ──
+   The kind used to be printed inside both build columns, beside each count.
+   On every row but one the two sides hold the SAME kind — that is the
+   precondition for subtracting them at all — so it was the same word twice,
+   and the Evidence column is now its only author.
+
+   The exception is the whole reason the column cannot be a single badge:
+   an *incomparable* row is incomparable BECAUSE the two sides disagree, so it
+   names both and says which build holds which. Collapsing that to one badge
+   would erase the finding. #}
+{% macro evidence_slot(o) -%}
+  <div class="dv-ev">{{ origin_badge(o) }}</div>
+{%- endmacro %}
+
+{% macro evidence_split(base, base_origin, target, target_origin) -%}
+  <div class="dv-ev" title="The two builds are known here by different kinds of evidence. That disagreement IS the finding: the page reports both and subtracts neither.">
+    <div class="dv-ev-side"><span class="dv-ev-scope">{{ base }}</span> {{ origin_badge(base_origin) }}</div>
+    <div class="dv-ev-side"><span class="dv-ev-scope">{{ target }}</span> {{ origin_badge(target_origin) }}</div>
+  </div>
 {%- endmacro %}
 
 {# ── the row: ONE COLUMN PER BUILD ──────────────────────────
@@ -13,12 +38,28 @@
    (2026-09-16) for a column per build with the evidence indented under the
    transport that produced it:
 
-     Endpoint / object │ URN │ 7.6.8              │ 8.0.5               │ Test
-       antivirus       │     │ API                │ API                 │
-       sweep 8 → 14    │     │   sweep · 8 fields │   sweep · 14 fields │
-                       │     │ CLI                │   +6 added — names  │
-                       │     │   <verdict>        │ CLI                 │
-                       │     │                    │   <verdict>         │
+     Endpoint / object │ Evidence │ URN │ 7.6.8        │ 8.0.5          │ Test
+       antivirus       │  sweep   │     │ API          │ API            │
+       8 → 14          │          │     │   8 field(s) │   14 field(s)  │
+                       │          │     │ CLI          │   +6 — names   │
+                       │          │     │   <verdict>  │ CLI            │
+                       │          │     │              │   <verdict>    │
+
+   Two later passes over the same table, both at the operator's request on
+   2026-09-16:
+
+   * the kind of evidence moved OUT of the two build columns into a column of
+     its own in second position. On every row but *incomparable* both sides
+     hold the same kind — that is the precondition for subtracting them — so
+     printing it per column was printing one word twice.
+   * the class labels ``added on X`` / ``gone on X`` left the identity column.
+     They restated what the two build columns already measure: a row whose
+     base column says ``absent`` and whose target column says ``served`` IS
+     the addition. **A class badge in column 1 now means the row is NOT a
+     change** — a gap, a one-sided field set, or an incomparable pair. That is
+     the rule this table is read by, and it inverts the old one, so it is
+     guarded from both directions: no change row may badge a class, and every
+     gap row must.
 
    Two things the split may NOT do.
 
@@ -33,11 +74,10 @@
       no "CLI added / CLI removed" here: that evidence does not exist.
 
    2. **The finding stays in the identity column**, because it is about the
-      PAIR and not about either build: the class badge, or — on a field delta,
-      which carries no badge since the operator removed the ``fields changed``
-      label — the subtraction ``8 → 14``. That arrow is the only place on this
-      page where one number is taken from another. Pushing the two counts into
-      the two columns and leaving the arrow nowhere is exactly how that number
+      PAIR and not about either build: the gap badge, or — on a field delta —
+      the subtraction ``8 → 14``. That arrow is the only place on this page
+      where one number is taken from another. Pushing the two counts into the
+      two columns and leaving the arrow nowhere is exactly how that number
       went missing the first time.
 
    What survives the move, unchanged in force:
@@ -128,9 +168,13 @@
    cannot drift apart. ``api_blank`` is NOT ``api_absent``: "the build rejected
    the URN" is a measured no and "nobody asked" is not an answer at all — the
    pair this whole page exists to keep apart. #}
-{% macro api_served() -%}<span class="fw-badge fw-badge-success">served</span>{%- endmacro %}
+{% macro api_served() -%}<span class="fw-badge fw-badge-success" title="This build was asked and answered: the catalog serves the URN here — a measured yes.">served</span>{%- endmacro %}
 {% macro api_absent() -%}<span class="fw-badge fw-badge-danger" title="This build was asked and rejected the URN — a measured no.">absent</span>{%- endmacro %}
-{% macro api_fields(origin, n) -%}{{ origin_badge(origin) }} <span class="dv-count">{{ n }} field(s)</span>{%- endmacro %}
+{# No evidence kind here since 2026-09-16: the *Evidence* column is its only
+   author. A count and its kind printed in both columns was one word twice on
+   every row whose sides agree — and on the row whose sides DISAGREE the kind
+   is the finding, which belongs in the column that states findings. #}
+{% macro api_fields(n) -%}<span class="dv-count">{{ n }} field(s)</span>{%- endmacro %}
 {% macro api_blank(scope) -%}<span class="text-muted dv-unmeasured" title="Nothing has ever been measured for this on {{ scope }}. An unasked side is not a negative answer.">not measured on {{ scope }}</span>{%- endmacro %}
 
 {% block content %}
@@ -426,6 +470,15 @@
       The last two are <strong>not</strong> changes and are never counted as
       one: the side nobody measured proves nothing, and two different kinds of
       evidence are reported side by side, never subtracted.
+      {# How to read a row, now that ``added on X`` / ``gone on X`` no longer
+         repeat per row what the two build columns already measure. The rule
+         has to be stated ONCE somewhere or it is not learnable — and once is
+         the point: it was thirteen copies of it. #}
+      A row with <strong>no badge</strong> in the first column is a change, and
+      which change it is, is read off the two build columns —
+      <em>absent</em> on one side and <em>served</em> on the other, or the
+      subtraction printed beside the name. A badge there means the row is
+      <strong>not</strong> a change.
       {% if not delta.fields_changed %}
         No object here is described by the same kind of evidence on both sides,
         so no field delta could be computed — that is a gap, not a statement
@@ -444,7 +497,9 @@
            table: a badge whose capture is unnamed cannot be told from a
            two-month-old one, and an unmeasured build has to say why its verdict
            is an em dash. #}
-        <thead><tr><th>Endpoint / object</th><th>URN</th>
+        <thead><tr><th>Endpoint / object</th>
+          <th class="dv-evcol" title="Which kind of evidence this row rests on. A sweep is the raw collection the appliance put on the wire; a harvested schema strips the wire-only companions of every enum. The two are never subtracted from one another — comparing them once reported 56 removals that were nothing but that filter — so a row whose two sides hold different kinds is reported as incomparable and names both here.">Evidence</th>
+          <th>URN</th>
           <th class="dv-build" title="Everything in this column was measured on {{ delta.base }} and none of it is borrowed from the other column: what the catalog was measured to serve there over REST, the fields only this build has, and the CLI verdict read from this build's own capture. The finding itself — which class it is, or the field subtraction — is in the first column, because it is about the pair and not about either build.">{{ delta.base }}{% if delta.base_kind == 'line' %} <span class="fw-badge fw-badge-secondary">line rollup</span>{% endif %}</th>
           <th class="dv-build" title="Everything in this column was measured on {{ delta.target }} and none of it is borrowed from the other column: what the catalog was measured to serve there over REST, the fields only this build has, and the CLI verdict read from this build's own capture. The finding itself — which class it is, or the field subtraction — is in the first column, because it is about the pair and not about either build.">{{ delta.target }}{% if delta.target_kind == 'line' %} <span class="fw-badge fw-badge-secondary">line rollup</span>{% endif %}</th>
           <th style="width:120px;">Test</th></tr></thead>
@@ -455,11 +510,19 @@
              prove each column answers from its own capture. A stray newline
              from a false {% raw %}{% if %}{% endraw %} is enough to make that
              guard report "no row rendered" against a correct page. #}
+          {# NO class badge. ``added on <target>`` restated the two columns
+             beside it — absent on one, served on the other, both measured and
+             both saying so in their own titles — and the operator removed it
+             for that (2026-09-16). What is NOT lost with it is the change/gap
+             split: a badge here now MEANS "not a change", so a change row is
+             told from a gap row by the columns, where ``absent`` (a measured
+             no) and ``not measured on X`` (nobody asked) are different words
+             with different titles. #}
           <tr><td><code>{{ r.endpoint }}</code>
-              {{ kind_slot('success', 'added on ' ~ delta.target, 'The target build serves an endpoint the base build was measured not to serve. This one is a change.') }}
               {%- if r.silent_on %}<div class="dv-meta"><span class="fw-badge fw-badge-warning"
                 title="Only some builds of the target rollup attested this.">partial</span></div>{% endif -%}
             </td>
+            <td>{{ evidence_slot(r.origin) }}</td>
             <td><code class="text-muted" style="font-size:11px;">{{ r.urn }}</code></td>
             <td>{% call build_cell(delta.base, base_prov, r.cli_base) %}{{ api_absent() }}{% endcall %}</td>
             <td>{% call build_cell(delta.target, target_prov, r.cli_target) %}{{ api_served() }}{% endcall %}</td>
@@ -467,8 +530,8 @@
         {% endfor %}
         {% for r in delta.endpoints_removed %}
           <tr><td><code>{{ r.endpoint }}</code>
-              {{ kind_slot('danger', 'gone on ' ~ delta.target, 'The base build served this endpoint and the target build was measured to reject it. This one is a change.') }}
             </td>
+            <td>{{ evidence_slot(r.origin) }}</td>
             <td><code class="text-muted" style="font-size:11px;">{{ r.urn }}</code></td>
             <td>{% call build_cell(delta.base, base_prov, r.cli_base) %}{{ api_served() }}{% endcall %}</td>
             <td>{% call build_cell(delta.target, target_prov, r.cli_target) %}{{ api_absent() }}{% endcall %}</td>
@@ -484,18 +547,20 @@
              and neither build's column can hold it without implying the other
              one's number. #}
           <tr><td><code>{{ c.key }}</code>
-              <div class="dv-meta" title="Both builds were measured with the same kind of evidence and their field sets differ. This one is a change.">{{ origin_badge(c.origin) }}
+              <div class="dv-meta" title="Both builds were measured with the same kind of evidence and their field sets differ. This one is a change.">
                 <span class="dv-count">{{ c.base_count }} → {{ c.target_count }}</span></div>
             </td>
+            <td>{{ evidence_slot(c.origin) }}</td>
             <td><code class="text-muted" style="font-size:11px;">{{ c.urn }}</code></td>
-            <td>{% call build_cell(delta.base, base_prov, c.cli_base) %}{{ api_fields(c.origin, c.base_count) }}{{ names_fold(c.removed, 'danger', 'removed') }}{% endcall %}</td>
-            <td>{% call build_cell(delta.target, target_prov, c.cli_target) %}{{ api_fields(c.origin, c.target_count) }}{{ names_fold(c.added, 'success', 'added') }}{% endcall %}</td>
+            <td>{% call build_cell(delta.base, base_prov, c.cli_base) %}{{ api_fields(c.base_count) }}{{ names_fold(c.removed, 'danger', 'removed') }}{% endcall %}</td>
+            <td>{% call build_cell(delta.target, target_prov, c.cli_target) %}{{ api_fields(c.target_count) }}{{ names_fold(c.added, 'success', 'added') }}{% endcall %}</td>
             <td>{{ test_btn(urn=c.urn) }}</td></tr>
         {% endfor %}
         {% for r in delta.endpoints_unknown %}
           <tr><td><code>{{ r.endpoint }}</code>
               {{ kind_slot('secondary', 'measured only on ' ~ r.measured_on, 'The other side was never asked, so this is not a change — the side nobody measured proves nothing.') }}
             </td>
+            <td>{{ evidence_slot(r.origin) }}</td>
             <td><code class="text-muted" style="font-size:11px;">{{ r.urn }}</code></td>
             <td>{% call build_cell(delta.base, base_prov, r.cli_base) %}{% if r.measured_on == delta.base %}{{ api_served() }}{% else %}{{ api_blank(delta.base) }}{% endif %}{% endcall %}</td>
             <td>{% call build_cell(delta.target, target_prov, r.cli_target) %}{% if r.measured_on == delta.target %}{{ api_served() }}{% else %}{{ api_blank(delta.target) }}{% endif %}{% endcall %}</td>
@@ -507,9 +572,10 @@
           <tr><td><code>{{ c.key }}</code>
               {{ kind_slot('secondary', 'fields known only on ' ~ c.known_on, 'Measured on one side and never on the other — the missing side proves nothing. This is a gap, not a change.') }}
             </td>
+            <td>{{ evidence_slot(c.origin) }}</td>
             <td><code class="text-muted" style="font-size:11px;">{{ c.urn }}</code></td>
-            <td>{% call build_cell(delta.base, base_prov, c.cli_base) %}{% if c.known_on == delta.base %}{{ api_fields(c.origin, c.count) }}{% else %}{{ api_blank(delta.base) }}{% endif %}{% endcall %}</td>
-            <td>{% call build_cell(delta.target, target_prov, c.cli_target) %}{% if c.known_on == delta.target %}{{ api_fields(c.origin, c.count) }}{% else %}{{ api_blank(delta.target) }}{% endif %}{% endcall %}</td>
+            <td>{% call build_cell(delta.base, base_prov, c.cli_base) %}{% if c.known_on == delta.base %}{{ api_fields(c.count) }}{% else %}{{ api_blank(delta.base) }}{% endif %}{% endcall %}</td>
+            <td>{% call build_cell(delta.target, target_prov, c.cli_target) %}{% if c.known_on == delta.target %}{{ api_fields(c.count) }}{% else %}{{ api_blank(delta.target) }}{% endif %}{% endcall %}</td>
             <td>{{ test_btn(urn=c.urn) }}</td></tr>
         {% endfor %}
         {% for c in delta.fields_incomparable %}
@@ -518,9 +584,14 @@
           <tr><td><code>{{ c.key }}</code>
               {{ kind_slot('warning', 'incomparable', 'Known on both builds, by different kinds of evidence. Reported, never subtracted — a gap a sweep cannot close.') }}
             </td>
+            {# The one row where the two sides hold DIFFERENT kinds, which is
+               why it is incomparable. The Evidence cell names both and says
+               which build holds which; one badge here would erase the
+               finding. #}
+            <td>{{ evidence_split(delta.base, c.base_origin, delta.target, c.target_origin) }}</td>
             <td><code class="text-muted" style="font-size:11px;">{{ c.urn }}</code></td>
-            <td>{% call build_cell(delta.base, base_prov, c.cli_base) %}{{ api_fields(c.base_origin, c.base_count) }}{% endcall %}</td>
-            <td>{% call build_cell(delta.target, target_prov, c.cli_target) %}{{ api_fields(c.target_origin, c.target_count) }}{% endcall %}</td>
+            <td>{% call build_cell(delta.base, base_prov, c.cli_base) %}{{ api_fields(c.base_count) }}{% endcall %}</td>
+            <td>{% call build_cell(delta.target, target_prov, c.cli_target) %}{{ api_fields(c.target_count) }}{% endcall %}</td>
             <td>{{ test_btn(urn=c.urn) }}</td></tr>
         {% endfor %}
         </tbody>

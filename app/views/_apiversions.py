@@ -324,6 +324,56 @@ def _cli_head(scope: str, prov, what: str) -> str:
     return "%s CLI %s (no dump captured on this build)" % (scope, what)
 
 
+def _columns(base, target, bp, tp):
+    """``(heading, explanation)`` for every column, in file order.
+
+    ONE author for the pair. A legend written beside the header rather than
+    WITH it is exactly how a column ends up documented as something it stopped
+    being three releases ago.
+    """
+    def _side(scope, prov, other):
+        return [
+            ("%s API" % scope,
+             "What %s's API catalogue says about the object: served, absent, or "
+             "blank when this build was never asked." % scope),
+            ("%s API fields" % scope,
+             "How many fields %s's catalogue lists for it. Blank means there is "
+             "no catalogue entry to count, which is not the same as zero." % scope),
+            ("fields only on %s" % scope,
+             "Field names %s has and %s does not. These are the names the page "
+             "keeps behind its [+] window." % (scope, other)),
+            (_cli_head(scope, prov, "verdict"),
+             "Whether the CLI dump captured on %s contains a block for this "
+             "object. That dump is ONE appliance's configuration: this column "
+             "and the %s one are two different boxes, never one firmware "
+             "measured twice." % (scope, other)),
+            (_cli_head(scope, prov, "sets"),
+             "How many set lines that block printed. Blank means no block was "
+             "captured on %s — again, not a zero." % scope),
+            ("CLI fields only on %s" % scope,
+             "set names in the %s dump's block and not in the %s one's. "
+             "Operator configuration, not firmware." % (scope, other)),
+        ]
+
+    return [
+        ("finding",
+         "Which bucket the comparison put the row in: "
+         + ", ".join(lbl for lbl, _ in _BUCKET_LABEL.values()) + "."),
+        ("is a change",
+         "yes only when BOTH builds were measured and they differ. A no row is "
+         "a gap in the evidence; summed into a change count it becomes a "
+         "removal nobody ever measured."),
+        ("endpoint / object", "The name the page prints in its first column."),
+        ("evidence",
+         "How the row was measured: sweep (a live walk of that build) or schema "
+         "(the shipped schema). An incomparable row prints both sides, as "
+         "base=... target=... ."),
+        ("urn",
+         "The REST path, when the row has one. An object that exists solely in "
+         "the configuration language has none."),
+    ] + _side(base, bp, target) + _side(target, tp, base)
+
+
 def _api_cell(row, side: str):
     """(verdict, field count) for one build's API half, mirroring the page."""
     b = row.get("_bucket")
@@ -360,17 +410,8 @@ def export_page(product: str, page_endpoint: str):
     bp, tp = R["base_prov"], R["target_prov"]
     buf = _io.StringIO()
     w = csv.writer(buf)
-    w.writerow([
-        "finding", "is a change", "endpoint / object", "evidence", "urn",
-        "%s API" % base, "%s API fields" % base,
-        "fields only on %s" % base,
-        _cli_head(base, bp, "verdict"), _cli_head(base, bp, "sets"),
-        "CLI fields only on %s" % base,
-        "%s API" % target, "%s API fields" % target,
-        "fields only on %s" % target,
-        _cli_head(target, tp, "verdict"), _cli_head(target, tp, "sets"),
-        "CLI fields only on %s" % target,
-    ])
+    cols = _columns(base, target, bp, tp)
+    w.writerow([h for h, _ in cols])
     n = 0
     for r in _rows(delta):
         label, is_change = _BUCKET_LABEL[r["_bucket"]]
@@ -398,6 +439,17 @@ def export_page(product: str, page_endpoint: str):
             " ".join((cd or {}).get("added") or []),
         ])
         n += 1
+
+    # The column legend, BELOW the findings and below a blank row. A blank row
+    # ends a spreadsheet's auto-detected range, so a pivot or a SUM over the
+    # table above cannot reach these lines; the "#" in the first cell is there
+    # for whoever reads the file with code instead. Putting the explanations in
+    # a second header row, or above the header, would make them the one thing
+    # they must never be: rows that count.
+    w.writerow([])
+    w.writerow(["#", "column", "what it means"])
+    for _h, _note in cols:
+        w.writerow(["#", _h, _note])
 
     log_action("api_versions.export", target="%s %s -> %s" % (product, base, target),
                extra={"rows": n})

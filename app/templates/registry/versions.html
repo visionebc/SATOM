@@ -8,6 +8,42 @@
   {%- else -%}<span class="fw-badge fw-badge-secondary">schema</span>{%- endif -%}
 {%- endmacro %}
 
+{# ── the Change cell: three fixed slots, in the same order in every row ────
+   The column carried six different shapes -- a bare badge on one row, a
+   badge plus counts plus two sentences plus eighteen inline pills on the
+   next -- so it could only be read a row at a time. The slots are:
+
+     1. KIND     one badge, alone on its line. Which class of finding it is.
+     2. MEASURE  the kind of evidence and the numbers, muted, one line.
+     3. NAMES    the fields themselves, folded, with the TALLY on the fold.
+
+   Slot 3 folds because the live 7.6.8→8.0.5 delta prints 115 field names
+   across 19 rows and one object alone accounts for 18 of them. Folding
+   hides the NAMES, never the finding: the +N/−M tally sits on the summary,
+   which is the number the rows are actually compared on and which until now
+   had to be counted by eye. The filter opens a fold whose names match, so a
+   search can still reach inside one.
+
+   Slot 1's sentence rides in the badge's title. There is one sentence per
+   kind and 43 rows; printed per row it was 43 copies of four sentences --
+   the same duplication this table was merged to stop. The sentence is not
+   dropped: a gap worded like a change is the one misreading this column
+   exists to prevent, so a guard pins each sentence to its badge's title. #}
+{% macro kind_slot(cls, label, why) -%}
+  <div class="dv-kind"><span class="fw-badge fw-badge-{{ cls }}" title="{{ why }}">{{ label }}</span></div>
+{%- endmacro %}
+
+{% macro names_fold(added, removed) -%}
+  {%- if added or removed -%}
+  <details class="dv-names"><summary>{% if added %}<span class="fw-badge fw-badge-success">+{{ added|length }}</span>{% endif %}{% if removed %} <span class="fw-badge fw-badge-danger">&minus;{{ removed|length }}</span>{% endif %} <span class="dv-fold-hint">field(s) — names</span></summary>
+    {%- if added %}<div class="dv-names-row"><span class="dv-fold-hint">added:</span>
+      {% for f in added %}<span class="fw-badge fw-badge-success me-1">{{ f }}</span>{% endfor %}</div>{% endif -%}
+    {%- if removed %}<div class="dv-names-row"><span class="dv-fold-hint">removed:</span>
+      {% for f in removed %}<span class="fw-badge fw-badge-danger me-1">{{ f }}</span>{% endfor %}</div>{% endif -%}
+  </details>
+  {%- endif -%}
+{%- endmacro %}
+
 {# A build's CLI evidence. Rendered from the per-VERSION provenance, so a
    capture taken on another build can never appear in this cell. #}
 {% macro cli_cell(P) -%}
@@ -352,7 +388,8 @@
            ALTOGETHER was not on the table: a badge whose capture is unnamed
            cannot be told from a two-month-old one, and an unmeasured column
            has to say why its cells are em dashes rather than verdicts. #}
-        <thead><tr><th>Endpoint / object</th><th>URN</th><th>Change</th>
+        <thead><tr><th>Endpoint / object</th><th>URN</th>
+          <th style="min-width:270px;" title="Every cell has the same three slots: what kind of finding it is, the measurement behind it, then the field names (folded). Rows come in the order the summary above counts them: added, gone, field delta, known on one side only, incomparable.">Change</th>
           <th title="{{ prov_hint(base_prov, delta.base) }}">CLI on {{ delta.base }}</th>
           <th title="{{ prov_hint(target_prov, delta.target) }}">CLI on {{ delta.target }}</th>
           <th style="width:120px;">Test</th></tr></thead>
@@ -366,9 +403,10 @@
                cell) to prove each column answers from its own capture. A
                stray newline from a false {% raw %}{% if %}{% endraw %} is enough to make that
                guard report "no row rendered" against a correct page. #}
-            <td><span class="fw-badge fw-badge-success">added on {{ delta.target }}</span>
-              {%- if r.silent_on %}<br><span class="fw-badge fw-badge-warning"
-                title="Only some builds of the target rollup attested this.">partial</span>{% endif -%}
+            <td>{{ kind_slot('success', 'added on ' ~ delta.target,
+                  'The target build serves an endpoint the base build was measured not to serve. This one is a change.') }}
+              {%- if r.silent_on %}<div class="dv-meta"><span class="fw-badge fw-badge-warning"
+                title="Only some builds of the target rollup attested this.">partial</span></div>{% endif -%}
             </td>
             <td>{{ prov_badge(r.cli_base) }}</td>
             <td>{{ prov_badge(r.cli_target) }}</td>
@@ -377,7 +415,8 @@
         {% for r in delta.endpoints_removed %}
           <tr><td><code>{{ r.endpoint }}</code></td>
             <td><code class="text-muted" style="font-size:11px;">{{ r.urn }}</code></td>
-            <td><span class="fw-badge fw-badge-danger">gone on {{ delta.target }}</span></td>
+            <td>{{ kind_slot('danger', 'gone on ' ~ delta.target,
+                  'The base build served this endpoint and the target build was measured to reject it. This one is a change.') }}</td>
             <td>{{ prov_badge(r.cli_base) }}</td>
             <td>{{ prov_badge(r.cli_target) }}</td>
             <td>{{ test_btn(urn=r.urn) }}</td></tr>
@@ -385,16 +424,15 @@
         {% for c in delta.fields_changed %}
           <tr><td><code>{{ c.key }}</code></td>
             <td><code class="text-muted" style="font-size:11px;">{{ c.urn }}</code></td>
-            <td><span class="fw-badge fw-badge-info">fields changed</span>
-              {{ origin_badge(c.origin) }}
-              <span class="text-muted">{{ c.base_count }} → {{ c.target_count }}</span>
-              {# The word, not just the colour: "added" and "removed" as two
-                 shades of the same pill is the kind of distinction that
-                 disappears on a projector and for a colour-blind reader. #}
-              {% if c.added %}<div style="font-size:12px;"><span class="text-muted">added:</span>
-                {% for f in c.added %}<span class="fw-badge fw-badge-success me-1">{{ f }}</span>{% endfor %}</div>{% endif %}
-              {% if c.removed %}<div style="font-size:12px;"><span class="text-muted">removed:</span>
-                {% for f in c.removed %}<span class="fw-badge fw-badge-danger me-1">{{ f }}</span>{% endfor %}</div>{% endif %}
+            {# The word, not just the colour, inside the fold: "added" and
+               "removed" as two shades of the same pill is the kind of
+               distinction that disappears on a projector and for a
+               colour-blind reader. #}
+            <td>{{ kind_slot('info', 'fields changed',
+                  'Both builds were measured with the same kind of evidence and their field sets differ. This one is a change.') }}
+              <div class="dv-meta">{{ origin_badge(c.origin) }}
+                <span class="dv-count">{{ c.base_count }} → {{ c.target_count }}</span></div>
+              {{ names_fold(c.added, c.removed) }}
             </td>
             <td>{{ prov_badge(c.cli_base) }}</td>
             <td>{{ prov_badge(c.cli_target) }}</td>
@@ -403,9 +441,8 @@
         {% for r in delta.endpoints_unknown %}
           <tr><td><code>{{ r.endpoint }}</code></td>
             <td><code class="text-muted" style="font-size:11px;">{{ r.urn }}</code></td>
-            <td><span class="fw-badge fw-badge-secondary">measured only on {{ r.measured_on }}</span>
-              <div class="text-muted" style="font-size:12px;">the other side was never
-                asked, so this is not a change.</div></td>
+            <td>{{ kind_slot('secondary', 'measured only on ' ~ r.measured_on,
+                  'The other side was never asked, so this is not a change — the side nobody measured proves nothing.') }}</td>
             <td>{{ prov_badge(r.cli_base) }}</td>
             <td>{{ prov_badge(r.cli_target) }}</td>
             <td>{{ test_btn(urn=r.urn) }}</td></tr>
@@ -413,11 +450,10 @@
         {% for c in delta.fields_unknown %}
           <tr><td><code>{{ c.key }}</code></td>
             <td><code class="text-muted" style="font-size:11px;">{{ c.urn }}</code></td>
-            <td><span class="fw-badge fw-badge-secondary">fields known only on {{ c.known_on }}</span>
-              {{ origin_badge(c.origin) }}
-              <span class="text-muted">{{ c.count }} field(s)</span>
-              <div class="text-muted" style="font-size:12px;">measured on one side and
-                never on the other — the missing side proves nothing.</div></td>
+            <td>{{ kind_slot('secondary', 'fields known only on ' ~ c.known_on,
+                  'Measured on one side and never on the other — the missing side proves nothing. This is a gap, not a change.') }}
+              <div class="dv-meta">{{ origin_badge(c.origin) }}
+                <span class="dv-count">{{ c.count }} field(s) on {{ c.known_on }}</span></div></td>
             <td>{{ prov_badge(c.cli_base) }}</td>
             <td>{{ prov_badge(c.cli_target) }}</td>
             <td>{{ test_btn(urn=c.urn) }}</td></tr>
@@ -425,12 +461,12 @@
         {% for c in delta.fields_incomparable %}
           <tr><td><code>{{ c.key }}</code></td>
             <td><code class="text-muted" style="font-size:11px;">{{ c.urn }}</code></td>
-            <td><span class="fw-badge fw-badge-warning">incomparable</span>
-              <span class="text-muted">{{ origin_badge(c.base_origin) }} {{ c.base_count }}
-                field(s) on {{ delta.base }} · {{ origin_badge(c.target_origin) }}
-                {{ c.target_count }} on {{ delta.target }}</span>
-              <div class="text-muted" style="font-size:12px;">known on both, by different
-                kinds of evidence. Reported, never subtracted.</div></td>
+            <td>{{ kind_slot('warning', 'incomparable',
+                  'Known on both builds, by different kinds of evidence. Reported, never subtracted — a gap a sweep cannot close.') }}
+              <div class="dv-meta">{{ origin_badge(c.base_origin) }}
+                <span class="dv-count">{{ c.base_count }} on {{ delta.base }}</span> ·
+                {{ origin_badge(c.target_origin) }}
+                <span class="dv-count">{{ c.target_count }} on {{ delta.target }}</span></div></td>
             <td>{{ prov_badge(c.cli_base) }}</td>
             <td>{{ prov_badge(c.cli_target) }}</td>
             <td>{{ test_btn(urn=c.urn) }}</td></tr>

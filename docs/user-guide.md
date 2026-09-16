@@ -3534,38 +3534,47 @@ The page has four parts:
 3. **Compare two of them** — build against build, or rollup against rollup,
    in **one table**: one row per finding, and the *Change* column says which
    kind of finding it is. An endpoint **added on** the target or **gone on**
-   it; an object whose **fields changed**, with the fields it gained and lost
+   it; an object with a **field delta**, with the fields it gained and lost
    named and the kind of evidence (`sweep` or `schema`) stated; and two things
    that are deliberately *not* changes — **known on one side only** (nobody
    measured the other) and **incomparable** (the two sides were measured by
    different means). Those last two exist because a naive subtraction reported
    56 phantom removals on the first draft of this page, and they keep their own
    wording so they can never be read as a measurement.
-   Every *Change* cell has the **same three slots, in the same order**, so the
+   Every *Change* cell has the **same slots, in the same order**, so the
    column can be read straight down instead of a row at a time:
 
    * the **kind** — one badge, alone on its line. Hover it for the sentence
-     that says whether this kind of finding *is* a change or a gap;
+     that says whether this kind of finding *is* a change or a gap. **A field
+     delta carries no badge**: the measurement below it already *is* the
+     finding, and the arrow is the only subtraction on the page. Its sentence
+     has not gone anywhere — hover the measurement instead;
    * the **measurement** — the kind of evidence (`sweep` or `schema`) and the
      numbers behind the finding, e.g. `8 → 14`;
    * the **field names** — folded, with the tally (`+6`, `−0`) on the fold.
      Only the names fold; the tally, which is what you actually compare on,
      stays in plain sight. Typing a field name into the filter opens the folds
      that contain it, so a search still reaches inside one. Rows with no field
-     list — endpoints added or gone — grow no fold at all.
+     list — endpoints added or gone — grow no fold at all;
+   * the **transport, one line per build** — `CLI on 7.6.8` and `CLI on 8.0.5`,
+     each with what that build's own dump says serves the object. They are
+     **stacked, never merged**: the two verdicts come from two dumps taken on
+     two different appliances, and each line names the capture it answers from
+     in its tooltip. A build with no dump of its own shows an em dash and says
+     why — it never borrows the other build's answer.
 
-   Each row also carries the REST path when its evidence has one, the CLI
-   verdict on each side, and a **Test** button. A row derived from a harvested
-   object schema has no REST path of its own, so it offers no button rather
-   than a button that cannot work. Which CLI capture each column answers from
-   is named in that column's header tooltip. Comparing a rollup says so, and
-   names the builds inside it.
+   Each row also carries the REST path when its evidence has one and a **Test**
+   button. A row derived from a harvested object schema has no REST path of its
+   own, so it offers no button rather than a button that cannot work. Comparing
+   a rollup says so, and names the builds inside it.
 
    *Before 2026-09-16 these findings were split across three tables, and a key
    whose only finding was a field delta was listed in one of them and absent
    from the other — an absent row reads as "nothing to report about it". The
-   column's three slots date from the same day: merged, it carried six
-   different shapes, and one object printed eighteen field names inline.*
+   column's fixed slots date from the same day: merged, it carried six
+   different shapes, and one object printed eighteen field names inline. The
+   transport verdicts were two columns of their own until they were folded
+   into this one, and the `fields changed` label went at the same time.*
 4. **Preflight** — name an object and the fields you intend to send, and get
    `ok`, `unknown_fields`, `absent`, `fields_unknown`, `version_unmeasured` or
    `unmeasured`.

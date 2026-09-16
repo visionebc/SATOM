@@ -128,7 +128,7 @@ def test_a_key_whose_only_finding_is_a_field_delta_is_a_row(two_builds, client, 
     """The reported bug, pinned. ``fielded`` is served on both builds — the
     endpoint buckets say nothing about it — and it gained a field."""
     row = _row(_page(client, app), "fielded")
-    assert "fields changed" in row, row
+    assert "2 → 3" in row, "the subtraction that IS the finding is gone: %s" % row
     assert "gamma" in row, "the field it gained must be named: %s" % row
 
 
@@ -164,10 +164,13 @@ def test_the_old_split_headings_do_not_come_back(two_builds, client, app, gone):
 @pytest.mark.parametrize("key,phrase", [
     ("arrives", "added on 8.0.5"),
     ("goes_away", "gone on 8.0.5"),
-    ("fielded", "fields changed"),
+    # The two field-delta rows lost their label on 2026-09-16 at the
+    # operator's request, so what they are asserted BY is the subtraction
+    # itself — the only place on this page where two numbers are subtracted.
+    ("fielded", "2 → 3"),
     ("onesided", "fields known only on 7.6.8"),
     ("mixed", "incomparable"),
-    ("schemaonly", "fields changed"),
+    ("schemaonly", "2 → 3"),
     ("onlyhere", "measured only on 8.0.5"),
 ])
 def test_every_bucket_reaches_the_one_table(two_builds, client, app, key, phrase):
@@ -181,7 +184,14 @@ def test_a_gap_is_never_worded_as_a_change(two_builds, client, app, key):
     share a table, and only one of them is a fact about the appliance."""
     row = _row(_page(client, app), key).lower()
     assert "added on" not in row and "gone on" not in row, row
-    assert "fields changed" not in row, row
+    # Was ``"fields changed" not in row`` until that label was removed
+    # (2026-09-16) — which would have left this half of the guard VACUOUS,
+    # passing on a page where the wording had been merged after all. A gap is
+    # now told from a measurement by the subtraction, so that is what it is
+    # forbidden to show: no ``N → M`` arrow, and no field-name fold, which
+    # only a computed delta earns.
+    assert "→" not in row, "a gap rendered a subtraction: %s" % row
+    assert "<details" not in row, "a gap grew a delta's field fold: %s" % row
 
 
 def test_the_two_gaps_do_not_share_one_word(two_builds, client, app):
@@ -240,43 +250,78 @@ def test_the_page_no_longer_renders_the_legend_blocks():
         "the legend the operator asked to remove is back"
 
 
-def test_each_cli_column_still_names_the_capture_it_answers_from(
+def _cells(row):
+    """The row's four cells. Cells nest tags but never another ``<td>``."""
+    return [c.split("</td>")[0] for c in row.split("<td")[1:]]
+
+
+def _transport(row):
+    """The per-build transport lines inside the Change cell, in order."""
+    return re.findall(
+        r'<div class="dv-cli-row"><span class="dv-cli-scope"\s*'
+        r'title="([^"]*)">CLI on ([\w.]+)</span>(.*?)</div>', row, re.S)
+
+
+def test_the_transport_verdicts_moved_into_change_and_are_stacked(
         two_builds, client, app):
-    """Removed from the page body, NOT dropped. A badge whose capture is
-    unnamed cannot be told from a two-month-old one, and a column with no
-    capture at all has to say why its cells are em dashes rather than
-    "API only"."""
+    """What the operator asked for on 2026-09-16: the two verdicts inside the
+    *Change* cell, one per line, instead of two columns beside each other.
+
+    Both halves are asserted. That they are IN the Change cell (cell 3 of
+    four, not a column of their own) and that they are two SEPARATE blocks —
+    put on one line they read as a single answer, and they are two answers
+    from two different dumps.
+    """
     body = _page(client, app)
-    heads = re.findall(r'<th title="([^"]+)">CLI on ([\w.]+)</th>', _table(body))
-    assert len(heads) == 2, "both CLI columns must carry their provenance"
-    for hint, scope in heads:
+    tbl = _table(body)
+    head = tbl.split("</thead>")[0]
+    assert "CLI on" not in head, \
+        "the transport verdicts are back as columns of their own: %s" % head
+    # ``</th>``, not ``<th``: the latter is also a substring of ``<thead>``,
+    # which is how the first draft of this guard counted five.
+    assert head.count("</th>") == 4, "the table is not four columns: %s" % head
+    for key in ("arrives", "goes_away", "fielded", "onesided", "mixed",
+                "schemaonly", "onlyhere"):
+        cells = _cells(_row(body, key))
+        assert len(cells) == 4, (key, len(cells))
+        lines = _transport(cells[2])
+        assert len(lines) == 2, (
+            "%s: the Change cell must carry exactly two transport lines, one "
+            "per build: %r" % (key, cells[2]))
+        assert [scope for _, scope, _ in lines] == [BASE, TARGET], (key, lines)
+        assert "dv-cli-row" not in cells[3], \
+            "%s: a transport verdict leaked out of the Change cell" % key
+
+
+def test_each_transport_line_still_names_the_capture_it_answers_from(
+        two_builds, client, app):
+    """Removed from the page body, then from the column headers, NOT dropped.
+    A badge whose capture is unnamed cannot be told from a two-month-old one,
+    and a build with no capture at all has to say why its verdict is an em
+    dash rather than a measured one."""
+    lines = _transport(_row(_page(client, app), "arrives"))
+    assert len(lines) == 2
+    for hint, scope, _ in lines:
         assert hint.strip(), scope
         assert "em dash" in hint or "captured" in hint, (scope, hint)
 
 
-def _cells(row):
-    """The row's six cells. Cells nest tags but never another ``<td>``."""
-    return [c.split("</td>")[0] for c in row.split("<td")[1:]]
-
-
-def test_a_field_row_answers_its_cli_columns_from_its_own_provenance(
+def test_a_field_row_answers_its_transports_from_its_own_provenance(
         two_builds, client, app):
     """The view annotates EVERY bucket, not only the two endpoint ones.
 
-    Without it those cells render ``prov_badge(None)`` — a bare em dash with
-    NO title, which is visually identical to the honest "nobody captured
+    Without it those verdicts render ``prov_badge(None)`` — a bare em dash
+    with NO title, which is visually identical to the honest "nobody captured
     anything on this build" and to a measured "no CLI block here". Same glyph,
     three meanings; the title is the only thing that separates them, so the
     guard is on the title and not on the dash.
     """
     body = _page(client, app)
     for key in ("fielded", "onesided", "mixed", "schemaonly", "onlyhere"):
-        cells = _cells(_row(body, key))
-        assert len(cells) == 6, (key, len(cells))
-        for col, cell in zip(("base", "target"), cells[3:5]):
-            assert "title=" in cell, (
+        for _, scope, verdict in _transport(_row(body, key)):
+            assert "title=" in verdict, (
                 "%s / CLI on %s: an em dash with no reason behind it — the "
-                "bucket was not annotated: %r" % (key, col, cell))
+                "bucket was not annotated: %r" % (key, scope, verdict))
 
 
 # ---------------------------------------------------------------------------
@@ -336,10 +381,38 @@ def test_nothing_to_report_says_so_instead_of_an_empty_table(isolated, client, a
 # ===========================================================================
 
 def _kind_title(row):
+    """The sentence that says whether this row is a change or a gap.
+
+    It hangs off slot 1's badge — except on a field delta, which has no badge
+    since 2026-09-16: the label ``fields changed`` was removed as a restatement
+    of the line under it. The sentence did NOT go with it, because "a gap
+    worded like a change" is the single misreading this column exists to
+    prevent, so there it hangs off the measure line instead.
+    """
     m = re.search(r'<div class="dv-kind"><span class="fw-badge[^"]*" title="([^"]*)"',
                   row)
-    assert m, "slot 1 is not a titled badge: %s" % row
+    if not m:
+        m = re.search(r'<div class="dv-meta" title="([^"]*)"', row)
+    assert m, "neither a titled kind badge nor a titled measure line: %s" % row
     return m.group(1)
+
+
+def test_a_field_delta_carries_no_kind_badge_at_all(two_builds, client, app):
+    """The removal is the deliverable, so it is guarded inverted too.
+
+    Scoped to the ROW: ``dv-kind`` is legitimately all over the table — five
+    other buckets still badge their kind — so a table-wide search would be
+    answered by any of them.
+    """
+    body = _page(client, app)
+    for key in ("fielded", "schemaonly"):
+        row = _row(body, key)
+        assert "dv-kind" not in row, \
+            "the label the operator removed is back on %s: %s" % (key, row)
+        assert "fields changed" not in row.lower(), row
+    assert "dv-kind" in _row(body, "arrives"), \
+        "premise: the other buckets still badge their kind, or the guard above " \
+        "proves nothing"
 
 
 @pytest.mark.parametrize("key,phrase", [
@@ -368,7 +441,8 @@ def test_each_kind_badge_says_in_its_title_whether_it_is_a_change(
         two_builds, client, app, key, verb):
     """The split the merged table must keep. Three kinds ARE changes and three
     are gaps; once they share a column the only thing left carrying that is
-    the wording."""
+    the wording — and on a field delta the badge that used to carry it is
+    gone, so this is the guard that stops the sentence going with it."""
     assert verb in _kind_title(_row(_page(client, app), key))
 
 

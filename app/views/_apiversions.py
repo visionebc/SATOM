@@ -116,11 +116,13 @@ def render_page(product: str, hub_endpoint: str, rebuild_endpoint: str,
     #
     # EVERY bucket, not just the two endpoint ones: the comparison renders a
     # single table since 2026-09-16, and a row that reached it through the
-    # field buckets has the same two CLI columns as its neighbours. Annotating
-    # only some buckets would leave those cells empty — indistinguishable on
-    # screen from "the CLI does not serve it", which is the one confusion this
-    # whole column exists to prevent. A key that names no catalog entry answers
-    # ``unknown`` (an em dash carrying its reason), never a badge.
+    # field buckets carries the same two per-build transport lines as its
+    # neighbours (they were two columns of their own until the operator asked
+    # for them stacked inside Change, same day). Annotating only some buckets
+    # would leave those verdicts empty — indistinguishable on screen from "the
+    # CLI does not serve it", which is the one confusion they exist to prevent.
+    # A key that names no catalog entry answers ``unknown`` (an em dash
+    # carrying its reason), never a badge.
     if delta:
         for bucket in ("endpoints_added", "endpoints_removed", "endpoints_unknown",
                        "fields_changed", "fields_unknown", "fields_incomparable"):

@@ -2351,14 +2351,37 @@ a.bm-dev:hover { background: var(--fw-accent-light); color: var(--fw-accent); }
 .fw-clone-err { color: #8B1C2A; font-size: 11px; }
 
 
-/* ── #versionDelta Change column ──────────────────────────────────────────
-   Fixed slots per cell: kind badge (absent on a field delta), measurement,
-   folded names, then ONE LINE PER BUILD with that build's transport verdict.
-   Styled here rather than inline because six loops render it and a second
-   author of one rule is how this page lost a link once already. */
-#versionDelta td .dv-kind { margin-bottom: 3px; }
+/* ── #versionDelta: ONE COLUMN PER BUILD ─────────────────────────────────
+   The finding lives in the identity column — the class badge, or on a field
+   delta the subtraction, which is about the PAIR and cannot sit in either
+   build's column without implying the other one's number. Each build column
+   then holds only what was measured on THAT build, indented under the
+   transport that produced it.
+
+   Styled here rather than inline because twelve loops render these cells, and
+   a second author of one rule is how this page lost a link once already. */
+#versionDelta td .dv-kind { margin-top: 3px; }
 #versionDelta td .dv-meta { font-size: 12px; color: var(--fw-text-secondary); line-height: 1.5; }
 #versionDelta td .dv-count { color: var(--fw-text-secondary); font-variant-numeric: tabular-nums; }
+#versionDelta th.dv-build { min-width: 210px; }
+
+/* The indent IS the reading order: the transport, then what that transport
+   says about this build. Flat, this was the old Change cell — six shapes deep
+   and readable only one row at a time. */
+#versionDelta td .dv-tree { font-size: 12px; line-height: 1.6; }
+#versionDelta td .dv-t-head {
+  color: var(--fw-text-secondary); text-transform: uppercase;
+  letter-spacing: .04em; font-size: 10.5px; font-weight: 600;
+}
+#versionDelta td .dv-t-head + .dv-t-body { padding-left: 12px; margin-bottom: 3px; }
+
+/* Dotted underline = there is a reason behind this and it is one hover away.
+   The CLI head carries the capture it answers from; an unmeasured side
+   carries why it has no answer. Same affordance because the reader's question
+   is the same one. */
+#versionDelta td .dv-cli-scope,
+#versionDelta td .dv-unmeasured { border-bottom: 1px dotted #B9BFC7; cursor: help; }
+
 #versionDelta details.dv-names { margin-top: 3px; font-size: 12px; }
 #versionDelta details.dv-names > summary {
   cursor: pointer; list-style: none; display: inline-flex; align-items: center; gap: 2px;
@@ -2368,17 +2391,5 @@ a.bm-dev:hover { background: var(--fw-accent-light); color: var(--fw-accent); }
   content: "\25B8"; color: var(--fw-text-secondary); font-size: 11px; margin-right: 3px;
 }
 #versionDelta details.dv-names[open] > summary::before { content: "\25BE"; }
-#versionDelta details.dv-names .dv-names-row { margin-top: 3px; }
+#versionDelta details.dv-names .dv-names-row { margin-top: 3px; padding-left: 12px; }
 #versionDelta .dv-fold-hint { color: var(--fw-text-secondary); }
-
-/* Slot 4. Stacked, never side by side: the two verdicts come from two
-   different captures, so they are read one against the other and a shared
-   line invites them to be read as one answer. The scope label is fixed-width
-   so the badges line up down the column — a ragged left edge is what made the
-   old two-column layout readable and the stack has to earn that back. */
-#versionDelta td .dv-cli { margin-top: 5px; font-size: 12px; line-height: 1.6; }
-#versionDelta td .dv-cli-row { white-space: nowrap; }
-#versionDelta td .dv-cli-scope {
-  display: inline-block; min-width: 96px; color: var(--fw-text-secondary);
-  border-bottom: 1px dotted #B9BFC7; cursor: help; margin-right: 6px;
-}

@@ -3532,36 +3532,42 @@ The page has four parts:
 2. **Witnesses excluded** — the same honesty as §30.4: an unhealthy device is
    not evidence.
 3. **Compare two of them** — build against build, or rollup against rollup,
-   in **one table**: one row per finding, and the *Change* column says which
-   kind of finding it is. An endpoint **added on** the target or **gone on**
-   it; an object with a **field delta**, with the fields it gained and lost
-   named and the kind of evidence (`sweep` or `schema`) stated; and two things
-   that are deliberately *not* changes — **known on one side only** (nobody
-   measured the other) and **incomparable** (the two sides were measured by
-   different means). Those last two exist because a naive subtraction reported
-   56 phantom removals on the first draft of this page, and they keep their own
-   wording so they can never be read as a measurement.
-   Every *Change* cell has the **same slots, in the same order**, so the
-   column can be read straight down instead of a row at a time:
+   in **one table with one column per build**: one row per finding, the finding
+   itself beside the name, and then everything measured *on 7.6.8* next to
+   everything measured *on 8.0.5*.
 
-   * the **kind** — one badge, alone on its line. Hover it for the sentence
-     that says whether this kind of finding *is* a change or a gap. **A field
-     delta carries no badge**: the measurement below it already *is* the
-     finding, and the arrow is the only subtraction on the page. Its sentence
-     has not gone anywhere — hover the measurement instead;
-   * the **measurement** — the kind of evidence (`sweep` or `schema`) and the
-     numbers behind the finding, e.g. `8 → 14`;
-   * the **field names** — folded, with the tally (`+6`, `−0`) on the fold.
-     Only the names fold; the tally, which is what you actually compare on,
-     stays in plain sight. Typing a field name into the filter opens the folds
-     that contain it, so a search still reaches inside one. Rows with no field
-     list — endpoints added or gone — grow no fold at all;
-   * the **transport, one line per build** — `CLI on 7.6.8` and `CLI on 8.0.5`,
-     each with what that build's own dump says serves the object. They are
-     **stacked, never merged**: the two verdicts come from two dumps taken on
-     two different appliances, and each line names the capture it answers from
-     in its tooltip. A build with no dump of its own shows an em dash and says
-     why — it never borrows the other build's answer.
+   * **The finding sits with the name**, because it is a fact about the pair
+     and not about either build: an endpoint **added on** the target or **gone
+     on** it; **known on one side only** and **incomparable**, which are
+     deliberately *not* changes; or, on an object whose field set changed, the
+     subtraction itself — `8 → 14`. That arrow is the only place on this page
+     where one number is taken from another, and it cannot sit in either column
+     without that column stating the other one's number. Hover the badge — or
+     the subtraction, on a field delta, which carries no badge — for the
+     sentence that says whether this kind of finding *is* a change or a gap.
+     The two gaps keep their own wording so they can never be read as a
+     measurement: a naive subtraction reported 56 phantom removals on the first
+     draft of this page.
+   * **Each build column is indented under the transport that produced its
+     evidence** — `API` first, then `CLI`, with that transport's answer
+     beneath it.
+   * The **API** half says whether that build was measured to serve the object
+     (`served`, `absent`, or `not measured on 8.0.5` — a rejection and an
+     unasked question never share a word), how many fields its evidence
+     carries, and which kind of evidence that is (`sweep` or `schema`). The
+     field names **fold**, with the tally (`+6`) on the fold, and they appear
+     only under the build that has them: the base column lists what was lost,
+     the target column what was gained. Typing a field name into the filter
+     opens the folds that contain it, so a search still reaches inside one. A
+     row with no field list — an endpoint added or gone, or either gap — grows
+     no fold at all.
+   * The **CLI** half is a verdict, never a field list. It answers from *that
+     build's own capture*, named in the tooltip on the word `CLI`, and a build
+     with no dump of its own shows an em dash and says why rather than
+     borrowing the other column's answer. There is deliberately no "CLI added /
+     CLI removed": a dump's `set` lines are the fields somebody *configured* on
+     one appliance, and the two columns are two different appliances, so
+     subtracting them would measure the operators rather than the firmware.
 
    Each row also carries the REST path when its evidence has one and a **Test**
    button. A row derived from a harvested object schema has no REST path of its
@@ -3571,10 +3577,10 @@ The page has four parts:
    *Before 2026-09-16 these findings were split across three tables, and a key
    whose only finding was a field delta was listed in one of them and absent
    from the other — an absent row reads as "nothing to report about it". The
-   column's fixed slots date from the same day: merged, it carried six
-   different shapes, and one object printed eighteen field names inline. The
-   transport verdicts were two columns of their own until they were folded
-   into this one, and the `fields changed` label went at the same time.*
+   single Change cell that replaced them carried six different shapes and one
+   object printed eighteen field names inline; it became fixed slots, then lost
+   the "fields changed" label, then absorbed the two transport columns, and
+   then split into a column per build — all in the same week.*
 4. **Preflight** — name an object and the fields you intend to send, and get
    `ok`, `unknown_fields`, `absent`, `fields_unknown`, `version_unmeasured` or
    `unmeasured`.

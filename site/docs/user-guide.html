@@ -4037,37 +4037,43 @@ row cannot — see <em>heterogeneous lines</em> below.</p>
 <li><strong>Witnesses excluded</strong> — the same honesty as §30.4: an unhealthy device is
    not evidence.</li>
 <li><strong>Compare two of them</strong> — build against build, or rollup against rollup,
-   in <strong>one table</strong>: one row per finding, and the <em>Change</em> column says which
-   kind of finding it is. An endpoint <strong>added on</strong> the target or <strong>gone on</strong>
-   it; an object with a <strong>field delta</strong>, with the fields it gained and lost
-   named and the kind of evidence (<code>sweep</code> or <code>schema</code>) stated; and two things
-   that are deliberately <em>not</em> changes — <strong>known on one side only</strong> (nobody
-   measured the other) and <strong>incomparable</strong> (the two sides were measured by
-   different means). Those last two exist because a naive subtraction reported
-   56 phantom removals on the first draft of this page, and they keep their own
-   wording so they can never be read as a measurement.
-   Every <em>Change</em> cell has the <strong>same slots, in the same order</strong>, so the
-   column can be read straight down instead of a row at a time:</li>
+   in <strong>one table with one column per build</strong>: one row per finding, the finding
+   itself beside the name, and then everything measured <em>on 7.6.8</em> next to
+   everything measured <em>on 8.0.5</em>.</li>
 </ol>
 <ul>
-<li>the <strong>kind</strong> — one badge, alone on its line. Hover it for the sentence
-     that says whether this kind of finding <em>is</em> a change or a gap. <strong>A field
-     delta carries no badge</strong>: the measurement below it already <em>is</em> the
-     finding, and the arrow is the only subtraction on the page. Its sentence
-     has not gone anywhere — hover the measurement instead;</li>
-<li>the <strong>measurement</strong> — the kind of evidence (<code>sweep</code> or <code>schema</code>) and the
-     numbers behind the finding, e.g. <code>8 → 14</code>;</li>
-<li>the <strong>field names</strong> — folded, with the tally (<code>+6</code>, <code>−0</code>) on the fold.
-     Only the names fold; the tally, which is what you actually compare on,
-     stays in plain sight. Typing a field name into the filter opens the folds
-     that contain it, so a search still reaches inside one. Rows with no field
-     list — endpoints added or gone — grow no fold at all;</li>
-<li>the <strong>transport, one line per build</strong> — <code>CLI on 7.6.8</code> and <code>CLI on 8.0.5</code>,
-     each with what that build's own dump says serves the object. They are
-     <strong>stacked, never merged</strong>: the two verdicts come from two dumps taken on
-     two different appliances, and each line names the capture it answers from
-     in its tooltip. A build with no dump of its own shows an em dash and says
-     why — it never borrows the other build's answer.</li>
+<li><strong>The finding sits with the name</strong>, because it is a fact about the pair
+     and not about either build: an endpoint <strong>added on</strong> the target or <strong>gone
+     on</strong> it; <strong>known on one side only</strong> and <strong>incomparable</strong>, which are
+     deliberately <em>not</em> changes; or, on an object whose field set changed, the
+     subtraction itself — <code>8 → 14</code>. That arrow is the only place on this page
+     where one number is taken from another, and it cannot sit in either column
+     without that column stating the other one's number. Hover the badge — or
+     the subtraction, on a field delta, which carries no badge — for the
+     sentence that says whether this kind of finding <em>is</em> a change or a gap.
+     The two gaps keep their own wording so they can never be read as a
+     measurement: a naive subtraction reported 56 phantom removals on the first
+     draft of this page.</li>
+<li><strong>Each build column is indented under the transport that produced its
+     evidence</strong> — <code>API</code> first, then <code>CLI</code>, with that transport's answer
+     beneath it.</li>
+<li>The <strong>API</strong> half says whether that build was measured to serve the object
+     (<code>served</code>, <code>absent</code>, or <code>not measured on 8.0.5</code> — a rejection and an
+     unasked question never share a word), how many fields its evidence
+     carries, and which kind of evidence that is (<code>sweep</code> or <code>schema</code>). The
+     field names <strong>fold</strong>, with the tally (<code>+6</code>) on the fold, and they appear
+     only under the build that has them: the base column lists what was lost,
+     the target column what was gained. Typing a field name into the filter
+     opens the folds that contain it, so a search still reaches inside one. A
+     row with no field list — an endpoint added or gone, or either gap — grows
+     no fold at all.</li>
+<li>The <strong>CLI</strong> half is a verdict, never a field list. It answers from <em>that
+     build's own capture</em>, named in the tooltip on the word <code>CLI</code>, and a build
+     with no dump of its own shows an em dash and says why rather than
+     borrowing the other column's answer. There is deliberately no "CLI added /
+     CLI removed": a dump's <code>set</code> lines are the fields somebody <em>configured</em> on
+     one appliance, and the two columns are two different appliances, so
+     subtracting them would measure the operators rather than the firmware.</li>
 </ul>
 <p>Each row also carries the REST path when its evidence has one and a <strong>Test</strong>
    button. A row derived from a harvested object schema has no REST path of its
@@ -4076,10 +4082,10 @@ row cannot — see <em>heterogeneous lines</em> below.</p>
 <p><em>Before 2026-09-16 these findings were split across three tables, and a key
    whose only finding was a field delta was listed in one of them and absent
    from the other — an absent row reads as "nothing to report about it". The
-   column's fixed slots date from the same day: merged, it carried six
-   different shapes, and one object printed eighteen field names inline. The
-   transport verdicts were two columns of their own until they were folded
-   into this one, and the <code>fields changed</code> label went at the same time.</em>
+   single Change cell that replaced them carried six different shapes and one
+   object printed eighteen field names inline; it became fixed slots, then lost
+   the "fields changed" label, then absorbed the two transport columns, and
+   then split into a column per build — all in the same week.</em>
 4. <strong>Preflight</strong> — name an object and the fields you intend to send, and get
    <code>ok</code>, <code>unknown_fields</code>, <code>absent</code>, <code>fields_unknown</code>, <code>version_unmeasured</code> or
    <code>unmeasured</code>.</p>

@@ -143,7 +143,7 @@ def test_a_run_carries_its_build_into_the_audit_log(isolated, client, app):
 def test_the_card_context_exposes_the_build_and_the_boxes_running_it(app):
     from app.views import _discovery
     with app.test_request_context("/"):
-        ctx = _discovery.context("fortiweb", run_endpoint="x.y",
+        ctx = _discovery.context("fortiweb",
                                  scope="8.0.5", scope_appliances=[1, 2])
     assert ctx["dr_scope"] == "8.0.5"
     assert ctx["dr_scope_appliances"] == [1, 2]
@@ -154,7 +154,7 @@ def test_an_unscoped_card_behaves_exactly_as_before(app):
     must not turn into a filter that silently hides every appliance."""
     from app.views import _discovery
     with app.test_request_context("/"):
-        ctx = _discovery.context("fortiweb", run_endpoint="x.y")
+        ctx = _discovery.context("fortiweb")
     assert ctx["dr_scope"] == ""
     assert ctx["dr_scope_appliances"] == []
 
@@ -207,9 +207,14 @@ def test_NO_control_in_the_card_can_aim_the_gets_at_another_build(isolated, clie
     am.rebuild("fortiweb")
     login(client, admin_user_id(app))
     body = client.get("/web/registry/versions?discover=8.0.5").get_data(as_text=True)
-    controls = body.split('id="discoveryRun"')[1].split('id="drResultWrap"')[0]
-    assert "new80" in controls
-    assert "old76" not in controls
+    # The card USED to end at the findings table, so the control area was
+    # everything before ``drResultWrap``. That table went on 2026-09-17, and
+    # with it the anchor — leaving the old split silently reading the WHOLE
+    # page, where "old76" legitimately appears in the versions table above.
+    # The region is now the card itself: from its id to its own <script>.
+    card = body.split('id="discoveryRun"')[1].split("<script nonce")[0]
+    assert "new80" in card
+    assert "old76" not in card
     assert "drAskOther" not in body
 
 
@@ -419,16 +424,53 @@ def test_the_card_announces_the_build_it_is_scoped_to(isolated, client, app):
     assert "<code>8.0.5</code>" in body
 
 
-def test_the_page_posts_the_build_with_every_plan_and_run(isolated, client, app):
-    """The cost quoted by "What would it cost?" and the GETs the run actually
-    spends must be derived from the SAME dump. Leaving the build to the URL
-    lets them disagree."""
+def test_the_page_posts_the_build_with_the_capture(isolated, client, app):
+    """The plan and the run this used to name were removed on 2026-09-17, and
+    the ``fd.append`` it asserted went with them. The rule is unchanged and now
+    rests on the one POST the card still makes: a capture that does not declare
+    its build lands a dump the version axis cannot place, which is the defect
+    the axis exists to end. Leaving the build to the URL lets the form and the
+    page disagree about which one it was for.
+    """
     box = _box("fw1", firmware="8.0.5")
     _sweep(isolated, box, "8.0.5", shared="ok")
     am.rebuild("fortiweb")
     login(client, admin_user_id(app))
     body = client.get("/web/registry/versions?discover=8.0.5").get_data(as_text=True)
-    assert "fd.append('version', '8.0.5')" in body
+    form = body.split('id="drLoadForm"')[1].split("</form>")[0]
+    assert '<input type="hidden" name="version" value="8.0.5">' in form
+
+
+def test_the_context_no_longer_hands_out_a_run_plan_or_register_endpoint():
+    """Three template variables no template reads are the quiet kind of dead
+    code: they outlive the feature and then get wired to something else by
+    mistake. Asserted as a TypeError on the keyword too — a context() that
+    still ACCEPTS them would let a caller keep passing one for ever, and a
+    silently ignored argument reads exactly like a working one.
+    """
+    import inspect
+
+    from app.views import _discovery
+
+    params = inspect.signature(_discovery.context).parameters
+    for gone in ("run_endpoint", "plan_endpoint", "register_endpoint"):
+        assert gone not in params, gone
+    assert "load_endpoint" in params
+
+
+def test_the_version_row_link_promises_only_what_it_still_does(isolated, client, app):
+    """The row link's tooltip said it would *derive and probe candidate API
+    paths*. It no longer can: the click scopes the capture card and nothing
+    else. A control whose tooltip describes a removed feature is worse than a
+    removed control — the operator clicks it and concludes the page is broken.
+    """
+    box = _box("fw1", firmware="8.0.5")
+    _sweep(isolated, box, "8.0.5", shared="ok")
+    am.rebuild("fortiweb")
+    login(client, admin_user_id(app))
+    body = client.get("/web/registry/versions").get_data(as_text=True)
+    assert "discover=8.0.5" in body            # the link is still there
+    assert "probe candidate API paths" not in body
 
 
 def test_the_card_evidence_names_the_build_not_only_the_line():

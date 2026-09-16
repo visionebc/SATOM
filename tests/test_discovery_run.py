@@ -683,14 +683,35 @@ def test_every_inline_script_carries_the_csp_nonce(app):
                 "will refuse to run it" % (name, attrs))
 
 
-def test_discovery_template_never_prints_not_probed_as_absent(app):
-    """The row badge vocabulary keeps the three negatives apart."""
+def test_the_three_negatives_stay_three_where_they_now_live(app):
+    """The card's row-badge vocabulary went with the findings table on
+    2026-09-17. The RULE it enforced did not: "the device says no", "we failed
+    to ask" and "nobody asked" are three different next steps, and a caller
+    that folds them reports a block as denied when it was merely skipped.
+
+    Re-anchored to the service, which is where the distinction is now made and
+    the only place left that can make it. The template half is asserted
+    INVERTED below so the vocabulary cannot quietly grow back in a page that no
+    longer probes anything.
+    """
+    from app.services import discovery_run as dr
+
+    verdicts = [dr.SERVED, dr.ABSENT, dr.ERROR, dr.NOT_PROBED]
+    assert len(set(verdicts)) == 4, verdicts
+    assert "" not in verdicts, verdicts
+
+
+def test_the_card_makes_no_claim_about_what_a_device_serves(app):
+    """It cannot: nothing on it asks a device for a path any more.
+
+    This is the inverted half of the guard above. A badge map, a findings row
+    or a footnote reappearing here would be a page printing verdicts it never
+    obtained — the worst version of the defect the vocabulary existed to stop.
+    """
     src = _read(DRTPL)
-    block = src.split("var BADGE")[1].split("};")[0]
-    assert "'absent'" in block and "'error'" in block and "'not_probed'" in block
-    # three distinct badge classes, so they cannot read as one state
-    classes = set(re.findall(r"\['(\w+)',", block))
-    assert len(classes) >= 3, classes
+    for token in ("var BADGE", "not_probed", "'absent'", "no such path",
+                  "could not ask", "id=\"drRows\"", "id=\"drFootnote\""):
+        assert token not in src, token
 
 
 # --------------------------------------------------------------------------- #

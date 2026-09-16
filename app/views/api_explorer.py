@@ -43,9 +43,6 @@ def index():
             registry_save_endpoint='registry.save'),
         **_discovery.context(
             'fortiweb',
-            run_endpoint='api_explorer.discovery_run',
-            plan_endpoint='api_explorer.discovery_plan',
-            register_endpoint='api_explorer.discovery_register',
             load_endpoint='api_explorer.discovery_load'),
     )
 

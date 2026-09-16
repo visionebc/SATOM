@@ -672,25 +672,37 @@ def test_interrupted_is_rendered_apart_from_done_and_failed_in_both_pages():
     assert "'done'" in paint
 
 
-def test_the_run_panel_polls_the_job_and_offers_a_stop():
-    """The Stop assertion is anchored to the BUTTON ELEMENT.
+def test_the_card_no_longer_drives_a_job_at_all():
+    """Inverted on 2026-09-17, when *Run discovery* was removed.
 
-    ``data-js="dr-stop"`` also appears twice in the script, as the selector that
-    shows and hides the control — so asking whether the string is in the file
-    was answered by the JavaScript while the button itself had been renamed
-    away, leaving a run that cannot be stopped.
+    The old guard required a Stop button and a job poller, and it was anchored
+    to the BUTTON ELEMENT on purpose: ``data-js="dr-stop"`` also appears as the
+    selector that shows and hides it, so a bare substring check was answered by
+    the JavaScript while the button itself had been renamed away. The inverse
+    needs the same care in reverse — leaving the poller behind with no button
+    is a timer nothing can stop, so BOTH halves are asserted gone.
     """
     code = _tpl()
-    assert "DRJOBID" in code
-    assert "function pollJob" in code
-    assert re.search(r'<button[^>]*data-js="dr-stop"', code), "no Stop button"
-    assert re.search(r'data-js="dr-stop"\]', code), "nothing wires the button up"
+    assert not re.search(r'<button[^>]*data-js="dr-stop"', code), "Stop button back"
+    assert not re.search(r'data-js="dr-stop"\]', code), "Stop wiring back"
+    for token in ("DRJOBID", "function pollJob", "function watchJob",
+                  "function finishJob", "function paintJob", "jobs.cancel"):
+        assert token not in code, token
 
 
-def test_the_results_are_rendered_from_the_persisted_job_result():
-    """Not from the POST response. That is what makes closing the tab safe."""
-    code = _tpl()
-    fin = code[code.index("function finishJob"):]
-    fin = fin[:fin.index("function pollJob")]
-    assert "j.result" in fin
-    assert "render(d.findings)" in fin
+def test_the_job_still_persists_its_result_for_whoever_reads_it_next():
+    """The card stopped rendering findings; the JOB did not stop storing them.
+
+    This is the half of the old guard that survives the removal. The result is
+    persisted so a run outlives the request that started it — and the routes
+    that start one are still registered (see views/_discovery.py). A worker
+    that quietly stopped storing would break them with nothing on screen to
+    say so, because the screen no longer looks.
+    """
+    import inspect
+
+    from app.services import discovery_jobs
+
+    src = inspect.getsource(discovery_jobs)
+    assert "result" in src
+    assert hasattr(discovery_jobs, "start")

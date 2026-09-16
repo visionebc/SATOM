@@ -2365,6 +2365,19 @@ a.bm-dev:hover { background: var(--fw-accent-light); color: var(--fw-accent); }
 #versionDelta td .dv-count { color: var(--fw-text-secondary); font-variant-numeric: tabular-nums; }
 #versionDelta th.dv-build { min-width: 210px; }
 
+/* Column 2 — the kind of evidence, in one place instead of twice per row
+   (2026-09-16). Narrow and non-wrapping: it holds one badge on every row but
+   the incomparable ones, which stack two, each prefixed by its build. Those
+   are the only rows whose two sides disagree, which is what makes them
+   incomparable — so the split is the finding and not a layout accident. */
+#versionDelta th.dv-evcol { width: 1%; white-space: nowrap; cursor: help; }
+#versionDelta td .dv-ev { white-space: nowrap; line-height: 1.6; }
+#versionDelta td .dv-ev-side + .dv-ev-side { margin-top: 2px; }
+#versionDelta td .dv-ev-scope {
+  color: var(--fw-text-secondary); font-size: 10.5px;
+  font-variant-numeric: tabular-nums; margin-right: 3px;
+}
+
 /* The indent IS the reading order: the transport, then what that transport
    says about this build. Flat, this was the old Change cell — six shapes deep
    and readable only one row at a time. */

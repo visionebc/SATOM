@@ -619,16 +619,29 @@ def test_versions_row_badges_the_measured_line_and_blanks_the_other(app, client,
     is for one to answer for both. So the boundaries below stay exact: a looser
     ``<td>.*?</td>`` would swallow both columns into one match and prove
     nothing about either.
+
+    Repaired again in the same pass: the row used to be found by its
+    ``added on 8.0`` badge, and that badge was removed as a restatement of the
+    two build columns. It is anchored on the ENDPOINT NAME instead — the one
+    thing about this row that no layout change can take away — and on the new
+    six-cell shape, so the two build columns are still cells 4 and 5 and not
+    whatever happens to sit there.
     """
     login(client, admin_user_id(app))
     page = client.get("/web/registry/versions?base=7.6&target=8.0").get_data(as_text=True)
+    # The name comes from the fixture's own matrix, not from a second call to
+    # the coverage report: the fixture already chose it, and asking twice is
+    # how a test starts passing for a different row than the one it seeded.
+    (ep_name,) = two_line_matrix["lines"]["8.0"]["endpoints"]
     m = re.search(
-        r"<tr><td><code>[\w.-]+</code>\s*"
-        r"<div class=\"dv-kind\"><span class=\"fw-badge fw-badge-success\"[^>]*>"
-        r"added on 8\.0</span></div>\s*</td>\s*"
+        r"<tr><td><code>%s</code>\s*</td>\s*"
+        r"<td><div class=\"dv-ev\">.*?</div></td>\s*"
         r"<td><code[^>]*>[^<]*</code></td>\s*"
-        r"<td>(.*?)</td>\s*<td>(.*?)</td>\s*<td>", page, re.S)
-    assert m, "no 'added on 8.0' row with a column per build"
+        r"<td>(.*?)</td>\s*<td>(.*?)</td>\s*<td>"
+        % re.escape(ep_name), page, re.S)
+    assert m, "no row for the added endpoint with a column per build"
+    assert "added on" not in page, \
+        "the class label the operator removed is back"
 
     def _cli(col):
         """One column's CLI half — hint and verdict, with exact boundaries."""

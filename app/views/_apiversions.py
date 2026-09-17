@@ -27,8 +27,8 @@ from flask import (Response, flash, redirect, render_template, request,
                    url_for)
 from flask_login import current_user
 
-from ..services import (absence_corroboration, api_matrix, cli_coverage,
-                        firmware_versions, pdf_kit)
+from ..services import (absence_corroboration, absence_record, api_matrix,
+                        cli_coverage, firmware_versions, pdf_kit)
 from ..services.audit import log_action
 
 
@@ -244,6 +244,31 @@ def _resolved(product: str) -> dict:
         delta["corroboration_actionable"] = sum(
             n for k, n in tally.items() if absence_corroboration.is_actionable(k))
 
+        # --- the LEDGER, joined to the pair the page is actually looking at -
+        # The comparison is derived and is rebuilt from evidence on every
+        # sweep, so it cannot answer the two questions a finding needs to
+        # outlive its page: since when has this been true, and has anybody
+        # looked at it. Those live in ``object_absences`` and are joined here.
+        #
+        # NO SECOND VERDICT. The state printed on the row is still the one this
+        # view computed live, per BUILD, from the evidence on disk. The ledger
+        # contributes only what a live computation cannot know -- first proof,
+        # repetition, and the review decision -- and its own scopes travel with
+        # it so a line-scoped row can never be read as a claim about two
+        # builds. That is the same boundary that keeps sweep and schema
+        # evidence apart, applied to time instead of to source.
+        ledger = absence_record.ledger_for_pair(product, base, target,
+                                                matrix=matrix)
+        for row in delta.get("endpoints_removed") or []:
+            rec = ledger["rows"].get(row.get("endpoint") or "")
+            row["ledger"] = rec
+            # Computed here, never in the template, for the same reason the
+            # field delta is: one call site for the lookup and one author for
+            # the vocabulary.
+            row["ledger_label"] = absence_record.review_label(rec) if rec else None
+            row["ledger_open"] = bool(rec) and absence_record.is_open(rec)
+        delta["ledger"] = ledger
+
     return {"matrix": matrix, "vdocs": vdocs, "versions": versions,
             "lines": lines, "scopes": scopes, "base": base, "target": target,
             "delta": delta, "prov": prov, "ver_prov": ver_prov,
@@ -254,7 +279,7 @@ def _resolved(product: str) -> dict:
 def render_page(product: str, hub_endpoint: str, rebuild_endpoint: str,
                 page_endpoint: str, declare_endpoint: str = "",
                 forget_endpoint: str = "", export_endpoint: str = "",
-                export_pdf_endpoint: str = ""):
+                export_pdf_endpoint: str = "", review_endpoint: str = ""):
     R = _resolved(product)
     matrix, vdocs = R["matrix"], R["vdocs"]
     versions, lines, scopes = R["versions"], R["lines"], R["scopes"]
@@ -314,6 +339,7 @@ def render_page(product: str, hub_endpoint: str, rebuild_endpoint: str,
         declare_endpoint=declare_endpoint, forget_endpoint=forget_endpoint,
         export_endpoint=export_endpoint,
         export_pdf_endpoint=export_pdf_endpoint,
+        review_endpoint=review_endpoint,
         line_prov=line_prov, ver_prov=ver_prov, prov=prov,
         base_prov=base_prov, target_prov=target_prov,
         source_label=firmware_versions.SOURCE_LABEL,
@@ -432,6 +458,22 @@ def _columns(base, target, bp, tp):
          "REST path is rejecting: the object is on the box and this catalogue "
          "is wrong. Blank on every row that is not a disappearance claim, "
          "which is not the same as an uncorroborated one."),
+        # Appended, again, and for the third time for the same reason: an
+        # inserted column renumbers every later one and the PDF addresses its
+        # cells by INDEX. The gap column stays 17 and corroboration stays 18.
+        ("ledger review",
+         "Whether a person has accepted or refused this disappearance, and "
+         "who. Blank means the finding is not in the lifecycle ledger for this "
+         "pair at all -- which is not the same as unreviewed, and the scope "
+         "column beside it says why."),
+        ("ledger scope and age",
+         "The line pair the ledger recorded this against, when it was first "
+         "proved and how many times it has been re-proved since. The scopes "
+         "are printed because they are the LEDGER's, not necessarily the two "
+         "scopes compared above: a disappearance is recorded against the "
+         "firmware LINE that removed it, so a build-to-build comparison shows "
+         "its line-level record and says so rather than restating it as a "
+         "claim about the builds."),
     ]
 
 
@@ -518,6 +560,40 @@ def _gap_text(row) -> str:
                                          g.get("status") or "", g.get("reason") or "")
 
 
+def _ledger_review_text(row) -> str:
+    """The review decision for one row, flattened for a spreadsheet cell.
+
+    Names WHO decided, not just what was decided: a download that says
+    "accepted" without an actor is an audit trail with the audit taken out.
+    """
+    rec = row.get("ledger")
+    if rec is None:
+        return ""
+    text = absence_record.review_label(rec)[0]
+    who = (rec.reviewed_by or "").strip()
+    if who and not absence_record.is_open(rec):
+        return "%s by %s%s" % (text, who,
+                               (" on %s" % rec.reviewed_at.strftime("%Y-%m-%d"))
+                               if rec.reviewed_at else "")
+    return text
+
+
+def _ledger_scope_text(row) -> str:
+    """The ledger row's OWN scopes, its first proof and its repetition count.
+
+    The scopes are in the cell rather than only in the header, for the reason
+    every other scope on this page is: a spreadsheet column gets sorted away
+    from its neighbours, and a date with no scope beside it is re-attachable to
+    whichever comparison the reader happens to remember.
+    """
+    rec = row.get("ledger")
+    if rec is None:
+        return ""
+    first = rec.first_seen_at.strftime("%Y-%m-%d") if rec.first_seen_at else "?"
+    return "%s -> %s; first proved %s; re-proved %d time(s)" % (
+        rec.base_scope, rec.target_scope, first, rec.seen_count or 0)
+
+
 def _export_rows(delta: dict, base: str, target: str):
     """One cell list per finding, in ``_columns`` order. ONE author.
 
@@ -552,6 +628,8 @@ def _export_rows(delta: dict, base: str, target: str):
             _gap_text(r),
             absence_corroboration.label(r["corroboration"])[0]
             if r.get("corroboration") else "",
+            _ledger_review_text(r),
+            _ledger_scope_text(r),
         ]
 
 
@@ -563,6 +641,11 @@ def _export_rows(delta: dict, base: str, target: str):
 #: appear twice, and the legend says so.
 _PDF_TABLE_A = (0, 1, 2, 3, 18, 17, 4, 5, 11, 12)
 _PDF_TABLE_B = (2, 6, 7, 8, 9, 10, 13, 14, 15, 16)
+#: The lifecycle ledger, third table. Its own rather than squeezed into A: the
+#: two ledger cells answer "who decided, and since when" and the tables above
+#: answer "what the firmware does" -- and A is already at the ten columns the
+#: renderer will draw. The name repeats here as the join key, same as in B.
+_PDF_TABLE_C = (2, 19, 20)
 
 
 def export_pdf_page(product: str, page_endpoint: str):
@@ -625,7 +708,9 @@ def export_pdf_page(product: str, page_endpoint: str):
 
     avail = doc.width
     for title, idx in (("Findings &mdash; identity and API evidence", _PDF_TABLE_A),
-                       ("Field names and CLI evidence", _PDF_TABLE_B)):
+                       ("Field names and CLI evidence", _PDF_TABLE_B),
+                       ("Lifecycle ledger &mdash; what was decided, and when",
+                        _PDF_TABLE_C)):
         story.append(Paragraph(title, h2))
         story.append(pdf_kit.table_flowable(
             {"columns": [cols[i][0] for i in idx],
@@ -711,6 +796,47 @@ def declare_page(product: str, page_endpoint: str):
         log_action("api_versions.declare", target="%s %s" % (product, version),
                    extra={"note": (request.form.get("note") or "")[:200]})
     return redirect(url_for(page_endpoint))
+
+
+def review_page(product: str, page_endpoint: str):
+    """Accept or refuse ONE ledger finding, from the comparison that shows it.
+
+    There is deliberately no ``apply`` verb here either: see
+    ``absence_record.BLOCKED_REASON``. A control that always refuses teaches
+    the operator that the page is broken, which is worse than its absence.
+
+    The redirect preserves the pair. A review that drops the operator back on
+    the default comparison makes the second decision harder than the first,
+    which is how a queue stops being worked.
+    """
+    base = request.form.get("base") or ""
+    target = request.form.get("target") or ""
+
+    def _back():
+        return redirect(url_for(page_endpoint, base=base, target=target))
+
+    try:
+        rid = int(request.form.get("row_id") or "")
+    except (TypeError, ValueError):
+        flash("No finding selected.", "warning")
+        return _back()
+    ok, msg, row = absence_record.review(
+        rid, (request.form.get("decision") or "").strip(),
+        actor=getattr(current_user, "username", "") or "unknown",
+        note=(request.form.get("note") or "").strip())
+    flash(msg, "success" if ok else "danger")
+    if ok and row is not None:
+        # The row's OWN scopes in the audit target, never the page's: the
+        # decision was recorded against the line pair, and an audit line that
+        # named the two builds on screen would be a record of something that
+        # did not happen.
+        log_action("api_versions.absence_review",
+                   target="%s %s %s->%s" % (product, row.name, row.base_scope,
+                                            row.target_scope),
+                   extra={"decision": request.form.get("decision") or "",
+                          "state": row.state,
+                          "note": (request.form.get("note") or "")[:200]})
+    return _back()
 
 
 def forget_page(product: str, page_endpoint: str):

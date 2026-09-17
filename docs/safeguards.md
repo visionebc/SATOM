@@ -15506,3 +15506,62 @@ ordering, not just on the two values.
   2026-09-17.
 * The ledger guards drive `absence_record.evaluate` through `monkeypatch`, so
   they never touch the real matrix or a real dump.
+
+## §180 — the review queue moved inside the comparison, and the join is the whole risk (`tests/test_absence_corroboration.py`, 2026-09-17)
+
+The operator asked for the ledger's review queue to live **inside the versions
+section** rather than as a page of its own. The feature is small; the hazard is
+not, and it is one this product has already paid for once in another form.
+
+**The comparison defaults to two BUILDS and the ledger is keyed on LINES.** On
+the live FortiWeb matrix the page opens on `7.6.8 → 8.0.5` while every ledger
+row is `7.6 → 8.0`. A join that ignored that difference would hand a
+line-scoped decision to a build pair and render it as a decision about those
+builds — the same class of error as subtracting sweep evidence from schema
+evidence, which once invented 56 removals. `models_lifecycle` already stores
+both scopes verbatim to defend exactly this; the join now *prints* them.
+
+What the guards fix, in the order it would rot:
+
+1. **The scope resolution.** A build pair resolves to its line pair; two builds
+   of one line resolve to nothing; a pair that skips a line resolves to
+   nothing. The three outcomes carry **three different sentences** — a blank
+   result and "this pair is not tracked" are opposite claims, and there is a
+   guard that the three strings are distinct.
+2. **`borrowed`.** True exactly when the ledger's scopes are not the ones on
+   screen. It drives the sentence in the chip's tooltip, in the summary line
+   and in the review window.
+3. **No inheritance.** A gone row the ledger does not hold gets `None`, never
+   the first row for the pair. The mutation that makes the lookup fall back to
+   "any row" is number 8, and with one recorded finding it marks every gone row
+   as decided.
+4. **No second verdict.** The corroboration state on the row is still computed
+   live from that build's evidence. Copying the ledger's stored `state` over it
+   is mutation 9; the guard renders the page with and without a ledger and
+   requires the verdicts to be identical.
+5. **One predicate for "open".** `absence_record.is_open`, used by the chip,
+   the counters and the queue. Three spellings of `correction in (none,
+   proposed)` is how a header learns to disagree with the buttons under it.
+6. **Two verbs, at the route as well as in the service.** A POST with
+   `decision=apply` changes nothing. The redirect carries the pair back, and
+   the audit line names the **record's** scopes, not the page's.
+7. **A refusal keeps its row.** Deleting it would erase the refusal and let the
+   next sweep re-create the finding as brand new.
+
+### Traps this round
+
+* **A guard answered by its own comment, the eleventh time.** The guard that
+  forbids the template from spelling the four review words was answered by the
+  Jinja comment that *explains* why the vocabulary lives in one place — it
+  legitimately uses the word "accepted". The repair is to strip `{# ... #}`
+  before asserting; rewording the prose would have been the guard winning an
+  argument it should not be in.
+* **Measuring the page with a substring that the page's own JavaScript
+  contains.** `dv-ledger-open` appears in the click handler as well as on the
+  chips, so a first live count reported one open chip on a page that has none.
+  Count `<button[^>]*class` matches, not bare class names.
+* **A column added is a column every index-addressed table has to learn.**
+  Three guards in `test_version_delta_table.py` bit, all correctly: the legend
+  count, the table split and the synthetic PDF row. The split now reads
+  `_PDF_TABLE_*` off the module instead of naming A and B, so a fourth table is
+  covered without touching it.

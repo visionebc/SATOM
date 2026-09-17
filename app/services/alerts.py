@@ -59,6 +59,7 @@ K_CHK_BACKUP = "alerts.check.backup"
 K_CHK_DRIFT = "alerts.check.drift"
 K_CHK_ACTIONS = "alerts.check.actions"
 K_CHK_HOST = "alerts.check.host"
+K_CHK_CATALOG = "alerts.check.catalog"
 K_ACT_STREAK_CRIT = "alerts.action_fail_streak_crit"  # crit at N straight failures
 K_ACT_OVERDUE_H = "alerts.action_overdue_hours"       # enabled action this late to fire
 K_DRIFT_WINDOW_MIN = "alerts.drift_window_min"  # only alert on drift newer than this
@@ -82,6 +83,7 @@ DEFAULTS = {
     K_CHK_DRIFT: "1",
     K_CHK_ACTIONS: "1",
     K_CHK_HOST: "1",
+    K_CHK_CATALOG: "1",
     K_ACT_STREAK_CRIT: "3",
     K_ACT_OVERDUE_H: "3",
     K_DRIFT_WINDOW_MIN: "90",
@@ -185,6 +187,7 @@ def config() -> dict:
             "drift": _flag(K_CHK_DRIFT),
             "actions": _flag(K_CHK_ACTIONS),
             "host": _flag(K_CHK_HOST),
+            "catalog": _flag(K_CHK_CATALOG),
         },
         # Per-sink routing (severity floor + family mask) and the syslog
         # collector. Kept in their own modules so the filter can be tested as
@@ -250,6 +253,7 @@ def save_config(form) -> None:
     AppSetting.set(K_CHK_DRIFT, cb("check_drift"))
     AppSetting.set(K_CHK_ACTIONS, cb("check_actions"))
     AppSetting.set(K_CHK_HOST, cb("check_host"))
+    AppSetting.set(K_CHK_CATALOG, cb("check_catalog"))
     # Per-sink routing and the syslog collector ride the same form and the
     # same POST: a severity floor saved in a different round-trip from the
     # engine toggle is a window in which the two disagree.
@@ -848,6 +852,91 @@ def _check_host() -> list[dict]:
     return findings
 
 
+
+def _check_catalog() -> list[dict]:
+    """Corroborated object disappearances — and the ones that accuse US.
+
+    Every other check in this engine reports on a device or on this host. This
+    one reports on SATOM's own endpoint catalog, and that is the point: when a
+    firmware line rejects a path we hold, exactly one of two things is true and
+    they need opposite work. ``absence_corroboration`` decides which by asking
+    the appliance's own configuration dump, a source that is addressed in CLI
+    syntax and therefore cannot inherit our path's mistake.
+
+    Severity follows that split and not the drama of the words:
+
+    * a **contradiction** (the dump holds a block the REST path is rejecting)
+      is a WARNING, because the catalog every service resolves names through
+      is wrong for that line and nobody would find out from a green page;
+    * a newly proved **disappearance** is INFO, because it is a correct
+      measurement of the firmware and alerting on it at warning level would
+      train the operator to mute the family before the contradiction arrives.
+
+    Evaluating writes the ledger (``absence_record.record``). That is
+    deliberate — the timer is the thing that re-proves a finding, and
+    ``last_seen_at`` is what lets a finding that stopped being true stop firing
+    without anybody clearing it. On a read-only standby the write is rolled
+    back and the findings are still reported.
+    """
+    from . import absence_corroboration as _corr
+    from . import absence_record
+    from . import api_matrix as _am
+
+    findings: list[dict] = []
+    for product in concrete_products():
+        if product not in _am.SWEPT_PRODUCTS:
+            continue
+        try:
+            summary = absence_record.record(product)
+        except Exception as exc:  # noqa: BLE001 — one product never sinks the check
+            findings.append({"key": "catalog.error", "severity": SEV_INFO,
+                             "product": product,
+                             "title": f"Catalog absence scan failed ({product})",
+                             "detail": str(exc)})
+            continue
+
+        rows = [f for f in summary.get("findings") or []
+                if _corr.is_actionable(f.get("state"))]
+        if rows:
+            lines = [
+                f"- {f['name']} ({f['base_scope']} -> {f['target_scope']}): "
+                f"{f['target_scope']} rejects {f['urn'] or 'the catalog URN'} "
+                f"but its CLI dump"
+                + (f" spells it {f['proposed_path']}" if f.get("proposed_path")
+                   else " holds a block for it")
+                + (f" [{f['cli_device']}]" if f.get("cli_device") else "")
+                for f in rows]
+            findings.append({
+                "key": "catalog.registry_suspect", "severity": SEV_WARNING,
+                "product": product,
+                "title": (f"{len(rows)} {product} catalog path(s) look wrong "
+                          f"for a firmware line"),
+                "detail": ("\n".join(lines) + "\n\n"
+                           + absence_record.BLOCKED_REASON
+                           + "\nReview: Registry -> firmware comparison.")})
+
+        fresh = [f for f in summary.get("findings") or []
+                 if f.get("state") == _corr.STATE_CONFIRMED]
+        if fresh and summary.get("created"):
+            findings.append({
+                "key": "catalog.object_gone", "severity": SEV_INFO,
+                "product": product,
+                "title": (f"{summary['created']} newly recorded {product} "
+                          f"object disappearance(s)"),
+                "detail": ("\n".join(
+                    f"- {f['name']}: gone on {f['target_scope']} "
+                    f"(corroborated by the CLI dump)"
+                    for f in fresh[:20])
+                    + ("\n..." if len(fresh) > 20 else ""))})
+        if not summary.get("persisted") and summary.get("error"):
+            findings.append({
+                "key": "catalog.error", "severity": SEV_INFO,
+                "product": product,
+                "title": f"Catalog absence ledger not written ({product})",
+                "detail": str(summary.get("error"))})
+    return findings
+
+
 _CHECKS = [
     (K_CHK_CERT, _check_cert),
     (K_CHK_GIT, _check_git),
@@ -856,6 +945,7 @@ _CHECKS = [
     (K_CHK_DRIFT, _check_drift),
     (K_CHK_ACTIONS, _check_actions),
     (K_CHK_HOST, _check_host),
+    (K_CHK_CATALOG, _check_catalog),
 ]
 
 

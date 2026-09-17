@@ -582,17 +582,27 @@ def test_the_export_keeps_the_gap_column_where_the_pdf_looks_for_it(app):
     heads = [h for h, _why in cols]
     assert heads[17].startswith("why the evidence")
     assert heads[18] == "corroboration"
-    assert len(cols) == 19
+    # Appended after it, same rule, third time: the ledger pair is 19/20 and
+    # every earlier index is untouched. The count is pinned so a column added
+    # by INSERTING silently shifts nothing without failing here first.
+    assert heads[19] == "ledger review"
+    assert heads[20] == "ledger scope and age"
+    assert len(cols) == 21
 
 
 def test_the_pdf_prints_every_column_exactly_once_bar_the_join_key(app):
     from app.views import _apiversions as V
     cols = V._columns("7.6", "8.0", None, None)
-    used = list(V._PDF_TABLE_A) + list(V._PDF_TABLE_B)
-    assert sorted(set(used)) == list(range(len(cols)))
+    tables = (V._PDF_TABLE_A, V._PDF_TABLE_B, V._PDF_TABLE_C)
+    used = [i for t in tables for i in t]
+    assert sorted(set(used)) == list(range(len(cols))), \
+        "every column is printed; a column in no table is evidence dropped in " \
+        "silence from the copy that leaves the building"
     twice = [i for i in set(used) if used.count(i) > 1]
     assert twice == [2], "only the name may repeat, as the join key"
-    assert len(V._PDF_TABLE_A) <= 10 and len(V._PDF_TABLE_B) <= 10
+    # Ten is the renderer's ceiling: past it ``table_flowable`` DROPS columns
+    # rather than wrapping them, so an eleventh would vanish without an error.
+    assert all(len(t) <= 10 for t in tables)
 
 
 def test_the_legend_documents_the_new_column_in_its_own_terms(app):
@@ -629,3 +639,515 @@ def test_the_unmeasured_verdict_renders_as_text_and_not_as_a_badge():
     assert re.search(r"text-muted", muted)
     # A row the view never judged prints nothing at all.
     assert str(macro({})).strip() == ""
+
+
+# ---------------------------------------------------------------------------
+# 7. the ledger, joined to a comparison
+# ---------------------------------------------------------------------------
+# Added 2026-09-17 when the operator asked for the review queue to live INSIDE
+# the versions comparison. The join is the whole risk: the page compares two
+# BUILDS by default and the ledger is keyed on LINES, so a careless join hands
+# a line rollup's record to a build pair and calls it a decision about those
+# builds. That is the same boundary violation that once reported 56 removals
+# which were nothing but a filter, moved from source to time.
+from app.models_lifecycle import (CORR_APPLIED, CORR_DISMISSED, CORR_NONE,
+                                  CORR_PROPOSED, ObjectAbsence)  # noqa: E402
+from app.services import absence_record as AR  # noqa: E402
+
+
+def _matrix(lines):
+    return {"product": "fortiweb", "lines": {ln: {} for ln in lines},
+            "versions": {}}
+
+
+def test_a_build_pair_resolves_to_the_line_pair_that_holds_its_record():
+    """7.6.8 -> 8.0.5 is answered by the 7.6 -> 8.0 record, and says so."""
+    lb, lt, note = AR.ledger_scope("fortiweb", "7.6.8", "8.0.5",
+                                   _matrix(["7.6", "8.0"]))
+    assert (lb, lt, note) == ("7.6", "8.0", "")
+
+
+def test_two_builds_of_one_line_get_no_record_and_a_reason():
+    """A blank and "the ledger does not track this pair" are opposite claims.
+
+    Returning an empty result with no note would render identically to "nothing
+    was ever recorded here", which on this page is the single confusion every
+    other cell has been rewritten to prevent.
+    """
+    lb, lt, note = AR.ledger_scope("fortiweb", "7.6.2", "7.6.8",
+                                   _matrix(["7.6", "8.0"]))
+    assert (lb, lt) == ("", "")
+    assert note == AR.LEDGER_SAME_LINE
+    assert "same firmware line" in note.lower()
+    # And it must not be read as a denial that anything disappeared.
+    assert "not a claim" in note.lower()
+
+
+def test_a_pair_that_skips_a_line_is_refused_with_its_own_reason():
+    """7.6 -> 8.2 would re-count everything 8.0 removed."""
+    lb, lt, note = AR.ledger_scope("fortiweb", "7.6", "8.2",
+                                   _matrix(["7.6", "8.0", "8.2"]))
+    assert (lb, lt) == ("", "")
+    assert note == AR.LEDGER_NOT_ADJACENT
+    assert note != AR.LEDGER_SAME_LINE, \
+        "three different refusals need three different sentences"
+
+
+def test_the_three_refusals_are_three_different_sentences():
+    reasons = {AR.LEDGER_SAME_LINE, AR.LEDGER_NOT_ADJACENT, AR.LEDGER_UNSCOPED}
+    assert len(reasons) == 3 and all(r.strip() for r in reasons)
+
+
+@pytest.fixture()
+def pair_ledger(app, monkeypatch):
+    """A ledger holding one open and one decided row for 7.6 -> 8.0."""
+    from app.extensions import db
+    with app.app_context():
+        ObjectAbsence.query.delete()
+        db.session.add(ObjectAbsence(
+            product="fortiweb", name="gone_one", urn="/g", base_scope="7.6",
+            target_scope="8.0", state=corr.STATE_CONFIRMED,
+            cli_base="both", cli_target="no_block", cli_device="fw17",
+            cli_captured_at="2026-09-17", correction=CORR_NONE,
+            first_seen_at=datetime(2026, 9, 1), last_seen_at=datetime(2026, 9, 17),
+            seen_count=4))
+        db.session.add(ObjectAbsence(
+            product="fortiweb", name="suspect_one", urn="/s", base_scope="7.6",
+            target_scope="8.0", state=corr.STATE_CONTRADICTED,
+            cli_base="both", cli_target="near_match", cli_device="fw17",
+            cli_captured_at="2026-09-17", proposed_path="config suspect one",
+            correction=CORR_DISMISSED, reviewed_by="ana",
+            reviewed_at=datetime(2026, 9, 16),
+            first_seen_at=datetime(2026, 9, 2), last_seen_at=datetime(2026, 9, 17),
+            seen_count=2))
+        db.session.commit()
+        yield
+        ObjectAbsence.query.delete()
+        db.session.commit()
+
+
+@pytest.fixture()
+def partial_ledger(app):
+    """ONE of the two gone rows recorded, and recorded with a STALE verdict.
+
+    Both halves are load-bearing and both were missing from the first draft of
+    the two guards below, which is why two mutations survived:
+
+    * ``suspect_one`` is deliberately NOT in the ledger, so a lookup that falls
+      back to "any row for this pair" hands it ``gone_one``'s record. A guard
+      written against an EMPTY ledger cannot see that -- there is nothing to
+      inherit -- and mine could not.
+    * ``gone_one``'s stored state is ``uncorroborated`` while the live
+      computation for the same row is ``confirmed``. That is the realistic
+      case: the row was written from an older capture. With the two agreeing,
+      code that copies the stored state over the measured one changes nothing
+      observable, and a guard comparing before/after is answered by the
+      coincidence rather than by the rule.
+    """
+    from app.extensions import db
+    with app.app_context():
+        ObjectAbsence.query.delete()
+        db.session.add(ObjectAbsence(
+            product="fortiweb", name="gone_one", urn="/g", base_scope="7.6",
+            target_scope="8.0", state=corr.STATE_UNCORROBORATED,
+            cli_base="unknown", cli_target="unknown", cli_device="fw17",
+            cli_captured_at="2026-08-01", correction=CORR_NONE,
+            first_seen_at=datetime(2026, 8, 1), last_seen_at=datetime(2026, 9, 17),
+            seen_count=9))
+        db.session.commit()
+        yield
+        ObjectAbsence.query.delete()
+        db.session.commit()
+
+
+def test_the_record_is_found_and_carries_its_own_scopes(app, pair_ledger):
+    with app.app_context():
+        got = AR.ledger_for_pair("fortiweb", "7.6.8", "8.0.5",
+                                 _matrix(["7.6", "8.0"]))
+    assert set(got["rows"]) == {"gone_one", "suspect_one"}
+    assert (got["base"], got["target"]) == ("7.6", "8.0")
+    # The page is looking at builds; the record is about lines. It must say so.
+    assert got["borrowed"] is True
+    assert got["open"] == 1 and got["reviewed"] == 1
+
+
+def test_a_line_to_line_comparison_borrows_nothing(app, pair_ledger):
+    with app.app_context():
+        got = AR.ledger_for_pair("fortiweb", "7.6", "8.0",
+                                 _matrix(["7.6", "8.0"]))
+    assert got["borrowed"] is False
+
+
+def test_the_open_and_decided_counters_add_up_to_the_rows(app, pair_ledger):
+    """A header that can disagree with the table under it is a header that
+    will, and the disagreement is invisible until somebody counts by hand."""
+    with app.app_context():
+        got = AR.ledger_for_pair("fortiweb", "7.6", "8.0",
+                                 _matrix(["7.6", "8.0"]))
+    assert got["open"] + got["reviewed"] == len(got["rows"])
+
+
+@pytest.mark.parametrize("correction,expected_open", [
+    (CORR_NONE, True), (CORR_PROPOSED, True),
+    (CORR_APPLIED, False), (CORR_DISMISSED, False)])
+def test_open_is_one_predicate_over_the_four_states(correction, expected_open):
+    class _R:
+        pass
+    r = _R()
+    r.correction = correction
+    assert AR.is_open(r) is expected_open
+
+
+def test_every_correction_state_has_its_own_words():
+    """Four states, four sentences. Two that share a label are two the operator
+    cannot tell apart on the row, which is where the decision is made."""
+    texts = [v[0] for v in AR.REVIEW_LABEL.values()]
+    titles = [v[2] for v in AR.REVIEW_LABEL.values()]
+    assert len(AR.REVIEW_LABEL) == 4
+    assert len(set(titles)) == 4
+    assert len(set(texts)) == 3, \
+        "the two OPEN states share a word deliberately; the two CLOSED ones " \
+        "must not"
+    assert AR.REVIEW_LABEL[CORR_APPLIED][0] != AR.REVIEW_LABEL[CORR_DISMISSED][0]
+    # An accepted finding must not be read as a rewritten catalogue entry.
+    assert "no catalogue entry was rewritten" in \
+        AR.REVIEW_LABEL[CORR_APPLIED][2].lower()
+
+
+# --- the join as the page sees it -----------------------------------------
+def test_the_page_attaches_the_record_to_the_row_that_earned_it(
+        app, monkeypatch, pair_ledger):
+    with app.app_context():
+        R = _resolve_with_stubs(app, monkeypatch)
+    rows = {r["endpoint"]: r for r in R["delta"]["endpoints_removed"]}
+    assert rows["gone_one"]["ledger"] is not None
+    assert rows["gone_one"]["ledger_open"] is True
+    assert rows["suspect_one"]["ledger_open"] is False
+
+
+def test_a_row_the_ledger_does_not_hold_inherits_nothing(app, monkeypatch,
+                                                         partial_ledger):
+    """No ledger row means no chip -- never a NEIGHBOUR's.
+
+    The ledger deliberately holds one of the two gone rows. A lookup that falls
+    back to "any row for this pair" would hand the recorded one's decision to
+    the unrecorded one, and on the live matrix that marks every gone row as
+    settled from a single finding.
+    """
+    with app.app_context():
+        R = _resolve_with_stubs(app, monkeypatch)
+    rows = {r["endpoint"]: r for r in R["delta"]["endpoints_removed"]}
+    assert rows["gone_one"]["ledger"] is not None, "premise: one row IS recorded"
+    assert rows["suspect_one"]["ledger"] is None
+    assert rows["suspect_one"]["ledger_label"] is None
+    assert rows["suspect_one"]["ledger_open"] is False
+
+
+def test_an_empty_ledger_gives_every_row_nothing(app, monkeypatch):
+    """The other half: with no rows at all, no gone row invents one."""
+    from app.extensions import db
+    with app.app_context():
+        ObjectAbsence.query.delete()
+        db.session.commit()
+        R = _resolve_with_stubs(app, monkeypatch)
+    for r in R["delta"]["endpoints_removed"]:
+        assert r["ledger"] is None
+        assert r["ledger_label"] is None
+        assert r["ledger_open"] is False
+
+
+def test_the_record_never_becomes_a_second_verdict(app, monkeypatch,
+                                                   partial_ledger):
+    """The state on the row stays the one MEASURED from this build's evidence.
+
+    The ledger's own ``state`` column is deliberately not copied over it: the
+    record was written against the line pair, possibly from an older capture,
+    and a page that showed it as today's verdict would be reporting a
+    measurement nobody took today.
+    """
+    with app.app_context():
+        R = _resolve_with_stubs(app, monkeypatch)
+        rows = {r["endpoint"]: r for r in R["delta"]["endpoints_removed"]}
+        stored = rows["gone_one"]["ledger"].state
+    # The premise, asserted rather than assumed: with the stored and the
+    # measured verdict equal this test proves nothing, and that is exactly how
+    # it passed against code that copied one over the other.
+    assert stored == corr.STATE_UNCORROBORATED
+    assert rows["gone_one"]["corroboration"] == corr.STATE_CONFIRMED, \
+        "the row shows the STORED verdict instead of the measured one"
+    assert rows["gone_one"]["corroboration"] != stored
+
+
+def test_the_summary_counter_matches_the_joined_rows(app, monkeypatch,
+                                                     pair_ledger):
+    with app.app_context():
+        R = _resolve_with_stubs(app, monkeypatch)
+    led = R["delta"]["ledger"]
+    assert led["open"] + led["reviewed"] == len(led["rows"])
+    assert led["note"] == ""
+
+
+# --- the chip, RENDERED ----------------------------------------------------
+def _chip():
+    import jinja2
+    src = open("app/templates/registry/versions.html", encoding="utf-8").read()
+    start = src.index("{% macro ledger_chip")
+    end = src.index("{%- endmacro %}", start) + len("{%- endmacro %}")
+    return jinja2.Environment().from_string(src[start:end]).module.ledger_chip
+
+
+def _row(correction=CORR_NONE, **over):
+    g = {"id": 7, "base_scope": "7.6", "target_scope": "8.0",
+         "state": corr.STATE_CONFIRMED, "urn": "/g", "api_detail": "errcode -20001",
+         "cli_base": "both", "cli_target": "no_block", "cli_device": "fw17",
+         "cli_captured_at": "2026-09-17", "proposed_path": "",
+         "reviewed_by": "", "reviewed_at": None,
+         "first_seen_at": datetime(2026, 9, 1), "last_seen_at": datetime(2026, 9, 17),
+         "seen_count": 4, "correction": correction}
+    g.update(over)
+    is_open = correction in (CORR_NONE, CORR_PROPOSED)
+    return {"endpoint": "gone_one", "ledger": g, "ledger_open": is_open,
+            "ledger_label": AR.REVIEW_LABEL[correction]}
+
+
+def test_only_an_open_finding_offers_the_control():
+    """Rendered, never grepped: a guard that reads the macro's SOURCE survives
+    a mutation that disables the whole branch. Caught in a guard of exactly
+    that shape on 2026-09-17."""
+    chip = _chip()
+    opened = str(chip(_row(CORR_NONE), "7.6.8", "8.0.5"))
+    closed = str(chip(_row(CORR_APPLIED, reviewed_by="ana",
+                           reviewed_at=datetime(2026, 9, 16)), "7.6", "8.0"))
+    assert "<button" in opened and "dv-ledger-open" in opened
+    assert "<button" not in closed, \
+        "a settled finding offering a control only re-asks a settled question"
+    # The VISIBLE text, with every tag (and therefore every title= attribute)
+    # stripped first. ``"ana" in closed`` was answered by the tooltip, which
+    # names the actor for its own reasons -- so dropping the actor from the
+    # chip the operator actually reads survived the guard on 2026-09-17. That
+    # is the same shape as the ten previous neighbour-attribute answers in this
+    # repo, and it is why the strip comes first here.
+    import re as _re
+    visible = _re.sub(r"<[^>]+>", "", closed)
+    assert "ana" in visible, \
+        "the actor is only in the tooltip; the row itself does not say who decided"
+    assert "Decided by ana" in closed, "and the tooltip still dates it"
+    # A row with no record prints nothing at all -- not an empty badge.
+    assert str(chip({"endpoint": "x", "ledger": None}, "7.6", "8.0")).strip() == ""
+
+
+def test_the_chip_names_the_records_own_scopes_when_they_differ():
+    """Against a BUILD pair the record's line pair has to be printed.
+
+    Without it the operator reads a line-level decision as a decision about the
+    two builds on screen -- a claim nobody made.
+    """
+    chip = _chip()
+    borrowed = str(chip(_row(), "7.6.8", "8.0.5"))
+    same = str(chip(_row(), "7.6", "8.0"))
+    assert "7.6 to 8.0" in borrowed or "7.6 &rarr; 8.0" in borrowed
+    assert "not the two compared above" in borrowed
+    assert "the two scopes compared above" in same
+    assert "not the two compared above" not in same
+
+
+def test_the_chip_carries_the_age_a_comparison_cannot_know():
+    chip = _chip()
+    out = str(chip(_row(), "7.6", "8.0"))
+    assert "2026-09-01" in out and "re-proved 4 time(s)" in out
+
+
+def test_the_review_vocabulary_is_spelled_in_exactly_one_place():
+    """The page must not author a second copy of the four state words.
+
+    Two authors of a vocabulary is how a badge drifts out of step with the
+    column it mirrors -- twice already on this page with the provenance
+    labels.
+    """
+    import re
+    page = open("app/templates/registry/versions.html", encoding="utf-8").read()
+    # Comments FIRST. This is the eleventh time in this repo that a substring
+    # assertion was answered by the comment that EXPLAINS the assertion -- the
+    # comment above the chip macro legitimately uses the word "accepted" to say
+    # why the vocabulary lives in one place. Stripping the prose is the repair;
+    # rewording the prose to dodge the guard would be the guard winning an
+    # argument it should not be in.
+    page = re.sub(r"\{#.*?#\}", " ", page, flags=re.S)
+    for text, _css, _title in AR.REVIEW_LABEL.values():
+        assert text not in page, \
+            "%r is spelled in the template as well as in REVIEW_LABEL" % text
+
+
+# --- the copy that leaves the building ------------------------------------
+def _csv_rows(app, monkeypatch, pair):
+    with app.app_context():
+        R = _resolve_with_stubs(app, monkeypatch)
+        from app.views import _apiversions as V
+        cols = [h for h, _ in V._columns(R["base"], R["target"], None, None)]
+        rows = list(V._export_rows(R["delta"], R["base"], R["target"]))
+    idx = {h: i for i, h in enumerate(cols)}
+    return idx, rows
+
+
+def test_the_download_carries_the_decision_and_who_took_it(app, monkeypatch,
+                                                           pair_ledger):
+    idx, rows = _csv_rows(app, monkeypatch, ("7.6", "8.0"))
+    by_name = {r[idx["endpoint / object"]]: r for r in rows}
+    decided = by_name["suspect_one"][idx["ledger review"]]
+    assert "ana" in decided and AR.REVIEW_LABEL[CORR_DISMISSED][0] in decided
+    # An open one names no actor, because none has acted.
+    assert "ana" not in by_name["gone_one"][idx["ledger review"]]
+
+
+def test_the_download_prints_the_records_scope_beside_its_dates(
+        app, monkeypatch, pair_ledger):
+    """A spreadsheet column gets sorted away from its neighbours, so a date
+    with no scope in the same cell is re-attachable to any comparison."""
+    idx, rows = _csv_rows(app, monkeypatch, ("7.6", "8.0"))
+    cell = [r for r in rows
+            if r[idx["endpoint / object"]] == "gone_one"][0][idx["ledger scope and age"]]
+    assert "7.6 -> 8.0" in cell and "2026-09-01" in cell
+    assert "re-proved 4 time(s)" in cell
+
+
+def test_a_row_with_no_record_exports_blank_and_the_legend_says_what_that_is(
+        app, monkeypatch):
+    from app.extensions import db
+    with app.app_context():
+        ObjectAbsence.query.delete()
+        db.session.commit()
+    idx, rows = _csv_rows(app, monkeypatch, ("7.6", "8.0"))
+    assert all(r[idx["ledger review"]] == "" for r in rows)
+    with app.app_context():
+        from app.views import _apiversions as V
+        why = dict(V._columns("7.6", "8.0", None, None))["ledger review"].lower()
+    # Blank must not read as "reviewed by nobody".
+    assert "blank" in why and "not the same as unreviewed" in why
+
+
+def test_the_ledger_scope_legend_explains_why_it_may_differ(app):
+    from app.views import _apiversions as V
+    why = dict(V._columns("7.6", "8.0", None, None))["ledger scope and age"].lower()
+    assert "line" in why and "build" in why
+
+
+def test_the_third_pdf_table_is_the_ledger_and_joins_by_name(app):
+    from app.views import _apiversions as V
+    cols = V._columns("7.6", "8.0", None, None)
+    heads = [cols[i][0] for i in V._PDF_TABLE_C]
+    assert heads[0] == "endpoint / object", "the join key comes first"
+    assert heads[1:] == ["ledger review", "ledger scope and age"]
+
+
+# --- the verb, end to end --------------------------------------------------
+# The chip and the counters can all be right while the button does nothing.
+# These four exercise the ROUTE against the ledger, which is the only place the
+# decision the operator was promised actually lands.
+def _review(client, app, name, decision, base="7.6.8", target="8.0.5",
+            note=""):
+    from tests.conftest import admin_user_id, login
+    login(client, admin_user_id(app))
+    with app.app_context():
+        rid = ObjectAbsence.query.filter_by(name=name).first().id
+    r = client.post("/web/registry/versions/review",
+                    data={"row_id": rid, "decision": decision, "base": base,
+                          "target": target, "note": note})
+    return rid, r
+
+
+def test_accepting_lands_in_the_ledger_and_returns_to_the_same_pair(
+        app, client, pair_ledger):
+    from app.extensions import db
+    rid, r = _review(client, app, "gone_one", "acknowledge",
+                     note="checked the dump on fw17")
+    assert r.status_code == 302
+    # The pair travels back with the decision. A review that returns the
+    # operator to the default comparison makes the second decision harder than
+    # the first, which is how a queue stops being worked.
+    loc = r.headers["Location"]
+    assert "base=7.6.8" in loc and "target=8.0.5" in loc
+    with app.app_context():
+        row = db.session.get(ObjectAbsence, rid)
+        assert row.correction == CORR_APPLIED
+        assert row.reviewed_by and row.reviewed_at is not None
+        assert row.correction_note == "checked the dump on fw17"
+
+
+def test_refusing_keeps_the_row_rather_than_deleting_it(app, client,
+                                                        pair_ledger):
+    """A finding deleted on refusal is a refusal nobody can audit -- and the
+    next sweep would re-create it as brand new and re-open it."""
+    from app.extensions import db
+    rid, r = _review(client, app, "gone_one", "dismiss")
+    assert r.status_code == 302
+    with app.app_context():
+        row = db.session.get(ObjectAbsence, rid)
+        assert row is not None, "the refusal deleted its own evidence"
+        assert row.correction == CORR_DISMISSED
+        assert row.state == corr.STATE_CONFIRMED, \
+            "a decision is not a re-measurement"
+
+
+def test_the_route_has_no_third_verb(app, client, pair_ledger):
+    """``apply`` is refused at the route as well as in the service.
+
+    The window offers two buttons; a route that quietly accepted a third would
+    make the missing button a UI detail instead of the structural refusal it
+    is.
+    """
+    from app.extensions import db
+    rid, r = _review(client, app, "gone_one", "apply")
+    assert r.status_code == 302
+    with app.app_context():
+        assert db.session.get(ObjectAbsence, rid).correction == CORR_NONE
+
+
+def test_a_post_with_no_row_changes_nothing(app, client, pair_ledger):
+    from tests.conftest import admin_user_id, login
+    from app.extensions import db
+    login(client, admin_user_id(app))
+    r = client.post("/web/registry/versions/review",
+                    data={"row_id": "", "decision": "acknowledge",
+                          "base": "7.6", "target": "8.0"})
+    assert r.status_code == 302
+    with app.app_context():
+        assert {x.correction for x in ObjectAbsence.query.all()} == \
+            {CORR_NONE, CORR_DISMISSED}
+
+
+def test_the_decision_is_audited_against_the_records_own_scopes(
+        app, client, pair_ledger, monkeypatch):
+    """The audit line names the LINE pair the decision was recorded against.
+
+    Naming the two builds on screen would be a record of something that did not
+    happen: the row is keyed on lines and the decision applies to the line.
+    """
+    seen = []
+    from app.views import _apiversions as V
+    monkeypatch.setattr(V, "log_action",
+                        lambda action, target="", extra=None: seen.append(
+                            (action, target, extra)))
+    _review(client, app, "gone_one", "acknowledge")
+    assert seen, "no audit entry for a decision that changed the ledger"
+    action, target, _extra = seen[-1]
+    assert action == "api_versions.absence_review"
+    assert "7.6->8.0" in target
+    assert "7.6.8" not in target and "8.0.5" not in target
+
+
+def test_only_a_disappearance_row_carries_a_ledger_cell(app, monkeypatch,
+                                                        pair_ledger):
+    """The ledger records disappearances, so only those rows may show one.
+
+    Stamping a ledger cell on a field delta or a gap would answer for rows that
+    made no such claim -- the same fabrication this page already refuses for
+    the corroboration verdict and for the evidence kind.
+    """
+    with app.app_context():
+        R = _resolve_with_stubs(app, monkeypatch)
+    delta = R["delta"]
+    for bucket in ("endpoints_added", "endpoints_unknown", "fields_changed",
+                   "fields_unknown", "fields_incomparable"):
+        for row in delta.get(bucket) or []:
+            assert "ledger" not in row, bucket
+    assert all("ledger" in r for r in delta["endpoints_removed"])

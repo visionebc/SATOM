@@ -53,7 +53,7 @@ from ..models import AppSetting
 from ..models_lifecycle import (CORR_APPLIED, CORR_DISMISSED, CORR_NONE,
                                 CORR_PROPOSED, ObjectAbsence)
 from . import absence_corroboration as corr
-from . import api_matrix, cli_coverage
+from . import api_matrix, cli_coverage, firmware_versions
 
 #: Setting key: acknowledge a corroborated absence without asking. Default on —
 #: an operator who has to click "yes, 8.0 removed this" once per firmware line
@@ -225,6 +225,127 @@ def record(product: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# joining the ledger to a comparison
+# ---------------------------------------------------------------------------
+#: One vocabulary for the review state of a ledger row: (text, css, title).
+#: Spelled HERE and nowhere else. ``correction`` is a storage value; a second
+#: spelling of it inside a template is how a badge drifts away from the column
+#: it is supposed to mirror -- the failure this page has already been bitten by
+#: twice with the provenance labels.
+REVIEW_LABEL = {
+    CORR_NONE: (
+        "needs review", "fw-badge-warning",
+        "Recorded and still open: nobody has accepted or refused this finding "
+        "yet."),
+    CORR_PROPOSED: (
+        "needs review", "fw-badge-danger",
+        "Recorded and open, and the configuration dump on that line spells the "
+        "path differently. The alternative spelling is evidence for a person, "
+        "never a value this page will write."),
+    CORR_APPLIED: (
+        "accepted", "fw-badge-success",
+        "A decision is on the record: the disappearance is taken as true of "
+        "the firmware. No catalogue entry was rewritten -- the finding is "
+        "about the firmware, not about the entry."),
+    CORR_DISMISSED: (
+        "refused", "fw-badge-secondary",
+        "A person looked and refused this finding. The row is kept rather than "
+        "deleted, so the refusal is itself on the record and the next sweep "
+        "does not re-open it."),
+}
+
+#: Why a comparison has NO ledger scope. Spelled out rather than left as an
+#: empty result: "the ledger recorded nothing for this pair" and "this pair is
+#: not a thing the ledger tracks" render identically as blank and mean opposite
+#: things -- the same confusion as a gap printed like a measured no.
+LEDGER_SAME_LINE = (
+    "Both sides of this comparison are builds of the SAME firmware line, and a "
+    "disappearance is recorded against the line that removed it. The ledger "
+    "therefore has nothing to say here, which is not a claim that nothing "
+    "disappeared between these two builds.")
+LEDGER_NOT_ADJACENT = (
+    "The ledger records ADJACENT line pairs only, so that an object removed "
+    "once is not counted again by every later comparison that skips over the "
+    "line which removed it. Compare the adjacent lines to see its record.")
+LEDGER_UNSCOPED = (
+    "This comparison does not resolve to two firmware lines, so there is no "
+    "line pair for the ledger to answer about.")
+
+
+def ledger_scope(product: str, base: str, target: str,
+                 matrix: dict | None = None) -> tuple:
+    """``(base_line, target_line, note)`` the ledger answers for this pair.
+
+    The comparison defaults to two BUILDS and the ledger is keyed on LINES, so
+    the join is made explicit here and the resolved scopes are handed back to
+    be PRINTED. A row found this way is about ``7.6 -> 8.0``; rendering it
+    against ``7.6.8 -> 8.0.5`` without naming its own scopes would let a line
+    rollup borrow a build's authority -- the exact boundary
+    :mod:`app.models_lifecycle` stores both scopes verbatim to defend.
+    """
+    lb = firmware_versions.line_of(base or "")
+    lt = firmware_versions.line_of(target or "")
+    if not lb or not lt:
+        return "", "", LEDGER_UNSCOPED
+    if lb == lt:
+        return "", "", LEDGER_SAME_LINE
+    if (lb, lt) not in line_pairs(product, matrix):
+        return "", "", LEDGER_NOT_ADJACENT
+    return lb, lt, ""
+
+
+def ledger_for_pair(product: str, base: str, target: str,
+                    matrix: dict | None = None) -> dict:
+    """The ledger rows this comparison can speak for, keyed by object name.
+
+    ``{"rows": {name: ObjectAbsence}, "base", "target", "note", "open",
+    "borrowed"}``. ``borrowed`` is True when the ledger's scopes are not the
+    ones on screen -- the page has to SAY so, because a review decision taken
+    here is recorded against the line pair, not against the two builds the
+    operator happens to be looking at.
+
+    A database that cannot be read (the read-only standby mid-failover, a
+    missing table on an un-migrated node) yields no rows and no exception: the
+    comparison is the page's job and the ledger is an annotation on it.
+    """
+    lb, lt, note = ledger_scope(product, base, target, matrix)
+    out = {"rows": {}, "base": lb, "target": lt, "note": note, "open": 0,
+           "reviewed": 0, "borrowed": bool(lb) and (lb != base or lt != target)}
+    if not lb:
+        return out
+    try:
+        rows = ObjectAbsence.query.filter_by(
+            product=product, base_scope=lb, target_scope=lt).all()
+    except Exception:  # noqa: BLE001 -- see docstring
+        db.session.rollback()
+        return out
+    out["rows"] = {r.name: r for r in rows}
+    for r in rows:
+        if (r.correction or CORR_NONE) in (CORR_NONE, CORR_PROPOSED):
+            out["open"] += 1
+        else:
+            out["reviewed"] += 1
+    return out
+
+
+def review_label(row) -> tuple:
+    """The (text, css, title) triple for one row's review state."""
+    return REVIEW_LABEL.get(getattr(row, "correction", "") or CORR_NONE,
+                            REVIEW_LABEL[CORR_NONE])
+
+
+def is_open(row) -> bool:
+    """True while a finding still waits for a person.
+
+    One predicate, used by the queue, the counter and the template gate. Three
+    spellings of ``correction in (none, proposed)`` is how a header learns to
+    disagree with the buttons under it.
+    """
+    return (getattr(row, "correction", "") or CORR_NONE) in (CORR_NONE,
+                                                             CORR_PROPOSED)
+
+
+# ---------------------------------------------------------------------------
 # read side
 # ---------------------------------------------------------------------------
 def open_findings(product: str = "") -> list:
@@ -295,6 +416,8 @@ def review(row_id: int, decision: str, *, actor: str = "",
     return True, "Finding %sd." % decision, row
 
 
-__all__ = ["K_AUTOACK", "K_ENABLED", "BLOCKED_REASON", "line_pairs",
-           "evaluate", "record", "open_findings", "actionable", "counts",
-           "review"]
+__all__ = ["K_AUTOACK", "K_ENABLED", "BLOCKED_REASON", "REVIEW_LABEL",
+           "LEDGER_SAME_LINE", "LEDGER_NOT_ADJACENT", "LEDGER_UNSCOPED",
+           "line_pairs", "evaluate", "record", "open_findings", "actionable",
+           "counts", "review", "ledger_scope", "ledger_for_pair",
+           "review_label", "is_open"]

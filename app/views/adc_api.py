@@ -276,7 +276,8 @@ def api_versions():
                                     'adc_api.api_versions_declare',
                                     'adc_api.api_versions_forget',
                                     'adc_api.api_versions_export',
-                                    'adc_api.api_versions_export_pdf')
+                                    'adc_api.api_versions_export_pdf',
+                                    'adc_api.api_versions_review')
 
 
 @bp.route('/versions/export.csv')
@@ -352,6 +353,16 @@ def api_versions_declare():
     refactor away from a version that silently never appears on the page.
     """
     return _apiversions.declare_page('fortiadc', 'adc_api.api_versions')
+
+
+@bp.route('/versions/review', methods=['POST'])
+@login_required
+@require_permission(Permission.REGISTRY_EDIT)
+def api_versions_review():
+    """Accept or refuse one recorded disappearance. Mirror of the FortiWeb
+    route -- the page is mounted twice, so the verb has to be too or the ADOM
+    that has it is the only one whose findings can be closed."""
+    return _apiversions.review_page('fortiadc', 'adc_api.api_versions')
 
 
 @bp.route('/versions/forget', methods=['POST'])

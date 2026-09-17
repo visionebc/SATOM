@@ -322,6 +322,48 @@
 {% if r.corroboration_label %}{% set L = r.corroboration_label %} {% if L[1] %}<span class="fw-badge {{ L[1] }} dv-corr" title="{{ L[2] }} What to do: {{ L[3] }}{% if r.proposed_path %} The dump on this build spells the path {{ r.proposed_path }} &mdash; evidence for a human, not a value to paste: either spelling could be the wrong one and a configuration file cannot decide which.{% endif %}">{{ L[0] }}</span>{% else %}<span class="text-muted dv-corr dv-corr-none" title="{{ L[2] }} What to do: {{ L[3] }}">{{ L[0] }}</span>{% endif %}{% endif %}
 {%- endmacro %}
 
+{# The LIFECYCLE LEDGER entry for a disappearance, and the way into reviewing
+   it. The badge beside this one is a MEASUREMENT (what two sources say right
+   now); this one is a RECORD (since when it has been true, and whether a
+   person has looked). They are never merged: a measurement that silently
+   inherited a review decision would let one accepted finding mark a different,
+   later one as settled.
+
+   It sits in the identity cell rather than in a build column because it is
+   about the PAIR, which is the rule this table already states for every other
+   finding-level fact. It is also the only thing in that cell: the labels the
+   operator emptied out of it on 2026-09-16 were restatements of neighbouring
+   cells, and this restates nothing on the page.
+
+   The chip is a BUTTON only while the finding is open. A row somebody already
+   decided renders as plain text -- offering a control that would only re-ask a
+   settled question is how a queue grows rows nobody trusts. #}
+{% macro ledger_chip(r, page_base, page_target) -%}
+{% if r.ledger %}{% set L = r.ledger_label %}{% set g = r.ledger %}
+{%- set scope_note = "Recorded against " ~ g.base_scope ~ " to " ~ g.target_scope ~
+   (". Those are the LEDGER's scopes, not the two compared above: a disappearance is recorded against the firmware LINE that removed it, so this record is shown here and is not restated as a claim about these two builds."
+    if (g.base_scope != page_base or g.target_scope != page_target)
+    else ". Those are the two scopes compared above.") -%}
+{%- set age_note = " First proved " ~ (g.first_seen_at.strftime("%Y-%m-%d %H:%M") if g.first_seen_at else "?") ~
+   ", re-proved " ~ (g.seen_count or 0) ~ " time(s), last " ~
+   (g.last_seen_at.strftime("%Y-%m-%d %H:%M") if g.last_seen_at else "?") ~ "." -%}
+{% if r.ledger_open %}<button type="button" class="fw-badge {{ L[1] }} dv-ledger dv-ledger-open"
+  data-lg-id="{{ g.id }}" data-lg-name="{{ r.endpoint }}"
+  data-lg-scope="{{ g.base_scope }} &rarr; {{ g.target_scope }}"
+  data-lg-borrowed="{{ 1 if (g.base_scope != page_base or g.target_scope != page_target) else 0 }}"
+  data-lg-state="{{ g.state }}" data-lg-urn="{{ g.urn }}"
+  data-lg-api="{{ g.api_detail }}"
+  data-lg-cli="{{ g.cli_base }} on {{ g.base_scope }} &rarr; {{ g.cli_target }} on {{ g.target_scope }}"
+  data-lg-device="{{ g.cli_device }}" data-lg-captured="{{ g.cli_captured_at }}"
+  data-lg-first="{{ g.first_seen_at.strftime('%Y-%m-%d %H:%M') if g.first_seen_at else '' }}"
+  data-lg-last="{{ g.last_seen_at.strftime('%Y-%m-%d %H:%M') if g.last_seen_at else '' }}"
+  data-lg-seen="{{ g.seen_count or 0 }}" data-lg-path="{{ g.proposed_path }}"
+  title="{{ L[2] }} {{ scope_note }}{{ age_note }} Click to review it.">{{ L[0] }}</button>
+{% else %}<span class="fw-badge {{ L[1] }} dv-ledger dv-ledger-done"
+  title="{{ L[2] }}{% if g.reviewed_by %} Decided by {{ g.reviewed_by }}{% if g.reviewed_at %} on {{ g.reviewed_at.strftime('%Y-%m-%d %H:%M') }}{% endif %}.{% endif %} {{ scope_note }}{{ age_note }}">{{ L[0] }}{% if g.reviewed_by %} &middot; {{ g.reviewed_by }}{% endif %}</span>{% endif %}
+{% endif %}
+{%- endmacro %}
+
 {% macro api_partial(silent_on) -%}{% if silent_on %} <span class="fw-badge fw-badge-warning dv-partial" title="Only some builds of this rollup attested this. The column is a rollup of several builds and not every one of them answered.">partial</span>{% endif %}{%- endmacro %}
 
 {% block content %}
@@ -709,6 +751,33 @@
         <strong>not</strong> doubts about the rejection &mdash; the build
         answered &mdash; only about what a second source would add.
       {% endif %}
+      {# The ledger, as its own sentence again and for the same reason: it
+         changes no count above. Every one of these rows is still a gone row
+         and still carries the verdict this page measured. What the ledger adds
+         is age and a decision -- the two things a derived comparison cannot
+         hold, because it is rebuilt from scratch on every sweep. #}
+      {% if delta.ledger %}
+        {% if delta.ledger.base %}
+          <br>In the <strong>lifecycle ledger</strong> for
+          <strong>{{ delta.ledger.base }} &rarr; {{ delta.ledger.target }}</strong>:
+          <strong>{{ delta.ledger.rows|length }}</strong> recorded &mdash;
+          <strong>{{ delta.ledger.open }}</strong> waiting for review ·
+          <strong>{{ delta.ledger.reviewed }}</strong> decided.
+          {% if delta.ledger.borrowed %}
+            Those are the ledger's own scopes and not the two compared above: a
+            disappearance is recorded against the firmware <strong>line</strong>
+            that removed it, so a build-to-build comparison shows the
+            line-level record and <strong>says so</strong> rather than
+            restating it as a claim about these two builds.
+          {% endif %}
+          A record is <strong>not</strong> a second verdict: the badge on each
+          row is still the one measured from this build's own evidence. The
+          ledger only says since when it has been true and who has looked.
+        {% else %}
+          <br>No <strong>lifecycle ledger</strong> entry applies to this
+          comparison. {{ delta.ledger.note }}
+        {% endif %}
+      {% endif %}
       {# How to read a row. The first column carries the NAME and nothing
          else since the operator emptied it (2026-09-16): every class label
          that used to sit under the object restated a cell already beside it.
@@ -771,7 +840,7 @@
         {% endfor %}
         {% for r in delta.endpoints_removed %}
           <tr><td><code>{{ r.endpoint }}</code>
-            </td>
+            {{ ledger_chip(r, delta.base, delta.target) }}</td>
             <td>{{ evidence_slot(r.origin, r.siblings) }}</td>
             <td><code class="text-muted" style="font-size:11px;">{{ r.urn }}</code></td>
             <td>{% call build_cell(delta.base, base_prov, r.cli_base, r.cli_delta, 'base') %}{{ api_served() }}{% endcall %}</td>
@@ -890,6 +959,104 @@
    two of them to drift; two windows for two halves is the same bet, smaller.
    The heading and the note come from the BUTTON, so the two halves can say
    different things about their numbers without a second window to keep. #}
+{# Reviewing a recorded disappearance. ONE window per page, filled from the
+   clicked chip, for the same reason the names window is one: a form per row is
+   a copy per row and a chance for two of them to drift.
+
+   There are TWO verbs and there is deliberately no third. "Apply this path to
+   the catalogue" cannot be done correctly today -- the endpoint catalogue holds
+   one URN per name with no firmware dimension, and a contradicted finding is by
+   construction one whose base line is still served by the current URN, so
+   writing the other spelling would break that line every time. A button that
+   always refuses teaches the operator the page is broken, which is worse than
+   its absence. The reason is printed in the window instead. #}
+{% if review_endpoint %}
+<div class="modal fade" id="dvLedger" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title mb-0" id="dvLedgerTitle"></h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
+      </div>
+      <form method="post" action="{{ url_for(review_endpoint) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="row_id" id="dvLedgerId" value="">
+        {# The pair travels with the decision so the redirect lands back on the
+           comparison the operator was reading. A review that returns you to the
+           default pair makes the second decision harder than the first. #}
+        <input type="hidden" name="base" value="{{ delta.base }}">
+        <input type="hidden" name="target" value="{{ delta.target }}">
+        <div class="modal-body">
+          <p class="mb-2" id="dvLedgerScope" style="font-size:11.5px;"></p>
+          <dl class="row mb-2" style="font-size:11.5px;">
+            <dt class="col-sm-3">{{ _('Verdict') }}</dt><dd class="col-sm-9" id="dvLedgerState"></dd>
+            <dt class="col-sm-3">{{ _('REST path') }}</dt><dd class="col-sm-9"><code id="dvLedgerUrn" style="font-size:11px;"></code></dd>
+            <dt class="col-sm-3">{{ _('What the API said') }}</dt><dd class="col-sm-9" id="dvLedgerApi"></dd>
+            <dt class="col-sm-3">{{ _('What the dump said') }}</dt><dd class="col-sm-9" id="dvLedgerCli"></dd>
+            <dt class="col-sm-3">{{ _('Age') }}</dt><dd class="col-sm-9" id="dvLedgerAge"></dd>
+          </dl>
+          <p class="text-muted mb-2" id="dvLedgerPath" style="font-size:11px;"></p>
+          <label class="form-label" style="font-size:11.5px;" for="dvLedgerNote">{{ _('Note (optional)') }}</label>
+          <input type="text" class="form-control form-control-sm" name="note" id="dvLedgerNote"
+                 maxlength="400" placeholder="{{ _('What you checked, and where') }}">
+          <p class="text-muted mt-2 mb-0" style="font-size:11px;">
+            Neither verb writes the endpoint catalogue. <strong>Accept</strong>
+            records that the disappearance is taken as true of the firmware;
+            <strong>refuse</strong> records that a person looked and said no.
+            The row is kept either way &mdash; a finding deleted on refusal is
+            a refusal nobody can audit, and the next sweep would re-open it.
+          </p>
+        </div>
+        <div class="modal-footer py-2">
+          <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+          <button type="submit" name="decision" value="dismiss" class="btn btn-sm btn-outline-danger">{{ _('Refuse') }}</button>
+          <button type="submit" name="decision" value="acknowledge" class="btn btn-sm btn-primary">{{ _('Accept') }}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var el = document.getElementById('dvLedger');
+  if (!el || !window.bootstrap) { return; }
+  function put(id, text) { document.getElementById(id).textContent = text || '\u2014'; }
+  document.addEventListener('click', function (ev) {
+    var btn = ev.target && ev.target.closest ? ev.target.closest('.dv-ledger-open') : null;
+    if (!btn) { return; }
+    var d = btn.dataset;
+    document.getElementById('dvLedgerId').value = d.lgId || '';
+    document.getElementById('dvLedgerTitle').textContent = d.lgName || '';
+    // The scope line is not decoration. The record is about a LINE pair and
+    // the table above may be comparing two builds; a window that showed the
+    // decision without its scope would let it read as a decision about the
+    // builds on screen.
+    var scope = 'Recorded against ' + (d.lgScope || '?');
+    if (d.lgBorrowed === '1') {
+      scope += ' \u2014 the ledger\u2019s own scopes, not the two compared in the table. '
+             + 'A disappearance is recorded against the firmware line that removed it.';
+    }
+    document.getElementById('dvLedgerScope').textContent = scope;
+    put('dvLedgerState', d.lgState);
+    put('dvLedgerUrn', d.lgUrn);
+    put('dvLedgerApi', d.lgApi);
+    put('dvLedgerCli', (d.lgCli || '') + (d.lgDevice ? ' (dump from ' + d.lgDevice
+        + (d.lgCaptured ? ', captured ' + d.lgCaptured : '') + ')' : ''));
+    put('dvLedgerAge', 'first proved ' + (d.lgFirst || '?') + ', re-proved '
+        + (d.lgSeen || '0') + ' time(s), last ' + (d.lgLast || '?'));
+    document.getElementById('dvLedgerPath').textContent = d.lgPath
+      ? ('The dump spells the path ' + d.lgPath + '. That is evidence for you to '
+         + 'check, not a value this page will write: the catalogue holds one URN '
+         + 'per name with no firmware dimension, so writing the other spelling '
+         + 'would break the line that is still served by the current one.')
+      : '';
+    document.getElementById('dvLedgerNote').value = '';
+    bootstrap.Modal.getOrCreateInstance(el).show();
+  });
+})();
+</script>
+{% endif %}
+
 <div class="modal fade" id="dvNames" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered modal-lg">
     <div class="modal-content">

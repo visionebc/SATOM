@@ -13,30 +13,49 @@
   `rec` is whatever cli_coverage.Provenance.for_name/for_urn returned.
 #}
 
-{% macro prov_badge(rec, show_path=False) -%}
-  {%- if not rec -%}
-    <span class="text-muted" style="font-size:11px;">—</span>
-  {%- elif rec.bucket == 'unknown' -%}
+{#
+  ``(css class, standalone wording, nested wording)`` per bucket — ONE table,
+  because the two wordings are two depths of one vocabulary and an if-chain per
+  depth is two authors of it.
+
+  **Standalone** answers "which transports serve this?" and is what the API hub
+  asks in a column headed *Transport*.
+
+  **Nested** is for a caller that has already printed an API line directly
+  above, under a head that reads CLI: there "API + CLI" repeats the line above
+  it and answers a question that head did not ask. Reported by the operator on
+  2026-09-16 against the firmware comparison, where a cell headed CLI read
+  ``API · no CLI block here``.
+
+  The two "no block" buckets keep TWO nested phrases rather than collapsing to
+  one. They are the same absence with opposite fixes: a runtime readout cannot
+  have a CLI block (nothing to do), while a config object that printed none in
+  THIS dump is one capture away from having it. Collapsing them would hide that
+  difference behind a tooltip, and the tooltip is not what gets read.
+#}
+{% set PROV_WORDS = {
+     'both':         ('success',   'API + CLI',                'in the dump'),
+     'near_match':   ('warning',   'API + CLI · other path',
+                                                               'in the dump · other path'),
+     'monitor_only': ('info',      'API only',                 'no block — runtime readout'),
+     'no_block':     ('secondary', 'API · no CLI block here',
+                                                               'no block in this dump'),
+     'cli_only':     ('danger',    'CLI only',                 'in the dump'),
+   } %}
+
+{% macro prov_badge(rec, show_path=False, nested=False) -%}
+  {%- if rec and rec.bucket in PROV_WORDS -%}
+    {%- set style = PROV_WORDS[rec.bucket] -%}
+    <span class="fw-badge fw-badge-{{ style[0] }} fw-badge-nowrap" title="{{ rec.why }}{% if rec.path %} &mdash; CLI: {{ rec.path }}{% endif %}">{{ style[2] if nested else style[1] }}</span>
+    {%- if show_path and rec.path %} <code class="text-muted" style="font-size:10.5px;">{{ rec.path }}</code>{% endif -%}
+  {%- elif rec and rec.bucket == 'unknown' -%}
     {#- No badge on purpose: a grey "unknown" pill sits in the same visual
-        family as the grey "no CLI block here" pill, and those two are exactly
-        the pair that must not be confused. -#}
+        family as the grey no-block pill, and those two are exactly the pair
+        that must not be confused. -#}
     <span class="text-muted" style="font-size:11px; border-bottom:1px dotted #B9BFC7; cursor:help;"
-          title="{{ rec.why }}">—</span>
-  {%- elif rec.bucket == 'both' -%}
-    <span class="fw-badge fw-badge-success fw-badge-nowrap" title="{{ rec.why }}{% if rec.path %} — CLI: {{ rec.path }}{% endif %}">API + CLI</span>
-    {%- if show_path and rec.path %} <code class="text-muted" style="font-size:10.5px;">{{ rec.path }}</code>{% endif -%}
-  {%- elif rec.bucket == 'near_match' -%}
-    <span class="fw-badge fw-badge-warning fw-badge-nowrap" title="{{ rec.why }}{% if rec.path %} — CLI: {{ rec.path }}{% endif %}">API + CLI · other path</span>
-    {%- if show_path and rec.path %} <code class="text-muted" style="font-size:10.5px;">{{ rec.path }}</code>{% endif -%}
-  {%- elif rec.bucket == 'monitor_only' -%}
-    <span class="fw-badge fw-badge-info fw-badge-nowrap" title="{{ rec.why }}">API only</span>
-  {%- elif rec.bucket == 'no_block' -%}
-    <span class="fw-badge fw-badge-secondary fw-badge-nowrap" title="{{ rec.why }}">API · no CLI block here</span>
-  {%- elif rec.bucket == 'cli_only' -%}
-    <span class="fw-badge fw-badge-danger fw-badge-nowrap" title="{{ rec.why }}{% if rec.path %} — CLI: {{ rec.path }}{% endif %}">CLI only</span>
-    {%- if show_path and rec.path %} <code class="text-muted" style="font-size:10.5px;">{{ rec.path }}</code>{% endif -%}
+          title="{{ rec.why }}">&mdash;</span>
   {%- else -%}
-    <span class="text-muted" style="font-size:11px;">—</span>
+    <span class="text-muted" style="font-size:11px;">&mdash;</span>
   {%- endif -%}
 {%- endmacro %}
 

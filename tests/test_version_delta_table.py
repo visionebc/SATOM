@@ -1681,7 +1681,15 @@ def test_a_schema_gap_shows_the_reason_the_harvest_recorded(
     body = _page(client, app)
     row = _twin(body, "twoways", "schema")
     _, target_col = _build_cols(row)
-    assert "not measured on %s" % TARGET in _api_half(target_col), target_col
+    # The cell leads with the sweep's own verdict since 2026-09-17 (this
+    # fixture's target DOES carry one), and states the missing half beside it.
+    # Pinning the older phrase here would fail against correct output and,
+    # worse, would pass again the day the verdict silently stopped being
+    # rendered. What this guard is ABOUT is the recorded reason below.
+    half = _api_half(target_col)
+    assert "no field names on %s" % TARGET in half, half
+    assert "not measured on %s" % TARGET not in half, \
+        "a build that answered is still described as one nobody asked: %s" % half
     m = re.search(r'class="dv-why" title="([^"]*)"', target_col)
     assert m, "the gap offers no reason at all: %s" % target_col
     assert "the table is EMPTY on the reference appliance" in m.group(1)
@@ -1709,7 +1717,8 @@ def test_a_sweep_gap_offers_no_reason(two_builds, client, app):
     recorded nowhere, and handing that cell the harvest's sentence would
     explain one absence with another absence's cause."""
     row = _row(_page(client, app), "onesided")
-    assert "not measured on" in row, row
+    assert "no field names on" in row or "not measured on" in row, \
+        "the row stopped stating the gap at all: %s" % row
     assert 'class="dv-why"' not in row, \
         "a sweep gap borrowed the harvest's reason: %s" % row
 

@@ -14676,6 +14676,51 @@ template_blocks, documented_commands). <strong>Full suite NOT run</strong> (rule
   <code>dv-ev-alsokind</code>) made a count read 16 where 8 rows existed. Renamed to
   <code>dv-ev-peer</code>. A measurement that cannot be trusted is not evidence.</li>
 </ul>
+<h2 id="178c-a-measured-no-spelled-the-same-way-as-silence-teststest_schema_coveragepy-2026-09-17">§178c — a measured "no" spelled the same way as silence (<code>tests/test_schema_coverage.py</code>, 2026-09-17)</h2>
+<p>The follow-up to §178, reported by the operator who had just acted on it. They
+ran the sweep a second time, against the 8.0.5 appliance, and the cell still
+said <code>not measured on 8.0.5</code>. Their objection was right and §178 had not
+addressed it: the sweep <strong>had</strong> asked that build about that object, and the
+build answered — <code>absent</code>, errcode <code>-20001</code>, <em>"The REST API has invalid URL"</em>.</p>
+<p>§178 gave the cell a recorded <em>reason</em>. It did not stop the cell from leading
+with a phrase that denies the measurement happened.</p>
+<p><strong>Two independent sources agree on the finding</strong>, which is why it is worth
+naming: the 8.0.5 API rejects <code>/api/v2.0/cmdb/user/user-group</code> (and
+<code>user/local-user</code>) while serving every other <code>user/*</code> object, and the 8.0.5 CLI
+dump has no <code>config user user-group</code> and no <code>config user local-user</code> block
+while the 7.6.8 dump has both. The objects are gone in 8.0.</p>
+<p><strong>What the guards pin</strong></p>
+<ul>
+<li>A <code>fields_unknown</code> row carries the sweep's own verdict for the missing side
+  when the sweep recorded one, and carries nothing when it did not. Inventing
+  one would make the word meaningless everywhere it appears.</li>
+<li>It applies to <strong>both</strong> kinds of evidence. The first cut guarded on schema
+  rows only and left five rows saying <code>not measured on 8.0.5</code> about endpoints
+  the 8.0.5 sweep had answered <code>ok</code> for — the same false sentence, in the
+  commoner half of the page.</li>
+<li><strong>No field set crosses the origin boundary.</strong> Only the existence verdict
+  does. Crossing field sets is what reported 56 phantom removals.</li>
+<li>The harvest's recorded reason is <strong>never</strong> lent to a sweep row.</li>
+<li>The cell renders both halves: the verdict, and <code>no field names on &lt;build&gt;</code>.</li>
+<li>Page and export do not diverge — a blank verdict column reads as <em>no finding</em>.</li>
+</ul>
+<p><strong>Two traps this round, both in my own guards</strong></p>
+<ol>
+<li>A guard that <strong>grepped the macro source</strong> for the words it must print
+   SURVIVED a mutation replacing the whole condition with <code>{% if False %}</code>:
+   the branch was dead and every string was still in the file. A guard that
+   reads source cannot see a branch that never runs. It now <strong>renders</strong> the
+   macro in a bare Jinja env.</li>
+<li>A guard asserting the served badge explains itself searched the <strong>whole
+   rendered cell</strong> and was answered by a neighbouring <code>title</code> that happens to
+   use the same word. Tenth assert-by-substring in this repo to match a
+   neighbour. Scope the assert to the element that must carry the sentence.</li>
+<li>An <code>assert not row.get("gap_reason")</code> was <strong>vacuous</strong>: with no coverage file
+   on disk there was nothing to pick up, so it passed against code that lends
+   the reason to every row. The guard now puts a record where the lending code
+   would find it.</li>
+</ol>
+<p><strong>12 mutations, 12 bite, 0 survive, 0 void</strong> (after repairing 1 and 2).</p>
     </div>
   </div>
 </section>

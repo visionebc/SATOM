@@ -287,8 +287,20 @@
 
    The phrase does not change when a reason exists. "not measured on X" is
    still exactly what happened, and a second wording for the same fact is how a
-   page grows two vocabularies for one state. #}
-{% macro api_blank(scope, gap=None) -%}<span class="text-muted dv-unmeasured" title="Nothing has ever been measured for this on {{ scope }}. An unasked side is not a negative answer: the side nobody measured proves nothing, so this row is a gap in the evidence and not a change.">not measured on {{ scope }}</span>{% if gap %} <span class="dv-why" title="{{ gap.reason }}{% if gap.detail %} (recorded: {{ gap.detail }}){% endif %}">why</span>{% endif %}{%- endmacro %}
+   page grows two vocabularies for one state.
+
+   ``measured`` is the one thing that DOES change it, and only because it is a
+   different fact: the sweep asked this build about this very object and got an
+   answer. Leading with "not measured" there is false to the operator who just
+   ran that sweep (reported 2026-09-17). The verdict is rendered with the SAME
+   two badges the endpoint rows use — no third vocabulary — and the schema
+   statement survives beside it, because a served URN with no schema is the
+   commonest state on this page and the reason for it is not obvious: a
+   FortiWeb cmdb GET returns CONFIGURED ENTRIES, not a schema, so a table
+   nobody has populated has no field names to read. Measured against both
+   reference boxes 2026-09-17: there is no schema/default/meta action, every
+   such query parameter is ignored and the reply is the same empty list. #}
+{% macro api_blank(scope, gap=None, measured=None) -%}{% if measured %}{% if measured.verdict == "absent" %}<span class="fw-badge fw-badge-danger dv-swept" title="The sweep DID ask {{ scope }} for this object{% if measured.measured_at %} on {{ measured.measured_at[:10] }}{% endif %}{% if measured.devices %} ({{ measured.devices|join(', ') }}){% endif %} and the build REJECTED the URN — a measured no, not an unasked question. There is no field schema here because there is no object here.">absent</span>{% else %}<span class="fw-badge fw-badge-success dv-swept" title="The sweep DID ask {{ scope }} for this object{% if measured.measured_at %} on {{ measured.measured_at[:10] }}{% endif %}{% if measured.devices %} ({{ measured.devices|join(', ') }}){% endif %} and the build served the URN — a measured yes. There is still no field schema because a FortiWeb cmdb GET returns the entries somebody CONFIGURED, not a schema: a table with no rows has no field names to read, and this API offers no schema action.">served</span>{% endif %} <span class="text-muted dv-unmeasured" title="No field NAMES are known for this on {{ scope }}, which is a different statement from the verdict beside it. A sweep learns field names only from rows the operator configured, and a harvest describes only a table the reference appliance has populated: a build can serve a URN perfectly and still teach nobody a single field name. A side with no field names proves nothing about the other side's fields, so this row is a gap in the evidence and not a change.">no field names on {{ scope }}</span>{% else %}<span class="text-muted dv-unmeasured" title="Nothing has ever been measured for this on {{ scope }}. An unasked side is not a negative answer: the side nobody measured proves nothing, so this row is a gap in the evidence and not a change.">not measured on {{ scope }}</span>{% endif %}{% if gap %} <span class="dv-why" title="{{ gap.reason }}{% if gap.detail %} (recorded: {{ gap.detail }}){% endif %}">why</span>{% endif %}{%- endmacro %}
 
 {# The one caveat that used to sit under the object name. It is a fact about
    THIS column — some builds of the rollup attested the URN and some stayed
@@ -769,8 +781,8 @@
             </td>
             <td>{{ evidence_slot(c.origin, c.siblings) }}</td>
             <td><code class="text-muted" style="font-size:11px;">{{ c.urn }}</code></td>
-            <td>{% call build_cell(delta.base, base_prov, c.cli_base, c.cli_delta, 'base') %}{% if c.known_on == delta.base %}{{ api_fields(c.count) }}{% else %}{{ api_blank(delta.base, c.gap_reason) }}{% endif %}{% endcall %}</td>
-            <td>{% call build_cell(delta.target, target_prov, c.cli_target, c.cli_delta, 'target') %}{% if c.known_on == delta.target %}{{ api_fields(c.count) }}{% else %}{{ api_blank(delta.target, c.gap_reason) }}{% endif %}{% endcall %}</td>
+            <td>{% call build_cell(delta.base, base_prov, c.cli_base, c.cli_delta, 'base') %}{% if c.known_on == delta.base %}{{ api_fields(c.count) }}{% else %}{{ api_blank(delta.base, c.gap_reason, c.measured) }}{% endif %}{% endcall %}</td>
+            <td>{% call build_cell(delta.target, target_prov, c.cli_target, c.cli_delta, 'target') %}{% if c.known_on == delta.target %}{{ api_fields(c.count) }}{% else %}{{ api_blank(delta.target, c.gap_reason, c.measured) }}{% endif %}{% endcall %}</td>
             <td>{{ test_btn(urn=c.urn) }}</td></tr>
         {% endfor %}
         {% for c in delta.fields_incomparable %}

@@ -361,7 +361,12 @@ def _schema_evidence(product: str) -> dict:
             continue
         bucket = lines.setdefault(line, {})
         for fname in sorted(os.listdir(os.path.join(base, line))):
-            if not fname.endswith(".json"):
+            # ``_coverage.json`` (what the last harvest could and could not do)
+            # lives in this directory too. It is skipped by RULE: it happens to
+            # carry no ``object`` key, so the check below would drop it anyway,
+            # and a file that is excluded only by accident is one field away
+            # from being read as an object.
+            if not fname.endswith(".json") or fname.startswith("_"):
                 continue
             doc = _read_json(os.path.join(base, line, fname))
             if not isinstance(doc, dict) or "object" not in doc:
@@ -592,6 +597,26 @@ def load(product: str, rebuild_if_missing: bool = True) -> dict | None:
 # diff — the answer to "what does 8.0 add?"
 # ---------------------------------------------------------------------------
 
+#: ``bucket -> (label, is-it-a-change)``. It lives here, next to the code that
+#: fills the buckets, because the CSV export, the PDF and now the row
+#: cross-reference all name them — and three authors of one vocabulary is how a
+#: label drifts out of step with the rule it describes.
+#:
+#: ``is a change`` is "yes" for exactly the three buckets where BOTH builds were
+#: measured. The other three are gaps in the evidence; counted as changes they
+#: become removals nobody ever measured.
+BUCKET_LABEL = {
+    "endpoints_added": ("endpoint added", "yes"),
+    "endpoints_removed": ("endpoint gone", "yes"),
+    "fields_changed": ("field delta", "yes"),
+    "endpoints_unknown": ("endpoint measured on one side only", "no"),
+    "fields_unknown": ("fields known on one side only", "no"),
+    "fields_incomparable": ("incomparable", "no"),
+}
+
+ALL_BUCKETS = tuple(BUCKET_LABEL)
+
+
 def diff(product: str, base_line: str, target_line: str, matrix: dict | None = None) -> dict:
     """What ``target_line`` adds/removes relative to ``base_line``.
 
@@ -732,10 +757,81 @@ def diff(product: str, base_line: str, target_line: str, matrix: dict | None = N
                     "base_count": len(ia[origin]), "target_count": len(ib[origin]),
                 })
 
+    buckets = {
+        "endpoints_added": endpoints_added,
+        "endpoints_removed": endpoints_removed,
+        "endpoints_unknown": endpoints_unknown,
+        "fields_changed": fields_changed,
+        "fields_unknown": fields_unknown,
+        "fields_incomparable": fields_incomparable,
+    }
+
+    # --- rows that describe the SAME NAME ----------------------------------
+    # ``user_group`` appears TWICE in the live matrix: once as endpoint
+    # evidence (a sweep asked the box and it answered ``absent``) and once as
+    # object evidence (a harvested schema, present on 7.6 and not on 8.0).
+    # Nothing tied the two rows together, so an operator who had just run a
+    # sweep read the schema row's "not measured on 8.0.5" as the sweep having
+    # failed (reported 2026-09-17). Both rows were correct; what was missing is
+    # that each says the other exists.
+    #
+    # Computed HERE and never in the template: the page renders one loop per
+    # bucket, and a cross-reference assembled inside a loop can only see its
+    # own bucket's rows — which is precisely the blindness being fixed.
+    #
+    # It does NOT merge them. The two are different kinds of evidence and
+    # merging them is what produced the 56 phantom removals; the link is a
+    # pointer, and the ``origin`` it carries is the reason the rows are apart.
+    by_key: dict = {}
+    for bucket, rows in buckets.items():
+        for row in rows:
+            by_key.setdefault(row.get("endpoint") or row.get("key") or "", []).append(
+                (bucket, row))
+    for name, entries in by_key.items():
+        if len(entries) < 2:
+            continue
+        for bucket, row in entries:
+            row["siblings"] = [
+                {"bucket": b, "label": BUCKET_LABEL[b][0],
+                 "origin": r.get("origin") or "",
+                 "is_change": BUCKET_LABEL[b][1] == "yes"}
+                for b, r in entries if r is not row]
+
+    # --- why a side has no schema ------------------------------------------
+    # A ``fields_unknown`` row whose evidence is ``schema`` says "not measured
+    # on 8.0.5" and that is literally true — but the reason lives in the
+    # harvest, which until now printed it to a terminal and discarded it. The
+    # reason is READ from the recorded coverage; it is never inferred from the
+    # absence itself, because "no schema" and "no schema BECAUSE the reference
+    # box has that table empty" are the difference between a defect and a
+    # property of the estate.
+    from . import field_catalog as _fc
+    base_ln, target_ln = firmware_line(base_line), firmware_line(target_line)
+    for row in fields_unknown:
+        if row.get("origin") != "schema":
+            continue
+        missing_line = target_ln if row.get("known_on") == base_line else base_ln
+        missing_scope = target_line if row.get("known_on") == base_line else base_line
+        gap = _fc.coverage_gap(product, missing_line, row.get("key") or "",
+                               root=SCHEMA_ROOT)
+        if gap:
+            row["gap_reason"] = gap
+            row["gap_reason"]["scope"] = missing_scope
+
+    # What the harvest of each compared line actually managed. A side whose
+    # catalog was never harvested reports ``harvested: False`` — not "complete".
+    schema_coverage = {
+        "base": dict(_fc.coverage_summary(product, base_ln, root=SCHEMA_ROOT),
+                     scope=base_line),
+        "target": dict(_fc.coverage_summary(product, target_ln, root=SCHEMA_ROOT),
+                       scope=target_line),
+    }
+
     # A delta computed between two ROLLUPS carries every build each rollup
     # merged. Without it "8.0 adds X" is unfalsifiable: the reader cannot tell
     # whether X was seen on one build or on all of them.
     return {
+        "schema_coverage": schema_coverage,
         "product": product, "base": base_line, "target": target_line,
         "base_kind": a_kind, "target_kind": b_kind,
         "base_known": bool(a), "target_known": bool(b),

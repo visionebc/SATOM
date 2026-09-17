@@ -110,20 +110,39 @@ class _Appliance:
         return self._client
 
 
-def test_a_rejected_urn_is_named_as_a_registry_defect():
+def test_a_rejected_urn_is_reported_without_picking_a_reading():
+    """REWRITTEN 2026-09-17, because the claim it used to pin is false.
+
+    It asserted that a rejection must name the registry as the defect. Measured
+    against the fleet that day: ``user_group`` is REJECTED by 8.0.5 and SERVED
+    by 7.6.8 under the same path. That is equally consistent with the object
+    having been dropped from the newer build, so naming the registry is a guess
+    dressed as a diagnosis — and it is the diagnosis an operator would act on.
+
+    What survives, and is what this guard is really about: a rejection must
+    never read as "nothing configured", and the raw errcode must reach whoever
+    has to decide which of the two readings it is.
+    """
     a = _Appliance(_Client({"errcode": -20001, "message": "The REST API has invalid URL."}))
-    reason = h.why_empty(a, "/api/v2.0/cmdb/system/network.interface")
-    assert "-20001" in reason
-    assert "registry" in reason.lower(), (
-        "a URN the device rejects must point at the registry entry, not read as "
-        "'nothing configured'"
-    )
+    status, detail = h.classify_empty(a, "/api/v2.0/cmdb/system/network.interface")
+    assert status == h.STATUS_URN_REJECTED
+    assert "-20001" in detail, detail
+    sentence = h.COVERAGE_REASON[h.STATUS_URN_REJECTED]
+    assert "does not say which" in sentence, \
+        "the reason picks one of the two readings again: %s" % sentence
 
 
 def test_an_unpopulated_table_is_named_as_not_a_defect():
-    reason = h.why_empty(_Appliance(_Client({"results": []})), "/api/v2.0/cmdb/user/ldap-user")
-    assert "not a defect" in reason.lower()
-    assert "-20001" not in reason
+    """Repaired, not relaxed: the classification is now a STATUS and the
+    sentence that says "not a defect" moved to the record the page reads. Both
+    halves are still asserted, at their new addresses."""
+    status, detail = h.classify_empty(
+        _Appliance(_Client({"results": []})), "/api/v2.0/cmdb/user/ldap-user")
+    assert status == h.STATUS_EMPTY_TABLE
+    assert "-20001" not in detail
+    sentence = h.COVERAGE_REASON[h.STATUS_EMPTY_TABLE]
+    assert "NOT about the firmware" in sentence, \
+        "an empty table is being worded as a property of the build: %s" % sentence
 
 
 def test_the_two_empties_do_not_read_the_same():
@@ -136,8 +155,9 @@ def test_the_two_empties_do_not_read_the_same():
 def test_errcode_zero_is_not_treated_as_an_error():
     """FortiWeb sends ``errcode: 0`` on success; reading that as a rejection
     would report a defect for every healthy-but-empty table."""
-    reason = h.why_empty(_Appliance(_Client({"errcode": 0, "results": []})), "/z")
-    assert "not a defect" in reason.lower()
+    status, _detail = h.classify_empty(
+        _Appliance(_Client({"errcode": 0, "results": []})), "/z")
+    assert status == h.STATUS_EMPTY_TABLE, status
 
 
 def test_diagnosis_never_breaks_the_harvest():
@@ -156,10 +176,20 @@ def test_diagnosis_issues_only_a_GET():
 
 
 def test_the_harvest_reports_the_reason_not_a_fixed_phrase():
-    """build() must call why_empty at the empty-object site. Printing a constant
-    string there is exactly the defect: two states, one message."""
+    """build() must classify the empty-object site. Printing a constant string
+    there is exactly the defect: two states, one message.
+
+    Strengthened 2026-09-17: printing the reason is no longer enough. It went
+    to a terminal nobody kept, so the comparison page had nothing to show and
+    the operator had no way to reach it — which cost a session. The reason has
+    to be RECORDED.
+    """
     body = _uncommented(inspect.getsource(h.build))
-    assert "why_empty(" in body, "build() no longer explains an empty harvest"
+    assert "classify_empty(" in body, "build() no longer explains an empty harvest"
+    assert "_no_evidence(" in body, \
+        "build() no longer files the reason against what is on disk"
+    assert "write_coverage(" in body, \
+        "build() explains the hole and then throws the explanation away"
 
 
 # --------------------------------------------------------------------------- #
@@ -202,10 +232,21 @@ def _fake_harvest(app, monkeypatch, line, firmware, allow_mismatch=False):
     entirely left that name in the signature — so the guard passed against code
     that harvested a mislabelled catalog anyway. Returns the payloads build()
     tried to write.
+
+    "Writing nothing" used to mean "``_write_if`` is stubbed". On 2026-09-17
+    ``build()`` grew a SECOND write path — the coverage record — and this
+    fixture happily let it through: the run overwrote the production catalog's
+    coverage files, and the live page's banner started naming ``linefake`` as
+    the reference appliance. Enumerating writers is the thing that failed, so
+    the ROOT is redirected as well; a third write path lands in a temporary
+    directory whether or not anyone remembers to stub it.
     """
+    import tempfile
+
     from app.extensions import db
     from app.models import Appliance
     from app.registry import loader
+    from app.services import field_catalog as fc
 
     with app.app_context():
         if Appliance.query.filter_by(name="linefake").first() is None:
@@ -221,6 +262,7 @@ def _fake_harvest(app, monkeypatch, line, firmware, allow_mismatch=False):
                             lambda appliance, urn: {"primary": "192.0.2.3"})
         monkeypatch.setattr(loader, "load_registry",
                             lambda: {"dns": "/api/v2.0/cmdb/system/dns"})
+        monkeypatch.setattr(fc, "SCHEMA_ROOT", tempfile.mkdtemp(prefix="satom-fc-"))
         monkeypatch.setattr(
             h, "_write_if",
             lambda path, payload, force: (written.append(payload), True)[1])
@@ -387,3 +429,39 @@ def test_no_schema_on_disk_was_harvested_from_the_wrong_firmware():
         if not h.line_matches_firmware(line, fw):
             bad.append("%s/%s built from %s" % (line, name, fw))
     assert not bad, bad
+
+
+def test_the_harvest_fixture_never_touches_the_production_catalog(app, monkeypatch):
+    """The guard the fixture's own docstring needed.
+
+    It claimed "writing nothing" and enforced it for exactly one writer. When a
+    second appeared, the test suite silently rewrote the real
+    ``data/field_schemas`` coverage records and the live comparison page began
+    citing a test appliance. Nothing failed — the suite was green.
+
+    So the claim is measured: after a full fake harvest, no file under the real
+    schema root may have changed. This fails for ANY future write path, which
+    is the only version of this guard that stays true.
+    """
+    from app.services import field_catalog as fc
+
+    real = fc.SCHEMA_ROOT
+    before = {}
+    for dirpath, _dirs, files in os.walk(real):
+        for f in files:
+            p = os.path.join(dirpath, f)
+            before[p] = os.stat(p).st_mtime_ns
+
+    _fake_harvest(app, monkeypatch, line="7.6", firmware="7.6.8")
+    _fake_harvest(app, monkeypatch, line="8.0", firmware="7.6.8",
+                  allow_mismatch=True)
+
+    after = {}
+    for dirpath, _dirs, files in os.walk(real):
+        for f in files:
+            p = os.path.join(dirpath, f)
+            after[p] = os.stat(p).st_mtime_ns
+    created = sorted(set(after) - set(before))
+    changed = sorted(p for p in before if after.get(p) != before[p])
+    assert not created, "the fake harvest created production files: %s" % created
+    assert not changed, "the fake harvest rewrote production files: %s" % changed

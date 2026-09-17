@@ -2391,7 +2391,22 @@ a.bm-dev:hover { background: var(--fw-accent-light); color: var(--fw-accent); }
    carries why it has no answer. Same affordance because the reader's question
    is the same one. */
 #versionDelta td .dv-cli-scope,
-#versionDelta td .dv-unmeasured { border-bottom: 1px dotted #B9BFC7; cursor: help; }
+#versionDelta td .dv-unmeasured,
+.dv-coverage .dv-why,
+#versionDelta td .dv-why,
+#versionDelta td .dv-ev-peer { border-bottom: 1px dotted #B9BFC7; cursor: help; }
+
+/* "there is another row about this name". Deliberately quiet: it is a pointer,
+   not a finding, and a pointer loud enough to compete with the evidence badge
+   beside it would be read as one. */
+#versionDelta td .dv-ev-also {
+  color: var(--fw-text-secondary); font-size: 10.5px; margin-top: 2px;
+}
+/* The reason a side has no schema. Same dotted affordance as every other
+   "there is a reason one hover away" on this page — same question, same
+   gesture, and a second affordance for it is a second thing to learn. */
+#versionDelta td .dv-why,
+.dv-coverage .dv-why { color: var(--fw-text-secondary); font-size: 11px; }
 
 /* The names fold is gone (2026-09-16): both halves open the one window
    instead. Its rules went with it rather than sitting here unreferenced —

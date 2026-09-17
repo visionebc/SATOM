@@ -3767,10 +3767,56 @@ two cases at two levels:
 
 A corroborated disappearance is **acknowledged automatically** (`absence.autoack`,
 on by default): it keeps being reported on the page, but it stops being an open
-question, and the review queue shows only what still needs a person. A
+question, and the review queue -- the chips in the comparison itself, see
+below -- shows only what still needs a person. A
 contradiction is never acknowledged automatically — it is precisely the case
 that needs the person this would be replacing. A human decision is never
 overwritten by the timer.
+
+#### Reviewing a finding, on the row that reports it
+
+The ledger is read back **inside the comparison**, so the queue is not a second
+page you have to remember to open. Every gone row that the ledger holds a record
+for carries a chip next to its name:
+
+| chip | meaning |
+|---|---|
+| **needs review** | recorded and still open; click it to decide |
+| **accepted · `<who>`** | somebody (or the automatic pass, as `system`) took it as true of the firmware |
+| **refused · `<who>`** | somebody looked and said no; the row is kept so the refusal is on the record |
+
+A row the ledger does not hold shows **nothing at all** — never an empty badge,
+and never a neighbour's chip.
+
+The chip is a **button only while the finding is open**. Clicking it opens a
+window with both sources, the appliance the dump came from and when it was
+captured, when the finding was first proved and how many times it has been
+re-proved since, and two verbs: **Accept** and **Refuse**. Neither writes the
+endpoint catalog (see below); both record who decided and when, and the page
+returns to the comparison you were reading rather than to the default one.
+
+**The scopes in that window are the ledger's own, and they may not be the two
+on screen.** A disappearance is recorded against the firmware **line** that
+removed it, so a `7.6.8 → 8.0.5` comparison shows the `7.6 → 8.0` record and
+says so. That is deliberate: a decision taken here applies to the line, and a
+window that showed it without its scopes would let it read as a decision about
+those two builds, which nobody made.
+
+Two comparisons get **no** ledger entry at all, each with its own sentence
+above the table rather than a blank:
+
+* **two builds of one line** — a disappearance belongs to the line that removed
+  it, so there is nothing to record between `8.0.3` and `8.0.5`. That is not a
+  claim that nothing disappeared between them.
+* **a pair that skips a line** — `7.6 → 8.2` would count everything `8.0`
+  removed a second time. Compare the adjacent lines to see the record.
+
+The chip never changes the verdict beside it. The badge on the row is still the
+one **measured** from that build's own evidence; the ledger only adds *since
+when* and *who looked*. The CSV and PDF exports carry both as the
+`ledger review` and `ledger scope and age` columns — the PDF gives them a third
+table, joined to the findings by object name. A blank there means the row is
+not in the ledger for this pair, which is not the same as unreviewed.
 
 #### What is NOT auto-written, and why
 

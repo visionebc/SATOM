@@ -188,7 +188,8 @@ def api_versions():
                                     'registry.api_versions_declare',
                                     'registry.api_versions_forget',
                                     'registry.api_versions_export',
-                                    'registry.api_versions_export_pdf')
+                                    'registry.api_versions_export_pdf',
+                                    'registry.api_versions_review')
 
 
 # GET, and read-only: it renders the same comparison the page does, so it is
@@ -228,6 +229,19 @@ def api_versions_declare():
     refactor away from a version that silently never appears on the page.
     """
     return _apiversions.declare_page('fortiweb', 'registry.api_versions')
+
+
+@bp.route('/versions/review', methods=['POST'])
+@login_required
+@require_permission(Permission.REGISTRY_EDIT)
+def api_versions_review():
+    """Accept or refuse one recorded disappearance.
+
+    Gated on the same permission as declare/forget and for the same reason: it
+    writes one row of operator judgement about the catalogue. It writes NO
+    catalogue entry -- see ``absence_record.BLOCKED_REASON``.
+    """
+    return _apiversions.review_page('fortiweb', 'registry.api_versions')
 
 
 @bp.route('/versions/forget', methods=['POST'])

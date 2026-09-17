@@ -4276,10 +4276,66 @@ two cases at two levels:</p>
 </ul>
 <p>A corroborated disappearance is <strong>acknowledged automatically</strong> (<code>absence.autoack</code>,
 on by default): it keeps being reported on the page, but it stops being an open
-question, and the review queue shows only what still needs a person. A
+question, and the review queue -- the chips in the comparison itself, see
+below -- shows only what still needs a person. A
 contradiction is never acknowledged automatically — it is precisely the case
 that needs the person this would be replacing. A human decision is never
 overwritten by the timer.</p>
+<h4 id="reviewing-a-finding-on-the-row-that-reports-it">Reviewing a finding, on the row that reports it</h4>
+<p>The ledger is read back <strong>inside the comparison</strong>, so the queue is not a second
+page you have to remember to open. Every gone row that the ledger holds a record
+for carries a chip next to its name:</p>
+<table>
+<thead>
+<tr>
+<th>chip</th>
+<th>meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>needs review</strong></td>
+<td>recorded and still open; click it to decide</td>
+</tr>
+<tr>
+<td><strong>accepted · <code>&lt;who&gt;</code></strong></td>
+<td>somebody (or the automatic pass, as <code>system</code>) took it as true of the firmware</td>
+</tr>
+<tr>
+<td><strong>refused · <code>&lt;who&gt;</code></strong></td>
+<td>somebody looked and said no; the row is kept so the refusal is on the record</td>
+</tr>
+</tbody>
+</table>
+<p>A row the ledger does not hold shows <strong>nothing at all</strong> — never an empty badge,
+and never a neighbour's chip.</p>
+<p>The chip is a <strong>button only while the finding is open</strong>. Clicking it opens a
+window with both sources, the appliance the dump came from and when it was
+captured, when the finding was first proved and how many times it has been
+re-proved since, and two verbs: <strong>Accept</strong> and <strong>Refuse</strong>. Neither writes the
+endpoint catalog (see below); both record who decided and when, and the page
+returns to the comparison you were reading rather than to the default one.</p>
+<p><strong>The scopes in that window are the ledger's own, and they may not be the two
+on screen.</strong> A disappearance is recorded against the firmware <strong>line</strong> that
+removed it, so a <code>7.6.8 → 8.0.5</code> comparison shows the <code>7.6 → 8.0</code> record and
+says so. That is deliberate: a decision taken here applies to the line, and a
+window that showed it without its scopes would let it read as a decision about
+those two builds, which nobody made.</p>
+<p>Two comparisons get <strong>no</strong> ledger entry at all, each with its own sentence
+above the table rather than a blank:</p>
+<ul>
+<li><strong>two builds of one line</strong> — a disappearance belongs to the line that removed
+  it, so there is nothing to record between <code>8.0.3</code> and <code>8.0.5</code>. That is not a
+  claim that nothing disappeared between them.</li>
+<li><strong>a pair that skips a line</strong> — <code>7.6 → 8.2</code> would count everything <code>8.0</code>
+  removed a second time. Compare the adjacent lines to see the record.</li>
+</ul>
+<p>The chip never changes the verdict beside it. The badge on the row is still the
+one <strong>measured</strong> from that build's own evidence; the ledger only adds <em>since
+when</em> and <em>who looked</em>. The CSV and PDF exports carry both as the
+<code>ledger review</code> and <code>ledger scope and age</code> columns — the PDF gives them a third
+table, joined to the findings by object name. A blank there means the row is
+not in the ledger for this pair, which is not the same as unreviewed.</p>
 <h4 id="what-is-not-auto-written-and-why">What is NOT auto-written, and why</h4>
 <p>The candidate CLI spelling is recorded and shown, and it is <strong>not</strong> written to
 the catalog. <code>RegistryEndpoint</code> is keyed <code>(product, api_version, name)</code> with one

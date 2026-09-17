@@ -1371,7 +1371,11 @@ def test_the_pdf_explains_every_column_it_prints(two_builds, client, app):
         R = _apiversions._resolved("fortiweb")
         cols = _apiversions._columns(R["base"], R["target"],
                                      R["base_prov"], R["target_prov"])
-    assert len(cols) == 19, len(cols)
+    # 21 since the lifecycle ledger's two columns were appended (2026-09-17).
+    # Pinned rather than derived on purpose: this guard's job is to notice that
+    # the document grew a column, and a count read from the same list the
+    # document is built from could never notice anything.
+    assert len(cols) == 21, len(cols)
     for head, note in cols:
         assert _sq(head) in flat, "column %r is not named in the PDF" % head
         # The explanation, not merely the heading. A document that printed the
@@ -1381,16 +1385,21 @@ def test_the_pdf_explains_every_column_it_prints(two_builds, client, app):
 
 
 def test_the_pdf_tables_between_them_print_every_column_once(two_builds, client, app):
-    """Nineteen columns, split across two tables of at most ten.
+    """Every column, split across tables of at most ten.
 
     The split is the whole reason nothing is dropped, so it is fixed here by
     INDEX: every column in exactly one table, except the object name, which is
     the key joining a finding's two halves and is allowed to repeat.
     """
     from app.views import _apiversions
-    a, b = _apiversions._PDF_TABLE_A, _apiversions._PDF_TABLE_B
-    assert len(a) <= 10 and len(b) <= 10, (len(a), len(b))
-    both = sorted(a + b)
+    # Every table, read off the module rather than named one by one: a fourth
+    # table added without touching this line must still be covered, and a
+    # hand-written pair is what went stale when the third one appeared.
+    tables = [getattr(_apiversions, n) for n in sorted(dir(_apiversions))
+              if n.startswith("_PDF_TABLE_")]
+    assert len(tables) >= 3, tables
+    assert all(len(t) <= 10 for t in tables), [len(t) for t in tables]
+    both = sorted(i for t in tables for i in t)
     # Derived from the column list rather than written as a literal: the
     # literal is what went stale when the corroboration column was appended,
     # and a split that silently stops covering a column drops evidence from a
@@ -1400,6 +1409,34 @@ def test_the_pdf_tables_between_them_print_every_column_once(two_builds, client,
     assert sorted(set(both)) == list(range(width)), both
     dupes = sorted(i for i in set(both) if both.count(i) > 1)
     assert dupes == [2], dupes
+
+
+def test_the_pdf_actually_DRAWS_every_column_the_split_names(two_builds, client,
+                                                             app):
+    """The document, not the module constants.
+
+    The split guard above reads ``_PDF_TABLE_*`` and the legend guard reads the
+    column list; BOTH keep passing if the render loop simply stops drawing one
+    of the tables. That mutation survived on 2026-09-17 with the third table
+    silently missing and the legend still describing its two columns -- the
+    worst shape a download can take, because it documents evidence it does not
+    carry. So every heading is required in the extracted TABLE CELLS, which
+    only a drawn table can produce (the legend is paragraphs).
+    """
+    from app.views import _apiversions
+    _, _text, cells = _pdf(client, app)
+    with app.test_request_context("/web/registry/versions?base=%s&target=%s"
+                                  % (BASE, TARGET)):
+        R = _apiversions._resolved("fortiweb")
+        cols = _apiversions._columns(R["base"], R["target"],
+                                     R["base_prov"], R["target_prov"])
+    tables = [getattr(_apiversions, n) for n in sorted(dir(_apiversions))
+              if n.startswith("_PDF_TABLE_")]
+    for idx in tables:
+        for i in idx:
+            head = cols[i][0]
+            assert _sq(head) in cells, \
+                "column %r is named in the split and drawn in no table" % head
 
 
 def test_the_pdf_carries_every_finding_the_csv_does(two_builds, client, app):
@@ -1446,7 +1483,9 @@ def test_the_pdf_caps_nothing_the_comparison_measured(
                    # own — so the cap is exercised by the column that needs it
                    # most rather than by whichever happens to be widest.
                    "no schema on 8.0.5 (empty_table): " + joined,
-                   "gone - corroborated"]
+                   "gone - corroborated",
+                   "accepted by ana on 2026-09-16",
+                   "7.6 -> 8.0; first proved 2026-09-01; re-proved 4 time(s)"]
 
     # A synthetic row narrower than the real one makes the PDF renderer
     # IndexError on a column the split addresses, and the guard then reports a

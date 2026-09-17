@@ -27,7 +27,8 @@ from flask import (Response, flash, redirect, render_template, request,
                    url_for)
 from flask_login import current_user
 
-from ..services import api_matrix, cli_coverage, firmware_versions, pdf_kit
+from ..services import (absence_corroboration, api_matrix, cli_coverage,
+                        firmware_versions, pdf_kit)
 from ..services.audit import log_action
 
 
@@ -200,6 +201,48 @@ def _resolved(product: str) -> dict:
                 # configured field names at all (guarded).
                 row["cli_delta"] = _cli_field_delta(
                     row["cli_base"], row["cli_target"], _pair_note)
+
+        # --- corroboration, on the ONE bucket that claims a disappearance --
+        # ``endpoints_removed`` is the only bucket where the comparison says
+        # "this used to be here and is not". Every other bucket is a gap or a
+        # field delta, and stamping a corroboration verdict on those would
+        # answer a question they never asked -- the same fabrication as
+        # printing an evidence kind for a record that never carried one.
+        #
+        # Computed here and not in ``api_matrix.diff`` because it needs the CLI
+        # provenance, which is resolved in this view (per BUILD, which is
+        # strictly better evidence than the per-line pass the ledger runs). The
+        # two therefore answer for different scope pairs and are keyed by those
+        # scopes on both sides; they are not two answers to one question.
+        for row in delta.get("endpoints_removed") or []:
+            state = absence_corroboration.corroborate(
+                second_now=absence_corroboration.source_of(row.get("cli_target")),
+                second_before=absence_corroboration.source_of(row.get("cli_base")))
+            row["corroboration"] = state
+            row["corroboration_label"] = absence_corroboration.label(state)
+            # The alternative CLI spelling travels only with the verdict that
+            # makes it meaningful -- on a corroborated disappearance there is
+            # no path to offer, and offering one would read as a fix for a
+            # finding that needs none.
+            #
+            # That coupling is NOT re-checked here. A spelling exists only for
+            # a ``near_match``, and ``near_match`` is a bucket that holds a
+            # block, so it can only ever produce the contradicted verdict: an
+            # ``if is_actionable(state)`` wrapper around this line was dead
+            # code that no mutation could reach. A conditional that cannot be
+            # false is an invitation to hang a second condition off it later.
+            # The invariant is pinned where it is actually true, on the bucket
+            # mapping, by
+            # ``test_an_alternative_spelling_belongs_only_to_the_actionable_verdict``.
+            row["proposed_path"] = absence_corroboration.proposed_path(
+                row.get("cli_target"))
+        tally = {}
+        for row in delta.get("endpoints_removed") or []:
+            k = row.get("corroboration") or ""
+            tally[k] = tally.get(k, 0) + 1
+        delta["corroboration_counts"] = tally
+        delta["corroboration_actionable"] = sum(
+            n for k, n in tally.items() if absence_corroboration.is_actionable(k))
 
     return {"matrix": matrix, "vdocs": vdocs, "versions": versions,
             "lines": lines, "scopes": scopes, "base": base, "target": target,
@@ -377,6 +420,18 @@ def _columns(base, target, bp, tp):
          "box, not the firmware), a rejected URN, or an unreachable device. "
          "Blank when the row is not a schema gap, or when no harvest has ever "
          "recorded that line — and those two blanks are not the same claim."),
+        # Appended AFTER the gap column for the reason stated above it: an
+        # inserted column renumbers every later one, and the PDF's two tables
+        # address cells by INDEX. Index 17 stays the gap column.
+        ("corroboration",
+         "For a row reported GONE, what a SECOND source says. The API alone "
+         "cannot tell a removed object from a path that is wrong for this "
+         "firmware line, so the appliance's own configuration dump -- which is "
+         "addressed in CLI syntax and cannot inherit our path's mistake -- is "
+         "asked too. \"check the registry\" means the dump HOLDS a block the "
+         "REST path is rejecting: the object is on the box and this catalogue "
+         "is wrong. Blank on every row that is not a disappearance claim, "
+         "which is not the same as an uncorroborated one."),
     ]
 
 
@@ -495,6 +550,8 @@ def _export_rows(delta: dict, base: str, target: str):
             (ct or {}).get("bucket") or "", (cd or {}).get("target_count", ""),
             " ".join((cd or {}).get("added") or []),
             _gap_text(r),
+            absence_corroboration.label(r["corroboration"])[0]
+            if r.get("corroboration") else "",
         ]
 
 
@@ -504,8 +561,8 @@ def _export_rows(delta: dict, base: str, target: str):
 #: columns of single characters either way. Index 2 (the object name) is
 #: repeated as the second table's join key — it is the only cell that may
 #: appear twice, and the legend says so.
-_PDF_TABLE_A = (0, 1, 2, 3, 17, 4, 5, 6, 11, 12)
-_PDF_TABLE_B = (2, 7, 8, 9, 10, 13, 14, 15, 16)
+_PDF_TABLE_A = (0, 1, 2, 3, 18, 17, 4, 5, 11, 12)
+_PDF_TABLE_B = (2, 6, 7, 8, 9, 10, 13, 14, 15, 16)
 
 
 def export_pdf_page(product: str, page_endpoint: str):

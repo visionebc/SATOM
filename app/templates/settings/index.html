@@ -1327,7 +1327,7 @@
                   </div>
                   <label class="fw-form-label">{{ _('Checks enabled') }}</label>
                   <div class="d-flex flex-wrap gap-3 mt-1">
-                    {% for key, lbl in [('check_cert','Cert expiry'),('check_git','Git divergence'),('check_device','Device health'),('check_backup','Backup freshness'),('check_drift','Config drift'),('check_actions','Scheduled automation'),('check_host','Host resources')] %}
+                    {% for key, lbl in [('check_cert','Cert expiry'),('check_git','Git divergence'),('check_device','Device health'),('check_backup','Backup freshness'),('check_drift','Config drift'),('check_actions','Scheduled automation'),('check_host','Host resources'),('check_catalog','API catalog integrity')] %}
                     <div class="form-check">
                       <input class="form-check-input" type="checkbox" name="{{ key }}" id="al-{{ key }}"
                              {{ 'checked' if alerts_config.checks[key.split('_')[1]] else '' }}>

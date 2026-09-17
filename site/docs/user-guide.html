@@ -3284,6 +3284,11 @@ the key prefix behind it:</p>
 <td>Host resources</td>
 <td><code>host.</code></td>
 </tr>
+<tr>
+<td><code>catalog</code></td>
+<td>API catalog integrity</td>
+<td><code>catalog.</code></td>
+</tr>
 </tbody>
 </table>
 <table>
@@ -4193,6 +4198,99 @@ script must never reach "go ahead" from "I have no evidence".</p>
 <p>Both commands print when the matrix was built, because it is a snapshot of the
 evidence, not a live query. Details, evidence rules and the CLI contract:
 <a href="device-api.html">docs/device-api.md</a> §6–§7.</p>
+<h3 id="306-when-an-object-disappears-who-the-finding-is-about">30.6 When an object disappears: who the finding is about</h3>
+<p>A comparison that reports an object as <strong>gone on 8.0.5</strong> is stating that the
+build rejected the path SATOM holds for it. That sentence is true in two
+completely different worlds, and they need opposite work:</p>
+<ul>
+<li>the object was <strong>removed in that firmware line</strong> — a correct measurement of
+  the appliance, and exactly what this page exists to produce;</li>
+<li>the object is <strong>still on the appliance</strong> and the path this catalogue holds is
+  <strong>wrong for that line</strong> — a finding about SATOM, not about the firmware.</li>
+</ul>
+<p>The REST API cannot tell them apart: a rejected URN looks the same either way.
+So the page asks a <strong>second source</strong> — the appliance's own CLI configuration
+dump, which is addressed in CLI syntax and therefore cannot inherit a mistake
+in our URN — and prints its verdict beside the <code>absent</code> badge:</p>
+<table>
+<thead>
+<tr>
+<th>verdict</th>
+<th>what it means</th>
+<th>what to do</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>gone — corroborated</strong></td>
+<td>the build rejects the path, its own dump has no block for it, and the dump of the build it is compared against does</td>
+<td>nothing; this is the finding</td>
+</tr>
+<tr>
+<td><strong>check the registry</strong></td>
+<td>the build rejects the path but its dump <strong>still holds a block</strong></td>
+<td>verify the path in the console, then correct the catalog entry</td>
+</tr>
+<tr>
+<td><strong>gone — one source</strong></td>
+<td>the dump never held a block on either side, or the object is a runtime readout that cannot have one</td>
+<td>capture a dump of the older build, if it should have one</td>
+</tr>
+<tr>
+<td><strong>not corroborated</strong></td>
+<td>no dump has been captured for that build</td>
+<td>capture a CLI configuration dump of it</td>
+</tr>
+</tbody>
+</table>
+<p>The last two are <strong>not doubts about the rejection</strong> — the build answered. They
+are statements about what a second source would add.</p>
+<p><strong>Why a missing block is not, on its own, proof.</strong> An empty table prints no
+block, so "no block" cannot mean "not in this firmware". What makes the pair
+conclusive is that the two weaknesses do not overlap: an empty-but-existing
+table <em>still answers over REST</em>, so a rejected URN rules that story out, and
+the earlier build's dump proves the object was ever there to lose. Corroborated
+therefore requires all three — rejected now, no block now, a block before.</p>
+<p>A counter above the table splits the gone rows across the four verdicts, and
+the CSV and PDF exports carry the verdict in a <code>corroboration</code> column. The
+column is blank on every row that is not a disappearance claim, which is not
+the same thing as an uncorroborated one.</p>
+<h4 id="the-ledger-and-hearing-about-it-without-opening-the-page">The ledger, and hearing about it without opening the page</h4>
+<p>The comparison is derived and is rebuilt on every sweep, so a finding it
+produced yesterday leaves no trace of <em>when</em> it was first proved or whether
+anybody looked at it. Corroborated disappearances are therefore also written to
+a ledger (<code>object_absences</code>), keyed by product, name and the two scopes
+compared. Re-proving one updates the row — it never mints a second — so
+"since when has this been true?" stays answerable.</p>
+<p>It is written at the two moments the evidence can change: at the end of a
+<strong>rediscovery sweep</strong>, and on the <strong>alert timer</strong>. The alert family is
+<strong>API catalog integrity</strong> (Settings → Alerts), and it deliberately reports the
+two cases at two levels:</p>
+<ul>
+<li>a <strong>contradiction</strong> is a <em>warning</em> — the catalogue every service resolves
+  names through is wrong for that line, and nobody would find out from a green
+  page;</li>
+<li>a newly proved <strong>disappearance</strong> is <em>info</em> — it is a correct measurement, and
+  alerting on it at warning level trains you to mute the family before the
+  contradiction ever arrives.</li>
+</ul>
+<p>A corroborated disappearance is <strong>acknowledged automatically</strong> (<code>absence.autoack</code>,
+on by default): it keeps being reported on the page, but it stops being an open
+question, and the review queue shows only what still needs a person. A
+contradiction is never acknowledged automatically — it is precisely the case
+that needs the person this would be replacing. A human decision is never
+overwritten by the timer.</p>
+<h4 id="what-is-not-auto-written-and-why">What is NOT auto-written, and why</h4>
+<p>The candidate CLI spelling is recorded and shown, and it is <strong>not</strong> written to
+the catalog. <code>RegistryEndpoint</code> is keyed <code>(product, api_version, name)</code> with one
+URN per name and <strong>no firmware dimension</strong>, and a contradicted row is by
+construction one whose <em>base</em> scope is still served by the current URN — so
+writing the other spelling would break the base line every single time.
+Independently, a configuration dump cannot decide which of two spellings is the
+wrong one. So the page offers no apply button rather than one that always
+refuses. Giving the catalog a per-line dimension is what would unblock it, and
+that is a change to the resolution path every service in the product goes
+through.</p>
 <h2 id="31-release-notes-the-satom-changelog">31. Release notes &amp; the SATOM changelog</h2>
 <p><strong>Two different things share the name "release notes", and confusing them wastes
 an afternoon.</strong> One is the <strong>vendor's</strong> notes for the <em>appliance</em> firmware,

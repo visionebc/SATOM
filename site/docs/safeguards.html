@@ -14721,6 +14721,74 @@ while the 7.6.8 dump has both. The objects are gone in 8.0.</p>
    would find it.</li>
 </ol>
 <p><strong>12 mutations, 12 bite, 0 survive, 0 void</strong> (after repairing 1 and 2).</p>
+<h2 id="179-one-measured-no-two-opposite-meanings-teststest_absence_corroborationpy-2026-09-17">§179 — one measured "no", two opposite meanings (<code>tests/test_absence_corroboration.py</code>, 2026-09-17)</h2>
+<p><strong>What happened.</strong> §178c taught the comparison to say <code>absent</code> when a sweep had
+actually asked and been refused. That fixed the wording and left the harder
+question untouched: <em>a rejected URN is equally consistent with "the firmware
+removed this object" and with "the path we hold is wrong for this line"</em>, and
+the second one is a finding about SATOM. Nothing failed. The page rendered
+perfectly and told the operator, confidently, one of two opposite things.</p>
+<p><strong>The fix is a rule, not a badge.</strong> <code>services/absence_corroboration.py</code> takes a
+disappearance claimed by a first source and asks a second, independent one
+whether it agrees. It is deliberately product- and transport-agnostic: the same
+shape recurs in upgrades (a capability the running build no longer offers), in
+provisioning (a template referencing an object the target lacks) and in clone
+(a source object missing on the destination), and every copy of the decision
+would drift. The CLI-dump adapter lives beside it; the rule itself knows nothing
+about REST or FortiWeb.</p>
+<p><strong>The logical lock, which is the whole of it.</strong> A dump with no block is <em>weak</em>
+evidence — an empty table prints no block, and folding <code>no_block</code> into "absent"
+once invented ~96 phantom removals. What makes the pair conclusive is that the
+two weaknesses do not overlap:</p>
+<ul>
+<li>an empty-but-existing table <strong>still answers over REST</strong>, so a rejected URN
+  excludes the empty-table story;</li>
+<li>a rejected URN alone cannot separate "gone" from "our path is wrong", so the
+  dump — addressed in CLI syntax, unable to inherit our mistake — settles that
+  half.</li>
+</ul>
+<p><code>CONFIRMED</code> therefore requires <strong>all three</strong>: rejected now, no block now, <strong>and
+a block before</strong>. Drop any one and the verdict falls to <code>UNCORROBORATED</code>, which
+is an answer (it names the capture that would settle it), not a hedge.</p>
+<p><strong>Two blanks that must never merge.</strong> <code>no_block</code> (a dump was read and is quiet)
+is a datum; <code>unknown</code> (no dump exists) is the absence of one. The guard pins
+both, and pins <code>monitor_only</code> as a third thing again — a runtime readout cannot
+have a block <em>by construction</em>, so no capture will ever fix it and the advice
+differs.</p>
+<p><strong>Severity is part of the design.</strong> A corroborated disappearance is INFO and a
+contradiction is WARNING. Ship them at the same level and the operator mutes
+the family before the rare, actionable one ever fires. There is a guard on the
+ordering, not just on the two values.</p>
+<h3 id="defects-this-round-produced-and-their-guards">Defects this round produced, and their guards</h3>
+<ol>
+<li><strong>The automatic acknowledgement never fired for the rows it exists for.</strong>
+   A row created inside the loop has <code>correction is None</code> in Python — the
+   column default is applied by the INSERT, which has not run yet — so the
+   membership test against the default was False for every brand-new finding,
+   while the code read as though it handled them. Found on the first live run
+   against 248, not by a test. The guard now asserts the <em>created</em> row's
+   correction, not an updated one.</li>
+<li><strong>An inserted export column renumbers every later one</strong>, and the PDF's two
+   tables address cells by INDEX. The file already carried a comment saying so
+   — written when the previous column was appended for the same reason — and
+   the first draft inserted anyway. The new column is appended; a guard pins
+   index 17 as the gap column and asserts every index appears in exactly one
+   PDF table, bar the join key.</li>
+</ol>
+<h3 id="recipe_8">Recipe</h3>
+<ul>
+<li><code>venv/bin/python -m pytest tests/test_absence_corroboration.py -q</code> — 52 tests.</li>
+<li>Mutation harness: <code>/root/mutate_abs.py</code> (23 mutations across the rule, the
+  ledger, the alert engine, the view and the template). <strong>Measure by rc, and
+  only <code>rc==1</code> is a failure.</strong></li>
+<li>The template guard <strong>renders</strong> the macro in a bare <code>jinja2.Environment()</code>
+  rather than grepping it. A source-reading guard survives <code>{% if False %}</code>:
+  the branch is dead and every string is still in the file. That mutation is
+  number 23 and it is there because the identical guard shape survived it on
+  2026-09-17.</li>
+<li>The ledger guards drive <code>absence_record.evaluate</code> through <code>monkeypatch</code>, so
+  they never touch the real matrix or a real dump.</li>
+</ul>
     </div>
   </div>
 </section>

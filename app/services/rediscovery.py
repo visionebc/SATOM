@@ -732,6 +732,14 @@ def _refresh_api_matrix(appliance_snap) -> None:
         app = _get_flask_app()
         with app.app_context():
             api_matrix.rebuild(kind)
+            # Re-judge the disappearances the fresh matrix implies, and record
+            # them. Here rather than only on the alert timer because THIS is
+            # the moment the evidence changed: an operator who runs a sweep to
+            # answer a question should not have to wait for a timer to see the
+            # answer recorded, and a ledger written only by a timer cannot say
+            # which sweep proved what.
+            from . import absence_record
+            absence_record.record(kind)
     except Exception:  # noqa: BLE001
         pass
 

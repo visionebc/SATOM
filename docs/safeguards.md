@@ -15433,3 +15433,76 @@ while the 7.6.8 dump has both. The objects are gone in 8.0.
 
 **12 mutations, 12 bite, 0 survive, 0 void** (after repairing 1 and 2).
 
+## §179 — one measured "no", two opposite meanings (`tests/test_absence_corroboration.py`, 2026-09-17)
+
+**What happened.** §178c taught the comparison to say `absent` when a sweep had
+actually asked and been refused. That fixed the wording and left the harder
+question untouched: *a rejected URN is equally consistent with "the firmware
+removed this object" and with "the path we hold is wrong for this line"*, and
+the second one is a finding about SATOM. Nothing failed. The page rendered
+perfectly and told the operator, confidently, one of two opposite things.
+
+**The fix is a rule, not a badge.** `services/absence_corroboration.py` takes a
+disappearance claimed by a first source and asks a second, independent one
+whether it agrees. It is deliberately product- and transport-agnostic: the same
+shape recurs in upgrades (a capability the running build no longer offers), in
+provisioning (a template referencing an object the target lacks) and in clone
+(a source object missing on the destination), and every copy of the decision
+would drift. The CLI-dump adapter lives beside it; the rule itself knows nothing
+about REST or FortiWeb.
+
+**The logical lock, which is the whole of it.** A dump with no block is *weak*
+evidence — an empty table prints no block, and folding `no_block` into "absent"
+once invented ~96 phantom removals. What makes the pair conclusive is that the
+two weaknesses do not overlap:
+
+* an empty-but-existing table **still answers over REST**, so a rejected URN
+  excludes the empty-table story;
+* a rejected URN alone cannot separate "gone" from "our path is wrong", so the
+  dump — addressed in CLI syntax, unable to inherit our mistake — settles that
+  half.
+
+`CONFIRMED` therefore requires **all three**: rejected now, no block now, **and
+a block before**. Drop any one and the verdict falls to `UNCORROBORATED`, which
+is an answer (it names the capture that would settle it), not a hedge.
+
+**Two blanks that must never merge.** `no_block` (a dump was read and is quiet)
+is a datum; `unknown` (no dump exists) is the absence of one. The guard pins
+both, and pins `monitor_only` as a third thing again — a runtime readout cannot
+have a block *by construction*, so no capture will ever fix it and the advice
+differs.
+
+**Severity is part of the design.** A corroborated disappearance is INFO and a
+contradiction is WARNING. Ship them at the same level and the operator mutes
+the family before the rare, actionable one ever fires. There is a guard on the
+ordering, not just on the two values.
+
+### Defects this round produced, and their guards
+
+1. **The automatic acknowledgement never fired for the rows it exists for.**
+   A row created inside the loop has `correction is None` in Python — the
+   column default is applied by the INSERT, which has not run yet — so the
+   membership test against the default was False for every brand-new finding,
+   while the code read as though it handled them. Found on the first live run
+   against 248, not by a test. The guard now asserts the *created* row's
+   correction, not an updated one.
+2. **An inserted export column renumbers every later one**, and the PDF's two
+   tables address cells by INDEX. The file already carried a comment saying so
+   — written when the previous column was appended for the same reason — and
+   the first draft inserted anyway. The new column is appended; a guard pins
+   index 17 as the gap column and asserts every index appears in exactly one
+   PDF table, bar the join key.
+
+### Recipe
+
+* `venv/bin/python -m pytest tests/test_absence_corroboration.py -q` — 52 tests.
+* Mutation harness: `/root/mutate_abs.py` (23 mutations across the rule, the
+  ledger, the alert engine, the view and the template). **Measure by rc, and
+  only `rc==1` is a failure.**
+* The template guard **renders** the macro in a bare `jinja2.Environment()`
+  rather than grepping it. A source-reading guard survives `{% if False %}`:
+  the branch is dead and every string is still in the file. That mutation is
+  number 23 and it is there because the identical guard shape survived it on
+  2026-09-17.
+* The ledger guards drive `absence_record.evaluate` through `monkeypatch`, so
+  they never touch the real matrix or a real dump.

@@ -2793,6 +2793,7 @@ the key prefix behind it:
 | `drift` | Config drift | `drift.` |
 | `actions` | Scheduled automation | `action.` |
 | `host` | Host resources | `host.` |
+| `catalog` | API catalog integrity | `catalog.` |
 
 | Sink | What it is | Default |
 |---|---|---|
@@ -3704,6 +3705,85 @@ script must never reach "go ahead" from "I have no evidence".
 Both commands print when the matrix was built, because it is a snapshot of the
 evidence, not a live query. Details, evidence rules and the CLI contract:
 [docs/device-api.md](device-api.md) §6–§7.
+
+### 30.6 When an object disappears: who the finding is about
+
+A comparison that reports an object as **gone on 8.0.5** is stating that the
+build rejected the path SATOM holds for it. That sentence is true in two
+completely different worlds, and they need opposite work:
+
+* the object was **removed in that firmware line** — a correct measurement of
+  the appliance, and exactly what this page exists to produce;
+* the object is **still on the appliance** and the path this catalogue holds is
+  **wrong for that line** — a finding about SATOM, not about the firmware.
+
+The REST API cannot tell them apart: a rejected URN looks the same either way.
+So the page asks a **second source** — the appliance's own CLI configuration
+dump, which is addressed in CLI syntax and therefore cannot inherit a mistake
+in our URN — and prints its verdict beside the `absent` badge:
+
+| verdict | what it means | what to do |
+|---|---|---|
+| **gone — corroborated** | the build rejects the path, its own dump has no block for it, and the dump of the build it is compared against does | nothing; this is the finding |
+| **check the registry** | the build rejects the path but its dump **still holds a block** | verify the path in the console, then correct the catalog entry |
+| **gone — one source** | the dump never held a block on either side, or the object is a runtime readout that cannot have one | capture a dump of the older build, if it should have one |
+| **not corroborated** | no dump has been captured for that build | capture a CLI configuration dump of it |
+
+The last two are **not doubts about the rejection** — the build answered. They
+are statements about what a second source would add.
+
+**Why a missing block is not, on its own, proof.** An empty table prints no
+block, so "no block" cannot mean "not in this firmware". What makes the pair
+conclusive is that the two weaknesses do not overlap: an empty-but-existing
+table *still answers over REST*, so a rejected URN rules that story out, and
+the earlier build's dump proves the object was ever there to lose. Corroborated
+therefore requires all three — rejected now, no block now, a block before.
+
+A counter above the table splits the gone rows across the four verdicts, and
+the CSV and PDF exports carry the verdict in a `corroboration` column. The
+column is blank on every row that is not a disappearance claim, which is not
+the same thing as an uncorroborated one.
+
+#### The ledger, and hearing about it without opening the page
+
+The comparison is derived and is rebuilt on every sweep, so a finding it
+produced yesterday leaves no trace of *when* it was first proved or whether
+anybody looked at it. Corroborated disappearances are therefore also written to
+a ledger (`object_absences`), keyed by product, name and the two scopes
+compared. Re-proving one updates the row — it never mints a second — so
+"since when has this been true?" stays answerable.
+
+It is written at the two moments the evidence can change: at the end of a
+**rediscovery sweep**, and on the **alert timer**. The alert family is
+**API catalog integrity** (Settings → Alerts), and it deliberately reports the
+two cases at two levels:
+
+* a **contradiction** is a *warning* — the catalogue every service resolves
+  names through is wrong for that line, and nobody would find out from a green
+  page;
+* a newly proved **disappearance** is *info* — it is a correct measurement, and
+  alerting on it at warning level trains you to mute the family before the
+  contradiction ever arrives.
+
+A corroborated disappearance is **acknowledged automatically** (`absence.autoack`,
+on by default): it keeps being reported on the page, but it stops being an open
+question, and the review queue shows only what still needs a person. A
+contradiction is never acknowledged automatically — it is precisely the case
+that needs the person this would be replacing. A human decision is never
+overwritten by the timer.
+
+#### What is NOT auto-written, and why
+
+The candidate CLI spelling is recorded and shown, and it is **not** written to
+the catalog. `RegistryEndpoint` is keyed `(product, api_version, name)` with one
+URN per name and **no firmware dimension**, and a contradicted row is by
+construction one whose *base* scope is still served by the current URN — so
+writing the other spelling would break the base line every single time.
+Independently, a configuration dump cannot decide which of two spellings is the
+wrong one. So the page offers no apply button rather than one that always
+refuses. Giving the catalog a per-line dimension is what would unblock it, and
+that is a change to the resolution path every service in the product goes
+through.
 
 ## 31. Release notes & the SATOM changelog
 

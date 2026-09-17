@@ -306,6 +306,22 @@
    THIS column — some builds of the rollup attested the URN and some stayed
    silent — so it rides beside the verdict it qualifies, not in the identity
    cell where it read as a class of finding. #}
+{# A disappearance, judged by a SECOND source.
+
+   Only ``endpoints_removed`` rows carry this: they are the only rows that
+   claim something used to be here and is not. The verdict is computed in the
+   view (``absence_corroboration``) and NEVER here -- the template cannot
+   reach the CLI provenance records the rule reads, and a template that
+   guessed would be inventing the one answer that decides whether somebody
+   edits the catalogue.
+
+   The unmeasured state renders as muted text and not as a badge, the same way
+   ``PROV_UNKNOWN`` does: a badge asserts a measurement, and "no dump was ever
+   captured for this build" is the absence of one. #}
+{% macro corroboration_badge(r) -%}
+{% if r.corroboration_label %}{% set L = r.corroboration_label %} {% if L[1] %}<span class="fw-badge {{ L[1] }} dv-corr" title="{{ L[2] }} What to do: {{ L[3] }}{% if r.proposed_path %} The dump on this build spells the path {{ r.proposed_path }} &mdash; evidence for a human, not a value to paste: either spelling could be the wrong one and a configuration file cannot decide which.{% endif %}">{{ L[0] }}</span>{% else %}<span class="text-muted dv-corr dv-corr-none" title="{{ L[2] }} What to do: {{ L[3] }}">{{ L[0] }}</span>{% endif %}{% endif %}
+{%- endmacro %}
+
 {% macro api_partial(silent_on) -%}{% if silent_on %} <span class="fw-badge fw-badge-warning dv-partial" title="Only some builds of this rollup attested this. The column is a rollup of several builds and not every one of them answered.">partial</span>{% endif %}{%- endmacro %}
 
 {% block content %}
@@ -674,6 +690,25 @@
       The last two are <strong>not</strong> changes and are never counted as
       one: the side nobody measured proves nothing, and two different kinds of
       evidence are reported side by side, never subtracted.
+      {# The gone rows, split by what a SECOND source says about them. Printed
+         as its own sentence rather than folded into the tally above, because
+         it does not change any count: every one of these rows IS a gone row.
+         What it changes is who the finding is about. #}
+      {% if delta.corroboration_counts %}
+        <br>Of the <strong>{{ delta.endpoints_removed|length }}</strong> gone:
+        <strong>{{ delta.corroboration_counts.get('confirmed', 0) }}</strong>
+        corroborated by the build's own configuration dump ·
+        <strong>{{ delta.corroboration_counts.get('contradicted', 0) }}</strong>
+        where that dump still holds a block, so the path <strong>this catalogue
+        holds is wrong for that line</strong> and the finding is about SATOM, not
+        about the firmware ·
+        <strong>{{ delta.corroboration_counts.get('uncorroborated', 0) }}</strong>
+        on the API alone ·
+        <strong>{{ delta.corroboration_counts.get('unmeasured', 0) }}</strong>
+        with no dump captured for that build. The last two are
+        <strong>not</strong> doubts about the rejection &mdash; the build
+        answered &mdash; only about what a second source would add.
+      {% endif %}
       {# How to read a row. The first column carries the NAME and nothing
          else since the operator emptied it (2026-09-16): every class label
          that used to sit under the object restated a cell already beside it.
@@ -740,7 +775,7 @@
             <td>{{ evidence_slot(r.origin, r.siblings) }}</td>
             <td><code class="text-muted" style="font-size:11px;">{{ r.urn }}</code></td>
             <td>{% call build_cell(delta.base, base_prov, r.cli_base, r.cli_delta, 'base') %}{{ api_served() }}{% endcall %}</td>
-            <td>{% call build_cell(delta.target, target_prov, r.cli_target, r.cli_delta, 'target') %}{{ api_absent() }}{% endcall %}</td>
+            <td>{% call build_cell(delta.target, target_prov, r.cli_target, r.cli_delta, 'target') %}{{ api_absent() }}{{ corroboration_badge(r) }}{% endcall %}</td>
             <td>{{ test_btn(urn=r.urn) }}</td></tr>
         {% endfor %}
         {% for c in delta.fields_changed %}

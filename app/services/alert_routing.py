@@ -70,10 +70,16 @@ _PREFIX_FAMILY = {
     "backup": "backup",
     "drift": "drift",
     "host": "host",
+    # Findings about SATOM's OWN catalog rather than about a device.
+    # Its own family because an operator who masks device noise still
+    # wants to hear that the paths this product resolves names through
+    # are wrong for a firmware line.
+    "catalog": "catalog",
 }
 
 #: The maskable families, in the order the settings page prints them.
-FAMILIES = ("cert", "git", "device", "backup", "drift", "actions", "host")
+FAMILIES = ("cert", "git", "device", "backup", "drift", "actions",
+            "host", "catalog")
 
 FAMILY_LABELS = {
     "cert": "Cert expiry",
@@ -83,6 +89,7 @@ FAMILY_LABELS = {
     "drift": "Config drift",
     "actions": "Scheduled automation",
     "host": "Host resources",
+    "catalog": "API catalog integrity",
 }
 
 #: Families no filter may drop.  See the module docstring.

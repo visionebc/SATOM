@@ -1989,6 +1989,11 @@ def create_app(config_override: object | None = None) -> Flask:
             from . import models_theme  # noqa: F401
             from . import models_analytics  # noqa: F401
             from . import models_sot  # noqa: F401
+            # Ledger of corroborated object disappearances. Without this
+            # import create_all() never makes ``object_absences`` and the
+            # first sweep after an upgrade 500s on a table the model says
+            # exists.
+            from . import models_lifecycle  # noqa: F401
             from . import models_metrics  # noqa: F401
             from . import models_trust  # noqa: F401
             # Provisioning tables (hypervisor targets + run state machine).

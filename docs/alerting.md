@@ -42,6 +42,7 @@ existed, and the map is explicit rather than clever:
 | `drift.` | `drift` | Config drift |
 | `action.` | `actions` | Scheduled automation |
 | `host.` | `host` | Host resources |
+| `catalog.` | `catalog` | API catalog integrity |
 
 Two families are **unfilterable** and no sink configuration can drop them:
 
@@ -294,7 +295,7 @@ cooldown window, and **only from the writable primary**.
 | field | meaning |
 |---|---|
 | `key` | stable identity — dedupe on this |
-| `family` | `cert` · `git` · `device` · `backup` · `drift` · `actions` · `host` · `engine` · `unknown` |
+| `family` | `cert` · `git` · `device` · `backup` · `drift` · `actions` · `host` · `catalog` · `engine` · `unknown` |
 | `severity` | `info` · `warning` · `critical` |
 | `title` | one line, operator-facing |
 | `detail` | the evidence |

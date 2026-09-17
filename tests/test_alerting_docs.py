@@ -377,7 +377,9 @@ def test_the_reference_names_the_ha_unit_that_executes_queued_hooks():
 
 def test_the_registries_are_not_empty():
     assert len(routing.SINKS) == 5
-    assert len(routing.FAMILIES) == 7
+    # 8 since 2026-09-17: ``catalog`` joined, for findings about the
+    # endpoint catalogue itself rather than about a device.
+    assert len(routing.FAMILIES) == 8
     assert len(routing.UNFILTERABLE) == 2
     assert len(routing.SEVERITIES) == 3
     assert len(integration_hooks.EVENT_NAMES) >= 7

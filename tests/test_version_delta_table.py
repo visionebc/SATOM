@@ -1371,7 +1371,7 @@ def test_the_pdf_explains_every_column_it_prints(two_builds, client, app):
         R = _apiversions._resolved("fortiweb")
         cols = _apiversions._columns(R["base"], R["target"],
                                      R["base_prov"], R["target_prov"])
-    assert len(cols) == 18, len(cols)
+    assert len(cols) == 19, len(cols)
     for head, note in cols:
         assert _sq(head) in flat, "column %r is not named in the PDF" % head
         # The explanation, not merely the heading. A document that printed the
@@ -1381,7 +1381,7 @@ def test_the_pdf_explains_every_column_it_prints(two_builds, client, app):
 
 
 def test_the_pdf_tables_between_them_print_every_column_once(two_builds, client, app):
-    """Eighteen columns, split across two tables of at most ten.
+    """Nineteen columns, split across two tables of at most ten.
 
     The split is the whole reason nothing is dropped, so it is fixed here by
     INDEX: every column in exactly one table, except the object name, which is
@@ -1391,7 +1391,13 @@ def test_the_pdf_tables_between_them_print_every_column_once(two_builds, client,
     a, b = _apiversions._PDF_TABLE_A, _apiversions._PDF_TABLE_B
     assert len(a) <= 10 and len(b) <= 10, (len(a), len(b))
     both = sorted(a + b)
-    assert sorted(set(both)) == list(range(18)), both
+    # Derived from the column list rather than written as a literal: the
+    # literal is what went stale when the corroboration column was appended,
+    # and a split that silently stops covering a column drops evidence from a
+    # document that still looks complete.
+    from app.views._apiversions import _columns as _cols
+    width = len(_cols("7.6", "8.0", None, None))
+    assert sorted(set(both)) == list(range(width)), both
     dupes = sorted(i for i in set(both) if both.count(i) > 1)
     assert dupes == [2], dupes
 
@@ -1439,7 +1445,15 @@ def test_the_pdf_caps_nothing_the_comparison_measured(
                    # carry — over the renderer's 300-character default on its
                    # own — so the cap is exercised by the column that needs it
                    # most rather than by whichever happens to be widest.
-                   "no schema on 8.0.5 (empty_table): " + joined]
+                   "no schema on 8.0.5 (empty_table): " + joined,
+                   "gone - corroborated"]
+
+    # A synthetic row narrower than the real one makes the PDF renderer
+    # IndexError on a column the split addresses, and the guard then reports a
+    # 500 that says nothing about caps. Pinned against the column list so the
+    # fixture cannot drift away from the document it stands in for.
+    width = len(_apiversions._columns("7.6", "8.0", None, None))
+    assert len(next(_fake(None, "7.6", "8.0"))) == width
 
     monkeypatch.setattr(_apiversions, "_export_rows", _fake)
     _, _text, cells = _pdf(client, app)
@@ -1770,14 +1784,18 @@ def test_the_export_carries_the_reason_and_names_which_build(
     _, rows = _csv(client, app)
     data, legend = _split(rows)
     header = data[0]
-    assert header[-1] == "why the evidence is missing", header[-1]
-    with_reason = [r for r in data[1:] if r[-1]]
+    # Addressed by NAME, not by position. ``-1`` was right until a column was
+    # appended after it, and a positional guard that silently starts reading
+    # its neighbour asserts something true about the wrong cell.
+    assert "why the evidence is missing" in header, header
+    col = header.index("why the evidence is missing")
+    with_reason = [r for r in data[1:] if r[col]]
     assert with_reason, "the reason never reaches the download"
     for r in with_reason:
-        assert TARGET in r[-1], \
-            "the reason does not name the build it is about: %s" % r[-1]
-        assert "EMPTY on the reference appliance" in r[-1]
-    assert [r for r in data[1:] if not r[-1]], \
+        assert TARGET in r[col], \
+            "the reason does not name the build it is about: %s" % r[col]
+        assert "EMPTY on the reference appliance" in r[col]
+    assert [r for r in data[1:] if not r[col]], \
         "every row got a reason — a row that is not a schema gap has none"
     # ``_split`` hands back the legend WITH its own ``# | column | what it
     # means`` header, which is not a documented column.

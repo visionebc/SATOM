@@ -35,6 +35,7 @@ import re
 import pytest
 
 from app.services import api_matrix as am
+from app.services import field_catalog as fc
 from tests.conftest import admin_user_id, login
 from tests.test_firmware_version_axis import (  # noqa: F401 — fixtures by name
     _appliance, _archive, _ledger, isolated,
@@ -1370,7 +1371,7 @@ def test_the_pdf_explains_every_column_it_prints(two_builds, client, app):
         R = _apiversions._resolved("fortiweb")
         cols = _apiversions._columns(R["base"], R["target"],
                                      R["base_prov"], R["target_prov"])
-    assert len(cols) == 17, len(cols)
+    assert len(cols) == 18, len(cols)
     for head, note in cols:
         assert _sq(head) in flat, "column %r is not named in the PDF" % head
         # The explanation, not merely the heading. A document that printed the
@@ -1380,7 +1381,7 @@ def test_the_pdf_explains_every_column_it_prints(two_builds, client, app):
 
 
 def test_the_pdf_tables_between_them_print_every_column_once(two_builds, client, app):
-    """Seventeen columns, split across two tables of nine.
+    """Eighteen columns, split across two tables of at most ten.
 
     The split is the whole reason nothing is dropped, so it is fixed here by
     INDEX: every column in exactly one table, except the object name, which is
@@ -1390,7 +1391,7 @@ def test_the_pdf_tables_between_them_print_every_column_once(two_builds, client,
     a, b = _apiversions._PDF_TABLE_A, _apiversions._PDF_TABLE_B
     assert len(a) <= 10 and len(b) <= 10, (len(a), len(b))
     both = sorted(a + b)
-    assert sorted(set(both)) == list(range(17)), both
+    assert sorted(set(both)) == list(range(18)), both
     dupes = sorted(i for i in set(both) if both.count(i) > 1)
     assert dupes == [2], dupes
 
@@ -1433,7 +1434,12 @@ def test_the_pdf_caps_nothing_the_comparison_measured(
         for name in objects:
             yield ["field delta", "yes", name, "sweep", "/api/v2/x/" + name,
                    "served", 8, joined, "present", 5, joined,
-                   "served", 14, joined, "present", 10, joined]
+                   "served", 14, joined, "present", 10, joined,
+                   # The recorded reason is the longest cell the document can
+                   # carry — over the renderer's 300-character default on its
+                   # own — so the cap is exercised by the column that needs it
+                   # most rather than by whichever happens to be widest.
+                   "no schema on 8.0.5 (empty_table): " + joined]
 
     monkeypatch.setattr(_apiversions, "_export_rows", _fake)
     _, _text, cells = _pdf(client, app)
@@ -1536,3 +1542,262 @@ def test_the_pdf_button_points_at_the_pair_on_screen(two_builds, client, app):
     assert m, "no PDF export link on the page"
     assert ("base=%s" % BASE) in m.group(1) and ("target=%s" % TARGET) in m.group(1), \
         m.group(1)
+
+
+# ---------------------------------------------------------------------------
+# 12. one name, two rows — and each one admits the other exists (2026-09-17)
+# ---------------------------------------------------------------------------
+# The reported defect: ``user_group`` reaches this table TWICE — once as an
+# endpoint a sweep asked about, once as an object a harvest described — and the
+# two rows said nothing about each other. The operator had just run a sweep,
+# read the schema row's "not measured on 8.0.5", and concluded the sweep had
+# failed. Both rows were correct. What was missing is that neither admitted the
+# other was there, and that the schema row could not say WHY it had no evidence.
+#
+# The link is a POINTER, never a merge: the two kinds are compared apart on
+# purpose (mixing them is the 56 phantom removals), so the marker names the
+# other row's evidence kind and stops.
+
+def _coverage_file(isolated, line, objects, appliance="boxR",
+                   harvested_at="2099-01-01T00:00:00"):
+    """A harvest's own record of what it could and could not describe."""
+    d = isolated["field_schemas"] / "fortiweb" / line
+    d.mkdir(parents=True, exist_ok=True)
+    covered = sum(1 for v in objects.values()
+                  if v["status"] in fc.COVERED_STATUSES)
+    (d / fc.COVERAGE_FILENAME).write_text(json.dumps({
+        "product": "fortiweb", "line": line, "appliance": appliance,
+        "device_firmware": "", "harvested_at": harvested_at,
+        "catalog_size": len(objects), "covered": covered, "objects": objects}))
+
+
+HARVESTED = {"status": "harvested", "detail": "2 field(s)", "reason": ""}
+EMPTY_TABLE = {
+    "status": "empty_table", "detail": "the table has no rows on this device",
+    "reason": ("No schema harvested: the table is EMPTY on the reference "
+               "appliance, so a live GET had no fields to describe."),
+}
+
+
+@pytest.fixture()
+def one_name_two_rows(isolated, app):
+    """``twoways`` is the reported shape: an endpoint the sweep asked about on
+    both builds (served, then absent) AND an object only one line has a schema
+    for. ``solo`` is the control — one bucket, so it must get no crosslink."""
+    a = _appliance("boxA", firmware=BASE)
+    b = _appliance("boxB", firmware=TARGET)
+    _archive(isolated, a, BASE, _ledger(twoways="ok", solo="ok"),
+             sections={"S": {"solo": [{"x": 1}]}})
+    _archive(isolated, b, TARGET, _ledger(twoways="absent", solo="ok"),
+             sections={"S": {"solo": [{"x": 1, "y": 2}]}})
+    _schema(isolated, "7.6", "twoways", ["m", "n"])
+    _coverage_file(isolated, "7.6", {"twoways": HARVESTED})
+    _coverage_file(isolated, "8.0", {"twoways": EMPTY_TABLE})
+    am.rebuild("fortiweb")
+    return a, b
+
+
+def _own_origin(row):
+    """The row's OWN evidence kind, read before the crosslink.
+
+    ``"schema" in _ev_cell(row)`` is now answered by the sweep row too — its
+    crosslink says ``also: schema``. The first draft of these guards picked the
+    wrong twin that way and failed against a correct page: the marker added this
+    round is exactly the kind of text that makes a substring assertion drift.
+    """
+    cell = _ev_cell(row).split('<div class="dv-ev-also"')[0]
+    m = re.search(r">(sweep|schema)<", cell)
+    return m.group(1) if m else ""
+
+
+def _twin(body, key, origin):
+    """The one of a name's rows whose OWN evidence is ``origin``."""
+    rows = [r for r in _rows_for(body, key) if _own_origin(r) == origin]
+    assert len(rows) == 1, "want one %s row for %r, got %d" % (origin, key, len(rows))
+    return rows[0]
+
+
+def _rows_for(body, key):
+    """EVERY row for a name. ``_row`` returns the first match, and against the
+    very defect under test that would silently answer for one of two rows."""
+    rows = re.findall(r"<tr><td><code>%s</code>.*?</tr>" % re.escape(key),
+                      _table(body), re.S)
+    assert rows, "no row for %r in the comparison table" % key
+    return rows
+
+
+def test_one_name_in_two_buckets_renders_two_rows_that_point_at_each_other(
+        one_name_two_rows, client, app):
+    rows = _rows_for(_page(client, app), "twoways")
+    assert len(rows) == 2, "the fixture no longer reproduces the reported shape"
+    for r in rows:
+        assert "dv-ev-also" in _ev_cell(r), \
+            "a row with a twin says nothing about it: %s" % _ev_cell(r)
+
+
+def test_the_crosslink_names_the_other_rows_evidence_kind(
+        one_name_two_rows, client, app):
+    """Not just "there is another row" — WHICH KIND. The kind is the whole
+    reason the two are apart, and a bare pointer would invite the reader to
+    treat them as one measurement taken twice."""
+    rows = _rows_for(_page(client, app), "twoways")
+    kinds = []
+    for r in rows:
+        m = re.search(r'class="dv-ev-peer"[^>]*>also: ([a-z]+)<', _ev_cell(r))
+        assert m, "the crosslink does not name a kind: %s" % _ev_cell(r)
+        kinds.append(m.group(1))
+    assert sorted(kinds) == ["schema", "sweep"], \
+        "each row must name the OTHER row's kind, got %s" % kinds
+
+
+def test_a_name_that_appears_once_gets_no_crosslink(one_name_two_rows, client, app):
+    """Inverted, and it is the half that matters: a pointer to a row that does
+    not exist sends the reader hunting for evidence nobody ever recorded."""
+    rows = _rows_for(_page(client, app), "solo")
+    assert len(rows) == 1
+    assert "dv-ev-also" not in _ev_cell(rows[0]), \
+        "a single-bucket row grew a crosslink: %s" % _ev_cell(rows[0])
+
+
+def test_the_crosslink_does_not_merge_the_two_kinds(one_name_two_rows, client, app):
+    """The link points; it must never subtract. Merging sweep and schema field
+    sets is what reported 56 removals that were nothing but a filter, so
+    neither of the twin rows may grow a signed tally."""
+    rows = _rows_for(_page(client, app), "twoways")
+    for r in rows:
+        assert "dv-api-gap" not in r, \
+            "a crosslinked row gained a subtraction: %s" % r
+    origins = {_own_origin(r) for r in rows}
+    assert origins == {"sweep", "schema"}, \
+        "the two rows stopped disagreeing about their evidence: %s" % origins
+
+
+# ---------------------------------------------------------------------------
+# 13. a hole in the catalog says why, FROM THE RECORD
+# ---------------------------------------------------------------------------
+
+def test_a_schema_gap_shows_the_reason_the_harvest_recorded(
+        one_name_two_rows, client, app):
+    body = _page(client, app)
+    row = _twin(body, "twoways", "schema")
+    _, target_col = _build_cols(row)
+    assert "not measured on %s" % TARGET in _api_half(target_col), target_col
+    m = re.search(r'class="dv-why" title="([^"]*)"', target_col)
+    assert m, "the gap offers no reason at all: %s" % target_col
+    assert "the table is EMPTY on the reference appliance" in m.group(1)
+    assert "the table has no rows on this device" in m.group(1), \
+        "the raw observation behind the sentence is dropped: %s" % m.group(1)
+
+
+def test_the_reason_is_read_from_the_record_and_never_from_the_absence(
+        isolated, one_name_two_rows, client, app):
+    """The load-bearing half. "No schema" and "no schema BECAUSE that table is
+    empty on the reference box" are a defect and a property of the estate; a
+    page that derived the second from the first would be inventing it."""
+    _coverage_file(isolated, "8.0", {"twoways": {
+        "status": "urn_rejected", "detail": "errcode=-20001",
+        "reason": "the appliance REJECTED the URN"}})
+    body = _page(client, app)
+    row = _twin(body, "twoways", "schema")
+    m = re.search(r'class="dv-why" title="([^"]*)"', _build_cols(row)[1])
+    assert m and "REJECTED the URN" in m.group(1), \
+        "the page did not follow the record: %s" % (m.group(1) if m else None)
+
+
+def test_a_sweep_gap_offers_no_reason(two_builds, client, app):
+    """Only the HARVEST records why it skipped something. A sweep's silence is
+    recorded nowhere, and handing that cell the harvest's sentence would
+    explain one absence with another absence's cause."""
+    row = _row(_page(client, app), "onesided")
+    assert "not measured on" in row, row
+    assert 'class="dv-why"' not in row, \
+        "a sweep gap borrowed the harvest's reason: %s" % row
+
+
+# ---------------------------------------------------------------------------
+# 14. the coverage banner
+# ---------------------------------------------------------------------------
+
+def test_the_banner_names_the_appliance_the_date_and_the_holes(
+        one_name_two_rows, client, app):
+    body = _page(client, app)
+    assert "dv-coverage" in body, "no coverage banner where a side has a hole"
+    banner = body[body.find("dv-coverage"):]
+    banner = banner[:banner.find("</div>", banner.find("Hover a name"))]
+    assert "boxR" in banner, "the banner does not say which box was harvested"
+    assert "2099-01-01" in banner, "the banner does not date the harvest"
+    assert "twoways" in banner, "the hole is not named"
+    assert "never a firmware change" in banner, \
+        "the banner stopped saying what a hole is NOT: %s" % banner[:400]
+
+
+def test_a_line_nobody_harvested_is_not_reported_as_covered(
+        isolated, one_name_two_rows, client, app):
+    """Zero recorded holes because nobody looked is not zero holes. It is the
+    same silence the record replaced, dressed as a clean bill of health."""
+    (isolated["field_schemas"] / "fortiweb" / "8.0" / fc.COVERAGE_FILENAME).unlink()
+    body = _page(client, app)
+    assert "no harvest has ever been" in body, \
+        "an unharvested line is rendered as if it were covered"
+
+
+def test_no_banner_when_there_is_nothing_to_report(
+        isolated, one_name_two_rows, client, app):
+    """A banner on every comparison is one nobody reads by the third."""
+    _coverage_file(isolated, "8.0", {"twoways": HARVESTED})
+    assert "dv-coverage" not in _page(client, app), \
+        "the banner fires with no hole to report"
+
+
+# ---------------------------------------------------------------------------
+# 15. the reason leaves the building too
+# ---------------------------------------------------------------------------
+
+def test_the_export_carries_the_reason_and_names_which_build(
+        one_name_two_rows, client, app):
+    """A spreadsheet has no tooltip and gets sorted away from its neighbours,
+    so a reason that said "the table is empty" without saying empty on WHICH
+    build is re-attachable to either column by whoever reads it next."""
+    _, rows = _csv(client, app)
+    data, legend = _split(rows)
+    header = data[0]
+    assert header[-1] == "why the evidence is missing", header[-1]
+    with_reason = [r for r in data[1:] if r[-1]]
+    assert with_reason, "the reason never reaches the download"
+    for r in with_reason:
+        assert TARGET in r[-1], \
+            "the reason does not name the build it is about: %s" % r[-1]
+        assert "EMPTY on the reference appliance" in r[-1]
+    assert [r for r in data[1:] if not r[-1]], \
+        "every row got a reason — a row that is not a schema gap has none"
+    # ``_split`` hands back the legend WITH its own ``# | column | what it
+    # means`` header, which is not a documented column.
+    assert legend[0][1] == "column", legend[0]
+    assert [x[1] for x in legend[1:] if x] == header, \
+        "the legend no longer documents exactly the columns"
+
+
+# ---------------------------------------------------------------------------
+# 16. rendered: a CLI head is answered by a CLI-only phrase (2026-09-16)
+# ---------------------------------------------------------------------------
+
+def test_no_build_column_answers_for_both_transports_under_its_cli_head(
+        two_builds, client, app):
+    """The operator's report, pinned where it was seen.
+
+    Every build column stacks an API line over a CLI line. The CLI line used to
+    print the hub's full-transport wording, so a cell headed CLI read ``API ·
+    no CLI block here`` — it repeats the line above it and answers a question
+    that head did not ask.
+    """
+    from app.services import cli_coverage as cc
+
+    body = _page(client, app)
+    tbody = _tbody(body)
+    for bucket, row in cc.PROV_LABEL.items():
+        if bucket == cc.PROV_UNKNOWN:
+            continue
+        assert row[0] not in tbody, (
+            "the comparison prints the standalone wording %r inside a stacked "
+            "column again" % row[0])
+

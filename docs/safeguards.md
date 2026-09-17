@@ -15262,3 +15262,123 @@ The structure guard goes further and walks the AST, requiring **both**
 `version=` and `line=` keywords on every `cli_coverage.report` call in the
 view — because the words appear in the surrounding prose either way.
 
+
+## §178 — a true sentence that cost a session: "not measured", with no way to learn why (`tests/test_schema_coverage.py`, 2026-09-17)
+
+**Nothing failed.** The firmware comparison printed `not measured on 8.0.5` for
+`user_group`, and that was literally correct. The operator had just finished a
+sweep against an 8.0.5 box, read it as the sweep having failed, and asked why.
+It had not failed — the sweep's own answer for that endpoint was on the page,
+one row away, in a *different row of the same table*.
+
+Three separate defects sat under one sentence.
+
+### 1. Two rows about one name, neither admitting the other existed
+
+`user_group` reaches this table twice: once as an **endpoint** a sweep asked
+about (answer: `absent`, errcode `-20001`), once as an **object** a harvest
+described (answer: a schema on 7.6 and none on 8.0). The two kinds of evidence
+are compared apart on purpose — mixing them once reported **56 phantom
+removals** — and the only thing distinguishing the rows on screen was the
+`Evidence` column.
+
+The fix is a **pointer, never a merge**: each row's Evidence cell names the
+other row's evidence kind (`also: sweep` / `also: schema`) and says why they are
+reported apart. Computed in `api_matrix.diff`, not in the template: the page
+renders one loop per bucket, and a cross-reference assembled inside a loop can
+only see its own bucket — which is exactly the blindness being fixed.
+
+Guarded: two rows point at each other; each names the OTHER's kind; a
+single-bucket row grows **no** crosslink (a pointer to a row that does not exist
+sends the reader hunting for evidence nobody recorded); and a crosslinked row
+never gains a subtraction.
+
+### 2. The reason existed and was thrown away
+
+Schema evidence comes from an offline harvest against **one reference appliance
+per line**, and a harvest can only describe a table that appliance has
+populated. Measured that day: five 8.0 objects have no schema because those
+tables are **empty on fortiweb17**, and one because 8.0.5 **rejects the URN**.
+`scripts/build_field_catalog.py` knew all six reasons — and printed them to a
+terminal nobody kept.
+
+So the harvest now **records** them, per object, into
+`data/field_schemas/<product>/<line>/_coverage.json`, and the page reads that
+record. A `why` beside `not measured on …` opens the recorded sentence; a banner
+above the table states each side's coverage, its appliance and its date.
+
+**A new firmware line needs one `.env` entry and one harvester run** — no code
+change. That is the part that makes this a fix and not a patch.
+
+Guarded: every recordable status has a sentence; the empty-table sentence says
+what it is **NOT** (a fact about the firmware) and what would fix it; the reason
+is **read from the record and never inferred from the absence** (mutate the
+record, the page follows); a **sweep** gap gets no reason at all, because a
+sweep's silence is recorded nowhere and lending it the harvest's cause would
+explain one absence with another's.
+
+### 3. Found by running it: a record that called existing evidence a hole
+
+The first run reported **10/16 covered for line 7.6 — a directory holding 15
+schema files.** Five were harvested in August from a box that had those tables
+populated; today's reference box has them empty, so the run filed five EXISTING
+schemas as holes. The page would have printed "no schema on 7.6" beside a row
+showing that schema's five fields.
+
+`kept_unverified` is the third status: the file stands, this run could not
+re-derive it, and the record says both. Folding it into `kept` would assert a
+freshness the run never established; folding it into a hole is the defect above.
+
+Guarded: the writer's covered-set and `field_catalog.COVERED_STATUSES` are
+pinned equal by reading the harvester's source, because a writer and a reader of
+one file with two ideas of "covered" is the same silence with more moving parts.
+
+### And one root, not two
+
+`api_matrix` reads schemas from its own `SCHEMA_ROOT` (the test fixture
+redirects it) and the coverage file lives **inside that directory**, so the
+coverage read takes the same root. Left split, the matrix would describe one
+installation and explain another's holes — and nothing on the page would look
+wrong. `coverage()` therefore takes `root=`, and a guard walks the calls in
+`diff()` by **paren balance** to check it is passed.
+
+### §178b — the badge that answered a question its heading did not ask
+
+Same page, reported the day before: every build column stacks an API line over a
+CLI line, and the CLI line called the API hub's badge. Under a head reading
+**CLI**, the cell said `API · no CLI block here` — it repeats the line above it.
+
+The nested wording is a **fourth element of `cli_coverage.PROV_LABEL`**, beside
+the standalone one, for the same reason the standalone one lives there: two
+authors of a vocabulary is the `api.js`/`main.js` status-badge split.
+
+The two "no block" buckets keep **two** nested phrases. They are the same
+absence with opposite fixes — a runtime readout cannot have a CLI block, while a
+config object that printed none in *this* dump is one capture away — and
+collapsing them leaves the difference only in a tooltip, which is not what gets
+read.
+
+Guarded by **rendering the macro**, bucket by bucket, in both depths: every
+bucket renders a non-empty phrase, the nested one never names the API, and the
+standalone one is still what an unstacked page gets (`nested=False` is the
+default, so a flipped default would silently halve every badge on two other
+pages). The page-level half is inverted: no standalone label may appear inside
+the comparison table at all.
+
+### Verification (2026-09-17)
+
+**20 mutations, 20 bite, 0 survivors, 0 void, `restore-ok=True`**, control green
+before and after — first clean pass. **412 targeted tests, RC=0** (schema_coverage,
+version_delta_table, cli_provenance, cli_coverage, api_matrix, api_matrix_docs,
+field_catalog, field_catalog_provenance, build_field_catalog, route_audit,
+template_blocks, documented_commands). **Full suite NOT run** (rule of 2026-08-09).
+
+### ⚠ Two traps this round paid for
+
+* **A `must_not` guard matched its own documentation.** The patch forbade the
+  over-claiming phrase and the docstring explaining its removal quoted it
+  verbatim. Ninth time this repo has paid for an assertion answered by the
+  comment that explains it.
+* **A CSS class that is a prefix of another** (`dv-ev-also` /
+  `dv-ev-alsokind`) made a count read 16 where 8 rows existed. Renamed to
+  `dv-ev-peer`. A measurement that cannot be trusted is not evidence.

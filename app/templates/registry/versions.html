@@ -22,14 +22,35 @@
    an *incomparable* row is incomparable BECAUSE the two sides disagree, so it
    names both and says which build holds which. Collapsing that to one badge
    would erase the finding. #}
-{% macro evidence_slot(o) -%}
-  <div class="dv-ev">{{ origin_badge(o) }}</div>
+{# The same NAME can reach this table through two buckets: ``user_group`` is
+   an endpoint a sweep asked about AND an object a harvest described. Nothing
+   said so, and an operator who had just run a sweep read the schema row's
+   "not measured on 8.0.5" as the sweep having failed (2026-09-17). Both rows
+   were right; neither admitted the other existed.
+
+   It goes in the EVIDENCE cell and not under the object name: this column
+   already answers "what kind of evidence is this row", and "there is another
+   kind, on another row" is the same question. The first column was emptied by
+   the operator two rounds ago and does not get refilled.
+
+   The link is a POINTER, never a merge. The two kinds are compared apart on
+   purpose — mixing them is what reported 56 removals that were nothing but a
+   filter — so the marker names the other row's evidence kind and stops. #}
+{% macro sibling_note(siblings) -%}
+  {%- if siblings -%}
+    <div class="dv-ev-also">{% for s in siblings %}<span class="dv-ev-peer" title="The same name is on another row of this table, filed as &laquo;{{ s.label }}&raquo;{% if s.origin %} and measured as {{ s.origin }} evidence{% endif %}. Two kinds of evidence answer two different questions about one name, so they are reported on separate rows and are never subtracted from one another{% if not s.is_change %}; that row is a gap in the evidence, not a change{% endif %}.">also: {{ s.origin or s.label }}</span>{% if not loop.last %} &middot; {% endif %}{% endfor %}</div>
+  {%- endif -%}
 {%- endmacro %}
 
-{% macro evidence_split(base, base_origin, target, target_origin) -%}
+{% macro evidence_slot(o, siblings=None) -%}
+  <div class="dv-ev">{{ origin_badge(o) }}{{ sibling_note(siblings) }}</div>
+{%- endmacro %}
+
+{% macro evidence_split(base, base_origin, target, target_origin, siblings=None) -%}
   <div class="dv-ev" title="The two builds are known here by different kinds of evidence. That disagreement IS the finding: both are reported and they are never subtracted — a gap a sweep cannot close, not a change.">
     <div class="dv-ev-side"><span class="dv-ev-scope">{{ base }}</span> {{ origin_badge(base_origin) }}</div>
     <div class="dv-ev-side"><span class="dv-ev-scope">{{ target }}</span> {{ origin_badge(target_origin) }}</div>
+    {{ sibling_note(siblings) }}
   </div>
 {%- endmacro %}
 
@@ -216,7 +237,12 @@
 {% macro cli_half(rec, cd, side, scope) -%}
   {%- set n = (cd.base_count if side == 'base' else cd.target_count) if cd else None -%}
   {%- if n is none -%}
-    {{ prov_badge(rec) }}
+    {#- ``nested``: this badge sits under a head that already says CLI, with the
+        API line printed directly above it. The standalone wording answers for
+        BOTH transports there, which repeats the line above and answers a
+        question this head did not ask (operator, 2026-09-16). The wording
+        itself lives in _cli_provenance.html and nowhere else. -#}
+    {{ prov_badge(rec, nested=True) }}
   {%- else -%}
     {%- set names = (cd.removed if side == 'base' else cd.added) -%}
     {%- set cls = 'danger' if side == 'base' else 'success' -%}
@@ -252,7 +278,17 @@
    every row whose sides agree — and on the row whose sides DISAGREE the kind
    is the finding, which belongs in the column that states findings. #}
 {% macro api_fields(n) -%}<span class="dv-count">{{ n }} field(s)</span>{%- endmacro %}
-{% macro api_blank(scope) -%}<span class="text-muted dv-unmeasured" title="Nothing has ever been measured for this on {{ scope }}. An unasked side is not a negative answer: the side nobody measured proves nothing, so this row is a gap in the evidence and not a change.">not measured on {{ scope }}</span>{%- endmacro %}
+{# ``gap`` is the harvest's own record of why this side has no schema, read
+   from ``data/field_schemas/<product>/<line>/_coverage.json`` and NEVER
+   inferred from the absence. Without it the cell is honest but terminal: the
+   operator is told nothing was measured and has no way to learn whether that
+   is a defect, a property of the reference appliance, or a line nobody has
+   harvested yet. With it, the three are one hover apart.
+
+   The phrase does not change when a reason exists. "not measured on X" is
+   still exactly what happened, and a second wording for the same fact is how a
+   page grows two vocabularies for one state. #}
+{% macro api_blank(scope, gap=None) -%}<span class="text-muted dv-unmeasured" title="Nothing has ever been measured for this on {{ scope }}. An unasked side is not a negative answer: the side nobody measured proves nothing, so this row is a gap in the evidence and not a change.">not measured on {{ scope }}</span>{% if gap %} <span class="dv-why" title="{{ gap.reason }}{% if gap.detail %} (recorded: {{ gap.detail }}){% endif %}">why</span>{% endif %}{%- endmacro %}
 
 {# The one caveat that used to sit under the object name. It is a fact about
    THIS column — some builds of the rollup attested the URN and some stayed
@@ -543,6 +579,49 @@
       builds, not against any single box you might write to.
     </div>
     {% endif %}
+    {# ── how much of the CATALOG each side actually has ───────────────────
+       Schema evidence does not come from a sweep. It comes from a harvest
+       against ONE reference appliance per line, and a harvest can only
+       describe a table that appliance has populated: five objects have no 8.0
+       schema because those tables are empty on fortiweb17, and one because
+       8.0.5 rejects the URN. Every one of them renders below as "not measured
+       on 8.0.5" — literally true, and read on 2026-09-17 as a sweep that had
+       failed.
+
+       So the coverage is stated ONCE, above the rows, from the harvest's own
+       record. It is not computed here by counting files: "no schema" and "a
+       harvest that could not describe it, and why" are the distinction the
+       whole record exists to carry, and a file count cannot tell them apart.
+
+       Shown only when there IS a hole — a fully covered pair says nothing,
+       because a banner that appears on every comparison is one nobody reads by
+       the third. #}
+    {% set SC = delta.schema_coverage %}
+    {% if SC and (SC.base.missing or SC.target.missing
+                  or not SC.base.harvested or not SC.target.harvested) %}
+    <div class="alert alert-info py-2 dv-coverage" style="font-size:12.5px;">
+      <strong>Schema coverage.</strong>
+      {% for side in (SC.base, SC.target) %}
+        {% if not side.harvested %}
+          <div><code>{{ side.scope }}</code>: <strong>no harvest has ever been
+          recorded</strong> for firmware line <code>{{ side.line }}</code>. Its objects
+          are unmeasured here, which is not the same claim as unchanged.</div>
+        {% else %}
+          <div><code>{{ side.scope }}</code>: <strong>{{ side.covered }}</strong> of
+          {{ side.catalog_size }} object(s) have a schema on line
+          <code>{{ side.line }}</code> ({{ side.appliance }}{% if side.harvested_at %},
+          harvested {{ side.harvested_at }}{% endif %}).
+          {% if side.missing %}<strong>{{ side.missing|length }}</strong> do not:
+            {% for m in side.missing %}<span class="dv-why" title="{{ m.reason }}{% if m.detail %} (recorded: {{ m.detail }}){% endif %}">{{ m.object }}</span>{% if not loop.last %}, {% endif %}{% endfor %}.
+          {% endif %}</div>
+        {% endif %}
+      {% endfor %}
+      <div class="mt-1">An object with no schema on one side is a hole in the
+      <strong>catalog</strong>, never a firmware change: its row below is filed as a
+      gap and is never counted as one of the field deltas. Hover a name for what the
+      harvest recorded when it tried.</div>
+    </div>
+    {% endif %}
     <p class="mb-3" style="font-size:13px;">
       <strong>{{ delta.totals.fields_added }}</strong> field(s) added and
       <strong>{{ delta.totals.fields_removed }}</strong> removed going
@@ -637,7 +716,7 @@
              with different titles. #}
           <tr><td><code>{{ r.endpoint }}</code>
             </td>
-            <td>{{ evidence_slot(r.origin) }}</td>
+            <td>{{ evidence_slot(r.origin, r.siblings) }}</td>
             <td><code class="text-muted" style="font-size:11px;">{{ r.urn }}</code></td>
             <td>{% call build_cell(delta.base, base_prov, r.cli_base, r.cli_delta, 'base') %}{{ api_absent() }}{% endcall %}</td>
             <td>{% call build_cell(delta.target, target_prov, r.cli_target, r.cli_delta, 'target') %}{{ api_served() }}{{ api_partial(r.silent_on) }}{% endcall %}</td>
@@ -646,7 +725,7 @@
         {% for r in delta.endpoints_removed %}
           <tr><td><code>{{ r.endpoint }}</code>
             </td>
-            <td>{{ evidence_slot(r.origin) }}</td>
+            <td>{{ evidence_slot(r.origin, r.siblings) }}</td>
             <td><code class="text-muted" style="font-size:11px;">{{ r.urn }}</code></td>
             <td>{% call build_cell(delta.base, base_prov, r.cli_base, r.cli_delta, 'base') %}{{ api_served() }}{% endcall %}</td>
             <td>{% call build_cell(delta.target, target_prov, r.cli_target, r.cli_delta, 'target') %}{{ api_absent() }}{% endcall %}</td>
@@ -668,7 +747,7 @@
              legend above the table. #}
           <tr><td><code>{{ c.key }}</code>
             </td>
-            <td>{{ evidence_slot(c.origin) }}</td>
+            <td>{{ evidence_slot(c.origin, c.siblings) }}</td>
             <td><code class="text-muted" style="font-size:11px;">{{ c.urn }}</code></td>
             <td>{% call build_cell(delta.base, base_prov, c.cli_base, c.cli_delta, 'base') %}{{ api_fields(c.base_count) }}{{ api_names(c.removed, 'danger', 'removed', delta.base) }}{% endcall %}</td>
             <td>{% call build_cell(delta.target, target_prov, c.cli_target, c.cli_delta, 'target') %}{{ api_fields(c.target_count) }}{{ api_names(c.added, 'success', 'added', delta.target) }}{% endcall %}</td>
@@ -677,7 +756,7 @@
         {% for r in delta.endpoints_unknown %}
           <tr><td><code>{{ r.endpoint }}</code>
             </td>
-            <td>{{ evidence_slot(r.origin) }}</td>
+            <td>{{ evidence_slot(r.origin, r.siblings) }}</td>
             <td><code class="text-muted" style="font-size:11px;">{{ r.urn }}</code></td>
             <td>{% call build_cell(delta.base, base_prov, r.cli_base, r.cli_delta, 'base') %}{% if r.measured_on == delta.base %}{{ api_served() }}{% else %}{{ api_blank(delta.base) }}{% endif %}{% endcall %}</td>
             <td>{% call build_cell(delta.target, target_prov, r.cli_target, r.cli_delta, 'target') %}{% if r.measured_on == delta.target %}{{ api_served() }}{% else %}{{ api_blank(delta.target) }}{% endif %}{% endcall %}</td>
@@ -688,10 +767,10 @@
              either, and this side was never compared against anything. #}
           <tr><td><code>{{ c.key }}</code>
             </td>
-            <td>{{ evidence_slot(c.origin) }}</td>
+            <td>{{ evidence_slot(c.origin, c.siblings) }}</td>
             <td><code class="text-muted" style="font-size:11px;">{{ c.urn }}</code></td>
-            <td>{% call build_cell(delta.base, base_prov, c.cli_base, c.cli_delta, 'base') %}{% if c.known_on == delta.base %}{{ api_fields(c.count) }}{% else %}{{ api_blank(delta.base) }}{% endif %}{% endcall %}</td>
-            <td>{% call build_cell(delta.target, target_prov, c.cli_target, c.cli_delta, 'target') %}{% if c.known_on == delta.target %}{{ api_fields(c.count) }}{% else %}{{ api_blank(delta.target) }}{% endif %}{% endcall %}</td>
+            <td>{% call build_cell(delta.base, base_prov, c.cli_base, c.cli_delta, 'base') %}{% if c.known_on == delta.base %}{{ api_fields(c.count) }}{% else %}{{ api_blank(delta.base, c.gap_reason) }}{% endif %}{% endcall %}</td>
+            <td>{% call build_cell(delta.target, target_prov, c.cli_target, c.cli_delta, 'target') %}{% if c.known_on == delta.target %}{{ api_fields(c.count) }}{% else %}{{ api_blank(delta.target, c.gap_reason) }}{% endif %}{% endcall %}</td>
             <td>{{ test_btn(urn=c.urn) }}</td></tr>
         {% endfor %}
         {% for c in delta.fields_incomparable %}
@@ -703,7 +782,7 @@
                why it is incomparable. The Evidence cell names both and says
                which build holds which; one badge here would erase the
                finding. #}
-            <td>{{ evidence_split(delta.base, c.base_origin, delta.target, c.target_origin) }}</td>
+            <td>{{ evidence_split(delta.base, c.base_origin, delta.target, c.target_origin, c.siblings) }}</td>
             <td><code class="text-muted" style="font-size:11px;">{{ c.urn }}</code></td>
             <td>{% call build_cell(delta.base, base_prov, c.cli_base, c.cli_delta, 'base') %}{{ api_fields(c.base_count) }}{% endcall %}</td>
             <td>{% call build_cell(delta.target, target_prov, c.cli_target, c.cli_delta, 'target') %}{{ api_fields(c.target_count) }}{% endcall %}</td>

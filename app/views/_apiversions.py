@@ -301,14 +301,11 @@ def render_page(product: str, hub_endpoint: str, rebuild_endpoint: str,
 # page, and an export of "the whole table" that quietly dropped them would be
 # the one thing a download is for.
 
-_BUCKET_LABEL = {
-    "endpoints_added": ("endpoint added", "yes"),
-    "endpoints_removed": ("endpoint gone", "yes"),
-    "fields_changed": ("field delta", "yes"),
-    "endpoints_unknown": ("endpoint measured on one side only", "no"),
-    "fields_unknown": ("fields known on one side only", "no"),
-    "fields_incomparable": ("incomparable", "no"),
-}
+#: Re-exported, not redefined. ``api_matrix`` fills the buckets, so it names
+#: them; the export, the PDF and the row cross-reference all read that one
+#: definition. A copy here would be the second author of a vocabulary — the
+#: shape of drift this page has already been bitten by twice.
+_BUCKET_LABEL = api_matrix.BUCKET_LABEL
 
 
 def _cli_head(scope: str, prov, what: str) -> str:
@@ -370,7 +367,17 @@ def _columns(base, target, bp, tp):
         ("urn",
          "The REST path, when the row has one. An object that exists solely in "
          "the configuration language has none."),
-    ] + _side(base, bp, target) + _side(target, tp, base)
+    ] + _side(base, bp, target) + _side(target, tp, base) + [
+        # Last column on purpose: appended rather than inserted beside
+        # ``evidence``, so every existing column keeps its index and the PDF's
+        # two tables keep addressing the cells they were built to address.
+        ("why the evidence is missing",
+         "For a row with no schema on one side, what the harvest recorded when "
+         "it tried: an empty table on the reference appliance (a fact about that "
+         "box, not the firmware), a rejected URN, or an unreachable device. "
+         "Blank when the row is not a schema gap, or when no harvest has ever "
+         "recorded that line — and those two blanks are not the same claim."),
+    ]
 
 
 def _api_cell(row, side: str):
@@ -433,10 +440,25 @@ def export_page(product: str, page_endpoint: str):
     return Response(buf.getvalue(), mimetype="text/csv; charset=utf-8",
                     headers={"Content-Disposition": 'attachment; filename="%s"' % fn})
 
+def _gap_text(row) -> str:
+    """The recorded reason a side has no schema, flattened for one cell.
+
+    The scope is named INSIDE the text. A spreadsheet column has no tooltip and
+    gets sorted away from its neighbours, so a reason that said "the table is
+    empty" without saying empty on WHICH build would be re-attachable to either
+    column by whoever reads it next.
+    """
+    g = row.get("gap_reason") or {}
+    if not g:
+        return ""
+    return "no schema on %s (%s): %s" % (g.get("scope") or g.get("line") or "?",
+                                         g.get("status") or "", g.get("reason") or "")
+
+
 def _export_rows(delta: dict, base: str, target: str):
     """One cell list per finding, in ``_columns`` order. ONE author.
 
-    The CSV and the PDF render the same 17 values. Building them twice is how
+    The CSV and the PDF render the same 18 values. Building them twice is how
     two exports of "the same table" start disagreeing, and of a drifting pair
     it is always the copy nobody opens that goes wrong first.
     """
@@ -464,6 +486,7 @@ def _export_rows(delta: dict, base: str, target: str):
             t_api, t_n, " ".join(r.get("added") or []),
             (ct or {}).get("bucket") or "", (cd or {}).get("target_count", ""),
             " ".join((cd or {}).get("added") or []),
+            _gap_text(r),
         ]
 
 
@@ -473,7 +496,7 @@ def _export_rows(delta: dict, base: str, target: str):
 #: columns of single characters either way. Index 2 (the object name) is
 #: repeated as the second table's join key — it is the only cell that may
 #: appear twice, and the legend says so.
-_PDF_TABLE_A = (0, 1, 2, 3, 4, 5, 6, 11, 12)
+_PDF_TABLE_A = (0, 1, 2, 3, 17, 4, 5, 6, 11, 12)
 _PDF_TABLE_B = (2, 7, 8, 9, 10, 13, 14, 15, 16)
 
 

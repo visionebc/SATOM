@@ -3536,55 +3536,100 @@ The page has four parts:
    `Evidence`, `URN`, then `7.6.8`, `8.0.5`, `Test`. One row per finding, and
    then everything measured *on 7.6.8* next to everything measured *on 8.0.5*.
 
-   * **A badge beside the name means the row is *not* a change.** That is the
-     rule the table is read by, and it is the reverse of what it was before
-     2026-09-16. **`added on`** and **`gone on`** were removed as labels: they
-     restated the two build columns beside them, where a row that is `absent`
-     on one side and `served` on the other *is* the addition. What keeps its
-     badge is everything that is **not** a change — **known on one side only**,
-     **measured only on** one build, and **incomparable** — and hovering that
-     badge gives the sentence saying so. The two gaps keep their own wording so
-     they can never be read as a measurement: a naive subtraction reported 56
-     phantom removals on the first draft of this page.
-   * **The subtraction still sits with the name**, because it is a fact about
-     the pair and not about either build — `8 → 14`. That arrow is the only
-     place on this page where one number is taken from another, and it cannot
-     sit in either column without that column stating the other one's number.
-     Hover it for the sentence that says this one *is* a change.
+   * **The first column is the name and nothing else.** What kind of finding a
+     row is, is read off the columns that measured it. A **change** shows
+     `absent` on one side and `served` on the other, or a field count on each
+     side with the signed difference beside the one that moved. A row where one
+     build column says **`not measured on 8.0.5`** is a **gap** — nobody asked
+     that side. A row whose `Evidence` cell names a *different kind per build*
+     is **incomparable** and is never subtracted. The class labels (`added on`,
+     `gone on`, `fields known only on`, the `8 → 14` subtraction) were all
+     removed from under the name during 2026-09-16: every one of them restated
+     a cell already beside it.
    * **`Evidence`, in second position, says which kind of evidence the row
      rests on** — `sweep` (the raw collection the appliance put on the wire) or
      `schema` (a harvested field schema, which strips the wire-only companion
-     of every enum). The two are never subtracted from one another. It sits in
-     one column because on every row but one *both* sides hold the same kind —
-     that is the precondition for comparing them at all — so printing it inside
-     both build columns printed one word twice. The exception is an
-     **incomparable** row, which is incomparable *because* the sides disagree:
-     there the cell names both kinds and which build holds which.
+     of every enum). **The two are never subtracted from one another**: a naive
+     subtraction across the two kinds reported 56 phantom removals on the first
+     draft of this page. An **incomparable** row is incomparable *because* the
+     sides disagree, and there the cell names both kinds and which build holds
+     which.
+   * **One name can be two rows, and each says so.** `user_group` is an
+     endpoint a sweep asked about *and* an object a harvest described, so it
+     appears twice — once per kind of evidence. The Evidence cell of each row
+     carries an **`also: sweep` / `also: schema`** marker pointing at its twin,
+     with the sentence explaining why the two are reported apart. It is a
+     pointer and never a merge: neither row borrows the other's numbers.
+     *Added 2026-09-17, after an operator read one twin's "not measured" as the
+     other twin's sweep having failed.*
    * **Each build column is indented under the transport that produced its
      evidence** — `API` first, then `CLI`, with that transport's answer
-     beneath it.
+     beneath it. The `CLI` half answers **only for the CLI**: under a head that
+     already says CLI, a verdict naming the API repeats the line above it.
    * The **API** half says whether that build was measured to serve the object
      (`served`, `absent`, or `not measured on 8.0.5` — a rejection and an
      unasked question never share a word) and how many fields its evidence
-     carries. The
-     field names **fold**, with the tally (`+6`) on the fold, and they appear
-     only under the build that has them: the base column lists what was lost,
-     the target column what was gained. Typing a field name into the filter
-     opens the folds that contain it, so a search still reaches inside one. A
-     row with no field list — an endpoint added or gone, or either gap — grows
-     no fold at all.
-   * The **CLI** half is a verdict, never a field list. It answers from *that
-     build's own capture*, named in the tooltip on the word `CLI`, and a build
-     with no dump of its own shows an em dash and says why rather than
-     borrowing the other column's answer. There is deliberately no "CLI added /
-     CLI removed": a dump's `set` lines are the fields somebody *configured* on
-     one appliance, and the two columns are two different appliances, so
-     subtracting them would measure the operators rather than the firmware.
+     carries. The signed tally (`+6 added`) stays printed; the **field names
+     open in a window** from the `[+]` button beside it, under the build that
+     has them — the base column lists what was lost, the target column what was
+     gained. *The names are not in the row's text, so typing one into the
+     filter will not find it: a row counted as a hit on text the operator
+     cannot see is worse than a miss.*
+   * The **CLI** half is a verdict or a count, never a field list of the
+     firmware's. It answers from *that build's own capture*, named in the
+     tooltip on the word `CLI`, and a build with no dump of its own shows an em
+     dash and says why rather than borrowing the other column's answer. There
+     is deliberately no "CLI added / CLI removed" *of the firmware*: a dump's
+     `set` lines are the fields somebody **configured on one appliance**, and
+     the two columns are two different appliances. Where both builds printed a
+     block the page does show `N set(s)` and a signed difference — with the
+     two-appliance caveat on every number that carries it.
+
+   **Why a side has no schema.** Schema evidence does not come from a sweep. It
+   comes from an offline harvest (`scripts/build_field_catalog.py`) against
+   **one reference appliance per firmware line**, and that harvest can only
+   describe a table the appliance has actually populated. So an object can have
+   no schema on a line for reasons that have nothing to do with the firmware,
+   and the row would say only `not measured on 8.0.5`.
+
+   Each harvest now **records what it could not do**, per object, into
+   `data/field_schemas/<product>/<line>/_coverage.json`, and the page reads it:
+
+   * a **coverage banner** above the table states, per compared side, how much
+     of the catalog that line has, which appliance was harvested and when, and
+     names every object that has no schema. A line nobody has ever harvested
+     says exactly that — it is not reported as complete.
+   * a **`why`** beside `not measured on …` opens the recorded reason: the
+     table is empty on the reference appliance (*a fact about that box, not
+     about the firmware — configure one row there and re-run the harvest*), the
+     appliance rejected the URN (*which does not say whether the object is gone
+     from this build or the registry path is wrong for this line*), or the
+     device was unreachable.
+   * an existing schema file still counts as coverage even when today's
+     reference box can no longer re-derive it; the record says so rather than
+     calling a measured artefact missing.
+
+   A **sweep** gap carries no such reason — a sweep's silence is recorded
+   nowhere, and lending it the harvest's sentence would explain one absence
+   with another absence's cause.
+
+   **A new firmware line** therefore needs one entry in
+   `SATOM_FIELD_CATALOG_SOURCES` (in `.env`: `fortiweb=8.2:<appliance>,…`) and
+   one harvester run. Everything above follows from the record that run writes,
+   with no code change.
 
    Each row also carries the REST path when its evidence has one and a **Test**
-   button. A row derived from a harvested object schema has no REST path of its
-   own, so it offers no button rather than a button that cannot work. Comparing
-   a rollup says so, and names the builds inside it.
+   button, which opens the live-appliance panel in a dialog. A row derived from
+   a harvested object schema has no REST path of its own, so it offers no
+   button rather than a button that cannot work. Comparing a rollup says so,
+   and names the builds inside it.
+
+   **Export CSV / Export PDF**, beside *Compare*, download exactly the
+   comparison on screen — including the field names that live behind the `[+]`
+   windows, which bucket each row came from, whether it **is a change**, and
+   the recorded reason a side has no schema. Both formats document **every
+   column**: the CSV below a blank row (so a spreadsheet's auto-range cannot sum
+   the documentation), the PDF as a legend after the findings.
 
    *Before 2026-09-16 these findings were split across three tables, and a key
    whose only finding was a field delta was listed in one of them and absent
@@ -3592,9 +3637,9 @@ The page has four parts:
    single Change cell that replaced them carried six different shapes and one
    object printed eighteen field names inline; it became fixed slots, then lost
    the "fields changed" label, then absorbed the two transport columns, then
-   split into a column per build, and finally gave up the evidence kind to a
-   column of its own and the `added on` / `gone on` labels to the two build
-   columns that already measured them — all in the same week.*
+   split into a column per build, gave up the evidence kind to a column of its
+   own and the `added on` / `gone on` labels to the two build columns that
+   already measured them — and then emptied the name column entirely.*
 4. **Preflight** — name an object and the fields you intend to send, and get
    `ok`, `unknown_fields`, `absent`, `fields_unknown`, `version_unmeasured` or
    `unmeasured`.

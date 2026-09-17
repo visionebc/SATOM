@@ -828,24 +828,47 @@ PROV_ORDER = (BUCKET_CLI_ONLY, BUCKET_NEAR, BUCKET_BOTH, BUCKET_NO_BLOCK,
 #: an em dash, because a grey badge saying "unknown" sits in the same visual
 #: family as a grey badge saying "no CLI block", and those two are precisely the
 #: pair that must never be confused.
+#: ``bucket -> (label, css, why, nested label)``.
+#:
+#: The FOURTH element is for a caller that has already printed an API line
+#: directly above the badge, under a head that reads CLI — the firmware
+#: comparison, where every build column is two stacked halves. There the
+#: standalone label answers for BOTH transports: a cell headed CLI read
+#: ``API · no CLI block here``, which repeats the line above it and answers a
+#: question that head did not ask (reported by the operator, 2026-09-16).
+#:
+#: It is declared HERE rather than written into the macro because that is where
+#: the standalone half already lives, and a vocabulary with two authors is the
+#: api.js/main.js status-badge split this product has already paid for once.
+#:
+#: The two "no block" buckets keep TWO nested phrases and are never collapsed.
+#: They are the same absence with opposite fixes — a runtime readout cannot have
+#: a CLI block, while a config object that printed none in THIS dump is one
+#: capture away from having one — and hiding that behind a tooltip loses it,
+#: because the tooltip is not what gets read.
 PROV_LABEL = {
     BUCKET_BOTH: ("API + CLI", "fw-badge-success",
                   "the catalog serves it over REST and the CLI dump has its "
-                  "configuration block"),
+                  "configuration block",
+                  "in the dump"),
     BUCKET_NEAR: ("API + CLI · other path", "fw-badge-warning",
                   "both transports carry it, but the CLI spells the path "
-                  "differently from the REST URN — neither a match nor a gap"),
+                  "differently from the REST URN — neither a match nor a gap",
+                  "in the dump · other path"),
     BUCKET_MONITOR: ("API only", "fw-badge-info",
                      "a runtime readout with no configuration table behind it, "
-                     "so it cannot have a CLI block by construction"),
+                     "so it cannot have a CLI block by construction",
+                     "no block — runtime readout"),
     BUCKET_NO_BLOCK: ("API · no CLI block here", "fw-badge-secondary",
                       "the catalog serves it, and this dump has no block for "
                       "it — an EMPTY table prints no block, so this is not "
-                      "evidence that the CLI lacks it"),
+                      "evidence that the CLI lacks it",
+                      "no block in this dump"),
     BUCKET_CLI_ONLY: ("CLI only", "fw-badge-danger",
                       "the dump has a configuration block for it and the "
-                      "catalog has no endpoint that matches"),
-    PROV_UNKNOWN: ("—", "", "no CLI evidence has been measured for this"),
+                      "catalog has no endpoint that matches",
+                      "in the dump"),
+    PROV_UNKNOWN: ("—", "", "no CLI evidence has been measured for this", "—"),
 }
 
 

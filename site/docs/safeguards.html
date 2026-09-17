@@ -14581,6 +14581,101 @@ same object) and the guards assert the kwargs it was called with.</p>
 <p>The structure guard goes further and walks the AST, requiring <strong>both</strong>
 <code>version=</code> and <code>line=</code> keywords on every <code>cli_coverage.report</code> call in the
 view — because the words appear in the surrounding prose either way.</p>
+<h2 id="178-a-true-sentence-that-cost-a-session-not-measured-with-no-way-to-learn-why-teststest_schema_coveragepy-2026-09-17">§178 — a true sentence that cost a session: "not measured", with no way to learn why (<code>tests/test_schema_coverage.py</code>, 2026-09-17)</h2>
+<p><strong>Nothing failed.</strong> The firmware comparison printed <code>not measured on 8.0.5</code> for
+<code>user_group</code>, and that was literally correct. The operator had just finished a
+sweep against an 8.0.5 box, read it as the sweep having failed, and asked why.
+It had not failed — the sweep's own answer for that endpoint was on the page,
+one row away, in a <em>different row of the same table</em>.</p>
+<p>Three separate defects sat under one sentence.</p>
+<h3 id="1-two-rows-about-one-name-neither-admitting-the-other-existed">1. Two rows about one name, neither admitting the other existed</h3>
+<p><code>user_group</code> reaches this table twice: once as an <strong>endpoint</strong> a sweep asked
+about (answer: <code>absent</code>, errcode <code>-20001</code>), once as an <strong>object</strong> a harvest
+described (answer: a schema on 7.6 and none on 8.0). The two kinds of evidence
+are compared apart on purpose — mixing them once reported <strong>56 phantom
+removals</strong> — and the only thing distinguishing the rows on screen was the
+<code>Evidence</code> column.</p>
+<p>The fix is a <strong>pointer, never a merge</strong>: each row's Evidence cell names the
+other row's evidence kind (<code>also: sweep</code> / <code>also: schema</code>) and says why they are
+reported apart. Computed in <code>api_matrix.diff</code>, not in the template: the page
+renders one loop per bucket, and a cross-reference assembled inside a loop can
+only see its own bucket — which is exactly the blindness being fixed.</p>
+<p>Guarded: two rows point at each other; each names the OTHER's kind; a
+single-bucket row grows <strong>no</strong> crosslink (a pointer to a row that does not exist
+sends the reader hunting for evidence nobody recorded); and a crosslinked row
+never gains a subtraction.</p>
+<h3 id="2-the-reason-existed-and-was-thrown-away">2. The reason existed and was thrown away</h3>
+<p>Schema evidence comes from an offline harvest against <strong>one reference appliance
+per line</strong>, and a harvest can only describe a table that appliance has
+populated. Measured that day: five 8.0 objects have no schema because those
+tables are <strong>empty on {device}</strong>, and one because 8.0.5 <strong>rejects the URN</strong>.
+<code>scripts/build_field_catalog.py</code> knew all six reasons — and printed them to a
+terminal nobody kept.</p>
+<p>So the harvest now <strong>records</strong> them, per object, into
+<code>data/field_schemas/&lt;product&gt;/&lt;line&gt;/_coverage.json</code>, and the page reads that
+record. A <code>why</code> beside <code>not measured on …</code> opens the recorded sentence; a banner
+above the table states each side's coverage, its appliance and its date.</p>
+<p><strong>A new firmware line needs one <code>.env</code> entry and one harvester run</strong> — no code
+change. That is the part that makes this a fix and not a patch.</p>
+<p>Guarded: every recordable status has a sentence; the empty-table sentence says
+what it is <strong>NOT</strong> (a fact about the firmware) and what would fix it; the reason
+is <strong>read from the record and never inferred from the absence</strong> (mutate the
+record, the page follows); a <strong>sweep</strong> gap gets no reason at all, because a
+sweep's silence is recorded nowhere and lending it the harvest's cause would
+explain one absence with another's.</p>
+<h3 id="3-found-by-running-it-a-record-that-called-existing-evidence-a-hole">3. Found by running it: a record that called existing evidence a hole</h3>
+<p>The first run reported <strong>10/16 covered for line 7.6 — a directory holding 15
+schema files.</strong> Five were harvested in August from a box that had those tables
+populated; today's reference box has them empty, so the run filed five EXISTING
+schemas as holes. The page would have printed "no schema on 7.6" beside a row
+showing that schema's five fields.</p>
+<p><code>kept_unverified</code> is the third status: the file stands, this run could not
+re-derive it, and the record says both. Folding it into <code>kept</code> would assert a
+freshness the run never established; folding it into a hole is the defect above.</p>
+<p>Guarded: the writer's covered-set and <code>field_catalog.COVERED_STATUSES</code> are
+pinned equal by reading the harvester's source, because a writer and a reader of
+one file with two ideas of "covered" is the same silence with more moving parts.</p>
+<h3 id="and-one-root-not-two">And one root, not two</h3>
+<p><code>api_matrix</code> reads schemas from its own <code>SCHEMA_ROOT</code> (the test fixture
+redirects it) and the coverage file lives <strong>inside that directory</strong>, so the
+coverage read takes the same root. Left split, the matrix would describe one
+installation and explain another's holes — and nothing on the page would look
+wrong. <code>coverage()</code> therefore takes <code>root=</code>, and a guard walks the calls in
+<code>diff()</code> by <strong>paren balance</strong> to check it is passed.</p>
+<h3 id="178b-the-badge-that-answered-a-question-its-heading-did-not-ask">§178b — the badge that answered a question its heading did not ask</h3>
+<p>Same page, reported the day before: every build column stacks an API line over a
+CLI line, and the CLI line called the API hub's badge. Under a head reading
+<strong>CLI</strong>, the cell said <code>API · no CLI block here</code> — it repeats the line above it.</p>
+<p>The nested wording is a <strong>fourth element of <code>cli_coverage.PROV_LABEL</code></strong>, beside
+the standalone one, for the same reason the standalone one lives there: two
+authors of a vocabulary is the <code>api.js</code>/<code>main.js</code> status-badge split.</p>
+<p>The two "no block" buckets keep <strong>two</strong> nested phrases. They are the same
+absence with opposite fixes — a runtime readout cannot have a CLI block, while a
+config object that printed none in <em>this</em> dump is one capture away — and
+collapsing them leaves the difference only in a tooltip, which is not what gets
+read.</p>
+<p>Guarded by <strong>rendering the macro</strong>, bucket by bucket, in both depths: every
+bucket renders a non-empty phrase, the nested one never names the API, and the
+standalone one is still what an unstacked page gets (<code>nested=False</code> is the
+default, so a flipped default would silently halve every badge on two other
+pages). The page-level half is inverted: no standalone label may appear inside
+the comparison table at all.</p>
+<h3 id="verification-2026-09-17">Verification (2026-09-17)</h3>
+<p><strong>20 mutations, 20 bite, 0 survivors, 0 void, <code>restore-ok=True</code></strong>, control green
+before and after — first clean pass. <strong>412 targeted tests, RC=0</strong> (schema_coverage,
+version_delta_table, cli_provenance, cli_coverage, api_matrix, api_matrix_docs,
+field_catalog, field_catalog_provenance, build_field_catalog, route_audit,
+template_blocks, documented_commands). <strong>Full suite NOT run</strong> (rule of 2026-08-09).</p>
+<h3 id="two-traps-this-round-paid-for">⚠ Two traps this round paid for</h3>
+<ul>
+<li><strong>A <code>must_not</code> guard matched its own documentation.</strong> The patch forbade the
+  over-claiming phrase and the docstring explaining its removal quoted it
+  verbatim. Ninth time this repo has paid for an assertion answered by the
+  comment that explains it.</li>
+<li><strong>A CSS class that is a prefix of another</strong> (<code>dv-ev-also</code> /
+  <code>dv-ev-alsokind</code>) made a count read 16 where 8 rows existed. Renamed to
+  <code>dv-ev-peer</code>. A measurement that cannot be trusted is not evidence.</li>
+</ul>
     </div>
   </div>
 </section>

@@ -98,7 +98,7 @@ def _fn_source(name: str) -> str:
 def test_the_badge_vocabulary_has_exactly_one_template_author():
     from app.services import cli_coverage as cc
 
-    labels = [lbl for lbl, _cls, _why in cc.PROV_LABEL.values() if lbl != "—"]
+    labels = [lbl for lbl, _cls, _why, _nested in cc.PROV_LABEL.values() if lbl != "—"]
     assert labels, "PROV_LABEL must carry the wording"
     macro = _macro_src()
     for lbl in labels:
@@ -111,7 +111,7 @@ def test_no_consumer_page_spells_the_vocabulary_itself():
     """A page that writes its own badge is a second author of one word."""
     from app.services import cli_coverage as cc
 
-    labels = [lbl for lbl, _c, _w in cc.PROV_LABEL.values() if lbl != "—"]
+    labels = [lbl for lbl, _c, _w, _n in cc.PROV_LABEL.values() if lbl != "—"]
     for rel in CONSUMERS:
         text = (REPO / rel).read_text(encoding="utf-8")
         for lbl in labels:
@@ -161,7 +161,7 @@ def test_unknown_renders_without_a_badge_and_no_block_renders_with_one(app):
     one that 500s on ``/api-tokens/`` today — so a guard built on it would fail
     for a reason that has nothing to do with this badge.
     """
-    with app.app_context():
+    with app.test_request_context():
         mod = app.jinja_env.get_template("partials/_cli_provenance.html").module
         unknown = str(mod.prov_badge({"bucket": "unknown", "why": "w"}))
         noblock = str(mod.prov_badge({"bucket": "no_block", "why": "w"}))
@@ -186,7 +186,7 @@ def test_no_evidence_answers_unknown_and_never_no_block(app):
     """The single rule this module exists for."""
     from app.services import cli_coverage as cc
 
-    with app.app_context():
+    with app.test_request_context():
         diff = cc.compare("fortiweb", "")
         diff["no_evidence"] = True
         prov = cc.provenance_from(diff, None)
@@ -208,7 +208,7 @@ def test_no_evidence_flag_beats_a_supplied_evidence_record(app):
     """
     from app.services import cli_coverage as cc
 
-    with app.app_context():
+    with app.test_request_context():
         diff = cc.compare("fortiweb", "")
         diff["no_evidence"] = True
         prov = cc.provenance_from(diff, {"appliance": "ghost", "line": "7.6"})
@@ -220,7 +220,7 @@ def test_monitor_survives_absent_evidence(app):
     """A runtime URN cannot host a CLI block — true with or without a dump."""
     from app.services import cli_coverage as cc
 
-    with app.app_context():
+    with app.test_request_context():
         prov = cc.provenance("fortiweb")           # empty test vault
         assert prov.measured is False
         rec = prov.for_urn("/api/v2.0/system/status.systemstatus")
@@ -230,7 +230,7 @@ def test_monitor_survives_absent_evidence(app):
 def test_unsupported_product_reports_its_own_reason(app):
     from app.services import cli_coverage as cc
 
-    with app.app_context():
+    with app.test_request_context():
         prov = cc.provenance("fortianalyzer")
     assert prov.supported is False
     assert prov.measured is False
@@ -243,7 +243,7 @@ def test_an_unmeasured_answer_is_distinguishable_from_a_missing_catalog_entry(ap
     """Two different ignorances must not share one sentence."""
     from app.services import cli_coverage as cc
 
-    with app.app_context():
+    with app.test_request_context():
         unmeasured = cc.provenance("fortiweb").for_name("system_admin")
         diff = cc.compare("fortiweb", FW_DUMP)
         measured = cc.provenance_from(diff, {"appliance": "t", "line": "7.6"})
@@ -262,7 +262,7 @@ def test_an_unmeasured_answer_is_distinguishable_from_a_missing_catalog_entry(ap
 def measured(app):
     from app.services import cli_coverage as cc
 
-    with app.app_context():
+    with app.test_request_context():
         diff = cc.compare("fortiweb", FW_DUMP)
         yield cc.provenance_from(diff, {"appliance": "fwtest", "line": "7.6",
                                         "created_at": "2026-09-15 10:00"})
@@ -287,7 +287,7 @@ def test_every_catalog_entry_gets_exactly_one_bucket(app, measured):
     """Completeness. A name with no answer is reported as 'not in the catalog'."""
     from app.registry import loader
 
-    with app.app_context():
+    with app.test_request_context():
         names = set(loader.load_registry())
     missing = sorted(n for n in names if n not in measured.by_name)
     assert not missing, "no bucket for %d catalog entries: %s" % (
@@ -325,7 +325,7 @@ def test_cli_only_is_empty_when_nothing_was_measured(app):
     """
     from app.services import cli_coverage as cc
 
-    with app.app_context():
+    with app.test_request_context():
         diff = cc.compare("fortiweb", FW_DUMP)
         assert diff[cc.BUCKET_CLI_ONLY], "premise: this dump produces findings"
         diff["no_evidence"] = True
@@ -349,7 +349,7 @@ def test_a_runtime_endpoint_is_api_only_by_NAME_too_with_no_dump(app):
     """
     from app.services import cli_coverage as cc
 
-    with app.app_context():
+    with app.test_request_context():
         prov = cc.provenance("fortiweb")
         assert prov.measured is False, "premise: the test vault holds no dump"
         monitor = [e["name"] for e in cc.compare("fortiweb", "")[cc.BUCKET_MONITOR]]
@@ -371,7 +371,7 @@ def test_line_is_a_filter_and_never_falls_back_to_another_capture(app):
 
     _seed_dump(app, firmware="FortiWeb-KVM 7.6.8,build1128(GA.M),260602",
                name="line76")
-    with app.app_context():
+    with app.test_request_context():
         assert cc.report("fortiweb")["chosen"] is not None
         on_76 = cc.report("fortiweb", line="7.6")
         on_80 = cc.report("fortiweb", line="8.0")
@@ -385,7 +385,7 @@ def test_the_unmeasured_line_names_the_line_in_its_reason(app):
     from app.services import cli_coverage as cc
 
     _seed_dump(app, name="line76b")
-    with app.app_context():
+    with app.test_request_context():
         prov = cc.provenance("fortiweb", line="8.0")
     assert prov.measured is False
     assert "8.0" in prov.reason
@@ -457,7 +457,7 @@ def test_structure_answers_by_urn_when_the_registry_does_not_cover_a_node(app, c
 
     from app.services import structure as st
 
-    with app.app_context():
+    with app.test_request_context():
         prov = cli_coverage.provenance("fortiweb")
         assert prov.measured and prov.cli_only, "premise: the dump has findings"
         # The URN a promotion would offer — derived by the one function whose
@@ -512,7 +512,7 @@ def test_versions_page_badges_each_build_from_its_own_capture(app, client, seede
     """
     from app.services import firmware_versions as fv
 
-    with app.app_context():
+    with app.test_request_context():
         fv.declare("fortiweb", "7.6.8")   # the build the seeded dump came from
         fv.declare("fortiweb", "8.0.5")   # nothing was ever captured on this one
     login(client, admin_user_id(app))
@@ -554,7 +554,7 @@ def two_line_matrix(app, seeded):
     # base column must carry a real CLI verdict, and a made-up name is "not an
     # entry in the fortiweb catalog, so there is nothing to compare a CLI block
     # against" — an em dash, which is exactly what this guard forbids.
-    with app.app_context():
+    with app.test_request_context():
         rep = cli_coverage.report("fortiweb")
         both = rep["diff"][cli_coverage.BUCKET_BOTH]
         assert both, "premise: the seeded dump matches at least one catalog entry"
@@ -691,7 +691,7 @@ def test_premise_the_operator_has_no_backup_permission(app, operator_id):
     """Without this the permission guard below would be vacuous."""
     from app.models import Permission, User
 
-    with app.app_context():
+    with app.test_request_context():
         assert not User.query.get(operator_id).can(Permission.BACKUP)
 
 
@@ -708,3 +708,151 @@ def test_badges_render_without_backup_but_carry_no_device_configuration(
     assert "set forbid-password-reuse" not in page
     assert "ENC " not in page
     assert "BEGIN CERTIFICATE" not in page
+
+
+# ---------------------------------------------------------------------------
+# The nested wording — one badge, two depths (2026-09-16, operator report)
+# ---------------------------------------------------------------------------
+# The firmware comparison stacks an API line and a CLI line inside every build
+# column. It called the same badge the API hub calls, so under a head that reads
+# CLI the cell answered ``API · no CLI block here`` — it repeats the line above
+# it and answers a question that head did not ask.
+#
+# The fix is a second wording, NOT a second badge: the nested phrases live in
+# ``PROV_LABEL`` beside the standalone ones, because a vocabulary with two
+# authors is the api.js/main.js status-badge split this product paid for once.
+
+def _unescape(markup):
+    """The macro writes HTML entities where the table writes glyphs.
+
+    Comparing the raw strings would fail against a correct template and pass
+    against one that had quietly dropped a phrase — the worst direction for a
+    guard to be wrong in.
+    """
+    return (markup.replace("&mdash;", "\u2014").replace("&middot;", "\u00b7")
+                  .replace("&ndash;", "\u2013"))
+
+
+def test_every_bucket_declares_a_nested_wording():
+    """A bucket with no nested phrase renders an empty badge in the comparison
+    — which looks exactly like a measured verdict of nothing."""
+    from app.services import cli_coverage as cc
+
+    for bucket, row in cc.PROV_LABEL.items():
+        assert len(row) == 4, \
+            "%s carries no nested wording: %r" % (bucket, row)
+        assert row[3], "%s declares an empty nested wording" % bucket
+
+
+def test_the_macro_renders_every_nested_label():
+    """Same anchor the standalone half has had: declared and never rendered is
+    how the service and the template drift apart in silence."""
+    from app.services import cli_coverage as cc
+
+    macro = _unescape(_macro_src())
+    for bucket, row in cc.PROV_LABEL.items():
+        if bucket == cc.PROV_UNKNOWN:
+            continue
+        assert row[3] in macro, (
+            "%r is declared as the nested wording of %s and never rendered"
+            % (row[3], bucket))
+
+
+def test_no_consumer_page_spells_a_nested_label_itself():
+    """The inverse, and the one that matters: the comparison page is precisely
+    the page that would be tempted to write these words inline."""
+    from app.services import cli_coverage as cc
+
+    words = [row[3] for b, row in cc.PROV_LABEL.items()
+             if b != cc.PROV_UNKNOWN]
+    for rel in CONSUMERS:
+        text = _unescape((REPO / rel).read_text(encoding="utf-8"))
+        for word in words:
+            assert word not in text, (
+                "%s spells the nested wording %r itself instead of calling "
+                "prov_badge(nested=True)" % (rel, word))
+
+
+def test_the_nested_wording_never_answers_for_the_other_transport():
+    """THE defect, pinned. Under a head that says CLI, a phrase that names the
+    API is answering for a transport the head above already answered for."""
+    from app.services import cli_coverage as cc
+
+    for bucket, row in cc.PROV_LABEL.items():
+        if bucket == cc.PROV_UNKNOWN:
+            continue
+        assert "API" not in row[3], (
+            "the nested wording of %s still speaks for the API: %r"
+            % (bucket, row[3]))
+
+
+def test_the_two_no_block_buckets_keep_two_nested_phrases():
+    """They are the same absence with OPPOSITE fixes: a runtime readout cannot
+    have a CLI block (nothing to do), a config object that printed none in this
+    dump is one capture away. Collapsed to one phrase the difference survives
+    only in a tooltip, and the tooltip is not what gets read."""
+    from app.services import cli_coverage as cc
+
+    assert cc.PROV_LABEL[cc.BUCKET_MONITOR][3] != cc.PROV_LABEL[cc.BUCKET_NO_BLOCK][3], \
+        "the two no-block buckets collapsed into one nested phrase"
+
+
+def test_only_a_stacked_caller_asks_for_the_nested_form():
+    """A standalone column that opted in would print half an answer under a
+    heading that asked the whole question — the defect, mirrored."""
+    import subprocess
+
+    out = subprocess.run(
+        ["grep", "-rn", "nested=True", "--include=*.html", str(REPO / "app" / "templates")],
+        capture_output=True, text=True).stdout.strip().splitlines()
+    assert out, "nobody asks for the nested badge any more"
+    for line in out:
+        assert "registry/versions.html" in line, (
+            "a page other than the stacked comparison asks for the nested "
+            "badge: %s" % line)
+
+
+def test_the_standalone_wording_is_still_what_an_unstacked_page_gets():
+    """The other half of the same rule. ``nested`` defaults to False, so the
+    hub and the Structure cross-reference keep the full answer; a default flip
+    would silently halve every badge on two other pages."""
+    macro = _macro_src()
+    assert "nested=False" in macro, \
+        "the nested form became the default: every unstacked page now prints half an answer"
+
+
+def test_the_macro_renders_a_phrase_for_every_bucket_in_both_depths(app):
+    """The other half of the nested-wording rule, rendered rather than grepped.
+
+    Its first draft tried to read this off a seeded page and failed against a
+    correct product: with a dump, a build column answers with its field COUNT,
+    and with no dump it answers with an em dash — neither fixture can produce a
+    ``no_block`` badge at all, so the assertion was vacuous where it was not
+    wrong. The claim is about the MACRO, so it is asked of the macro.
+
+    A wording swap that rendered NOTHING would satisfy "no standalone label
+    appears in the table" perfectly and leave a cell headed CLI saying nothing,
+    which reads as a measured verdict of nothing.
+    """
+    from flask import render_template_string
+    from app.services import cli_coverage as cc
+
+    tpl = ("{% from 'partials/_cli_provenance.html' import prov_badge %}"
+           "{{ prov_badge(rec) }}|{{ prov_badge(rec, nested=True) }}")
+    with app.test_request_context():
+        for bucket, row in cc.PROV_LABEL.items():
+            if bucket == cc.PROV_UNKNOWN:
+                continue
+            out = render_template_string(
+                tpl, rec={"bucket": bucket, "why": "why-text", "path": ""})
+            standalone, nested = out.split("|")
+            assert row[0] in standalone, (
+                "the standalone form of %s no longer renders its label: %r"
+                % (bucket, standalone))
+            assert row[3] in nested, (
+                "the nested form of %s renders no phrase: %r" % (bucket, nested))
+            assert row[0] not in nested, (
+                "the nested form of %s still answers for both transports: %r"
+                % (bucket, nested))
+            assert "why-text" in nested, (
+                "the nested form dropped the reason the badge carries")

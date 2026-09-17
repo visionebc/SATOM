@@ -14789,6 +14789,62 @@ ordering, not just on the two values.</p>
 <li>The ledger guards drive <code>absence_record.evaluate</code> through <code>monkeypatch</code>, so
   they never touch the real matrix or a real dump.</li>
 </ul>
+<h2 id="180-the-review-queue-moved-inside-the-comparison-and-the-join-is-the-whole-risk-teststest_absence_corroborationpy-2026-09-17">§180 — the review queue moved inside the comparison, and the join is the whole risk (<code>tests/test_absence_corroboration.py</code>, 2026-09-17)</h2>
+<p>The operator asked for the ledger's review queue to live <strong>inside the versions
+section</strong> rather than as a page of its own. The feature is small; the hazard is
+not, and it is one this product has already paid for once in another form.</p>
+<p><strong>The comparison defaults to two BUILDS and the ledger is keyed on LINES.</strong> On
+the live FortiWeb matrix the page opens on <code>7.6.8 → 8.0.5</code> while every ledger
+row is <code>7.6 → 8.0</code>. A join that ignored that difference would hand a
+line-scoped decision to a build pair and render it as a decision about those
+builds — the same class of error as subtracting sweep evidence from schema
+evidence, which once invented 56 removals. <code>models_lifecycle</code> already stores
+both scopes verbatim to defend exactly this; the join now <em>prints</em> them.</p>
+<p>What the guards fix, in the order it would rot:</p>
+<ol>
+<li><strong>The scope resolution.</strong> A build pair resolves to its line pair; two builds
+   of one line resolve to nothing; a pair that skips a line resolves to
+   nothing. The three outcomes carry <strong>three different sentences</strong> — a blank
+   result and "this pair is not tracked" are opposite claims, and there is a
+   guard that the three strings are distinct.</li>
+<li><strong><code>borrowed</code>.</strong> True exactly when the ledger's scopes are not the ones on
+   screen. It drives the sentence in the chip's tooltip, in the summary line
+   and in the review window.</li>
+<li><strong>No inheritance.</strong> A gone row the ledger does not hold gets <code>None</code>, never
+   the first row for the pair. The mutation that makes the lookup fall back to
+   "any row" is number 8, and with one recorded finding it marks every gone row
+   as decided.</li>
+<li><strong>No second verdict.</strong> The corroboration state on the row is still computed
+   live from that build's evidence. Copying the ledger's stored <code>state</code> over it
+   is mutation 9; the guard renders the page with and without a ledger and
+   requires the verdicts to be identical.</li>
+<li><strong>One predicate for "open".</strong> <code>absence_record.is_open</code>, used by the chip,
+   the counters and the queue. Three spellings of <code>correction in (none,
+   proposed)</code> is how a header learns to disagree with the buttons under it.</li>
+<li><strong>Two verbs, at the route as well as in the service.</strong> A POST with
+   <code>decision=apply</code> changes nothing. The redirect carries the pair back, and
+   the audit line names the <strong>record's</strong> scopes, not the page's.</li>
+<li><strong>A refusal keeps its row.</strong> Deleting it would erase the refusal and let the
+   next sweep re-create the finding as brand new.</li>
+</ol>
+<h3 id="traps-this-round_3">Traps this round</h3>
+<ul>
+<li><strong>A guard answered by its own comment, the eleventh time.</strong> The guard that
+  forbids the template from spelling the four review words was answered by the
+  Jinja comment that <em>explains</em> why the vocabulary lives in one place — it
+  legitimately uses the word "accepted". The repair is to strip <code>{# ... #}</code>
+  before asserting; rewording the prose would have been the guard winning an
+  argument it should not be in.</li>
+<li><strong>Measuring the page with a substring that the page's own JavaScript
+  contains.</strong> <code>dv-ledger-open</code> appears in the click handler as well as on the
+  chips, so a first live count reported one open chip on a page that has none.
+  Count <code>&lt;button[^&gt;]*class</code> matches, not bare class names.</li>
+<li><strong>A column added is a column every index-addressed table has to learn.</strong>
+  Three guards in <code>test_version_delta_table.py</code> bit, all correctly: the legend
+  count, the table split and the synthetic PDF row. The split now reads
+  <code>_PDF_TABLE_*</code> off the module instead of naming A and B, so a fourth table is
+  covered without touching it.</li>
+</ul>
     </div>
   </div>
 </section>

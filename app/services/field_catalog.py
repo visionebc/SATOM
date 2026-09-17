@@ -113,6 +113,74 @@ def load_object_schema(product: str, line: str, obj: str) -> "ObjectSchema | Non
     return None
 
 
+#: Mirror of ``scripts.build_field_catalog.COVERAGE_FILENAME``. Named here too
+#: because the app must not import a deploy script; the two are pinned equal by
+#: a guard rather than by hope.
+COVERAGE_FILENAME = "_coverage.json"
+
+#: The statuses that mean "this object HAS a schema on this line". Three, not
+#: two: a file kept from an earlier harvest counts as coverage even when the
+#: current reference box can no longer re-derive it — the fields on disk were
+#: measured, and calling them missing is the misreading the record exists to
+#: prevent. Pinned equal to the writer's set by a guard.
+COVERED_STATUSES = ("harvested", "kept", "kept_unverified")
+
+
+def coverage(product: str, line: str, root: str = "") -> dict:
+    """What the last harvest of ``<product>/<line>`` could and could not do.
+
+    ``{}`` when no harvest has ever recorded this line — and that empty dict is
+    an ANSWER ("nobody has harvested it"), never to be rendered as "every object
+    was harvested fine". Every caller below distinguishes the two.
+
+    ``root`` exists because the coverage file lives IN the schema directory, so
+    whoever is reading schemas from a particular tree has to be told to explain
+    that tree's holes and not this module's default. ``api_matrix`` keeps its
+    own ``SCHEMA_ROOT`` (the test fixture redirects it), and a caller reading
+    one tree while being explained another is a mismatch nothing would surface.
+    """
+    path = os.path.join(root or SCHEMA_ROOT, product, line, COVERAGE_FILENAME)
+    try:
+        with open(path) as fh:
+            doc = json.load(fh)
+    except Exception:  # noqa: BLE001 — an unreadable record is no record
+        return {}
+    return doc if isinstance(doc, dict) and doc.get("objects") else {}
+
+
+def coverage_gap(product: str, line: str, obj: str, root: str = "") -> dict:
+    """Why ``obj`` has no schema on ``line``, or ``{}`` if that is not known.
+
+    Returns ``{}`` for an object the harvest DID cover, too: the caller only
+    asks about a hole, and answering a non-hole with a reason would attach an
+    excuse to evidence that exists.
+    """
+    rec = ((coverage(product, line, root).get("objects") or {}).get(obj)) or {}
+    if not rec or rec.get("status") in COVERED_STATUSES:
+        return {}
+    return {"object": obj, "line": line, "status": rec.get("status") or "",
+            "detail": rec.get("detail") or "", "reason": rec.get("reason") or ""}
+
+
+def coverage_summary(product: str, line: str, root: str = "") -> dict:
+    """One line's harvest, counted. ``{"harvested": False}`` when never run."""
+    doc = coverage(product, line, root)
+    if not doc:
+        return {"line": line, "harvested": False, "missing": [], "covered": 0,
+                "catalog_size": 0, "appliance": "", "harvested_at": ""}
+    objs = doc.get("objects") or {}
+    missing = [{"object": k, "status": v.get("status") or "",
+                "detail": v.get("detail") or "", "reason": v.get("reason") or ""}
+               for k, v in sorted(objs.items())
+               if v.get("status") not in COVERED_STATUSES]
+    return {"line": line, "harvested": True, "missing": missing,
+            "covered": doc.get("covered") or (len(objs) - len(missing)),
+            "catalog_size": doc.get("catalog_size") or len(objs),
+            "appliance": doc.get("appliance") or "",
+            "device_firmware": doc.get("device_firmware") or "",
+            "harvested_at": str(doc.get("harvested_at") or "")[:19]}
+
+
 def available_lines(product: str = "fortiweb") -> list:
     """Firmware lines that have a schema folder (``_default`` excluded), newest first."""
     base = os.path.join(SCHEMA_ROOT, product)

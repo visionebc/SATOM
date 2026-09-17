@@ -125,23 +125,137 @@ def _live_object(appliance, endpoint_urn: str) -> dict:
     return appliance.build_client()._safe_one(endpoint_urn)
 
 
-def why_empty(appliance, endpoint_urn: str) -> str:
-    """Explain an empty harvest. ``_safe_one`` returns {} both for a table the
-    operator has not populated and for a URN the device rejects — opposite
-    situations (one is fine and self-healing, the other is a registry defect that
-    breaks every consumer of the key). Best-effort: never raises, and the caller
-    treats an unknown reason as the benign case."""
+#: What the last harvest managed for one object on one line. These are DATA,
+#: not log lines, and that is the whole point of them: the comparison page
+#: prints ``not measured on 8.0.5`` for an object with no schema, and an
+#: operator who has just finished a sweep reads that as the sweep having
+#: failed. It did not — schema evidence comes from a HARVEST, and until
+#: 2026-09-17 the reason a harvest skipped an object was printed to a terminal
+#: nobody kept and then thrown away. Recorded, every future line answers "why"
+#: on the page instead of costing a session to rediscover.
+STATUS_HARVESTED = "harvested"
+STATUS_KEPT = "kept"
+#: A schema file EXISTS but this run could not re-derive it — the reference box
+#: has that table empty today, or rejected the URN. It is still coverage: the
+#: page has fields to show. Folding it into ``kept`` would assert a freshness
+#: this run did not establish; folding it into a hole would call an artefact
+#: with five measured fields "not measured", which is the exact misreading this
+#: whole record exists to end.
+STATUS_KEPT_UNVERIFIED = "kept_unverified"
+STATUS_EMPTY_TABLE = "empty_table"
+STATUS_URN_REJECTED = "urn_rejected"
+STATUS_TRANSPORT = "transport_error"
+STATUS_NO_REGISTRY = "not_in_registry"
+STATUS_UNRECOGNISED = "unrecognised_envelope"
+
+#: One sentence per status, written for the OPERATOR reading the comparison
+#: page rather than for whoever ran the harvest. Each says what the hole is
+#: and, where it is fixable, what would fix it — a reason that stops at
+#: "no schema" is the same dead end as no reason at all.
+COVERAGE_REASON = {
+    STATUS_KEPT_UNVERIFIED:
+        "A schema for this object exists on this line, harvested on an earlier run "
+        "(the file's own source and date are the truth about it). THIS run could not "
+        "re-derive it: the current reference appliance has nothing to describe here.",
+    STATUS_EMPTY_TABLE:
+        "No schema harvested: the table is EMPTY on the reference appliance, so a "
+        "live GET had no fields to describe. That is a fact about how that box is "
+        "configured, NOT about the firmware — configure one row on a reference "
+        "appliance of this line and re-run the harvest.",
+    STATUS_URN_REJECTED:
+        "No schema harvested: the reference appliance REJECTED the URN. Either this "
+        "build does not serve the object, or the registry path is wrong for this "
+        "line. The rejection on its own does not say which, and this file does not "
+        "guess.",
+    STATUS_TRANSPORT:
+        "No schema harvested: the reference appliance could not be reached during "
+        "the harvest. Nothing was learned about the object either way.",
+    STATUS_NO_REGISTRY:
+        "No schema harvested: this object has no endpoint in the registry, so there "
+        "is no path to GET.",
+    STATUS_UNRECOGNISED:
+        "No schema harvested: the appliance answered in a shape this harvester does "
+        "not recognise.",
+}
+
+#: Written into the line directory beside the schemas. Underscore-prefixed
+#: because ``api_matrix._schema_evidence`` reads that directory as "one file per
+#: object" — the prefix is the convention that keeps a bookkeeping file from
+#: being read as an object, and that reader now enforces it rather than relying
+#: on this file happening to lack an ``object`` key.
+COVERAGE_FILENAME = "_coverage.json"
+
+
+def classify_empty(appliance, endpoint_urn: str) -> tuple:
+    """``(status, detail)`` for an empty harvest.
+
+    ``_safe_one`` returns {} both for a table the operator has not populated and
+    for a URN the device rejects — opposite situations: one is benign and
+    self-healing, the other means this build does not answer under that path.
+    Best-effort: never raises, and an unknown reason is treated as the benign
+    case by the caller.
+
+    It used to report a rejection as a defect in the registry entry. On
+    2026-09-17 that turned out to over-claim in the other direction:
+    ``user_group`` is rejected by 8.0.5 and served by 7.6.8 under the SAME path,
+    which is equally consistent with the object having been dropped from the
+    newer build. The rejection is reported; which of the two it is, is not
+    invented here.
+    """
     try:
         body = appliance.build_client().api_call("GET", endpoint_urn).json()
     except Exception as exc:  # noqa: BLE001 — diagnosis must not break the harvest
-        return "transport error (%s)" % type(exc).__name__
+        return STATUS_TRANSPORT, "transport error (%s)" % type(exc).__name__
     if isinstance(body, dict) and body.get("errcode") not in (None, 0, "0"):
-        return "DEVICE REJECTED THE URN: errcode=%s %r — the registry entry is wrong" % (
+        return STATUS_URN_REJECTED, "errcode=%s %r" % (
             body.get("errcode"), str(body.get("message"))[:60])
     rows = body.get("results") if isinstance(body, dict) else body
     if isinstance(rows, list) and not rows:
-        return "table is empty on this device — nothing to harvest (not a defect)"
-    return "unrecognised envelope: %s" % (list(body)[:6] if isinstance(body, dict) else type(body).__name__)
+        return STATUS_EMPTY_TABLE, "the table has no rows on this device"
+    return STATUS_UNRECOGNISED, "envelope: %s" % (
+        list(body)[:6] if isinstance(body, dict) else type(body).__name__)
+
+
+def why_empty(appliance, endpoint_urn: str) -> str:
+    """The one-line form of :func:`classify_empty`, for the run's stdout."""
+    status, detail = classify_empty(appliance, endpoint_urn)
+    return "%s — %s" % (status, detail)
+
+
+def schema_path(product: str, line: str, key: str) -> str:
+    return os.path.join(fc.SCHEMA_ROOT, product, line, f"{key}.json")
+
+
+def _no_evidence(product: str, line: str, key: str, status: str, detail: str) -> dict:
+    """Classify a skip against WHAT IS ON DISK, not against this run alone.
+
+    An object this run could not harvest may still have a schema from an
+    earlier one — line 7.6 holds five such files, harvested from a box that had
+    those tables populated. Reporting them as holes would have the page print
+    "no schema on 7.6" next to a row showing that schema's fields.
+    """
+    if os.path.exists(schema_path(product, line, key)):
+        return {"status": STATUS_KEPT_UNVERIFIED,
+                "detail": f"{status}: {detail} — the existing schema file stands"}
+    return {"status": status, "detail": detail}
+
+
+def write_coverage(product: str, line: str, payload: dict) -> str:
+    """Record THIS run's coverage for one line. Always overwrites.
+
+    Unlike a schema file, coverage is not an artefact to preserve: it is the
+    report of the most recent harvest, and a kept-from-June coverage file
+    describing a September run would assert holes that may no longer exist.
+    A line whose harvest never ran writes nothing at all — "no record" and
+    "recorded as complete" are the pair this file exists to keep apart.
+    """
+    path = os.path.join(fc.SCHEMA_ROOT, product, line, COVERAGE_FILENAME)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w") as fh:
+        json.dump(payload, fh, indent=2)
+    os.replace(tmp, path)
+    return path
 
 
 def device_firmware(appliance) -> str:
@@ -199,6 +313,11 @@ def build(product: str = "fortiweb", force: bool = False,
         if appliance is None:
             print(f"! {appliance_name} not registered — skipping line {line}")
             continue
+        # Coverage for THIS line, filled per object below. Declared here so an
+        # object that never reaches the write path cannot silently vanish from
+        # the record: every spec in the catalog gets an entry or the run did
+        # not happen for that line at all.
+        coverage: dict = {}
         firmware = device_firmware(appliance)
         if not line_matches_firmware(line, firmware):
             print(f"!! line {line} via {appliance_name}: the device runs {firmware}, "
@@ -213,14 +332,22 @@ def build(product: str = "fortiweb", force: bool = False,
             urn = reg.get(spec.endpoint or "")
             if not urn:
                 print(f"  - {spec.key}: endpoint {spec.endpoint!r} not in registry, skip")
+                coverage[spec.key] = _no_evidence(
+                    product, line, spec.key, STATUS_NO_REGISTRY,
+                    f"no endpoint {spec.endpoint!r} in the registry")
                 continue
             try:
                 live = _live_object(appliance, urn)
             except Exception as exc:
                 print(f"  - {spec.key}@{line}: live GET failed ({type(exc).__name__}); skip")
+                coverage[spec.key] = _no_evidence(
+                    product, line, spec.key, STATUS_TRANSPORT,
+                    f"live GET failed ({type(exc).__name__})")
                 continue
             if not live:
-                print(f"  - {spec.key}@{line}: {why_empty(appliance, urn)}; skip")
+                status, detail = classify_empty(appliance, urn)
+                coverage[spec.key] = _no_evidence(product, line, spec.key, status, detail)
+                print(f"  - {spec.key}@{line}: {coverage[spec.key]['status']} — {detail}; skip")
                 continue
             fields = merge_doc(fields_from_live_object(live), firecrawl_doc(spec.key))
             req = REQUIRED_HINTS.get(spec.key, set())
@@ -241,11 +368,34 @@ def build(product: str = "fortiweb", force: bool = False,
                               schema, force)
             print(f"  {'+' if wrote else '=' } {spec.key}@{line} ({len(fields)} fields)"
                   f"{'' if wrote else ' [kept existing]'}")
+            # A KEPT file is not the same claim as a harvested one: its fields
+            # were measured on some earlier run, possibly against another box,
+            # and the file's own ``source``/``generated_at`` remain the truth
+            # about it. Flattening the two would let a coverage report assert a
+            # freshness this run never established.
+            coverage[spec.key] = {
+                "status": STATUS_HARVESTED if wrote else STATUS_KEPT,
+                "detail": f"{len(fields)} field(s)", "fields": len(fields)}
             if spec.key not in default_written:
                 d = dict(schema, line="_default", source=f"default<-{appliance_name}@{line}")
                 _write_if(os.path.join(fc.SCHEMA_ROOT, product, "_default", f"{spec.key}.json"),
                           d, force)
                 default_written.add(spec.key)
+        for key, rec in coverage.items():
+            rec["reason"] = COVERAGE_REASON.get(rec["status"], "")
+        missing = [k for k, r in coverage.items()
+                   if r["status"] not in (STATUS_HARVESTED, STATUS_KEPT,
+                                          STATUS_KEPT_UNVERIFIED)]
+        path = write_coverage(product, line, {
+            "product": product, "line": line, "appliance": appliance_name,
+            "device_firmware": firmware,
+            "line_mismatch": not line_matches_firmware(line, firmware),
+            "harvested_at": harvested_at,
+            "catalog_size": len(specs), "covered": len(specs) - len(missing),
+            "objects": coverage,
+        })
+        print(f"  -> coverage: {len(specs) - len(missing)}/{len(specs)} object(s) "
+              f"have a schema on {line}; wrote {os.path.relpath(path, os.getcwd())}")
 
 
 def main() -> None:

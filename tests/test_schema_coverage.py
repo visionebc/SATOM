@@ -252,3 +252,258 @@ def test_the_matrix_explains_the_holes_of_the_tree_it_read(tmp_path, monkeypatch
             assert "root=SCHEMA_ROOT" in whole, (
                 "%s is resolved against the wrong tree: %s" % (call, whole[:200]))
     assert seen >= 3, "the comparison stopped reading coverage at all (%d calls)" % seen
+
+
+# ---------------------------------------------------------------------------
+# 4. a side with no schema is not automatically a side nobody asked
+#
+# The 2026-09-17 follow-up. The operator ran the sweep a SECOND time, against
+# the 8.0.5 box, and the cell still said "not measured on 8.0.5". Their
+# objection was exactly right and the earlier fix had not addressed it: the
+# sweep HAD asked that build about that object, and the build answered
+# ``absent`` (errcode -20001, "The REST API has invalid URL"). Two independent
+# sources agree it is gone in 8.0 -- the API rejects the URN, and the 8.0.5 CLI
+# dump has no ``config user user-group`` block while the 7.6.8 one does.
+#
+# So the page had a measured answer in hand and spelled it the same way it
+# spells silence. These guards pin the distinction, NOT a merge: only the
+# existence verdict crosses, never a field set -- crossing field sets is what
+# reported 56 phantom removals.
+# ---------------------------------------------------------------------------
+
+def _matrix_with(target_endpoint: dict | None):
+    """7.6 knows a schema for ``widget``; 8.0 does not. ``target_endpoint`` is
+    what the sweep recorded for ``widget`` on 8.0 -- or nothing at all."""
+    eps = {}
+    if target_endpoint is not None:
+        eps["widget"] = dict({"endpoint": "widget", "fields": None,
+                              "origin": "sweep",
+                              "urn": "/api/v2.0/cmdb/x/widget"}, **target_endpoint)
+    return {
+        "product": "fortiweb",
+        "versions": {},
+        "lines": {
+            "7.6": {"endpoints": {}, "objects": {
+                "widget": {"fields": ["a", "b"], "origin": "schema"}}},
+            "8.0": {"endpoints": eps, "objects": {}},
+        },
+    }
+
+
+def _unknown_row(matrix):
+    d = am.diff("fortiweb", "7.6", "8.0", matrix=matrix)
+    rows = [r for r in d["fields_unknown"] if r["key"] == "widget"]
+    assert rows, "the schema-gap row vanished: %s" % d["fields_unknown"]
+    return rows[0]
+
+
+def test_a_rejected_build_is_reported_as_measured_not_as_silence():
+    row = _unknown_row(_matrix_with(
+        {"verdict": "absent", "measured_at": "2026-09-16T22:45:26",
+         "devices": ["fortiweb17"]}))
+    m = row.get("measured")
+    assert m, ("the sweep asked this build and it said no; the row carries "
+               "nothing, so the cell can only spell it as an unasked question")
+    assert m["verdict"] == "absent"
+    assert m["devices"] == ["fortiweb17"], "the box that answered is not named"
+    assert m["scope"] == "8.0", "the verdict is attached to the wrong side"
+
+
+def test_a_served_build_with_no_schema_still_reports_what_it_answered():
+    """The commoner half, and the one that teaches the rule: a cmdb GET returns
+    the entries somebody CONFIGURED. A populated-nowhere table answers ``ok``
+    and still yields no field names, which is not a defect and must not be
+    worded as one."""
+    row = _unknown_row(_matrix_with({"verdict": "ok", "devices": ["fortiweb17"]}))
+    assert (row.get("measured") or {}).get("verdict") == "ok"
+
+
+def test_a_key_the_sweep_never_recorded_keeps_the_unqualified_phrase():
+    """The guard against over-reaching: inventing a verdict for a key with no
+    endpoint record would make "measured" meaningless everywhere it appears."""
+    row = _unknown_row(_matrix_with(None))
+    assert row.get("measured") in (None, {}), \
+        "a verdict was manufactured for a key the sweep never recorded: %r" % (
+            row.get("measured"),)
+
+
+def test_no_field_set_crosses_the_origin_boundary():
+    """The 56 phantom removals, pinned.
+
+    NOTE the shape, which the first draft of this guard got wrong: a sweep that
+    carries fields on one side against a schema on the other is not a schema
+    gap at all -- it is INCOMPARABLE, and lands in its own bucket. That is the
+    boundary working. What must never happen is those sweep names reaching a
+    row whose evidence is ``schema``, or a field delta being computed across
+    the two kinds.
+    """
+    m = _matrix_with({"verdict": "ok", "fields": ["zzz_sweep_only"],
+                      "devices": ["fw"]})
+    d = am.diff("fortiweb", "7.6", "8.0", matrix=m)
+    assert not [r for r in d["fields_changed"] if r["key"] == "widget"], \
+        "a delta was computed between a sweep set and a schema set"
+    assert [r for r in d["fields_incomparable"] if r["key"] == "widget"], \
+        "two kinds of evidence stopped declaring themselves incomparable"
+    blob = json.dumps(d["fields_unknown"] + d["fields_changed"])
+    assert "zzz_sweep_only" not in blob, \
+        "a sweep field set leaked into a schema row: %s" % blob
+
+
+def _render_blank(**kw):
+    """Render ``api_blank`` ALONE, in a bare Jinja env.
+
+    The first draft of this guard grepped the macro source for the words it
+    must be able to print. That guard survived a mutation that replaced the
+    whole condition with ``{% if False %}``: the branch was dead and every
+    string it guarded was still in the file. A guard that reads source cannot
+    see a branch that never runs -- so this one runs it.
+    """
+    import jinja2
+    tpl = io.open(os.path.join(ROOT, "app/templates/registry/versions.html"),
+                  encoding="utf-8").read()
+    at = tpl.index("{% macro api_blank(")
+    end = tpl.index("endmacro %}", at) + len("endmacro %}")
+    src = tpl[at:end]
+    kw.setdefault("gap", None)
+    kw.setdefault("measured", None)
+    env = jinja2.Environment(autoescape=True)
+    t = env.from_string(src + "{{ api_blank(scope, gap, measured) }}")
+    return t.render(**kw)
+
+
+def test_the_blank_cell_renders_the_verdict_and_keeps_the_schema_statement():
+    """Both halves, in one rendered cell. Printing only the verdict would claim
+    the object was schema-measured; printing only the old phrase is the defect
+    the operator reported. The verdict reuses the endpoint rows' two badges --
+    a third vocabulary for the same two states is how this page grew two
+    authors for one sentence before."""
+    swept = {"verdict": "absent", "devices": ["fortiweb17"],
+             "measured_at": "2026-09-16T22:45:26", "scope": "8.0.5"}
+    out = _render_blank(scope="8.0.5", measured=swept)
+    assert ">absent<" in out, "the measured no is not printed: %s" % out
+    assert "no field names on 8.0.5" in out, "the schema statement was dropped: %s" % out
+    assert "not measured on" not in out, \
+        "the cell still leads with silence for a build that answered: %s" % out
+    assert "fortiweb17" in out, "the box that answered is not named"
+    assert "fw-badge-danger" in out, "the verdict is not wearing the endpoint badge"
+
+    served = _render_blank(scope="8.0.5",
+                          measured={"verdict": "ok", "devices": ["fortiweb17"],
+                                    "measured_at": "2026-09-16T22:45:26"})
+    assert ">served<" in out.replace(">absent<", ">served<") and ">served<" in served, \
+        "a served build with no schema does not report what it answered"
+    # Scoped to the badge's OWN title. The first draft searched the whole
+    # rendered cell and was answered by the neighbouring span, which also
+    # happens to use the word -- so a mutation that gutted this sentence
+    # SURVIVED. Tenth assert-by-substring in this repo to match a neighbour.
+    badge = served[served.index('<span class="fw-badge fw-badge-success'):]
+    badge = badge[:badge.index("</span>")]
+    assert "not a schema" in badge, (
+        "the served badge no longer says WHY a served URN still teaches no "
+        "field names -- a cmdb GET returns what somebody configured: %s" % badge)
+
+    quiet = _render_blank(scope="8.0.5", measured=None)
+    assert "not measured on 8.0.5" in quiet, \
+        "a key the sweep never recorded lost its honest phrase: %s" % quiet
+    assert ">absent<" not in quiet and ">served<" not in quiet, \
+        "a verdict is rendered for a build nobody asked: %s" % quiet
+    assert quiet != out, "the two states render identically"
+
+
+def test_both_field_delta_call_sites_pass_the_verdict_through():
+    """A macro that can show it and a call site that never hands it over is the
+    silent half of this defect, and it looks exactly like correct code."""
+    tpl = io.open(os.path.join(ROOT, "app/templates/registry/versions.html"),
+                  encoding="utf-8").read()
+    calls = re.findall(r"api_blank\(delta\.(?:base|target), c\.[^)]*\)", tpl)
+    assert len(calls) == 2, "expected the two field-delta blanks, found %r" % calls
+    for c in calls:
+        assert "c.measured" in c, "a field-delta blank drops the verdict: %s" % c
+
+
+def test_the_export_is_not_quieter_than_the_page():
+    """The copy that leaves the building. A blank verdict column reads as "no
+    finding" in a spreadsheet, which is the misreading the page was changed to
+    stop."""
+    from app.views import _apiversions as av
+    row = {"_bucket": "fields_unknown", "_base": "7.6", "_target": "8.0",
+           "key": "widget", "known_on": "7.6", "count": 2,
+           "measured": {"verdict": "absent", "scope": "8.0"}}
+    assert av._api_cell(row, "base") == ("served", 2)
+    assert av._api_cell(row, "target")[0] == "absent", \
+        "the export stayed silent where the page prints a measured no"
+    quiet = dict(row); quiet.pop("measured")
+    assert av._api_cell(quiet, "target") == ("", ""), \
+        "the export invented a verdict for a key the sweep never recorded"
+
+
+def test_a_sweep_origin_gap_gets_the_verdict_too():
+    """The wider half of the same defect, and the commoner one.
+
+    The first cut attached the verdict to schema rows only. Five rows were left
+    saying "not measured on 8.0.5" about endpoints the 8.0.5 sweep had answered
+    ``ok`` for -- their field names are unknown because those tables are empty,
+    not because nobody asked. Same false sentence, different bucket.
+    """
+    m = {
+        "product": "fortiweb", "versions": {},
+        "lines": {
+            "7.6": {"objects": {}, "endpoints": {
+                "widget": {"endpoint": "widget", "origin": "sweep",
+                           "fields": ["a", "b"], "verdict": "ok"}}},
+            "8.0": {"objects": {}, "endpoints": {
+                "widget": {"endpoint": "widget", "origin": "sweep",
+                           "fields": None, "verdict": "ok",
+                           "devices": ["fortiweb17"]}}},
+        },
+    }
+    d = am.diff("fortiweb", "7.6", "8.0", matrix=m)
+    rows = [r for r in d["fields_unknown"] if r["key"] == "widget"]
+    assert rows, "the sweep gap row vanished"
+    row = rows[0]
+    assert row["origin"] == "sweep"
+    assert (row.get("measured") or {}).get("verdict") == "ok", \
+        "a sweep-evidence gap still spells a measured build as an unasked one"
+    assert not row.get("gap_reason"), \
+        "the harvest's recorded reason was lent to a sweep row, which keeps no such record"
+
+
+def test_the_harvest_reason_is_never_lent_to_a_sweep_row(tmp_path, monkeypatch):
+    """The previous guard asserts an absence, and an absence is free when there
+    is nothing to pick up: with no coverage file on disk it passed against code
+    that lends the reason to every row. So this one PUTS a record where the
+    lending code would find it, and still demands the sweep row refuse it.
+
+    Why it matters: the harvest's sentences describe a harvest ("the table is
+    empty on the reference appliance"). A sweep keeps no such log, and pinning
+    one of those sentences to a sweep gap explains one absence with the cause
+    of another -- confidently, and in the operator's own words."""
+    d = tmp_path / "fortiweb" / "8.0"
+    d.mkdir(parents=True)
+    (d / fc.COVERAGE_FILENAME).write_text(json.dumps({
+        "line": "8.0", "appliance": "fortiweb17", "harvested": True,
+        "objects": {"widget": {"status": fc.STATUS_EMPTY_TABLE
+                               if hasattr(fc, "STATUS_EMPTY_TABLE") else "empty_table",
+                               "detail": "the table has no rows on this device"}},
+    }))
+    monkeypatch.setattr(am, "SCHEMA_ROOT", str(tmp_path))
+    m = {
+        "product": "fortiweb", "versions": {},
+        "lines": {
+            "7.6": {"objects": {}, "endpoints": {
+                "widget": {"endpoint": "widget", "origin": "sweep",
+                           "fields": ["a", "b"], "verdict": "ok"}}},
+            "8.0": {"objects": {}, "endpoints": {
+                "widget": {"endpoint": "widget", "origin": "sweep",
+                           "fields": None, "verdict": "ok",
+                           "devices": ["fortiweb17"]}}},
+        },
+    }
+    d2 = am.diff("fortiweb", "7.6", "8.0", matrix=m)
+    row = [r for r in d2["fields_unknown"] if r["key"] == "widget"][0]
+    assert row["origin"] == "sweep"
+    assert not row.get("gap_reason"), (
+        "a sweep gap picked up the harvest's recorded reason: %r"
+        % (row.get("gap_reason"),))
+    assert (row.get("measured") or {}).get("verdict") == "ok", \
+        "the sweep's own verdict went missing while the harvest reason was refused"

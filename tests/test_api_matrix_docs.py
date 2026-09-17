@@ -176,8 +176,13 @@ def test_the_manual_carries_the_section(head):
 def test_the_sections_are_bounded_not_the_whole_file():
     """If the terminators ever stop matching, every derived guard below turns
     into a whole-file search and silently stops proving anything."""
+    # The ceiling is a SANITY bound on the terminators, not a style rule: the
+    # whole guide is two orders of magnitude bigger, so a slipped terminator
+    # blows past any of these numbers instantly. Raised 12000 -> 16000 on
+    # 2026-09-17 when §30.5 legitimately grew; the guard it protects (every
+    # derived search below is scoped to a section) is unchanged.
     for part in (ref_reconcile(), ref_matrix(), guide_reconcile(), guide_matrix()):
-        assert 0 < len(part) < 12000, len(part)
+        assert 0 < len(part) < 16000, len(part)
     assert REF_MATRIX_HEAD not in ref_reconcile()
     assert GUIDE_MATRIX_HEAD not in guide_reconcile()
 

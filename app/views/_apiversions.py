@@ -391,7 +391,15 @@ def _api_cell(row, side: str):
     if b == "endpoints_unknown":
         return ("served", "") if row.get("measured_on") == scope else ("", "")
     if b == "fields_unknown":
-        return ("served", row.get("count")) if row.get("known_on") == scope else ("", "")
+        if row.get("known_on") == scope:
+            return ("served", row.get("count"))
+        # The side with no schema is not necessarily a side nobody asked. Since
+        # 2026-09-17 the page prints the sweep's own verdict for that build when
+        # it recorded one, and a copy that leaves the building must not be the
+        # quieter of the two: a blank here reads as "no finding", which is the
+        # exact misreading the page was changed to stop. Still blank when the
+        # sweep has no record for that key — that one really is unasked.
+        return ((row.get("measured") or {}).get("verdict") or "", "")
     n = row.get("base_count") if side == "base" else row.get("target_count")
     return ("served", n)
 

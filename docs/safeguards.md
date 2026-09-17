@@ -15382,3 +15382,54 @@ template_blocks, documented_commands). **Full suite NOT run** (rule of 2026-08-0
 * **A CSS class that is a prefix of another** (`dv-ev-also` /
   `dv-ev-alsokind`) made a count read 16 where 8 rows existed. Renamed to
   `dv-ev-peer`. A measurement that cannot be trusted is not evidence.
+
+## §178c — a measured "no" spelled the same way as silence (`tests/test_schema_coverage.py`, 2026-09-17)
+
+The follow-up to §178, reported by the operator who had just acted on it. They
+ran the sweep a second time, against the 8.0.5 appliance, and the cell still
+said `not measured on 8.0.5`. Their objection was right and §178 had not
+addressed it: the sweep **had** asked that build about that object, and the
+build answered — `absent`, errcode `-20001`, *"The REST API has invalid URL"*.
+
+§178 gave the cell a recorded *reason*. It did not stop the cell from leading
+with a phrase that denies the measurement happened.
+
+**Two independent sources agree on the finding**, which is why it is worth
+naming: the 8.0.5 API rejects `/api/v2.0/cmdb/user/user-group` (and
+`user/local-user`) while serving every other `user/*` object, and the 8.0.5 CLI
+dump has no `config user user-group` and no `config user local-user` block
+while the 7.6.8 dump has both. The objects are gone in 8.0.
+
+**What the guards pin**
+
+* A `fields_unknown` row carries the sweep's own verdict for the missing side
+  when the sweep recorded one, and carries nothing when it did not. Inventing
+  one would make the word meaningless everywhere it appears.
+* It applies to **both** kinds of evidence. The first cut guarded on schema
+  rows only and left five rows saying `not measured on 8.0.5` about endpoints
+  the 8.0.5 sweep had answered `ok` for — the same false sentence, in the
+  commoner half of the page.
+* **No field set crosses the origin boundary.** Only the existence verdict
+  does. Crossing field sets is what reported 56 phantom removals.
+* The harvest's recorded reason is **never** lent to a sweep row.
+* The cell renders both halves: the verdict, and `no field names on <build>`.
+* Page and export do not diverge — a blank verdict column reads as *no finding*.
+
+**Two traps this round, both in my own guards**
+
+1. A guard that **grepped the macro source** for the words it must print
+   SURVIVED a mutation replacing the whole condition with `{% if False %}`:
+   the branch was dead and every string was still in the file. A guard that
+   reads source cannot see a branch that never runs. It now **renders** the
+   macro in a bare Jinja env.
+2. A guard asserting the served badge explains itself searched the **whole
+   rendered cell** and was answered by a neighbouring `title` that happens to
+   use the same word. Tenth assert-by-substring in this repo to match a
+   neighbour. Scope the assert to the element that must carry the sentence.
+3. An `assert not row.get("gap_reason")` was **vacuous**: with no coverage file
+   on disk there was nothing to pick up, so it passed against code that lends
+   the reason to every row. The guard now puts a record where the lending code
+   would find it.
+
+**12 mutations, 12 bite, 0 survive, 0 void** (after repairing 1 and 2).
+

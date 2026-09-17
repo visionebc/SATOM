@@ -4117,6 +4117,20 @@ row cannot — see <em>heterogeneous lines</em> below.</p>
 <p>A <strong>sweep</strong> gap carries no such reason — a sweep's silence is recorded
    nowhere, and lending it the harvest's sentence would explain one absence
    with another absence's cause.</p>
+<p><strong>But a gap is not automatically a question nobody asked.</strong> When the sweep
+   holds a verdict for that object on that build, the cell leads with it —
+   <code>served</code> or <code>absent</code>, the same two badges the endpoint rows use — and states
+   the missing half beside it as <code>no field names on 8.0.5</code>. Only a key the
+   sweep has no record of keeps the bare <code>not measured on 8.0.5</code>. The export
+   carries the same verdict, because a blank spreadsheet cell reads as <em>no
+   finding</em>.</p>
+<p>The rule underneath explains most of this column: <strong>a FortiWeb <code>cmdb</code> GET
+   returns the entries somebody configured, not a schema.</strong> There is no
+   <code>action=schema</code> — measured against both reference appliances on 2026-09-17,
+   every such query parameter is ignored and the reply is the same empty list.
+   A build can serve a URN perfectly and still teach nobody a field name until
+   a row exists on the box. The verdict says the object is there; the blank
+   says nobody has configured one.</p>
 <p><strong>A new firmware line</strong> therefore needs one entry in
    <code>SATOM_FIELD_CATALOG_SOURCES</code> (in <code>.env</code>: <code>fortiweb=8.2:&lt;appliance&gt;,…</code>) and
    one harvester run. Everything above follows from the record that run writes,

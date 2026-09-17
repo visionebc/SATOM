@@ -808,15 +808,47 @@ def diff(product: str, base_line: str, target_line: str, matrix: dict | None = N
     from . import field_catalog as _fc
     base_ln, target_ln = firmware_line(base_line), firmware_line(target_line)
     for row in fields_unknown:
-        if row.get("origin") != "schema":
-            continue
         missing_line = target_ln if row.get("known_on") == base_line else base_ln
         missing_scope = target_line if row.get("known_on") == base_line else base_line
-        gap = _fc.coverage_gap(product, missing_line, row.get("key") or "",
-                               root=SCHEMA_ROOT)
-        if gap:
-            row["gap_reason"] = gap
-            row["gap_reason"]["scope"] = missing_scope
+        # The recorded harvest reason exists for SCHEMA evidence only -- it is
+        # the harvest's own log. A sweep keeps no such record, and lending it
+        # the harvest's sentence would explain one absence with the cause of
+        # another.
+        if row.get("origin") == "schema":
+            gap = _fc.coverage_gap(product, missing_line, row.get("key") or "",
+                                   root=SCHEMA_ROOT)
+            if gap:
+                row["gap_reason"] = gap
+                row["gap_reason"]["scope"] = missing_scope
+
+        # --- and what the SWEEP already answered about that same side -------
+        # Reported 2026-09-17: an operator ran a sweep against the 8.0.5 box
+        # and the cell still read "not measured on 8.0.5", so they concluded
+        # the sweep had failed. It had not. The sweep asked, and the box
+        # REJECTED the URN — a measured no. The cell was true about SCHEMA
+        # evidence and silent about the answer the operator had just paid for.
+        #
+        # This is not a merge: no field set crosses the origin boundary (that
+        # is what produced the 56 phantom removals). Only the EXISTENCE verdict
+        # the sweep recorded for the same key on the same line is surfaced, so
+        # a blank cell can distinguish the two states it used to spell the same
+        # way — "nobody asked this build" from "this build was asked and said
+        # no". A key with no endpoint record on the missing side keeps the
+        # unqualified phrase, because for that key nobody really did ask.
+        # Applies to BOTH kinds of evidence. The first cut of this guarded on
+        # schema rows only and left five rows saying "not measured on 8.0.5"
+        # for endpoints the 8.0.5 sweep had answered ``ok`` about -- the very
+        # sentence being fixed, in the commoner half of the page.
+        missing_doc = b if row.get("known_on") == base_line else a
+        ep = (missing_doc.get("endpoints") or {}).get(row.get("key") or "")
+        if ep and ep.get("verdict"):
+            row["measured"] = {
+                "verdict": ep.get("verdict"),
+                "measured_at": ep.get("measured_at") or "",
+                "devices": list(ep.get("devices") or []),
+                "urn": ep.get("urn") or "",
+                "scope": missing_scope,
+            }
 
     # What the harvest of each compared line actually managed. A side whose
     # catalog was never harvested reports ``harvested: False`` — not "complete".

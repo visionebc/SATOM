@@ -72,7 +72,7 @@
       </div>
       <div class="col-md-2">
         <label class="fw-form-label" style="font-size:12px;">{{ _('Version') }}</label>
-        <input type="text" name="version" class="form-control" placeholder="7.6.4" required>
+        <input type="text" name="version" id="fwVersion" class="form-control" placeholder="7.6.4" required>
       </div>
       <div class="col-md-3">
         <label class="fw-form-label" style="font-size:12px;">
@@ -88,7 +88,7 @@
         <label class="fw-form-label" style="font-size:12px;">
           {{ _('Build') }} <span class="text-muted">{{ _('(optional)') }}</span>
         </label>
-        <input type="text" name="build" class="form-control" placeholder="1234">
+        <input type="text" name="build" id="fwBuild" class="form-control" placeholder="1234">
       </div>
       <div class="col-md-8">
         <label class="fw-form-label" style="font-size:12px;">
@@ -246,6 +246,40 @@
   }
   kind.addEventListener('change', sync);
   sync();
+})();
+</script>
+
+<script nonce="{{ csp_nonce }}">
+// Autofill Version/Build from the chosen filename. The parsing lives on the
+// server (firmware.parse_name -> the same helper both POST handlers use), so
+// what shows up here is a preview of what would be stored, not a second guess.
+(function () {
+  var file = document.getElementById('fwFile');
+  var ver = document.getElementById('fwVersion');
+  var bld = document.getElementById('fwBuild');
+  if (!file || (!ver && !bld)) { return; }
+  // Only ever overwrite a value THIS code wrote: a version the operator typed
+  // survives, and picking a second file replaces the first guess instead of
+  // leaving a stale one from the previous name.
+  function put(el, val) {
+    if (!el) { return; }
+    if (el.value && el.dataset.fwAuto !== '1') { return; }
+    el.value = val || '';
+    if (val) { el.dataset.fwAuto = '1'; } else { delete el.dataset.fwAuto; }
+  }
+  [ver, bld].forEach(function (el) {
+    if (el) { el.addEventListener('input', function () { delete el.dataset.fwAuto; }); }
+  });
+  file.addEventListener('change', function () {
+    if (!file.files || !file.files.length) { return; }
+    var name = file.files[0].name || '';
+    fetch('{{ url_for("firmware.parse_name") }}?filename=' + encodeURIComponent(name),
+          { credentials: 'same-origin',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) { if (!d) { return; } put(ver, d.version); put(bld, d.build); })
+      .catch(function () { /* autofill is a convenience - never block an upload */ });
+  });
 })();
 </script>
 

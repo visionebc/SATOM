@@ -112,3 +112,131 @@ def test_upload_blocked_for_readonly(app, client):
     from app.models_firmware import FirmwareImage
     with app.app_context():
         assert FirmwareImage.query.count() == 0
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Filename-derived version/build (Infrastructure -> Firmware, upload form)
+#
+# Fortinet's own naming carries both tokens, so an operator re-typing them is
+# only a chance to get them wrong — row 21 of the live store shipped with an
+# empty build while its filename said ``build0116``. The rule that has to hold
+# in BOTH directions: derive what was left blank, and NEVER overrule what was
+# typed (a wrong version files an image under a release nobody chose).
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _upload_raw(client, name, version="", build="", body=b"DATA"):
+    data = {"product": "fortiweb", "image": (io.BytesIO(body), name)}
+    if version:
+        data["version"] = version
+    if build:
+        data["build"] = build
+    return client.post("/firmware/upload", data=data,
+                       content_type="multipart/form-data", follow_redirects=True)
+
+
+def test_upload_derives_dotted_version_and_build(app, client):
+    login(client, _admin(app))
+    _upload_raw(client, "FWB_KVM-v7.6.8.M-build1128-FORTINET.out")
+    from app.models_firmware import FirmwareImage
+    with app.app_context():
+        fw = FirmwareImage.query.one()
+        assert fw.version == "7.6.8"
+        assert fw.build == "1128"
+
+
+def test_upload_derives_packed_version(app, client):
+    """The older short form (``v750``) is the same one backup-server images use."""
+    login(client, _admin(app))
+    _upload_raw(client, "FWB_KVM-v750-build0387-FORTINET.out")
+    from app.models_firmware import FirmwareImage
+    with app.app_context():
+        fw = FirmwareImage.query.one()
+        assert fw.version == "7.5.0"
+        assert fw.build == "0387"
+
+
+def test_typed_version_and_build_beat_the_filename(app, client):
+    login(client, _admin(app))
+    _upload_raw(client, "FWB_KVM-v7.6.8.M-build1128-FORTINET.out",
+                version="8.0.0", build="9")
+    from app.models_firmware import FirmwareImage
+    with app.app_context():
+        fw = FirmwareImage.query.one()
+        assert fw.version == "8.0.0"
+        assert fw.build == "9"
+
+
+def test_typed_version_still_lets_build_be_derived(app, client):
+    """Half-filled is the common case: the two fields are derived independently."""
+    login(client, _admin(app))
+    _upload_raw(client, "FWB_KVM-v7.6.8.M-build1128-FORTINET.out", version="8.0.0")
+    from app.models_firmware import FirmwareImage
+    with app.app_context():
+        fw = FirmwareImage.query.one()
+        assert fw.version == "8.0.0"
+        assert fw.build == "1128"
+
+
+def test_unparseable_name_invents_nothing(app, client):
+    """No ``v...`` token: build stays empty rather than guessed."""
+    login(client, _admin(app))
+    _upload_raw(client, "firmware.out", version="7.6.4")
+    from app.models_firmware import FirmwareImage
+    with app.app_context():
+        fw = FirmwareImage.query.one()
+        assert fw.version == "7.6.4"
+        assert not fw.build
+
+
+def test_unparseable_name_without_version_is_still_rejected(app, client):
+    """Deriving must not weaken the required-version check into a silent blank."""
+    login(client, _admin(app))
+    _upload_raw(client, "firmware.out")
+    from app.models_firmware import FirmwareImage
+    with app.app_context():
+        assert FirmwareImage.query.count() == 0
+
+
+def test_resumable_begin_derives_version_too(app, client):
+    """The chunked path is the one the browser actually uses for big images —
+    it must not reject a blank version the multipart path would have filled."""
+    login(client, _admin(app))
+    resp = client.post("/firmware/upload/begin", json={
+        "filename": "FWB_KVM-v8.0.5.F-build0110-FORTINET.out", "size": 4,
+    })
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    upload_id = resp.get_json()["upload_id"]
+    from app.views import firmware as fwv
+    with app.app_context():
+        import json as _j
+        with open(fwv._meta_file(fwv._upload_dir(upload_id)), encoding="utf-8") as fh:
+            meta = _j.load(fh)
+    assert meta["version"] == "8.0.5"
+    assert meta["build"] == "0110"
+
+
+def test_parse_name_endpoint_matches_the_upload_handlers(app, client):
+    login(client, _admin(app))
+    got = client.get("/firmware/parse-name",
+                     query_string={"filename": "FWB_KVM-v7.6.8.M-build1128-FORTINET.out"})
+    assert got.status_code == 200
+    assert got.get_json() == {"version": "7.6.8", "build": "1128"}
+    empty = client.get("/firmware/parse-name", query_string={"filename": "firmware.out"})
+    assert empty.get_json() == {"version": "", "build": ""}
+
+
+def test_parse_name_is_admin_gated(app, client):
+    login(client, _readonly(app))
+    assert client.get("/firmware/parse-name",
+                      query_string={"filename": "a.out"}).status_code == 403
+
+
+def test_upload_form_wires_the_autofill(app, client):
+    """The fields must carry the ids the script writes to, the script must ask
+    the SERVER (not a second regex), and it must refuse to clobber a typed
+    value — checked on the page the server actually renders."""
+    login(client, _admin(app))
+    html = client.get("/firmware/").get_data(as_text=True)
+    assert 'id="fwVersion"' in html
+    assert 'id="fwBuild"' in html
+    assert "/firmware/parse-name?filename=" in html
+    assert "fwAuto !== '1'" in html

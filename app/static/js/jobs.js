@@ -48,6 +48,22 @@
       else fetch(DIAG + q, { method: 'GET', keepalive: true });
     } catch (e) { /* diagnostics must never throw */ }
   }
+  // Does the page the user is on RIGHT NOW match the page a finished job
+  // wants refreshed? Compared on normalised paths: the FortiWeb areas are
+  // mounted under the /web ADOM prefix while a WSGI shim still serves their
+  // pre-2026-07 top-level spelling, so the browser can legitimately sit on
+  // either form of one page. A job that does NOT say where refreshes
+  // nothing: reloading a page the user is filling in is worse than a stale
+  // table, and that gate is the whole reason this check exists.
+  function samePage(want) {
+    if (!want) return false;
+    function norm(p) {
+      p = String(p || '').replace(/[?#].*$/, '').replace(/\/+$/, '');
+      return p.replace(/^\/web(?=\/|$)/, '') || '/';
+    }
+    var here = norm(location.pathname), target = norm(want);
+    return here === target || here.indexOf(target + '/') === 0;
+  }
   function fmtBytes(n) {
     n = n || 0;
     if (n >= 1073741824) return (n / 1073741824).toFixed(1) + ' GB';
@@ -206,7 +222,7 @@
         showToast(key, { title: name + ' — upload failed', state: 'err',
                          message: (j.error || ('HTTP ' + xhr.status)) });
         autoDismiss(key, 10000);
-      } else if (location.pathname.indexOf('/firmware') === 0) {
+      } else if (samePage('/firmware')) {
         location.reload();                            // non-JSON success (JS-off shape)
       }
     };
@@ -260,8 +276,7 @@
             if (res.report_url) addToastLink(key, res.report_url, reportLabel(res.report_url));
             addToastLink(key, jobUrl(jobId), 'View job →');
             autoDismiss(key, res.report_url ? 60000 : 12000); delete tracked[jobId];
-            if (res.reload &&
-                location.pathname.indexOf(res.reload_path || '/firmware') === 0)
+            if (res.reload && samePage(res.reload_path))
               setTimeout(function () {
                 if (window.Turbo && window.Turbo.visit) window.Turbo.visit(location.href, { action: 'replace' });
                 else location.reload();

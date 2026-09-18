@@ -4352,6 +4352,53 @@ through.</p>
 an afternoon.</strong> One is the <strong>vendor's</strong> notes for the <em>appliance</em> firmware,
 harvested into the product. The other is <strong>SATOM's own</strong> changelog, which tells
 you what changed in <em>this manager</em>. This section covers both, in that order.</p>
+<h3 id="307-what-happens-when-a-new-firmware-line-ships">30.7 What happens when a new firmware line ships</h3>
+<p>Nothing in the code has to change. Every axis on this page is <strong>derived</strong>:</p>
+<ul>
+<li>the selector lists whatever versions and lines the evidence, the firmware
+  vault, the appliance table and the declare form know about — an appliance
+  upgraded to <strong>8.1.0</strong> appears the moment its firmware string changes, marked
+  <code>declared · unmeasured</code> until something sweeps it;</li>
+<li>the default comparison is oldest → newest <strong>measured</strong> build;</li>
+<li>the lifecycle ledger pairs <strong>adjacent</strong> lines, so <code>8.0 → 8.1</code> becomes a
+  tracked pair on its own, without touching <code>7.6 → 8.0</code>;</li>
+<li>ordering is numeric everywhere, so <code>10.0</code> sorts after <code>8.0</code> rather than
+  before it;</li>
+<li>the vendor release-note scan defaults to the <strong>newest lines it just
+  discovered</strong>, and says which ones it kept. It no longer carries a typed list
+  of firmware numbers, which is a filter that goes <em>wrong</em> rather than stale:
+  it silently dropped any line added after the list was written.</li>
+</ul>
+<p>Two things still need a person when a line appears, and the page says so rather
+than pretending otherwise:</p>
+<ol>
+<li><strong>A reference appliance for the field-schema catalog.</strong> Add the line to
+   <code>SATOM_FIELD_CATALOG_SOURCES</code> and re-run the harvest. Until then the
+   coverage banner reads <em>"no harvest has ever been recorded for firmware line
+   8.1 — its objects are unmeasured here, which is not the same claim as
+   unchanged"</em>.</li>
+<li><strong>A CLI configuration dump from a box on that line.</strong> Without one, every CLI
+   badge for it is <code>—</code>, which is the correct answer and not a zero.</li>
+</ol>
+<h4 id="a-line-that-lands-between-two-recorded-ones">A line that lands <em>between</em> two recorded ones</h4>
+<p>This is the case that used to lose data. The ledger pairs adjacent lines, so a
+new <strong>7.8</strong> re-pairs <code>7.6 → 7.8</code> and <code>7.8 → 8.0</code>, and every row filed under
+<code>7.6 → 8.0</code> — including decisions a person took — stopped being reachable from
+any comparison while nothing re-proved them. Measured on the live ledger: five
+decided rows went to zero visible rows, in silence.</p>
+<p>Now such a pair is:</p>
+<ul>
+<li><strong>reported</strong>, in a warning banner shown on <em>every</em> comparison of that product
+  (the pair itself is no longer offered, so a banner on its own comparison
+  would require you to already know which one to open), naming how many rows
+  were recorded and how many were already decided;</li>
+<li><strong>still readable</strong> on the comparison that recorded it, which says in its own
+  words that the pair stopped being tracked;</li>
+<li><strong>alerted</strong> on, at <em>warning</em> level, in the <code>catalog</code> family;</li>
+<li><strong>never re-filed</strong> under the new pairing. A decision was taken about the pair
+  it names; moving it would put a reviewer's name on a judgement they did not
+  make.</li>
+</ul>
 <h3 id="311-vendor-release-notes-the-topbar-modal">31.1 Vendor release notes (the topbar modal)</h3>
 <p>In the FortiWeb and FortiADC ADOMs the top banner opens a <strong>Release Notes</strong>
 modal. It reads a corpus of harvested vendor notes — Known and Resolved issue

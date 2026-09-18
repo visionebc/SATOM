@@ -333,3 +333,119 @@ def test_release_notes_reachable_in_fortiadc_adom(app, client, monkeypatch):
                           "use_direct": True},
                     headers={"X-ADOM": "fortiadc"})
     assert r.status_code in (202, 409), f"scan gated out of ADC ADOM: {r.status_code}"
+
+
+# ===========================================================================
+# THE DEFAULT SCAN MUST NOT NAME FIRMWARE LINES (2026-09-18)
+# ===========================================================================
+# The unfiltered scan defaulted to the literal ["7.0","7.2","7.4","7.6","8.0"].
+# Discovery finds every version the vendor publishes; that filter then dropped
+# any line nobody had thought to add to the list -- so a release line that
+# ships after the list was typed (8.1, 8.2, anything) would never be harvested
+# and the scan would report success. A filter that goes WRONG rather than
+# stale. The default is derived from what discovery actually returned.
+import re as _re
+from pathlib import Path as _Path
+
+from app.services import release_notes as _rn
+
+
+def test_the_newest_lines_are_picked_numerically():
+    """A string sort puts 10.0 before 8.0 and would drop the newest line.
+
+    Which is the one failure a derived default exists to make impossible: it
+    would silently reinstate the bug it replaces, on the very version that
+    prompted it.
+    """
+    vs = ["7.0.9", "7.2.0", "7.4.2", "7.6.8", "8.0.5", "8.1.0", "10.0.1"]
+    assert _rn.recent_majors(vs, 3) == ["8.0", "8.1", "10.0"]
+    assert _rn.recent_majors(vs, 1) == ["10.0"]
+
+
+def test_asking_for_no_cap_is_not_asking_for_nothing():
+    """``0`` means "no filter", and ``select_versions`` reads ``[]`` that way.
+
+    The opposite reading -- keep nothing -- is a scan that harvests zero pages
+    and still finishes green.
+    """
+    vs = ["7.6.8", "8.0.5"]
+    assert _rn.recent_majors(vs, 0) == []
+    assert _rn.select_versions(vs, _rn.recent_majors(vs, 0)) == vs
+
+
+def test_fewer_lines_than_asked_for_returns_all_of_them():
+    vs = ["7.6.8", "8.0.5"]
+    assert _rn.recent_majors(vs, 9) == ["7.6", "8.0"]
+    assert _rn.recent_majors([], 5) == []
+
+
+def _view_src():
+    """The scan view with comments stripped.
+
+    Stripped because the comment that EXPLAINS the retired default necessarily
+    quotes it, and asserting over raw text makes an explanation fail its own
+    guard -- the recurring trap in this repo.
+    """
+    src = _Path("app/views/release_notes.py").read_text()
+    return "\n".join(_re.sub(r"#.*$", "", ln) for ln in src.splitlines())
+
+
+def test_the_scan_view_names_no_firmware_line():
+    """No literal major.minor anywhere in the code of the scan view.
+
+    Deliberately broader than "the old list is gone": the defect is the HABIT
+    of typing firmware numbers into a filter, and a shorter list, a different
+    order or one extra entry is the same bug wearing a new value.
+    """
+    src = _view_src()
+    found = sorted(set(_re.findall(r'["\'](\d+\.\d+)["\']', src)))
+    assert found == [], "firmware line literal(s) back in the scan view: %s" % found
+
+
+def test_the_derived_default_is_actually_applied_and_announced(app, monkeypatch):
+    """Drives the scan. Replaces two guards that only READ the source.
+
+    Both of those survived their mutations and the reason is the same one this
+    repo keeps re-learning: a dead branch KEEPS its text. ``if False:`` left
+    ``rn.recent_majors(`` sitting in the file for a grep to find, and the
+    ``emit(`` check was answered by one of the four other emits further down
+    the same function. So this one stubs discovery, lets ``_do_scan`` run, and
+    reads what it PICKED and what it SAID.
+    """
+    from app.views import release_notes as V
+
+    said, picked = [], {}
+
+    class _Stop(RuntimeError):
+        pass
+
+    monkeypatch.setattr(V.rn, "make_fetcher", lambda **k: (lambda url: ""))
+    monkeypatch.setattr(V.rn, "discover_versions",
+                        lambda fetch, product="": ["7.0.9", "7.2.0", "7.4.2",
+                                                   "7.6.8", "8.0.5", "8.1.0"])
+    monkeypatch.setattr(V, "_scan_append", lambda path, msg: said.append(msg))
+    monkeypatch.setattr(V, "_scan_write", lambda path, st: None)
+    monkeypatch.setattr(V, "_scan_read", lambda path: {})
+    monkeypatch.setattr(V, "_notify_scan_done", lambda *a, **k: None)
+
+    def _capture(fetch, versions, **k):
+        picked["versions"] = list(versions)
+        raise _Stop("far enough")
+    monkeypatch.setattr(V.rn, "scan_release_notes", _capture)
+
+    V._do_scan(app, product="fortiweb", majors=None, use_direct=True,
+               fc_endpoint="", fc_key="", username="t", user_id=1,
+               recent_majors=V.DEFAULT_RECENT_MAJORS)
+
+    got = picked.get("versions")
+    assert got is not None, "the scan never reached the harvest"
+    # THE requirement, as a measurement: a line that ships after this code was
+    # written is scanned on the day it appears.
+    assert "8.1.0" in got
+    # And the cap really is a cap -- otherwise the assertion above is satisfied
+    # by "no filter at all", which is a different bug with the same symptom.
+    assert "7.0.9" not in got
+    note = " ".join(said)
+    assert "8.1" in note and "defaulting" in note, \
+        "a cap the operator cannot see is a scan that reads as complete"
+    assert "All" in note, "the announcement must name the way to widen it"

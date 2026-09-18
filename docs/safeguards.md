@@ -15565,3 +15565,70 @@ What the guards fix, in the order it would rot:
   count, the table split and the synthetic PDF row. The split now reads
   `_PDF_TABLE_*` off the module instead of naming A and B, so a fourth table is
   covered without touching it.
+
+
+## §181 — a new firmware line must not be able to delete a decision (`tests/test_absence_corroboration.py`, `tests/test_release_notes.py`, 2026-09-18)
+
+**The ask.** *"todo esto debe de ser compatible con todas las versiones. ejemplo
+si sale una version 8.1 deberia de poderse ver la diferencia."*
+
+**Measured before writing anything.** A simulated `8.1` line was injected into
+the live matrix and the page rendered against the real database: scopes, the
+default pick, `line_pairs`, `ledger_scope`, `api_matrix.diff`, the page and the
+CSV all handled it — HTTP 200, 25 mentions of the new line, no traceback. The
+comparison engine was already version-agnostic. **The failures were at the
+edges**, and one of them destroyed data.
+
+### The defect
+
+`line_pairs` pairs ADJACENT lines. A line that lands **between** two recorded
+ones re-pairs the ledger, and every row under the old pair becomes unreachable
+from every comparison while `evaluate` stops visiting it. Measured: adding a
+`7.8` turned five rows — all five already decided — into zero visible rows,
+with nothing raised and nothing logged.
+
+### What is guarded
+
+| guard | what it holds shut |
+|---|---|
+| `a_newer_line_changes_nothing_about_older_records` | appending 8.1 must stay a no-op for 7.6 → 8.0 |
+| `a_line_between_two_recorded_ones_is_reported_not_swallowed` | the pair is named, with open and decided counted APART |
+| `an_orphaned_pairs_rows_stay_readable_where_they_were_recorded` | reporting is not enough — a better error message is not a fix |
+| `a_pair_that_merely_skips_a_line_is_not_called_orphaned` | the other half: widening the branch would re-count on 7.6 → 8.2 everything 8.0 removed |
+| `orphans_says_nothing_when_it_cannot_know` | an unreadable matrix is not "every pair is orphaned"; a check that cries wolf on a cold start gets muted |
+| `orphaned_rows_are_never_re_keyed` | a refusal stays attached to the pair it was made about |
+| `the_writer_and_the_reader_pair_from_the_same_lines` | `evaluate` reads the same merged matrix the page does |
+| `line_ordering_is_numeric_and_has_one_author` | 10.0 after 8.0, and this module's key agrees with the page's |
+| `a_pair_that_stopped_being_tracked_leaves_the_building` | warning severity, named rows, in the `catalog` family |
+| `the_banner_is_rendered_and_not_merely_available` | asks the SERVER for the page — see below |
+| `the_scan_view_names_no_firmware_line` | no `major.minor` literal survives anywhere in the scan view |
+| `the_derived_default_is_actually_applied_and_announced` | drives `_do_scan`: 8.1.0 is picked, 7.0.9 is not, and the cap is announced |
+
+### Three traps this round paid for
+
+1. **A context key is not a feature.** `_resolved` returned `ledger_orphans`
+   and `render_page` enumerates its `render_template` kwargs rather than
+   splatting — so the banner never reached the template while every resolver
+   assertion was green. Caught only because the guard asks the **server** for
+   the page. This is the same shape as the lost footer note (§…) and the
+   `_await_auth` call site.
+2. **A dead branch keeps its text.** Two guards read the view's SOURCE for
+   `rn.recent_majors(` and for an `emit(`. `if False:` left the first string in
+   place, and the second was answered by one of four other `emit(` calls in the
+   same function. **Both survived their mutation.** Replaced by one guard that
+   runs `_do_scan` with discovery stubbed and reads what it picked and said.
+3. **A guard that raises is not a guard that bites.** `str.index` inside a
+   slice threw `ValueError` when the banner lost a phrase, taking the other
+   assertions with it and naming nothing. Rewritten with `find` + an index
+   comparison.
+
+Plus a measurement bug in the harness itself: the first pass reported four
+survivors, and **two of them were the `-k` selector failing to select the
+guards that cover them**. Widened and the whole harness re-run.
+
+**Verification.** 23 mutations, 23 bite, 0 survive, 0 void, control green
+before and after. 240 targeted tests RC=0 (`test_absence_corroboration`,
+`test_version_delta_table`, `test_release_notes` — the modules edited). Live
+render against the real database for all three scenarios: today (no banner),
+8.1 appended (200, comparison renders), 7.8 inserted (banner naming the five
+real decided rows).

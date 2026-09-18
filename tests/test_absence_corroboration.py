@@ -389,7 +389,7 @@ def test_the_check_is_registered_and_maskable(app):
     assert fam in routing.FAMILY_LABELS
 
 
-def _run_check(app, monkeypatch, findings, created=1):
+def _run_check(app, monkeypatch, findings, created=1, orphans=()):
     from app.services import absence_record, alerts
     monkeypatch.setattr(absence_record, "record",
                         lambda product: {"product": product,
@@ -398,6 +398,11 @@ def _run_check(app, monkeypatch, findings, created=1):
                                          "persisted": True,
                                          "findings": list(findings)})
     monkeypatch.setattr(alerts, "concrete_products", lambda: ["fortiweb"])
+    # Stubbed so the severity guards below measure the finding they were
+    # written for and not whatever the ambient ledger happens to hold. The
+    # orphan check has its own guards further down.
+    monkeypatch.setattr(absence_record, "orphans",
+                        lambda product, matrix=None: list(orphans))
     with app.app_context():
         return alerts._check_catalog()
 
@@ -693,9 +698,18 @@ def test_a_pair_that_skips_a_line_is_refused_with_its_own_reason():
         "three different refusals need three different sentences"
 
 
-def test_the_three_refusals_are_three_different_sentences():
-    reasons = {AR.LEDGER_SAME_LINE, AR.LEDGER_NOT_ADJACENT, AR.LEDGER_UNSCOPED}
-    assert len(reasons) == 3 and all(r.strip() for r in reasons)
+def test_the_four_refusals_are_four_different_sentences():
+    """Was three until 2026-09-18, when a fourth case got its own words.
+
+    "this pair skips a line, read the adjacent ones" and "this pair WAS the
+    adjacent one until a firmware shipped between its halves" are opposite
+    instructions: the first sends the operator somewhere the record exists, the
+    second somewhere it does not. Repaired rather than relaxed -- the rule is
+    still "every refusal says which refusal it is", the count just grew.
+    """
+    reasons = {AR.LEDGER_SAME_LINE, AR.LEDGER_NOT_ADJACENT, AR.LEDGER_ORPHANED,
+               AR.LEDGER_UNSCOPED}
+    assert len(reasons) == 4 and all(r.strip() for r in reasons)
 
 
 @pytest.fixture()
@@ -1151,3 +1165,275 @@ def test_only_a_disappearance_row_carries_a_ledger_cell(app, monkeypatch,
         for row in delta.get(bucket) or []:
             assert "ledger" not in row, bucket
     assert all("ledger" in r for r in delta["endpoints_removed"])
+
+
+# ===========================================================================
+# A NEW FIRMWARE LINE (2026-09-18)
+# ===========================================================================
+# The operator's requirement, verbatim: "todo esto debe de ser compatible con
+# todas las versiones. ejemplo si sale una version 8.1 deberia de poderse ver
+# la diferencia."
+#
+# Measured against the live node before any of this was written: appending a
+# NEWER line already worked end to end. What did not was a line landing
+# BETWEEN two recorded ones -- ``line_pairs`` re-pairs, and the five decided
+# rows under the old pair went to zero visible rows on every surface, with
+# nothing raised and ``evaluate`` never visiting them again. These guards hold
+# that shut, in both directions: the silent loss must stay impossible AND the
+# ordinary skip-a-line refusal must not start calling itself an orphan.
+
+
+def _lines(*names):
+    return {"product": "fortiweb", "lines": {n: {} for n in names},
+            "versions": {}}
+
+
+def test_a_newer_line_changes_nothing_about_older_records(app, pair_ledger):
+    """8.1 ships. 7.6 -> 8.0 is still adjacent and still holds its rows."""
+    with app.app_context():
+        m = _lines("7.6", "8.0", "8.1")
+        assert AR.line_pairs("fortiweb", m) == [("7.6", "8.0"), ("8.0", "8.1")]
+        assert AR.orphans("fortiweb", m) == []
+        led = AR.ledger_for_pair("fortiweb", "7.6.8", "8.0.5", m)
+        assert len(led["rows"]) == 2 and led["orphaned"] is False
+
+
+def test_a_line_between_two_recorded_ones_is_reported_not_swallowed(
+        app, pair_ledger):
+    """The defect this section exists for, stated as the measurement."""
+    with app.app_context():
+        m = _lines("7.6", "7.8", "8.0")
+        assert ("7.6", "8.0") not in AR.line_pairs("fortiweb", m), "premise"
+        got = AR.orphans("fortiweb", m)
+    assert len(got) == 1
+    g = got[0]
+    assert (g["base"], g["target"]) == ("7.6", "8.0")
+    # Counted, and counted APART: "2 recorded" would hide that one of them is
+    # a decision a person took, which is the part that must not evaporate.
+    assert g["rows"] == 2 and g["open"] == 1 and g["decided"] == 1
+    assert sorted(g["names"]) == ["gone_one", "suspect_one"]
+
+
+def test_an_orphaned_pairs_rows_stay_readable_where_they_were_recorded(
+        app, pair_ledger):
+    """Reported ISN'T enough -- they have to remain reachable.
+
+    A banner that says "5 rows are unreachable" and leaves them unreachable is
+    a better error message, not a fix.
+    """
+    with app.app_context():
+        led = AR.ledger_for_pair("fortiweb", "7.6.8", "8.0.5",
+                                 _lines("7.6", "7.8", "8.0"))
+    assert len(led["rows"]) == 2
+    assert led["orphaned"] is True
+    assert led["note"] == AR.LEDGER_ORPHANED
+    assert (led["base"], led["target"]) == ("7.6", "8.0")
+    assert led["open"] == 1 and led["reviewed"] == 1
+
+
+def test_a_pair_that_merely_skips_a_line_is_not_called_orphaned(
+        app, pair_ledger):
+    """The other half. Both cases are "not adjacent"; only one lost its home.
+
+    Without this, widening the orphan branch to every non-adjacent pair would
+    pass every guard above and quietly re-count, on 7.6 -> 8.2, everything 8.0
+    removed -- the exact double count ``line_pairs`` exists to prevent.
+    """
+    with app.app_context():
+        led = AR.ledger_for_pair("fortiweb", "7.6", "8.2",
+                                 _lines("7.6", "8.0", "8.2"))
+    assert led["rows"] == {}
+    assert led["orphaned"] is False
+    assert led["note"] == AR.LEDGER_NOT_ADJACENT
+
+
+def test_orphans_says_nothing_when_it_cannot_know(app, pair_ledger):
+    """No lines at all is not "every pair is orphaned".
+
+    A cold start, an unreadable matrix or a product never swept would otherwise
+    fire a warning naming every row in the ledger -- and a check that cries
+    wolf on an empty install is one that gets muted before it is ever right.
+    """
+    with app.app_context():
+        assert AR.orphans("fortiweb", _lines()) == []
+        assert AR.orphans("fortiweb", {"lines": {"8.0": {}}}) == []
+
+
+def test_orphaned_rows_are_never_re_keyed(app, pair_ledger):
+    """Reading the orphans must not quietly re-file them under the new pair.
+
+    ``suspect_one`` was refused by a person against 7.6 -> 8.0. Moving that row
+    onto 7.8 -> 8.0 would put their name on a judgement about a firmware line
+    that did not exist when they made it.
+    """
+    with app.app_context():
+        AR.orphans("fortiweb", _lines("7.6", "7.8", "8.0"))
+        rows = ObjectAbsence.query.filter_by(product="fortiweb").all()
+        assert {(r.base_scope, r.target_scope) for r in rows} == {("7.6", "8.0")}
+        assert next(r for r in rows if r.name == "suspect_one").reviewed_by == "ana"
+
+
+def test_the_writer_and_the_reader_pair_from_the_same_lines(app, monkeypatch):
+    """``evaluate`` and the page must not disagree about which lines exist.
+
+    The page resolves DERIVED evidence merged with DECLARATIONS; this module
+    used to pair from the raw evidence file alone. The gap opens precisely when
+    a line is known but not yet swept -- which is what a new firmware release
+    IS for as long as it takes to sweep it. A box upgraded to 8.1 changed the
+    page's pairing and left the recorder pairing the old way.
+    """
+    from app.services import api_matrix, firmware_versions
+    monkeypatch.setattr(api_matrix, "load",
+                        lambda p, **k: {"lines": {"7.6": {}, "8.0": {}},
+                                        "versions": {}})
+    monkeypatch.setattr(
+        firmware_versions, "overlay",
+        lambda p, m: {**m, "lines": {**m["lines"], "8.1": {}}})
+    with app.app_context():
+        assert ("8.0", "8.1") in AR.line_pairs("fortiweb"), \
+            "the declared-but-unswept line is invisible to the recorder"
+
+
+@pytest.mark.parametrize("lines,expected", [
+    (["8.0", "10.0", "7.6"], ["7.6", "8.0", "10.0"]),
+    (["8.0.10", "8.0.9"], ["8.0.9", "8.0.10"]),
+])
+def test_line_ordering_is_numeric_and_has_one_author(lines, expected):
+    """A string sort puts 10.0 before 8.0, and a wrong order inverts verdicts.
+
+    Also pinned: this module's key agrees with the one the PAGE sorts with.
+    Two spellings of one ordering is how the recorder starts pairing lines the
+    selector lists in a different order.
+    """
+    from app.services import firmware_versions as fv
+    assert sorted(lines, key=AR._version_key) == expected
+    assert sorted(lines, key=AR._version_key) == sorted(lines, key=fv.sort_key)
+
+
+def test_an_unparseable_line_never_steals_a_real_ones_pair():
+    """Junk sorts LAST, as it always did. Delegating must not change that."""
+    assert sorted(["zz", "7.6", "8.0"], key=AR._version_key) == \
+        ["7.6", "8.0", "zz"]
+
+
+# --- out of the building ---------------------------------------------------
+def test_a_pair_that_stopped_being_tracked_leaves_the_building(app, monkeypatch):
+    """WARNING, and named. Nothing else in the product can notice this.
+
+    The two findings above are about a firmware; this one is about the ledger
+    having stopped maintaining records a person already decided. The page stays
+    green, the rows stay in the table, and ``evaluate`` simply never returns.
+    Silence IS the failure mode, so it is the one that has to leave on its own.
+    """
+    from app.services import alerts
+    out = _run_check(app, monkeypatch, [], created=0, orphans=[
+        {"base": "7.6", "target": "8.0", "rows": 2, "open": 1, "decided": 1,
+         "names": ["gone_one", "suspect_one"], "last_seen_at": None}])
+    f = next(x for x in out if x["key"] == "catalog.ledger_orphaned")
+    assert f["severity"] == alerts.SEV_WARNING
+    assert "7.6 -> 8.0" in f["detail"]
+    assert "gone_one" in f["detail"] and "suspect_one" in f["detail"]
+    # The decided ones are named as decided: an operator who reads "2 records"
+    # has no reason to act, and one who reads "1 already decided" does.
+    assert "already decided" in f["detail"]
+    assert "not re-filed automatically" in f["detail"].replace("\n", " ")
+
+
+def test_no_orphans_fires_nothing(app, monkeypatch):
+    out = _run_check(app, monkeypatch, [], created=0, orphans=[])
+    assert [f for f in out if f["key"] == "catalog.ledger_orphaned"] == []
+
+
+# --- the page carries it to every comparison of the product ---------------
+def _resolve_with_lines(app, monkeypatch, lines):
+    from app.services import api_matrix, cli_coverage, firmware_versions
+    from app.views import _apiversions as V
+    matrix = {"product": "fortiweb", "lines": {ln: {} for ln in lines},
+              "versions": {}, "fleet_lines": [], "fleet_versions": [],
+              "witnesses": [], "notes": [], "built_at": "", "sweepable": True}
+    monkeypatch.setattr(api_matrix, "load", lambda p, **k: dict(matrix))
+    monkeypatch.setattr(firmware_versions, "overlay", lambda p, m: m)
+    monkeypatch.setattr(api_matrix, "diff",
+                        lambda p, b, t, matrix=None: {
+                            k: ([dict(x) for x in v] if isinstance(v, list) else v)
+                            for k, v in _FAKE_DELTA.items()})
+    monkeypatch.setattr(
+        cli_coverage, "provenance",
+        lambda product, backup_id=None, line="", version="":
+        _prov(product, {}, device="fw17"))
+    with app.test_request_context("/?base=7.6&target=8.0"):
+        return V._resolved("fortiweb")
+
+
+def test_the_page_carries_the_orphans_to_every_comparison(app, monkeypatch,
+                                                          pair_ledger):
+    """Resolved for the PRODUCT, not for the pair on screen.
+
+    An orphaned pair is not offered by the selector any more, so a banner shown
+    only on its own comparison would require the operator to already know which
+    comparison that is -- the one thing they cannot know.
+    """
+    with app.app_context():
+        clean = _resolve_with_lines(app, monkeypatch, ["7.6", "8.0"])
+        assert clean["ledger_orphans"] == []
+        broken = _resolve_with_lines(app, monkeypatch, ["7.6", "7.8", "8.0"])
+    assert [(g["base"], g["target"]) for g in broken["ledger_orphans"]] == \
+        [("7.6", "8.0")]
+
+
+def test_the_banner_is_rendered_and_not_merely_available(app, client, monkeypatch,
+                                                         pair_ledger):
+    """The context key is not the feature -- the printed banner is.
+
+    A guard that only checks ``_resolved`` returns ``ledger_orphans`` passes
+    happily while the template wraps the block in a dead condition or drops it
+    altogether, which is exactly how the footer note and the CLI-coverage call
+    site were lost in this repo. So this one asks the SERVER for the page and
+    reads what came back.
+    """
+    from tests.conftest import admin_user_id, login
+    from app.services import api_matrix, cli_coverage, firmware_versions
+
+    # Only the LINES are stubbed. ``diff`` is left real on purpose: the first
+    # draft stubbed it too, the fake delta had no ``totals``, the page 500ed,
+    # and the "no banner here" half passed because a 500 contains no banner
+    # either. A guard answered by a crash is not a guard.
+    def _stub(lines):
+        m = {"product": "fortiweb", "lines": {ln: {} for ln in lines},
+             "versions": {}, "fleet_lines": [], "fleet_versions": [],
+             "witnesses": [], "notes": [], "built_at": "", "sweepable": True}
+        monkeypatch.setattr(api_matrix, "load", lambda p, **k: dict(m))
+        monkeypatch.setattr(firmware_versions, "overlay", lambda p, mm: mm)
+        monkeypatch.setattr(
+            cli_coverage, "provenance",
+            lambda product, backup_id=None, line="", version="":
+            _prov(product, {}, device="fw17"))
+
+    login(client, admin_user_id(app))
+    url = "/web/registry/versions?base=7.6&target=8.0"
+
+    _stub(["7.6", "8.0"])
+    r = client.get(url)
+    assert r.status_code == 200, "premise: the page renders at all"
+    clean = r.get_data(as_text=True)
+    assert "dv-orphans" not in clean, \
+        "a banner on every comparison is one nobody reads by the third"
+
+    _stub(["7.6", "7.8", "8.0"])
+    r = client.get(url)
+    assert r.status_code == 200
+    broken = r.get_data(as_text=True)
+    assert broken.count('class="alert alert-warning py-2 dv-orphans"') == 1
+    # Read the banner ONLY -- the pair and the object names appear legitimately
+    # elsewhere on this page, so searching the whole document would be answered
+    # by the table it is warning about.
+    # Bounded with ``find`` and an index comparison, never ``index`` inside a
+    # slice: a guard that raises ValueError takes the other assertions down
+    # with it and names nothing. It has to DICTATE, not crash.
+    i = broken.find("dv-orphans")
+    end = broken.find("re-filed", i)
+    assert i >= 0 and end > i, "the banner lost its closing sentence"
+    block = broken[i:end + 200]
+    assert "7.6" in block and "8.0" in block
+    assert "gone_one" in block and "suspect_one" in block
+    assert "already decided" in block

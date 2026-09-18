@@ -666,6 +666,35 @@
        Shown only when there IS a hole — a fully covered pair says nothing,
        because a banner that appears on every comparison is one nobody reads by
        the third. #}
+    {# Ledger pairs the product stopped tracking. Shown on EVERY comparison of
+       this product, not just on the pair concerned, because that pair is no
+       longer offered anywhere: the selector lists scopes and the ledger is
+       paired from adjacent LINES, so a line that appears between two recorded
+       ones removes its pair from the page while leaving its rows in the table.
+       Measured 2026-09-18: one inserted line took five decided rows to zero
+       visible rows without raising anything. A banner that only appeared on
+       the affected comparison would require the operator to already know which
+       comparison that is, which is the thing they cannot know. #}
+    {% if ledger_orphans %}
+    <div class="alert alert-warning py-2 dv-orphans" style="font-size:12.5px;">
+      <strong>Lifecycle ledger: {{ ledger_orphans|length }} pair(s) no longer
+      tracked.</strong> A firmware line now sits between the two halves of
+      {{ 'these pairs' if ledger_orphans|length > 1 else 'this pair' }}, so
+      nothing re-proves their findings and no comparison offers them any more.
+      {% for g in ledger_orphans %}
+        <div><code>{{ g.base }} &rarr; {{ g.target }}</code>:
+        <strong>{{ g.rows }}</strong> recorded &mdash;
+        <strong>{{ g.open }}</strong> still open ·
+        <strong>{{ g.decided }}</strong> already decided
+        ({{ g.names|join(', ') }}).</div>
+      {% endfor %}
+      <div class="mt-1">The rows are kept exactly as recorded and are still
+      readable on the comparison that produced them. They are deliberately
+      <strong>not</strong> re-filed under the new pairing: a decision was taken
+      about the pair it names, and moving it would put a reviewer's name on a
+      judgement they never made.</div>
+    </div>
+    {% endif %}
     {% set SC = delta.schema_coverage %}
     {% if SC and (SC.base.missing or SC.target.missing
                   or not SC.base.harvested or not SC.target.harvested) %}
@@ -763,7 +792,11 @@
           <strong>{{ delta.ledger.rows|length }}</strong> recorded &mdash;
           <strong>{{ delta.ledger.open }}</strong> waiting for review ·
           <strong>{{ delta.ledger.reviewed }}</strong> decided.
-          {% if delta.ledger.borrowed %}
+          {% if delta.ledger.orphaned %}
+            <strong>This pair is no longer tracked.</strong>
+            {{ delta.ledger.note }}
+          {% endif %}
+          {% if delta.ledger.borrowed and not delta.ledger.orphaned %}
             Those are the ledger's own scopes and not the two compared above: a
             disappearance is recorded against the firmware <strong>line</strong>
             that removed it, so a build-to-build comparison shows the

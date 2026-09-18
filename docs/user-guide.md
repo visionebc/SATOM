@@ -3838,6 +3838,56 @@ an afternoon.** One is the **vendor's** notes for the *appliance* firmware,
 harvested into the product. The other is **SATOM's own** changelog, which tells
 you what changed in *this manager*. This section covers both, in that order.
 
+### 30.7 What happens when a new firmware line ships
+
+Nothing in the code has to change. Every axis on this page is **derived**:
+
+* the selector lists whatever versions and lines the evidence, the firmware
+  vault, the appliance table and the declare form know about — an appliance
+  upgraded to **8.1.0** appears the moment its firmware string changes, marked
+  `declared · unmeasured` until something sweeps it;
+* the default comparison is oldest → newest **measured** build;
+* the lifecycle ledger pairs **adjacent** lines, so `8.0 → 8.1` becomes a
+  tracked pair on its own, without touching `7.6 → 8.0`;
+* ordering is numeric everywhere, so `10.0` sorts after `8.0` rather than
+  before it;
+* the vendor release-note scan defaults to the **newest lines it just
+  discovered**, and says which ones it kept. It no longer carries a typed list
+  of firmware numbers, which is a filter that goes *wrong* rather than stale:
+  it silently dropped any line added after the list was written.
+
+Two things still need a person when a line appears, and the page says so rather
+than pretending otherwise:
+
+1. **A reference appliance for the field-schema catalog.** Add the line to
+   `SATOM_FIELD_CATALOG_SOURCES` and re-run the harvest. Until then the
+   coverage banner reads *"no harvest has ever been recorded for firmware line
+   8.1 — its objects are unmeasured here, which is not the same claim as
+   unchanged"*.
+2. **A CLI configuration dump from a box on that line.** Without one, every CLI
+   badge for it is `—`, which is the correct answer and not a zero.
+
+#### A line that lands *between* two recorded ones
+
+This is the case that used to lose data. The ledger pairs adjacent lines, so a
+new **7.8** re-pairs `7.6 → 7.8` and `7.8 → 8.0`, and every row filed under
+`7.6 → 8.0` — including decisions a person took — stopped being reachable from
+any comparison while nothing re-proved them. Measured on the live ledger: five
+decided rows went to zero visible rows, in silence.
+
+Now such a pair is:
+
+* **reported**, in a warning banner shown on *every* comparison of that product
+  (the pair itself is no longer offered, so a banner on its own comparison
+  would require you to already know which one to open), naming how many rows
+  were recorded and how many were already decided;
+* **still readable** on the comparison that recorded it, which says in its own
+  words that the pair stopped being tracked;
+* **alerted** on, at *warning* level, in the `catalog` family;
+* **never re-filed** under the new pairing. A decision was taken about the pair
+  it names; moving it would put a reviewer's name on a judgement they did not
+  make.
+
 ### 31.1 Vendor release notes (the topbar modal)
 
 In the FortiWeb and FortiADC ADOMs the top banner opens a **Release Notes**

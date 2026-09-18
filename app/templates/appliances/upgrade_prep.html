@@ -7,6 +7,29 @@
 </div>
 <p class="text-muted">{{ _('A read-only pre-flight before a firmware upgrade: take a config backup, capture the SSH health battery, check maintenance permission, and HTTP-validate every published service. Nothing is changed.') }}</p>
 
+{#
+  Hand-off to the bulk Upgrade Flow. ASKED, never assumed: this page is opened
+  on purpose for ONE appliance, and redirecting it would hijack that. The
+  device id travels on the "yes" branch and nowhere else — the answer is what
+  carries it. The answer is also not remembered: a stored "don't ask again"
+  turns the next window of forty boxes into forty loose pre-flights without
+  anybody deciding that.
+#}
+<div class="fw-card mb-3" id="prep-flow-ask">
+  <div class="fw-card-body d-flex justify-content-between align-items-center flex-wrap gap-3">
+    <div>
+      <strong>{{ _('Is this appliance part of a full upgrade window?') }}</strong>
+      <div class="text-muted small">{{ _('The Upgrade Flow pre-flights every appliance in the window, raises ONE change request citing all of that evidence, and executes inside the approved window. Continuing there opens it with this appliance already selected.') }}</div>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+      <a class="btn fw-btn-primary btn-sm text-nowrap"
+         href="{{ url_for('upgrade_flow.index', device=appliance.id, _adom=product.key) }}">
+        <i class="bi bi-arrow-up-circle me-1"></i>{{ _('Yes, full upgrade flow') }}</a>
+      <button type="button" id="prep-flow-no" class="btn fw-btn-secondary btn-sm text-nowrap">{{ _('No, only this appliance') }}</button>
+    </div>
+  </div>
+</div>
+
 <div class="fw-card">
   <div class="fw-card-body d-flex justify-content-between align-items-center flex-wrap gap-3">
     <div class="d-flex gap-3 flex-wrap">
@@ -128,6 +151,11 @@
 <script nonce="{{ csp_nonce }}">
 (function() {
   const token = document.querySelector('meta[name="csrf-token"]').content;
+  // "No" only folds the question away for this visit. It is deliberately not
+  // persisted: see the comment on #prep-flow-ask.
+  const askCard = document.getElementById('prep-flow-ask');
+  const askNo = document.getElementById('prep-flow-no');
+  if (askNo && askCard) { askNo.addEventListener('click', () => askCard.remove()); }
   const btn = document.getElementById('prep-run');
   const out = document.getElementById('prep-out');
   // Every value below this line comes from the appliance. Interpolating it raw

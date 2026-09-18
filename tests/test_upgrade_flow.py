@@ -478,3 +478,115 @@ def test_the_automation_menu_offers_the_flow_where_it_can_run():
         "to a 403"
     assert "'upgrade_flow'" in text.split("_auto_bps")[1][:200], \
         "the group does not open when the flow is the active page"
+
+import re  # noqa: E402  (appended section)
+
+# =========================================================================== #
+#  8. the hand-off from a single appliance's pre-upgrade page                   #
+# =========================================================================== #
+#  ``/appliances/<id>/upgrade/prep`` asks whether the box is part of a full
+#  upgrade window and, ONLY on "yes", opens this page with ``?device=<id>``.
+#  Two ways for that to be wrong, neither of which raises:
+#
+#    * the wrong row comes back ticked — a maintenance window silently gains an
+#      appliance nobody chose;
+#    * NOTHING comes back ticked and the page says nothing — indistinguishable
+#      from a page opened by hand, so the operator ticks a box themselves and
+#      never learns the link pointed somewhere this console cannot act.
+#
+#  Both are measured on the RENDERED page, per row, never by counting the word
+#  "checked" in the document: the stage-1 select-all script contains
+#  ``.checked`` on its own.
+def _checked_ids(html):
+    """Ids whose device checkbox came back ticked, read off the markup."""
+    return set(re.findall(r'name="device_ids" value="(\d+)"[^>]*checked', html))
+
+
+def test_the_hand_off_preselects_exactly_the_device_it_names(app, client):
+    with app.app_context():
+        a = _mk_appliance("handoff-a", kind="fortiweb")
+        b = _mk_appliance("handoff-b", kind="fortiweb")
+        aid, bid = a.id, b.id
+
+    login(client, admin_user_id(app))
+    body = client.get("/web/upgrade-flow/?device=%d" % aid).get_data(as_text=True)
+    assert _checked_ids(body) == {str(aid)}, \
+        "the hand-off ticked something other than the appliance it came from"
+    assert str(bid) not in _checked_ids(body)
+    assert "Pre-selected from its pre-upgrade page" in body, \
+        "the row is ticked but unnamed — in sixty rows that is not an answer " \
+        "to 'did the link bring the right box'"
+    # The name is read out of the BANNER. Asserting it against the whole page
+    # proves nothing: every eligible appliance is in the table below.
+    banner = body.split("Pre-selected from its pre-upgrade page", 1)[1][:400]
+    assert "handoff-a" in banner, "the banner does not say which box it ticked"
+    assert "handoff-b" not in banner
+
+
+def test_an_id_this_page_cannot_pre_flight_is_reported_not_ignored(app, client):
+    """A FortiAnalyzer is a real, visible appliance the pre-upgrade does not
+    support. Arriving with its id must not read like arriving with none."""
+    with app.app_context():
+        faz = _mk_appliance("handoff-faz", kind="fortianalyzer")
+        fid = faz.id
+
+    login(client, admin_user_id(app))
+    body = client.get("/web/upgrade-flow/?device=%d" % fid).get_data(as_text=True)
+    assert _checked_ids(body) == set(), "an unsupported product was ticked"
+    assert "is not on this list" in body, \
+        "a hand-off that resolved to nothing rendered as an ordinary visit"
+    assert "device=%d" % fid in body, \
+        "the complaint does not say WHICH id failed to resolve"
+
+
+def test_a_device_parameter_that_is_not_a_number_is_reported_too(app, client):
+    login(client, admin_user_id(app))
+    body = client.get("/web/upgrade-flow/?device=abc").get_data(as_text=True)
+    assert _checked_ids(body) == set()
+    assert "is not on this list" in body
+    assert "Pre-selected from its pre-upgrade page" not in body
+
+
+def test_without_the_parameter_nothing_is_preselected_and_nothing_is_claimed(
+        app, client):
+    with app.app_context():
+        _mk_appliance("handoff-plain", kind="fortiweb")
+
+    login(client, admin_user_id(app))
+    for url in ("/web/upgrade-flow/", "/web/upgrade-flow/?device="):
+        body = client.get(url).get_data(as_text=True)
+        assert _checked_ids(body) == set(), url
+        assert "Pre-selected from its pre-upgrade page" not in body, url
+        assert "is not on this list" not in body, url
+
+
+def test_the_preselection_resolves_against_the_rendered_list(app):
+    """Against the LIST, never the database: an id the operator cannot see
+    must not be able to tick a row here merely because it exists."""
+    from app.views.upgrade_flow import preselect_device
+
+    class _D:
+        def __init__(self, i):
+            self.id = i
+
+    devices = [_D(7), _D(9)]
+    assert preselect_device("9", devices) == (9, None)
+    assert preselect_device("8", devices) == (None, "8"), \
+        "an id outside the rendered list resolved to a selection"
+    assert preselect_device("x", devices) == (None, "x")
+    assert preselect_device("", devices) == (None, None)
+    assert preselect_device(None, devices) == (None, None)
+
+
+def test_the_page_names_the_preselection_kwarg_to_the_template(app, client):
+    """render_template ENUMERATES its kwargs here. A value the view computes
+    but does not pass simply never reaches the page, with every assertion on
+    the resolver still green — which is how a banner gets written, reviewed
+    and shipped without ever rendering."""
+    with app.app_context():
+        a = _mk_appliance("handoff-kwarg", kind="fortiweb")
+        aid = a.id
+
+    login(client, admin_user_id(app))
+    body = client.get("/web/upgrade-flow/?device=%d" % aid).get_data(as_text=True)
+    assert "handoff-kwarg" in body and _checked_ids(body) == {str(aid)}

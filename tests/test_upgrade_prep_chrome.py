@@ -394,3 +394,63 @@ def test_each_recorded_row_offers_its_result(tpl):
     assert 'class="btn btn-sm fw-btn-secondary prep-view"' in tpl
     assert 'data-prep="{{ r.id }}"' in tpl
     assert "upgrade_prep_show" in tpl
+
+
+# --------------------------------------------------------------------------- #
+#  The hand-off to the bulk Upgrade Flow                                        #
+# --------------------------------------------------------------------------- #
+#  This page is opened on purpose for ONE appliance. It may OFFER the windowed
+#  flow and, on "yes", carry its own device id there — it may not decide that
+#  for the operator. A redirect (or a link with no id) are the two failures:
+#  the first hijacks a page somebody asked for, the second drops them into a
+#  list of sixty boxes to find their own.
+def _prep_page(app, client, name="handoffbox"):
+    with app.app_context():
+        a = Appliance(name=name, host="192.0.2.98", port=443, kind="fortiweb",
+                      username="admin")
+        a.password = "pw"
+        db.session.add(a)
+        db.session.commit()
+        aid = a.id
+    login(client, admin_user_id(app))
+    r = client.get("/appliances/%d/upgrade/prep" % aid)
+    return aid, r
+
+
+def test_prep_page_offers_the_flow_carrying_its_own_device_id(app, client):
+    aid, r = _prep_page(app, client)
+    assert r.status_code == 200
+    html = r.get_data(as_text=True)
+    assert 'id="prep-flow-ask"' in html, "the question is not on the page"
+    assert "full upgrade window" in html
+    # Scoped to the ask card. Searching the whole document finds the sidebar's
+    # own Upgrade Flow entry first — a link that legitimately carries no device
+    # id, so the guard passed while the card's own link was empty.
+    card = html.split('id="prep-flow-ask"', 1)[1].split("</div>\n\n", 1)[0]
+    m = re.search(r'href="([^"]*upgrade-flow[^"]*)"', card)
+    assert m, "the page offers no way into the windowed flow"
+    assert "device=%d" % aid in m.group(1), \
+        "the hand-off does not carry the appliance it was opened for — the " \
+        "operator lands on a list of every eligible box and picks one by hand"
+    assert 'id="prep-flow-no"' in html, \
+        "the question has no 'stay here' answer, so it is not a question"
+
+
+def test_prep_page_does_not_redirect_into_the_flow(app, client):
+    """ASKED, never assumed. The id travels on the 'yes' branch and nowhere
+    else."""
+    aid, r = _prep_page(app, client, name="handoffbox2")
+    assert r.status_code == 200, "opening one appliance's pre-flight bounced"
+    assert "Location" not in r.headers
+    html = r.get_data(as_text=True)
+    assert "http-equiv=\"refresh\"" not in html.lower()
+    assert 'id="prep-run"' in html, \
+        "the question displaced the button this page exists for"
+
+
+def test_prep_page_does_not_remember_the_answer(tpl):
+    """A stored 'do not ask again' turns the next window of forty boxes into
+    forty loose pre-flights without anybody deciding that."""
+    for banned in ("localStorage", "sessionStorage", "prepflow_dismissed"):
+        assert banned not in tpl, \
+            "the hand-off question persists its answer: %s" % banned

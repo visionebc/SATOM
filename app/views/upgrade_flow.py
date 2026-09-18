@@ -125,12 +125,44 @@ def _eligible():
     return query.order_by(Appliance.name.asc()).all()
 
 
+def preselect_device(raw, devices):
+    """``(id, unresolved)`` for a ``?device=`` hand-off from a prep page.
+
+    The single-appliance pre-upgrade page asks the operator whether this box is
+    part of a full upgrade window, and carries its id here ONLY on "yes". The
+    answer is what carries the id; nothing is sent when they stay.
+
+    It NEVER silently selects nothing. A hand-off that lands on a list with no
+    row ticked reads exactly like a page opened by hand: the operator ticks a
+    box themselves and never learns the link pointed at an appliance this
+    console cannot pre-flight. The unresolved value is returned so the page can
+    say so, and it is returned VERBATIM rather than coerced — ``?device=abc``
+    and ``?device=999`` are both "not on this list" to the operator, and a
+    silent 0 would name the wrong thing.
+    """
+    raw = (raw or '').strip()
+    if not raw:
+        return None, None
+    try:
+        did = int(raw)
+    except (TypeError, ValueError):
+        return None, raw
+    if any(d.id == did for d in devices):
+        return did, None
+    return None, raw
+
+
 @bp.route('/')
 @login_required
 @require_permission(Permission.BACKUP)
 def index():
     from ..services import prep_store
     devices = _eligible()
+    # Scoped against the SAME list the checkboxes are rendered from, never
+    # against the database: an id the operator cannot see must not be able to
+    # tick a row here just because it exists.
+    preselect, preselect_unresolved = preselect_device(
+        request.args.get('device'), devices)
     latest = prep_store.latest_for_many([d.id for d in devices])
     # Changes that already cite a run, newest first — stage 2's "carry on with
     # the one you started" list. Bounded: this is a landing page, not a
@@ -181,6 +213,12 @@ def index():
                 else (codes[0] if codes else lang_registry.DEFAULT))
     return render_template('upgrade_flow/index.html',
                            devices=devices, latest=latest,
+                           # Enumerated kwargs: a value the resolver computes
+                           # but render_template does not name simply never
+                           # reaches the page, with every assertion above it
+                           # still green.
+                           preselect=preselect,
+                           preselect_unresolved=preselect_unresolved,
                            recent_crs=recent_crs, wave_groups=wave_groups,
                            kinds=prep_kinds(), max_sweep=MAX_SWEEP,
                            max_waves=MAX_WAVES, crdoc=crdoc,

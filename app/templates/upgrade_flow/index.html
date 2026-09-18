@@ -27,6 +27,29 @@
       <span class="text-muted small">{{ _('Read-only. Config backup, health battery, maintenance permission, and an HTTP baseline of every published service — persisted as citable evidence.') }}</span>
     </div>
     <div class="fw-card-body">
+      {#
+        The hand-off from a single appliance's pre-upgrade page. Named, not
+        merely ticked: a checkbox already checked somewhere in sixty rows is
+        not an answer to "did the link bring the right box".
+      #}
+      {% if preselect %}
+      <div class="fw-alert fw-alert-info mb-3">
+        {{ _('Pre-selected from its pre-upgrade page:') }}
+        <strong>{{ devices|selectattr('id', 'equalto', preselect)|map(attribute='name')|first }}</strong>.
+        {{ _('Add the rest of the window below before running the sweep.') }}
+      </div>
+      {% elif preselect_unresolved %}
+      {#
+        Arriving with an id that is not on this list must not read like
+        arriving with none: the operator would tick a box by hand and never
+        learn the link pointed somewhere this console cannot act.
+      #}
+      <div class="fw-alert fw-alert-warning mb-3">
+        {{ _('The appliance this page was opened for is not on this list, so nothing was pre-selected.') }}
+        <span class="is-mono">device={{ preselect_unresolved }}</span>
+        {{ _('It is either outside your visibility, in another ADOM, or of a product the pre-upgrade does not support.') }}
+      </div>
+      {% endif %}
       {% if not devices %}
         <p class="text-muted mb-0">
           {{ _('No appliance of a type the pre-upgrade supports is visible to you.') }}
@@ -52,7 +75,8 @@
             {% set p = latest.get(d.id) %}
             <tr>
               <td><input class="form-check-input uf-dev" type="checkbox" name="device_ids" value="{{ d.id }}"
-                         data-prep="{{ p.id if p else '' }}" data-name="{{ d.name }}"></td>
+                         data-prep="{{ p.id if p else '' }}" data-name="{{ d.name }}"
+                         {% if preselect == d.id %}checked{% endif %}></td>
               <td><a href="{{ url_for('appliances.detail', id=d.id) }}">{{ d.name }}</a>
                   <div class="text-muted small is-mono">{{ d.host }}</div></td>
               <td><span class="fw-badge fw-badge-secondary">{{ d.kind }}</span></td>

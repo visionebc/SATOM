@@ -35,7 +35,9 @@
       {% if preselect %}
       <div class="fw-alert fw-alert-info mb-3">
         {{ _('Pre-selected from its pre-upgrade page:') }}
-        <strong>{{ devices|selectattr('id', 'equalto', preselect)|map(attribute='name')|first }}</strong>.
+        <strong>{{ devices|selectattr('id', 'equalto', preselect)|map(attribute='name')|first }}</strong>{% if preselect_prep %},
+        {{ _('citing its recorded pre-upgrade run') }} <strong>#{{ preselect_prep }}</strong>,
+        {{ _('already chosen in its row — pick another run there, or run a new one.') }}{% else %}.{% endif %}
         {{ _('Add the rest of the window below before running the sweep.') }}
       </div>
       {% elif preselect_unresolved %}
@@ -48,6 +50,19 @@
         {{ _('The appliance this page was opened for is not on this list, so nothing was pre-selected.') }}
         <span class="is-mono">device={{ preselect_unresolved }}</span>
         {{ _('It is either outside your visibility, in another ADOM, or of a product the pre-upgrade does not support.') }}
+      </div>
+      {% endif %}
+      {#
+        A run that does not belong to the pre-selected appliance is REPORTED,
+        never quietly dropped: the change would otherwise be raised with this
+        box carrying whatever run happened to be newest, and the operator who
+        followed a link naming a specific run would never learn it was not the
+        one cited.
+      #}
+      {% if preselect_prep_unresolved %}
+      <div class="fw-alert fw-alert-warning mb-3">
+        {{ _('The pre-upgrade run this page was opened with is not one of that appliance\'s recorded runs, so no evidence was pre-chosen for it.') }}
+        <span class="is-mono">prep={{ preselect_prep_unresolved }}</span>
       </div>
       {% endif %}
       {% if not devices %}
@@ -68,14 +83,14 @@
             <th>{{ _('Appliance') }}</th>
             <th>{{ _('Product') }}</th>
             <th>{{ _('Latest pre-upgrade') }}</th>
-            <th>{{ _('Verdict') }}</th>
+            <th>{{ _('Evidence this change cites') }}</th>
           </tr></thead>
           <tbody>
           {% for d in devices %}
             {% set p = latest.get(d.id) %}
             <tr>
               <td><input class="form-check-input uf-dev" type="checkbox" name="device_ids" value="{{ d.id }}"
-                         data-prep="{{ p.id if p else '' }}" data-name="{{ d.name }}"
+                         data-name="{{ d.name }}"
                          {% if preselect == d.id %}checked{% endif %}></td>
               <td><a href="{{ url_for('appliances.detail', id=d.id) }}">{{ d.name }}</a>
                   <div class="text-muted small is-mono">{{ d.host }}</div></td>
@@ -91,10 +106,26 @@
                 {% endif %}
               </td>
               <td>
-                {% if p %}
-                  <span class="fw-badge fw-badge-{{ 'success' if p.ok else 'warning' }}">{{ _('passed') if p.ok else _('not clean') }}</span>
-                  <div class="text-muted small">{{ p.summary }}</div>
-                {% else %}<span class="text-muted">—</span>{% endif %}
+                {#
+                  WHICH run this change is signed against, chosen per
+                  appliance. The newest is proposed, not imposed: a re-run made
+                  to test a fix is the newest and is frequently NOT the run the
+                  operator wants cited. The empty option is a real answer —
+                  the appliance is still covered by the change, it simply
+                  carries no baseline, which is the sentence stage 2 prints.
+                #}
+                {% set dev_runs = runs.get(d.id) or [] %}
+                {% if dev_runs %}
+                <select class="form-select form-select-sm uf-prep" data-dev="{{ d.id }}"
+                        aria-label="{{ _('Evidence for') }} {{ d.name }}">
+                  {% for r in dev_runs %}
+                  <option value="{{ r.id }}"{% if (preselect_prep and preselect == d.id and preselect_prep == r.id) or (not (preselect_prep and preselect == d.id) and loop.first) %} selected{% endif %}>#{{ r.id }} · {{ r.created_at.strftime('%Y-%m-%d %H:%M') }} UTC · {{ _('passed') if r.ok else _('not clean') }}</option>
+                  {% endfor %}
+                  <option value="">{{ _('no run cited for this appliance') }}</option>
+                </select>
+                {% else %}
+                  <span class="text-muted">{{ _('nothing to cite — run the pre-upgrade above') }}</span>
+                {% endif %}
               </td>
             </tr>
           {% endfor %}
@@ -214,11 +245,11 @@
     <div class="fw-card-body">
       <div class="row g-3">
         <div class="col-6 col-lg-4">
-          <label class="form-label">{{ _('Window start') }}</label>
+          <label class="form-label">{{ _('Window start') }} <span class="text-muted">({{ tz_name }})</span></label>
           <input class="form-control" type="datetime-local" name="window_start">
         </div>
         <div class="col-6 col-lg-4">
-          <label class="form-label">{{ _('Window end') }}</label>
+          <label class="form-label">{{ _('Window end') }} <span class="text-muted">({{ tz_name }})</span></label>
           <input class="form-control" type="datetime-local" name="window_end">
         </div>
         <div class="col-12 col-lg-4">
@@ -228,6 +259,33 @@
             <option value="medium" selected>{{ _('medium') }}</option>
             <option value="high">{{ _('high') }}</option>
           </select>
+        </div>
+        {#
+          The rest of what a change request IS, the same three fields the
+          single-change form asks for and with the same defaults. Raising a
+          windowed change here used to produce a document with no owner, no
+          completion notice and manual approval by default — differences
+          nobody chose, on the path meant for the larger and riskier job.
+        #}
+        <div class="col-12 col-lg-7">
+          <label class="form-label">{{ _('Change owner (Verantwortlicher)') }}</label>
+          <input class="form-control" name="owner" form="uf-cr" value="{{ defaults.owner }}">
+          <div class="form-text">{{ _('Printed in §1 of the change document. Proposed from your account and editable — cleared, it prints as “not recorded”.') }}</div>
+        </div>
+        <div class="col-12 col-lg-5">
+          <label class="form-label">{{ _('Notify on completion') }}</label>
+          <input class="form-control" name="notify_to" form="uf-cr" value="{{ defaults.notify_to }}" placeholder="{{ _('ops@example.com') }}">
+          <div class="form-text">{{ _('Who is emailed when the window closes (completed or failed).') }}</div>
+        </div>
+        <div class="col-12">
+          <label class="form-label">{{ _('Approval') }}</label>
+          <select class="form-select" name="approval_mode" form="uf-cr">
+            <option value="manual" selected>{{ _('Manual — approved here in SATOM') }}</option>
+            <option value="external">{{ _('External — an integration must approve it') }}</option>
+          </select>
+          <div class="form-text">
+            <strong>{{ _('External') }}</strong> {{ _('is fail-closed: the change cannot run until your change-management system approves it. Unreachable, slow and no-answer all count as NOT approved.') }}
+          </div>
         </div>
       </div>
       <div id="uf-cr-targets" class="mt-3"></div>
@@ -250,6 +308,9 @@
   <input type="hidden" name="title" id="uf-w-title" value="{{ d_title }}">
   <input type="hidden" name="reason" id="uf-w-reason" value="{{ d_reason }}">
   <input type="hidden" name="rollback" id="uf-w-rollback" value="{{ d_rollback }}">
+  <input type="hidden" name="owner" id="uf-w-owner" value="{{ defaults.owner }}">
+  <input type="hidden" name="notify_to" id="uf-w-notify" value="{{ defaults.notify_to }}">
+  <input type="hidden" name="approval_mode" id="uf-w-approval" value="manual">
   <div class="fw-card mb-3">
     <div class="fw-card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
       <span><span class="fw-badge fw-badge-secondary me-2">2b</span><strong>{{ _('Or split the same selection into waves') }}</strong></span>
@@ -313,44 +374,11 @@
 </div>
 {% endif %}
 
-{# ------------------------------------------------------------- stages 3+4 #}
-<div class="fw-card">
-  <div class="fw-card-header">
-    <span><span class="fw-badge fw-badge-secondary me-2">3–4</span><strong>{{ _('Customer impact and execution') }}</strong></span>
-  </div>
-  <div class="fw-card-body">
-    <p class="text-muted">{{ _('Both live on the change itself: the consolidated spreadsheet is generated from its frozen inventory (merged across every bound pre-upgrade run), and execution is its one-shot scheduled action, re-gated at fire time against the approved window.') }}</p>
-    {% if recent_crs %}
-    <div class="table-responsive">
-      <table class="table fw-table align-middle mb-0">
-        <thead><tr>
-          <th>{{ _('Change') }}</th><th>{{ _('Status') }}</th><th>{{ _('Window') }}</th>
-          <th>{{ _('Customer impact') }}</th><th>{{ _('Execution') }}</th>
-        </tr></thead>
-        <tbody>
-        {% for cr in recent_crs %}
-          <tr>
-            <td><a href="{{ url_for('change_requests.detail', id=cr.id) }}">{{ cr.ref or ('#' ~ cr.id) }}</a>
-                <div class="text-muted small">{{ cr.title }}</div></td>
-            <td><span class="fw-badge fw-badge-{{ 'success' if cr.status in ('approved','completed') else ('warning' if cr.status in ('draft','scheduled','in_progress') else 'secondary') }}">{{ cr.status }}</span></td>
-            <td class="is-mono small">{{ cr.window_start.strftime('%Y-%m-%d %H:%M') if cr.window_start else '—' }}</td>
-            <td>
-              <a class="btn btn-sm fw-btn-secondary" href="{{ url_for('change_requests.inventory_export', id=cr.id, fmt='xlsx') }}"><i class="bi bi-file-earmark-excel me-1"></i>XLSX</a>
-              <a class="btn btn-sm fw-btn-secondary" href="{{ url_for('change_requests.inventory_export', id=cr.id, fmt='csv') }}">CSV</a>
-            </td>
-            <td><a class="btn btn-sm fw-btn-primary" href="{{ url_for('upgrade_flow.progress', cr_id=cr.id) }}"><i class="bi bi-activity me-1"></i>{{ _('progress') }}</a>
-                <a class="btn btn-sm fw-btn-secondary" href="{{ url_for('change_requests.detail', id=cr.id) }}">{{ _('open change') }}</a></td>
-          </tr>
-        {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    {% else %}
-      <p class="text-muted mb-0">{{ _('No upgrade change request has been raised yet.') }}</p>
-    {% endif %}
-  </div>
-</div>
-
+{#
+  The customer-impact export and the execution progress live on the change
+  itself and are reached from it (Change Requests, top right). The register
+  that used to be repeated here is gone at the operator's request.
+#}
 <script nonce="{{ csp_nonce }}">
 (function () {
   // Stage 2 posts to the change-request form's own handler, so the devices and
@@ -367,6 +395,15 @@
   var all = document.getElementById('uf-all');
   var devs = Array.prototype.slice.call(document.querySelectorAll('.uf-dev'));
 
+  // The run cited for one appliance, read from ITS chooser. Reading a
+  // data-attribute stamped at render time would send whatever was newest when
+  // the page loaded, silently ignoring the operator's choice -- and the two
+  // look identical on screen.
+  function prepFor(devId) {
+    var sel = document.querySelector('.uf-prep[data-dev="' + devId + '"]');
+    return sel ? sel.value : '';
+  }
+
   function hidden(parent, name, value) {
     var el = document.createElement('input');
     el.type = 'hidden'; el.name = name; el.value = value;
@@ -380,7 +417,7 @@
     var withPrep = 0;
     picked.forEach(function (c) {
       hidden(box, 'device_ids', c.value);
-      var pid = c.getAttribute('data-prep');
+      var pid = prepFor(c.value);
       if (pid) {
         withPrep += 1;
         hidden(box, 'prep_ids', pid);
@@ -485,6 +522,8 @@
   if (restore) { restore.addEventListener('click', function () { paint(true); }); }
 
   devs.forEach(function (c) { c.addEventListener('change', sync); });
+  Array.prototype.forEach.call(document.querySelectorAll('.uf-prep'),
+    function (sel) { sel.addEventListener('change', sync); });
   if (all) {
     all.addEventListener('change', function () {
       devs.forEach(function (c) { c.checked = all.checked; });

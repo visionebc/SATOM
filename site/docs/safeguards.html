@@ -14845,6 +14845,107 @@ both scopes verbatim to defend exactly this; the join now <em>prints</em> them.<
   <code>_PDF_TABLE_*</code> off the module instead of naming A and B, so a fourth table is
   covered without touching it.</li>
 </ul>
+<h2 id="181-a-new-firmware-line-must-not-be-able-to-delete-a-decision-teststest_absence_corroborationpy-teststest_release_notespy-2026-09-18">§181 — a new firmware line must not be able to delete a decision (<code>tests/test_absence_corroboration.py</code>, <code>tests/test_release_notes.py</code>, 2026-09-18)</h2>
+<p><strong>The ask.</strong> <em>"todo esto debe de ser compatible con todas las versiones. ejemplo
+si sale una version 8.1 deberia de poderse ver la diferencia."</em></p>
+<p><strong>Measured before writing anything.</strong> A simulated <code>8.1</code> line was injected into
+the live matrix and the page rendered against the real database: scopes, the
+default pick, <code>line_pairs</code>, <code>ledger_scope</code>, <code>api_matrix.diff</code>, the page and the
+CSV all handled it — HTTP 200, 25 mentions of the new line, no traceback. The
+comparison engine was already version-agnostic. <strong>The failures were at the
+edges</strong>, and one of them destroyed data.</p>
+<h3 id="the-defect_1">The defect</h3>
+<p><code>line_pairs</code> pairs ADJACENT lines. A line that lands <strong>between</strong> two recorded
+ones re-pairs the ledger, and every row under the old pair becomes unreachable
+from every comparison while <code>evaluate</code> stops visiting it. Measured: adding a
+<code>7.8</code> turned five rows — all five already decided — into zero visible rows,
+with nothing raised and nothing logged.</p>
+<h3 id="what-is-guarded">What is guarded</h3>
+<table>
+<thead>
+<tr>
+<th>guard</th>
+<th>what it holds shut</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>a_newer_line_changes_nothing_about_older_records</code></td>
+<td>appending 8.1 must stay a no-op for 7.6 → 8.0</td>
+</tr>
+<tr>
+<td><code>a_line_between_two_recorded_ones_is_reported_not_swallowed</code></td>
+<td>the pair is named, with open and decided counted APART</td>
+</tr>
+<tr>
+<td><code>an_orphaned_pairs_rows_stay_readable_where_they_were_recorded</code></td>
+<td>reporting is not enough — a better error message is not a fix</td>
+</tr>
+<tr>
+<td><code>a_pair_that_merely_skips_a_line_is_not_called_orphaned</code></td>
+<td>the other half: widening the branch would re-count on 7.6 → 8.2 everything 8.0 removed</td>
+</tr>
+<tr>
+<td><code>orphans_says_nothing_when_it_cannot_know</code></td>
+<td>an unreadable matrix is not "every pair is orphaned"; a check that cries wolf on a cold start gets muted</td>
+</tr>
+<tr>
+<td><code>orphaned_rows_are_never_re_keyed</code></td>
+<td>a refusal stays attached to the pair it was made about</td>
+</tr>
+<tr>
+<td><code>the_writer_and_the_reader_pair_from_the_same_lines</code></td>
+<td><code>evaluate</code> reads the same merged matrix the page does</td>
+</tr>
+<tr>
+<td><code>line_ordering_is_numeric_and_has_one_author</code></td>
+<td>10.0 after 8.0, and this module's key agrees with the page's</td>
+</tr>
+<tr>
+<td><code>a_pair_that_stopped_being_tracked_leaves_the_building</code></td>
+<td>warning severity, named rows, in the <code>catalog</code> family</td>
+</tr>
+<tr>
+<td><code>the_banner_is_rendered_and_not_merely_available</code></td>
+<td>asks the SERVER for the page — see below</td>
+</tr>
+<tr>
+<td><code>the_scan_view_names_no_firmware_line</code></td>
+<td>no <code>major.minor</code> literal survives anywhere in the scan view</td>
+</tr>
+<tr>
+<td><code>the_derived_default_is_actually_applied_and_announced</code></td>
+<td>drives <code>_do_scan</code>: 8.1.0 is picked, 7.0.9 is not, and the cap is announced</td>
+</tr>
+</tbody>
+</table>
+<h3 id="three-traps-this-round-paid-for">Three traps this round paid for</h3>
+<ol>
+<li><strong>A context key is not a feature.</strong> <code>_resolved</code> returned <code>ledger_orphans</code>
+   and <code>render_page</code> enumerates its <code>render_template</code> kwargs rather than
+   splatting — so the banner never reached the template while every resolver
+   assertion was green. Caught only because the guard asks the <strong>server</strong> for
+   the page. This is the same shape as the lost footer note (§…) and the
+   <code>_await_auth</code> call site.</li>
+<li><strong>A dead branch keeps its text.</strong> Two guards read the view's SOURCE for
+   <code>rn.recent_majors(</code> and for an <code>emit(</code>. <code>if False:</code> left the first string in
+   place, and the second was answered by one of four other <code>emit(</code> calls in the
+   same function. <strong>Both survived their mutation.</strong> Replaced by one guard that
+   runs <code>_do_scan</code> with discovery stubbed and reads what it picked and said.</li>
+<li><strong>A guard that raises is not a guard that bites.</strong> <code>str.index</code> inside a
+   slice threw <code>ValueError</code> when the banner lost a phrase, taking the other
+   assertions with it and naming nothing. Rewritten with <code>find</code> + an index
+   comparison.</li>
+</ol>
+<p>Plus a measurement bug in the harness itself: the first pass reported four
+survivors, and <strong>two of them were the <code>-k</code> selector failing to select the
+guards that cover them</strong>. Widened and the whole harness re-run.</p>
+<p><strong>Verification.</strong> 23 mutations, 23 bite, 0 survive, 0 void, control green
+before and after. 240 targeted tests RC=0 (<code>test_absence_corroboration</code>,
+<code>test_version_delta_table</code>, <code>test_release_notes</code> — the modules edited). Live
+render against the real database for all three scenarios: today (no banner),
+8.1 appended (200, comparison renders), 7.8 inserted (banner naming the five
+real decided rows).</p>
     </div>
   </div>
 </section>

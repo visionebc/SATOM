@@ -833,6 +833,24 @@ def upgrade_prep_run(id):
         return jsonify({'ok': False, 'error': f'{type(exc).__name__}: {exc}', 'error_id': eid})
 
 
+def _adom_arg() -> dict:
+    """``{'_adom': <this request's ADOM>}``, or nothing at all.
+
+    ``g.product`` is the per-request resolution (URL scope > X-ADOM header >
+    form field > session); the session is only the fallback. Reading the
+    session alone would disagree with the page the link is printed on, which is
+    the class of bug this exists to avoid.
+
+    An UNRESOLVED scope yields an empty dict, never ``_adom=``: a scope
+    parameter with no value is not the same request as one with no scope
+    parameter — it is a parameter that names nothing, and the gate would have
+    to decide what it meant.
+    """
+    from flask import g as _g, session as _session
+    scope = (getattr(_g, 'product', None) or _session.get('product') or '')
+    return {'_adom': scope} if scope else {}
+
+
 def _prep_payload(prep, *, result=None, stored=True) -> dict:
     """The wire form of ONE pre-flight, live or recorded.
 
@@ -876,9 +894,15 @@ def _prep_payload(prep, *, result=None, stored=True) -> dict:
         # it is not is the place a pre-flight leads to, because a change raised
         # from one box's evidence while the window covers forty is the defect
         # the flow exists to remove.
+        # Same link as the table row's, spelled ONCE the same way: the ADOM
+        # travels with it. Without `_adom` this button lands in whatever scope
+        # the session cookie happens to hold — usually Global — so the operator
+        # who pressed it inside the FortiWeb console arrives somewhere else,
+        # with the chrome, the nav and the visible inventory all changed under
+        # them. Two spellings of one link is the drift, not the scope.
         'cr_url': ('' if prep.cr_id else
                    url_for('upgrade_flow.index', device=prep.appliance_id,
-                           prep=prep.id)),
+                           prep=prep.id, **_adom_arg())),
     }
 
 

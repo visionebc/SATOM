@@ -240,3 +240,95 @@ def test_upload_form_wires_the_autofill(app, client):
     assert 'id="fwBuild"' in html
     assert "/firmware/parse-name?filename=" in html
     assert "fwAuto !== '1'" in html
+
+
+def _wait_job(jid, timeout=15.0):
+    """Bounded wait for a background job to settle. Never a bare sleep: the
+    finalize thread is real here, and a fixed nap either wastes time or asserts
+    against a job that has not finished."""
+    import time
+    from app.services import jobs as jobsvc
+    end = time.time() + timeout
+    while time.time() < end:
+        st = jobsvc.get_job(jid) or {}
+        if st.get("status") in ("success", "error", "cancelled"):
+            return st
+        time.sleep(0.05)
+    return jobsvc.get_job(jid) or {}
+
+
+def test_finalize_job_says_which_page_to_refresh(app, client):
+    """A finished upload must tell the browser WHICH page to refresh, using the
+    URL this app actually serves the firmware page on.
+
+    The client only refreshes when the job names its page, and its historical
+    fallback ("/firmware") stopped matching the real path the day this area
+    moved under the /web ADOM prefix. A job that omits the path therefore leaves
+    the stored-firmware table showing everything except the image just uploaded.
+    """
+    login(client, _admin(app))
+    resp = client.post(
+        "/firmware/upload",
+        data={"version": "7.6.4", "product": "fortiweb",
+              "image": (io.BytesIO(b"FWDATA123"), "a.out")},
+        content_type="multipart/form-data",
+        headers={"X-Requested-With": "XMLHttpRequest"},
+    )
+    assert resp.status_code == 202, resp.get_data(as_text=True)
+    st = _wait_job(resp.get_json()["job_id"])
+    assert st.get("status") == "success", st
+    res = st.get("result") or {}
+    assert res.get("reload") is True
+    with app.test_request_context():
+        from flask import url_for
+        want = url_for("firmware.index")
+    assert res.get("reload_path") == want
+    # ...and that path is a page, not a string that merely looks like one.
+    assert client.get(res["reload_path"]).status_code == 200
+
+
+def test_resumable_finish_also_says_which_page_to_refresh(app, client):
+    """The chunked path is the one the browser uses for real (600 MB) images.
+    It hands off to the same finalize job, so it must carry the same refresh
+    target -- the two upload paths have drifted apart before."""
+    login(client, _admin(app))
+    begin = client.post("/firmware/upload/begin",
+                        json={"filename": "b.out", "version": "7.6.4", "size": 4})
+    assert begin.status_code == 200, begin.get_data(as_text=True)
+    uid = begin.get_json()["upload_id"]
+    assert client.post("/firmware/upload/chunk",
+                       query_string={"upload_id": uid, "offset": 0},
+                       data=b"DATA",
+                       content_type="application/octet-stream").status_code == 200
+    fin = client.post("/firmware/upload/finish", query_string={"upload_id": uid})
+    assert fin.status_code == 202, fin.get_data(as_text=True)
+    st = _wait_job(fin.get_json()["job_id"])
+    assert st.get("status") == "success", st
+    with app.test_request_context():
+        from flask import url_for
+        want = url_for("firmware.index")
+    assert (st.get("result") or {}).get("reload_path") == want
+
+
+def test_jobs_js_refresh_gate_normalises_the_adom_prefix(app):
+    """The refresh must fire on the page the job names, compared on normalised
+    paths -- and on nothing else.
+
+    Two failure modes this pins, both of which have already happened here:
+    gating on a prefix-at-position-0 match against a hardcoded top-level path
+    (never true under /web, so the refresh silently never ran), and refreshing
+    whatever page the user happens to be on (which would discard a form they
+    are filling in while an upload finishes in the background).
+    """
+    import os as _os
+    with open(_os.path.join(app.static_folder, "js", "jobs.js"),
+              encoding="utf-8") as fh:
+        js = fh.read()
+    assert "function samePage(" in js
+    assert "/^\\/web(?=\\/|$)/" in js          # the ADOM prefix is normalised away
+    assert "res.reload && samePage(res.reload_path)" in js
+    # A job with no page named must refresh nothing: no fallback target.
+    assert "res.reload_path ||" not in js
+    # ...and no surviving prefix-at-0 test against a hardcoded page path.
+    assert "location.pathname.indexOf('/firmware')" not in js
+    assert "location.pathname.indexOf(res.reload_path" not in js

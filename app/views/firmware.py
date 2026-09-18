@@ -170,7 +170,14 @@ def _finalize_upload(app, job_id: str, image_id: int, dest_path: str,
         jobsvc.finish_success(
             job_id, message=f"{filename} ready — {size_mb} MB",
             result={"image_id": image_id, "filename": filename,
-                    "size_mb": size_mb, "reload": True})
+                    "size_mb": size_mb, "reload": True,
+                    # WHERE to refresh. Resolved in the request (url_for
+                    # cannot build a URL from this thread) and carried
+                    # here, because the client's fallback is a hardcoded
+                    # "/firmware" that stopped matching anything the day
+                    # this page moved under the /web ADOM prefix - so the
+                    # stored-firmware table sat stale until a manual F5.
+                    "reload_path": link})
         if user_id:
             notify.push(user_id, f"Firmware image ready: {filename}",
                         kind=notify.Notification.KIND_SUCCESS,

@@ -820,3 +820,122 @@ def test_the_customer_impact_and_execution_card_is_gone(app, client):
     body = client.get("/web/upgrade-flow/").get_data(as_text=True)
     assert "Customer impact and execution" not in body
     assert ">3\u20134<" not in body, "the 3-4 stage badge is still rendered"
+
+
+# --------------------------------------------------------------------------- #
+#  stage 2 IS the change request — not half of it                              #
+# --------------------------------------------------------------------------- #
+def _stage_two(client):
+    """The markup of the stage-2 form only, never the whole page.
+
+    Asserting against the page would let the SINGLE-change form's own fields
+    (reachable from the nav) or the 2b mirrors answer a question about stage 2,
+    which is how a field can be "present" on a card that does not have it.
+    """
+    body = client.get("/web/upgrade-flow/").get_data(as_text=True)
+    assert 'id="uf-cr"' in body, "stage-2 form is missing entirely"
+    head, rest = body.split('id="uf-cr"', 1)
+    return body, rest.split('id="uf-waves"')[0]
+
+
+def test_stage_two_asks_everything_the_single_change_form_asks(app, client):
+    """Every field ``change_requests.new`` reads from its POST is on this card.
+
+    The window used to be raised here with no owner, no completion notice, no
+    approval mode and no change type in sight — defaults nobody chose, on the
+    path meant for the larger and riskier job. The list is the CREATE path's
+    own, so a field added there fails here instead of quietly never being
+    asked on this one.
+    """
+    login(client, admin_user_id(app))
+    _, form = _stage_two(client)
+    for field in ("doc_lang", "action", "risk", "title", "reason", "rollback",
+                  "owner", "notify_to", "approval_mode",
+                  "window_start", "window_end"):
+        assert 'name="%s"' % field in form, \
+            "stage 2 never asks for %s" % field
+
+
+def test_the_wording_is_inside_stage_two_not_floating_above_it(app, client):
+    """It used to be an UNNUMBERED card between stages 1 and 2.
+
+    Half of what raising the change takes sat outside the card numbered 2, so
+    the badge named half the work and the rest read as a detour. One heading,
+    and it comes after the badge.
+    """
+    login(client, admin_user_id(app))
+    body, _ = _stage_two(client)
+    assert body.count("Proposed wording") == 1, \
+        "two wording blocks is two authors of the same document"
+    badge = body.index('me-2">2</span>')
+    assert body.index("Proposed wording") > badge, \
+        "the wording still renders above the stage-2 badge"
+    assert body.index('id="uf-waves"') > body.index('id="uf-cr"'), \
+        "2b must come after 2"
+
+
+def test_the_change_type_is_named_on_the_page(app, client):
+    """Posted as a hidden field and shown nowhere: a value the operator signs
+    for and cannot read. Named, with its key, next to the risk it carries."""
+    login(client, admin_user_id(app))
+    from app.views.upgrade_flow import CR_ACTION, cr_draft_context
+
+    _, form = _stage_two(client)
+    with app.app_context():
+        label = cr_draft_context()["labels"].get("en", "")
+    assert CR_ACTION in form
+    if label:
+        assert label in form, "the change type is posted but never displayed"
+
+
+def test_stage_two_names_the_appliances_instead_of_counting_them(app, client):
+    """"4 appliance(s) selected" answers neither half of the question the
+    operator arrived with: WHICH boxes, and which run each is signed against.
+
+    The names are built client-side from stage 1's ticks, so what is guarded
+    here is that the containers exist and that the hidden fields are NOT the
+    only place the selection appears.
+    """
+    login(client, admin_user_id(app))
+    body, form = _stage_two(client)
+    assert 'id="uf-cr-chips"' in form, "no visible list of covered appliances"
+    assert 'id="uf-cr-fields"' in form, "the posted fields lost their box"
+    assert 'id="uf-cr-empty"' in form, \
+        "an empty selection must say so, not render as nothing"
+    # Built with textContent, never innerHTML: an appliance name is operator
+    # data and this page has a CSP nonce precisely because that matters.
+    assert "chip.textContent" in body
+    assert "chips.innerHTML = ''" in body, "the list is never cleared"
+
+
+def test_the_hand_off_link_carries_the_adom_it_was_pressed_in(app, client):
+    """Two spellings of one link is the drift, not the scope.
+
+    The table row's link carried ``_adom`` and the button rendered after a run
+    finished did not, so the same operator pressing what looks like the same
+    control landed in Global — different chrome, different nav, different
+    visible inventory — depending on which one they pressed.
+    """
+    from app.views.appliances import _prep_payload
+
+    with app.app_context():
+        a = _mk_appliance("adom-link", kind="fortiweb")
+        prep = _mk_prep(a)
+        pid, aid = prep.id, a.id
+
+    # NO nested app context: `g` belongs to the app context, so pushing a
+    # second one inside the request throws the ADOM away and the guard would
+    # be measuring its own scaffolding.
+    from app.models import UpgradePrep
+    with app.test_request_context("/appliances/%d/upgrade/prep" % aid):
+        from flask import g
+        g.product = "fortiweb"
+        url = _prep_payload(UpgradePrep.query.get(pid))["cr_url"]
+    assert "_adom=fortiweb" in url, "the button drops the ADOM: %s" % url
+    assert "device=%d" % aid in url and "prep=%d" % pid in url
+
+    # An unresolved scope omits the parameter rather than sending an empty one.
+    with app.test_request_context("/appliances/%d/upgrade/prep" % aid):
+        url2 = _prep_payload(UpgradePrep.query.get(pid))["cr_url"]
+    assert "_adom=&" not in url2 and not url2.endswith("_adom="), \
+        "empty scope parameter: %s" % url2

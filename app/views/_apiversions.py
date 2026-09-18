@@ -269,11 +269,18 @@ def _resolved(product: str) -> dict:
             row["ledger_open"] = bool(rec) and absence_record.is_open(rec)
         delta["ledger"] = ledger
 
+    # Orphaned ledger pairs are resolved for the PRODUCT, not for the pair on
+    # screen, and that is the whole reason they are here: a pair that stopped
+    # being adjacent cannot be found by browsing, because no comparison offers
+    # it any more. If it were only surfaced on its own comparison the operator
+    # would have to already know which one to open.
+    orphans = absence_record.orphans(product, matrix)
+
     return {"matrix": matrix, "vdocs": vdocs, "versions": versions,
             "lines": lines, "scopes": scopes, "base": base, "target": target,
             "delta": delta, "prov": prov, "ver_prov": ver_prov,
             "line_prov": line_prov, "base_prov": base_prov,
-            "target_prov": target_prov}
+            "target_prov": target_prov, "ledger_orphans": orphans}
 
 
 def render_page(product: str, hub_endpoint: str, rebuild_endpoint: str,
@@ -342,6 +349,12 @@ def render_page(product: str, hub_endpoint: str, rebuild_endpoint: str,
         review_endpoint=review_endpoint,
         line_prov=line_prov, ver_prov=ver_prov, prov=prov,
         base_prov=base_prov, target_prov=target_prov,
+        # Enumerated, like every other key: this function does not splat
+        # ``**R``. Resolving a value and forgetting to hand it over renders as
+        # a feature that simply is not there, with every unit test green --
+        # which is what happened to this one on its first pass, and is why the
+        # guard for it asks the SERVER for the page instead of the resolver.
+        ledger_orphans=R["ledger_orphans"],
         source_label=firmware_versions.SOURCE_LABEL,
     )
 

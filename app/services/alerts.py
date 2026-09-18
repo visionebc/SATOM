@@ -934,6 +934,37 @@ def _check_catalog() -> list[dict]:
                 "product": product,
                 "title": f"Catalog absence ledger not written ({product})",
                 "detail": str(summary.get("error"))})
+
+        # A pair the ledger stopped tracking. WARNING, and the level is the
+        # argument: the two findings above are about a firmware, and this one
+        # is about the ledger having quietly stopped maintaining records a
+        # person already decided. Nothing else in the product can notice it --
+        # the rows are still in the table, the page is still green, and
+        # ``evaluate`` simply never visits them again. Silence is exactly the
+        # failure mode, so it is the one thing here that leaves the building on
+        # its own.
+        try:
+            stale = absence_record.orphans(product)
+        except Exception:  # noqa: BLE001 -- never sink the check over a read
+            stale = []
+        if stale:
+            findings.append({
+                "key": "catalog.ledger_orphaned", "severity": SEV_WARNING,
+                "product": product,
+                "title": (f"{len(stale)} {product} lifecycle ledger pair(s) are "
+                          f"no longer tracked"),
+                "detail": ("\n".join(
+                    f"- {g['base']} -> {g['target']}: {g['rows']} recorded "
+                    f"({g['decided']} already decided, {g['open']} open) — "
+                    f"a firmware line now sits between these two, so nothing "
+                    f"re-proves them: {', '.join(g['names'][:10])}"
+                    + ("…" if len(g['names']) > 10 else "")
+                    for g in stale)
+                    + "\n\nThe rows are intact and still readable on the "
+                      "comparison that recorded them. Decide whether the "
+                      "records still stand for the new pairing; they are not "
+                      "re-filed automatically, because that would attribute a "
+                      "decision to a pair nobody reviewed.")})
     return findings
 
 

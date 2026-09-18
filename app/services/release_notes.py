@@ -599,6 +599,34 @@ def discover_versions(fetch: Callable[[str], str], *, product: str = PRODUCT_DEF
     return sorted(kept, key=version_key)
 
 
+def recent_majors(versions: list[str], count: int) -> list[str]:
+    """The ``count`` newest ``major.minor`` lines present in ``versions``.
+
+    The version-agnostic replacement for a hand-typed list of firmware lines.
+    Ordering is NUMERIC (``major_of`` then an int split), because a string sort
+    puts ``10.0`` before ``8.0`` and would quietly drop the newest line — the
+    exact failure a derived default exists to make impossible.
+
+    Fewer lines than ``count`` returns all of them; ``count <= 0`` returns
+    ``[]``, which ``select_versions`` reads as "no filter" rather than as "keep
+    nothing" — a caller asking for no cap must not accidentally ask for no
+    versions.
+    """
+    if count <= 0:
+        return []
+    def _key(line):
+        parts = []
+        for chunk in str(line).split("."):
+            try:
+                parts.append((0, int(chunk)))
+            except ValueError:
+                parts.append((1, chunk))
+        return tuple(parts)
+    lines = {major_of(v) for v in versions or []}
+    lines.discard("")
+    return sorted(sorted(lines, key=_key)[-count:], key=_key)
+
+
 def select_versions(versions: list[str], majors: list[str] | None) -> list[str]:
     """Keep only versions whose ``major.minor`` is in ``majors`` (None ⇒ all)."""
     if not majors:

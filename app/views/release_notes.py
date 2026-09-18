@@ -362,8 +362,14 @@ def _notify_scan_done(user_id, product, *, ok, result=None, error=None, lines=No
                     kind="error", body=(error or tail), product=product)
 
 
+#: How many firmware lines the default (unfiltered) scan keeps, newest first.
+#: A number rather than a list of lines, so it cannot name a firmware and
+#: therefore cannot be wrong about which firmwares exist.
+DEFAULT_RECENT_MAJORS = 5
+
+
 def _do_scan(app, *, product, majors, use_direct, fc_endpoint, fc_key,
-             username, user_id, versions=None):
+             username, user_id, versions=None, recent_majors=0):
     with app.app_context():
         path = _scan_path()
         root = _corpus_root()
@@ -384,6 +390,15 @@ def _do_scan(app, *, product, majors, use_direct, fc_endpoint, fc_key,
                 emit(f"Discovering {product} versions…")
                 all_versions = rn.discover_versions(fetch, product=product)
                 emit(f"Discovered {len(all_versions)} versions.")
+                if recent_majors and not majors:
+                    # Derived from what the vendor site listed just now, never
+                    # from a list in this file. Announced, because a cap the
+                    # operator cannot see is a scan that reads as complete.
+                    majors = rn.recent_majors(all_versions, recent_majors)
+                    emit("No filter given — defaulting to the %d newest "
+                         "firmware line(s) discovered: %s. Tick 'All "
+                         "discovered' to scan every line."
+                         % (len(majors), ", ".join(majors)))
                 picked = rn.select_versions(all_versions, majors)
                 if not picked:
                     raise RuntimeError("No versions matched. Check the majors or tick 'All'.")
@@ -497,8 +512,15 @@ def scan():
         return jsonify({"error": "'All discovered' and a majors filter contradict "
                                  "each other. Untick All, or clear the box."}), 400
     majors = None if scan_all else [m.strip() for m in majors_raw.split(",") if m.strip()]
-    if versions is None and not scan_all and not majors:
-        majors = ["7.0", "7.2", "7.4", "7.6", "8.0"]
+    # The default used to be the literal list ["7.0","7.2","7.4","7.6","8.0"].
+    # A hard-wired set of firmware lines is a filter that goes WRONG rather
+    # than stale: the discovery step finds every version the vendor publishes,
+    # and the filter then silently dropped any line nobody had thought to add
+    # -- so the release notes of a brand new line (8.1, 8.2, anything after
+    # this list was typed) would never be harvested, and the scan would report
+    # success. The default is now derived from what discovery actually found:
+    # the newest lines, so a line that ships tomorrow is in it on the day.
+    recent = 0 if (versions is not None or scan_all or majors) else DEFAULT_RECENT_MAJORS
     use_direct = bool(body.get("use_direct", True))
     use_fc = bool(body.get("use_firecrawl", True))
     fc_endpoint = (body.get("firecrawl_endpoint") or "").strip() if use_fc else ""
@@ -519,6 +541,7 @@ def scan():
     t = threading.Thread(
         target=_do_scan, args=(app,),
         kwargs=dict(product=product, majors=majors, versions=versions,
+                    recent_majors=recent,
                     use_direct=use_direct,
                     fc_endpoint=fc_endpoint, fc_key=fc_key,
                     username=current_user.username, user_id=current_user.id),

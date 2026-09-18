@@ -84,14 +84,20 @@ def _version_key(scope: str) -> tuple:
     string sort gets the second one wrong, and a line ordering that is wrong is
     a pair ordering that is wrong, which inverts every added/removed verdict
     downstream.
+
+    The numeric half is DELEGATED to :func:`firmware_versions.sort_key` rather
+    than re-implemented. This module used to carry its own integer split, which
+    is two spellings of one ordering in a codebase where the page sorts with
+    one of them and the ledger pairs with the other: the day they disagree,
+    ``line_pairs`` pairs lines the page lists in a different order and every
+    added/removed verdict between them flips, silently. Unparseable scopes keep
+    their old place (last, ordered by text) because that property is what stops
+    a junk line from sorting itself in front of 7.6 and stealing its pair.
     """
-    parts = []
-    for chunk in (scope or "").split("."):
-        try:
-            parts.append((0, int(chunk)))
-        except ValueError:
-            parts.append((1, chunk))
-    return tuple(parts)
+    v = firmware_versions.normalize(scope)
+    if not v:
+        return (1, (), str(scope or ""))
+    return (0, firmware_versions.sort_key(v), "")
 
 
 def line_pairs(product: str, matrix: dict | None = None) -> list[tuple]:
@@ -103,14 +109,41 @@ def line_pairs(product: str, matrix: dict | None = None) -> list[tuple]:
     than builds, because a ledger keyed on builds grows a row per patch release
     for a fact that is true of the line.
     """
-    matrix = matrix if matrix is not None else (api_matrix.load(product) or {})
+    matrix = matrix if matrix is not None else resolved_matrix(product)
     lines = sorted((matrix.get("lines") or {}).keys(), key=_version_key)
     return list(zip(lines, lines[1:]))
 
 
-def _evaluate_pair(product: str, base: str, target: str) -> list[dict]:
+def resolved_matrix(product: str) -> dict:
+    """The matrix this module pairs lines from: DERIVED evidence + DECLARATIONS.
+
+    The same object the comparison page resolves, and that identity is the
+    whole point. The page reads ``firmware_versions.overlay(...)``; this module
+    used to read the raw file. Two readers of "which firmware lines exist"
+    means the reader and the writer of the ledger can disagree about which
+    pairs are adjacent -- and the disagreement appears the moment a line is
+    known but not yet swept, which is exactly what a NEW firmware release is.
+    A box upgraded to 8.1, or a version typed into the declare form, changes
+    the page's pairing and used to leave the recorder pairing the old way.
+
+    A declared-but-unmeasured line contributes no findings (there is no
+    evidence to diff), so sharing the list costs nothing and buys the
+    guarantee that both halves answer "adjacent?" identically.
+    """
+    try:
+        return firmware_versions.overlay(product, api_matrix.load(product) or {})
+    except Exception:  # noqa: BLE001 -- no app context / unreadable DB
+        # The declarations live in Postgres and the evidence in a file. If the
+        # database cannot be read we still pair from the file rather than
+        # returning nothing: fewer lines is a smaller answer, no lines is a
+        # wrong one (every pair would look orphaned).
+        return api_matrix.load(product) or {}
+
+
+def _evaluate_pair(product: str, base: str, target: str,
+                   matrix: dict | None = None) -> list[dict]:
     """Corroborated verdicts for one line pair. Pure read, no DB writes."""
-    delta = api_matrix.diff(product, base, target)
+    delta = api_matrix.diff(product, base, target, matrix=matrix)
     removed = delta.get("endpoints_removed") or []
     if not removed:
         return []
@@ -138,11 +171,17 @@ def _evaluate_pair(product: str, base: str, target: str) -> list[dict]:
 
 
 def evaluate(product: str) -> list[dict]:
-    """Every corroborated verdict for a product, across adjacent line pairs."""
+    """Every corroborated verdict for a product, across adjacent line pairs.
+
+    The pairs and the deltas are read off ONE matrix, resolved once. Pairing
+    from one view of the lines and diffing against another is how a pair could
+    be evaluated against a scope the pairing never saw.
+    """
     findings = []
-    for base, target in line_pairs(product):
+    matrix = resolved_matrix(product)
+    for base, target in line_pairs(product, matrix):
         try:
-            findings.extend(_evaluate_pair(product, base, target))
+            findings.extend(_evaluate_pair(product, base, target, matrix))
         except Exception:  # noqa: BLE001 — one unreadable pair never sinks the rest
             continue
     return findings
@@ -267,9 +306,27 @@ LEDGER_NOT_ADJACENT = (
     "The ledger records ADJACENT line pairs only, so that an object removed "
     "once is not counted again by every later comparison that skips over the "
     "line which removed it. Compare the adjacent lines to see its record.")
+LEDGER_ORPHANED = (
+    "These rows were recorded when this pair WAS adjacent. A firmware line has "
+    "since appeared between the two, so the ledger no longer tracks this pair "
+    "and nothing re-proves these findings. They are shown here, on the "
+    "comparison that recorded them, because the alternative is that a decision "
+    "somebody took disappears from every screen the day a new firmware ships.")
 LEDGER_UNSCOPED = (
     "This comparison does not resolve to two firmware lines, so there is no "
     "line pair for the ledger to answer about.")
+
+
+def _pair_has_rows(product: str, base_line: str, target_line: str) -> bool:
+    """True when the ledger holds any row filed under this exact pair."""
+    try:
+        return db.session.query(
+            ObjectAbsence.query.filter_by(
+                product=product, base_scope=base_line,
+                target_scope=target_line).exists()).scalar() or False
+    except Exception:  # noqa: BLE001 -- an unreadable ledger holds nothing
+        db.session.rollback()
+        return False
 
 
 def ledger_scope(product: str, base: str, target: str,
@@ -294,6 +351,58 @@ def ledger_scope(product: str, base: str, target: str,
     return lb, lt, ""
 
 
+def orphans(product: str, matrix: dict | None = None) -> list[dict]:
+    """Recorded line pairs that are no longer adjacent. One entry per pair.
+
+    A firmware line that lands BETWEEN two recorded ones re-pairs the whole
+    ledger: ``7.6 -> 8.0`` stops being adjacent the moment ``7.8`` exists, and
+    every row filed under it -- including the ones a person accepted or refused
+    -- becomes unreachable from every comparison while :func:`evaluate` stops
+    re-proving them. Nothing raises and nothing is logged; the decisions simply
+    stop existing as far as the product is concerned. Measured on 2026-09-18
+    against the live ledger: inserting one line turned five decided rows into
+    zero visible rows, in silence.
+
+    Rows are never RE-KEYED onto the new pairing. A decision was taken about
+    the pair it names, and moving it would put a person's name on a judgement
+    they did not make -- the same reason a refusal is kept rather than deleted.
+
+    An empty ``line_pairs`` (unreadable matrix, a product never swept) returns
+    ``[]`` rather than "everything is orphaned": not knowing which pairs are
+    adjacent is not evidence that none are, and a check that cries wolf on a
+    cold start is one that gets muted before it is ever right.
+    """
+    pairs = set(line_pairs(product, matrix))
+    if not pairs:
+        return []
+    try:
+        rows = ObjectAbsence.query.filter_by(product=product).all()
+    except Exception:  # noqa: BLE001 -- see ledger_for_pair's docstring
+        db.session.rollback()
+        return []
+    groups: dict = {}
+    for r in rows:
+        key = (r.base_scope or "", r.target_scope or "")
+        if key in pairs:
+            continue
+        g = groups.setdefault(key, {"base": key[0], "target": key[1],
+                                    "rows": 0, "open": 0, "decided": 0,
+                                    "names": [], "last_seen_at": None})
+        g["rows"] += 1
+        if is_open(r):
+            g["open"] += 1
+        else:
+            g["decided"] += 1
+        g["names"].append(r.name)
+        if r.last_seen_at and (g["last_seen_at"] is None
+                               or r.last_seen_at > g["last_seen_at"]):
+            g["last_seen_at"] = r.last_seen_at
+    for g in groups.values():
+        g["names"].sort()
+    return sorted(groups.values(),
+                  key=lambda g: (_version_key(g["base"]), _version_key(g["target"])))
+
+
 def ledger_for_pair(product: str, base: str, target: str,
                     matrix: dict | None = None) -> dict:
     """The ledger rows this comparison can speak for, keyed by object name.
@@ -309,8 +418,22 @@ def ledger_for_pair(product: str, base: str, target: str,
     comparison is the page's job and the ledger is an annotation on it.
     """
     lb, lt, note = ledger_scope(product, base, target, matrix)
+    orphaned = False
+    if not lb and note is LEDGER_NOT_ADJACENT:
+        # The pair does not pair TODAY. That has two causes and they need
+        # opposite words: a comparison that deliberately skips a line (its
+        # record lives in the adjacent pairs -- go read those), or a pair that
+        # WAS adjacent until a line appeared between its two halves, whose
+        # rows now live nowhere else at all. Answering the second with the
+        # first's advice sends the operator to look for decisions in a pair
+        # that never held them.
+        cb, ct = (firmware_versions.line_of(base or ""),
+                  firmware_versions.line_of(target or ""))
+        if cb and ct and _pair_has_rows(product, cb, ct):
+            lb, lt, note, orphaned = cb, ct, LEDGER_ORPHANED, True
     out = {"rows": {}, "base": lb, "target": lt, "note": note, "open": 0,
-           "reviewed": 0, "borrowed": bool(lb) and (lb != base or lt != target)}
+           "reviewed": 0, "orphaned": orphaned,
+           "borrowed": bool(lb) and (lb != base or lt != target)}
     if not lb:
         return out
     try:
@@ -417,7 +540,8 @@ def review(row_id: int, decision: str, *, actor: str = "",
 
 
 __all__ = ["K_AUTOACK", "K_ENABLED", "BLOCKED_REASON", "REVIEW_LABEL",
-           "LEDGER_SAME_LINE", "LEDGER_NOT_ADJACENT", "LEDGER_UNSCOPED",
+           "LEDGER_SAME_LINE", "LEDGER_NOT_ADJACENT", "LEDGER_ORPHANED",
+           "LEDGER_UNSCOPED", "orphans", "resolved_matrix",
            "line_pairs", "evaluate", "record", "open_findings", "actionable",
            "counts", "review", "ledger_scope", "ledger_for_pair",
            "review_label", "is_open"]

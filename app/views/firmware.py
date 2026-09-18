@@ -112,6 +112,25 @@ def _wants_json() -> bool:
             or (request.form.get("ajax") or "") in ("1", "true"))
 
 
+def _derive_meta(filename: str, version: str, build: str) -> tuple[str, str]:
+    """Fill ``(version, build)`` from a Fortinet firmware filename.
+
+    Only ever fills what the operator left EMPTY: a typed value is a decision,
+    the filename is a guess, and overruling the first with the second would
+    silently file an image under a version nobody chose. A name that carries
+    neither token leaves both empty rather than inventing one.
+
+    The parsing itself is delegated to ``backup_server.parse_fw_version`` — the
+    backup-server pull path already derives these same two fields from these same
+    names, and a second regex here would be a second author of one rule.
+    """
+    if version and build:
+        return version, build
+    from ..services.backup_server import parse_fw_version
+    v, b = parse_fw_version(filename or "")
+    return (version or v), (build or b)
+
+
 def _finalize_upload(app, job_id: str, image_id: int, dest_path: str,
                      user_id: int = 0, link: str | None = None):
     """Background worker: sha256 the just-uploaded image (reporting progress so
@@ -253,6 +272,11 @@ def upload():
     if image_kind != "install" or hypervisor not in INSTALL_HYPERVISORS:
         hypervisor = ""
     ext = os.path.splitext(file.filename)[1].lower() if file and file.filename else ""
+    # Fortinet's own naming carries both version and build
+    # (``FWB_KVM-v7.6.8.M-build1128-FORTINET.out``), so re-typing them is only a
+    # chance to get them wrong. Typed values win; an unparseable name leaves
+    # them empty and the required-version check below still fires.
+    version, build = _derive_meta(file.filename if file else "", version, build)
 
     # Validate — return JSON to the AJAX path, flash+redirect to the classic one.
     err = None
@@ -536,6 +560,7 @@ def upload_begin():
     if image_kind != "install" or hypervisor not in INSTALL_HYPERVISORS:
         hypervisor = ""
     ext = os.path.splitext(filename)[1].lower() if filename else ""
+    version, build = _derive_meta(filename, version, build)
 
     err = None
     if not filename:
@@ -673,3 +698,17 @@ def manifest():
     'manifest maintained by hand' gap)."""
     from ..services import backup_server as _bksrv
     return jsonify(_bksrv.read_manifest())
+
+
+@bp.route("/parse-name", methods=["GET"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def parse_name():
+    """What the upload form's autofill reads (filename only — no bytes move).
+
+    Deliberately the SAME parser the two POST handlers use, so the value shown
+    pre-filled in the form is exactly the value the server would have stored on
+    its own. A JS-side regex would be a second author and would drift.
+    """
+    v, b = _derive_meta(request.args.get("filename") or "", "", "")
+    return jsonify({"version": v, "build": b})

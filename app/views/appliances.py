@@ -871,9 +871,14 @@ def _prep_payload(prep, *, result=None, stored=True) -> dict:
                                               '%Y-%m-%d %H:%M:%S'),
         'created_by': prep.created_by or '',
         'cr_id': prep.cr_id,
+        # Into the WINDOWED flow, carrying this appliance and this run.
+        # The single-change form is still reachable from Change Requests; what
+        # it is not is the place a pre-flight leads to, because a change raised
+        # from one box's evidence while the window covers forty is the defect
+        # the flow exists to remove.
         'cr_url': ('' if prep.cr_id else
-                   url_for('change_requests.new', prep_id=prep.id,
-                           action='upgrade')),
+                   url_for('upgrade_flow.index', device=prep.appliance_id,
+                           prep=prep.id)),
     }
 
 

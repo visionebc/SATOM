@@ -590,3 +590,233 @@ def test_the_page_names_the_preselection_kwarg_to_the_template(app, client):
     login(client, admin_user_id(app))
     body = client.get("/web/upgrade-flow/?device=%d" % aid).get_data(as_text=True)
     assert "handoff-kwarg" in body and _checked_ids(body) == {str(aid)}
+
+
+# =========================================================================== #
+#  6. The hand-off carries the RUN, not only the appliance                     #
+# =========================================================================== #
+#  A pre-flight page hands off with "this box, and THIS run of it". Carrying
+#  only the appliance made the flow pick whatever was newest — and the newest
+#  run is very often a re-run made to test a fix, i.e. precisely the one the
+#  operator did NOT mean to sign the change against. Both readings render an
+#  identical page.
+def _chooser(body, dev_id):
+    import re
+    m = re.search(r'<select[^>]*uf-prep[^>]*data-dev="%d"[^>]*>(.*?)</select>'
+                  % dev_id, body, re.S)
+    return m.group(1) if m else ""
+
+
+def _selected_run(body, dev_id):
+    import re
+    return re.findall(r'<option value="(\d*)" selected>', _chooser(body, dev_id))
+
+
+def test_a_prep_hand_off_cites_that_run_even_when_it_is_not_the_newest(app,
+                                                                      client):
+    with app.app_context():
+        a = _mk_appliance("evidence-pick", kind="fortiweb")
+        old = _mk_prep(a, summary="the run we mean")
+        _mk_prep(a, summary="a re-run made afterwards")
+        aid, oid = a.id, old.id
+
+    login(client, admin_user_id(app))
+    body = client.get("/web/upgrade-flow/?device=%d&prep=%d"
+                      % (aid, oid)).get_data(as_text=True)
+    assert _selected_run(body, aid) == [str(oid)], \
+        "the flow cited the newest run instead of the one the link named"
+    assert "#%d" % oid in body and "citing its recorded pre-upgrade run" in body, \
+        "the page does not SAY which run it is citing — a selection buried " \
+        "in one of sixty rows is not an answer to 'did it bring the right one'"
+
+
+def test_without_a_prep_the_newest_run_is_proposed_not_imposed(app, client):
+    with app.app_context():
+        a = _mk_appliance("evidence-default", kind="fortiweb")
+        _mk_prep(a, summary="older")
+        new = _mk_prep(a, summary="newer")
+        aid, nid = a.id, new.id
+
+    login(client, admin_user_id(app))
+    body = client.get("/web/upgrade-flow/?device=%d" % aid).get_data(as_text=True)
+    assert _selected_run(body, aid) == [str(nid)]
+    # Every run is offered, and so is "cite nothing" — an appliance with no
+    # baseline is a real, sayable state, not an absence of options.
+    assert _chooser(body, aid).count("<option") >= 3, \
+        "the operator cannot choose a different run, so the default is imposed"
+    assert '<option value="">' in _chooser(body, aid), \
+        "there is no way to cite no run for an appliance the change covers"
+
+
+def test_a_run_belonging_to_another_appliance_is_refused_and_reported(app,
+                                                                     client):
+    """Signed-against-the-wrong-box is the failure this guards. Silence would
+    leave the change citing whatever was newest while the operator followed a
+    link that named something else."""
+    with app.app_context():
+        a = _mk_appliance("evidence-mine", kind="fortiweb")
+        other = _mk_appliance("evidence-theirs", kind="fortiweb")
+        theirs = _mk_prep(other, summary="not this box")
+        mine = _mk_prep(a, summary="this box")
+        aid, tid, mid = a.id, theirs.id, mine.id
+
+    login(client, admin_user_id(app))
+    body = client.get("/web/upgrade-flow/?device=%d&prep=%d"
+                      % (aid, tid)).get_data(as_text=True)
+    assert _selected_run(body, aid) == [str(mid)], \
+        "another appliance's run was pre-chosen as this one's evidence"
+    assert "is not one of that appliance" in body, \
+        "the mismatch was swallowed; it must read differently from arriving " \
+        "with no run at all"
+    assert "prep=%d" % tid in body, "the complaint does not name the run"
+
+
+def test_a_prep_parameter_that_is_not_a_number_is_reported_too(app, client):
+    with app.app_context():
+        a = _mk_appliance("evidence-junk", kind="fortiweb")
+        _mk_prep(a)
+        aid = a.id
+
+    login(client, admin_user_id(app))
+    body = client.get("/web/upgrade-flow/?device=%d&prep=zz"
+                      % aid).get_data(as_text=True)
+    assert "is not one of that appliance" in body
+    assert "prep=zz" in body
+
+
+def test_the_prep_preselection_resolves_against_the_rendered_runs(app):
+    from app.views.upgrade_flow import preselect_prep
+
+    class _R:
+        def __init__(self, i):
+            self.id = i
+
+    runs = {4: [_R(11), _R(12)]}
+    assert preselect_prep("12", 4, runs) == (12, None)
+    assert preselect_prep("99", 4, runs) == (None, "99")
+    assert preselect_prep("11", 5, runs) == (None, "11"), \
+        "a run was accepted for an appliance whose rows it is not among"
+    assert preselect_prep("11", None, runs) == (None, "11"), \
+        "a run was accepted with no appliance to belong to"
+    assert preselect_prep("x", 4, runs) == (None, "x")
+    assert preselect_prep("", 4, runs) == (None, None)
+    assert preselect_prep(None, 4, runs) == (None, None)
+
+
+def test_the_page_names_the_prep_kwargs_to_the_template(app, client):
+    """render_template ENUMERATES its kwargs. A value the view computes and
+    does not pass reaches nothing, with every resolver assertion still green."""
+    with app.app_context():
+        a = _mk_appliance("evidence-kwarg", kind="fortiweb")
+        p = _mk_prep(a)
+        aid, pid = a.id, p.id
+
+    login(client, admin_user_id(app))
+    body = client.get("/web/upgrade-flow/?device=%d&prep=%d"
+                      % (aid, pid)).get_data(as_text=True)
+    assert "citing its recorded pre-upgrade run" in body
+    body2 = client.get("/web/upgrade-flow/?device=%d&prep=4242"
+                       % aid).get_data(as_text=True)
+    assert "is not one of that appliance" in body2
+
+
+def test_every_recorded_run_is_offered_per_appliance_and_capped_there(app):
+    """Capped PER APPLIANCE, not by a LIMIT on the query: one busy box would
+    otherwise spend the whole budget and the rest would read 'never run'."""
+    from app.services import prep_store
+
+    with app.app_context():
+        busy = _mk_appliance("evidence-busy", kind="fortiweb")
+        quiet = _mk_appliance("evidence-quiet", kind="fortiweb")
+        for _ in range(5):
+            _mk_prep(busy)
+        q = _mk_prep(quiet)
+        rows = prep_store.recent_for_many([busy.id, quiet.id], 2)
+        assert len(rows[busy.id]) == 2, "the per-appliance cap is not applied"
+        assert rows[quiet.id] and rows[quiet.id][0].id == q.id, \
+            "a busy appliance consumed another one's rows"
+        ids = [r.id for r in rows[busy.id]]
+        assert ids == sorted(ids, reverse=True), "runs are not newest-first"
+        assert prep_store.recent_for_many([], 2) == {}
+        assert prep_store.recent_for_many(["x"], 2) == {}
+
+
+# =========================================================================== #
+#  7. Stage 2 asks everything a change request is                              #
+# =========================================================================== #
+def test_stage_two_carries_the_whole_change_request_field_set(app, client):
+    """A windowed change used to come out with no owner, nobody notified and
+    manual approval by default — differences nobody chose, on the path meant
+    for the larger job."""
+    with app.app_context():
+        _mk_appliance("cr-fields", kind="fortiweb")
+
+    login(client, admin_user_id(app))
+    body = client.get("/web/upgrade-flow/").get_data(as_text=True)
+    for field in ('name="owner"', 'name="notify_to"', 'name="approval_mode"'):
+        assert field in body, "stage 2 does not ask for %s" % field
+    assert 'value="external"' in body, "the fail-closed approval mode is absent"
+
+
+def test_stage_two_actually_stores_owner_notify_and_approval(app, client):
+    """The fields must reach the change, not merely appear. An input whose
+    name the create path ignores renders identically to one it honours."""
+    from app.models import ChangeRequest
+
+    with app.app_context():
+        a = _mk_appliance("cr-fields-post", kind="fortiweb")
+        aid = a.id
+
+    login(client, admin_user_id(app))
+    client.post("/web/change-requests/new", data={
+        "title": "windowed upgrade", "action": "upgrade", "risk": "medium",
+        "reason": "r", "rollback": "b", "device_ids": [str(aid)],
+        "owner": "kim", "notify_to": "ops@example.com",
+        "approval_mode": "external",
+    }, follow_redirects=True)
+    with app.app_context():
+        cr = (ChangeRequest.query.filter_by(title="windowed upgrade")
+              .order_by(ChangeRequest.id.desc()).first())
+        assert cr is not None
+        assert cr.owner == "kim"
+        assert cr.notify_to == "ops@example.com"
+        assert cr.approval_mode == "external"
+
+
+def test_the_waves_path_carries_the_same_three_fields(app, client):
+    """A wave that drops them is silently the un-owned, un-notified,
+    locally-approved variant of the same change."""
+    import inspect
+
+    from app.views import upgrade_flow as uf
+
+    src = inspect.getsource(uf.waves)
+    for field in ("'owner'", "'notify_to'", "'approval_mode'"):
+        assert field in src, "waves() drops %s" % field
+
+    with app.app_context():
+        a = _mk_appliance("wave-fields", kind="fortiweb")
+        aid = a.id
+    login(client, admin_user_id(app))
+    from app.models import ChangeRequest
+    client.post("/web/upgrade-flow/waves", data={
+        "device_ids": [str(aid)], "wave_size": "1", "title": "waved",
+        "risk": "low", "reason": "r", "rollback": "b",
+        "owner": "kim", "notify_to": "ops@example.com",
+        "approval_mode": "external",
+    }, follow_redirects=True)
+    with app.app_context():
+        cr = (ChangeRequest.query.filter(ChangeRequest.title.like("waved%"))
+              .order_by(ChangeRequest.id.desc()).first())
+        assert cr is not None, "no wave was raised"
+        assert (cr.owner, cr.notify_to, cr.approval_mode) == \
+            ("kim", "ops@example.com", "external")
+
+
+def test_the_customer_impact_and_execution_card_is_gone(app, client):
+    """Removed at the operator's request: both live on the change itself and
+    the register was a second copy of Change Requests."""
+    login(client, admin_user_id(app))
+    body = client.get("/web/upgrade-flow/").get_data(as_text=True)
+    assert "Customer impact and execution" not in body
+    assert ">3\u20134<" not in body, "the 3-4 stage badge is still rendered"

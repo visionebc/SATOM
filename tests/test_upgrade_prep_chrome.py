@@ -432,8 +432,15 @@ def test_prep_page_offers_the_flow_carrying_its_own_device_id(app, client):
     assert "device=%d" % aid in m.group(1), \
         "the hand-off does not carry the appliance it was opened for — the " \
         "operator lands on a list of every eligible box and picks one by hand"
-    assert 'id="prep-flow-no"' in html, \
-        "the question has no 'stay here' answer, so it is not a question"
+    # There is deliberately NO "stay here" control: staying IS this page, and
+    # a second button whose only effect was to hide the first read as a
+    # decision the operator had to take before running the pre-flight they had
+    # already opened the page to run. Asserted as an ABSENCE so re-adding it is
+    # a decision somebody makes on purpose.
+    assert 'id="prep-flow-no"' not in html, \
+        "the dismissed 'no' button is back; staying on this page is the " \
+        "default and needs no control"
+    assert html.count('id="prep-flow-ask"') == 1, "the ask card is duplicated"
 
 
 def test_prep_page_does_not_redirect_into_the_flow(app, client):
@@ -454,3 +461,68 @@ def test_prep_page_does_not_remember_the_answer(tpl):
     for banned in ("localStorage", "sessionStorage", "prepflow_dismissed"):
         assert banned not in tpl, \
             "the hand-off question persists its answer: %s" % banned
+
+
+# --------------------------------------------------------------------------- #
+#  "Raise change request" leads into the WINDOWED flow, carrying its run        #
+# --------------------------------------------------------------------------- #
+#  It used to open the single-change form with this one run pre-cited. That is
+#  the document the bulk flow exists to stop being produced: evidence covering
+#  one box while the window covers forty. The link now carries BOTH the
+#  appliance and the run, so the flow opens with this box ticked and this run
+#  chosen as its evidence -- and the operator adds the rest of the window.
+def test_the_raise_link_goes_to_the_flow_carrying_appliance_and_run(app, client):
+    from app.models import UpgradePrep
+    import json as _json
+    from datetime import datetime as _dt
+
+    with app.app_context():
+        a = Appliance(name="raisebox", host="192.0.2.97", port=443,
+                      kind="fortiweb", username="admin")
+        a.password = "pw"
+        db.session.add(a)
+        db.session.commit()
+        p = UpgradePrep(appliance_id=a.id, created_by="op", ok=True,
+                        summary="backup ok", result=_json.dumps({}),
+                        inventory=_json.dumps([]), created_at=_dt.utcnow())
+        db.session.add(p)
+        db.session.commit()
+        aid, pid = a.id, p.id
+
+    login(client, admin_user_id(app))
+    html = client.get("/appliances/%d/upgrade/prep" % aid).get_data(as_text=True)
+    links = re.findall(r'href="([^"]*upgrade-flow[^"]*prep=[^"]*)"', html)
+    assert links, "the recorded run offers no way to raise a change"
+    assert any("device=%d" % aid in u and "prep=%d" % pid in u for u in links), \
+        "the link drops either the appliance or the run it was raised from"
+    assert "change-requests/new?prep_id" not in html, \
+        "the run still leads to the single-change form"
+
+
+def test_the_json_payload_points_at_the_flow_too(app, client):
+    """The panel painted after a fresh run gets its button from the SERVER
+    (cr_url). A template fixed on its own would leave the freshly-run case
+    still walking into the single-change form -- the path most operators take."""
+    from app.models import UpgradePrep
+    import json as _json
+    from datetime import datetime as _dt
+
+    with app.app_context():
+        a = Appliance(name="raisebox2", host="192.0.2.96", port=443,
+                      kind="fortiweb", username="admin")
+        a.password = "pw"
+        db.session.add(a)
+        db.session.commit()
+        p = UpgradePrep(appliance_id=a.id, created_by="op", ok=True,
+                        summary="ok", result=_json.dumps({}),
+                        inventory=_json.dumps([]), created_at=_dt.utcnow())
+        db.session.add(p)
+        db.session.commit()
+        aid, pid = a.id, p.id
+
+    login(client, admin_user_id(app))
+    j = client.get("/appliances/%d/upgrade/prep/%d.json" % (aid, pid)).get_json()
+    assert j["ok"] is not False
+    url = j["cr_url"]
+    assert "upgrade-flow" in url, "the fresh-run button still opens the old form"
+    assert "device=%d" % aid in url and "prep=%d" % pid in url

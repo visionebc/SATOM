@@ -436,6 +436,40 @@ def latest_for_many(appliance_ids) -> dict:
     return {r.appliance_id: r for r in rows}
 
 
+def recent_for_many(appliance_ids, limit: int = 10) -> dict:
+    """``{appliance_id: [UpgradePrep, ...]}`` newest first, in ONE query.
+
+    The bulk flow's evidence chooser needs every candidate run per appliance,
+    not only the newest. An operator who re-ran a pre-flight after fixing what
+    the first one caught still decides WHICH run the change is signed against,
+    and a page that offers only the last one has made that decision for them --
+    silently, and in the one direction ("the most recent is the right one")
+    that a failed re-run makes wrong.
+    """
+    ids: list[int] = []
+    for value in appliance_ids or []:
+        try:
+            ids.append(int(value))
+        except (TypeError, ValueError):
+            continue
+    if not ids:
+        return {}
+    cap = max(1, min(50, int(limit or 10)))
+    out: dict = {}
+    for row in (UpgradePrep.query
+                .filter(UpgradePrep.appliance_id.in_(ids))
+                .order_by(UpgradePrep.created_at.desc(), UpgradePrep.id.desc())
+                .all()):
+        rows = out.setdefault(row.appliance_id, [])
+        # Capped PER APPLIANCE rather than with a LIMIT on the query: one busy
+        # box with forty runs would otherwise spend the whole budget and every
+        # other appliance would render as "never run" -- which is the opposite
+        # of the truth and the one reading that stops a sweep being planned.
+        if len(rows) < cap:
+            rows.append(row)
+    return out
+
+
 def merged_inventory(preps) -> list:
     """One affected-service inventory across N runs, de-duplicated.
 
@@ -517,6 +551,7 @@ def export_xlsx(rows, keys, *, sheet_name: str = "Affected services") -> bytes:
 __all__ = [
     "FIELDS", "FIELD_KEYS", "FIELD_LABELS", "DEFAULT_FIELDS",
     "verdict", "build_inventory", "record", "latest_for", "recent", "get",
+    "recent_for_many",
     "run_for", "run_bulk",
     "bind_change_request", "bind_many", "preps_for_cr", "latest_for_many",
     "coverage", "merged_inventory",

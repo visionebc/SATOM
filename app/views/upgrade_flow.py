@@ -152,6 +152,31 @@ def preselect_device(raw, devices):
     return None, raw
 
 
+def preselect_prep(raw, device_id, runs):
+    """``(prep_id, unresolved)`` for a ``?prep=`` hand-off from a prep page.
+
+    Resolved against the runs THIS page renders for THAT appliance, never
+    against the store. A run belonging to another box must not arrive
+    pre-chosen: the change would then be signed against a pre-flight of a
+    device it does not touch, and nothing on the page would say so.
+
+    Unresolved is returned VERBATIM for the same reason ``preselect_device``
+    does it -- "prep=abc" and "prep=999" are both "not one of this appliance's
+    runs", and a silent None reads exactly like arriving with no run at all.
+    """
+    raw = (raw or '').strip()
+    if not raw:
+        return None, None
+    try:
+        pid = int(raw)
+    except (TypeError, ValueError):
+        return None, raw
+    for row in (runs.get(device_id) or []) if device_id else []:
+        if row.id == pid:
+            return pid, None
+    return None, raw
+
+
 @bp.route('/')
 @login_required
 @require_permission(Permission.BACKUP)
@@ -163,14 +188,16 @@ def index():
     # tick a row here just because it exists.
     preselect, preselect_unresolved = preselect_device(
         request.args.get('device'), devices)
-    latest = prep_store.latest_for_many([d.id for d in devices])
-    # Changes that already cite a run, newest first — stage 2's "carry on with
-    # the one you started" list. Bounded: this is a landing page, not a
-    # register, and the full list is one click away on Change Requests.
-    recent_crs = (ChangeRequest.query
-                  .filter(ChangeRequest.action == 'upgrade')
-                  .order_by(ChangeRequest.id.desc())
-                  .limit(10).all())
+    # EVERY recorded run per appliance, not just the newest: stage 1 offers
+    # the operator which one this change is signed against, and the hand-off
+    # from a single appliance's page arrives naming one.
+    runs = prep_store.recent_for_many([d.id for d in devices], 10)
+    # ONE author for "the newest run": derived from the same list the chooser
+    # renders, so the column and the dropdown cannot disagree about which run
+    # is on top.
+    latest = {aid: rows[0] for aid, rows in runs.items() if rows}
+    prep_pick, prep_unresolved = preselect_prep(
+        request.args.get('prep'), preselect, runs)
     # Batched rollouts, newest group first. Grouped HERE rather than left as
     # ten look-alike rows: five changes whose only distinguishing mark is
     # "wave 3/5" buried in the title is precisely the register this page
@@ -211,15 +238,27 @@ def index():
     # `drafts` corresponds to, and the fields would come out blank.
     fallback = (lang_registry.DEFAULT if lang_registry.DEFAULT in codes
                 else (codes[0] if codes else lang_registry.DEFAULT))
+    # The same proposals the single change form makes, from the same two
+    # sources. Typing either default here would be a second author of a value
+    # the operator is about to sign their name to.
+    from ..services import email_service
+    from .change_requests import _tz_name
+    defaults = {
+        'owner': (getattr(current_user, 'username', '') or ''),
+        'notify_to': (email_service.config().get('default_to') or '').strip(),
+    }
     return render_template('upgrade_flow/index.html',
-                           devices=devices, latest=latest,
+                           devices=devices, latest=latest, runs=runs,
+                           preselect_prep=prep_pick,
+                           preselect_prep_unresolved=prep_unresolved,
+                           defaults=defaults, tz_name=_tz_name(),
                            # Enumerated kwargs: a value the resolver computes
                            # but render_template does not name simply never
                            # reaches the page, with every assertion above it
                            # still green.
                            preselect=preselect,
                            preselect_unresolved=preselect_unresolved,
-                           recent_crs=recent_crs, wave_groups=wave_groups,
+                           wave_groups=wave_groups,
                            kinds=prep_kinds(), max_sweep=MAX_SWEEP,
                            max_waves=MAX_WAVES, crdoc=crdoc,
                            cr_action=CR_ACTION,
@@ -377,6 +416,12 @@ def waves():
             'reason': request.form.get('reason'),
             'rollback': request.form.get('rollback'),
             'doc_lang': request.form.get('doc_lang'),
+            # Carried, not dropped: a wave that loses the owner, the notify
+            # address and the approval mode is silently the un-owned,
+            # un-notified, locally-approved variant of the same change.
+            'owner': request.form.get('owner'),
+            'notify_to': request.form.get('notify_to'),
+            'approval_mode': request.form.get('approval_mode'),
             'device_ids': [d.id for d in members],
             'prep_ids': [prep_by_dev[d.id] for d in members
                          if prep_by_dev.get(d.id)],

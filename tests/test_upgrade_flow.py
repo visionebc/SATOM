@@ -1556,28 +1556,72 @@ def test_stage_two_lists_the_changes_this_flow_has_raised(app, client):
         "the picker does not open the change inside the flow"
 
 
-def test_the_picker_opens_nothing_on_its_own(app, client):
-    """Those blocks carry Approve, Schedule, Mark notified and Cancel, and they
-    act on a real change. A stage that pre-selects one is a stage that can get
-    the wrong change approved by somebody who thought they were reading a form.
+def test_a_plain_visit_opens_the_newest_change_whole(app, client):
+    """Stage 2 IS the change request, without a click.
+
+    Requiring ?cr= meant every visit after the one that pressed the button
+    showed a bare form, which is indistinguishable from the stage never having
+    been built. A plain visit renders the newest change raised from this flow:
+    document, inventory, external record, timeline, notice and the action bar.
     """
-    cid, ref, _ = _raise_one(app, client, "picker-inert")
+    cid, ref, _ = _raise_one(app, client, "plain-visit-opens")
     body = client.get("/web/upgrade-flow/").get_data(as_text=True)
+    for label, marker in _CR_BLOCKS.items():
+        assert marker in body, \
+            "a plain visit did not render %s" % label
+    for label, marker in _CR_ACTIONS.items():
+        # "edit" is matched by a bare Bootstrap icon class the nav also uses
+        # (Custom Signature); on a whole-page assertion it answers itself.
+        if label == "edit":
+            continue
+        assert marker in body, "%s is missing on a plain visit" % label
+    # The change it opened is NAMED. These buttons act on a real record the
+    # operator did not pick, so a page that renders them without saying which
+    # change they belong to is the actual hazard -- not the auto-open.
+    assert ref in body, "the open change is not named on the page"
+
+
+def test_the_newest_is_what_opens_and_an_explicit_id_still_wins(app, client):
+    """Newest-first, and ?cr= overrides it.
+
+    If the default were "the first one found" it would drift with insertion
+    order, and the operator would be approving whichever change the query
+    happened to return.
+    """
+    old_id, old_ref, _ = _raise_one(app, client, "older-change")
+    new_id, new_ref, _ = _raise_one(app, client, "newer-change")
+    assert new_id > old_id
+
+    plain = client.get("/web/upgrade-flow/").get_data(as_text=True)
+    assert new_ref in plain, "the newest change is not the one opened"
+
+    picked = client.get("/web/upgrade-flow/?cr=%d" % old_id).get_data(as_text=True)
+    assert old_ref in picked
+    # ...and it really switched, rather than rendering both.
+    assert picked.count(new_ref) < plain.count(new_ref), \
+        "asking for an older change did not displace the default"
+
+
+def test_close_it_stays_closed(app, client):
+    """`?cr=0` is the closed state, and no change can carry id 0.
+
+    A bare link back to the stage is what OPENS the newest one, so if Close it
+    dropped the argument the button would reopen what it just closed and read
+    as broken.
+    """
+    _raise_one(app, client, "close-stays-closed")
+    closed = client.get("/web/upgrade-flow/?cr=0").get_data(as_text=True)
     for label, marker in _CR_BLOCKS.items():
         if label == "overview":
             continue  # stage 1 has a heading of its own by that name
-        assert marker not in body, \
-            "a change nobody opened rendered its %s" % label
+        assert marker not in closed, \
+            "%s rendered on a stage the operator closed" % label
     for label, marker in _CR_ACTIONS.items():
-        # "edit" is matched by a bare Bootstrap icon class, which the nav also
-        # uses (Custom Signature) — on a whole-page assertion it answers itself
-        # and would report a button that is not there. The other four are
-        # route-shaped and cannot be said by accident.
         if label == "edit":
             continue
-        assert marker not in body, \
-            "%s is live on a change the operator never opened" % label
-    # ...and opening it explicitly still works, or the assertions above would
-    # pass just as well against a picker that does nothing at all.
-    opened = client.get("/web/upgrade-flow/?cr=%d" % cid).get_data(as_text=True)
-    assert all(v in opened for v in _CR_BLOCKS.values())
+        assert marker not in closed, \
+            "%s is live on a stage the operator closed" % label
+    # The close control itself has to carry cr=0, or this state is unreachable
+    # from the page and only this test can produce it.
+    opened = client.get("/web/upgrade-flow/").get_data(as_text=True)
+    assert "cr=0" in opened, "Close it does not carry the closed state"

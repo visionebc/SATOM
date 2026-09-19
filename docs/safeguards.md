@@ -15632,3 +15632,45 @@ before and after. 240 targeted tests RC=0 (`test_absence_corroboration`,
 render against the real database for all three scenarios: today (no banner),
 8.1 appended (200, comparison renders), 7.8 inserted (banner naming the five
 real decided rows).
+
+## §182 — a stage that could only be finished by leaving the page it was on (`tests/test_upgrade_flow.py`, 2026-09-19)
+
+**What was wrong.** Stage 2 of the upgrade flow posted at
+`change_requests.new`. On success that route redirects to the new change's own
+page and on refusal to an empty `change_requests.new` — correct for the
+single-change form, which is where the operator already is, and wrong for a
+stage inside a staged page. Raising the change threw the operator out of the
+workflow two stages from the end; a refused one cost them the whole card,
+including the pre-flight run they had chosen per appliance. **Neither failed.**
+
+**What is guarded.**
+
+| Guard | What it kills |
+|---|---|
+| `test_stage_two_posts_to_the_flow_not_to_the_single_change_form` | the form action pointing back at `/change-requests/new` |
+| `test_a_raised_change_comes_back_to_the_flow_citing_itself` | success redirecting out of the flow; a citation that names nothing; a citation with no link to the document or to execution |
+| `test_a_refused_change_re_renders_the_flow_with_what_was_typed` | a refusal that redirects at all, or that comes back with wording, owner, notification, approval mode, window or ticks reset |
+| `test_a_refusal_keeps_the_run_each_appliance_cited` | the newest run being re-proposed over the operator's choice, and *no run cited* being silently upgraded to one |
+| `test_a_refusal_tells_an_edited_field_from_an_untouched_proposal` | `data-auto` collapsing to one answer — either freezing an untouched proposal or overwriting an edited field |
+| `test_a_refusal_creates_nothing` | a refused post that wrote a row |
+| `test_the_citation_never_names_a_change_this_operator_cannot_see` | `?cr=` raising a 404, a 500, or citing a change outside the ADOM |
+| `test_the_flow_does_not_reimplement_what_raising_a_change_is` | the route growing its own change row, or reading the change type from the post |
+
+**The trap this class keeps setting.** The error path is the one nobody looks
+at twice. `index()` used to be the only author of the flow page, so the
+refusal had nowhere to re-render *to* — which is exactly why it redirected to
+a different form. The page's context is now built by `page_context(posted=…)`
+and returned as **one dict splatted at the render call**: enumerating the
+kwargs is how a value the resolver computes can fail to reach the template
+with every assertion about it still green (§9j).
+
+**Verified 2026-09-19.** 12 mutations, 12 bite, 0 survive, 0 void,
+`restore-ok`, control green before and after — but one of them only on the
+second pass. `'action': CR_ACTION,` appears **twice** in this module (the wave
+route raises the same type), so the anchor matched nothing and the harness
+printed `VOID`, which sits in a list of eleven `BITES` looking like one more
+of them. A mutation that was never applied is not a guard that held. 83 targeted tests RC=0
+(`test_upgrade_flow`, `test_upgrade_flow_wording`, `test_upgrade_flow_exec` —
+the modules edited). Live render against the real database of a1: the form
+posting to the flow, a citation of a real change, and four refusals coming
+back with the card intact — none of which created a row.

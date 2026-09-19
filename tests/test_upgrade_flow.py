@@ -939,3 +939,219 @@ def test_the_hand_off_link_carries_the_adom_it_was_pressed_in(app, client):
         url2 = _prep_payload(UpgradePrep.query.get(pid))["cr_url"]
     assert "_adom=&" not in url2 and not url2.endswith("_adom="), \
         "empty scope parameter: %s" % url2
+
+
+# =========================================================================== #
+#  9. stage 2 raises the change WITHOUT leaving the flow                       #
+# =========================================================================== #
+#  It used to post straight at ``change_requests.new``, which cannot do either
+#  of the two things a stage inside a staged page has to do:
+#
+#    * on SUCCESS it redirected to the new change's own page — out of the flow,
+#      two stages from the end, with no way back to the selection just built;
+#    * on REFUSAL it redirected to an EMPTY ``/change-requests/new`` — the form
+#      the operator had deliberately not used, with everything they had typed
+#      gone and the per-appliance evidence they had chosen gone with it.
+#
+#  Neither failed. A change simply could not be raised from this page without
+#  leaving it, and a refused one cost the whole card.
+# --------------------------------------------------------------------------- #
+_STAGE2 = {
+    "doc_lang": "en", "risk": "high",
+    "title": "October window", "reason": "reason typed by hand",
+    "rollback": "rollback typed by hand",
+    "owner": "someone-else", "notify_to": "ops@example.com",
+    "approval_mode": "external",
+    "window_start": "2026-10-01T22:00", "window_end": "2026-10-01T23:30",
+}
+
+
+def _post_stage_two(client, **over):
+    data = dict(_STAGE2)
+    data.update(over)
+    return client.post("/web/upgrade-flow/change", data=data)
+
+
+def test_stage_two_posts_to_the_flow_not_to_the_single_change_form(app, client):
+    login(client, admin_user_id(app))
+    body = client.get("/web/upgrade-flow/").get_data(as_text=True)
+    assert 'action="/web/upgrade-flow/change" id="uf-cr"' in body, \
+        "stage 2 no longer posts to the flow's own handler"
+    assert 'action="/web/change-requests/new" id="uf-cr"' not in body, \
+        "stage 2 posts at the single-change form again — success leaves the " \
+        "flow and a refusal empties the card"
+
+
+def test_a_raised_change_comes_back_to_the_flow_citing_itself(app, client):
+    from app.models import ChangeRequest, CrPrep
+
+    with app.app_context():
+        a = _mk_appliance("come-back")
+        prep = _mk_prep(a, inventory=[{"device": "come-back",
+                                       "device_id": a.id, "policy": "p"}])
+        ids = (a.id, prep.id)
+
+    login(client, admin_user_id(app))
+    resp = _post_stage_two(client, device_ids=[str(ids[0])],
+                           prep_ids=[str(ids[1])])
+    assert resp.status_code in (302, 303)
+    where = resp.headers["Location"]
+    assert "/web/upgrade-flow/" in where, \
+        "raising the change still throws the operator out of the flow"
+    assert "/web/change-requests/" not in where
+
+    with app.app_context():
+        cr = ChangeRequest.query.order_by(ChangeRequest.id.desc()).first()
+        cid, ref, action = cr.id, cr.ref, cr.action
+        # Only create_change_request stamps a ref, freezes the inventory and
+        # binds the runs. Their presence is what says this route did NOT grow
+        # its own idea of what raising a change is.
+        bound = CrPrep.query.filter_by(cr_id=cid).count()
+        frozen = json.loads(cr.policies or "[]")
+    assert action == "upgrade" and ref and bound == 1 and frozen
+    assert "cr=%d" % cid in where, "the flow comes back citing nothing"
+
+    body = client.get(where).get_data(as_text=True)
+    assert ref in body, "the change the flow just raised is not named on it"
+    assert "/web/change-requests/%d" % cid in body, \
+        "no way from the citation to the change document"
+    assert "/web/upgrade-flow/change/%d" % cid in body, \
+        "no way from the citation to the per-appliance execution view"
+
+
+def test_a_refused_change_re_renders_the_flow_with_what_was_typed(app, client):
+    with app.app_context():
+        a = _mk_appliance("refused")
+        ids = (a.id,)
+
+    login(client, admin_user_id(app))
+    resp = _post_stage_two(client, title="", device_ids=[str(ids[0])])
+    assert resp.status_code == 200, "a refusal must not redirect anywhere"
+    assert resp.headers.get("Location") is None
+    body = resp.get_data(as_text=True)
+    assert 'id="uf-cr"' in body and 'id="uf-all"' in body, \
+        "the refusal landed somewhere other than the flow"
+    assert "A title is required" in body, "the refusal is not shown"
+    for kept in ("reason typed by hand", "rollback typed by hand",
+                 "someone-else", "ops@example.com",
+                 '"2026-10-01T22:00"', '"2026-10-01T23:30"'):
+        assert kept in body, "%s was lost when the change was refused" % kept
+    assert '<option value="high" selected>' in body, "the risk was reset"
+    assert '<option value="external" selected>' in body, \
+        "the approval mode was reset to the default nobody chose"
+    import re as _re
+    assert _re.search(r'value="%d"[^>]*data-name="[^"]*"[^>]*checked' % ids[0],
+                      body), \
+        "the appliances the change covers came back unticked — the selection " \
+        "is mirrored from stage 1, so losing the ticks loses the change's scope"
+
+
+def test_a_refusal_creates_nothing(app, client):
+    from app.models import ChangeRequest
+
+    with app.app_context():
+        a = _mk_appliance("refuse-nothing")
+        ids = (a.id,)
+        before = ChangeRequest.query.count()
+
+    login(client, admin_user_id(app))
+    _post_stage_two(client, title="", device_ids=[str(ids[0])])
+    # An inverted window is refused by create_change_request, not by the page.
+    _post_stage_two(client, device_ids=[str(ids[0])],
+                    window_start="2026-10-02T23:30",
+                    window_end="2026-10-02T22:00")
+    with app.app_context():
+        assert ChangeRequest.query.count() == before
+
+
+def test_a_refusal_keeps_the_run_each_appliance_cited(app, client):
+    """The evidence chooser is per appliance and the newest run is only a
+    PROPOSAL. A re-render that re-proposed it would silently re-cite a run the
+    operator had replaced — or one they had deliberately cleared — and the page
+    would look exactly as if they had chosen it."""
+    with app.app_context():
+        a = _mk_appliance("cited")
+        older = _mk_prep(a, summary="the run the operator wants")
+        newer = _mk_prep(a, summary="a re-run made to test a fix")
+        ids = (a.id, older.id, newer.id)
+
+    login(client, admin_user_id(app))
+    fresh = client.get("/web/upgrade-flow/").get_data(as_text=True)
+    assert _selected_run(fresh, ids[0]) == [str(ids[2])], \
+        "the newest run is no longer proposed on a plain visit"
+
+    body = _post_stage_two(client, title="", device_ids=[str(ids[0])],
+                           prep_ids=[str(ids[1])]).get_data(as_text=True)
+    assert _selected_run(body, ids[0]) == [str(ids[1])], \
+        "the refusal re-proposed the newest run over the operator's choice"
+
+    cleared = _post_stage_two(client, title="", device_ids=[str(ids[0])],
+                              prep_ids=[]).get_data(as_text=True)
+    chooser = _chooser(cleared, ids[0])
+    assert '<option value="" selected>' in chooser, \
+        "'no run cited' is a real answer and it was not kept"
+    assert 'value="%d" selected' % ids[2] not in chooser
+
+
+def test_a_refusal_tells_an_edited_field_from_an_untouched_proposal(app, client):
+    """``data-auto`` is what stops the page overwriting the operator's words,
+    and what the 'auto' chip reports. Marking all three edited on the way back
+    would be simpler and wrong: an operator who corrected only the window would
+    find the wording frozen, with a chip claiming text is theirs."""
+    import re as _re
+    from app.views.upgrade_flow import cr_draft_context
+
+    with app.app_context():
+        a = _mk_appliance("auto-flag")
+        ids = (a.id,)
+        crdoc = cr_draft_context()
+        draft = crdoc["drafts"].get("en") or {}
+        token = crdoc["devices_token"]
+    proposal = {k: (draft.get(k) or "").replace(token, "auto-flag")
+                for k in ("title", "reason", "rollback")}
+
+    login(client, admin_user_id(app))
+    body = _post_stage_two(
+        client, title="", reason=proposal["reason"],
+        rollback="changed by hand", device_ids=[str(ids[0])]).get_data(as_text=True)
+
+    def _auto(el):
+        m = _re.search(r'<(?:input|textarea)[^>]*id="%s".*?>' % el, body, _re.S)
+        assert m, "%s is missing from the re-rendered card" % el
+        got = _re.search(r'data-auto="(\d)"', m.group(0))
+        return got.group(1) if got else "?"
+
+    assert _auto("uf-reason") == "1", \
+        "an untouched proposal came back marked as the operator's own words"
+    assert _auto("uf-rollback") == "0", \
+        "an edited field came back marked auto — the proposal would overwrite it"
+
+
+def test_the_citation_never_names_a_change_this_operator_cannot_see(app, client):
+    """Decoration on a page that renders perfectly without it: an unknown id
+    must read as no citation, never as a 404 and never as the existence of
+    something outside this ADOM."""
+    login(client, admin_user_id(app))
+    for raw in ("999999", "abc", ""):
+        resp = client.get("/web/upgrade-flow/?cr=%s" % raw)
+        assert resp.status_code == 200, "?cr=%s broke the page" % raw
+        assert "Open the change" not in resp.get_data(as_text=True), \
+            "?cr=%s produced a citation of nothing" % raw
+
+
+def test_the_flow_does_not_reimplement_what_raising_a_change_is(app, client):
+    """The rules live in ``change_requests.create_change_request``; this route
+    only decides where the operator ends up. Two implementations of "raise a
+    change" is the defect this whole feature was built to remove."""
+    import inspect
+
+    from app.views import upgrade_flow
+
+    src = inspect.getsource(upgrade_flow.change)
+    assert "create_change_request(" in src, \
+        "stage 2 no longer goes through the one create path"
+    assert "ChangeRequest(" not in src, \
+        "stage 2 builds its own change row"
+    assert "'action': CR_ACTION" in src or '"action": CR_ACTION' in src, \
+        "the change type is read from the post again — a type the page cannot " \
+        "propose wording for could be substituted into it"

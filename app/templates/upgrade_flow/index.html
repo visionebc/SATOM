@@ -91,7 +91,7 @@
             <tr>
               <td><input class="form-check-input uf-dev" type="checkbox" name="device_ids" value="{{ d.id }}"
                          data-name="{{ d.name }}"
-                         {% if preselect == d.id %}checked{% endif %}></td>
+                         {% if d.id in ticked %}checked{% endif %}></td>
               <td><a href="{{ url_for('appliances.detail', id=d.id) }}">{{ d.name }}</a>
                   <div class="text-muted small is-mono">{{ d.host }}</div></td>
               <td><span class="fw-badge fw-badge-secondary">{{ d.kind }}</span></td>
@@ -118,10 +118,11 @@
                 {% if dev_runs %}
                 <select class="form-select form-select-sm uf-prep" data-dev="{{ d.id }}"
                         aria-label="{{ _('Evidence for') }} {{ d.name }}">
+                  {% set cited = prep_choice.get(d.id) %}
                   {% for r in dev_runs %}
-                  <option value="{{ r.id }}"{% if (preselect_prep and preselect == d.id and preselect_prep == r.id) or (not (preselect_prep and preselect == d.id) and loop.first) %} selected{% endif %}>#{{ r.id }} · {{ r.created_at.strftime('%Y-%m-%d %H:%M') }} UTC · {{ _('passed') if r.ok else _('not clean') }}</option>
+                  <option value="{{ r.id }}"{% if cited == r.id %} selected{% endif %}>#{{ r.id }} · {{ r.created_at.strftime('%Y-%m-%d %H:%M') }} UTC · {{ _('passed') if r.ok else _('not clean') }}</option>
                   {% endfor %}
-                  <option value="">{{ _('no run cited for this appliance') }}</option>
+                  <option value=""{% if cited == '' %} selected{% endif %}>{{ _('no run cited for this appliance') }}</option>
                 </select>
                 {% else %}
                   <span class="text-muted">{{ _('nothing to cite — run the pre-upgrade above') }}</span>
@@ -186,9 +187,20 @@
   hard-coded placeholder here would be a second author, and the one nobody can
   correct.
 #}
-<form method="post" action="{{ url_for('change_requests.new') }}" id="uf-cr">
+{#
+  Posted to the FLOW, not to /web/change-requests/new. What a legal change is
+  still lives in change_requests.create_change_request — this handler is the
+  two answers the single-change route cannot give from inside a staged page:
+  come back HERE citing the change, and, when it is refused, come back here
+  with everything the operator typed still in the card.
+#}
+<form method="post" action="{{ url_for('upgrade_flow.change') }}" id="uf-cr">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  {# The ADOM this card was READ in, so the refusal re-renders the same scope
+     the operator was looking at rather than whatever the session last held. #}
+  <input type="hidden" name="_adom" value="{{ product.key }}">
   <input type="hidden" name="action" value="{{ cr_action }}">
+  {% set back = posted or {} %}
   <div class="fw-card mb-3" id="uf-doc">
     <div class="fw-card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
       <span><span class="fw-badge fw-badge-secondary me-2">2</span><strong>{{ _('Change request (CRQ)') }}</strong></span>
@@ -196,13 +208,41 @@
     </div>
     <div class="fw-card-body">
 
+      {% if created %}
+      {#
+        The change this flow raised, cited where it was raised. It used to be
+        a redirect OUT of the flow onto the change's own page: the operator
+        read the confirmation two stages from the end of the workflow they
+        were in the middle of, and the selection they had built was gone.
+        Named with its ref and linked BOTH ways — the document and the
+        per-appliance execution view are different questions.
+      #}
+      <div class="fw-alert fw-alert-success d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
+        <span>
+          <i class="bi bi-clipboard2-check me-1"></i>
+          <strong class="is-mono">{{ created.ref or '#' ~ created.id }}</strong>
+          <span class="ms-1">{{ created.title }}</span>
+          <span class="fw-badge fw-badge-secondary ms-2">{{ created.status }}</span>
+        </span>
+        <span class="d-flex flex-wrap gap-2">
+          <a class="btn btn-sm fw-btn-secondary" href="{{ url_for('change_requests.detail', id=created.id, _adom=product.key) }}">
+            <i class="bi bi-file-earmark-text me-1"></i>{{ _('Open the change') }}</a>
+          <a class="btn btn-sm fw-btn-secondary" href="{{ url_for('upgrade_flow.progress', cr_id=created.id) }}">
+            <i class="bi bi-activity me-1"></i>{{ _('Execution') }}</a>
+        </span>
+      </div>
+      <p class="text-muted small">
+        {{ _('The card below is still here, filled in as you left it: raising a second change over a different group of appliances is the next step of a staged window, not a mistake.') }}
+      </p>
+      {% endif %}
+
       {# ------------------------------------------------- 2.1 language #}
       <div class="fw-step-label text-muted small text-uppercase mb-2">{{ _('Document language') }}</div>
       <div class="d-flex flex-wrap gap-3">
         {% for code, label in crdoc.langs %}
         <label class="form-check">
           <input class="form-check-input uf-lang" type="radio" name="doc_lang" form="uf-cr"
-                 value="{{ code }}" required {{ 'checked' if code == lang_preset else '' }}>
+                 value="{{ code }}" required {{ 'checked' if code == (back.doc_lang if posted else lang_preset) else '' }}>
           <span class="form-check-label"><span class="is-mono">{{ code|upper }}</span> {{ label }}</span>
         </label>
         {% endfor %}
@@ -254,7 +294,7 @@
           #}
           <select class="form-select" name="risk">
             {% for r in risks %}
-            <option value="{{ r }}" {{ 'selected' if r == 'medium' else '' }}>{{ r|capitalize }}</option>
+            <option value="{{ r }}" {{ 'selected' if r == (back.risk or 'medium') else '' }}>{{ r|capitalize }}</option>
             {% endfor %}
           </select>
         </div>
@@ -281,19 +321,20 @@
           <label class="form-label">{{ _('Title') }}
             <span class="fw-auto-chip" data-for="title">{{ _('auto') }}</span></label>
           <input class="form-control" name="title" id="uf-title" form="uf-cr" required
-                 maxlength="200" autocomplete="off" data-auto="1" value="{{ d_title }}">
+                 maxlength="200" autocomplete="off" data-auto="{{ '1' if auto.title else '0' }}"
+                 value="{{ back.title if posted else d_title }}">
         </div>
         <div class="col-12 col-lg-6">
           <label class="form-label">{{ _('Reason') }}
             <span class="fw-auto-chip" data-for="reason">{{ _('auto') }}</span></label>
           <textarea class="form-control" name="reason" id="uf-reason" form="uf-cr"
-                    rows="3" data-auto="1">{{ d_reason }}</textarea>
+                    rows="3" data-auto="{{ '1' if auto.reason else '0' }}">{{ back.reason if posted else d_reason }}</textarea>
         </div>
         <div class="col-12 col-lg-6">
           <label class="form-label">{{ _('Rollback plan') }}
             <span class="fw-auto-chip" data-for="rollback">{{ _('auto') }}</span></label>
           <textarea class="form-control" name="rollback" id="uf-rollback" form="uf-cr"
-                    rows="3" data-auto="1">{{ d_rollback }}</textarea>
+                    rows="3" data-auto="{{ '1' if auto.rollback else '0' }}">{{ back.rollback if posted else d_rollback }}</textarea>
         </div>
       </div>
 
@@ -311,19 +352,20 @@
       <div class="row g-3">
         <div class="col-12 col-lg-7">
           <label class="form-label">{{ _('Change owner (Verantwortlicher)') }}</label>
-          <input class="form-control" name="owner" form="uf-cr" value="{{ defaults.owner }}">
+          <input class="form-control" name="owner" form="uf-cr" value="{{ back.owner if posted else defaults.owner }}">
           <div class="form-text">{{ _('Printed in §1 of the change document. Proposed from your account and editable — cleared, it prints as “not recorded”.') }}</div>
         </div>
         <div class="col-12 col-lg-5">
           <label class="form-label">{{ _('Notify on completion') }}</label>
-          <input class="form-control" name="notify_to" form="uf-cr" value="{{ defaults.notify_to }}" placeholder="{{ _('ops@example.com') }}">
+          <input class="form-control" name="notify_to" form="uf-cr" value="{{ back.notify_to if posted else defaults.notify_to }}" placeholder="{{ _('ops@example.com') }}">
           <div class="form-text">{{ _('Who is emailed when the window closes (completed or failed).') }}</div>
         </div>
         <div class="col-12">
           <label class="form-label">{{ _('Approval') }}</label>
           <select class="form-select" name="approval_mode" form="uf-cr">
-            <option value="manual" selected>{{ _('Manual — approved here in SATOM') }}</option>
-            <option value="external">{{ _('External — an integration must approve it') }}</option>
+            {% set sel_appr = back.approval_mode or 'manual' %}
+            <option value="manual" {{ 'selected' if sel_appr != 'external' else '' }}>{{ _('Manual — approved here in SATOM') }}</option>
+            <option value="external" {{ 'selected' if sel_appr == 'external' else '' }}>{{ _('External — an integration must approve it') }}</option>
           </select>
           <div class="form-text">
             <strong>{{ _('External') }}</strong> {{ _('is fail-closed: the change cannot run until your change-management system approves it. Unreachable, slow and no-answer all count as NOT approved.') }}
@@ -352,11 +394,11 @@
       <div class="row g-3">
         <div class="col-6 col-lg-4">
           <label class="form-label">{{ _('Window start') }} <span class="text-muted">({{ tz_name }})</span></label>
-          <input class="form-control" type="datetime-local" name="window_start">
+          <input class="form-control" type="datetime-local" name="window_start" value="{{ back.window_start or '' }}">
         </div>
         <div class="col-6 col-lg-4">
           <label class="form-label">{{ _('Window end') }} <span class="text-muted">({{ tz_name }})</span></label>
-          <input class="form-control" type="datetime-local" name="window_end">
+          <input class="form-control" type="datetime-local" name="window_end" value="{{ back.window_end or '' }}">
         </div>
       </div>
       <div class="d-flex justify-content-between align-items-center mt-3 flex-wrap gap-2">

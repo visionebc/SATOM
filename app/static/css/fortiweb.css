@@ -2420,3 +2420,12 @@ a.bm-dev:hover { background: var(--fw-accent-light); color: var(--fw-accent); }
 #versionDelta td .dv-api-gap { font-variant-numeric: tabular-nums; }
 #versionDelta td .dv-names-more { line-height: 1.2; vertical-align: baseline; }
 #dvCliNames .modal-body { max-height: 60vh; overflow-y: auto; }
+
+/* "auto" marker on a field still holding the product's proposed wording. Two
+   pages show it (Change Requests -> New, Upgrade Flow stage 2); it is declared
+   ONCE here because a per-page copy is how chrome drifts between sections. */
+.fw-auto-chip{display:none;margin-left:6px;padding:1px 6px;border-radius:9px;
+  font-size:10.5px;font-weight:600;letter-spacing:.02em;text-transform:uppercase;
+  background:var(--fw-surface-alt,#F4F5F7);color:var(--fw-text-secondary,#5A6270);
+  border:1px solid var(--fw-border,#D6DAE0);vertical-align:middle;}
+.fw-auto-chip.is-on{display:inline-block;}

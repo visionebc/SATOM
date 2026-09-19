@@ -245,10 +245,17 @@
         </div>
         <div class="col-12 col-lg-4">
           <label class="form-label">{{ _('Risk') }}</label>
+          {#
+            The vocabulary is services.change_requests.RISKS, the same list the
+            single-change form offers. Spelt out here, this page was a second
+            author of it: a level added or renamed there would never reach the
+            bulk path, and nothing would fail -- the two forms would simply
+            stop offering the same answers to the same question.
+          #}
           <select class="form-select" name="risk">
-            <option value="low">{{ _('low') }}</option>
-            <option value="medium" selected>{{ _('medium') }}</option>
-            <option value="high">{{ _('high') }}</option>
+            {% for r in risks %}
+            <option value="{{ r }}" {{ 'selected' if r == 'medium' else '' }}>{{ r|capitalize }}</option>
+            {% endfor %}
           </select>
         </div>
       </div>
@@ -271,17 +278,20 @@
       </p>
       <div class="row g-3">
         <div class="col-12">
-          <label class="form-label">{{ _('Title') }}</label>
+          <label class="form-label">{{ _('Title') }}
+            <span class="fw-auto-chip" data-for="title">{{ _('auto') }}</span></label>
           <input class="form-control" name="title" id="uf-title" form="uf-cr" required
                  maxlength="200" autocomplete="off" data-auto="1" value="{{ d_title }}">
         </div>
         <div class="col-12 col-lg-6">
-          <label class="form-label">{{ _('Reason') }}</label>
+          <label class="form-label">{{ _('Reason') }}
+            <span class="fw-auto-chip" data-for="reason">{{ _('auto') }}</span></label>
           <textarea class="form-control" name="reason" id="uf-reason" form="uf-cr"
                     rows="3" data-auto="1">{{ d_reason }}</textarea>
         </div>
         <div class="col-12 col-lg-6">
-          <label class="form-label">{{ _('Rollback plan') }}</label>
+          <label class="form-label">{{ _('Rollback plan') }}
+            <span class="fw-auto-chip" data-for="rollback">{{ _('auto') }}</span></label>
           <textarea class="form-control" name="rollback" id="uf-rollback" form="uf-cr"
                     rows="3" data-auto="1">{{ d_rollback }}</textarea>
         </div>
@@ -531,6 +541,14 @@
     reason: document.getElementById('uf-reason'),
     rollback: document.getElementById('uf-rollback')
   };
+  // Which of the three fields still carry the product's proposal. 'Restore
+  // proposal' exists precisely because a field can be overwritten, so the
+  // operator needs to read WHICH ones that button would change -- an edited
+  // field and an untouched one look identical once both hold text.
+  var autoChips = {};
+  Array.prototype.forEach.call(form.querySelectorAll('.fw-auto-chip'),
+    function (c) { autoChips[c.getAttribute('data-for')] = c; });
+
   var MIRROR = {
     title: document.getElementById('uf-w-title'),
     reason: document.getElementById('uf-w-reason'),
@@ -577,6 +595,7 @@
       // change goes out saying something nobody wrote.
       if (el.getAttribute('data-auto') !== '1') { return; }
       el.value = substitute(draft[key], code);
+      if (autoChips[key]) { autoChips[key].classList.add('is-on'); }
     });
     mirror();
   }
@@ -586,6 +605,7 @@
     if (!el) { return; }
     el.addEventListener('input', function () {
       el.setAttribute('data-auto', '0');
+      if (autoChips[key]) { autoChips[key].classList.remove('is-on'); }
       mirror();
     });
   });

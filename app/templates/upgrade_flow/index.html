@@ -194,6 +194,110 @@
   come back HERE citing the change, and, when it is refused, come back here
   with everything the operator typed still in the card.
 #}
+{# ---------------------------------------------- stage 2 — the waves POST #}
+{#
+  An EMPTY form element, deliberately. Its visible fields live inside the
+  stage-2 card below, bound to it by `form="uf-waves"`, because splitting the
+  window into waves is part of raising this change and not a stage of its own.
+  A <form> nested in a <form> is invalid HTML the browser silently unnests --
+  the buttons would post the wrong thing while the page looked right.
+#}
+<form method="post" action="{{ url_for('upgrade_flow.waves') }}" id="uf-waves">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  {# The wording block belongs to the stage-2 form natively; the waves post
+     carries MIRRORS of it, rendered server-side with the same proposal so the
+     batched path is not silently the un-worded one when scripting is off, and
+     kept in step by the script below when it is. #}
+  <input type="hidden" name="doc_lang" id="uf-w-lang" value="{{ lang_preset or render_lang }}">
+  <input type="hidden" name="title" id="uf-w-title" value="{{ d_title }}">
+  <input type="hidden" name="reason" id="uf-w-reason" value="{{ d_reason }}">
+  <input type="hidden" name="rollback" id="uf-w-rollback" value="{{ d_rollback }}">
+  <input type="hidden" name="owner" id="uf-w-owner" value="{{ defaults.owner }}">
+  <input type="hidden" name="notify_to" id="uf-w-notify" value="{{ defaults.notify_to }}">
+  <input type="hidden" name="approval_mode" id="uf-w-approval" value="manual">
+</form>
+
+{# --------------------------------------- stage 2 — the change, rendered WHOLE #}
+{#
+  ONE stage, one number. What this stage produces is a change request, so this
+  is where the change request LIVES: the picker below opens any change this
+  flow has raised, and it renders here exactly as /web/change-requests/<id>
+  renders it -- same action bar, same document, same frozen inventory, same
+  exports -- from the one builder and the one partial both pages share.
+
+  Nothing is opened for the operator. Those blocks carry Approve, Schedule,
+  Mark notified and Cancel; a stage that pre-selects a change is a stage that
+  can get the wrong one approved by somebody who thought they were reading a
+  form.
+#}
+<div class="fw-card mb-3" id="uf-cr-section">
+  <div class="fw-card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <span><span class="fw-badge fw-badge-secondary me-2">2</span><strong>{{ _('Change request (CRQ)') }}</strong></span>
+    <span class="text-muted small">{{ _('Raised, read, approved, scheduled, notified and exported here — the change page itself, inline.') }}</span>
+  </div>
+  <div class="fw-card-body">
+    {% if flow_changes %}
+    <div class="fw-step-label text-muted small text-uppercase mb-2">{{ _('Changes raised from this flow') }}</div>
+    <div class="d-flex flex-wrap gap-2">
+      {% for c in flow_changes %}
+      <a class="btn btn-sm {{ 'fw-btn-primary' if created and c.id == created.id else 'fw-btn-secondary' }}"
+         href="{{ url_for('upgrade_flow.index', cr=c.id, _adom=product.key) }}#uf-cr-section">
+        <span class="is-mono">{{ c.ref or '#' ~ c.id }}</span>
+        <span class="fw-badge fw-badge-secondary ms-1">{{ c.status }}</span>
+      </a>
+      {% endfor %}
+      {% if created %}
+      <a class="btn btn-sm fw-btn-secondary" href="{{ url_for('upgrade_flow.index', _adom=product.key) }}#uf-cr-section">
+        <i class="bi bi-x-lg me-1"></i>{{ _('Close it') }}</a>
+      {% endif %}
+    </div>
+    <div class="form-text">
+      {{ _('Opening one renders it whole, right here. Only changes naming an appliance you can see are listed.') }}
+    </div>
+    {% else %}
+    <p class="text-muted small mb-0">
+      {{ _('No change has been raised from this flow yet. Fill in the card below; the change it raises opens here, whole — approve, schedule, notify and export it without leaving this page.') }}
+    </p>
+    {% endif %}
+{% if created %}
+{#
+  The change this flow raised, shown here in full: the same action bar,
+  overview, change document, frozen affected-service inventory with its
+  exports, external change record, timeline and maintenance notice that
+  /web/change-requests/<id> shows — from the ONE builder both pages call
+  (change_requests.cr_view_context) and the ONE partial both pages include.
+  Citing it with a link and nothing else was still a trip to another screen to
+  approve it, schedule it, mark it notified or export its inventory.
+
+  OUTSIDE the stage-2 <form>, deliberately: those blocks carry forms of their
+  own, and a <form> nested in a <form> is invalid HTML the browser silently
+  unnests — the buttons would post the wrong thing, or nothing at all.
+#}
+    <hr class="my-3">
+    <div class="fw-alert fw-alert-success d-flex flex-wrap justify-content-between align-items-center gap-2 mb-0">
+      <span>
+        <i class="bi bi-clipboard2-check me-1"></i>
+        <strong class="is-mono">{{ created.ref or '#' ~ created.id }}</strong>
+        <span class="ms-1">{{ created.title }}</span>
+        <span class="fw-badge fw-badge-secondary ms-2">{{ created.status }}</span>
+      </span>
+      <span class="d-flex flex-wrap gap-2">
+        <a class="btn btn-sm fw-btn-secondary" href="{{ url_for('change_requests.detail', id=created.id, _adom=product.key) }}">
+          <i class="bi bi-file-earmark-text me-1"></i>{{ _('Open its own page') }}</a>
+        <a class="btn btn-sm fw-btn-secondary" href="{{ url_for('upgrade_flow.progress', cr_id=created.id) }}">
+          <i class="bi bi-activity me-1"></i>{{ _('Execution') }}</a>
+      </span>
+    </div>
+{% endif %}
+  </div>
+</div>
+
+{% if created %}
+{# `with`, not a bare `set`: the include reads `crv` and nothing else in this
+   page may answer to that name by accident. #}
+{% with crv = created_view %}{% include 'change_requests/_view.html' %}{% endwith %}
+{% endif %}
+
 <form method="post" action="{{ url_for('upgrade_flow.change') }}" id="uf-cr">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   {# The ADOM this card was READ in, so the refusal re-renders the same scope
@@ -203,36 +307,14 @@
   {% set back = posted or {} %}
   <div class="fw-card mb-3" id="uf-doc">
     <div class="fw-card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
-      <span><span class="fw-badge fw-badge-secondary me-2">2</span><strong>{{ _('Change request (CRQ)') }}</strong></span>
-      <span class="text-muted small">{{ _('One change for the whole window, citing every pre-upgrade run above.') }}</span>
+      <span><span class="fw-badge fw-badge-secondary me-2">2</span><strong>{% if created %}{{ _('Raise another change request') }}{% else %}{{ _('Raise the change request') }}{% endif %}</strong></span>
+      <span class="text-muted small">{{ _('One change for the whole window, citing every pre-upgrade run above — or one change per wave.') }}</span>
     </div>
     <div class="fw-card-body">
 
       {% if created %}
-      {#
-        The change this flow raised, cited where it was raised. It used to be
-        a redirect OUT of the flow onto the change's own page: the operator
-        read the confirmation two stages from the end of the workflow they
-        were in the middle of, and the selection they had built was gone.
-        Named with its ref and linked BOTH ways — the document and the
-        per-appliance execution view are different questions.
-      #}
-      <div class="fw-alert fw-alert-success d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
-        <span>
-          <i class="bi bi-clipboard2-check me-1"></i>
-          <strong class="is-mono">{{ created.ref or '#' ~ created.id }}</strong>
-          <span class="ms-1">{{ created.title }}</span>
-          <span class="fw-badge fw-badge-secondary ms-2">{{ created.status }}</span>
-        </span>
-        <span class="d-flex flex-wrap gap-2">
-          <a class="btn btn-sm fw-btn-secondary" href="{{ url_for('change_requests.detail', id=created.id, _adom=product.key) }}">
-            <i class="bi bi-file-earmark-text me-1"></i>{{ _('Open the change') }}</a>
-          <a class="btn btn-sm fw-btn-secondary" href="{{ url_for('upgrade_flow.progress', cr_id=created.id) }}">
-            <i class="bi bi-activity me-1"></i>{{ _('Execution') }}</a>
-        </span>
-      </div>
       <p class="text-muted small">
-        {{ _('The card below is still here, filled in as you left it: raising a second change over a different group of appliances is the next step of a staged window, not a mistake.') }}
+        {{ _('This card is still here, filled in as you left it: raising a second change over a different group of appliances is the next step of a staged window, not a mistake.') }}
       </p>
       {% endif %}
 
@@ -405,50 +487,39 @@
         <span class="text-muted small" id="uf-cr-note">{{ _('Tick appliances in stage 1. Only those with a stored pre-upgrade run contribute evidence; an appliance without one is still covered by the change, it simply carries no baseline.') }}</span>
         <button type="submit" class="btn fw-btn-primary"><i class="bi bi-clipboard2-plus me-1"></i>{{ _('Raise one change request') }}</button>
       </div>
-    </div>
-  </div>
-</form>
 
-{# ------------------------------------------------------- stage 2b (waves) #}
-<form method="post" action="{{ url_for('upgrade_flow.waves') }}" id="uf-waves">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  {# The wording block above belongs to the stage-2 form natively; the waves
-     form carries MIRRORS of it, rendered server-side with the same proposal so
-     the batched path is not silently the un-worded one when scripting is off,
-     and kept in step by the script below when it is. #}
-  <input type="hidden" name="doc_lang" id="uf-w-lang" value="{{ lang_preset or render_lang }}">
-  <input type="hidden" name="title" id="uf-w-title" value="{{ d_title }}">
-  <input type="hidden" name="reason" id="uf-w-reason" value="{{ d_reason }}">
-  <input type="hidden" name="rollback" id="uf-w-rollback" value="{{ d_rollback }}">
-  <input type="hidden" name="owner" id="uf-w-owner" value="{{ defaults.owner }}">
-  <input type="hidden" name="notify_to" id="uf-w-notify" value="{{ defaults.notify_to }}">
-  <input type="hidden" name="approval_mode" id="uf-w-approval" value="manual">
-  <div class="fw-card mb-3">
-    <div class="fw-card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
-      <span><span class="fw-badge fw-badge-secondary me-2">2b</span><strong>{{ _('Or split the same selection into waves') }}</strong></span>
-      <span class="text-muted small">{{ _('One wave = one ordinary change request, with its own window and its own approval.') }}</span>
-    </div>
-    <div class="fw-card-body">
+      <hr class="my-4">
+
+      {# ------------------------------- 2.6 the same selection, in waves #}
+      {#
+        Was a card of its own numbered 2b, which read as a stage between
+        raising the change and executing it. It is neither: it is the same
+        stage answering "one window or several", over the same ticks, the same
+        wording and the same owner. EVERY field here carries form="uf-waves" --
+        unbound they would belong to the stage-2 form, and `window_start`
+        exists in both, so the single change would post two of them.
+      #}
+      <div class="fw-step-label text-muted small text-uppercase mb-2">{{ _('Or split the same selection into waves') }}</div>
       <p class="text-muted small">
-        {{ _('For a rollout too large for one window: the appliances are chunked in name order, and each chunk gets a change of its own so the first group can be watched before the next one is approved. Nothing about approval, execution or the customer-impact export changes — a wave is a change request like any other.') }}
+        {{ _('For a rollout too large for one window: the appliances are chunked in name order, and each chunk gets a change of its own so the first group can be watched before the next one is approved. One wave = one ordinary change request, with its own window and its own approval — nothing about approval, execution or the customer-impact export changes.') }}
       </p>
       <div class="row g-3">
         <div class="col-6 col-lg-3">
           <label class="form-label">{{ _('Appliances per wave') }}</label>
-          <input class="form-control" type="number" name="wave_size" min="1" value="5">
+          <input class="form-control" type="number" name="wave_size" form="uf-waves" min="1" value="5">
           <div class="form-text">{{ _('Each wave takes the title above, suffixed “… — wave k/N”.') }}</div>
         </div>
         <div class="col-6 col-lg-3">
           <label class="form-label">{{ _('First window start') }}</label>
-          <input class="form-control" type="datetime-local" name="window_start">
+          <input class="form-control" type="datetime-local" name="window_start" form="uf-waves">
         </div>
         <div class="col-6 col-lg-3">
           <label class="form-label">{{ _('Window (minutes)') }}</label>
-          <input class="form-control" type="number" name="wave_minutes" min="1" value="120">
+          <input class="form-control" type="number" name="wave_minutes" form="uf-waves" min="1" value="120">
         </div>
         <div class="col-6 col-lg-3">
           <label class="form-label">{{ _('Gap') }}</label>
-          <input class="form-control" type="number" name="wave_gap" min="0" value="30">
+          <input class="form-control" type="number" name="wave_gap" form="uf-waves" min="0" value="30">
         </div>
       </div>
       <div id="uf-waves-targets"></div>
@@ -457,11 +528,12 @@
           {{ _('Windows are consecutive and never overlap: each wave starts after the previous one ends, plus the gap. Leave the start empty to raise the waves now and schedule them later. At most') }}
           <strong>{{ max_waves }}</strong> {{ _('waves at once.') }}
         </span>
-        <button type="submit" class="btn fw-btn-secondary"><i class="bi bi-layers me-1"></i>{{ _('Raise one change per wave') }}</button>
+        <button type="submit" form="uf-waves" class="btn fw-btn-secondary"><i class="bi bi-layers me-1"></i>{{ _('Raise one change per wave') }}</button>
       </div>
     </div>
   </div>
 </form>
+
 {% endif %}{# crdoc.entry #}
 {% endif %}{# user_manage #}
 
@@ -522,9 +594,16 @@
     return sel ? sel.value : '';
   }
 
-  function hidden(parent, name, value) {
+  // `owner` is the id of the form element the field belongs to, and it is NOT
+  // optional for the wave fields: they are injected inside the stage-2 form's
+  // card, so an unbound hidden device_ids would be posted by the single change
+  // as well -- silently doubling its own device list. (Spelt without the
+  // angle brackets on purpose: a // comment reaches the served HTML, and a
+  // markup-shaped word in it answers any check that counts form tags.)
+  function hidden(parent, name, value, owner) {
     var el = document.createElement('input');
     el.type = 'hidden'; el.name = name; el.value = value;
+    if (owner) { el.setAttribute('form', owner); }
     parent.appendChild(el);
   }
 
@@ -555,8 +634,8 @@
       // prep_ids list cannot say which appliance each run belongs to without
       // the server looking every one of them up again.
       if (waveBox) {
-        hidden(waveBox, 'device_ids', c.value);
-        if (pid) { hidden(waveBox, 'prep_pairs', c.value + ':' + pid); }
+        hidden(waveBox, 'device_ids', c.value, 'uf-waves');
+        if (pid) { hidden(waveBox, 'prep_pairs', c.value + ':' + pid, 'uf-waves'); }
       }
     });
     if (picked.length) {

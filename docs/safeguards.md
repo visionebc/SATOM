@@ -15674,3 +15674,101 @@ of them. A mutation that was never applied is not a guard that held. 83 targeted
 the modules edited). Live render against the real database of a1: the form
 posting to the flow, a citation of a real change, and four refusals coming
 back with the card intact — none of which created a row.
+
+
+## §183 — a stage that showed the change but could not drive it (`tests/test_upgrade_flow.py`, `tests/test_cr_edit.py`, 2026-09-19)
+
+**The defect.** The previous round stopped stage 2 of the upgrade flow from
+throwing the operator out on submit, and cited the raised change with a link.
+Nine blocks make up a change request; stage 2 had **one** — the form. Approving
+it, scheduling it, marking the client notified, exporting the inventory, asking
+for the external ticket or reading the document were all still a trip to
+`/change-requests/<id>`, which is the trip the stage exists to remove.
+
+**The fix, and the shape of it.** The blocks moved into ONE partial
+(`app/templates/change_requests/_view.html`) fed by ONE builder
+(`change_requests.cr_view_context`). `change_requests/detail.html` is now a
+header and an `{% include %}`; the flow renders the same include when it has a
+change to show. The lifecycle routes return to the page the button was pressed
+on, via `_after()`.
+
+**What is guarded, and why each one exists:**
+
+| Guard | The failure it refuses |
+|---|---|
+| `test_stage_two_renders_the_whole_change_not_a_link_to_it` | the eight block markers and five action markers are all present on the flow once a change exists |
+| `test_the_flow_and_the_change_page_show_the_same_change` | presence compared BOTH ways **and required on both** — two pages agreeing a block is missing is not the two pages agreeing |
+| `test_there_is_exactly_one_author_for_those_blocks` | the markup exists in the partial and in **neither** page; the flow was already a second author of the CRQ form once |
+| `test_no_form_is_nested_inside_another_on_the_flow` | the embedded blocks carry forms and stage 2 *is* a form — a nested `<form>` is invalid HTML the browser silently unnests, and every button in the inner one then posts the wrong thing while the page still looks right |
+| `test_approving_from_the_flow_comes_back_to_the_flow` | asserts the redirect **and** that the change really was approved — a round trip that lands correctly having done nothing is the quieter bug |
+| `test_approving_from_the_changes_own_page_still_lands_there` | the change's own page stops being its own return target |
+| `test_the_return_target_is_a_token_never_a_url` (×5) | `https://evil.example/x`, `//evil.example`, a valid-looking internal path, wrong case and junk — only the known token is honoured |
+| `test_every_lifecycle_button_carries_the_return_token` | one button left without it walks the operator out silently, and only that one |
+| `test_the_live_comparison_does_not_leave_the_flow` | the drift link is read **by id**, because the sidebar has a `bi-arrow-repeat` of its own and a search by icon returns that one |
+| `test_editing_from_the_flow_returns_to_the_flow` | the token survives the GET, the hidden field and the POST; Back and Discard on the edit screen too |
+| `test_a_citation_of_nothing_embeds_nothing` | an unciteable id must not render a change's blocks as a consolation prize |
+| `test_a_reader_who_cannot_drive_the_change_gets_no_buttons` | a button that answers 403 reads as an action you may take — and the second half asserts the buttons ARE there for someone, so the first half cannot pass by gating everybody off |
+| `test_the_flow_does_not_rebuild_the_change_view` | the flow calls `cr_view_context` and assembles none of it itself |
+
+**Three traps this round, all of them measurement traps:**
+
+1. **A guard that read the wrong link.** The drift assertion searched for
+   `<a …><i class="bi bi-arrow-repeat`, and the sidebar's own icon is earlier in
+   the document — it measured a link to `/web/server-objects/…` and said
+   nothing about the one under test. Fixed by giving the link `id="crv-drift"`
+   and asking for it by name.
+2. **A guard defanged by a rename.** `test_the_citation_never_names_a_change
+   _this_operator_cannot_see` asserted on the button label *"Open the change"*.
+   The button is now *"Open its own page"*, so the assertion would have gone on
+   passing while measuring nothing. Repointed.
+3. **A guard whose file moved out from under it.** `test_the_cancel_control
+   _cannot_squeeze_its_own_button` reads `detail.html` for the cancel form's
+   flex rules — markup that now lives in the partial. Left as it was it would
+   have passed against a file that no longer contains what it measures.
+   `DETAIL_TPL` repointed at `_view.html`.
+
+**And one guard the fixture could not support.** The reader test was first
+written against the flow page; stage 2 sits behind `user_manage` in that
+template, so the guard passed by finding an empty stage and said nothing about
+the gate. Rewritten to render the partial directly with a real `operator` user
+— which is where `can_act` actually decides anything.
+
+**Verification recipe.** `pytest tests/test_upgrade_flow.py tests/test_cr_edit.py
+tests/test_change_request_lifecycle.py -q` → RC=0. Then check the two pages
+agree in the browser, not only in the guards: the block count on
+`/web/change-requests/<id>` and on `/web/upgrade-flow/?cr=<id>` must be equal,
+and `grep -c 'name="back" value="upgrade_flow"'` must be **0** on the first and
+**≥4** on the second.
+
+### §183b — stage 2 IS the change request (picker + waves folded in, 2026-09-19)
+
+Reported as *"no has cambiado nada"*, twice, and both times correctly: the
+blocks rendered only for `?cr=<id>`, and nothing on the page ever produced that
+link, so the stage read as a bare form to anyone who had not just pressed its
+button. Stage 2 now lists every upgrade change this operator can see and opens
+any of them inline, exactly as `/web/change-requests/<id>` renders it.
+
+Nothing is auto-opened. Those blocks carry Approve / Schedule / Mark notified /
+Cancel, which act on a real change; a stage that picks one is a stage that can
+get the wrong change approved by somebody who thought they were reading a form.
+
+**2b is no longer a stage.** Its fields live inside the stage-2 card after that
+card's own submit, with the `<form id="uf-waves">` hoisted ABOVE as an EMPTY
+element and every visible field bound back by `form="uf-waves"`.
+
+- **Why the binding is not cosmetic:** `window_start` exists in BOTH forms.
+  An unbound waves input inside the stage-2 card posts a second `window_start`
+  with the single change — same name, different meaning, nothing fails, and
+  which one the server reads is an accident of ordering.
+- `tests/test_upgrade_flow.py::_stage_two` had to be repaired, not relaxed: it
+  bounded the stage-2 slice by splitting at `id="uf-waves"`, which now sits
+  above the form. Left alone it returned the rest of the page and every
+  assertion built on it would have widened in silence.
+- Recipe: `grep -c 'form="uf-waves"'` on the served page → **5** (4 inputs +
+  1 button); `name="window_start"` unbound inside the stage-2 slice → **1**.
+- Form depth is measured on MARKUP ONLY. A `//` comment reaches the served
+  HTML, and this page's script comments talk about form elements — counting
+  them reported depth 2 on a page whose real depth is 1. Strip `<script>`
+  blocks first, and do not write markup-shaped words in JS comments.
+- `bi-pencil-square` is NOT a usable marker for the Edit button in a
+  whole-page assertion: the nav uses the same icon (Custom Signature).

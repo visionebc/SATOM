@@ -4755,6 +4755,50 @@ the same one the single-change form and the batched wave route use. Only the
 two answers — where you end up — belong to this page. The change type stays
 fixed at `upgrade` and is read from the code, not from the form.
 
+### 40.1c Stage 2 *is* the change request — all of it
+
+Raising the change inside the flow fixed the **submit**. It did not fix the
+rest: approving the change, scheduling it, marking the client notified,
+exporting the affected-service inventory, asking for the external ticket or
+reading the change document were all still a trip to
+`/change-requests/<id>` — which is the trip stage 2 exists to remove.
+
+Since **2026-09-19**, once a change has been raised the flow renders it whole,
+in place. Everything the change's own page shows is on stage 2:
+
+| Block | What it is |
+|---|---|
+| **Action bar** | Run-gate verdict and reason, plus **Approve**, **Schedule**, **Mark notified**, **Edit** and **Cancel CR** — the buttons, not links to them. |
+| **Overview** | Action, risk, window in your timezone, the appliances, who asked and who approved, notification address and status, bound scheduled action. |
+| **Change document** | The formal 13-section document, viewable and downloadable in every configured language. |
+| **Affected services** | The **frozen** inventory with its per-appliance pre-upgrade evidence table, the live-drift comparison, and the column-picking `.xlsx` / `.csv` export. |
+| **External change record** | Approval mode, change ticket, NetBox window, the integration log, and the button that queues `change.requested`. |
+| **Timeline** | Every recorded event on the change. |
+| **Maintenance notice** | The client-facing draft. |
+
+Four things about how this is built are deliberate:
+
+* **One author.** The blocks live in a single partial
+  (`change_requests/_view.html`) built from a single function
+  (`change_requests.cr_view_context`). Both pages include the one and call the
+  other. A second copy would drift — and the embedded copy, read once at the
+  end of a window nobody re-opens, would drift first.
+* **Every button comes back here.** Approve, schedule, notify, cancel, the
+  ticket request and even the Edit screen return to the flow, still citing the
+  change. Pressed on the change's own page the very same buttons return there.
+  This is carried as a **token**, never as a URL in the form: a redirect target
+  read out of a request field is an open redirect, and these buttons now sit on
+  a page more operators can reach.
+* **"Compare against the devices now" does not leave the flow.** It is the same
+  question asked about the page you are on.
+* **A change you cannot see is not rendered.** An unknown id, or one naming a
+  change outside your ADOM, reads as *no citation at all* — never as a 404, and
+  never as the existence of something you may not open.
+
+Below the change, the card that raised it is still there, filled in as you left
+it, relabelled **Raise another change request**: a staged window is normally
+several changes over different groups of appliances.
+
 ### 40.2 Two limits that refuse rather than truncate
 
 | Limit | Value | Why |

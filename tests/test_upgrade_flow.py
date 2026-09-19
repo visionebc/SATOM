@@ -1634,30 +1634,29 @@ def test_the_newest_is_what_opens_and_an_explicit_id_still_wins(app, client):
         "asking for an older change did not displace the default"
 
 
-def test_close_it_stays_closed(app, client):
-    """`?cr=0` is the closed state, and no change can carry id 0.
+def test_no_url_leaves_the_stage_as_a_bare_form(app, client):
+    """There is no closed state left, because its only control was removed.
 
-    A bare visit is what OPENS the newest one, so ``cr=0`` -- not a missing
-    argument -- is the only spelling of "closed". The control that used to
-    carry it was removed with the picker; the STATE is still supported and is
-    still what this guard measures.
+    ``?cr=0`` WAS the closed state, written by the picker's "Close it" button.
+    The picker went on request (2026-09-19) and the state outlived it: an
+    operator who had pressed Close it -- or anyone holding that URL, which is
+    what a browser keeps across a reload -- sat on a bare form with the change
+    gone and NOTHING on the page able to bring it back. That is the bug this
+    guard exists to keep fixed, so it measures the three spellings that used
+    to differ: plain, the old closed state, and an id that resolves to nothing
+    this operator may see. All three must open the newest change, whole.
     """
-    _raise_one(app, client, "close-stays-closed")
-    closed = client.get("/web/upgrade-flow/?cr=0").get_data(as_text=True)
-    for label, marker in _CR_BLOCKS.items():
-        if label == "overview":
-            continue  # stage 1 has a heading of its own by that name
-        assert marker not in closed, \
-            "%s rendered on a stage the operator closed" % label
-    for label, marker in _CR_ACTIONS.items():
-        if label == "edit":
-            continue
-        assert marker not in closed, \
-            "%s is live on a stage the operator closed" % label
-    # There is no Close control any more: it lived in the picker the user
-    # removed (2026-09-19), so the closed state is now reachable only by URL.
-    # That is deliberate and is NOT a relaxation of this guard -- what it
-    # verifies (cr=0 renders no record and no live button) is unchanged.
+    _raise_one(app, client, "no-dead-end")
+    for url in ("/web/upgrade-flow/",
+                "/web/upgrade-flow/?cr=0",
+                "/web/upgrade-flow/?cr=99999"):
+        html = client.get(url).get_data(as_text=True)
+        for label, marker in _CR_BLOCKS.items():
+            assert marker in html, \
+                "%s missing on %s -- the stage is a bare form again" % (
+                    label, url)
+    # The control whose removal created the dead end must stay removed: put it
+    # back and the state it writes is reachable again.
     opened = client.get("/web/upgrade-flow/").get_data(as_text=True)
     assert "Close it" not in opened, \
         "the removed Close control is back on the stage"

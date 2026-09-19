@@ -225,10 +225,11 @@
   renders it -- same action bar, same document, same frozen inventory, same
   exports -- from the one builder and the one partial both pages share.
 
-  A plain visit opens the NEWEST change raised from this flow. ?cr=<id> opens
-  a specific one and ?cr=0 leaves the stage as the bare form; neither has a
-  control on the page any more -- the list of raised changes was removed on
-  request, so this stage shows ONE change and nothing that switches it. Those
+  This stage shows ONE change: the newest this flow raised, whole. ?cr=<id>
+  still opens a specific one for a hand-off link, but there is no control on
+  the page that switches or closes it -- the list of raised changes was removed
+  on request, and the closed state it used to write went with it, so no URL
+  leaves this stage as a bare form while a change exists. Those
   blocks carry Approve, Schedule, Mark notified and Cancel, so the header of
   every one of them names the ref, title and status of the change it acts on.
 #}

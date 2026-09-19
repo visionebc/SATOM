@@ -225,10 +225,10 @@
   renders it -- same action bar, same document, same frozen inventory, same
   exports -- from the one builder and the one partial both pages share.
 
-  Nothing is opened for the operator. Those blocks carry Approve, Schedule,
-  Mark notified and Cancel; a stage that pre-selects a change is a stage that
-  can get the wrong one approved by somebody who thought they were reading a
-  form.
+  A plain visit opens the NEWEST change raised from this flow; the picker
+  switches, and Close it (?cr=0) leaves the stage as the bare form. Those
+  blocks carry Approve, Schedule, Mark notified and Cancel, so the header of
+  every one of them names the ref, title and status of the change it acts on.
 #}
 <div class="fw-card mb-3" id="uf-cr-section">
   <div class="fw-card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
@@ -247,12 +247,13 @@
       </a>
       {% endfor %}
       {% if created %}
-      <a class="btn btn-sm fw-btn-secondary" href="{{ url_for('upgrade_flow.index', _adom=product.key) }}#uf-cr-section">
+      {# cr=0, not a bare link: no cr at all is what opens the newest one. #}
+      <a class="btn btn-sm fw-btn-secondary" href="{{ url_for('upgrade_flow.index', cr=0, _adom=product.key) }}#uf-cr-section">
         <i class="bi bi-x-lg me-1"></i>{{ _('Close it') }}</a>
       {% endif %}
     </div>
     <div class="form-text">
-      {{ _('Opening one renders it whole, right here. Only changes naming an appliance you can see are listed.') }}
+      {{ _('The newest one is open below, whole. Pick another to switch. Only changes naming an appliance you can see are listed.') }}
     </div>
     {% else %}
     <p class="text-muted small mb-0">

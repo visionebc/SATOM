@@ -18,8 +18,9 @@ This blueprint is the staged front for the whole thing:
   4. Execution — the approved change's one-shot action, or manual.
 
 It OWNS no workflow of its own. Stage 1 calls ``services.prep_store``, stage 2
-posts to :func:`app.views.change_requests.new`, stages 3 and 4 link into that
-change. A second implementation of any of them is precisely the defect this
+calls :func:`app.views.change_requests.create_change_request` — the same one
+implementation the single-change form uses, and the same one the batched wave
+route uses — stages 3 and 4 link into that change. A second implementation of any of them is precisely the defect this
 feature was built to remove: ``scheduled_actions._do_upgrade_prep`` spent
 months as a rival "upgrade prep" that stored no evidence at all.
 
@@ -187,10 +188,126 @@ def preselect_prep(raw, device_id, runs):
     return None, raw
 
 
-@bp.route('/')
-@login_required
-@require_permission(Permission.BACKUP)
-def index():
+def submitted_fields(form) -> dict:
+    """What the operator had in stage 2, as the page must be able to re-read it.
+
+    Verbatim, and the windows as TEXT: they go back into the
+    ``datetime-local`` inputs exactly as they were typed, in the console's
+    timezone, never re-formatted out of the UTC value the parser produced. A
+    refused change that comes back with the hour shifted is worse than an
+    empty form, because it looks like the operator typed it.
+    """
+    def ints(name):
+        out = set()
+        for raw in form.getlist(name):
+            try:
+                out.add(int(raw))
+            except (TypeError, ValueError):
+                continue
+        return out
+
+    return {
+        'doc_lang': (form.get('doc_lang') or '').strip(),
+        'risk': (form.get('risk') or '').strip(),
+        'title': form.get('title') or '',
+        'reason': form.get('reason') or '',
+        'rollback': form.get('rollback') or '',
+        'owner': form.get('owner') or '',
+        'notify_to': form.get('notify_to') or '',
+        'approval_mode': (form.get('approval_mode') or '').strip(),
+        'window_start': (form.get('window_start') or '').strip(),
+        'window_end': (form.get('window_end') or '').strip(),
+        'device_ids': ints('device_ids'),
+        'prep_ids': ints('prep_ids'),
+    }
+
+
+def prep_choice(devices, runs, preselect, prep_pick, posted) -> dict:
+    """``{appliance_id: prep_id or ''}`` — WHICH run each row cites.
+
+    ONE author for a question the page answers in three situations: a plain
+    visit (the newest run is proposed), a hand-off from an appliance's own
+    pre-upgrade page (``?prep=`` wins, and only for that appliance), and a
+    refused change coming back (whatever the operator had chosen). Spelt out
+    in the template the first two were already a compound condition and the
+    third had nowhere to go: a re-render would have re-proposed the newest run
+    over a citation the operator had deliberately cleared, and the page would
+    have looked exactly as if they had chosen it.
+    """
+    out: dict = {}
+    for dev in devices:
+        rows = runs.get(dev.id) or []
+        if not rows:
+            continue
+        if posted is not None and dev.id in posted['device_ids']:
+            # '' is a REAL answer here — "this appliance is in the change and
+            # cites no run" — not a missing one.
+            out[dev.id] = next((r.id for r in rows
+                                if r.id in posted['prep_ids']), '')
+            continue
+        if prep_pick and preselect == dev.id:
+            out[dev.id] = prep_pick
+            continue
+        out[dev.id] = rows[0].id
+    return out
+
+
+def auto_fields(posted, crdoc, devices, render_lang) -> dict:
+    """Which of title/reason/rollback still hold the product's own proposal.
+
+    On a plain visit, all three. On a re-render it is COMPUTED: the proposal
+    the page would have shown is rebuilt here — the change type's sentence
+    with the device token replaced by the names the operator had ticked, in
+    the order the table lists them, which is exactly what the page's own
+    substitution does — and compared with what came back. Marking all three
+    "edited" would be simpler and wrong in the common case: an operator who
+    corrected only the window would find the wording frozen for the rest of
+    the session, with a chip claiming text is theirs that they never touched.
+    """
+    keys = ('title', 'reason', 'rollback')
+    if posted is None:
+        return {k: True for k in keys}
+    drafts = crdoc.get('drafts') or {}
+    code = posted['doc_lang'] if posted['doc_lang'] in drafts else render_lang
+    draft = drafts.get(code) or {}
+    names = [d.name for d in devices if d.id in posted['device_ids']]
+    shown = (', '.join(names) if names
+             else (crdoc.get('devices_none', {}).get(code) or ''))
+    token = crdoc.get('devices_token') or ''
+    return {k: posted[k] == str(draft.get(k) or '').replace(token, shown)
+            for k in keys}
+
+
+def created_change(raw):
+    """The change stage 2 has just raised, cited back on the flow. Or None.
+
+    Never a 404: this is decoration on a page that renders perfectly without
+    it, and an id naming a change outside the operator's ADOM must read as no
+    citation at all rather than as the existence of something they cannot see.
+    """
+    raw = (raw or '').strip()
+    if not raw:
+        return None
+    try:
+        cid = int(raw)
+    except (TypeError, ValueError):
+        return None
+    cr = db.session.get(ChangeRequest, cid)
+    if cr is None or not _visible_to_me(cr):
+        return None
+    return cr
+
+
+def page_context(posted=None) -> dict:
+    """Everything the flow page renders, as plain data.
+
+    ``posted`` is the stage-2 form coming BACK after the change was refused;
+    it is None on an ordinary visit. Built as a function so the refusal path
+    re-renders the very page the operator was on instead of redirecting them
+    to a different form — the two would otherwise be two authors of the same
+    screen, and it is the error path, the one nobody looks at twice, that
+    would have drifted.
+    """
     from ..services import prep_store
     devices = _eligible()
     # Scoped against the SAME list the checkboxes are rendered from, never
@@ -257,32 +374,107 @@ def index():
         'owner': (getattr(current_user, 'username', '') or ''),
         'notify_to': (email_service.config().get('default_to') or '').strip(),
     }
-    return render_template('upgrade_flow/index.html',
-                           devices=devices, latest=latest, runs=runs,
-                           preselect_prep=prep_pick,
-                           preselect_prep_unresolved=prep_unresolved,
-                           defaults=defaults, tz_name=_tz_name(),
-                           # Enumerated kwargs: a value the resolver computes
-                           # but render_template does not name simply never
-                           # reaches the page, with every assertion above it
-                           # still green.
-                           preselect=preselect,
-                           preselect_unresolved=preselect_unresolved,
-                           wave_groups=wave_groups,
-                           risks=crsvc_risks(),
-                           kinds=prep_kinds(), max_sweep=MAX_SWEEP,
-                           max_waves=MAX_WAVES, crdoc=crdoc,
-                           cr_action=CR_ACTION,
-                           lang_preset=lang_preset,
-                           # The text has to be rendered in SOME language for
-                           # the page to work without scripting; that is not
-                           # the same as the question being answered, and the
-                           # radios still ask it.
-                           render_lang=(lang_preset or fallback),
-                           lang_pref_label=(lang_registry.label(pref_lang)
-                                            if pref_lang else ''),
-                           lang_pref_unrenderable=(bool(pref_lang)
-                                                   and not lang_preset))
+    render_lang = (lang_preset or fallback)
+    # Returned as ONE dict and splatted by the caller. Enumerating the keys at
+    # the render call is how a value this function computes can fail to reach
+    # the template with every assertion about it still green.
+    return dict(
+        devices=devices, latest=latest, runs=runs,
+        preselect_prep=prep_pick,
+        preselect_prep_unresolved=prep_unresolved,
+        defaults=defaults, tz_name=_tz_name(),
+        preselect=preselect,
+        preselect_unresolved=preselect_unresolved,
+        wave_groups=wave_groups,
+        risks=crsvc_risks(),
+        kinds=prep_kinds(), max_sweep=MAX_SWEEP,
+        max_waves=MAX_WAVES, crdoc=crdoc,
+        cr_action=CR_ACTION,
+        lang_preset=lang_preset,
+        # The text has to be rendered in SOME language for the page to work
+        # without scripting; that is not the same as the question being
+        # answered, and the radios still ask it.
+        render_lang=render_lang,
+        lang_pref_label=(lang_registry.label(pref_lang)
+                         if pref_lang else ''),
+        lang_pref_unrenderable=(bool(pref_lang) and not lang_preset),
+        # --- the three answers that differ between a visit and a refusal ---
+        posted=posted,
+        ticked=(posted['device_ids'] if posted is not None
+                else ({preselect} if preselect else set())),
+        prep_choice=prep_choice(devices, runs, preselect, prep_pick, posted),
+        auto=auto_fields(posted, crdoc, devices, render_lang),
+        created=created_change(request.args.get('cr')),
+    )
+
+
+@bp.route('/')
+@login_required
+@require_permission(Permission.BACKUP)
+def index():
+    return render_template('upgrade_flow/index.html', **page_context())
+
+
+@bp.route('/change', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def change():
+    """Stage 2 — raise the ONE change, without leaving the flow.
+
+    Stage 2 used to post straight at ``change_requests.new``, which cannot do
+    either of the two things a stage inside a staged page has to do. On
+    success it sent the operator to that change's own page — out of the flow,
+    two stages from the end, with no way back to the selection they had built.
+    On refusal it redirected to an EMPTY ``/change-requests/new``: the form
+    they had deliberately not used, with everything they had typed gone, and
+    the pre-flight evidence they had picked per appliance gone with it.
+
+    This is NOT a second implementation of "raise a change". What a legal
+    change is stays in ``change_requests.create_change_request``, exactly as
+    the batched wave route uses it. Only the two answers are this page's own.
+    """
+    from .change_requests import _parse_dt, create_change_request
+    posted = submitted_fields(request.form)
+    cr, error = create_change_request({
+        'title': posted['title'],
+        # Read from the module, never from the post. The flow raises the
+        # upgrade change — the pre-flight above it, the wording beside it and
+        # the executor after it are all that one action — and a type arriving
+        # in a form field is a type somebody could substitute for one whose
+        # wording this page cannot propose.
+        'action': CR_ACTION,
+        'risk': posted['risk'],
+        'reason': posted['reason'],
+        'rollback': posted['rollback'],
+        'owner': posted['owner'],
+        'notify_to': posted['notify_to'],
+        'approval_mode': posted['approval_mode'],
+        'doc_lang': posted['doc_lang'],
+        'device_ids': sorted(posted['device_ids']),
+        'prep_ids': sorted(posted['prep_ids']),
+        'window_start': _parse_dt(posted['window_start']),
+        'window_end': _parse_dt(posted['window_end']),
+        'requested_by': getattr(current_user, 'username', '') or '',
+    })
+    if cr is None:
+        flash(error, 'danger')
+        # Re-rendered, not redirected: a redirect cannot carry the form back.
+        # 200 and not 4xx because a reverse proxy in front of this product may
+        # be configured to replace an error body with its own page, which
+        # would answer a refused change with a blank error screen.
+        return render_template('upgrade_flow/index.html',
+                               **page_context(posted=posted))
+    log_action('upgrade_flow.change', target=cr.ref or f'#{cr.id}',
+               detail=f'{len(cr.device_ids_list)} appliance(s)')
+    flash(f'Change request {cr.ref} "{cr.title}" was raised. Approve and '
+          f'schedule it from the change itself; this flow now cites it.',
+          'success')
+    # BACK to the flow, citing the change. The operator is mid-window-planning
+    # and the next thing they do is stage 2b or the change's own page — both
+    # of which are reachable from here, and neither of which was reachable
+    # from where this used to land them.
+    from .appliances import _adom_arg
+    return redirect(url_for('upgrade_flow.index', cr=cr.id, **_adom_arg()))
 
 
 def split_waves(devices, size: int) -> list[list]:
@@ -460,6 +652,23 @@ def waves():
     return redirect(url_for('upgrade_flow.index'))
 
 
+def _visible_to_me(cr) -> bool:
+    """Does this change name any appliance this operator can see?
+
+    A change with NO devices is visible: it names nothing to be scoped by, and
+    hiding it would make an empty change unreachable from the page that raised
+    it. One author, because the 404 gate and the "just created" citation must
+    agree about what "visible" means — disagreeing would either 404 a change
+    the flow had just cited or cite one its own page refuses to open.
+    """
+    ids = cr.device_ids_list
+    if not ids:
+        return True
+    visible = {row[0] for row in
+               visible_appliances().with_entities(Appliance.id).all()}
+    return any(i in visible for i in ids)
+
+
 def _cr_or_404(cr_id: int) -> ChangeRequest:
     """Load an upgrade change, honouring the SAME ADOM scope as its own page.
 
@@ -468,12 +677,8 @@ def _cr_or_404(cr_id: int) -> ChangeRequest:
     ADOM exists.
     """
     cr = ChangeRequest.query.get_or_404(cr_id)
-    ids = cr.device_ids_list
-    if ids:
-        visible = {row[0] for row in
-                   visible_appliances().with_entities(Appliance.id).all()}
-        if not any(i in visible for i in ids):
-            abort(404)
+    if not _visible_to_me(cr):
+        abort(404)
     return cr
 
 

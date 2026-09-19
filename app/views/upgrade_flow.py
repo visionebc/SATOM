@@ -379,16 +379,10 @@ def page_context(posted=None) -> dict:
     # Resolved ONCE: the citation and the embedded view have to be the same
     # change, and two independent lookups of the same query argument is how
     # a page comes to name one record and render another.
-    created = created_change(request.args.get('cr'))
+    asked_cr = request.args.get('cr')
+    created = created_change(asked_cr)
     # Every change this flow has raised that this operator may see, newest
-    # first. Stage 2 renders the CHANGE ITSELF, and until now the only way to
-    # reach that rendering was to hand-type ?cr= -- so the stage looked like a
-    # bare form to everyone who had not just pressed its button.
-    #
-    # Nothing here is auto-opened. The blocks it opens carry Approve, Schedule,
-    # Mark notified and Cancel, which act on a real change; a page that picks
-    # one for you is a page that can get one approved by somebody who thought
-    # they were reading a form.
+    # first. Stage 2 renders the CHANGE ITSELF.
     #
     # Scoped through _visible_to_me -- the SAME gate the citation uses -- so
     # the picker cannot offer a change this very page would then decline to
@@ -398,6 +392,21 @@ def page_context(posted=None) -> dict:
                                 .order_by(ChangeRequest.id.desc())
                                 .limit(60).all())
                     if _visible_to_me(c)][:12]
+    # A plain visit opens the NEWEST change this flow raised. Requiring a
+    # click meant the stage looked like a bare form to anyone who had not just
+    # pressed its button -- which is every visit after the first.
+    #
+    # `asked_cr is None` is the whole condition: it separates "no answer yet"
+    # from "closed on purpose". `?cr=0` is the closed state -- no change can
+    # carry id 0 -- so Close it stays closed instead of re-opening on the spot.
+    #
+    # What the auto-open costs: the blocks carry Approve, Schedule, Mark
+    # notified and Cancel, so the change the page opened for you is one you did
+    # not name. That is why every one of those buttons sits under a header that
+    # states the ref, the title and the status of the change it acts on, and
+    # why the picker marks which one is open.
+    if created is None and asked_cr is None and flow_changes:
+        created = flow_changes[0]
     # Returned as ONE dict and splatted by the caller. Enumerating the keys at
     # the render call is how a value this function computes can fail to reach
     # the template with every assertion about it still green.

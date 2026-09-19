@@ -4716,10 +4716,44 @@ of every device it touches.
 | **4 · Execution** | The approved change's one-shot action, or manual. Progress is polled live. |
 
 The page **owns no workflow of its own**. Stage 1 calls the same pre-flight
-service an individual appliance page calls; stage 2 posts to the ordinary
-change-request form; stages 3 and 4 link into that change. This is deliberate:
-a second implementation of "upgrade prep" is exactly the defect this feature
-was built to remove.
+service an individual appliance page calls; stage 2 calls the **same create
+path** the ordinary change-request form calls; stages 3 and 4 link into that
+change. This is deliberate: a second implementation of "upgrade prep" is
+exactly the defect this feature was built to remove.
+
+### 40.1b Stage 2 is raised — and refused — without leaving the flow
+
+Until **2026-09-19** stage 2 posted straight at `/change-requests/new`, which
+cannot do either of the two things a stage inside a staged page has to do:
+
+* on **success** it redirected to the new change's own page — out of the flow,
+  two stages from the end, with no way back to the selection just built;
+* on **refusal** it redirected to an **empty** `/change-requests/new`: the form
+  you had deliberately not used, with everything you had typed gone, and the
+  run you had picked per appliance gone with it.
+
+Now the card posts to the flow itself:
+
+| | What happens |
+|---|---|
+| **Raised** | You come back to the flow with the change **cited on stage 2** — its reference, title and status, linked both to the change document and to the per-appliance execution view. The card stays filled in, because raising a second change over a different group of appliances is the next step of a staged window, not a mistake. |
+| **Refused** | The **same page** re-renders with the refusal at the top and the card as you left it: wording, owner, notification address, approval mode, the window as you typed it, the appliances still ticked and **the run each one cited** — including *no run cited*, which is a real answer and is kept as one. |
+
+Two details that are not cosmetic:
+
+* **The window comes back as you typed it**, in the console's timezone, never
+  re-formatted out of the UTC value the parser produced. A refused change that
+  came back with the hour shifted would look like you had typed it.
+* **An untouched proposal is still a proposal.** A field you never edited keeps
+  its `auto` mark and keeps following the change type and your selection; a
+  field you did edit stays yours. Marking everything "edited" on the way back
+  would freeze the wording for the rest of the session and claim text is yours
+  that you never wrote.
+
+What a legal change *is* did not move: the rules stay in the one create path,
+the same one the single-change form and the batched wave route use. Only the
+two answers — where you end up — belong to this page. The change type stays
+fixed at `upgrade` and is read from the code, not from the form.
 
 ### 40.2 Two limits that refuse rather than truncate
 

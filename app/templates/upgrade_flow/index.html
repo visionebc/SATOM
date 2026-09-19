@@ -225,8 +225,10 @@
   renders it -- same action bar, same document, same frozen inventory, same
   exports -- from the one builder and the one partial both pages share.
 
-  A plain visit opens the NEWEST change raised from this flow; the picker
-  switches, and Close it (?cr=0) leaves the stage as the bare form. Those
+  A plain visit opens the NEWEST change raised from this flow. ?cr=<id> opens
+  a specific one and ?cr=0 leaves the stage as the bare form; neither has a
+  control on the page any more -- the list of raised changes was removed on
+  request, so this stage shows ONE change and nothing that switches it. Those
   blocks carry Approve, Schedule, Mark notified and Cancel, so the header of
   every one of them names the ref, title and status of the change it acts on.
 #}
@@ -236,26 +238,7 @@
     <span class="text-muted small">{{ _('Raised, read, approved, scheduled, notified and exported here — the change page itself, inline.') }}</span>
   </div>
   <div class="fw-card-body">
-    {% if flow_changes %}
-    <div class="fw-step-label text-muted small text-uppercase mb-2">{{ _('Changes raised from this flow') }}</div>
-    <div class="d-flex flex-wrap gap-2">
-      {% for c in flow_changes %}
-      <a class="btn btn-sm {{ 'fw-btn-primary' if created and c.id == created.id else 'fw-btn-secondary' }}"
-         href="{{ url_for('upgrade_flow.index', cr=c.id, _adom=product.key) }}#uf-cr-section">
-        <span class="is-mono">{{ c.ref or '#' ~ c.id }}</span>
-        <span class="fw-badge fw-badge-secondary ms-1">{{ c.status }}</span>
-      </a>
-      {% endfor %}
-      {% if created %}
-      {# cr=0, not a bare link: no cr at all is what opens the newest one. #}
-      <a class="btn btn-sm fw-btn-secondary" href="{{ url_for('upgrade_flow.index', cr=0, _adom=product.key) }}#uf-cr-section">
-        <i class="bi bi-x-lg me-1"></i>{{ _('Close it') }}</a>
-      {% endif %}
-    </div>
-    <div class="form-text">
-      {{ _('The newest one is open below, whole. Pick another to switch. Only changes naming an appliance you can see are listed.') }}
-    </div>
-    {% else %}
+    {% if not flow_changes %}
     <p class="text-muted small mb-0">
       {{ _('No change has been raised from this flow yet. Fill in the card below; the change it raises opens here, whole — approve, schedule, notify and export it without leaving this page.') }}
     </p>

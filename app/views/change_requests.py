@@ -673,7 +673,7 @@ def edit(id):
         # change that was never going to be written.
         flash(f'This change request is {cr.status} and can no longer be edited.',
               'warning')
-        return redirect(url_for('change_requests.detail', id=id))
+        return redirect(_after(id))
 
     if request.method == 'POST':
         changed, error = update_change_request(cr, {
@@ -690,10 +690,11 @@ def edit(id):
         }, getattr(current_user, 'username', '') or '')
         if error:
             flash(error, 'danger')
-            return redirect(url_for('change_requests.edit', id=id))
+            return redirect(url_for('change_requests.edit', id=id,
+                                    **_back_arg()))
         if not changed:
             flash('Nothing to save — no field was changed.', 'info')
-            return redirect(url_for('change_requests.detail', id=id))
+            return redirect(_after(id))
         if cr.status == 'draft' and any(f.split(':')[0] in APPROVAL_CRITICAL
                                         for f in changed):
             flash(f'Change request {cr.ref or cr.id} updated. It is a draft '
@@ -701,7 +702,7 @@ def edit(id):
                   'warning')
         else:
             flash(f'Change request {cr.ref or cr.id} updated.', 'success')
-        return redirect(url_for('change_requests.detail', id=id))
+        return redirect(_after(id))
 
     from ..services import cr_document, settings_store
     device_ids = cr.device_ids_list
@@ -719,6 +720,12 @@ def edit(id):
 
     return render_template('change_requests/edit.html',
                            cr=cr,
+                           # Carried through the edit screen so saving a change
+                           # opened FROM the flow lands back in the flow. Read as
+                           # a token, printed as a hidden field, resolved by
+                           # _after() - the URL is never the form's to choose.
+                           back=_back_token(),
+                           back_url=_after(cr.id),
                            devices=devices,
                            risks=svc.RISKS,
                            langs=cr_document.document_langs(),
@@ -729,11 +736,27 @@ def edit(id):
                            tz_name=_tz_name())
 
 
-@bp.route('/<int:id>')
-@login_required
-@require_permission(Permission.USER_MANAGE)
-def detail(id):
-    cr = _cr_in_scope_or_404(id)
+def cr_view_context(cr, *, drift=False, back='',
+                    self_endpoint='change_requests.detail',
+                    self_args=None) -> dict:
+    """Everything the change-request VIEW renders, as plain data.
+
+    ONE author for a screen that now has two homes: the change's own page, and
+    stage 2 of the upgrade flow, which renders the change it has just raised
+    inline. A second copy of these blocks would drift, and the embedded copy -
+    read once, at the end of a window nobody re-opens - would drift first.
+
+    ``back`` is a TOKEN, never a URL. The lifecycle forms post it so approve /
+    schedule / cancel / notify return to the page the button was pressed on; a
+    redirect target read straight from a request field is an open redirect, and
+    these buttons now sit on a page reachable with BACKUP alone.
+
+    Returned as ONE dict and splatted nowhere: enumerating these keys at the
+    render call is how a value this function computes can fail to reach the
+    template with every assertion about it still green.
+    """
+    from ..services import cr_document, prep_store
+    self_args = dict(self_args) if self_args else {'id': cr.id}
     events = (ChangeRequestEvent.query
               .filter_by(cr_id=cr.id)
               .order_by(ChangeRequestEvent.ts.asc())
@@ -742,15 +765,14 @@ def detail(id):
     devices = (Appliance.query.filter(Appliance.id.in_(device_ids)).all()
                if device_ids else [])
     runnable_ok, runnable_reason = svc.cr_runnable(cr)
-    # Best-effort LIVE read of the affected policies (the clients to warn). With
-    # no/unreachable devices this returns [] quickly rather than raising.
-    # The FROZEN inventory is what this change is about — the services that were
+    # The FROZEN inventory is what this change is about - the services that were
     # published when it was raised, which is what the approver signed for. A
-    # live re-read is offered separately (below) as DRIFT, never as the record.
-    from ..services import cr_document, prep_store
+    # live re-read is offered separately as DRIFT, never as the record.
     policies = svc.frozen_policies(cr)
     live_drift = None
-    if request.args.get('drift') == '1':
+    if drift:
+        # Best-effort LIVE read of the affected policies (the clients to warn).
+        # With no/unreachable devices this returns [] quickly rather than raising.
         live = svc.affected_policies(device_ids)
         frozen_keys = {(p.get('device'), p.get('policy'))
                        for p in policies if isinstance(p, dict)}
@@ -760,34 +782,79 @@ def detail(id):
             'removed': sorted(k[1] or '?' for k in frozen_keys - live_keys),
             'total': len(live),
         }
-    return render_template('change_requests/detail.html',
-                           cr=cr,
-                           # Derived, not stored: whether this change has an
-                           # executor is a question for the registry, asked
-                           # now. The Schedule button is hidden when the answer
-                           # is no, and the service refuses it anyway.
-                           executable=sa.get_spec(cr.action) is not None,
-                           events=events,
-                           devices=devices,
-                           notice=svc.maintenance_notice(cr),
-                           runnable_ok=runnable_ok,
-                           runnable_reason=runnable_reason,
-                           policies=policies,
-                           live_drift=live_drift,
-                           prep=prep_store.get(cr.prep_id),
-                           # EVERY bound run, plus the appliances that have
-                           # none. "Captured by upgrade preparation #88" is a
-                           # true sentence about a one-device change and a
-                           # false one about a window over twenty: the frozen
-                           # inventory below is merged across all of them.
-                           evidence=prep_store.coverage(cr, devices),
-                           langs=cr_document.document_langs(),
-                           fields=prep_store.FIELDS,
-                           default_fields=prep_store.DEFAULT_FIELDS,
-                           tz_name=_tz_name(),
-                           terminal=cr.status in ChangeRequest.TERMINAL,
-                           status_badge=_STATUS_BADGE,
-                           risk_badge=_RISK_BADGE)
+    return dict(
+        cr=cr,
+        # Derived, not stored: whether this change has an executor is a
+        # question for the registry, asked now. The Schedule button is hidden
+        # when the answer is no, and the service refuses it anyway.
+        executable=sa.get_spec(cr.action) is not None,
+        events=events,
+        devices=devices,
+        notice=svc.maintenance_notice(cr),
+        runnable_ok=runnable_ok,
+        runnable_reason=runnable_reason,
+        policies=policies,
+        live_drift=live_drift,
+        prep=prep_store.get(cr.prep_id),
+        # EVERY bound run, plus the appliances that have none. "Captured by
+        # upgrade preparation #88" is a true sentence about a one-device change
+        # and a false one about a window over twenty: the frozen inventory is
+        # merged across all of them.
+        evidence=prep_store.coverage(cr, devices),
+        langs=cr_document.document_langs(),
+        fields=prep_store.FIELDS,
+        default_fields=prep_store.DEFAULT_FIELDS,
+        tz_name=_tz_name(),
+        terminal=cr.status in ChangeRequest.TERMINAL,
+        status_badge=_STATUS_BADGE,
+        risk_badge=_RISK_BADGE,
+        # --- the answers that differ between the two homes ---
+        back=back,
+        # Asking for the live comparison from inside the flow must not be a way
+        # OUT of the flow, and neither must pressing Edit.
+        drift_url=url_for(self_endpoint, drift=1, **self_args),
+        edit_url=url_for('change_requests.edit', id=cr.id,
+                         **({'back': back} if back else {})),
+        # A button that answers 403 is worse than no button: it reads as an
+        # action this operator may take, on a page they reached legitimately.
+        can_act=bool(getattr(current_user, 'can', None)
+                     and current_user.can('user_manage')),
+    )
+
+
+def _back_token() -> str:
+    """The return-to token this request carries, or ''."""
+    return (request.form.get('back') or request.args.get('back') or '').strip()
+
+
+def _back_arg() -> dict:
+    """``{'back': <token>}`` or nothing - never ``back=`` with no value."""
+    token = _back_token()
+    return {'back': token} if token else {}
+
+
+def _after(cr_id: int) -> str:
+    """Where a lifecycle POST returns to: the page the button was pressed on.
+
+    Resolved from a TOKEN (form field, or query string for the edit round
+    trip), never from a URL the request carried. An unknown token falls back to
+    the change's own page rather than being honoured - an open redirect is what
+    this function exists to not be.
+    """
+    if _back_token() == 'upgrade_flow':
+        from .appliances import _adom_arg
+        return url_for('upgrade_flow.index', cr=cr_id, **_adom_arg())
+    return url_for('change_requests.detail', id=cr_id)
+
+
+@bp.route('/<int:id>')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def detail(id):
+    cr = _cr_in_scope_or_404(id)
+    return render_template(
+        'change_requests/detail.html',
+        crv=cr_view_context(cr, drift=request.args.get('drift') == '1'))
 
 
 @bp.route('/<int:id>/document')
@@ -869,7 +936,7 @@ def approve(id):
         flash('Change request approved.', 'success')
     except ValueError as exc:
         flash(str(exc), 'danger')
-    return redirect(url_for('change_requests.detail', id=id))
+    return redirect(_after(id))
 
 
 @bp.route('/<int:id>/schedule', methods=['POST'])
@@ -884,7 +951,7 @@ def schedule(id):
         flash(f'Change request scheduled — bound action #{action_id}.', 'success')
     except ValueError as exc:
         flash(str(exc), 'danger')
-    return redirect(url_for('change_requests.detail', id=id))
+    return redirect(_after(id))
 
 
 @bp.route('/<int:id>/cancel', methods=['POST'])
@@ -899,7 +966,7 @@ def cancel(id):
         flash('Change request cancelled.', 'success')
     except ValueError as exc:
         flash(str(exc), 'danger')
-    return redirect(url_for('change_requests.detail', id=id))
+    return redirect(_after(id))
 
 
 @bp.route('/<int:id>/mark-notified', methods=['POST'])
@@ -942,7 +1009,7 @@ def mark_notified(id):
         db.session.commit()
         log_action('change_request.notified', target=cr.title)
         flash('Notice marked as sent. Configure Settings -> Email to deliver it automatically.', 'info')
-    return redirect(url_for('change_requests.detail', id=id))
+    return redirect(_after(id))
 
 
 @bp.route('/<int:id>/request-crq', methods=['POST'])
@@ -1013,7 +1080,7 @@ def request_crq(id):
         flash('Nothing was sent: no tracker backend is configured in '
               'Settings -> Integrations and no enabled hook is bound to '
               'change.requested.', 'warning')
-    return redirect(url_for('change_requests.detail', id=id))
+    return redirect(_after(id))
 
 
 def _to_int(value):

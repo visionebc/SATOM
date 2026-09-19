@@ -396,16 +396,20 @@ def page_context(posted=None) -> dict:
     # click meant the stage looked like a bare form to anyone who had not just
     # pressed its button -- which is every visit after the first.
     #
-    # `asked_cr is None` is the whole condition: it separates "no answer yet"
-    # from "closed on purpose". `?cr=0` is the closed state -- no change can
-    # carry id 0 -- so Close it stays closed instead of re-opening on the spot.
+    # There is NO closed state any more. `?cr=0` used to be one, written by
+    # the picker's "Close it" button; the picker was removed on request and
+    # the state outlived its only control, so anyone still holding that URL
+    # sat on a bare form with the change gone and nothing able to reopen it.
+    # A dead end reachable only by a stale link is worse than no state at all,
+    # and this one hid the whole stage. Any `cr` that does not resolve to a
+    # change this operator may see -- 0, a deleted id, another ADOM's -- now
+    # falls back to the newest, exactly like a plain visit.
     #
     # What the auto-open costs: the blocks carry Approve, Schedule, Mark
     # notified and Cancel, so the change the page opened for you is one you did
     # not name. That is why every one of those buttons sits under a header that
-    # states the ref, the title and the status of the change it acts on, and
-    # why the picker marks which one is open.
-    if created is None and asked_cr is None and flow_changes:
+    # states the ref, the title and the status of the change it acts on.
+    if created is None and flow_changes:
         created = flow_changes[0]
     # Returned as ONE dict and splatted by the caller. Enumerating the keys at
     # the render call is how a value this function computes can fail to reach

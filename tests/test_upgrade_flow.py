@@ -1544,16 +1544,48 @@ def test_the_waves_form_element_is_empty_and_not_nested(app, client):
         "form nesting depth %d, balance %d" % (maximum, depth)
 
 
-def test_stage_two_lists_the_changes_this_flow_has_raised(app, client):
-    """Stage 2 renders the CHANGE. Until it listed them, the only way to reach
-    that rendering was to hand-type ``?cr=`` — so the stage read as a bare form
-    to everyone who had not just pressed its button, which is exactly how it
-    was reported."""
-    cid, ref, _ = _raise_one(app, client, "picker-listed")
+def test_stage_two_shows_one_change_and_never_a_list_of_them(app, client):
+    """Stage 2 renders ONE change: the newest, whole, with nothing that lists
+    the others.
+
+    It used to carry a picker listing every change this flow had raised. The
+    user removed it (2026-09-19): the stage is the change request, not a menu
+    of them. This guard is what keeps it removed — the list is the kind of
+    thing that grows back the next time someone wants to "switch quickly", and
+    a second reference to a change nobody opened is exactly what made the
+    stage read as a chooser rather than as the record.
+
+    Asserting the label alone would be an assertion that answers itself, so it
+    raises TWO changes and counts the OLDER one's ref DIFFERENTIALLY: stage 1
+    legitimately cites the change each prep run was handed to, so "absent from
+    the page" is the wrong question and would fail against correct markup. The
+    right one is whether opening the stage adds a mention the closed stage does
+    not have -- which is precisely what a list of raised changes would add.
+    """
+    _old_id, old_ref, _ = _raise_one(app, client, "not-listed-older")
+    _new_id, new_ref, _ = _raise_one(app, client, "not-listed-newer")
+    # Raising leaves a flash naming the change, and a flash survives until a
+    # request consumes it -- so the FIRST page load after two raises carries
+    # both refs in its banner and nothing to do with the stage. Burn them, or
+    # this guard measures the flash queue and fails against correct markup.
+    client.get("/web/upgrade-flow/")
     body = client.get("/web/upgrade-flow/").get_data(as_text=True)
-    assert ref in body, "the change this flow raised is not offered anywhere"
-    assert re.search(r'upgrade-flow/\?[^"]*cr=%d\b' % cid, body), \
-        "the picker does not open the change inside the flow"
+
+    # Scoped to the stage-2 card, not the whole page: stage 1 legitimately
+    # cites the change a prep run was handed to, so a page-wide absence check
+    # would fail against correct markup. find()+index comparison rather than
+    # index()/slicing, which raises and takes the other assertions with it.
+    start = body.find('id="uf-cr-section"')
+    end = body.find('id="uf-cr"', start + 1)
+    assert start != -1 and end > start, \
+        "the stage-2 card is not on the page at all"
+    stage = body[start:end]
+
+    assert new_ref in stage, "the open change is not named in stage 2"
+    assert old_ref not in stage, \
+        "an older change is named in stage 2 — the list of raised changes is back"
+    assert "Changes raised from this flow" not in stage, \
+        "the removed picker heading is back on the stage"
 
 
 def test_a_plain_visit_opens_the_newest_change_whole(app, client):
@@ -1605,9 +1637,10 @@ def test_the_newest_is_what_opens_and_an_explicit_id_still_wins(app, client):
 def test_close_it_stays_closed(app, client):
     """`?cr=0` is the closed state, and no change can carry id 0.
 
-    A bare link back to the stage is what OPENS the newest one, so if Close it
-    dropped the argument the button would reopen what it just closed and read
-    as broken.
+    A bare visit is what OPENS the newest one, so ``cr=0`` -- not a missing
+    argument -- is the only spelling of "closed". The control that used to
+    carry it was removed with the picker; the STATE is still supported and is
+    still what this guard measures.
     """
     _raise_one(app, client, "close-stays-closed")
     closed = client.get("/web/upgrade-flow/?cr=0").get_data(as_text=True)
@@ -1621,7 +1654,10 @@ def test_close_it_stays_closed(app, client):
             continue
         assert marker not in closed, \
             "%s is live on a stage the operator closed" % label
-    # The close control itself has to carry cr=0, or this state is unreachable
-    # from the page and only this test can produce it.
+    # There is no Close control any more: it lived in the picker the user
+    # removed (2026-09-19), so the closed state is now reachable only by URL.
+    # That is deliberate and is NOT a relaxation of this guard -- what it
+    # verifies (cr=0 renders no record and no live button) is unchanged.
     opened = client.get("/web/upgrade-flow/").get_data(as_text=True)
-    assert "cr=0" in opened, "Close it does not carry the closed state"
+    assert "Close it" not in opened, \
+        "the removed Close control is back on the stage"

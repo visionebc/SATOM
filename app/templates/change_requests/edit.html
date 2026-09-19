@@ -24,7 +24,7 @@
       {{ _('Corrects a change that is still open — above all the maintenance window, which is optional when the change is raised and required before it can run.') }}
     </p>
   </div>
-  <a class="btn btn-fw-outline btn-sm" href="{{ url_for('change_requests.detail', id=cr.id) }}">
+  <a class="btn btn-fw-outline btn-sm" href="{{ back_url }}">
     <i class="bi bi-chevron-left me-1"></i>{{ _('Back to change') }}
   </a>
 </div>
@@ -42,6 +42,10 @@
 
 <form method="POST" action="{{ url_for('change_requests.edit', id=cr.id) }}">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  {# Where this edit was opened FROM, so saving it does not strand an operator
+     who pressed Edit inside the upgrade flow on a different screen. A TOKEN,
+     resolved server-side by _after(); the form never names a URL. #}
+  <input type="hidden" name="back" value="{{ back }}">
 
   <div class="row g-3">
     <div class="col-lg-7">
@@ -182,7 +186,7 @@
   </div>
 
   <div class="d-flex justify-content-end gap-2 mt-3">
-    <a class="btn btn-secondary" href="{{ url_for('change_requests.detail', id=cr.id) }}">{{ _('Discard') }}</a>
+    <a class="btn btn-secondary" href="{{ back_url }}">{{ _('Discard') }}</a>
     <button type="submit" class="btn btn-fw-primary">
       <i class="bi bi-check-lg me-1"></i>{{ _('Save changes') }}
     </button>

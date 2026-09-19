@@ -39,7 +39,11 @@ from tests.conftest import admin_user_id, login, make_user, profile_id
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 VIEW_PATH = os.path.join(REPO, "app", "views", "change_requests.py")
 SVC_PATH = os.path.join(REPO, "app", "services", "change_requests.py")
-DETAIL_TPL = os.path.join(REPO, "app", "templates", "change_requests", "detail.html")
+# The change VIEW, not the page that frames it: those blocks moved into a
+# shared partial when stage 2 of the upgrade flow started rendering the same
+# change inline. Left pointing at detail.html this guard would have gone on
+# passing against a file that no longer contains what it measures.
+DETAIL_TPL = os.path.join(REPO, "app", "templates", "change_requests", "_view.html")
 EDIT_TPL = os.path.join(REPO, "app", "templates", "change_requests", "edit.html")
 CSS_PATH = os.path.join(REPO, "app", "static", "css", "fortiweb.css")
 

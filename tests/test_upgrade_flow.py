@@ -829,13 +829,23 @@ def _stage_two(client):
     """The markup of the stage-2 form only, never the whole page.
 
     Asserting against the page would let the SINGLE-change form's own fields
-    (reachable from the nav) or the 2b mirrors answer a question about stage 2,
-    which is how a field can be "present" on a card that does not have it.
+    (reachable from the nav) or the waves mirrors answer a question about stage
+    2, which is how a field can be "present" on a card that does not have it.
+
+    Bounded at this form's own ``</form>``, and with every element BOUND
+    ELSEWHERE stripped out. The waves fields now sit INSIDE this card carrying
+    ``form="uf-waves"``, and ``window_start`` exists in both — a slice that
+    kept them would let a waves input answer a question about the single
+    change. Splitting at ``id="uf-waves"`` no longer bounds anything: that form
+    element is hoisted ABOVE this one, so the split would return the rest of
+    the page and every assertion below would widen in silence.
     """
     body = client.get("/web/upgrade-flow/").get_data(as_text=True)
     assert 'id="uf-cr"' in body, "stage-2 form is missing entirely"
     head, rest = body.split('id="uf-cr"', 1)
-    return body, rest.split('id="uf-waves"')[0]
+    form = rest.split("</form>", 1)[0]
+    form = re.sub(r'<[^>]*\bform="uf-waves"[^>]*>', "", form)
+    return body, form
 
 
 def test_stage_two_asks_everything_the_single_change_form_asks(app, client):
@@ -870,8 +880,18 @@ def test_the_wording_is_inside_stage_two_not_floating_above_it(app, client):
     badge = body.index('me-2">2</span>')
     assert body.index("Proposed wording") > badge, \
         "the wording still renders above the stage-2 badge"
-    assert body.index('id="uf-waves"') > body.index('id="uf-cr"'), \
-        "2b must come after 2"
+    # 2b is not a stage any more. The waves fields live INSIDE this card,
+    # after its own submit, at the operator's request: "one window or several"
+    # is the same stage answering a second question over the same ticks, the
+    # same wording and the same owner. What used to be guarded here — "2b comes
+    # after 2" — guarded a card that no longer exists, and the form element it
+    # named is now hoisted ABOVE this one on purpose (an empty form outside the
+    # card, its fields bound in by form="uf-waves").
+    assert not re.search(r">\s*2b\s*<", body), \
+        "the waves block is numbered as a stage of its own again"
+    assert body.index("Or split the same selection into waves") > \
+        body.index("Raise one change request"), \
+        "the waves block must come after stage 2's own submit, inside its card"
 
 
 def test_the_change_type_is_named_on_the_page(app, client):
@@ -1135,7 +1155,7 @@ def test_the_citation_never_names_a_change_this_operator_cannot_see(app, client)
     for raw in ("999999", "abc", ""):
         resp = client.get("/web/upgrade-flow/?cr=%s" % raw)
         assert resp.status_code == 200, "?cr=%s broke the page" % raw
-        assert "Open the change" not in resp.get_data(as_text=True), \
+        assert "Open its own page" not in resp.get_data(as_text=True), \
             "?cr=%s produced a citation of nothing" % raw
 
 
@@ -1155,3 +1175,409 @@ def test_the_flow_does_not_reimplement_what_raising_a_change_is(app, client):
     assert "'action': CR_ACTION" in src or '"action": CR_ACTION' in src, \
         "the change type is read from the post again — a type the page cannot " \
         "propose wording for could be substituted into it"
+
+
+# --------------------------------------------------------------------------- #
+#  Stage 2 IS the change request — the whole of it, not a link to it            #
+#                                                                              #
+#  Raising the change without leaving the flow fixed the SUBMIT; approving it,  #
+#  scheduling it, marking it notified, exporting its inventory or reading its   #
+#  document were all still a trip to /web/change-requests/<id>. What stage 2    #
+#  renders now is the same seven blocks that page renders, from ONE builder     #
+#  (``change_requests.cr_view_context``) and ONE partial                        #
+#  (``change_requests/_view.html``).                                            #
+#                                                                              #
+#  These guards exist because nothing FAILS when the two drift: both pages      #
+#  render, and the embedded one — read once, at the end of a window nobody      #
+#  re-opens — is the one that goes stale.                                       #
+# --------------------------------------------------------------------------- #
+_CR_BLOCKS = {
+    "run-gate / action bar": "Run-gate:",
+    "overview": ">Overview<",
+    "change document": ">Change document<",
+    "affected services": ">Affected services<",
+    "inventory export": "Download .xlsx",
+    "external change record": ">External change record<",
+    "timeline": ">Timeline<",
+    "maintenance notice": ">Maintenance notice<",
+}
+_CR_ACTIONS = {
+    "approve": "/approve\"",
+    "mark notified": "/mark-notified\"",
+    "cancel": "/cancel\"",
+    "edit": "bi-pencil-square",
+    "change ticket": "/request-crq\"",
+}
+
+
+def _raise_one(app, client, name):
+    """Raise a change THROUGH stage 2 and hand back (cr_id, ref, appliance_id).
+
+    Through the page, never by inserting a row: a change built by hand would
+    carry no frozen inventory and no bound run, so the blocks under test would
+    be legitimately empty and every assertion about them would pass by being
+    vacuous."""
+    from app.models import ChangeRequest
+
+    with app.app_context():
+        a = _mk_appliance(name)
+        prep = _mk_prep(a, inventory=[{"device": name, "device_id": a.id,
+                                       "policy": "pol-1", "vserver": "vs-1",
+                                       "service": "HTTPS", "status": "enable"}])
+        ids = (a.id, prep.id)
+    login(client, admin_user_id(app))
+    resp = _post_stage_two(client, device_ids=[str(ids[0])],
+                           prep_ids=[str(ids[1])])
+    assert resp.status_code in (302, 303), \
+        "stage 2 refused the fixture change: %s" % resp.status_code
+    with app.app_context():
+        cr = ChangeRequest.query.order_by(ChangeRequest.id.desc()).first()
+        return cr.id, cr.ref, ids[0]
+
+
+def _both(client, cid):
+    flow = client.get("/web/upgrade-flow/?cr=%d" % cid).get_data(as_text=True)
+    own = client.get("/web/change-requests/%d" % cid).get_data(as_text=True)
+    return flow, own
+
+
+def test_stage_two_renders_the_whole_change_not_a_link_to_it(app, client):
+    cid, ref, _ = _raise_one(app, client, "whole-change")
+    flow = client.get("/web/upgrade-flow/?cr=%d" % cid).get_data(as_text=True)
+    assert ref in flow
+    missing = [k for k, v in _CR_BLOCKS.items() if v not in flow]
+    assert not missing, \
+        "stage 2 cites the change but does not show %s — still a trip to " \
+        "another screen" % ", ".join(missing)
+    missing = [k for k, v in _CR_ACTIONS.items() if v not in flow]
+    assert not missing, \
+        "stage 2 shows the change but cannot drive it: no %s" % ", ".join(missing)
+
+
+def test_the_flow_and_the_change_page_show_the_same_change(app, client):
+    """The anti-drift guard. Presence compared BOTH ways, and every block
+    required on both: two pages agreeing that a block is absent is not the two
+    pages agreeing."""
+    cid, _, _ = _raise_one(app, client, "same-change")
+    flow, own = _both(client, cid)
+    for label, marker in list(_CR_BLOCKS.items()) + list(_CR_ACTIONS.items()):
+        assert marker in own, "%s vanished from the change's own page" % label
+        assert marker in flow, "%s is on the change's page but not in stage 2" % label
+
+
+def test_there_is_exactly_one_author_for_those_blocks(app, client):
+    """Two copies of this markup is the defect, not the symptom. The flow was
+    already a second author of the CRQ FORM once; the round that fixed that is
+    the reason this is asserted on the files and not only on the output."""
+    def _read(rel):
+        with open(os.path.join(REPO, *rel.split("/")), encoding="utf-8") as fh:
+            return fh.read()
+
+    partial = _read("app/templates/change_requests/_view.html")
+    detail = _read("app/templates/change_requests/detail.html")
+    flow = _read("app/templates/upgrade_flow/index.html")
+
+    assert "change_requests/_view.html" in detail, \
+        "the change's own page no longer includes the shared view"
+    assert "change_requests/_view.html" in flow, \
+        "stage 2 no longer includes the shared view"
+    for marker in ("_('Timeline')", "_('Maintenance notice')",
+                   "change_requests.request_crq", "change_requests.approve",
+                   "_('Affected services')"):
+        assert marker in partial, "%s left the shared partial" % marker
+        assert marker not in detail, \
+            "%s is written a SECOND time in detail.html" % marker
+        assert marker not in flow, \
+            "%s is written a SECOND time in the flow template" % marker
+
+
+def test_no_form_is_nested_inside_another_on_the_flow(app, client):
+    """The embedded blocks carry forms of their own (approve, schedule, cancel,
+    ticket, export) and stage 2 is itself a form. A <form> inside a <form> is
+    invalid HTML the browser silently unnests — every button in the inner one
+    then posts the wrong thing, or nothing, and the page still LOOKS right."""
+    cid, _, _ = _raise_one(app, client, "no-nesting")
+    body = client.get("/web/upgrade-flow/?cr=%d" % cid).get_data(as_text=True)
+    depth = deepest = 0
+    for m in re.finditer(r"<form\b|</form>", body):
+        depth += 1 if m.group(0) == "<form" else -1
+        deepest = max(deepest, depth)
+    assert deepest == 1, "forms are nested %d deep on the flow page" % deepest
+    assert depth == 0, "unbalanced <form> tags on the flow page"
+
+
+def test_approving_from_the_flow_comes_back_to_the_flow(app, client):
+    from app.models import ChangeRequest
+
+    cid, _, _ = _raise_one(app, client, "approve-back")
+    resp = client.post("/web/change-requests/%d/approve" % cid,
+                       data={"back": "upgrade_flow"})
+    assert resp.status_code in (302, 303)
+    where = resp.headers["Location"]
+    assert "/web/upgrade-flow/" in where and "cr=%d" % cid in where, \
+        "approving from stage 2 threw the operator out of the flow: %s" % where
+    with app.app_context():
+        assert db_get_status(ChangeRequest, cid) == "approved", \
+            "the round trip came back to the flow without approving anything"
+
+
+def db_get_status(model, cid):
+    from app.extensions import db
+    return db.session.get(model, cid).status
+
+
+def test_approving_from_the_changes_own_page_still_lands_there(app, client):
+    cid, _, _ = _raise_one(app, client, "approve-here")
+    resp = client.post("/web/change-requests/%d/approve" % cid, data={})
+    where = resp.headers["Location"]
+    assert where.endswith("/web/change-requests/%d" % cid), \
+        "the change's own page stopped being its own return target: %s" % where
+
+
+@pytest.mark.parametrize("token", ["https://evil.example/x", "//evil.example",
+                                   "/web/upgrade-flow/", "UPGRADE_FLOW", "junk"])
+def test_the_return_target_is_a_token_never_a_url(app, client, token):
+    """These buttons now render on a page any operator can reach. A redirect
+    target read straight out of the form is an open redirect; only the known
+    token is honoured, and anything else falls back to the change itself."""
+    cid, _, _ = _raise_one(app, client, "token-%d" % (abs(hash(token)) % 9999))
+    resp = client.post("/web/change-requests/%d/cancel" % cid,
+                       data={"back": token, "reason": "guard"})
+    where = resp.headers["Location"]
+    assert where.endswith("/web/change-requests/%d" % cid), \
+        "%r was honoured as a redirect target: %s" % (token, where)
+    assert "evil.example" not in where
+
+
+def test_every_lifecycle_button_carries_the_return_token(app, client):
+    """One button left without it silently walks the operator out of the flow
+    — and only that one button, which is how this would be found in the field
+    instead of here."""
+    cid, _, _ = _raise_one(app, client, "token-on-each")
+    flow, own = _both(client, cid)
+    posts = len(re.findall(r'<form[^>]+method="?POST"?', flow, re.I))
+    tokens = flow.count('name="back" value="upgrade_flow"')
+    assert tokens >= 4, "only %d of the embedded forms return to the flow" % tokens
+    assert 'name="back" value="upgrade_flow"' not in own, \
+        "the change's own page posts a return token it was never given"
+
+
+def test_the_live_comparison_does_not_leave_the_flow(app, client):
+    """Asking for the drift read from inside stage 2 must not be a way out of
+    stage 2 — it is the same question asked about the page you are on."""
+    cid, _, _ = _raise_one(app, client, "drift-stays")
+    flow, own = _both(client, cid)
+
+    def _compare_link(body):
+        # By ID, not by icon: the sidebar has a bi-arrow-repeat of its own and
+        # a search by icon happily returns THAT one — a guard that reads a
+        # different link than the one under test measures nothing.
+        m = re.search(r'id="crv-drift"\s+href="([^"]+)"', body)
+        assert m, "the 'compare against the devices now' link is gone"
+        return m.group(1)
+
+    here = _compare_link(flow)
+    assert "/web/upgrade-flow/" in here and "drift=1" in here \
+        and "cr=%d" % cid in here, "the drift link leaves the flow: %s" % here
+    there = _compare_link(own)
+    assert "/web/change-requests/%d" % cid in there and "drift=1" in there
+
+    drifted = client.get("/web/upgrade-flow/?cr=%d&drift=1" % cid).get_data(as_text=True)
+    assert "Drift vs. the devices right now" in drifted, \
+        "the flow accepts drift=1 and renders no comparison"
+    assert 'id="uf-cr"' in drifted, "asking for drift landed somewhere else"
+
+
+def test_editing_from_the_flow_returns_to_the_flow(app, client):
+    cid, _, _ = _raise_one(app, client, "edit-back")
+    flow, own = _both(client, cid)
+    assert "/web/change-requests/%d/edit?back=upgrade_flow" % cid in flow, \
+        "Edit pressed inside the flow does not carry where it came from"
+    assert "/edit?back=" not in own, \
+        "the change's own page sends a return token it was never given"
+
+    page = client.get("/web/change-requests/%d/edit?back=upgrade_flow" % cid)
+    body = page.get_data(as_text=True)
+    assert 'name="back" value="upgrade_flow"' in body, \
+        "the edit form drops the return token on the way through"
+    # Prefix, not the whole attribute: the return URL also carries the ADOM
+    # it was pressed in, and the & is HTML-escaped in the href.
+    assert body.count('href="/web/upgrade-flow/?cr=%d' % cid) >= 2, \
+        "Back and Discard on the edit screen still leave the flow"
+
+    resp = client.post("/web/change-requests/%d/edit" % cid, data={
+        "title": "edited from inside the flow", "risk": "high",
+        "reason": "r", "rollback": "rb", "owner": "o",
+        "notify_to": "ops@example.com", "doc_lang": "en",
+        "approval_mode": "manual",
+        "window_start": "2026-10-01T22:00", "window_end": "2026-10-01T23:30",
+        "back": "upgrade_flow"})
+    where = resp.headers["Location"]
+    assert "/web/upgrade-flow/" in where and "cr=%d" % cid in where, \
+        "saving an edit opened from the flow lands elsewhere: %s" % where
+
+
+def test_a_citation_of_nothing_embeds_nothing(app, client):
+    """An id naming a change outside this operator's scope reads as NO citation
+    — it must not render that change's blocks as a consolation prize."""
+    login(client, admin_user_id(app))
+    body = client.get("/web/upgrade-flow/?cr=999999").get_data(as_text=True)
+    for label, marker in _CR_BLOCKS.items():
+        if label == "overview":
+            continue  # stage 1 has a heading of its own by that name
+        assert marker not in body, \
+            "an unciteable change still rendered its %s" % label
+
+
+def test_a_reader_who_cannot_drive_the_change_gets_no_buttons(app, client):
+    """A button that answers 403 is worse than no button: it reads as an action
+    this operator may take.
+
+    MEASURED, not assumed: stage 2 of the flow sits behind ``user_manage``
+    today, so on that page ``can_act`` is belt-and-braces — which is exactly
+    why it is guarded on the PARTIAL rather than on the flow. A guard written
+    against the flow page would have passed by finding an empty stage 2 and
+    said nothing about the gate at all.
+    """
+    from flask import render_template
+    from flask_login import login_user
+
+    from app.extensions import db
+    from app.models import ChangeRequest, User
+    from app.views.change_requests import cr_view_context
+    from conftest import make_user, profile_id
+
+    cid, _, _ = _raise_one(app, client, "read-only")
+    uid = make_user(app, username="ops-reader", role="operator",
+                    profile_id=profile_id(app, "operator"))
+
+    with app.test_request_context("/web/change-requests/%d" % cid):
+        reader = db.session.get(User, uid)
+        assert reader.can("backup") and not reader.can("user_manage")
+        login_user(reader)
+        crv = cr_view_context(db.session.get(ChangeRequest, cid))
+        assert crv["can_act"] is False, \
+            "a user without user_manage was handed the workflow"
+        body = render_template("change_requests/_view.html", crv=crv)
+
+    assert "Run-gate:" in body, "the reader cannot read the change either"
+    assert ">Timeline<" in body and ">Maintenance notice<" in body
+    for label, marker in _CR_ACTIONS.items():
+        assert marker not in body, \
+            "a reader without user_manage was offered %s" % label
+    assert "needs the user-manage permission" in body, \
+        "the buttons are gone and nothing says why"
+
+    with app.test_request_context("/web/change-requests/%d" % cid):
+        admin = db.session.get(User, admin_user_id(app))
+        login_user(admin)
+        crv = cr_view_context(db.session.get(ChangeRequest, cid))
+        assert crv["can_act"] is True, \
+            "can_act is False for everyone — the guard above proves nothing"
+        allowed = render_template("change_requests/_view.html", crv=crv)
+    for label, marker in _CR_ACTIONS.items():
+        assert marker in allowed, "%s is gated off for everybody" % label
+
+
+def test_the_flow_does_not_rebuild_the_change_view(app, client):
+    """One BUILDER as well as one partial: a second assembly of these values is
+    how the two pages would come to disagree about a change while both render."""
+    import inspect
+
+    from app.views import upgrade_flow
+
+    src = inspect.getsource(upgrade_flow.page_context)
+    assert "cr_view_context(" in src, \
+        "the flow builds the embedded change some other way"
+    assert "maintenance_notice(" not in src and "frozen_policies(" not in src, \
+        "the flow assembles the change view itself again"
+
+
+# --------------------------------------------------------------------------- #
+#  stage 2 IS the change request: the picker, and the waves folded into it      #
+# --------------------------------------------------------------------------- #
+def test_every_waves_field_is_bound_to_the_waves_form(app, client):
+    """The waves inputs sit inside the stage-2 form's card. Unbound, they
+    belong to it — and ``window_start`` exists in BOTH, so the single change
+    would post two of them with the same name and different meanings.
+
+    Nothing would fail: the server would read one, and which one is an accident
+    of ordering. Guarded by counting, inside the stage-2 slice, the fields that
+    are NOT bound away.
+    """
+    login(client, admin_user_id(app))
+    body = client.get("/web/upgrade-flow/").get_data(as_text=True)
+    head, rest = body.split('id="uf-cr"', 1)
+    raw = rest.split("</form>", 1)[0]          # the card, waves fields included
+    for name in ("wave_size", "wave_minutes", "wave_gap"):
+        for tag in re.findall(r'<input[^>]*name="%s"[^>]*>' % name, raw):
+            assert 'form="uf-waves"' in tag, \
+                "%s would be posted by the single change" % name
+    unbound = [t for t in re.findall(r'<input[^>]*name="window_start"[^>]*>', raw)
+               if 'form="uf-waves"' not in t]
+    assert len(unbound) == 1, \
+        "the stage-2 form posts %d window_start fields, not 1" % len(unbound)
+    assert re.search(r'<button[^>]*form="uf-waves"[^>]*>', raw), \
+        "the waves submit would raise the single change instead"
+
+
+def test_the_waves_form_element_is_empty_and_not_nested(app, client):
+    """It carries the hidden wording mirrors and nothing else. A form element
+    inside a form element is invalid HTML the browser silently unnests — the
+    page looks right and the buttons post the wrong thing."""
+    login(client, admin_user_id(app))
+    body = client.get("/web/upgrade-flow/").get_data(as_text=True)
+    assert body.count('id="uf-waves"') == 1
+    waves = body.split('id="uf-waves"', 1)[1].split("</form>", 1)[0]
+    assert "<form" not in waves and "fw-card" not in waves, \
+        "the waves form element grew a card again"
+    for mirror in ("uf-w-title", "uf-w-reason", "uf-w-rollback", "uf-w-lang"):
+        assert mirror in waves, "%s left the waves post" % mirror
+    # Depth, measured on MARKUP only: this page's own script comments talk
+    # about form elements, and counting those is how a checker answers itself.
+    markup = re.sub(r"<script\b.*?</script>", "", body, flags=re.S | re.I)
+    depth = maximum = 0
+    for tok in re.findall(r"<form\b|</form>", markup):
+        depth += -1 if tok == "</form>" else 1
+        maximum = max(maximum, depth)
+    assert maximum == 1 and depth == 0, \
+        "form nesting depth %d, balance %d" % (maximum, depth)
+
+
+def test_stage_two_lists_the_changes_this_flow_has_raised(app, client):
+    """Stage 2 renders the CHANGE. Until it listed them, the only way to reach
+    that rendering was to hand-type ``?cr=`` — so the stage read as a bare form
+    to everyone who had not just pressed its button, which is exactly how it
+    was reported."""
+    cid, ref, _ = _raise_one(app, client, "picker-listed")
+    body = client.get("/web/upgrade-flow/").get_data(as_text=True)
+    assert ref in body, "the change this flow raised is not offered anywhere"
+    assert re.search(r'upgrade-flow/\?[^"]*cr=%d\b' % cid, body), \
+        "the picker does not open the change inside the flow"
+
+
+def test_the_picker_opens_nothing_on_its_own(app, client):
+    """Those blocks carry Approve, Schedule, Mark notified and Cancel, and they
+    act on a real change. A stage that pre-selects one is a stage that can get
+    the wrong change approved by somebody who thought they were reading a form.
+    """
+    cid, ref, _ = _raise_one(app, client, "picker-inert")
+    body = client.get("/web/upgrade-flow/").get_data(as_text=True)
+    for label, marker in _CR_BLOCKS.items():
+        if label == "overview":
+            continue  # stage 1 has a heading of its own by that name
+        assert marker not in body, \
+            "a change nobody opened rendered its %s" % label
+    for label, marker in _CR_ACTIONS.items():
+        # "edit" is matched by a bare Bootstrap icon class, which the nav also
+        # uses (Custom Signature) — on a whole-page assertion it answers itself
+        # and would report a button that is not there. The other four are
+        # route-shaped and cannot be said by accident.
+        if label == "edit":
+            continue
+        assert marker not in body, \
+            "%s is live on a change the operator never opened" % label
+    # ...and opening it explicitly still works, or the assertions above would
+    # pass just as well against a picker that does nothing at all.
+    opened = client.get("/web/upgrade-flow/?cr=%d" % cid).get_data(as_text=True)
+    assert all(v in opened for v in _CR_BLOCKS.values())

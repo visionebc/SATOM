@@ -369,12 +369,35 @@ def page_context(posted=None) -> dict:
     # sources. Typing either default here would be a second author of a value
     # the operator is about to sign their name to.
     from ..services import email_service
-    from .change_requests import _tz_name
+    from .appliances import _adom_arg
+    from .change_requests import _tz_name, cr_view_context
     defaults = {
         'owner': (getattr(current_user, 'username', '') or ''),
         'notify_to': (email_service.config().get('default_to') or '').strip(),
     }
     render_lang = (lang_preset or fallback)
+    # Resolved ONCE: the citation and the embedded view have to be the same
+    # change, and two independent lookups of the same query argument is how
+    # a page comes to name one record and render another.
+    created = created_change(request.args.get('cr'))
+    # Every change this flow has raised that this operator may see, newest
+    # first. Stage 2 renders the CHANGE ITSELF, and until now the only way to
+    # reach that rendering was to hand-type ?cr= -- so the stage looked like a
+    # bare form to everyone who had not just pressed its button.
+    #
+    # Nothing here is auto-opened. The blocks it opens carry Approve, Schedule,
+    # Mark notified and Cancel, which act on a real change; a page that picks
+    # one for you is a page that can get one approved by somebody who thought
+    # they were reading a form.
+    #
+    # Scoped through _visible_to_me -- the SAME gate the citation uses -- so
+    # the picker cannot offer a change this very page would then decline to
+    # render.
+    flow_changes = [c for c in (ChangeRequest.query
+                                .filter(ChangeRequest.action == CR_ACTION)
+                                .order_by(ChangeRequest.id.desc())
+                                .limit(60).all())
+                    if _visible_to_me(c)][:12]
     # Returned as ONE dict and splatted by the caller. Enumerating the keys at
     # the render call is how a value this function computes can fail to reach
     # the template with every assertion about it still green.
@@ -404,7 +427,19 @@ def page_context(posted=None) -> dict:
                 else ({preselect} if preselect else set())),
         prep_choice=prep_choice(devices, runs, preselect, prep_pick, posted),
         auto=auto_fields(posted, crdoc, devices, render_lang),
-        created=created_change(request.args.get('cr')),
+        created=created,
+        flow_changes=flow_changes,
+        # The change this flow raised, rendered WHOLE right here - the same
+        # action bar, overview, document, frozen inventory, external record,
+        # timeline and notice its own page shows, from the ONE builder both
+        # pages call. Citing it with a link and nothing else still made
+        # approving, scheduling, notifying or exporting it a trip to another
+        # screen, which is the trip this stage exists to remove.
+        created_view=(cr_view_context(
+            created, drift=request.args.get('drift') == '1',
+            back='upgrade_flow', self_endpoint='upgrade_flow.index',
+            self_args=dict({'cr': created.id}, **_adom_arg()))
+            if created is not None else None),
     )
 
 

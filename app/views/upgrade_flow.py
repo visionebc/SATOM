@@ -67,6 +67,16 @@ MAX_WAVES = 12
 CR_ACTION = 'upgrade'
 
 
+def crsvc_risks() -> tuple:
+    """The risk vocabulary, read from the service that owns it.
+
+    Imported at call time like every other service reference in this module,
+    so importing the blueprint still touches nothing.
+    """
+    from ..services import change_requests as crsvc
+    return tuple(crsvc.RISKS)
+
+
 def cr_draft_context() -> dict:
     """The stage-2 wording, authored by Administration -> Change Types.
 
@@ -259,6 +269,7 @@ def index():
                            preselect=preselect,
                            preselect_unresolved=preselect_unresolved,
                            wave_groups=wave_groups,
+                           risks=crsvc_risks(),
                            kinds=prep_kinds(), max_sweep=MAX_SWEEP,
                            max_waves=MAX_WAVES, crdoc=crdoc,
                            cr_action=CR_ACTION,

@@ -98,7 +98,12 @@ def guide_reconcile() -> str:
 
 
 def guide_matrix() -> str:
-    return bounded(guide(), GUIDE_MATRIX_HEAD, '\n## 31.')
+    # Bounded at the NEXT heading, not at the chapter. It used to stop at
+    # '## 31.', which was the next heading until §30.6 was inserted between
+    # them: the slice silently grew to cover two sections and the
+    # sanity bound below caught it at 19 926 characters. Same shape as
+    # guide_reconcile, which stops at the heading that follows it.
+    return bounded(guide(), GUIDE_MATRIX_HEAD, '\n### 30.6')
 
 
 def ref_apply() -> str:

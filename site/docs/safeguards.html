@@ -14946,6 +14946,254 @@ before and after. 240 targeted tests RC=0 (<code>test_absence_corroboration</cod
 render against the real database for all three scenarios: today (no banner),
 8.1 appended (200, comparison renders), 7.8 inserted (banner naming the five
 real decided rows).</p>
+<h2 id="182-a-stage-that-could-only-be-finished-by-leaving-the-page-it-was-on-teststest_upgrade_flowpy-2026-09-19">§182 — a stage that could only be finished by leaving the page it was on (<code>tests/test_upgrade_flow.py</code>, 2026-09-19)</h2>
+<p><strong>What was wrong.</strong> Stage 2 of the upgrade flow posted at
+<code>change_requests.new</code>. On success that route redirects to the new change's own
+page and on refusal to an empty <code>change_requests.new</code> — correct for the
+single-change form, which is where the operator already is, and wrong for a
+stage inside a staged page. Raising the change threw the operator out of the
+workflow two stages from the end; a refused one cost them the whole card,
+including the pre-flight run they had chosen per appliance. <strong>Neither failed.</strong></p>
+<p><strong>What is guarded.</strong></p>
+<table>
+<thead>
+<tr>
+<th>Guard</th>
+<th>What it kills</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>test_stage_two_posts_to_the_flow_not_to_the_single_change_form</code></td>
+<td>the form action pointing back at <code>/change-requests/new</code></td>
+</tr>
+<tr>
+<td><code>test_a_raised_change_comes_back_to_the_flow_citing_itself</code></td>
+<td>success redirecting out of the flow; a citation that names nothing; a citation with no link to the document or to execution</td>
+</tr>
+<tr>
+<td><code>test_a_refused_change_re_renders_the_flow_with_what_was_typed</code></td>
+<td>a refusal that redirects at all, or that comes back with wording, owner, notification, approval mode, window or ticks reset</td>
+</tr>
+<tr>
+<td><code>test_a_refusal_keeps_the_run_each_appliance_cited</code></td>
+<td>the newest run being re-proposed over the operator's choice, and <em>no run cited</em> being silently upgraded to one</td>
+</tr>
+<tr>
+<td><code>test_a_refusal_tells_an_edited_field_from_an_untouched_proposal</code></td>
+<td><code>data-auto</code> collapsing to one answer — either freezing an untouched proposal or overwriting an edited field</td>
+</tr>
+<tr>
+<td><code>test_a_refusal_creates_nothing</code></td>
+<td>a refused post that wrote a row</td>
+</tr>
+<tr>
+<td><code>test_the_citation_never_names_a_change_this_operator_cannot_see</code></td>
+<td><code>?cr=</code> raising a 404, a 500, or citing a change outside the ADOM</td>
+</tr>
+<tr>
+<td><code>test_the_flow_does_not_reimplement_what_raising_a_change_is</code></td>
+<td>the route growing its own change row, or reading the change type from the post</td>
+</tr>
+</tbody>
+</table>
+<p><strong>The trap this class keeps setting.</strong> The error path is the one nobody looks
+at twice. <code>index()</code> used to be the only author of the flow page, so the
+refusal had nowhere to re-render <em>to</em> — which is exactly why it redirected to
+a different form. The page's context is now built by <code>page_context(posted=…)</code>
+and returned as <strong>one dict splatted at the render call</strong>: enumerating the
+kwargs is how a value the resolver computes can fail to reach the template
+with every assertion about it still green (§9j).</p>
+<p><strong>Verified 2026-09-19.</strong> 12 mutations, 12 bite, 0 survive, 0 void,
+<code>restore-ok</code>, control green before and after — but one of them only on the
+second pass. <code>'action': CR_ACTION,</code> appears <strong>twice</strong> in this module (the wave
+route raises the same type), so the anchor matched nothing and the harness
+printed <code>VOID</code>, which sits in a list of eleven <code>BITES</code> looking like one more
+of them. A mutation that was never applied is not a guard that held. 83 targeted tests RC=0
+(<code>test_upgrade_flow</code>, <code>test_upgrade_flow_wording</code>, <code>test_upgrade_flow_exec</code> —
+the modules edited). Live render against the real database of a1: the form
+posting to the flow, a citation of a real change, and four refusals coming
+back with the card intact — none of which created a row.</p>
+<h2 id="183-a-stage-that-showed-the-change-but-could-not-drive-it-teststest_upgrade_flowpy-teststest_cr_editpy-2026-09-19">§183 — a stage that showed the change but could not drive it (<code>tests/test_upgrade_flow.py</code>, <code>tests/test_cr_edit.py</code>, 2026-09-19)</h2>
+<p><strong>The defect.</strong> The previous round stopped stage 2 of the upgrade flow from
+throwing the operator out on submit, and cited the raised change with a link.
+Nine blocks make up a change request; stage 2 had <strong>one</strong> — the form. Approving
+it, scheduling it, marking the client notified, exporting the inventory, asking
+for the external ticket or reading the document were all still a trip to
+<code>/change-requests/&lt;id&gt;</code>, which is the trip the stage exists to remove.</p>
+<p><strong>The fix, and the shape of it.</strong> The blocks moved into ONE partial
+(<code>app/templates/change_requests/_view.html</code>) fed by ONE builder
+(<code>change_requests.cr_view_context</code>). <code>change_requests/detail.html</code> is now a
+header and an <code>{% include %}</code>; the flow renders the same include when it has a
+change to show. The lifecycle routes return to the page the button was pressed
+on, via <code>_after()</code>.</p>
+<p><strong>What is guarded, and why each one exists:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Guard</th>
+<th>The failure it refuses</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>test_stage_two_renders_the_whole_change_not_a_link_to_it</code></td>
+<td>the eight block markers and five action markers are all present on the flow once a change exists</td>
+</tr>
+<tr>
+<td><code>test_the_flow_and_the_change_page_show_the_same_change</code></td>
+<td>presence compared BOTH ways <strong>and required on both</strong> — two pages agreeing a block is missing is not the two pages agreeing</td>
+</tr>
+<tr>
+<td><code>test_there_is_exactly_one_author_for_those_blocks</code></td>
+<td>the markup exists in the partial and in <strong>neither</strong> page; the flow was already a second author of the CRQ form once</td>
+</tr>
+<tr>
+<td><code>test_no_form_is_nested_inside_another_on_the_flow</code></td>
+<td>the embedded blocks carry forms and stage 2 <em>is</em> a form — a nested <code>&lt;form&gt;</code> is invalid HTML the browser silently unnests, and every button in the inner one then posts the wrong thing while the page still looks right</td>
+</tr>
+<tr>
+<td><code>test_approving_from_the_flow_comes_back_to_the_flow</code></td>
+<td>asserts the redirect <strong>and</strong> that the change really was approved — a round trip that lands correctly having done nothing is the quieter bug</td>
+</tr>
+<tr>
+<td><code>test_approving_from_the_changes_own_page_still_lands_there</code></td>
+<td>the change's own page stops being its own return target</td>
+</tr>
+<tr>
+<td><code>test_the_return_target_is_a_token_never_a_url</code> (×5)</td>
+<td><code>https://evil.example/x</code>, <code>//evil.example</code>, a valid-looking internal path, wrong case and junk — only the known token is honoured</td>
+</tr>
+<tr>
+<td><code>test_every_lifecycle_button_carries_the_return_token</code></td>
+<td>one button left without it walks the operator out silently, and only that one</td>
+</tr>
+<tr>
+<td><code>test_the_live_comparison_does_not_leave_the_flow</code></td>
+<td>the drift link is read <strong>by id</strong>, because the sidebar has a <code>bi-arrow-repeat</code> of its own and a search by icon returns that one</td>
+</tr>
+<tr>
+<td><code>test_editing_from_the_flow_returns_to_the_flow</code></td>
+<td>the token survives the GET, the hidden field and the POST; Back and Discard on the edit screen too</td>
+</tr>
+<tr>
+<td><code>test_a_citation_of_nothing_embeds_nothing</code></td>
+<td>an unciteable id must not render a change's blocks as a consolation prize</td>
+</tr>
+<tr>
+<td><code>test_a_reader_who_cannot_drive_the_change_gets_no_buttons</code></td>
+<td>a button that answers 403 reads as an action you may take — and the second half asserts the buttons ARE there for someone, so the first half cannot pass by gating everybody off</td>
+</tr>
+<tr>
+<td><code>test_the_flow_does_not_rebuild_the_change_view</code></td>
+<td>the flow calls <code>cr_view_context</code> and assembles none of it itself</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Three traps this round, all of them measurement traps:</strong></p>
+<ol>
+<li><strong>A guard that read the wrong link.</strong> The drift assertion searched for
+   <code>&lt;a …&gt;&lt;i class="bi bi-arrow-repeat</code>, and the sidebar's own icon is earlier in
+   the document — it measured a link to <code>/web/server-objects/…</code> and said
+   nothing about the one under test. Fixed by giving the link <code>id="crv-drift"</code>
+   and asking for it by name.</li>
+<li><strong>A guard defanged by a rename.</strong> <code>test_the_citation_never_names_a_change
+   _this_operator_cannot_see</code> asserted on the button label <em>"Open the change"</em>.
+   The button is now <em>"Open its own page"</em>, so the assertion would have gone on
+   passing while measuring nothing. Repointed.</li>
+<li><strong>A guard whose file moved out from under it.</strong> <code>test_the_cancel_control
+   _cannot_squeeze_its_own_button</code> reads <code>detail.html</code> for the cancel form's
+   flex rules — markup that now lives in the partial. Left as it was it would
+   have passed against a file that no longer contains what it measures.
+   <code>DETAIL_TPL</code> repointed at <code>_view.html</code>.</li>
+</ol>
+<p><strong>And one guard the fixture could not support.</strong> The reader test was first
+written against the flow page; stage 2 sits behind <code>user_manage</code> in that
+template, so the guard passed by finding an empty stage and said nothing about
+the gate. Rewritten to render the partial directly with a real <code>operator</code> user
+— which is where <code>can_act</code> actually decides anything.</p>
+<p><strong>Verification recipe.</strong> <code>pytest tests/test_upgrade_flow.py tests/test_cr_edit.py
+tests/test_change_request_lifecycle.py -q</code> → RC=0. Then check the two pages
+agree in the browser, not only in the guards: the block count on
+<code>/web/change-requests/&lt;id&gt;</code> and on <code>/web/upgrade-flow/?cr=&lt;id&gt;</code> must be equal,
+and <code>grep -c 'name="back" value="upgrade_flow"'</code> must be <strong>0</strong> on the first and
+<strong>≥4</strong> on the second.</p>
+<h3 id="183b-stage-2-is-the-change-request-picker-waves-folded-in-2026-09-19">§183b — stage 2 IS the change request (picker + waves folded in, 2026-09-19)</h3>
+<p>Reported as <em>"no has cambiado nada"</em>, twice, and both times correctly: the
+blocks rendered only for <code>?cr=&lt;id&gt;</code>, and nothing on the page ever produced that
+link, so the stage read as a bare form to anyone who had not just pressed its
+button. Stage 2 now lists every upgrade change this operator can see and opens
+any of them inline, exactly as <code>/web/change-requests/&lt;id&gt;</code> renders it.</p>
+<p>Nothing is auto-opened. Those blocks carry Approve / Schedule / Mark notified /
+Cancel, which act on a real change; a stage that picks one is a stage that can
+get the wrong change approved by somebody who thought they were reading a form.</p>
+<p><strong>2b is no longer a stage.</strong> Its fields live inside the stage-2 card after that
+card's own submit, with the <code>&lt;form id="uf-waves"&gt;</code> hoisted ABOVE as an EMPTY
+element and every visible field bound back by <code>form="uf-waves"</code>.</p>
+<ul>
+<li><strong>Why the binding is not cosmetic:</strong> <code>window_start</code> exists in BOTH forms.
+  An unbound waves input inside the stage-2 card posts a second <code>window_start</code>
+  with the single change — same name, different meaning, nothing fails, and
+  which one the server reads is an accident of ordering.</li>
+<li><code>tests/test_upgrade_flow.py::_stage_two</code> had to be repaired, not relaxed: it
+  bounded the stage-2 slice by splitting at <code>id="uf-waves"</code>, which now sits
+  above the form. Left alone it returned the rest of the page and every
+  assertion built on it would have widened in silence.</li>
+<li>Recipe: <code>grep -c 'form="uf-waves"'</code> on the served page → <strong>5</strong> (4 inputs +
+  1 button); <code>name="window_start"</code> unbound inside the stage-2 slice → <strong>1</strong>.</li>
+<li>Form depth is measured on MARKUP ONLY. A <code>//</code> comment reaches the served
+  HTML, and this page's script comments talk about form elements — counting
+  them reported depth 2 on a page whose real depth is 1. Strip <code>&lt;script&gt;</code>
+  blocks first, and do not write markup-shaped words in JS comments.</li>
+<li><code>bi-pencil-square</code> is NOT a usable marker for the Edit button in a
+  whole-page assertion: the nav uses the same icon (Custom Signature).</li>
+</ul>
+<h2 id="184-a-netbox-id-is-only-half-an-address-teststest_netbox_clientpy-2026-09-21">§184 — a NetBox id is only half an address (<code>tests/test_netbox_client.py</code>, 2026-09-21)</h2>
+<p><strong>The report.</strong> An operator added <code>{device}</code> to NetBox and the <em>Open
+maintenance window in NetBox</em> button stayed disabled.</p>
+<p><strong>What was measured, before anything was written.</strong> The NetBox at
+<code>{ip}</code> (4.6.7) holds <strong>13 devices and 87 virtual machines</strong>, and
+<code>{device}/16/17</code> and <code>{device}</code> are all <strong>virtual machines</strong> on the <code>{hypervisor}</code>
+cluster. <code>resolve_plan</code> asked <code>/api/dcim/devices/</code> and nothing else, so it
+reported four fully documented appliances as undocumented — and the gate added
+the day before did exactly what it was built to do with that answer.</p>
+<p><strong>The class of defect.</strong> NetBox models a virtual machine as a <em>different
+object type</em> from a device: different API path, different content type, and a
+separate id space. An integration that carries only the id has half an address.
+Everything in this round follows from that:</p>
+<ul>
+<li><code>resolve_plan</code> asks <code>/api/dcim/devices/</code> first and
+  <code>/api/virtualization/virtual-machines/</code> <strong>only for the names dcim did not
+  answer</strong> — so a device match still wins, and an install with no virtual
+  machines pays for no second request.</li>
+<li>A <strong>half-answered lookup is UNKNOWN, not absent</strong>: if the virtualization leg
+  fails, the names dcim matched stand, and the rest are <code>checked=False</code>, which
+  leaves the button alive. Rendering them as "NetBox does not document this"
+  accuses the operator's inventory of the integration's own fault.</li>
+<li>The <strong>ref carries the kind</strong> (<code>tag:vm:95</code>, <code>cf:vm:95</code>), because the ref is the
+  only handle <code>close_window</code> gets. A ref without one is a device — which is what
+  every ref written before this date is, so closing an old window still works
+  and re-reading one as a virtual machine cannot clear a tag from a stranger's
+  hardware.</li>
+<li>The <strong>journal close follows the object the open was filed against</strong>, read back
+  from the entry. It used to hardcode <code>dcim.device</code>, which would have filed the
+  closing note against whatever device wore the virtual machine's number. A
+  journal ref carries no kind precisely because the entry itself knows.</li>
+<li><strong>Custom fields are checked on the target's own object type.</strong> A field
+  declared for <code>dcim.device</code> does not exist on <code>virtualization.virtualmachine</code>,
+  and NetBox answers the PATCH with a 400 no operator can read as "wrong object
+  type". The refusal names the type and writes nothing.</li>
+<li><strong>One parser</strong> (<code>parse_target</code>) reads <code>"vm:95"</code> for the stored map, the refs
+  and the settings form. Two spellings of "which object is this" is exactly how
+  a window comes to be opened on one object and closed on another.</li>
+</ul>
+<p><strong>The guards.</strong> 15 new ones in <code>tests/test_netbox_client.py</code>, all of them red
+against the previous file. Four existing guards were <strong>repaired, not relaxed</strong>:
+the stored map is now text (<code>{"1": "7"}</code>) rather than an int, <code>parse_ref</code>
+returns three values, and two refusal messages name both object kinds. One is a
+source guard: no write path may address a device through an f-string again.</p>
+<p><strong>Still true and still required:</strong> a name that exists in neither collection is
+still refused, and a case-only difference is still a different object.</p>
     </div>
   </div>
 </section>

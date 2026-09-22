@@ -304,3 +304,238 @@ def test_the_renderer_treats_a_failed_fetch_as_an_error_not_an_empty_canvas():
     body = js[js.index(".catch(function (err)"):]
     body = re.sub(r"/\*.*?\*/", "", body, flags=re.S)   # comments explain the rule; they are not the rule
     assert "exclamation-octagon" in body or "Could not draw" in body
+
+
+# --------------------------------------------------------------------------
+# 4 — display text: two rows the operator cannot tell apart
+# --------------------------------------------------------------------------
+def test_no_two_pages_share_a_label():
+    """A map whose rows have the same name fails at the one question it answers.
+
+    ``/waf/artifacts`` (fleet-wide) and ``/artifacts/`` (the one device+ADOM
+    the session stands on) were BOTH called "WAF Artifacts", in two different
+    clusters. Searching the map for "artifacts" returned two identical names
+    and the operator had to open both to learn which was which.
+
+    :func:`test_concept_keys_are_unique_and_endpoints_appear_once` cannot see
+    this: the endpoints differ, so that guard is green. Only the display text
+    collides, and display text is the entire search surface.
+    """
+    from collections import Counter
+
+    counts = Counter(p["label"] for p in cmap.PAGES)
+    dupes = {label: n for label, n in counts.items() if n > 1}
+    assert not dupes, (
+        "Two pages on the map carry the same label, so a search result cannot "
+        f"tell them apart. Name what makes them different (usually SCOPE): {dupes}")
+
+
+def test_no_two_pages_resolve_to_the_same_url(app):
+    """The mirror defect: two rows, one page.
+
+    Distinct endpoints can still build the same path (an alias, a legacy name
+    kept alive). That inflates the coverage count the page prints out loud and
+    offers the operator a choice that is not one.
+    """
+    from collections import defaultdict
+
+    with app.test_request_context("/map/"):
+        from flask import url_for
+
+        by_href = defaultdict(list)
+        for page in cmap.PAGES:
+            by_href[url_for(page["endpoint"])].append(page["endpoint"])
+    dupes = {href: eps for href, eps in by_href.items() if len(eps) > 1}
+    assert not dupes, f"several map rows point at one URL: {dupes}"
+
+
+def test_a_page_and_its_fleet_wide_twin_each_declare_their_scope():
+    """Scope is what separates these two pages, so each blurb must state it.
+
+    Renaming alone would fix the collision and leave the harder question --
+    "which one is the whole estate?" -- answered nowhere on the map. Asserted
+    on the blurbs because the blurb is what a searcher reads under the name.
+    """
+    blurbs = {p["endpoint"]: p["blurb"] for p in cmap.PAGES}
+    assert "FLEET-WIDE" in blurbs["waf.artifacts"], (
+        "the estate-wide artifacts page no longer says it is estate-wide")
+    assert "(device, ADOM)" in blurbs["artifacts.index"], (
+        "the device-scoped artifacts page no longer says what it is scoped to")
+
+
+# --------------------------------------------------------------------------
+# 6 — the index is the page: default view, anchors, per-row explanation
+# --------------------------------------------------------------------------
+def _js():
+    """The script with its comments stripped.
+
+    Eight guards in this repo have passed against a broken product because the
+    comment EXPLAINING the rule contained the words the assertion looked for.
+    The comments are not the rule.
+    """
+    js = open("app/static/js/concept_map.js").read()
+    js = re.sub(r"/\*.*?\*/", "", js, flags=re.S)
+    return re.sub(r"^\s*//.*$", "", js, flags=re.M)
+
+
+def _fn(js, name):
+    """The body of one 4-space-indented function declaration inside init()."""
+    start = js.index("function " + name + "(")
+    end = js.index("\n    }", start)
+    return js[start:end]
+
+
+def _css(body):
+    """Only the <style> block of the page, never the markup it styles."""
+    return "\n".join(re.findall(r"<style[^>]*>(.*?)</style>", body, flags=re.S))
+
+
+def _cls_in_markup(body, token):
+    """The class TOKEN appears in a rendered class attribute.
+
+    A bare substring match passes against a mutant that renames the class to
+    ``cm-jump-chip-gone``; ``\b`` does not save you either, because a hyphen is
+    already a word boundary.
+    """
+    return re.search(r'class="[^"]*\b' + re.escape(token) + r'(?![\w-])', body) is not None
+
+
+def _selector(css, token):
+    """The stylesheet actually CONSULTS that class name."""
+    return re.search(r"\." + re.escape(token) + r"(?![\w-])", css) is not None
+
+
+def test_the_index_is_the_default_view_and_the_diagram_is_opt_in(app, client):
+    """The scrollable index must be what the page SERVES, not what a click reveals.
+
+    The list view existed for a month and nobody had seen it: it was rendered
+    with ``hidden`` and only the "List" button took it off. Everyone who opened
+    /map got the SVG diagram, which needs panning and zooming to read a name.
+    Asserted on the served markup, so the index survives with JavaScript off.
+    """
+    login(client, admin_user_id(app), product="global")
+    body = client.get("/map/").get_data(as_text=True)
+
+    list_tag = re.search(r"<div id=\"cm-list\"[^>]*>", body).group(0)
+    assert "hidden" not in list_tag, (
+        "the index is served hidden again — a page nobody sees is not a default")
+
+    map_tag = re.search(r"<div[^>]*id=\"cm-map-card\"[^>]*>", body).group(0)
+    assert "hidden" in map_tag, "the diagram is the default view again"
+
+    btn = re.search(r"<button[^>]*id=\"cm-view-list\"[^>]*>", body).group(0)
+    assert "active" in btn, "the toggle disagrees with what is on screen"
+
+
+def test_the_stored_preference_is_the_open_choice_not_the_closed_one():
+    """Storing "is the diagram closed?" would send a fresh profile, a wiped
+    profile and a private window back to the diagram. Only an explicit stored
+    "map" may opt out of the index."""
+    js = _js()
+    assert "satom.map.view" in js, "the chosen view is not persisted at all"
+    assert 'var pref = "list"' in js, "the default is no longer the index"
+    assert re.search(r'getItem\(STORE\) === "map"', js), (
+        "the stored value is no longer read as an explicit opt-IN to the diagram")
+    assert "setItem(STORE" in _fn(js, "show"), "the choice is read but never written"
+
+
+def test_every_concept_offers_a_jump_chip_that_lands_on_its_section(app, client):
+    """An index whose entry points nowhere is worse than no index.
+
+    Checks both halves: the chip exists for every cluster, and the anchor it
+    names exists on the section. A chip with a dead href still LOOKS complete.
+    """
+    login(client, admin_user_id(app), product="global")
+    body = client.get("/map/").get_data(as_text=True)
+    with app.test_request_context("/map/"):
+        clusters = cmap.build(None, app)
+
+    assert clusters, "no clusters to index"
+    for c in clusters:
+        assert f'href="#cm-c-{c["key"]}"' in body, f"no index entry for {c['key']}"
+        assert f'id="cm-c-{c["key"]}"' in body, f"index entry for {c['key']} lands nowhere"
+
+    assert _cls_in_markup(body, "cm-jump-chip")
+    assert _selector(_css(body), "cm-jump-chip"), (
+        "the chips are emitted but the stylesheet no longer consults that name")
+
+
+def test_the_index_chip_says_what_is_in_the_section(app, client):
+    """The whole point of the index: what would I find in there, without
+    scrolling to it first. The chip carries the cluster's own blurb."""
+    login(client, admin_user_id(app), product="global")
+    body = client.get("/map/").get_data(as_text=True)
+    with app.test_request_context("/map/"):
+        clusters = cmap.build(None, app)
+
+    nav = re.search(r"<nav class=\"cm-jump\".*?</nav>", body, flags=re.S).group(0)
+    for c in clusters:
+        assert c["blurb"][:40] in nav, f"the {c['key']} chip explains nothing"
+
+
+def test_every_listed_page_carries_its_own_mini_explanation(app, client):
+    """Each row states what is behind it. A bare list of 107 names is a menu
+    with extra steps; the blurb is the reason the map beats the sidebar."""
+    login(client, admin_user_id(app), product="global")
+    body = client.get("/map/").get_data(as_text=True)
+
+    rows = re.findall(r'<a class="cm-node".*?</a>', body, flags=re.S)
+    assert rows, "no page rows rendered"
+    blurbs = re.findall(r'<span class="cm-node-blurb">(.*?)</span>', body, flags=re.S)
+    assert len(blurbs) == len(rows), (
+        f"{len(rows)} rows but {len(blurbs)} explanations — some row says nothing")
+    assert all(b.strip() for b in blurbs), "an empty explanation is not an explanation"
+
+    for c in re.findall(r'<p class="text-muted cm-cluster-blurb">(.*?)</p>', body, flags=re.S):
+        assert c.strip(), "a section heading promises a topic and explains nothing"
+
+
+def test_a_filtered_out_row_is_really_removed_not_just_outlined(app, client):
+    """``node.hidden = true`` does NOT hide ``.cm-node``.
+
+    The UA rule ``[hidden]{display:none}`` loses to the author declaration
+    ``.cm-node{display:flex}`` — author beats user-agent, and there is no other
+    ``[hidden]`` rule in this product's stylesheets. So searching the list
+    outlined the matches and left every non-match on screen. Invisible while
+    the list was hidden behind a toggle; the first thing you meet now.
+    """
+    login(client, admin_user_id(app), product="global")
+    css = _css(client.get("/map/").get_data(as_text=True))
+
+    assert re.search(r"\.cm-node\s*\{[^}]*display\s*:\s*flex", css), (
+        "the premise changed: re-check whether the [hidden] override is still needed")
+    assert re.search(r"\.cm-node\[hidden\]\s*\{[^}]*display\s*:\s*none", css), (
+        "filtered-out rows stay on screen: nothing overrides .cm-node's display")
+    assert re.search(r"\.cm-jump-chip\[hidden\]\s*\{[^}]*display\s*:\s*none", css), (
+        "chips for filtered-out sections stay clickable and lead nowhere")
+
+
+def test_the_anchor_target_clears_the_topbar_and_the_sticky_index(app, client):
+    """Both bars are position-fixed/sticky, so an un-offset anchor drops the
+    section heading UNDERNEATH them — the jump looks like it missed."""
+    login(client, admin_user_id(app), product="global")
+    css = _css(client.get("/map/").get_data(as_text=True))
+    assert re.search(r"\.cm-cluster\s*\{[^}]*scroll-margin-top", css), (
+        "anchors land under the sticky index")
+    assert re.search(r"\.cm-jump\s*\{[^}]*position\s*:\s*sticky", css), (
+        "the index scrolls away, so a long page needs a trip back to the top")
+
+
+def test_the_diagram_is_drawn_only_when_it_is_opened():
+    """107 rows laid out on every visit to fill a card nobody opened."""
+    js = _js()
+    assert "fetch(" in _fn(js, "ensureMap"), "the diagram fetch left ensureMap"
+    assert re.search(r'if \(which === "map"\) ensureMap\(\)', _fn(js, "show")), (
+        "the build is no longer gated on the diagram actually being opened — an "
+        "unconditional call in show() fetches it on every visit again")
+    outside = js.replace(_fn(js, "ensureMap"), "")
+    assert "fetch(" not in outside, "the diagram is still fetched eagerly"
+
+
+def test_the_status_line_keeps_the_server_translation(app, client):
+    """The server renders a translated summary; filter() used to overwrite it
+    on load with English built in JS, so es/de/fr/it lost it on first paint."""
+    js = _js()
+    body = _fn(js, "filter")
+    assert "statusBase" in body, "the server's translated summary is not restored"
+    assert "pages · " not in body, "an untranslated summary is built in JS again"

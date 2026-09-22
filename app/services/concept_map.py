@@ -236,8 +236,8 @@ PAGES: tuple[dict, ...] = (
        "artifacts fleet wide file backed objects xml schema xsd dtd wsdl "
        "openapi grpc json schema lua scripting held missing blocked at risk "
        "borrowed orphan empty library store migration blockers sweep",
-       "Every file-backed WAF object the estate needs, whether SATOM holds it, "
-       "and which policies cannot be migrated without it."),
+       "FLEET-WIDE: every file-backed WAF object the estate needs, whether "
+       "SATOM holds it, and which policies cannot be migrated without it."),
     _p("waf.exceptions", "WAF Exceptions", "fleet",
        "exception carve out waiver false positive signature disable custom "
        "signature inventory who has it fleet wide library version rollback "
@@ -500,11 +500,17 @@ PAGES: tuple[dict, ...] = (
     _p("fac_api.index", "FortiAuthenticator API", "dev",
        "fac api console rest fortiauthenticator raw call",
        "Raw API console scoped to FortiAuthenticator."),
-    _p("artifacts.index", "WAF Artifacts", "waf",
+    # Label is the page's OWN <title>, not a name invented here: it already
+    # carries the half that separates it from fleet-wide "WAF Artifacts"
+    # (waf.artifacts). The two differ by SCOPE, so both blurbs say their scope
+    # out loud — a search for "artifacts" used to return two identical names.
+    _p("artifacts.index", "WAF Artifacts — statistics", "waf",
        "artifact xml schema xsd dtd wsdl openapi grpc idl json lua script file "
-       "upload capture push clone migrate content -7694",
-       "The file content FortiWeb keeps out of its own configuration, so a "
-       "clone can carry it."),
+       "upload capture push clone migrate content -7694 statistics numbers "
+       "counts object types per device adom scope this device",
+       "The artifact numbers for the ONE (device, ADOM) this session stands "
+       "on, with the reference explaining why a configuration-only clone "
+       "creates these objects EMPTY."),
     _p("artifacts.inventory", "Artifact inventory", "waf",
        "artifact inventory statistics filter orphan used by policy spo "
        "coverage migration missing stale where held "
@@ -611,6 +617,12 @@ EXCLUDED: dict[str, str] = {
     "release_notes.advise": "json feed", "release_notes.data": "json feed",
     "release_notes.issues": "json feed", "release_notes.notes": "json feed",
     "release_notes.scan_status": "json feed",
+    "release_notes.advisory":
+        "json feed — Scout's verdicts for ONE move, fetched by the Advisor tab "
+        "of the release-notes modal (behind #rnAdvShow). It is meaningless "
+        "without ?current= and ?target=: opened bare it answers 400, so it is "
+        "not a destination a person navigates to. release_notes.index is the "
+        "page that drives it.",
     "cert_manager.settings": "moved into settings.index",
     # Sub-pages reached FROM a mapped page — listing them doubles the map's
     # size and halves its signal.

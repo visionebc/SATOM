@@ -291,7 +291,13 @@ def test_the_menu_is_defined_in_exactly_one_template(app):
     includers = sorted(p.relative_to(root).as_posix()
                        for p in root.rglob("*.html")
                        if 'include "settings/_nav.html"' in p.read_text())
-    assert includers == ["settings/index.html", "settings/sentinel.html"], includers
+    # Exact set, not a subset: a surface that starts drawing the Admin Console
+    # submenu is a decision, and it is made here. settings/integrations.html is
+    # the third since 2026-09-21 -- the page moved from a bare base.html to the
+    # console layout, so removing the include would silently strand it again.
+    assert includers == ["integrations/index.html",
+                         "settings/index.html",
+                         "settings/sentinel.html"], includers
 
 
 def test_a_standalone_settings_page_keeps_the_submenu(app, client):

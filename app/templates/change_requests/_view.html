@@ -25,16 +25,6 @@
 <!-- ACTION BAR -->
 <div class="fw-card mb-3">
   <div class="fw-card-body d-flex flex-wrap align-items-center gap-2">
-    <span class="me-2">
-      Run-gate:
-      {% if crv.runnable_ok %}
-        <span class="fw-badge fw-badge-success">{{ _('Runnable') }}</span>
-      {% else %}
-        <span class="fw-badge fw-badge-secondary">{{ _('Not runnable') }}</span>
-      {% endif %}
-      <span class="text-muted ms-1" style="font-size:12.5px;">{{ crv.runnable_reason }}</span>
-    </span>
-
     <div class="fw-topbar-spacer" style="flex:1 1 auto;"></div>
 
     {% if not crv.can_act %}
@@ -103,87 +93,18 @@
 <div class="row g-3">
   <!-- LEFT: fields -->
   <div class="col-lg-6">
+    {# Hidden where the host page renders this table itself (upgrade flow
+       stage 2 puts it inside its own change-request card). #}
+    {% if not hide_overview %}
     <div class="fw-card mb-3">
       <div class="fw-card-header">
         <span class="fw-card-title"><i class="bi bi-info-circle me-2 text-accent"></i>{{ _('Overview') }}</span>
       </div>
       <div class="fw-card-body">
-        <table class="fw-table">
-          <tbody>
-            <tr><td class="text-muted" style="width:40%;">{{ _('Action') }}</td><td>{{ cr.action }}</td></tr>
-            <tr>
-              <td class="text-muted">{{ _('Risk') }}</td>
-              <td><span class="fw-badge {{ crv.risk_badge.get(cr.risk, 'fw-badge-secondary') }} text-uppercase">{{ cr.risk }}</span></td>
-            </tr>
-            <tr>
-              <td class="text-muted">{{ _('Window') }}</td>
-              <td>
-                {% if cr.window_start %}
-                  {{ cr.window_start|localtime('%Y-%m-%d %H:%M %Z') }}
-                  {% if cr.window_end %}&rarr; {{ cr.window_end|localtime('%Y-%m-%d %H:%M %Z') }}{% endif %}
-                {% else %}<span class="text-muted">{{ _('— not set —') }}</span>{% endif %}
-              </td>
-            </tr>
-            <tr>
-              <td class="text-muted">{{ _('Devices') }}</td>
-              <td>
-                {% if devices %}
-                  {% for d in devices %}<span class="fw-badge fw-badge-secondary me-1">{{ d.name }}</span>{% endfor %}
-                {% else %}
-                  <span class="text-muted">{{ cr.device_ids_list|length }} id(s) / none resolved</span>
-                {% endif %}
-              </td>
-            </tr>
-            <tr><td class="text-muted">{{ _('Requested by') }}</td><td>{{ cr.requested_by or '—' }}</td></tr>
-            <tr>
-              <td class="text-muted">{{ _('Approved by') }}</td>
-              <td>
-                {{ cr.approved_by or '—' }}
-                {% if cr.approved_at %}<span class="text-muted" style="font-size:12px;">
-                  ({{ cr.approved_at|localtime }})</span>{% endif %}
-              </td>
-            </tr>
-            <tr>
-              <td class="text-muted">{{ _('Notify on completion') }}</td>
-              <td>
-                {% if cr.notify_to %}<code>{{ cr.notify_to }}</code>
-                {% else %}<span class="text-muted">Settings &rarr; Email default</span>{% endif %}
-                {% if cr.final_notified_at %}
-                  <span class="fw-badge fw-badge-success ms-1">sent
-                    {{ cr.final_notified_at|localtime }}</span>
-                {% endif %}
-              </td>
-            </tr>
-            <tr>
-              <td class="text-muted">{{ _('Notify status') }}</td>
-              <td>
-                {% if cr.notify_status == 'sent' %}
-                  <span class="fw-badge fw-badge-success">{{ _('sent') }}</span>
-                {% else %}
-                  <span class="fw-badge fw-badge-secondary">{{ cr.notify_status }}</span>
-                {% endif %}
-              </td>
-            </tr>
-            {% if cr.scheduled_action_id %}
-            <tr><td class="text-muted">{{ _('Bound action') }}</td><td>#{{ cr.scheduled_action_id }}</td></tr>
-            {% endif %}
-          </tbody>
-        </table>
-
-        {% if cr.reason %}
-        <div class="mt-3">
-          <div class="fw-form-label">{{ _('Reason') }}</div>
-          <div style="font-size:13px; white-space:pre-wrap;">{{ cr.reason }}</div>
-        </div>
-        {% endif %}
-        {% if cr.rollback %}
-        <div class="mt-3">
-          <div class="fw-form-label">{{ _('Rollback plan') }}</div>
-          <div style="font-size:13px; white-space:pre-wrap;">{{ cr.rollback }}</div>
-        </div>
-        {% endif %}
+{% include 'change_requests/_overview.html' %}
       </div>
     </div>
+    {% endif %}
 
     <!-- CHANGE DOCUMENT -->
     <div class="fw-card mb-3">
@@ -382,36 +303,102 @@
 
           <dt class="col-sm-4">{{ _('Change ticket') }}</dt>
           <dd class="col-sm-8">
-            {% if cr.crq_ref %}
-              {% if cr.crq_url %}<a href="{{ cr.crq_url }}" target="_blank" rel="noopener"><code>{{ cr.crq_ref }}</code></a>
-              {% else %}<code>{{ cr.crq_ref }}</code>{% endif %}
-            {% else %}<span class="text-muted">{{ _('none recorded') }}</span>{% endif %}
+            <div class="d-flex align-items-center flex-wrap gap-2">
+              <span>
+                {% if cr.crq_ref %}
+                  {% if cr.crq_url %}<a href="{{ cr.crq_url }}" target="_blank" rel="noopener"><code>{{ cr.crq_ref }}</code></a>
+                  {% else %}<code>{{ cr.crq_ref }}</code>{% endif %}
+                {% else %}<span class="text-muted">{{ _('none recorded') }}</span>{% endif %}
+              </span>
+              {% if crv.can_act and not terminal and cr.status in ('draft', 'approved') %}
+              <form method="post" action="{{ url_for('change_requests.request_crq', id=cr.id) }}" class="d-inline m-0">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="back" value="{{ crv.back }}">
+                <button class="btn btn-fw-outline btn-sm" style="font-size:12px; padding:2px 9px;"
+                        {% if not crv.crq.ready %}disabled{% endif %}>
+                  <i class="bi bi-send me-1"></i>{{ _('Raise change ticket via integration hooks') }}
+                </button>
+              </form>
+              {% endif %}
+            </div>
+            {% if crv.can_act and not terminal and cr.status in ('draft', 'approved') %}
+              {% if crv.crq.ready %}
+              <div class="form-text">Queues the <code>change.requested</code> hooks. The ticket id arrives back
+              asynchronously &mdash; hooks run out of process, so nothing here waits on your CRM.</div>
+              {% else %}
+              <div class="form-text">{{ _('The button is off because nothing is wired behind it: no ticket backend is selected and no enabled hook is bound to') }}
+              <code>change.requested</code> ({{ _('Settings') }} &rarr; {{ _('Integrations') }}).
+              {{ _('Nothing would be sent — so until one exists, write the reference your change board gave you here instead.') }}</div>
+              {% endif %}
+            {% endif %}
+            {% if crv.can_act and not terminal %}
+            <form method="post" action="{{ url_for('change_requests.record_crq', id=cr.id) }}"
+                  class="d-flex align-items-center flex-wrap gap-1 mt-1 m-0">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="back" value="{{ crv.back }}">
+              <input type="text" class="form-control form-control-sm" name="crq_ref"
+                     value="{{ cr.crq_ref or '' }}" placeholder="{{ _('Ticket reference') }}"
+                     style="font-size:12px; max-width:180px;">
+              <input type="text" class="form-control form-control-sm" name="crq_url"
+                     value="{{ cr.crq_url or '' }}" placeholder="{{ _('https://… link (optional)') }}"
+                     style="font-size:12px; max-width:250px;">
+              <button class="btn btn-fw-outline btn-sm" style="font-size:12px; padding:2px 9px;">
+                <i class="bi bi-pencil me-1"></i>{{ _('Record') }}
+              </button>
+            </form>
+            <div class="form-text">{{ _('Typed by hand, for a change board that does not talk to SATOM. Submitted empty it changes nothing; to correct a reference, type the right one over it.') }}</div>
+            {% endif %}
           </dd>
 
           <dt class="col-sm-4">{{ _('NetBox window') }}</dt>
           <dd class="col-sm-8">
-            {% if cr.mw_state == 'open' %}<span class="fw-badge fw-badge-warning">{{ _('open') }}</span>
-            {% elif cr.mw_state == 'closed' %}<span class="fw-badge fw-badge-success">{{ _('closed') }}</span>
-            {% elif cr.mw_state == 'error' %}<span class="fw-badge fw-badge-danger">{{ _('error') }}</span>
-            {% else %}<span class="fw-badge fw-badge-secondary">{{ _('none requested') }}</span>{% endif %}
+            <div class="d-flex align-items-center flex-wrap gap-2">
+              <span>
+                {% if cr.mw_state == 'open' %}<span class="fw-badge fw-badge-warning">{{ _('open') }}</span>
+                {% elif cr.mw_state == 'closed' %}<span class="fw-badge fw-badge-success">{{ _('closed') }}</span>
+                {% elif cr.mw_state == 'error' %}<span class="fw-badge fw-badge-danger">{{ _('error') }}</span>
+                {% else %}<span class="fw-badge fw-badge-secondary">{{ _('none requested') }}</span>{% endif %}
+              </span>
+              {% if crv.can_act and not terminal and cr.mw_state != 'open'
+                    and cr.status in ('draft', 'approved', 'scheduled') %}
+              {% set mw_all_unmapped = crv.mw_unmapped and crv.mw_unmapped|length == crv.devices|length %}
+              {% set mw_blocked = (not crv.netbox_ready) or (not cr.window_start) or (not cr.window_end) or mw_all_unmapped %}
+              <form method="post" action="{{ url_for('change_requests.open_window', id=cr.id) }}" class="d-inline m-0">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="back" value="{{ crv.back }}">
+                <button class="btn btn-fw-outline btn-sm" style="font-size:12px; padding:2px 9px;"
+                        {% if mw_blocked %}disabled{% endif %}>
+                  <i class="bi bi-calendar-plus me-1"></i>{% if cr.mw_state == 'error' %}{{ _('Retry maintenance window in NetBox') }}{% else %}{{ _('Open maintenance window in NetBox') }}{% endif %}
+                </button>
+              </form>
+              {% endif %}
+            </div>
             {% if cr.mw_ref %}<div class="text-muted"><code>{{ cr.mw_ref }}</code></div>{% endif %}
             {% if cr.mw_state == 'error' %}
               <div class="text-muted">{{ _('SATOM asked NetBox and it refused or never answered — a device may still be shown in maintenance there. This is deliberately not the same as “no window requested”.') }}</div>
             {% endif %}
+            {% if crv.can_act and not terminal and cr.mw_state != 'open'
+                  and cr.status in ('draft', 'approved', 'scheduled') %}
+              {% if not crv.netbox_ready %}
+              <div class="form-text">{{ _('The button is off because the NetBox integration is not configured (Settings &rarr; Integrations). Nothing would be sent.') }}</div>
+              {% elif not (cr.window_start and cr.window_end) %}
+              <div class="form-text">{{ _('The button is off until this change has a window start AND end. NetBox refuses an ambiguous timestamp, and nothing would be sent.') }}</div>
+              {% elif mw_all_unmapped %}
+              <div class="form-text">{{ _('The button is off because NetBox does not document %(names)s, so nothing would be sent.', names=crv.mw_unmapped|join(', ')) }}</div>
+              {% for name in crv.mw_unmapped %}{% if crv.mw_detail.get(name) %}
+              <div class="form-text">{{ crv.mw_detail[name] }}</div>
+              {% endif %}{% endfor %}
+              {% else %}
+              {% if crv.mw_unmapped %}
+              <div class="form-text text-danger">{{ _('NetBox does not document %(names)s: those appliances will be skipped and reported by name, the rest still get a window.', names=crv.mw_unmapped|join(', ')) }}</div>
+              {% endif %}
+              {% if crv.mw_unverified %}
+              <div class="form-text">{{ _('SATOM could not check %(names)s against NetBox just now, so this is unknown rather than missing — the button stays available and the press will report what NetBox says.', names=crv.mw_unverified|join(', ')) }}</div>
+              {% endif %}
+              <div class="form-text">{{ _('Opens the window in NetBox now, for every device on this change. The scheduler opens the same window when the run starts; doing it here is for showing the devices in maintenance ahead of time. It is not closed until the run finishes.') }}</div>
+              {% endif %}
+            {% endif %}
           </dd>
-        </dl>
-
-        {% if crv.can_act and not terminal and cr.status in ('draft', 'approved') %}
-        <form method="post" action="{{ url_for('change_requests.request_crq', id=cr.id) }}" class="mt-3">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <input type="hidden" name="back" value="{{ crv.back }}">
-          <button class="btn btn-outline-secondary btn-sm">
-            <i class="bi bi-send me-1"></i>{{ _('Raise change ticket via integration hooks') }}
-          </button>
-          <div class="form-text">Queues the <code>change.requested</code> hooks. The ticket id arrives back
-          asynchronously — hooks run out of process, so nothing here waits on your CRM.</div>
-        </form>
-        {% endif %}
 
         {% if cr.integration_log %}
         <details class="mt-3">

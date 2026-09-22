@@ -287,27 +287,59 @@ def open_window(cr, *, by: str = "scheduler") -> dict:
         return {"ok": False, "opened": 0, "failed": 0,
                 "detail": "netbox not configured"}
 
-    refs, failures = [], []
-    for dev in _devices(cr):
+    devices = _devices(cr)
+    if not devices:
+        # Not an integration fault, and "opened 0, failed 0" reads as one.
+        detail = ("this change has no appliances, so there is no device to put "
+                  "in a maintenance window")
+        _log(cr, f"maintenance window NOT opened: {detail}")
+        return {"ok": False, "opened": 0, "failed": 0, "sent": False,
+                "detail": detail}
+
+    refs, failures, contacted = [], [], False
+    for dev in devices:
+        # The APPLIANCE, not its id: an id alone can only be looked up in the
+        # explicit device map, so passing dev.id made the exact-name fallback
+        # that Settings -> Integrations documents unreachable from the only
+        # caller that opens windows in production.
         res = netbox.open_window(
-            dev.id, cr_id=cr.id, title=cr.title, start=cr.window_start,
+            dev, cr_id=cr.id, title=cr.title, start=cr.window_start,
             end=cr.window_end, reason=cr.reason or "")
+        # Absent key -> assume it was sent: the cautious side of the answer.
+        if res.get("sent", True):
+            contacted = True
         if res.get("ok"):
             refs.append(f"{dev.name}={res.get('ref', '')}")
         else:
             failures.append(f"{dev.name}: {res.get('detail', 'failed')}")
 
+    reasons = "; ".join(failures)
+    if not contacted:
+        # NOTHING left this process. mw_state='error' states on the change page
+        # that a device may be sitting in maintenance in the customer's NetBox,
+        # and mw_ref is the only handle close_window accepts — neither may be
+        # touched by a call that never opened a socket. The reason is still
+        # recorded, loudly: it names the appliance and the setting to fix.
+        _log(cr, f"maintenance window NOT opened, nothing was sent - {reasons}")
+        _event(cr, "window_opened", by, f"nothing sent - {reasons}")
+        return {"ok": False, "opened": 0, "failed": len(failures),
+                "sent": False,
+                "detail": f"nothing was sent to NetBox - {reasons}"}
+
     cr.mw_ref = ",".join(refs)[:512]
     cr.mw_state = "open" if refs and not failures else ("error" if failures else "none")
     db.session.commit()
+    # The REASONS ride in `detail`, not only in the log: the caller flashes this
+    # at the operator, and a count names neither the cause nor the next step.
     detail = f"opened {len(refs)}, failed {len(failures)}"
-    _log(cr, f"maintenance window: {detail}"
-             + (f" - {'; '.join(failures)}" if failures else ""))
+    if failures:
+        detail += f" - {reasons}"
+    _log(cr, f"maintenance window: {detail}")
     _event(cr, "window_opened", by, detail)
     _dispatch_quiet("window.opening", cr, by=by, extra={
         "action": cr.action, "policies": _policy_names(cr)})
     return {"ok": bool(refs) and not failures, "opened": len(refs),
-            "failed": len(failures), "detail": detail}
+            "failed": len(failures), "sent": True, "detail": detail}
 
 
 def close_window(cr, *, ok: bool, summary: str = "", by: str = "scheduler") -> dict:

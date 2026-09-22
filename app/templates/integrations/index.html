@@ -1,19 +1,42 @@
 {% extends "base.html" %}
 {% block title %}Integrations — Settings{% endblock %}
+{% block breadcrumb %}
+<div class="fw-breadcrumb mb-1">
+  <a href="/">{{ _('Home') }}</a>
+  <span class="separator">/</span>
+  <a href="{{ url_for('settings.index') }}">{{ _('Settings') }}</a>
+  <span class="separator">/</span>
+  <span>{{ _('Integrations') }}</span>
+</div>
+{% endblock %}
+
 {% block content %}
 <div class="fw-page-header">
-  <h4 class="mb-1"><i class="bi bi-plug me-2"></i>{{ _('Integrations') }}</h4>
-  <p class="text-muted mb-0" style="font-size:13px;">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-plug me-2 text-accent"></i>{{ _('Integrations') }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
     {{ _('Outbound links to systems SATOM does not own: NetBox for maintenance windows, an issue tracker (Jira, OpenProject or Vikunja) for change tickets, and your own Python hooks for anything else. Every integration here is optional — with all of them off, change requests and upgrades work exactly as before. Nothing on this page is contacted while the page renders.') }}
-  </p>
+    </p>
+  </div>
 </div>
 
-<div class="card mb-3">
-  <div class="card-header d-flex justify-content-between align-items-center">
-    <strong><i class="bi bi-diagram-3 me-1"></i>{{ _('NetBox') }}</strong>
+{#
+   The Admin Console submenu comes WITH the page: the same settings/_nav.html
+   the console draws, in `links` mode because this page has no panes to switch.
+   Sharing the partial and copying its layout per page is exactly what made the
+   sections drift before -- so the wrapper is the console's too.
+#}
+<div class="fw-settings-layout">
+  {% include "settings/_nav.html" %}
+
+  <div class="fw-settings-main">
+
+<div class="fw-card mb-3">
+  <div class="fw-card-header d-flex justify-content-between align-items-center">
+    <span class="fw-card-title"><i class="bi bi-diagram-3 me-2 text-accent"></i>{{ _('NetBox') }}</span>
     <span class="small text-muted">{{ _('Source of truth for the maintenance window') }}</span>
   </div>
-  <div class="card-body">
+  <div class="fw-card-body">
     <form method="post" action="{{ url_for('integrations.save_netbox') }}" class="row g-3">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="col-md-3">
@@ -65,12 +88,12 @@
   </div>
 </div>
 
-<div class="card mb-3">
-  <div class="card-header d-flex justify-content-between align-items-center">
-    <strong><i class="bi bi-ticket-detailed me-1"></i>{{ _('Issue tracker') }}</strong>
+<div class="fw-card mb-3">
+  <div class="fw-card-header d-flex justify-content-between align-items-center">
+    <span class="fw-card-title"><i class="bi bi-ticket-detailed me-2 text-accent"></i>{{ _('Issue tracker') }}</span>
     <span class="small text-muted">{{ _('Where a change request opens its ticket') }}</span>
   </div>
-  <div class="card-body">
+  <div class="fw-card-body">
     <p class="small text-muted mb-3">
       {{ _('With a backend selected, raising the CRQ on a change request opens a real ticket and writes its reference back onto the change — no Python hook required. The ticket carries the appliances') }} <strong>{{ _('by name') }}</strong>{{ _(', the pre-upgrade evidence, and the appliances that have none. A change that already carries a reference is never given a second ticket.') }}
     </p>
@@ -146,22 +169,29 @@
   </div>
 </div>
 
-<div class="card mb-3">
-  <div class="card-header"><strong><i class="bi bi-link-45deg me-1"></i>{{ _('Device mapping') }}</strong></div>
-  <div class="card-body">
+<div class="fw-card mb-3">
+  <div class="fw-card-header">
+    <span class="fw-card-title"><i class="bi bi-link-45deg me-2 text-accent"></i>{{ _('Device mapping') }}</span>
+  </div>
+  <div class="fw-card-body">
     <p class="small text-muted">
-      {{ _('Which NetBox device each appliance is. Leave blank to fall back to an exact') }} <em>{{ _('name') }}</em> {{ _('match — that works until somebody renames a device on either side, which is why the fallback is shown rather than assumed.') }}
+      {{ _('Which NetBox object each appliance is. Leave blank to fall back to an exact') }} <em>{{ _('name') }}</em> {{ _('match — that works until somebody renames a device on either side, which is why the fallback is shown rather than assumed.') }}
+    </p>
+    <p class="small text-muted mb-2">
+      {{ _('A NetBox id is only half an address: the same number is a different object depending on its type. Write a device id on its own') }}
+      (<code>7</code>) {{ _('and a virtual machine with its prefix') }} (<code>vm:95</code>).
+      {{ _('The name fallback tries devices first, then virtual machines.') }}
     </p>
     <form method="post" action="{{ url_for('integrations.save_map') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <table class="table table-sm align-middle mb-2">
-        <thead><tr><th>{{ _('Appliance') }}</th><th>{{ _('Host') }}</th><th style="width:220px;">{{ _('NetBox device id') }}</th><th>{{ _('Resolution') }}</th></tr></thead>
+        <thead><tr><th>{{ _('Appliance') }}</th><th>{{ _('Host') }}</th><th style="width:220px;">{{ _('NetBox object') }}</th><th>{{ _('Resolution') }}</th></tr></thead>
         <tbody>
         {% for a in appliances %}
           <tr>
             <td><strong>{{ a.name }}</strong></td>
             <td><code class="small">{{ a.host }}</code></td>
-            <td><input class="form-control form-control-sm" name="map_{{ a.id }}" value="{{ device_map.get(a.id|string, '') }}" placeholder="—"></td>
+            <td><input class="form-control form-control-sm" name="map_{{ a.id }}" value="{{ device_map.get(a.id|string, '') }}" placeholder="7 or vm:95"></td>
             <td>
               {% if device_map.get(a.id|string) %}
                 <span class="fw-badge fw-badge-success">{{ _('mapped') }}</span>
@@ -180,14 +210,14 @@
   </div>
 </div>
 
-<div class="card">
-  <div class="card-header d-flex justify-content-between align-items-center">
-    <strong><i class="bi bi-code-square me-1"></i>{{ _('Integration hooks (your Python)') }}</strong>
+<div class="fw-card">
+  <div class="fw-card-header d-flex justify-content-between align-items-center">
+    <span class="fw-card-title"><i class="bi bi-code-square me-2 text-accent"></i>{{ _('Integration hooks (your Python)') }}</span>
     <a class="btn btn-fw-primary btn-sm" href="{{ url_for('integrations.hook_detail', slug='new') }}">
       <i class="bi bi-plus-lg me-1"></i>{{ _('New hook') }}
     </a>
   </div>
-  <div class="card-body">
+  <div class="fw-card-body">
     {% if hooks_error %}
       <div class="alert alert-warning small mb-0">Hooks subsystem unavailable: <code>{{ hooks_error }}</code></div>
     {% else %}
@@ -248,10 +278,114 @@
     {% endif %}
   </div>
 </div>
+
+<div class="fw-card mt-3">
+  <div class="fw-card-header d-flex justify-content-between align-items-center">
+    <span class="fw-card-title"><i class="bi bi-arrow-repeat me-2 text-accent"></i>{{ _('Scheduled reconciliation') }}</span>
+    {% if nb_task %}
+      {% if nb_task.enabled %}
+        <span class="fw-badge fw-badge-success">{{ _('scheduled') }}</span>
+      {% else %}
+        <span class="fw-badge fw-badge-secondary">{{ _('disabled') }}</span>
+      {% endif %}
+    {% else %}
+      <span class="fw-badge fw-badge-info">{{ _('not scheduled') }}</span>
+    {% endif %}
+  </div>
+  <div class="fw-card-body">
+    <p class="small text-muted">
+      {{ _('One round asks NetBox about the appliances that have no explicit mapping above, lowest id first, and writes the ones NetBox answers by name into the table — as a real object id, which keeps working after a rename on either side. It is read-only against NetBox: it creates nothing there and never removes a mapping you wrote. What it could not resolve is named in the run log, every round.') }}
+    </p>
+    <form method="post" action="{{ url_for('integrations.save_netbox_schedule') }}" class="row g-3">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <div class="col-md-4">
+        <label class="form-label small">{{ _('Task name') }}</label>
+        <input class="form-control form-control-sm" name="name" maxlength="128"
+               value="{{ nb_task.name if nb_task else nb_task_name }}">
+      </div>
+
+      <div class="col-md-3">
+        <label class="form-label small">{{ _('Virtual machines per round') }}</label>
+        <input class="form-control form-control-sm" type="number" name="per_round"
+               min="1" max="{{ nb_max_per_round }}"
+               value="{{ (nb_task.params_dict.get('per_round', nb_default_per_round)) if nb_task else nb_default_per_round }}">
+        <div class="form-text small">{{ _('1–%(max)s. The rest carry over to the next round.', max=nb_max_per_round) }}</div>
+      </div>
+
+      <div class="col-md-5">
+        <label class="form-label small">{{ _('Runs') }}</label>
+        <div class="d-flex gap-2 align-items-center flex-wrap">
+          <select class="form-select form-select-sm" name="schedule_kind" id="nb-sched-kind" style="max-width:130px;">
+            <option value="daily" {{ 'selected' if not nb_task or nb_task.schedule_kind != 'interval' else '' }}>{{ _('daily') }}</option>
+            <option value="interval" {{ 'selected' if nb_task and nb_task.schedule_kind == 'interval' else '' }}>{{ _('every') }}</option>
+          </select>
+          <span id="nb-sched-daily" class="d-flex align-items-center gap-1">
+            <span class="small text-muted">{{ _('at') }}</span>
+            <input class="form-control form-control-sm" type="time" name="daily_time" style="max-width:120px;"
+                   value="{{ nb_task.schedule_dict.get('time', nb_default_time) if nb_task and nb_task.schedule_kind == 'daily' else nb_default_time }}">
+          </span>
+          <span id="nb-sched-interval" class="d-flex align-items-center gap-1">
+            <input class="form-control form-control-sm" type="number" name="interval_every" min="1" style="max-width:80px;"
+                   value="{{ nb_task.schedule_dict.get('every', 6) if nb_task and nb_task.schedule_kind == 'interval' else 6 }}">
+            <select class="form-select form-select-sm" name="interval_unit" style="max-width:110px;">
+              {% for u in ['minutes', 'hours', 'days'] %}
+              <option value="{{ u }}" {{ 'selected' if nb_task and nb_task.schedule_kind == 'interval' and nb_task.schedule_dict.get('unit') == u else ('selected' if u == 'hours' and not (nb_task and nb_task.schedule_kind == 'interval') else '') }}>{{ _(u) }}</option>
+              {% endfor %}
+            </select>
+          </span>
+        </div>
+        <div class="form-text small">{{ _('Wall-clock times follow the instance time zone.') }}</div>
+      </div>
+
+      <div class="col-12 d-flex align-items-center gap-3 flex-wrap">
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" name="enabled" id="nb-sched-on"
+                 {{ 'checked' if (nb_task.enabled if nb_task else true) }}>
+          <label class="form-check-label small" for="nb-sched-on">{{ _('Enabled') }}</label>
+        </div>
+        <button class="btn btn-fw-primary btn-sm"><i class="bi bi-save me-1"></i>{{ _('Save as scheduled task') }}</button>
+        {% if nb_task %}
+          <span class="small text-muted">
+            {{ _('Next run') }}: <strong>{{ nb_task.next_run or '—' }}</strong> UTC
+            {% if nb_task.last_run %} · {{ _('last') }}: {{ nb_task.last_run }} ({{ nb_task.last_status or '—' }}){% endif %}
+          </span>
+          <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('scheduled_actions.index') }}">
+            <i class="bi bi-list-check me-1"></i>{{ _('Scheduled actions') }}
+          </a>
+          {% if calendar_on %}
+            <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('calendar_plan.index') }}">
+              <i class="bi bi-calendar3 me-1"></i>{{ _('Calendar') }}
+            </a>
+          {% else %}
+            <span class="small text-muted">{{ _('(the calendar is switched off for your user)') }}</span>
+          {% endif %}
+        {% endif %}
+      </div>
+    </form>
+  </div>
+</div>
+
+  </div><!-- /.fw-settings-main -->
+</div><!-- /.fw-settings-layout -->
 {% endblock %}
 
 {% block scripts %}
 <script nonce="{{ csp_nonce }}">
+(function () {
+  // Only ONE of the two schedule shapes is meaningful at a time; both stay in
+  // the DOM so the posted field names match the Automation editor exactly.
+  var kind = document.getElementById('nb-sched-kind');
+  var daily = document.getElementById('nb-sched-daily');
+  var every = document.getElementById('nb-sched-interval');
+  function sync() {
+    if (!kind || !daily || !every) { return; }
+    var isInterval = kind.value === 'interval';
+    daily.style.display = isInterval ? 'none' : '';
+    every.style.display = isInterval ? '' : 'none';
+  }
+  if (kind) { kind.addEventListener('change', sync); sync(); }
+})();
 (function () {
   var btn = document.getElementById('nb-test');
   var out = document.getElementById('nb-test-result');

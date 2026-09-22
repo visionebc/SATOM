@@ -382,7 +382,45 @@ def create_change_request(fields: dict):
     # self-approving a change nobody looked at.
     raw_params = fields.get('params')
     params = {str(k): v for k, v in raw_params.items()
-              if str(k) != 'change_request_id'} if isinstance(raw_params, dict) else {}
+              if str(k) not in ('change_request_id', 'target_version')} \
+        if isinstance(raw_params, dict) else {}
+
+    # --- WHERE this change is going -------------------------------------
+    # One author. 'target_version' is STRIPPED out of params above and
+    # recomputed here, so a caller cannot post a destination past the two
+    # checks below by hiding it in the executor's parameter bag — which is the
+    # same reason 'change_request_id' is stripped.
+    #
+    # The evidence CORROBORATES the declaration rather than replacing it: the
+    # runs cited were each swept towards a version, and a change that claims a
+    # different destination from the pre-flights it rests on is a document
+    # whose prerequisites section proves the wrong move. Both halves are
+    # refusals, not corrections — silently adopting either value would produce
+    # exactly the misleading-but-green document this whole feature removes.
+    from ..services import firmware_versions as _fv
+    declared = _fv.normalize(fields.get('target_version'))
+    cited = {_fv.normalize(getattr(p, 'target_version', '') or '')
+             for p in preps}
+    cited.discard('')
+    if len(cited) > 1:
+        return None, ('The pre-upgrade runs cited here were run towards '
+                      'different versions (' + ', '.join(sorted(cited)) +
+                      '). One change request is one move — raise one per '
+                      'destination. Nothing was created.')
+    if cited and declared and declared not in cited:
+        return None, (f'This change declares an upgrade to {declared}, but the '
+                      f'pre-upgrade evidence it cites was run towards '
+                      f'{sorted(cited)[0]}. Re-run the pre-flight towards '
+                      f'{declared}, or cite the runs that match. Nothing was '
+                      f'created.')
+    # Declared wins where both agree; the evidence answers when nothing was
+    # declared (the flow's Create draft posts no field — the destination
+    # travels on the runs it mirrors). Absent stays ABSENT: a change citing no
+    # evidence and naming no version declares no destination, and inventing
+    # one would put a firmware number on a document nobody chose it for.
+    target_version = declared or (sorted(cited)[0] if cited else '')
+    if target_version:
+        params['target_version'] = target_version
 
     cr = ChangeRequest(
         title=title[:200],
@@ -430,29 +468,86 @@ def new():
         prep_ids = (request.form.getlist('prep_ids')
                     or ([request.form.get('prep_id')]
                         if request.form.get('prep_id') else []))
-        cr, error = create_change_request({
-            'title': request.form.get('title'),
-            'action': request.form.get('action'),
-            'risk': request.form.get('risk'),
-            'reason': request.form.get('reason'),
-            'device_ids': request.form.getlist('device_ids'),
-            'prep_ids': prep_ids,
-            'window_start': _parse_dt(request.form.get('window_start')),
-            'window_end': _parse_dt(request.form.get('window_end')),
-            'rollback': request.form.get('rollback'),
-            'notify_to': request.form.get('notify_to'),
-            'owner': request.form.get('owner'),
-            'doc_lang': request.form.get('doc_lang'),
-            'approval_mode': request.form.get('approval_mode'),
-            'requested_by': current_user.username,
-        })
+        # At least one appliance -- for the UPGRADE FLOW only. There the
+        # devices are not a field of this form at all: they were ticked in
+        # step 1 and mirrored in, so a device-less post means the operator
+        # never answered step 1, and the change it would raise resolves to
+        # zero targets and reports itself 'skipped' after the window closed.
+        #
+        # The STANDALONE page keeps accepting one, and that is not an
+        # oversight: a change naming no device belongs to no product and stays
+        # readable from every console -- test_cr_action_catalog's
+        # `test_a_change_naming_no_device_stays_reachable_everywhere` is the
+        # guard that says so by name. Narrowing that here would have deleted a
+        # documented product decision to answer a question about another page.
+        # Refused here rather than inside create_change_request for the same
+        # reason: the calendar plans from a SELECTOR, where "matched nothing"
+        # is its own, differently worded refusal.
+        device_ids = [x for x in request.form.getlist('device_ids')
+                      if (x or '').strip()]
+        if not device_ids and _back_token() == 'upgrade_flow':
+            cr, error = None, ('Select at least one appliance. '
+                               'Nothing was created.')
+        else:
+            cr, error = create_change_request({
+                'title': request.form.get('title'),
+                'action': request.form.get('action'),
+                'risk': request.form.get('risk'),
+                'reason': request.form.get('reason'),
+                'device_ids': device_ids,
+                'prep_ids': prep_ids,
+                'window_start': _parse_dt(request.form.get('window_start')),
+                'window_end': _parse_dt(request.form.get('window_end')),
+                'rollback': request.form.get('rollback'),
+                'notify_to': request.form.get('notify_to'),
+                'owner': request.form.get('owner'),
+                'doc_lang': request.form.get('doc_lang'),
+                'approval_mode': request.form.get('approval_mode'),
+                # Accepted but NOT required. The upgrade flow's Create draft
+                # posts no such field: its destination travels on the
+                # pre-upgrade runs it mirrors, and create_change_request reads
+                # it from there. A page that DOES ask can still say so, and
+                # the two are reconciled in one place, not two.
+                'target_version': request.form.get('target_version'),
+                'requested_by': current_user.username,
+            })
         if cr is None:
             flash(error, 'danger')
+            # A refusal must not be a way OUT of the page the button was
+            # pressed on either: the operator reads the reason where they
+            # typed, not on a screen they never asked for.
+            if _back_token() == 'upgrade_flow':
+                from .appliances import _adom_arg
+                return redirect(url_for('upgrade_flow.index', **_adom_arg()))
             return redirect(url_for('change_requests.new'))
         flash(f'Change request {cr.ref} "{cr.title}" created.', 'success')
-        return redirect(url_for('change_requests.detail', id=cr.id))
+        # Resolved from the same TOKEN the lifecycle buttons use, never from a
+        # URL the request carried. Raising a change from inside a staged page
+        # stays on that page, citing what it just raised; the standalone page
+        # sets no token and still opens the change's own page.
+        return redirect(_after(cr.id))
 
-    from ..services import cr_document, prep_store
+    from ..services import prep_store
+    prep = prep_store.get(request.args.get('prep_id'))
+    return render_template(
+        'change_requests/form.html',
+        **new_form_context(
+            prep=prep,
+            preset_action=(request.args.get('action') or '').strip()))
+
+
+def new_form_context(prep=None, preset_action=''):
+    """Everything `change_requests/_new_form.html` needs, in ONE dict.
+
+    Splatted by the caller rather than enumerated at each render call:
+    enumerating the keys is how a value computed here fails to reach the
+    template with every assertion about it still green (the missing
+    ledger banner, 2026-09-18). The upgrade flow merges this same dict
+    for its stage 2, so the embedded form and the stand-alone page can
+    never be fed two different catalogues, two different proposals or
+    two different device lists.
+    """
+    from ..services import cr_document
     appliances = (visible_appliances()
                   .filter(Appliance.kind.in_(cr_kinds()))
                   .order_by(Appliance.kind, Appliance.name)
@@ -461,7 +556,6 @@ def new():
     # the device it ran against and a sensible action are all pre-selected, and
     # the operator only fills in the window. That link is the whole point of
     # persisting the pre-flight.
-    prep = prep_store.get(request.args.get('prep_id'))
     if prep is not None and prep.appliance_id not in {a.id for a in appliances}:
         prep = None            # not visible in this ADOM: do not leak that it exists
     # The guided form asks two questions - document language, then change type -
@@ -497,7 +591,7 @@ def new():
     from ..services import langs as lang_registry
     pref_lang = user_store.language(getattr(current_user, 'id', 0) or 0)
     lang_preset = pref_lang if pref_lang in set(lang_codes) else ''
-    return render_template('change_requests/form.html',
+    return dict(
                            appliances=appliances,
                            cr_actions=[(e['key'], e['label'])
                                        for e in entries],
@@ -506,8 +600,8 @@ def new():
                            action_executable={e['key']: e['executable']
                                               for e in entries},
                            risks=svc.RISKS,
-                           prep=prep,
-                           preset_action=(request.args.get('action') or '').strip(),
+        prep=prep,
+        preset_action=preset_action,
                            langs=cr_document.document_langs(),
                            lang_preset=lang_preset,
                            lang_pref=pref_lang,
@@ -819,7 +913,95 @@ def cr_view_context(cr, *, drift=False, back='',
         # action this operator may take, on a page they reached legitimately.
         can_act=bool(getattr(current_user, 'can', None)
                      and current_user.can('user_manage')),
+        # Whether pressing the NetBox button could do anything at all. A button
+        # that is enabled, sends, and reports "netbox not configured" teaches
+        # the operator the integration is broken; the answer is a dropdown.
+        netbox_ready=_netbox_ready(),
+        # A configured NetBox is NOT enough. NetBox only knows the devices its
+        # owner documented; an appliance it cannot resolve gets no window, and
+        # before this the only way to find that out was to press the button —
+        # which then marked the change as a NetBox error.
+        **_mw_plan(devices),
+        # Whether pressing the change-ticket button could reach anything, and
+        # through which channel. Same question, same answer shape, same reason.
+        crq=_crq_channels(),
     )
+
+
+def _mw_plan(devices) -> dict:
+    """What NetBox can and cannot document for this change.
+
+    Three outcomes, kept apart on purpose:
+
+    * ``mw_unmapped`` — asked, and NetBox has no such device. This is the only
+      one that may switch the button off, because it is the only one that is a
+      PROVEN refusal.
+    * ``mw_unverified`` — NetBox could not be asked (down, slow, switched off
+      mid-page). Unknown must never be rendered as absent, and must never
+      disable a control: the press may well succeed.
+    * resolved — nothing to say.
+
+    ``mw_detail`` carries the per-appliance reason so the page can name the
+    remedy instead of repeating the symptom. Asked through
+    :func:`netbox_client.resolve_plan`, the SAME author the POST uses, in ONE
+    bounded request for the whole change."""
+    out = {'mw_unmapped': [], 'mw_unverified': [], 'mw_detail': {}}
+    try:
+        from ..services import netbox_client
+        plan = netbox_client.resolve_plan(
+            devices or [], budget=netbox_client.GATE_BUDGET_S)
+    except Exception:
+        # A page that cannot ask reports nothing rather than an accusation.
+        return out
+    for dev in (devices or []):
+        key = str(getattr(dev, 'id', '') or '')
+        name = getattr(dev, 'name', '') or key
+        entry = plan.get(key) or plan.get(name) or {}
+        if entry.get('device_id'):
+            continue
+        bucket = 'mw_unmapped' if entry.get('checked', True) else 'mw_unverified'
+        out[bucket].append(name)
+        out['mw_detail'][name] = entry.get('error', '')
+    return out
+
+
+def _crq_channels() -> dict:
+    """What, if anything, is wired behind "Raise change ticket".
+
+    Answered BEFORE the button is drawn. Measured on a live node 2026-09-20:
+    tracker backend ``none`` and zero hooks on disk, so the press dispatched to
+    nobody and flashed a warning — which teaches the operator that the
+    integration is broken when the truth is that none was ever selected. This
+    is the gate its NetBox sibling already carries, one row down.
+
+    Two independent channels, and either one is enough: gating on the tracker
+    alone would switch the button off for every operator running their own CRM
+    glue as a hook, which is the older half of the feature.
+    """
+    backend, hooks = '', 0
+    try:
+        from ..services import tracker_client
+        if tracker_client.is_configured():
+            cfg = tracker_client.config() or {}
+            backend = cfg.get('backend_label') or cfg.get('backend') or 'tracker'
+    except Exception:
+        pass
+    try:
+        from ..services import integration_hooks
+        hooks = len(integration_hooks.hooks_for_event('change.requested') or [])
+    except Exception:
+        pass
+    return {'backend': backend, 'hooks': hooks,
+            'ready': bool(backend) or hooks > 0}
+
+
+def _netbox_ready() -> bool:
+    """True when the NetBox integration is switched on and bound."""
+    try:
+        from ..services import netbox_client
+        return bool(netbox_client.is_configured())
+    except Exception:
+        return False
 
 
 def _back_token() -> str:
@@ -925,6 +1107,46 @@ def inventory_export(id, fmt):
                  f'attachment; filename="{ref}-affected-services.xlsx"'})
 
 
+def _flash_rollout(cr) -> None:
+    """Say in words what the approval just created, if anything.
+
+    A rollout plan saved while the change was a draft becomes real scheduled
+    rows the instant it is approved. An approval that silently created six
+    timed outages is an approval whose blast radius the approver was never
+    told about; one that silently FAILED to create them is worse, because the
+    card will keep showing the plan as though it were going to run.
+
+    The success sentence is the SAME message the rollout card prints, from the
+    same msgid: two spellings of "it is saved and on the calendar" is how one
+    of them comes to claim it over a row that was never written.
+    """
+    from flask_babel import gettext
+
+    from ..models import ScheduledAction
+
+    outcome = getattr(cr, 'rollout_outcome', None) or {}
+    if not outcome:
+        return
+    plan = outcome.get('plan') or {}
+    if outcome.get('error'):
+        flash(gettext('This change was approved, but its saved rollout plan '
+                      'could NOT be scheduled: %(why)s The plan is still on '
+                      'the change — fix it and save it again.',
+                      why=outcome.get('error') or ''), 'danger')
+        return
+    action_id = outcome.get('action_id')
+    action = db.session.get(ScheduledAction, action_id) if action_id else None
+    name = action.name if action is not None else f'CR #{cr.id}'
+    flash(gettext('The task “%(name)s” has been added to Scheduled '
+                  'Actions and is on the calendar.', name=name), 'success')
+    total = int(plan.get('total') or 1)
+    if total > 1:
+        flash(gettext('It runs in %(total)d rounds of at most %(size)d '
+                      'appliance(s), %(gap)d minute(s) apart.',
+                      total=total, size=int(plan.get('size') or 1),
+                      gap=int(plan.get('gap') or 0)), 'info')
+
+
 @bp.route('/<int:id>/approve', methods=['POST'])
 @login_required
 @require_permission(Permission.USER_MANAGE)
@@ -934,6 +1156,7 @@ def approve(id):
         cr = svc.approve(id, current_user.username)
         log_action('change_request.approve', target=cr.title)
         flash('Change request approved.', 'success')
+        _flash_rollout(cr)
     except ValueError as exc:
         flash(str(exc), 'danger')
     return redirect(_after(id))
@@ -1080,6 +1303,110 @@ def request_crq(id):
         flash('Nothing was sent: no tracker backend is configured in '
               'Settings -> Integrations and no enabled hook is bound to '
               'change.requested.', 'warning')
+    return redirect(_after(id))
+
+
+@bp.route('/<int:id>/record-crq', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def record_crq(id):
+    """Write the external ticket reference BY HAND.
+
+    Until now this field had exactly two writers: a configured tracker backend
+    and a Python hook calling back through the API. An operator whose change
+    board is a person, an e-mail or a system SATOM has no adapter for had NO
+    way to put the reference on the change — the row read "none recorded"
+    permanently, and the only control offered was a button that, with nothing
+    wired behind it, could not fill it either.
+
+    Every refusal leaves the record untouched AND says nothing was saved. A
+    half-save (reference stored, link rejected) would leave an approver with a
+    ticket id the page offers no way to open.
+    """
+    from ..services import cr_orchestrator as orch
+    cr = _cr_in_scope_or_404(id)
+    if cr.status in ChangeRequest.TERMINAL:
+        # A cancelled or failed change is the record of something that did not
+        # happen. Stamping a live ticket id on it makes it read as if it did.
+        flash('This change is closed, so its ticket reference can no longer '
+              'change. Nothing was saved.', 'warning')
+        return redirect(_after(id))
+    ref = (request.form.get('crq_ref') or '').strip()
+    url = (request.form.get('crq_url') or '').strip()
+    if not ref:
+        # An empty field is a slipped click far more often than an intent to
+        # erase, and clearing silently would strip the approver's only link to
+        # the ticket. Correcting a reference is typing the right one over it.
+        flash('Type the ticket reference your change board gave you. Nothing '
+              'was saved.', 'warning')
+        return redirect(_after(id))
+    if url and not url.lower().startswith(('http://', 'https://')):
+        # This value is rendered as an <a href>. A javascript: URL typed here
+        # is a click-to-run script for the next person who opens the change.
+        flash('The ticket link must start with http:// or https://. Nothing '
+              'was saved.', 'danger')
+        return redirect(_after(id))
+    previous = (cr.crq_ref or '').strip()
+    # ONE author for "this change now carries a reference": the same service
+    # call the tracker backend makes, so the event, the log line and the field
+    # cannot drift between the two ways in.
+    orch.record_crq(cr, ref, url, by=f'{current_user.username} (by hand)')
+    log_action('change_request.crq_recorded', target=cr.title,
+               detail=f"ref={ref} previous={previous or '-'} "
+                      f"link={'yes' if url else 'no'}")
+    flash(f"Recorded {ref} on this change"
+          + (f", replacing {previous}" if previous and previous != ref else '')
+          + '.', 'success')
+    return redirect(_after(id))
+
+
+@bp.route('/<int:id>/open-window', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def open_window(id):
+    """Open the NetBox maintenance window for this change, by hand, now.
+
+    The scheduler already opens it when the run starts (cr_orchestrator.
+    on_start). This is the SAME call for the operator who needs NetBox to show
+    the devices in maintenance before the window begins. It is idempotent: a
+    change whose window is already open does not get a second one.
+
+    Refuses locally on a change with no window times instead of calling NetBox.
+    The client rejects an unusable timestamp, and that rejection would be
+    stored as ``mw_state='error'`` - whose wording on this page states a device
+    may be sitting in maintenance in NetBox. Nothing was sent, so nothing here
+    may say that.
+    """
+    from ..services import cr_orchestrator as orch
+    cr = _cr_in_scope_or_404(id)
+    if not (cr.window_start and cr.window_end):
+        flash('This change has no maintenance window yet: set a start AND an '
+              'end first. NetBox was not asked and nothing was recorded.',
+              'warning')
+        return redirect(_after(id))
+    result = orch.open_window(cr, by=current_user.username)
+    log_action('change_request.window_opened', target=cr.title,
+               detail=f"opened={result.get('opened', 0)} "
+                      f"failed={result.get('failed', 0)} "
+                      f"detail={result.get('detail', '')}")
+    if result.get('detail') == 'already open':
+        flash('The window for this change is already open in NetBox; a second '
+              'one was not created.', 'info')
+    elif result.get('ok'):
+        flash(f"Maintenance window opened in NetBox for "
+              f"{result.get('opened', 0)} device(s). It stays open until the "
+              f"run finishes - closing it is not automatic for a change that "
+              f"is never run.", 'success')
+    elif result.get('opened'):
+        flash(f"NetBox opened {result.get('opened')} window(s) and refused "
+              f"{result.get('failed')}. This change is now marked as window "
+              f"error: some devices may show as in maintenance there.",
+              'danger')
+    else:
+        # The reason arrives already punctuated (it ends in "Map it in
+        # Settings -> Integrations first."), so a bare period would double it.
+        why = (result.get('detail') or 'NetBox gave no detail').rstrip('. ')
+        flash(f"No maintenance window was opened: {why}.", 'danger')
     return redirect(_after(id))
 
 

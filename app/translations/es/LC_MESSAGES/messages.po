@@ -15858,3 +15858,86 @@ msgstr "punto(s) de entrada mapeados a un punto final que ya no existe"
 
 msgid "No page matches that search."
 msgstr "Ninguna página coincide con esa búsqueda."
+
+msgid "Scheduled reconciliation"
+msgstr "Reconciliación programada"
+
+msgid "scheduled"
+msgstr "programada"
+
+msgid "not scheduled"
+msgstr "sin programar"
+
+msgid "Task name"
+msgstr "Nombre de la tarea"
+
+msgid "Virtual machines per round"
+msgstr "Máquinas virtuales por ronda"
+
+#, python-format
+msgid "1–%(max)s. The rest carry over to the next round."
+msgstr "1–%(max)s. El resto pasa a la siguiente ronda."
+
+msgid "daily"
+msgstr "a diario"
+
+msgid "at"
+msgstr "a las"
+
+msgid "Wall-clock times follow the instance time zone."
+msgstr "Las horas de reloj siguen la zona horaria de la instancia."
+
+msgid "Save as scheduled task"
+msgstr "Guardar como tarea programada"
+
+msgid "last"
+msgstr "última"
+
+msgid "Scheduled actions"
+msgstr "Acciones programadas"
+
+msgid "Calendar"
+msgstr "Calendario"
+
+msgid "(the calendar is switched off for your user)"
+msgstr "(el calendario está desactivado para tu usuario)"
+
+msgid ""
+"One round asks NetBox about the appliances that have no explicit mapping above, "
+"lowest id first, and writes the ones NetBox answers by name into the table — as a "
+"real object id, which keeps working after a rename on either side. It is read-only "
+"against NetBox: it creates nothing there and never removes a mapping you wrote. What "
+"it could not resolve is named in the run log, every round."
+msgstr ""
+"Una ronda pregunta a NetBox por los equipos que no tienen mapeo explícito arriba, "
+"empezando por el id más bajo, y escribe en la tabla los que NetBox responde por "
+"nombre — como id de objeto real, que sigue funcionando tras un renombrado en "
+"cualquiera de los dos lados. Es de solo lectura contra NetBox: no crea nada allí y "
+"nunca quita un mapeo que hayas escrito tú. Lo que no pudo resolver se nombra en el "
+"registro de la ejecución, en cada ronda."
+
+#, python-format
+msgid "“%(value)s” is not a HH:MM time; using %(fallback)s."
+msgstr "«%(value)s» no es una hora HH:MM; se usa %(fallback)s."
+
+#, python-format
+msgid "The task “%(name)s” has been added to Scheduled Actions and is on the calendar."
+msgstr "La tarea «%(name)s» se ha agregado a las acciones programadas y está en el calendario."
+
+#, python-format
+msgid "The task “%(name)s” was updated in Scheduled Actions and is on the calendar."
+msgstr ""
+"La tarea «%(name)s» se ha actualizado en las acciones programadas y está en el "
+"calendario."
+
+#, python-format
+msgid ""
+"The task “%(name)s” was saved, but it is DISABLED: it will not run and it is not "
+"drawn on the calendar."
+msgstr ""
+"La tarea «%(name)s» se ha guardado, pero está DESACTIVADA: no se ejecutará y no se "
+"dibuja en el calendario."
+
+#, python-format
+msgid "It runs in %(total)d rounds of at most %(size)d appliance(s), %(gap)d minute(s) apart — the first at %(at)s."
+msgstr "Se ejecuta en %(total)d rondas de como mucho %(size)d equipo(s), con %(gap)d minuto(s) entre ellas — la primera a las %(at)s."

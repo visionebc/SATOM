@@ -259,7 +259,13 @@
     var status = document.getElementById("cm-status");
     var empty = document.getElementById("cm-empty");
 
+    var jump = document.getElementById("cm-jump");
     var ctrl = null;
+
+    /* The server already rendered a TRANSLATED summary here. filter() used to
+     * overwrite it on load with an English one built in JS, so every non-English
+     * console lost the string on first paint. Keep the server's words. */
+    var statusBase = status ? status.textContent.trim() : "";
 
     /* One search box drives BOTH views. Filtering only the visible one would
      * make the toggle silently change the result set. */
@@ -304,14 +310,30 @@
         if (empty) empty.hidden = lhits !== 0;
       }
 
+      /* A chip pointing at a section the filter just removed is a dead link. */
+      if (jump && listWrap) {
+        Array.prototype.forEach.call(jump.querySelectorAll(".cm-jump-chip"), function (chip) {
+          var cl = listWrap.querySelector('.cm-cluster[data-concept="' +
+                                          chip.getAttribute("data-concept") + '"]');
+          chip.hidden = !!(cl && cl.hidden);
+        });
+      }
+
       if (status) {
         status.textContent = term
           ? (hits || lhits) + " match" + ((hits || lhits) === 1 ? "" : "es") + " for “" + term + "”"
-          : total + " pages · " + host.querySelectorAll("g[data-concept]").length + " concepts";
+          : statusBase;
       }
     }
 
-    fetch(host.dataset.src, { headers: { "Accept": "application/json" } })
+    /* The diagram is the SECONDARY view now, so it is drawn on demand: fetching
+     * and laying out 107 rows on every visit to pay for a card nobody opened is
+     * work the default view does not need. */
+    var requested = false;
+    function ensureMap() {
+      if (requested) return;
+      requested = true;
+      fetch(host.dataset.src, { headers: { "Accept": "application/json" } })
       .then(function (r) {
         if (!r.ok) throw new Error("HTTP " + r.status);
         return r.json();
@@ -334,9 +356,10 @@
         box.style.color = "#8B1C2A";
         box.innerHTML = "<i class='bi bi-exclamation-octagon'></i> " +
           "Could not draw the map (" + String(err.message || err).replace(/[<>&]/g, "") +
-          "). The list view below still works.";
+          "). The index view still works.";
         host.appendChild(box);
       });
+    }
 
     if (q) q.addEventListener("input", filter);
     var bFit = document.getElementById("cm-fit");
@@ -348,14 +371,27 @@
 
     var vMap = document.getElementById("cm-view-map");
     var vList = document.getElementById("cm-view-list");
+    var STORE = "satom.map.view";
+
     function show(which) {
       if (mapCard) mapCard.hidden = which !== "map";
       if (listWrap) listWrap.hidden = which !== "list";
+      if (jump) jump.hidden = which !== "list";
       if (vMap) vMap.classList.toggle("active", which === "map");
       if (vList) vList.classList.toggle("active", which === "list");
+      try { window.localStorage.setItem(STORE, which); } catch (e) { /* private mode */ }
+      if (which === "map") ensureMap();
     }
     if (vMap) vMap.addEventListener("click", function () { show("map"); });
     if (vList) vList.addEventListener("click", function () { show("list"); });
+
+    /* Default is the INDEX; only an explicit stored "map" opts back into the
+     * diagram. Storing the OPEN choice rather than the closed one means a fresh
+     * browser, a wiped profile and a private window all land on the readable
+     * view instead of on the one that needs panning. */
+    var pref = "list";
+    try { if (window.localStorage.getItem(STORE) === "map") pref = "map"; } catch (e) { /* private mode */ }
+    show(pref);
   }
 
   if (document.readyState === "loading") {

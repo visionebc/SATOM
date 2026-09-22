@@ -25,12 +25,15 @@
    through the translation call.  (An identifier is not copy -- safeguards §68.)
 
    An item with `ep` instead of `t` is a link to a PAGE and is drawn with the
-   leaving arrow.  No entry uses it today: Sentinel's Architecture, Incidents
-   console, Context, Response policy and the Border blocklist all became PANES
-   at the operator's request, so all six entries stay inside.  The branch is
-   kept because the arrow is the only thing that distinguishes a row which
-   replaces the whole page from one which does not, and the next entry that
-   leaves must carry it.
+   leaving arrow.  Integrations is the one entry that uses it: it is a whole
+   page of its own (/settings/integrations), not a pane of the console, and it
+   had NO menu entry at all until the operator asked for one -- a page reachable
+   only by typing its URL is a page that does not exist.  Sentinel's
+   Architecture, Incidents console, Context, Response policy and the Border
+   blocklist all became PANES at the operator's request, so all six of those
+   stay inside.  The arrow is the only thing that distinguishes a row which
+   replaces the whole page from one which does not, and every entry that leaves
+   must carry it.
 
    Sentinel is a group of its own -- a pipeline with its own incidents console
    and architecture, not one knob under Monitoring -- and it sits below
@@ -78,7 +81,9 @@
     {'t': 'tab-general',     'icon': 'bi-sliders',          'label': _('General')},
     {'t': 'tab-git',         'icon': 'bi-git',              'label': _('Software Update Repository')},
     {'t': 'tab-ai',          'icon': 'bi-stars',            'label': _('AI Advisor'),
-     'perm': 'advisor.configure', 'id': 'ai-settings-tab-btn'}]},
+     'perm': 'advisor.configure', 'id': 'ai-settings-tab-btn'},
+    {'ep': 'integrations.index', 'icon': 'bi-plug', 'label': _('Integrations'),
+     'perm': 'user_manage'}]},
   {'key': 'sot', 'label': _('Source of Truth & Backup'), 'icon': 'bi-hdd-network', 'admin': true, 'items': [
     {'t': 'tab-sot',         'icon': 'bi-file-earmark-diff','label': _('Configuration SoT')},
     {'t': 'tab-backupsrv',   'icon': 'bi-hdd-network',      'label': _('Backup Server')}]},

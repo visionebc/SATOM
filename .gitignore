@@ -75,3 +75,4 @@ publication-rules.local.json
 # roto se publica en silencio.
 app/translations/*/LC_MESSAGES/*.mo
 .python_history
+*.mutbak

@@ -14,6 +14,8 @@ somebody's CRM is down is a settings page nobody can use to turn that CRM off.
 """
 from __future__ import annotations
 
+import re
+
 from flask import (Blueprint, flash, jsonify, redirect, render_template,
                    request, url_for)
 from flask_login import current_user, login_required
@@ -34,6 +36,24 @@ def _who() -> str:
 #: published site lost its Docs link.
 SAMPLE_HOOK = hook_starters.STARTERS["change-ticket"]["source"]
 
+#: The catalog key and default name of the reconciliation task this page
+#: writes. ONE row per install, looked up by KEY and not by name, so renaming
+#: the task on the Scheduled Actions page does not make this card create a
+#: second one that fights the first over the same map.
+NB_TASK_ACTION = "netbox_reconcile"
+NB_TASK_NAME = "NetBox inventory reconcile"
+NB_DEFAULT_TIME = "03:00"
+_HHMM_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+
+
+def _netbox_task():
+    """The reconciliation ScheduledAction, or None. Never creates."""
+    from ..models import ScheduledAction
+    return (ScheduledAction.query
+            .filter_by(action=NB_TASK_ACTION)
+            .order_by(ScheduledAction.id.asc())
+            .first())
+
 
 # --------------------------------------------------------------------------- #
 #  Page                                                                         #
@@ -47,6 +67,14 @@ def index():
     hooks_mod, hooks_error = _hooks()
     return render_template(
         "integrations/index.html",
+        # The Admin Console submenu travels with the page. It is the SAME
+        # settings/_nav.html the console renders, in `links` mode because this
+        # page has no panes to switch; is_admin is what decides which groups
+        # the menu offers at all -- without it the menu would silently shrink
+        # to My Account on a page only USER_MANAGE ever reaches.
+        is_admin=True,          # gated by @require_permission(USER_MANAGE)
+        nav_mode="links",
+        nav_active="integrations.index",
         netbox=netbox.config(),                    # never reveals the token
         mw_backends=netbox.MW_BACKENDS,
         appliances=visible_appliances().all(),
@@ -57,6 +85,14 @@ def index():
         hooks_error=hooks_error,
         tracker=tracker.config(),            # never reveals the token
         tracker_backends=tracker.BACKENDS,
+        # The reconciliation card. `nb_task` is the row itself (or None) so the
+        # card can show what is ACTUALLY scheduled rather than re-describing
+        # the form the operator last posted.
+        nb_task=_netbox_task(),
+        nb_default_per_round=netbox.DEFAULT_PER_ROUND,
+        nb_max_per_round=netbox.MAX_PER_ROUND,
+        nb_default_time=NB_DEFAULT_TIME,
+        nb_task_name=NB_TASK_NAME,
     )
 
 
@@ -76,10 +112,10 @@ def save_netbox():
         return redirect(url_for("integrations.index"))
     # The token is never logged - not its value, not its length. An audit row
     # that records how long a secret is has still narrowed it.
-    audit.log(_who(), "integrations.netbox.save",
-              detail=f"url={request.form.get('url', '')!r} "
-                     f"backend={request.form.get('mw_backend', '')!r} "
-                     f"enabled={'1' if request.form.get('enabled') else '0'}")
+    audit.log_action("integrations.netbox.save", target="netbox",
+                     detail=f"url={request.form.get('url', '')!r} "
+                            f"backend={request.form.get('mw_backend', '')!r} "
+                            f"enabled={'1' if request.form.get('enabled') else '0'}")
     flash("NetBox settings saved.", "success")
     return redirect(url_for("integrations.index"))
 
@@ -98,12 +134,17 @@ def test_netbox():
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def save_map():
-    """Bind SATOM appliances to NetBox device ids.
+    """Bind SATOM appliances to NetBox objects.
 
-    An UNMAPPED appliance is not an error here: :func:`netbox_client.resolve_device`
-    falls back to an exact name match. It is recorded as unmapped in the UI so
-    the operator can see which devices depend on that fallback, because a rename
-    on either side breaks it silently."""
+    A value is a DEVICE id on its own (``7``) or a virtual machine with its
+    prefix (``vm:95``) -- the same number names different objects in the two
+    types, so the id alone is only half an address.
+
+    An UNMAPPED appliance is not an error here: :func:`netbox_client.resolve_plan`
+    falls back to an exact name match, devices first and then virtual machines.
+    It is recorded as unmapped in the UI so the operator can see which
+    appliances depend on that fallback, because a rename on either side breaks
+    it silently."""
     from ..services import netbox_client as netbox
     pairs = {}
     for key, value in request.form.items():
@@ -119,6 +160,97 @@ def save_map():
         flash(str(exc), "danger")
         return redirect(url_for("integrations.index"))
     flash(f"Saved {len(pairs)} device mapping(s).", "success")
+    return redirect(url_for("integrations.index"))
+
+
+@bp.route("/netbox/schedule", methods=["POST"])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def save_netbox_schedule():
+    """Save the reconciliation cadence AS A SCHEDULED ACTION.
+
+    Deliberately not a private setting: the row this writes is the same
+    :class:`ScheduledAction` the Automation page edits and the calendar draws,
+    so the task is visible, runnable-now, auditable and deletable from the
+    surfaces that already own scheduled work. A second, page-local scheduler
+    would be a job nobody could see from the page that lists the jobs.
+
+    The flash NAMES the outcome it actually produced. A disabled row is saved
+    but is neither run nor drawn, so it must not be reported as "on the
+    calendar" -- the same rule the rest of this page keeps for a disabled
+    integration.
+    """
+    import json
+
+    from flask_babel import gettext
+
+    from ..models import ScheduledAction, db
+    from ..services import audit, settings_store
+    from ..services import netbox_client as netbox
+    from ..services.product_scope import stamp
+    from ..services.scheduler import compute_next_run
+
+    form = request.form
+    per_round = netbox.clamp_per_round(form.get("per_round"))
+
+    kind = (form.get("schedule_kind") or "daily").strip()
+    if kind not in ("interval", "daily"):
+        kind = "daily"
+    if kind == "interval":
+        try:
+            every = int(form.get("interval_every") or 6)
+        except (TypeError, ValueError):
+            every = 6
+        unit = (form.get("interval_unit") or "hours").strip()
+        if unit not in ("minutes", "hours", "days"):
+            unit = "hours"
+        schedule = {"every": max(1, every), "unit": unit}
+    else:
+        at = (form.get("daily_time") or "").strip()
+        # A malformed time is CORRECTED to the default and said out loud: a
+        # silently dropped schedule is a task that never fires.
+        if not _HHMM_RE.match(at):
+            if at:
+                flash(gettext("“%(value)s” is not a HH:MM time; using %(fallback)s.",
+                              value=at[:16], fallback=NB_DEFAULT_TIME), "warning")
+            at = NB_DEFAULT_TIME
+        schedule = {"time": at}
+
+    row = _netbox_task()
+    created = row is None
+    if created:
+        row = ScheduledAction(created_by=_who(), product=stamp() or "fortiweb")
+        db.session.add(row)
+    name = (form.get("name") or "").strip()[:128] or NB_TASK_NAME
+    row.name = name
+    row.action = NB_TASK_ACTION
+    row.scope = "admin"
+    row.targets = json.dumps([])
+    row.params = json.dumps({"per_round": per_round})
+    row.schedule_kind = kind
+    row.schedule = json.dumps(schedule)
+    row.enabled = bool(form.get("enabled"))
+    # No catch-up: a missed reconciliation is not worth replaying. The next
+    # round reads the map as it is and takes whatever is still unmapped.
+    row.catch_up = False
+    row.next_run = compute_next_run(kind, schedule, tz=settings_store.tz_name())
+    db.session.commit()
+
+    audit.log_action("integrations.netbox.schedule", target=row.name,
+                     detail=f"{'created' if created else 'updated'} id={row.id} "
+                            f"per_round={per_round} {kind}={schedule} "
+                            f"enabled={'1' if row.enabled else '0'}")
+
+    if not row.enabled:
+        flash(gettext("The task “%(name)s” was saved, but it is DISABLED: it "
+                      "will not run and it is not drawn on the calendar.",
+                      name=name), "warning")
+    elif created:
+        flash(gettext("The task “%(name)s” has been added to Scheduled Actions "
+                      "and is on the calendar.", name=name), "success")
+    else:
+        flash(gettext("The task “%(name)s” was updated in Scheduled Actions and "
+                      "is on the calendar.", name=name), "success")
     return redirect(url_for("integrations.index"))
 
 
@@ -140,11 +272,11 @@ def save_tracker():
     # that records how long a secret is has still narrowed it. The PROJECT is
     # logged on purpose: "who pointed our changes at a different project" is
     # the question this row exists to answer.
-    audit.log(_who(), "integrations.tracker.save",
-              detail=f"backend={request.form.get('backend', '')!r} "
-                     f"url={request.form.get('url', '')!r} "
-                     f"project={request.form.get('project', '')!r} "
-                     f"enabled={'1' if request.form.get('enabled') else '0'}")
+    audit.log_action("integrations.tracker.save", target="tracker",
+                     detail=f"backend={request.form.get('backend', '')!r} "
+                            f"url={request.form.get('url', '')!r} "
+                            f"project={request.form.get('project', '')!r} "
+                            f"enabled={'1' if request.form.get('enabled') else '0'}")
     flash("Issue tracker settings saved.", "success")
     return redirect(url_for("integrations.index"))
 
@@ -246,8 +378,8 @@ def hook_save():
         flash(f"Hook not saved: {exc}", "danger")
         return redirect(url_for("integrations.hook_detail", slug=slug)
                         if slug else url_for("integrations.index"))
-    audit.log(_who(), "integrations.hook.save",
-              detail=f"slug={slug!r} event={meta['event']!r} enabled={meta['enabled']}")
+    audit.log_action("integrations.hook.save", target=slug,
+                     detail=f"event={meta['event']!r} enabled={meta['enabled']}")
     flash("Hook saved.", "success")
     return redirect(url_for("integrations.hook_detail", slug=slug))
 
@@ -269,7 +401,7 @@ def hook_dry_run(slug):
         result = mod.dispatch_one(slug, sample=True, by=_who())
     except ValueError as exc:
         return jsonify({"ok": False, "detail": str(exc)}), 400
-    audit.log(_who(), "integrations.hook.dry_run", detail=f"slug={slug!r}")
+    audit.log_action("integrations.hook.dry_run", target=slug)
     return jsonify({"ok": True, **result})
 
 
@@ -283,7 +415,7 @@ def hook_delete(slug):
         flash(error or "integrations unavailable", "danger")
         return redirect(url_for("integrations.index"))
     mod.delete_hook(slug, by=_who())
-    audit.log(_who(), "integrations.hook.delete", detail=f"slug={slug!r}")
+    audit.log_action("integrations.hook.delete", target=slug)
     flash("Hook deleted. Its version history is kept.", "success")
     return redirect(url_for("integrations.index"))
 

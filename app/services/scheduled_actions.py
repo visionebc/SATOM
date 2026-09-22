@@ -326,6 +326,22 @@ ADMIN_ACTIONS: list[ActionSpec] = [
                 "edge. Daily is plenty.",
     ),
     ActionSpec(
+        "netbox_reconcile", "NetBox inventory - reconcile the device map",
+        "admin", needs_targets=False,
+        products=("fortiweb", "fortiadc", "fortianalyzer", "fortiauthenticator"),
+        summary="Ask NetBox which of the still-unmapped appliances it already "
+                "documents - devices first, then virtual machines - and write "
+                "the ones it answers by name into the EXPLICIT device map "
+                "(services.netbox_client.reconcile), so the binding survives a "
+                "rename on either side. Bounded per run "
+                "(params.per_round, default 25) and lowest-id first, so a large "
+                "fleet converges over successive rounds and the remainder is "
+                "named every time. Read-only against NetBox: it creates nothing "
+                "there and never drops a mapping an operator wrote. A NetBox "
+                "that cannot be asked writes nothing and reports FAILED - "
+                "unknown is not 'absent'.",
+    ),
+    ActionSpec(
         "metrics_scrape", "Fleet metrics — scrape to the local store", "admin",
         needs_targets=False,
         summary="Run every due scrape target (Monitoring → Collection): one "
@@ -616,6 +632,42 @@ def _do_artifact_refs(params: dict, dry_run: bool = False) -> dict:
             "log": (res.get("log") or "")[:_LOG_MAX]}
 
 
+def _do_netbox_reconcile(params: dict, dry_run: bool = False) -> dict:
+    """Bind ONE round of still-unmapped appliances to the NetBox objects that
+    already document them.
+
+    ``ok`` contract: ok = THE ROUND RAN. An appliance NetBox does not document
+    is a NAMED remainder, not a red action - it is a fact about somebody else's
+    inventory, and a red row every night trains the operator to ignore this
+    action. A NetBox that could not be asked at all IS red: a disabled or
+    unreachable integration must never report a green sweep.
+    """
+    from . import netbox_client as netbox
+    per = netbox.clamp_per_round(params.get("per_round"))
+    res = netbox.reconcile(per_round=per, dry_run=dry_run)
+    if not res["checked"]:
+        return {"ok": False,
+                "summary": "NetBox was not asked: %s" % (res["error"] or "unknown"),
+                "log": (res.get("log") or "")[:_LOG_MAX]}
+    parts = ["%s%s %d of %d appliance(s) asked (round size %d)"
+             % ("[dry-run] " if dry_run else "",
+                "would map" if dry_run else "mapped",
+                len(res["mapped"]), res["scanned"], res["per_round"])]
+    if res["unresolved"]:
+        parts.append("NetBox documents no object named: %s"
+                     % ", ".join(sorted(res["unresolved"])))
+    if res["unknown"]:
+        parts.append("no answer for: %s" % ", ".join(sorted(res["unknown"])))
+    if res["remaining"]:
+        parts.append("%d still unmapped, next round takes them"
+                     % res["remaining"])
+    if not res["scanned"]:
+        parts = ["Nothing to do: every appliance already has an explicit "
+                 "NetBox mapping (%d)." % res["fleet"]]
+    return {"ok": True, "summary": " - ".join(parts),
+            "log": (res.get("log") or "")[:_LOG_MAX]}
+
+
 def _do_metrics_scrape(params: dict, dry_run: bool = False) -> dict:
     """Sweep the fleet scrape targets into VictoriaMetrics. Same ``ok``
     contract as the deep-monitor sweep: ok = THE SWEEP RAN; per-device
@@ -869,6 +921,8 @@ def run_action(spec, appliance, params: dict | None, dry_run: bool = False) -> d
             return _do_metrics_scrape(params, dry_run)
         if key == "artifact_refs":
             return _do_artifact_refs(params, dry_run)
+        if key == "netbox_reconcile":
+            return _do_netbox_reconcile(params, dry_run)
         if key == "sentinel_sweep":
             return _do_sentinel_sweep(params, dry_run)
         if key == "sentinel_baseline":

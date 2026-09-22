@@ -1035,8 +1035,12 @@ def test_a_raised_change_comes_back_to_the_flow_citing_itself(app, client):
     assert ref in body, "the change the flow just raised is not named on it"
     assert "/web/change-requests/%d" % cid in body, \
         "no way from the citation to the change document"
-    assert "/web/upgrade-flow/change/%d" % cid in body, \
-        "no way from the citation to the per-appliance execution view"
+    # The "Execution" shortcut that used to sit beside this citation was
+    # removed on request (2026-09-19) with the summary strip it lived in,
+    # so stage 2 no longer reaches the per-appliance execution view
+    # directly — it is reached from the change itself. The link to the
+    # change is asserted just above and is now the ONLY route out of the
+    # citation, which is exactly why it is guarded.
 
 
 def test_a_refused_change_re_renders_the_flow_with_what_was_typed(app, client):
@@ -1192,7 +1196,11 @@ def test_the_flow_does_not_reimplement_what_raising_a_change_is(app, client):
 #  re-opens — is the one that goes stale.                                       #
 # --------------------------------------------------------------------------- #
 _CR_BLOCKS = {
-    "run-gate / action bar": "Run-gate:",
+    # NOT the old "Run-gate:" strip: that label was removed on request
+    # 2026-09-19 while the bar and every button in it stayed. A sentinel
+    # that can be deleted without the thing it stands for going away is
+    # a guard that reports on the wrong noun.
+    "action bar": "<!-- ACTION BAR -->",
     "overview": ">Overview<",
     "change document": ">Change document<",
     "affected services": ">Affected services<",
@@ -1460,7 +1468,8 @@ def test_a_reader_who_cannot_drive_the_change_gets_no_buttons(app, client):
             "a user without user_manage was handed the workflow"
         body = render_template("change_requests/_view.html", crv=crv)
 
-    assert "Run-gate:" in body, "the reader cannot read the change either"
+    assert "<!-- ACTION BAR -->" in body, \
+        "the reader cannot read the change either"
     assert ">Timeline<" in body and ">Maintenance notice<" in body
     for label, marker in _CR_ACTIONS.items():
         assert marker not in body, \

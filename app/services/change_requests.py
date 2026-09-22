@@ -19,7 +19,7 @@ device.
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from ..models import (Appliance, ChangeRequest, ChangeRequestEvent,
                       ScheduledAction, db)
@@ -130,6 +130,13 @@ def approve(cr_id: int, by: str) -> ChangeRequest:
     # system being unreachable must not be able to un-make it.
     from . import cr_orchestrator
     cr_orchestrator.announce_approved(cr, by=by)
+    # A plan written down while this was still a draft is carried out HERE,
+    # through the very call the Schedule button makes - one author of "bind
+    # the rows". Attached to the returned object rather than flashed from
+    # inside a headless service: this module has no request and no session,
+    # and the view that asked for the approval is the one that has to say in
+    # words what its click created.
+    cr.rollout_outcome = materialize_rollout_plan(cr, by=by)
     return cr
 
 
@@ -147,59 +154,367 @@ def cancel(cr_id: int, by: str, reason: str = "") -> ChangeRequest:
     return cr
 
 
-def schedule_change_request(cr_id: int, by: str) -> int:
-    """Bind a ``once`` scheduled action at the window start and move the CR to
-    ``scheduled``. Returns the bound ``scheduled_action`` id.
+#: How many rounds one change's rollout may be split into. REFUSES naming the
+#: number rather than quietly making fewer rounds than were asked for: a round
+#: that silently disappeared takes its appliances out of the window without
+#: anybody being told. Same rule as the batched-wave cap on the flow page.
+MAX_ROUNDS = 24
 
-    Requires an approved (or already scheduled) CR with a window start. The
-    created action carries ``change_request_id`` in its params so the executor can
-    re-check approval + window at fire time (:func:`cr_runnable`)."""
-    cr = db.session.get(ChangeRequest, cr_id)
+#: Minutes between two consecutive rounds when the caller does not say. It is
+#: never 0: rounds that all start at the same instant are not rounds, they are
+#: the un-batched fire wearing a plan's name.
+DEFAULT_ROUND_GAP_MINUTES = 60
+
+#: Where a rollout plan lives while the change is still waiting for a
+#: signature. A key of ``ChangeRequest.params``, STRIPPED again in
+#: :func:`schedule_change_request` before those params are copied onto the
+#: rows the executor fires: that dict is the executor's instruction sheet, and
+#: a key it does not understand riding along into it is exactly how a setting
+#: nobody honours ends up being carried by the thing that acts. The leading
+#: underscore keeps it from ever colliding with a real executor parameter.
+PLAN_KEY = "_rollout_plan"
+
+
+def rollout_plan(cr) -> dict:
+    """The plan saved against a change that is not schedulable yet, or ``{}``.
+
+    Empty once the plan has BECOME scheduled rows: from that moment the rows
+    are the only description of what was saved, and a leftover copy here
+    would be a second author that drifts the first time a round is edited in
+    Scheduled Actions.
+    """
     if cr is None:
-        raise ValueError("change request not found")
-    if cr.status not in ("approved", "scheduled"):
-        raise ValueError("approve the change request before scheduling it")
+        return {}
+    value = cr.params_dict.get(PLAN_KEY)
+    return value if isinstance(value, dict) else {}
+
+
+def plannable(cr) -> tuple[bool, str]:
+    """``(ok, reason)`` - may a rollout PLAN be saved against this change now?
+
+    Deliberately NOT :func:`schedulable`, and the difference is the whole
+    point: deciding how many appliances go down at a time is a plan, binding
+    scheduled rows to it is an execution, and only the second one needs a
+    signature. Collapsing the two forced an approval before the blast radius
+    could even be written down - the approver signed, and only then saw what
+    they had approved.
+
+    Everything that is NOT about the signature is still enforced here, because
+    a plan this gate accepts is a plan approval will have to carry out.
+    """
+    if cr is None:
+        return False, "change request not found"
+    if cr.status in ChangeRequest.TERMINAL:
+        return False, (f"this change is {cr.status}, so its rollout can no "
+                       f"longer be planned")
     if cr.window_start is None:
-        raise ValueError("set a maintenance-window start first")
+        return False, "set a maintenance-window start first"
+    # A change type an administrator defined has NO executor. Refusing the
+    # PLAN as well as the schedule matters: a plan stored against one would be
+    # carried out at approval, fail there, and leave an approved change whose
+    # rollout silently does not exist.
+    from . import scheduled_actions as _sa
+    if _sa.get_spec(cr.action) is None:
+        return False, (
+            f"'{cr.action}' is a documentary change type: it has no automated "
+            f"executor. Carry the work out during the window and close this "
+            f"change request by hand.")
+    return True, ""
+
+
+def schedulable(cr) -> tuple[bool, str]:
+    """``(ok, reason)`` - may this change be bound to a scheduled task NOW?
+
+    THE one author of that question. The page that OFFERS the save and the
+    call that performs it must agree about it: a control offered over a change
+    that cannot be scheduled teaches the operator that scheduling is broken,
+    and one withheld from a change that can is a feature nobody can reach.
+    Two spellings of this test is exactly how the NetBox button came to be
+    live for appliances its own backend could not act on.
+    """
+    if cr is None:
+        return False, "change request not found"
+    if cr.status not in ("approved", "scheduled"):
+        return False, "approve the change request before scheduling it"
+    if cr.window_start is None:
+        return False, "set a maintenance-window start first"
     # A change type an administrator defined has NO executor. Binding one to a
     # scheduled action would not fail here - it would fail at fire time, inside
     # the window, resolving to nothing and closing the change as failed hours
     # after anybody could act on it. Refuse while somebody is still looking.
     from . import scheduled_actions as _sa
     if _sa.get_spec(cr.action) is None:
-        raise ValueError(
+        return False, (
             f"'{cr.action}' is a documentary change type: it has no automated "
             f"executor. Carry the work out during the window and close this "
             f"change request by hand.")
+    return True, ""
 
+
+def round_slices(device_ids, per_round) -> list[list]:
+    """Split a change's appliances into rounds of at most ``per_round``.
+
+    ``None``, 0, or a size that already covers everything give ONE round
+    holding the whole list - which is precisely the un-batched change this
+    product has always scheduled, so the default path is unchanged.
+
+    Deterministic and clock-free on purpose: the arithmetic that decides which
+    box goes down at 22:00 and which at 23:00 is the part that has to be
+    assertable without a database, a request or a clock.
+    """
+    ids = list(device_ids or [])
+    try:
+        size = int(per_round or 0)
+    except (TypeError, ValueError):
+        size = 0
+    if size < 1 or size >= len(ids):
+        return [ids]
+    return [ids[i:i + size] for i in range(0, len(ids), size)]
+
+
+def round_siblings(cr_id: int) -> list:
+    """Every EXTRA round row a change owns - round 2..N, never round 1.
+
+    A change carries exactly ONE ``scheduled_action_id``, and rounds 2..N are
+    deliberately not it. Without a way back to them, re-saving a plan would
+    leave yesterday's rounds enabled and firing a second time against
+    appliances the new plan had already moved - a duplicate reboot nobody
+    ordered, from a page that reported success.
+
+    Found by reading the params rather than by a column, because the binding
+    the executor honours IS ``params['change_request_id']``: any other index
+    could disagree with the thing that actually authorizes the fire.
+    """
+    out = []
+    for row in ScheduledAction.query.all():
+        p = row.params_dict
+        if _as_int(p.get("change_request_id")) != cr_id:
+            continue
+        if (_as_int(p.get("round_index")) or 1) > 1:
+            out.append(row)
+    out.sort(key=lambda r: _as_int(r.params_dict.get("round_index")) or 0)
+    return out
+
+
+def plan_rounds(cr, per_round=None, round_gap_minutes=None):
+    """``(rounds, starts, gap)`` for this change, or ``ValueError`` saying why
+    this plan could not be carried out.
+
+    THE one author of the round arithmetic and of its four refusals. A plan
+    SAVED against a draft and a plan MATERIALISED at approval have to be
+    judged by the same rules: a card that accepted a plan its own approval
+    will later refuse would fail at the single moment nobody is watching, and
+    leave an approved change whose rollout quietly does not exist.
+    """
+    rounds = round_slices(cr.device_ids_list, per_round)
+    if len(rounds) > MAX_ROUNDS:
+        raise ValueError(
+            f"{len(cr.device_ids_list)} appliance(s) at {per_round} per round "
+            f"is {len(rounds)} rounds; at most {MAX_ROUNDS} are scheduled at "
+            f"once. Raise the appliances per round. Nothing was scheduled.")
+    try:
+        gap = int(round_gap_minutes or DEFAULT_ROUND_GAP_MINUTES)
+    except (TypeError, ValueError):
+        gap = DEFAULT_ROUND_GAP_MINUTES
+    if len(rounds) > 1 and gap < 1:
+        raise ValueError(
+            "Rounds need at least one minute between them - starting them all "
+            "at the same instant is the un-batched change under another name. "
+            "Nothing was scheduled.")
+    if cr.window_start is None:
+        raise ValueError(
+            "This change has no maintenance-window start, so no round has an "
+            "hour to begin at. Set the window first. Nothing was scheduled.")
+
+    starts = [cr.window_start + timedelta(minutes=gap * k)
+              for k in range(len(rounds))]
+    # A round that starts after the window closes is REFUSED here, not left to
+    # be skipped at fire time: cr_runnable would answer "after the maintenance
+    # window" at 02:00, to nobody, and those appliances would simply never be
+    # touched while the plan on screen said they would be.
+    if cr.window_end is not None and starts[-1] > cr.window_end:
+        raise ValueError(
+            f"{len(rounds)} rounds {gap} minute(s) apart would start the last "
+            f"one at {_fmt_window(starts[-1])}, after this change's window "
+            f"closes at {_fmt_window(cr.window_end)} - it would be refused at "
+            f"fire time and those appliances would never be touched. Widen the "
+            f"window, raise the appliances per round, or shorten the gap. "
+            f"Nothing was scheduled.")
+    return rounds, starts, gap
+
+
+def save_rollout_plan(cr_id: int, by: str, per_round=None,
+                      round_gap_minutes=None) -> dict:
+    """Write the rollout plan onto the CHANGE itself and create nothing else.
+
+    The honest half of "save" for a change nobody has signed: no
+    :class:`ScheduledAction` row exists, so the executor has nothing to fire
+    and the calendar has nothing to draw - which is precisely true of a plan
+    that has not been approved. Saying "it is on the calendar" here would be
+    a sentence the product could not keep.
+
+    Judged by :func:`plan_rounds`, the same arithmetic approval will use.
+    """
+    cr = db.session.get(ChangeRequest, cr_id)
+    if cr is None:
+        raise ValueError("change request not found")
+    ok, why = plannable(cr)
+    if not ok:
+        raise ValueError(why)
+    rounds, _starts, gap = plan_rounds(cr, per_round, round_gap_minutes)
+    try:
+        size = int(per_round or 0)
+    except (TypeError, ValueError):
+        size = 0
+    plan = {"size": size, "gap": gap, "total": len(rounds), "by": by,
+            "at": datetime.utcnow().isoformat(timespec="seconds")}
     params = dict(cr.params_dict)
-    params["change_request_id"] = cr.id
-    schedule = {"at": cr.window_start.isoformat()}
-    next_run = scheduler.compute_next_run("once", schedule)
-    name = f"CR #{cr.id}: {cr.title}"[:120]
+    params[PLAN_KEY] = plan
+    cr.params = json.dumps(params)
+    # Stamped on the timeline, NOT as a status transition: the change has not
+    # moved: it is still a draft waiting for the same signature it was waiting
+    # for a second ago. A plan that changed the status would read, on the
+    # approver's screen, as work that had already begun.
+    db.session.add(ChangeRequestEvent(
+        cr_id=cr.id, kind="rollout_planned", by=by,
+        detail=(f"Rollout plan saved: {len(rounds)} round(s) of at most "
+                f"{size} appliance(s), {gap} minute(s) apart. Nothing is "
+                f"scheduled until this change is approved."),
+        ts=datetime.utcnow()))
+    db.session.commit()
+    return plan
 
-    action = None
+
+def materialize_rollout_plan(cr, by: str) -> dict:
+    """Turn a saved plan into the real scheduled rows. ``{}`` when the change
+    carries no plan.
+
+    Never raises, and that is deliberate: this runs immediately AFTER an
+    approval has been committed. An approval is a decision a human made, and a
+    rollout that cannot be bound - a window that moved, a round count that no
+    longer fits - must not be able to un-make it. On failure the plan STAYS on
+    the change, so the operator can widen the window and press Save again
+    instead of re-deriving a plan the product threw away.
+
+    Returns ``{"action_id": int, "plan": {...}}`` or ``{"error": str,
+    "plan": {...}}``.
+    """
+    plan = rollout_plan(cr)
+    if not plan:
+        return {}
+    try:
+        action_id = schedule_change_request(
+            cr.id, by, per_round=plan.get("size"),
+            round_gap_minutes=plan.get("gap"))
+    except Exception as exc:  # noqa: BLE001 - see docstring
+        db.session.rollback()
+        return {"error": str(exc), "plan": plan}
+    return {"action_id": action_id, "plan": plan}
+
+
+def schedule_change_request(cr_id: int, by: str, per_round=None,
+                            round_gap_minutes=None) -> int:
+    """Bind the ``once`` scheduled action(s) that carry out this change and move
+    the CR to ``scheduled``. Returns the id of the FIRST round's action - the
+    one bound back to the change.
+
+    Requires an approved (or already scheduled) CR with a window start. Every
+    created action carries ``change_request_id`` in its params so the executor
+    re-checks approval + window at fire time (:func:`cr_runnable`).
+
+    ``per_round`` splits the change's appliances into rounds: one round is one
+    fire of the executor against its own slice, ``round_gap_minutes`` apart.
+    Left out (or large enough to cover everything) this is byte-for-byte the
+    single action this function has always created - the batched shape is
+    additive, so nothing that scheduled a change before behaves differently.
+
+    Why rounds are separate ACTIONS and not a parameter of one: the executor
+    runs an action's targets straight through in a single fire
+    (``scheduled_actions._run_targets``). A round size stored as a number the
+    executor never reads would be a setting that lies - the page would promise
+    twenty-five boxes at a time while sixty rebooted at once.
+    """
+    cr = db.session.get(ChangeRequest, cr_id)
+    if cr is None:
+        raise ValueError("change request not found")
+    ok, why = schedulable(cr)
+    if not ok:
+        raise ValueError(why)
+
+    rounds, starts, gap = plan_rounds(cr, per_round, round_gap_minutes)
+
+    # Yesterday's extra rounds go BEFORE the new ones are written. A round
+    # whose slice moved is a fire against boxes the new plan already covers.
+    stale = round_siblings(cr.id)
+    live = [r for r in stale if r.running_at is not None]
+    if live:
+        raise ValueError(
+            "Round " + ", ".join(str(_as_int(r.params_dict.get("round_index")))
+                                 for r in live)
+            + " of this change is running right now. Re-planning would delete "
+              "the record of a fire that is in progress. Nothing was changed.")
+    for row in stale:
+        db.session.delete(row)
+
+    # The saved PLAN never reaches the executor's parameters. That dict is
+    # copied verbatim onto every round, and the executor reads it as its
+    # instruction sheet; a bookkeeping key riding along into it is how a
+    # setting nobody honours ends up being carried by the thing that fires.
+    base = {k: v for k, v in cr.params_dict.items() if k != PLAN_KEY}
+    base["change_request_id"] = cr.id
+
+    first = None
     if cr.scheduled_action_id:
-        action = db.session.get(ScheduledAction, cr.scheduled_action_id)
-    if action is None:
-        action = ScheduledAction(created_by=by)
-        db.session.add(action)
-    action.name = name
-    action.scope = "admin"
-    action.action = cr.action
-    action.targets = json.dumps(cr.device_ids_list)
-    action.params = json.dumps(params)
-    action.schedule_kind = "once"
-    action.schedule = json.dumps(schedule)
-    action.enabled = True
-    action.catch_up = True
-    action.next_run = next_run
-    db.session.flush()  # assign action.id before binding it back to the CR
+        first = db.session.get(ScheduledAction, cr.scheduled_action_id)
+    if first is None:
+        first = ScheduledAction(created_by=by)
+        db.session.add(first)
 
-    _transition(cr, "scheduled", by=by,
-                detail=f"Scheduled for {_fmt_window(cr.window_start)}",
-                scheduled_action_id=action.id)
-    return action.id
+    total = len(rounds)
+    for index, (members, at) in enumerate(zip(rounds, starts), 1):
+        row = first
+        if index > 1:
+            row = ScheduledAction(created_by=by)
+            db.session.add(row)
+        params = dict(base)
+        if total > 1:
+            params["round_index"] = index
+            params["round_total"] = total
+            params["round_size"] = int(per_round or 0)
+            params["round_gap_minutes"] = gap
+        schedule = {"at": at.isoformat()}
+        # The suffix is RESERVED out of the 120-character budget rather than
+        # appended and truncated away: "- round 3/6" is the only thing telling
+        # two rounds apart in the automations list, and it is exactly the part
+        # a blind truncation cuts.
+        suffix = f" - round {index}/{total}" if total > 1 else ""
+        row.name = f"CR #{cr.id}: {cr.title}"[:120 - len(suffix)] + suffix
+        row.scope = "admin"
+        row.action = cr.action
+        row.targets = json.dumps(members)
+        row.params = json.dumps(params)
+        row.schedule_kind = "once"
+        row.schedule = json.dumps(schedule)
+        row.enabled = True
+        row.catch_up = True
+        row.next_run = scheduler.compute_next_run("once", schedule)
+    db.session.flush()  # assign ids before binding the first one to the CR
+
+    # The plan has BECOME the rows. Leaving a copy on the change would give
+    # the card two authors for "what was saved", and they would disagree the
+    # first time a round is edited in Scheduled Actions.
+    stored = cr.params_dict
+    if PLAN_KEY in stored:
+        stored.pop(PLAN_KEY)
+        cr.params = json.dumps(stored)
+
+    detail = f"Scheduled for {_fmt_window(cr.window_start)}"
+    if total > 1:
+        detail += (f" in {total} rounds of at most {per_round} appliance(s), "
+                   f"{gap} minute(s) apart")
+    _transition(cr, "scheduled", by=by, detail=detail,
+                scheduled_action_id=first.id)
+    return first.id
 
 
 # --------------------------------------------------------------------------- #

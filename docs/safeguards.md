@@ -15772,3 +15772,281 @@ element and every visible field bound back by `form="uf-waves"`.
   blocks first, and do not write markup-shaped words in JS comments.
 - `bi-pencil-square` is NOT a usable marker for the Edit button in a
   whole-page assertion: the nav uses the same icon (Custom Signature).
+
+
+## §184 — a NetBox id is only half an address (`tests/test_netbox_client.py`, 2026-09-21)
+
+**The report.** An operator added `fortiweb16` to NetBox and the *Open
+maintenance window in NetBox* button stayed disabled.
+
+**What was measured, before anything was written.** The NetBox at
+`192.0.2.200` (4.6.7) holds **13 devices and 87 virtual machines**, and
+`fortiweb15/16/17` and `fac01` are all **virtual machines** on the `hypervisor06`
+cluster. `resolve_plan` asked `/api/dcim/devices/` and nothing else, so it
+reported four fully documented appliances as undocumented — and the gate added
+the day before did exactly what it was built to do with that answer.
+
+**The class of defect.** NetBox models a virtual machine as a *different
+object type* from a device: different API path, different content type, and a
+separate id space. An integration that carries only the id has half an address.
+Everything in this round follows from that:
+
+* `resolve_plan` asks `/api/dcim/devices/` first and
+  `/api/virtualization/virtual-machines/` **only for the names dcim did not
+  answer** — so a device match still wins, and an install with no virtual
+  machines pays for no second request.
+* A **half-answered lookup is UNKNOWN, not absent**: if the virtualization leg
+  fails, the names dcim matched stand, and the rest are `checked=False`, which
+  leaves the button alive. Rendering them as "NetBox does not document this"
+  accuses the operator's inventory of the integration's own fault.
+* The **ref carries the kind** (`tag:vm:95`, `cf:vm:95`), because the ref is the
+  only handle `close_window` gets. A ref without one is a device — which is what
+  every ref written before this date is, so closing an old window still works
+  and re-reading one as a virtual machine cannot clear a tag from a stranger's
+  hardware.
+* The **journal close follows the object the open was filed against**, read back
+  from the entry. It used to hardcode `dcim.device`, which would have filed the
+  closing note against whatever device wore the virtual machine's number. A
+  journal ref carries no kind precisely because the entry itself knows.
+* **Custom fields are checked on the target's own object type.** A field
+  declared for `dcim.device` does not exist on `virtualization.virtualmachine`,
+  and NetBox answers the PATCH with a 400 no operator can read as "wrong object
+  type". The refusal names the type and writes nothing.
+* **One parser** (`parse_target`) reads `"vm:95"` for the stored map, the refs
+  and the settings form. Two spellings of "which object is this" is exactly how
+  a window comes to be opened on one object and closed on another.
+
+**The guards.** 15 new ones in `tests/test_netbox_client.py`, all of them red
+against the previous file. Four existing guards were **repaired, not relaxed**:
+the stored map is now text (`{"1": "7"}`) rather than an int, `parse_ref`
+returns three values, and two refusal messages name both object kinds. One is a
+source guard: no write path may address a device through an f-string again.
+
+**Still true and still required:** a name that exists in neither collection is
+still refused, and a case-only difference is still a different object.
+
+## §185 — a pre-flight that did not say what it was a pre-flight FOR (`tests/test_upgrade_flow_target_version.py`, 2026-09-21)
+
+`UpgradePrep` recorded `firmware` — the version the appliance was **running**.
+Nothing recorded where it was **going**. The bulk upgrade flow therefore asked
+every question about a maintenance window except the one that defines it, and
+the gap was invisible in exactly the way that keeps a defect alive: every page
+rendered, every run was green, every document read correct.
+
+What it cost, measured rather than supposed:
+
+1. **The evidence could not name its own move.** One green run was equally
+   valid proof for `7.6.8 → 8.0.5` and `7.6.8 → 8.0.6`.
+2. **`upgrade_flow.change()` passed no `params` at all**, so every change the
+   flow raised was born `params={}` — and `cr_orchestrator._dispatch_per_device`
+   already reads `params` to fill the `upgrade.finished` / `upgrade.failed`
+   webhooks. They went out naming no image, forever.
+3. **Scout could not be asked.** `services.upgrade_scout` is offline — it reads
+   harvested vendor prose and contacts nothing — and was wired only to the
+   single appliance's page, because the bulk page had no target to hand it.
+
+### What the guards fix in place
+
+* **The column is NULL, never `''`.** "Nobody said where this was going" (every
+  row written before the feature) and "we asked and got nothing back" must stay
+  distinguishable, and one value for both makes the history unreadable the
+  first time some later writer stores `''`. `record()` coerces blank to `None`;
+  `_ensure_columns` declares the column with **no DEFAULT**, and the guard
+  reads the **source** of that dict — by the time it is built, a duplicate key
+  has already collapsed silently.
+* **The sweep REFUSES, in three distinct sentences.** Absent, unparseable and
+  unknown-to-this-console are three different mistakes that send the operator
+  to three different places; one message for all three is the natural tidy-up
+  and is guarded against by name.
+* **The destination is resolved against the rendered catalogue**, not against a
+  regex. `9.9.9` parses perfectly and is still a version with no image, no
+  release notes and no verdict.
+* **"No image uploaded" is stated, not enforced.** Refusing it would push the
+  whole pre-flight to the last moment — the opposite of what a pre-flight is
+  for. An **install** image (`.zip`/`.qcow2`/`.ova`) is never reported as the
+  flashable artefact: the version still appears, it is simply not claimed.
+* **Scout answers for the RUN, not for the select**, and uses the firmware the
+  run observed rather than the inventory row, so old evidence is graded against
+  what was true when it was taken. An appliance with no recorded destination
+  gets **no badge** — `absent`, `unknown` and `clear` are three statements.
+* **Memoised per `(kind, current, target)`.** `release_corpus.load` re-reads and
+  re-filters the whole harvested JSON on every call; forty boxes on two
+  versions must cost two reads. Guarded by COUNTING the calls, because the slow
+  version is indistinguishable from the fast one on a two-device fixture.
+* **The change derives its destination from its evidence, and cross-checks.**
+  Two ticked runs swept towards different versions is refused (one change is
+  one move); a declaration that contradicts the runs it cites is refused naming
+  both. `target_version` is **stripped out of `params`** and recomputed, for
+  the same reason `change_request_id` is — otherwise a caller posts straight
+  past both checks by hiding the value in the executor's bag.
+* **Absent stays absent.** A change citing no evidence and declaring nothing
+  records no destination and says so on the page. Inventing one puts a firmware
+  number on a document nobody chose it for.
+
+### The trap this round re-taught
+
+The page is asked for **by the server** in the render guards, not only of
+`page_context`. `render_template` is called by splatting one dict here, but the
+sibling defect of 2026-09-18 — a resolver key that never reached the template
+because the view enumerated its kwargs — is why a context-level assertion is
+not evidence that anything is on screen.
+
+
+
+## 186. Forward-only destinations in the upgrade flow
+
+The destination select offers only versions that are an upgrade for at least
+one appliance the page is rendering.
+
+* **`firmware_versions.compare(a, b)` is a separate function from `sort_key`,
+  and returns `None`.** `sort_key` must be total, so it places a line-only
+  string (`8.0`) before every patch of its line. Read as an upgrade question
+  that ordering is a lie: `8.0` against a box on `8.0.3` could be `8.0.0` or
+  `8.0.9`. A filter that HIDES destinations must distinguish *provably not
+  newer* from *unknown*, because only the first is safe to hide. Guarded by a
+  test that asserts `sort_key` orders the pair and `compare` refuses to — the
+  one that bites when somebody rewrites `compare` as a `sort_key` comparison.
+* **Numeric per component.** `8.0.10` is newer than `8.0.9`; as text it is not.
+  Guarded with the string comparison asserted alongside, so the guard states
+  the bug it exists for.
+* **Newer than at least ONE appliance, never than the highest.** The lab has
+  fortiweb15/16 on 7.6.8 and fortiweb17 on 8.0.5; the *highest* rule hides
+  8.0.5 and produces an empty select for a legal window. Guarded with all
+  three boxes present.
+* **Compared per product.** A FortiAuthenticator's version cannot hide a
+  FortiWeb destination. Guarded with a FAC on 9.9.9 next to a FortiWeb on
+  7.6.8: `comparable` must be 1.
+* **Hidden only when provable.** Undecidable comparisons and appliances with
+  no readable firmware keep the version on the list; a page with no comparable
+  appliance offers everything. A destination silently missing from a select is
+  unreportable.
+* **One filter, two readers.** The view computes `offerable`; the template
+  reads it and does not re-derive it, and `resolve_target` refuses the same
+  rows on POST. A filter written twice is a filter that stops agreeing with
+  itself.
+* **A FOURTH refusal sentence, not a variant of the third.** "This console has
+  never heard of 9.9.9" and "7.6.8 exists and every one of these boxes is past
+  it" send the operator to two different places, and answering the second with
+  the first sends them to declare a version that is already declared. Guarded
+  by asserting four distinct strings.
+* **Known-but-not-offered is its own empty state** on the form, distinct from
+  "this console knows of no firmware version for these products".
+* **The re-proposal is filtered ONCE, at the option loop.** The select is
+  re-proposed from the last sweep, and a version every remaining box has since
+  moved to must not come back `selected`. Adding `offerable` to the
+  `target_pick` membership check as well was tried and REMOVED: `target_pick`
+  has one consumer, the option loop, which already iterates the offered rows,
+  so the extra term changed no rendered byte. The mutation harness is what
+  found it — the guard written for it could not fail, because the behaviour
+  was already guaranteed elsewhere. A second author of "which versions are
+  offered" is the thing this whole feature is shaped to avoid.
+
+Verified live against the production database: the select drops 7.6.8 and
+labels 8.0.5 `moves 2/3 · fortiweb17 already there or ahead`, and all four
+refusals fire with four different sentences leaving `UpgradePrep.count()`
+unchanged.
+
+**Closed by §187**, at the operator's instruction: the per-appliance case is
+now a skip with its own sentence, not a proposal.
+
+## 187. The destination is checked per appliance, and a held box says why
+
+§186 narrows the select against the whole **page**; the sweep runs against the
+**ticked** rows. Nothing made those two sets agree, and the gap needed no
+crafted request: tick only the box that is already on 8.0.5, sweep it towards
+8.0.5, and every window-level rule passes while the stored evidence declares
+the move `8.0.5 → 8.0.5`.
+
+`upgrade_flow.classify_move()` is now the single authority for *what this
+version does to this appliance* — four outcomes (`up`, `same`, `behind`,
+`unknown`), not a boolean — and it has three readers that must never disagree:
+the select's filter (`forward_only`), the sweep's per-appliance skip
+(`sweep_split`) and the hint the page paints beside a row.
+
+* **Skipped, not refused, while anything still moves.** One extra tick in a
+  selection of forty must not discard the thirty-nine that were right. The
+  window is refused only when the whole selection is held — a summary reading
+  *"swept 0 appliance(s): 0 clean"* is not a refusal, it is a green-looking
+  report of a sweep that never happened. Both branches guarded, and both
+  assert `UpgradePrep.query.count()` did not move.
+* **Nothing is stored for a held appliance.** A "did not run" row is still a
+  row the citation picker offers and the Move column paints.
+* **`same` and `behind` do not share a sentence.** "Already on 8.0.5" is fixed
+  by picking a later version or unticking the row; "on 8.0.6, you picked
+  8.0.5" means the destination chosen for the whole window is **behind**
+  something in it — a downgrade, which this pre-flight reviews nothing about.
+  Guarded by asserting the two strings differ and that the downgrade one names
+  the version the box is actually on.
+* **One author for the sentence.** `hold_reason()` writes it; the view flashes
+  it and the page renders it as server data (`holds`, keyed version → name).
+  Guarded by asserting the string the page carries is byte-identical to the
+  one the sweep produces. A hint written in the template and a refusal written
+  in the view are two authors of the same promise, and the template's copy is
+  the one nothing tests.
+* **The checkbox is NOT disabled.** Disabling it would drop the row from the
+  request and make the skip a client-side filter — which is exactly what the
+  server-side rule exists to be instead of. Guarded.
+* **Held only when provable.** Another product's numbering, unreadable
+  firmware and undecidable comparisons are all **swept**. Guarded per case.
+* **The skip is counted apart from a failure**, and a sweep that skipped
+  anything is not reported green. Guarded by reading the alert class around
+  the summary, not merely its text.
+
+19 guards, appended to `tests/test_upgrade_flow_target_version.py`. Verified
+live against the production database: `fortiweb17` ticked alone towards 8.0.5
+is refused by name, with the reason, and `UpgradePrep.count()` stays at 2.
+
+
+## 188 — A configuration is checked against the API of the build it lands on
+
+**The defect class.** A FortiWeb cmdb POST carrying a field the target build
+does not understand answers **200 and discards it**. Nothing raises, nothing
+logs, and the copy looks complete in the destination GUI. Until this round
+nothing in SATOM compared a payload against the firmware it was about to be
+written to: the clone pre-flight checked nine families and not one of them
+imported `api_matrix`, and the pre-upgrade took a backup without ever asking
+what the new build stops serving.
+
+**One engine, two surfaces.** `services/version_compat` answers *"would this
+configuration survive a write to that build?"* and is consumed by both the
+clone/migrate pre-flight (family `apiver`, against the destination's EXACT
+running version) and the pre-upgrade (`prepare()["apisurface"]`, against the
+declared `target_version`). Two copies of this rule would start disagreeing
+about one appliance, and the disagreement would show as a green light on one
+page and a warning on the other.
+
+**Six verdicts, never a boolean.** `same` · `ok` · `dropped` · `absent` ·
+`blind` · `unmeasured`. The last two are separate ignorances on purpose:
+`blind` still proves the object can exist on that build (the endpoint answered,
+its collection was empty), `unmeasured` proves nothing at all — so `unmeasured`
+outranks `blind` in the rollup.
+
+**Only `absent` blocks.** That verdict is the appliance itself rejecting the
+URN. Everything else rests on a field census, and a hard block built on a
+census walls off legitimate clones the night a sweep runs thin.
+
+**Reported, never graded.** `apisurface` does not change the pre-upgrade's
+clean/not-clean verdict — the same exemption the service-probe baseline
+already has. A field the new build drops is something to decide about, not a
+reason the window cannot open, and a red verdict trains people to re-run a
+pre-flight until it goes green.
+
+**An absent object is counted apart from dropped fields.** It carries ZERO
+dropped fields, so a summary that only totals fields renders the whole loss as
+nothing. Measured on `fortiweb15`: the 8.0.5 build does not serve
+`web_protection_profile` at all.
+
+**What is NOT compared is named.** 188 of the registry's 513 logicals are
+`*_item` sub-tables no sweep reaches; they are listed as "outside the API
+sweep" and kept out of the verdict, because a family that answers `warn` on
+every single clone is one operators learn to click past.
+
+**One author of the field evidence.** `api_matrix.known_fields(doc, key)` — the
+union of schema and sweep origins — is now read by both `_answer` and
+`version_compat`. It was inlined in `_answer` before.
+
+**Guards.** `tests/test_version_compat.py` (31) +
+`tests/test_version_compat_surfaces.py` (16). **33 mutations, 33 bite, 0
+survive, 0 void**, control green before and after, harness run on a COPY of
+the tree (`/tmp/vcmut`) because the shared checkout carries ~45 files from
+other sessions.

@@ -2199,15 +2199,15 @@ is a single **global** one, not per-ADOM.
 
 ## 26. Settings, tab by tab
 
-`Settings` is one page with a **grouped sidebar**: **11 groups, 34 panels**.
-Ten of the groups (32 panels) are admin-only (`user_manage`); the remaining
+`Settings` is one page with a **grouped sidebar**: **11 groups, 35 panels**.
+Ten of the groups (33 panels) are admin-only (`user_manage`); the remaining
 one — **My Account**, holding **Security** and **Change Password** — is
 self-service and is the only group a non-admin sees. A group with nothing you may see is not
 rendered at all, so the menu never offers a section that is not there.
 
 | Group | Panels |
 |---|---|
-| **System** | General · Software Update Repository · AI Advisor |
+| **System** | General · Software Update Repository · AI Advisor · Integrations |
 | **Source of Truth & Backup** | Configuration SoT · Backup Server |
 | **Access & Identity** | Users · Profiles · Authentication · Access Control · Vault |
 | **Certificates & Trust** | Certificate Manager · Node TLS · Trust store |
@@ -2221,6 +2221,14 @@ rendered at all, so the menu never offers a section that is not there.
 
 The **AI Advisor** panel additionally needs `advisor.configure`; an admin
 without it does not see the entry.
+
+**Integrations is a page, not a pane**, and its row carries the leaving arrow
+(↗) for that reason: clicking it replaces the console instead of switching a
+tab. It is where SATOM is wired to systems it does not own — NetBox
+(maintenance windows and the appliance → device map) and your own Python hooks
+— and it is filed under System because that is what it configures. It had no
+menu entry at all until 2026-09-21; the page existed and worked, but the only
+way to reach it was to type `/settings/integrations`.
 
 **Scout is its own group, below Sentinel.** Its *Settings* panel holds only
 *where to look and how long to wait* — the default look-back window, the
@@ -4140,14 +4148,29 @@ only, and works against any NetBox:
 
 | Backend | What it writes | Trade-off |
 |---|---|---|
-| **Journal entry** (default) | A journal entry on the device with the change-request id, window and reason; closing posts a *second* entry | Full history, but journal entries are not filterable in the NetBox UI |
-| **Device tag** | Adds `maint-window` to the device, removes it on close | Queryable from NetBox, but records *that* a window exists, not which one or when it started |
-| **Device custom fields** | Sets `maint_window_start` / `_end` on the device | Structured, but the custom fields must already be defined — SATOM tells you by name if they are not, rather than quietly doing nothing |
+| **Journal entry** (default) | A journal entry on the object with the change-request id, window and reason; closing posts a *second* entry | Full history, but journal entries are not filterable in the NetBox UI |
+| **Object tag** | Adds `maint-window` to the object, removes it on close | Queryable from NetBox, but records *that* a window exists, not which one or when it started |
+| **Object custom fields** | Sets `maint_window_start` / `_end` on the object | Structured, but the custom fields must already be defined **for that object type** — a field declared for devices does not exist on a virtual machine, and SATOM tells you by name and by type rather than quietly doing nothing |
 
-**Device mapping** binds each SATOM appliance to a NetBox device id. Leave a row
-blank and SATOM falls back to an exact *name* match — that works right up until
-somebody renames a device on either side, which is why the page shows you which
-devices rely on the fallback.
+**Devices and virtual machines are both targets.** NetBox models a virtual
+machine as a different object from a device: another API path, another content
+type, and a **separate id space** — device 95 and virtual machine 95 are
+unrelated objects. That matters here because a virtual appliance (FortiWeb-VM,
+FortiADC-VM, FortiAuthenticator-VM) is usually documented in NetBox as a
+virtual machine, and a device-only integration would call a fully documented
+appliance undocumented and switch its maintenance-window button off.
+
+**Object mapping** binds each SATOM appliance to a NetBox object. A device is
+its id on its own (`7`); a virtual machine carries its prefix (`vm:95`). Leave
+a row blank and SATOM falls back to an exact *name* match — **devices first,
+then virtual machines** — which works right up until somebody renames an object
+on either side, which is why the page shows you which appliances rely on the
+fallback.
+
+Two names that differ only in case are two *different* objects to SATOM, even
+though NetBox's own search will find either: the page names the near miss
+(`NetBox has no device or virtual machine named 'PRT03'; it does have 'hypervisor03'`)
+rather than binding to something you did not pick.
 
 ### 35.2 Issue tracker (Jira, OpenProject, Vikunja)
 
@@ -4705,6 +4728,222 @@ still finished holding a change document whose evidence covered one box.
 `Upgrade Flow` (`/upgrade-flow`) is the staged front for the whole window. It
 needs the **backup** permission, because stage 1 takes a configuration backup
 of every device it touches.
+
+### 40.0 Where the window is going — the one question the flow never asked
+
+Until **2026-09-21** this page asked everything about a maintenance window
+except the thing that defines it. A pre-upgrade run recorded the version the
+appliance was **running**; nothing recorded the version it was **going to**.
+
+That is not a missing form field. It had three consequences:
+
+* The same green pre-flight was equally valid evidence for `7.6.8 → 8.0.5` and
+  for `7.6.8 → 8.0.6`. Those are different moves, with different release notes
+  and different breaking changes, and a change request citing that run could
+  not state which of them it had been pre-flighted for.
+* Stage 2 created the change with **no executor parameters at all**. The
+  `upgrade.finished` / `upgrade.failed` webhooks already read those parameters
+  to name the image, so they went out naming nothing — permanently.
+* **Scout** — the offline reviewer that reads harvested vendor release notes —
+  was wired to the single appliance's page only, because the bulk page had no
+  destination to give it. The page that plans sixty upgrades was the one page
+  that could not say what the vendor had written about them.
+
+**Stage 1 now asks first.** `Upgrade to` is the first control in the card,
+above the backup/health/services options, and the sweep is **refused** without
+it:
+
+| You choose | What happens |
+|---|---|
+| nothing | Refused. Nothing is swept, nothing is stored. "Upgrade to the newest one we know about" is a decision, and a page that makes it silently writes a destination onto forty pieces of evidence nobody chose. |
+| `latest`, or anything that is not a version | Refused, with its own message. |
+| a version this console has never heard of | Refused, with its own message — and it names where to declare it. `9.9.9` parses perfectly and is still a destination with no image, no release notes and no verdict. |
+| a version in the catalogue | Swept, and **stored on every run**. |
+
+The three refusals are deliberately **three different sentences**: they send
+you to three different places.
+
+**Where the list comes from.** The same catalogue the *Firmware → API versions*
+page shows — uploaded images, versions running in the fleet, and versions
+declared by hand. Nothing is re-listed here, so a release you declare there
+appears here without a code change.
+
+Two distinctions the list preserves:
+
+* **"No image uploaded" is said, not refused.** Pre-flighting a window before
+  the `.out` lands is ordinary; blocking it would push the entire pre-flight to
+  the last moment, which is the opposite of what a pre-flight is for. An image
+  is required to *execute* a window, not to *prepare* one.
+* **An install image is not an upgrade image.** A `.zip`/`.qcow2`/`.ova` builds
+  a machine from nothing. The version still appears; it is simply not reported
+  as "the image for it is here".
+* **A line is not its `.0` patch.** `8.0` is offered under its own group,
+  *Line only — no patch level declared*, so nobody picks one believing they
+  named a flashable build.
+
+### 40.0b The Move column, and Scout per appliance
+
+Stage 1's table gained a **Move** column: `7.6.8 → 8.0.5` for each appliance,
+read off **its own newest run** — never off the select above. Painting the
+select there would show forty boxes as reviewed for a move none of them has
+been pre-flighted for yet.
+
+Under it sits **Scout's verdict for that move**: `blocker`, `caution`, `clear`,
+`unknown`, or `unavailable`. The last two are not the same thing and are never
+merged — `unknown` means Scout read the notes and found nothing about this
+move; `unavailable` means it never got to read them, and it can never spell
+itself `clear`. Hops with no harvested notes are counted out loud, because a
+verdict computed over a ladder with holes in it is not the same claim as one
+computed over a complete one.
+
+An appliance whose newest run declared **no** destination gets **no badge** and
+reads *no destination recorded*. Absent is absent: it is a different statement
+from `unknown` and from `clear`.
+
+The verdict is computed **when the page is drawn**, not frozen onto the run.
+Scout reads vendor prose, so a corpus that gains the 8.0.5 page tonight changes
+this badge tomorrow without anybody re-running a sweep against forty live
+appliances. The pre-flight measures the **box**; Scout reads the **notes**.
+
+### 40.0c How the destination reaches the change
+
+It rides on the **evidence**, not on a hidden form field. Each run stores the
+version it was swept towards; the change derives its destination from the runs
+it cites, and stores it in the change's executor parameters — which is what the
+upgrade webhooks read.
+
+Two refusals protect that:
+
+| Situation | What happens |
+|---|---|
+| The ticked runs were swept towards **two different versions** | **Refused.** One change request is one move. Raise one per destination. |
+| The change **declares** 8.0.6 but its evidence was swept towards 8.0.5 | **Refused**, naming both. A document whose prerequisites section proves the wrong move reads exactly like a correct one. |
+
+Stage 2's header states the destination the ticked evidence implies **before**
+you fill the form in — including *Two destinations ticked*, so a split window
+is read at the start instead of at submit time — and counts the appliances that
+cite no destination at all. Stage 3's header states what was actually stored on
+the change, read back from the change itself.
+
+A change citing no evidence and declaring nothing **records no destination**,
+and says so. Inventing one would put a firmware number on a document nobody
+chose it for.
+
+**What this does not yet do:** it does not resolve the destination to a
+specific image file per appliance (hardware vs VM), and the `image` field of
+the upgrade webhooks is still empty. That is stage 4's question, not stage 1's.
+
+### 40.0d Only forward moves are offered
+
+The list is narrowed to versions that are an **upgrade for at least one
+appliance on the page**. A release every box has already passed is not a
+maintenance window, and offering it is how one gets planned.
+
+"Newer than the version the system is running" has no single referent here,
+because a page lists boxes on different firmware — the lab is exactly that
+case: `fortiweb15` and `fortiweb16` run 7.6.8, `fortiweb17` runs 8.0.5.
+Narrowing to *newer than the highest* would hide **8.0.5**, the move two of
+the three are waiting for, and leave an empty select in front of a perfectly
+legal window. So the rule is *newer than at least one*, and each option says
+what it would do:
+
+```
+8.0.6 · image uploaded · moves 3/3
+8.0.5 · image uploaded · already in the fleet · moves 2/3 · fortiweb17 already there or ahead
+```
+
+The page narrows the choice; it does not make it. You can still sweep a window
+that leaves one box untouched — you just read that before you run it instead
+of afterwards from the evidence.
+
+**A version is removed only when the page can SHOW it is not an upgrade.**
+A destination missing from a select is unreportable: nobody can ask why the
+version they came for is not there. So anything undecidable stays on the list:
+
+| Case | Offered? | Why |
+|---|---|---|
+| 7.6.8, and every box is on 7.6.8 or later | **No** | Provably not an upgrade for anybody. |
+| 8.0.5, boxes on 7.6.8 and on 8.0.5 | **Yes** | It moves two of them. Says `moves 2/3`. |
+| `8.0` (line only) against a box on 8.0.3 | **Yes** | A line is not a patch. It could be 8.0.0 or 8.0.9 — unknown is not "older". |
+| A FortiWeb version, with a FortiAuthenticator on 8.0.9 on screen | **Yes** | Compared per product. Two vendors' counters that share digits are not the same axis. |
+| Any version, when the page lists no comparable appliance | **Yes** | Nothing to compare against proves nothing. |
+
+Comparison is numeric, per component: **8.0.10 is newer than 8.0.9**, which is
+the release the one-line string comparison gets wrong.
+
+If the console knows versions but **none** of them is an upgrade for anything
+on screen, the form says so and names the count — a different message from
+"this console knows of no firmware version", which would send you to declare a
+version that is already declared.
+
+The same rule applies on POST, from the view, not from the template: a crafted
+form naming a version the page hides is refused with its own sentence —
+*"7.6.8 would not move any of these appliances forward — fortiweb15,
+fortiweb16, fortiweb17 are already running it or something newer"* — and
+nothing is started.
+
+### 40.0e An appliance the destination cannot move is skipped, and says why
+
+The filter above is **page-wide**; the sweep runs against the rows you
+**ticked**. Those two sets are not the same, and the gap is reachable with no
+crafted request at all: on a page holding `fortiweb15`/`fortiweb16` on 7.6.8
+and `fortiweb17` on 8.0.5, the select offers 8.0.5 correctly (it moves two of
+three) — untick the first two, sweep `fortiweb17` towards the version it is
+already running, and every window-level rule passes while what gets stored is
+evidence whose declared move is `8.0.5 → 8.0.5`.
+
+So the destination is now checked **per appliance**, and an appliance it
+cannot move is **skipped** with its own sentence:
+
+```
+fortiweb17 cannot be upgraded to 8.0.5: it is already running it,
+so there is no upgrade to pre-flight.          It was skipped; the rest of the sweep ran.
+```
+
+**Skipped, not refused.** One box too many in a selection of forty must not
+throw away the thirty-nine that were right — you would simply retick them and
+press the same button. The whole window is refused only when **nothing** in it
+moves, because then there is no sweep left to run:
+
+```
+Nothing was started: not one of the 1 selected appliance(s) would move
+forward to 8.0.5. Pick a later version, or select an appliance that is
+still behind it.
+```
+
+**Two sentences, because they are two mistakes.**
+
+| The box runs | You picked | What it says |
+|---|---|---|
+| 8.0.5 | 8.0.5 | *already running it, so there is no upgrade to pre-flight* — pick a later version, or untick the row. |
+| 8.0.6 | 8.0.5 | *it is already running 8.0.6, which is newer — that move is a **downgrade**, and the pre-upgrade reviews upgrades.* The version chosen for the **whole window** is behind something in it. |
+
+Telling the second story with the first one's words would send you to reread a
+selection that is not the mistake.
+
+**Nothing is stored for a skipped appliance.** A row written to say "this did
+not run" is still a row the citation picker offers and the Move column paints,
+and evidence for a move that never happened is the thing the destination
+column exists to prevent.
+
+The skip is counted **apart from a failure** — `3 clean, 0 ran but not clean,
+0 could not be pre-flighted. 1 skipped: already on 8.0.5 or past it.` — and
+the summary comes up amber, not green: a box that was skipped because it is
+already there had nothing go wrong with it, and folding the two together sends
+somebody to debug a healthy appliance.
+
+**Skipped only when the page can prove it.** An appliance of another product,
+one whose firmware could not be read, or a comparison
+(`firmware_versions.compare`) that refuses to decide — a line-only destination
+such as `8.0` against a box already on that line — is **swept**. Absence of
+evidence is not evidence of a no-op, and silently not running a box you ticked
+is unreportable.
+
+**The page says it before you press the button.** When a destination is
+selected, each held row carries the *same sentence* the sweep would flash
+back, beside the appliance name. The checkbox is deliberately **not** disabled:
+what the form posts stays yours, and the skip is enforced by the view whether
+or not that script ran.
 
 ### 40.1 The four stages
 
@@ -5377,3 +5616,38 @@ shape, the Device Console, HA failover from the device page, the WAF fleet
 inventory — is additive, and none of it would have justified a major on its
 own. The full list is in the [changelog](../CHANGELOG.md) (§31 reads it inside
 the product).
+
+
+### 41.8 API surface: what the destination build actually takes
+
+Two places now compare a configuration against the API of the firmware it is
+about to meet.
+
+**Cloning or migrating** (Workspace → Policies → the pre-flight checklist). A
+line reading `API surface: fortiweb15 (7.6.8) → fortiweb17 (8.0.5)` appears
+beside the other checks. It reports, per object that would actually be
+written:
+
+* fields the destination build has **no evidence for** — a cmdb write answers
+  **200 and discards them**, so the copy looks complete in the destination GUI
+  and is not;
+* object types the destination **does not serve at all** (this one blocks);
+* fields that exist on the destination and never existed on the source —
+  things to review *after* the copy;
+* everything that could **not** be measured, named rather than implied.
+
+**Before an upgrade** (Upgrade flow → pre-flight sweep, once a target version
+is picked). The same comparison, run against the appliance's **stored**
+configuration — offline, so it costs the appliance nothing and works on a box
+that is already unreachable. Its result is appended to the pre-flight summary
+and **does not** make the run "not clean": a field the new build drops is
+something to decide about, not a reason the window cannot open.
+
+**What it will honestly refuse to tell you.** FortiWeb has no schema endpoint
+(seven probe styles were measured answering 200 with an ordinary row list), so
+the fields of a version are knowable only from evidence harvested off a box
+running it — and a build whose collection is **empty** records no fields at
+all. Asking about a version nothing in the fleet runs answers `no evidence for
+that build`, never "compatible". In the current lab that is why
+`server_policy` compares as *fields never measured* against 8.0.5: the one
+8.0.5 appliance has no server policies on it.

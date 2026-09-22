@@ -15194,6 +15194,209 @@ returns three values, and two refusal messages name both object kinds. One is a
 source guard: no write path may address a device through an f-string again.</p>
 <p><strong>Still true and still required:</strong> a name that exists in neither collection is
 still refused, and a case-only difference is still a different object.</p>
+<h2 id="185-a-pre-flight-that-did-not-say-what-it-was-a-pre-flight-for-teststest_upgrade_flow_target_versionpy-2026-09-21">§185 — a pre-flight that did not say what it was a pre-flight FOR (<code>tests/test_upgrade_flow_target_version.py</code>, 2026-09-21)</h2>
+<p><code>UpgradePrep</code> recorded <code>firmware</code> — the version the appliance was <strong>running</strong>.
+Nothing recorded where it was <strong>going</strong>. The bulk upgrade flow therefore asked
+every question about a maintenance window except the one that defines it, and
+the gap was invisible in exactly the way that keeps a defect alive: every page
+rendered, every run was green, every document read correct.</p>
+<p>What it cost, measured rather than supposed:</p>
+<ol>
+<li><strong>The evidence could not name its own move.</strong> One green run was equally
+   valid proof for <code>7.6.8 → 8.0.5</code> and <code>7.6.8 → 8.0.6</code>.</li>
+<li><strong><code>upgrade_flow.change()</code> passed no <code>params</code> at all</strong>, so every change the
+   flow raised was born <code>params={}</code> — and <code>cr_orchestrator._dispatch_per_device</code>
+   already reads <code>params</code> to fill the <code>upgrade.finished</code> / <code>upgrade.failed</code>
+   webhooks. They went out naming no image, forever.</li>
+<li><strong>Scout could not be asked.</strong> <code>services.upgrade_scout</code> is offline — it reads
+   harvested vendor prose and contacts nothing — and was wired only to the
+   single appliance's page, because the bulk page had no target to hand it.</li>
+</ol>
+<h3 id="what-the-guards-fix-in-place">What the guards fix in place</h3>
+<ul>
+<li><strong>The column is NULL, never <code>''</code>.</strong> "Nobody said where this was going" (every
+  row written before the feature) and "we asked and got nothing back" must stay
+  distinguishable, and one value for both makes the history unreadable the
+  first time some later writer stores <code>''</code>. <code>record()</code> coerces blank to <code>None</code>;
+  <code>_ensure_columns</code> declares the column with <strong>no DEFAULT</strong>, and the guard
+  reads the <strong>source</strong> of that dict — by the time it is built, a duplicate key
+  has already collapsed silently.</li>
+<li><strong>The sweep REFUSES, in three distinct sentences.</strong> Absent, unparseable and
+  unknown-to-this-console are three different mistakes that send the operator
+  to three different places; one message for all three is the natural tidy-up
+  and is guarded against by name.</li>
+<li><strong>The destination is resolved against the rendered catalogue</strong>, not against a
+  regex. <code>9.9.9</code> parses perfectly and is still a version with no image, no
+  release notes and no verdict.</li>
+<li><strong>"No image uploaded" is stated, not enforced.</strong> Refusing it would push the
+  whole pre-flight to the last moment — the opposite of what a pre-flight is
+  for. An <strong>install</strong> image (<code>.zip</code>/<code>.qcow2</code>/<code>.ova</code>) is never reported as the
+  flashable artefact: the version still appears, it is simply not claimed.</li>
+<li><strong>Scout answers for the RUN, not for the select</strong>, and uses the firmware the
+  run observed rather than the inventory row, so old evidence is graded against
+  what was true when it was taken. An appliance with no recorded destination
+  gets <strong>no badge</strong> — <code>absent</code>, <code>unknown</code> and <code>clear</code> are three statements.</li>
+<li><strong>Memoised per <code>(kind, current, target)</code>.</strong> <code>release_corpus.load</code> re-reads and
+  re-filters the whole harvested JSON on every call; forty boxes on two
+  versions must cost two reads. Guarded by COUNTING the calls, because the slow
+  version is indistinguishable from the fast one on a two-device fixture.</li>
+<li><strong>The change derives its destination from its evidence, and cross-checks.</strong>
+  Two ticked runs swept towards different versions is refused (one change is
+  one move); a declaration that contradicts the runs it cites is refused naming
+  both. <code>target_version</code> is <strong>stripped out of <code>params</code></strong> and recomputed, for
+  the same reason <code>change_request_id</code> is — otherwise a caller posts straight
+  past both checks by hiding the value in the executor's bag.</li>
+<li><strong>Absent stays absent.</strong> A change citing no evidence and declaring nothing
+  records no destination and says so on the page. Inventing one puts a firmware
+  number on a document nobody chose it for.</li>
+</ul>
+<h3 id="the-trap-this-round-re-taught">The trap this round re-taught</h3>
+<p>The page is asked for <strong>by the server</strong> in the render guards, not only of
+<code>page_context</code>. <code>render_template</code> is called by splatting one dict here, but the
+sibling defect of 2026-09-18 — a resolver key that never reached the template
+because the view enumerated its kwargs — is why a context-level assertion is
+not evidence that anything is on screen.</p>
+<h2 id="186-forward-only-destinations-in-the-upgrade-flow">186. Forward-only destinations in the upgrade flow</h2>
+<p>The destination select offers only versions that are an upgrade for at least
+one appliance the page is rendering.</p>
+<ul>
+<li><strong><code>firmware_versions.compare(a, b)</code> is a separate function from <code>sort_key</code>,
+  and returns <code>None</code>.</strong> <code>sort_key</code> must be total, so it places a line-only
+  string (<code>8.0</code>) before every patch of its line. Read as an upgrade question
+  that ordering is a lie: <code>8.0</code> against a box on <code>8.0.3</code> could be <code>8.0.0</code> or
+  <code>8.0.9</code>. A filter that HIDES destinations must distinguish <em>provably not
+  newer</em> from <em>unknown</em>, because only the first is safe to hide. Guarded by a
+  test that asserts <code>sort_key</code> orders the pair and <code>compare</code> refuses to — the
+  one that bites when somebody rewrites <code>compare</code> as a <code>sort_key</code> comparison.</li>
+<li><strong>Numeric per component.</strong> <code>8.0.10</code> is newer than <code>8.0.9</code>; as text it is not.
+  Guarded with the string comparison asserted alongside, so the guard states
+  the bug it exists for.</li>
+<li><strong>Newer than at least ONE appliance, never than the highest.</strong> The lab has
+  {device}/16 on 7.6.8 and {device} on 8.0.5; the <em>highest</em> rule hides
+  8.0.5 and produces an empty select for a legal window. Guarded with all
+  three boxes present.</li>
+<li><strong>Compared per product.</strong> A FortiAuthenticator's version cannot hide a
+  FortiWeb destination. Guarded with a FAC on 9.9.9 next to a FortiWeb on
+  7.6.8: <code>comparable</code> must be 1.</li>
+<li><strong>Hidden only when provable.</strong> Undecidable comparisons and appliances with
+  no readable firmware keep the version on the list; a page with no comparable
+  appliance offers everything. A destination silently missing from a select is
+  unreportable.</li>
+<li><strong>One filter, two readers.</strong> The view computes <code>offerable</code>; the template
+  reads it and does not re-derive it, and <code>resolve_target</code> refuses the same
+  rows on POST. A filter written twice is a filter that stops agreeing with
+  itself.</li>
+<li><strong>A FOURTH refusal sentence, not a variant of the third.</strong> "This console has
+  never heard of 9.9.9" and "7.6.8 exists and every one of these boxes is past
+  it" send the operator to two different places, and answering the second with
+  the first sends them to declare a version that is already declared. Guarded
+  by asserting four distinct strings.</li>
+<li><strong>Known-but-not-offered is its own empty state</strong> on the form, distinct from
+  "this console knows of no firmware version for these products".</li>
+<li><strong>The re-proposal is filtered ONCE, at the option loop.</strong> The select is
+  re-proposed from the last sweep, and a version every remaining box has since
+  moved to must not come back <code>selected</code>. Adding <code>offerable</code> to the
+  <code>target_pick</code> membership check as well was tried and REMOVED: <code>target_pick</code>
+  has one consumer, the option loop, which already iterates the offered rows,
+  so the extra term changed no rendered byte. The mutation harness is what
+  found it — the guard written for it could not fail, because the behaviour
+  was already guaranteed elsewhere. A second author of "which versions are
+  offered" is the thing this whole feature is shaped to avoid.</li>
+</ul>
+<p>Verified live against the production database: the select drops 7.6.8 and
+labels 8.0.5 <code>moves 2/3 · {device} already there or ahead</code>, and all four
+refusals fire with four different sentences leaving <code>UpgradePrep.count()</code>
+unchanged.</p>
+<p><strong>Closed by §187</strong>, at the operator's instruction: the per-appliance case is
+now a skip with its own sentence, not a proposal.</p>
+<h2 id="187-the-destination-is-checked-per-appliance-and-a-held-box-says-why">187. The destination is checked per appliance, and a held box says why</h2>
+<p>§186 narrows the select against the whole <strong>page</strong>; the sweep runs against the
+<strong>ticked</strong> rows. Nothing made those two sets agree, and the gap needed no
+crafted request: tick only the box that is already on 8.0.5, sweep it towards
+8.0.5, and every window-level rule passes while the stored evidence declares
+the move <code>8.0.5 → 8.0.5</code>.</p>
+<p><code>upgrade_flow.classify_move()</code> is now the single authority for <em>what this
+version does to this appliance</em> — four outcomes (<code>up</code>, <code>same</code>, <code>behind</code>,
+<code>unknown</code>), not a boolean — and it has three readers that must never disagree:
+the select's filter (<code>forward_only</code>), the sweep's per-appliance skip
+(<code>sweep_split</code>) and the hint the page paints beside a row.</p>
+<ul>
+<li><strong>Skipped, not refused, while anything still moves.</strong> One extra tick in a
+  selection of forty must not discard the thirty-nine that were right. The
+  window is refused only when the whole selection is held — a summary reading
+  <em>"swept 0 appliance(s): 0 clean"</em> is not a refusal, it is a green-looking
+  report of a sweep that never happened. Both branches guarded, and both
+  assert <code>UpgradePrep.query.count()</code> did not move.</li>
+<li><strong>Nothing is stored for a held appliance.</strong> A "did not run" row is still a
+  row the citation picker offers and the Move column paints.</li>
+<li><strong><code>same</code> and <code>behind</code> do not share a sentence.</strong> "Already on 8.0.5" is fixed
+  by picking a later version or unticking the row; "on 8.0.6, you picked
+  8.0.5" means the destination chosen for the whole window is <strong>behind</strong>
+  something in it — a downgrade, which this pre-flight reviews nothing about.
+  Guarded by asserting the two strings differ and that the downgrade one names
+  the version the box is actually on.</li>
+<li><strong>One author for the sentence.</strong> <code>hold_reason()</code> writes it; the view flashes
+  it and the page renders it as server data (<code>holds</code>, keyed version → name).
+  Guarded by asserting the string the page carries is byte-identical to the
+  one the sweep produces. A hint written in the template and a refusal written
+  in the view are two authors of the same promise, and the template's copy is
+  the one nothing tests.</li>
+<li><strong>The checkbox is NOT disabled.</strong> Disabling it would drop the row from the
+  request and make the skip a client-side filter — which is exactly what the
+  server-side rule exists to be instead of. Guarded.</li>
+<li><strong>Held only when provable.</strong> Another product's numbering, unreadable
+  firmware and undecidable comparisons are all <strong>swept</strong>. Guarded per case.</li>
+<li><strong>The skip is counted apart from a failure</strong>, and a sweep that skipped
+  anything is not reported green. Guarded by reading the alert class around
+  the summary, not merely its text.</li>
+</ul>
+<p>19 guards, appended to <code>tests/test_upgrade_flow_target_version.py</code>. Verified
+live against the production database: <code>{device}</code> ticked alone towards 8.0.5
+is refused by name, with the reason, and <code>UpgradePrep.count()</code> stays at 2.</p>
+<h2 id="188-a-configuration-is-checked-against-the-api-of-the-build-it-lands-on">188 — A configuration is checked against the API of the build it lands on</h2>
+<p><strong>The defect class.</strong> A FortiWeb cmdb POST carrying a field the target build
+does not understand answers <strong>200 and discards it</strong>. Nothing raises, nothing
+logs, and the copy looks complete in the destination GUI. Until this round
+nothing in SATOM compared a payload against the firmware it was about to be
+written to: the clone pre-flight checked nine families and not one of them
+imported <code>api_matrix</code>, and the pre-upgrade took a backup without ever asking
+what the new build stops serving.</p>
+<p><strong>One engine, two surfaces.</strong> <code>services/version_compat</code> answers <em>"would this
+configuration survive a write to that build?"</em> and is consumed by both the
+clone/migrate pre-flight (family <code>apiver</code>, against the destination's EXACT
+running version) and the pre-upgrade (<code>prepare()["apisurface"]</code>, against the
+declared <code>target_version</code>). Two copies of this rule would start disagreeing
+about one appliance, and the disagreement would show as a green light on one
+page and a warning on the other.</p>
+<p><strong>Six verdicts, never a boolean.</strong> <code>same</code> · <code>ok</code> · <code>dropped</code> · <code>absent</code> ·
+<code>blind</code> · <code>unmeasured</code>. The last two are separate ignorances on purpose:
+<code>blind</code> still proves the object can exist on that build (the endpoint answered,
+its collection was empty), <code>unmeasured</code> proves nothing at all — so <code>unmeasured</code>
+outranks <code>blind</code> in the rollup.</p>
+<p><strong>Only <code>absent</code> blocks.</strong> That verdict is the appliance itself rejecting the
+URN. Everything else rests on a field census, and a hard block built on a
+census walls off legitimate clones the night a sweep runs thin.</p>
+<p><strong>Reported, never graded.</strong> <code>apisurface</code> does not change the pre-upgrade's
+clean/not-clean verdict — the same exemption the service-probe baseline
+already has. A field the new build drops is something to decide about, not a
+reason the window cannot open, and a red verdict trains people to re-run a
+pre-flight until it goes green.</p>
+<p><strong>An absent object is counted apart from dropped fields.</strong> It carries ZERO
+dropped fields, so a summary that only totals fields renders the whole loss as
+nothing. Measured on <code>{device}</code>: the 8.0.5 build does not serve
+<code>web_protection_profile</code> at all.</p>
+<p><strong>What is NOT compared is named.</strong> 188 of the registry's 513 logicals are
+<code>*_item</code> sub-tables no sweep reaches; they are listed as "outside the API
+sweep" and kept out of the verdict, because a family that answers <code>warn</code> on
+every single clone is one operators learn to click past.</p>
+<p><strong>One author of the field evidence.</strong> <code>api_matrix.known_fields(doc, key)</code> — the
+union of schema and sweep origins — is now read by both <code>_answer</code> and
+<code>version_compat</code>. It was inlined in <code>_answer</code> before.</p>
+<p><strong>Guards.</strong> <code>tests/test_version_compat.py</code> (31) +
+<code>tests/test_version_compat_surfaces.py</code> (16). <strong>33 mutations, 33 bite, 0
+survive, 0 void</strong>, control green before and after, harness run on a COPY of
+the tree (<code>/tmp/vcmut</code>) because the shared checkout carries ~45 files from
+other sessions.</p>
     </div>
   </div>
 </section>

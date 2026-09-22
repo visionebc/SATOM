@@ -61,6 +61,7 @@
     <aside class="toc">
       <div class="toc-title">On this page</div>
       <a href="#unreleased">[Unreleased]</a>
+      <a href="#210-2026-09-22">[2.1.0] - 2026-09-22</a>
       <a href="#200-2026-09-10">[2.0.0] - 2026-09-10</a>
       <a href="#1200-2026-08-24">[1.20.0] - 2026-08-24</a>
       <a href="#1190-2026-08-23">[1.19.0] - 2026-08-23</a>
@@ -107,6 +108,25 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h2 id="210-2026-09-22">[2.1.0] - 2026-09-22</h2>
+<h3 id="fixed-the-upgrade-flows-stage-2-posts-to-the-flow-again-and-a-refused-change-keeps-what-was-typed-2026-09-22">Fixed — the upgrade flow's stage 2 posts to the flow again, and a refused change keeps what was typed (2026-09-22)</h3>
+<p>The new-change form was split into a partial shared by
+<strong>Change requests → New</strong> and stage 2 of the <strong>Upgrade flow</strong>. Embedded in the
+flow it posted to the stand-alone handler and rendered every field empty, so:</p>
+<ul>
+<li>a refused change <strong>redirected and lost everything typed</strong> — title, reason,
+  rollback, owner, window, risk and approval mode;</li>
+<li>with scripting off <strong>no proposal was shown</strong>, so the wording set under
+  <strong>Administration → Change Types</strong> never reached the page;</li>
+<li>the <strong>"Or split the same selection into waves"</strong> block and the
+  <strong>Edit this wording</strong> link were gone, leaving the waves route unreachable.</li>
+</ul>
+<p>The partial now takes four opt-in values that the stand-alone page does not
+set (post target, extra hidden fields, server-side prefill, wording link). The
+flow posts to its own handler again, a refusal re-renders with the operator's
+text and the per-field <em>auto</em> marks intact, and the waves block is back inside
+stage 2. Stage 3 still opens only for the change the page was asked for
+(<code>?cr=</code>), so lifecycle buttons never sit over a change nobody named.</p>
 <h3 id="changed-evidence-is-indexed-by-firmware-build-and-three-pages-stopped-answering-about-a-firmware-nobody-chose-2026-09-16">Changed — evidence is indexed by firmware BUILD, and three pages stopped answering about a firmware nobody chose (2026-09-16)</h3>
 <p>Asked for as <em>"no vale la pena tenerlo ahí porque no sabremos por versión qué
 es… mejor es establecer con las versiones que tenemos"</em>, and then, precisely:

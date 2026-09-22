@@ -5442,6 +5442,258 @@ still finished holding a change document whose evidence covered one box.</p>
 <p><code>Upgrade Flow</code> (<code>/upgrade-flow</code>) is the staged front for the whole window. It
 needs the <strong>backup</strong> permission, because stage 1 takes a configuration backup
 of every device it touches.</p>
+<h3 id="400-where-the-window-is-going-the-one-question-the-flow-never-asked">40.0 Where the window is going — the one question the flow never asked</h3>
+<p>Until <strong>2026-09-21</strong> this page asked everything about a maintenance window
+except the thing that defines it. A pre-upgrade run recorded the version the
+appliance was <strong>running</strong>; nothing recorded the version it was <strong>going to</strong>.</p>
+<p>That is not a missing form field. It had three consequences:</p>
+<ul>
+<li>The same green pre-flight was equally valid evidence for <code>7.6.8 → 8.0.5</code> and
+  for <code>7.6.8 → 8.0.6</code>. Those are different moves, with different release notes
+  and different breaking changes, and a change request citing that run could
+  not state which of them it had been pre-flighted for.</li>
+<li>Stage 2 created the change with <strong>no executor parameters at all</strong>. The
+  <code>upgrade.finished</code> / <code>upgrade.failed</code> webhooks already read those parameters
+  to name the image, so they went out naming nothing — permanently.</li>
+<li><strong>Scout</strong> — the offline reviewer that reads harvested vendor release notes —
+  was wired to the single appliance's page only, because the bulk page had no
+  destination to give it. The page that plans sixty upgrades was the one page
+  that could not say what the vendor had written about them.</li>
+</ul>
+<p><strong>Stage 1 now asks first.</strong> <code>Upgrade to</code> is the first control in the card,
+above the backup/health/services options, and the sweep is <strong>refused</strong> without
+it:</p>
+<table>
+<thead>
+<tr>
+<th>You choose</th>
+<th>What happens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>nothing</td>
+<td>Refused. Nothing is swept, nothing is stored. "Upgrade to the newest one we know about" is a decision, and a page that makes it silently writes a destination onto forty pieces of evidence nobody chose.</td>
+</tr>
+<tr>
+<td><code>latest</code>, or anything that is not a version</td>
+<td>Refused, with its own message.</td>
+</tr>
+<tr>
+<td>a version this console has never heard of</td>
+<td>Refused, with its own message — and it names where to declare it. <code>9.9.9</code> parses perfectly and is still a destination with no image, no release notes and no verdict.</td>
+</tr>
+<tr>
+<td>a version in the catalogue</td>
+<td>Swept, and <strong>stored on every run</strong>.</td>
+</tr>
+</tbody>
+</table>
+<p>The three refusals are deliberately <strong>three different sentences</strong>: they send
+you to three different places.</p>
+<p><strong>Where the list comes from.</strong> The same catalogue the <em>Firmware → API versions</em>
+page shows — uploaded images, versions running in the fleet, and versions
+declared by hand. Nothing is re-listed here, so a release you declare there
+appears here without a code change.</p>
+<p>Two distinctions the list preserves:</p>
+<ul>
+<li><strong>"No image uploaded" is said, not refused.</strong> Pre-flighting a window before
+  the <code>.out</code> lands is ordinary; blocking it would push the entire pre-flight to
+  the last moment, which is the opposite of what a pre-flight is for. An image
+  is required to <em>execute</em> a window, not to <em>prepare</em> one.</li>
+<li><strong>An install image is not an upgrade image.</strong> A <code>.zip</code>/<code>.qcow2</code>/<code>.ova</code> builds
+  a machine from nothing. The version still appears; it is simply not reported
+  as "the image for it is here".</li>
+<li><strong>A line is not its <code>.0</code> patch.</strong> <code>8.0</code> is offered under its own group,
+  <em>Line only — no patch level declared</em>, so nobody picks one believing they
+  named a flashable build.</li>
+</ul>
+<h3 id="400b-the-move-column-and-scout-per-appliance">40.0b The Move column, and Scout per appliance</h3>
+<p>Stage 1's table gained a <strong>Move</strong> column: <code>7.6.8 → 8.0.5</code> for each appliance,
+read off <strong>its own newest run</strong> — never off the select above. Painting the
+select there would show forty boxes as reviewed for a move none of them has
+been pre-flighted for yet.</p>
+<p>Under it sits <strong>Scout's verdict for that move</strong>: <code>blocker</code>, <code>caution</code>, <code>clear</code>,
+<code>unknown</code>, or <code>unavailable</code>. The last two are not the same thing and are never
+merged — <code>unknown</code> means Scout read the notes and found nothing about this
+move; <code>unavailable</code> means it never got to read them, and it can never spell
+itself <code>clear</code>. Hops with no harvested notes are counted out loud, because a
+verdict computed over a ladder with holes in it is not the same claim as one
+computed over a complete one.</p>
+<p>An appliance whose newest run declared <strong>no</strong> destination gets <strong>no badge</strong> and
+reads <em>no destination recorded</em>. Absent is absent: it is a different statement
+from <code>unknown</code> and from <code>clear</code>.</p>
+<p>The verdict is computed <strong>when the page is drawn</strong>, not frozen onto the run.
+Scout reads vendor prose, so a corpus that gains the 8.0.5 page tonight changes
+this badge tomorrow without anybody re-running a sweep against forty live
+appliances. The pre-flight measures the <strong>box</strong>; Scout reads the <strong>notes</strong>.</p>
+<h3 id="400c-how-the-destination-reaches-the-change">40.0c How the destination reaches the change</h3>
+<p>It rides on the <strong>evidence</strong>, not on a hidden form field. Each run stores the
+version it was swept towards; the change derives its destination from the runs
+it cites, and stores it in the change's executor parameters — which is what the
+upgrade webhooks read.</p>
+<p>Two refusals protect that:</p>
+<table>
+<thead>
+<tr>
+<th>Situation</th>
+<th>What happens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>The ticked runs were swept towards <strong>two different versions</strong></td>
+<td><strong>Refused.</strong> One change request is one move. Raise one per destination.</td>
+</tr>
+<tr>
+<td>The change <strong>declares</strong> 8.0.6 but its evidence was swept towards 8.0.5</td>
+<td><strong>Refused</strong>, naming both. A document whose prerequisites section proves the wrong move reads exactly like a correct one.</td>
+</tr>
+</tbody>
+</table>
+<p>Stage 2's header states the destination the ticked evidence implies <strong>before</strong>
+you fill the form in — including <em>Two destinations ticked</em>, so a split window
+is read at the start instead of at submit time — and counts the appliances that
+cite no destination at all. Stage 3's header states what was actually stored on
+the change, read back from the change itself.</p>
+<p>A change citing no evidence and declaring nothing <strong>records no destination</strong>,
+and says so. Inventing one would put a firmware number on a document nobody
+chose it for.</p>
+<p><strong>What this does not yet do:</strong> it does not resolve the destination to a
+specific image file per appliance (hardware vs VM), and the <code>image</code> field of
+the upgrade webhooks is still empty. That is stage 4's question, not stage 1's.</p>
+<h3 id="400d-only-forward-moves-are-offered">40.0d Only forward moves are offered</h3>
+<p>The list is narrowed to versions that are an <strong>upgrade for at least one
+appliance on the page</strong>. A release every box has already passed is not a
+maintenance window, and offering it is how one gets planned.</p>
+<p>"Newer than the version the system is running" has no single referent here,
+because a page lists boxes on different firmware — the lab is exactly that
+case: <code>{device}</code> and <code>{device}</code> run 7.6.8, <code>{device}</code> runs 8.0.5.
+Narrowing to <em>newer than the highest</em> would hide <strong>8.0.5</strong>, the move two of
+the three are waiting for, and leave an empty select in front of a perfectly
+legal window. So the rule is <em>newer than at least one</em>, and each option says
+what it would do:</p>
+<pre><code>8.0.6 · image uploaded · moves 3/3
+8.0.5 · image uploaded · already in the fleet · moves 2/3 · {device} already there or ahead
+</code></pre>
+<p>The page narrows the choice; it does not make it. You can still sweep a window
+that leaves one box untouched — you just read that before you run it instead
+of afterwards from the evidence.</p>
+<p><strong>A version is removed only when the page can SHOW it is not an upgrade.</strong>
+A destination missing from a select is unreportable: nobody can ask why the
+version they came for is not there. So anything undecidable stays on the list:</p>
+<table>
+<thead>
+<tr>
+<th>Case</th>
+<th>Offered?</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>7.6.8, and every box is on 7.6.8 or later</td>
+<td><strong>No</strong></td>
+<td>Provably not an upgrade for anybody.</td>
+</tr>
+<tr>
+<td>8.0.5, boxes on 7.6.8 and on 8.0.5</td>
+<td><strong>Yes</strong></td>
+<td>It moves two of them. Says <code>moves 2/3</code>.</td>
+</tr>
+<tr>
+<td><code>8.0</code> (line only) against a box on 8.0.3</td>
+<td><strong>Yes</strong></td>
+<td>A line is not a patch. It could be 8.0.0 or 8.0.9 — unknown is not "older".</td>
+</tr>
+<tr>
+<td>A FortiWeb version, with a FortiAuthenticator on 8.0.9 on screen</td>
+<td><strong>Yes</strong></td>
+<td>Compared per product. Two vendors' counters that share digits are not the same axis.</td>
+</tr>
+<tr>
+<td>Any version, when the page lists no comparable appliance</td>
+<td><strong>Yes</strong></td>
+<td>Nothing to compare against proves nothing.</td>
+</tr>
+</tbody>
+</table>
+<p>Comparison is numeric, per component: <strong>8.0.10 is newer than 8.0.9</strong>, which is
+the release the one-line string comparison gets wrong.</p>
+<p>If the console knows versions but <strong>none</strong> of them is an upgrade for anything
+on screen, the form says so and names the count — a different message from
+"this console knows of no firmware version", which would send you to declare a
+version that is already declared.</p>
+<p>The same rule applies on POST, from the view, not from the template: a crafted
+form naming a version the page hides is refused with its own sentence —
+<em>"7.6.8 would not move any of these appliances forward — {device},
+{device}, {device} are already running it or something newer"</em> — and
+nothing is started.</p>
+<h3 id="400e-an-appliance-the-destination-cannot-move-is-skipped-and-says-why">40.0e An appliance the destination cannot move is skipped, and says why</h3>
+<p>The filter above is <strong>page-wide</strong>; the sweep runs against the rows you
+<strong>ticked</strong>. Those two sets are not the same, and the gap is reachable with no
+crafted request at all: on a page holding <code>{device}</code>/<code>{device}</code> on 7.6.8
+and <code>{device}</code> on 8.0.5, the select offers 8.0.5 correctly (it moves two of
+three) — untick the first two, sweep <code>{device}</code> towards the version it is
+already running, and every window-level rule passes while what gets stored is
+evidence whose declared move is <code>8.0.5 → 8.0.5</code>.</p>
+<p>So the destination is now checked <strong>per appliance</strong>, and an appliance it
+cannot move is <strong>skipped</strong> with its own sentence:</p>
+<pre><code>{device} cannot be upgraded to 8.0.5: it is already running it,
+so there is no upgrade to pre-flight.          It was skipped; the rest of the sweep ran.
+</code></pre>
+<p><strong>Skipped, not refused.</strong> One box too many in a selection of forty must not
+throw away the thirty-nine that were right — you would simply retick them and
+press the same button. The whole window is refused only when <strong>nothing</strong> in it
+moves, because then there is no sweep left to run:</p>
+<pre><code>Nothing was started: not one of the 1 selected appliance(s) would move
+forward to 8.0.5. Pick a later version, or select an appliance that is
+still behind it.
+</code></pre>
+<p><strong>Two sentences, because they are two mistakes.</strong></p>
+<table>
+<thead>
+<tr>
+<th>The box runs</th>
+<th>You picked</th>
+<th>What it says</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>8.0.5</td>
+<td>8.0.5</td>
+<td><em>already running it, so there is no upgrade to pre-flight</em> — pick a later version, or untick the row.</td>
+</tr>
+<tr>
+<td>8.0.6</td>
+<td>8.0.5</td>
+<td><em>it is already running 8.0.6, which is newer — that move is a </em><em>downgrade</em><em>, and the pre-upgrade reviews upgrades.</em> The version chosen for the <strong>whole window</strong> is behind something in it.</td>
+</tr>
+</tbody>
+</table>
+<p>Telling the second story with the first one's words would send you to reread a
+selection that is not the mistake.</p>
+<p><strong>Nothing is stored for a skipped appliance.</strong> A row written to say "this did
+not run" is still a row the citation picker offers and the Move column paints,
+and evidence for a move that never happened is the thing the destination
+column exists to prevent.</p>
+<p>The skip is counted <strong>apart from a failure</strong> — <code>3 clean, 0 ran but not clean,
+0 could not be pre-flighted. 1 skipped: already on 8.0.5 or past it.</code> — and
+the summary comes up amber, not green: a box that was skipped because it is
+already there had nothing go wrong with it, and folding the two together sends
+somebody to debug a healthy appliance.</p>
+<p><strong>Skipped only when the page can prove it.</strong> An appliance of another product,
+one whose firmware could not be read, or a comparison
+(<code>firmware_versions.compare</code>) that refuses to decide — a line-only destination
+such as <code>8.0</code> against a box already on that line — is <strong>swept</strong>. Absence of
+evidence is not evidence of a no-op, and silently not running a box you ticked
+is unreportable.</p>
+<p><strong>The page says it before you press the button.</strong> When a destination is
+selected, each held row carries the <em>same sentence</em> the sweep would flash
+back, beside the appliance name. The checkbox is deliberately <strong>not</strong> disabled:
+what the form posts stays yours, and the skip is enforced by the view whether
+or not that script ran.</p>
 <h3 id="401-the-four-stages">40.1 The four stages</h3>
 <table>
 <thead>
@@ -6263,6 +6515,36 @@ shape, the Device Console, HA failover from the device page, the WAF fleet
 inventory — is additive, and none of it would have justified a major on its
 own. The full list is in the <a href="changelog.html">changelog</a> (§31 reads it inside
 the product).</p>
+<h3 id="418-api-surface-what-the-destination-build-actually-takes">41.8 API surface: what the destination build actually takes</h3>
+<p>Two places now compare a configuration against the API of the firmware it is
+about to meet.</p>
+<p><strong>Cloning or migrating</strong> (Workspace → Policies → the pre-flight checklist). A
+line reading <code>API surface: {device} (7.6.8) → {device} (8.0.5)</code> appears
+beside the other checks. It reports, per object that would actually be
+written:</p>
+<ul>
+<li>fields the destination build has <strong>no evidence for</strong> — a cmdb write answers
+  <strong>200 and discards them</strong>, so the copy looks complete in the destination GUI
+  and is not;</li>
+<li>object types the destination <strong>does not serve at all</strong> (this one blocks);</li>
+<li>fields that exist on the destination and never existed on the source —
+  things to review <em>after</em> the copy;</li>
+<li>everything that could <strong>not</strong> be measured, named rather than implied.</li>
+</ul>
+<p><strong>Before an upgrade</strong> (Upgrade flow → pre-flight sweep, once a target version
+is picked). The same comparison, run against the appliance's <strong>stored</strong>
+configuration — offline, so it costs the appliance nothing and works on a box
+that is already unreachable. Its result is appended to the pre-flight summary
+and <strong>does not</strong> make the run "not clean": a field the new build drops is
+something to decide about, not a reason the window cannot open.</p>
+<p><strong>What it will honestly refuse to tell you.</strong> FortiWeb has no schema endpoint
+(seven probe styles were measured answering 200 with an ordinary row list), so
+the fields of a version are knowable only from evidence harvested off a box
+running it — and a build whose collection is <strong>empty</strong> records no fields at
+all. Asking about a version nothing in the fleet runs answers <code>no evidence for
+that build</code>, never "compatible". In the current lab that is why
+<code>server_policy</code> compares as <em>fields never measured</em> against 8.0.5: the one
+8.0.5 appliance has no server policies on it.</p>
     </div>
   </div>
 </section>

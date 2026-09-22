@@ -6,6 +6,28 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-09-22
+
+### Fixed — the upgrade flow's stage 2 posts to the flow again, and a refused change keeps what was typed (2026-09-22)
+
+The new-change form was split into a partial shared by
+**Change requests → New** and stage 2 of the **Upgrade flow**. Embedded in the
+flow it posted to the stand-alone handler and rendered every field empty, so:
+
+* a refused change **redirected and lost everything typed** — title, reason,
+  rollback, owner, window, risk and approval mode;
+* with scripting off **no proposal was shown**, so the wording set under
+  **Administration → Change Types** never reached the page;
+* the **"Or split the same selection into waves"** block and the
+  **Edit this wording** link were gone, leaving the waves route unreachable.
+
+The partial now takes four opt-in values that the stand-alone page does not
+set (post target, extra hidden fields, server-side prefill, wording link). The
+flow posts to its own handler again, a refusal re-renders with the operator's
+text and the per-field *auto* marks intact, and the waves block is back inside
+stage 2. Stage 3 still opens only for the change the page was asked for
+(`?cr=`), so lifecycle buttons never sit over a change nobody named.
+
 ### Changed — evidence is indexed by firmware BUILD, and three pages stopped answering about a firmware nobody chose (2026-09-16)
 
 Asked for as *"no vale la pena tenerlo ahí porque no sabremos por versión qué

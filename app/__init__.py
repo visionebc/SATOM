@@ -1756,6 +1756,16 @@ def create_app(config_override: object | None = None) -> Flask:
                 ('capabilities', "TEXT DEFAULT '[]'"),
                 ('app_ids', "TEXT DEFAULT '[]'"),
             ],
+            # --- the version a pre-flight was run TOWARDS (2026-09-21) ---
+            # NULLABLE, NO DEFAULT, NO BACKFILL. A run stored before this
+            # column was taken without anybody declaring a destination, and a
+            # DEFAULT '' would be indistinguishable from the value a future
+            # writer stores for "asked and answered nothing" -- two different
+            # facts under one value, which is the attestation lie the
+            # 'appliances' entry above refuses to tell about firmware.
+            'upgrade_prep': [
+                ('target_version', 'VARCHAR(32)'),
+            ],
             # Change-request end-of-window notification (2026-08-09). NULLABLE
             # with no default: a CR created before the feature reads as "never
             # notified" rather than claiming a send that never happened.

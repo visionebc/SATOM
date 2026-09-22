@@ -101,6 +101,45 @@ def sort_key(version: str):
     return tuple(parts[:3])
 
 
+def compare(a, b):
+    """``1`` if ``a`` is newer than ``b``, ``-1`` older, ``0`` the same build,
+    and **None when the pair cannot be decided**.
+
+    ``None`` is an answer, not a failure, and it is why this exists beside
+    :func:`sort_key` instead of being spelled ``sort_key(a) > sort_key(b)``.
+    Sorting has to be total, so a line-only string is placed before every
+    patch of its line and ``8.0`` sorts under ``8.0.3``. Read as an UPGRADE
+    question that ordering is a LIE: ``8.0`` means *"the 8.0 line, patch
+    unrecorded"* (RULE 1), and against a box on ``8.0.3`` it could turn out to
+    be ``8.0.0`` — a downgrade — or ``8.0.9``. A caller that HIDES
+    destinations has to be able to tell *provably not newer* from *unknown*,
+    because only the first is safe to hide.
+
+    Across different lines the line decides and no patch is needed: ``8.0`` is
+    newer than every ``7.6.x`` whatever its patch turns out to be.
+
+    Nothing here compares across PRODUCTS. FortiAuthenticator 8.0.3 and
+    FortiWeb 8.0.5 are two vendors' counters that happen to share digits.
+    Keeping products apart is the caller's job and it is deliberately not
+    defaulted here, because a default would be silent.
+    """
+    va, vb = normalize(a), normalize(b)
+    if not va or not vb:
+        return None
+    la, lb = line_of(va), line_of(vb)
+    if la != lb:
+        ka = tuple(int(p) for p in la.split("."))
+        kb = tuple(int(p) for p in lb.split("."))
+        return 1 if ka > kb else -1
+    oa, ob = is_line_only(va), is_line_only(vb)
+    if oa and ob:
+        return 0
+    if oa or ob:
+        return None
+    pa, pb = int(va.split(".")[2]), int(vb.split(".")[2])
+    return (pa > pb) - (pa < pb)
+
+
 # ---------------------------------------------------------------------------
 # the manual table (authored declarations only — see RULE 3)
 # ---------------------------------------------------------------------------

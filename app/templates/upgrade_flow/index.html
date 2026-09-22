@@ -71,6 +71,88 @@
           {{ _('It runs against:') }} <span class="is-mono">{{ kinds|join(', ') or '—' }}</span>
         </p>
       {% else %}
+      {#
+        WHERE this window is going. First control in the stage, above the
+        options, because it is the only one with no usable default: the other
+        three answer "what shall we measure", this one answers "evidence for
+        WHAT". A pre-flight with no destination is a green run that can be
+        cited as proof of any upgrade at all, including the one nobody read
+        the release notes for.
+
+        ONE per window, not per appliance. A maintenance window IS a version
+        move; asking per row would let one window store two destinations, and
+        the change raised from it could then only name one of them.
+      #}
+      <div class="row g-3 mb-3">
+        <div class="col-md-5">
+          <label class="fw-form-label" for="uf-target">
+            {{ _('Upgrade to') }} <span class="text-danger">*</span>
+          </label>
+          <select class="form-select" name="target_version" id="uf-target" required>
+            <option value="">{{ _('— choose the destination version —') }}</option>
+            {#
+              FORWARD MOVES ONLY. A destination that would leave every
+              appliance on this page where it is (or move it back) is not
+              an upgrade window, and offering it is how one gets planned.
+              Narrowed in the view, not here: resolve_target refuses the
+              same rows on POST, and a filter written twice is a filter
+              that stops agreeing with itself.
+            #}
+            {% set offered = targets|selectattr('offerable')|list %}
+            {% set patched = offered|rejectattr('line_only')|list %}
+            {% set lines = offered|selectattr('line_only')|list %}
+            {% for t in patched %}
+            <option value="{{ t.version }}"{% if target_pick == t.version %} selected{% endif %}>
+              {{ t.version }}{% if t.has_image %} · {{ _('image uploaded') }}{% else %} · {{ _('no image uploaded') }}{% endif %}{% if t.in_fleet %} · {{ _('already in the fleet') }}{% endif %}{% if t.upgrades %} · {{ _('moves') }} {{ t.upgrades|length }}/{{ t.comparable }}{% endif %}{% if t.at_or_above %} · {{ t.at_or_above|join(', ') }} {{ _('already there or ahead') }}{% endif %}
+            </option>
+            {% endfor %}
+            {% if lines %}
+            {#
+              A line ("8.0") is NOT its .0 patch, and firmware_versions keeps
+              them apart on purpose. Offered, because declaring the intent
+              before the patch level is known is legitimate and is exactly what
+              API versions is for — but in their own group, so nobody picks one
+              believing they named a flashable build.
+            #}
+            <optgroup label="{{ _('Line only — no patch level declared') }}">
+              {% for t in lines %}
+              <option value="{{ t.version }}"{% if target_pick == t.version %} selected{% endif %}>{{ t.version }}</option>
+              {% endfor %}
+            </optgroup>
+            {% endif %}
+          </select>
+          <div class="form-text">
+            {% if offered %}
+              {{ _('Only versions newer than at least one appliance below are listed. Stored on every run this sweep records, so the evidence says which move it is evidence for. Versions come from Firmware → API versions: uploaded images, versions running in the fleet, and versions declared by hand.') }}
+            {% elif targets %}
+              {#
+                KNOWN but not OFFERED is its own state, and reporting it as
+                the empty one below would send an operator to declare
+                versions that are already declared.
+              #}
+              <span class="text-danger">{{ _('This console knows of %(n)d firmware version(s) for these products, and none of them is newer than what any appliance below is running — so there is no upgrade to pre-flight. Declare or upload a later release under Firmware → API versions.', n=targets|length) }}</span>
+            {% else %}
+              {#
+                An empty list is a REPORTED state, not a blank control: the
+                sweep cannot run, and the operator has to be told where to go
+                and not left wondering why the button refuses.
+              #}
+              <span class="text-danger">{{ _('This console knows of no firmware version for these products yet, so no sweep can be run. Upload an image or declare the version under Firmware → API versions.') }}</span>
+            {% endif %}
+          </div>
+        </div>
+        <div class="col-md-7 d-flex align-items-end">
+          <div class="text-muted small">
+            {#
+              "no image uploaded" is NOT a refusal. Pre-flighting a window
+              before the .out lands is ordinary, and blocking it would push the
+              whole pre-flight to the last moment — which is the opposite of
+              what a pre-flight is for. It is SAID, and the operator decides.
+            #}
+            {{ _('An image is not required to pre-flight: you may prepare a window before the .out has been uploaded. It is required to execute one.') }}
+          </div>
+        </div>
+      </div>
       <div class="d-flex gap-3 flex-wrap mb-3">
         <label class="form-check"><input class="form-check-input" type="checkbox" name="backup" value="1" checked> <span class="form-check-label">{{ _('Config backup') }}</span></label>
         <label class="form-check"><input class="form-check-input" type="checkbox" name="health" value="1" checked> <span class="form-check-label">{{ _('Health battery (SSH)') }}</span></label>
@@ -83,6 +165,7 @@
             <th>{{ _('Appliance') }}</th>
             <th>{{ _('Product') }}</th>
             <th>{{ _('Latest pre-upgrade') }}</th>
+            <th>{{ _('Move') }}</th>
             <th>{{ _('Evidence this change cites') }}</th>
           </tr></thead>
           <tbody>
@@ -93,7 +176,15 @@
                          data-name="{{ d.name }}"
                          {% if d.id in ticked %}checked{% endif %}></td>
               <td><a href="{{ url_for('appliances.detail', id=d.id) }}">{{ d.name }}</a>
-                  <div class="text-muted small is-mono">{{ d.host }}</div></td>
+                  <div class="text-muted small is-mono">{{ d.host }}</div>
+                  {#
+                    Filled in from the server's own sentences when the chosen
+                    destination cannot move this box. The checkbox beside it
+                    is deliberately NOT disabled: what the form posts stays
+                    the operator's, and the sweep skips held rows server-side
+                    whether or not this script ran.
+                  #}
+                  <div class="uf-hold text-danger small mt-1 d-none"></div></td>
               <td><span class="fw-badge fw-badge-secondary">{{ d.kind }}</span></td>
               <td>
                 {% if p %}
@@ -103,6 +194,61 @@
                   {# "never" and "failed" are opposite statements; this page must
                      not let one read as the other. #}
                   <span class="text-muted">{{ _('never run') }}</span>
+                {% endif %}
+              </td>
+              {#
+                current -> target, and what Scout read about that move. BOTH
+                halves come off the RUN, never off the select above: the
+                select is what the next sweep will store, and painting it here
+                would show forty boxes as reviewed for a move none of them has
+                been pre-flighted for yet.
+              #}
+              <td>
+                {% set sc = scout.get(d.id) %}
+                {% if p and p.target_version %}
+                  <span class="is-mono">{{ p.firmware or d.firmware or '?' }}</span>
+                  <i class="bi bi-arrow-right mx-1 text-muted"></i>
+                  <span class="is-mono"><strong>{{ p.target_version }}</strong></span>
+                  {% if sc %}
+                  <div class="mt-1">
+                    {#
+                      Five verdicts, five badges, and 'unavailable' is NOT
+                      folded into 'unknown': one means Scout read the notes and
+                      found nothing about this move, the other means it never
+                      got to read them. Colours from the .fw-badge-* set, which
+                      is calibrated against white — a dark-theme pastel lands
+                      at ~1.4:1 here and produces a badge saying 'blocker' that
+                      nobody can read.
+                    #}
+                    {% set badge = {'blocker': 'fw-badge-danger',
+                                    'caution': 'fw-badge-warning',
+                                    'clear': 'fw-badge-success',
+                                    'unknown': 'fw-badge-info',
+                                    'unavailable': 'fw-badge-secondary'} %}
+                    <span class="fw-badge {{ badge.get(sc.verdict, 'fw-badge-secondary') }}"
+                          title="{{ sc.reason or _('Scout read the release notes for this move.') }}">
+                      {{ _('Scout') }}: {{ sc.verdict }}</span>
+                    {% if sc.counts and (sc.counts.blocker or sc.counts.caution) %}
+                    <span class="text-muted small ms-1">
+                      {{ sc.counts.blocker or 0 }} {{ _('blocking') }} ·
+                      {{ sc.counts.caution or 0 }} {{ _('caution') }}</span>
+                    {% endif %}
+                    {% if sc.gaps %}
+                    {#
+                      A hop with no harvested page is stated, because a verdict
+                      computed over a ladder with holes in it is not the same
+                      claim as one computed over a complete one.
+                    #}
+                    <div class="text-muted small">{{ sc.gaps }} {{ _('hop(s) with no harvested notes') }}</div>
+                    {% endif %}
+                  </div>
+                  {% endif %}
+                {% elif p %}
+                  {# A run that predates the destination column, or one stored
+                     before it was asked for. NOT rendered as a version. #}
+                  <span class="text-muted small">{{ _('no destination recorded') }}</span>
+                {% else %}
+                  <span class="text-muted">—</span>
                 {% endif %}
               </td>
               <td>
@@ -217,71 +363,74 @@
   <input type="hidden" name="approval_mode" id="uf-w-approval" value="manual">
 </form>
 
-{# --------------------------------------- stage 2 — the change, rendered WHOLE #}
-{#
-  ONE stage, one number. What this stage produces is a change request, so this
-  is where the change request LIVES: the picker below opens any change this
-  flow has raised, and it renders here exactly as /web/change-requests/<id>
-  renders it -- same action bar, same document, same frozen inventory, same
-  exports -- from the one builder and the one partial both pages share.
-
-  This stage shows ONE change: the newest this flow raised, whole. ?cr=<id>
-  still opens a specific one for a hand-off link, but there is no control on
-  the page that switches or closes it -- the list of raised changes was removed
-  on request, and the closed state it used to write went with it, so no URL
-  leaves this stage as a bare form while a change exists. Those
-  blocks carry Approve, Schedule, Mark notified and Cancel, so the header of
-  every one of them names the ref, title and status of the change it acts on.
-#}
+{# ------------------------------------------------------------- stage 2 #}
+{# Stage 2 IS the new-change-request page. The same partial that page renders,
+   included here, so raising the change never leaves this screen. It carries
+   its own <form id="cr-form"> and therefore sits OUTSIDE the uf-waves and
+   uf-cr form elements -- a <form> inside a <form> is invalid HTML the browser
+   silently unnests, and the buttons would post the wrong thing while the page
+   looked right. #}
 <div class="fw-card mb-3" id="uf-cr-section">
   <div class="fw-card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
-    <span><span class="fw-badge fw-badge-secondary me-2">2</span><strong>{{ _('Change request (CRQ)') }}</strong></span>
-    <span class="text-muted small">{{ _('Raised, read, approved, scheduled, notified and exported here — the change page itself, inline.') }}</span>
-  </div>
-  <div class="fw-card-body">
-    {% if not flow_changes %}
-    <p class="text-muted small mb-0">
-      {{ _('No change has been raised from this flow yet. Fill in the card below; the change it raises opens here, whole — approve, schedule, notify and export it without leaving this page.') }}
-    </p>
+    <span><span class="fw-badge fw-badge-secondary me-2">2</span><strong>{{ _('Change request (CRQ)') }}</strong>
+      {#
+        WHAT MOVE this change is. Read off the runs ticked in step 1 — the
+        same value create_change_request derives and would refuse over — and
+        rendered here rather than only at submit time, so a split window is
+        read before the form is filled in and not after it is rejected.
+        Server-rendered: with scripting off this line is still the truth about
+        what was ticked when the page was drawn.
+      #}
+      {% if cited_target.split %}
+      <span class="fw-badge fw-badge-danger ms-2"
+            title="{{ _('One change request is one move.') }}">
+        <i class="bi bi-exclamation-triangle-fill me-1"></i>{{ _('Two destinations ticked:') }}
+        {{ cited_target.versions|join(', ') }}</span>
+      {% elif cited_target.one %}
+      <span class="fw-badge fw-badge-info ms-2">{{ _('Upgrade to') }} {{ cited_target.one }}</span>
+      {% endif %}
+      {% if cited_target.uncited %}
+      {# Appliances in the change whose evidence declares nothing. Named as a
+         count, because "the change is for 8.0.5" over four boxes nobody
+         pre-flighted towards it is the half-truth this column exists to
+         remove. #}
+      <span class="text-muted small ms-2">
+        {{ cited_target.uncited }} {{ _('appliance(s) cite no destination') }}</span>
+      {% endif %}
+    </span>
+    {% if created_view %}
+    <span class="fw-badge fw-badge-secondary" id="uf-cr-locked-badge">
+      <i class="bi bi-lock-fill me-1"></i>{{ _('Raised as') }} {{ created_view.cr.ref }}
+    </span>
     {% endif %}
-{% if created %}
-{#
-  The change this flow raised, shown here in full: the same action bar,
-  overview, change document, frozen affected-service inventory with its
-  exports, external change record, timeline and maintenance notice that
-  /web/change-requests/<id> shows — from the ONE builder both pages call
-  (change_requests.cr_view_context) and the ONE partial both pages include.
-  Citing it with a link and nothing else was still a trip to another screen to
-  approve it, schedule it, mark it notified or export its inventory.
-
-  OUTSIDE the stage-2 <form>, deliberately: those blocks carry forms of their
-  own, and a <form> nested in a <form> is invalid HTML the browser silently
-  unnests — the buttons would post the wrong thing, or nothing at all.
-#}
-    <hr class="my-3">
-    <div class="fw-alert fw-alert-success d-flex flex-wrap justify-content-between align-items-center gap-2 mb-0">
-      <span>
-        <i class="bi bi-clipboard2-check me-1"></i>
-        <strong class="is-mono">{{ created.ref or '#' ~ created.id }}</strong>
-        <span class="ms-1">{{ created.title }}</span>
-        <span class="fw-badge fw-badge-secondary ms-2">{{ created.status }}</span>
-      </span>
-      <span class="d-flex flex-wrap gap-2">
-        <a class="btn btn-sm fw-btn-secondary" href="{{ url_for('change_requests.detail', id=created.id, _adom=product.key) }}">
-          <i class="bi bi-file-earmark-text me-1"></i>{{ _('Open its own page') }}</a>
-        <a class="btn btn-sm fw-btn-secondary" href="{{ url_for('upgrade_flow.progress', cr_id=created.id) }}">
-          <i class="bi bi-activity me-1"></i>{{ _('Execution') }}</a>
-      </span>
-    </div>
-{% endif %}
   </div>
+{#
+  Once the change is raised this stage is DONE, so it folds and stops taking
+  input. An editable form left sitting above the change it produced offers an
+  edit that goes nowhere: submitting it again raises a SECOND change request,
+  it does not amend the first. Folded with <details> rather than removed, so
+  what was submitted stays readable, and made inert with a <fieldset disabled>
+  rather than by hiding -- a form that still posts while it looks finished is
+  the worse half of both. The badge above names the change it produced,
+  because "locked" without a reason reads as a fault.
+#}
+{% if created_view %}<details class="uf-cr-done"><summary class="uf-cr-summary">{{ _('Show what was submitted (read-only)') }}</summary>{% endif %}
+  <div class="fw-card-body">
+{% if created_view %}<fieldset disabled class="uf-cr-locked">{% endif %}
+{% include 'change_requests/_new_form.html' %}
+{% if created_view %}</fieldset>{% endif %}
+  </div>
+{% if created_view %}</details>{% endif %}
 </div>
-
-{% if created %}
-{# `with`, not a bare `set`: the include reads `crv` and nothing else in this
-   page may answer to that name by accident. #}
-{% with crv = created_view %}{% include 'change_requests/_view.html' %}{% endwith %}
-{% endif %}
+<style nonce="{{ csp_nonce }}">
+/* Light chrome only: this product has no dark theme (safeguards 9m). */
+#uf-cr-section .uf-cr-summary{cursor:pointer;padding:12px 16px;font-size:13px;
+  color:var(--fw-text-secondary,#5A6270);border-top:1px solid var(--fw-border,#D6DAE0);}
+#uf-cr-section .uf-cr-summary:hover{color:var(--fw-text-primary,#1F2430);}
+/* A fieldset carries a border, padding and a min-width of its own; left in
+   place they would re-frame every card it wraps and stop the grid shrinking. */
+#uf-cr-section .uf-cr-locked{border:0;padding:0;margin:0;min-width:0;}
+</style>
 
 <form method="post" action="{{ url_for('upgrade_flow.change') }}" id="uf-cr">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -289,237 +438,260 @@
      the operator was looking at rather than whatever the session last held. #}
   <input type="hidden" name="_adom" value="{{ product.key }}">
   <input type="hidden" name="action" value="{{ cr_action }}">
-  {% set back = posted or {} %}
-  <div class="fw-card mb-3" id="uf-doc">
-    <div class="fw-card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
-      <span><span class="fw-badge fw-badge-secondary me-2">2</span><strong>{% if created %}{{ _('Raise another change request') }}{% else %}{{ _('Raise the change request') }}{% endif %}</strong></span>
-      <span class="text-muted small">{{ _('One change for the whole window, citing every pre-upgrade run above — or one change per wave.') }}</span>
-    </div>
-    <div class="fw-card-body">
-
-      {% if created %}
-      <p class="text-muted small">
-        {{ _('This card is still here, filled in as you left it: raising a second change over a different group of appliances is the next step of a staged window, not a mistake.') }}
-      </p>
-      {% endif %}
-
-      {# ------------------------------------------------- 2.1 language #}
-      <div class="fw-step-label text-muted small text-uppercase mb-2">{{ _('Document language') }}</div>
-      <div class="d-flex flex-wrap gap-3">
-        {% for code, label in crdoc.langs %}
-        <label class="form-check">
-          <input class="form-check-input uf-lang" type="radio" name="doc_lang" form="uf-cr"
-                 value="{{ code }}" required {{ 'checked' if code == (back.doc_lang if posted else lang_preset) else '' }}>
-          <span class="form-check-label"><span class="is-mono">{{ code|upper }}</span> {{ label }}</span>
-        </label>
-        {% endfor %}
-      </div>
-      <div class="form-text">
-        {% if lang_preset %}
-          {{ _('Pre-selected from your') }} <a href="{{ url_for('auth.profile') }}#language">{{ _('profile') }}</a>.
-        {% elif lang_pref_unrenderable %}
-          {{ _('Your profile language (%(lang)s) has no change-document text yet, so it is not offered here.', lang=lang_pref_label) }}
-        {% else %}
-          {{ _('Nothing is pre-selected — the text below is shown in %(lang)s so it can be read, which is not the same as the question being answered.', lang=render_lang|upper) }}
-        {% endif %}
-      </div>
-
-      <hr class="my-4">
-
-      {# -------------------------------------------- 2.2 type of change #}
-      <div class="fw-step-label text-muted small text-uppercase mb-2">{{ _('Type of change') }}</div>
-      <div class="row g-3">
-        <div class="col-12 col-lg-8">
-          <label class="form-label">{{ _('Change type') }}</label>
-          {#
-            Shown, not offered. The single-change form asks this question
-            because it raises any kind of change; this flow raises ONE — the
-            pre-flight above it, the wording beside it and the executor after
-            it are all the upgrade change, and the proposals exist for that
-            action alone. A picker here would let somebody select a type whose
-            wording this page cannot propose, and the document would come out
-            blank. The answer is still on screen, because a field the operator
-            cannot see is one they cannot check.
-          #}
-          <div class="form-control-plaintext py-0">
-            <strong>{{ crdoc.labels.get(render_lang, '') or cr_action }}</strong>
-            <span class="is-mono text-muted small ms-2">{{ cr_action }}</span>
-          </div>
-          <div class="form-text">
-            {{ _('Fixed for this flow. Any other type of change is raised from') }}
-            <a href="{{ url_for('change_requests.new', _adom=product.key) }}">{{ _('Change Requests → New') }}</a>.
-          </div>
-        </div>
-        <div class="col-12 col-lg-4">
-          <label class="form-label">{{ _('Risk') }}</label>
-          {#
-            The vocabulary is services.change_requests.RISKS, the same list the
-            single-change form offers. Spelt out here, this page was a second
-            author of it: a level added or renamed there would never reach the
-            bulk path, and nothing would fail -- the two forms would simply
-            stop offering the same answers to the same question.
-          #}
-          <select class="form-select" name="risk">
-            {% for r in risks %}
-            <option value="{{ r }}" {{ 'selected' if r == (back.risk or 'medium') else '' }}>{{ r|capitalize }}</option>
-            {% endfor %}
-          </select>
-        </div>
-      </div>
-
-      <hr class="my-4">
-
-      {# ------------------------------------------ 2.3 proposed wording #}
-      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
-        <span class="fw-step-label text-muted small text-uppercase">{{ _('Proposed wording') }}
-          <span class="text-muted ms-2 text-none">{{ crdoc.labels.get(render_lang, '') }}</span></span>
-        <span>
-          <button type="button" class="btn btn-sm fw-btn-secondary" id="uf-restore">
-            <i class="bi bi-arrow-counterclockwise me-1"></i>{{ _('Restore proposal') }}</button>
-          <a class="btn btn-sm fw-btn-secondary" href="{{ url_for('cr_types.edit', key=cr_action) }}">
-            <i class="bi bi-sliders me-1"></i>{{ _('Edit this wording') }}</a>
-        </span>
-      </div>
-      <p class="text-muted small">
-        {{ _('Filled in from the change type and the appliances you tick above. Editing a field stops it updating — your words are never overwritten. It is a proposal: §1 of the change document attributes this text to you by name.') }}
-      </p>
-      <div class="row g-3">
-        <div class="col-12">
-          <label class="form-label">{{ _('Title') }}
-            <span class="fw-auto-chip" data-for="title">{{ _('auto') }}</span></label>
-          <input class="form-control" name="title" id="uf-title" form="uf-cr" required
-                 maxlength="200" autocomplete="off" data-auto="{{ '1' if auto.title else '0' }}"
-                 value="{{ back.title if posted else d_title }}">
-        </div>
-        <div class="col-12 col-lg-6">
-          <label class="form-label">{{ _('Reason') }}
-            <span class="fw-auto-chip" data-for="reason">{{ _('auto') }}</span></label>
-          <textarea class="form-control" name="reason" id="uf-reason" form="uf-cr"
-                    rows="3" data-auto="{{ '1' if auto.reason else '0' }}">{{ back.reason if posted else d_reason }}</textarea>
-        </div>
-        <div class="col-12 col-lg-6">
-          <label class="form-label">{{ _('Rollback plan') }}
-            <span class="fw-auto-chip" data-for="rollback">{{ _('auto') }}</span></label>
-          <textarea class="form-control" name="rollback" id="uf-rollback" form="uf-cr"
-                    rows="3" data-auto="{{ '1' if auto.rollback else '0' }}">{{ back.rollback if posted else d_rollback }}</textarea>
-        </div>
-      </div>
-
-      <hr class="my-4">
-
-      {# --------------------------------- 2.4 ownership and approval #}
-      {#
-        The rest of what a change request IS, the same three fields the
-        single-change form asks for and with the same defaults. Raising a
-        windowed change here used to produce a document with no owner, no
-        completion notice and manual approval by default — differences nobody
-        chose, on the path meant for the larger and riskier job.
-      #}
-      <div class="fw-step-label text-muted small text-uppercase mb-2">{{ _('Ownership and approval') }}</div>
-      <div class="row g-3">
-        <div class="col-12 col-lg-7">
-          <label class="form-label">{{ _('Change owner (Verantwortlicher)') }}</label>
-          <input class="form-control" name="owner" form="uf-cr" value="{{ back.owner if posted else defaults.owner }}">
-          <div class="form-text">{{ _('Printed in §1 of the change document. Proposed from your account and editable — cleared, it prints as “not recorded”.') }}</div>
-        </div>
-        <div class="col-12 col-lg-5">
-          <label class="form-label">{{ _('Notify on completion') }}</label>
-          <input class="form-control" name="notify_to" form="uf-cr" value="{{ back.notify_to if posted else defaults.notify_to }}" placeholder="{{ _('ops@example.com') }}">
-          <div class="form-text">{{ _('Who is emailed when the window closes (completed or failed).') }}</div>
-        </div>
-        <div class="col-12">
-          <label class="form-label">{{ _('Approval') }}</label>
-          <select class="form-select" name="approval_mode" form="uf-cr">
-            {% set sel_appr = back.approval_mode or 'manual' %}
-            <option value="manual" {{ 'selected' if sel_appr != 'external' else '' }}>{{ _('Manual — approved here in SATOM') }}</option>
-            <option value="external" {{ 'selected' if sel_appr == 'external' else '' }}>{{ _('External — an integration must approve it') }}</option>
-          </select>
-          <div class="form-text">
-            <strong>{{ _('External') }}</strong> {{ _('is fail-closed: the change cannot run until your change-management system approves it. Unreachable, slow and no-answer all count as NOT approved.') }}
-          </div>
-        </div>
-      </div>
-
-      <hr class="my-4">
-
-      {# ------------------------------ 2.5 appliances and the window #}
-      <div class="fw-step-label text-muted small text-uppercase mb-2">{{ _('Appliances this change covers') }}</div>
-      {#
-        NAMED here, not merely counted. The operator who arrived from one
-        appliance's pre-upgrade page is asking "is my box in this change, and
-        against which run" — and a sentence reading "4 appliance(s) selected"
-        answers neither. The list is mirrored from stage 1's ticks; a second
-        set of checkboxes would drift the moment somebody ticked one and not
-        the other, and the pair that drifts is "which boxes go down" against
-        "which boxes we have a baseline for".
-      #}
-      <div id="uf-cr-targets" class="mb-3">
-        <span class="text-muted small" id="uf-cr-empty">{{ _('None ticked yet — tick them in stage 1 above.') }}</span>
-        <div id="uf-cr-chips" class="d-flex flex-wrap gap-2"></div>
-        <div id="uf-cr-fields" class="d-none"></div>
-      </div>
-      <div class="row g-3">
-        <div class="col-6 col-lg-4">
-          <label class="form-label">{{ _('Window start') }} <span class="text-muted">({{ tz_name }})</span></label>
-          <input class="form-control" type="datetime-local" name="window_start" value="{{ back.window_start or '' }}">
-        </div>
-        <div class="col-6 col-lg-4">
-          <label class="form-label">{{ _('Window end') }} <span class="text-muted">({{ tz_name }})</span></label>
-          <input class="form-control" type="datetime-local" name="window_end" value="{{ back.window_end or '' }}">
-        </div>
-      </div>
-      <div class="d-flex justify-content-between align-items-center mt-3 flex-wrap gap-2">
-        <span class="text-muted small" id="uf-cr-note">{{ _('Tick appliances in stage 1. Only those with a stored pre-upgrade run contribute evidence; an appliance without one is still covered by the change, it simply carries no baseline.') }}</span>
-        <button type="submit" class="btn fw-btn-primary"><i class="bi bi-clipboard2-plus me-1"></i>{{ _('Raise one change request') }}</button>
-      </div>
-
-      <hr class="my-4">
-
-      {# ------------------------------- 2.6 the same selection, in waves #}
-      {#
-        Was a card of its own numbered 2b, which read as a stage between
-        raising the change and executing it. It is neither: it is the same
-        stage answering "one window or several", over the same ticks, the same
-        wording and the same owner. EVERY field here carries form="uf-waves" --
-        unbound they would belong to the stage-2 form, and `window_start`
-        exists in both, so the single change would post two of them.
-      #}
-      <div class="fw-step-label text-muted small text-uppercase mb-2">{{ _('Or split the same selection into waves') }}</div>
-      <p class="text-muted small">
-        {{ _('For a rollout too large for one window: the appliances are chunked in name order, and each chunk gets a change of its own so the first group can be watched before the next one is approved. One wave = one ordinary change request, with its own window and its own approval — nothing about approval, execution or the customer-impact export changes.') }}
-      </p>
-      <div class="row g-3">
-        <div class="col-6 col-lg-3">
-          <label class="form-label">{{ _('Appliances per wave') }}</label>
-          <input class="form-control" type="number" name="wave_size" form="uf-waves" min="1" value="5">
-          <div class="form-text">{{ _('Each wave takes the title above, suffixed “… — wave k/N”.') }}</div>
-        </div>
-        <div class="col-6 col-lg-3">
-          <label class="form-label">{{ _('First window start') }}</label>
-          <input class="form-control" type="datetime-local" name="window_start" form="uf-waves">
-        </div>
-        <div class="col-6 col-lg-3">
-          <label class="form-label">{{ _('Window (minutes)') }}</label>
-          <input class="form-control" type="number" name="wave_minutes" form="uf-waves" min="1" value="120">
-        </div>
-        <div class="col-6 col-lg-3">
-          <label class="form-label">{{ _('Gap') }}</label>
-          <input class="form-control" type="number" name="wave_gap" form="uf-waves" min="0" value="30">
-        </div>
-      </div>
-      <div id="uf-waves-targets"></div>
-      <div class="d-flex justify-content-between align-items-center mt-3 flex-wrap gap-2">
-        <span class="text-muted small" id="uf-waves-note">
-          {{ _('Windows are consecutive and never overlap: each wave starts after the previous one ends, plus the gap. Leave the start empty to raise the waves now and schedule them later. At most') }}
-          <strong>{{ max_waves }}</strong> {{ _('waves at once.') }}
-        </span>
-        <button type="submit" form="uf-waves" class="btn fw-btn-secondary"><i class="bi bi-layers me-1"></i>{{ _('Raise one change per wave') }}</button>
-      </div>
-    </div>
-  </div>
+  {# The 'Raise another change request' card was REMOVED on request.
+     The form element around it is kept on purpose: it is the POST target
+     for upgrade_flow.change and carries the csrf/_adom/action hiddens that
+     the view refuses without. Nothing visible renders from it. #}
 </form>
 
 {% endif %}{# crdoc.entry #}
+
+{# ---------------------------------------------------------------- stage 3 #}
+{#
+  The change this flow raised, WHOLE and right here — the same blocks
+  /web/change-requests/<id> shows, from the ONE builder both pages call. This
+  is where Create draft now lands: raising the change is a step of the flow,
+  so reading, approving, scheduling or cancelling it must not be a trip to
+  another screen.
+
+  Outside every <form> on this page on purpose: the action bar below carries
+  its own, and a <form> nested in a <form> is invalid HTML the browser
+  silently unnests — the buttons would post the wrong thing while the page
+  looked right.
+#}
+{% if created_view %}
+<div class="fw-card mb-3" id="uf-created-section">
+  <div class="fw-card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <span><span class="fw-badge fw-badge-secondary me-2">3</span><strong>{{ created_view.cr.ref }} — {{ created_view.cr.title }}</strong>
+      {#
+        The destination stored ON the change, read back from its own params —
+        not from step 1's select, which may have been changed since. A change
+        that declares none says so: it was raised citing no evidence that
+        named one, and printing the page's current pick here would claim
+        otherwise.
+      #}
+      {% set cr_target = created_view.cr.params_dict.get('target_version') %}
+      {% if cr_target %}
+      <span class="fw-badge fw-badge-info ms-2">{{ _('Upgrade to') }} {{ cr_target }}</span>
+      {% else %}
+      <span class="text-muted small ms-2">{{ _('no destination recorded on this change') }}</span>
+      {% endif %}
+    </span>
+    <span class="fw-badge {{ created_view.status_badge.get(created_view.cr.status, 'fw-badge-secondary') }} text-capitalize">{{ created_view.cr.status|replace('_', ' ') }}</span>
+  </div>
+  <div class="fw-card-body">
+    {% with crv = created_view %}{% include 'change_requests/_view.html' %}{% endwith %}
+  </div>
+</div>
+{% endif %}
+
+{# ---------------------------------------------------------------- stage 4 #}
+{#
+  The rollout, saved as REAL scheduled task(s) — the same rows /scheduled-actions
+  lists and the calendar draws, created through the ONE call the change's own
+  Schedule button makes (services.change_requests.schedule_change_request).
+  A second, page-local scheduler would be work nobody could see from the pages
+  that list the work.
+
+  One round is one FIRE of the executor against its own slice of this change's
+  appliances. Rounds are separate actions and not a number in one action's
+  params because the executor runs an action's targets straight through in a
+  single fire: a round size it never reads would be a setting that lies,
+  promising twenty-five boxes at a time while sixty rebooted together.
+
+  Outside every other <form> on this page, and carrying its own: a form nested
+  in a form is invalid HTML the browser silently unnests, and the buttons would
+  post the wrong thing while the page looked right.
+#}
+{% if created_view %}
+<form method="post" action="{{ url_for('upgrade_flow.schedule') }}" id="uf-sched">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  {# The change this card acts on, named. The page also re-derives it from the
+     URL, but a card whose Save depends on a query argument survives exactly
+     until somebody opens a second change in another tab. #}
+  <input type="hidden" name="cr_id" value="{{ created_view.cr.id }}">
+  <input type="hidden" name="_adom" value="{{ product.key }}">
+<div class="fw-card mb-3" id="uf-rollout-section">
+  <div class="fw-card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <span><span class="fw-badge fw-badge-secondary me-2">4</span><strong>{{ _('Scheduled rollout') }}</strong></span>
+    {% if rollout.task %}
+    <span class="fw-badge fw-badge-primary" id="uf-rollout-bound">
+      <i class="bi bi-calendar-check me-1"></i>{{ _('Saved as scheduled task') }} #{{ rollout.task.id }}
+    </span>
+    {% endif %}
+  </div>
+  <div class="fw-card-body">
+    <p class="text-muted small mb-3">
+      {{ _('This change covers') }} <strong id="uf-rollout-total">{{ rollout.total }}</strong>
+      {{ _('appliance(s). They go down in rounds, not all at once: each round is one fire of the upgrade executor against its own slice, bound to THIS change and re-checked against its approval and its window at fire time.') }}
+    </p>
+
+    {% if not rollout.savable %}
+    {#
+      NOTHING can be recorded here: no plan, no rows. Said before the fields,
+      and the Save is inert rather than merely unhelpful - a live button over
+      a change that can record nothing teaches the operator that the card is
+      broken. The reason names the remedy so it does not read as a fault of
+      this page.
+    #}
+    <div class="fw-alert fw-alert-warning mb-3" id="uf-rollout-why">
+      <strong>{{ _('Nothing can be planned yet:') }}</strong> {{ rollout.save_reason }}
+      {{ _('The action bar above sets the window.') }}
+    </div>
+    {% elif not rollout.ok %}
+    {#
+      The plan CAN be written down; only the calendar rows need the signature.
+      Stated as what Save will do rather than as a refusal, because the button
+      below is live and a warning above a working control reads as a fault.
+    #}
+    <div class="fw-alert fw-alert-info mb-3" id="uf-rollout-draft">
+      <strong>{{ _('Not scheduled yet:') }}</strong> {{ rollout.reason }}
+      {{ _('Save records the plan on this change now; the rounds are created in Scheduled Actions and on the calendar the moment it is approved.') }}
+      {% if rollout.plan %}
+      <div class="small mt-1" id="uf-rollout-plan-saved">
+        {{ _('Saved plan:') }}
+        <strong>{{ rollout.plan.total }}</strong> {{ _('round(s) of at most') }}
+        <strong>{{ rollout.plan.size }}</strong> {{ _('appliance(s),') }}
+        <strong>{{ rollout.plan.gap }}</strong> {{ _('minute(s) apart — by') }}
+        {{ rollout.plan.by or '—' }}.
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <div class="row g-3 align-items-end">
+      <div class="col-sm-4 col-md-3">
+        <label class="form-label small" for="uf-per-round">{{ _('Appliances per round') }}</label>
+        {#
+          READONLY, never disabled: a disabled input posts NOTHING, and the
+          POST refuses a missing per_round outright ("Set how many appliances
+          go in each round"). Disabling the field on a one-appliance change
+          would make Save refuse the only plan the card can offer.
+
+          And the lock follows the appliance COUNT, not the approval gate: how
+          many go down at a time is a decision the operator can make while the
+          change is still waiting for a signature. Save stays gated.
+        #}
+        <input class="form-control fw-form-control" type="number" min="1"
+               max="{{ rollout.total if rollout.total else 1 }}" step="1"
+               id="uf-per-round" name="per_round" value="{{ rollout.per_round }}"
+               {% if rollout.total <= 1 %}readonly{% endif %}>
+        {% if rollout.total <= 1 %}
+        <div class="form-text small" id="uf-per-round-fixed">
+          {{ _('One appliance in this change — there is nothing to split into rounds.') }}
+        </div>
+        {% endif %}
+      </div>
+      <div class="col-sm-4 col-md-3">
+        <label class="form-label small" for="uf-round-gap">{{ _('Minutes between rounds') }}</label>
+        <input class="form-control fw-form-control" type="number" min="1" max="1440" step="1"
+               id="uf-round-gap" name="round_gap" value="{{ rollout.gap }}"
+               {% if rollout.total <= 1 %}readonly{% endif %}>
+        {% if rollout.total <= 1 %}
+        <div class="form-text small" id="uf-round-gap-fixed">
+          {{ _('No second round, so no gap applies.') }}
+        </div>
+        {% endif %}
+      </div>
+      <div class="col-sm-4 col-md-6">
+        {# The round COUNT only. The times are rendered server-side, through the
+           one timezone conversion path — computing them here would put a second
+           author on the hour an outage starts, and the two would agree right up
+           until a DST boundary. #}
+        <div class="text-muted small" id="uf-round-count"></div>
+      </div>
+    </div>
+
+    <div class="d-flex align-items-center gap-3 flex-wrap mt-3">
+      {#
+        Gated on ``savable``, NOT on ``ok``. Writing the plan down needs no
+        signature; only turning it into calendar rows does. The label says
+        which of the two this click will do, because a button that answers
+        "Save as scheduled task" by scheduling nothing is the button that
+        taught the operator this card was broken.
+      #}
+      <button type="submit" class="btn fw-btn-primary" id="uf-rollout-save"
+              {% if not rollout.savable %}disabled title="{{ rollout.save_reason }}"{% endif %}>
+        <i class="bi bi-save me-1"></i>
+        {% if rollout.ok %}{{ _('Save as scheduled task') }}
+        {% else %}{{ _('Save rollout plan') }}{% endif %}</button>
+      {% if rollout.task %}
+        <a class="btn btn-sm fw-btn-secondary" href="{{ url_for('scheduled_actions.index') }}">
+          <i class="bi bi-list-check me-1"></i>{{ _('Scheduled actions') }}</a>
+        {% if rollout.calendar_on %}
+        <a class="btn btn-sm fw-btn-secondary" href="{{ url_for('calendar_plan.index') }}">
+          <i class="bi bi-calendar3 me-1"></i>{{ _('Calendar') }}</a>
+        {% else %}
+        <span class="small text-muted">{{ _('(the calendar is switched off for your user)') }}</span>
+        {% endif %}
+      {% endif %}
+      <span class="small text-muted">{{ _('At most') }} <strong>{{ rollout.max_rounds }}</strong> {{ _('rounds are scheduled at once.') }}</span>
+    </div>
+
+    {% if rollout.rounds %}
+    {#
+      What was actually SAVED, read back off the rows the executor will fire —
+      not off the fields above. A plan echoed from the form is a plan that
+      agrees with itself and with nothing else.
+    #}
+    <div class="table-responsive mt-3">
+      <table class="table fw-table align-middle mb-0" id="uf-rounds-table">
+        <thead><tr>
+          <th style="width:6rem;">{{ _('Round') }}</th>
+          <th style="width:14rem;">{{ _('Starts') }}</th>
+          <th>{{ _('Appliances') }}</th>
+          <th style="width:8rem;">{{ _('State') }}</th>
+        </tr></thead>
+        <tbody>
+        {% for r in rollout.rounds %}
+          <tr>
+            <td class="is-mono">{{ r.index }}/{{ r.total }}</td>
+            <td class="is-mono">{{ r.at }}</td>
+            <td>{{ r.names }} <span class="text-muted small">({{ r.count }})</span></td>
+            <td>
+              {% if not r.enabled %}
+                <span class="fw-badge fw-badge-secondary">{{ _('disabled') }}</span>
+              {% elif r.last_status %}
+                <span class="fw-badge fw-badge-secondary">{{ r.last_status }}</span>
+              {% else %}
+                <span class="fw-badge fw-badge-primary">{{ _('scheduled') }}</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </div>
+</div>
+</form>
+<script nonce="{{ csp_nonce }}">
+(function () {
+  // The round COUNT, live. Nothing here computes a time or a boundary: those
+  // are the server's, rendered through the one timezone path.
+  var per = document.getElementById('uf-per-round');
+  var out = document.getElementById('uf-round-count');
+  var totalEl = document.getElementById('uf-rollout-total');
+  if (!per || !out || !totalEl) { return; }
+  var total = parseInt(totalEl.textContent, 10) || 0;
+  var ONE = {{ _('one round — every appliance in this change goes down together.')|tojson }};
+  var MANY = {{ _('rounds')|tojson }};
+  var NONE = {{ _('This change covers no appliance, so there is nothing to roll out.')|tojson }};
+  function paint() {
+    if (!total) { out.textContent = NONE; return; }
+    var size = parseInt(per.value, 10);
+    if (!size || size < 1) { size = total; }
+    var n = Math.ceil(total / size);
+    // "1 rounds" reads as a bug and "1 round" says nothing about what that
+    // means here, so the single-round case is spelt out.
+    out.textContent = n <= 1 ? ONE : (n + ' ' + MANY + ' \u00d7 ' + size);
+  }
+  per.addEventListener('input', paint);
+  paint();
+})();
+</script>
+{% endif %}
 {% endif %}{# user_manage #}
 
 {% if wave_groups %}
@@ -548,6 +720,12 @@
   itself and are reached from it (Change Requests, top right). The register
   that used to be repeated here is gone at the operator's request.
 #}
+{#
+  The refusals, as DATA, straight from the view. Not re-derived in the
+  browser: the hint beside a row and the flash the sweep sends back have to
+  be the same words, and a second author in JavaScript is how they drift.
+#}
+<script type="application/json" id="uf-holds" nonce="{{ csp_nonce }}">{{ holds|tojson }}</script>
 <script nonce="{{ csp_nonce }}">
 (function () {
   // Stage 2 posts to the change-request form's own handler, so the devices and
@@ -561,7 +739,16 @@
   // Hidden fields and the VISIBLE list are two boxes on purpose: what the
   // form posts and what the operator reads are the same data, but one of them
   // must be legible.
-  var box = document.getElementById('uf-cr-fields');
+  // Stage 2 IS the change-request form now, so the ticks are mirrored into
+  // ITS devices box. The box sits inside that form, so the hidden inputs
+  // belong to it without an explicit `form` attribute.
+  var box = document.getElementById('cr-devices-hidden');
+  var devText = document.getElementById('cr-devices-text');
+  var NONE_TICKED = {{ _('Nothing ticked in step 1 yet')|tojson }};
+  // Nothing to mirror into means every listener below -- including stage 1's
+  // own select-all -- must still bind, so this is a per-write guard and not a
+  // return.
+
   var chips = document.getElementById('uf-cr-chips');
   var empty = document.getElementById('uf-cr-empty');
   var note = document.getElementById('uf-cr-note');
@@ -585,26 +772,32 @@
   // as well -- silently doubling its own device list. (Spelt without the
   // angle brackets on purpose: a // comment reaches the served HTML, and a
   // markup-shaped word in it answers any check that counts form tags.)
-  function hidden(parent, name, value, owner) {
+  function hidden(parent, name, value, owner, label) {
     var el = document.createElement('input');
     el.type = 'hidden'; el.name = name; el.value = value;
     if (owner) { el.setAttribute('form', owner); }
+    if (label) { el.setAttribute('data-name', label); }
     parent.appendChild(el);
   }
 
   function sync() {
     var picked = devs.filter(function (c) { return c.checked; });
-    box.innerHTML = '';
+    if (box) { box.innerHTML = ''; }
     if (chips) { chips.innerHTML = ''; }
     if (waveBox) { waveBox.innerHTML = ''; }
     var withPrep = 0;
+    var names = [];
     picked.forEach(function (c) {
-      hidden(box, 'device_ids', c.value);
+      var nm = c.getAttribute('data-name') || c.value;
+      names.push(nm);
       var pid = prepFor(c.value);
-      if (pid) {
-        withPrep += 1;
-        hidden(box, 'prep_ids', pid);
+      if (box) {
+        // data-name travels with the id so the document's wording can name the
+        // appliance without reading it back off the screen.
+        hidden(box, 'device_ids', c.value, null, nm);
+        if (pid) { hidden(box, 'prep_ids', pid); }
       }
+      if (pid) { withPrep += 1; }
       // Built with textContent: an appliance name interpolated into innerHTML
       // is script the operator never typed.
       if (chips) {
@@ -623,9 +816,16 @@
         if (pid) { hidden(waveBox, 'prep_pairs', c.value + ':' + pid, 'uf-waves'); }
       }
     });
-    if (picked.length) {
+    if (note && picked.length) {
       note.textContent = picked.length + ' appliance(s) selected, ' + withPrep
         + ' with a stored pre-upgrade run to cite.';
+    }
+    if (devText) {
+      // The placeholder sentence is a STATEMENT, not an empty box: a blank
+      // read-only field reads as "loading" or "broken", and neither is true.
+      devText.value = names.length ? names.join(', ') : NONE_TICKED;
+      // Tells the change-request form's own script to re-word the proposal.
+      devText.dispatchEvent(new Event('change'));
     }
     if (empty) { empty.classList.toggle('d-none', picked.length > 0); }
     paint(false);
@@ -734,6 +934,33 @@
     });
   }
   sync();
+})();
+
+// Its OWN closure. The block above returns early when the stage-2 form is
+// absent, and hanging this off the end of it would make the row hints vanish
+// on exactly the pages where that happens.
+(function () {
+  var node = document.getElementById('uf-holds');
+  var sel = document.getElementById('uf-target');
+  if (!node || !sel) { return; }
+  var holds = {};
+  try { holds = JSON.parse(node.textContent || '{}'); } catch (e) { return; }
+  function paintHolds() {
+    var forVersion = holds[sel.value] || {};
+    Array.prototype.forEach.call(document.querySelectorAll('.uf-dev'),
+      function (box) {
+        var row = box.closest('tr');
+        var hint = row ? row.querySelector('.uf-hold') : null;
+        if (!hint) { return; }
+        var why = forVersion[box.getAttribute('data-name') || ''];
+        hint.textContent = why || '';
+        hint.classList.toggle('d-none', !why);
+      });
+  }
+  sel.addEventListener('change', paintHolds);
+  // On load too: the select is re-proposed from the last sweep, so a page can
+  // open with a destination already chosen and rows already held.
+  paintHolds();
 })();
 </script>
 {% endblock %}

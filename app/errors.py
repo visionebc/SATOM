@@ -235,17 +235,22 @@ def _safe_render(template: str, *, code: int, error_id: str | None = None) -> st
     try:
         return render_template(template, error_id=error_id, code=code)
     except Exception:  # noqa: BLE001 — secondary failure, stay minimal
-        ref = (f'<p>Reference ID: <code style="color:#fbbf24">{error_id}</code></p>'
+        # Last-resort markup: same SATOM light palette as the templates it is
+        # standing in for. It used to carry the fleet's dark theme, so the one
+        # page that renders when everything else failed was also the one page
+        # that did not look like this product. Colours are literal on purpose
+        # -- this path exists precisely because rendering is already broken.
+        ref = (f'<p>Reference ID: <code style="color:#0A3F9F">{error_id}</code></p>'
                if error_id else "")
         return (
             '<!doctype html><meta charset="utf-8">'
             f'<title>Error {code}</title>'
-            '<body style="font-family:system-ui,sans-serif;background:#080d1a;'
-            'color:#e2e8f0;padding:3rem;text-align:center">'
+            '<body style="font-family:Inter,system-ui,sans-serif;background:#F3F6FC;'
+            'color:#0C1B33;padding:3rem;text-align:center">'
             f'<h1 style="font-size:3rem;margin:0">{code}</h1>'
-            '<p>An error occurred while processing your request.</p>'
+            '<p style="color:#51607F">An error occurred while processing your request.</p>'
             f'{ref}'
-            '<p><a style="color:#3b82f6" href="/">Return home</a></p></body>')
+            '<p><a style="color:#0A3F9F" href="/">Return home</a></p></body>')
 
 
 def register_error_handlers(app: Flask) -> None:

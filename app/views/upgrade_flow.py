@@ -128,6 +128,332 @@ def prep_kinds() -> tuple[str, ...]:
     return tuple(getattr(spec, 'products', ()) or ())
 
 
+#: What one destination does to ONE appliance. Four outcomes, not a
+#: boolean: "already there" and "already past it" send the operator to two
+#: different places, and "cannot tell" must not be collapsed into either.
+MOVE_UP = 'up'
+MOVE_SAME = 'same'
+MOVE_BEHIND = 'behind'
+MOVE_UNKNOWN = 'unknown'
+
+#: The two outcomes a sweep refuses to run. Kept as a set beside the codes so
+#: a fifth outcome cannot be added without deciding which side it falls on.
+HELD_MOVES = (MOVE_SAME, MOVE_BEHIND)
+
+
+def classify_move(version, dev) -> tuple:
+    """``(code, current)`` — what ``version`` would do to one appliance.
+
+    The single authority for the comparison, because it has three callers
+    that must not be allowed to disagree: the select's filter, the sweep's
+    per-appliance skip, and the hint the page paints beside a row. The first
+    two disagreeing is exactly the gap this function was added to close — the
+    select narrows against the whole PAGE, the sweep runs against the TICKED
+    rows, and those sets need not be the same.
+
+    Compares NOTHING across products; the caller decides which appliances are
+    even comparable. See :func:`firmware_versions.compare`.
+    """
+    from ..services import firmware_versions as fv
+    current = fv.normalize(getattr(dev, 'fw_version', '')
+                           or getattr(dev, 'firmware', '') or '')
+    verdict = fv.compare(version, current)
+    if verdict is None:
+        return MOVE_UNKNOWN, current
+    if verdict > 0:
+        return MOVE_UP, current
+    return (MOVE_SAME if verdict == 0 else MOVE_BEHIND), current
+
+
+def hold_reason(code, name, current, version) -> str:
+    """The ONE sentence explaining why an appliance is not swept.
+
+    Written here and nowhere else because it is read in two places that have
+    to agree word for word: the hint the page paints beside the row BEFORE
+    the operator presses the button, and the flash the POST sends back AFTER.
+    A hint written in the template and a refusal written in the view are two
+    authors of the same promise, and the template's copy is the one nothing
+    tests.
+
+    ``same`` and ``behind`` do NOT share a sentence. "It is already on 8.0.5"
+    is fixed by picking a later version or unticking the row; "it is on 8.0.6,
+    you picked 8.0.5" means the version chosen for the whole window is older
+    than something in it, which is a downgrade — a different operation that
+    this pre-flight reviews nothing about. Telling an operator the second
+    story with the first one's words sends them to reread a selection that is
+    not the mistake.
+    """
+    if code == MOVE_BEHIND:
+        return ('%s cannot be upgraded to %s: it is already running %s, which '
+                'is newer — that move is a DOWNGRADE, and the pre-upgrade '
+                'reviews upgrades.' % (name, version, current or '?'))
+    return ('%s cannot be upgraded to %s: it is already running it, so there '
+            'is no upgrade to pre-flight.' % (name, version))
+
+
+def forward_only(version, products, devices) -> dict:
+    """What one destination would DO to the appliances on this page.
+
+    The rule this implements — *only offer versions newer than the one the
+    system is running* — has no single referent on a page that lists boxes
+    on different firmware, and the fleet is exactly that case: fortiweb15
+    and fortiweb16 run 7.6.8 while fortiweb17 runs 8.0.5. Hiding everything
+    that is not newer than the HIGHEST would have hidden 8.0.5 — the one
+    move two of the three boxes are actually waiting for — and left the
+    operator a select that offers nothing while the window it describes is
+    perfectly legal. So a version stays on the list while it moves AT LEAST
+    ONE appliance forward, and the option SAYS how many of how many, plus
+    which boxes are already there. The page narrows the choice; it does not
+    make it.
+
+    Compared PER PRODUCT. A FortiAuthenticator running 8.0.3 says nothing
+    about whether FortiWeb 8.0.5 is an upgrade — folding the two would hide
+    a real destination on the strength of another vendor's digits.
+
+    A version is hidden ONLY when this page can show it is not an upgrade.
+    No comparable appliance, or a comparison ``firmware_versions.compare``
+    refuses to decide (a line-only destination against a box already on
+    that line, or a box whose firmware was never read), leaves it on the
+    list: absence of evidence is not evidence of a downgrade, and a
+    destination silently missing from a select is unreportable — the
+    operator has no way to ask why the version they came for is not there.
+    """
+    ups, held, undecided = [], [], []
+    same, behind, holds = [], [], {}
+    for dev in (devices or []):
+        if (getattr(dev, 'kind', '') or '') not in (products or []):
+            continue
+        name = getattr(dev, 'name', '') or ''
+        code, current = classify_move(version, dev)
+        if code == MOVE_UNKNOWN:
+            undecided.append(name)
+        elif code == MOVE_UP:
+            ups.append(name)
+        else:
+            held.append(name)
+            (same if code == MOVE_SAME else behind).append(name)
+            holds[name] = hold_reason(code, name, current, version)
+    comparable = len(ups) + len(held) + len(undecided)
+    return {
+        'upgrades': sorted(ups),
+        'at_or_above': sorted(held),
+        # ``at_or_above`` is the union and stays, because the option label
+        # reads better as one list. The split is carried BESIDE it rather
+        # than replacing it: a downgrade and a no-op are one line apart on
+        # this page and a long way apart in a maintenance window.
+        'same': sorted(same),
+        'behind': sorted(behind),
+        'holds': holds,
+        'undecided': sorted(undecided),
+        'comparable': comparable,
+        'offerable': comparable == 0 or bool(ups) or bool(undecided),
+    }
+
+
+def sweep_split(version, products, devices) -> dict:
+    """The TICKED appliances, split into the ones a sweep may run against.
+
+    A different question from the one :func:`forward_only` answers, and the
+    gap between them is a real hole this closes. ``forward_only`` narrows the
+    select against everything the PAGE lists — a version stays offered while
+    it moves at least one box forward. The sweep runs against the boxes the
+    operator TICKED, and nothing makes those two sets the same: tick only the
+    appliance that is already on 8.0.5, sweep it towards 8.0.5, and every
+    window-level rule passes while what gets written is evidence whose
+    declared move is 8.0.5 -> 8.0.5.
+
+    SKIPPED, never refused wholesale, whenever anything else still moves. One
+    box too many in a selection of forty must not throw away the thirty-nine
+    that were right — the operator would simply retick them and press the same
+    button. The window is only refused when NOTHING in it moves, because then
+    there is no sweep left to run.
+
+    Nothing is stored for a held appliance. A row written to say "this did not
+    run" is still a row the citation picker offers and the Move column paints,
+    and evidence for a move that never happened is the thing the destination
+    column exists to prevent.
+
+    Held only when this page can PROVE it: an appliance of another product, or
+    one whose firmware could not be read, or a comparison
+    ``firmware_versions.compare`` refuses to decide, is swept. Absence of
+    evidence is not evidence of a no-op, and silently not running a box the
+    operator ticked is unreportable.
+    """
+    run, held = [], []
+    for dev in (devices or []):
+        name = getattr(dev, 'name', '') or ''
+        if (getattr(dev, 'kind', '') or '') not in (products or []):
+            run.append(dev)
+            continue
+        code, current = classify_move(version, dev)
+        if code in HELD_MOVES:
+            held.append({'id': getattr(dev, 'id', None), 'name': name,
+                         'code': code, 'current': current,
+                         'reason': hold_reason(code, name, current, version)})
+        else:
+            run.append(dev)
+    return {'run': run, 'held': held}
+
+
+def target_options(kinds=None, devices=None) -> list[dict]:
+    """Every version this window may be upgraded TO, newest first.
+
+    ``devices`` are the appliances the page is rendering. Passed in rather
+    than re-queried so the select can only ever be narrowed by the SAME
+    rows the checkboxes below it come from: a version filtered out by a box
+    the operator cannot see would be a destination missing for a reason
+    nothing on screen explains. Omitted, every row is offerable and the
+    return is what it always was.
+
+    DERIVED from ``services.firmware_versions.catalog`` — the one authority for
+    "what versions does this console know of" — for each product the sweep
+    actually runs against. Re-listing them here would be a second catalogue
+    that silently stops agreeing with API Versions the first time somebody
+    declares a release on that page.
+
+    ``has_image`` answers a DIFFERENT question from "is this version known",
+    and the two are kept apart on purpose: an operator may legitimately
+    pre-flight a window towards a release whose ``.out`` has not been uploaded
+    yet, and refusing that would make the pre-flight impossible to run until
+    the last moment. The page SAYS which is which; it does not decide.
+
+    Only ``upgrade`` images count. An install image (``.zip``/``.qcow2``/
+    ``.ova``) builds a machine from nothing, and reporting one as "the image
+    for 8.0.5 is here" is how somebody walks into a window holding a file that
+    was never meant to touch a running appliance.
+    """
+    from ..models_firmware import FirmwareImage
+    from ..services import firmware_versions as fv
+
+    kinds = tuple(kinds if kinds is not None else prep_kinds())
+    images: dict[str, list[str]] = {}
+    if kinds:
+        for row in (FirmwareImage.query
+                    .filter(FirmwareImage.product.in_(kinds)).all()):
+            if (row.image_kind or 'upgrade') != 'upgrade':
+                continue
+            version = fv.normalize(row.version)
+            if version:
+                images.setdefault(version, []).append(row.filename or '')
+
+    merged: dict[str, dict] = {}
+    for kind in kinds:
+        for version, entry in fv.catalog(kind).items():
+            row = merged.setdefault(version, {
+                'version': version, 'line': entry.get('line') or '',
+                'line_only': bool(entry.get('line_only')),
+                'products': [], 'appliances': [], 'note': ''})
+            row['products'].append(kind)
+            row['appliances'].extend(entry.get('appliances') or [])
+            if entry.get('note') and not row['note']:
+                row['note'] = entry['note']
+
+    out = []
+    for version in sorted(merged, key=fv.sort_key, reverse=True):
+        row = merged[version]
+        files = sorted({f for f in (images.get(version) or []) if f})
+        row['images'] = files
+        row['has_image'] = bool(files)
+        row['appliances'] = sorted(set(row['appliances']))
+        row['in_fleet'] = bool(row['appliances'])
+        row.update(forward_only(version, row['products'], devices))
+        out.append(row)
+    return out
+
+
+def resolve_target(raw, options) -> tuple[str, str]:
+    """``(version, error)`` for the destination a sweep was asked for.
+
+    Resolved against the SAME list the select renders, never against a regex
+    alone, for the reason ``preselect_device`` resolves ids against the rows on
+    screen: a version this console has never heard of is not a typo to be
+    normalised through, it is a destination nothing on this page can say
+    anything about — no image, no release notes, no Scout verdict.
+
+    An ABSENT answer is refused rather than defaulted. "Upgrade to the newest
+    one we know about" is a decision, and a page that makes it silently writes
+    a destination onto forty pieces of evidence that nobody chose.
+    """
+    from ..services import firmware_versions as fv
+    raw = (raw or '').strip()
+    if not raw:
+        return '', ('Choose the version this window upgrades TO before running '
+                    'the sweep. The pre-flight is evidence FOR a specific move: '
+                    'the same green run says nothing comparable about 7.6.8 → '
+                    '8.0.5 and 7.6.8 → 8.0.6. Nothing was started.')
+    version = fv.normalize(raw)
+    if not version:
+        return '', (f'"{raw}" is not a firmware version. Nothing was started.')
+    row = next((o for o in (options or []) if o.get('version') == version),
+               None)
+    if row is None:
+        return '', (f'{version} is not a version this console knows of, so '
+                    f'nothing here can review the move to it. Declare it under '
+                    f'Firmware → API versions, or upload its image, and it '
+                    f'appears in this list. Nothing was started.')
+    # A FOURTH sentence, and not a variant of the third. "This console has
+    # never heard of 9.9.9" and "7.6.8 exists and every one of these boxes
+    # is already on it or past it" send the operator to two different
+    # places -- one to declare a version, the other to re-read their own
+    # selection -- and answering the second with the first would send them
+    # to declare a version that is already declared.
+    if not row.get('offerable', True):
+        held = row.get('at_or_above') or []
+        shown = ', '.join(held[:4]) + ('…' if len(held) > 4 else '')
+        return '', (f'{version} would not move any of these appliances '
+                    f'forward — {shown} '
+                    f'{"is" if len(held) == 1 else "are"} already running it '
+                    f'or something newer. Pick a later version, or sweep the '
+                    f'appliances that are still behind. Nothing was started.')
+    return version, ''
+
+
+def scout_reviews(devices, preps) -> dict:
+    """``{appliance_id: summary}`` — Scout's reading of each recorded move.
+
+    Computed at RENDER time, not stored on the run: Scout reads harvested
+    vendor prose, so a corpus that gains the 8.0.5 page tonight must change
+    this badge tomorrow without anybody re-running a sweep against forty live
+    appliances. The pre-flight measures the BOX; Scout reads the NOTES, and
+    freezing the second into the first would make a stale corpus look like
+    measured evidence.
+
+    Only appliances whose newest run DECLARED a destination get an entry.
+    Absent is absent: a row with no badge has no target recorded, which is a
+    different statement from ``unknown`` (Scout looked and the corpus had
+    nothing) and from ``clear``.
+
+    Memoised per ``(kind, current, target)`` because that triple is the whole
+    of what :func:`upgrade_scout.review` reads — ``current`` is passed
+    explicitly here, so the only attribute taken off the appliance is its
+    kind. Forty boxes on four versions cost four corpus reads, not forty.
+    """
+    from ..services import upgrade_scout
+    out: dict = {}
+    cache: dict = {}
+    for dev in devices or []:
+        prep = (preps or {}).get(getattr(dev, 'id', None))
+        target = ((getattr(prep, 'target_version', '') or '').strip()
+                  if prep is not None else '')
+        if not target:
+            continue
+        # The version the RUN observed, falling back to the inventory row.
+        # The run's own reading is preferred because it is what was true when
+        # the evidence was taken; the appliance row may have been re-probed
+        # since, and grading old evidence against today's firmware is how a
+        # box that has already been upgraded shows a review of a move it is
+        # no longer making.
+        current = upgrade_scout.normalise(
+            (getattr(prep, 'firmware', '') or '')
+            or (getattr(dev, 'firmware', '') or ''))
+        key = ((getattr(dev, 'kind', '') or ''), current, target)
+        if key not in cache:
+            cache[key] = upgrade_scout.summary(
+                upgrade_scout.review(dev, target, current=current))
+        out[dev.id] = cache[key]
+    return out
+
+
 def _eligible():
     kinds = prep_kinds()
     query = visible_appliances()
@@ -209,6 +535,7 @@ def submitted_fields(form) -> dict:
     return {
         'doc_lang': (form.get('doc_lang') or '').strip(),
         'risk': (form.get('risk') or '').strip(),
+        'target_version': (form.get('target_version') or '').strip(),
         'title': form.get('title') or '',
         'reason': form.get('reason') or '',
         'rollback': form.get('rollback') or '',
@@ -250,6 +577,42 @@ def prep_choice(devices, runs, preselect, prep_pick, posted) -> dict:
             continue
         out[dev.id] = rows[0].id
     return out
+
+
+def cited_targets(devices, runs, choice) -> dict:
+    """What destination the runs THIS page has ticked actually declare.
+
+    ``{'versions': [...], 'one': str, 'split': bool, 'uncited': int}``.
+
+    Computed from the same ``prep_choice`` the selects render, so stage 2 shows
+    the number ``create_change_request`` is about to derive — and would refuse
+    over. Re-deriving it there from the change's own rows would be a check
+    comparing a value with itself.
+
+    ``split`` is the interesting one: two ticked runs swept towards different
+    versions is one window carrying two moves, and it is REPORTED here rather
+    than only at submit time, after the operator has filled the whole form.
+    """
+    picked = {d.id for d in (devices or [])}
+    versions, uncited = [], 0
+    for dev_id, prep_id in (choice or {}).items():
+        if dev_id not in picked:
+            continue
+        if not prep_id:
+            uncited += 1
+            continue
+        row = next((r for r in (runs.get(dev_id) or []) if r.id == prep_id),
+                   None)
+        target = (getattr(row, 'target_version', '') or '').strip() if row else ''
+        if target:
+            versions.append(target)
+        else:
+            # A cited run with no destination is NOT the same as an uncited
+            # appliance: there IS evidence, it simply predates the question.
+            uncited += 1
+    uniq = sorted(set(versions))
+    return {'versions': uniq, 'one': uniq[0] if len(uniq) == 1 else '',
+            'split': len(uniq) > 1, 'uncited': uncited}
 
 
 def auto_fields(posted, crdoc, devices, render_lang) -> dict:
@@ -298,6 +661,101 @@ def created_change(raw):
     return cr
 
 
+def rollout_context(cr) -> dict:
+    """Stage 4 — the rollout plan, as plain data.
+
+    ``cr`` is the change stage 3 is showing, or ``None`` on a visit that names
+    none. Never raises: this is decoration on a page that renders without it,
+    and a card that 500s the whole flow because a scheduled row is odd is
+    worse than a card that says it cannot read the plan.
+
+    The question "may this be scheduled" is asked of
+    :func:`services.change_requests.schedulable` and NOT re-spelt here — the
+    control this card offers and the call behind it have to agree about it.
+    """
+    from ..services import change_requests as crsvc
+    from ..services import settings_store
+    empty = {
+        'total': 0, 'ok': False, 'reason': '', 'per_round': 1,
+        'gap': crsvc.DEFAULT_ROUND_GAP_MINUTES, 'max_rounds': crsvc.MAX_ROUNDS,
+        'task': None, 'rounds': [], 'calendar_on': False,
+        'savable': False, 'save_reason': '', 'plan': {},
+    }
+    if cr is None:
+        return empty
+    ids = list(cr.device_ids_list or [])
+    ok, reason = crsvc.schedulable(cr)
+    # TWO questions, asked of two authors on purpose. ``ok`` is "may rows be
+    # put on the calendar now", which needs the signature; ``savable`` is "may
+    # the plan be written down", which does not. Asking only the first is what
+    # made the operator approve a change before they could record how many
+    # appliances it may take down at a time.
+    savable, save_reason = crsvc.plannable(cr)
+    plan = crsvc.rollout_plan(cr)
+
+    task = None
+    if cr.scheduled_action_id:
+        task = db.session.get(ScheduledAction, cr.scheduled_action_id)
+    saved = task.params_dict if task is not None else {}
+
+    def _int(value, fallback):
+        try:
+            out = int(value)
+        except (TypeError, ValueError):
+            return fallback
+        return out if out > 0 else fallback
+
+    # What the operator last SAVED, read back off the rows the executor will
+    # actually fire — never off a default that merely looks like it. A card
+    # that re-opens proposing 25 over a plan saved at 5 is a card that invites
+    # somebody to press Save and silently triple the blast radius.
+    # Rows first, then the plan saved on the change, then a default. The
+    # middle step is what stops a number typed before approval from vanishing
+    # on the way back from the Approve button - which is exactly how somebody
+    # re-opens this card, sees 25 over a plan they had set to 5, and presses
+    # Save.
+    per_round = _int(saved.get('round_size'),
+                     _int(plan.get('size'), len(ids) or 1))
+    gap = _int(saved.get('round_gap_minutes'),
+               _int(plan.get('gap'), crsvc.DEFAULT_ROUND_GAP_MINUTES))
+
+    rows = ([task] if task is not None else []) + crsvc.round_siblings(cr.id)
+    names = {}
+    if ids:
+        names = {a.id: a.name for a in
+                 Appliance.query.filter(Appliance.id.in_(ids)).all()}
+    rounds = []
+    for row in rows:
+        params = row.params_dict
+        targets = [t for t in row.targets_list]
+        rounds.append({
+            'id': row.id,
+            # A round with no index IS round 1 of 1: the un-batched action this
+            # product has always created carries no round bookkeeping, and
+            # rendering it as "round None" would make the plain case look broken.
+            'index': _int(params.get('round_index'), 1),
+            'total': _int(params.get('round_total'), 1),
+            'at': settings_store.to_local(row.schedule_dict.get('at')),
+            'count': len(targets),
+            'names': ', '.join(str(names.get(t, f'#{t}')) for t in targets) or '—',
+            'enabled': bool(row.enabled),
+            'last_status': row.last_status or '',
+        })
+    rounds.sort(key=lambda r: r['index'])
+
+    calendar_on = False
+    try:
+        from .calendar import _calendar_on
+        calendar_on = bool(_calendar_on())
+    except Exception:  # noqa: BLE001 - a card must not 500 over a preference
+        calendar_on = False
+
+    return dict(empty, total=len(ids), ok=ok, reason=reason,
+                savable=savable, save_reason=save_reason, plan=plan,
+                per_round=min(per_round, len(ids)) if ids else per_round,
+                gap=gap, task=task, rounds=rounds, calendar_on=calendar_on)
+
+
 def page_context(posted=None) -> dict:
     """Everything the flow page renders, as plain data.
 
@@ -323,8 +781,51 @@ def page_context(posted=None) -> dict:
     # renders, so the column and the dropdown cannot disagree about which run
     # is on top.
     latest = {aid: rows[0] for aid, rows in runs.items() if rows}
+    # The destinations this window may be swept towards, and what each
+    # appliance's newest run was actually swept towards. The select is
+    # re-proposed from the LAST sweep rather than reset to blank: an operator
+    # who ran 20 boxes towards 8.0.5 and comes back for the other 20 is
+    # answering the same question again, and a blank control invites a second,
+    # different answer that would split one window across two moves.
+    targets = target_options(devices=devices)
+    # What each offered destination would REFUSE to do, keyed by version and
+    # then by appliance name. Computed on the SERVER and handed over as data
+    # so the hint beside a row is the same sentence the POST flashes back;
+    # re-deriving "is this box already there" in JavaScript would be a second
+    # author of the refusal, and the browser's copy is the one nothing tests.
+    holds = {t['version']: t['holds'] for t in targets if t.get('holds')}
+    target_pick = (request.args.get('target') or '').strip()
+    if not target_pick:
+        declared = [(p.target_version or '').strip() for p in latest.values()]
+        declared = [d for d in declared if d]
+        # Re-proposed only when the fleet AGREES. Picking the most common one
+        # out of a split would silently answer "which of these two windows am
+        # I continuing" on the operator's behalf.
+        if declared and len(set(declared)) == 1:
+            target_pick = declared[0]
+    # NOT also filtered by ``offerable`` here, and that was tried. The only
+    # consumer of ``target_pick`` is the option loop, which already iterates
+    # the offered rows -- a version filtered out there can never be marked
+    # selected, so the extra term changes no rendered byte and would be a
+    # second author of "which versions are offered". The behaviour it was
+    # meant to protect is guarded at the template instead.
+    if target_pick not in {o['version'] for o in targets}:
+        target_pick = ''
     prep_pick, prep_unresolved = preselect_prep(
         request.args.get('prep'), preselect, runs)
+    # Computed ONCE, and AFTER prep_pick exists. The stage-2 header and the
+    # per-row selects must describe the same choice; two calls that happen to
+    # agree today are the pair that stops agreeing the moment somebody makes
+    # this function depend on anything that is not its arguments.
+    #
+    # Placed here for a reason that cost a render: the first attempt put this
+    # block higher, next to the target select it feeds, and `prep_pick` is
+    # assigned BELOW. Python raised NameError on every visit -- the page 500'd
+    # outright, which is at least loud. The quiet version of this mistake is
+    # what the comment is for.
+    chosen = prep_choice(devices, runs, preselect, prep_pick, posted)
+    ticked_ids = (posted['device_ids'] if posted is not None
+                  else ({preselect} if preselect else set()))
     # Batched rollouts, newest group first. Grouped HERE rather than left as
     # ten look-alike rows: five changes whose only distinguishing mark is
     # "wave 3/5" buried in the title is precisely the register this page
@@ -370,7 +871,8 @@ def page_context(posted=None) -> dict:
     # the operator is about to sign their name to.
     from ..services import email_service
     from .appliances import _adom_arg
-    from .change_requests import _tz_name, cr_view_context
+    from .change_requests import (_tz_name, cr_view_context,
+                                  new_form_context)
     defaults = {
         'owner': (getattr(current_user, 'username', '') or ''),
         'notify_to': (email_service.config().get('default_to') or '').strip(),
@@ -409,12 +911,21 @@ def page_context(posted=None) -> dict:
     # notified and Cancel, so the change the page opened for you is one you did
     # not name. That is why every one of those buttons sits under a header that
     # states the ref, the title and the status of the change it acts on.
-    if created is None and flow_changes:
-        created = flow_changes[0]
+    # Stage 3 opens ONLY for a change this visit NAMES. The fallback to the
+    # newest meant the stage was already open before anyone pressed Create
+    # draft -- and its blocks carry Approve, Schedule, Mark notified and
+    # Cancel, so a plain visit offered lifecycle buttons over a change the
+    # operator had not raised in this sitting. `?cr=` is written by the
+    # redirect Create draft takes, so the stage appears exactly when the
+    # change was just created, and the same link reopens it later.
     # Returned as ONE dict and splatted by the caller. Enumerating the keys at
     # the render call is how a value this function computes can fail to reach
     # the template with every assertion about it still green.
-    return dict(
+    # Stage 2 IS the new-change-request form, so it is fed by the SAME
+    # builder that page uses. Merged UNDER this function's own keys: where the
+    # two overlap (defaults, tz_name, risks, lang_preset...) the flow's value
+    # wins, so nothing stage 1 or the waves post renders changes meaning.
+    return dict(new_form_context(preset_action=CR_ACTION), **dict(
         devices=devices, latest=latest, runs=runs,
         preselect_prep=prep_pick,
         preselect_prep_unresolved=prep_unresolved,
@@ -424,8 +935,24 @@ def page_context(posted=None) -> dict:
         wave_groups=wave_groups,
         risks=crsvc_risks(),
         kinds=prep_kinds(), max_sweep=MAX_SWEEP,
+        targets=targets, target_pick=target_pick, holds=holds,
+        cited_target=cited_targets(
+            [d for d in devices if d.id in ticked_ids], runs, chosen),
+        # Scout's verdict per appliance, for the move its newest run declared.
+        scout=scout_reviews(devices, latest),
         max_waves=MAX_WAVES, crdoc=crdoc,
         cr_action=CR_ACTION,
+        # Stage 2's change-type select is fixed to this flow's one action and
+        # locked. Opt-in key: the shared partial keeps ASKING on the page that
+        # does not set it.
+        locked_action=CR_ACTION,
+        # Same opt-in shape: stage 2 shows the step-1 ticks read-only instead
+        # of asking the question a second time. The standalone page does not
+        # set it and keeps its inventory picker.
+        locked_devices=True,
+        # Third opt-in key: Create draft comes back HERE, to stage 3, instead
+        # of leaving the flow for the change's own page.
+        cr_back='upgrade_flow',
         lang_preset=lang_preset,
         # The text has to be rendered in SOME language for the page to work
         # without scripting; that is not the same as the question being
@@ -436,12 +963,13 @@ def page_context(posted=None) -> dict:
         lang_pref_unrenderable=(bool(pref_lang) and not lang_preset),
         # --- the three answers that differ between a visit and a refusal ---
         posted=posted,
-        ticked=(posted['device_ids'] if posted is not None
-                else ({preselect} if preselect else set())),
-        prep_choice=prep_choice(devices, runs, preselect, prep_pick, posted),
+        ticked=ticked_ids,
+        prep_choice=chosen,
         auto=auto_fields(posted, crdoc, devices, render_lang),
         created=created,
         flow_changes=flow_changes,
+        # Stage 4 - the rollout this change will actually be carried out as.
+        rollout=rollout_context(created),
         # The change this flow raised, rendered WHOLE right here - the same
         # action bar, overview, document, frozen inventory, external record,
         # timeline and notice its own page shows, from the ONE builder both
@@ -453,7 +981,7 @@ def page_context(posted=None) -> dict:
             back='upgrade_flow', self_endpoint='upgrade_flow.index',
             self_args=dict({'cr': created.id}, **_adom_arg()))
             if created is not None else None),
-    )
+    ))
 
 
 @bp.route('/')
@@ -500,6 +1028,12 @@ def change():
         'doc_lang': posted['doc_lang'],
         'device_ids': sorted(posted['device_ids']),
         'prep_ids': sorted(posted['prep_ids']),
+        # Declared, and cross-checked against the runs above by
+        # create_change_request. Posted rather than re-derived here so the
+        # check has two independent sides to compare: a destination read back
+        # off the same evidence it is being compared with can never disagree
+        # with it, which is a check that cannot fail.
+        'target_version': posted['target_version'],
         'window_start': _parse_dt(posted['window_start']),
         'window_end': _parse_dt(posted['window_end']),
         'requested_by': getattr(current_user, 'username', '') or '',
@@ -523,6 +1057,129 @@ def change():
     # from where this used to land them.
     from .appliances import _adom_arg
     return redirect(url_for('upgrade_flow.index', cr=cr.id, **_adom_arg()))
+
+
+@bp.route('/schedule', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def schedule():
+    """Stage 4 — save the rollout as real scheduled task(s) on the calendar.
+
+    NOT a second implementation of "schedule a change". What a schedulable
+    change is, what the bound action carries and how the rounds are laid out
+    all stay in :func:`services.change_requests.schedule_change_request` —
+    the same call the change's own Schedule button makes. This route is the
+    two answers a stage inside a staged page has to give: come back HERE
+    citing the change, and say in words what was created.
+    """
+    from flask_babel import gettext
+
+    from ..services import change_requests as crsvc
+    from ..services import settings_store
+    from .appliances import _adom_arg
+
+    # Through the SAME gate the citation uses. An id naming a change outside
+    # this operator's ADOM must not be schedulable from here just because the
+    # form posted it.
+    cr = created_change(request.form.get('cr_id'))
+    back = lambda: redirect(url_for(  # noqa: E731 - one destination, one author
+        'upgrade_flow.index', **dict({'cr': cr.id} if cr is not None else {},
+                                     **_adom_arg())))
+    if cr is None:
+        flash('That change request is not one this flow can schedule — it does '
+              'not exist, or it is not visible to you. Nothing was scheduled.',
+              'danger')
+        return redirect(url_for('upgrade_flow.index', **_adom_arg()))
+
+    try:
+        per_round = int(request.form.get('per_round') or 0)
+    except (TypeError, ValueError):
+        per_round = 0
+    if per_round < 1:
+        # Refused, not defaulted: "how many go down at a time" is the one
+        # question this card exists to ask, and answering it on the operator's
+        # behalf is how sixty appliances reboot together.
+        flash('Set how many appliances go in each round. Nothing was scheduled.',
+              'warning')
+        return back()
+    try:
+        gap = int(request.form.get('round_gap') or crsvc.DEFAULT_ROUND_GAP_MINUTES)
+    except (TypeError, ValueError):
+        gap = crsvc.DEFAULT_ROUND_GAP_MINUTES
+
+    # The field is READONLY, not authoritative: a number input still answers
+    # its spinner in some browsers, and readonly is a courtesy to the operator
+    # rather than a guarantee to the server. Clamped to the same ceiling the
+    # card renders, so a plan can never be STORED claiming a round wider than
+    # the change it belongs to.
+    device_ids = list(cr.device_ids_list or [])
+    if device_ids:
+        per_round = min(per_round, len(device_ids))
+
+    # Two different things wear the word "Save" on this card, and collapsing
+    # them is the bug this branch exists to prevent. An APPROVED change gets
+    # real rows on the calendar. A change still waiting for a signature gets
+    # its plan written onto the change and NOTHING scheduled - because the
+    # executor re-checks approval at fire time and would find none, and
+    # because printing "it is on the calendar" over an unapproved plan is a
+    # sentence this product could not keep.
+    gate_ok, _gate_why = crsvc.schedulable(cr)
+    if not gate_ok:
+        try:
+            plan = crsvc.save_rollout_plan(
+                cr.id, getattr(current_user, 'username', '') or '',
+                per_round=per_round, round_gap_minutes=gap)
+        except ValueError as exc:
+            db.session.rollback()
+            flash(str(exc), 'danger')
+            return back()
+        log_action('upgrade_flow.plan', target=cr.ref or f'#{cr.id}',
+                   detail=f"rounds={plan.get('total')} "
+                          f"per_round={plan.get('size')} "
+                          f"gap={plan.get('gap')}m (not scheduled: "
+                          f"{cr.status})")
+        flash(gettext('Rollout plan saved on this change: %(total)d round(s) '
+                      'of at most %(size)d appliance(s), %(gap)d minute(s) '
+                      'apart. Nothing is in Scheduled Actions or on the '
+                      'calendar yet — the rounds are created the moment this '
+                      'change is approved.',
+                      total=plan.get('total') or 1, size=plan.get('size') or 1,
+                      gap=plan.get('gap') or crsvc.DEFAULT_ROUND_GAP_MINUTES),
+              'success')
+        return back()
+
+    existed = bool(cr.scheduled_action_id)
+    try:
+        action_id = crsvc.schedule_change_request(
+            cr.id, getattr(current_user, 'username', '') or '',
+            per_round=per_round, round_gap_minutes=gap)
+    except ValueError as exc:
+        db.session.rollback()
+        flash(str(exc), 'danger')
+        return back()
+
+    action = db.session.get(ScheduledAction, action_id)
+    name = action.name if action is not None else f'CR #{cr.id}'
+    total = len(crsvc.round_slices(cr.device_ids_list, per_round))
+    log_action('upgrade_flow.schedule', target=cr.ref or f'#{cr.id}',
+               detail=f'action={action_id} rounds={total} '
+                      f'per_round={per_round} gap={gap}m')
+
+    # The SAME sentence the other scheduling card in this product prints, from
+    # the same message. Two spellings of "it is saved and on the calendar" is
+    # how one of them comes to claim it over a row that is switched off.
+    if existed:
+        flash(gettext('The task “%(name)s” was updated in Scheduled Actions and '
+                      'is on the calendar.', name=name), 'success')
+    else:
+        flash(gettext('The task “%(name)s” has been added to Scheduled Actions '
+                      'and is on the calendar.', name=name), 'success')
+    if total > 1:
+        flash(gettext('It runs in %(total)d rounds of at most %(size)d '
+                      'appliance(s), %(gap)d minute(s) apart — the first at '
+                      '%(at)s.', total=total, size=per_round, gap=gap,
+                      at=settings_store.to_local(cr.window_start)), 'info')
+    return back()
 
 
 def split_waves(devices, size: int) -> list[list]:
@@ -676,6 +1333,10 @@ def waves():
             'device_ids': [d.id for d in members],
             'prep_ids': [prep_by_dev[d.id] for d in members
                          if prep_by_dev.get(d.id)],
+            # Every wave of one batch is the SAME move; carrying it per wave
+            # rather than per batch is how each wave's own document states its
+            # destination without a reader having to find the others.
+            'target_version': request.form.get('target_version'),
             'window_start': w_start,
             'window_end': w_end,
             'requested_by': getattr(current_user, 'username', '') or '',
@@ -895,6 +1556,28 @@ def prep():
               f'{MAX_SWEEP}. Run it in batches — nothing was started.', 'danger')
         return redirect(url_for('upgrade_flow.index'))
 
+    # WHERE this window is going, answered before anything runs. Refused, not
+    # defaulted: a pre-flight is evidence for a specific move, and a sweep that
+    # stored no destination produces rows citable as proof of any upgrade at
+    # all — including the one nobody read the release notes for.
+    #
+    # Checked AFTER the cap, deliberately, and this order was got wrong once.
+    # Putting it first read better ("answer the one question you must answer")
+    # and it took the cap's message away: 41 selected appliances with no
+    # destination were told to pick a version, and the operator retried 41
+    # appliances. The cap's sentence NAMES THE NUMBER, which is the thing they
+    # have to act on either way -- `test_an_oversized_sweep_starts_nothing_and
+    # _says_how_many` is the guard that settled it, and it bit.
+    # Against the page's own list -- _eligible() is what the select was
+    # built from -- so a refusal here names the same options the operator
+    # was looking at when they chose.
+    options = target_options(devices=_eligible())
+    target, target_error = resolve_target(request.form.get('target_version'),
+                                          options)
+    if target_error:
+        flash(target_error, 'danger')
+        return redirect(url_for('upgrade_flow.index'))
+
     # Re-resolve through visible_appliances(): the posted ids are user input,
     # and a device this user cannot see must not be backed up because its id
     # was typed into a form.
@@ -914,11 +1597,32 @@ def prep():
               'visible to you. Nothing was started.', 'danger')
         return redirect(url_for('upgrade_flow.index'))
 
+    # PER APPLIANCE, and last, because every check above is about the
+    # window (how many, towards what, may you see them, does the action even
+    # support their product) while this one is about the pair (this box, this
+    # destination). Running it earlier would take the cap's number or the
+    # visibility refusal away from a selection that has both problems.
+    chosen = next((o for o in options if o.get('version') == target), None)
+    split = sweep_split(target, (chosen or {}).get('products') or [], devices)
+    if not split['run']:
+        for hold in split['held']:
+            flash(hold['reason'], 'danger')
+        flash(f'Nothing was started: not one of the {len(split["held"])} '
+              f'selected appliance(s) would move forward to {target}. Pick a '
+              f'later version, or select an appliance that is still behind '
+              f'it.', 'danger')
+        return redirect(url_for('upgrade_flow.index', target=target))
+    for hold in split['held']:
+        flash(f'{hold["reason"]} It was skipped; the rest of the sweep ran.',
+              'warning')
+    devices = split['run']
+
     rows = prep_store.run_bulk(
         devices,
         do_backup=request.form.get('backup', '1') == '1',
         do_health=request.form.get('health', '1') == '1',
         do_services=request.form.get('services', '1') == '1',
+        target_version=target,
         created_by=getattr(current_user, 'username', '') or '')
 
     clean = [r for r in rows if r['ok'] and r['stored']]
@@ -926,17 +1630,27 @@ def prep():
     broken = [r for r in rows if not r['stored']]
     log_action('upgrade_flow.prep_sweep',
                target=f'{len(rows)} appliances',
-               detail=f'clean={len(clean)} not-clean={len(dirty)} '
-                      f'failed={len(broken)}')
+               detail=f'to={target} clean={len(clean)} not-clean={len(dirty)} '
+                      f'failed={len(broken)} skipped={len(split["held"])}')
     # Three counts, never one. "38 of 40 succeeded" hides which two, and the
     # two that failed are the only ones anybody has to act on before the
     # window opens.
-    flash(f'Pre-upgrade swept {len(rows)} appliance(s): {len(clean)} clean, '
-          f'{len(dirty)} ran but not clean, {len(broken)} could not be '
-          f'pre-flighted.',
-          'success' if not broken and not dirty else 'warning')
+    # The destination is NAMED in the sentence that reports the sweep. Three
+    # counts and no target reads as "the fleet is ready", which is the claim
+    # this column exists to qualify: ready FOR WHAT.
+    # A FOURTH count, not folded into "could not be pre-flighted". A box
+    # that was skipped because it is already there had nothing go wrong with
+    # it, and reporting the two together would send somebody to debug a
+    # healthy appliance.
+    skipped = ('' if not split['held'] else
+               f' {len(split["held"])} skipped: already on {target} or past it.')
+    flash(f'Pre-upgrade swept {len(rows)} appliance(s) towards {target}: '
+          f'{len(clean)} clean, {len(dirty)} ran but not clean, '
+          f'{len(broken)} could not be pre-flighted.' + skipped,
+          'success' if not broken and not dirty and not split['held']
+          else 'warning')
     for row in broken:
         flash(f'{row["name"]}: {row["error"] or "no evidence stored"}', 'danger')
     for row in dirty:
         flash(f'{row["name"]}: {row["summary"]}', 'warning')
-    return redirect(url_for('upgrade_flow.index'))
+    return redirect(url_for('upgrade_flow.index', target=target))

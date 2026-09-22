@@ -2595,8 +2595,8 @@ deletes its bindings, and says so.</p>
 <p>The assignment picker spans both FortiWeb and FortiADC appliances — the catalog
 is a single <strong>global</strong> one, not per-ADOM.</p>
 <h2 id="26-settings-tab-by-tab">26. Settings, tab by tab</h2>
-<p><code>Settings</code> is one page with a <strong>grouped sidebar</strong>: <strong>11 groups, 34 panels</strong>.
-Ten of the groups (32 panels) are admin-only (<code>user_manage</code>); the remaining
+<p><code>Settings</code> is one page with a <strong>grouped sidebar</strong>: <strong>11 groups, 35 panels</strong>.
+Ten of the groups (33 panels) are admin-only (<code>user_manage</code>); the remaining
 one — <strong>My Account</strong>, holding <strong>Security</strong> and <strong>Change Password</strong> — is
 self-service and is the only group a non-admin sees. A group with nothing you may see is not
 rendered at all, so the menu never offers a section that is not there.</p>
@@ -2610,7 +2610,7 @@ rendered at all, so the menu never offers a section that is not there.</p>
 <tbody>
 <tr>
 <td><strong>System</strong></td>
-<td>General · Software Update Repository · AI Advisor</td>
+<td>General · Software Update Repository · AI Advisor · Integrations</td>
 </tr>
 <tr>
 <td><strong>Source of Truth &amp; Backup</strong></td>
@@ -2656,6 +2656,13 @@ rendered at all, so the menu never offers a section that is not there.</p>
 </table>
 <p>The <strong>AI Advisor</strong> panel additionally needs <code>advisor.configure</code>; an admin
 without it does not see the entry.</p>
+<p><strong>Integrations is a page, not a pane</strong>, and its row carries the leaving arrow
+(↗) for that reason: clicking it replaces the console instead of switching a
+tab. It is where SATOM is wired to systems it does not own — NetBox
+(maintenance windows and the appliance → device map) and your own Python hooks
+— and it is filed under System because that is what it configures. It had no
+menu entry at all until 2026-09-21; the page existed and worked, but the only
+way to reach it was to type <code>/settings/integrations</code>.</p>
 <p><strong>Scout is its own group, below Sentinel.</strong> Its <em>Settings</em> panel holds only
 <em>where to look and how long to wait</em> — the default look-back window, the
 FortiAnalyzer ADOM and device selector the border rung queries, the two
@@ -4800,25 +4807,38 @@ only, and works against any NetBox:</p>
 <tbody>
 <tr>
 <td><strong>Journal entry</strong> (default)</td>
-<td>A journal entry on the device with the change-request id, window and reason; closing posts a <em>second</em> entry</td>
+<td>A journal entry on the object with the change-request id, window and reason; closing posts a <em>second</em> entry</td>
 <td>Full history, but journal entries are not filterable in the NetBox UI</td>
 </tr>
 <tr>
-<td><strong>Device tag</strong></td>
-<td>Adds <code>maint-window</code> to the device, removes it on close</td>
+<td><strong>Object tag</strong></td>
+<td>Adds <code>maint-window</code> to the object, removes it on close</td>
 <td>Queryable from NetBox, but records <em>that</em> a window exists, not which one or when it started</td>
 </tr>
 <tr>
-<td><strong>Device custom fields</strong></td>
-<td>Sets <code>maint_window_start</code> / <code>_end</code> on the device</td>
-<td>Structured, but the custom fields must already be defined — SATOM tells you by name if they are not, rather than quietly doing nothing</td>
+<td><strong>Object custom fields</strong></td>
+<td>Sets <code>maint_window_start</code> / <code>_end</code> on the object</td>
+<td>Structured, but the custom fields must already be defined <strong>for that object type</strong> — a field declared for devices does not exist on a virtual machine, and SATOM tells you by name and by type rather than quietly doing nothing</td>
 </tr>
 </tbody>
 </table>
-<p><strong>Device mapping</strong> binds each SATOM appliance to a NetBox device id. Leave a row
-blank and SATOM falls back to an exact <em>name</em> match — that works right up until
-somebody renames a device on either side, which is why the page shows you which
-devices rely on the fallback.</p>
+<p><strong>Devices and virtual machines are both targets.</strong> NetBox models a virtual
+machine as a different object from a device: another API path, another content
+type, and a <strong>separate id space</strong> — device 95 and virtual machine 95 are
+unrelated objects. That matters here because a virtual appliance (FortiWeb-VM,
+FortiADC-VM, FortiAuthenticator-VM) is usually documented in NetBox as a
+virtual machine, and a device-only integration would call a fully documented
+appliance undocumented and switch its maintenance-window button off.</p>
+<p><strong>Object mapping</strong> binds each SATOM appliance to a NetBox object. A device is
+its id on its own (<code>7</code>); a virtual machine carries its prefix (<code>vm:95</code>). Leave
+a row blank and SATOM falls back to an exact <em>name</em> match — <strong>devices first,
+then virtual machines</strong> — which works right up until somebody renames an object
+on either side, which is why the page shows you which appliances rely on the
+fallback.</p>
+<p>Two names that differ only in case are two <em>different</em> objects to SATOM, even
+though NetBox's own search will find either: the page names the near miss
+(<code>NetBox has no device or virtual machine named 'PRT03'; it does have '{hypervisor}'</code>)
+rather than binding to something you did not pick.</p>
 <h3 id="352-issue-tracker-jira-openproject-vikunja">35.2 Issue tracker (Jira, OpenProject, Vikunja)</h3>
 <p>Pick a backend, fill in the URL, the API token and the project, and press
 <strong>Test connection</strong>. Raising the CRQ on a change request then opens a real
@@ -5450,10 +5470,122 @@ of every device it touches.</p>
 </tbody>
 </table>
 <p>The page <strong>owns no workflow of its own</strong>. Stage 1 calls the same pre-flight
-service an individual appliance page calls; stage 2 posts to the ordinary
-change-request form; stages 3 and 4 link into that change. This is deliberate:
-a second implementation of "upgrade prep" is exactly the defect this feature
-was built to remove.</p>
+service an individual appliance page calls; stage 2 calls the <strong>same create
+path</strong> the ordinary change-request form calls; stages 3 and 4 link into that
+change. This is deliberate: a second implementation of "upgrade prep" is
+exactly the defect this feature was built to remove.</p>
+<h3 id="401b-stage-2-is-raised-and-refused-without-leaving-the-flow">40.1b Stage 2 is raised — and refused — without leaving the flow</h3>
+<p>Until <strong>2026-09-19</strong> stage 2 posted straight at <code>/change-requests/new</code>, which
+cannot do either of the two things a stage inside a staged page has to do:</p>
+<ul>
+<li>on <strong>success</strong> it redirected to the new change's own page — out of the flow,
+  two stages from the end, with no way back to the selection just built;</li>
+<li>on <strong>refusal</strong> it redirected to an <strong>empty</strong> <code>/change-requests/new</code>: the form
+  you had deliberately not used, with everything you had typed gone, and the
+  run you had picked per appliance gone with it.</li>
+</ul>
+<p>Now the card posts to the flow itself:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>What happens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Raised</strong></td>
+<td>You come back to the flow with the change <strong>cited on stage 2</strong> — its reference, title and status, linked both to the change document and to the per-appliance execution view. The card stays filled in, because raising a second change over a different group of appliances is the next step of a staged window, not a mistake.</td>
+</tr>
+<tr>
+<td><strong>Refused</strong></td>
+<td>The <strong>same page</strong> re-renders with the refusal at the top and the card as you left it: wording, owner, notification address, approval mode, the window as you typed it, the appliances still ticked and <strong>the run each one cited</strong> — including <em>no run cited</em>, which is a real answer and is kept as one.</td>
+</tr>
+</tbody>
+</table>
+<p>Two details that are not cosmetic:</p>
+<ul>
+<li><strong>The window comes back as you typed it</strong>, in the console's timezone, never
+  re-formatted out of the UTC value the parser produced. A refused change that
+  came back with the hour shifted would look like you had typed it.</li>
+<li><strong>An untouched proposal is still a proposal.</strong> A field you never edited keeps
+  its <code>auto</code> mark and keeps following the change type and your selection; a
+  field you did edit stays yours. Marking everything "edited" on the way back
+  would freeze the wording for the rest of the session and claim text is yours
+  that you never wrote.</li>
+</ul>
+<p>What a legal change <em>is</em> did not move: the rules stay in the one create path,
+the same one the single-change form and the batched wave route use. Only the
+two answers — where you end up — belong to this page. The change type stays
+fixed at <code>upgrade</code> and is read from the code, not from the form.</p>
+<h3 id="401c-stage-2-is-the-change-request-all-of-it">40.1c Stage 2 <em>is</em> the change request — all of it</h3>
+<p>Raising the change inside the flow fixed the <strong>submit</strong>. It did not fix the
+rest: approving the change, scheduling it, marking the client notified,
+exporting the affected-service inventory, asking for the external ticket or
+reading the change document were all still a trip to
+<code>/change-requests/&lt;id&gt;</code> — which is the trip stage 2 exists to remove.</p>
+<p>Since <strong>2026-09-19</strong>, once a change has been raised the flow renders it whole,
+in place. Everything the change's own page shows is on stage 2:</p>
+<table>
+<thead>
+<tr>
+<th>Block</th>
+<th>What it is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Action bar</strong></td>
+<td>Run-gate verdict and reason, plus <strong>Approve</strong>, <strong>Schedule</strong>, <strong>Mark notified</strong>, <strong>Edit</strong> and <strong>Cancel CR</strong> — the buttons, not links to them.</td>
+</tr>
+<tr>
+<td><strong>Overview</strong></td>
+<td>Action, risk, window in your timezone, the appliances, who asked and who approved, notification address and status, bound scheduled action.</td>
+</tr>
+<tr>
+<td><strong>Change document</strong></td>
+<td>The formal 13-section document, viewable and downloadable in every configured language.</td>
+</tr>
+<tr>
+<td><strong>Affected services</strong></td>
+<td>The <strong>frozen</strong> inventory with its per-appliance pre-upgrade evidence table, the live-drift comparison, and the column-picking <code>.xlsx</code> / <code>.csv</code> export.</td>
+</tr>
+<tr>
+<td><strong>External change record</strong></td>
+<td>Approval mode, change ticket, NetBox window, the integration log, and the button that queues <code>change.requested</code>.</td>
+</tr>
+<tr>
+<td><strong>Timeline</strong></td>
+<td>Every recorded event on the change.</td>
+</tr>
+<tr>
+<td><strong>Maintenance notice</strong></td>
+<td>The client-facing draft.</td>
+</tr>
+</tbody>
+</table>
+<p>Four things about how this is built are deliberate:</p>
+<ul>
+<li><strong>One author.</strong> The blocks live in a single partial
+  (<code>change_requests/_view.html</code>) built from a single function
+  (<code>change_requests.cr_view_context</code>). Both pages include the one and call the
+  other. A second copy would drift — and the embedded copy, read once at the
+  end of a window nobody re-opens, would drift first.</li>
+<li><strong>Every button comes back here.</strong> Approve, schedule, notify, cancel, the
+  ticket request and even the Edit screen return to the flow, still citing the
+  change. Pressed on the change's own page the very same buttons return there.
+  This is carried as a <strong>token</strong>, never as a URL in the form: a redirect target
+  read out of a request field is an open redirect, and these buttons now sit on
+  a page more operators can reach.</li>
+<li><strong>"Compare against the devices now" does not leave the flow.</strong> It is the same
+  question asked about the page you are on.</li>
+<li><strong>A change you cannot see is not rendered.</strong> An unknown id, or one naming a
+  change outside your ADOM, reads as <em>no citation at all</em> — never as a 404, and
+  never as the existence of something you may not open.</li>
+</ul>
+<p>Below the change, the card that raised it is still there, filled in as you left
+it, relabelled <strong>Raise another change request</strong>: a staged window is normally
+several changes over different groups of appliances.</p>
 <h3 id="402-two-limits-that-refuse-rather-than-truncate">40.2 Two limits that refuse rather than truncate</h3>
 <table>
 <thead>

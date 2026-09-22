@@ -165,6 +165,27 @@ def test_every_settings_panel_is_named_in_the_intro(panel):
     assert panel in S26_TABLE, f"panel {panel!r} missing from the §26 table"
 
 
+def test_only_an_entry_that_leaves_the_console_is_promised_the_arrow():
+    """The arrow means "this replaces the whole page". A paragraph that
+    promises it for a pane teaches the reader to save their work before a
+    click that never takes the console away -- and nothing fails when it does:
+    the page renders and every row is still correct.
+
+    Derived from the menu literal, so an entry that stops leaving (or one that
+    starts) is caught here rather than in a sentence somebody remembered to
+    re-read.
+    """
+    head = S26.split("### ")[0]
+    leaving = {it["label"] for g in GROUPS for it in g["items"] if "ep" in it}
+    for par in head.split("\n\n"):
+        if "leaving arrow" not in par and "↗" not in par:
+            continue
+        assert any(lbl in par for lbl in leaving), (
+            "a §26 paragraph promises the leaving arrow but names none of the "
+            "entries that actually leave the console (%s): %r"
+            % (sorted(leaving) or "none do", " ".join(par.split())[:120])
+        )
+
 def test_the_table_lists_the_groups_in_the_order_the_menu_draws_them():
     """The reader counts down the table to find a group on screen.
 
@@ -214,12 +235,20 @@ def test_the_intro_describes_sentinel_s_entries_the_way_the_menu_draws_them():
     head = S26.split("### ")[0]
     sentinel = next(g for g in GROUPS if g["key"] == "sentinel")
     leaves = [it for it in sentinel["items"] if "ep" in it]
+    # Scoped to the paragraphs that are ABOUT Sentinel. Searching the whole
+    # §26 head made this guard read every mention of the arrow as a claim
+    # about Sentinel, so the paragraph introducing Integrations -- an entry
+    # that genuinely carries it -- tripped a guard about a different group.
+    # A guard that fires on a true sentence is one that gets relaxed next
+    # time, which is the failure mode it was written to prevent.
+    about = "\n\n".join(par for par in head.split("\n\n")
+                         if "Sentinel" in par)
     if not leaves:
-        assert "links out" not in head, (
+        assert "links out" not in about, (
             "§26 says Sentinel's entries are links out of the console; every "
             "one of them is a pane"
         )
-        assert "leaving arrow" not in head, (
+        assert "leaving arrow" not in about, (
             "§26 says a Sentinel entry carries the leaving arrow; none does"
         )
         # The COUNT is derived from the menu literal too. Spelling it into

@@ -1325,6 +1325,40 @@ def _source_gate(pol, src_name, *, live_ok, src_err, root_present, issues):
             "detail": "validated on %s" % src_name}
 
 
+def _apiver_targets(items) -> tuple[list, list]:
+    """``([(matrix_key, fields)], outside)`` for a collected clone plan.
+
+    ``outside`` names the objects the API sweep does not cover — 188 of the
+    registry's 513 logicals are ``*_item`` sub-tables that no sweep ever
+    reaches. They are REPORTED (every report says what it could not measure)
+    and deliberately kept out of the verdict: a family that answers "warn"
+    on every single clone because of them is a family operators learn to
+    click past, and then it is worth nothing on the day it is right.
+    """
+    from . import clone as _clone, objform as _objform
+    idx = _clone.registry_urn_index()
+    targets: dict[str, set] = {}
+    outside: set = set()
+    for it in items or []:
+        # Only what is actually WRITTEN. ``exists``/``untouched``/``cert``/
+        # ``no-endpoint`` never carry a payload to the destination, so a field
+        # verdict about them would be a verdict about a write nobody makes.
+        if getattr(it, "status", "") not in ("create", "update"):
+            continue
+        payload = getattr(it, "payload", None)
+        if not isinstance(payload, dict) or not payload:
+            continue
+        key = getattr(it, "logical", None) or idx.get(
+            _objform.collection_of(getattr(it, "urn", "") or ""), "")
+        if not key:
+            continue
+        if getattr(it, "kind", "") != "object":
+            outside.add(key)
+            continue
+        targets.setdefault(key, set()).update(str(k) for k in payload)
+    return sorted((k, sorted(v)) for k, v in targets.items()), sorted(outside)
+
+
 def preflight(action: str, *, source_appl, dest_appl=None, policies: list[str],
               new_name: str = "", opts: dict | None = None) -> dict:
     """The clone/migrate PRE-FLIGHT CHECKLIST the dialog shows before anything
@@ -1579,6 +1613,55 @@ def preflight(action: str, *, source_appl, dest_appl=None, policies: list[str],
             add("capacity", "ok" if allowed else "block", "Capacity on %s" % dest.name, msg)
         except Exception:  # noqa: BLE001 — capacity data is optional
             pass
+
+        # 9) API SURFACE of the destination build. The destination answers a
+        #    cmdb POST carrying a field it does not understand with **200 and
+        #    a silent discard** — the copy then looks complete in the
+        #    destination GUI and is not. Nothing else in this checklist can
+        #    see that, because nothing else compares the payload against the
+        #    firmware it is about to land on.
+        try:
+            from . import version_compat as _vc
+            _tg, _outside = _apiver_targets(items if (live_ok and items) else [])
+            if not _tg:
+                add("apiver", "warn", "API surface of %s" % dest.name,
+                    "no writable object could be read off the source, so "
+                    "nothing was compared against the destination's firmware")
+            else:
+                _rep = _vc.for_clone(source_appl, dest, _tg)
+                _tail = ("" if not _outside else
+                         " %d sub-table(s) are outside the API sweep and were "
+                         "NOT compared: %s." % (len(_outside), ", ".join(_outside[:6])))
+                _drop = [r for r in _rep["rows"] if r["state"] == _vc.STATE_DROPPED]
+                _gone = [r for r in _rep["rows"] if r["state"] == _vc.STATE_ABSENT]
+                if _gone:
+                    _detail = ("%s does not serve %s. Cloning it there creates "
+                               "nothing." % (dest.name,
+                                             ", ".join(r["key"] for r in _gone)))
+                elif _drop:
+                    _detail = "; ".join(
+                        "%s would lose %s" % (r["key"], ", ".join(r["dropped"]))
+                        for r in _drop[:4])
+                else:
+                    _detail = _vc.STATE_LABEL.get(_rep["state"], _rep["state"])
+                if _rep["new_total"]:
+                    _detail += (" %d field(s) exist on %s that %s never had — "
+                                "review them after the copy."
+                                % (_rep["new_total"], _rep["target_version"],
+                                   _rep["source_version"] or "the source"))
+                if _rep["new_unmeasured"]:
+                    _detail += (" Gains unknown for %d object(s)."
+                                % _rep["new_unmeasured"])
+                add("apiver", _rep["level"],
+                    "API surface: %s (%s) \u2192 %s (%s)"
+                    % (source_appl.name, _rep.get("source_version") or "?",
+                       dest.name, _rep.get("target_version") or "?"),
+                    _detail + _tail)
+                suggest["apiver"] = _rep
+        except Exception as exc:  # noqa: BLE001 — a checklist never crashes
+            add("apiver", "warn", "API surface could NOT be compared",
+                "%s: %s \u2014 this is 'not measured', not 'fine'"
+                % (type(exc).__name__, exc))
 
         worst = "ok"
         for c in checks:

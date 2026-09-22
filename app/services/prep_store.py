@@ -106,6 +106,26 @@ def verdict(result: dict | None) -> tuple[bool, str]:
             # missing baseline, unlike an individual service answering badly.
             ok = False
             parts.append("service baseline FAILED")
+    api = result.get("apisurface")
+    if isinstance(api, dict):
+        # Reported, never graded — see ``upgrade.prepare``. It is appended to
+        # the summary so the fact travels with the row a change request cites;
+        # leaving it only in the JSON would make it invisible everywhere the
+        # summary is the whole UI.
+        if not api.get("ok"):
+            parts.append("API surface NOT compared")
+        elif api.get("absent_total"):
+            parts.append("API surface: %s drops %d object type(s) and %d field(s)"
+                         % (api.get("target_version") or "?",
+                            api["absent_total"], api.get("dropped_total") or 0))
+        elif api.get("dropped_total"):
+            parts.append("API surface: %d field(s) dropped by %s"
+                         % (api["dropped_total"], api.get("target_version") or "?"))
+        elif api.get("new_total"):
+            parts.append("API surface: %d new field(s) on %s"
+                         % (api["new_total"], api.get("target_version") or "?"))
+        else:
+            parts.append("API surface: no field change measured")
     if result.get("permission") is False:
         ok = False
         parts.append("account lacks maintenance permission")
@@ -190,14 +210,23 @@ def build_inventory(policies, result: dict | None = None,
 #  Persistence (append-only)                                                    #
 # --------------------------------------------------------------------------- #
 def record(appliance, result: dict, *, inventory=None,
-           created_by: str = "") -> UpgradePrep:
-    """Store one pre-flight run. Always INSERTs — see :class:`UpgradePrep`."""
+           created_by: str = "", target_version: str = "") -> UpgradePrep:
+    """Store one pre-flight run. Always INSERTs — see :class:`UpgradePrep`.
+
+    ``target_version`` is the version this run is evidence FOR. Stored as NULL
+    — never "" — when it was not declared, because the column's whole point is
+    that "nobody said where this was going" and "we asked and got nothing back"
+    are different facts, and one value for both is indistinguishable
+    afterwards. See :class:`app.models.UpgradePrep`.
+    """
     ok, summary = verdict(result)
     rows = build_inventory(inventory or [], result, appliance)
+    target = str(target_version or "").strip()[:32]
     prep = UpgradePrep(
         appliance_id=getattr(appliance, "id", None),
         created_by=created_by or "",
         firmware=str((result or {}).get("firmware") or "")[:64],
+        target_version=target or None,
         ok=ok,
         summary=summary,
         result=json.dumps(result or {}, default=str),
@@ -242,6 +271,7 @@ def get(prep_id) -> UpgradePrep | None:
 
 def run_for(appliance, *, do_backup: bool = True, do_health: bool = True,
             do_services: bool = True, created_by: str = "",
+            target_version: str = "",
             inventory_timeout: float = 6.0, on_store_error=None):
     """Run the pre-upgrade against ONE appliance and persist it. Returns
     ``(result, prep)``.
@@ -260,13 +290,15 @@ def run_for(appliance, *, do_backup: bool = True, do_health: bool = True,
     """
     from . import change_requests as crsvc, upgrade
     result = upgrade.prepare(appliance, do_backup=do_backup,
-                             do_health=do_health, do_services=do_services)
+                             do_health=do_health, do_services=do_services,
+                             target_version=target_version or "")
     prep = None
     try:
         inventory = crsvc.affected_policies([appliance.id],
                                             timeout=inventory_timeout)
         prep = record(appliance, result, inventory=inventory,
-                      created_by=created_by or "")
+                      created_by=created_by or "",
+                      target_version=target_version)
     except Exception as exc:  # noqa: BLE001 - see docstring
         db.session.rollback()
         if callable(on_store_error):
@@ -276,6 +308,7 @@ def run_for(appliance, *, do_backup: bool = True, do_health: bool = True,
 
 def run_bulk(appliances, *, do_backup: bool = True, do_health: bool = True,
              do_services: bool = True, created_by: str = "",
+             target_version: str = "",
              on_store_error=None) -> list[dict]:
     """Pre-flight N appliances and return ONE ROW PER APPLIANCE, always.
 
@@ -297,16 +330,23 @@ def run_bulk(appliances, *, do_backup: bool = True, do_health: bool = True,
             "name": getattr(appliance, "name", "") or "",
             "kind": getattr(appliance, "kind", "") or "",
             "ok": False, "stored": False, "prep_id": None,
+            # Echoed back per row so a caller reporting the sweep quotes what
+            # was STORED, not what it asked for. A device whose row failed to
+            # persist has no declared target, and a summary built from the
+            # request would claim otherwise.
+            "target_version": "",
             "summary": "", "error": "",
         }
         try:
             result, prep = run_for(
                 appliance, do_backup=do_backup, do_health=do_health,
                 do_services=do_services, created_by=created_by,
+                target_version=target_version,
                 on_store_error=on_store_error)
             if prep is not None:
                 row.update(ok=bool(prep.ok), stored=True, prep_id=prep.id,
-                           summary=prep.summary or "")
+                           summary=prep.summary or "",
+                           target_version=prep.target_version or "")
             else:
                 ok, summary = verdict(result)
                 row.update(ok=ok, summary=summary,

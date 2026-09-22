@@ -1669,6 +1669,20 @@ class UpgradePrep(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     created_by = db.Column(db.String(64), nullable=True, default="")
     firmware = db.Column(db.String(64), nullable=True, default="")
+    #: The version this pre-flight was run TOWARDS. ``firmware`` above is the
+    #: version the box was RUNNING; the two are different facts and a window
+    #: has both. Until this column existed only the first was recorded, so the
+    #: evidence a change request rests on could not say which upgrade it was
+    #: evidence FOR -- the same green run "proved" 7.6.4 -> 7.6.8 and
+    #: 7.6.4 -> 8.0.5, which are not the same move and do not have the same
+    #: release notes.
+    #:
+    #: NULLABLE with NO default and NO backfill. A run recorded before this
+    #: column exists was taken without anybody declaring a destination, and
+    #: writing one in now -- even "" -- would put a claim on evidence that was
+    #: never made. Readers MUST render NULL as "not declared", never as a
+    #: version.
+    target_version = db.Column(db.String(32), nullable=True)
     # ok is the OVERALL verdict, computed once at write time from the sections
     # that ran. Recomputing it on read would let a later change to the scoring
     # rule silently re-grade a run somebody already approved a change against.

@@ -417,7 +417,72 @@
 {% if created_view %}<details class="uf-cr-done"><summary class="uf-cr-summary">{{ _('Show what was submitted (read-only)') }}</summary>{% endif %}
   <div class="fw-card-body">
 {% if created_view %}<fieldset disabled class="uf-cr-locked">{% endif %}
+{#
+  The partial posts to THIS flow's handler and is filled in server-side. Posted
+  to /web/change-requests/new it could not keep a refused change's text (a
+  redirect cannot carry a form back), and with scripting off it showed no
+  proposal at all. The values come from the same crdoc proposal the waves
+  mirrors carry, or from the refused post, verbatim.
+#}
+{% set cr_form_action = url_for('upgrade_flow.change') %}
+{% set cr_hidden = {'_adom': product.key} %}
+{% set cr_wording_url = url_for('cr_types.edit', key=cr_action) %}
+{% set cr_prefill = {
+  'doc_lang': posted.doc_lang if posted else '',
+  'risk': posted.risk if posted else '',
+  'title': posted.title if posted else d_title,
+  'reason': posted.reason if posted else d_reason,
+  'rollback': posted.rollback if posted else d_rollback,
+  'owner': posted.owner if posted else defaults.owner,
+  'notify_to': posted.notify_to if posted else defaults.notify_to,
+  'approval_mode': posted.approval_mode if posted else '',
+  'window_start': posted.window_start if posted else '',
+  'window_end': posted.window_end if posted else '',
+  'auto': auto,
+} %}
 {% include 'change_requests/_new_form.html' %}
+
+{#
+  The same selection, in waves. Restored after the form split dropped it: the
+  /waves route stayed live with no control left on the page to reach it. Every
+  field carries form="uf-waves" -- `window_start` exists in the change form
+  too, and an unbound one would be posted twice with two meanings.
+#}
+<div class="fw-card mt-3" id="uf-waves-card">
+  <div class="fw-card-body">
+    <div class="fw-step-label text-muted small text-uppercase mb-2">{{ _('Or split the same selection into waves') }}</div>
+    <p class="text-muted small">
+      {{ _('For a rollout too large for one window: the appliances are chunked in name order, and each chunk gets a change of its own so the first group can be watched before the next one is approved. One wave = one ordinary change request, with its own window and its own approval — nothing about approval, execution or the customer-impact export changes.') }}
+    </p>
+    <div class="row g-3">
+      <div class="col-6 col-lg-3">
+        <label class="form-label">{{ _('Appliances per wave') }}</label>
+        <input class="form-control" type="number" name="wave_size" form="uf-waves" min="1" value="5">
+        <div class="form-text">{{ _('Each wave takes the title above, suffixed “… — wave k/N”.') }}</div>
+      </div>
+      <div class="col-6 col-lg-3">
+        <label class="form-label">{{ _('First window start') }}</label>
+        <input class="form-control" type="datetime-local" name="window_start" form="uf-waves">
+      </div>
+      <div class="col-6 col-lg-3">
+        <label class="form-label">{{ _('Window (minutes)') }}</label>
+        <input class="form-control" type="number" name="wave_minutes" form="uf-waves" min="1" value="120">
+      </div>
+      <div class="col-6 col-lg-3">
+        <label class="form-label">{{ _('Gap') }}</label>
+        <input class="form-control" type="number" name="wave_gap" form="uf-waves" min="0" value="30">
+      </div>
+    </div>
+    <div id="uf-waves-targets"></div>
+    <div class="d-flex justify-content-between align-items-center mt-3 flex-wrap gap-2">
+      <span class="text-muted small" id="uf-waves-note">
+        {{ _('Windows are consecutive and never overlap: each wave starts after the previous one ends, plus the gap. Leave the start empty to raise the waves now and schedule them later. At most') }}
+        <strong>{{ max_waves }}</strong> {{ _('waves at once.') }}
+      </span>
+      <button type="submit" form="uf-waves" class="btn fw-btn-secondary"><i class="bi bi-layers me-1"></i>{{ _('Raise one change per wave') }}</button>
+    </div>
+  </div>
+</div>
 {% if created_view %}</fieldset>{% endif %}
   </div>
 {% if created_view %}</details>{% endif %}
@@ -432,17 +497,10 @@
 #uf-cr-section .uf-cr-locked{border:0;padding:0;margin:0;min-width:0;}
 </style>
 
-<form method="post" action="{{ url_for('upgrade_flow.change') }}" id="uf-cr">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  {# The ADOM this card was READ in, so the refusal re-renders the same scope
-     the operator was looking at rather than whatever the session last held. #}
-  <input type="hidden" name="_adom" value="{{ product.key }}">
-  <input type="hidden" name="action" value="{{ cr_action }}">
-  {# The 'Raise another change request' card was REMOVED on request.
-     The form element around it is kept on purpose: it is the POST target
-     for upgrade_flow.change and carries the csrf/_adom/action hiddens that
-     the view refuses without. Nothing visible renders from it. #}
-</form>
+{# The empty `uf-cr` shell form that used to sit here is gone: the partial's
+   own cr-form now posts to upgrade_flow.change and carries the csrf/_adom/
+   action hiddens itself. An empty form element with no control was a POST
+   target nothing could reach, and every check anchored on it measured air. #}
 
 {% endif %}{# crdoc.entry #}
 
@@ -734,7 +792,7 @@
   // checkboxes: two lists of the same devices drift the moment somebody ticks
   // one and not the other, and the pair that drifts here is "which boxes go
   // down" against "which boxes we have a baseline for".
-  var form = document.getElementById('uf-cr');
+  var form = document.getElementById('cr-form');
   if (!form) { return; }
   // Hidden fields and the VISIBLE list are two boxes on purpose: what the
   // form posts and what the operator reads are the same data, but one of them
@@ -843,9 +901,9 @@
   var RENDER_LANG = {{ render_lang|tojson }};
 
   var FIELDS = {
-    title: document.getElementById('uf-title'),
-    reason: document.getElementById('uf-reason'),
-    rollback: document.getElementById('uf-rollback')
+    title: document.getElementById('cr-title'),
+    reason: document.getElementById('cr-reason'),
+    rollback: document.getElementById('cr-rollback')
   };
   // Which of the three fields still carry the product's proposal. 'Restore
   // proposal' exists precisely because a field can be overwritten, so the
@@ -860,7 +918,7 @@
     reason: document.getElementById('uf-w-reason'),
     rollback: document.getElementById('uf-w-rollback')
   };
-  var langRadios = document.querySelectorAll('.uf-lang');
+  var langRadios = form.querySelectorAll('input[name="doc_lang"]');
   var langMirror = document.getElementById('uf-w-lang');
 
   function chosenLang() {
@@ -921,7 +979,10 @@
     r.addEventListener('change', function () { paint(false); });
     r.addEventListener('click', function () { paint(false); });
   });
-  var restore = document.getElementById('uf-restore');
+  // The partial's own Restore button. Its handler repaints from the per-action
+  // catalogue; this one runs after it and repaints from the flow's bulk
+  // proposal, so the two painters end on the same text the server rendered.
+  var restore = document.getElementById('cr-reset-proposal');
   if (restore) { restore.addEventListener('click', function () { paint(true); }); }
 
   devs.forEach(function (c) { c.addEventListener('change', sync); });

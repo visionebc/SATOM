@@ -21,8 +21,24 @@
 </div>
 {% endif %}
 
-<form method="POST" action="{{ url_for('change_requests.new') }}" id="cr-form">
+{#
+  Four more opt-in keys, same shape as locked_action / locked_devices /
+  cr_back, all unset on the standalone page:
+    cr_form_action  where the form posts. The upgrade flow posts to its own
+                    handler, because a refusal has to come back to the flow
+                    WITH what was typed -- a redirect cannot carry a form.
+    cr_hidden       extra hidden fields (the flow's ADOM).
+    cr_prefill      server-side values for every field, plus `auto` (which
+                    wording fields still hold the proposal). Without it a
+                    refused change comes back empty, and with scripting off
+                    the proposal is never shown at all.
+    cr_wording_url  where the proposed wording is edited, linked beside it.
+#}
+{% set pf = cr_prefill or {} %}
+{% set pf_auto = pf.get('auto') or {} %}
+<form method="POST" action="{{ cr_form_action or url_for('change_requests.new') }}" id="cr-form">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  {% for hk, hv in (cr_hidden or {}).items() %}<input type="hidden" name="{{ hk }}" value="{{ hv }}">{% endfor %}
   {# Opt-in, same shape as locked_action / locked_devices: a page that embeds
      this form sets `cr_back` so Create draft returns THERE citing the change
      it just raised. A TOKEN, never a URL — a redirect target read straight
@@ -44,7 +60,7 @@
         {% for code, label in langs %}
         <label class="fw-lang-option">
           <input type="radio" name="doc_lang" value="{{ code }}" required
-                 {{ 'checked' if code == lang_preset else '' }}>
+                 {{ 'checked' if code == (pf.get('doc_lang') or lang_preset) else '' }}>
           <span class="fw-lang-code">{{ code|upper }}</span>
           <span class="fw-lang-label">{{ label }}</span>
         </label>
@@ -124,7 +140,7 @@
           <label class="fw-form-label">{{ _('Risk') }}</label>
           <select class="form-select" name="risk">
             {% for r in risks %}
-            <option value="{{ r }}" {{ 'selected' if r == 'medium' else '' }}>{{ r|capitalize }}</option>
+            <option value="{{ r }}" {{ 'selected' if r == (pf.get('risk') or 'medium') else '' }}>{{ r|capitalize }}</option>
             {% endfor %}
           </select>
         </div>
@@ -144,6 +160,10 @@
           <button type="button" class="btn btn-fw-outline btn-sm" id="cr-reset-proposal">
             <i class="bi bi-arrow-counterclockwise me-1"></i>{{ _('Restore proposal') }}
           </button>
+          {% if cr_wording_url %}
+          <a class="btn btn-fw-outline btn-sm" href="{{ cr_wording_url }}">
+            <i class="bi bi-sliders me-1"></i>{{ _('Edit this wording') }}</a>
+          {% endif %}
         </div>
         <div class="fw-card-body">
           <div class="fw-alert fw-alert-info mb-3" style="font-size:12.5px;">
@@ -158,13 +178,13 @@
             <label class="fw-form-label">{{ _('Title') }} <span class="text-danger">*</span>
               <span class="fw-auto-chip" data-for="title">{{ _('auto') }}</span></label>
             <input type="text" class="form-control" name="title" id="cr-title" required autocomplete="off"
-                   data-auto="1">
+                   data-auto="{{ '1' if pf_auto.get('title', True) else '0' }}" value="{{ pf.get('title', '') }}">
           </div>
 
           <div class="mb-3">
             <label class="fw-form-label">{{ _('Reason') }}
               <span class="fw-auto-chip" data-for="reason">{{ _('auto') }}</span></label>
-            <textarea class="form-control" name="reason" id="cr-reason" rows="4" data-auto="1"></textarea>
+            <textarea class="form-control" name="reason" id="cr-reason" rows="4" data-auto="{{ '1' if pf_auto.get('reason', True) else '0' }}">{{ pf.get('reason', '') }}</textarea>
             <div class="form-text">Printed in the &ldquo;reason recorded on the change request&rdquo;
               block, next to (not instead of) the standard justification for this action.</div>
           </div>
@@ -172,13 +192,13 @@
           <div class="mb-3">
             <label class="fw-form-label">{{ _('Rollback plan') }}
               <span class="fw-auto-chip" data-for="rollback">{{ _('auto') }}</span></label>
-            <textarea class="form-control" name="rollback" id="cr-rollback" rows="4" data-auto="1"></textarea>
+            <textarea class="form-control" name="rollback" id="cr-rollback" rows="4" data-auto="{{ '1' if pf_auto.get('rollback', True) else '0' }}">{{ pf.get('rollback', '') }}</textarea>
           </div>
 
           <div class="row g-3">
             <div class="col-md-7">
               <label class="fw-form-label">{{ _('Change owner (Verantwortlicher)') }}</label>
-              <input type="text" class="form-control" name="owner" id="cr-owner">
+              <input type="text" class="form-control" name="owner" id="cr-owner" value="{{ pf.get('owner', '') }}">
               <div class="form-text">Pre-filled with your account and editable. Printed in &sect;1
                 of the change document; cleared, it prints as <em>{{ _('not recorded') }}</em>{{ _('. It is filled in') }} <strong>{{ _('visibly') }}</strong> rather than derived at save time &mdash; accountability
                 you did not see assigned is not accountability.</div>
@@ -186,7 +206,7 @@
             <div class="col-md-5">
               <label class="fw-form-label">{{ _('Notify on completion') }}</label>
               <input type="text" class="form-control" name="notify_to" id="cr-notify"
-                     placeholder="{{ _('ops@example.com') }}">
+                     value="{{ pf.get('notify_to', '') }}" placeholder="{{ _('ops@example.com') }}">
               <div class="form-text" id="cr-notify-help">{{ _('Who is emailed when the window closes (completed or failed).') }}</div>
             </div>
           </div>
@@ -194,8 +214,9 @@
           <div class="mb-1 mt-3">
             <label class="fw-form-label">{{ _('Approval') }}</label>
             <select class="form-select" name="approval_mode">
-              <option value="manual" selected>{{ _('Manual — approved here in SATOM') }}</option>
-              <option value="external">{{ _('External — an integration must approve it') }}</option>
+              {% set sel_appr = pf.get('approval_mode') or 'manual' %}
+              <option value="manual" {{ 'selected' if sel_appr != 'external' else '' }}>{{ _('Manual — approved here in SATOM') }}</option>
+              <option value="external" {{ 'selected' if sel_appr == 'external' else '' }}>{{ _('External — an integration must approve it') }}</option>
             </select>
             <div class="form-text">
               <strong>{{ _('External') }}</strong> {{ _('is fail-closed: this change cannot run until your change-management system explicitly approves it. Unreachable, slow and no-answer all count as') }} <em>{{ _('not approved') }}</em> {{ _('— that is the whole point of routing approval through it.') }}
@@ -253,11 +274,11 @@
 
           <div class="mb-3">
             <label class="fw-form-label">{{ _('Window start') }} <span class="text-muted">({{ tz_name }})</span></label>
-            <input type="datetime-local" class="form-control" name="window_start">
+            <input type="datetime-local" class="form-control" name="window_start" value="{{ pf.get('window_start', '') }}">
           </div>
           <div class="mb-1">
             <label class="fw-form-label">{{ _('Window end') }} <span class="text-muted">({{ tz_name }})</span></label>
-            <input type="datetime-local" class="form-control" name="window_end">
+            <input type="datetime-local" class="form-control" name="window_end" value="{{ pf.get('window_end', '') }}">
             <div class="form-text">
               {{ _('Both times are read in') }} <strong>{{ tz_name }}</strong> &mdash; the timezone set under
               Settings &rarr; General &mdash; and stored as UTC. A browser field carries no

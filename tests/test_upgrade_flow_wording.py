@@ -93,7 +93,7 @@ def test_the_title_offered_in_bulk_is_the_administrators(app, client):
         _override(draft_title="CAB-Wartung: Firmware {devices}")
 
     body = _page(client, app)
-    assert "CAB-Wartung: Firmware" in _field(body, "uf-title"), \
+    assert "CAB-Wartung: Firmware" in _field(body, "cr-title"), \
         "the bulk form proposes a title the Change Types page cannot correct"
 
 
@@ -107,8 +107,8 @@ def test_reason_and_rollback_are_offered_and_come_from_the_change_type(app,
                   draft_rollback="Reboot to the previous partition.")
 
     body = _page(client, app)
-    assert "Quarterly patch round" in _field(body, "uf-reason")
-    assert "previous partition" in _field(body, "uf-rollback")
+    assert "Quarterly patch round" in _field(body, "cr-reason")
+    assert "previous partition" in _field(body, "cr-rollback")
 
 
 def test_the_template_composes_no_proposal_of_its_own(app):
@@ -176,7 +176,7 @@ def test_the_document_language_chosen_in_the_profile_is_the_one_proposed(app,
     body = _page(client, app)
     assert _field(body, "uf-w-lang") == other, \
         "the batched path posts a different language than the page shows"
-    assert expected and expected in _field(body, "uf-title"), \
+    assert expected and expected in _field(body, "cr-title"), \
         "the proposal is not in the language the operator reads in"
 
 
@@ -285,7 +285,7 @@ def test_the_bulk_proposal_quotes_no_single_pre_flight_run(app, client):
         prep_id = prep.id
 
     body = _page(client, app)
-    for ident in ("uf-reason", "uf-rollback", "uf-title"):
+    for ident in ("cr-reason", "cr-rollback", "cr-title"):
         value = _field(body, ident)
         assert f"#{prep_id}" not in value, \
             f"{ident} cites one pre-flight run on a change covering many"
@@ -302,7 +302,7 @@ def test_the_devices_placeholder_is_never_left_as_a_raw_token(app, client):
         _mk_appliance("tok-fw")
 
     body = _page(client, app)
-    assert cr_document.DEVICES_TOKEN not in _field(body, "uf-title")
+    assert cr_document.DEVICES_TOKEN not in _field(body, "cr-title")
     assert cr_document.DEVICES_TOKEN not in _field(body, "uf-w-title")
 
 
@@ -322,7 +322,7 @@ def test_a_disabled_change_type_is_reported_instead_of_a_form_that_refuses(app,
                         username="tester")
 
     body = _page(client, app)
-    assert 'id="uf-cr"' not in body, \
+    assert 'id="cr-form"' not in body, \
         "the form is still offered for a change type that cannot be raised"
     assert "Change Types" in body, \
         "the page does not say where the change type was switched off"

@@ -841,8 +841,11 @@ def _stage_two(client):
     the page and every assertion below would widen in silence.
     """
     body = client.get("/web/upgrade-flow/").get_data(as_text=True)
-    assert 'id="uf-cr"' in body, "stage-2 form is missing entirely"
-    head, rest = body.split('id="uf-cr"', 1)
+    # Stage 2 is the shared change-request partial; its form is `cr-form`.
+    # The empty `uf-cr` shell that used to carry the POST is gone, and a
+    # slice anchored on it measured 256 bytes of hidden fields.
+    assert 'id="cr-form"' in body, "stage-2 form is missing entirely"
+    head, rest = body.split('id="cr-form"', 1)
     form = rest.split("</form>", 1)[0]
     form = re.sub(r'<[^>]*\bform="uf-waves"[^>]*>', "", form)
     return body, form
@@ -890,7 +893,7 @@ def test_the_wording_is_inside_stage_two_not_floating_above_it(app, client):
     assert not re.search(r">\s*2b\s*<", body), \
         "the waves block is numbered as a stage of its own again"
     assert body.index("Or split the same selection into waves") > \
-        body.index("Raise one change request"), \
+        body.index('id="cr-submit"'), \
         "the waves block must come after stage 2's own submit, inside its card"
 
 
@@ -918,14 +921,16 @@ def test_stage_two_names_the_appliances_instead_of_counting_them(app, client):
     """
     login(client, admin_user_id(app))
     body, form = _stage_two(client)
-    assert 'id="uf-cr-chips"' in form, "no visible list of covered appliances"
-    assert 'id="uf-cr-fields"' in form, "the posted fields lost their box"
-    assert 'id="uf-cr-empty"' in form, \
+    # The partial's locked-devices mode: a read-only line NAMING the ticked
+    # appliances, and a hidden box the ids (and their runs) are posted from.
+    assert 'id="cr-devices-text"' in form, "no visible list of covered appliances"
+    assert 'id="cr-devices-hidden"' in form, "the posted fields lost their box"
+    assert "Nothing ticked in step 1 yet" in form, \
         "an empty selection must say so, not render as nothing"
-    # Built with textContent, never innerHTML: an appliance name is operator
+    # Written through .value, never innerHTML: an appliance name is operator
     # data and this page has a CSP nonce precisely because that matters.
-    assert "chip.textContent" in body
-    assert "chips.innerHTML = ''" in body, "the list is never cleared"
+    assert "devText.value = names.length" in body
+    assert "box.innerHTML = ''" in body, "the posted ids are never cleared"
 
 
 def test_the_hand_off_link_carries_the_adom_it_was_pressed_in(app, client):
@@ -995,9 +1000,9 @@ def _post_stage_two(client, **over):
 def test_stage_two_posts_to_the_flow_not_to_the_single_change_form(app, client):
     login(client, admin_user_id(app))
     body = client.get("/web/upgrade-flow/").get_data(as_text=True)
-    assert 'action="/web/upgrade-flow/change" id="uf-cr"' in body, \
+    assert 'action="/web/upgrade-flow/change" id="cr-form"' in body, \
         "stage 2 no longer posts to the flow's own handler"
-    assert 'action="/web/change-requests/new" id="uf-cr"' not in body, \
+    assert 'action="/web/change-requests/new" id="cr-form"' not in body, \
         "stage 2 posts at the single-change form again — success leaves the " \
         "flow and a refusal empties the card"
 
@@ -1053,7 +1058,7 @@ def test_a_refused_change_re_renders_the_flow_with_what_was_typed(app, client):
     assert resp.status_code == 200, "a refusal must not redirect anywhere"
     assert resp.headers.get("Location") is None
     body = resp.get_data(as_text=True)
-    assert 'id="uf-cr"' in body and 'id="uf-all"' in body, \
+    assert 'id="cr-form"' in body and 'id="uf-all"' in body, \
         "the refusal landed somewhere other than the flow"
     assert "A title is required" in body, "the refusal is not shown"
     for kept in ("reason typed by hand", "rollback typed by hand",
@@ -1145,9 +1150,9 @@ def test_a_refusal_tells_an_edited_field_from_an_untouched_proposal(app, client)
         got = _re.search(r'data-auto="(\d)"', m.group(0))
         return got.group(1) if got else "?"
 
-    assert _auto("uf-reason") == "1", \
+    assert _auto("cr-reason") == "1", \
         "an untouched proposal came back marked as the operator's own words"
-    assert _auto("uf-rollback") == "0", \
+    assert _auto("cr-rollback") == "0", \
         "an edited field came back marked auto — the proposal would overwrite it"
 
 
@@ -1393,7 +1398,7 @@ def test_the_live_comparison_does_not_leave_the_flow(app, client):
     drifted = client.get("/web/upgrade-flow/?cr=%d&drift=1" % cid).get_data(as_text=True)
     assert "Drift vs. the devices right now" in drifted, \
         "the flow accepts drift=1 and renders no comparison"
-    assert 'id="uf-cr"' in drifted, "asking for drift landed somewhere else"
+    assert 'id="cr-form"' in drifted, "asking for drift landed somewhere else"
 
 
 def test_editing_from_the_flow_returns_to_the_flow(app, client):
@@ -1516,8 +1521,10 @@ def test_every_waves_field_is_bound_to_the_waves_form(app, client):
     """
     login(client, admin_user_id(app))
     body = client.get("/web/upgrade-flow/").get_data(as_text=True)
-    head, rest = body.split('id="uf-cr"', 1)
-    raw = rest.split("</form>", 1)[0]          # the card, waves fields included
+    # The whole stage-2 CARD: the change form and the waves block after it.
+    # Bounded at the card's own style block, which follows it immediately.
+    start = body.index('id="uf-cr-section"')
+    raw = body[start:body.index("#uf-cr-section .uf-cr-summary", start)]
     for name in ("wave_size", "wave_minutes", "wave_gap"):
         for tag in re.findall(r'<input[^>]*name="%s"[^>]*>' % name, raw):
             assert 'form="uf-waves"' in tag, \
@@ -1553,119 +1560,103 @@ def test_the_waves_form_element_is_empty_and_not_nested(app, client):
         "form nesting depth %d, balance %d" % (maximum, depth)
 
 
-def test_stage_two_shows_one_change_and_never_a_list_of_them(app, client):
-    """Stage 2 renders ONE change: the newest, whole, with nothing that lists
-    the others.
+def _stage_three(body):
+    """The stage-3 card only: the change this visit NAMED, rendered whole."""
+    start = body.find('id="uf-created-section"')
+    return body[start:] if start != -1 else ""
+
+
+def test_stage_three_shows_one_change_and_never_a_list_of_them(app, client):
+    """Stage 3 renders ONE change -- the one the visit names -- and nothing
+    that lists the others.
 
     It used to carry a picker listing every change this flow had raised. The
     user removed it (2026-09-19): the stage is the change request, not a menu
-    of them. This guard is what keeps it removed — the list is the kind of
-    thing that grows back the next time someone wants to "switch quickly", and
-    a second reference to a change nobody opened is exactly what made the
-    stage read as a chooser rather than as the record.
-
-    Asserting the label alone would be an assertion that answers itself, so it
-    raises TWO changes and counts the OLDER one's ref DIFFERENTIALLY: stage 1
-    legitimately cites the change each prep run was handed to, so "absent from
-    the page" is the wrong question and would fail against correct markup. The
-    right one is whether opening the stage adds a mention the closed stage does
-    not have -- which is precisely what a list of raised changes would add.
+    of them. Raising TWO and opening the newer one by id asks the right
+    question: does opening it add a mention of the older one? A list of raised
+    changes is exactly what would.
     """
     _old_id, old_ref, _ = _raise_one(app, client, "not-listed-older")
-    _new_id, new_ref, _ = _raise_one(app, client, "not-listed-newer")
-    # Raising leaves a flash naming the change, and a flash survives until a
-    # request consumes it -- so the FIRST page load after two raises carries
-    # both refs in its banner and nothing to do with the stage. Burn them, or
-    # this guard measures the flash queue and fails against correct markup.
+    new_id, new_ref, _ = _raise_one(app, client, "not-listed-newer")
+    # Burn the flashes naming both refs, or this measures the flash queue.
     client.get("/web/upgrade-flow/")
-    body = client.get("/web/upgrade-flow/").get_data(as_text=True)
-
-    # Scoped to the stage-2 card, not the whole page: stage 1 legitimately
-    # cites the change a prep run was handed to, so a page-wide absence check
-    # would fail against correct markup. find()+index comparison rather than
-    # index()/slicing, which raises and takes the other assertions with it.
-    start = body.find('id="uf-cr-section"')
-    end = body.find('id="uf-cr"', start + 1)
-    assert start != -1 and end > start, \
-        "the stage-2 card is not on the page at all"
-    stage = body[start:end]
-
-    assert new_ref in stage, "the open change is not named in stage 2"
+    body = client.get("/web/upgrade-flow/?cr=%d" % new_id).get_data(as_text=True)
+    stage = _stage_three(body)
+    assert stage, "the named change did not open"
+    assert new_ref in stage, "the open change is not named in stage 3"
     assert old_ref not in stage, \
-        "an older change is named in stage 2 — the list of raised changes is back"
-    assert "Changes raised from this flow" not in stage, \
-        "the removed picker heading is back on the stage"
+        "an older change is named in stage 3 -- the list of raised changes is back"
+    assert "Changes raised from this flow" not in body, \
+        "the removed picker heading is back on the page"
 
 
-def test_a_plain_visit_opens_the_newest_change_whole(app, client):
-    """Stage 2 IS the change request, without a click.
+def test_a_plain_visit_offers_no_lifecycle_buttons_over_an_unnamed_change(app, client):
+    """Stage 3 opens ONLY for a change the visit NAMES (``?cr=``).
 
-    Requiring ?cr= meant every visit after the one that pressed the button
-    showed a bare form, which is indistinguishable from the stage never having
-    been built. A plain visit renders the newest change raised from this flow:
-    document, inventory, external record, timeline, notice and the action bar.
+    It used to fall back to the newest change on a plain visit -- and its
+    blocks carry Approve, Schedule, Mark notified and Cancel, so a plain visit
+    offered lifecycle buttons over a change the operator had not raised in
+    this sitting. Create draft redirects with ``?cr=``, so the stage appears
+    exactly when the change was just created, and that link reopens it.
     """
-    cid, ref, _ = _raise_one(app, client, "plain-visit-opens")
-    body = client.get("/web/upgrade-flow/").get_data(as_text=True)
+    cid, ref, _ = _raise_one(app, client, "plain-visit-closed")
+    client.get("/web/upgrade-flow/")                     # burn the flash
+    plain = client.get("/web/upgrade-flow/").get_data(as_text=True)
+    assert not _stage_three(plain), \
+        "a plain visit opened a change nobody named"
+    assert "<!-- ACTION BAR -->" not in plain, \
+        "a plain visit offers lifecycle buttons over an unnamed change"
+    assert 'id="cr-form"' in plain, "a plain visit lost the stage-2 form"
+
+    named = client.get("/web/upgrade-flow/?cr=%d" % cid).get_data(as_text=True)
     for label, marker in _CR_BLOCKS.items():
-        assert marker in body, \
-            "a plain visit did not render %s" % label
+        assert marker in named, "a named change did not render %s" % label
     for label, marker in _CR_ACTIONS.items():
-        # "edit" is matched by a bare Bootstrap icon class the nav also uses
-        # (Custom Signature); on a whole-page assertion it answers itself.
         if label == "edit":
             continue
-        assert marker in body, "%s is missing on a plain visit" % label
-    # The change it opened is NAMED. These buttons act on a real record the
-    # operator did not pick, so a page that renders them without saying which
-    # change they belong to is the actual hazard -- not the auto-open.
-    assert ref in body, "the open change is not named on the page"
+        assert marker in named, "%s is missing on the named change" % label
+    assert ref in _stage_three(named), "the open change is not named on the page"
 
 
-def test_the_newest_is_what_opens_and_an_explicit_id_still_wins(app, client):
-    """Newest-first, and ?cr= overrides it.
-
-    If the default were "the first one found" it would drift with insertion
-    order, and the operator would be approving whichever change the query
-    happened to return.
+def test_an_explicit_id_opens_that_change_and_no_other(app, client):
+    """?cr= is the only thing that opens stage 3, and it opens exactly the id
+    it names -- never "the first one found", which drifts with insertion
+    order and has the operator approving whichever change a query returned.
     """
     old_id, old_ref, _ = _raise_one(app, client, "older-change")
     new_id, new_ref, _ = _raise_one(app, client, "newer-change")
     assert new_id > old_id
+    client.get("/web/upgrade-flow/")                     # burn the flashes
 
-    plain = client.get("/web/upgrade-flow/").get_data(as_text=True)
-    assert new_ref in plain, "the newest change is not the one opened"
+    picked = _stage_three(client.get(
+        "/web/upgrade-flow/?cr=%d" % old_id).get_data(as_text=True))
+    assert old_ref in picked and new_ref not in picked, \
+        "asking for an older change rendered another one"
+    picked = _stage_three(client.get(
+        "/web/upgrade-flow/?cr=%d" % new_id).get_data(as_text=True))
+    assert new_ref in picked and old_ref not in picked
 
-    picked = client.get("/web/upgrade-flow/?cr=%d" % old_id).get_data(as_text=True)
-    assert old_ref in picked
-    # ...and it really switched, rather than rendering both.
-    assert picked.count(new_ref) < plain.count(new_ref), \
-        "asking for an older change did not displace the default"
 
+def test_no_url_leaves_the_page_broken_or_names_a_ghost(app, client):
+    """There is no closed state, and an id that resolves to nothing this
+    operator may see reads as no citation -- never a 404, never a dead end.
 
-def test_no_url_leaves_the_stage_as_a_bare_form(app, client):
-    """There is no closed state left, because its only control was removed.
-
-    ``?cr=0`` WAS the closed state, written by the picker's "Close it" button.
-    The picker went on request (2026-09-19) and the state outlived it: an
-    operator who had pressed Close it -- or anyone holding that URL, which is
-    what a browser keeps across a reload -- sat on a bare form with the change
-    gone and NOTHING on the page able to bring it back. That is the bug this
-    guard exists to keep fixed, so it measures the three spellings that used
-    to differ: plain, the old closed state, and an id that resolves to nothing
-    this operator may see. All three must open the newest change, whole.
+    ``?cr=0`` WAS the closed state, written by the picker's "Close it" button;
+    the picker went on request (2026-09-19). Every spelling that names no
+    visible change now renders the stage-2 form with stage 3 closed, which is
+    the same page a plain visit gets, and Create draft is one click away.
     """
     _raise_one(app, client, "no-dead-end")
+    client.get("/web/upgrade-flow/")
     for url in ("/web/upgrade-flow/",
                 "/web/upgrade-flow/?cr=0",
                 "/web/upgrade-flow/?cr=99999"):
-        html = client.get(url).get_data(as_text=True)
-        for label, marker in _CR_BLOCKS.items():
-            assert marker in html, \
-                "%s missing on %s -- the stage is a bare form again" % (
-                    label, url)
-    # The control whose removal created the dead end must stay removed: put it
-    # back and the state it writes is reachable again.
+        resp = client.get(url)
+        assert resp.status_code == 200, "%s broke the page" % url
+        html = resp.get_data(as_text=True)
+        assert 'id="cr-form"' in html, "%s lost the stage-2 form" % url
+        assert not _stage_three(html), "%s opened a change nobody named" % url
+    # The control whose removal retired the closed state must stay removed.
     opened = client.get("/web/upgrade-flow/").get_data(as_text=True)
     assert "Close it" not in opened, \
         "the removed Close control is back on the stage"

@@ -66,7 +66,8 @@ def check_permission(client) -> bool | None:
 
 
 def prepare(appliance, *, do_backup: bool = True, do_health: bool = True,
-            do_services: bool = True, progress=None, created_by: str = "") -> dict:
+            do_services: bool = True, progress=None, created_by: str = "",
+            target_version: str = "") -> dict:
     """Read-only upgrade/downgrade pre-flight. Never changes the appliance.
 
     ``progress(pct, msg)`` (optional) announces each section so a background
@@ -129,6 +130,37 @@ def prepare(appliance, *, do_backup: bool = True, do_health: bool = True,
             out["services"] = {"ok": True, "probes": service_probe.probe_targets(targets)}
         except Exception as exc:  # noqa: BLE001
             out["services"] = {"ok": False, "error": f"{type(exc).__name__}: {exc}"[:200]}
+
+    # API SURFACE of the version this box is about to run. Offline: it reads
+    # the harvested config and the evidence matrix, so it costs the appliance
+    # nothing and works on a box that is already unreachable.
+    #
+    # Deliberately NOT graded by ``prep_store.verdict``: a field the new build
+    # drops is something to decide about, not a reason the window cannot open,
+    # and turning it into a red verdict is how operators learn to re-run a
+    # pre-flight until it goes green. Same argument the service-probe baseline
+    # is already exempt under.
+    if target_version:
+        _say(18, "Pre-flight - comparing the stored configuration against the "
+                 "target firmware's API...")
+        try:
+            from . import version_compat as vc
+            objects, rows = vc.cached_config_fields(appliance.id)
+            if not rows:
+                out["apisurface"] = {
+                    "ok": False, "target_version": target_version, "rows": 0,
+                    "error": "%s has never been harvested, so there is no "
+                             "stored configuration to compare against %s"
+                             % (appliance.name, target_version)}
+            else:
+                rep = vc.for_upgrade(appliance, target_version, objects)
+                rep["ok"] = True
+                rep["cached_rows"] = rows
+                out["apisurface"] = rep
+        except Exception as exc:  # noqa: BLE001 — a pre-flight never crashes
+            out["apisurface"] = {"ok": False, "target_version": target_version,
+                                 "rows": 0,
+                                 "error": f"{type(exc).__name__}: {exc}"[:200]}
 
     return out
 

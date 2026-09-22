@@ -900,6 +900,32 @@ STATUS_UNKNOWN_FIELDS = "unknown_fields"
 STATUS_VERSION_UNMEASURED = "version_unmeasured"
 
 
+def known_fields(doc: dict, key: str) -> tuple[set, list]:
+    """Field evidence for ``key`` inside an ALREADY-RESOLVED scope document.
+
+    The single author of "which fields does this scope serve". ``_answer``
+    reads it to decide ``unknown``; ``version_compat`` reads it to decide which
+    fields are NEW at a destination. Two readers, one rule — a second copy of
+    this union is how the two surfaces would start disagreeing about the same
+    appliance.
+
+    Returns ``(fields, origins)``. An EMPTY set with empty origins means nobody
+    measured them, which is not the same as "it has none": the caller must keep
+    those apart (``STATUS_FIELDS_UNKNOWN`` is the verdict for it).
+    """
+    known: set = set()
+    origins: list = []
+    obj = (doc.get("objects") or {}).get(key)
+    ep = (doc.get("endpoints") or {}).get(key)
+    if obj and obj.get("fields"):
+        known |= set(obj["fields"])
+        origins.append("schema")
+    if ep and ep.get("fields"):
+        known |= set(ep["fields"])
+        origins.append("sweep")
+    return known, origins
+
+
 def _answer(doc: dict, kind: str, scope: str, key: str, keys: list) -> dict:
     """The verdict for one already-resolved scope. Never resolves anything."""
     base = {"status": None, "line": scope, "scope": scope, "scope_kind": kind,
@@ -931,21 +957,15 @@ def _answer(doc: dict, kind: str, scope: str, key: str, keys: list) -> dict:
                 "reason": "%r is not served by %s (the appliance rejected the "
                           "URN)" % (key, scope)}
 
-    known: set = set()
-    origins = []
+    known, origins = known_fields(doc, key)
     line_granular = []
-    if obj and obj.get("fields"):
-        known |= set(obj["fields"])
-        origins.append("schema")
-        # Field schemas are harvested per LINE, so on a VERSION scope they are
-        # the weaker claim. Labelled rather than dropped: dropping would make
-        # every build look field-blind, and silence would make a line-granular
-        # fact read as a build-granular one.
-        if kind == "version" and obj.get("granularity") == "line":
-            line_granular.append("schema")
-    if ep and ep.get("fields"):
-        known |= set(ep["fields"])
-        origins.append("sweep")
+    # Field schemas are harvested per LINE, so on a VERSION scope they are the
+    # weaker claim. Labelled rather than dropped: dropping would make every
+    # build look field-blind, and silence would make a line-granular fact read
+    # as a build-granular one.
+    if ("schema" in origins and kind == "version"
+            and (obj or {}).get("granularity") == "line"):
+        line_granular.append("schema")
     if not known:
         return {**base, "status": STATUS_FIELDS_UNKNOWN, "origins": origins,
                 "reason": "%r exists on %s but no evidence records its fields "
@@ -1049,5 +1069,5 @@ __all__ = [
     "MATRIX_ROOT", "MATRIX_ROOT_DEFAULT", "REDISCOVERY_ROOT_DEFAULT",
     "SWEPT_PRODUCTS", "STATUS_OK", "STATUS_UNMEASURED", "STATUS_ABSENT",
     "STATUS_FIELDS_UNKNOWN", "STATUS_UNKNOWN_FIELDS",
-    "STATUS_VERSION_UNMEASURED",
+    "STATUS_VERSION_UNMEASURED", "known_fields",
 ]

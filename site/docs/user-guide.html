@@ -165,9 +165,12 @@ codebase is assumed. For architecture and internals see the
 <hr>
 <h2 id="1-signing-in-accounts">1. Signing in &amp; accounts</h2>
 <ul>
-<li>Browse to the app URL and log in. A fresh install ships one seeded
-  administrator (<code>admin</code> / <code>Sopas123.-</code>) — <strong>change this password on first
-  login</strong> (Profile → password).</li>
+<li>Browse to the app URL and log in. A fresh install seeds one administrator,
+  <code>admin</code>, with no default password: it is the one given to the installer
+  (<code>--admin-password=…</code> / <code>SATOM_ADMIN_PASSWORD</code>) or a random one the installer
+  writes to <code>initial-admin-password</code> in the install directory (root-only,
+  <code>0600</code>; the installer prints its path). <strong>Change it on first login</strong>
+  (Profile → password) and delete that file.</li>
 <li><strong>Account protection:</strong> 10 consecutive failed logins lock the account for
   15 minutes. Login attempts are rate-limited per IP (5/min).</li>
 <li><strong>2FA:</strong> TOTP can be enabled per account, with QR enrollment on

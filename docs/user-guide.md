@@ -4975,7 +4975,7 @@ Now the card posts to the flow itself:
 
 | | What happens |
 |---|---|
-| **Raised** | You come back to the flow with the change **cited on stage 2** — its reference, title and status, linked both to the change document and to the per-appliance execution view. The card stays filled in, because raising a second change over a different group of appliances is the next step of a staged window, not a mistake. |
+| **Raised** | You come back to the flow at `?cr=<id>`, with the change **open below the card as stage 3** (§40.1c). The card folds shut under a **Raised as** badge naming the change: what you submitted stays readable under *Show what was submitted (read-only)*, but it takes no more input, because submitting it again would raise a **second** change, not amend this one. For the next group of appliances, open `Upgrade Flow` again without the `?cr=` link. |
 | **Refused** | The **same page** re-renders with the refusal at the top and the card as you left it: wording, owner, notification address, approval mode, the window as you typed it, the appliances still ticked and **the run each one cited** — including *no run cited*, which is a real answer and is kept as one. |
 
 Two details that are not cosmetic:
@@ -4988,6 +4988,10 @@ Two details that are not cosmetic:
   field you did edit stays yours. Marking everything "edited" on the way back
   would freeze the wording for the rest of the session and claim text is yours
   that you never wrote.
+
+**The proposal is on the page before any script runs.** Title, reason and rollback arrive filled in by the server with the wording set for the `upgrade` type under **Administration → Change Types**, so with scripting off you still read, and can submit, the administrator's words. Until a script runs, the place where the appliances are named reads as the change type's *no appliances* text. With scripting on, the fields follow your ticks and your document language as they did before. **Edit this wording**, beside **Restore proposal**, opens that change type.
+
+**Or split the same selection into waves.** Below the form, stage 2 can raise the ticked appliances as several changes instead of one. You set the appliances per wave (default 5), the first window's start, each window's length in minutes (default 120) and the gap between windows (default 30). The appliances are chunked in name order, and each wave is an ordinary change request with its own window and its own approval, titled like the form's title with *— wave k/N* appended. Windows follow one another and never overlap. Leave the start empty to raise the waves now and schedule them later. The number of waves is capped (§40.2).
 
 What a legal change *is* did not move: the rules stay in the one create path,
 the same one the single-change form and the batched wave route use. Only the
@@ -5003,7 +5007,7 @@ reading the change document were all still a trip to
 `/change-requests/<id>` — which is the trip stage 2 exists to remove.
 
 Since **2026-09-19**, once a change has been raised the flow renders it whole,
-in place. Everything the change's own page shows is on stage 2:
+in place. Everything the change's own page shows is on the flow, as stage 3:
 
 | Block | What it is |
 |---|---|
@@ -5034,9 +5038,11 @@ Four things about how this is built are deliberate:
   change outside your ADOM, reads as *no citation at all* — never as a 404, and
   never as the existence of something you may not open.
 
-Below the change, the card that raised it is still there, filled in as you left
-it, relabelled **Raise another change request**: a staged window is normally
-several changes over different groups of appliances.
+Above the change, the card that raised it folds shut and stops taking input
+(*Raised* in §40.1b). A staged window is normally several changes over
+different groups of appliances, and each one starts from a plain visit to
+`Upgrade Flow`. A plain visit opens stage 3 for **no** change: its buttons act
+on a real change, so they only appear over the one the `?cr=` link names.
 
 ### 40.2 Two limits that refuse rather than truncate
 

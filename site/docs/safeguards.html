@@ -15428,6 +15428,98 @@ module-scoped context. <strong>5 mutations, 5 bite, 0 survive, 0 void</strong>, 
 green before and after, run on a copy of the tree. The one that matters most:
 removing the local pop from <code>test_cert_share_freshness</code> now fails <strong>that</strong>
 file (ERROR at teardown), and <code>test_probe_thread_context</code> stays green.</p>
+<h2 id="190-a-form-split-that-kept-every-field-and-lost-three-behaviours-teststest_upgrade_flowpy-teststest_upgrade_flow_wordingpy-2026-09-22">§190 — a form split that kept every field and lost three behaviours (<code>tests/test_upgrade_flow.py</code>, <code>tests/test_upgrade_flow_wording.py</code>, 2026-09-22)</h2>
+<p><strong>The defect.</strong> <code>52a9bb2</code> moved the new-change form into
+<code>change_requests/_new_form.html</code>, which the stand-alone page and stage 2 of the
+upgrade flow both include. Every field survived the move. Three behaviours did
+not:</p>
+<ol>
+<li>the partial posted to <code>change_requests.new</code>, so a refused change redirected
+   and lost everything typed, which is the defect §182 had closed;</li>
+<li>its fields rendered empty, so with scripting off the change type's proposed
+   wording never reached the page;</li>
+<li>the waves block and the <em>Edit this wording</em> link were not carried over, so
+   <code>upgrade_flow.waves</code> stayed live with no control left that reached it.</li>
+</ol>
+<p>The flow still carried an empty <code>&lt;form id="uf-cr"&gt;</code> as its POST target, and
+nothing could submit it. The §182 and wording guards caught all three: 14 were
+red before release.</p>
+<p><strong>The fix, and its shape.</strong> The partial takes four opt-in keys, the same shape
+as <code>locked_action</code> / <code>cr_back</code> and unset on the stand-alone page:
+<code>cr_form_action</code> (where it posts), <code>cr_hidden</code> (the flow's ADOM),
+<code>cr_prefill</code> (a server-side value per field, plus <code>auto</code>: which wording fields
+still hold the proposal) and <code>cr_wording_url</code>. The flow sets all four and posts
+to <code>upgrade_flow.change</code>, which re-renders a refusal with the post. The empty
+shell form is gone; the guards are anchored on <code>cr-form</code> / <code>cr-*</code>.</p>
+<p><strong>Stage 3 opens only for the change the visit names.</strong> <code>72e69f0</code> had a plain
+visit fall back to the newest change. Stage 3 carries Approve, Schedule, Mark
+notified and Cancel, so a plain visit put lifecycle buttons over a change the
+operator had not raised in that sitting. Now only <code>?cr=&lt;id&gt;</code> opens it, which is
+where Create draft redirects.</p>
+<table>
+<thead>
+<tr>
+<th>Guard</th>
+<th>What it kills</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>test_a_plain_visit_offers_no_lifecycle_buttons_over_an_unnamed_change</code></td>
+<td>a plain visit opening any change, or losing the stage-2 form</td>
+</tr>
+<tr>
+<td><code>test_an_explicit_id_opens_that_change_and_no_other</code></td>
+<td><code>?cr=</code> rendering "the first one found" instead of the id it names</td>
+</tr>
+<tr>
+<td><code>test_no_url_leaves_the_page_broken_or_names_a_ghost</code></td>
+<td><code>?cr=0</code> or an unresolvable id breaking the page or opening a change; the removed <em>Close it</em> control coming back</td>
+</tr>
+<tr>
+<td><code>test_stage_three_shows_one_change_and_never_a_list_of_them</code></td>
+<td>stage 3 growing a list of changes</td>
+</tr>
+<tr>
+<td>the §182 table, re-anchored on <code>cr-form</code></td>
+<td>the refusal and the post target, as listed there</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Verified 2026-09-22</strong> (as recorded in <code>8bdbffe</code>): 84/84 in
+<code>test_upgrade_flow.py</code> + <code>test_upgrade_flow_wording.py</code>, 5 mutations, 5 bite,
+and a live render against the production database.</p>
+<h2 id="191-two-guards-that-could-not-both-be-green-and-guards-reading-a-file-nobody-renders-teststest_discovery_runpy-teststest_cr_draft_prefillpy-teststest_lang_preferencepy-teststest_cr_timezone_evidencepy-2026-09-23">§191 — two guards that could not both be green, and guards reading a file nobody renders (<code>tests/test_discovery_run.py</code>, <code>tests/test_cr_draft_prefill.py</code>, <code>tests/test_lang_preference.py</code>, <code>tests/test_cr_timezone_evidence.py</code>, 2026-09-23)</h2>
+<p>Found by release run 28, which failed on 18 reds in 10 files. Two of the
+causes were guards, not product.</p>
+<p><strong>Two guards, one contradiction.</strong> <code>test_adc_write_invalidates_the_menu_cache_too</code>
+required <code>registry_write.invalidate()</code> to name <code>adc_menu</code> in its source, and
+<code>test_product_separation</code> forbids a platform module from importing ADC code.
+Every version of <code>registry_write</code> failed one of them. The fix is ownership,
+not an exemption: <code>loader.invalidate_adc_cache()</code>, already on the separation
+whitelist, now drops both the FortiADC catalog <strong>and</strong> the GUI menu <code>adc_menu</code>
+groups from it, so no caller can drop one without the other. <code>registry_write</code>
+calls only that. The discovery guard measures the cache instead of the
+writer's source: prime <code>adc_menu.menu()</code>, assert
+<code>_build.cache_info().currsize == 1</code>, call <code>registry_write.invalidate("fortiadc")</code>,
+assert <code>0</code>. A source-shape guard can be satisfied by a comment; this one fails
+only when the menu really goes on serving the old catalog.</p>
+<p><strong>Guards reading a file nobody renders.</strong> Since <code>52a9bb2</code>,
+<code>change_requests/form.html</code> only includes <code>_new_form.html</code>. Three modules still
+read <code>form.html</code>, so every "X in tpl" assertion went red and every "X not in
+tpl" assertion went <strong>vacuously green</strong>. They now read the partial, and each
+first asserts that <code>form.html</code> still includes it, so the next move of the form
+fails them instead of hollowing them out. The <code>data-auto</code> guard renders
+<code>/change-requests/new</code> instead of grepping, because the flag is computed since
+§190.</p>
+<p><strong>A guard that lost the function it was watching.</strong> The frozen-inventory AST
+guard read <code>detail()</code>, which builds its context in <code>cr_view_context()</code> since
+<code>8713e53</code>. It now requires <code>detail</code> to call <code>cr_view_context</code> and asserts the
+frozen read (and the live <code>affected_policies</code> read only inside the opt-in drift
+comparison) there.</p>
+<p><strong>Verified 2026-09-23</strong> (as recorded in <code>fd4e2ba</code>): 9 mutations, 9 bite, 0
+survive, run on a copy of the tree; 2097 targeted and touched-area tests rc=0.
+The order-dependent red from the same run is §189.</p>
     </div>
   </div>
 </section>

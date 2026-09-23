@@ -16050,3 +16050,39 @@ union of schema and sweep origins — is now read by both `_answer` and
 survive, 0 void**, control green before and after, harness run on a COPY of
 the tree (`/tmp/vcmut`) because the shared checkout carries ~45 files from
 other sessions.
+
+## §189 — a test that leaves a Flask context open fails ITSELF, not a victim (`tests/conftest.py`, `tests/test_context_leak_guard.py`, 2026-09-23)
+
+**The defect.** pytest runs every test in one thread and one contextvars
+context, so a `ctx.push()` without its `pop()` does not end with the test that
+made it: every later test in the run executes inside that context. Release run
+28 (2026-09-22) failed that way. `test_cert_share_freshness._wire` pushed and
+never popped, and `test_probe_thread_context`, which asserts there is NO app
+context, went red dozens of files later. Run on its own, each file was green,
+so no targeted run could see it; only the full suite, in collection order.
+
+**The guard.** An autouse fixture, `_no_leaked_flask_context`, snapshots the
+app and request context stacks at setup and, at teardown:
+
+1. **pops** whatever the test left above that snapshot, so the next test starts
+   clean and one leak cannot turn into a cascade;
+2. **fails the test that leaked**, naming how many contexts and of which kind.
+
+The comparison is by identity against the setup snapshot, so a context pushed
+and popped by a wider-scoped fixture is never reported. The pop loop is
+bounded, and a `pop()` that raises restores the contextvar and still fails the
+test.
+
+**Measured before adding it.** A static scan found exactly one `.push()` in
+`tests/` (the culprit, already fixed in `fd4e2ba`) and one in `app/`
+(`hook_runner._push_app_context`, which pops in its `finally`). There are no
+`ExitStack`/`enter_context` pushes either. So the guard turns no existing test
+red, and it catches the next leak at the culprit.
+
+**Guards.** `tests/test_context_leak_guard.py` (3) runs a small pytest session
+in a subprocess against a COPY of the real conftest: one probe leaks an app
+context, one leaks a request context, one uses a `with` block, and one uses a
+module-scoped context. **5 mutations, 5 bite, 0 survive, 0 void**, control
+green before and after, run on a copy of the tree. The one that matters most:
+removing the local pop from `test_cert_share_freshness` now fails **that**
+file (ERROR at teardown), and `test_probe_thread_context` stays green.

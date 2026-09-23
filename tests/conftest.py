@@ -89,6 +89,53 @@ class _TestConfig:
     RATELIMIT_ENABLED = False
 
 
+@pytest.fixture(autouse=True)
+def _no_leaked_flask_context():
+    """Fail the test that leaves a Flask app/request context pushed.
+
+    pytest runs every test in ONE thread and ONE contextvars context, so a
+    ``ctx.push()`` without its ``pop()`` does not end with the test: every
+    later test in the run executes inside it. Release run 28 (2026-09-22)
+    failed that way -- ``test_cert_share_freshness._wire`` pushed and never
+    popped, and ``test_probe_thread_context`` (which asserts there is NO
+    context) went red dozens of files later. Run on its own, each passed.
+
+    Two jobs, in this order:
+      1. pop whatever this test left above the stack it started with, so the
+         NEXT test runs clean -- one leak must not become a cascade;
+      2. fail THIS test, naming what leaked, so the red lands on the culprit
+         instead of on an innocent test far away in collection order.
+
+    Compared by identity against the stack at setup, so a context pushed by a
+    wider-scoped fixture (and popped by it) is never reported.
+    """
+    from flask import globals as fg
+
+    app_before = fg._cv_app.get(None)
+    req_before = fg._cv_request.get(None)
+    yield
+    leaked = []
+    for cv, before, kind in ((fg._cv_request, req_before, "request"),
+                             (fg._cv_app, app_before, "app")):
+        for _ in range(64):  # bounded: a pop() that raises must not spin
+            top = cv.get(None)
+            if top is None or top is before:
+                break
+            leaked.append(kind)
+            try:
+                top.pop()
+            except Exception:  # noqa: BLE001 -- restore, then still fail
+                cv.set(before)
+                break
+    if leaked:
+        pytest.fail(
+            "test left %d Flask context(s) pushed (%s); every later test in "
+            "the run would execute inside them. Use `with app.app_context():` "
+            "or pop what you push." % (len(leaked), ", ".join(leaked)),
+            pytrace=False,
+        )
+
+
 @pytest.fixture()
 def app(tmp_path):
     # A UNIQUE DB file per test → full isolation (no state leaks across tests).

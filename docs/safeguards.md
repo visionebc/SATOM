@@ -16086,3 +16086,84 @@ module-scoped context. **5 mutations, 5 bite, 0 survive, 0 void**, control
 green before and after, run on a copy of the tree. The one that matters most:
 removing the local pop from `test_cert_share_freshness` now fails **that**
 file (ERROR at teardown), and `test_probe_thread_context` stays green.
+
+## §190 — a form split that kept every field and lost three behaviours (`tests/test_upgrade_flow.py`, `tests/test_upgrade_flow_wording.py`, 2026-09-22)
+
+**The defect.** `52a9bb2` moved the new-change form into
+`change_requests/_new_form.html`, which the stand-alone page and stage 2 of the
+upgrade flow both include. Every field survived the move. Three behaviours did
+not:
+
+1. the partial posted to `change_requests.new`, so a refused change redirected
+   and lost everything typed, which is the defect §182 had closed;
+2. its fields rendered empty, so with scripting off the change type's proposed
+   wording never reached the page;
+3. the waves block and the *Edit this wording* link were not carried over, so
+   `upgrade_flow.waves` stayed live with no control left that reached it.
+
+The flow still carried an empty `<form id="uf-cr">` as its POST target, and
+nothing could submit it. The §182 and wording guards caught all three: 14 were
+red before release.
+
+**The fix, and its shape.** The partial takes four opt-in keys, the same shape
+as `locked_action` / `cr_back` and unset on the stand-alone page:
+`cr_form_action` (where it posts), `cr_hidden` (the flow's ADOM),
+`cr_prefill` (a server-side value per field, plus `auto`: which wording fields
+still hold the proposal) and `cr_wording_url`. The flow sets all four and posts
+to `upgrade_flow.change`, which re-renders a refusal with the post. The empty
+shell form is gone; the guards are anchored on `cr-form` / `cr-*`.
+
+**Stage 3 opens only for the change the visit names.** `72e69f0` had a plain
+visit fall back to the newest change. Stage 3 carries Approve, Schedule, Mark
+notified and Cancel, so a plain visit put lifecycle buttons over a change the
+operator had not raised in that sitting. Now only `?cr=<id>` opens it, which is
+where Create draft redirects.
+
+| Guard | What it kills |
+|---|---|
+| `test_a_plain_visit_offers_no_lifecycle_buttons_over_an_unnamed_change` | a plain visit opening any change, or losing the stage-2 form |
+| `test_an_explicit_id_opens_that_change_and_no_other` | `?cr=` rendering "the first one found" instead of the id it names |
+| `test_no_url_leaves_the_page_broken_or_names_a_ghost` | `?cr=0` or an unresolvable id breaking the page or opening a change; the removed *Close it* control coming back |
+| `test_stage_three_shows_one_change_and_never_a_list_of_them` | stage 3 growing a list of changes |
+| the §182 table, re-anchored on `cr-form` | the refusal and the post target, as listed there |
+
+**Verified 2026-09-22** (as recorded in `8bdbffe`): 84/84 in
+`test_upgrade_flow.py` + `test_upgrade_flow_wording.py`, 5 mutations, 5 bite,
+and a live render against the production database.
+
+## §191 — two guards that could not both be green, and guards reading a file nobody renders (`tests/test_discovery_run.py`, `tests/test_cr_draft_prefill.py`, `tests/test_lang_preference.py`, `tests/test_cr_timezone_evidence.py`, 2026-09-23)
+
+Found by release run 28, which failed on 18 reds in 10 files. Two of the
+causes were guards, not product.
+
+**Two guards, one contradiction.** `test_adc_write_invalidates_the_menu_cache_too`
+required `registry_write.invalidate()` to name `adc_menu` in its source, and
+`test_product_separation` forbids a platform module from importing ADC code.
+Every version of `registry_write` failed one of them. The fix is ownership,
+not an exemption: `loader.invalidate_adc_cache()`, already on the separation
+whitelist, now drops both the FortiADC catalog **and** the GUI menu `adc_menu`
+groups from it, so no caller can drop one without the other. `registry_write`
+calls only that. The discovery guard measures the cache instead of the
+writer's source: prime `adc_menu.menu()`, assert
+`_build.cache_info().currsize == 1`, call `registry_write.invalidate("fortiadc")`,
+assert `0`. A source-shape guard can be satisfied by a comment; this one fails
+only when the menu really goes on serving the old catalog.
+
+**Guards reading a file nobody renders.** Since `52a9bb2`,
+`change_requests/form.html` only includes `_new_form.html`. Three modules still
+read `form.html`, so every "X in tpl" assertion went red and every "X not in
+tpl" assertion went **vacuously green**. They now read the partial, and each
+first asserts that `form.html` still includes it, so the next move of the form
+fails them instead of hollowing them out. The `data-auto` guard renders
+`/change-requests/new` instead of grepping, because the flag is computed since
+§190.
+
+**A guard that lost the function it was watching.** The frozen-inventory AST
+guard read `detail()`, which builds its context in `cr_view_context()` since
+`8713e53`. It now requires `detail` to call `cr_view_context` and asserts the
+frozen read (and the live `affected_policies` read only inside the opt-in drift
+comparison) there.
+
+**Verified 2026-09-23** (as recorded in `fd4e2ba`): 9 mutations, 9 bite, 0
+survive, run on a copy of the tree; 2097 targeted and touched-area tests rc=0.
+The order-dependent red from the same run is §189.

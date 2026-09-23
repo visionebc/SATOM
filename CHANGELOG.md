@@ -6,6 +6,21 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Documentation — the upgrade flow's stage 2, as it behaves since the form split was repaired (2026-09-23)
+
+The user guide (§40.1b, §40.1c) described stage 2 as it was before the change
+view moved to stage 3: a raised change's card "stays filled in" and is
+"relabelled Raise another change request". It now says what the page does. The
+card folds shut, read-only, under **Raised as**, and the change opens below it
+as stage 3 only for the `?cr=` link. The guide also covers the two things the
+form split had dropped and 2.1.0 restored: the proposed wording is rendered by
+the server, so it is there with scripting off (with an **Edit this wording**
+link), and the **Or split the same selection into waves** block.
+
+The safeguards catalog gains §190 (the stage-2 form split and the rule that
+stage 3 opens only for a named change) and §191 (two guards that could not
+both be green, and guards that read a template nobody renders).
+
 ## [2.1.0] - 2026-09-22
 
 ### Fixed — the "CLI capture skipped" badge on the discovery card had no style (2026-09-23)

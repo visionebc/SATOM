@@ -5747,7 +5747,7 @@ cannot do either of the two things a stage inside a staged page has to do:</p>
 <tbody>
 <tr>
 <td><strong>Raised</strong></td>
-<td>You come back to the flow with the change <strong>cited on stage 2</strong> — its reference, title and status, linked both to the change document and to the per-appliance execution view. The card stays filled in, because raising a second change over a different group of appliances is the next step of a staged window, not a mistake.</td>
+<td>You come back to the flow at <code>?cr=&lt;id&gt;</code>, with the change <strong>open below the card as stage 3</strong> (§40.1c). The card folds shut under a <strong>Raised as</strong> badge naming the change: what you submitted stays readable under <em>Show what was submitted (read-only)</em>, but it takes no more input, because submitting it again would raise a <strong>second</strong> change, not amend this one. For the next group of appliances, open <code>Upgrade Flow</code> again without the <code>?cr=</code> link.</td>
 </tr>
 <tr>
 <td><strong>Refused</strong></td>
@@ -5766,6 +5766,8 @@ cannot do either of the two things a stage inside a staged page has to do:</p>
   would freeze the wording for the rest of the session and claim text is yours
   that you never wrote.</li>
 </ul>
+<p><strong>The proposal is on the page before any script runs.</strong> Title, reason and rollback arrive filled in by the server with the wording set for the <code>upgrade</code> type under <strong>Administration → Change Types</strong>, so with scripting off you still read, and can submit, the administrator's words. Until a script runs, the place where the appliances are named reads as the change type's <em>no appliances</em> text. With scripting on, the fields follow your ticks and your document language as they did before. <strong>Edit this wording</strong>, beside <strong>Restore proposal</strong>, opens that change type.</p>
+<p><strong>Or split the same selection into waves.</strong> Below the form, stage 2 can raise the ticked appliances as several changes instead of one. You set the appliances per wave (default 5), the first window's start, each window's length in minutes (default 120) and the gap between windows (default 30). The appliances are chunked in name order, and each wave is an ordinary change request with its own window and its own approval, titled like the form's title with <em>— wave k/N</em> appended. Windows follow one another and never overlap. Leave the start empty to raise the waves now and schedule them later. The number of waves is capped (§40.2).</p>
 <p>What a legal change <em>is</em> did not move: the rules stay in the one create path,
 the same one the single-change form and the batched wave route use. Only the
 two answers — where you end up — belong to this page. The change type stays
@@ -5777,7 +5779,7 @@ exporting the affected-service inventory, asking for the external ticket or
 reading the change document were all still a trip to
 <code>/change-requests/&lt;id&gt;</code> — which is the trip stage 2 exists to remove.</p>
 <p>Since <strong>2026-09-19</strong>, once a change has been raised the flow renders it whole,
-in place. Everything the change's own page shows is on stage 2:</p>
+in place. Everything the change's own page shows is on the flow, as stage 3:</p>
 <table>
 <thead>
 <tr>
@@ -5835,9 +5837,11 @@ in place. Everything the change's own page shows is on stage 2:</p>
   change outside your ADOM, reads as <em>no citation at all</em> — never as a 404, and
   never as the existence of something you may not open.</li>
 </ul>
-<p>Below the change, the card that raised it is still there, filled in as you left
-it, relabelled <strong>Raise another change request</strong>: a staged window is normally
-several changes over different groups of appliances.</p>
+<p>Above the change, the card that raised it folds shut and stops taking input
+(<em>Raised</em> in §40.1b). A staged window is normally several changes over
+different groups of appliances, and each one starts from a plain visit to
+<code>Upgrade Flow</code>. A plain visit opens stage 3 for <strong>no</strong> change: its buttons act
+on a real change, so they only appear over the one the <code>?cr=</code> link names.</p>
 <h3 id="402-two-limits-that-refuse-rather-than-truncate">40.2 Two limits that refuse rather than truncate</h3>
 <table>
 <thead>

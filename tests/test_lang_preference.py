@@ -32,9 +32,17 @@ from app.services import user_settings_store as ustore
 from tests.conftest import admin_user_id, login
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-FORM_TPL = os.path.join(REPO, "app", "templates", "change_requests", "form.html")
+# The form lives in the partial since 52a9bb2; form.html only includes it.
+FORM_TPL = os.path.join(REPO, "app", "templates", "change_requests", "_new_form.html")
+FORM_PAGE = os.path.join(REPO, "app", "templates", "change_requests", "form.html")
 PROFILE_TPL = os.path.join(REPO, "app", "templates", "auth", "profile.html")
 BASE_TPL = os.path.join(REPO, "app", "templates", "base.html")
+
+
+
+def test_the_page_still_includes_the_form_these_guards_read():
+    """Without this, every FORM_TPL guard below reads a file nobody renders."""
+    assert "change_requests/_new_form.html" in _read(FORM_PAGE)
 
 
 _PY_DOCSTRING = re.compile(r"(\"\"\".*?\"\"\"|\'\'\'.*?\'\'\')", re.S)

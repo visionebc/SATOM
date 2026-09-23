@@ -30,7 +30,11 @@ from app.views.change_requests import cr_action_keys
 from tests.conftest import admin_user_id, login
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-TPL_PATH = os.path.join(REPO, "app", "templates", "change_requests", "form.html")
+# The form moved into a partial (52a9bb2) that the standalone page and the
+# upgrade flow both include. Reading form.html after the split made every
+# "X in tpl" red and every "X not in tpl" vacuously green.
+TPL_PATH = os.path.join(REPO, "app", "templates", "change_requests", "_new_form.html")
+PAGE_PATH = os.path.join(REPO, "app", "templates", "change_requests", "form.html")
 
 LANG_CODES = tuple(code for code, _label in doc.document_langs())
 
@@ -45,6 +49,10 @@ INVENTORY_FIXTURE = [{"policy": "www_prod"}, {"policy": "api_prod"}]
 
 @pytest.fixture(scope="module")
 def tpl():
+    page = io.open(PAGE_PATH, encoding="utf-8").read()
+    assert "change_requests/_new_form.html" in page, (
+        "form.html stopped including the partial -- these guards would read "
+        "a file nobody renders")
     return io.open(TPL_PATH, encoding="utf-8").read()
 
 
@@ -293,11 +301,19 @@ def test_owner_and_recipients_are_proposed_visibly(app, client):
     assert 'id="cr-owner"' in html and 'id="cr-notify"' in html
 
 
-def test_the_operators_own_words_are_never_overwritten(tpl):
+def test_the_operators_own_words_are_never_overwritten(app, client, tpl):
     """The fields keep updating as the two answers change -- until the operator
     types. Without the flag, picking a language after writing the reason wipes
     it, and the wipe looks like the form working."""
-    assert 'data-auto="1"' in tpl
+    # Rendered, not grepped: since 8bdbffe the flag is computed (a refused
+    # change re-renders with the operator's words locked), so the literal is
+    # gone from the source while a fresh form must still start unlocked.
+    login(client, admin_user_id(app))
+    html = client.get("/change-requests/new").get_data(as_text=True)
+    for fid in ("cr-title", "cr-reason", "cr-rollback"):
+        m = re.search(r'<(?:input|textarea)\b[^>]*id="%s"[^>]*>' % fid, html)
+        assert m, fid
+        assert 'data-auto="1"' in m.group(0), "%s starts locked" % fid
     assert "el.setAttribute('data-auto', '0')" in tpl
     body = tpl[tpl.index("function paint("):tpl.index("function relabelActions(")]
     # The BRANCH is pinned, not merely the word: a guard that only proves the

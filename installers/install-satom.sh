@@ -1565,7 +1565,10 @@ if [ "$ROLE" != "secondary" ]; then
     # veia el operador era "pg_hba: regla local scram" y la causa real vivia
     # 60 lineas de traceback dentro de $INSTALL_LOG. Un fallo mudo es un
     # fallo que nadie encuentra.
-    FLASK_APP=wsgi.py venv/bin/flask create-db >>"$INSTALL_LOG" 2>&1 \
+    # The operator's password seeds the first admin directly: without it the
+    # seed would generate one and write it to a file this installer then makes
+    # stale by setting ADMIN_PASS below.
+    SATOM_ADMIN_PASSWORD="$ADMIN_PASS" FLASK_APP=wsgi.py venv/bin/flask create-db >>"$INSTALL_LOG" 2>&1 \
         || die "flask create-db fallo — no se pudo inicializar el esquema.
        Revisa el final de $INSTALL_LOG (causa habitual: la app no puede
        autenticarse contra PostgreSQL)"

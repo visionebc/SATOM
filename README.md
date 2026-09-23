@@ -185,9 +185,13 @@ sudo systemctl reload nginx
 ```
 
 An imported certificate is never overwritten by re-running the installer.
-First login: `admin` / `Sopas123.-` — **change it immediately**
-(the app also supports per-account lockout, TOTP 2FA, and LDAP/RADIUS
-directory auth).
+First login: user `admin`. There is no default password — pass your own with
+`--admin-password=…` (or `SATOM_ADMIN_PASSWORD`), or let the installer generate
+one: it is written only to `/opt/satom/initial-admin-password` (root-only,
+`0600`) and the installer prints that path when it finishes. **Change it after
+the first login and delete the file.** Re-running the installer never changes
+an existing admin's password (the app also supports per-account lockout, TOTP
+2FA, and LDAP/RADIUS directory auth).
 
 Full install/upgrade/backup notes: [docs/INSTALL.md](docs/INSTALL.md).
 

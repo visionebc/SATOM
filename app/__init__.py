@@ -1502,15 +1502,22 @@ def create_app(config_override: object | None = None) -> Flask:
 
     @app.cli.command('create-db')
     def create_db_cmd():
-        """Initialise database tables and seed the default admin user."""
+        """Initialise database tables and seed the first admin user.
+
+        The admin's password is $SATOM_ADMIN_PASSWORD or, when unset, a random
+        one written to a 0600 file whose path is printed (never the password).
+        """
         db.create_all()
         from .models import User
         if User.query.count() == 0:
-            admin = User(username='admin', role='admin', is_active=True)
-            admin.set_password('Sopas123.-')
-            db.session.add(admin)
-            db.session.commit()
-            print('Admin user created: admin / Sopas123.-')
+            path = _seed_admin()
+            if User.query.count() == 0:
+                raise click.ClickException(
+                    'no admin user was created — see the error logged above')
+            if path:
+                print('Admin user created: admin — generated password in %s' % path)
+            else:
+                print('Admin user created: admin — password from $%s' % ADMIN_PASSWORD_ENV)
         else:
             print('Database already contains users — skipping seed.')
 
@@ -2390,13 +2397,62 @@ def _assign_missing_profiles() -> None:
         db.session.rollback()
 
 
-def _seed_admin() -> None:
-    """Create a default admin user if the users table is empty."""
+#: Operator-supplied password for the FIRST admin (installers pass it through).
+ADMIN_PASSWORD_ENV = "SATOM_ADMIN_PASSWORD"
+#: Where a GENERATED first-admin password is written (mode 0600).
+ADMIN_PASSWORD_FILE_ENV = "SATOM_ADMIN_PASSWORD_FILE"
+ADMIN_PASSWORD_FILENAME = "initial-admin-password"
+
+
+def admin_password_file() -> str:
+    """Path of the generated first-admin password: $SATOM_ADMIN_PASSWORD_FILE,
+    else ``initial-admin-password`` in the install dir (the app root)."""
+    return (os.environ.get(ADMIN_PASSWORD_FILE_ENV)
+            or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                            ADMIN_PASSWORD_FILENAME))
+
+
+def _seed_admin() -> str | None:
+    """Create the first admin user if the users table is empty.
+
+    There is no default password. The product used to ship one literal, which
+    made every fresh install's admin a published credential. Now the password
+    is the operator's ($SATOM_ADMIN_PASSWORD) or, when none is given, a random
+    one written ONLY to a 0600 file (see :func:`admin_password_file`) --
+    never to a log. An existing admin is never touched.
+
+    Returns the file's path when a password was generated, else None. If the
+    file cannot be written no admin is created at all: an admin whose password
+    nobody can read is a locked door, and the next start retries.
+    """
+    import secrets
+
     from .models import Role, User
     from sqlalchemy.exc import IntegrityError
 
     if User.query.first() is not None:
-        return
+        return None
+
+    log = logging.getLogger(__name__)
+    password = os.environ.get(ADMIN_PASSWORD_ENV) or ""
+    path = tmp = None
+    if not password:
+        password = secrets.token_urlsafe(18)
+        path = admin_password_file()
+        # Written to a private temp name first and moved into place only by
+        # the worker whose INSERT won: gunicorn workers seed concurrently, and
+        # a loser overwriting the file would leave it holding a password that
+        # was never set.
+        tmp = "%s.%d.tmp" % (path, os.getpid())
+        try:
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w") as fh:
+                fh.write(password + "\n")
+        except OSError as exc:
+            log.error("No admin user was created: the generated password could "
+                      "not be stored in %s (%s). Set %s, or make that location "
+                      "writable, and restart.", path, exc, ADMIN_PASSWORD_ENV)
+            return None
 
     admin = User(
         username="admin",
@@ -2404,13 +2460,28 @@ def _seed_admin() -> None:
         created_at=datetime.utcnow(),
         is_active=True,
     )
-    admin.set_password("Sopas123.-")
+    admin.set_password(password)
     db.session.add(admin)
+    won = False
     try:
         db.session.commit()
+        won = True
     except IntegrityError:
-        db.session.rollback()
-        return  # Another worker seeded first — that's fine
+        db.session.rollback()  # Another worker seeded first — that's fine
+    finally:
+        if tmp and not won:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+    if not won or path is None:
+        return None
+    os.replace(tmp, path)
+    os.chmod(path, 0o600)
+    log.warning("Admin user 'admin' created with a generated password, stored in "
+                "%s (mode 0600). Change it after first login, then delete the file.",
+                path)
+    return path
 
 
 def _seed_acme_providers() -> None:

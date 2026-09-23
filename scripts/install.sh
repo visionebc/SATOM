@@ -8,6 +8,13 @@
 #   ./scripts/install.sh                 # online install / upgrade
 #   ./scripts/install.sh --offline       # air-gapped (needs ./wheelhouse)
 #   ./scripts/install.sh --no-system-deps # skip apt (deps already present)
+#   ./scripts/install.sh --admin-password=S  # first admin's password (or env
+#                                            # SATOM_ADMIN_PASSWORD)
+#
+# First admin: there is NO default password. On a first install (empty users
+# table) the admin gets the password given above or, when none is, a random one
+# written ONLY to $APP_DIR/initial-admin-password (root:root, 0600); the path is
+# printed at the end. An existing admin's password is never changed.
 #
 # Idempotent + SAFE:
 #   * NEVER regenerates SECRET_KEY / FERNET_KEY when .env already exists
@@ -25,12 +32,14 @@ SERVICE="${SERVICE:-satom}"
 PORT="${PORT:-8000}"
 OFFLINE=0
 SYSTEM_DEPS=1
+ADMIN_PASSWORD="${SATOM_ADMIN_PASSWORD:-}"
 
 for arg in "$@"; do
   case "$arg" in
     --offline) OFFLINE=1 ;;
+    --admin-password=*) ADMIN_PASSWORD="${arg#--admin-password=}" ;;
     --no-system-deps) SYSTEM_DEPS=0 ;;
-    --help|-h) sed -n '2,20p' "$0"; exit 0 ;;
+    --help|-h) sed -n '2,23p' "$0"; exit 0 ;;
     *) echo "unknown flag: $arg" >&2; exit 2 ;;
   esac
 done
@@ -139,6 +148,22 @@ set -a; . ./.env; set +a
 FORTINET_SKIP_DB_BOOTSTRAP=1 venv/bin/flask db upgrade
 
 # --------------------------------------------------------------------------- #
+# 6b) First admin — seeded here, before the service starts, so the generated
+#     password file exists (and is root-only) before the summary prints it.
+#     A no-op when the database already has users.
+# --------------------------------------------------------------------------- #
+ADMIN_PW_FILE="$APP_DIR/initial-admin-password"
+log "Seeding the first admin (only if the database has no users)…"
+SATOM_ADMIN_PASSWORD="$ADMIN_PASSWORD" SATOM_ADMIN_PASSWORD_FILE="$ADMIN_PW_FILE" \
+  venv/bin/flask create-db
+if [ -f "$ADMIN_PW_FILE" ]; then
+  chown root:root "$ADMIN_PW_FILE"
+  chmod 600 "$ADMIN_PW_FILE"
+fi
+ADMIN_SUPPLIED=0; [ -n "$ADMIN_PASSWORD" ] && ADMIN_SUPPLIED=1
+unset ADMIN_PASSWORD SATOM_ADMIN_PASSWORD
+
+# --------------------------------------------------------------------------- #
 # 7) systemd unit + log dir
 # --------------------------------------------------------------------------- #
 log "Installing systemd unit '$SERVICE'…"
@@ -218,7 +243,16 @@ if timeout 30 bash -c "until curl -skfo /dev/null https://127.0.0.1:${WEB_PORT:-
   echo "    systemctl reload nginx"
   echo "  An imported certificate is never overwritten by re-running this installer."
   echo
-  echo "  Admin login: admin / Sopas123.-  (CHANGE IT after first login)"
+  if [ -f "$ADMIN_PW_FILE" ]; then
+    echo "  Admin login: admin — initial password in $ADMIN_PW_FILE"
+    echo "               (root-only, 0600). Change it after first login, then"
+    echo "               delete that file."
+  elif [ "$ADMIN_SUPPLIED" = "1" ]; then
+    echo "  Admin login: admin — the password you supplied (first install only;"
+    echo "               an existing admin's password is never changed)."
+  else
+    echo "  Admin login: existing users kept — no password was changed."
+  fi
   echo "  Service:     systemctl status $SERVICE"
   echo "  Database:    $DB_NAME (Postgres, UTF-8)"
 else

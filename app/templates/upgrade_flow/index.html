@@ -358,9 +358,17 @@
   <input type="hidden" name="title" id="uf-w-title" value="{{ d_title }}">
   <input type="hidden" name="reason" id="uf-w-reason" value="{{ d_reason }}">
   <input type="hidden" name="rollback" id="uf-w-rollback" value="{{ d_rollback }}">
-  <input type="hidden" name="owner" id="uf-w-owner" value="{{ defaults.owner }}">
-  <input type="hidden" name="notify_to" id="uf-w-notify" value="{{ defaults.notify_to }}">
-  <input type="hidden" name="approval_mode" id="uf-w-approval" value="manual">
+  {# Risk, owner, notify and approval are mirrored like the wording. These
+     were rendered from the DEFAULTS and never followed the change form, so a
+     change set to External approval (fail-closed) was split into waves that
+     were each approved locally, at medium risk, by whoever the default was.
+     Read from `posted` / `defaults` directly, the same sources cr_prefill
+     uses: cr_prefill itself is only set further down, so here it is still
+     undefined and a refused post came back with the waves on the defaults. #}
+  <input type="hidden" name="risk" id="uf-w-risk" value="{{ (posted.risk if posted else '') or 'medium' }}">
+  <input type="hidden" name="owner" id="uf-w-owner" value="{{ posted.owner if posted else defaults.owner }}">
+  <input type="hidden" name="notify_to" id="uf-w-notify" value="{{ posted.notify_to if posted else defaults.notify_to }}">
+  <input type="hidden" name="approval_mode" id="uf-w-approval" value="{{ 'external' if posted and posted.approval_mode == 'external' else 'manual' }}">
 </form>
 
 {# ------------------------------------------------------------- stage 2 #}
@@ -920,6 +928,13 @@
   };
   var langRadios = form.querySelectorAll('input[name="doc_lang"]');
   var langMirror = document.getElementById('uf-w-lang');
+  // Copied verbatim, never substituted: these are decisions, not wording.
+  var CARRY = {
+    'cr-risk': 'uf-w-risk',
+    'cr-owner': 'uf-w-owner',
+    'cr-notify': 'uf-w-notify',
+    'cr-approval': 'uf-w-approval'
+  };
 
   function chosenLang() {
     for (var i = 0; i < langRadios.length; i++) {
@@ -944,7 +959,19 @@
       if (MIRROR[key] && FIELDS[key]) { MIRROR[key].value = FIELDS[key].value; }
     });
     if (langMirror) { langMirror.value = chosenLang() || RENDER_LANG; }
+    Object.keys(CARRY).forEach(function (src) {
+      var from = document.getElementById(src), to = document.getElementById(CARRY[src]);
+      if (from && to) { to.value = from.value; }
+    });
   }
+  Object.keys(CARRY).forEach(function (src) {
+    var el = document.getElementById(src);
+    if (el) { el.addEventListener('input', mirror); el.addEventListener('change', mirror); }
+  });
+  // Last copy at the moment of posting: no event ordering can leave a wave
+  // carrying a value the operator already changed.
+  var wavesForm = document.getElementById('uf-waves');
+  if (wavesForm) { wavesForm.addEventListener('submit', mirror); }
 
   function paint(force) {
     var code = chosenLang() || RENDER_LANG;

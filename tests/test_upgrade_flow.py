@@ -1660,3 +1660,94 @@ def test_no_url_leaves_the_page_broken_or_names_a_ghost(app, client):
     opened = client.get("/web/upgrade-flow/").get_data(as_text=True)
     assert "Close it" not in opened, \
         "the removed Close control is back on the stage"
+
+
+# --------------------------------------------------------------------------- #
+#  the waves post carries the DECISIONS of the change form, not the defaults   #
+# --------------------------------------------------------------------------- #
+_DECISIONS = {"risk": ("cr-risk", "uf-w-risk"), "owner": ("cr-owner", "uf-w-owner"),
+              "notify_to": ("cr-notify", "uf-w-notify"),
+              "approval_mode": ("cr-approval", "uf-w-approval")}
+
+
+def _waves_form(body):
+    return body.split('id="uf-waves"', 1)[1].split("</form>", 1)[0]
+
+
+def test_the_waves_post_carries_every_decision_of_the_change_form(app, client):
+    """Risk was not posted at all (every wave silently 'medium') and owner,
+    notify and approval were the defaults: a change set to External approval,
+    which is fail-closed, became N locally-approved waves."""
+    login(client, admin_user_id(app))
+    body = client.get("/web/upgrade-flow/").get_data(as_text=True)
+    waves = _waves_form(body)
+    for name, (_src, mirror) in _DECISIONS.items():
+        tags = re.findall(r'<input[^>]*id="%s"[^>]*>' % mirror, waves)
+        assert len(tags) == 1, "%s is not mirrored into the waves post" % name
+        assert 'name="%s"' % name in tags[0], "%s mirror posts the wrong name" % mirror
+
+
+def test_each_mirror_is_fed_by_the_change_form_field_of_the_same_name(app, client):
+    """A mirror nobody writes to is a default with extra steps -- which is the
+    defect. The script's CARRY map must pair each change-form control with the
+    mirror that posts the SAME field, and both ends must exist on the page."""
+    login(client, admin_user_id(app))
+    body = client.get("/web/upgrade-flow/").get_data(as_text=True)
+    m = re.search(r"var CARRY = \{(.*?)\};", body, re.S)
+    assert m, "the waves mirrors have no feeder"
+    carry = dict(re.findall(r"'([\w-]+)'\s*:\s*'([\w-]+)'", m.group(1)))
+    waves = _waves_form(body)
+    markup = re.sub(r"<script\b.*?</script>", "", body, flags=re.S | re.I)
+    for name, (src, mirror) in _DECISIONS.items():
+        assert carry.get(src) == mirror, "%s is not fed from %s" % (mirror, src)
+        ctl = re.search(r'<(?:input|select)[^>]*id="%s"[^>]*>' % src, markup)
+        assert ctl and 'name="%s"' % name in ctl.group(0), \
+            "#%s is not the change form's %s control" % (src, name)
+        assert 'form="uf-waves"' not in ctl.group(0)
+    assert re.search(r"wavesForm\.addEventListener\('submit',\s*mirror\)", body), \
+        "the mirrors are not refreshed at the moment of posting"
+
+
+def test_without_scripting_the_waves_mirrors_start_from_the_same_values_as_the_form(app, client):
+    """Scripting off, nothing copies: the mirrors must then hold exactly what
+    the change form shows, or the two buttons post two different changes."""
+    login(client, admin_user_id(app))
+    body = client.get("/web/upgrade-flow/").get_data(as_text=True)
+    _assert_mirrors_match_the_form(body)
+
+
+def _assert_mirrors_match_the_form(body):
+    """Return {field: value} after asserting each waves mirror equals what the
+    change form shows for the same field, with scripting off."""
+    waves = _waves_form(body)
+    markup = re.sub(r"<script\b.*?</script>", "", body, flags=re.S | re.I)
+
+    def mirror_value(mid):
+        return re.search(r'id="%s"[^>]*value="([^"]*)"' % mid, waves).group(1)
+
+    seen = {}
+    for name in ("owner", "notify_to"):
+        src, mid = _DECISIONS[name]
+        shown = re.search(r'<input[^>]*id="%s"[^>]*>' % src, markup).group(0)
+        shown = re.search(r'value="([^"]*)"', shown).group(1)
+        assert mirror_value(mid) == shown, "%s: form %r, waves %r" % (name, shown, mirror_value(mid))
+        seen[name] = shown
+    for name in ("risk", "approval_mode"):
+        src, mid = _DECISIONS[name]
+        sel = re.search(r'<select[^>]*id="%s"[^>]*>(.*?)</select>' % src, markup, re.S).group(1)
+        chosen = re.search(r'<option value="([^"]*)"\s+selected', sel).group(1)
+        assert mirror_value(mid) == chosen, "%s: form %r, waves %r" % (name, chosen, mirror_value(mid))
+        seen[name] = chosen
+    return seen
+
+
+def test_a_refused_change_comes_back_with_the_waves_carrying_what_was_posted(app, client):
+    """The change form is refilled from the refused post; the waves mirrors
+    must be too. They were rendered before the prefill was set, so a refused
+    External/high change came back with waves on Manual/medium/defaults."""
+    login(client, admin_user_id(app))
+    resp = _post_stage_two(client, title="")  # refused, re-rendered
+    assert resp.status_code == 200
+    seen = _assert_mirrors_match_the_form(resp.get_data(as_text=True))
+    assert seen == {"risk": "high", "approval_mode": "external",
+                    "owner": "someone-else", "notify_to": "ops@example.com"}, seen

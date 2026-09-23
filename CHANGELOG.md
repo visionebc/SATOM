@@ -6,6 +6,33 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [2.1.1] - 2026-09-23
+
+### Security — a fresh install no longer has a default admin password (2026-09-23)
+
+The first admin used to be seeded with one literal password, printed in the
+README and the installers and carried in every release bundle, so every
+fresh install started with a published credential. The seed now takes the
+operator's password (`$SATOM_ADMIN_PASSWORD`, or `--admin-password=` on
+`scripts/install.sh`; `install-satom.sh` passes the password it already asks
+for) or, when none is given, generates a random one and writes it **only** to
+`initial-admin-password` (mode 0600) in the install directory. The path is
+printed, the password never is. If that file cannot be written, no admin is
+created and the next start retries — an admin whose password nobody can read
+is a locked door.
+
+**Existing installations are not changed**: an admin that already exists is
+never touched. If yours still uses the old default, change it now.
+
+### Fixed — splitting a change into waves ignored the change form's decisions (2026-09-23)
+
+The **Or split the same selection into waves** block posted fixed values: the
+approval mode was always *Manual* (even when *External* was chosen, which by
+design holds the change until the external approval arrives), owner and
+notification went out with their defaults, and the risk was not sent at all,
+so every wave was created as *medium*. The block now carries the approval
+mode, owner, notification and risk chosen in the change form.
+
 ### Documentation — the upgrade flow's stage 2, as it behaves since the form split was repaired (2026-09-23)
 
 The user guide (§40.1b, §40.1c) described stage 2 as it was before the change

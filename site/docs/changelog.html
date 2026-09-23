@@ -61,6 +61,7 @@
     <aside class="toc">
       <div class="toc-title">On this page</div>
       <a href="#unreleased">[Unreleased]</a>
+      <a href="#211-2026-09-23">[2.1.1] - 2026-09-23</a>
       <a href="#210-2026-09-22">[2.1.0] - 2026-09-22</a>
       <a href="#200-2026-09-10">[2.0.0] - 2026-09-10</a>
       <a href="#1200-2026-08-24">[1.20.0] - 2026-08-24</a>
@@ -108,6 +109,27 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h2 id="211-2026-09-23">[2.1.1] - 2026-09-23</h2>
+<h3 id="security-a-fresh-install-no-longer-has-a-default-admin-password-2026-09-23">Security — a fresh install no longer has a default admin password (2026-09-23)</h3>
+<p>The first admin used to be seeded with one literal password, printed in the
+README and the installers and carried in every release bundle, so every
+fresh install started with a published credential. The seed now takes the
+operator's password (<code>$SATOM_ADMIN_PASSWORD</code>, or <code>--admin-password=</code> on
+<code>scripts/install.sh</code>; <code>install-satom.sh</code> passes the password it already asks
+for) or, when none is given, generates a random one and writes it <strong>only</strong> to
+<code>initial-admin-password</code> (mode 0600) in the install directory. The path is
+printed, the password never is. If that file cannot be written, no admin is
+created and the next start retries — an admin whose password nobody can read
+is a locked door.</p>
+<p><strong>Existing installations are not changed</strong>: an admin that already exists is
+never touched. If yours still uses the old default, change it now.</p>
+<h3 id="fixed-splitting-a-change-into-waves-ignored-the-change-forms-decisions-2026-09-23">Fixed — splitting a change into waves ignored the change form's decisions (2026-09-23)</h3>
+<p>The <strong>Or split the same selection into waves</strong> block posted fixed values: the
+approval mode was always <em>Manual</em> (even when <em>External</em> was chosen, which by
+design holds the change until the external approval arrives), owner and
+notification went out with their defaults, and the risk was not sent at all,
+so every wave was created as <em>medium</em>. The block now carries the approval
+mode, owner, notification and risk chosen in the change form.</p>
 <h3 id="documentation-the-upgrade-flows-stage-2-as-it-behaves-since-the-form-split-was-repaired-2026-09-23">Documentation — the upgrade flow's stage 2, as it behaves since the form split was repaired (2026-09-23)</h3>
 <p>The user guide (§40.1b, §40.1c) described stage 2 as it was before the change
 view moved to stage 3: a raised change's card "stays filled in" and is

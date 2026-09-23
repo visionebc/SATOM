@@ -72,6 +72,12 @@ os.environ["SATOM_REDISCOVERY_DIR"] = f"{_TMPDIR}/rediscovery"
 os.environ["SATOM_API_MATRIX_DIR"] = f"{_TMPDIR}/api_matrix"
 os.environ.setdefault("FORTINET_REPORTS_DIR", f"{_TMPDIR}/reports")
 os.environ.setdefault("SECRET_KEY", "test-secret-key-not-for-prod")
+# The seeded admin's password: there is no product default any more, and an
+# unset one would make every app fixture generate a password FILE. Its path is
+# pinned to the tmpdir as well, so a test that unsets the password can never
+# write one into the checkout.
+os.environ["SATOM_ADMIN_PASSWORD"] = "test-admin-pw-not-for-prod"
+os.environ["SATOM_ADMIN_PASSWORD_FILE"] = f"{_TMPDIR}/initial-admin-password"
 # A valid Fernet key so models.py encryption helpers import cleanly.
 from cryptography.fernet import Fernet  # noqa: E402
 os.environ.setdefault("FERNET_KEY", Fernet.generate_key().decode())

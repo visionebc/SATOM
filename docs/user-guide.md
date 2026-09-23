@@ -59,9 +59,12 @@
 
 ## 1. Signing in & accounts
 
-- Browse to the app URL and log in. A fresh install ships one seeded
-  administrator (`admin` / `Sopas123.-`) — **change this password on first
-  login** (Profile → password).
+- Browse to the app URL and log in. A fresh install seeds one administrator,
+  `admin`, with no default password: it is the one given to the installer
+  (`--admin-password=…` / `SATOM_ADMIN_PASSWORD`) or a random one the installer
+  writes to `initial-admin-password` in the install directory (root-only,
+  `0600`; the installer prints its path). **Change it on first login**
+  (Profile → password) and delete that file.
 - **Account protection:** 10 consecutive failed logins lock the account for
   15 minutes. Login attempts are rate-limited per IP (5/min).
 - **2FA:** TOTP can be enabled per account, with QR enrollment on

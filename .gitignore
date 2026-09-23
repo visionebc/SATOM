@@ -15,6 +15,9 @@ instance/
 
 # Secrets & local backups (kept on the host, not in git)
 .env
+# Generated first-admin password (0600, written by the seed / installer)
+/initial-admin-password
+/initial-admin-password.*.tmp
 *.bak
 *.bak-*
 

@@ -138,7 +138,7 @@
         </div>
         <div class="col-md-4">
           <label class="fw-form-label">{{ _('Risk') }}</label>
-          <select class="form-select" name="risk">
+          <select class="form-select" name="risk" id="cr-risk">
             {% for r in risks %}
             <option value="{{ r }}" {{ 'selected' if r == (pf.get('risk') or 'medium') else '' }}>{{ r|capitalize }}</option>
             {% endfor %}
@@ -213,7 +213,7 @@
 
           <div class="mb-1 mt-3">
             <label class="fw-form-label">{{ _('Approval') }}</label>
-            <select class="form-select" name="approval_mode">
+            <select class="form-select" name="approval_mode" id="cr-approval">
               {% set sel_appr = pf.get('approval_mode') or 'manual' %}
               <option value="manual" {{ 'selected' if sel_appr != 'external' else '' }}>{{ _('Manual — approved here in SATOM') }}</option>
               <option value="external" {{ 'selected' if sel_appr == 'external' else '' }}>{{ _('External — an integration must approve it') }}</option>

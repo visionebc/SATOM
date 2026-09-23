@@ -6,6 +6,8 @@ flow integration (external bind, 2FA challenge gate, password recovery).
 """
 from __future__ import annotations
 
+import os
+
 import pyotp
 import pytest
 
@@ -204,7 +206,8 @@ def test_radius_no_config():
 # Login flow integration
 # ---------------------------------------------------------------------------
 def test_login_local_still_works(client, app):
-    r = client.post("/auth/login", data={"username": "admin", "password": "Sopas123.-"},
+    r = client.post("/auth/login", data={"username": "admin",
+                                         "password": os.environ["SATOM_ADMIN_PASSWORD"]},
                     follow_redirects=False)
     assert r.status_code in (302, 303)
     assert "/auth/login" not in r.headers.get("Location", "")

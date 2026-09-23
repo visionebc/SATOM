@@ -75,6 +75,20 @@ def test_the_date_comes_from_the_certificate_not_from_meta(tmp_path, monkeypatch
 # --------------------------------------------------------------------- #
 #  publish_shared_cert — the refusal
 # --------------------------------------------------------------------- #
+# _wire pushes an app context for the test that calls it. It used to leave it
+# pushed for the REST OF THE SESSION, so every later test ran inside it -- and
+# test_probe_thread_context, which must run outside one, failed only in the
+# full suite (run 28). Popped after each test, in reverse order.
+_PUSHED: list = []
+
+
+@pytest.fixture(autouse=True)
+def _pop_wired_context():
+    yield
+    while _PUSHED:
+        _PUSHED.pop().pop()
+
+
 def _wire(app, monkeypatch, tmp_path, served_not_after, slot_not_after):
     """A publish where THIS node serves `served_not_after` and the slot holds
     `slot_not_after`. Everything below the freshness question is stubbed."""
@@ -83,6 +97,7 @@ def _wire(app, monkeypatch, tmp_path, served_not_after, slot_not_after):
         crt.write_bytes(b"SLOT"), key.write_bytes(b"SLOTKEY")
     ctx = app.app_context()
     ctx.push()
+    _PUSHED.append(ctx)
     monkeypatch.setattr(cs, "_reload_nginx", lambda: None, raising=False)
     served_crt, served_key = tmp_path / "served.crt", tmp_path / "served.key"
     served_crt.write_bytes(b"SERVED"), served_key.write_bytes(b"SERVEDKEY")

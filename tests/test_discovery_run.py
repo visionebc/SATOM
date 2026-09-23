@@ -416,24 +416,21 @@ def test_writer_refuses_a_cross_product_edit_by_id(app):
 
 def test_adc_write_invalidates_the_menu_cache_too(app):
     """Catalog cache and menu cache are two caches; missing one makes the new
-    endpoint present and invisible, which reads as a failed write."""
-    code = _code_only(WRITER)
-    fn = [n for n in ast.walk(ast.parse(_read(WRITER)))
-          if isinstance(n, ast.FunctionDef) and n.name == "invalidate"]
-    assert fn, "invalidate() moved"
-    node = fn[0]
-    if ast.get_docstring(node):
-        # The docstring of this very function explains why adc_menu matters, so
-        # asserting over the unparsed function INCLUDING it is satisfied by the
-        # explanation with the call deleted.
-        node = ast.FunctionDef(name=node.name, args=node.args,
-                               body=node.body[1:], decorator_list=[],
-                               returns=None, type_comment=None,
-                               type_params=[])
-        ast.fix_missing_locations(node)
-    body = ast.unparse(node)
-    assert "invalidate_adc_cache" in body, body
-    assert "adc_menu" in body, "the FortiADC menu cache is never invalidated"
+    endpoint present and invisible, which reads as a failed write.
+
+    Asserted on the CACHE, not on the writer's source. The source form required
+    registry_write to name adc_menu, which test_product_separation forbids for a
+    platform module -- the two guards could not both be green. The menu drop now
+    lives in loader.invalidate_adc_cache (one owner), and this proves the writer
+    still reaches it."""
+    from app.services import adc_menu, registry_write
+    with app.app_context():
+        adc_menu.invalidate()
+        adc_menu.menu()
+        assert adc_menu._build.cache_info().currsize == 1, "menu() stopped caching"
+        registry_write.invalidate("fortiadc")
+        assert adc_menu._build.cache_info().currsize == 0, (
+            "the FortiADC menu cache is never invalidated")
 
 
 def test_default_api_version_is_per_product(app):

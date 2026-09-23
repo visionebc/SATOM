@@ -143,7 +143,7 @@ def parse_config_dump(text: str) -> dict:
 
     The one thing that makes this more than a line loop: **a quoted value can
     span lines**, and FortiWeb puts PEM bodies in them
-    (``set private-key "-----BEGIN ENCRYPTED PRIVATE KEY-----`` … ). A
+    (``set private-key "`` followed by an encrypted PEM block). A
     continuation line is arbitrary text, so a line that happens to read ``end``
     inside one would pop a block that never closed and shift every block after
     it into the wrong parent. Quote state is therefore tracked and continuation

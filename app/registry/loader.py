@@ -189,8 +189,18 @@ def _adc_db_registry() -> dict | None:
 
 
 def invalidate_adc_cache() -> None:
+    """Drop the FortiADC catalog AND the GUI menu grouped from it.
+
+    ``adc_menu`` memoises its grouping of this catalog; dropping one cache
+    and not the other puts a new endpoint in the catalog and leaves it out
+    of the menu -- present and invisible. One owner, so no caller can do
+    half of it.
+    """
     _adc_db_cache["map"] = None
     _adc_db_cache["ts"] = 0.0
+    from ..services import adc_menu  # lazy: adc_menu reads this module
+
+    adc_menu.invalidate()
 
 
 def load_adc_registry() -> dict:

@@ -406,14 +406,17 @@ def test_the_detail_and_document_routes_read_the_frozen_inventory():
     import ast
     src = open(os.path.join(REPO, "app", "views", "change_requests.py")).read()
     tree = ast.parse(src)
-    for name in ("detail", "document", "inventory_export"):
-        fn = next(n for n in ast.walk(tree)
-                  if isinstance(n, ast.FunctionDef) and n.name == name)
-        body = ast.dump(fn)
+    fns = {n.name: n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
+    # detail() builds its context in cr_view_context() since 8713e53 (the
+    # upgrade flow renders the same view), so the read is asserted THERE --
+    # and detail is held to going through it.
+    assert "cr_view_context" in ast.dump(fns["detail"]), "detail"
+    for name in ("cr_view_context", "document", "inventory_export"):
+        body = ast.dump(fns[name])
         assert "frozen_policies" in body, name
         # affected_policies (the LIVE read) is allowed only inside the explicit
         # opt-in drift comparison, never as the source of the record.
-        if name != "detail":
+        if name != "cr_view_context":
             assert "affected_policies" not in body, name
 
 
@@ -471,8 +474,11 @@ def test_the_window_form_no_longer_parses_a_naive_value_as_utc():
 def test_the_window_labels_name_the_timezone():
     """A datetime-local input carries no zone; an unlabelled field is a guess
     the operator makes and the server silently overrules."""
-    html = open(os.path.join(REPO, "app", "templates", "change_requests",
-                             "form.html")).read()
+    tdir = os.path.join(REPO, "app", "templates", "change_requests")
+    # The form lives in the partial since 52a9bb2; the page only includes it.
+    assert "change_requests/_new_form.html" in open(
+        os.path.join(tdir, "form.html")).read()
+    html = open(os.path.join(tdir, "_new_form.html")).read()
     assert html.count("{{ tz_name }}") >= 2
     assert "(UTC)" not in html
 

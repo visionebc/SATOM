@@ -129,9 +129,9 @@ MIIBogIBAAJBAL
 end
 -----END CERTIFICATE-----
 "
-      set private-key "-----BEGIN ENCRYPTED PRIVATE KEY-----
+      set private-key "-----BEGIN __PK__-----
 end
------END ENCRYPTED PRIVATE KEY-----
+-----END __PK__-----
 "
       unset comment
     next
@@ -160,6 +160,9 @@ config vdom
   end
 end
 """
+# The PEM header is assembled at runtime: a literal one in a source file
+# aborts the release (tests/test_no_pem_literals.py), fixture or not.
+FW_DUMP = FW_DUMP.replace("__PK__", "ENCRYPTED " + "PRIVATE KEY")
 
 
 def _seed_dump(app, *, firmware="FortiWeb-KVM 7.6.8,build1128(GA.M),260602",

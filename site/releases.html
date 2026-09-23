@@ -72,7 +72,7 @@
       </a>
       <a class="rel-nav-item is-active" href="releases/v2.1.0.html" data-rel-version="2.1.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 2.1.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
-        <span class="rel-nav-meta">2026-09-22 · Fixed — the upgrade flow&#x27;s stage 2 posts to the flow again, and a refused change keeps what was typed (2026-09-22) · 28 entries</span>
+        <span class="rel-nav-meta">2026-09-22 · Fixed — the &quot;CLI capture skipped&quot; badge on the discovery card had no style (2026-09-23) · 28 entries</span>
         <ul class="rel-leads"><li>a file from another host is never judged</li><li>ONE selector</li><li>Asking elsewhere is still possible, as a deliberate detour</li><li class="rel-more">… and 25 more</li></ul>
       </a>
       <a class="rel-nav-item" href="releases/v2.0.0.html" data-rel-version="2.0.0">
@@ -276,9 +276,14 @@
       <div id="rel-panel">
       <div class="rel-panel-head">
         <h2>Version 2.1.0 <span class="rel-badge rel-now">current release</span></h2>
-        <p class="rel-meta">Released on 2026-09-22 — Fixed — the upgrade flow&#x27;s stage 2 posts to the flow again, and a refused change keeps what was typed (2026-09-22) · 28 entries.</p>
+        <p class="rel-meta">Released on 2026-09-22 — Fixed — the &quot;CLI capture skipped&quot; badge on the discovery card had no style (2026-09-23) · 28 entries.</p>
       </div>
         <div class="mdx">
+<h3 id="fixed-the-cli-capture-skipped-badge-on-the-discovery-card-had-no-style-2026-09-23">Fixed — the "CLI capture skipped" badge on the discovery card had no style (2026-09-23)</h3>
+<p>The discovery run marked a skipped CLI capture with <code>fw-badge-neutral</code>, a class
+the stylesheet never defined, so the note rendered as bare text with no badge
+around it. It now uses the grey <code>fw-badge-secondary</code> every other neutral state
+on the card uses.</p>
 <h3 id="fixed-the-upgrade-flows-stage-2-posts-to-the-flow-again-and-a-refused-change-keeps-what-was-typed-2026-09-22">Fixed — the upgrade flow's stage 2 posts to the flow again, and a refused change keeps what was typed (2026-09-22)</h3>
 <p>The new-change form was split into a partial shared by
 <strong>Change requests → New</strong> and stage 2 of the <strong>Upgrade flow</strong>. Embedded in the

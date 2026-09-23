@@ -8,6 +8,13 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [2.1.0] - 2026-09-22
 
+### Fixed — the "CLI capture skipped" badge on the discovery card had no style (2026-09-23)
+
+The discovery run marked a skipped CLI capture with `fw-badge-neutral`, a class
+the stylesheet never defined, so the note rendered as bare text with no badge
+around it. It now uses the grey `fw-badge-secondary` every other neutral state
+on the card uses.
+
 ### Fixed — the upgrade flow's stage 2 posts to the flow again, and a refused change keeps what was typed (2026-09-22)
 
 The new-change form was split into a partial shared by

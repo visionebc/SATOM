@@ -109,6 +109,11 @@
 source-available project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
 <h2 id="210-2026-09-22">[2.1.0] - 2026-09-22</h2>
+<h3 id="fixed-the-cli-capture-skipped-badge-on-the-discovery-card-had-no-style-2026-09-23">Fixed — the "CLI capture skipped" badge on the discovery card had no style (2026-09-23)</h3>
+<p>The discovery run marked a skipped CLI capture with <code>fw-badge-neutral</code>, a class
+the stylesheet never defined, so the note rendered as bare text with no badge
+around it. It now uses the grey <code>fw-badge-secondary</code> every other neutral state
+on the card uses.</p>
 <h3 id="fixed-the-upgrade-flows-stage-2-posts-to-the-flow-again-and-a-refused-change-keeps-what-was-typed-2026-09-22">Fixed — the upgrade flow's stage 2 posts to the flow again, and a refused change keeps what was typed (2026-09-22)</h3>
 <p>The new-change form was split into a partial shared by
 <strong>Change requests → New</strong> and stage 2 of the <strong>Upgrade flow</strong>. Embedded in the

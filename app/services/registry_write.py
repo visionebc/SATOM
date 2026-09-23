@@ -114,16 +114,12 @@ def invalidate(product: str) -> None:
     and because forgetting it is invisible: the rows are in the database and
     every reader keeps serving the cached catalog from before the run.
 
-    FortiADC has a SECOND cache: ``adc_menu`` groups the catalog into the GUI
-    menu the ADC hub renders, and it memoises that grouping. Invalidating only
-    the loader would put the new endpoint in the catalog and leave it out of the
-    menu — present and invisible, which reads as "the write failed".
+    FortiADC has a SECOND cache (the GUI menu ``adc_menu`` groups from the
+    catalog); ``loader.invalidate_adc_cache`` drops both, so this platform
+    module never imports ADC code (tests/test_product_separation.py).
     """
     if product == "fortiadc":
         loader.invalidate_adc_cache()
-        from . import adc_menu
-
-        adc_menu.invalidate()
     else:
         loader.invalidate_cache()
 

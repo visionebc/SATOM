@@ -5,8 +5,8 @@
 <meta charset="UTF-8">
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Version 1.0 — SATOM</title>
-<meta name="description" content="Released on 2026-07-14 — Added · Fixed · 9 entries.">
+<title>Version 2.1.2 — SATOM</title>
+<meta name="description" content="Released on 2026-09-24 — Fixed — a fresh native install died at flask create-db (2026-09-24) · 0 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -45,8 +45,8 @@
 
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
-  <h1>Version 1.0 <span class="rel-badge">superseded</span></h1>
-  <p class="sub">Released on 2026-07-14 — Added · Fixed · 9 entries.</p>
+  <h1>Version 2.1.2 <span class="rel-badge rel-now">current release</span></h1>
+  <p class="sub">Released on 2026-09-24 — Fixed — a fresh native install died at flask create-db (2026-09-24) · 0 entries.</p>
 </header>
 
 <section class="wrap">
@@ -62,7 +62,7 @@
         <span class="rel-nav-meta">unreleased · Changes · 0 entries</span>
         <ul class="rel-leads"></ul>
       </a>
-      <a class="rel-nav-item" href="v2.1.2.html" data-rel-version="2.1.2">
+      <a class="rel-nav-item is-active" href="v2.1.2.html" data-rel-version="2.1.2">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 2.1.2</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
         <span class="rel-nav-meta">2026-09-24 · Fixed — a fresh native install died at flask create-db (2026-09-24) · 0 entries</span>
         <ul class="rel-leads"></ul>
@@ -257,7 +257,7 @@
         <span class="rel-nav-meta">2026-07-15 · Renamed — service &amp; filesystem layout (breaking for existing installs) · 4 entries</span>
         <ul class="rel-leads"><li class="rel-more">… and 4 more</li></ul>
       </a>
-      <a class="rel-nav-item is-active" href="v1.0.html" data-rel-version="1.0">
+      <a class="rel-nav-item" href="v1.0.html" data-rel-version="1.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 1.0</span></span>
         <span class="rel-nav-meta">2026-07-14 · Added · Fixed · 9 entries</span>
         <ul class="rel-leads"><li>DNS Records management (IPAM/DDI)</li><li>Alerts engine</li><li>Certificate auto-renewal</li><li class="rel-more">… and 6 more</li></ul>
@@ -275,30 +275,41 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
-<h3 id="added">Added</h3>
-<ul>
-<li><strong>DNS Records management (IPAM/DDI)</strong>: "+DNS Records" CRUD in the DNS &amp; LB
-  lookup tool, backed by pluggable providers (EfficientIP SOLIDserver,
-  phpIPAM, NetBox).</li>
-<li><strong>Alerts engine</strong>: cert-expiry, git-divergence, device-unreachable and
-  backup-freshness alerts with in-app + email dispatch and admin thresholds.</li>
-<li><strong>Certificate auto-renewal</strong> modes (alert-only default, or auto-pull from
-  the edge) via a nightly renew timer.</li>
-<li><strong>Configuration drift detection</strong> against the git source of truth, with
-  recursive volatility normalisation.</li>
-<li><strong>Preflight/postflight health-snapshot harness</strong> for upgrades and restores.</li>
-<li><strong>Gated canary restore</strong> for per-device config recovery.</li>
-<li><strong>Firmware manifest auto-generation</strong> on upload / pull / delete.</li>
-<li><strong>Production release line</strong>: Linux installer (Debian + RHEL offline
-  bundles), generic package-manager support, public site (GitHub Pages),
-  package registry artifacts.</li>
-</ul>
-<h3 id="fixed">Fixed</h3>
-<ul>
-<li>Upgrade-event timestamps now render in local time (<code>| localtime</code>) instead
-  of raw UTC.</li>
-</ul>
-<p class="rel-prevnext"><a href="v1.1.html">← Version 1.1</a> · <a href="v0.9.html">Version 0.9 →</a></p>
+<h3 id="fixed-a-fresh-native-install-died-at-flask-create-db-2026-09-24">Fixed — a fresh native install died at <code>flask create-db</code> (2026-09-24)</h3>
+<p>The documentation-redaction rules are read from
+<code>data/publication-rules.local.json</code>, and on an installed node (one with a
+<code>.env</code>) a missing file stops the application on purpose — redacting with the
+generic rules alone would be a silent fail-open. That file is site-specific and
+never ships, so every fresh 2.1.1 install stopped at <code>flask create-db</code>.
+<code>install-satom.sh</code> now creates it as <code>{}</code> (a new installation has no site
+rules), owned by the service account and before anything imports the
+application — <strong>only when it is absent</strong>, from <code>data/</code> and from the legacy path
+alike, and never overwriting it. The container entrypoint does the same on the
+data volume. The loader's fail-closed behaviour is unchanged.</p>
+<h3 id="fixed-container-image-no-home-directory-and-no-admin-without-a-password-2026-09-24">Fixed — container image: no home directory, and no admin without a password (2026-09-24)</h3>
+<p>The image's <code>satom</code> account had no home directory, so gunicorn could not create
+its control socket under <code>~/.gunicorn</code> and warned on every start; it now has
+one. And with no <code>SATOM_ADMIN_PASSWORD</code> the first start tried to write the
+generated admin password into the root-owned application directory, failed,
+and created no admin at all — on every restart. The image now points
+<code>SATOM_ADMIN_PASSWORD_FILE</code> at the instance volume
+(<code>/opt/satom/instance/initial-admin-password</code>, <code>0600</code>).</p>
+<h3 id="fixed-install-satomsh-ignored-ufw-2026-09-24">Fixed — <code>install-satom.sh</code> ignored ufw (2026-09-24)</h3>
+<p>Only firewalld was opened, so on a Debian/Ubuntu host with ufw active the
+install finished and the console was unreachable. Both now open the HTTPS port,
+<code>:80</code> (the vhost's redirect and ACME http-01 listener) and, on a cluster
+primary, <code>5432</code>.</p>
+<h3 id="added-guided-installer-installerssatom-setupsh-2026-09-24">Added — guided installer <code>installers/satom-setup.sh</code> (2026-09-24)</h3>
+<p>One script for a new machine: system checks (<code>--check</code>), native (driving
+<code>install-satom.sh</code>) or Docker, bundled or external PostgreSQL, roles, name,
+port, certificate and admin password, asked once; <code>--yes</code> for unattended runs;
+<code>--uninstall</code>/<code>--purge</code> for Docker. It installs the release it ships with (its
+<code>SETUP_VERSION</code> is stamped from <code>VERSION</code> by <code>deploy/stamp_site_assets.py</code>,
+like the installer banner), uses the sibling <code>install-satom.sh</code> when run from
+an offline bundle — every bundle now carries it — and refuses a downloaded
+source tree that still contains an invalid network literal instead of
+repairing it. See <code>docs/INSTALL.md</code> §2.</p>
+<p class="rel-prevnext"><a href="unreleased.html">← Unreleased — the next release</a> · <a href="v2.1.1.html">Version 2.1.1 →</a></p>
       </div>
       <div class="callout" style="margin-top:24px;">
         <span class="cico">🗒️</span>

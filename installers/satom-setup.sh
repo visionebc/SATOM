@@ -40,7 +40,7 @@ set -Eeuo pipefail
 # deploy/stamp_site_assets.py stamps it from VERSION when the release is cut
 # (like install-satom.sh's VERSION) and the release pipeline refuses to
 # publish if it does not match. MUST be the first line matching ^(SATOM_|SETUP_)?VERSION=.
-SETUP_VERSION="2.1.2"
+SETUP_VERSION="2.1.3"
 GH_REPO="visionebc/SATOM"
 GH_URL="https://github.com/${GH_REPO}"
 LOG="/var/log/satom-setup.log"

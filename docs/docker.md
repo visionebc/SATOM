@@ -196,6 +196,14 @@ stored device credential permanently undecryptable. Never copy a development
 value into production or the reverse. The entrypoint refuses to start while
 either secret still holds its `CHANGE_ME` placeholder.
 
+**First login.** There is no default password. Set `SATOM_ADMIN_PASSWORD` in
+`.env` before the first `up`, or let the first start generate one: it is written
+only to the instance volume, readable with
+`./satom-docker.sh exec web cat /opt/satom/instance/initial-admin-password`
+(or `docker compose exec web cat …`). Change it after the first login and
+delete the file. `installers/satom-setup.sh` (INSTALL.md §2) builds and
+starts this stack for you and asks for the password instead.
+
 ## Production — a two-node cluster
 
 The second node is a **standby**, not the other half of a load balancer: its

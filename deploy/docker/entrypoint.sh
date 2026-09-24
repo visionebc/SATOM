@@ -83,8 +83,35 @@ reject_placeholder_secrets() {
     done
 }
 
+# ---------------------------------------------------------------------------
+# [SATOM-OVERLAY-SEED] The site's publication rules.
+#
+# app/services/doc_publication._load_overlay fails CLOSED on a deployed node
+# whose data/publication-rules.local.json is missing, on purpose. The file is
+# site-specific and never ships (gitignored, .dockerignored), and a new
+# installation has no site rules: its correct content is '{}'. Same seed as
+# installers/install-satom.sh -- created only when absent from BOTH paths the
+# loader reads (data/ and the legacy app root), never overwritten, so a data
+# volume carried over from a node with real rules keeps them.
+# ---------------------------------------------------------------------------
+ensure_publication_overlay() {
+    app_dir="${SATOM_APP_DIR:-/opt/satom}"
+    f="$app_dir/data/publication-rules.local.json"
+    if [ -e "$f" ] || [ -e "$app_dir/publication-rules.local.json" ]; then
+        return 0
+    fi
+    if (umask 022; printf '{}\n' > "$f") 2>/dev/null; then
+        log "created empty site publication rules at $f"
+    else
+        # Not fatal here: the loader is the authority and says precisely what
+        # is wrong if it needs the file. This line only names the likely cause.
+        log "WARNING: cannot create $f (is the data volume writable by uid $(id -u)?)"
+    fi
+}
+
 role="${SATOM_ROLE:-web}"
 log "role=${role} runtime=${SATOM_RUNTIME:-host} version=$(cat /opt/satom/VERSION 2>/dev/null || echo '?')"
+case "$role" in web|scheduler|cron|shell) ensure_publication_overlay ;; esac
 
 case "$role" in
     web)

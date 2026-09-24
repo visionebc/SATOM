@@ -95,6 +95,7 @@ def test_default_bearing_modules_name_no_internal_host(module_path):
 @pytest.mark.parametrize("artefact", [
     "deploy/nginx-vhost.conf",
     "installers/install-satom.sh",
+    "installers/satom-setup.sh",
     "app/templates/auth/profile.html",
 ])
 def test_shipped_artefacts_are_generic(artefact):

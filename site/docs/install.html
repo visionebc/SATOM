@@ -465,6 +465,48 @@ install issues one, and you replace it whenever you are ready
   perfectly. Each installer removes those and, if some <em>other</em> vhost already
   claims the default, rewrites its own without the claim rather than failing.</li>
 </ul>
+<p><strong>Guided install — <code>satom-setup.sh</code>.</strong> Not a fourth shape: a front end that
+checks the machine and then performs the native install (§2.1/§2.2) or the
+Docker one (§2.3) for you.</p>
+<pre><code class="language-bash">curl -fsSLO https://github.com/visionebc/SATOM/releases/download/v&lt;ver&gt;/satom-setup.sh
+sudo bash satom-setup.sh            # interactive
+sudo bash satom-setup.sh --check    # system checks only, installs nothing
+sudo bash satom-setup.sh --help     # every option and SETUP_* variable
+</code></pre>
+<p>It checks the OS (Debian 12/13, Ubuntu
+22.04/24.04, RHEL/Rocky/Alma 9, openSUSE Leap/SLES 15), CPU, RAM, disk, ports 80
+and 443 and Internet egress, detects an existing or half-finished install
+(update, reinstall or resume), and then asks <strong>once</strong> for everything: native or
+Docker, role, DNS name(s), HTTPS port, certificate (the node's own or an
+imported one) and the <code>admin</code> password — typed twice, at least 10 characters
+and three character classes; left empty, one is generated and written only to
+<code>/root/satom-admin-password.txt</code> (<code>0600</code>), never to a log. <code>--yes</code> runs it
+unattended from <code>SETUP_*</code> variables (or <code>--answers FILE</code>). It ends with a
+summary in <code>/root/satom-setup-summary.txt</code>; its log is
+<code>/var/log/satom-setup.log</code>.</p>
+<p>It installs <strong>the release it ships with</strong> (<code>SETUP_VERSION</code> in the script,
+stamped from <code>VERSION</code> when a version is cut); <code>--version X.Y.Z</code> picks another.
+Before installing it refuses — naming file and line — a downloaded source tree
+that still carries an invalid network literal (the 2.1.1 mirror defect), rather
+than installing an application that cannot start.</p>
+<ul>
+<li><strong>Native</strong> — the same result as §2.1/§2.2: <code>satom-setup.sh</code> drives the
+  release's <code>install-satom.sh</code> and answers its questions. Every offline bundle
+  carries <code>satom-setup.sh</code> next to <code>install-satom.sh</code>; run from inside the
+  extracted <code>satom-installer/</code> directory it uses that sibling installer and
+  downloads nothing. Roles: standalone, primary, secondary (join key).</li>
+<li><strong>Docker</strong> — builds the image <code>satom:&lt;ver&gt;</code> from the release's source, keeps
+  its secrets in <code>/opt/satom-docker/satom.env</code> (<code>0600</code>; back it up —
+  <code>FERNET_KEY</code> cannot be regenerated) and installs the <code>satom-docker</code> wrapper
+  (<code>satom-docker ps</code>, <code>satom-docker logs -f web</code>). PostgreSQL in the stack or an
+  existing external server (reachability and table-creation rights are tested
+  first). Roles: standalone, primary, standby — a standby needs Docker Compose
+  ≥ 2.24.4. Update by re-running the script; <code>--uninstall</code> stops the stack and
+  keeps the data, <code>--uninstall --purge</code> deletes it. <strong>The Docker variant
+  disables the four host-only web actions</strong> — Software Update &amp; HA,
+  service control, certificate activation and systemd unit health (§2.3,
+  <code>app/runtime.py</code>); if you need them, install natively.</li>
+</ul>
 <h3 id="21-online-with-network">2.1 Online (with network)</h3>
 <pre><code class="language-bash">sudo bash install-satom.sh
 </code></pre>

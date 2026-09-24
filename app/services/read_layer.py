@@ -108,7 +108,7 @@ def cached_ref_names(appliance_id: int, endpoint: str, *, session=None) -> list:
 
 
 def freshness_label(meta: dict) -> str:
-    """Human 'DB · hace 3 h' style label for a freshness badge."""
+    """Human 'DB · 3 h ago' style label for a freshness badge."""
     ga = meta.get("generated_at")
     if not ga:
         return "no local data — refresh"

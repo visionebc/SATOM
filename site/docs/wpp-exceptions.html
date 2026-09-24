@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../assets/site.css?v=72c63f9378">
+<link rel="stylesheet" href="../assets/site.css?v=b0cf1dde95">
 <script src="../assets/site.js?v=bf3b55a92e" defer></script>
 </head>
 <body class="wide">
@@ -648,7 +648,7 @@ assigned to a Server Policy"). ONE area, both kinds.</p>
   (<code>STRING_MATCH</code>/<code>REGEXP_MATCH</code>/<code>EQ</code>/<code>NE</code>/<code>INCLUDE</code>/<code>EXCLUDE</code>), <code>http-method</code> (NOT
   <code>HTTP-method</code>), <code>ip</code>, <code>name</code>, <code>value-check</code>, <code>value</code>, <code>concatenate-type</code> (<code>AND</code>/<code>OR</code>).
   Max 128 per signature. The set is SHARED (referenced by a WPP <code>signature-rule</code>, bound
-  to policies) so the binding is tracked here — <em>casado a una server policy</em>.</li>
+  to policies) so the binding is tracked here — <em>tied to a server policy</em>.</li>
 <li><strong>🔎 Detect on device</strong> (<code>services.exception_detect</code>) — reads the LIVE per-signature
   exceptions off the box and imports the chosen ones into desired-state, bound to their
   policy. Walks <strong>server policy → WPP (<code>signature-rule</code>) → signature set → <code>filter_list</code></strong>

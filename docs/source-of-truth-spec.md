@@ -194,7 +194,7 @@ def refresh_section(appliance, section, *, user) -> SyncRun:
   `objedit`, `search`, `architecture`, `fleet_objects`) switch their list reads
   to `read_section`. **Piloted first on `workspace` (Server Policy) and
   `server_objects`**, validated, then rolled out.
-- Each list shows a **freshness badge**: `DB · hace 3 h · ⟳`. ⟳ refreshes only
+- Each list shows a **freshness badge**: `DB · 3 h ago · ⟳`. ⟳ refreshes only
   that section (not the whole device).
 - Detail/edit still loads the single object live-or-DB, but editing requires a
   **lock** (§6) and writes go through **approval** (§7).
@@ -220,7 +220,7 @@ lapses → object becomes editable again automatically. No stuck locks.
 race-free across all gunicorn workers. (This is why held `FOR UPDATE` row locks
 don't work — they can't span a stateless user session; the lease can.)
 
-UI: a locked object shows a banner *"En edición por <user> — vence en 1:45"* and
+UI: a locked object shows a banner *"Being edited by <user> — expires in 1:45"* and
 its inputs are disabled until the lease lapses or the owner releases.
 
 ---

@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../assets/site.css?v=72c63f9378">
+<link rel="stylesheet" href="../assets/site.css?v=b0cf1dde95">
 <script src="../assets/site.js?v=bf3b55a92e" defer></script>
 </head>
 <body class="wide">
@@ -287,7 +287,7 @@ def refresh_section(appliance, section, *, user) -&gt; SyncRun:
   <code>objedit</code>, <code>search</code>, <code>architecture</code>, <code>fleet_objects</code>) switch their list reads
   to <code>read_section</code>. <strong>Piloted first on <code>workspace</code> (Server Policy) and
   <code>server_objects</code></strong>, validated, then rolled out.</li>
-<li>Each list shows a <strong>freshness badge</strong>: <code>DB · hace 3 h · ⟳</code>. ⟳ refreshes only
+<li>Each list shows a <strong>freshness badge</strong>: <code>DB · 3 h ago · ⟳</code>. ⟳ refreshes only
   that section (not the whole device).</li>
 <li>Detail/edit still loads the single object live-or-DB, but editing requires a
   <strong>lock</strong> (§6) and writes go through <strong>approval</strong> (§7).</li>
@@ -307,7 +307,7 @@ lapses → object becomes editable again automatically. No stuck locks.</p>
 <code>INSERT … ON CONFLICT DO NOTHING</code> / conditional <code>UPDATE</code> make acquire/steal
 race-free across all gunicorn workers. (This is why held <code>FOR UPDATE</code> row locks
 don't work — they can't span a stateless user session; the lease can.)</p>
-<p>UI: a locked object shows a banner <em>"En edición por <user> — vence en 1:45"</em> and
+<p>UI: a locked object shows a banner <em>"Being edited by <user> — expires in 1:45"</em> and
 its inputs are disabled until the lease lapses or the owner releases.</p>
 <hr>
 <h2 id="7-write-path-dry-run-approval-apply-write-through">7. Write path — dry-run → approval → apply → write-through</h2>

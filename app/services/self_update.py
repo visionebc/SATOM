@@ -9,10 +9,10 @@ inspects the current git revision, checks the remote for a newer one, and
 ENQUEUES an update request (a JSON file the root runner picks up). It never
 runs a privileged command itself.
 
-Scope ("solo la paqueteria que usa"): git app code + pip requirements +
+Scope ("only the packages it uses"): git app code + pip requirements +
 ``flask db upgrade``. NEVER OS packages.
 
-Staged rollout ("un equipo primero, luego el otro"): the interlock lives in
+Staged rollout ("one node first, then the other"): the interlock lives in
 ``AppSetting`` (Postgres → replicated to both HA nodes). A target revision must
 be validated on the STANDBY (updated + health-checked) before the PRIMARY
 button unlocks.

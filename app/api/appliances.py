@@ -18,24 +18,25 @@ def _is_stale(a):
 
 
 def _probe_in_own_context(app, appliance_id):
-    """Sonda UN appliance desde un hilo del pool, con su propio contexto.
+    """Probe ONE appliance from a pool thread, with its own context.
 
-    Un hilo nuevo arranca con las ContextVars VACIAS, asi que no hereda el app
-    context de la peticion — y el camino de la credencial llega a la BD
-    (services.secret_backend, desde que un secreto puede vivir en un vault).
-    Sin contexto esa lectura falla, el vault parece apagado, y una credencial
-    que solo vive en el vault resuelve al centinela local: probe_status se
-    traga el error y TODOS los badges salen "offline". Medido el 2026-09-14
-    contra la BD viva: los 3 appliances offline en el pool, los 3 online en el
-    hilo principal, con el mismo codigo y el mismo timeout.
+    A new thread starts with EMPTY ContextVars, so it does not inherit the
+    request's app context — and the credential path reaches the DB
+    (services.secret_backend, since a secret can live in a vault).
+    Without a context that read fails, the vault looks switched off, and a
+    credential that lives only in the vault resolves to the local sentinel:
+    probe_status swallows the error and ALL the badges come out "offline".
+    Measured on 2026-09-14 against the live DB: the 3 appliances offline in the
+    pool, the same 3 online in the main thread, with the same code and the same
+    timeout.
 
-    La fila se RELEE por id en vez de compartir la instancia ORM de la
-    peticion: cada app_context() tiene su propia sesion y un objeto de otra
-    llega aqui desacoplado.
+    The row is RE-READ by id instead of sharing the request's ORM instance:
+    each app_context() has its own session, and an object from another one
+    arrives here detached.
     """
     with app.app_context():
         a = db.session.get(Appliance, appliance_id)
-        if a is None:  # borrado entre el listado y el sondeo
+        if a is None:  # deleted between the listing and the probe
             return "unknown"
         return a.probe_status(timeout=6.0)
 
@@ -56,8 +57,8 @@ def list_appliances():
 
     stale = [a for a in appliances if _is_stale(a)]
     if stale:
-        # El objeto de aplicacion, no el proxy: el proxy se resuelve por
-        # ContextVar y dentro del hilo no apunta a nada.
+        # The application object, not the proxy: the proxy resolves through a
+        # ContextVar and inside the thread it points at nothing.
         app = current_app._get_current_object()
         ids = [a.id for a in stale]
         with ThreadPoolExecutor(max_workers=min(8, len(stale))) as pool:
@@ -69,11 +70,11 @@ def list_appliances():
             status_map[a.id] = st
             db.session.query(Appliance).filter(Appliance.id == a.id).update(
                 {'last_status': st, 'last_checked_at': now,
-                 # updated_at se asigna a SI MISMO para que NO dispare el
-                 # onupdate de la columna: un sondeo de estado no es una
-                 # edicion de configuracion. Sin esto cada poll marcaba la
-                 # fila como editada cada 60 s y 'cuando se cambio esta
-                 # config' dejaba de tener respuesta.
+                 # updated_at is assigned to ITSELF so that it does NOT fire
+                 # the column's onupdate: a status probe is not a config
+                 # edit. Without this every poll marked the row as edited
+                 # every 60 s and 'when was this config changed' no longer
+                 # had an answer.
                  'updated_at': Appliance.updated_at},
                 synchronize_session=False,
             )
@@ -209,8 +210,8 @@ def test_appliance(id):
 
     db.session.query(Appliance).filter(Appliance.id == id).update(
         {'last_status': status, 'last_checked_at': datetime.utcnow(),
-         # Mismo motivo que en list_appliances: pulsar el boton de test es
-         # mirar el aparato, no editar su configuracion.
+         # Same reason as in list_appliances: pressing the test button is
+         # looking at the device, not editing its configuration.
          'updated_at': Appliance.updated_at},
         synchronize_session=False,
     )

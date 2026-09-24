@@ -293,7 +293,7 @@ assigned to a Server Policy"). ONE area, both kinds.
   (`STRING_MATCH`/`REGEXP_MATCH`/`EQ`/`NE`/`INCLUDE`/`EXCLUDE`), `http-method` (NOT
   `HTTP-method`), `ip`, `name`, `value-check`, `value`, `concatenate-type` (`AND`/`OR`).
   Max 128 per signature. The set is SHARED (referenced by a WPP `signature-rule`, bound
-  to policies) so the binding is tracked here — *casado a una server policy*.
+  to policies) so the binding is tracked here — *tied to a server policy*.
 * **🔎 Detect on device** (`services.exception_detect`) — reads the LIVE per-signature
   exceptions off the box and imports the chosen ones into desired-state, bound to their
   policy. Walks **server policy → WPP (`signature-rule`) → signature set → `filter_list`**

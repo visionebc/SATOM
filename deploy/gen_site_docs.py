@@ -69,6 +69,7 @@ redact = _dp.redact
 scan = _dp.scan
 source_for = _dp.source_for
 MD_EXTENSIONS = _dp.MD_EXTENSIONS
+MD_EXTENSION_CONFIGS = _dp.MD_EXTENSION_CONFIGS
 relink = _dp.relink
 
 SITE_DIR = ROOT_DIR / "site"
@@ -86,7 +87,7 @@ NAV = [("index.html", "Home"), ("features.html", "Features"),
        ("docs.html", "Docs"), ("releases.html", "Releases"),
        ("docs/api.html", "API"), ("install.html", "Install")]
 
-SOURCE_URL = "https://github.com/visionebc/SATOM"
+SOURCE_URL = _dp.SOURCE_URL
 
 
 def head(title: str, description: str, up: str, active: str,
@@ -184,11 +185,12 @@ def render_doc(md_name: str, slug: str, title: str, icon: str,
 
     # No nl2br here, unlike the in-app renderer: these files are hard-wrapped at
     # ~90 columns, and nl2br would turn every wrap into a visible line break.
-    md = md_lib.Markdown(extensions=MD_EXTENSIONS, output_format="html5")
+    md = md_lib.Markdown(extensions=MD_EXTENSIONS, extension_configs=MD_EXTENSION_CONFIGS,
+                         output_format="html5")
     body = md.convert(raw)
     # Inter-document links are written as Markdown-to-Markdown in the repo and
     # would 404 on the published site; rewrite them to the published slugs.
-    body = relink(body)
+    body = relink(body, base=source.parent.relative_to(ROOT_DIR).as_posix().strip("."))
 
     # toc_tokens is a TREE, not a list: the only top-level token is the H1, so
     # filtering it directly produced a one-entry table of contents. Flatten,

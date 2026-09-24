@@ -219,7 +219,7 @@ need root.</p>
 <li><strong>Absence of data is never health.</strong> A check that cannot read reports
   <em>unknown</em> and exits 4. It never reports OK.</li>
 </ul>
-<h3 id="get-read-state-any-user"><code>get</code> — read state (any user)</h3>
+<h3 id="get--read-state-any-user"><code>get</code> — read state (any user)</h3>
 <table>
 <thead>
 <tr>
@@ -325,7 +325,7 @@ need root.</p>
 <p>Most of this half has no console of its own in the product: the scheduler, the
 timers, the four backup copies and the alert delivery path are things you
 otherwise only see indirectly, through their consequences.</p>
-<h3 id="show-configuration-and-reference-any-user"><code>show</code> — configuration and reference (any user)</h3>
+<h3 id="show--configuration-and-reference-any-user"><code>show</code> — configuration and reference (any user)</h3>
 <table>
 <thead>
 <tr>
@@ -389,7 +389,7 @@ browser and usually no route to the internet. Keep the commands in them
 copy-pasteable.</p>
 <p>The CLI never prints a secret and no command accepts one as an argument — it
 would land in shell history and in the process table.</p>
-<h3 id="diagnose-active-probes-any-user"><code>diagnose</code> — active probes (any user)</h3>
+<h3 id="diagnose--active-probes-any-user"><code>diagnose</code> — active probes (any user)</h3>
 <table>
 <thead>
 <tr>
@@ -490,7 +490,7 @@ serving — which reads like a DNS fault. It also flags a <code>return 301</code
 level in a config with no ACME challenge location: that redirect runs in the
 rewrite phase, before a location is chosen, so it swallows the HTTP-01
 challenge.</p>
-<h3 id="execute-change-state-root"><code>execute</code> — change state (root)</h3>
+<h3 id="execute--change-state-root"><code>execute</code> — change state (root)</h3>
 <table>
 <thead>
 <tr>
@@ -1538,7 +1538,7 @@ never painted. <code>satom-ha-datasync</code> is <code>inactive</code> on the pr
 painting it red is the same false positive that had to be removed from
 <code>get system health</code>. A check that always complains is a check that gets
 ignored, and so is a colour that always complains.</p>
-<h3 id="show-tree-the-whole-command-surface"><code>show tree</code> — the whole command surface</h3>
+<h3 id="show-tree--the-whole-command-surface"><code>show tree</code> — the whole command surface</h3>
 <pre><code>satom show tree                      every command, as a tree
 satom tree                           same thing (alias, for muscle memory)
 satom show tree execute              just that branch

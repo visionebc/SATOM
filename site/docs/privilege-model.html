@@ -62,7 +62,7 @@
       <div class="toc-title">On this page</div>
       <a href="#1-the-one-rule">1. The one rule</a>
       <a href="#2-accounts">2. Accounts</a>
-      <a href="#3-sudo-and-what-is-deliberately-not-granted">3. sudo — and what is deliberately NOT granted</a>
+      <a href="#3-sudo--and-what-is-deliberately-not-granted">3. sudo — and what is deliberately NOT granted</a>
       <a href="#4-the-privileged-runner-boundary">4. The privileged runner boundary</a>
       <a href="#5-ha-trust-between-nodes">5. HA trust between nodes</a>
       <a href="#5b-why-user-lives-in-a-drop-in-not-in-the-unit-file">5b. Why User= lives in a drop-in, not in the unit file</a>
@@ -70,7 +70,7 @@
       <a href="#7-checklist-when-adding-a-feature">7. Checklist when adding a feature</a>
     </aside>
     <div class="doc-body mdx">
-<h1 id="satom-privilege-model-and-ha-trust">SATOM — Privilege model and HA trust</h1>
+<h1 id="satom--privilege-model-and-ha-trust">SATOM — Privilege model and HA trust</h1>
 <p>Status: <strong>normative</strong>. Applies to <code>install-satom.sh</code> v1.2 and later, and to any
 node migrated with <code>deploy/migrate-deprivilege.sh</code>.</p>
 <p>This document exists because every earlier version of SATOM ran the whole
@@ -194,7 +194,7 @@ steps.</p>
 <pre><code class="language-bash">bash install-satom.sh --print-sudoers [account]   # needs no root, touches nothing
 </code></pre>
 <hr>
-<h2 id="3-sudo-and-what-is-deliberately-not-granted">3. sudo — and what is deliberately NOT granted</h2>
+<h2 id="3-sudo--and-what-is-deliberately-not-granted">3. sudo — and what is deliberately NOT granted</h2>
 <p><code>/etc/sudoers.d/satom</code> grants <strong>exactly two commands</strong>:</p>
 <pre><code>Cmnd_Alias SATOM_CERT_RELOAD = /usr/sbin/nginx -t, /usr/bin/systemctl reload nginx
 satom ALL=(root) NOPASSWD: SATOM_CERT_RELOAD

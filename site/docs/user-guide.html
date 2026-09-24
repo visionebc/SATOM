@@ -61,37 +61,37 @@
     <aside class="toc">
       <div class="toc-title">On this page</div>
       <a href="#table-of-contents">Table of contents</a>
-      <a href="#1-signing-in-accounts">1. Signing in &amp; accounts</a>
+      <a href="#1-signing-in--accounts">1. Signing in &amp; accounts</a>
       <a href="#2-core-concepts">2. Core concepts</a>
       <a href="#3-products-adoms">3. Products (ADOMs)</a>
       <a href="#4-registering-and-operating-devices">4. Registering and operating devices</a>
       <a href="#5-server-policy">5. Server Policy</a>
-      <a href="#6-cloning-migrating-policies">6. Cloning &amp; migrating policies</a>
-      <a href="#7-server-objects-the-generic-object-editor">7. Server Objects &amp; the generic object editor</a>
+      <a href="#6-cloning--migrating-policies">6. Cloning &amp; migrating policies</a>
+      <a href="#7-server-objects--the-generic-object-editor">7. Server Objects &amp; the generic object editor</a>
       <a href="#8-web-protection-waf">8. Web Protection (WAF)</a>
-      <a href="#9-exceptions-signature-carve-outs">9. Exceptions &amp; signature carve-outs</a>
+      <a href="#9-exceptions--signature-carve-outs">9. Exceptions &amp; signature carve-outs</a>
       <a href="#10-certificate-manager">10. Certificate Manager</a>
-      <a href="#11-backups-restore">11. Backups &amp; restore</a>
+      <a href="#11-backups--restore">11. Backups &amp; restore</a>
       <a href="#12-firmware-upgrades">12. Firmware upgrades</a>
       <a href="#13-fleet-tools">13. Fleet tools</a>
-      <a href="#14-monitoring-fleet-health-metrics-probes">14. Monitoring: fleet health, metrics &amp; probes</a>
+      <a href="#14-monitoring-fleet-health-metrics--probes">14. Monitoring: fleet health, metrics &amp; probes</a>
       <a href="#15-automation">15. Automation</a>
-      <a href="#16-reports-database-tools">16. Reports &amp; database tools</a>
+      <a href="#16-reports--database-tools">16. Reports &amp; database tools</a>
       <a href="#17-product-workspaces">17. Product workspaces</a>
       <a href="#18-api-tokens">18. API tokens</a>
-      <a href="#19-appearance-logo-colours-themes">19. Appearance: logo, colours &amp; themes</a>
+      <a href="#19-appearance-logo-colours--themes">19. Appearance: logo, colours &amp; themes</a>
       <a href="#20-the-operator-console">20. The operator console</a>
       <a href="#21-provisioning-new-appliances">21. Provisioning new appliances</a>
       <a href="#22-updating-satom-itself">22. Updating SATOM itself</a>
-      <a href="#23-studio-custom-views-plugins-lua">23. Studio: custom views, plugins &amp; Lua</a>
+      <a href="#23-studio-custom-views-plugins--lua">23. Studio: custom views, plugins &amp; Lua</a>
       <a href="#24-high-availability">24. High availability</a>
       <a href="#25-appids">25. AppIDs</a>
       <a href="#26-settings-tab-by-tab">26. Settings, tab by tab</a>
       <a href="#27-operations-log-collection-and-importing-a-backup">27. Operations: log collection and importing a backup</a>
       <a href="#28-system-provisioning-profiles-and-baselines">28. System provisioning: profiles and baselines</a>
-      <a href="#29-template-library-the-section-catalog">29. Template library &amp; the section catalog</a>
-      <a href="#30-the-endpoint-registry-the-api-explorer">30. The endpoint registry &amp; the API explorer</a>
-      <a href="#31-release-notes-the-satom-changelog">31. Release notes &amp; the SATOM changelog</a>
+      <a href="#29-template-library--the-section-catalog">29. Template library &amp; the section catalog</a>
+      <a href="#30-the-endpoint-registry--the-api-explorer">30. The endpoint registry &amp; the API explorer</a>
+      <a href="#31-release-notes--the-satom-changelog">31. Release notes &amp; the SATOM changelog</a>
       <a href="#32-troubleshooting">32. Troubleshooting</a>
       <a href="#33-ai-advisor">33. AI Advisor</a>
       <a href="#34-the-audit-log">34. The Audit Log</a>
@@ -106,7 +106,7 @@
       <a href="#43-upgrading-to-20">43. Upgrading to 2.0</a>
     </aside>
     <div class="doc-body mdx">
-<h1 id="satom-user-guide">SATOM — User Guide</h1>
+<h1 id="satom--user-guide">SATOM — User Guide</h1>
 <blockquote>
 <p><strong>Audience:</strong> operators and network/security engineers who use the web UI to
 manage FortiWeb, FortiADC, FortiAuthenticator and FortiAnalyzer appliances day
@@ -163,7 +163,7 @@ codebase is assumed. For architecture and internals see the
 <li><a href="#43-upgrading-to-20">Upgrading to 2.0</a></li>
 </ol>
 <hr>
-<h2 id="1-signing-in-accounts">1. Signing in &amp; accounts</h2>
+<h2 id="1-signing-in--accounts">1. Signing in &amp; accounts</h2>
 <ul>
 <li>Browse to the app URL and log in. A fresh install seeds one administrator,
   <code>admin</code>, with no default password: it is the one given to the installer
@@ -351,7 +351,7 @@ objects.</p>
 <li><strong>⏰ Schedule</strong> lets an operator schedule a policy enable/disable, a backend
   enable/disable, or a certificate swap for a specific date/time (see §15).</li>
 </ul>
-<h3 id="51-new-server-policy-from-a-line-the-wizard">5.1 New Server Policy from a line — the wizard</h3>
+<h3 id="51-new-server-policy-from-a-line--the-wizard">5.1 New Server Policy from a line — the wizard</h3>
 <p><code>/web/workspace/&lt;id&gt;/spo-wizard</code>, reached from the <strong>From a line profile</strong>
 button on the Server Policy page, beside <strong>New Server Policy</strong>.</p>
 <p>You pick a <strong>line</strong>, and its profile supplies the network segment, the
@@ -469,7 +469,7 @@ The registry is editable between the two presses, so a second resolution could
 answer differently and write to a backend the summary never named. A recorded
 <code>null</code> therefore means exactly one thing: no backend carried that role when the
 plan was built.</p>
-<h2 id="6-cloning-migrating-policies">6. Cloning &amp; migrating policies</h2>
+<h2 id="6-cloning--migrating-policies">6. Cloning &amp; migrating policies</h2>
 <p>From the Server Policy list, <strong>Clone / Migrate</strong> recreates a whole policy tree
 (virtual server, VIP, pool + members, health checks, content routing, and
 optionally the full WAF profile) on the same or another FortiWeb.</p>
@@ -533,7 +533,7 @@ you can point the cloned policy at a profile that is already on the destination.
 The subtree is pruned <em>and</em> the policy's profile field is rewritten — pruning
 alone would leave the copy naming the source's profile, which the appliance
 answers with <code>-651</code>.</p>
-<h3 id="62-new-compare-and-decide-and-what-a-no-actually-does">6.2 New, compare and decide — and what a "no" actually does</h3>
+<h3 id="62-new-compare-and-decide--and-what-a-no-actually-does">6.2 New, compare and decide — and what a "no" actually does</h3>
 <p>This is the only clone mode that <strong>edits a live object on purpose</strong>, so nothing
 is ever pre-ticked and the pre-flight says <strong>WARN</strong>, never <em>ok</em>.</p>
 <p>You are shown two kinds of offer:</p>
@@ -630,7 +630,7 @@ option described above is true of a 60-policy run and of one dialog.</p>
   footprint and the selection order preserved. The worker count is yours to
   set; the ceiling exists because the appliance saturates.</li>
 </ul>
-<h2 id="7-server-objects-the-generic-object-editor">7. Server Objects &amp; the generic object editor</h2>
+<h2 id="7-server-objects--the-generic-object-editor">7. Server Objects &amp; the generic object editor</h2>
 <p>FortiWeb ADOM → <strong>Server Objects</strong> mirrors the appliance's Server Objects
 menu (Server, Service, SSL, Protected Hostnames, Lists, Global, Certificates).
 Any object opens in the <strong>generic object editor</strong> (<code>objedit</code>), which is also
@@ -728,7 +728,7 @@ Prevention — plus the profile itself under Policy → Web Protection Profile
 <li>Profile-level editing shows each sub-policy as a dropdown with Edit/＋,
   down to six levels of nesting.</li>
 </ul>
-<h2 id="9-exceptions-signature-carve-outs">9. Exceptions &amp; signature carve-outs</h2>
+<h2 id="9-exceptions--signature-carve-outs">9. Exceptions &amp; signature carve-outs</h2>
 <p>FortiWeb ADOM → <strong>Exceptions</strong> is the single place for every policy-bound
 carve-out (WAF exceptions <em>and</em> signature customizations). The team rules the
 app enforces:</p>
@@ -754,7 +754,7 @@ app enforces:</p>
 <li><strong>Alignment report</strong> — device → policy → profile → exceptions, with stale
   detection; exportable.</li>
 </ul>
-<h3 id="91-search-attack-id-from-a-block-page-to-a-reviewed-carve-out">9.1 Search Attack ID — from a block page to a reviewed carve-out</h3>
+<h3 id="91-search-attack-id--from-a-block-page-to-a-reviewed-carve-out">9.1 Search Attack ID — from a block page to a reviewed carve-out</h3>
 <p>When FortiWeb blocks a request it shows the caller a block page carrying an
 <strong>Attack ID</strong> (<code>000000004106</code>). That number is the only thing the person who
 was blocked can give you, and on its own it says nothing. FortiWeb ADOM →
@@ -990,7 +990,7 @@ your browser and to its peer is <code>Settings → Node TLS</code> (§26.8), and
 SATOM <strong>trusts</strong> when it dials an appliance are the trust store (§10.1). Three
 different questions, three different pages.</p>
 </blockquote>
-<h3 id="101-the-trust-store-the-cas-satom-itself-trusts">10.1 The trust store — the CAs <em>SATOM itself</em> trusts</h3>
+<h3 id="101-the-trust-store--the-cas-satom-itself-trusts">10.1 The trust store — the CAs <em>SATOM itself</em> trusts</h3>
 <p>Global → Settings → <strong>Trust store</strong> (admin).</p>
 <p>Every appliance row carries a <code>verify_ssl</code> switch, and until this page existed
 it had only two positions: validate against the <strong>public</strong> roots — which an
@@ -1023,7 +1023,7 @@ This page is the missing third position: name the CA and keep the check on.</p>
   reissue with that name in the SAN), and an expired leaf (reissue — no CA
   rescues it). <em>"Verification failed"</em> on its own is not an answer.</li>
 </ul>
-<h2 id="11-backups-restore">11. Backups &amp; restore</h2>
+<h2 id="11-backups--restore">11. Backups &amp; restore</h2>
 <ul>
 <li><strong>Device Backups</strong> (FortiWeb ADOM → Operations) is the config-backup
   <strong>vault</strong>: every backup row shows filename, date, size, source
@@ -1240,12 +1240,12 @@ device.</p>
   line the time budget did not reach is named in the report, never dropped.
   Export is tab-separated, one line per difference.
 - <strong>Monitoring / Metrics</strong> — see §14.</p>
-<h2 id="14-monitoring-fleet-health-metrics-probes">14. Monitoring: fleet health, metrics &amp; probes</h2>
+<h2 id="14-monitoring-fleet-health-metrics--probes">14. Monitoring: fleet health, metrics &amp; probes</h2>
 <p>Monitoring lives in <strong>every</strong> workspace, not only Global. It is scoped by
 device kind, so the FortiWeb workspace shows FortiWeb appliances and nothing
 about the manager itself. Three submenus, and they answer three different
 questions.</p>
-<h3 id="141-fleet-health-is-the-box-alive">14.1 Fleet health — <em>is the box alive?</em></h3>
+<h3 id="141-fleet-health--is-the-box-alive">14.1 Fleet health — <em>is the box alive?</em></h3>
 <p>One card per appliance. The badge is the <strong>worst of four independent signals</strong>,
 and every signal that is not healthy is printed underneath, so a state is never
 unexplained:</p>
@@ -1307,7 +1307,7 @@ it exists because nothing in the product used to measure its own box. Its
 limits live in Settings → Thresholds under the <em>SATOM machine</em> scope. Disk turns
 critical at 92 %, deliberately below 95: a full filesystem stops PostgreSQL
 writing WAL, so the alert has to arrive while there is still room to act on it.</p>
-<h3 id="142-metrics-how-much-does-it-hold-and-who-changed-it">14.2 Metrics — <em>how much does it hold, and who changed it?</em></h3>
+<h3 id="142-metrics--how-much-does-it-hold-and-who-changed-it">14.2 Metrics — <em>how much does it hold, and who changed it?</em></h3>
 <p><code>Monitoring → Metrics</code>. Inventory counts and activity for the <strong>active
 workspace</strong>, over a date range. <strong>Nothing here touches an appliance</strong> — it reads
 the local cache, the audit log and the change history, so it opens with the whole
@@ -1337,7 +1337,7 @@ beside it — so "is this a busy week" has an answer rather than a number.</p>
 change-history rows are scoped through the <em>kind</em> of the appliance they were made
 on, by inclusion rather than exclusion. Manager-level changes with no appliance
 count under FortiWeb, which is where they originate. Global sees everything.</p>
-<h3 id="143-deep-monitors-is-the-service-still-serving">14.3 Deep monitors — <em>is the service still serving?</em></h3>
+<h3 id="143-deep-monitors--is-the-service-still-serving">14.3 Deep monitors — <em>is the service still serving?</em></h3>
 <p><code>Monitoring → Deep monitors</code>. These reach into the appliance (synthetic request
 or read-only CLI over SSH):</p>
 <table>
@@ -1374,7 +1374,7 @@ FortiWeb-only. On FortiAuthenticator, load and memory are read from the unit's
 <code>No such command.</code> to the performance summary, which is a <em>successful</em> round
 trip carrying no reading, exactly the kind of silence a monitor must never
 grade as healthy.</p>
-<h3 id="144-service-monitor-telemetry-over-the-api">14.4 Service monitor — telemetry over the API</h3>
+<h3 id="144-service-monitor--telemetry-over-the-api">14.4 Service monitor — telemetry over the API</h3>
 <p><code>Monitoring → Service monitor</code>. Same engine, no shell access — these read the
 appliance's monitoring API only, which means they keep working on a device
 whose configuration API is refusing calls (an expired licence, typically):</p>
@@ -1467,7 +1467,7 @@ different quantity, its old samples are cleared rather than plotted on the
 same axis. That is a deliberate, manual operation — never a side effect of a
 restart.</p>
 </blockquote>
-<h3 id="147-collection-the-metrics-store">14.7 Collection — the metrics store</h3>
+<h3 id="147-collection--the-metrics-store">14.7 Collection — the metrics store</h3>
 <p>Monitoring → <strong>Collection</strong> (needs config-write).</p>
 <blockquote>
 <p><strong>How many devices fits on this node, and how much disk will that take?</strong>
@@ -1633,7 +1633,7 @@ coarser data while looking exactly like one built on time.</p>
   outage.</li>
 <li>A period with no samples reports <strong>unknown</strong>, not a healthy zero.</li>
 </ul>
-<h3 id="1410-thresholds-declare-a-limit-once">14.10 Thresholds — declare a limit once</h3>
+<h3 id="1410-thresholds--declare-a-limit-once">14.10 Thresholds — declare a limit once</h3>
 <p>Settings → <strong>Thresholds</strong> (admin). Before this page every limit lived on an
 individual probe, so tuning a fleet meant editing each monitor by hand; in
 practice nobody did, and all 42 production probes sat on the same factory
@@ -1769,7 +1769,7 @@ Server Policy for operators):</p>
 and duration; Pause / Resume / Stop (cooperative — jobs park at safe
 checkpoints); orphaned jobs from a service restart are swept and marked on
 boot.</p>
-<h2 id="16-reports-database-tools">16. Reports &amp; database tools</h2>
+<h2 id="16-reports--database-tools">16. Reports &amp; database tools</h2>
 <p>Global → Administrator → <strong>Database</strong> (admin only):</p>
 <ul>
 <li><strong>Reports</strong> — 7 built-in reports (policies by device, expiring
@@ -1896,7 +1896,7 @@ owner's own role, bound to one product (ADOM). The plaintext token is shown
 <strong>once</strong> at creation. The API is read-biased: mutations happen only by
 triggering pre-created scheduled actions; nothing destructive is reachable by
 any token. Full reference: <a href="api.html">docs/api_v1.md</a>.</p>
-<h2 id="19-appearance-logo-colours-themes">19. Appearance: logo, colours &amp; themes</h2>
+<h2 id="19-appearance-logo-colours--themes">19. Appearance: logo, colours &amp; themes</h2>
 <p><code>Settings → Appearance</code> (administrators). Four palettes ship — <strong>SATOM Aurora</strong>
 (the default), <strong>Slate</strong>, <strong>Graphite</strong> and the original <strong>Classic</strong> — and you
 can create your own.</p>
@@ -2161,7 +2161,7 @@ grant that — it is the hypervisor's own setting.</p>
 Proxmox (<code>.qcow2</code>) or VMware ESXi (<code>.ovf</code> / <code>.ova</code>). An upgrade <code>.out</code> applies
 to a <em>running</em> appliance and cannot build a machine — two different artefact
 families, kept apart on purpose.</p>
-<h3 id="216-modes-advantages-and-disadvantages">21.6 Modes — advantages and disadvantages</h3>
+<h3 id="216-modes--advantages-and-disadvantages">21.6 Modes — advantages and disadvantages</h3>
 <p>The product cannot promise unattended first boot on every hypervisor, so how
 far a run goes is a <strong>choice</strong>, not a guess. Each mode is a different answer to
 the first-boot dialog described in 21.2.</p>
@@ -2387,7 +2387,7 @@ satom diagnose code       # is the running process actually on the new code?
 </code></pre>
 <p>How packages are built and signed:
 <a href="offline-update-packages.html">docs/offline-update-packages.md</a>.</p>
-<h2 id="23-studio-custom-views-plugins-lua">23. Studio: custom views, plugins &amp; Lua</h2>
+<h2 id="23-studio-custom-views-plugins--lua">23. Studio: custom views, plugins &amp; Lua</h2>
 <p>Three admin-only authoring tools, grouped under <strong>Studio</strong>. In the Global ADOM
 they sit at Administrator → Studio; in the FortiWeb and FortiADC ADOMs the same
 two authoring pages plus the read side (<strong>Custom Views</strong>) appear in their own
@@ -2809,7 +2809,7 @@ because the setting is meaningless without it. They are not repeated here:</p>
 </tbody>
 </table>
 <p>The rest follow.</p>
-<h3 id="261-general-identity-logging-and-the-libraries-panel">26.1 General — identity, logging, and the Libraries panel</h3>
+<h3 id="261-general--identity-logging-and-the-libraries-panel">26.1 General — identity, logging, and the Libraries panel</h3>
 <p>Application name (browser title and top bar), environment (which drives the
 <strong>PROD</strong>/<strong>DEV</strong> badge), default appliance platform, session-lock timeout, status
 poll interval, which log severities are written, display timezone, log format,
@@ -2839,7 +2839,7 @@ deliberately not merged. Practical notes:</p>
   prints which node you are on, and you repeat the change on the other one (§22.2).</li>
 <li>A queued change is polled live and its steps are written by the runner.</li>
 </ul>
-<h3 id="261b-services-starting-stopping-and-restarting-this-nodes-units">26.1b Services — starting, stopping and restarting this node's units</h3>
+<h3 id="261b-services--starting-stopping-and-restarting-this-nodes-units">26.1b Services — starting, stopping and restarting this node's units</h3>
 <p>The <strong>Services</strong> card at the bottom of the tab controls the units this node
 runs: the web app, the scheduler, the reconciler, the metrics store, the alert /
 certificate-renewal / data-sync timers, nginx and PostgreSQL. It is the same
@@ -2879,7 +2879,7 @@ deliberate:</p>
   installed on this node — <code>satom-ha-datasync.timer</code> on a primary or a
   standalone install — is shown greyed with no buttons, not as a failure.</li>
 </ul>
-<h3 id="262-access-control-who-may-reach-the-app-at-all">26.2 Access Control — who may reach the app at all</h3>
+<h3 id="262-access-control--who-may-reach-the-app-at-all">26.2 Access Control — who may reach the app at all</h3>
 <p>One gate here, and it is <strong>empty-means-everywhere</strong>:</p>
 <ul>
 <li><strong>IP whitelist</strong> — only these source addresses or CIDRs may reach the app.
@@ -2917,7 +2917,7 @@ starting point, not the ceiling.</p>
 <p>An <strong>anti-lockout guard</strong> keeps at least one active account holding both user
 management and profile management, so this page cannot be used to remove the
 last administrator.</p>
-<h3 id="264-software-update-repository-where-this-node-downloads-its-own-code-from">26.4 Software Update Repository — where this node downloads its own code from</h3>
+<h3 id="264-software-update-repository--where-this-node-downloads-its-own-code-from">26.4 Software Update Repository — where this node downloads its own code from</h3>
 <p>This is the product's <strong>source code</strong>, and the only one of the three
 repositories-or-destinations above that a software update is pulled from. It is
 not where appliance configuration is versioned (§26.5) and not where backups are
@@ -2957,7 +2957,7 @@ guess flashes the form open on a node that has been registered for a year.
 - <strong>Recent commits</strong> lists what actually landed.</p>
 </blockquote>
 <p>See also <a href="git-backup.html">git backup and surviving a Gitea outage</a>.</p>
-<h3 id="265-configuration-sot-the-only-thing-satom-calls-a-source-of-truth">26.5 Configuration SoT — the only thing SATOM calls a source of truth</h3>
+<h3 id="265-configuration-sot--the-only-thing-satom-calls-a-source-of-truth">26.5 Configuration SoT — the only thing SATOM calls a source of truth</h3>
 <p>The versioned history of every managed appliance's <strong>configuration</strong>. Each
 harvest is hashed; an unchanged config writes nothing at all, only a newer
 <code>last_seen_at</code>, so the version count is a count of real changes. Snapshots are
@@ -3049,7 +3049,7 @@ a FortiWeb's is ~0.5 MB, so one number for all four fits none of them.</p>
 never "keep nothing" — zero down this path would evacuate the newest payload
 too, and the very next diff would go to the network for a config harvested a
 minute ago.</p>
-<h4 id="confirm-off-box-then-delete-in-that-order-always">Confirm off-box, then delete — in that order, always</h4>
+<h4 id="confirm-off-box-then-delete--in-that-order-always">Confirm off-box, then delete — in that order, always</h4>
 <p>Evacuation <strong>uploads first, lists the server, and deletes locally only what
 that listing confirms</strong>. A listing that fails yields an empty set, so an
 unreachable or misconfigured server evacuates <strong>nothing</strong>; it is never read as
@@ -3109,7 +3109,7 @@ off, which is a setting that looks saved and is inert.</p>
 <li>Uploading the new SoT blobs off-box is a separate action on its own schedule
   (<code>device_inspect</code>) and is edited in Automation, not here.</li>
 </ul>
-<h3 id="265b-backup-server-the-external-sftp-destination">26.5b Backup Server — the external SFTP destination</h3>
+<h3 id="265b-backup-server--the-external-sftp-destination">26.5b Backup Server — the external SFTP destination</h3>
 <p>The box <strong>three separate streams are copied to</strong>. It is a destination, not an
 authority: nothing stored there is consulted to decide what a device is
 configured to do — that is §26.5.</p>
@@ -3157,7 +3157,7 @@ appliance stops pushing, SATOM can report the gap but cannot fill it.</p>
   browser's native tooltip if the script that upgrades it never loads: a
   control whose whole purpose is to explain must not go silent.</li>
 </ul>
-<h4 id="system-bundle-schedule-when-beside-where">System bundle schedule — when, beside where</h4>
+<h4 id="system-bundle-schedule--when-beside-where">System bundle schedule — when, beside where</h4>
 <p>A path says <em>where</em> this node's own backups land and nothing about <em>when</em> they
 are written, and the hour was reachable only from the Automation list, under an
 action name, three pages away from the folder it fills. Whether an empty folder
@@ -3187,7 +3187,7 @@ is a problem depends on both halves.</p>
   leaves a local bundle</strong> — which is correct, because then the local copy is the
   only copy.</li>
 </ul>
-<h4 id="local-bundle-retention-the-bundle-lives-off-the-node-it-backs-up">Local bundle retention — the bundle lives off the node it backs up</h4>
+<h4 id="local-bundle-retention--the-bundle-lives-off-the-node-it-backs-up">Local bundle retention — the bundle lives off the node it backs up</h4>
 <p>Added <strong>2026-08-30</strong>. A bundle is SATOM's own backup, so the one place it is
 worth least is beside the thing it backs up: the node that loses its disk loses
 both. <strong>Bundles kept on this node</strong> therefore defaults to <strong>0</strong>.</p>
@@ -3216,7 +3216,7 @@ both. <strong>Bundles kept on this node</strong> therefore defaults to <strong>0
   "what does each node physically hold", and folding the shared off-box copy in
   would make two empty nodes look identical to two full ones.</li>
 </ul>
-<h3 id="266-email-alerts-this-is-the-delivery-policy-1410-defers-to">26.6 Email &amp; Alerts — this is the delivery policy §14.10 defers to</h3>
+<h3 id="266-email--alerts--this-is-the-delivery-policy-1410-defers-to">26.6 Email &amp; Alerts — this is the delivery policy §14.10 defers to</h3>
 <p><strong>Email (SMTP)</strong> — enable/disable, server, port, TLS verification (with an
 explicit "uncheck for an internal self-signed server, and know that it is
 insecure"), optional authentication, from-name and from-address, default
@@ -3375,7 +3375,7 @@ no hook is bound to <code>alert.fired</code>, the engine says so and stamps noth
 suppressing an alert on behalf of a subscriber that does not exist would be the
 worse of the two failures. Starters for Telegram, Slack and Teams are on
 <code>Settings → Integrations → New hook</code>.</p>
-<h3 id="267-authentication-sign-in-sources-and-directory-import">26.7 Authentication — sign-in sources and directory import</h3>
+<h3 id="267-authentication--sign-in-sources-and-directory-import">26.7 Authentication — sign-in sources and directory import</h3>
 <p><strong>Sign-in sources.</strong> Tick as many as you need — Active Directory, LDAP,
 FortiAuthenticator/RADIUS — and give each an order. Sign-in walks them in that
 order and the <strong>first source that accepts the password wins</strong>. The <strong>local
@@ -3415,7 +3415,7 @@ would put a REST call on the critical path of every first login. That is the
 other half of why the approval gate exists.</p>
 <p>Directory accounts manage their own password and MFA at the directory; the
 Security tab says so rather than offering controls that would not work.</p>
-<h3 id="268-node-tls-the-certificate-satom-itself-presents">26.8 Node TLS — the certificate <em>SATOM itself</em> presents</h3>
+<h3 id="268-node-tls--the-certificate-satom-itself-presents">26.8 Node TLS — the certificate <em>SATOM itself</em> presents</h3>
 <p>A different concern from §10 (which is about certificates <strong>on the appliances</strong>)
 and from §10.1 (which is about the CAs SATOM <strong>trusts</strong>). This tab is the
 certificate the node <strong>serves</strong>, and the "Encryption in transit" card on
@@ -3537,14 +3537,14 @@ default zone and default pool are carried across <strong>as defaults, not as a
 scope</strong>: they were defaults, you could always write into other zones from the
 records modal, and a scope would start refusing those the moment the package was
 updated. An install that worked before is not narrowed by the upgrade.</p>
-<h3 id="2610-policy-links-deep-links-onto-every-server-policy-page">26.10 Policy Links — deep links onto every Server Policy page</h3>
+<h3 id="2610-policy-links--deep-links-onto-every-server-policy-page">26.10 Policy Links — deep links onto every Server Policy page</h3>
 <p>Up to ten links rendered at the top of every <strong>Server Policy</strong> detail page, with
 <code>{token}</code> placeholders that each policy fills from its own context — so one entry
 (a log search, a ticket query, a dashboard) jumps straight to <em>that</em> policy's
 data. The available tokens are listed on the tab. A link naming a field the
 policy does not have is <strong>skipped, never rendered broken</strong>. Each row can be
 enabled and can open in a new tab; the list is shared by all ADOMs.</p>
-<h3 id="2611-adoms-the-product-list-is-data-not-code">26.11 ADOMs — the product list is data, not code</h3>
+<h3 id="2611-adoms--the-product-list-is-data-not-code">26.11 ADOMs — the product list is data, not code</h3>
 <p>Create, edit, deactivate and delete ADOMs. This is why §3's five workspaces are a
 <em>current</em> list rather than a fixed one.</p>
 <p>Each row carries a key (lowercase, the URL-scoping identifier), a display name,
@@ -3556,13 +3556,13 @@ workspace offers.</p>
 <p><strong><code>global</code>, <code>fortiweb</code> and <code>fortiadc</code> cannot be deleted</strong>; their keys are wired
 into URL scoping and deleting them would orphan data. Deactivate them instead.
 Everything else is fully deletable.</p>
-<h3 id="2612-faz-menu-trim-the-fortianalyzer-sidebar">26.12 FAZ Menu — trim the FortiAnalyzer sidebar</h3>
+<h3 id="2612-faz-menu--trim-the-fortianalyzer-sidebar">26.12 FAZ Menu — trim the FortiAnalyzer sidebar</h3>
 <p>Hide FortiAnalyzer menu groups and leaves. Turning a <strong>group</strong> off cascades to
 everything under it; turning a single <strong>item</strong> off hides just that leaf. Hidden
 entries disappear from the sidebar and dashboard <strong>and are not reachable by URL</strong>.
 It applies to every user of that ADOM, and it changes only the GUI menu — the
 devices and the configuration harvest are unaffected.</p>
-<h3 id="2612b-languages-which-of-the-five-this-install-offers">26.12b Languages — which of the five this install offers</h3>
+<h3 id="2612b-languages--which-of-the-five-this-install-offers">26.12b Languages — which of the five this install offers</h3>
 <p>SATOM speaks five languages. English is the <strong>source</strong> language: the action
 profiles, the CLI help and the docs are authored in it, and every translation
 derives from it directly, never through a chain.</p>
@@ -3631,7 +3631,7 @@ stored preference is that language — read it before withdrawing one.</p>
 <p>What this gate does not touch is the catalogues. Text keeps being authored and
 translated for every language in the registry, so a language switched back on
 is complete the moment it reappears instead of starting from empty.</p>
-<h3 id="2613-security-and-change-password-self-service-for-every-account">26.13 Security and Change Password — self-service, for every account</h3>
+<h3 id="2613-security-and-change-password--self-service-for-every-account">26.13 Security and Change Password — self-service, for every account</h3>
 <p>The two tabs any signed-in user gets.</p>
 <ul>
 <li><strong>Two-factor authentication (TOTP).</strong> Scan the QR with an authenticator app and
@@ -3658,7 +3658,7 @@ for them among the tabs is a dead end:</p>
 <li><strong>PostgreSQL SSL policy</strong> — saved from the Node TLS tab (§26.8).</li>
 <li><strong>ACME provider registry</strong> — saved from the Certificate Manager tab (§10).</li>
 </ul>
-<h3 id="sentinel-context-border-map">Sentinel → Context → Border map</h3>
+<h3 id="sentinel--context--border-map">Sentinel → Context → Border map</h3>
 <p>Ties each protected appliance to the collector that sees its border:
 <strong>analyzer, ADOM, FortiGate, VDOM</strong>, all typed by you. Leave <em>FortiGate</em> empty
 to search every device in the ADOM and <em>VDOM</em> empty to search every VDOM on
@@ -3677,7 +3677,7 @@ exactly like a source the border never saw — the button shows the raw device
 answer so you can tell which one you have. If the collector runs on anything
 other than UTC, set <em>Collector clock offset</em> in Settings → Sentinel → Border
 corroboration first.</p>
-<h3 id="sentinel-border-blocklist">Sentinel → Border blocklist</h3>
+<h3 id="sentinel--border-blocklist">Sentinel → Border blocklist</h3>
 <p>The list SATOM publishes for a border firewall to read, and the place you take
 an address off it.</p>
 <p><strong>SATOM never writes to a FortiGate.</strong> There is no FortiGate client in this
@@ -3723,7 +3723,7 @@ addresses attacked which customer.</p>
 <p>The FortiWeb ADOM's <strong>Operations</strong> group has three entries. §11 documents the
 third one (Device Backups). These are the other two — they look adjacent and they
 do completely different things.</p>
-<h3 id="271-log-collection-a-read-only-diagnostic-battery-over-ssh">27.1 Log Collection — a read-only diagnostic battery over SSH</h3>
+<h3 id="271-log-collection--a-read-only-diagnostic-battery-over-ssh">27.1 Log Collection — a read-only diagnostic battery over SSH</h3>
 <p>FortiWeb ADOM → Operations → <strong>Log Collection</strong> (<code>config_write</code>).</p>
 <p><strong>What it is not:</strong> it is <em>not</em> a viewer of the appliance's on-box log database.
 It does not page attack or event logs.</p>
@@ -3747,7 +3747,7 @@ own labelled <code>.txt</code>.</p>
   device, because it opens an administrative SSH session with the stored
   credentials.</li>
 </ul>
-<h3 id="272-import-backup-parse-a-config-file-with-no-appliance-at-all">27.2 Import Backup — parse a config file with no appliance at all</h3>
+<h3 id="272-import-backup--parse-a-config-file-with-no-appliance-at-all">27.2 Import Backup — parse a config file with no appliance at all</h3>
 <p>FortiWeb ADOM → Operations → <strong>Import Backup</strong> (<code>config_write</code>).</p>
 <p>Upload a FortiWeb configuration backup — <code>.conf</code>, <code>.txt</code>, <code>.cfg</code>, <code>.zip</code> or
 <code>.gz</code> — and it is parsed <strong>entirely offline</strong>. <strong>No appliance is contacted</strong>, at
@@ -3822,7 +3822,7 @@ this scope have".</p>
 </ul>
 <p>The filter (zone / line / department / name) can be <strong>saved to your account</strong> and
 is restored on your next visit.</p>
-<h2 id="29-template-library-the-section-catalog">29. Template library &amp; the section catalog</h2>
+<h2 id="29-template-library--the-section-catalog">29. Template library &amp; the section catalog</h2>
 <p>Two pages that are the same data seen from two ends: the <strong>Template Library</strong> is
 where desired state is authored and reviewed, and the <strong>Section Catalog</strong> is the
 approved subset, arranged the way FortiWeb arranges it.</p>
@@ -3896,7 +3896,7 @@ exactly the pool that baselines draw from: a template is authored in the library
 (29.1), approved, appears here grouped by section, and is then assignable to a
 zone × line × department combo in System Provisioning (28.4). A template that
 never got approved cannot reach a baseline, which is the point.</p>
-<h2 id="30-the-endpoint-registry-the-api-explorer">30. The endpoint registry &amp; the API explorer</h2>
+<h2 id="30-the-endpoint-registry--the-api-explorer">30. The endpoint registry &amp; the API explorer</h2>
 <p>Every product workspace has an API console (§17.1, §17.2, §17.3 cover the ADC,
 FAC and FAZ ones). This section documents the <strong>FortiWeb</strong> one and, more
 importantly, the <strong>registry model all four share</strong>.</p>
@@ -4357,7 +4357,7 @@ wrong one. So the page offers no apply button rather than one that always
 refuses. Giving the catalog a per-line dimension is what would unblock it, and
 that is a change to the resolution path every service in the product goes
 through.</p>
-<h2 id="31-release-notes-the-satom-changelog">31. Release notes &amp; the SATOM changelog</h2>
+<h2 id="31-release-notes--the-satom-changelog">31. Release notes &amp; the SATOM changelog</h2>
 <p><strong>Two different things share the name "release notes", and confusing them wastes
 an afternoon.</strong> One is the <strong>vendor's</strong> notes for the <em>appliance</em> firmware,
 harvested into the product. The other is <strong>SATOM's own</strong> changelog, which tells
@@ -4464,7 +4464,7 @@ when it advises you on an upgrade.</p>
 <p>The corpus holds both products in one shared file, tagged per row, and every read
 is filtered by the ADOM you are in — a FortiADC workspace never shows FortiWeb
 rows.</p>
-<h3 id="312-satoms-own-changelog-what-changed-in-your-version">31.2 SATOM's own changelog — what changed in <em>your</em> version</h3>
+<h3 id="312-satoms-own-changelog--what-changed-in-your-version">31.2 SATOM's own changelog — what changed in <em>your</em> version</h3>
 <p>The manager's own history lives in <strong><code>CHANGELOG.md</code></strong> at the repository root. It
 is a normal Keep-a-Changelog file, one section per released version, and it is
 the authoritative answer to "what is new since we last updated".</p>
@@ -4699,7 +4699,7 @@ will leave the LAN — the redacted text and how many internal identifiers were
 rewritten — before anything is sent. Nothing goes out until you confirm.
 Local Ollama has no such prompt: it never leaves the LAN, so there is nothing
 to preview.</p>
-<h3 id="334-proposals-how-a-chat-turns-into-a-change">33.4 Proposals — how a chat turns into a change</h3>
+<h3 id="334-proposals--how-a-chat-turns-into-a-change">33.4 Proposals — how a chat turns into a change</h3>
 <p>When the model suggests a concrete change, it appears as a card under the
 conversation with the exact JSON it proposed, <strong>Apply as draft</strong> and
 <strong>Dismiss</strong>. Apply requires the SAME permission the manual form already
@@ -5445,7 +5445,7 @@ still finished holding a change document whose evidence covered one box.</p>
 <p><code>Upgrade Flow</code> (<code>/upgrade-flow</code>) is the staged front for the whole window. It
 needs the <strong>backup</strong> permission, because stage 1 takes a configuration backup
 of every device it touches.</p>
-<h3 id="400-where-the-window-is-going-the-one-question-the-flow-never-asked">40.0 Where the window is going — the one question the flow never asked</h3>
+<h3 id="400-where-the-window-is-going--the-one-question-the-flow-never-asked">40.0 Where the window is going — the one question the flow never asked</h3>
 <p>Until <strong>2026-09-21</strong> this page asked everything about a maintenance window
 except the thing that defines it. A pre-upgrade run recorded the version the
 appliance was <strong>running</strong>; nothing recorded the version it was <strong>going to</strong>.</p>
@@ -5729,7 +5729,7 @@ service an individual appliance page calls; stage 2 calls the <strong>same creat
 path</strong> the ordinary change-request form calls; stages 3 and 4 link into that
 change. This is deliberate: a second implementation of "upgrade prep" is
 exactly the defect this feature was built to remove.</p>
-<h3 id="401b-stage-2-is-raised-and-refused-without-leaving-the-flow">40.1b Stage 2 is raised — and refused — without leaving the flow</h3>
+<h3 id="401b-stage-2-is-raised--and-refused--without-leaving-the-flow">40.1b Stage 2 is raised — and refused — without leaving the flow</h3>
 <p>Until <strong>2026-09-19</strong> stage 2 posted straight at <code>/change-requests/new</code>, which
 cannot do either of the two things a stage inside a staged page has to do:</p>
 <ul>
@@ -5775,7 +5775,7 @@ cannot do either of the two things a stage inside a staged page has to do:</p>
 the same one the single-change form and the batched wave route use. Only the
 two answers — where you end up — belong to this page. The change type stays
 fixed at <code>upgrade</code> and is read from the code, not from the form.</p>
-<h3 id="401c-stage-2-is-the-change-request-all-of-it">40.1c Stage 2 <em>is</em> the change request — all of it</h3>
+<h3 id="401c-stage-2-is-the-change-request--all-of-it">40.1c Stage 2 <em>is</em> the change request — all of it</h3>
 <p>Raising the change inside the flow fixed the <strong>submit</strong>. It did not fix the
 rest: approving the change, scheduling it, marking the client notified,
 exporting the affected-service inventory, asking for the external ticket or

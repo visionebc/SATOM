@@ -67,7 +67,7 @@
       <a href="#3b-the-operator-console-satom">3b. The operator console (satom)</a>
       <a href="#3c-the-operator-consoles-output-path">3c. The operator console&#x27;s output path</a>
       <a href="#4-two-node-correctness">4. Two-node correctness</a>
-      <a href="#4b-the-standby-is-the-last-live-copy-do-not-reconcile-it-as-a-side-effect">4b. The standby is the last live copy — do not reconcile it as a side effect</a>
+      <a href="#4b-the-standby-is-the-last-live-copy--do-not-reconcile-it-as-a-side-effect">4b. The standby is the last live copy — do not reconcile it as a side effect</a>
       <a href="#5-writing-to-the-appliances">5. Writing to the appliances</a>
       <a href="#6-certificates">6. Certificates</a>
       <a href="#7-files-coming-from-outside">7. Files coming from outside</a>
@@ -76,7 +76,7 @@
       <a href="#7d-a-cross-reference-that-renders-is-not-a-cross-reference-that-works">7d. A cross-reference that renders is not a cross-reference that works</a>
       <a href="#7e-what-leaves-the-building-is-the-mirror-not-just-the-manual">7e. What leaves the building is the MIRROR, not just the manual</a>
       <a href="#7f-the-licence-has-to-say-the-same-thing-on-every-surface">7f. The licence has to say the same thing on every surface</a>
-      <a href="#7g-the-release-notes-are-the-changelog-split-never-a-second-copy">7g. The release notes are the changelog, split — never a second copy</a>
+      <a href="#7g-the-release-notes-are-the-changelog-split--never-a-second-copy">7g. The release notes are the changelog, split — never a second copy</a>
       <a href="#8-sessions-and-the-web-surface">8. Sessions and the web surface</a>
       <a href="#8b-operator-supplied-theming">8b. Operator-supplied theming</a>
       <a href="#8c-the-public-sites-theme-layer">8c. The public site&#x27;s theme layer</a>
@@ -107,7 +107,7 @@
       <a href="#25-monitoring-has-two-layers-and-neither-substitutes-for-the-other">25. Monitoring has two layers, and neither substitutes for the other</a>
     </aside>
     <div class="doc-body mdx">
-<h1 id="safeguards-what-stops-satom-from-hurting-itself">Safeguards — what stops SATOM from hurting itself</h1>
+<h1 id="safeguards--what-stops-satom-from-hurting-itself">Safeguards — what stops SATOM from hurting itself</h1>
 <p>SATOM writes to production firewalls, rewrites its own checkout, installs its own
 dependencies and reloads its own web server. Every one of those is a way to lose
 data or lock yourself out. This document is the catalog of the guards that make
@@ -375,7 +375,7 @@ cannot predict. Removing either one alone still leaves the CLI standing, and
 </tr>
 </tbody>
 </table>
-<h2 id="4b-the-standby-is-the-last-live-copy-do-not-reconcile-it-as-a-side-effect">4b. The standby is the last live copy — do not reconcile it as a side effect</h2>
+<h2 id="4b-the-standby-is-the-last-live-copy--do-not-reconcile-it-as-a-side-effect">4b. The standby is the last live copy — do not reconcile it as a side effect</h2>
 <p><code>satom-reconciler</code> runs in AUTO on both nodes and pulls on its own within about
 a minute of a push. So a manual <code>git fetch &amp;&amp; git reset --hard origin/main</code> on
 the <strong>standby</strong> buys nothing that was not already going to happen, and it costs
@@ -871,7 +871,7 @@ proves it does.</p>
 cannot pin what a recipient already holds: a copy distributed under an earlier
 licence stays under the terms it was received under, and no test changes that.
 <code>LICENSE</code> states it in the scope header rather than leaving it implied.</p>
-<h2 id="7g-the-release-notes-are-the-changelog-split-never-a-second-copy">7g. The release notes are the changelog, split — never a second copy</h2>
+<h2 id="7g-the-release-notes-are-the-changelog-split--never-a-second-copy">7g. The release notes are the changelog, split — never a second copy</h2>
 <p><code>CHANGELOG.md</code> was published whole, as one page. It is a thousand lines, so the
 question an operator actually asks — <em>what shipped in 1.3.3, and do I need it?</em>
 — could only be answered by scrolling. The site now carries a <strong>Release notes</strong>
@@ -1620,7 +1620,7 @@ check.</p>
 <strong>Tests:</strong> <code>tests/test_deep_monitor_api.py</code> — 48 cases over payloads captured
 verbatim from a live appliance; <code>tests/test_service_monitor.py</code> for the
 silent-zero guard (mutation-tested: neutralising the check fails the suite).</p>
-<h3 id="9f-two-probe-pages-one-subsystem-the-partition-is-server-side">9f. Two probe pages, one subsystem — the partition is server-side</h3>
+<h3 id="9f-two-probe-pages-one-subsystem--the-partition-is-server-side">9f. Two probe pages, one subsystem — the partition is server-side</h3>
 <p><strong>Service Monitor</strong> (<code>/monitoring/services</code>) and <strong>Deep monitors</strong>
 (<code>/monitoring/deep</code>) are two <em>views</em> over one probe table, one runner and one
 scheduled action. Splitting the storage or the runner would double-schedule
@@ -1796,7 +1796,7 @@ Service Monitor do not share it, and re-applied while the card markup is built.<
 <p><strong>Where:</strong> <code>app/templates/monitoring/_probe_page.html</code> (<code>OPEN_KEY</code>, <code>toggleDev</code>,
 <code>.dp-dev-toggle</code>, <code>.dp-dev-body</code>).
 <strong>Tests:</strong> <code>tests/test_probe_cadence.py</code>.</p>
-<h3 id="9m-this-product-is-a-light-chrome-a-borrowed-dark-palette-is-a-bug">9m. This product is a light chrome — a borrowed dark palette is a bug</h3>
+<h3 id="9m-this-product-is-a-light-chrome--a-borrowed-dark-palette-is-a-bug">9m. This product is a light chrome — a borrowed dark palette is a bug</h3>
 <p><code>static/css/fortiweb.css</code> is the whole theme: content background <code>#F4F5F7</code>,
 <code>.fw-card</code> on <code>#FFFFFF</code>, accent <code>#EF5424</code>. There is <strong>no dark mode</strong>, no
 <code>prefers-color-scheme</code> block and no <code>data-theme</code> hook anywhere in the app.</p>
@@ -4525,7 +4525,7 @@ git rev-list --objects --all | awk '$2==&quot;LICENSE&quot;{print $1}' | sort -u
 generator and the hand-written pages have diverged. Step 4 is the only one that
 proves the <em>published</em> mirror was refreshed — a force-push to <code>gh-pages</code> does
 not always trigger a build (see 7e).</p>
-<h3 id="8e-brand-gradients-and-asset-stamps">8e — brand gradients and asset stamps</h3>
+<h3 id="8e--brand-gradients-and-asset-stamps">8e — brand gradients and asset stamps</h3>
 <pre><code class="language-bash"># the gradient pattern refuses a declaration escape on its own
 python3 - &lt;&lt;'EOF'
 from app.services.theme_service import VALIDATORS
@@ -5670,7 +5670,7 @@ guard in <code>via_field_index</code> — is an EQUIVALENT mutant, confirmed by 
 every <code>via</code> in the real tree: the only one containing <code>=</code> is
 <code>deployment-mode = http-content-routing</code>, and the token filter rejects it
 anyway.</p>
-<h2 id="37a-5-means-already-there-which-is-the-state-that-was-wanted">37a. <code>-5</code> means "already there", which is the state that was wanted</h2>
+<h2 id="37a--5-means-already-there-which-is-the-state-that-was-wanted">37a. <code>-5</code> means "already there", which is the state that was wanted</h2>
 <p><code>tests/test_inject_duplicate.py</code> · <code>app/services/exception_inject.py</code></p>
 <p><code>apply_injection</code> writes a container and then a row, and returned
 <code>ok = all(steps)</code>. The container step POSTed unconditionally even though its
@@ -5858,7 +5858,7 @@ and the validator would come to disagree about what exists.</p>
 make the editor unusable on a flaky box, and the device is still the authority —
 it answers -651 if the value really is wrong. The unchecked fields come back as
 <code>unverified_refs</code> so the weaker preview is visible instead of silent.</p>
-<h3 id="40b-20001-is-benign-for-a-read-and-decisive-for-a-validator">40b. <code>-20001</code> is benign for a read and decisive for a validator</h3>
+<h3 id="40b--20001-is-benign-for-a-read-and-decisive-for-a-validator">40b. <code>-20001</code> is benign for a read and decisive for a validator</h3>
 <p><code>_BENIGN_ERRCODES</code> swallows <code>-20001</code> on purpose: the object registry is a
 cross-firmware superset, so a path missing here is not an error to a <em>browser</em>.
 A <em>validator</em> needs the opposite reading, which is why <code>_ABSENT_ERRCODES</code> exists
@@ -6060,7 +6060,7 @@ NetBox holds its maintenance window, and the operator's own Python talks to
 their CRM. Every failure in that direction is silent by nature — the change
 still happens, the record just stops being true — so each property below is
 guarded rather than reviewed.</p>
-<h3 id="43a-fail-closed-external-approval">§43a — Fail-closed external approval</h3>
+<h3 id="43a--fail-closed-external-approval">§43a — Fail-closed external approval</h3>
 <p><code>approval_mode="external"</code> makes a CR runnable only once <code>external_approved_at</code>
 is stamped. Unreachable, slow, ambiguous and never-asked all land on the
 un-runnable side of <code>cr_orchestrator.external_gate</code>, and an <strong>unrecognised</strong>
@@ -6073,7 +6073,7 @@ reason.</p>
 <p>Withdrawing an approval <strong>clears</strong> the timestamp. Leaving it would let a revoked
 approval still open a window. Existing CRs default to <code>manual</code>: a migration must
 never retroactively gate work nobody bound to an approver.</p>
-<h3 id="43b-none-and-error-are-different-facts">§43b — <code>none</code> and <code>error</code> are different facts</h3>
+<h3 id="43b--none-and-error-are-different-facts">§43b — <code>none</code> and <code>error</code> are different facts</h3>
 <p><code>mw_state</code> separates <em>we never asked NetBox</em> from <em>we asked and it refused or
 never answered</em>. Collapsing them makes an integration outage read as a
 deliberate decision and hides that a device may still be shown in maintenance.
@@ -6081,19 +6081,19 @@ A second <code>open_window</code> on an open CR is a no-op, so a retried fire ca
 NetBox with duplicate windows. <code>close_window(ok=…)</code> takes the outcome of <strong>the
 change</strong>, not of the call: a failed upgrade still closes its window, carrying
 the failure.</p>
-<h3 id="43c-nothing-external-re-grades-the-change">§43c — Nothing external re-grades the change</h3>
+<h3 id="43c--nothing-external-re-grades-the-change">§43c — Nothing external re-grades the change</h3>
 <p>NetBox down, a hook raising, SMTP refusing: recorded on the CR, never able to
 turn a completed upgrade into a failed one. <code>on_start</code> swallows and logs, so a
 ticket system being down cannot abort an upgrade the operator already approved.
 Order is guarded too — <code>close</code> before <code>notify</code>, because nobody may be told
 service is restored before the window covering the outage is closed.</p>
-<h3 id="43d-naive-utc-is-how-a-window-moves-by-hours">§43d — Naive UTC is how a window moves by hours</h3>
+<h3 id="43d--naive-utc-is-how-a-window-moves-by-hours">§43d — Naive UTC is how a window moves by hours</h3>
 <p>SATOM stores naive UTC; NetBox reads ISO-8601 and interprets a naive string in
 its own zone — confirmed on the wire against 4.6.7, where a naive datetime
 round-trips without a <code>Z</code>. <code>_iso()</code> emits an explicit <code>+00:00</code>, <code>_iso(None)</code> is
 <code>None</code> (never today's date), and a structural guard forbids a bare
 <code>.isoformat()</code> anywhere in the orchestrator.</p>
-<h3 id="43e-hooks-never-execute-in-the-web-worker">§43e — Hooks never execute in the web worker</h3>
+<h3 id="43e--hooks-never-execute-in-the-web-worker">§43e — Hooks never execute in the web worker</h3>
 <p>Saving a hook writes it to disk and compiles it (a syntax error is refused at
 save, with its message). <code>dispatch()</code> only enqueues; the runner executes, as an
 unprivileged user, in its own process group, with a hard timeout, receiving only
@@ -6102,7 +6102,7 @@ can bisect a token and leave its first characters permanently visible. A hook
 returns through a dedicated fd, so printing JSON-shaped text cannot fake a
 verdict. The runner unit must be <code>enabled --now</code> on <strong>both</strong> HA nodes; the
 <code>satom-updater.path</code>-on-standby incident applies verbatim.</p>
-<h3 id="43f-one-writable-tree-and-the-reason-travels-with-it">§43f — One writable tree, and the reason travels with it</h3>
+<h3 id="43f--one-writable-tree-and-the-reason-travels-with-it">§43f — One writable tree, and the reason travels with it</h3>
 <p>This is the defect that hardening introduced. Four <code>ReadWritePaths=</code> are four
 bind-mounts; the claim step is a <code>rename(2)</code> between two of them, which is
 <code>EXDEV</code> — and <code>process_request_file</code> cannot tell <code>EXDEV</code> apart from “already
@@ -6117,12 +6117,12 @@ namespace) and that the unit still records <em>why</em>. The unit guard in
 <code>test_integration_hooks.py</code> was changed to assert against <code>IH.REQ_DIR</code> instead
 of a literal path: it had hardcoded the old directory and so failed against a
 CORRECT tree, which is how guards get deleted.</p>
-<h3 id="43g-the-token-stays-a-secret">§43g — The token stays a secret</h3>
+<h3 id="43g--the-token-stays-a-secret">§43g — The token stays a secret</h3>
 <p>The NetBox API token is stored encrypted, never returned by <code>config()</code> without
 an explicit reveal, never placed in a <code>detail</code> string or exception, and the live
 check asserts it is absent from the CR's integration log. A blank token field on
 save <strong>keeps</strong> the existing token rather than clearing it.</p>
-<h3 id="43h-the-emitter-must-send-what-the-contract-promises">§43h — The emitter must send what the contract promises</h3>
+<h3 id="43h--the-emitter-must-send-what-the-contract-promises">§43h — The emitter must send what the contract promises</h3>
 <p><code>tests/test_event_contract.py</code>. A hook is written by reading the payload
 documentation in the editor. If the emitter sends a different key set the hook
 does not crash — it reads <code>None</code> and opens a ticket with an empty title, or
@@ -6452,7 +6452,7 @@ tests/test_cr_action_catalog.py -q</code>, then mutate: make the authorisation a
 return ok, remove the gate from the live push, stop freezing the inventory, read
 the fleet live in <code>detail</code>, let any appliance's pre-flight be cited, and derive
 the document's owner from the requester. Each must turn the run red.</p>
-<h2 id="53-a-brand-never-fails-it-just-says-two-things-in-two-places">§53. A brand never fails — it just says two things in two places</h2>
+<h2 id="53-a-brand-never-fails--it-just-says-two-things-in-two-places">§53. A brand never fails — it just says two things in two places</h2>
 <p>Reported as "the logo is not the right one" on two nodes; it was wrong on
 <strong>three</strong>, in two different ways, and neither way could break anything.</p>
 <ul>
@@ -7152,7 +7152,7 @@ leaves a rollout that LOOKS scheduled while a third of the fleet has no window.
 And more waves than <code>MAX_WAVES</code> is refused <strong>naming the number</strong>, never
 truncated — a wave that silently disappeared takes its appliances out of every
 window without anybody being told.</p>
-<h2 id="67-the-monitor-may-not-assert-what-it-has-not-measured">§67 — the monitor may not assert what it has not measured</h2>
+<h2 id="67--the-monitor-may-not-assert-what-it-has-not-measured">§67 — the monitor may not assert what it has not measured</h2>
 <p><code>tests/test_monitor_truthfulness.py</code> (31 tests). Four checks were each stating
 something false while every test passed, because in all four cases the code was
 internally consistent and only the CLAIM was wrong. Between them they produced
@@ -7209,7 +7209,7 @@ guard on <code>alerts-run</code> first tried to strip comments from <code>app/__
 truncated a multi-line string literal containing a <code>#</code>. Strip comments before
 asserting on source — or, when the question is structural, parse the ORIGINAL
 source and assert on the AST, which carries no comments at all.</p>
-<h2 id="68-a-guard-anchored-on-a-visible-label-dies-the-day-the-label-is-translated">§68 — a guard anchored on a visible label dies the day the label is translated</h2>
+<h2 id="68--a-guard-anchored-on-a-visible-label-dies-the-day-the-label-is-translated">§68 — a guard anchored on a visible label dies the day the label is translated</h2>
 <p><code>tests/test_monitoring_split.py::test_every_administrator_group_offers_collection</code>
 promises the same thing it always did: <strong>every</strong> Administrator/Administration
 block in <code>base.html</code> reaches the Collection page through the one shared partial,
@@ -7257,7 +7257,7 @@ exist; and the run-on above). The eighth — deleting a single <code>&lt;/div&gt
 body — correctly survives: the slice grows by one nesting level but stays inside
 its own group, and the block genuinely does still include the partial. A mutation
 that does not change the truth of the assertion is not supposed to kill it.</p>
-<h2 id="69-a-language-gate-is-only-a-gate-if-every-surface-asks-it">§69 — a language gate is only a gate if every surface asks it</h2>
+<h2 id="69--a-language-gate-is-only-a-gate-if-every-surface-asks-it">§69 — a language gate is only a gate if every surface asks it</h2>
 <p><strong>Guard:</strong> <code>tests/test_lang_availability.py</code> (30 tests) + the widened
 <code>tests/test_i18n_foundation.py::test_the_registry_is_the_only_author_of_the_language_list</code>.
 <strong>22 mutations, 22 bite.</strong></p>
@@ -7359,7 +7359,7 @@ through <code>translator.translate</code>, append). Result here: +69 lines per c
 zero reflow. Also: <code>git checkout -- app/translations/</code> <strong>as root</strong> leaves the
 catalogues root-owned and the next <code>pybabel compile</code> as <code>satom</code> dies with
 <code>PermissionError</code> — chown back before compiling.</p>
-<h2 id="70-dictget-does-not-call-__missing__-so-it-cannot-see-a-translated-language">§70 — <code>dict.get()</code> does not call <code>__missing__</code>, so it cannot see a translated language</h2>
+<h2 id="70--dictget-does-not-call-__missing__-so-it-cannot-see-a-translated-language">§70 — <code>dict.get()</code> does not call <code>__missing__</code>, so it cannot see a translated language</h2>
 <p><code>cr_document._Localized</code> builds a language that exists only as a catalogue by
 overlaying it onto the authored English, and it does that in <code>__missing__</code>.
 <code>__missing__</code> is reached by SUBSCRIPTION alone. <code>dict.get()</code> never calls it.</p>
@@ -7397,7 +7397,7 @@ were real findings, not noise: "degrade to the authored English" was the
 correct behaviour and the code had <code>{}</code>, and the generic-fallback branch was
 indistinguishable from dead code until a test built a profile that never went
 through <code>_localize_all</code>.</p>
-<h2 id="71-a-console-that-holds-the-receipt-must-not-ask-the-operator-for-it">§71 — a console that holds the receipt must not ask the operator for it</h2>
+<h2 id="71--a-console-that-holds-the-receipt-must-not-ask-the-operator-for-it">§71 — a console that holds the receipt must not ask the operator for it</h2>
 <p>The drift alert ended, from the day it was written, with <em>"If nobody edited it
 via SATOM, a device-side (CLI/GUI) change has drifted from the baseline"</em>.</p>
 <p>On 2026-08-11 it fired for <code>{device}</code> at 09:15 UTC. The cause was an
@@ -7449,7 +7449,7 @@ invent attributions.</p>
 <p>Known and documented rather than engineered around: the harvest reads the
 device seconds before it stores the snapshot, so a write landing in that gap is
 inside the window while its effect appears in the NEXT version.</p>
-<h3 id="the-two-errors-are-not-symmetric-when-in-doubt-no-receipt">The two errors are not symmetric — when in doubt, no receipt</h3>
+<h3 id="the-two-errors-are-not-symmetric--when-in-doubt-no-receipt">The two errors are not symmetric — when in doubt, no receipt</h3>
 <p>Failing to credit a real SATOM write leaves a WARNING that overstates: noisy,
 and the operator finds the write in two clicks. Crediting a device-side change
 to SATOM downgrades a genuine intrusion to an approving nod and buries the one
@@ -7491,7 +7491,7 @@ from one it accepted.</p>
   <code>timestamp &gt;= NULL</code> and a backwards range both return no rows anyway, so that
   assertion held with the guard deleted.</li>
 </ul>
-<h2 id="72-a-menu-and-its-sections-are-a-pair-and-nothing-fails-when-they-drift">§72 — a menu and its sections are a pair, and nothing fails when they drift</h2>
+<h2 id="72--a-menu-and-its-sections-are-a-pair-and-nothing-fails-when-they-drift">§72 — a menu and its sections are a pair, and nothing fails when they drift</h2>
 <p><code>tests/test_settings_nav_groups.py</code> — the Admin Console menu (<code>app/templates/
 settings/index.html</code>).</p>
 <p><strong>What cannot fail on its own.</strong> A settings pane whose menu entry was never
@@ -7541,7 +7541,7 @@ leaves a stored preference that the page never honours.</p>
 <code>rc == 4</code> is a pytest usage error and <code>grep -i failed</code> reports it as a pass).
 Every mutation restores its file in <code>finally</code> — other sessions work this tree.
 <strong>12/12 bite</strong> as of 2026-08-11.</p>
-<h2 id="73-the-menu-default-the-store-that-encodes-it-and-the-single-column">§73 — the menu default, the store that encodes it, and the single column</h2>
+<h2 id="73--the-menu-default-the-store-that-encodes-it-and-the-single-column">§73 — the menu default, the store that encodes it, and the single column</h2>
 <p><code>tests/test_settings_nav_groups.py</code></p>
 <p><strong>Two halves that have to agree and cannot check each other.</strong> The server draws
 the groups; the script decides what an EMPTY store means. Render <code>open</code> while
@@ -7604,7 +7604,7 @@ never made. The rendered check is not optional here either: the nested split in
 System Information is invisible in the stylesheet and in the markup, and only
 shows up in a screenshot of the pane.</p>
 <hr>
-<h2 id="74-an-index-of-the-product-is-a-claim-and-nothing-fails-when-it-stops-being-true">§74 — an index of the product is a claim, and nothing fails when it stops being true</h2>
+<h2 id="74--an-index-of-the-product-is-a-claim-and-nothing-fails-when-it-stops-being-true">§74 — an index of the product is a claim, and nothing fails when it stops being true</h2>
 <p>The Concept Map (<code>/map</code>, 2026-08-12) says: <em>this is every page in the console,
 and here is what each one is for</em>. That is the only thing it sells. A map that
 has quietly fallen four pages behind renders <strong>exactly</strong> like a complete one —
@@ -7673,7 +7673,7 @@ permission · stamp but stop enforcing · remove the map from one ADOM allowlist
 · remove the footer link · show the footer link to anonymous visitors · put a
 translucent slate card on the white page · render half the list · paint an
 empty canvas on a failed fetch · drop <code>login_required</code>.</p>
-<h2 id="75-an-accordion-is-only-an-accordion-if-selecting-folds-too">§75 — an accordion is only an accordion if SELECTING folds too</h2>
+<h2 id="75--an-accordion-is-only-an-accordion-if-selecting-folds-too">§75 — an accordion is only an accordion if SELECTING folds too</h2>
 <p>The Admin Console menu (<code>app/templates/settings/index.html</code>) holds <strong>one</strong> open
 group. The rule that costs the time is not "opening one closes the others" —
 it is that <strong>selecting a section</strong> closes them as well, and a section can be
@@ -7715,7 +7715,7 @@ is genuine and not a stub. Seed <code>localStorage</code> from a <code>&lt;scrip
 exercise a legacy multi-entry store — a headless run starts with an empty
 profile, so nothing persists between runs.</p>
 <p>8 mutations, 8 bite (harness measured by <strong>rc</strong>; only <code>rc==1</code> is a failure).</p>
-<h2 id="76-a-permissive-default-is-a-grant-when-you-add-a-new-door-behind-it">§76 — a permissive default is a grant when you add a new door behind it</h2>
+<h2 id="76--a-permissive-default-is-a-grant-when-you-add-a-new-door-behind-it">§76 — a permissive default is a grant when you add a new door behind it</h2>
 <p><code>app/models_api_token.py</code> · <code>app/services/api_object_rules.py</code> ·
 <code>app/api_v1/waf.py</code> · <code>app/api_v1/adc.py</code> ·
 <code>tests/test_api_v1_object_rules.py</code></p>
@@ -7772,7 +7772,7 @@ measured by <strong>return code</strong> (only <code>rc==1</code> is a failure).
 matters most is the first: restore the permissive default in
 <code>authorize_object()</code> and <code>test_a_token_with_no_capabilities_cannot_author_a_carve_out</code>
 fails.</p>
-<h2 id="77-a-firmware-line-is-a-claim-about-a-device-and-the-device-was-never-asked">§77 — a firmware line is a claim about a device, and the device was never asked</h2>
+<h2 id="77--a-firmware-line-is-a-claim-about-a-device-and-the-device-was-never-asked">§77 — a firmware line is a claim about a device, and the device was never asked</h2>
 <p><code>scripts/build_field_catalog.py</code> takes the line from
 <code>SATOM_FIELD_CATALOG_SOURCES="fortiweb=8.0:&lt;appliance&gt;"</code> and writes it into the
 folder path <em>and</em> the artefact's <code>source</code> string. Nothing read the box's own
@@ -7793,7 +7793,7 @@ protest says so instead of looking identical to a verified one.</p>
 <p><strong>Two failure modes, and both need a guard.</strong> A gate that refuses everything
 passes "it refuses a mismatched line" perfectly while breaking the tool. The
 guards assert both directions.</p>
-<h3 id="the-assert-by-substring-trap-eleventh-instance-this-time-in-my-own-guard">The assert-by-substring trap, eleventh instance — this time in my own guard</h3>
+<h3 id="the-assert-by-substring-trap-eleventh-instance--this-time-in-my-own-guard">The assert-by-substring trap, eleventh instance — this time in my own guard</h3>
 <p>The first version of the mismatch guard asserted that <code>allow_mismatch</code> appears in
 <code>inspect.getsource(build)</code>. Mutating the gate to <code>if False: continue</code> <strong>survived</strong>:
 the name is still in the function <em>signature</em>. A guard that a deleted gate passes
@@ -7817,7 +7817,7 @@ run refuses it and writes nothing:</p>
 # =&gt; !! line 8.0 via {device}: the device runs 7.6.8, NOT a 8.0 build — refusing
 </code></pre>
 <p>Then confirm <code>data/field_schemas/fortiweb/8.0/</code> is byte-identical to before.</p>
-<h2 id="78-a-manual-is-an-interface-and-nothing-fails-when-it-stops-matching-the-product">§78 — a manual is an interface, and nothing fails when it stops matching the product</h2>
+<h2 id="78--a-manual-is-an-interface-and-nothing-fails-when-it-stops-matching-the-product">§78 — a manual is an interface, and nothing fails when it stops matching the product</h2>
 <p><code>docs/api_v1.md</code> is the whole of what an external team reads before wiring an
 automation against SATOM. On 2026-08-13 it said, in its <strong>first paragraph</strong>,
 that "mutations happen only through pre-created Scheduled Actions" while the
@@ -7897,7 +7897,7 @@ harness measures the mutation instead of the guard.)</p>
 <code>test_published_site_documentation_is_current</code> already covers the drift — it was
 <strong>red</strong> when this round started, and had been since sections 6 and 7 were
 written. Regenerating is part of the change, not a follow-up.</p>
-<h2 id="79-an-untracked-file-is-not-a-decision-and-deleting-one-leaves-no-record">§79 — an untracked file is not a decision, and deleting one leaves no record</h2>
+<h2 id="79--an-untracked-file-is-not-a-decision-and-deleting-one-leaves-no-record">§79 — an untracked file is not a decision, and deleting one leaves no record</h2>
 <p><strong>The trap.</strong> Two sessions worked <code>/opt/satom</code> in the same hour on 2026-08-12
 and both built the <code>/api/v1</code> object-authoring surface. One got wired into the
 blueprint and shipped. The other left three files on disk, untracked:
@@ -7947,7 +7947,7 @@ pgrep -af 'venv/bin/python -m py[t]est'  # someone else may be mid-run
 venv/bin/python -m pytest &lt;orphan_test&gt; -q   # judge it by its result, not its name
 git add &lt;the orphan files&gt; &amp;&amp; git commit     # record BEFORE reconciling
 </code></pre>
-<h2 id="80-prose-is-not-a-gate-and-an-alias-is-not-a-second-door">§80 — prose is not a gate, and an alias is not a second door</h2>
+<h2 id="80--prose-is-not-a-gate-and-an-alias-is-not-a-second-door">§80 — prose is not a gate, and an alias is not a second door</h2>
 <p><strong>The two failures this round are the same failure seen from both sides.</strong></p>
 <p><code>upgrade</code> had a summary saying an approved change request authorized it, and an
 executor docstring saying the check was enforced upstream. Both sentences were
@@ -7991,7 +7991,7 @@ target refusal <em>messages</em>, not refusal <em>logic</em>. A refusal that can
 apart from four other refusals sends the operator around the gate, which is the
 outcome the gate exists to prevent — so "which rule said no" is load-bearing
 and is tested as such.</p>
-<h2 id="81-a-sweep-that-measures-everything-and-reports-nothing">§81 — a sweep that measures everything and reports nothing</h2>
+<h2 id="81--a-sweep-that-measures-everything-and-reports-nothing">§81 — a sweep that measures everything and reports nothing</h2>
 <p>The rediscovery sweep is the only thing in SATOM that asks a live appliance
 about <strong>every</strong> endpoint in the catalog. For months it threw the answer away,
 and nothing anywhere failed.</p>
@@ -8100,7 +8100,7 @@ PY
 list is shorter than the trusted-device list, means rule 2 or the unanimity
 check has come loose.</p>
 <hr>
-<h2 id="82-a-filter-fails-by-delivering-silence-and-silence-is-what-success-looks-like">§82 — a filter fails by delivering silence, and silence is what success looks like</h2>
+<h2 id="82--a-filter-fails-by-delivering-silence-and-silence-is-what-success-looks-like">§82 — a filter fails by delivering silence, and silence is what success looks like</h2>
 <p><strong>Guarded by</strong> <code>tests/test_alert_routing.py</code> (38),
 <code>tests/test_alerts_dispatch_paths.py</code> (10). <strong>27 mutations, 27 bite</strong>
 (<code>/var/tmp/mut_alertsinks_a13.py</code> on a1, measured by <strong>rc</strong>; only <code>rc==1</code> is a
@@ -8177,7 +8177,7 @@ from the other side.</p>
    (<code>set -a; . /opt/satom/.env</code>), or SQLAlchemy silently falls back to a SQLite
    path that does not exist and the traceback blames the database.</li>
 </ol>
-<h2 id="83-the-same-api-version-and-not-the-same-fields">§83 — the same API version, and not the same fields</h2>
+<h2 id="83--the-same-api-version-and-not-the-same-fields">§83 — the same API version, and not the same fields</h2>
 <p><code>tests/test_api_matrix.py</code> (43 tests) guards <code>services/api_matrix.py</code>, the four
 registry readers in <code>app/registry/loader.py</code>, the API-versions page and the
 <code>get api …</code> CLI branch.</p>
@@ -8247,7 +8247,7 @@ runuser -u satom -- venv/bin/python -m pytest \
 </code></pre>
 <p>Mutation harness: <code>/var/tmp/mut_apimatrix.py</code> on a1 — measured by <strong>rc</strong>, only
 <code>rc==1</code> counts as caught, restores in <code>finally</code>.</p>
-<h2 id="84-issue-tracker-integration-teststest_tracker_clientpy">§84 — Issue tracker integration (<code>tests/test_tracker_client.py</code>)</h2>
+<h2 id="84--issue-tracker-integration-teststest_tracker_clientpy">§84 — Issue tracker integration (<code>tests/test_tracker_client.py</code>)</h2>
 <p><strong>What silently breaks.</strong> Every failure mode in this integration renders as a
 working one, which is why a test is the only thing that catches them:</p>
 <ul>
@@ -8289,7 +8289,7 @@ suite — every HTTP call is faked. <strong>Test connection</strong> is the live
 is the only thing that proves the operator's own credentials, project id and
 network path. A green suite says the request shapes are right; it does not say
 the tracker is reachable from this node.</p>
-<h2 id="85-an-enqueue-is-not-a-delivery-and-a-signature-without-a-timestamp-is-a-permanent-key">§85 — an enqueue is not a delivery, and a signature without a timestamp is a permanent key</h2>
+<h2 id="85--an-enqueue-is-not-a-delivery-and-a-signature-without-a-timestamp-is-a-permanent-key">§85 — an enqueue is not a delivery, and a signature without a timestamp is a permanent key</h2>
 <p>Three questions look like one question, and answering them with one variable
 gets two of them wrong.</p>
 <p><strong>Did it reach a person?</strong> drives <code>dispatched</code>. <strong>Did it leave this process?</strong>
@@ -8374,7 +8374,7 @@ grep -c 'X-SATOM-Signature' app/services/alert_webhook.py         # header defin
 <p>The signature check that matters cannot be a grep: recompute the HMAC from the
 bytes captured at the transport boundary and compare it with the captured
 header. A grep for <code>hmac.new</code> proves only that signing was attempted.</p>
-<h2 id="86-a-sidebar-that-is-a-second-copy-of-the-inventory-teststest_bookmarkspy-teststest_bookmarks_panelpy-teststest_bookmarks_lenspy">§86 — a sidebar that is a second copy of the inventory (<code>tests/test_bookmarks.py</code>, <code>tests/test_bookmarks_panel.py</code>, <code>tests/test_bookmarks_lens.py</code>)</h2>
+<h2 id="86--a-sidebar-that-is-a-second-copy-of-the-inventory-teststest_bookmarkspy-teststest_bookmarks_panelpy-teststest_bookmarks_lenspy">§86 — a sidebar that is a second copy of the inventory (<code>tests/test_bookmarks.py</code>, <code>tests/test_bookmarks_panel.py</code>, <code>tests/test_bookmarks_lens.py</code>)</h2>
 <p><strong>What is being defended.</strong> The bookmarks rail. 107 guards across three files:
 the service (visibility, authorship, placement), the panel (routes, tree shape,
 search) and the grouping order (the per-user lens).</p>
@@ -8449,7 +8449,7 @@ same device count — so assert on <code>data-bm-node="r:lens|…"</code>, never
 <li><strong><code>ssh root@host '…heredoc…'</code> with single quotes inside the script dies in
   the outer shell.</strong> Script to a file, <code>scp -O</code>, run it there.</li>
 </ul>
-<h2 id="87-two-destinations-and-a-link-that-looks-live-teststest_bookmarks_devlinkpy">§87 — two destinations, and a link that looks live (<code>tests/test_bookmarks_devlink.py</code>)</h2>
+<h2 id="87--two-destinations-and-a-link-that-looks-live-teststest_bookmarks_devlinkpy">§87 — two destinations, and a link that looks live (<code>tests/test_bookmarks_devlink.py</code>)</h2>
 <p><strong>What is being defended.</strong> The arrow on a panel row, and the same link on the
 appliance detail page. 34 guards.</p>
 <p><strong>Why it needs guarding at all.</strong> Every failure mode here renders perfectly.
@@ -8529,7 +8529,7 @@ first label instead of the last; drop the bracketing of an IPv6 literal; derive
 the scheme to <code>http</code>; drop the port from the URL; paste the host instead of
 parsing it; drop either <code>rel</code> token; render a refusal as nothing; point the row
 itself at the device. All bite.</p>
-<h2 id="88-a-saved-link-is-an-href-in-everybody-elses-sidebar-teststest_bookmarks_linkurlpy">§88 — a saved link is an <code>href</code> in everybody else's sidebar (<code>tests/test_bookmarks_linkurl.py</code>)</h2>
+<h2 id="88--a-saved-link-is-an-href-in-everybody-elses-sidebar-teststest_bookmarks_linkurlpy">§88 — a saved link is an <code>href</code> in everybody else's sidebar (<code>tests/test_bookmarks_linkurl.py</code>)</h2>
 <p><strong>What is being defended.</strong> The URL a <code>link</code> bookmark may carry, on the way in
 and on the way out. 44 guards.</p>
 <p><strong>Why it needs guarding at all.</strong> A link bookmark is free text one person types
@@ -8621,7 +8621,7 @@ legitimate <code>https</code> link. <strong>16 mutations, all bite.</strong></p>
   usage error and <code>rc==-15</code> an external SIGTERM, and both otherwise read as
   "the guard caught it".</li>
 </ul>
-<h2 id="89-a-catalog-value-is-a-key-not-a-word-teststest_classification_opspy-teststest_classification_pagepy">§89 — a catalog value is a key, not a word (<code>tests/test_classification_ops.py</code>, <code>tests/test_classification_page.py</code>)</h2>
+<h2 id="89--a-catalog-value-is-a-key-not-a-word-teststest_classification_opspy-teststest_classification_pagepy">§89 — a catalog value is a key, not a word (<code>tests/test_classification_ops.py</code>, <code>tests/test_classification_page.py</code>)</h2>
 <p><strong>What is being defended.</strong> Every edit to the zones / lines / departments
 catalogs, and the references those edits move. 43 guards, 30 mutations.</p>
 <p><strong>Why it needs guarding at all.</strong> The page looked like the safest one in the
@@ -8697,7 +8697,7 @@ silently would be trading one invisible loss for another.</p>
 prints <code>FAILED</code> in caps, <code>rc==4</code> is a usage error, and only <code>rc==1</code> is a test
 failure. It restores every mutation in a <code>finally</code> and re-runs the baseline
 afterwards to prove the tree came back clean.</p>
-<h2 id="90-a-manual-is-a-claim-and-nothing-fails-when-it-stops-being-true-teststest_alerting_docspy">§90 — a manual is a claim, and nothing fails when it stops being true (<code>tests/test_alerting_docs.py</code>)</h2>
+<h2 id="90--a-manual-is-a-claim-and-nothing-fails-when-it-stops-being-true-teststest_alerting_docspy">§90 — a manual is a claim, and nothing fails when it stops being true (<code>tests/test_alerting_docs.py</code>)</h2>
 <p><strong>What it prevents.</strong> Documentation that describes an earlier version of the
 product. This is not hypothetical here: the alerting subsystem produced two
 instances in two rounds, and neither was caught by anything failing.</p>
@@ -8759,7 +8759,7 @@ measured by <strong>return code</strong> — only <code>rc==1</code> is a test f
 usage error, <code>rc==4</code> collection, and a negative rc is a signal and no verdict
 at all. It restores every mutation in a <code>finally</code> and re-runs the baseline
 afterwards to prove the tree came back clean. <strong>22/22 bite.</strong></p>
-<h2 id="91-a-device-type-is-a-product-name-and-a-wash-is-not-a-label-colour-teststest_bookmarks_typepy">§91 — a device type is a product name, and a wash is not a label colour (<code>tests/test_bookmarks_type.py</code>)</h2>
+<h2 id="91--a-device-type-is-a-product-name-and-a-wash-is-not-a-label-colour-teststest_bookmarks_typepy">§91 — a device type is a product name, and a wash is not a label colour (<code>tests/test_bookmarks_type.py</code>)</h2>
 <p><strong>What is claimed.</strong> In the bookmarks rail, the bucket that says <em>what kind of
 box this is</em> is written the way the product is actually named and is set in a
 pill washed with the reader's own top-bar banner. Three separate things can rot
@@ -8818,7 +8818,7 @@ only <code>rc==1</code> is a test failure; <code>rc==2</code> is a usage error a
 collection error, and a harness that greps stdout for <code>failed</code> misses every one
 of them because pytest prints <code>FAILED</code>. It restores each file in a <code>finally</code>
 and re-runs the baseline afterwards. <strong>19/19 bite.</strong></p>
-<h2 id="92-a-hover-is-a-state-and-two-states-can-want-the-same-row-teststest_bookmarks_hoverpy">§92 — a hover is a state, and two states can want the same row (<code>tests/test_bookmarks_hover.py</code>)</h2>
+<h2 id="92--a-hover-is-a-state-and-two-states-can-want-the-same-row-teststest_bookmarks_hoverpy">§92 — a hover is a state, and two states can want the same row (<code>tests/test_bookmarks_hover.py</code>)</h2>
 <p>The sidebar row went from a flat grey hover to a wash of the reader's own
 banner colour. The colour itself is the easy part. What this section defends
 is that <strong>three things now compete for one row's background</strong>, and every way
@@ -8853,7 +8853,7 @@ error and a negative rc is a killed run, neither of which is a verdict), each
 restoring its file in a <code>finally</code> and re-running the baseline at the end. The
 ordering mutation is the one worth keeping: it proves the suite is testing
 cascade order and not just the presence of two rules.</p>
-<h2 id="93-a-page-can-promise-a-command-that-does-not-exist-teststest_documented_commandspy">§93 — a page can promise a command that does not exist (<code>tests/test_documented_commands.py</code>)</h2>
+<h2 id="93--a-page-can-promise-a-command-that-does-not-exist-teststest_documented_commandspy">§93 — a page can promise a command that does not exist (<code>tests/test_documented_commands.py</code>)</h2>
 <p><code>docs/cli.md</code> has been held to the live command tree since §7: every runnable
 node appears in the reference, and every command named there resolves. Two
 surfaces an operator is far more likely to act on had no such guard — <strong>the
@@ -8909,7 +8909,7 @@ git checkout -- app/templates/registry/versions.html
 exits 0. Measured this way, <strong>12 of 12 mutations bite</strong>, including reverting
 the page to the shipped spelling, deleting the sentence entirely, dropping the
 anchor, and making the scanner read nothing.</p>
-<h2 id="94-a-page-that-offers-to-delete-things-must-be-documented-before-it-is-used-teststest_api_matrix_docspy">§94 — a page that offers to delete things must be documented before it is used (<code>tests/test_api_matrix_docs.py</code>)</h2>
+<h2 id="94--a-page-that-offers-to-delete-things-must-be-documented-before-it-is-used-teststest_api_matrix_docspy">§94 — a page that offers to delete things must be documented before it is used (<code>tests/test_api_matrix_docs.py</code>)</h2>
 <p><strong>What it prevents.</strong> The same failure as §90, on the two pages where the cost
 of an undocumented sentence is highest. <strong>Registry reconcile</strong> offers an
 operator a <em>Disable selected</em> button, and <strong>API versions</strong> answers the question
@@ -8979,7 +8979,7 @@ venv/bin/python -m pytest tests/test_api_matrix_docs.py -q; git checkout -- docs
 only <code>rc==1</code> is a test failure; <code>rc==2</code> is a usage error and a negative rc is a
 signal, which is no verdict at all. Both restore in a <code>finally</code> and re-run the
 baseline afterwards to prove the tree came back clean.</p>
-<h2 id="95-a-tool-that-opens-a-socket-must-say-what-it-measured-teststest_cert_inspectpy-teststest_fp_triagepy-teststest_txn_tracepy">§95 — a tool that opens a socket must say what it measured (<code>tests/test_cert_inspect.py</code>, <code>tests/test_fp_triage.py</code>, <code>tests/test_txn_trace.py</code>)</h2>
+<h2 id="95--a-tool-that-opens-a-socket-must-say-what-it-measured-teststest_cert_inspectpy-teststest_fp_triagepy-teststest_txn_tracepy">§95 — a tool that opens a socket must say what it measured (<code>tests/test_cert_inspect.py</code>, <code>tests/test_fp_triage.py</code>, <code>tests/test_txn_trace.py</code>)</h2>
 <p>Three tools landed together (2026-08-17) and they share one failure mode:
 <strong>they can produce a confident answer about something they never observed.</strong>
 Nothing fails when they do. The page renders, the badge is green or red, and
@@ -9065,7 +9065,7 @@ the operator acts on it.</p>
 <p><strong>42 mutations, 42 bite</strong> (<code>/var/tmp/mut_tools.py</code>, measured by rc; only
 <code>rc == 1</code> is a failure, every mutation restored in <code>finally</code>, baseline re-run
 after restore).</p>
-<h2 id="96-a-verification-that-cannot-see-the-failure-is-not-a-verification-teststest_route_auditpy">§96 — a verification that cannot see the failure is not a verification (<code>tests/test_route_audit.py</code>)</h2>
+<h2 id="96--a-verification-that-cannot-see-the-failure-is-not-a-verification-teststest_route_auditpy">§96 — a verification that cannot see the failure is not a verification (<code>tests/test_route_audit.py</code>)</h2>
 <p>On 2026-08-17 the standby node <code>{standby-node}</code> returned HTTP 500 on <strong>every
 authenticated page for about fifteen hours</strong>, and every check the system ran
 said it was fine. That combination — total failure, unanimous green — is the
@@ -9136,7 +9136,7 @@ conditional on the role again, and letting an unmeasurable audit roll a healthy
 update back. One guard was <strong>rejected as weak on the first pass</strong> — the cwd-leak
 test ran from the app root, so the <code>chdir</code> it was checking was a no-op and the
 test proved nothing; it now starts from a different directory.</p>
-<h2 id="97-a-manual-goes-stale-without-anything-failing-teststest_user_guide_featurespy">§97 — a manual goes stale without anything failing (<code>tests/test_user_guide_features.py</code>)</h2>
+<h2 id="97--a-manual-goes-stale-without-anything-failing-teststest_user_guide_featurespy">§97 — a manual goes stale without anything failing (<code>tests/test_user_guide_features.py</code>)</h2>
 <p><strong>What went wrong.</strong> <code>docs/user-guide.md</code> §26 opened with "<code>Settings</code> is one
 page with <strong>22 tabs</strong>" for weeks after Settings became a grouped sidebar of 8
 groups and 24 panels. Nothing failed: the page rendered, the suite passed, the
@@ -9204,7 +9204,7 @@ not an artefact.</p>
 after the last restore). One of the 28 was rejected as a bad mutation first
 (the anchor did not match the file's line wrapping) rather than counted as a
 survivor.</p>
-<h2 id="98-the-suites-own-plumbing-fails-silently-teststest_suite_hygienepy">§98 — the suite's own plumbing fails silently (<code>tests/test_suite_hygiene.py</code>)</h2>
+<h2 id="98--the-suites-own-plumbing-fails-silently-teststest_suite_hygienepy">§98 — the suite's own plumbing fails silently (<code>tests/test_suite_hygiene.py</code>)</h2>
 <p>Two pieces of test infrastructure share a failure shape, and it is the shape
 this repo keeps rediscovering: <strong>nothing fails when they break.</strong></p>
 <p><strong>1. The temp-root leak.</strong> <code>tests/conftest.py</code> builds its temp root with
@@ -9293,7 +9293,7 @@ ls -d /tmp/fmw-test-* | wc -l               # must not grow across runs
 <p>Verified 2026-08-17: 20 tests rc=0, <strong>12/12 mutations kill</strong> (measured by rc,
 only rc==1 counts, restored in <code>finally</code>, post-restore baseline 0), dry-run
 plan balanced to ±0.06% over 263 files, 2841 orphaned temp roots swept.</p>
-<h2 id="99-a-class-that-matches-no-rule-cannot-fail-teststest_tool_modal_chromepy">§99 — a class that matches no rule cannot fail (<code>tests/test_tool_modal_chrome.py</code>)</h2>
+<h2 id="99--a-class-that-matches-no-rule-cannot-fail-teststest_tool_modal_chromepy">§99 — a class that matches no rule cannot fail (<code>tests/test_tool_modal_chrome.py</code>)</h2>
 <p>Reported by the user twice on 2026-08-17: <em>"Certificate inspector /
 False-positive explainer / Transaction tracer still have the old
 format"</em>. The first review of it called the divergence a style drift. It was
@@ -9356,7 +9356,7 @@ source-level checks above cannot see an <code>fw-card-body</code> that is opened
 closed. Static token counts are useless for this: they double-count mutually
 exclusive branches (the error and success paths of <code>legCard</code>), which is why
 <code>txn_trace.js</code> shows two more <code>&lt;/div&gt;</code> than <code>&lt;div&gt;</code> while being correct.</p>
-<h2 id="100-a-button-that-cannot-be-submitted-still-renders-teststest_form_csrfpy">§100 — a button that cannot be submitted still renders (<code>tests/test_form_csrf.py</code>)</h2>
+<h2 id="100--a-button-that-cannot-be-submitted-still-renders-teststest_form_csrfpy">§100 — a button that cannot be submitted still renders (<code>tests/test_form_csrf.py</code>)</h2>
 <p><strong>What went wrong.</strong> <code>/registry/versions</code> shipped its Rebuild control as a
 plain <code>&lt;form method="post"&gt;</code> with no <code>csrf_token</code>. Nothing failed: the route
 existed, the permission was right, the page rendered, the button was
@@ -9386,7 +9386,7 @@ search forms, becomes noise, and the next person <code>xfail</code>s it.</p>
 <code>finally</code>, post-restore baseline 0). Live render through the authenticated test
 client: <code>GET /registry/versions</code> 200 with <code>name="csrf_token"</code> inside the
 rebuild form.</p>
-<h2 id="101-a-port-name-is-not-a-network-teststest_interface_bindingpy-teststest_chassis_groupingpy">§101 — a port name is not a network (<code>tests/test_interface_binding.py</code>, <code>tests/test_chassis_grouping.py</code>)</h2>
+<h2 id="101--a-port-name-is-not-a-network-teststest_interface_bindingpy-teststest_chassis_groupingpy">§101 — a port name is not a network (<code>tests/test_interface_binding.py</code>, <code>tests/test_chassis_grouping.py</code>)</h2>
 <p><strong>The defect this exists for is a SUCCESS, not a crash.</strong></p>
 <p><code>interface</code> is an ordinary payload field. <code>fortiweb_ops.sanitize_payload</code>
 only strips read-only keys, so it survives. <code>registry/dependencies.py</code> has no
@@ -9694,7 +9694,7 @@ still link at themselves.</p>
 two-branch spelling it replaced duplicated the dead <code>fw-btn-*</code> class and moved
 the frozen budget in §99 — a formatting choice is not allowed to spend a debt
 ceiling.</p>
-<h2 id="102-a-menu-is-a-claim-about-the-appliance-and-a-curated-menu-drifts-in-silence-teststest_server_objects_menupy">§102 — a menu is a claim about the appliance, and a curated menu drifts in silence (<code>tests/test_server_objects_menu.py</code>)</h2>
+<h2 id="102--a-menu-is-a-claim-about-the-appliance-and-a-curated-menu-drifts-in-silence-teststest_server_objects_menupy">§102 — a menu is a claim about the appliance, and a curated menu drifts in silence (<code>tests/test_server_objects_menu.py</code>)</h2>
 <p>The Server Objects menu is a <strong>claim</strong>: <em>this is what the FortiWeb has, arranged
 the way the FortiWeb arranges it</em>. Nothing fails when that claim stops being
 true. The page renders, the sidebar links, the object lists come back — and the
@@ -9743,7 +9743,7 @@ the flat leaf it replaces, so <code>?type=</code> bookmarks survive.</p>
 <td>entries, order, which pages have tabs and which routes those tabs are</td>
 </tr>
 <tr>
-<td>the 7.6 admin guide swept with firecrawl (<strong>554 pages</strong>, self-hosted LXC 247)</td>
+<td>the 7.6 admin guide swept with firecrawl (<strong>554 pages</strong>, self-hosted {container})</td>
 <td>the documented <code>Server Objects &gt; …</code> GUI paths</td>
 <td>corroborates every entry and the tab <strong>labels</strong> (<code>Local &gt; Multi-certificate</code>, <code>Certificate Verify &gt; Server Certificate Verify</code>, <code>Service &gt; Custom</code>)</td>
 </tr>
@@ -9799,7 +9799,7 @@ that no data test can see: the sidebar reverted to <code>== item.logical</code>,
 strip removed from <code>overview.html</code>, and the view resolving the page instead of
 the tab (which renders the DEFAULT tab's objects under the requested tab's
 name).</p>
-<h2 id="103-where-a-credential-lives-is-configuration-and-the-default-must-stay-untouched-teststest_secret_backendpy">§103 — where a credential LIVES is configuration, and the default must stay untouched (<code>tests/test_secret_backend.py</code>)</h2>
+<h2 id="103--where-a-credential-lives-is-configuration-and-the-default-must-stay-untouched-teststest_secret_backendpy">§103 — where a credential LIVES is configuration, and the default must stay untouched (<code>tests/test_secret_backend.py</code>)</h2>
 <p><code>services/secret_backend.py</code> adds a second place a secret can live: an external
 KV v2 vault (OpenBao / HashiCorp Vault). It does <strong>not</strong> replace the local
 Fernet column. The whole guard set exists to pin one property:</p>
@@ -9915,7 +9915,7 @@ failure (<code>rc == 4</code> is a usage error, and a rc read from the end of a 
 rc of <code>tail</code>). It also runs against a <strong>copy</strong> of the tree in <code>/opt/satom-mut</code>,
 never against the live one — several sessions work on this repo in parallel and
 a mutation left behind in <code>/opt/satom</code> is a credential bug in production.</p>
-<h2 id="104-moving-a-secret-is-not-removing-the-old-one-teststest_vault_scrubpy">§104 — moving a secret is not removing the old one (<code>tests/test_vault_scrub.py</code>)</h2>
+<h2 id="104--moving-a-secret-is-not-removing-the-old-one-teststest_vault_scrubpy">§104 — moving a secret is not removing the old one (<code>tests/test_vault_scrub.py</code>)</h2>
 <p><strong>Why this exists.</strong> §103 added the vault and three modes. Switching the mode to
 <code>vault</code> decides where the <em>next</em> write goes and nothing else: every credential
 already in the database keeps its Fernet copy, and the key that decrypts it
@@ -9955,7 +9955,7 @@ copy accepted, dry-run destroys, sentinel reprocessed, "scrubbed" reported
 without writing, a down vault reported as <code>skipped</code>, the default flipped to
 apply, the directory-secret write removed, the route always applying, the
 admin-permission decorator removed).</p>
-<h2 id="105-git-writes-the-push-token-in-mode-644-teststest_git_config_permspy">§105 — git writes the push token in mode 644 (<code>tests/test_git_config_perms.py</code>)</h2>
+<h2 id="105--git-writes-the-push-token-in-mode-644-teststest_git_config_permspy">§105 — git writes the push token in mode 644 (<code>tests/test_git_config_perms.py</code>)</h2>
 <p><strong>Why this exists.</strong> This product keeps its push credential embedded in the
 origin URL, so <code>.git/config</code> <strong>is</strong> a secret file — and git creates it 644.
 On the live node it had been world-readable since 8 August and nothing had
@@ -9978,7 +9978,7 @@ vhost bug. There is a guard that reads <code>install-satom.sh</code> and fails i
 <code>chmod</code> is not next to the <code>git clone</code>.</p>
 <p><strong>Mutations: 5, all bite</strong> (never narrows, narrows to 644, the writer stops
 hardening, <code>git_info</code> stops hardening, the installer line removed).</p>
-<h2 id="106-the-sentinel-is-not-a-credential-teststest_vault_sentinel_never_sentpy">§106 — the sentinel is not a credential (<code>tests/test_vault_sentinel_never_sent.py</code>)</h2>
+<h2 id="106--the-sentinel-is-not-a-credential-teststest_vault_sentinel_never_sentpy">§106 — the sentinel is not a credential (<code>tests/test_vault_sentinel_never_sent.py</code>)</h2>
 <p><strong>Why this exists — because it happened.</strong> Within minutes of removing the local
 copies (§104), the whole fleet sweep went to HTTP 401 and <code>satom_scrape_up</code>
 dropped from 1 to 0. The credentials were fine and the vault was fine. What had
@@ -10009,7 +10009,7 @@ the operator to check all nine.</p>
 <p><strong>Mutations: 5, all bite</strong> (the sentinel returned as a password, the error not
 naming the appliance, the comparison inverted so normal passwords raise, and
 both halves of the same pair in <code>auth_store</code>).</p>
-<h2 id="107-an-unexplained-control-fails-nothing-teststest_sentinel_hintspy">§107 — an unexplained control fails nothing (<code>tests/test_sentinel_hints.py</code>)</h2>
+<h2 id="107--an-unexplained-control-fails-nothing-teststest_sentinel_hintspy">§107 — an unexplained control fails nothing (<code>tests/test_sentinel_hints.py</code>)</h2>
 <p>Nothing breaks when a knob ships without an explanation. The page renders, the
 form saves, every existing test passes — the operator simply has to guess, and
 on the Sentinel settings page the guesses are expensive. <code>response_enabled</code>
@@ -10050,7 +10050,7 @@ looks fine while being wrong:</p>
 <p><strong><code>type="button"</code> on the icon is load-bearing</strong>, not style: these buttons sit
 inside the settings <code>&lt;form&gt;</code>, so a default <code>&lt;button&gt;</code> submits it — reading an
 explanation would have written the settings.</p>
-<h3 id="the-trap-this-cost-an-assert-answered-by-its-own-comment-eighth-time">⚠ The trap this cost: an assert answered by its own comment (eighth time)</h3>
+<h3 id="-the-trap-this-cost-an-assert-answered-by-its-own-comment-eighth-time">⚠ The trap this cost: an assert answered by its own comment (eighth time)</h3>
 <p>Two of the three guards above initially SURVIVED their mutations. <code>fw_hints.js</code>
 explains in its header <em>why</em> it needs <code>container: 'body'</code> and
 <code>turbo:before-render</code> — so <code>assert "container: 'body'" in js</code> matched the
@@ -10069,7 +10069,7 @@ documents its own invariants guarantees it cannot.</strong></p>
 delete a <code>UI_HINTS</code> key, stop passing <code>sentinel_ui_hints</code> from the view, drop
 <code>type="button"</code> or <code>aria-label</code> from the macro, unhook the script in
 <code>base.html</code>, or reverse any of the three render decisions above.</p>
-<h2 id="108-an-inline-block-without-the-nonce-is-dead-code-teststest_csp_noncepy">§108 — an inline block without the nonce is dead code (<code>tests/test_csp_nonce.py</code>)</h2>
+<h2 id="108--an-inline-block-without-the-nonce-is-dead-code-teststest_csp_noncepy">§108 — an inline block without the nonce is dead code (<code>tests/test_csp_nonce.py</code>)</h2>
 <p><strong>The failure.</strong> <code>settings/_nav.html</code> carried the Admin Console accordion. Its
 <code>&lt;script&gt;</code> had no <code>nonce</code>, and the app serves
 <code>script-src-elem 'self' 'nonce-&lt;per-session&gt;'</code>. The browser dropped it. Nothing
@@ -10116,7 +10116,7 @@ baseline required (only <code>rc==1</code> is a failure): the menu script loses 
 comments. Directed suite (16 files, 514 tests) <code>rc=0</code>. Browser re-measured
 after the fix, policy present: <strong>9 of 9</strong>.</p>
 <hr>
-<h2 id="109-sentinels-surfaces-are-panes-and-a-removed-button-is-not-a-removed-function">§109 — Sentinel's surfaces are panes, and a removed button is not a removed function</h2>
+<h2 id="109--sentinels-surfaces-are-panes-and-a-removed-button-is-not-a-removed-function">§109 — Sentinel's surfaces are panes, and a removed button is not a removed function</h2>
 <p>The operator asked for two things in one breath: <em>put Context and Response
 policy in the Sentinel menu</em>, and <em>take Architecture and Context off the
 incidents console</em>. Doing only the second would have been a regression
@@ -10162,7 +10162,7 @@ the first <code>return_to</code> in the partial left every test green). The guar
 reads the <strong>template source</strong>, comment-stripped, and requires the marker on
 every POST form; the render check requires it on every form that is actually
 drawn. Both, because each is blind where the other sees.</p>
-<h2 id="110-a-mode-is-a-preset-and-its-name-is-derived">§110 — A mode is a preset, and its name is derived</h2>
+<h2 id="110--a-mode-is-a-preset-and-its-name-is-derived">§110 — A mode is a preset, and its name is derived</h2>
 <p>Four named postures over the response engine (<em>alert only</em>, <em>alert and block</em>,
 <em>high</em>, <em>ultra high</em>). Two rules carry the whole feature, and both are in
 <code>tests/test_sentinel_modes.py</code>.</p>
@@ -10201,7 +10201,7 @@ unclamped write would do two things, and the second is the subtle one: store a
 level the catalog refuses, <strong>and</strong> make that mode permanently unrecognisable,
 because the stored value could never equal what the preset asked for. The page
 would read <em>Custom</em> for ever with no knob to move.</p>
-<h2 id="111-the-on-demand-sweep-is-a-job-and-progress-comes-before-the-work">§111 — The on-demand sweep is a job, and progress comes before the work</h2>
+<h2 id="111--the-on-demand-sweep-is-a-job-and-progress-comes-before-the-work">§111 — The on-demand sweep is a job, and progress comes before the work</h2>
 <p><code>Run sweep now</code> ran the entire fleet synchronously inside the request. At five
 appliances that is invisible; at the ninety this product is sized for it holds
 a gunicorn worker for minutes with no progress anywhere, and a browser that
@@ -10235,7 +10235,7 @@ honoured only once the device it was meant to spare has already been read. The
 guard now records progress and collection in one ordered trace.</p>
 <p><strong>Verification (1.17.0).</strong> 21 mutations, 21 bite, measured by return code with
 a green baseline required — only <code>rc==1</code> counts as a failure.</p>
-<h2 id="112-a-button-outside-the-tab-list-teststest_pane_buttonspy">§112 — a button outside the tab list (<code>tests/test_pane_buttons.py</code>)</h2>
+<h2 id="112--a-button-outside-the-tab-list-teststest_pane_buttonspy">§112 — a button outside the tab list (<code>tests/test_pane_buttons.py</code>)</h2>
 <p><strong>What it guards.</strong> No element may be rendered with <code>data-bs-toggle="tab"</code>
 unless it has a <code>.nav</code> / <code>.list-group</code> / <code>[role="tablist"]</code> ancestor, and every
 <code>data-fw-pane</code> button must name a pane that exists, a menu entry that can be
@@ -10273,7 +10273,7 @@ active pane. Before: both inert, two <code>Illegal invocation</code> errors. Aft
 switch panes, menu highlight follows, <code>js errors: []</code>.</p>
 <p><strong>Verification (1.17.1).</strong> 12 mutations, 12 bite, measured by return code with a
 green baseline required — only <code>rc==1</code> counts as a failure.</p>
-<h2 id="113-the-border-layer-unknown-is-not-no-and-the-reason-is-the-answer-teststest_sentinel_edgepy">§113 — The border layer: unknown is not no, and the reason is the answer (<code>tests/test_sentinel_edge.py</code>)</h2>
+<h2 id="113--the-border-layer-unknown-is-not-no-and-the-reason-is-the-answer-teststest_sentinel_edgepy">§113 — The border layer: unknown is not no, and the reason is the answer (<code>tests/test_sentinel_edge.py</code>)</h2>
 <p><strong>What breaks without it.</strong> This layer's two jobs fail in opposite directions.
 As evidence it must score only an answer that came back — a timeout, a wrong
 ADOM and a retired collector all return zero rows, and if any of them ever
@@ -10322,7 +10322,7 @@ client behind it.</p>
 <li>Both surfaces admit the mechanism is unverified and explain why the border
   can disagree with the WAF.</li>
 </ul>
-<h2 id="114-the-published-blocklist-the-ttl-that-left-the-appliance-teststest_sentinel_blocklistpy">§114 — The published blocklist: the TTL that left the appliance (<code>tests/test_sentinel_blocklist.py</code>)</h2>
+<h2 id="114--the-published-blocklist-the-ttl-that-left-the-appliance-teststest_sentinel_blocklistpy">§114 — The published blocklist: the TTL that left the appliance (<code>tests/test_sentinel_blocklist.py</code>)</h2>
 <p><strong>What breaks without it.</strong> This is the first response path in the product
 whose enforcement point is outside it, and that moves one safety property.
 <code>block_ip</code> on FortiWeb uses <code>action=block-period</code>: <strong>the appliance expires the
@@ -10399,7 +10399,7 @@ holds it in place.</p>
 <li>The scheduled job exists <strong>and is dispatched</strong>: a catalog entry with no
   dispatch branch is an action that runs nothing and reports success.</li>
 </ul>
-<h2 id="115-the-explanation-has-to-be-where-the-number-is-teststest_sentinel_page_hintspy">§115 — The explanation has to be where the number is (<code>tests/test_sentinel_page_hints.py</code>)</h2>
+<h2 id="115--the-explanation-has-to-be-where-the-number-is-teststest_sentinel_page_hintspy">§115 — The explanation has to be where the number is (<code>tests/test_sentinel_page_hints.py</code>)</h2>
 <p><strong>What went wrong.</strong> An operator read <em>"Behavioural baseline — 4416/4720 buckets
 usable (93.6 %). 304 still learning — an immature bucket never fires"</em> on the
 incidents console and asked what it meant. The sentence that answers that
@@ -10455,7 +10455,7 @@ duplicate guard was right to stay quiet), and one dropped a comma, which is
 <p><strong>Deliberately not covered.</strong> Sentinel → Documentation carries no "?" — that
 page <em>is</em> the explanation, and annotating prose with prose is the duplication
 this file exists to prevent.</p>
-<h2 id="116-the-policyartifact-index-derived-scoped-and-outage-immune-teststest_artifact_refspy">§116 — The policy→artifact index: derived, scoped, and outage-immune (<code>tests/test_artifact_refs.py</code>)</h2>
+<h2 id="116--the-policyartifact-index-derived-scoped-and-outage-immune-teststest_artifact_refspy">§116 — The policy→artifact index: derived, scoped, and outage-immune (<code>tests/test_artifact_refs.py</code>)</h2>
 <p><strong>What fails silently.</strong> Every failure mode in this feature renders as a page
 that works and a number that looks like a number. Nothing throws.</p>
 <table>
@@ -10527,7 +10527,7 @@ A guard that cannot fail is not a guard.</p>
 <p><strong>Recipe.</strong> <code>venv/bin/python -m pytest tests/test_artifact_refs.py -q</code>; then
 the harness at <code>/tmp/mutate_artifacts.py</code> (22 mutations, anchor-checked at x1,
 tree restored per mutation).</p>
-<h2 id="117-the-profile-is-walked-and-unknown-is-not-none-teststest_artifact_wpppy">§117 — The profile is walked, and "unknown" is not "none" (<code>tests/test_artifact_wpp.py</code>)</h2>
+<h2 id="117--the-profile-is-walked-and-unknown-is-not-none-teststest_artifact_wpppy">§117 — The profile is walked, and "unknown" is not "none" (<code>tests/test_artifact_wpp.py</code>)</h2>
 <p><strong>What breaks silently.</strong> <code>waf_artifact_ref</code> gained a <code>wpp_mkey</code> column, and
 every way of getting it wrong keeps the page rendering and the column holding a
 plausible string:</p>
@@ -10574,7 +10574,7 @@ select kind, count(*) from waf_artifact_ref where wpp_mkey='' group by 1;
 <p>The second must return <strong><code>scripting</code> and nothing else</strong>. Any other kind under
 <code>''</code> means the walk lost a profile; a non-zero <code>&lt;NULL&gt;</code> count after a full sweep
 means edges were recorded without a referrer graph.</p>
-<h2 id="118-the-statistics-are-per-device-adom-and-the-empty-ones-are-not-zeros-teststest_artifact_statspy">§118 — The statistics are per (device, ADOM), and the empty ones are not zeros (<code>tests/test_artifact_stats.py</code>)</h2>
+<h2 id="118--the-statistics-are-per-device-adom-and-the-empty-ones-are-not-zeros-teststest_artifact_statspy">§118 — The statistics are per (device, ADOM), and the empty ones are not zeros (<code>tests/test_artifact_stats.py</code>)</h2>
 <p>Every failure this pins is <strong>silent</strong>: the page renders, the numbers look like
 numbers, and each wrong one is wrong in the direction that clears a migration
 nobody checked.</p>
@@ -10620,7 +10620,7 @@ A dedicated third scope (scanned, zero refs) now covers it. Changing a fixture
 can uncover a mutation that was previously killed by accident — re-run the
 whole harness after every fixture edit, never just the mutation you were
 chasing.</p>
-<h2 id="119-a-filter-that-cannot-be-seen-to-have-applied-teststest_artifact_statspy">§119 — A filter that cannot be SEEN to have applied (<code>tests/test_artifact_stats.py</code>)</h2>
+<h2 id="119--a-filter-that-cannot-be-seen-to-have-applied-teststest_artifact_statspy">§119 — A filter that cannot be SEEN to have applied (<code>tests/test_artifact_stats.py</code>)</h2>
 <p>Counts are a lossy view of a scope. Two scopes holding <strong>disjoint</strong> data can
 report <strong>identical</strong> numbers, and on a statistics page that is indistinguishable
 from a filter that never ran. This actually happened: the four ADOMs of one
@@ -10645,7 +10645,7 @@ as broken while being arithmetically correct.</p>
 it to <code>None</code>; point it at the wrong record; drop the <code>?scope=</code> filter entirely;
 strip the fleet label; break the fixture's symmetry). Measured by rc, only
 <code>rc==1</code> counts as a bite, green baseline required first.</p>
-<h2 id="120-a-save-must-not-change-a-file-for-devices-nobody-named-teststest_artifact_inventory_scopepy">§120 — A save must not change a file for devices nobody named (<code>tests/test_artifact_inventory_scope.py</code>)</h2>
+<h2 id="120--a-save-must-not-change-a-file-for-devices-nobody-named-teststest_artifact_inventory_scopepy">§120 — A save must not change a file for devices nobody named (<code>tests/test_artifact_inventory_scope.py</code>)</h2>
 <p>The artifact store resolves <code>(kind, name)</code> narrowest-first: the device's own
 copy, then the SATOM library copy, then — reported by name — any other box's.
 One consequence is easy to miss and expensive: <strong>a library-wide copy that three
@@ -10692,7 +10692,7 @@ routes. Two traps worth keeping:</p>
 <p>Recipe: <code>venv/bin/python -m pytest tests/test_artifact_inventory_scope.py -q</code>
 (17 guards) and the mutation harness pattern from §116 — by <code>rc</code>, only <code>rc == 1</code>
 counts as a bite, with a green baseline required. 13 mutations, 13 bite.</p>
-<h2 id="121-a-scope-is-a-universe-not-a-filter-teststest_artifact_inventory_universepy">§121 — A scope is a universe, not a filter (<code>tests/test_artifact_inventory_universe.py</code>)</h2>
+<h2 id="121--a-scope-is-a-universe-not-a-filter-teststest_artifact_inventory_universepy">§121 — A scope is a universe, not a filter (<code>tests/test_artifact_inventory_universe.py</code>)</h2>
 <p><strong>The failure this prevents.</strong> An operator picks one device and one ADOM and
 the page still shows the fleet. Reported twice in two days about
 <code>/artifacts/inventory</code>, and both times the arithmetic was correct: the filter
@@ -10743,7 +10743,7 @@ blinded, the <code>?scope=</code> alias dropped, the banner removed, the by-type
 sidebar links dropping the scope, and one meta-mutation that breaks the
 fixture's symmetry to prove the control bites, and one that counts distinct NAMES instead of copies in the headline). All 14 must fail by <code>rc == 1</code>
 from a green baseline, and each must name its own guard among the dead.</p>
-<h2 id="122-the-scope-is-the-sessions-and-a-picker-is-not-a-scope-teststest_artifact_session_scopepy">§122 — The scope is the session's, and a picker is not a scope (<code>tests/test_artifact_session_scope.py</code>)</h2>
+<h2 id="122--the-scope-is-the-sessions-and-a-picker-is-not-a-scope-teststest_artifact_session_scopepy">§122 — The scope is the session's, and a picker is not a scope (<code>tests/test_artifact_session_scope.py</code>)</h2>
 <p><strong>The failure this prevents.</strong> A whole area of the product that does not
 participate in device-first navigation. The operator picks a device on the
 Architecture map, every other per-device page follows, and this one renders the
@@ -10774,7 +10774,7 @@ in a template is decoration and a form post carries whatever its author types.</
 </ol>
 <p><strong>Verification recipe.</strong> 13 guards, rc=0, then the mutation set of §123 (the two
 files are run together: they share the contract).</p>
-<h2 id="123-a-row-id-is-a-scope-and-a-json-feed-is-a-page-teststest_artifact_scope_gatespy">§123 — A row id is a scope, and a JSON feed is a page (<code>tests/test_artifact_scope_gates.py</code>)</h2>
+<h2 id="123--a-row-id-is-a-scope-and-a-json-feed-is-a-page-teststest_artifact_scope_gatespy">§123 — A row id is a scope, and a JSON feed is a page (<code>tests/test_artifact_scope_gates.py</code>)</h2>
 <p><strong>The failure this prevents.</strong> Half of <code>/artifacts/*</code> never mentions a device
 in the request at all. <code>/blob/&lt;id&gt;</code>, <code>/raw/&lt;id&gt;</code>, <code>delete</code> and <code>push</code> name a
 stored version by <strong>primary key</strong>; <code>/api/list</code>, <code>/api/refs</code> and
@@ -10831,7 +10831,7 @@ form, the fork's no-reader refusal disabled) plus one meta-mutation that breaks
 the fixture's symmetry to prove the control bites. All 15 must fail by
 <code>rc == 1</code> from a green baseline, without <code>-x</code>, each naming its own guard among
 the dead.</p>
-<h2 id="124-an-emptiness-is-not-an-absence-teststest_artifact_empty_contentpy">§124 — An emptiness is not an absence (<code>tests/test_artifact_empty_content.py</code>)</h2>
+<h2 id="124--an-emptiness-is-not-an-absence-teststest_artifact_empty_contentpy">§124 — An emptiness is not an absence (<code>tests/test_artifact_empty_content.py</code>)</h2>
 <p><strong>What is guarded.</strong> That a stored artifact version with no content is treated
 as <em>not available</em> by everything that decides whether an object can travel, and
 that the standalone push verb stays gone.</p>
@@ -10877,7 +10877,7 @@ then the mutation harness in this section's round: 18 mutations, each of which
 must produce <code>rc == 1</code> <strong>and name its own guard</strong> among the FAILED lines. One
 is <em>meta</em> — it makes the fixture's hollow copy non-empty — and proves the
 fixture is what drives the rest.</p>
-<h2 id="125-the-exception-catalog-teststest_exception_catalog_shapepy">§125 — the exception catalog (<code>tests/test_exception_catalog_shape.py</code>)</h2>
+<h2 id="125--the-exception-catalog-teststest_exception_catalog_shapepy">§125 — the exception catalog (<code>tests/test_exception_catalog_shape.py</code>)</h2>
 <p><strong>Nothing fails when this catalog is wrong.</strong> A missing type just never appears in the
 picker. A wrong enum token is posted to the appliance and either bounces with a device
 error nobody reads, or is <em>stored and never matches</em>. Both render on the Exceptions page
@@ -10945,7 +10945,7 @@ the seed can pass while the picker renders something else.</p>
 <p><strong>Known weak assertion:</strong> <code>UNVERIFIED_SHAPES</code> notes are checked only for length &gt; 40, and
 the notes are concatenated string literals, so hollowing out one fragment survives.
 Emptying the register does bite. Recorded rather than over-engineered.</p>
-<h2 id="126-a-fleet-page-states-its-denominator-teststest_waf_fleetpy">§126 — A fleet page states its denominator (<code>tests/test_waf_fleet.py</code>)</h2>
+<h2 id="126--a-fleet-page-states-its-denominator-teststest_waf_fleetpy">§126 — A fleet page states its denominator (<code>tests/test_waf_fleet.py</code>)</h2>
 <p><code>Fleet -&gt; WAF</code> is the first page in this product that is deliberately
 fleet-WIDE after four rounds of narrowing <code>/artifacts/*</code> to the session's
 device. The two are not in tension, but the difference has to be <em>stated</em>: a
@@ -11031,7 +11031,7 @@ failure), baseline green required, no <code>-x</code>, and each mutation must na
 guard it kills among the dead. One mutation is <em>meta</em>: it breaks the fixture so
 the never-harvested device is never created, proving the control can die.</p>
 <hr>
-<h2 id="127-demand-supply-and-the-difference-between-them-teststest_waf_artifact_fleetpy">§127 — Demand, supply, and the difference between them (<code>tests/test_waf_artifact_fleet.py</code>)</h2>
+<h2 id="127--demand-supply-and-the-difference-between-them-teststest_waf_artifact_fleetpy">§127 — Demand, supply, and the difference between them (<code>tests/test_waf_artifact_fleet.py</code>)</h2>
 <p><code>/waf/artifacts</code> is the only fleet-wide view of the file-backed WAF objects.
 <code>/artifacts/*</code> is pinned to the session's (device, ADOM) by §121–§123, on
 purpose, so nothing else in the product can answer <em>which policies in this
@@ -11090,7 +11090,7 @@ estate could not be migrated today</em>.</p>
 failure), baseline green required, no <code>-x</code>, and each mutation must name the
 guard it kills among the dead. One mutation is <em>meta</em>: it removes the library
 copy from the fixture, proving the library guards are load-bearing.</p>
-<h2 id="128-provenance-travels-with-the-data-teststest_waf_exportpy">§128 — Provenance travels with the data (<code>tests/test_waf_export.py</code>)</h2>
+<h2 id="128--provenance-travels-with-the-data-teststest_waf_exportpy">§128 — Provenance travels with the data (<code>tests/test_waf_export.py</code>)</h2>
 <p>An export is a snapshot OF A SNAPSHOT. Every <code>/waf/*</code> page reads the
 source-of-truth store, so its figures are exactly as old as the last harvest of
 each scope — which is why each page carries the scope-and-freshness banner as
@@ -11158,7 +11158,7 @@ failure), baseline green required, no <code>-x</code>, and each mutation must na
 guard it kills among the dead. One mutation is <em>meta</em>: it gives the
 never-harvested scope a snapshot, proving the unknown-vs-missing control can
 die.</p>
-<h2 id="129-the-catalogue-must-agree-with-the-wire-not-with-the-guide">§129 — the catalogue must agree with the WIRE, not with the guide</h2>
+<h2 id="129--the-catalogue-must-agree-with-the-wire-not-with-the-guide">§129 — the catalogue must agree with the WIRE, not with the guide</h2>
 <p><code>tests/test_wire_shapes.py</code>, <code>tests/test_mutation_survivors.py</code>.</p>
 <p><strong>What goes wrong silently.</strong> A catalogue that disagrees with the appliance is
 not a broken feature — it is a working-looking one. The operator fills the
@@ -11213,7 +11213,7 @@ indication of which field.</p>
    because the sweep skips it. "Missing from the snapshot" is not "not
    collected".</li>
 </ol>
-<h2 id="130-ipam-allocation-and-the-provisioning-dns-step-2026-08-27">§130 — IPAM allocation and the provisioning DNS step (2026-08-27)</h2>
+<h2 id="130--ipam-allocation-and-the-provisioning-dns-step-2026-08-27">§130 — IPAM allocation and the provisioning DNS step (2026-08-27)</h2>
 <p><strong>The defect being guarded.</strong> A step whose success value does not depend on
 whether the work happened. <code>provision_runner</code> imported four functions that did
 not exist, inside <code>except ImportError</code> handlers, so the DNS step reported OK
@@ -11254,7 +11254,7 @@ came back SURVIVES — the guard it named checks method <em>identity</em>
 the <em>body</em> can affect. The mutation was mis-aimed, but it exposed a real hole:
 nothing asserted the base class refuses at all. Ninth entry in the running
 tally of guards that assert the wrong layer.</p>
-<h2 id="131-the-device-hostname-2026-08-27">§131 — the device hostname (2026-08-27)</h2>
+<h2 id="131--the-device-hostname-2026-08-27">§131 — the device hostname (2026-08-27)</h2>
 <p><strong>What is being guarded.</strong> That the name printed for an appliance is the one
 the DEVICE reports, and that "never observed" stays distinguishable from
 "observed as empty".</p>
@@ -11294,7 +11294,7 @@ to <code>/architecture/</code> when none is selected), so the template never rea
 browser. It was updated for consistency and is guarded, but nothing verifies
 it renders. <code>policies.html</code> and <code>browse.html</code> were both confirmed over real
 HTTP against the live node.</p>
-<h2 id="132-line-profiles-declared-vs-inferred-2026-08-27">§132 — line profiles: declared vs inferred (2026-08-27)</h2>
+<h2 id="132--line-profiles-declared-vs-inferred-2026-08-27">§132 — line profiles: declared vs inferred (2026-08-27)</h2>
 <p><strong>§132 means this section.</strong> The clone's additive mode briefly carried the
 same number; it was renumbered to §138 on 2026-08-28 because it had one
 citation to this section's five. The references in <code>services/spo_wizard.py</code>,
@@ -11343,7 +11343,7 @@ would change what the report counts.</p>
 <p><strong>Verified by render</strong> against the live node: <code>/web/line-profiles/</code> 200, the
 four real catalog lines listed, every undeclared line badged <code>inferred</code>,
 anonymous bounced, zero fleet dark-theme chrome (§9m — this product is white).</p>
-<h2 id="133-the-spo-wizard-refuse-early-compensate-exactly-never-guess-2026-08-27">§133 — the SPO wizard: refuse early, compensate exactly, never guess (2026-08-27)</h2>
+<h2 id="133--the-spo-wizard-refuse-early-compensate-exactly-never-guess-2026-08-27">§133 — the SPO wizard: refuse early, compensate exactly, never guess (2026-08-27)</h2>
 <p><strong>Why a planner and not a form handler.</strong> <code>workspace.create_policy</code> stops at
 the first failure and leaves everything before it. Survivable when the
 leftovers are all on one device an operator can see. NOT survivable once a
@@ -11391,7 +11391,7 @@ shows {device}'s own hostname, a dry run of line <code>A</code> refuses with
 <code>no_segments</code> and produces <strong>zero steps</strong>, and a plan whose derived name is
 <code>pol-dev-billing</code> is refused with <code>policy_exists</code> — read from {device}'s
 REAL policy list, not a fixture.</p>
-<h2 id="134-the-wizards-script-was-blocked-by-the-csp-so-the-page-was-furniture-2026-08-27">§134 — the wizard's script was blocked by the CSP, so the page was furniture (2026-08-27)</h2>
+<h2 id="134--the-wizards-script-was-blocked-by-the-csp-so-the-page-was-furniture-2026-08-27">§134 — the wizard's script was blocked by the CSP, so the page was furniture (2026-08-27)</h2>
 <p>Reported by the user: <em>"I added a segment in /web/segments/ and the options
 registered there don't show up in /web/workspace/26/spo-wizard"</em>.</p>
 <p><strong>The segment was never the problem.</strong> Measured against the live database of
@@ -11450,7 +11450,7 @@ after restart: <strong>0 blocked inline scripts</strong>, line <code>P</code> ca
   2026-08-28: the clone-additive half became §138, because it carried one
   citation against the other's five (four of them in code).</li>
 </ul>
-<h2 id="135-one-row-per-network-departments-are-a-list-names-are-unique-2026-08-27">§135 — one row per NETWORK: departments are a list, names are unique (2026-08-27)</h2>
+<h2 id="135--one-row-per-network-departments-are-a-list-names-are-unique-2026-08-27">§135 — one row per NETWORK: departments are a list, names are unique (2026-08-27)</h2>
 <p><code>tests/test_segment_departments.py</code> (47 guards). Reported by the operator as
 "I added a segment and I cannot see the department in the wizard, and the
 entries repeat". The repetition was the visible half; the invisible half was
@@ -11523,7 +11523,7 @@ Settings console route). Two authors of one answer is how they drifted.</p>
   keeps it in every department's view and prints the whole list joined, never
   the first (a row saying "WAF/LB" for a network WSG also uses is false).</li>
 </ul>
-<h3 id="traps-four-survivors-all-defects-in-my-guards">⚠ TRAPS (four survivors, all defects in MY guards)</h3>
+<h3 id="-traps-four-survivors-all-defects-in-my-guards">⚠ TRAPS (four survivors, all defects in MY guards)</h3>
 <ol>
 <li><strong>Tenth assert that claimed more than it checked.</strong> <code>..._is_distinct_from_
    not_being_on_the_line</code> only exercised the off-line case, so a mutation that
@@ -11553,7 +11553,7 @@ interface/gateway: those are two networks with a name collision, and picking a
 survivor would be the script deciding what production keeps. Production: 5 rows
 → 4, <code>LineP_External_LB</code> folded to <code>['WAF/LB', 'WSG']</code>, zero conflicts. Pre-
 migration blob kept at <code>data/segments-pre-B-20260827.json</code>.</p>
-<h2 id="136-n-backends-optional-roles-and-a-tie-that-is-refused-2026-08-28">§136 — N backends, optional roles, and a tie that is refused (2026-08-28)</h2>
+<h2 id="136--n-backends-optional-roles-and-a-tie-that-is-refused-2026-08-28">§136 — N backends, optional roles, and a tie that is refused (2026-08-28)</h2>
 <p><code>tests/test_dns_backends.py</code> (54 guards) + the §130 guards moved onto the new
 seam in <code>tests/test_ipam_allocation.py</code> and <code>tests/test_spo_wizard.py</code>.</p>
 <p><strong>What changed.</strong> <code>dnsrecords.provider</code> / <code>.config</code> / <code>.secret_enc</code> were three
@@ -11653,7 +11653,7 @@ script. Each must be killed by the guard it names, measured by <strong>rc, and o
   <code>services/concept_map.py</code> as a <code>json feed</code>, or the route-coverage guards go
   red on an unmapped endpoint.</li>
 </ul>
-<h2 id="137-the-operator-chooses-the-backend-and-the-choice-is-checked-2026-08-28">§137 — the operator chooses the backend, and the choice is checked (2026-08-28)</h2>
+<h2 id="137--the-operator-chooses-the-backend-and-the-choice-is-checked-2026-08-28">§137 — the operator chooses the backend, and the choice is checked (2026-08-28)</h2>
 <p><strong>What the user reported.</strong> <em>"A section was added in settings for adding
 different IPAMs, so the options that are registered should appear here, so
 that the user can choose where and how they want
@@ -11701,7 +11701,7 @@ to nothing is invisible to every server-side assertion. And
 <code>const BACKENDS</code> payload rather than searching the page — the first draft
 asserted <code>"hidden" not in body</code> and matched the <strong>Hidden Fields</strong> nav entry.</p>
 <hr>
-<h2 id="138-only-add-what-is-missing-teststest_clone_additivepy">§138 — "only add what is missing" (<code>tests/test_clone_additive.py</code>)</h2>
+<h2 id="138--only-add-what-is-missing-teststest_clone_additivepy">§138 — "only add what is missing" (<code>tests/test_clone_additive.py</code>)</h2>
 <p><strong>Renumbered from §132 (2026-08-28).</strong> This section and the line-profiles
 one were both written 2026-08-27 and both took the number §132. This is the
 clone's additive mode; it had exactly one citation (<code>CHANGELOG.md</code>), so it
@@ -11827,7 +11827,7 @@ tests/test_i18n_foundation.py tests/test_ui_locale.py tests/test_cr_doc_i18n.py
 tests/test_cr_types.py -q</code> as <code>satom</code>. Live render (EN and ES, one fresh app
 context per request — flask-babel caches the locale on <code>g</code>):
 <code>/tmp/render2.py</code> pattern in §61.</p>
-<h2 id="140-three-subjects-under-one-authoritys-name-2026-08-29">§140 — three subjects under one authority's name (2026-08-29)</h2>
+<h2 id="140--three-subjects-under-one-authoritys-name-2026-08-29">§140 — three subjects under one authority's name (2026-08-29)</h2>
 <p><code>tests/test_sot_settings_split.py</code> — 22 guards, 15 mutations, 15 killed.</p>
 <h3 id="what-was-wrong">What was wrong</h3>
 <p>Settings carried one panel called <strong>SoT &amp; Backup</strong>. It held a git URL for a
@@ -11925,7 +11925,7 @@ tests/test_concept_map.py tests/test_route_audit.py tests/test_csp_nonce.py
 tests/test_failopen_settings_git.py tests/test_docs_links.py -q</code> as <code>satom</code>.
 Mutations: <code>/tmp/mutate.py</code> pattern — anchor count must be exactly 1, baseline
 must be green per selection, and only <code>rc==1</code> scores as a kill.</p>
-<h2 id="141-a-form-that-is-always-open-a-cadence-with-no-knob-and-three-unlabelled-destinations-2026-08-29">§141 — a form that is always open, a cadence with no knob, and three unlabelled destinations (2026-08-29)</h2>
+<h2 id="141--a-form-that-is-always-open-a-cadence-with-no-knob-and-three-unlabelled-destinations-2026-08-29">§141 — a form that is always open, a cadence with no knob, and three unlabelled destinations (2026-08-29)</h2>
 <p><code>tests/test_settings_repo_sot_backup_ux.py</code> (17 guards, 13 mutations, 13 dead).</p>
 <p>Three controls on the Settings panes that rendered perfectly and said the wrong
 thing. None of them could fail a test that asks "does the page render?".</p>
@@ -11955,7 +11955,7 @@ distinction that matters is <em>who writes</em>: an empty config folder means th
 appliance is not pushing, not that SATOM failed. Reuses the <code>hint()</code> macro from
 <code>partials/_hint.html</code>, so the text is in <code>title</code> and survives a script that
 never loads.</p>
-<h3 id="the-fifteenth-substring-assert-that-matched-its-own-mutation">⚠ The fifteenth substring-assert that matched its own mutation</h3>
+<h3 id="-the-fifteenth-substring-assert-that-matched-its-own-mutation">⚠ The fifteenth substring-assert that matched its own mutation</h3>
 <p><code>assert "git-config-block" in fn</code> stayed green against a toggle rewired to
 <code>git-config-blockZZ</code> — the mutated id <strong>contains</strong> the original. The anchor has
 to be the whole call, <code>getElementById('git-config-block')</code>. Caught by the
@@ -11973,7 +11973,7 @@ endif %}</code>; force it always-hidden; rewire the toggle; drop the <code>next_
 recompute; drop the clamp; make <code>val &lt;= 0</code> into <code>val &lt; 0</code>; make
 <code>_sot_refresh_primary</code> return any row regardless of kind; make the
 no-harvest path a silent no-op; strip a path hint; copy one hint over another.</p>
-<h2 id="142-a-destination-with-no-visible-hour-2026-08-29">§142 — a destination with no visible hour (2026-08-29)</h2>
+<h2 id="142--a-destination-with-no-visible-hour-2026-08-29">§142 — a destination with no visible hour (2026-08-29)</h2>
 <p><strong>What was wrong.</strong> <em>System bundles path</em> said WHERE this node's own backups
 land and nothing about WHEN they are written. The hour existed — the
 <code>system_backup</code> scheduled action, daily at 01:30 — but only in the Automation
@@ -12016,7 +12016,7 @@ garbage and on out-of-range; ignore the conflict and add a second bundle; take
 any schedule kind for the daily one; never report <code>other_kind</code>; drop the zone
 from the field; point the form at the SFTP endpoint; re-enable the field;
 re-enable the button; make the hour's POST also save the SFTP form.</p>
-<h2 id="143-two-lifetimes-the-change-log-is-permanent-the-payload-leaves-2026-08-30">§143 — two lifetimes: the change log is permanent, the payload leaves (2026-08-30)</h2>
+<h2 id="143--two-lifetimes-the-change-log-is-permanent-the-payload-leaves-2026-08-30">§143 — two lifetimes: the change log is permanent, the payload leaves (2026-08-30)</h2>
 <p><code>tests/test_adom_assets_and_sot_payload.py</code> — <strong>46 guards, 34 mutations, 34 dead.</strong></p>
 <h3 id="what-was-wrong_1">What was wrong</h3>
 <p>Nothing failed. <code>prune()</code> deleted <code>sot_version</code> rows and that was the documented
@@ -12115,7 +12115,7 @@ python3 /root/mutate.py            # 34 mutations, all must print KILLED
 <p>Measure by <strong>return code</strong>, and only <code>rc==1</code> is a failure (<code>rc==4</code> is a usage
 error, and pytest prints <code>FAILED</code> in upper case so a lower-case grep finds
 nothing). The baseline for the selected tests must be green before mutating.</p>
-<h2 id="144-the-change-log-gets-a-window-and-the-window-is-only-safe-because-the-log-leaves-first-2026-08-30">§144 — the change log gets a window, and the window is only safe because the log leaves first (2026-08-30)</h2>
+<h2 id="144--the-change-log-gets-a-window-and-the-window-is-only-safe-because-the-log-leaves-first-2026-08-30">§144 — the change log gets a window, and the window is only safe because the log leaves first (2026-08-30)</h2>
 <p><strong>What was asked.</strong> Three things, from the operator, about <code>Settings → Configuration SoT</code>:
 gate the per-device-family settings on whether that ADOM is switched on; give the
 change log a configurable window with the rest backed up somewhere it can be pulled
@@ -12178,7 +12178,7 @@ the consequence. It is now <strong>Free space on this node now</strong> / <stron
 now</strong>, it states in the first line that it does <strong>not</strong> discard history, it names the
 two things it removes locally, and it prints where the archive lands and what the last
 run did. A card whose effect has to be guessed is the defect, not the wording.</p>
-<h3 id="trampas">⚠ TRAMPAS</h3>
+<h3 id="-trampas">⚠ TRAMPAS</h3>
 <ol>
 <li><strong>Two mutation harnesses ran at once and every result after that was noise.</strong> The
    foreground run hit the tool's 2-minute timeout; the SSH client died and the remote
@@ -12214,7 +12214,7 @@ python3 /tmp/mut.py                # 25 mutations, all must print KILLED
 </code></pre>
 <p>Measure by <strong>return code</strong>, only <code>rc==1</code> is a failure, the baseline must be green
 before mutating, and every anchor must match <strong>exactly once</strong> in its file.</p>
-<h2 id="145-a-copy-button-that-could-not-report-its-own-failure-2026-08-30">§145 — a copy button that could not report its own failure (2026-08-30)</h2>
+<h2 id="145--a-copy-button-that-could-not-report-its-own-failure-2026-08-30">§145 — a copy button that could not report its own failure (2026-08-30)</h2>
 <p><strong>Report:</strong> <em>"error DD5943CE, the copy button doesn't work either"</em>.</p>
 <h3 id="the-500-was-not-a-defect-in-shipped-code">The 500 was not a defect in shipped code</h3>
 <p><code>DD5943CE</code> is in <code>data/logs/satom.log</code>: <code>GET /settings/ ::
@@ -12302,7 +12302,7 @@ nothing, and no amount of reading the template can settle it.</p>
 <p><strong>15 guards, 15 mutations, 15 dead</strong> (by rc, only <code>rc==1</code> counting as a kill,
 green baseline required, every anchor matching exactly once).</p>
 <hr>
-<h2 id="146-one-familys-answer-under-four-headings-and-a-row-per-adom-for-a-backup-there-is-only-one-of-2026-08-30">§146 — one family's answer under four headings, and a row per ADOM for a backup there is only one of (2026-08-30)</h2>
+<h2 id="146--one-familys-answer-under-four-headings-and-a-row-per-adom-for-a-backup-there-is-only-one-of-2026-08-30">§146 — one family's answer under four headings, and a row per ADOM for a backup there is only one of (2026-08-30)</h2>
 <p>Two defects, one page, and <strong>neither of them failed</strong>. <code>/adom-assets/</code> returned
 200 in every ADOM, the suite was green, and the page had been reviewed. What it
 did was answer a different question from the one its heading asked.</p>
@@ -12354,7 +12354,7 @@ and disagrees with the <em>showing N of M</em> count the moment either side chan
 An unrecognised value narrows <strong>nothing</strong>: a typo in a hand-edited URL must not
 look like an ADOM with no devices. And the tiles describe the whole ADOM, never
 the filter — a count that shrinks when you type is a claim about the estate.</p>
-<h3 id="traps_1">⚠ Traps</h3>
+<h3 id="-traps">⚠ Traps</h3>
 <ul>
 <li><strong><code>_ensure_columns</code> again.</strong> <code>device_identity</code> had no entry at all (the table
   is created by <code>create_all</code>), so this is a NEW key — but the guard still reads
@@ -12375,7 +12375,7 @@ the filter — a count that shrinks when you type is a claim about the estate.</
 <p><strong>30 guards</strong> (<code>tests/test_adom_assets_sections.py</code>) · <strong>37 mutations, 37 dead</strong>
 (by rc, only <code>rc==1</code> counting as a kill, green baseline required, every anchor
 matching exactly once, tree verified byte-identical afterwards).</p>
-<h2 id="147-three-slots-for-four-adoms-and-a-fallback-that-only-two-pages-knew-2026-08-30">§147 — three slots for four ADOMs, and a fallback that only two pages knew (2026-08-30)</h2>
+<h2 id="147--three-slots-for-four-adoms-and-a-fallback-that-only-two-pages-knew-2026-08-30">§147 — three slots for four ADOMs, and a fallback that only two pages knew (2026-08-30)</h2>
 <p><strong>Guard:</strong> <code>tests/test_adom_menu_reachability.py</code> (19 tests, 12 mutations, 12
 killed).</p>
 <p>Reported as <em>"only the Global and FortiWeb menus work — ADC, FortiAuth and
@@ -12444,7 +12444,7 @@ vacuously.</p>
 <p><code>docs</code> left the three lists in the same commit: that blueprint was deleted on
 2026-08-02, so the string had been allowing nothing for four weeks while
 reading like policy.</p>
-<h3 id="traps_2">⚠ Traps</h3>
+<h3 id="-traps_1">⚠ Traps</h3>
 <ul>
 <li><strong>The first reproduction was wrong and looked right.</strong> Driving <code>/adc/menu/&lt;k&gt;</code>
   (the route is <code>/adc/m/&lt;k&gt;</code>) produced a 302 to <code>/adc/</code> for every item — the
@@ -12456,7 +12456,7 @@ reading like policy.</p>
 <li>Fixture hosts end in <code>.invalid</code> on purpose: DNS fails instantly, where a
   TEST-NET address would hang the guard on a TCP connect.</li>
 </ul>
-<h2 id="148-a-ninth-place-to-state-the-licence-on-the-console-of-a-broken-node-2026-08-30">§148 — a ninth place to state the licence, on the console of a broken node (2026-08-30)</h2>
+<h2 id="148--a-ninth-place-to-state-the-licence-on-the-console-of-a-broken-node-2026-08-30">§148 — a ninth place to state the licence, on the console of a broken node (2026-08-30)</h2>
 <p><code>satom</code> with no arguments now prints a wordmark, an attribution and the licence
 before its first prompt. Guards in <code>tests/test_cli_banner.py</code> (25).</p>
 <p><strong>Why it needs guards at all.</strong> The banner is the <strong>ninth</strong> surface that
@@ -12529,7 +12529,7 @@ from <code>_ART_TOP_EXTRA</code> would be satisfied by every value of the consta
 exists to pin, which is how the left-margin guard went blind (§148, above).</p>
 <p><strong>The full suite was NOT run</strong> (operator rule, 2026-08-09).</p>
 <hr>
-<h2 id="149-a-panel-that-painted-a-whole-page-into-itself-and-a-class-on-a-body-turbo-throws-away-2026-08-30">§149 — a panel that painted a whole page into itself, and a class on a body Turbo throws away (2026-08-30)</h2>
+<h2 id="149--a-panel-that-painted-a-whole-page-into-itself-and-a-class-on-a-body-turbo-throws-away-2026-08-30">§149 — a panel that painted a whole page into itself, and a class on a body Turbo throws away (2026-08-30)</h2>
 <p>Reported as <em>"the bookmarks tab does not work anywhere"</em>. Two defects. Neither
 raised, neither logged, both rendered perfectly, and <strong>both were permanent for
 the rest of the session on every page</strong> — because <code>#fw-bookmarks</code> is
@@ -12585,7 +12585,7 @@ persists, so re-applying it on every page would have had the rail rewriting the
 preference it was supposed to be obeying. And it no-ops where there is no rail,
 since <code>body.bm-open .fw-main</code> reserves a 300px column that would otherwise be
 margin for nothing.</p>
-<h3 id="traps_3">⚠ TRAPS</h3>
+<h3 id="-traps_2">⚠ TRAPS</h3>
 <ol>
 <li><strong>A repro that changed nothing.</strong> Setting <code>rail.dataset.bmCsrf</code> to a dead
    value does not make the rail send a dead token — <code>CSRF</code> is a closure
@@ -12618,7 +12618,7 @@ declared as an XHR is answered <code>400 application/json</code>, not redirected
 <em>"CSRF token missing or expired — reload the page and retry"</em> instead of
 painting a page into itself.</p>
 <p><strong>The full suite was NOT run</strong> (operator rule, 2026-08-09).</p>
-<h2 id="150-four-artefacts-in-one-row-and-a-filter-that-would-have-hidden-the-disagreement-2026-08-30">§150 — four artefacts in one row, and a filter that would have hidden the disagreement (2026-08-30)</h2>
+<h2 id="150--four-artefacts-in-one-row-and-a-filter-that-would-have-hidden-the-disagreement-2026-08-30">§150 — four artefacts in one row, and a filter that would have hidden the disagreement (2026-08-30)</h2>
 <p><strong>Where:</strong> <code>app/services/adom_assets.py</code>, <code>app/templates/adom_assets/index.html</code>,
 <code>tests/test_adom_assets_artefact_sections.py</code> (23 guards).</p>
 <p><code>/adom-assets/</code> was one table whose columns mixed two unrelated artefacts:
@@ -12672,7 +12672,7 @@ fixture doing <code>.update({"retired": True})</code> dies with
 <p><strong>Verification:</strong> 23 guards, <strong>27 mutations, 27 killed</strong> (measured by rc, only
 <code>rc==1</code> counts, green baseline required, every anchor unique, tree checked byte
 for byte afterwards).</p>
-<h2 id="151-a-page-that-folds-itself-shut-and-the-three-things-it-must-never-fold-2026-08-30">§151 — a page that folds itself shut, and the three things it must never fold (2026-08-30)</h2>
+<h2 id="151--a-page-that-folds-itself-shut-and-the-three-things-it-must-never-fold-2026-08-30">§151 — a page that folds itself shut, and the three things it must never fold (2026-08-30)</h2>
 <p><code>/adom-assets/</code> was asked to open with every section and subsection collapsed.
 Folding a page is four lines of CSS; the failures are all silent.</p>
 <h3 id="the-folded-page-that-cannot-open">The folded page that cannot open</h3>
@@ -12708,7 +12708,7 @@ as an open-set expands exactly what the operator had folded; that is why the
 probe cards minted <code>…probecards.open.</code> instead of reusing <code>…collapsed.</code> (§9j),
 and the same reasoning applies here. Keyed per ADOM: Global lists every family
 and a choice made there is not a choice about FortiWeb.</p>
-<h3 id="traps_4">⚠ TRAPS</h3>
+<h3 id="-traps_3">⚠ TRAPS</h3>
 <ol>
 <li><strong>A browser harness that reports a dead button on a working one.</strong>
    <code>Input.dispatchMouseEvent</code> takes <strong>viewport</strong> coordinates. At the default
@@ -12744,7 +12744,7 @@ driven through a real Chromium over CDP</strong> — first paint, real mouse cli
 two levels, a Bootstrap collapse nested inside a folded family, persistence
 across reload, Enter on a focused toggle, expand/collapse all, and the deep
 link.</p>
-<h2 id="152-page-chrome-the-product-gate-refused-and-a-bounce-reported-as-a-dead-session-2026-08-30">§152 — page chrome the product gate refused, and a bounce reported as a dead session (2026-08-30)</h2>
+<h2 id="152--page-chrome-the-product-gate-refused-and-a-bounce-reported-as-a-dead-session-2026-08-30">§152 — page chrome the product gate refused, and a bounce reported as a dead session (2026-08-30)</h2>
 <p>Reported in the reader's own words: <em>"Your session expired — reload the page
 to use bookmarks."</em> The session was fine. Two defects, one visible and one
 that made the visible one unreadable.</p>
@@ -12795,7 +12795,7 @@ production database: <code>GET /bookmarks/panel</code> and <code>/bookmarks/devi
 the panel header in all five ADOMs</strong>, each with a fresh CSRF token and a device
 count that matches its own ADOM (global 9, FortiWeb 7, ADC 0, FAZ 1, FAC 1) ·
 <code>satom.service</code> restarted · <code>/healthz</code> 200 · 0 failed units.</p>
-<h2 id="153-one-fleet-one-arrangement-and-the-card-that-must-not-fold-2026-08-30">§153 — one fleet, one arrangement; and the card that must not fold (2026-08-30)</h2>
+<h2 id="153--one-fleet-one-arrangement-and-the-card-that-must-not-fold-2026-08-30">§153 — one fleet, one arrangement; and the card that must not fold (2026-08-30)</h2>
 <p><strong>What was wrong.</strong> This console grouped one estate two ways. The bookmarks
 rail nests devices by a per-user lens (<code>line › zone › department</code> by default);
 <code>/adom-assets/</code> nested them by family and stopped. Nothing failed. An operator
@@ -12860,7 +12860,7 @@ an omission nothing asserts is one edit away from coming back.</p>
 is a same-document navigation: nothing reloads and the fold script never runs
 again, so <code>#sec-satom</code> scrolled to a strip that stayed shut. Wired to
 <code>hashchange</code> as well as first paint.</p>
-<h3 id="traps-this-round_1">⚠ Traps this round</h3>
+<h3 id="-traps-this-round">⚠ Traps this round</h3>
 <ol>
 <li><strong>A slice bounded by an attribute drags in the next element.</strong> <code>html[index(
    'id="sec-filter"'):index('id="sec-backups"')]</code> ends inside the <em>backups</em>
@@ -12886,7 +12886,7 @@ again, so <code>#sec-satom</code> scrolled to a strip that stayed shut. Wired to
    ancestor chain both sides matched empty and it passed while measuring
    nothing — which is the exact failure mode it exists to catch, one level up.</li>
 </ol>
-<h2 id="154-the-lease-that-outlived-the-process-and-the-nine-days-nobody-was-told-about-2026-08-31">§154 — the lease that outlived the process, and the nine days nobody was told about (2026-08-31)</h2>
+<h2 id="154--the-lease-that-outlived-the-process-and-the-nine-days-nobody-was-told-about-2026-08-31">§154 — the lease that outlived the process, and the nine days nobody was told about (2026-08-31)</h2>
 <p><code>scheduled_action.running_at</code> is a lease: <code>execute_and_record</code> claims it with a
 <strong>committed</strong> <code>UPDATE ... WHERE running_at IS NULL</code>, and <code>due_actions</code> filters
 leased rows out. That is correct dedupe and a permanent trap, because the claim
@@ -12940,7 +12940,7 @@ SELECT count(*) FROM scheduled_action_run WHERE status = 'running';
 </code></pre>
 <p>Both should be 0 on an idle node. A non-zero second number with a zero first
 number is the phase-2 case specifically.</p>
-<h2 id="154b-the-backup-check-that-fired-on-its-own-policy-working">§154b — the backup check that fired on its own policy working</h2>
+<h2 id="154b--the-backup-check-that-fired-on-its-own-policy-working">§154b — the backup check that fired on its own policy working</h2>
 <p><code>_check_backup</code> read <code>local_inventory()</code>, i.e. this node's disk. Default
 retention is <code>keep=0</code>: <code>evict_local_bundles</code> deletes the local bundle once the
 backup server verifiably holds it, byte for byte. So every day, in the window
@@ -12952,7 +12952,7 @@ whose own docstring names this exact failure.</p>
 comes from the name (<code>fmw-backup-YYYYmmdd-HHMMSS</code>), which is written from the
 same clock. The name is a <strong>fallback</strong>, never the first source: preferring it
 over an explicit timestamp is a separate lie, and both directions have a test.</p>
-<h2 id="155-a-failover-with-no-api-and-a-command-the-running-firmware-does-not-have-2026-09-08">§155 — a failover with no API, and a command the running firmware does not have (2026-09-08)</h2>
+<h2 id="155--a-failover-with-no-api-and-a-command-the-running-firmware-does-not-have-2026-09-08">§155 — a failover with no API, and a command the running firmware does not have (2026-09-08)</h2>
 <p>The ask was to schedule a cluster failover, with the honest caveat <em>"I don't know
 if there's an api call for that"</em>. There isn't one, and finding that out is most of
 this section.</p>
@@ -13004,7 +13004,7 @@ found out the next morning.</p>
    command does and said yes anyway". For an interactive operator that record is
    a typed confirmation; for a scheduled run it is the approval on the change.</li>
 </ol>
-<h3 id="traps_5">⚠ TRAPS</h3>
+<h3 id="-traps_4">⚠ TRAPS</h3>
 <ul>
 <li><strong>Two mutations survived the first harness run, and both were genuine test
   gaps, not false alarms.</strong> <code>ScriptResult.error</code> (connect/auth failure) carries
@@ -13030,7 +13030,7 @@ read live), no <code>Appliance</code> row carries <code>is_cluster</code>, and b
 refusals; the send path is covered by fixtures and by the mutation harness. The
 FortiWeb CLI syntax comes from Fortinet's 8.0.x reference, not from a box that
 answered it.</p>
-<h2 id="156-a-disruptive-verb-on-the-device-page-route-gates-not-hidden-buttons-2026-09-08">§156 — a disruptive verb on the device page: route gates, not hidden buttons (2026-09-08)</h2>
+<h2 id="156--a-disruptive-verb-on-the-device-page-route-gates-not-hidden-buttons-2026-09-08">§156 — a disruptive verb on the device page: route gates, not hidden buttons (2026-09-08)</h2>
 <p>The failover was plannable from the calendar and unreachable from the box an
 operator actually has open. The ask was <em>"put it inside the device ... there, if it is
 a cluster, the option to do a failover should come up"</em>. Guarded by
@@ -13109,7 +13109,7 @@ the ask named, is a standalone. So the button does not appear on it, which is
 the correct behaviour and also means the page has only ever been rendered
 against synthetic cluster rows. The live-run path is covered by fixtures and by
 the mutation harness, never by a box that handed a role over.</p>
-<h2 id="157-the-generic-write-door-and-the-one-thing-a-rehearsal-cannot-prove-2026-09-09">§157 — the generic write door, and the one thing a rehearsal cannot prove (2026-09-09)</h2>
+<h2 id="157--the-generic-write-door-and-the-one-thing-a-rehearsal-cannot-prove-2026-09-09">§157 — the generic write door, and the one thing a rehearsal cannot prove (2026-09-09)</h2>
 <p><code>tests/test_process_write_nodes.py</code> · <code>tests/test_process_doc_currency.py</code></p>
 <p>Process gained the two nodes the first round deliberately held back:
 <code>console_script</code> (CLI lines to an appliance) and <code>hook</code> (operator-written
@@ -13201,7 +13201,7 @@ baseline-green required before scoring, <code>__pycache__</code> purged per roun
 by SHA-256, suite re-run green after the last restore. A negative rc, 124 or 137
 counts as <strong>killed by the resource cap</strong> and is reported as such; a missing
 anchor counts as a <strong>survivor</strong>, never a kill.</p>
-<h2 id="158-a-procedure-as-a-file-the-import-that-is-not-a-second-door-2026-09-09">§158 — a procedure as a file: the import that is not a second door (2026-09-09)</h2>
+<h2 id="158--a-procedure-as-a-file-the-import-that-is-not-a-second-door-2026-09-09">§158 — a procedure as a file: the import that is not a second door (2026-09-09)</h2>
 <p>A process can now arrive as XML (<code>Process → Import XML</code>) and leave as XML
 (<code>Export XML</code> on its own page). An import is the one door in this module where
 the <em>plausible</em> result is the failure: a parser that drops a parameter,
@@ -13289,7 +13289,7 @@ every child, <code>python3 -u</code>, baseline-green required before scoring,
 <code>__pycache__</code> purged per round (never <code>deploy/__pycache__</code>), tree restored by
 content and verified by SHA-256, suite re-run green after the last restore, a
 missing anchor scored as a <strong>survivor</strong>.</p>
-<h2 id="159-a-filter-is-a-view-preference-and-a-split-is-a-permission-2026-09-09">§159 — a filter is a view preference, and a split is a permission (2026-09-09)</h2>
+<h2 id="159--a-filter-is-a-view-preference-and-a-split-is-a-permission-2026-09-09">§159 — a filter is a view preference, and a split is a permission (2026-09-09)</h2>
 <p>Two things that look identical on screen and are not the same object. The
 Automation subsystem now has both, and every guard in
 <code>tests/test_automation_filter.py</code> (60) and <code>tests/test_automation_split.py</code> (50)
@@ -13340,7 +13340,7 @@ exists to keep them from being confused for one another.</p>
   reported a busy tree forever against a node at load 1.3. Match a real
   invocation: <code>pgrep -af 'bin/python[0-9.]* -m py[t]est'</code>.</li>
 </ul>
-<h2 id="160-absent-is-not-stale-and-a-band-that-shrinks-in-silence-2026-09-10">§160 — absent is not stale, and a band that shrinks in silence (2026-09-10)</h2>
+<h2 id="160--absent-is-not-stale-and-a-band-that-shrinks-in-silence-2026-09-10">§160 — absent is not stale, and a band that shrinks in silence (2026-09-10)</h2>
 <p>The Change Calendar's filter. §159 covers the two Automation lists; this covers
 the grid, where the same word means the opposite thing and the failure modes are
 not the same.</p>
@@ -13415,7 +13415,7 @@ saved filter" and the filter the user just widened would come straight back.</p>
   waiter shells contain the word and match themselves, and reported a busy tree
   forever against a node at load 1.3.</li>
 </ul>
-<h2 id="161-one-list-not-two-facets-the-calendar-band-filter-2026-09-10">§161 — one list, not two facets: the calendar band filter (2026-09-10)</h2>
+<h2 id="161--one-list-not-two-facets-the-calendar-band-filter-2026-09-10">§161 — one list, not two facets: the calendar band filter (2026-09-10)</h2>
 <p><code>tests/test_calendar_filter.py</code> (71 guards) + <code>/tmp/mut_bands.py</code> (40 mutations).</p>
 <p><strong>What went wrong.</strong> The filter shipped with two independent facets — event
 family (<code>kind</code>) and automation owner (<code>owner</code>). Read aloud, the bar was
@@ -13471,7 +13471,7 @@ app runs Europe/Zurich, so a naive run is red for two hours every night), then
 <code>/opt/satom/venv/bin/python3 /tmp/mut_bands.py</code>. The bar must print
 <code>System Automations</code> exactly once and must never print <code>Automations (upcoming)</code>
 or <code>Automations (fleet work)</code> again.</p>
-<h2 id="162-a-form-control-that-explains-nothing-and-the-one-that-explains-wrong-2026-09-10">§162 — a form control that explains nothing, and the one that explains wrong (2026-09-10)</h2>
+<h2 id="162--a-form-control-that-explains-nothing-and-the-one-that-explains-wrong-2026-09-10">§162 — a form control that explains nothing, and the one that explains wrong (2026-09-10)</h2>
 <p><code>/scout/</code> asks for twelve things and explained four of them. The gap that
 mattered was not the eight silent ones: it was <strong>Port</strong> and <strong>Scheme</strong>, which
 looked exactly as settable as the rest and are <em>read only when a Published host
@@ -13511,7 +13511,7 @@ happy branch.</p>
 written about a <em>default</em> ("Pre-filled into the walk form"). The same string on
 the walk form is circular. Link the two by key and compose the shared sentence
 once.</p>
-<h2 id="163-a-cut-that-does-not-say-it-is-a-cut-and-a-class-nobody-defined-2026-09-10">§163 — a cut that does not say it is a cut, and a class nobody defined (2026-09-10)</h2>
+<h2 id="163--a-cut-that-does-not-say-it-is-a-cut-and-a-class-nobody-defined-2026-09-10">§163 — a cut that does not say it is a cut, and a class nobody defined (2026-09-10)</h2>
 <p>Two failure modes, one report, and neither of them raises anything.</p>
 <p><strong>A trimmed list is indistinguishable from a short one.</strong> Six Scout rungs sliced
 their evidence (<code>[:4]</code>, <code>[:6]</code>) and printed the survivors with nothing to mark
@@ -13567,7 +13567,7 @@ passes against a form somebody emptied.</p>
   <code>tests/test_tool_modal_chrome.py</code>, with a printed budget. The first draft of
   the new guard duplicated it with a file allowlist; it was deleted.</li>
 </ul>
-<h2 id="165-a-renderer-change-that-read-as-an-empty-release-and-two-controls-that-disagreed-in-silence-2026-09-13">§165 — a renderer change that read as an empty release, and two controls that disagreed in silence (2026-09-13)</h2>
+<h2 id="165--a-renderer-change-that-read-as-an-empty-release-and-two-controls-that-disagreed-in-silence-2026-09-13">§165 — a renderer change that read as an empty release, and two controls that disagreed in silence (2026-09-13)</h2>
 <p><strong>Guards:</strong> <code>tests/test_release_notes_docsets.py</code> (24), <code>tests/test_release_advisor.py</code>
 (34), <code>tests/test_scout_switch.py</code> (16). 38 mutations driven.</p>
 <p>Three failures in one feature, and all three produced output that looks exactly
@@ -13638,7 +13638,7 @@ defects: the catch-all reprinting a block a tailored rule had already turned int
 an instruction; the example upgrade path drawn once per version crossed; the same
 rollback trap stated twice with slightly different wording; and an upgrade
 advisory quoting the <em>Downgrading</em> page. <strong>A green suite is not a read output.</strong></p>
-<h2 id="164-a-picker-that-quietly-narrows-what-may-be-walked-2026-09-10">§164 — a picker that quietly narrows what may be walked (2026-09-10)</h2>
+<h2 id="164--a-picker-that-quietly-narrows-what-may-be-walked-2026-09-10">§164 — a picker that quietly narrows what may be walked (2026-09-10)</h2>
 <p><strong>Guards:</strong> <code>tests/test_scout_objects.py</code> (63 guards), plus the extended identity in
 <code>tests/test_scout_help.py</code>.</p>
 <p>A dropdown of names is the most trustworthy-looking control on a form: it
@@ -13702,7 +13702,7 @@ no name is plural or overflows a column.</p>
 <p><strong>Verification.</strong> 31 mutations, 31 bite. Baseline green before and after,
 <code>__pycache__</code> purged every pass, tree restored and verified by SHA-256, aborts
 if another pytest is alive on the tree.</p>
-<h2 id="9p-the-status-badge-a-thread-that-cannot-read-where-the-secret-lives">§9p — The status badge: a thread that cannot read where the secret lives</h2>
+<h2 id="9p--the-status-badge-a-thread-that-cannot-read-where-the-secret-lives">§9p — The status badge: a thread that cannot read where the secret lives</h2>
 <p><strong>What it defends.</strong> <code>GET /api/appliances</code> probes inside a <code>ThreadPoolExecutor</code>,
 and the credential path reads the database. A worker thread has no app context,
 so that read failed and <code>secret_backend._raw()</code> answered <code>{}</code> = "no vault" —
@@ -13737,7 +13737,7 @@ the one line that breaks.</p>
   original expression is a no-op dressed as a change; it would have reported a
   surviving guard against a tree that was never modified.</li>
 </ul>
-<h2 id="166-a-four-click-flag-on-a-one-click-decision-2026-09-14">§166 — a four-click flag on a one-click decision (2026-09-14)</h2>
+<h2 id="166--a-four-click-flag-on-a-one-click-decision-2026-09-14">§166 — a four-click flag on a one-click decision (2026-09-14)</h2>
 <p><strong>Guard:</strong> <code>tests/test_appliance_maintenance_toggle.py</code> (25 tests).</p>
 <p><code>Appliance.maintenance</code> hides a device from operators and read-only users and
 drops it from the scheduled probe/metric sweeps. It was reachable only from the
@@ -13780,7 +13780,7 @@ pipe</strong> on the run being measured, and treats only <code>rc==1</code> as a
 pytest into <code>tail</code> measures <code>tail</code>, which is how this repo has reported
 "SURVIVED" against obviously-fatal mutations eleven times.</p>
 <hr>
-<h2 id="167-a-field-that-is-optional-to-write-and-required-to-run-2026-09-14">§167 — a field that is optional to write and required to run (2026-09-14)</h2>
+<h2 id="167--a-field-that-is-optional-to-write-and-required-to-run-2026-09-14">§167 — a field that is optional to write and required to run (2026-09-14)</h2>
 <p><code>tests/test_cr_edit.py</code> — 42 guards behind <code>/change-requests/&lt;id&gt;/edit</code>.</p>
 <p><strong>The shape of the defect.</strong> <code>window_start</code> is optional at creation and required
 by <code>cr_runnable</code>, and the blueprint had no route that could write one. Nothing
@@ -13837,7 +13837,7 @@ The product was innocent and the guard said otherwise.</p>
 <p><strong>Mutations: 23 run, 23 kill, 0 survive, 0 void, <code>restore-ok=True</code>,</strong> control
 green before and after, measured <strong>by return code with no pipe</strong> on the run
 being measured.</p>
-<h2 id="168-a-verdict-that-already-existed-four-clicks-from-the-button-that-reboots-the-box-2026-09-14">§168 — a verdict that already existed, four clicks from the button that reboots the box (2026-09-14)</h2>
+<h2 id="168--a-verdict-that-already-existed-four-clicks-from-the-button-that-reboots-the-box-2026-09-14">§168 — a verdict that already existed, four clicks from the button that reboots the box (2026-09-14)</h2>
 <p><code>tests/test_upgrade_scout.py</code> — 32 guards. Scout's upgrade advisory now renders
 on the Upgrade page and runs for every dry run and every live push.</p>
 <p><strong>What is defended, in order of how badly it fails.</strong> Every failure mode here is
@@ -13893,7 +13893,7 @@ reader functions and asserts <em>they</em> delegate.</p>
 <code>restore-ok=True</code>. Measured <strong>by return code and without a pipe</strong> — piping pytest
 into <code>grep</code>/<code>tail</code> measures <code>grep</code>, for the eleventh time in this repo; <code>rc==1</code>
 is a failure, <code>rc==4</code> is a usage error and counts as void, not as a kill.</p>
-<h2 id="169-evidence-that-was-already-on-disk-and-the-bucket-that-must-never-be-called-absent-2026-09-15">§169 — evidence that was already on disk, and the bucket that must never be called absent (2026-09-15)</h2>
+<h2 id="169--evidence-that-was-already-on-disk-and-the-bucket-that-must-never-be-called-absent-2026-09-15">§169 — evidence that was already on disk, and the bucket that must never be called absent (2026-09-15)</h2>
 <p><code>tests/test_cli_coverage.py</code> (60 guards) covers <code>services/cli_coverage.py</code>,
 <code>views/_clicoverage.py</code> and <code>partials/_cli_coverage.html</code>: the CLI ↔ API
 coverage section on every ADOM's API hub.</p>
@@ -13997,7 +13997,7 @@ permission that exists to gate exactly that.</p>
   live routes were exercised against the production app with a real token
   instead (and a POST without one returns 302, which is how that was found).</li>
 </ul>
-<h3 id="the-second-door-that-http-cannot-reach-measured-not-assumed">The second door that HTTP cannot reach — measured, not assumed</h3>
+<h3 id="the-second-door-that-http-cannot-reach--measured-not-assumed">The second door that HTTP cannot reach — measured, not assumed</h3>
 <p><code>live</code> and <code>capture</code> both check <code>appliance.kind == product</code>. Over HTTP that check
 is <strong>unreachable</strong>: the <code>/web</code> URL scope stamps <code>product=fortiweb</code> on the request
 regardless of the session, so <code>visible_appliance_or_404</code> answers <strong>404</strong> first
@@ -14065,7 +14065,7 @@ than comparing against a number written down here.</p>
   catalog side only; aliases that collapse onto one key are listed on the page,
   because every count otherwise silently picks one of them.</li>
 </ul>
-<h3 id="phase-c-promoting-a-finding-without-inventing-a-path">Phase C — promoting a finding, without inventing a path</h3>
+<h3 id="phase-c--promoting-a-finding-without-inventing-a-path">Phase C — promoting a finding, without inventing a path</h3>
 <p>The REST path for a CLI block <strong>cannot be derived</strong>. FortiWeb joins the segments
 below the family with <code>.</code> for a sub-table and <code>/</code> for a child list, and the CLI
 spells both identically, so a single derived path is a coin flip — and it would
@@ -14170,7 +14170,7 @@ guards rather than a hole in the code:</p>
   the <em>tag</em> and the <em>condition</em>, on comment-stripped source. Eleventh and twelfth
   time in this repo.</li>
 </ul>
-<h2 id="170-the-sweeps-cli-capture-pass-teststest_rediscovery_cli_capturepy">§170 — The sweep's CLI-capture pass (<code>tests/test_rediscovery_cli_capture.py</code>)</h2>
+<h2 id="170--the-sweeps-cli-capture-pass-teststest_rediscovery_cli_capturepy">§170 — The sweep's CLI-capture pass (<code>tests/test_rediscovery_cli_capture.py</code>)</h2>
 <p><strong>What can go wrong here looks exactly like success.</strong> A capture that never ran,
 a capture that ran against a stale credential, a budget that silently stopped
 firing — all of them render as a page with no error on it. The guards fix
@@ -14210,7 +14210,7 @@ venv/bin/python -m pytest tests/test_rediscovery_cli_capture.py -q --no-header
 measures <code>tail</code>, which has now cost a wrong result eleven times in this repo.
 Only <code>rc == 1</code> is a failure; <code>rc == 5</code> means <em>nothing was collected</em> and is how
 the previous round discovered a patcher had deleted two tests.</p>
-<h2 id="171-the-word-api-only-and-the-four-things-it-must-not-mean-2026-09-15">§171 — the word "API only", and the four things it must not mean (2026-09-15)</h2>
+<h2 id="171--the-word-api-only-and-the-four-things-it-must-not-mean-2026-09-15">§171 — the word "API only", and the four things it must not mean (2026-09-15)</h2>
 <p><code>tests/test_cli_provenance.py</code> (30 guards). Covers
 <code>cli_coverage.provenance()</code> / <code>provenance_from()</code> / <code>Provenance</code>,
 <code>partials/_cli_provenance.html</code>, and the four pages that consume them
@@ -14243,7 +14243,7 @@ class.</p>
 so it renders without <code>Permission.BACKUP</code>, matching the split §169 already drew.
 A guard asserts a readonly user sees the badges and that no <code>set</code> line, no <code>ENC</code>
 value and no PEM reaches the page.</p>
-<h3 id="traps-this-round_2">Traps this round</h3>
+<h3 id="traps-this-round_1">Traps this round</h3>
 <ol>
 <li><code>render_template_string</code> drags in every context processor, including the one
    that 500s on <code>/api-tokens/</code> today. A macro is rendered through
@@ -14267,7 +14267,7 @@ every badge. A mutation that stripped the badge off every row left the words on
 the page and walked. Both assertions are now scoped to the row / the leaf that
 must carry the badge. Eighth assert-satisfied-by-the-wrong-text in this repo,
 and the first one caused by new chrome rather than by a comment.</p>
-<h3 id="found-in-passing-running-the-suite-clobbers-dataapi_matrix">Found in passing — running the suite CLOBBERS <code>data/api_matrix/</code></h3>
+<h3 id="found-in-passing--running-the-suite-clobbers-dataapi_matrix">Found in passing — running the suite CLOBBERS <code>data/api_matrix/</code></h3>
 <p>Not introduced by this round; demonstrated by it. <code>api_matrix.MATRIX_ROOT</code> is a
 repo-relative path with no app-config or test override, and
 <code>rediscovery.py:543</code> rebuilds the matrix at the end of every sweep. So
@@ -14285,7 +14285,7 @@ nothing is lost permanently. The same run also wrote a fixture device
 in production, so that copy is inert.</p>
 <p><strong>Until <code>MATRIX_ROOT</code> takes an override, re-check the matrix after any run that
 includes the rediscovery tests.</strong></p>
-<h2 id="172-the-catalogs-growth-path-and-the-three-ways-to-say-no-2026-09-15">§172 — the catalog's growth path, and the three ways to say "no" (2026-09-15)</h2>
+<h2 id="172--the-catalogs-growth-path-and-the-three-ways-to-say-no-2026-09-15">§172 — the catalog's growth path, and the three ways to say "no" (2026-09-15)</h2>
 <p><code>tests/test_discovery_run.py</code> — 36 guards over
 <code>services/discovery_run.py</code>, <code>services/registry_write.py</code>,
 <code>views/_discovery.py</code>, the CLI half of <code>services/structure.py</code> and the shared
@@ -14334,7 +14334,7 @@ exactly once <strong>before</strong> starting, restores in a <code>finally</code
 SIGTERM/SIGINT, and verifies the restore against its own table rather than a
 grep of convenience — an interrupted harness left a live mutation in the tree
 twice.</p>
-<h2 id="173-a-button-the-browser-refuses-to-run-teststest_discovery_runpy">§173 — a button the browser refuses to run (tests/test_discovery_run.py)</h2>
+<h2 id="173--a-button-the-browser-refuses-to-run-teststest_discovery_runpy">§173 — a button the browser refuses to run (tests/test_discovery_run.py)</h2>
 <p><strong>A <code>&lt;script&gt;</code> without the CSP nonce is not an error — it is a dead button.</strong></p>
 <p><code>app/__init__.py</code> (<code>after_request</code>) sets the app-wide policy</p>
 <pre><code>script-src-elem 'self' 'nonce-&lt;per-session&gt;' https://cdn.jsdelivr.net;
@@ -14405,7 +14405,7 @@ them <em>"the coverage partial mounts it again"</em> (double render), <em>"api_e
 mounts it at the bottom"</em>, <em>"faz_api promotes the not-applicable card"</em>, <em>"the
 card collapses again"</em>, <em>"the chevron lies about the state"</em>, and each script
 losing its nonce.</p>
-<h2 id="174-two-pickers-one-question-and-a-firmware-nobody-established-teststest_discovery_versionpy-2026-09-15">§174 — two pickers, one question, and a firmware nobody established (<code>tests/test_discovery_version.py</code>, 2026-09-15)</h2>
+<h2 id="174--two-pickers-one-question-and-a-firmware-nobody-established-teststest_discovery_versionpy-2026-09-15">§174 — two pickers, one question, and a firmware nobody established (<code>tests/test_discovery_version.py</code>, 2026-09-15)</h2>
 <p><strong>What went wrong.</strong> The discovery run took its candidates from a CLI dump and
 its verdicts from an appliance, and those were selected by two different
 controls that nothing compared. A run pointed at the wrong box prints <code>absent</code>
@@ -14440,7 +14440,7 @@ picker and the explicit override).</p>
 whole function; the audit row a few lines below spells the same word, so
 dropping the key from the payload left them green. Scope assertions to the dict
 literal / the row / the sheet — never to "somewhere in this function".</p>
-<h2 id="175-a-job-with-no-reader-and-a-running-that-outlived-its-process-teststest_discovery_asyncpy-2026-09-15">§175 — a job with no reader, and a "running" that outlived its process (<code>tests/test_discovery_async.py</code>, 2026-09-15)</h2>
+<h2 id="175--a-job-with-no-reader-and-a-running-that-outlived-its-process-teststest_discovery_asyncpy-2026-09-15">§175 — a job with no reader, and a "running" that outlived its process (<code>tests/test_discovery_async.py</code>, 2026-09-15)</h2>
 <p><strong>What this protects.</strong> Four defects with one shape: <em>a screen reporting a state
 nobody is in</em>.</p>
 <h3 id="the-rules_7">The rules</h3>
@@ -14505,7 +14505,7 @@ contract are mutated instead.</p>
   The phase-label window closed before a single state was in it, and the guard
   failed against correct code. Slice on <code>};</code>.</li>
 </ul>
-<h2 id="176-evidence-per-build-and-a-rollup-that-declares-itself-teststest_firmware_version_axispy-2026-09-16">§176 — evidence per BUILD, and a rollup that declares itself (<code>tests/test_firmware_version_axis.py</code>, 2026-09-16)</h2>
+<h2 id="176--evidence-per-build-and-a-rollup-that-declares-itself-teststest_firmware_version_axispy-2026-09-16">§176 — evidence per BUILD, and a rollup that declares itself (<code>tests/test_firmware_version_axis.py</code>, 2026-09-16)</h2>
 <p>The failure is silent by construction. <code>api_matrix</code> merged every witness on a
 firmware <strong>line</strong> with <em>"OK from any healthy witness wins"</em>, so an endpoint
 served by one build was attributed to the line and <code>preflight</code> answered
@@ -14545,7 +14545,7 @@ to its line. That is the original defect, and it must turn the suite red.</p>
 <li>A guard run harness that buffers its own stdout shows no progress for an
   hour. <code>flush=True</code>, or <code>python3 -u</code>.</li>
 </ul>
-<h2 id="177-three-pages-that-answered-about-a-firmware-nobody-chose-teststest_version_scoped_pagespy-2026-09-16">§177 — three pages that answered about a firmware nobody chose (<code>tests/test_version_scoped_pages.py</code>, 2026-09-16)</h2>
+<h2 id="177--three-pages-that-answered-about-a-firmware-nobody-chose-teststest_version_scoped_pagespy-2026-09-16">§177 — three pages that answered about a firmware nobody chose (<code>tests/test_version_scoped_pages.py</code>, 2026-09-16)</h2>
 <p>One defect, three pages, one line of code each: <code>cli_coverage.report(product)</code>
 with no firmware argument returns whichever stored dump sorts first, and none
 of the three said which.</p>
@@ -14581,7 +14581,7 @@ same object) and the guards assert the kwargs it was called with.</p>
 <p>The structure guard goes further and walks the AST, requiring <strong>both</strong>
 <code>version=</code> and <code>line=</code> keywords on every <code>cli_coverage.report</code> call in the
 view — because the words appear in the surrounding prose either way.</p>
-<h2 id="178-a-true-sentence-that-cost-a-session-not-measured-with-no-way-to-learn-why-teststest_schema_coveragepy-2026-09-17">§178 — a true sentence that cost a session: "not measured", with no way to learn why (<code>tests/test_schema_coverage.py</code>, 2026-09-17)</h2>
+<h2 id="178--a-true-sentence-that-cost-a-session-not-measured-with-no-way-to-learn-why-teststest_schema_coveragepy-2026-09-17">§178 — a true sentence that cost a session: "not measured", with no way to learn why (<code>tests/test_schema_coverage.py</code>, 2026-09-17)</h2>
 <p><strong>Nothing failed.</strong> The firmware comparison printed <code>not measured on 8.0.5</code> for
 <code>user_group</code>, and that was literally correct. The operator had just finished a
 sweep against an 8.0.5 box, read it as the sweep having failed, and asked why.
@@ -14642,7 +14642,7 @@ coverage read takes the same root. Left split, the matrix would describe one
 installation and explain another's holes — and nothing on the page would look
 wrong. <code>coverage()</code> therefore takes <code>root=</code>, and a guard walks the calls in
 <code>diff()</code> by <strong>paren balance</strong> to check it is passed.</p>
-<h3 id="178b-the-badge-that-answered-a-question-its-heading-did-not-ask">§178b — the badge that answered a question its heading did not ask</h3>
+<h3 id="178b--the-badge-that-answered-a-question-its-heading-did-not-ask">§178b — the badge that answered a question its heading did not ask</h3>
 <p>Same page, reported the day before: every build column stacks an API line over a
 CLI line, and the CLI line called the API hub's badge. Under a head reading
 <strong>CLI</strong>, the cell said <code>API · no CLI block here</code> — it repeats the line above it.</p>
@@ -14666,7 +14666,7 @@ before and after — first clean pass. <strong>412 targeted tests, RC=0</strong>
 version_delta_table, cli_provenance, cli_coverage, api_matrix, api_matrix_docs,
 field_catalog, field_catalog_provenance, build_field_catalog, route_audit,
 template_blocks, documented_commands). <strong>Full suite NOT run</strong> (rule of 2026-08-09).</p>
-<h3 id="two-traps-this-round-paid-for">⚠ Two traps this round paid for</h3>
+<h3 id="-two-traps-this-round-paid-for">⚠ Two traps this round paid for</h3>
 <ul>
 <li><strong>A <code>must_not</code> guard matched its own documentation.</strong> The patch forbade the
   over-claiming phrase and the docstring explaining its removal quoted it
@@ -14676,7 +14676,7 @@ template_blocks, documented_commands). <strong>Full suite NOT run</strong> (rule
   <code>dv-ev-alsokind</code>) made a count read 16 where 8 rows existed. Renamed to
   <code>dv-ev-peer</code>. A measurement that cannot be trusted is not evidence.</li>
 </ul>
-<h2 id="178c-a-measured-no-spelled-the-same-way-as-silence-teststest_schema_coveragepy-2026-09-17">§178c — a measured "no" spelled the same way as silence (<code>tests/test_schema_coverage.py</code>, 2026-09-17)</h2>
+<h2 id="178c--a-measured-no-spelled-the-same-way-as-silence-teststest_schema_coveragepy-2026-09-17">§178c — a measured "no" spelled the same way as silence (<code>tests/test_schema_coverage.py</code>, 2026-09-17)</h2>
 <p>The follow-up to §178, reported by the operator who had just acted on it. They
 ran the sweep a second time, against the 8.0.5 appliance, and the cell still
 said <code>not measured on 8.0.5</code>. Their objection was right and §178 had not
@@ -14721,7 +14721,7 @@ while the 7.6.8 dump has both. The objects are gone in 8.0.</p>
    would find it.</li>
 </ol>
 <p><strong>12 mutations, 12 bite, 0 survive, 0 void</strong> (after repairing 1 and 2).</p>
-<h2 id="179-one-measured-no-two-opposite-meanings-teststest_absence_corroborationpy-2026-09-17">§179 — one measured "no", two opposite meanings (<code>tests/test_absence_corroboration.py</code>, 2026-09-17)</h2>
+<h2 id="179--one-measured-no-two-opposite-meanings-teststest_absence_corroborationpy-2026-09-17">§179 — one measured "no", two opposite meanings (<code>tests/test_absence_corroboration.py</code>, 2026-09-17)</h2>
 <p><strong>What happened.</strong> §178c taught the comparison to say <code>absent</code> when a sweep had
 actually asked and been refused. That fixed the wording and left the harder
 question untouched: <em>a rejected URN is equally consistent with "the firmware
@@ -14789,7 +14789,7 @@ ordering, not just on the two values.</p>
 <li>The ledger guards drive <code>absence_record.evaluate</code> through <code>monkeypatch</code>, so
   they never touch the real matrix or a real dump.</li>
 </ul>
-<h2 id="180-the-review-queue-moved-inside-the-comparison-and-the-join-is-the-whole-risk-teststest_absence_corroborationpy-2026-09-17">§180 — the review queue moved inside the comparison, and the join is the whole risk (<code>tests/test_absence_corroboration.py</code>, 2026-09-17)</h2>
+<h2 id="180--the-review-queue-moved-inside-the-comparison-and-the-join-is-the-whole-risk-teststest_absence_corroborationpy-2026-09-17">§180 — the review queue moved inside the comparison, and the join is the whole risk (<code>tests/test_absence_corroboration.py</code>, 2026-09-17)</h2>
 <p>The operator asked for the ledger's review queue to live <strong>inside the versions
 section</strong> rather than as a page of its own. The feature is small; the hazard is
 not, and it is one this product has already paid for once in another form.</p>
@@ -14827,7 +14827,7 @@ both scopes verbatim to defend exactly this; the join now <em>prints</em> them.<
 <li><strong>A refusal keeps its row.</strong> Deleting it would erase the refusal and let the
    next sweep re-create the finding as brand new.</li>
 </ol>
-<h3 id="traps-this-round_3">Traps this round</h3>
+<h3 id="traps-this-round_2">Traps this round</h3>
 <ul>
 <li><strong>A guard answered by its own comment, the eleventh time.</strong> The guard that
   forbids the template from spelling the four review words was answered by the
@@ -14845,7 +14845,7 @@ both scopes verbatim to defend exactly this; the join now <em>prints</em> them.<
   <code>_PDF_TABLE_*</code> off the module instead of naming A and B, so a fourth table is
   covered without touching it.</li>
 </ul>
-<h2 id="181-a-new-firmware-line-must-not-be-able-to-delete-a-decision-teststest_absence_corroborationpy-teststest_release_notespy-2026-09-18">§181 — a new firmware line must not be able to delete a decision (<code>tests/test_absence_corroboration.py</code>, <code>tests/test_release_notes.py</code>, 2026-09-18)</h2>
+<h2 id="181--a-new-firmware-line-must-not-be-able-to-delete-a-decision-teststest_absence_corroborationpy-teststest_release_notespy-2026-09-18">§181 — a new firmware line must not be able to delete a decision (<code>tests/test_absence_corroboration.py</code>, <code>tests/test_release_notes.py</code>, 2026-09-18)</h2>
 <p><strong>The ask.</strong> <em>"all of this has to be compatible with every version. for example,
 if an 8.1 comes out, the difference should be visible."</em></p>
 <p><strong>Measured before writing anything.</strong> A simulated <code>8.1</code> line was injected into
@@ -14946,7 +14946,7 @@ before and after. 240 targeted tests RC=0 (<code>test_absence_corroboration</cod
 render against the real database for all three scenarios: today (no banner),
 8.1 appended (200, comparison renders), 7.8 inserted (banner naming the five
 real decided rows).</p>
-<h2 id="182-a-stage-that-could-only-be-finished-by-leaving-the-page-it-was-on-teststest_upgrade_flowpy-2026-09-19">§182 — a stage that could only be finished by leaving the page it was on (<code>tests/test_upgrade_flow.py</code>, 2026-09-19)</h2>
+<h2 id="182--a-stage-that-could-only-be-finished-by-leaving-the-page-it-was-on-teststest_upgrade_flowpy-2026-09-19">§182 — a stage that could only be finished by leaving the page it was on (<code>tests/test_upgrade_flow.py</code>, 2026-09-19)</h2>
 <p><strong>What was wrong.</strong> Stage 2 of the upgrade flow posted at
 <code>change_requests.new</code>. On success that route redirects to the new change's own
 page and on refusal to an empty <code>change_requests.new</code> — correct for the
@@ -15014,7 +15014,7 @@ of them. A mutation that was never applied is not a guard that held. 83 targeted
 the modules edited). Live render against the real database of a1: the form
 posting to the flow, a citation of a real change, and four refusals coming
 back with the card intact — none of which created a row.</p>
-<h2 id="183-a-stage-that-showed-the-change-but-could-not-drive-it-teststest_upgrade_flowpy-teststest_cr_editpy-2026-09-19">§183 — a stage that showed the change but could not drive it (<code>tests/test_upgrade_flow.py</code>, <code>tests/test_cr_edit.py</code>, 2026-09-19)</h2>
+<h2 id="183--a-stage-that-showed-the-change-but-could-not-drive-it-teststest_upgrade_flowpy-teststest_cr_editpy-2026-09-19">§183 — a stage that showed the change but could not drive it (<code>tests/test_upgrade_flow.py</code>, <code>tests/test_cr_edit.py</code>, 2026-09-19)</h2>
 <p><strong>The defect.</strong> The previous round stopped stage 2 of the upgrade flow from
 throwing the operator out on submit, and cited the raised change with a link.
 Nine blocks make up a change request; stage 2 had <strong>one</strong> — the form. Approving
@@ -15118,7 +15118,7 @@ agree in the browser, not only in the guards: the block count on
 <code>/web/change-requests/&lt;id&gt;</code> and on <code>/web/upgrade-flow/?cr=&lt;id&gt;</code> must be equal,
 and <code>grep -c 'name="back" value="upgrade_flow"'</code> must be <strong>0</strong> on the first and
 <strong>≥4</strong> on the second.</p>
-<h3 id="183b-stage-2-is-the-change-request-picker-waves-folded-in-2026-09-19">§183b — stage 2 IS the change request (picker + waves folded in, 2026-09-19)</h3>
+<h3 id="183b--stage-2-is-the-change-request-picker--waves-folded-in-2026-09-19">§183b — stage 2 IS the change request (picker + waves folded in, 2026-09-19)</h3>
 <p>Reported as <em>"no has cambiado nada"</em>, twice, and both times correctly: the
 blocks rendered only for <code>?cr=&lt;id&gt;</code>, and nothing on the page ever produced that
 link, so the stage read as a bare form to anyone who had not just pressed its
@@ -15148,7 +15148,7 @@ element and every visible field bound back by <code>form="uf-waves"</code>.</p>
 <li><code>bi-pencil-square</code> is NOT a usable marker for the Edit button in a
   whole-page assertion: the nav uses the same icon (Custom Signature).</li>
 </ul>
-<h2 id="184-a-netbox-id-is-only-half-an-address-teststest_netbox_clientpy-2026-09-21">§184 — a NetBox id is only half an address (<code>tests/test_netbox_client.py</code>, 2026-09-21)</h2>
+<h2 id="184--a-netbox-id-is-only-half-an-address-teststest_netbox_clientpy-2026-09-21">§184 — a NetBox id is only half an address (<code>tests/test_netbox_client.py</code>, 2026-09-21)</h2>
 <p><strong>The report.</strong> An operator added <code>{device}</code> to NetBox and the <em>Open
 maintenance window in NetBox</em> button stayed disabled.</p>
 <p><strong>What was measured, before anything was written.</strong> The NetBox at
@@ -15194,7 +15194,7 @@ returns three values, and two refusal messages name both object kinds. One is a
 source guard: no write path may address a device through an f-string again.</p>
 <p><strong>Still true and still required:</strong> a name that exists in neither collection is
 still refused, and a case-only difference is still a different object.</p>
-<h2 id="185-a-pre-flight-that-did-not-say-what-it-was-a-pre-flight-for-teststest_upgrade_flow_target_versionpy-2026-09-21">§185 — a pre-flight that did not say what it was a pre-flight FOR (<code>tests/test_upgrade_flow_target_version.py</code>, 2026-09-21)</h2>
+<h2 id="185--a-pre-flight-that-did-not-say-what-it-was-a-pre-flight-for-teststest_upgrade_flow_target_versionpy-2026-09-21">§185 — a pre-flight that did not say what it was a pre-flight FOR (<code>tests/test_upgrade_flow_target_version.py</code>, 2026-09-21)</h2>
 <p><code>UpgradePrep</code> recorded <code>firmware</code> — the version the appliance was <strong>running</strong>.
 Nothing recorded where it was <strong>going</strong>. The bulk upgrade flow therefore asked
 every question about a maintenance window except the one that defines it, and
@@ -15353,7 +15353,7 @@ the select's filter (<code>forward_only</code>), the sweep's per-appliance skip
 <p>19 guards, appended to <code>tests/test_upgrade_flow_target_version.py</code>. Verified
 live against the production database: <code>{device}</code> ticked alone towards 8.0.5
 is refused by name, with the reason, and <code>UpgradePrep.count()</code> stays at 2.</p>
-<h2 id="188-a-configuration-is-checked-against-the-api-of-the-build-it-lands-on">188 — A configuration is checked against the API of the build it lands on</h2>
+<h2 id="188--a-configuration-is-checked-against-the-api-of-the-build-it-lands-on">188 — A configuration is checked against the API of the build it lands on</h2>
 <p><strong>The defect class.</strong> A FortiWeb cmdb POST carrying a field the target build
 does not understand answers <strong>200 and discards it</strong>. Nothing raises, nothing
 logs, and the copy looks complete in the destination GUI. Until this round
@@ -15397,7 +15397,7 @@ union of schema and sweep origins — is now read by both <code>_answer</code> a
 survive, 0 void</strong>, control green before and after, harness run on a COPY of
 the tree (<code>/tmp/vcmut</code>) because the shared checkout carries ~45 files from
 other sessions.</p>
-<h2 id="189-a-test-that-leaves-a-flask-context-open-fails-itself-not-a-victim-testsconftestpy-teststest_context_leak_guardpy-2026-09-23">§189 — a test that leaves a Flask context open fails ITSELF, not a victim (<code>tests/conftest.py</code>, <code>tests/test_context_leak_guard.py</code>, 2026-09-23)</h2>
+<h2 id="189--a-test-that-leaves-a-flask-context-open-fails-itself-not-a-victim-testsconftestpy-teststest_context_leak_guardpy-2026-09-23">§189 — a test that leaves a Flask context open fails ITSELF, not a victim (<code>tests/conftest.py</code>, <code>tests/test_context_leak_guard.py</code>, 2026-09-23)</h2>
 <p><strong>The defect.</strong> pytest runs every test in one thread and one contextvars
 context, so a <code>ctx.push()</code> without its <code>pop()</code> does not end with the test that
 made it: every later test in the run executes inside that context. Release run
@@ -15428,7 +15428,7 @@ module-scoped context. <strong>5 mutations, 5 bite, 0 survive, 0 void</strong>, 
 green before and after, run on a copy of the tree. The one that matters most:
 removing the local pop from <code>test_cert_share_freshness</code> now fails <strong>that</strong>
 file (ERROR at teardown), and <code>test_probe_thread_context</code> stays green.</p>
-<h2 id="190-a-form-split-that-kept-every-field-and-lost-three-behaviours-teststest_upgrade_flowpy-teststest_upgrade_flow_wordingpy-2026-09-22">§190 — a form split that kept every field and lost three behaviours (<code>tests/test_upgrade_flow.py</code>, <code>tests/test_upgrade_flow_wording.py</code>, 2026-09-22)</h2>
+<h2 id="190--a-form-split-that-kept-every-field-and-lost-three-behaviours-teststest_upgrade_flowpy-teststest_upgrade_flow_wordingpy-2026-09-22">§190 — a form split that kept every field and lost three behaviours (<code>tests/test_upgrade_flow.py</code>, <code>tests/test_upgrade_flow_wording.py</code>, 2026-09-22)</h2>
 <p><strong>The defect.</strong> <code>52a9bb2</code> moved the new-change form into
 <code>change_requests/_new_form.html</code>, which the stand-alone page and stage 2 of the
 upgrade flow both include. Every field survived the move. Three behaviours did
@@ -15489,7 +15489,7 @@ where Create draft redirects.</p>
 <p><strong>Verified 2026-09-22</strong> (as recorded in <code>8bdbffe</code>): 84/84 in
 <code>test_upgrade_flow.py</code> + <code>test_upgrade_flow_wording.py</code>, 5 mutations, 5 bite,
 and a live render against the production database.</p>
-<h2 id="191-two-guards-that-could-not-both-be-green-and-guards-reading-a-file-nobody-renders-teststest_discovery_runpy-teststest_cr_draft_prefillpy-teststest_lang_preferencepy-teststest_cr_timezone_evidencepy-2026-09-23">§191 — two guards that could not both be green, and guards reading a file nobody renders (<code>tests/test_discovery_run.py</code>, <code>tests/test_cr_draft_prefill.py</code>, <code>tests/test_lang_preference.py</code>, <code>tests/test_cr_timezone_evidence.py</code>, 2026-09-23)</h2>
+<h2 id="191--two-guards-that-could-not-both-be-green-and-guards-reading-a-file-nobody-renders-teststest_discovery_runpy-teststest_cr_draft_prefillpy-teststest_lang_preferencepy-teststest_cr_timezone_evidencepy-2026-09-23">§191 — two guards that could not both be green, and guards reading a file nobody renders (<code>tests/test_discovery_run.py</code>, <code>tests/test_cr_draft_prefill.py</code>, <code>tests/test_lang_preference.py</code>, <code>tests/test_cr_timezone_evidence.py</code>, 2026-09-23)</h2>
 <p>Found by release run 28, which failed on 18 reds in 10 files. Two of the
 causes were guards, not product.</p>
 <p><strong>Two guards, one contradiction.</strong> <code>test_adc_write_invalidates_the_menu_cache_too</code>

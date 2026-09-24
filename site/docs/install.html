@@ -63,13 +63,13 @@
       <a href="#1-requirements">1. Requirements</a>
       <a href="#2-ways-to-install">2. Ways to install</a>
       <a href="#3-what-the-installer-asks-in-this-order">3. What the installer asks (in this order)</a>
-      <a href="#4-cluster-mode-how-joining-works">4. Cluster mode — how joining works</a>
+      <a href="#4-cluster-mode--how-joining-works">4. Cluster mode — how joining works</a>
       <a href="#5-permissions-to-request-from-the-systems-team">5. Permissions to request from the systems team</a>
       <a href="#6-after-installing">6. After installing</a>
       <a href="#7-support">7. Support</a>
     </aside>
     <div class="doc-body mdx">
-<h1 id="satom-installation-manual">SATOM — Installation manual</h1>
+<h1 id="satom--installation-manual">SATOM — Installation manual</h1>
 <p><strong>Product:</strong> SATOM (System Automation &amp; Task Orchestration Manager) — web console for
 managing and automating FortiWeb, FortiADC and FortiAnalyzer.
 <strong>Manual version:</strong> 1.2 · <strong>Target:</strong> Debian 12 (bookworm) amd64 as the reference;
@@ -189,7 +189,7 @@ checkpoint it cannot defer, and a bundle build needs before it prunes.</p>
 <p>Check the machine <strong>without installing anything</strong> with
 <code>sudo bash install-satom.sh --preflight</code> (see §1.6).</p>
 </blockquote>
-<h3 id="13-network-ports">1.3 Network / ports</h3>
+<h3 id="13-network--ports">1.3 Network / ports</h3>
 <table>
 <thead>
 <tr>
@@ -416,7 +416,7 @@ to force a private group on every family.</p>
 <code>127.0.0.1/32</code> (Debian uses <code>scram-sha-256</code>). The installer inserts its own rule
 <strong>at the top</strong> of the file — <code>pg_hba</code> is <em>first-match</em>, so appending it at the
 end would achieve nothing.</p>
-<h3 id="16-checking-beforehand-without-installing-anything-preflight">1.6 Checking beforehand without installing anything (<code>--preflight</code>)</h3>
+<h3 id="16-checking-beforehand-without-installing-anything---preflight">1.6 Checking beforehand without installing anything (<code>--preflight</code>)</h3>
 <pre><code class="language-bash">sudo bash install-satom.sh --preflight     # alias: --check
 </code></pre>
 <p>It asks nothing, modifies nothing and <strong>returns 0 if the machine is ready</strong>, or
@@ -701,7 +701,7 @@ configuration+services → health check.</p>
   repository's before touching it.</li>
 </ul>
 <hr>
-<h2 id="4-cluster-mode-how-joining-works">4. Cluster mode — how joining works</h2>
+<h2 id="4-cluster-mode--how-joining-works">4. Cluster mode — how joining works</h2>
 <ol>
 <li>Install the <strong>primary</strong> (<code>cluster</code> → <code>primary</code>). At the end it prints the
    <strong>JOIN KEY</strong> (<code>SATOMJOIN1.</code> + a base64 blob). The legacy <code>OFMJOIN1.</code> prefix
@@ -767,7 +767,7 @@ IP.</p>
 <p><strong>Option A (recommended): a named installer account with a <code>sudoers</code> rule.</strong>
 The root password is handed to nobody and there is a trace of who installed and
 when. The file lives in the repository
-(<a href="../deploy/satom-installer.sudoers"><code>deploy/satom-installer.sudoers</code></a>) and the
+(<a href="https://github.com/visionebc/SATOM/blob/main/deploy/satom-installer.sudoers"><code>deploy/satom-installer.sudoers</code></a>) and the
 installer itself emits it, so it can be handed to the systems team without
 sending them the whole repository:</p>
 <pre><code class="language-bash">bash install-satom.sh --print-sudoers            # default user: satominstall
@@ -852,7 +852,7 @@ Summary:</p>
 standby first</strong>:</p>
 <pre><code class="language-bash">sudo bash /opt/satom/deploy/migrate-deprivilege.sh
 </code></pre>
-<h3 id="the-operator-account-the-console-cli-satom">The OPERATOR account — the console CLI (<code>satom</code>)</h3>
+<h3 id="the-operator-account--the-console-cli-satom">The OPERATOR account — the console CLI (<code>satom</code>)</h3>
 <p>SATOM installs <code>/usr/local/sbin/satom</code>, a console CLI to diagnose, control and
 <strong>rebuild</strong> the node when the web interface will not start (full reference in
 <a href="cli.html"><code>cli.md</code></a>). This is the system's third account and it has to be
@@ -1041,7 +1041,7 @@ unit that published nothing.</p>
 </blockquote>
 <p>How to verify they ended up armed, command by command:
 <a href="safeguards.html"><code>safeguards.md</code></a> § <em>Verifying the guards are armed</em>.</p>
-<h3 id="uninstall-revert">Uninstall / revert</h3>
+<h3 id="uninstall--revert">Uninstall / revert</h3>
 <pre><code class="language-bash">systemctl disable --now satom satom-scheduler \
   satom-updater.path satom-cert-renew.timer satom-ha-datasync.timer 2&gt;/dev/null
 rm -f /etc/systemd/system/satom* /etc/systemd/system/fm-*

@@ -63,15 +63,15 @@
       <a href="#1-two-paths-and-why-the-model-is-not-in-the-middle">1. Two paths, and why the model is not in the middle</a>
       <a href="#2-flow-diagrams">2. Flow diagrams</a>
       <a href="#3-correlation">3. Correlation</a>
-      <a href="#4-behavioural-baseline-median-and-mad-per-hour-of-week">4. Behavioural baseline — median and MAD, per hour of week</a>
+      <a href="#4-behavioural-baseline--median-and-mad-per-hour-of-week">4. Behavioural baseline — median and MAD, per hour of week</a>
       <a href="#5-http-outcomes">5. HTTP outcomes</a>
       <a href="#6-vulnerability-intelligence">6. Vulnerability intelligence</a>
       <a href="#7-scoring">7. Scoring</a>
       <a href="#8-incidents">8. Incidents</a>
       <a href="#9-response">9. Response</a>
-      <a href="#9b-operating-modes-four-names-over-the-same-knobs">9b. Operating modes — four names over the same knobs</a>
-      <a href="#9c-border-corroboration-the-layer-the-waf-cannot-supply">9c. Border corroboration — the layer the WAF cannot supply</a>
-      <a href="#9d-the-border-blocklist-a-list-satom-publishes-never-a-write-it-performs">9d. The border blocklist — a list SATOM publishes, never a write it performs</a>
+      <a href="#9b-operating-modes--four-names-over-the-same-knobs">9b. Operating modes — four names over the same knobs</a>
+      <a href="#9c-border-corroboration--the-layer-the-waf-cannot-supply">9c. Border corroboration — the layer the WAF cannot supply</a>
+      <a href="#9d-the-border-blocklist--a-list-satom-publishes-never-a-write-it-performs">9d. The border blocklist — a list SATOM publishes, never a write it performs</a>
       <a href="#10-the-ai-wall">10. The AI wall</a>
       <a href="#11-data-model">11. Data model</a>
       <a href="#12-collection">12. Collection</a>
@@ -79,7 +79,7 @@
       <a href="#14-verification">14. Verification</a>
     </aside>
     <div class="doc-body mdx">
-<h1 id="satom-sentinel-security-correlation-and-autonomous-response">SATOM Sentinel — security correlation and autonomous response</h1>
+<h1 id="satom-sentinel--security-correlation-and-autonomous-response">SATOM Sentinel — security correlation and autonomous response</h1>
 <p>Sentinel answers a question the rest of SATOM cannot: <strong>what is actually
 happening right now, across every layer at once?</strong> It correlates attack
 signatures, HTTP outcomes, appliance internals, the VM the appliance runs in,
@@ -163,7 +163,7 @@ person reading the picture is the one who finds out.</p>
    │ that writes enforcement              │
    └──────────────────────────────────────┘
 </code></pre>
-<h3 id="22-processing-one-attack-log-row-to-one-proposal">2.2 Processing — one attack-log row to one proposal</h3>
+<h3 id="22-processing--one-attack-log-row-to-one-proposal">2.2 Processing — one attack-log row to one proposal</h3>
 <pre><code>COLLECT ─► NORMALIZE ─► ENRICH ─► STORE ─► CORRELATE ─► BASELINE ─► SCORE
   rows      one shape    trust     event    5 layers     vs median   0…100
                          window             T-60s…T+5m   and MAD
@@ -177,7 +177,7 @@ person reading the picture is the one who finds out.</p>
 </code></pre>
 <p>A layer that could not be measured stays <strong><code>unknown</code></strong>. It never becomes
 "no impact": on a page the two look identical and they mean opposite things.</p>
-<h3 id="23-decision-the-gate-chain">2.3 Decision — the gate chain</h3>
+<h3 id="23-decision--the-gate-chain">2.3 Decision — the gate chain</h3>
 <pre><code>                    proposed action + live incident
                                   │
    1 catalog ─────────────────────┼──► refuse: no blast radius, no ceiling, no undo
@@ -245,7 +245,7 @@ drive opposite operator decisions, and collapsing them is precisely how a
 saturated hypervisor reads as a quiet one. <code>None</code> survives from the correlator
 through the score into the incident's impact flags and onto the page.</p>
 <hr>
-<h2 id="4-behavioural-baseline-median-and-mad-per-hour-of-week">4. Behavioural baseline — median and MAD, per hour of week</h2>
+<h2 id="4-behavioural-baseline--median-and-mad-per-hour-of-week">4. Behavioural baseline — median and MAD, per hour of week</h2>
 <p>A security baseline is trained on data that <em>contains attacks</em>. With mean plus
 standard deviation, one 8,500 req/s flood raises the centre and inflates the
 spread, so the <strong>next identical flood scores as less anomalous than the first</strong>
@@ -315,7 +315,7 @@ each attack request, and the two outcomes are opposites:</p>
 <p>A design that only counts attack events treats the third and fourth rows
 identically. Telling them apart is what lets one evaded request outrank a wall
 of successfully-blocked noise.</p>
-<h3 id="where-the-data-comes-from-measured-not-assumed">Where the data comes from — measured, not assumed</h3>
+<h3 id="where-the-data-comes-from--measured-not-assumed">Where the data comes from — measured, not assumed</h3>
 <p>The obvious source, <code>policy_status</code>, was probed live against <strong>{device}
 (7.6.8) on 2026-08-20</strong> and carries <strong>no</strong> response-class counters. Its full
 field set is:</p>
@@ -635,7 +635,7 @@ every three minutes; without deduplication on the live statuses, an incident
 open for an hour would accumulate twenty identical proposals — harmless while
 nothing executed, twenty firewall writes for one decision once something does.</p>
 <hr>
-<h2 id="9b-operating-modes-four-names-over-the-same-knobs">9b. Operating modes — four names over the same knobs</h2>
+<h2 id="9b-operating-modes--four-names-over-the-same-knobs">9b. Operating modes — four names over the same knobs</h2>
 <p>The operator asked for named postures: <em>alert only</em>, <em>alert and block</em>, <em>high</em>,
 <em>ultra high</em>. What was built is a <strong>preset</strong>, and the distance between those
 two words is the whole design.</p>
@@ -721,7 +721,7 @@ that reaches one. The containment against an over-eager mode is not the mode:
 it is the never-block list, the per-action TTL, the device-side block period
 and the fact that an unverified mechanism executes nothing at all.</p>
 <hr>
-<h2 id="9c-border-corroboration-the-layer-the-waf-cannot-supply">9c. Border corroboration — the layer the WAF cannot supply</h2>
+<h2 id="9c-border-corroboration--the-layer-the-waf-cannot-supply">9c. Border corroboration — the layer the WAF cannot supply</h2>
 <p>The question this layer answers is not "was this bad?" but "<strong>is this address
 a real peer?</strong>", and the WAF structurally cannot answer it.</p>
 <p>FortiWeb reports the source of an attack. Which source depends on whether the
@@ -821,7 +821,7 @@ fleet — so it ships as a specification and the console says so, exactly as
 <strong>read-only</strong>: a guard asserts no <code>set</code> / <code>update</code> / <code>delete</code>, and that the
 one <code>add</code> (FortiAnalyzer's verb for <em>create a search task</em>) targets only
 <code>logsearch</code>.</p>
-<h2 id="9d-the-border-blocklist-a-list-satom-publishes-never-a-write-it-performs">9d. The border blocklist — a list SATOM publishes, never a write it performs</h2>
+<h2 id="9d-the-border-blocklist--a-list-satom-publishes-never-a-write-it-performs">9d. The border blocklist — a list SATOM publishes, never a write it performs</h2>
 <p>The corroboration above answers <em>may this address be listed?</em> This section is
 what happens after the answer is yes.</p>
 <p>SATOM has <strong>no FortiGate client and gets none.</strong> The border is told what to

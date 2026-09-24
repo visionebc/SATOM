@@ -63,13 +63,13 @@
       <a href="#1-getting-a-token">1. Getting a token</a>
       <a href="#2-authentication">2. Authentication</a>
       <a href="#3-endpoints">3. Endpoints</a>
-      <a href="#4-a-complete-example-drain-restore-a-backend">4. A complete example — drain / restore a backend</a>
+      <a href="#4-a-complete-example--drain--restore-a-backend">4. A complete example — drain / restore a backend</a>
       <a href="#5-errors">5. Errors</a>
-      <a href="#6-waf-carve-outs-apiv1waf-fortiweb">6. WAF carve-outs — /api/v1/waf/* (FortiWeb)</a>
-      <a href="#7-fortiadc-rules-apiv1adc">7. FortiADC rules — /api/v1/adc/*</a>
+      <a href="#6-waf-carve-outs--apiv1waf-fortiweb">6. WAF carve-outs — /api/v1/waf/* (FortiWeb)</a>
+      <a href="#7-fortiadc-rules--apiv1adc">7. FortiADC rules — /api/v1/adc/*</a>
     </aside>
     <div class="doc-body mdx">
-<h1 id="api-v1-integration-manual">API v1 — Integration Manual</h1>
+<h1 id="api-v1--integration-manual">API v1 — Integration Manual</h1>
 <p>The <strong>SATOM</strong> exposes a small, versioned, <strong>token-authenticated</strong>
 HTTP API at <code>/api/v1</code> for third-party integrations and automation.</p>
 <ul>
@@ -281,7 +281,7 @@ The API never issues an HTML login redirect — you always get JSON.</p>
   &quot;product&quot;: &quot;fortiweb&quot;
 }
 </code></pre>
-<h3 id="get-appliances-get-appliancesid"><code>GET /appliances</code> / <code>GET /appliances/&lt;id&gt;</code></h3>
+<h3 id="get-appliances--get-appliancesid"><code>GET /appliances</code> / <code>GET /appliances/&lt;id&gt;</code></h3>
 <p>Returns the devices the token's owner may see. Each device:</p>
 <pre><code class="language-json">{
   &quot;id&quot;: 6,
@@ -393,7 +393,7 @@ through the API.</p>
 }
 </code></pre>
 <hr>
-<h2 id="4-a-complete-example-drain-restore-a-backend">4. A complete example — drain / restore a backend</h2>
+<h2 id="4-a-complete-example--drain--restore-a-backend">4. A complete example — drain / restore a backend</h2>
 <p>The API cannot <em>re-point</em> a backend to a new IP; what it can do is
 <strong>enable / disable</strong> a pool member (drain or restore it). The recipe:</p>
 <ol>
@@ -491,7 +491,7 @@ curl -s -H &quot;Authorization: Bearer $TOKEN&quot; $BASE/actions/runs/99 | jq
 and so is every <em>refusal</em> of an object write: the denial reason is recorded
 against your token.</p>
 <hr>
-<h2 id="6-waf-carve-outs-apiv1waf-fortiweb">6. WAF carve-outs — <code>/api/v1/waf/*</code> (FortiWeb)</h2>
+<h2 id="6-waf-carve-outs--apiv1waf-fortiweb">6. WAF carve-outs — <code>/api/v1/waf/*</code> (FortiWeb)</h2>
 <p>File an exception on the Web Protection Profile in front of your application.</p>
 <p>This is <strong>not</strong> a proxy to the FortiWeb configuration database. The type you may
 author comes from a curated catalog, and only the <em>exception</em> half of it —
@@ -551,7 +551,7 @@ appliance and the response says so.</p>
 refused when the Web Protection Profile you named is bound to a policy outside
 your scope: a profile is usually shared, so the exception would apply to every
 application on it. Ask an operator for a dedicated profile (clone + rebind).</p>
-<h2 id="7-fortiadc-rules-apiv1adc">7. FortiADC rules — <code>/api/v1/adc/*</code></h2>
+<h2 id="7-fortiadc-rules--apiv1adc">7. FortiADC rules — <code>/api/v1/adc/*</code></h2>
 <p>Same capability model (<code>adc_rule_draft</code> / <code>adc_rule_apply</code>), same curated
 allow-list (<code>GET /adc/rule-types</code>), one honest difference: FortiADC writes go
 straight to the appliance because there is no desired-state store for it. So:</p>

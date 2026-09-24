@@ -64,8 +64,8 @@
       </a>
       <a class="rel-nav-item" href="v2.1.3.html" data-rel-version="2.1.3">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 2.1.3</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
-        <span class="rel-nav-meta">2026-09-24 · Changed — the installers speak English (2026-09-24) · 2 entries</span>
-        <ul class="rel-leads"><li class="rel-more">… and 2 more</li></ul>
+        <span class="rel-nav-meta">2026-09-24 · Changed — the installers speak English (2026-09-24) · 6 entries</span>
+        <ul class="rel-leads"><li>Table-of-contents anchors</li><li>Release pages</li><li>Repository files</li><li class="rel-more">… and 3 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v2.1.2.html" data-rel-version="2.1.2">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 2.1.2</span></span>
@@ -280,12 +280,12 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
-<h3 id="fixed-the-cli-capture-skipped-badge-on-the-discovery-card-had-no-style-2026-09-23">Fixed — the "CLI capture skipped" badge on the discovery card had no style (2026-09-23)</h3>
+<h3 id="fixed--the-cli-capture-skipped-badge-on-the-discovery-card-had-no-style-2026-09-23">Fixed — the "CLI capture skipped" badge on the discovery card had no style (2026-09-23)</h3>
 <p>The discovery run marked a skipped CLI capture with <code>fw-badge-neutral</code>, a class
 the stylesheet never defined, so the note rendered as bare text with no badge
 around it. It now uses the grey <code>fw-badge-secondary</code> every other neutral state
 on the card uses.</p>
-<h3 id="fixed-the-upgrade-flows-stage-2-posts-to-the-flow-again-and-a-refused-change-keeps-what-was-typed-2026-09-22">Fixed — the upgrade flow's stage 2 posts to the flow again, and a refused change keeps what was typed (2026-09-22)</h3>
+<h3 id="fixed--the-upgrade-flows-stage-2-posts-to-the-flow-again-and-a-refused-change-keeps-what-was-typed-2026-09-22">Fixed — the upgrade flow's stage 2 posts to the flow again, and a refused change keeps what was typed (2026-09-22)</h3>
 <p>The new-change form was split into a partial shared by
 <strong>Change requests → New</strong> and stage 2 of the <strong>Upgrade flow</strong>. Embedded in the
 flow it posted to the stand-alone handler and rendered every field empty, so:</p>
@@ -303,7 +303,7 @@ flow posts to its own handler again, a refusal re-renders with the operator's
 text and the per-field <em>auto</em> marks intact, and the waves block is back inside
 stage 2. Stage 3 still opens only for the change the page was asked for
 (<code>?cr=</code>), so lifecycle buttons never sit over a change nobody named.</p>
-<h3 id="changed-evidence-is-indexed-by-firmware-build-and-three-pages-stopped-answering-about-a-firmware-nobody-chose-2026-09-16">Changed — evidence is indexed by firmware BUILD, and three pages stopped answering about a firmware nobody chose (2026-09-16)</h3>
+<h3 id="changed--evidence-is-indexed-by-firmware-build-and-three-pages-stopped-answering-about-a-firmware-nobody-chose-2026-09-16">Changed — evidence is indexed by firmware BUILD, and three pages stopped answering about a firmware nobody chose (2026-09-16)</h3>
 <p>Asked for as <em>"it's not worth having it there because we won't know by version
 what it is… better to pin it to the versions we have"</em>, and then, precisely:
 <em>"within one and the same version 8.0 there can be an 8.0.4 and an 8.0.7, and
@@ -383,7 +383,7 @@ endpoints swept on each, <strong>287</strong> served on 7.6.8 and <strong>290</s
 FortiWeb line on this fleet is homogeneous <em>today</em>, so the false positive was
 not currently firing — the mechanism is what is fixed, and the guards are what
 prove it, because production data cannot.</p>
-<h3 id="fixed-nothing-on-the-discovery-card-is-a-synchronous-request-any-more-and-no-running-outlives-its-worker-2026-09-15">Fixed — nothing on the discovery card is a synchronous request any more, and no "running" outlives its worker (2026-09-15)</h3>
+<h3 id="fixed--nothing-on-the-discovery-card-is-a-synchronous-request-any-more-and-no-running-outlives-its-worker-2026-09-15">Fixed — nothing on the discovery card is a synchronous request any more, and no "running" outlives its worker (2026-09-15)</h3>
 <p>Asked for as <em>"when it is created and run, how does the user know it is
 running? … a job should be created and the user told when that job
 finishes"</em>, then <em>"fix it so it stays fixed"</em>.</p>
@@ -455,7 +455,7 @@ moment the snapshot <strong>observed</strong> it — not with "now", because an 
 dated later than its observation is a lie about freshness — and a snapshot with
 no readable time leaves the previous attestation alone rather than inventing
 one.</p>
-<h3 id="fixed-one-appliance-for-the-discovery-run-and-the-firmware-it-is-running-2026-09-15">Fixed — one appliance for the discovery run, and the firmware it is running (2026-09-15)</h3>
+<h3 id="fixed--one-appliance-for-the-discovery-run-and-the-firmware-it-is-running-2026-09-15">Fixed — one appliance for the discovery run, and the firmware it is running (2026-09-15)</h3>
 <p>Asked for as <em>"isn't it redundant? … selecting a fortiweb again further down
 makes no sense"</em>, then <em>"make sure it automatically detects the version of the
 fortiweb or fortidevice and saves the version"</em>.</p>
@@ -511,7 +511,7 @@ assertions</strong>: two key-name checks satisfied by the <em>other</em> occurre
 same word (the audit row also spells <code>evidence_line</code>) — the tenth
 assert-by-substring in this repo — and an <code>askId()</code> guard that accepted the
 override being declared and then ignored.</p>
-<h3 id="fixed-the-discovery-run-is-the-first-card-and-its-buttons-actually-run-2026-09-15">Fixed — the discovery run is the FIRST card, and its buttons actually run (2026-09-15)</h3>
+<h3 id="fixed--the-discovery-run-is-the-first-card-and-its-buttons-actually-run-2026-09-15">Fixed — the discovery run is the FIRST card, and its buttons actually run (2026-09-15)</h3>
 <p>Asked for as <em>"put it at the very top"</em>, after <em>"where did you put the button?"</em>.</p>
 <p><strong>Position was the request; the defect found while moving it is the bigger
 half.</strong> The app-wide CSP (<code>app/__init__.py</code> <code>after_request</code>) sends
@@ -550,7 +550,7 @@ included once per hub. Guards assert the include statement appears exactly once
 per hub, that no hub copies <code>id="discoveryRun"</code> (a second mount would duplicate
 the DOM ids the JS binds to and break it silently), and that the ordering
 relative to <code>_cli_coverage.html</code> is first-where-it-acts / last-where-it-cannot.</p>
-<h3 id="added-the-catalog-can-finally-grow-from-what-a-device-serves-2026-09-15">Added — The catalog can finally GROW from what a device serves (2026-09-15)</h3>
+<h3 id="added--the-catalog-can-finally-grow-from-what-a-device-serves-2026-09-15">Added — The catalog can finally GROW from what a device serves (2026-09-15)</h3>
 <p>Asked for as <em>"so where, in the end, is the button or function that generates
 that <code>/api-explorer/</code> library?"</em>, then <em>"yes, do it, and it has to load both the
 api and the cli"</em>.</p>
@@ -591,7 +591,7 @@ reason returned</strong> when the user lacks the vault permission.</p>
 <p><strong>Registration re-asks the device inside the same request.</strong> A checkbox list is
 replayable and a name may have been edited between the run and the submit; the
 browser is not the authority on what exists.</p>
-<h3 id="added-one-catalog-writer-2026-09-15">Added — One catalog writer (2026-09-15)</h3>
+<h3 id="added--one-catalog-writer-2026-09-15">Added — One catalog writer (2026-09-15)</h3>
 <p><code>services/registry_write.py</code> is now the only code that writes a
 <code>RegistryEndpoint</code> row. There were two — <code>registry.save</code> and
 <code>adc_api.registry_save</code> — and they had <strong>already drifted</strong>: the FortiADC one
@@ -603,7 +603,7 @@ would have been a third copy.</p>
 forget: FortiADC has a <strong>second</strong> cache (<code>adc_menu</code>) and invalidating only the
 loader leaves a freshly registered endpoint present in the catalog and invisible
 in the menu — which reads as a failed write.</p>
-<h3 id="added-the-cli-only-elements-now-appear-in-webstructure-2026-09-15">Added — The CLI-only elements now appear in <code>/web/structure/</code> (2026-09-15)</h3>
+<h3 id="added--the-cli-only-elements-now-appear-in-webstructure-2026-09-15">Added — The CLI-only elements now appear in <code>/web/structure/</code> (2026-09-15)</h3>
 <p>Asked for as <em>"what I need is for the spo elements too … from the
 cli that don't appear in the structure to appear"</em>.</p>
 <p>The dependency tree was captured by walking REST, so anything REST never names
@@ -626,7 +626,7 @@ a path the appliance serves (discovery run), then declare its parent field in
 the structure overlay. The snippet leaves <code>via</code> <strong>blank on purpose</strong> — only
 someone who has read the parent's schema knows it, and a plausible guess would
 produce a tree that looks complete and a clone the appliance rejects.</p>
-<h3 id="added-search-and-test-on-all-three-endpoint-listings-2026-09-15">Added — Search and test on all three endpoint listings (2026-09-15)</h3>
+<h3 id="added--search-and-test-on-all-three-endpoint-listings-2026-09-15">Added — Search and test on all three endpoint listings (2026-09-15)</h3>
 <p><code>partials/_cli_probe_tools.html</code> is the single author of the filter box and the
 test buttons now carried by <code>/web/structure/</code>, <code>/web/registry/versions</code> and the
 API hubs. <strong>Two buttons, never one</strong>: "test over REST" and "test over the CLI"
@@ -635,7 +635,7 @@ finding these pages exist to show. The filter wires itself inside its own macro
 because the API hub does not mount the test bar, and a search box whose
 JavaScript lives elsewhere is a search box that silently does nothing, which
 reads as "no rows matched".</p>
-<h3 id="added-every-page-that-lists-an-endpoint-now-says-which-transport-serves-it-2026-09-15">Added — Every page that lists an endpoint now says which transport serves it (2026-09-15)</h3>
+<h3 id="added--every-page-that-lists-an-endpoint-now-says-which-transport-serves-it-2026-09-15">Added — Every page that lists an endpoint now says which transport serves it (2026-09-15)</h3>
 <p>Asked for as <em>"here it should also show which things come from the CLI and which
 come via the API"</em>, naming <code>/web/registry/versions</code>, <code>/web/api-explorer/</code> and
 <code>/web/structure/</code>.</p>
@@ -671,7 +671,7 @@ before) so that difference is visible per row.</p>
 page). FortiAnalyzer and FortiAuthenticator deliberately do not: neither has a
 config CLI to diff, and their coverage section already states that once, which
 is the right place for a fact about the whole product rather than each row.</p>
-<h3 id="added-the-sweep-can-now-capture-what-the-cli-serves-in-the-same-pass-2026-09-15">Added — The sweep can now capture what the CLI serves, in the same pass (2026-09-15)</h3>
+<h3 id="added--the-sweep-can-now-capture-what-the-cli-serves-in-the-same-pass-2026-09-15">Added — The sweep can now capture what the CLI serves, in the same pass (2026-09-15)</h3>
 <p>Asked for as <em>"yes, do it"</em> on the one item the previous round left needing an
 explicit OK: hooking the CLI capture onto the rediscovery sweep.</p>
 <p><strong>It is hooked as a third pass, not folded inline.</strong> The sweep's own snapshot
@@ -724,7 +724,7 @@ never going to be taken.</p>
 "no dump was taken" and "a dump was attempted and lost" send the operator to
 opposite places.</p>
 <p>Guards: <code>tests/test_rediscovery_cli_capture.py</code> (§170), <code>docs/safeguards.md</code>.</p>
-<h3 id="added-what-the-cli-serves-and-the-catalog-does-not-know-coverage-on-the-api-hub-2026-09-15">Added — What the CLI serves and the catalog does not know: coverage on the API hub (2026-09-15)</h3>
+<h3 id="added--what-the-cli-serves-and-the-catalog-does-not-know-coverage-on-the-api-hub-2026-09-15">Added — What the CLI serves and the catalog does not know: coverage on the API hub (2026-09-15)</h3>
 <p>Asked for as <em>"there are elements on the fortiweb that are not in the api, and that
 only show up, for example, when you connect via ssh and run a full command…
 compare what we have via the api and what we don't, and put this in the library
@@ -859,7 +859,7 @@ to register.</p>
 host-list</code> → <code>…/allow-hosts/host-list</code>, <code>load-balance pool pool_member</code> →
 <code>/api/load_balance_pool_child_pool_member</code> — because a derivation that cannot
 reproduce the endpoints we know would not find the ones we do not.</p>
-<h3 id="added-scout-reads-the-release-notes-before-the-firmware-is-sent-2026-09-14">Added — Scout reads the release notes before the firmware is sent (2026-09-14)</h3>
+<h3 id="added--scout-reads-the-release-notes-before-the-firmware-is-sent-2026-09-14">Added — Scout reads the release notes before the firmware is sent (2026-09-14)</h3>
 <p>Asked for as <em>"when it gets upgraded it would be good for Scout, if it is
 enabled, to check whether there is any problem with the target version that
 could break things, like what we saw in version 8.0.7 — add this section to
@@ -906,7 +906,7 @@ move for Scout to review".</p>
 <code>services/release_corpus</code>. Two definitions of <em>where the JSON is</em> would fail
 silently — a loader pointed at an empty directory renders exactly like a corpus
 that had nothing to say.</p>
-<h3 id="added-a-change-request-can-be-corrected-while-it-is-still-open-2026-09-14">Added — A change request can be corrected while it is still open (2026-09-14)</h3>
+<h3 id="added--a-change-request-can-be-corrected-while-it-is-still-open-2026-09-14">Added — A change request can be corrected while it is still open (2026-09-14)</h3>
 <p>Asked for as <em>"I can't edit the change request, I should be able to"</em>,
 after CR-2026-0012 sat <strong>approved and un-runnable</strong> with <code>no maintenance window</code>.</p>
 <p><code>window_start</code> is <strong>optional when a change is raised</strong> and <strong>required before it
@@ -950,7 +950,7 @@ resolution, so a window stored with seconds — written by any other path: a
 batched wave, the API, a restore — could not be typed into it, and comparing the
 posted value verbatim reported a change on every save. Correcting a change's
 <strong>title</strong> would have voided its approval.</p>
-<h3 id="fixed-a-button-label-is-one-phrase-never-prose-2026-09-14">Fixed — A button label is one phrase, never prose (2026-09-14)</h3>
+<h3 id="fixed--a-button-label-is-one-phrase-never-prose-2026-09-14">Fixed — A button label is one phrase, never prose (2026-09-14)</h3>
 <p>Reported as <em>"the cancel button doesn't look right, it's kind of on two lines"</em>.
 Measured in a real browser: the <strong>Cancel CR</strong> button on a change request
 rendered <strong>80px wide and 73px tall — three lines</strong> — at 1600px, 1280px and
@@ -964,7 +964,7 @@ the API-explorer method chips are unaffected) and the squeeze itself in the
 markup (<code>flex:0 1 220px</code> on the input, <code>flex-shrink-0</code> on the button). Verified
 by measurement: <strong>31px, one line, no overflow, zero multi-line buttons</strong> on the
 detail page and the new editor at both widths.</p>
-<h3 id="added-maintenance-mode-as-a-verb-on-the-inventory-row-and-the-device-page-2026-09-14">Added — Maintenance mode as a verb, on the inventory row and the device page (2026-09-14)</h3>
+<h3 id="added--maintenance-mode-as-a-verb-on-the-inventory-row-and-the-device-page-2026-09-14">Added — Maintenance mode as a verb, on the inventory row and the device page (2026-09-14)</h3>
 <p>Asked for as <em>"inside the table where the devices appear I want to be able to
 put the device into maintenance from those rows, and when inside the device, on
 the line where the actions section is, to also be able to put the device into
@@ -1010,7 +1010,7 @@ class of users); leaving it does not — that direction <em>is</em> the undo.</p
 <p>Guarded by <code>tests/test_appliance_maintenance_toggle.py</code> (25 tests, safeguards
 §166), including a "one author" test that fails if either page grows its own
 copy of the form instead of importing the macro.</p>
-<h3 id="fixed-every-status-badge-read-offline-against-appliances-that-answered-2026-09-14">Fixed — Every status badge read "offline" against appliances that answered (2026-09-14)</h3>
+<h3 id="fixed--every-status-badge-read-offline-against-appliances-that-answered-2026-09-14">Fixed — Every status badge read "offline" against appliances that answered (2026-09-14)</h3>
 <p>Reported as <em>"why does SATOM mark {device} as offline?"</em>. It was not
 {device}: <strong>the whole inventory was mislabelled</strong>, and had been for ~3.5
 weeks.</p>
@@ -1067,7 +1067,7 @@ single broken writer poisoned all of them.</p>
 the live node: all three appliances <code>online</code> through the real thread pool in
 1.55 s, <code>last_checked_at</code> advancing while <code>updated_at</code> stands still in Postgres,
 and a context-less thread raising instead of answering "off".</p>
-<h3 id="added-clonemigrate-registry-with-a-hover-flag-on-the-policy-row-2026-09-14">Added — Clone/migrate registry with a hover flag on the policy row (2026-09-14)</h3>
+<h3 id="added--clonemigrate-registry-with-a-hover-flag-on-the-policy-row-2026-09-14">Added — Clone/migrate registry with a hover flag on the policy row (2026-09-14)</h3>
 <p>Asked for as <em>"when an SPO is cloned you cannot see, from inside the device,
 whether it was cloned and where it went"</em>. The dato did not exist durably, so
 the round created it before it could show it.</p>
@@ -1107,7 +1107,7 @@ kill</strong>, 0 survive, 0 void. Verified by rendering the real page in chromiu
 against a seeded cache — which is what caught the popover printing <em>failed</em>
 while swallowing the reason the row had already stored.</p>
 <p>No backfill: the flag is empty until the first clone made after this change.</p>
-<h3 id="added-scout-advisory-reads-unmarked-admonitions-and-destination-scoped-hazards-2026-09-14">Added — Scout Advisory reads unmarked admonitions and destination-scoped hazards (2026-09-14)</h3>
+<h3 id="added--scout-advisory-reads-unmarked-admonitions-and-destination-scoped-hazards-2026-09-14">Added — Scout Advisory reads unmarked admonitions and destination-scoped hazards (2026-09-14)</h3>
 <p>Reported as <em>"why doesn't the advisor show this?"</em> against FortiWeb 8.0.7's
 <em>"do not upgrade"</em>. The sentence was in the corpus, correctly harvested, and
 invisible to the rule set for <strong>two independent reasons</strong>.</p>
@@ -1142,7 +1142,7 @@ assertion in the file that does not already know what the prose looks like.</p>
 with every assertion green: a MadCap admonition titled itself <code>Note: Note :</code>
 (its own mark is the first sentence), and the span-based gate raised a blocker
 about a release the route never installs.</p>
-<h3 id="fixed-release_notesjs-was-served-without-a-cache-key-2026-09-14">Fixed — <code>release_notes.js</code> was served without a cache key (2026-09-14)</h3>
+<h3 id="fixed--release_notesjs-was-served-without-a-cache-key-2026-09-14">Fixed — <code>release_notes.js</code> was served without a cache key (2026-09-14)</h3>
 <p>Found while shipping the picker above, and it would have hidden it. The tag was
 a bare <code>url_for('static', …)</code> while <code>SEND_FILE_MAX_AGE_DEFAULT</code> is <strong>86400</strong> and
 nothing revalidates inside that window — so any browser that had loaded a page in
@@ -1152,7 +1152,7 @@ does not read as a slow rollout: the operator opens the modal, sees the previous
 build, and reports the fix as not deployed. It now uses the house <code>asset()</code>
 helper (<code>?v=&lt;mtime&gt;</code>, already on ~20 other tags). Guarded for every app-owned
 <code>js/</code> tag in <code>base.html</code>, with the vendored bundle named as the one exception.</p>
-<h3 id="changed-the-release-notes-version-picker-is-a-grid-of-release-lines-2026-09-14">Changed — the Release Notes version picker is a grid of release lines (2026-09-14)</h3>
+<h3 id="changed--the-release-notes-version-picker-is-a-grid-of-release-lines-2026-09-14">Changed — the Release Notes version picker is a grid of release lines (2026-09-14)</h3>
 <p>After <strong>Discover versions</strong>, the picker listed each major as a wrapping inline
 run inside a 200 px scroll box. Measured against the live payload — <strong>59
 versions over 5 release lines, 8 to 14 each</strong> — that is unreadable for reasons
@@ -1190,7 +1190,7 @@ of them only started biting after the guards themselves were fixed: a class-name
 assertion matched its own mutant (<code>rn-vmaj</code> is a substring of <code>rn-vmaj-gone</code>, and
 <code>\b</code> does not help — a hyphen is already a word boundary), and the markup class
 and the selector that binds it were being checked as if they were one fact.</p>
-<h3 id="removed-the-two-git-controls-in-the-release-notes-modal-2026-09-14">Removed — the two git controls in the Release Notes modal (2026-09-14)</h3>
+<h3 id="removed--the-two-git-controls-in-the-release-notes-modal-2026-09-14">Removed — the two git controls in the Release Notes modal (2026-09-14)</h3>
 <p><code>Publish to git</code> (scan panel) and <code>⤓ Sync from git</code> (modal header) are gone, and
 so is <code>POST /release-notes/sync</code>. Three defects, one removal — and only the first
 was visible:</p>
@@ -1216,7 +1216,7 @@ worker finishes a scan, or while <code>satom-ha-datasync</code> drops a fresher 
 A legacy client still posting <code>publish: true</code> is ignored rather than refused;
 failing a valid scan over a dead flag would trade a cosmetic staleness for an
 outage. Sharing between nodes is data replication, never git.</p>
-<h3 id="fixed-a-renderer-change-on-docsfortinetcom-read-as-this-version-has-no-release-notes-2026-09-13">Fixed — a renderer change on docs.fortinet.com read as "this version has no release notes" (2026-09-13)</h3>
+<h3 id="fixed--a-renderer-change-on-docsfortinetcom-read-as-this-version-has-no-release-notes-2026-09-13">Fixed — a renderer change on docs.fortinet.com read as "this version has no release notes" (2026-09-13)</h3>
 <p>Fortinet re-rendered the FortiWeb release notes between <strong>8.0.6</strong> and <strong>8.0.7</strong>:
 MadCap (<code>id="mc-main-content"</code>) became a markdown pipeline
 (<code>document-content src-md</code>). The harvester looked for the MadCap container, did
@@ -1238,7 +1238,7 @@ two-step upgrade.</p>
   recognised, so an empty table and an unreadable one are no longer one
   observation.</li>
 </ul>
-<h3 id="fixed-the-scan-ignored-the-versions-you-typed-2026-09-13">Fixed — the scan ignored the versions you typed (2026-09-13)</h3>
+<h3 id="fixed--the-scan-ignored-the-versions-you-typed-2026-09-13">Fixed — the scan ignored the versions you typed (2026-09-13)</h3>
 <p>The scan panel had a free-text <code>major.minor</code> box next to an <strong>All discovered</strong>
 checkbox. The checkbox silently won: with <code>8.0</code> in the box, the 2026-09-13 scan
 harvested all <strong>59</strong> versions and nothing said which control had decided. The box
@@ -1254,13 +1254,13 @@ matched"</em>.</p>
   itself.</li>
 <li>Discovery that returns nothing is a <strong>502</strong>, not an empty picker.</li>
 </ul>
-<h3 id="added-the-rest-of-the-upgrade-instructions-branch-is-harvested-2026-09-13">Added — the rest of the Upgrade instructions branch is harvested (2026-09-13)</h3>
+<h3 id="added--the-rest-of-the-upgrade-instructions-branch-is-harvested-2026-09-13">Added — the rest of the Upgrade instructions branch is harvested (2026-09-13)</h3>
 <p><code>Repartitioning the hard disk</code>, <code>Upgrading an HA cluster</code>, <code>Downgrading to a
 previous release</code>, <code>Image checksums</code> and <code>FortiWeb-VM license validation</code> are
 siblings of <em>Upgrading from previous releases</em>, not children of it — so every
 blocking prerequisite lived outside the corpus. All five are now collected and
 searchable in the Notes tab.</p>
-<h3 id="added-scout-advisory-the-upgrade-prose-as-verdicts-2026-09-13">Added — Scout Advisory: the upgrade prose, as verdicts (2026-09-13)</h3>
+<h3 id="added--scout-advisory-the-upgrade-prose-as-verdicts-2026-09-13">Added — Scout Advisory: the upgrade prose, as verdicts (2026-09-13)</h3>
 <p>New <code>services/release_advisor.py</code> and <code>GET /release-notes/advisory</code>, rendered at
 the top of the <strong>Upgrade advisor</strong> tab — above the bug diff, because a blocking
 prerequisite decides whether the window happens at all and a list of fixed bugs
@@ -1280,7 +1280,7 @@ three downgrade traps; a catch-all carries through every block Fortinet marked
 <li>Direction-aware: an upgrade advisory never quotes the <em>Downgrading</em> page, and a
   rollback advisory never quotes <em>Supported upgrade paths</em>.</li>
 </ul>
-<h3 id="added-scoutenabled-scout-can-be-switched-off-2026-09-13">Added — <code>scout.enabled</code>: Scout can be switched off (2026-09-13)</h3>
+<h3 id="added--scoutenabled-scout-can-be-switched-off-2026-09-13">Added — <code>scout.enabled</code>: Scout can be switched off (2026-09-13)</h3>
 <p>Settings → Scout → <strong>Availability</strong>, and a switch beside the advisory in the
 Release Notes modal — the same flag, not a second one. Enforced with a
 <code>before_request</code> on the Scout blueprint, because hiding a nav entry closes

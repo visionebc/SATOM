@@ -171,7 +171,7 @@ def blurb_for(sec: dict) -> str:
     return f"Released{when} — {kinds} · {what}."
 
 
-def render_body(sec: dict) -> tuple[str, dict[str, str]]:
+def render_body(sec: dict, prefix: str = "../docs/") -> tuple[str, dict[str, str]]:
     """Render one changelog section, and map each heading to its anchor id.
 
     The id map is what lets a search hit deep-link into the right part of the
@@ -183,8 +183,11 @@ def render_body(sec: dict) -> tuple[str, dict[str, str]]:
     # Redact BEFORE rendering, so the placeholder flows into code blocks and
     # link text alike and there is no HTML-escaping seam to get wrong.
     raw = gsd.redact(sec["body"])
-    md = md_lib.Markdown(extensions=gsd.MD_EXTENSIONS, output_format="html5")
-    body = gsd.relink(md.convert(raw))
+    md = md_lib.Markdown(extensions=gsd.MD_EXTENSIONS,
+                         extension_configs=gsd.MD_EXTENSION_CONFIGS, output_format="html5")
+    # CHANGELOG.md sits at the repository root; ``prefix`` is how the page that
+    # embeds this body reaches the manual (site/releases/ by default).
+    body = gsd.relink(md.convert(raw), base="", prefix=prefix)
 
     def _flat(tokens):
         for t in tokens:
@@ -400,7 +403,7 @@ def render_hub(secs: list[dict], current: str) -> str:
     for. Reference surfaces do not animate their own navigation.
     """
     landing = next((s for s in secs if s["version"] == current), secs[0])
-    body, _ids = render_body(landing)
+    body, _ids = render_body(landing, prefix="docs/")
 
     records: list[dict] = []
     for sec in secs:

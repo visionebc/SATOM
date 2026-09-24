@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../assets/site.css?v=72c63f9378">
+<link rel="stylesheet" href="../assets/site.css?v=b0cf1dde95">
 <script src="../assets/site.js?v=bf3b55a92e" defer></script>
 </head>
 <body class="wide">
@@ -98,6 +98,10 @@
 </tr>
 </tbody>
 </table>
+<p>This page explains the design. The operator manual — installing with
+<code>satom-setup.sh</code> or by hand, each service's identity, ports, volumes and
+permissions, configuration, HA, updates, backups and troubleshooting — is
+<a href="docker-compose.html"><code>docker-compose.md</code></a>.</p>
 <h2 id="read-this-before-you-choose-the-container-shape">Read this before you choose the container shape</h2>
 <p><strong>SATOM is an appliance that administers its own host.</strong> A container controls
 none of that host, so the container shape <em>renounces</em> four capabilities rather
@@ -215,6 +219,9 @@ remedy but to reissue.</p>
     --cert /path/fullchain.pem --key /path/privkey.pem'
 docker compose restart proxy
 </code></pre>
+<p>The exact invocation the installer uses — a one-off <code>tls-init</code> container with
+the files bind-mounted — is in
+<a href="docker-compose.html"><code>docker-compose.md</code></a> §7.3.3.</p>
 <p><code>import-cert</code> refuses a certificate and key that do not match — nginx would
 accept the reload and fail on the first handshake, which reads as a network
 fault rather than a configuration one. It then records <code>source: "imported"</code> in

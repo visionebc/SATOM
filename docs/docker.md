@@ -8,6 +8,11 @@ SATOM ships three installation shapes. This page covers the third.
 | package-only | the application on a host that already provides those services | [INSTALL.md](INSTALL.md) |
 | **container** | the application as an image, with its dependencies as sibling containers | **this page** |
 
+This page explains the design. The operator manual — installing with
+`satom-setup.sh` or by hand, each service's identity, ports, volumes and
+permissions, configuration, HA, updates, backups and troubleshooting — is
+[`docker-compose.md`](docker-compose.md).
+
 ## Read this before you choose the container shape
 
 **SATOM is an appliance that administers its own host.** A container controls
@@ -127,6 +132,10 @@ docker compose exec -u 0 tls-init sh -c '
     --cert /path/fullchain.pem --key /path/privkey.pem'
 docker compose restart proxy
 ```
+
+The exact invocation the installer uses — a one-off `tls-init` container with
+the files bind-mounted — is in
+[`docker-compose.md`](docker-compose.md) §7.3.3.
 
 `import-cert` refuses a certificate and key that do not match — nginx would
 accept the reload and fail on the first handshake, which reads as a network

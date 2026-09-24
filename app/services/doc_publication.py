@@ -104,6 +104,11 @@ PUBLIC_DOCS: list[tuple[str, str, str, str, str]] = [
      "renounces rather than ships broken, the development stack, the "
      "primary/standby production cluster, offline image delivery, and what a "
      "backup actually has to cover."),
+    ("docker-compose.md", "docker-compose", "Docker Compose — operator manual", "\U0001f9f0",
+     "Running the container stack: guided and manual install, every service "
+     "with its user, ports, volumes and permissions, the four renounced "
+     "capabilities and the procedures that replace them, configuration, TLS, "
+     "primary/standby failover, update, backup and troubleshooting."),
     ("sizing.md", "sizing", "Sizing a node — the formula", "\U0001f4d0",
      "How big the node has to be for the fleet you are pointing it at: the "
      "device-I/O ceiling that sets the device count, the disk and RAM formulas "
@@ -186,7 +191,7 @@ GROUPS: list[tuple[str, str, list[str]]] = [
     ("Start here", "New to the platform — read these in order.",
      ["readme", "management-overview", "overview", "user-guide", "theming"]),
     ("Deploy & operate", "Getting it running, keeping it running, getting it back.",
-     ["install", "docker", "sizing", "cli", "privilege-model", "safeguards",
+     ["install", "docker", "docker-compose", "sizing", "cli", "privilege-model", "safeguards",
       "metrics-architecture",
       "alerting", "provisioning-hypervisors", "git-backup",
       "offline-update-packages"]),

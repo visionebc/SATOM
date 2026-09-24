@@ -1142,6 +1142,32 @@ if [ -f "$APP_DIR/.env" ]; then
     chown root:"$APP_USER" "$APP_DIR/.env"; chmod 640 "$APP_DIR/.env"
 fi
 
+# ---- [SATOM-OVERLAY-SEED] reglas de publicacion del sitio -----------------
+# app/services/doc_publication._load_overlay FALLA CERRADO a proposito: en un
+# nodo desplegado (existe .env) sin data/publication-rules.local.json la app no
+# importa, porque redactar solo con las reglas genericas seria un fallo abierto.
+# Ni el repo publico ni los bundles traen ese fichero (es del sitio y esta en
+# .gitignore), asi que en 2.1.1 `flask create-db` moria en TODA instalacion
+# nueva. Una instalacion nueva no tiene reglas propias: su contenido correcto
+# es '{}'. Se crea SOLO si no existe -- ni en data/ ni en la ruta heredada de
+# la raiz, que el cargador tambien lee: sembrar data/ encima de una raiz con
+# reglas reales las ocultaria en silencio. Nunca se sobrescribe. En un
+# secondary el primer datasync lo reemplaza por la copia del primary.
+# Va ANTES de escribir .env y de cualquier import de la app (sellado, create-db).
+ensure_publication_overlay() {
+    local f="$APP_DIR/data/publication-rules.local.json"
+    if [ -e "$f" ] || [ -e "$APP_DIR/publication-rules.local.json" ]; then
+        ok "Reglas de publicación del sitio presentes — no se tocan"
+        return 0
+    fi
+    mkdir -p "$APP_DIR/data"
+    ( umask 022; printf '{}\n' > "$f" )
+    chown "${APP_USER}:${APP_USER}" "$f"
+    chmod 644 "$f"
+    ok "Reglas de publicación del sitio: creado ${f} vacío ({})"
+}
+ensure_publication_overlay
+
 # ---- sudoers: allowlist DELIBERADAMENTE DIMINUTA -------------------------
 # Sólo dos comandos. NO se concede instalación de paquetes (apt/dnf/pip) ni
 # systemctl sin restringir: ambos son EQUIVALENTES A ROOT — un paquete
@@ -1894,12 +1920,24 @@ if command -v getenforce >/dev/null 2>&1 && [ "$(getenforce 2>/dev/null)" = "Enf
             || semanage port -m -t http_port_t -p tcp "$WEB_PORT" >>"$INSTALL_LOG" 2>&1 || true
     fi
 fi
-# firewalld (RHEL/SUSE): abrir el puerto web (+5432 en primary de clúster)
+# [SATOM-FIREWALL] Cortafuegos del host: abrir el puerto web, el :80 (el vhost
+# lo escucha a proposito: redireccion 301 y ACME http-01, que la CA valida
+# SIEMPRE por :80) y el 5432 en el primary de un cluster.
+# firewalld (RHEL/SUSE) o ufw (Debian/Ubuntu). ufw no se trataba: en un Ubuntu
+# con ufw activo la instalacion terminaba bien y la consola era inalcanzable.
+FW_PORTS="${WEB_PORT} 80"
+[ "$ROLE" = "primary" ] && FW_PORTS="${FW_PORTS} 5432"
 if systemctl is-active --quiet firewalld 2>/dev/null; then
-    firewall-cmd --permanent --add-port="${WEB_PORT}/tcp" >>"$INSTALL_LOG" 2>&1 || true
-    [ "$ROLE" = "primary" ] && firewall-cmd --permanent --add-port=5432/tcp >>"$INSTALL_LOG" 2>&1 || true
+    for _p in $FW_PORTS; do
+        firewall-cmd --permanent --add-port="${_p}/tcp" >>"$INSTALL_LOG" 2>&1 || true
+    done
     firewall-cmd --reload >>"$INSTALL_LOG" 2>&1 || true
-    ok "firewalld: puerto ${WEB_PORT}/tcp abierto"
+    ok "firewalld: puertos $(echo "$FW_PORTS" | sed 's# #/tcp, #g')/tcp abiertos"
+elif command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q 'Status: active'; then
+    for _p in $FW_PORTS; do
+        ufw allow "${_p}/tcp" >>"$INSTALL_LOG" 2>&1 || true
+    done
+    ok "ufw: puertos $(echo "$FW_PORTS" | sed 's# #/tcp, #g')/tcp abiertos"
 fi
 nginx -t >>"$INSTALL_LOG" 2>&1 || die "nginx -t falló (revisa $INSTALL_LOG)"
 # SATOM-NGINX-START: arrancar y ESPERAR a que nginx sirva de verdad. NO recargar aqui.

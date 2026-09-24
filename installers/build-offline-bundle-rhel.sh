@@ -114,8 +114,9 @@ echo "    victoria-metrics ${VM_VERSION} anadido al bundle (sha256 verificado)"
 
 echo "==> 4/4 Instalador + manual + tarball final"
 cp "$REPO_DIR/installers/install-satom.sh" "$STAGE/"
+cp "$REPO_DIR/installers/satom-setup.sh" "$STAGE/"   # guided installer; uses the sibling install-satom.sh
 cp "$REPO_DIR/docs/INSTALL.md" "$STAGE/" 2>/dev/null || true
-chmod +x "$STAGE/install-satom.sh"
+chmod +x "$STAGE/install-satom.sh" "$STAGE/satom-setup.sh"
 
 TARBALL="$OUT/satom-offline-${VERSION}-rhel9-x86_64.tar.gz"
 tar -C "$OUT" -czf "$TARBALL" satom-installer

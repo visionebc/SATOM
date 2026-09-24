@@ -6,6 +6,47 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [2.1.3] - 2026-09-24
+
+### Changed — the installers speak English (2026-09-24)
+
+`satom-setup.sh` and `install-satom.sh` asked every question, printed every
+error and wrote every summary in Spanish, while the README, the manual and the
+release pages are in English: an operator following the documentation met
+prompts and failure messages the manual never mentions and could not search
+for. Both installers, the three offline-bundle builders and the `deploy/`
+scripts (the privileged update runner, the de-privilege migration, the HA data
+sync, the CLI installer and checks, the installer sudoers file) are now English
+only — messages, `--help`, generated file headers and comments. There is no
+language switch: the product ships in one language.
+
+Behaviour is unchanged apart from two operator-visible details:
+
+- Yes/no questions show `(y/n)` / `[Y/n]` and accept `y` / `yes`. `s` and `si`
+  are still accepted, silently, so answer files written for 2.1.2 and earlier
+  keep working.
+- `satom-setup.sh --uninstall --purge` now asks you to type `DELETE` (it was
+  `BORRAR`) before it removes the data volumes. `--yes` still skips the prompt.
+
+Quoted requests in this changelog, in the safeguards log and in a few specs,
+code comments and tests were translated as well.
+
+### Added — a dedicated Docker Compose manual (2026-09-24)
+
+`docs/docker-compose.md` is the operator manual for running SATOM with Docker
+Compose: supported shapes and requirements, the guided and the manual install,
+every volume, a full reference for every service (image, account, ports,
+volumes, health check, limits), the permission model per container, the
+configuration reference, TLS, primary/standby, update, backup and restore,
+uninstall, troubleshooting, and hardening that the stack does not yet apply.
+
+It states plainly that **no operations agent ships for Docker**: the container
+runtime renounces in-place self-update, service control, certificate
+activation and unit health, and the manual gives the command that replaces
+each one. It also records the permission boundary any future agent must keep.
+Writing it surfaced defects in the Docker path that 2.1.3 does not fix; they
+are listed in the manual's section 14.
+
 ## [2.1.2] - 2026-09-24
 
 ### Fixed — a fresh native install died at `flask create-db` (2026-09-24)

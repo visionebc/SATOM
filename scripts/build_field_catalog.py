@@ -9,7 +9,7 @@ fallback. Idempotent and non-destructive: existing files are preserved (so
 hand-curated seeds survive); pass ``--force`` to overwrite. NOT run at request
 time.
 
-Usage (on LXC 248, repo root, venv):
+Usage (on the primary node, repo root, venv):
     set -a && . ./.env && set +a
     PYTHONPATH=. venv/bin/python -m scripts.build_field_catalog --product fortiweb
     # add --force to regenerate existing schema files

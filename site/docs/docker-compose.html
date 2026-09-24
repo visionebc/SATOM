@@ -1486,7 +1486,7 @@ It then writes <code>public/server.crt</code> (with the chain appended when give
 on every <code>up</code>.</p>
 <h4 id="734-instead-of-unit_health-container-health">7.3.4 Instead of <code>unit_health</code>: container health</h4>
 <pre><code class="language-bash">satom-docker ps                                              # State and Health columns
-docker inspect --format '{{json .State.Health}}' satom-node  # details of the last probes
+docker inspect --format '{{json .State.Health}}' {node}  # details of the last probes
 </code></pre>
 <p>Only <code>postgres</code>, <code>proxy</code> and <code>web</code> have healthchecks. <code>scheduler</code> and <code>cron</code>
 are deliberately unchecked. The stack defines none for <code>redis</code> and

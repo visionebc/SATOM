@@ -505,7 +505,9 @@ than installing an application that cannot start.</p>
   keeps the data, <code>--uninstall --purge</code> deletes it. <strong>The Docker variant
   disables the four host-only web actions</strong> — Software Update &amp; HA,
   service control, certificate activation and systemd unit health (§2.3,
-  <code>app/runtime.py</code>); if you need them, install natively.</li>
+  <code>app/runtime.py</code>); if you need them, install natively. Every <code>SETUP_*</code>
+  variable of this mode, the files it writes and how to operate the result:
+  <a href="docker-compose.html"><code>docker-compose.md</code></a>.</li>
 </ul>
 <h3 id="21-online-with-network">2.1 Online (with network)</h3>
 <pre><code class="language-bash">sudo bash install-satom.sh
@@ -666,7 +668,10 @@ development single node, the production cluster and its failover rules, offline
 image delivery, and what a backup has to cover. (A <code>pg_dump</code> alone is not a
 backup: the source-of-truth index lives in PostgreSQL while its blobs live in
 the data volume, so restoring only the database leaves rows pointing at
-nothing.)</p>
+nothing.) <strong>Operator manual: <a href="docker-compose.html"><code>docker-compose.md</code></a></strong> — every
+service with its user, ports, volumes and permissions, the configuration
+reference, the procedures that replace the four renounced capabilities,
+failover, updates, backup and restore, and troubleshooting.</p>
 <hr>
 <h2 id="3-what-the-installer-asks-in-this-order">3. What the installer asks (in this order)</h2>
 <p><strong>Step 0 — preflight.</strong> Before the first question it verifies that the machine

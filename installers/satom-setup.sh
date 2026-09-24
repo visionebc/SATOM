@@ -238,10 +238,15 @@ detect_os() {
     CURRENT_STEP="1 · sistema operativo"
     say "Paso 1 · Sistema operativo y requisitos"
     [ -r /etc/os-release ] || die "No existe /etc/os-release: distribución no reconocible"
-    # shellcheck disable=SC1091
-    . /etc/os-release
-    OS_ID="${ID:-?}"; OS_VER="${VERSION_ID:-?}"; OS_NAME="${PRETTY_NAME:-$OS_ID $OS_VER}"
-    local like=" ${ID:-} ${ID_LIKE:-} " major="${VERSION_ID%%.*}" support="no"
+    # En un SUBSHELL: os-release define VERSION (p.ej. "15.6") y NAME, y
+    # cargarlo aquí pisaba la versión de SATOM a instalar.
+    local id="" id_like="" ver_id="" pretty=""
+    { IFS= read -r id; IFS= read -r id_like; IFS= read -r ver_id; IFS= read -r pretty; } < <(
+        # shellcheck disable=SC1091
+        . /etc/os-release
+        printf '%s\n' "${ID:-}" "${ID_LIKE:-}" "${VERSION_ID:-}" "${PRETTY_NAME:-}")
+    OS_ID="${id:-?}"; OS_VER="${ver_id:-?}"; OS_NAME="${pretty:-$OS_ID $OS_VER}"
+    local like=" ${id} ${id_like} " major="${ver_id%%.*}" support="no"
     case "$like" in
         *" debian "*|*" ubuntu "*)
             OS_FAMILY=debian; PKG=apt
@@ -313,9 +318,11 @@ check_requirements() {
 # Versión a instalar: la de este script salvo --version. Fijada a propósito:
 # "la última publicada" hacía que el mismo script instalase cosas distintas
 # según el día, y que un paquete offline preguntase a GitHub qué contiene.
-VERSION="$SETUP_VERSION"
+# Se asigna AQUÍ y no arriba: nada anterior puede pisarla.
+VERSION=""
 resolve_version() {
     CURRENT_STEP="1 · versión"
+    VERSION="$SETUP_VERSION"
     if [ "$WANT_VERSION" = latest ]; then
         [ "$INTERNET" -eq 1 ] || die "--version latest necesita Internet (o indica la versión: --version X.Y.Z)"
         VERSION="$(curl -fsSI -o /dev/null -w '%{redirect_url}' "${GH_URL}/releases/latest" | sed -n 's|.*/tag/v\{0,1\}\([^/]*\)$|\1|p')"

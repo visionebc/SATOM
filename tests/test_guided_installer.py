@@ -233,10 +233,47 @@ def test_shipped_installer_declares_the_release_version(script):
         % (script.name, m.group(1), VERSION))
 
 
-def test_setup_installs_the_version_it_declares_by_default():
+def _setup_version() -> str:
+    m = re.search(r'^SETUP_VERSION="([^"]*)"$', SETUP.read_text(encoding="utf-8"), re.M)
+    assert m, "satom-setup.sh has no SETUP_VERSION"
+    return m.group(1)
+
+
+def _run_setup_funcs(funcs, tail, env_lines=()):
     text = SETUP.read_text(encoding="utf-8")
-    assert re.search(r'^VERSION="\$SETUP_VERSION"$', text, re.M), (
-        "the default install target is no longer the pinned SETUP_VERSION")
+    script = "\n".join([
+        "set -Eeuo pipefail",
+        "say() { :; }; ok() { :; }; warn() { :; }; info() { :; }; log_raw() { :; }",
+        'die() { echo "DIE $*" >&2; exit 1; }',
+        "have() { command -v \"$1\" >/dev/null 2>&1; }",
+        'SETUP_VERSION="%s"' % _setup_version(),
+        *env_lines,
+        *(_extract(f, text) for f in funcs),
+        tail,
+    ])
+    return subprocess.run(["bash", "-c", script], capture_output=True, text=True)
+
+
+@pytest.mark.parametrize("want,expected", [("", None), ("1.2.3", "1.2.3")])
+def test_setup_installs_the_version_it_declares_by_default(want, expected):
+    """Found on the first end-to-end run: detect_os sourced /etc/os-release,
+    which defines VERSION, and the install target became "15.6". Whatever
+    VERSION holds beforehand, the target is SETUP_VERSION unless --version."""
+    r = _run_setup_funcs(
+        ["resolve_version"], 'resolve_version; echo "VERSION=$VERSION"',
+        ['VERSION="15.6"', 'WANT_VERSION="%s"' % want, "INTERNET=0"])
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.strip() == "VERSION=%s" % (expected or _setup_version())
+
+
+def test_detect_os_does_not_clobber_the_install_version():
+    if not pathlib.Path("/etc/os-release").is_file() or not pathlib.Path("/run/systemd/system").is_dir():
+        pytest.skip("needs /etc/os-release and systemd, like the script itself")
+    r = _run_setup_funcs(
+        ["detect_os"], 'detect_os; echo "VERSION=$VERSION NAME=${NAME:-unset}"',
+        ['VERSION="sentinel"', "FORCE=1"])
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.strip() == "VERSION=sentinel NAME=unset", r.stdout
 
 
 def _stamper():

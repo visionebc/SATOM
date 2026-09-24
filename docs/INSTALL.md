@@ -263,7 +263,9 @@ than installing an application that cannot start.
   keeps the data, `--uninstall --purge` deletes it. **The Docker variant
   disables the four host-only web actions** — Software Update & HA,
   service control, certificate activation and systemd unit health (§2.3,
-  `app/runtime.py`); if you need them, install natively.
+  `app/runtime.py`); if you need them, install natively. Every `SETUP_*`
+  variable of this mode, the files it writes and how to operate the result:
+  [`docker-compose.md`](docker-compose.md).
 
 ### 2.1 Online (with network)
 ```bash
@@ -426,7 +428,10 @@ development single node, the production cluster and its failover rules, offline
 image delivery, and what a backup has to cover. (A `pg_dump` alone is not a
 backup: the source-of-truth index lives in PostgreSQL while its blobs live in
 the data volume, so restoring only the database leaves rows pointing at
-nothing.)
+nothing.) **Operator manual: [`docker-compose.md`](docker-compose.md)** — every
+service with its user, ports, volumes and permissions, the configuration
+reference, the procedures that replace the four renounced capabilities,
+failover, updates, backup and restore, and troubleshooting.
 
 ---
 

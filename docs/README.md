@@ -80,6 +80,10 @@ page.
 5. [`docker.md`](docker.md) — only if the host runs containers rather than
    services. Read it **before** choosing that shape: it renounces four host
    capabilities on purpose, and one of them is the in-place updater.
+6. [`docker-compose.md`](docker-compose.md) — the operator manual for that
+   shape: install (guided or manual), every service and what it is allowed to
+   do, configuration, TLS, primary/standby, updates, backups and
+   troubleshooting.
 
 ### Something is broken
 1. `satom diagnose all` — 24 checks, one exit code, works unprivileged.
@@ -128,6 +132,7 @@ page.
 |---|---|
 | [`INSTALL.md`](INSTALL.md) | Requirements, per-distribution packages, preflight, clustering, hardening, uninstall. |
 | [`docker.md`](docker.md) | The container shape: what the stack contains, the four host capabilities it renounces rather than ships broken, the development node, the primary/standby production cluster, offline image delivery and backups. |
+| [`docker-compose.md`](docker-compose.md) | Operating the container shape: guided and manual install, each service's identity, ports, volumes and permissions, the capabilities the runtime renounces and the procedures that replace them, configuration, TLS, primary/standby, update, backup and troubleshooting. |
 | [`sizing.md`](sizing.md) | How big the node has to be for the fleet you are pointing it at: one measured formula per resource, the tiers, and the free-space floor that has to be watched continuously. |
 | [`privilege-model.md`](privilege-model.md) | Which account runs what, the two-command sudo allowlist, the privileged-runner boundary, node trust. |
 | [`safeguards.md`](safeguards.md) | Every protection: what it prevents, where it lives, how to prove it is armed. |

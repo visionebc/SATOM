@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../assets/site.css?v=72c63f9378">
+<link rel="stylesheet" href="../assets/site.css?v=b0cf1dde95">
 <script src="../assets/site.js?v=bf3b55a92e" defer></script>
 </head>
 <body class="wide">
@@ -161,6 +161,10 @@ page.</p>
 <li><a href="docker.html"><code>docker.md</code></a> — only if the host runs containers rather than
    services. Read it <strong>before</strong> choosing that shape: it renounces four host
    capabilities on purpose, and one of them is the in-place updater.</li>
+<li><a href="docker-compose.html"><code>docker-compose.md</code></a> — the operator manual for that
+   shape: install (guided or manual), every service and what it is allowed to
+   do, configuration, TLS, primary/standby, updates, backups and
+   troubleshooting.</li>
 </ol>
 <h3 id="something-is-broken">Something is broken</h3>
 <ol>
@@ -243,6 +247,10 @@ page.</p>
 <tr>
 <td><a href="docker.html"><code>docker.md</code></a></td>
 <td>The container shape: what the stack contains, the four host capabilities it renounces rather than ships broken, the development node, the primary/standby production cluster, offline image delivery and backups.</td>
+</tr>
+<tr>
+<td><a href="docker-compose.html"><code>docker-compose.md</code></a></td>
+<td>Operating the container shape: guided and manual install, each service's identity, ports, volumes and permissions, the capabilities the runtime renounces and the procedures that replace them, configuration, TLS, primary/standby, update, backup and troubleshooting.</td>
 </tr>
 <tr>
 <td><a href="sizing.html"><code>sizing.md</code></a></td>

@@ -619,7 +619,7 @@ def test_the_pages_own_script_carries_the_csp_nonce(app, client, env):
     """The wizard's whole UI is ONE inline <script>; without the nonce the
     browser drops it and the page is furniture.
 
-    Reported 2026-08-27: "agregue un segmento y no me aparecen las opciones".
+    Reported 2026-08-27: "I added a segment and the options don't show up".
     The segment WAS in the payload -- ``PLANS`` carried it, the route returned
     200, every server-side test here was green -- and the select stayed empty,
     because ``script-src-elem`` names a nonce and this block did not carry one.

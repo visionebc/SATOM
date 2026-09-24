@@ -1,6 +1,6 @@
 """Scheduling an HA failover: the rules that make it safe to automate.
 
-The feature was asked for as "calendarizar un failover de los clusters", and the
+The feature was asked for as "schedule a failover of the clusters", and the
 first honest answer was that **there is no REST call for it on either product** --
 verified 2026-09-08 by downloading fortiweb12's OWN 7.6.8 GUI bundle and finding
 ``system/ha``, ``ha/node``, ``ha-topology`` and ``ha-disconnect`` and no failover

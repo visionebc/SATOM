@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
 # ============================================================================
-# migrate-deprivilege.sh — mueve una instalación SATOM existente de
-# "todo como root" al modelo de privilegio mínimo (docs/privilege-model.md).
+# migrate-deprivilege.sh — moves an existing SATOM install from
+# "everything as root" to the least-privilege model (docs/privilege-model.md).
 #
-# EJECUTAR UN NODO A LA VEZ, EL STANDBY PRIMERO. Idempotente.
+# RUN ONE NODE AT A TIME, STANDBY FIRST. Idempotent.
 #
-# Qué hace:
-#   1. Adopta el usuario de servicio existente (fortinet) o crea 'satom'.
-#   2. Corrige la propiedad de state/ y /var/log/satom — root-owned en nodos
-#      heredados justamente porque la app corría como root.
-#   3. Instala /etc/sudoers.d/satom con DOS comandos y nada más.
-#   4. Reescribe User=/Group= en las unidades que no necesitan root.
-#      satom-updater.{path,service} se deja como root A PROPÓSITO.
-#   5. daemon-reload + restart + comprobación de salud.
+# What it does:
+#   1. Adopts the existing service user (fortinet) or creates 'satom'.
+#   2. Fixes ownership of state/ and /var/log/satom — root-owned on legacy
+#      nodes precisely because the app ran as root.
+#   3. Installs /etc/sudoers.d/satom with TWO commands and nothing else.
+#   4. Rewrites User=/Group= in the units that do not need root.
+#      satom-updater.{path,service} is left as root ON PURPOSE.
+#   5. daemon-reload + restart + health check.
 #
-# Rollback: restaurar /root/satom-units.pre-deprivilege-<ts>/ y borrar
+# Rollback: restore /root/satom-units.pre-deprivilege-<ts>/ and delete
 #           /etc/sudoers.d/satom.
 # ============================================================================
 set -euo pipefail
@@ -30,12 +30,12 @@ ok()   { echo "    ${c_grn}✓${c_off} $*"; }
 warn() { echo "    ${c_ylw}!${c_off} $*"; }
 die()  { echo "${c_red}ERROR:${c_off} $*" >&2; exit 1; }
 
-[ "$(id -u)" -eq 0 ] || die "Ejecuta como root: sudo bash $0"
-[ -d "$APP_DIR" ] || die "No existe $APP_DIR"
+[ "$(id -u)" -eq 0 ] || die "Run as root: sudo bash $0"
+[ -d "$APP_DIR" ] || die "$APP_DIR does not exist"
 
-# --- 1. usuario de servicio -------------------------------------------------
-# Preferimos adoptar el que ya posee el árbol: renombrarlo obligaría a tocar
-# el rol de Postgres homónimo y no aporta nada de seguridad.
+# --- 1. service user ---------------------------------------------------------
+# We prefer to adopt whoever already owns the tree: renaming it would mean
+# touching the Postgres role of the same name and adds nothing for security.
 APP_USER="${SATOM_APP_USER:-}"
 if [ -z "$APP_USER" ]; then
     OWNER="$(stat -c %U "$APP_DIR")"
@@ -51,66 +51,66 @@ if ! id -u "$APP_USER" >/dev/null 2>&1; then
     [ -x "$NOLOGIN" ] || NOLOGIN=/bin/false
     useradd --system --home-dir "$APP_DIR" --shell "$NOLOGIN" \
             --comment "SATOM service account" "$APP_USER"
-    ok "Usuario de servicio ${APP_USER} creado"
+    ok "Service user ${APP_USER} created"
 else
-    ok "Usuario de servicio ${APP_USER} adoptado (uid $(id -u "$APP_USER"))"
+    ok "Service user ${APP_USER} adopted (uid $(id -u "$APP_USER"))"
 fi
 APP_GROUP="$(id -gn "$APP_USER")"
 
-# --- 2. propiedad -----------------------------------------------------------
-say "Corrigiendo propiedad de rutas escribibles"
+# --- 2. ownership ------------------------------------------------------------
+say "Fixing ownership of writable paths"
 mkdir -p "$APP_DIR/state" "$APP_DIR/.ssh" "$LOG_DIR"
-# El árbol ENTERO, no sólo unos directorios: la app hace commits git sobre
-# reports/ y escribe backups, así que cualquier fichero suelto que quedara
-# root-owned (por haber corrido como root) rompe una operación más tarde.
-# Caso real: data/acme quedó 0700 root y el rsync del standby fallaba con
-# "Permission denied" pese a estar bien autenticado.
+# The WHOLE tree, not just a few directories: the app makes git commits in
+# reports/ and writes backups, so any stray file left root-owned (from having
+# run as root) breaks some operation later on.
+# Real case: data/acme was left 0700 root and the standby rsync failed with
+# "Permission denied" despite being correctly authenticated.
 chown -R "${APP_USER}:${APP_GROUP}" "$APP_DIR" "$LOG_DIR"
 chmod 700 "$APP_DIR/state" "$APP_DIR/.ssh"
 [ -d "$APP_DIR/data/acme" ] && chmod 700 "$APP_DIR/data/acme"
 if [ -f "$APP_DIR/.env" ]; then
     chown root:"$APP_GROUP" "$APP_DIR/.env"; chmod 640 "$APP_DIR/.env"
 fi
-# git necesita confiar en el árbol para el usuario que ahora lo usa
+# git has to trust the tree for the user that now works in it
 git config --global --add safe.directory "$APP_DIR" 2>/dev/null || true
 ok "state/, .ssh/, ${LOG_DIR}, data/, pki/ → ${APP_USER}:${APP_GROUP}"
 
 # --- 3. sudoers -------------------------------------------------------------
-say "Instalando allowlist de sudo (2 comandos)"
-command -v sudo >/dev/null 2>&1 || die "sudo no está instalado — instálalo antes de migrar"
+say "Installing sudo allowlist (2 commands)"
+command -v sudo >/dev/null 2>&1 || die "sudo is not installed — install it before migrating"
 NGINX_BIN="$(command -v nginx || echo /usr/sbin/nginx)"
 SYSTEMCTL_BIN="$(command -v systemctl || echo /usr/bin/systemctl)"
 cat > /etc/sudoers.d/satom <<SUDOERS
-# Generado por migrate-deprivilege.sh — ver docs/privilege-model.md
-# NO añadir aquí gestores de paquetes ni systemctl genérico: sería root.
+# Generated by migrate-deprivilege.sh — see docs/privilege-model.md
+# Do NOT add package managers or generic systemctl here: that would be root.
 Cmnd_Alias SATOM_CERT_RELOAD = ${NGINX_BIN} -t, ${SYSTEMCTL_BIN} reload nginx
 ${APP_USER} ALL=(root) NOPASSWD: SATOM_CERT_RELOAD
 Defaults:${APP_USER} !requiretty
 SUDOERS
 chmod 440 /etc/sudoers.d/satom
 visudo -cf /etc/sudoers.d/satom >/dev/null \
-    || { rm -f /etc/sudoers.d/satom; die "La regla sudoers generada es inválida"; }
-ok "${APP_USER} sólo puede: '${NGINX_BIN} -t' y '${SYSTEMCTL_BIN} reload nginx'"
+    || { rm -f /etc/sudoers.d/satom; die "The generated sudoers rule is invalid"; }
+ok "${APP_USER} may only run: '${NGINX_BIN} -t' and '${SYSTEMCTL_BIN} reload nginx'"
 
-# --- 4. wrapper del datasync ------------------------------------------------
+# --- 4. datasync wrapper -----------------------------------------------------
 if [ -f "$APP_DIR/deploy/satom-ha-rsync-shell" ]; then
     install -m 0755 "$APP_DIR/deploy/satom-ha-rsync-shell" /usr/local/sbin/
-    ok "Forced command del datasync instalado"
+    ok "Datasync forced command installed"
 fi
 if [ -f "$APP_DIR/deploy/satom-ha-datasync.sh" ]; then
     install -m 0755 "$APP_DIR/deploy/satom-ha-datasync.sh" /usr/local/sbin/
-    ok "satom-ha-datasync.sh desplegado (faltaba en el primary)"
+    ok "satom-ha-datasync.sh deployed (it was missing on the primary)"
 fi
 
-# --- 5. unidades ------------------------------------------------------------
-say "Degradando unidades a ${APP_USER}"
+# --- 5. units ----------------------------------------------------------------
+say "Dropping units to ${APP_USER}"
 mkdir -p "$BACKUP"
 DEPRIV=(satom.service satom-scheduler.service satom-reconciler.service
         satom-alerts.service satom-cert-renew.service
         satom-git-publish.service satom-ha-datasync.service)
 for unit in "${DEPRIV[@]}"; do
     f="/etc/systemd/system/$unit"
-    [ -f "$f" ] || { warn "$unit no está instalada — se omite"; continue; }
+    [ -f "$f" ] || { warn "$unit is not installed — skipped"; continue; }
     cp "$f" "$BACKUP/"
     if grep -qE '^User=' "$f"; then
         sed -i "s#^User=.*#User=${APP_USER}#" "$f"
@@ -122,23 +122,23 @@ for unit in "${DEPRIV[@]}"; do
     else
         sed -i "/^User=/a Group=${APP_GROUP}" "$f"
     fi
-    # El sed de arriba deja la unidad coherente, pero NO es durable: cada
-    # self-update recopia deploy/<unit> (User=root). El drop-in sí sobrevive.
+    # The sed above leaves the unit consistent, but it is NOT durable: every
+    # self-update re-copies deploy/<unit> (User=root). The drop-in survives.
     install -d -m 0755 "${f}.d"
     cat > "${f}.d/10-app-user.conf" <<DROPIN
-# Generado por migrate-deprivilege.sh. Vive en un drop-in porque las plantillas
-# de deploy/ declaran User=root y cada update las recopia. NO editar a mano.
+# Generated by migrate-deprivilege.sh. Lives in a drop-in because the deploy/
+# templates declare User=root and every update re-copies them. Do NOT edit by hand.
 [Service]
 User=${APP_USER}
 Group=${APP_GROUP}
 DROPIN
-    ok "$unit → User=${APP_USER} (unidad + drop-in)"
+    ok "$unit → User=${APP_USER} (unit + drop-in)"
 done
-warn "satom-updater.{path,service} se dejan como ROOT a propósito (runner privilegiado)"
-echo "    backup de las unidades: $BACKUP"
+warn "satom-updater.{path,service} are left as ROOT on purpose (privileged runner)"
+echo "    unit backup: $BACKUP"
 
-# --- 6. aplicar + verificar -------------------------------------------------
-say "Recargando systemd y reiniciando"
+# --- 6. apply + verify --------------------------------------------------------
+say "Reloading systemd and restarting"
 systemctl daemon-reload
 systemctl restart satom.service
 for u in satom-scheduler satom-reconciler; do
@@ -148,25 +148,25 @@ done
 PORT="$(grep -oP '(?<=--bind )[0-9.]+:\K[0-9]+' /etc/systemd/system/satom.service | head -1)"
 PORT="${PORT:-8000}"
 if timeout 45 bash -c "until curl -sfo /dev/null http://127.0.0.1:${PORT}/healthz; do sleep 1; done"; then
-    ok "satom.service responde /healthz 200 como ${APP_USER}"
+    ok "satom.service answers /healthz 200 as ${APP_USER}"
 else
     echo ""
     systemctl status satom.service --no-pager -l | tail -20
-    die "satom.service NO respondió tras el cambio. Restaura: cp $BACKUP/* /etc/systemd/system/ && systemctl daemon-reload && systemctl restart satom.service"
+    die "satom.service did NOT respond after the change. Restore with: cp $BACKUP/* /etc/systemd/system/ && systemctl daemon-reload && systemctl restart satom.service"
 fi
 
 RUNAS="$(ps -o user= -p "$(systemctl show satom.service -p MainPID --value)" 2>/dev/null | tr -d ' ')"
-[ "$RUNAS" = "$APP_USER" ] && ok "Proceso confirmado corriendo como ${RUNAS}" \
-                           || warn "El proceso corre como '${RUNAS}' (esperado ${APP_USER})"
+[ "$RUNAS" = "$APP_USER" ] && ok "Process confirmed running as ${RUNAS}" \
+                           || warn "The process runs as '${RUNAS}' (expected ${APP_USER})"
 
 echo ""
-echo "${c_grn}Migración completada.${c_off} Siguiente nodo: repite este script allí."
-echo "Recuerda re-autorizar el peer con --authorize-peer si cambias las llaves HA."
+echo "${c_grn}Migration complete.${c_off} Next node: run this script there."
+echo "Remember to re-authorise the peer with --authorize-peer if you change the HA keys."
 
-# [SATOM-RUNNER-ROOT-COPY] Un nodo de-privilegiado cuyo runner sigue ejecutando
-# codigo del arbol de la app NO esta de-privilegiado: la cuenta de servicio
-# elige lo que root ejecuta. Ver docs/safeguards.md seccion 12.
+# [SATOM-RUNNER-ROOT-COPY] A de-privileged node whose runner still executes
+# code from the app tree is NOT de-privileged: the service account chooses
+# what root runs. See docs/safeguards.md section 12.
 if [ -f "$(dirname "$0")/install-runner.sh" ]; then
     bash "$(dirname "$0")/install-runner.sh" || \
-        echo "AVISO: no se pudo endurecer el runner privilegiado" >&2
+        echo "WARNING: could not harden the privileged runner" >&2
 fi

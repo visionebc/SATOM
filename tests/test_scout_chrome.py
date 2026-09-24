@@ -1,8 +1,8 @@
 """Guards for what the Scout page SHOWS — the two defects a passing suite kept.
 
 Both classes here were reported by the operator, in one sentence, on
-2026-09-10: *"quitaste los filtros y divisiones, y el reporte está como
-cortado, los campos no están completos"*. Nothing had been removed and nothing
+2026-09-10: *"you removed the filters and dividers, and the report looks cut
+off, the fields are not complete"*. Nothing had been removed and nothing
 raised. Both halves of the sentence were nevertheless accurate descriptions of
 what the page put on screen, which is the whole problem:
 

@@ -1,19 +1,19 @@
-"""Los scripts de deploy no pueden depender del entorno de una distro.
+"""Deploy scripts must not depend on a distro's environment.
 
-Estas unidades corren fuera de la aplicacion, como la cuenta de servicio, en
-cualquier distribucion soportada. Dos veces ya se han roto EN SILENCIO por
-asumir el entorno de Debian:
+These units run outside the application, as the service account, on any
+supported distribution. They have already broken SILENTLY twice by assuming
+the Debian environment:
 
-  2026-07-27  `runuser` solo funciona como root. Al bajar las unidades a la
-              cuenta de servicio, scheduler_guard y git-publish dejaron de
-              funcionar y systemd siguio mostrando SUCCESS.
-  2026-08-02  `python3` no existe en openSUSE (el binario es python3.11). El
-              descubrimiento de peer del datasync devolvia vacio, el script
-              lo trataba como "no hay peer" y salia con exit 0: la unidad en
-              verde y data/ sin replicar.
+  2026-07-27  `runuser` only works as root. When the units were moved down to
+              the service account, scheduler_guard and git-publish stopped
+              working and systemd kept showing SUCCESS.
+  2026-08-02  `python3` does not exist on openSUSE (the binary is python3.11).
+              The datasync peer discovery returned empty, the script treated
+              that as "there is no peer" and exited 0: the unit green and
+              data/ not replicated.
 
-La regla: si un script de deploy necesita Python, usa el del venv de la
-aplicacion. Existe siempre en un nodo instalado y tiene la version correcta.
+The rule: if a deploy script needs Python, it uses the application's venv.
+It always exists on an installed node and has the right version.
 """
 from __future__ import annotations
 
@@ -24,10 +24,10 @@ import pytest
 
 DEPLOY = Path(__file__).resolve().parent.parent / "deploy"
 
-# Scripts que NO corren en un nodo ya instalado (no hay venv todavia) o que
-# son legado explicito. Cada exencion tiene que justificarse aqui.
+# Scripts that do NOT run on an already-installed node (there is no venv yet)
+# or that are explicitly legacy. Every exemption has to be justified here.
 EXEMPT = {
-    "install.sh",  # bootstrap legado: corre ANTES de que exista el venv
+    "install.sh",  # legacy bootstrap: runs BEFORE the venv exists
 }
 
 SHELL_SCRIPTS = sorted(p for p in DEPLOY.glob("*.sh") if p.name not in EXEMPT)
@@ -36,11 +36,11 @@ BARE_PYTHON = re.compile(r"(?<![\w/.\-])(?:python3(?:\.\d+)?|python)\b(?![\w.\-]
 
 
 def code_lines(path: Path):
-    """Lineas de CODIGO: sin vacias y sin comentarios.
+    """CODE lines: no blank lines and no comments.
 
-    Es esencial. La primera version de este fichero no lo hacia y marcaba tres
-    scripts que solo mencionan `runuser` en un comentario explicando por que NO
-    lo usan. Un test que casa prosa no prueba nada.
+    This is essential. The first version of this file did not do it and flagged
+    three scripts that only mention `runuser` in a comment explaining why they
+    do NOT use it. A test that matches prose proves nothing.
     """
     for n, raw in enumerate(path.read_text().splitlines(), 1):
         line = raw.strip()
@@ -64,45 +64,45 @@ def test_deploy_scripts_do_not_call_a_bare_python(script: Path) -> None:
                 continue
             offenders.append("%s:%d: %s" % (script.name, n, raw.strip()))
     assert not offenders, (
-        "Un script de deploy invoca un Python de la distro. En openSUSE no "
-        'existe /usr/bin/python3 y el fallo es SILENCIOSO. Usa "$APP/venv/bin/python".\n  '
+        "A deploy script invokes a distro Python. On openSUSE "
+        '/usr/bin/python3 does not exist and the failure is SILENT. Use "$APP/venv/bin/python".\n  '
         + "\n  ".join(offenders)
     )
 
 
 @pytest.mark.parametrize("script", SHELL_SCRIPTS, ids=lambda p: p.name)
 def test_deploy_scripts_do_not_call_runuser_without_a_root_guard(script: Path) -> None:
-    """`runuser` solo funciona como root. Un script que la INVOCA tiene que
-    ramificar por `id -u` o declarar que exige root."""
+    """`runuser` only works as root. A script that INVOKES it has to branch
+    on `id -u` or declare that it requires root."""
     text = code_text(script)
     if not re.search(r"(?<![\w/.\-])runuser\b", text):
-        pytest.skip("no invoca runuser")
+        pytest.skip("does not invoke runuser")
     guarded = ("id -u" in text) or ("EUID" in text)
     assert guarded, (
-        "%s invoca runuser sin comprobar que corre como root. Las unidades "
-        "bajaron a la cuenta de servicio el 2026-07-26 y runuser solo "
-        "funciona como root." % script.name
+        "%s invokes runuser without checking that it runs as root. The units "
+        "were moved down to the service account on 2026-07-26 and runuser only "
+        "works as root." % script.name
     )
 
 
 def test_the_datasync_peer_probe_fails_loudly() -> None:
-    """Una sonda que no puede evaluarse NO puede parecer 'no hay nada que
-    hacer'. Ese era el modo de fallo exacto: unidad en verde, data/ sin
-    replicar."""
+    """A probe that cannot be evaluated must NOT look like 'nothing to
+    do'. That was the exact failure mode: unit green, data/ not
+    replicated."""
     text = (DEPLOY / "satom-ha-datasync.sh").read_text()
-    assert "PEER_RC" in text, "el codigo de salida de la sonda de peer se descarta"
+    assert "PEER_RC" in text, "the peer probe's exit code is discarded"
 
     tail = text[text.index("PEER_RC"):]
     assert re.search(r'"\$PEER_RC"\s*-ne\s*0', tail), (
-        "el codigo de salida de la sonda de peer no se comprueba"
+        "the peer probe's exit code is not checked"
     )
-    # El bloque que trata el fallo tiene que salir != 0. Se mira la rama, no
-    # el fichero entero: `exit 1` en cualquier otro sitio no prueba nada.
+    # The block that handles the failure has to exit != 0. Look at the branch,
+    # not the whole file: an `exit 1` anywhere else proves nothing.
     branch = tail[tail.index("-ne"): tail.index("-ne") + 400]
-    assert "exit 1" in branch, "un fallo de la sonda de peer no sale distinto de cero"
+    assert "exit 1" in branch, "a peer probe failure does not exit non-zero"
 
-    # Y el caso legitimo (no hay peer) tiene que seguir siendo exit 0, para no
-    # convertir un standalone en una alerta permanente.
+    # And the legitimate case (no peer) must remain exit 0, so as not to turn
+    # a standalone into a permanent alert.
     assert re.search(r'if \[ -z "\$\{PEER\}" \]', text), (
-        "se perdio la distincion entre 'sin peer configurado' y 'sonda rota'"
+        "the distinction between 'no peer configured' and 'broken probe' was lost"
     )

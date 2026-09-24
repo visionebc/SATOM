@@ -407,7 +407,7 @@ def config(ctx, args):
     return r
 
 
-# Directorios de vhost que el instalador puede haber usado, por familia.
+# Vhost directories the installer may have used, per distro family.
 NGINX_VHOST_DIRS = ("/etc/nginx/sites-enabled", "/etc/nginx/vhosts.d",
                     "/etc/nginx/conf.d")
 
@@ -580,13 +580,13 @@ def nginx(ctx, args):
                "serving — which looks like a DNS fault, not an nginx one.")
     if findings:
         r.rows("findings", findings)
-    # [SATOM-VHOST-HOST] `$host` DESCARTA el puerto. Flask-WTF construye el
-    # origen esperado del token CSRF con el host que la app cree tener y lo
-    # compara con el Referer del navegador INCLUYENDO el puerto, asi que detras
-    # de un NAT o un proxy en puerto no estandar TODO POST -- el login incluido
-    # -- se rechaza con un mensaje que habla de la sesion caducada. El sintoma
-    # apunta al sitio equivocado, que es justo por lo que esto tiene que ser un
-    # chequeo y no una nota.
+    # [SATOM-VHOST-HOST] `$host` DROPS the port. Flask-WTF builds the CSRF
+    # token's expected origin from the host the app believes it has and
+    # compares it with the browser's Referer INCLUDING the port, so behind a
+    # NAT or a proxy on a non-standard port EVERY POST -- login included -- is
+    # rejected with a message about an expired session. The symptom points at
+    # the wrong place, which is exactly why this has to be a check and not a
+    # note.
     proxied = [(n, t) for n, t in bodies if re.search(r"\bproxy_pass\s", t)]
     if proxied:
         bare = bare_host_vhosts(proxied)
@@ -599,11 +599,11 @@ def nginx(ctx, args):
                    "POST behind a non-standard port fails CSRF and reports a "
                    "stale form. Fix: `satom execute repair nginx --yes`.")
 
-    # [SATOM-SERVED-NAMES] Lo que sirve el vhost y lo que cubre el certificado
-    # tienen que ser el MISMO conjunto. El instalador acunaba ambos desde
-    # `hostname` (el nombre CORTO), asi que un nodo alcanzado por su FQDN tenia
-    # un certificado sin ese SAN -- aviso del navegador sobre un certificado que
-    # el instalador acababa de reportar como bueno.
+    # [SATOM-SERVED-NAMES] What the vhost serves and what the certificate
+    # covers have to be the SAME set. The installer minted both from
+    # `hostname` (the SHORT name), so a node reached by its FQDN had a
+    # certificate without that SAN -- a browser warning about a certificate
+    # the installer had just reported as good.
     crt = ctx.app_dir / "pki" / "public" / "server.crt"
     served = sorted({n for _, t in proxied for n in vhost_server_names(t)})
     if served and crt.exists():
@@ -612,11 +612,11 @@ def nginx(ctx, args):
         r.rows("certificate covers server_name",
                [(n, "covered" if cert_covers(n, sans) else "NOT COVERED")
                 for n in served])
-        # Solo se GRADUAN los FQDN. Un nombre de una sola etiqueta no puede
-        # estar en un certificado publico -- ninguna CA lo emite -- y solo se
-        # alcanza desde el dominio de busqueda local, asi que contarlo como
-        # fallo dejaria en warn permanente a todo nodo que importe un wildcard.
-        # Se IMPRIME igual: no graduar no es ocultar.
+        # Only FQDNs are GRADED. A single-label name cannot be in a public
+        # certificate -- no CA issues one -- and is only reachable through the
+        # local search domain, so counting it as a failure would leave every
+        # node that imports a wildcard on a permanent warn.
+        # It is PRINTED all the same: not grading is not hiding.
         missing = uncovered_names(served, sans)
         if missing:
             r.worst("warn")

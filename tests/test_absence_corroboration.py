@@ -1170,9 +1170,9 @@ def test_only_a_disappearance_row_carries_a_ledger_cell(app, monkeypatch,
 # ===========================================================================
 # A NEW FIRMWARE LINE (2026-09-18)
 # ===========================================================================
-# The operator's requirement, verbatim: "todo esto debe de ser compatible con
-# todas las versiones. ejemplo si sale una version 8.1 deberia de poderse ver
-# la diferencia."
+# The operator's requirement, verbatim: "all of this has to be compatible with
+# every version. for example, if an 8.1 comes out, the difference should be
+# visible."
 #
 # Measured against the live node before any of this was written: appending a
 # NEWER line already worked end to end. What did not was a line landing

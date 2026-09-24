@@ -450,10 +450,10 @@ class Appliance(db.Model):
             self.build_client(timeout=timeout).status_check()
             return "online"
         except Exception as exc:
-            # "offline" es una respuesta perfectamente creible, y por eso un
-            # sondeo roto sobrevivio 3,5 semanas sin que nadie lo notara. Se
-            # nombra el appliance: un aviso que no dice CUAL fallo manda al
-            # operador a revisar los nueve.
+            # "offline" is a perfectly believable answer, which is why a broken
+            # probe survived 3.5 weeks without anyone noticing. The appliance
+            # is named: a warning that does not say WHICH one failed sends the
+            # operator to check all nine.
             import logging as _logging
             _logging.getLogger(__name__).warning(
                 "probe: %s reported offline: %s", self.name or "?", exc)
@@ -2132,7 +2132,7 @@ class CapacityLimit(db.Model):
     — the number from Appendix B / the model datasheet. It is the ABSOLUTE limit
     the box will accept; the admin enters/confirms it (the fleet is unlicensed
     VMs that can't self-report a SKU). ``operational_cap`` is the admin's OWN
-    lower limit (the "espacio de sobra" buffer) that automations honour BEFORE
+    lower limit (the "room to spare" buffer) that automations honour BEFORE
     hitting the hardware ceiling — it may be NULL (=> effective cap = hard_max)
     and is validated <= hard_max (never above; going above just makes the box
     reject creates).

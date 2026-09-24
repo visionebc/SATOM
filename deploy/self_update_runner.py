@@ -34,9 +34,9 @@ SCHED = "satom-scheduler.service"
 
 
 def _app_user_from_tree():
-    """Dueño del árbol de la app = cuenta de servicio. Única fuente de verdad:
-    una env var (FM_APP_USER) se olvida al instalar un nodo nuevo, el dueño del
-    directorio no. Devuelve 'root' en una instalación sin degradar."""
+    """Owner of the app tree = service account. Single source of truth: an env
+    var (FM_APP_USER) gets forgotten when a new node is installed, the
+    directory's owner does not. Returns 'root' on a non-deprivileged install."""
     try:
         import pwd
         return pwd.getpwuid(APP.stat().st_uid).pw_name
@@ -50,26 +50,26 @@ HEALTH_TIMEOUT = int(os.environ.get("FM_HEALTH_TIMEOUT", "90"))
 
 
 def _unit_templates():
-    """Toda plantilla de unidad que deploy/ envía, LEÍDA DEL DIRECTORIO.
+    """Every unit template deploy/ ships, READ FROM THE DIRECTORY.
 
-    Esto era una lista escrita a mano de seis nombres mientras deploy/ enviaba
-    diez: satom-alerts.{service,timer} y satom-cert-renew.{service,timer} no se
-    refrescaban NUNCA, así que la copia instalada seguía declarando
-    User=fortinet — una cuenta que ya no existe en el nodo. Sólo arrancaban
-    porque el drop-in las tapaba, y a ese drop-in no lo replica nada: un
-    `systemctl revert` (o un nodo restaurado de una imagen anterior) convierte
-    la renovación de certificado en status=217/USER, en silencio, que es
-    exactamente lo que la señal cert.renew_failed existe para evitar.
+    This used to be a hand-written list of six names while deploy/ shipped
+    ten: satom-alerts.{service,timer} and satom-cert-renew.{service,timer} were
+    NEVER refreshed, so the installed copy kept declaring User=fortinet — an
+    account that no longer exists on the node. They only started because the
+    drop-in masked it, and nothing replicates that drop-in: a
+    `systemctl revert` (or a node restored from an older image) turns the
+    certificate renewal into status=217/USER, silently, which is exactly what
+    the cert.renew_failed signal exists to prevent.
 
-    Una lista escrita a mano ES una copia del listado del directorio, y las
-    copias se pudren: derivarla es la única forma de que la próxima unidad
-    añadida a deploy/ no repita esto sin que nadie se entere.
+    A hand-written list IS a copy of the directory listing, and copies rot:
+    deriving it is the only way the next unit added to deploy/ does not repeat
+    this without anyone noticing.
 
-    OJO — refrescar el FICHERO de una unidad NO es armarla. Aquí no se llama a
-    `systemctl enable` en ningún caso, así que el estado enabled/disabled del
-    nodo se conserva tal cual. Y sólo entra lo que deploy/ envía: por eso
-    quedan fuera satom-ha-datasync.* (la escribe el instalador en línea y sólo
-    en modo cluster) y satom-git-publish.* (RETIRADA el 2026-08-05).
+    CAREFUL — refreshing a unit's FILE is NOT arming it. `systemctl enable` is
+    never called here, so the node's enabled/disabled state is kept exactly as
+    it is. And only what deploy/ ships is included: that is why
+    satom-ha-datasync.* (written inline by the installer, and only in cluster
+    mode) and satom-git-publish.* (RETIRED on 2026-08-05) are left out.
     """
     names = set()
     for pat in ("*.service", "*.timer", "*.path"):
@@ -82,32 +82,31 @@ def _unit_templates():
 
 UNIT_FILES = _unit_templates()
 
-# Unidades que pueden existir INSTALADAS en un nodo pero que no son plantillas
-# de deploy/: el instalador escribe satom-ha-datasync.{service,timer} en línea
-# (sólo en modo cluster) y satom-git-publish.* quedó retirada el 2026-08-05. No
-# se distribuyen ni se arman desde aquí; se listan sólo para que el drop-in de
-# cuenta de servicio las siga cubriendo SI están instaladas — sin él, una
-# unidad heredada que aún declare un usuario inexistente muere con
-# status=217/USER.
+# Units that may exist INSTALLED on a node but are not deploy/ templates: the
+# installer writes satom-ha-datasync.{service,timer} inline (only in cluster
+# mode) and satom-git-publish.* was retired on 2026-08-05. They are neither
+# distributed nor armed from here; they are listed only so the service-account
+# drop-in keeps covering them IF they are installed — without it, a legacy
+# unit that still declares a non-existent user dies with status=217/USER.
 LEGACY_NONROOT_UNITS = (
     "satom-ha-datasync.service",
     "satom-git-publish.service",
 )
 
-# Unidades que DEBEN correr como la cuenta de servicio. satom-updater.{service,
-# path} está deliberadamente fuera: ES el runner privilegiado. Derivada por el
-# mismo motivo que UNIT_FILES: las plantillas declaran User=root y cada update
-# las recopia, así que una plantilla nueva que se olvidara aquí volvería a root
-# en el siguiente update sin que nada avisara.
+# Units that MUST run as the service account. satom-updater.{service,path} is
+# deliberately left out: it IS the privileged runner. Derived for the same
+# reason as UNIT_FILES: the templates declare User=root and every update
+# re-copies them, so a new template forgotten here would go back to root on
+# the next update without anything warning about it.
 NONROOT_UNITS = tuple(sorted(
     ({u for u in UNIT_FILES if u.endswith(".service")}
      - {"satom-updater.service"})
     | set(LEGACY_NONROOT_UNITS)))
 
-UNIT_DROPIN = """# Generado por SATOM (instalador / migrate-deprivilege.sh / self_update_runner).
-# Vive en un drop-in y no en la unidad porque las plantillas de deploy/ declaran
-# User=root y cada update las recopia: el drop-in sobrevive a esa copia.
-# NO editar a mano.
+UNIT_DROPIN = """# Generated by SATOM (installer / migrate-deprivilege.sh / self_update_runner).
+# Lives in a drop-in rather than in the unit because the deploy/ templates
+# declare User=root and every update re-copies them: the drop-in survives that.
+# Do NOT edit by hand.
 [Service]
 User=%s
 Group=%s
@@ -115,7 +114,7 @@ Group=%s
 
 
 def enforce_unit_user(user):
-    """Fija User=/Group= por drop-in en las unidades no privilegiadas."""
+    """Pin User=/Group= via drop-in on the unprivileged units."""
     if not user or user == "root":
         return
     for unit in NONROOT_UNITS:
@@ -507,11 +506,11 @@ def process(req_path):
             if p.returncode != 0:
                 raise RuntimeError("pip install failed")
 
-        # Los .mo son DERIVADOS y ya no viajan en el repo, asi que un update
-        # que trae .po nuevos deja la interfaz en ingles hasta recompilarlos.
-        # Fuera del bloque do_pip a proposito: una actualizacion de solo codigo
-        # tambien trae catalogos. Nunca aborta -- un catalogo viejo es peor que
-        # uno nuevo, pero los dos son mejores que un update revertido.
+        # The .mo files are DERIVED and no longer travel in the repo, so an
+        # update that brings new .po files leaves the interface in English
+        # until they are recompiled. Outside the do_pip block on purpose: a
+        # code-only update also brings catalogues. Never aborts -- an old
+        # catalogue is worse than a new one, but both beat a reverted update.
         pb = run([str(VENV / "pybabel"), "compile", "-d",
                   str(APP / "app" / "translations")], timeout=300, user=APP_USER)
         st.step("pybabel compile (language catalogues)",
@@ -537,9 +536,9 @@ def process(req_path):
             src = APP / "deploy" / unit
             if src.exists():
                 subprocess.run(["cp", str(src), "/etc/systemd/system/" + unit])
-        # ...y VOLVER a fijar la cuenta de servicio. Las plantillas de deploy/
-        # declaran User=root, así que la copia de arriba degradaría el modelo de
-        # privilegio en cada update si no fuera por el drop-in.
+        # ...and pin the service account AGAIN. The deploy/ templates declare
+        # User=root, so the copy above would downgrade the privilege model on
+        # every update were it not for the drop-in.
         enforce_unit_user(APP_USER)
         subprocess.run(["systemctl", "daemon-reload"])
         # Refresh the ROOT-OWNED copies that live OUTSIDE the app tree: the

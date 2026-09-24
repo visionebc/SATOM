@@ -1,16 +1,17 @@
-"""El centinela no es una credencial y no puede salir por la puerta como si lo fuera.
+"""The sentinel is not a credential and cannot go out the door as if it were one.
 
-Lo que fija: cuando la columna local dice `__stored-in-vault__` y el vault NO
-esta en el camino de ESTE proceso, no hay nada que enviar. Devolver el marcador
-mete la cadena literal en un formulario de login: el aparato contesta 401 y el
-operador lee "contrasena incorrecta" en vez de "este proceso no llega al vault".
+What this pins down: when the local column says `__stored-in-vault__` and the
+vault is NOT in THIS process's path, there is nothing to send. Returning the
+marker puts the literal string into a login form: the appliance answers 401 and
+the operator reads "wrong password" instead of "this process cannot reach the
+vault".
 
-No es hipotetico. El 2026-08-19, el mismo dia que se borraron las copias
-locales, `satom-scheduler` seguia corriendo codigo anterior al vault (proceso
-arrancado el 17 de agosto). Su getter solo leia la columna local, mando el
-centinela a cada aparato y el barrido de flota entero paso a 401 —
-`satom_scrape_up` cayo de 1 a 0 sin una sola linea en el audit log del vault,
-que era justamente la pista de que nadie estaba preguntandole al vault.
+This is not hypothetical. On 2026-08-19, the same day the local copies were
+scrubbed, `satom-scheduler` was still running pre-vault code (process started
+on 17 August). Its getter only read the local column, sent the sentinel to
+every appliance, and the entire fleet sweep went to 401 —
+`satom_scrape_up` dropped from 1 to 0 without a single line in the vault's
+audit log, which was precisely the clue that nobody was asking the vault.
 """
 import pytest
 
@@ -30,7 +31,7 @@ def _sentinel_row(name="fw1"):
 
 
 def test_the_sentinel_is_never_returned_as_a_password(app):
-    """Modo local (o proceso sin el vault en el camino) + columna centinela."""
+    """Local mode (or a process without the vault in its path) + sentinel column."""
     with app.app_context():
         row = _sentinel_row()
         with pytest.raises(RuntimeError) as exc:
@@ -40,7 +41,7 @@ def test_the_sentinel_is_never_returned_as_a_password(app):
 
 
 def test_the_error_names_the_appliance(app):
-    """Un fallo que no dice CUAL manda a revisar los nueve."""
+    """A failure that does not say WHICH one sends you to check all nine."""
     with app.app_context():
         row = _sentinel_row("fortiweb12")
         with pytest.raises(RuntimeError) as exc:
@@ -55,12 +56,12 @@ def test_a_normal_password_still_reads(app):
 
 
 def test_the_vault_copy_wins_over_the_sentinel(app, vault):
-    """Con el vault en el camino la columna no se mira siquiera."""
+    """With the vault in the path the column is not even looked at."""
     with app.app_context():
         configure(sb.MODE_VAULT)
         row = _sentinel_row("fw3")
-        sb.write(sb.appliance_path("fw3"), {"password": "desde-el-vault"})
-        assert row.password == "desde-el-vault"
+        sb.write(sb.appliance_path("fw3"), {"password": "from-the-vault"})
+        assert row.password == "from-the-vault"
 
 
 def test_the_directory_secret_sentinel_is_never_returned(app):
@@ -82,7 +83,7 @@ def test_a_normal_directory_secret_still_reads(app):
 
 
 def test_an_unset_directory_secret_is_still_empty_not_an_error(app):
-    """Sin configurar sigue siendo "" — el guardia solo mira el centinela."""
+    """Unconfigured is still "" — the guard only looks at the sentinel."""
     with app.app_context():
         assert auth_store._vault_first(
             "auth/fortiauthenticator", "shared_secret",

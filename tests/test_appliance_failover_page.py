@@ -1,7 +1,7 @@
 """The failover verb ON the device page (``/appliances/<id>/failover``).
 
-Asked for as "metelo dentro del device ... ahi si es un cluster debera venir la
-opcion de hacer un failover". The action itself was already registered and
+Asked for as "put it inside the device ... there, if it is a cluster, the
+option to do a failover should come up". The action itself was already registered and
 change-request gated (``tests/test_ha_failover.py``); what is new here is a
 SURFACE, and a surface for a disruptive verb fails in ways the executor's own
 tests cannot see:

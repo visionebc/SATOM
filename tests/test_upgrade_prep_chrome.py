@@ -2,7 +2,7 @@
 
 Reported 2026-08-10: on ``/appliances/<id>/upgrade/prep`` the result text ran
 past the card edges, the sizing did not match the rest of the product, and the
-device CLI output "no se ve por los colores".
+device CLI output "it can't be read because of the colours".
 
 Three distinct defects, none of which can ever raise:
 

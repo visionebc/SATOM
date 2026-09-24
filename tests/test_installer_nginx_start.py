@@ -167,26 +167,26 @@ def test_configured_peers_finds_a_real_peer(tmp_path):
 
 
 # --------------------------------------------------------------------------
-# C. SATOM-LEGO-PATH: no imprimir "command not found" en una linea de exito.
+# C. SATOM-LEGO-PATH: do not print "command not found" on a success line.
 #
-# El instalador corre con el PATH heredado del arranque del contenedor o de un
-# shell no-login: /sbin:/bin:/usr/sbin:/usr/bin. NO lleva /usr/local/bin, que
-# es donde se instala lego. Un `$(lego --version)` dentro del TEXTO de un
-# mensaje de exito se expande a
+# The installer runs with the PATH inherited from the container boot or from a
+# non-login shell: /sbin:/bin:/usr/sbin:/usr/bin. It does NOT include
+# /usr/local/bin, which is where lego is installed. A `$(lego --version)` inside
+# the TEXT of a success message expands to
 #     install-satom.sh: line NNN: lego: command not found
-# y queda impreso DENTRO de la linea con el tick verde, sobre una instalacion
-# que fue correcta y cuyo sha256 SI se verifico.
+# and ends up printed INSIDE the line with the green tick, on an installation
+# that was correct and whose sha256 WAS verified.
 #
-# Un mensaje de exito que contiene "command not found" ensena al operador a
-# ignorar los mensajes -- y entonces ignora tambien el que si importa. Ademas
-# `command -v lego` falla por la misma razon, asi que una reinstalacion no
-# detecta el binario ya presente y lo vuelve a descargar entero.
+# A success message that contains "command not found" teaches the operator to
+# ignore the messages -- and then they also ignore the one that does matter.
+# Also, `command -v lego` fails for the same reason, so a reinstall does not
+# detect the binary already present and downloads it again in full.
 #
-# Verificado en vivo 2026-08-04 en CT 345/346 (openSUSE Leap 15.6): lego 5.2.2
-# instalado y funcional mientras el instalador habia impreso el error.
+# Verified live 2026-08-04 on CT 345/346 (openSUSE Leap 15.6): lego 5.2.2
+# installed and working while the installer had printed the error.
 # --------------------------------------------------------------------------
 def _lego_lines():
-    """Lineas ejecutadas del bloque ACME (comentarios ya filtrados)."""
+    """Executed lines of the ACME block (comments already filtered out)."""
     return [ln for ln in _executed_lines(INSTALLER.read_text(encoding="utf-8"))
             if "lego" in ln]
 
@@ -194,34 +194,34 @@ def _lego_lines():
 def test_installer_defines_an_absolute_lego_binary_path():
     text = INSTALLER.read_text(encoding="utf-8")
     assert 'LEGO_BIN="/usr/local/bin/lego"' in text, (
-        "El bloque ACME debe fijar LEGO_BIN a ruta absoluta: el PATH del "
-        "instalador no incluye /usr/local/bin."
+        "The ACME block must pin LEGO_BIN to an absolute path: the "
+        "installer's PATH does not include /usr/local/bin."
     )
 
 
 def test_lego_messages_never_shell_out_to_a_bare_lego():
-    """Ninguna sustitucion de comando puede invocar `lego` desnudo.
+    """No command substitution may invoke a bare `lego`.
 
-    Unica excepcion: la rama que YA comprobo `command -v lego`, donde el
-    binario esta demostrablemente en el PATH.
+    Only exception: the branch that ALREADY checked `command -v lego`, where the
+    binary is demonstrably on the PATH.
     """
     offenders = [ln for ln in _lego_lines()
                  if "$(" in ln and "command -v lego" not in ln and "$(lego " in ln]
     assert not offenders, (
-        "Sustitucion de comando con `lego` desnudo en un mensaje del "
-        'instalador; usa "$LEGO_BIN":\n  ' + "\n  ".join(offenders)
+        "Command substitution with a bare `lego` in an installer "
+        'message; use "$LEGO_BIN":\n  ' + "\n  ".join(offenders)
     )
 
 
 def test_lego_is_installed_to_the_absolute_path_variable():
-    """El install(1) debe escribir en $LEGO_BIN, no en un literal.
+    """install(1) must write to $LEGO_BIN, not to a literal.
 
-    Si el mensaje usa $LEGO_BIN y el install usa el literal, una edicion futura
-    de la ruta los separa y el mensaje describe un fichero que no existe.
+    If the message uses $LEGO_BIN and the install uses the literal, a future edit
+    of the path splits them apart and the message describes a file that does not exist.
     """
     bad = [ln for ln in _lego_lines()
            if "install -m 0755" in ln and "/usr/local/bin/lego" in ln]
     assert not bad, (
-        'install(1) de lego con ruta literal en vez de "$LEGO_BIN":\n  '
+        'install(1) of lego with a literal path instead of "$LEGO_BIN":\n  '
         + "\n  ".join(bad)
     )

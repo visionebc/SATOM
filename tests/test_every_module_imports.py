@@ -22,7 +22,7 @@ import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
-# Sólo árboles nuestros: nada de venv, migraciones generadas o material de test.
+# Only our own trees: no venv, generated migrations or test material.
 SOURCE_DIRS = ("app", "deploy")
 
 
@@ -41,21 +41,21 @@ ALL_FILES = list(_python_files())
 
 
 def test_there_is_something_to_check():
-    # Si el glob se rompe, el test de abajo pasaría vacío y no protegería nada.
-    assert len(ALL_FILES) > 50, "esperaba decenas de modulos, encontre %d" % len(ALL_FILES)
+    # If the glob breaks, the test below would pass empty and protect nothing.
+    assert len(ALL_FILES) > 50, "expected dozens of modules, found %d" % len(ALL_FILES)
 
 
 @pytest.mark.parametrize("path", ALL_FILES, ids=lambda p: str(p.relative_to(ROOT)))
 def test_module_compiles(path, tmp_path):
-    """Cada fichero .py del producto tiene que compilar."""
+    """Every .py file in the product has to compile."""
     try:
         py_compile.compile(str(path), cfile=str(tmp_path / "out.pyc"), doraise=True)
-    except py_compile.PyCompileError as exc:  # pragma: no cover - el mensaje es el valor
-        pytest.fail("%s no compila:\n%s" % (path.relative_to(ROOT), exc))
+    except py_compile.PyCompileError as exc:  # pragma: no cover - the message is the value
+        pytest.fail("%s does not compile:\n%s" % (path.relative_to(ROOT), exc))
 
 
-# Módulos que NINGÚN test importa a nivel de colección porque sus llamadores los
-# importan dentro de funciones. Son justo los que se pueden pudrir en silencio.
+# Modules that NO test imports at collection time because their callers import
+# them inside functions. They are exactly the ones that can rot silently.
 LAZY_MODULES = [
     "app.services.cert_service",
     "app.services.cert_renew_log",
@@ -79,6 +79,6 @@ LAZY_MODULES = [
 
 @pytest.mark.parametrize("dotted", LAZY_MODULES)
 def test_lazily_imported_module_actually_imports(app, dotted):
-    """Importable de verdad, no sólo parseable (imports rotos, typos en nombres)."""
+    """Actually importable, not just parseable (broken imports, typos in names)."""
     with app.app_context():
         importlib.import_module(dotted)

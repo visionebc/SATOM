@@ -14,13 +14,13 @@
 
 /* ---- brand palette (fixed, theme-independent reference) ---- */
 :root {
-  --blue-900: #041F5A;   /* Azul profundo   */
-  --blue-700: #0A3F9F;   /* Azul principal  */
-  --blue-400: #12B8FF;   /* Azul brillante  */
-  --blue-300: #39D4FF;   /* Azul eléctrico  */
-  --gold-700: #C98A11;   /* Dorado oscuro   */
-  --gold-500: #F3B52F;   /* Dorado principal*/
-  --gold-300: #FFD45A;   /* Dorado brillante*/
+  --blue-900: #041F5A;   /* Deep blue       */
+  --blue-700: #0A3F9F;   /* Primary blue    */
+  --blue-400: #12B8FF;   /* Bright blue     */
+  --blue-300: #39D4FF;   /* Electric blue   */
+  --gold-700: #C98A11;   /* Dark gold       */
+  --gold-500: #F3B52F;   /* Primary gold    */
+  --gold-300: #FFD45A;   /* Bright gold     */
 
   --grad-blue: linear-gradient(135deg, #041F5A 0%, #0A3F9F 35%, #12B8FF 75%, #39D4FF 100%);
   --grad-gold: linear-gradient(135deg, #C98A11 0%, #F3B52F 45%, #FFD45A 100%);

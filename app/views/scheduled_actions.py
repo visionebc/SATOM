@@ -4,7 +4,7 @@
     /scheduled-actions  System Automations  scope 'admin'  perm user_manage
 
 Until 2026-09-09 both lived in ONE list, sorted by name, behind ``user_manage``.
-That is how "disable spo-tienda-mx at 02:00 on Saturday" — a cutover an operator
+That is how "disable spo-shop-mx at 02:00 on Saturday" — a cutover an operator
 schedules, executed through FortiWebOps with snapshot + audit — came to sit
 between "Nightly system backup" and "Sentinel — correlate and score", which are
 SATOM maintaining ITSELF. The two are not the same object wearing two labels:

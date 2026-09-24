@@ -1,34 +1,34 @@
-"""El badge de estado se sondea en HILOS, y un hilo no hereda el app context.
+"""The status badge is probed in THREADS, and a thread does not inherit the app context.
 
-Lo que fija este fichero, en una linea: **"no puedo leer la configuracion del
-vault" no es lo mismo que "el vault esta apagado"**, y confundir las dos cosas
-marca offline a un aparato que responde.
+What this file pins down, in one line: **"I cannot read the vault
+configuration" is not the same as "the vault is off"**, and confusing the two
+marks a responsive appliance as offline.
 
-El defecto real (medido 2026-09-14 contra la BD viva de satom-node-1): los tres
-appliances del inventario (fac01, fortiweb15, fortiweb16) salian `offline` en
-`GET /api/appliances` mientras el MISMO codigo, en el hilo principal, los daba
-`online` en 0,08 s. La cadena:
+The real defect (measured 2026-09-14 against the live DB of satom-node-1): the
+three appliances in the inventory (fac01, fortiweb15, fortiweb16) came out
+`offline` in `GET /api/appliances` while the SAME code, on the main thread,
+reported them `online` in 0.08 s. The chain:
 
-1. `api/appliances.list_appliances` sonda dentro de un `ThreadPoolExecutor`.
-2. Un hilo nuevo arranca con ContextVars vacias -> **sin app context**.
-3. `secret_backend._raw()` hacia `AppSetting.get(...)` y se tragaba el fallo
-   con `except Exception: return {}`.
-4. Config vacia -> `active()` pasa a False -> `get_appliance_password()`
-   devuelve None, que significa "usa la copia local".
-5. La copia local es el centinela `__stored-in-vault__` -> el getter LANZA.
-6. `probe_status` se traga la excepcion y devuelve `"offline"`.
+1. `api/appliances.list_appliances` probes inside a `ThreadPoolExecutor`.
+2. A new thread starts with empty ContextVars -> **no app context**.
+3. `secret_backend._raw()` called `AppSetting.get(...)` and swallowed the
+   failure with `except Exception: return {}`.
+4. Empty config -> `active()` becomes False -> `get_appliance_password()`
+   returns None, which means "use the local copy".
+5. The local copy is the `__stored-in-vault__` sentinel -> the getter RAISES.
+6. `probe_status` swallows the exception and returns `"offline"`.
 
-Ninguna de las dos piezas introdujo el defecto por si sola: el pool existe
-desde el commit inicial y era inofensivo porque el camino de la credencial era
-env + columna (cero BD). Lo introdujo la COMBINACION, el dia que la credencial
-paso a poder vivir en un vault (2026-08-19). Estuvo ~3,5 semanas en produccion
-sin una linea de log, porque "offline" es una respuesta perfectamente creible.
+Neither piece introduced the defect on its own: the pool has existed since the
+initial commit and was harmless because the credential path was env + column
+(zero DB). The COMBINATION introduced it, the day the credential became able to
+live in a vault (2026-08-19). It sat in production for ~3.5 weeks without a
+single log line, because "offline" is a perfectly believable answer.
 
-Por eso los guardias de aqui son de DOS clases y hacen falta las dos:
-  - de comportamiento: la ruta del badge tiene que decir `online`;
-  - estructurales: `_raw()`/`active()` tienen que ROMPER en un hilo sin
-    contexto en vez de contestar "apagado", porque si no el mismo sintoma
-    reaparece en la proxima ruta que use hilos.
+That is why the guards here come in TWO kinds and both are needed:
+  - behavioural: the badge route has to say `online`;
+  - structural: `_raw()`/`active()` have to FAIL in a thread without context
+    instead of answering "off", because otherwise the same symptom reappears
+    in the next route that uses threads.
 """
 import logging
 import threading
@@ -43,19 +43,19 @@ from conftest import admin_user_id, login
 from test_secret_backend import configure, vault  # noqa: F401  (fixture)
 
 
-VAULT_PW = "la-que-vive-solo-en-el-vault"
+VAULT_PW = "the-one-that-only-lives-in-the-vault"
 
 
 # ---------------------------------------------------------------------------
-# doble de cliente
+# client double
 # ---------------------------------------------------------------------------
 class _RecordingClient:
-    """Cliente falso que EXIGE leer la credencial, como el de verdad.
+    """Fake client that INSISTS on reading the credential, like the real one.
 
-    Un doble que no toque `appliance.password` haria pasar el guardia sin
-    ejercitar la unica linea que rompe. Ademas apunta en QUE hilo corrio: es lo
-    que distingue "arreglado" de "serializado en el hilo de la peticion", que
-    tambien daria verde y convertiria la pagina en N x 6 s.
+    A double that does not touch `appliance.password` would let the guard pass
+    without exercising the one line that breaks. It also records WHICH thread
+    it ran on: that is what distinguishes "fixed" from "serialised on the
+    request thread", which would also go green and turn the page into N x 6 s.
     """
 
     seen: list = []
@@ -75,14 +75,14 @@ class _RecordingClient:
 def rec(monkeypatch):
     _RecordingClient.seen = []
     _RecordingClient.threads = set()
-    # client_for() y _own_client() acaban los dos aqui, asi que un solo parche
-    # cubre la ruta del badge Y el boton de test manual.
+    # client_for() and _own_client() both end up here, so a single patch
+    # covers the badge route AND the manual test button.
     monkeypatch.setattr("app.clients.fortiweb.FortiWebClient", _RecordingClient)
     return _RecordingClient
 
 
 def _vaulted_row(name="fortiweb16", host="192.0.2.28"):
-    """Una fila como las que nacen con el vault ya autoritativo: sin copia local."""
+    """A row like those created once the vault is already authoritative: no local copy."""
     row = Appliance(name=name, kind="fortiweb", host=host, port=443,
                     username="admin",
                     password_enc=encryption.encrypt(sb.VAULT_SENTINEL))
@@ -100,10 +100,10 @@ def _arm_vault(app, name="fortiweb16"):
 
 
 # ---------------------------------------------------------------------------
-# comportamiento: el defecto que vio el usuario
+# behavioural: the defect the user saw
 # ---------------------------------------------------------------------------
 def test_the_badge_route_says_online_for_a_vault_backed_appliance(app, client, vault, rec):
-    """El defecto reportado, tal cual: el aparato responde y el badge miente."""
+    """The reported defect, exactly: the appliance responds and the badge lies."""
     _arm_vault(app)
     login(client, admin_user_id(app))
     body = client.get("/api/appliances").get_json()
@@ -111,7 +111,7 @@ def test_the_badge_route_says_online_for_a_vault_backed_appliance(app, client, v
 
 
 def test_the_probe_sends_the_vault_password_not_the_sentinel(app, client, vault, rec):
-    """Verde no vale si llego con la credencial equivocada."""
+    """Green does not count if it got there with the wrong credential."""
     _arm_vault(app)
     login(client, admin_user_id(app))
     client.get("/api/appliances")
@@ -120,7 +120,7 @@ def test_the_probe_sends_the_vault_password_not_the_sentinel(app, client, vault,
 
 
 def test_every_appliance_is_probed_not_just_the_first(app, client, vault, rec):
-    """El defecto afectaba a los TRES; un guardia de un solo equipo no lo ve."""
+    """The defect hit all THREE; a single-appliance guard does not see it."""
     with app.app_context():
         configure(sb.MODE_VAULT)
         for n in ("fac01", "fortiweb15", "fortiweb16"):
@@ -133,16 +133,16 @@ def test_every_appliance_is_probed_not_just_the_first(app, client, vault, rec):
 
 
 def test_the_probe_still_runs_off_the_request_thread(app, client, vault, rec):
-    """Serializar en el hilo de la peticion tambien da verde, y es N x 6 s."""
+    """Serialising on the request thread also goes green, and it is N x 6 s."""
     _arm_vault(app)
     login(client, admin_user_id(app))
     client.get("/api/appliances")
-    assert rec.threads, "no se sondeo nada"
+    assert rec.threads, "nothing was probed"
     assert threading.main_thread().name not in rec.threads
 
 
 def test_the_cached_status_is_persisted(app, client, vault, rec):
-    """Todas las demas vistas leen `last_status`, no vuelven a sondear."""
+    """Every other view reads `last_status`; they do not probe again."""
     rid = _arm_vault(app)
     login(client, admin_user_id(app))
     client.get("/api/appliances")
@@ -153,17 +153,17 @@ def test_the_cached_status_is_persisted(app, client, vault, rec):
 
 
 # ---------------------------------------------------------------------------
-# estructural: la degradacion silenciosa que lo causo
+# structural: the silent degradation that caused it
 # ---------------------------------------------------------------------------
 def test_the_vault_config_refuses_to_guess_without_an_app_context(app):
-    """`{}` significaria "no configurado", y eso es una respuesta inventada."""
-    assert not has_app_context(), "el guardia necesita correr FUERA de contexto"
+    """`{}` would mean "not configured", and that is a made-up answer."""
+    assert not has_app_context(), "the guard needs to run OUTSIDE a context"
     with pytest.raises(sb.VaultConfigUnavailable):
         sb._raw()
 
 
 def test_active_does_not_answer_false_in_a_thread_without_context(app, vault):
-    """Este es el paso 4 de la cadena: la mentira que se propaga."""
+    """This is step 4 of the chain: the lie that propagates."""
     with app.app_context():
         configure(sb.MODE_VAULT)
     box = {}
@@ -171,25 +171,25 @@ def test_active_does_not_answer_false_in_a_thread_without_context(app, vault):
     def worker():
         try:
             box["value"] = sb.active()
-        except BaseException as exc:  # noqa: BLE001 — se inspecciona abajo
+        except BaseException as exc:  # noqa: BLE001 — inspected below
             box["error"] = exc
 
     t = threading.Thread(target=worker)
     t.start()
     t.join()
     assert "value" not in box, (
-        "el vault contesto %r desde un hilo sin contexto" % (box.get("value"),))
+        "the vault answered %r from a thread without context" % (box.get("value"),))
     assert isinstance(box["error"], sb.VaultConfigUnavailable)
 
 
 def test_the_failure_is_not_a_kind_of_vault_error(app):
-    """Si heredase de VaultError, `get_appliance_password` la volveria a tragar
-    y devolveria None = "usa la copia local" — la degradacion, otra vez."""
+    """If it inherited from VaultError, `get_appliance_password` would swallow
+    it again and return None = "use the local copy" — the degradation, again."""
     assert not issubclass(sb.VaultConfigUnavailable, sb.VaultError)
 
 
 def test_an_unmigrated_settings_table_is_still_tolerated(app, monkeypatch):
-    """Una instalacion nueva, antes de Alembic, NO tiene que romper."""
+    """A fresh install, before Alembic, must NOT break."""
     def boom(*a, **k):
         raise RuntimeError("no such table: app_settings")
 
@@ -200,19 +200,19 @@ def test_an_unmigrated_settings_table_is_still_tolerated(app, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# el silencio de 3,5 semanas
+# the 3.5-week silence
 # ---------------------------------------------------------------------------
 def test_a_failed_probe_leaves_a_trace(app, caplog):
-    """`offline` es creible, y por eso un fallo mudo sobrevive semanas."""
+    """`offline` is believable, and that is why a mute failure survives for weeks."""
     with app.app_context():
-        row = _vaulted_row("fortiweb15")  # centinela, vault fuera del camino
+        row = _vaulted_row("fortiweb15")  # sentinel, vault out of the path
         with caplog.at_level(logging.WARNING):
             assert row.probe_status(timeout=0.1) == "offline"
-    assert "fortiweb15" in caplog.text, "el aviso no dice CUAL fallo"
+    assert "fortiweb15" in caplog.text, "the warning does not say WHICH one failed"
 
 
 def test_a_probe_of_a_healthy_box_logs_nothing(app, vault, rec, caplog):
-    """Un log por sondeo bueno convierte el aviso en ruido y nadie lo lee."""
+    """A log line per successful probe turns the warning into noise nobody reads."""
     with app.app_context():
         configure(sb.MODE_VAULT)
         row = _vaulted_row()
@@ -223,10 +223,10 @@ def test_a_probe_of_a_healthy_box_logs_nothing(app, vault, rec, caplog):
 
 
 # ---------------------------------------------------------------------------
-# un sondeo no es una edicion de configuracion
+# a probe is not a configuration edit
 # ---------------------------------------------------------------------------
 def test_a_status_poll_does_not_look_like_a_config_edit(app, client, vault, rec):
-    """`updated_at` responde "cuando se edito esta fila", no "cuando se miro"."""
+    """`updated_at` answers "when was this row edited", not "when was it looked at"."""
     rid = _arm_vault(app)
     with app.app_context():
         before = db.session.get(Appliance, rid).updated_at
@@ -235,11 +235,11 @@ def test_a_status_poll_does_not_look_like_a_config_edit(app, client, vault, rec)
     with app.app_context():
         row = db.session.get(Appliance, rid)
         assert row.updated_at == before
-        assert row.last_checked_at is not None  # guarda-al-guardia: SI se sondeo
+        assert row.last_checked_at is not None  # guard-the-guard: it WAS probed
 
 
 def test_the_manual_test_button_does_not_look_like_a_config_edit(app, client, vault, rec):
-    """Mismo defecto, segunda ruta: el boton de la lista de appliances."""
+    """Same defect, second route: the button in the appliance list."""
     rid = _arm_vault(app)
     with app.app_context():
         before = db.session.get(Appliance, rid).updated_at
@@ -253,7 +253,7 @@ def test_the_manual_test_button_does_not_look_like_a_config_edit(app, client, va
 
 
 class _DeadClient:
-    """Falla con una excepcion ANONIMA: no nombra host, appliance ni credencial."""
+    """Fails with an ANONYMOUS exception: it names no host, appliance or credential."""
 
     def __init__(self, appliance, timeout=30.0):
         pass
@@ -272,13 +272,13 @@ def _plain_row(name, host="192.0.2.27"):
 
 def test_the_trace_names_the_appliance_even_when_the_error_does_not(
         app, monkeypatch, caplog):
-    """La trampa que dejo sobrevivir una mutacion en la primera pasada.
+    """The trap that let a mutation survive on the first pass.
 
-    `test_a_failed_probe_leaves_a_trace` usa el fallo del centinela, y ese
-    RuntimeError YA lleva el nombre del appliance dentro. Asi que el aserto
-    `"fortiweb15" in caplog.text` se cumplia por el texto de la EXCEPCION
-    aunque el aviso no nombrara nada: quitar el `%s` del formato no rompia
-    nada. Un timeout de red no nombra a nadie, y ahi si se ve.
+    `test_a_failed_probe_leaves_a_trace` uses the sentinel failure, and that
+    RuntimeError ALREADY carries the appliance name inside it. So the assertion
+    `"fortiweb15" in caplog.text` held thanks to the EXCEPTION text even though
+    the warning named nothing: removing the `%s` from the format broke
+    nothing. A network timeout names nobody, and there it DOES show.
     """
     monkeypatch.setattr("app.clients.fortiweb.FortiWebClient", _DeadClient)
     with app.app_context():
@@ -286,5 +286,5 @@ def test_the_trace_names_the_appliance_even_when_the_error_does_not(
         row = Appliance.query.filter_by(name="fortiweb15").one()
         with caplog.at_level(logging.WARNING):
             assert row.probe_status(timeout=0.1) == "offline"
-    assert "fortiweb15" in caplog.text, "el aviso no dice CUAL fallo"
-    assert "timed out" in caplog.text, "el aviso no dice POR QUE fallo"
+    assert "fortiweb15" in caplog.text, "the warning does not say WHICH one failed"
+    assert "timed out" in caplog.text, "the warning does not say WHY it failed"

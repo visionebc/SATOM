@@ -63,7 +63,7 @@ def test_create_form_selects_match_standalone(client, app):
     aid = _make_appliance(app)
     login(client, admin_user_id(app))
     h = client.get(f"/workspace/{aid}/new-policy").get_data(as_text=True)
-    # el VIP se muestra como dropdown poblado del equipo, no como text box
+    # the VIP is shown as a dropdown populated from the device, not as a text box
     assert 'data-ref="system/vip"' in h, "VIP address is not a device dropdown"
     # pool member tri-state + sdn (were missing before the port)
     assert ">maintenance<" in h, "pool member status missing 'maintenance'"

@@ -108,15 +108,15 @@ class VaultConfigUnavailable(RuntimeError):
 # configuration
 # ---------------------------------------------------------------------------
 def _raw() -> dict:
-    # "No puedo leer la configuracion" NO es "el vault esta apagado", y hasta
-    # 2026-09-14 este `except` las confundia. Un hilo sin app context (el pool
-    # del badge en api/appliances.py) recibia {} -> active() False ->
-    # get_appliance_password() None = "usa la copia local" -> la copia local es
-    # el centinela -> el getter lanza -> probe_status devuelve "offline". Todo
-    # el inventario marcado offline, 3,5 semanas, sin una linea de log.
+    # "I cannot read the configuration" is NOT "the vault is switched off", and
+    # until 2026-09-14 this `except` confused the two. A thread with no app
+    # context (the badge pool in api/appliances.py) got {} -> active() False ->
+    # get_appliance_password() None = "use the local copy" -> the local copy is
+    # the sentinel -> the getter raises -> probe_status returns "offline". The
+    # whole inventory marked offline, for 3.5 weeks, without a single log line.
     #
-    # Que se rompa RUIDOSAMENTE es el arreglo: el sintoma reaparece en la
-    # proxima ruta que use hilos, y ahi tampoco habria log.
+    # Breaking LOUDLY is the fix: the symptom reappears in the next code path
+    # that uses threads, and there would be no log there either.
     if not has_app_context():
         raise VaultConfigUnavailable(
             "vault configuration was read with no Flask app context, so this "

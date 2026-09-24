@@ -437,8 +437,8 @@ def repair_nginx(ctx, args):
         if new != txt:
             staged.append((path, txt, new))
 
-    # Un mismo fichero puede tener varios bloques server; el operador quiere
-    # saber QUE cambia, no cuantas veces.
+    # One file can hold several server blocks; the operator wants to know
+    # WHAT changes, not how many times.
     seen, uniq = set(), []
     for row in plan:
         if row not in seen:
@@ -466,8 +466,8 @@ def repair_nginx(ctx, args):
         path.write_text(new)
     rc, out_, err = run(["nginx", "-t"])
     if rc != 0:
-        # Restaurar SIEMPRE antes de reportar: dejar una config invalida en
-        # disco convierte el siguiente reload ajeno en una caida.
+        # ALWAYS restore before reporting: leaving an invalid config on disk
+        # turns the next unrelated reload into an outage.
         for path, old, _bak in backups:
             path.write_text(old)
         r.status = "bad"

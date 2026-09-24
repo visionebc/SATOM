@@ -20,10 +20,10 @@
 #       account on the peer, not root — which is what it used to yield.
 set -u
 APP=/opt/satom
-# Derivado del dueño real del árbol, no hardcodeado: así funciona igual en una
-# instalación nueva (satom) y en una heredada que adoptó otro nombre
-# (fortinet). Hardcodear "satom" hizo que el datasync intentara entrar como un
-# usuario inexistente tras migrar los nodos 248/249.
+# Derived from the tree's real owner, not hardcoded: that way it works the same
+# on a fresh install (satom) and on a legacy one that adopted another name
+# (fortinet). Hardcoding "satom" made the datasync try to log in as a
+# non-existent user after nodes 248/249 were migrated.
 APP_USER="${SATOM_APP_USER:-$(stat -c %U "$APP" 2>/dev/null || echo satom)}"
 SSH_KEY="$APP/.ssh/id_ha_rsync"
 KNOWN_HOSTS="$APP/.ssh/known_hosts"
@@ -69,7 +69,7 @@ PYEOF
 # A probe failure must be LOUD. Exiting 0 here would look identical to
 # "correctly inert on the primary" and the standby could silently stop
 # replicating for weeks.
-[ -n "$PROBE" ] || { echo "datasync: no se pudo consultar el rol en Postgres" >&2; exit 1; }
+[ -n "$PROBE" ] || { echo "datasync: could not query the role in Postgres" >&2; exit 1; }
 
 ROLE="${PROBE%%|*}"
 MODE="${PROBE##*|}"
@@ -80,9 +80,9 @@ MODE="${PROBE##*|}"
 [ "$MODE" = "standalone" ] && exit 0
 
 # --- peer discovery --------------------------------------------------------
-# El interprete es el del venv de la app, igual que la sonda de rol de arriba:
-# existe siempre en un nodo instalado y no depende de que la distro tenga un
-# symlink /usr/bin/python3 (openSUSE no lo tiene).
+# The interpreter is the app venv's, same as the role probe above: it always
+# exists on an installed node and does not depend on the distro providing a
+# /usr/bin/python3 symlink (openSUSE does not).
 PEER=$("$APP/venv/bin/python" - <<'PYEOF'
 import json, socket, subprocess
 # Peer discovery keys off THIS NODE'S OWN IP ADDRESSES, never its hostname.
@@ -113,18 +113,18 @@ for n in nodes:
 PYEOF
 )
 PEER_RC=$?
-# "no pude evaluar" y "no hay peer configurado" NO son lo mismo, y tratarlos
-# igual es como esta unidad reportaba SUCCESS mientras no sincronizaba nada.
+# "could not evaluate" and "no peer configured" are NOT the same thing, and
+# treating them alike is how this unit reported SUCCESS while syncing nothing.
 if [ "$PEER_RC" -ne 0 ]; then
-    echo "datasync: no se pudo determinar el peer desde data/ha_nodes.json (rc=$PEER_RC)" >&2
+    echo "datasync: could not determine the peer from data/ha_nodes.json (rc=$PEER_RC)" >&2
     exit 1
 fi
 if [ -z "${PEER}" ]; then
-    echo "datasync: ha_nodes.json no lista ningún peer distinto de este nodo — nada que sincronizar" >&2
+    echo "datasync: ha_nodes.json lists no peer other than this node — nothing to sync" >&2
     exit 0
 fi
 
-[ -r "$SSH_KEY" ] || { echo "datasync: falta la llave $SSH_KEY" >&2; exit 1; }
+[ -r "$SSH_KEY" ] || { echo "datasync: key $SSH_KEY is missing" >&2; exit 1; }
 
 # StrictHostKeyChecking=yes, NOT accept-new: the peer's host key is seeded at
 # install time (ssh-keyscan over the already-authenticated join step), so a

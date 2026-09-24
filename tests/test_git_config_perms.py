@@ -1,13 +1,13 @@
-"""Guardias del modo de ``.git/config``.
+"""Guards for the mode of ``.git/config``.
 
-Por que existe: el remote de este repo lleva el token de push EMBEBIDO en la
-URL, y git escribe ese fichero en 644. La credencial que autentica cada push
-queda legible por cualquier cuenta de la maquina — y nada falla, que es
-exactamente por lo que sobrevivio hasta que alguien miro el ``ls -l``.
+Why this exists: this repo's remote carries the push token EMBEDDED in the
+URL, and git writes that file as 644. The credential that authenticates every
+push ends up readable by any account on the machine — and nothing fails, which
+is exactly why it survived until someone looked at the ``ls -l``.
 
-git no tiene ajuste para esto: el modo hay que re-afirmarlo desde el codigo que
-escribe el fichero, y desde el que se lo encuentra ya escrito (un repo clonado
-por el instalador nunca pasa por el escritor).
+git has no setting for this: the mode has to be re-asserted from the code that
+writes the file, and from the code that finds it already written (a repo cloned
+by the installer never goes through the writer).
 """
 from pathlib import Path
 
@@ -34,7 +34,7 @@ def test_a_world_readable_config_is_narrowed(tmp_path):
 
 
 def test_a_group_readable_config_is_narrowed(tmp_path):
-    """640 tampoco vale: el grupo del servicio no es el dueno del token."""
+    """640 is not good enough either: the service group does not own the token."""
     root, cfg = _repo(tmp_path, 0o640)
     gs._harden_git_config(root)
     assert _mode(cfg) == 0o600
@@ -47,7 +47,7 @@ def test_an_already_private_config_is_left_alone(tmp_path):
 
 
 def test_a_missing_repository_is_not_an_error(tmp_path):
-    gs._harden_git_config(tmp_path / "no-existe")   # no debe levantar
+    gs._harden_git_config(tmp_path / "does-not-exist")   # must not raise
 
 
 def test_the_contents_are_not_touched(tmp_path):
@@ -58,7 +58,7 @@ def test_the_contents_are_not_touched(tmp_path):
 
 
 def test_configure_hardens_after_writing_the_remote(tmp_path, monkeypatch):
-    """El escritor: ``remote set-url`` acaba de meter el token en el fichero."""
+    """The writer: ``remote set-url`` has just put the token into the file."""
     root, cfg = _repo(tmp_path, 0o644)
     monkeypatch.setattr(gs, "_repo_root", lambda: root)
     monkeypatch.setattr(gs, "_run_git", lambda *a, **k: 0)
@@ -68,7 +68,7 @@ def test_configure_hardens_after_writing_the_remote(tmp_path, monkeypatch):
 
 
 def test_git_info_hardens_a_repo_it_did_not_write(tmp_path, monkeypatch):
-    """El instalador clona con la URL con token y nunca pasa por el escritor."""
+    """The installer clones with the token URL and never goes through the writer."""
     root, cfg = _repo(tmp_path, 0o644)
     monkeypatch.setattr(gs, "_repo_root", lambda: root)
     monkeypatch.setattr(gs, "_git_out", lambda *a, **k: "—")
@@ -78,7 +78,7 @@ def test_git_info_hardens_a_repo_it_did_not_write(tmp_path, monkeypatch):
 
 
 def test_the_installer_narrows_the_config_it_clones():
-    """El defecto es del PRODUCTO: cada instalacion nueva lo reintroduce."""
+    """The defect is in the PRODUCT: every new installation reintroduces it."""
     src = Path(gs.__file__).resolve().parents[2] / "installers" / "install-satom.sh"
     body = src.read_text()
     assert 'git clone --depth 1 --branch main "$GIT_URL"' in body

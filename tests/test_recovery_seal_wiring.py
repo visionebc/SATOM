@@ -95,7 +95,7 @@ def test_sealing_happens_only_after_the_health_check_passes():
     """An envelope built before the app is proven to start is an envelope
     built from a configuration that may never work."""
     code = shell_code(INSTALLER)
-    health = code.index("healthz responde 200")
+    health = code.index("healthz returns 200")
     # NOT "execute seal recovery --yes": that exact string also appears in a
     # remediation hint printed ~500 lines earlier, and index() would find the
     # hint. Anchor on the invocation's own shape instead.

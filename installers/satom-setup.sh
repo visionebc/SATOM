@@ -40,7 +40,7 @@ set -Eeuo pipefail
 # estampa deploy/stamp_site_assets.py desde VERSION al cortar la versión (igual
 # que el VERSION de install-satom.sh) y el pipeline de release se niega a
 # publicar si no coincide. DEBE ser la primera línea ^(SATOM_|SETUP_)?VERSION=.
-SETUP_VERSION="2.1.1"
+SETUP_VERSION="2.1.2"
 GH_REPO="visionebc/SATOM"
 GH_URL="https://github.com/${GH_REPO}"
 LOG="/var/log/satom-setup.log"

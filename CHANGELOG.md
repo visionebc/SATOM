@@ -6,6 +6,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [2.1.2] - 2026-09-24
+
 ### Fixed — a fresh native install died at `flask create-db` (2026-09-24)
 
 The documentation-redaction rules are read from

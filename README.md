@@ -158,7 +158,15 @@ plane on every page load. See [docs/engineering.md](docs/engineering.md).
 
 ## Quick start
 
-Requires a Debian-family host with Python 3.11+ and PostgreSQL.
+**Guided install** (Debian/Ubuntu, RHEL/Rocky/Alma 9, openSUSE/SLES 15): download
+`satom-setup.sh` from the [release](https://github.com/visionebc/SATOM/releases)
+and run `sudo bash satom-setup.sh`. It checks the machine, then installs natively
+(systemd, through `install-satom.sh`) or as a Docker stack — the Docker variant
+disables the four host-only web actions (Software Update & HA, service control,
+certificate activation, systemd unit health). See
+[docs/INSTALL.md §2](docs/INSTALL.md).
+
+Manual install — requires a Debian-family host with Python 3.11+ and PostgreSQL.
 
 ```bash
 # put the source at /opt/satom (git clone / tarball)

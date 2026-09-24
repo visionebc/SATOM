@@ -6,6 +6,48 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed — a fresh native install died at `flask create-db` (2026-09-24)
+
+The documentation-redaction rules are read from
+`data/publication-rules.local.json`, and on an installed node (one with a
+`.env`) a missing file stops the application on purpose — redacting with the
+generic rules alone would be a silent fail-open. That file is site-specific and
+never ships, so every fresh 2.1.1 install stopped at `flask create-db`.
+`install-satom.sh` now creates it as `{}` (a new installation has no site
+rules), owned by the service account and before anything imports the
+application — **only when it is absent**, from `data/` and from the legacy path
+alike, and never overwriting it. The container entrypoint does the same on the
+data volume. The loader's fail-closed behaviour is unchanged.
+
+### Fixed — container image: no home directory, and no admin without a password (2026-09-24)
+
+The image's `satom` account had no home directory, so gunicorn could not create
+its control socket under `~/.gunicorn` and warned on every start; it now has
+one. And with no `SATOM_ADMIN_PASSWORD` the first start tried to write the
+generated admin password into the root-owned application directory, failed,
+and created no admin at all — on every restart. The image now points
+`SATOM_ADMIN_PASSWORD_FILE` at the instance volume
+(`/opt/satom/instance/initial-admin-password`, `0600`).
+
+### Fixed — `install-satom.sh` ignored ufw (2026-09-24)
+
+Only firewalld was opened, so on a Debian/Ubuntu host with ufw active the
+install finished and the console was unreachable. Both now open the HTTPS port,
+`:80` (the vhost's redirect and ACME http-01 listener) and, on a cluster
+primary, `5432`.
+
+### Added — guided installer `installers/satom-setup.sh` (2026-09-24)
+
+One script for a new machine: system checks (`--check`), native (driving
+`install-satom.sh`) or Docker, bundled or external PostgreSQL, roles, name,
+port, certificate and admin password, asked once; `--yes` for unattended runs;
+`--uninstall`/`--purge` for Docker. It installs the release it ships with (its
+`SETUP_VERSION` is stamped from `VERSION` by `deploy/stamp_site_assets.py`,
+like the installer banner), uses the sibling `install-satom.sh` when run from
+an offline bundle — every bundle now carries it — and refuses a downloaded
+source tree that still contains an invalid network literal instead of
+repairing it. See `docs/INSTALL.md` §2.
+
 ## [2.1.1] - 2026-09-23
 
 ### Security — a fresh install no longer has a default admin password (2026-09-23)

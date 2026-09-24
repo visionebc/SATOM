@@ -69,7 +69,7 @@
       <a href="#7-reference-docs">7. Reference docs</a>
     </aside>
     <div class="doc-body mdx">
-<h1 id="satom-project-overview-operational-rules">SATOM — Project Overview &amp; Operational Rules</h1>
+<h1 id="satom--project-overview--operational-rules">SATOM — Project Overview &amp; Operational Rules</h1>
 <blockquote>
 <p>The web platform for managing <strong>FortiWeb</strong> appliances over their REST API and
 SSH/CLI. This is the authoritative in-app overview: what the app is, where it
@@ -97,8 +97,8 @@ when operating it.</p>
 when appliances are slow, unreachable, or license-locked. Live device reads are
 the explicit "refresh" escape hatch.</p>
 <h2 id="2-architecture">2. Architecture</h2>
-<pre><code>Browser ──▶ edge nginx (LXC 241 @ {ip})
-             └─▶ gunicorn (4 workers × 8 gthread) on 0.0.0.0:8000 inside LXC 248
+<pre><code>Browser ──▶ edge nginx ({container} @ {ip})
+             └─▶ gunicorn (4 workers × 8 gthread) on 0.0.0.0:8000 inside {container}
                   ├─ Flask app (app/) ── PostgreSQL (config, registry, jobs index)
                   ├─ Redis (rate-limit + cache, 127.0.0.1)
                   ├─ httpx  ─▶ FortiWeb REST  (/api/v2.0/…)
@@ -117,7 +117,7 @@ the explicit "refresh" escape hatch.</p>
 </ul>
 <h2 id="3-deployment">3. Deployment</h2>
 <ul>
-<li><strong>Host:</strong> {hypervisor} ({ip}), <strong>LXC 248</strong>, <code>/opt/satom</code>. Container IP
+<li><strong>Host:</strong> {hypervisor} ({ip}), <strong>{container}</strong>, <code>/opt/satom</code>. Container IP
   <code>{ip}</code>. Reach: <code>ssh root@{ip} "pct exec 248 -- &lt;cmd&gt;"</code>.</li>
 <li><strong>Service:</strong> <code>systemctl restart satom.service</code> after any code or
   template change. A scheduler sidecar (<code>satom-scheduler.service</code>)

@@ -66,7 +66,7 @@
       <a href="#4-the-run-state-machine">4. The run state machine</a>
       <a href="#5-credentials">5. Credentials</a>
       <a href="#6-verifying-the-backends-are-wired">6. Verifying the backends are wired</a>
-      <a href="#7-choosing-a-mode-advantages-and-disadvantages">7. Choosing a mode — advantages and disadvantages</a>
+      <a href="#7-choosing-a-mode--advantages-and-disadvantages">7. Choosing a mode — advantages and disadvantages</a>
       <a href="#8-the-esxi-host-shell-transport">8. The ESXi host-shell transport</a>
       <a href="#9-two-proxmox-storage-roles-that-are-not-the-same-role">9. Two Proxmox storage roles that are not the same role</a>
       <a href="#10-clusterresources-is-a-cache">10. /cluster/resources is a cache</a>
@@ -76,7 +76,7 @@
       <a href="#14-verifying-the-guards-are-armed">14. Verifying the guards are armed</a>
     </aside>
     <div class="doc-body mdx">
-<h1 id="hypervisor-provisioning-building-appliances-from-nothing">Hypervisor provisioning — building appliances from nothing</h1>
+<h1 id="hypervisor-provisioning--building-appliances-from-nothing">Hypervisor provisioning — building appliances from nothing</h1>
 <p>SATOM can create the virtual machine an appliance runs on, not just configure
 one that already exists. This document covers the machine half: the hypervisor
 backends, what each one can and cannot do, the firmware split that feeds it,
@@ -126,7 +126,7 @@ something that did not travel in the bundle (<code>sudo</code> and <code>openssh
 SUSE one). <code>proxmoxer</code> and <code>pyVmomi</code> would each require a rebuild of three
 bundles and a new entry in the curated pip allowlist to buy a thin wrapper
 over JSON and XML we can write directly.</p>
-<h3 id="21-proxmox-ve-appserviceshypervisorsproxmoxpy">2.1 Proxmox VE — <code>app/services/hypervisors/proxmox.py</code></h3>
+<h3 id="21-proxmox-ve--appserviceshypervisorsproxmoxpy">2.1 Proxmox VE — <code>app/services/hypervisors/proxmox.py</code></h3>
 <p>Plain JSON over <code>/api2/json</code>. Authentication supports both forms Proxmox
 offers: an <strong>API token</strong> (<code>user@realm!tokenid</code> + secret, preferred — no
 session, no expiry, scopeable below root) and a <strong>ticket</strong> (username +
@@ -151,7 +151,7 @@ delete → delete again (idempotent).</p>
 <p>Appliance disks are attached with <code>import-from</code> at creation time, with size
 <code>0</code> so the size comes from the source image — an explicit size silently
 truncates a larger appliance disk.</p>
-<h3 id="22-vmware-esxi-appserviceshypervisorsesxipy">2.2 VMware ESXi — <code>app/services/hypervisors/esxi.py</code></h3>
+<h3 id="22-vmware-esxi--appserviceshypervisorsesxipy">2.2 VMware ESXi — <code>app/services/hypervisors/esxi.py</code></h3>
 <p>vSphere SOAP over <code>/sdk</code>, parsed with the standard library. Sessions, the
 PropertyCollector, container views and managed-object resolution are all
 implemented directly; the well-known standalone identifiers (<code>ha-root-pool</code>,
@@ -219,7 +219,7 @@ Appending a step is safe; reordering is not — the index in <code>STEPS</code> 
 "how far did it get" means, so existing rows would claim the wrong progress.</p>
 <p><code>ip_from_ipam</code> exists because <strong>a user-typed address is not ours to release</strong>.
 Rollback frees an address only when SATOM allocated it.</p>
-<h3 id="41-modes-the-operator-chooses-how-far-unattended-goes">4.1 Modes — the operator chooses how far unattended goes</h3>
+<h3 id="41-modes--the-operator-chooses-how-far-unattended-goes">4.1 Modes — the operator chooses how far unattended goes</h3>
 <p>The product cannot promise unattended first boot everywhere. A factory
 Fortinet VM boots to <code>admin</code> with an empty password and a forced change
 dialog; the REST API does not exist until that dialog is completed, and
@@ -306,7 +306,7 @@ machines that may already be gone.</p>
 <li>a capability record that was never probed against the endpoint will happily
   advertise writes on a read-only licence.</li>
 </ul>
-<h2 id="7-choosing-a-mode-advantages-and-disadvantages">7. Choosing a mode — advantages and disadvantages</h2>
+<h2 id="7-choosing-a-mode--advantages-and-disadvantages">7. Choosing a mode — advantages and disadvantages</h2>
 <p>A factory Fortinet appliance boots into a first-boot dialog: <code>admin</code> with an
 empty password and a forced change. Nothing can reach its API until that dialog
 is completed. So "fully automatic" turns entirely on one question — <strong>does the

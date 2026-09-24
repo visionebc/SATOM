@@ -62,14 +62,14 @@
       <div class="toc-title">On this page</div>
       <a href="#1-where-the-data-comes-from">1. Where the data comes from</a>
       <a href="#2-topics-curated">2. Topics (curated)</a>
-      <a href="#3-the-modal-account-menu-release-notes">3. The modal (account menu → Release Notes)</a>
+      <a href="#3-the-modal-account-menu--release-notes">3. The modal (account menu → Release Notes)</a>
       <a href="#4-data-model">4. Data model</a>
       <a href="#5-running-a-scan-there-is-no-cli">5. Running a scan (there is no CLI)</a>
       <a href="#6-scout-advisory-servicesrelease_advisorpy">6. Scout Advisory (services/release_advisor.py)</a>
       <a href="#7-tests">7. Tests</a>
     </aside>
     <div class="doc-body mdx">
-<h1 id="release-notes-upgrade-planning">Release Notes &amp; Upgrade Planning</h1>
+<h1 id="release-notes--upgrade-planning">Release Notes &amp; Upgrade Planning</h1>
 <p>A searchable corpus of FortiWeb <strong>known</strong> and <strong>resolved</strong> issues (plus the prose
 sections) across firmware versions, harvested from <code>docs.fortinet.com</code> — built to
 <strong>plan upgrades</strong>: diff your current firmware against a target and see what you
@@ -242,7 +242,7 @@ Bot Mitigation, Caching &amp; Compression, GUI / Web UI, Upgrade &amp; Configura
 System &amp; Performance,</em> else <em>General</em>. The modal's topic filter reflects the topics
 actually present (<code>_topics()</code> in <code>app/views/release_notes.py</code>), so tuning the rules
 never breaks the UI.</p>
-<h2 id="3-the-modal-account-menu-release-notes">3. The modal (account menu → Release Notes)</h2>
+<h2 id="3-the-modal-account-menu--release-notes">3. The modal (account menu → Release Notes)</h2>
 <p>Reading needs <code>VIEW</code>; the 🔎 scan needs <code>USER_MANAGE</code> (admin). Three tabs:</p>
 <ul>
 <li><strong>Issues</strong> — filter by version / status (known·resolved) / topic / keyword;
@@ -257,7 +257,7 @@ never breaks the UI.</p>
     <code>services.release_notes.advise</code>).</li>
 <li><strong>Notes</strong> — full-text search the prose sections (What's new / Upgrade notes / …).</li>
 </ul>
-<h3 id="scan-from-fortinet">🔎 Scan from Fortinet</h3>
+<h3 id="-scan-from-fortinet">🔎 Scan from Fortinet</h3>
 <p><strong>Discover first, then tick.</strong> Opening the scan panel fetches the version list
 (one page fetch, ~1 s) and renders it as checkboxes grouped by line, with the
 versions missing from the corpus <strong>pre-ticked</strong>. Only the ticked versions are

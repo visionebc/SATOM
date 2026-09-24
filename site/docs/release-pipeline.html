@@ -60,16 +60,16 @@
   <div class="doc">
     <aside class="toc">
       <div class="toc-title">On this page</div>
-      <a href="#stage-0-the-promotion-order">Stage 0 — the promotion order</a>
-      <a href="#stage-1-sanitization">Stage 1 — Sanitization</a>
-      <a href="#stage-2-secret-scan">Stage 2 — Secret scan</a>
-      <a href="#stage-3-internal-ai-vulnerability-audit">Stage 3 — Internal AI vulnerability audit</a>
-      <a href="#before-any-of-it-regenerate-the-derived-pages">Before any of it — regenerate the derived pages</a>
-      <a href="#stage-4-publish">Stage 4 — Publish</a>
+      <a href="#stage-0--the-promotion-order">Stage 0 — the promotion order</a>
+      <a href="#stage-1--sanitization">Stage 1 — Sanitization</a>
+      <a href="#stage-2--secret-scan">Stage 2 — Secret scan</a>
+      <a href="#stage-3--internal-ai-vulnerability-audit">Stage 3 — Internal AI vulnerability audit</a>
+      <a href="#before-any-of-it--regenerate-the-derived-pages">Before any of it — regenerate the derived pages</a>
+      <a href="#stage-4--publish">Stage 4 — Publish</a>
       <a href="#why-publish-this">Why publish this</a>
     </aside>
     <div class="doc-body mdx">
-<h1 id="release-publication-pipeline">Release &amp; publication pipeline</h1>
+<h1 id="release--publication-pipeline">Release &amp; publication pipeline</h1>
 <p>SATOM is developed privately and published publicly through an
 automated, deterministic gate. Nothing reaches the public mirror by hand.
 This document is the source of truth for that process and is intentionally
@@ -93,7 +93,7 @@ repository and its own node (Stage 0, hop 7).</p>
   │ (full history)   │   │ 3. Internal AI vuln audit      │   │ (public)     │
   └──────────────────┘   └───────────────────────────────┘   └──────────────┘
 </code></pre>
-<h2 id="stage-0-the-promotion-order">Stage 0 — the promotion order</h2>
+<h2 id="stage-0--the-promotion-order">Stage 0 — the promotion order</h2>
 <p>Publication is the <strong>last</strong> hop of a chain. Each hop reaches a wider audience
 than the one before it and nothing downstream can be un-published, so each has
 a gate that must be green before the next one runs.</p>
@@ -195,7 +195,7 @@ Two things are measured, and only those two are claimed here:</p>
   a guess, which is how 3600 got there.</li>
 </ul>
 <hr>
-<h2 id="stage-1-sanitization">Stage 1 — Sanitization</h2>
+<h2 id="stage-1--sanitization">Stage 1 — Sanitization</h2>
 <p>The full internal history is rewritten into a clean mirror with
 <code>git-filter-repo</code>:
 - <strong>Removed from all history:</strong> <code>.env</code> and <code>.env.*</code>, <code>CLAUDE.md</code>,
@@ -204,7 +204,7 @@ Two things are measured, and only those two are claimed here:</p>
 - <strong>Commit messages</strong> are filtered to drop any AI-assistant references.
 - The rewrite is <strong>deterministic</strong>: the same internal history always
   produces the same public commit SHAs.</p>
-<h2 id="stage-2-secret-scan">Stage 2 — Secret scan</h2>
+<h2 id="stage-2--secret-scan">Stage 2 — Secret scan</h2>
 <p>Every blob in the sanitized history is scanned with a gitleaks-style
 detector (high-confidence patterns: PEM private keys, GitHub/AWS/Slack/
 Google tokens, and <code>fernet</code>/<code>secret_key</code>/<code>encryption_key</code> assignments).
@@ -226,7 +226,7 @@ evidence that it still bites. <code>tools_check_secret_patterns.py</code> <stron
 eight real key encodings — PKCS#8, traditional RSA, EC, ED25519, OpenSSH, a
 <code>DEK-Info</code> encrypted PEM, a JSON-escaped one-liner and a YAML block scalar —
 and asserts every one still aborts, alongside seven labels that must not.</p>
-<h2 id="stage-3-internal-ai-vulnerability-audit">Stage 3 — Internal AI vulnerability audit</h2>
+<h2 id="stage-3--internal-ai-vulnerability-audit">Stage 3 — Internal AI vulnerability audit</h2>
 <p>Before a release is blessed, the code is audited by <strong>fleet-internal LLMs</strong>
 (no third-party/cloud AI, no code leaves the LAN): DeepSeek-R1 and
 Qwen2.5-Coder running on local Ollama nodes, orchestrated by the Project
@@ -240,7 +240,7 @@ written verdict). <strong>Auditor output is treated as a lead, not a verdict:</s
 every finding is verified against the real source before it is fixed or
 dismissed — automated scanners over-report (stale snapshots, hallucinated
 files), so human/maintainer verification is mandatory.</p>
-<h2 id="before-any-of-it-regenerate-the-derived-pages">Before any of it — regenerate the derived pages</h2>
+<h2 id="before-any-of-it--regenerate-the-derived-pages">Before any of it — regenerate the derived pages</h2>
 <p>The public site carries two generated trees, and both are derived from files a
 release necessarily touches:</p>
 <pre><code class="language-bash">python3 deploy/gen_site_docs.py        # site/docs/*.html   &lt;- docs/*.md
@@ -252,7 +252,7 @@ site. The suite fails if they are stale, so this is a reminder rather than a
 rule you can forget — but running it after the tests and before the sync saves
 a round trip.</p>
 <hr>
-<h2 id="stage-4-publish">Stage 4 — Publish</h2>
+<h2 id="stage-4--publish">Stage 4 — Publish</h2>
 <p>On a clean gate the sanitized history is force-pushed to the <strong>public GitHub
 mirror</strong> — one destination, with every version tag repointed at the sanitized
 commit that carries the same tree — and the release artefacts (installer +

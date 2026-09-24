@@ -67,11 +67,11 @@
       <a href="#5-section-pages-are-read-only-deliberately">5. Section pages are read-only, deliberately</a>
       <a href="#6-the-snapshot-excludes-the-operational-endpoints">6. The snapshot excludes the operational endpoints</a>
       <a href="#7-two-traps-when-registering-an-appliance">7. Two traps when registering an appliance</a>
-      <a href="#8-the-18-character-ceiling-read-this-before-adding-a-fifth-product">8. The 18-character ceiling — read this before adding a fifth product</a>
+      <a href="#8-the-18-character-ceiling--read-this-before-adding-a-fifth-product">8. The 18-character ceiling — read this before adding a fifth product</a>
       <a href="#9-what-satom-measures-on-it">9. What SATOM measures on it</a>
     </aside>
     <div class="doc-body mdx">
-<h1 id="fortiauthenticator-fac-how-this-product-is-wired">FortiAuthenticator (FAC) — how this product is wired</h1>
+<h1 id="fortiauthenticator-fac--how-this-product-is-wired">FortiAuthenticator (FAC) — how this product is wired</h1>
 <p>FortiAuthenticator is the fourth managed product, added 2026-08-05 against
 <code>FACVMKVM v8.0.3, build0099 (GA)</code>. It is the odd one out: FortiWeb and FortiADC
 speak the Fortinet CMDB REST dialect, FortiAnalyzer speaks JSON-RPC, and
@@ -140,7 +140,7 @@ anyway (<code>systeminfo</code>, <code>logsettings</code>, <code>snmpgeneral</co
 <code>fortitokenmobilelicenses</code>, <code>fortiguardmessages</code>). A registry seeded from "does
 <code>/schema/</code> work?" would have silently dropped them. The census in
 <code>endpoints_fortiauthenticator.yaml</code> is keyed on the <strong>list</strong> response instead.</p>
-<h3 id="secrets-are-write-only-verified-not-assumed">Secrets are write-only — verified, not assumed</h3>
+<h3 id="secrets-are-write-only--verified-not-assumed">Secrets are write-only — verified, not assumed</h3>
 <p>A canary round-trip on 2026-08-05 created a RADIUS client with a known secret
 and a local user with a known password, read both back and deleted them. The
 device omits <code>radiusclients.secret</code> and <code>localusers.password</code> from the GET
@@ -278,7 +278,7 @@ sync with unchanged config creates <strong>no new SoT version</strong>.</p>
    syncs.</li>
 <li><strong>The password column holds the API key</strong>, not the login password (§1).</li>
 </ol>
-<h2 id="8-the-18-character-ceiling-read-this-before-adding-a-fifth-product">8. The 18-character ceiling — read this before adding a fifth product</h2>
+<h2 id="8-the-18-character-ceiling--read-this-before-adding-a-fifth-product">8. The 18-character ceiling — read this before adding a fifth product</h2>
 <p><code>fortiauthenticator</code> is <strong>18 characters</strong>. Every product key the app had ever
 written was ≤ 13 (<code>fortianalyzer</code>), so the whole product-scoping layer was
 declared <code>varchar(16)</code>: <code>appliances.kind</code> plus the <code>product</code> column on
@@ -310,7 +310,7 @@ entitlement.</strong> A box sitting at 4 % CPU refuses the sixth local user when
 licence ships <code>users_usage_detail {max: 5}</code>, and that is a cliff no CPU, memory
 or session series would ever show. Measuring it the way a FortiWeb is measured
 would produce a dashboard that is green on the day the product stops working.</p>
-<h3 id="capacity-the-licence-cliff-from-one-call"><code>capacity</code> — the licence cliff, from ONE call</h3>
+<h3 id="capacity--the-licence-cliff-from-one-call"><code>capacity</code> — the licence cliff, from ONE call</h3>
 <p>One <code>systeminfo</code> call yields every licence counter and every FortiToken pool:</p>
 <table>
 <thead>
@@ -352,7 +352,7 @@ expression covers the whole fleet however many counters a future firmware adds.<
   the source of truth for churn, so the series is the only place HA presence
   can live.</li>
 </ul>
-<h3 id="identity-what-the-directory-contains-counted-not-fetched"><code>identity</code> — what the directory CONTAINS, counted not fetched</h3>
+<h3 id="identity--what-the-directory-contains-counted-not-fetched"><code>identity</code> — what the directory CONTAINS, counted not fetched</h3>
 <p><code>satom_fac_inventory</code>, one series per resource, labelled <code>resource=</code>: local /
 RADIUS / LDAP / IAM users, user groups, group memberships, MAC devices,
 FortiTokens, user certificates, RADIUS clients, TACACS+ clients and SSO groups

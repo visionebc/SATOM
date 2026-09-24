@@ -64,8 +64,8 @@
       </a>
       <a class="rel-nav-item" href="v2.1.3.html" data-rel-version="2.1.3">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 2.1.3</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
-        <span class="rel-nav-meta">2026-09-24 · Changed — the installers speak English (2026-09-24) · 2 entries</span>
-        <ul class="rel-leads"><li class="rel-more">… and 2 more</li></ul>
+        <span class="rel-nav-meta">2026-09-24 · Changed — the installers speak English (2026-09-24) · 6 entries</span>
+        <ul class="rel-leads"><li>Table-of-contents anchors</li><li>Release pages</li><li>Repository files</li><li class="rel-more">… and 3 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v2.1.2.html" data-rel-version="2.1.2">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 2.1.2</span></span>
@@ -313,7 +313,7 @@
   chain in leaf-first order with <strong>every link verified by actually checking the
   child's signature with the parent's key</strong> — plus expiry, key size, signature
   hash, RFC 6125 hostname coverage and whether a pasted private key matches.
-  Built because this project already paid for not having it: CT 346 served a
+  Built because this project already paid for not having it: {container} served a
   chain one certificate short and the diagnosis was <code>unable to get local issuer
   certificate</code> plus a manual count. Chain completeness can come back <strong>UNKNOWN</strong>
   — on a node without <code>openssl</code> only the leaf is readable, and "not measured"
@@ -381,7 +381,7 @@
   still introduced the engine as routing to "in-app bell, email, and a
   syslog/CEF feed", and there was nowhere at all to read the wire contract.</li>
 </ul>
-<p>New <strong><a href="alerting.html">Alerting &amp; notification delivery</a></strong>, published with
+<p>New <strong><a href="../docs/alerting.html">Alerting &amp; notification delivery</a></strong>, published with
   the rest of the manual: the two delivery paths and why the feed carries no
   cooldown, the per-sink severity floor and family mask, the key-prefix to
   family map, the signed webhook envelope with a verification recipe and the

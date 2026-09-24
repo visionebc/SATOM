@@ -68,7 +68,7 @@
       <a href="#6-security-notes">6. Security notes</a>
     </aside>
     <div class="doc-body mdx">
-<h1 id="acme-lets-encrypt-in-the-certificate-manager">ACME / Let's Encrypt in the Certificate Manager</h1>
+<h1 id="acme--lets-encrypt-in-the-certificate-manager">ACME / Let's Encrypt in the Certificate Manager</h1>
 <p>The Certificate Manager issues certificates through a <strong>pluggable protocol</strong>:</p>
 <table>
 <thead>
@@ -170,7 +170,7 @@ as a badge on the provider and <strong>fail the issuance early</strong>, with a 
 instead of a CA error.</p>
 <p><code>Resolvers</code> matters in a split-horizon fleet: point it at a public resolver
 (<code>1.1.1.1:53</code>) or the propagation check will read your internal view and hang.</p>
-<h3 id="providers-with-no-native-support-the-exec-hook">Providers with no native support — the <code>exec</code> hook</h3>
+<h3 id="providers-with-no-native-support--the-exec-hook">Providers with no native support — the <code>exec</code> hook</h3>
 <p><code>flag: exec</code> runs any script: <code>&lt;script&gt; present|cleanup &lt;fqdn&gt; &lt;token&gt; &lt;keyauth&gt;</code>.
 This is how <strong>EfficientIP SOLIDserver</strong> is supported
 (<code>deploy/acme-hooks/efficientip.sh</code>, stdlib-only, same REST verbs and Basic auth

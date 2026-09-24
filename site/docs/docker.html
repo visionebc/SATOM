@@ -63,8 +63,8 @@
       <a href="#read-this-before-you-choose-the-container-shape">Read this before you choose the container shape</a>
       <a href="#what-the-stack-contains">What the stack contains</a>
       <a href="#tls-ships-with-the-stack">TLS ships with the stack</a>
-      <a href="#development-a-single-node">Development — a single node</a>
-      <a href="#production-a-two-node-cluster">Production — a two-node cluster</a>
+      <a href="#development--a-single-node">Development — a single node</a>
+      <a href="#production--a-two-node-cluster">Production — a two-node cluster</a>
       <a href="#delivering-an-image-to-an-air-gapped-or-dmz-node">Delivering an image to an air-gapped or DMZ node</a>
       <a href="#backups">Backups</a>
       <a href="#guards">Guards</a>
@@ -262,7 +262,7 @@ to keep the application off the network would otherwise have had the opposite
 of what their file said. <code>satom-docker.sh</code> stops with an explanation rather
 than ignoring it. Use <code>SATOM_HTTPS_BIND</code> and <code>SATOM_REDIRECT_BIND</code>.</p>
 </blockquote>
-<h2 id="development-a-single-node">Development — a single node</h2>
+<h2 id="development--a-single-node">Development — a single node</h2>
 <pre><code class="language-bash">git clone &lt;repo&gt; /opt/satom &amp;&amp; cd /opt/satom/deploy/docker
 cp env.example .env
 ./satom-docker.sh gen-secrets          # real SECRET_KEY / FERNET_KEY / passwords
@@ -282,7 +282,7 @@ only to the instance volume, readable with
 (or <code>docker compose exec web cat …</code>). Change it after the first login and
 delete the file. <code>installers/satom-setup.sh</code> (INSTALL.md §2) builds and
 starts this stack for you and asks for the password instead.</p>
-<h2 id="production-a-two-node-cluster">Production — a two-node cluster</h2>
+<h2 id="production--a-two-node-cluster">Production — a two-node cluster</h2>
 <p>The second node is a <strong>standby</strong>, not the other half of a load balancer: its
 PostgreSQL is a streaming replica, its scheduler idles, and the reverse proxy
 carries it as <code>backup</code>. It takes traffic when the primary stops answering

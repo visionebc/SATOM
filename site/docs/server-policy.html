@@ -62,15 +62,15 @@
       <div class="toc-title">On this page</div>
       <a href="#1-what-a-server-policy-is">1. What a Server Policy is</a>
       <a href="#2-server-policy-field-inventory-108-fields">2. Server Policy field inventory (~108 fields)</a>
-      <a href="#3-dependency-graph-linked-objects">3. Dependency graph — linked objects</a>
-      <a href="#4-web-protection-profile-35-sub-policy-references">4. Web Protection Profile — 35 sub-policy references</a>
-      <a href="#5-shared-vs-owned-the-cascade-delete-contract">5. Shared vs owned — the cascade-delete contract</a>
-      <a href="#6-auditing-persistence-who-when-what">6. Auditing &amp; persistence (who / when / what)</a>
+      <a href="#3-dependency-graph--linked-objects">3. Dependency graph — linked objects</a>
+      <a href="#4-web-protection-profile--35-sub-policy-references">4. Web Protection Profile — 35 sub-policy references</a>
+      <a href="#5-shared-vs-owned--the-cascade-delete-contract">5. Shared vs owned — the cascade-delete contract</a>
+      <a href="#6-auditing--persistence-who--when--what">6. Auditing &amp; persistence (who / when / what)</a>
       <a href="#7-where-this-lives-in-the-repo">7. Where this lives in the repo</a>
-      <a href="#8-coverage-cross-validation-official-docs-2026-06-20">8. Coverage &amp; cross-validation (official docs, 2026-06-20)</a>
+      <a href="#8-coverage--cross-validation-official-docs-2026-06-20">8. Coverage &amp; cross-validation (official docs, 2026-06-20)</a>
     </aside>
     <div class="doc-body mdx">
-<h1 id="server-policy-full-reference">Server Policy — full reference</h1>
+<h1 id="server-policy--full-reference">Server Policy — full reference</h1>
 <blockquote>
 <p>Authoritative, field-level reference for the FortiWeb <strong>Server Policy</strong> object and
 its entire dependency graph. Source of truth: the team's <code>fortiweb_api</code> SDK
@@ -131,11 +131,11 @@ content-routing, persistence, allow-lists, acceleration and logging on top.</p>
 <p><code>name</code> is the mkey. <code>q_ref</code> / <code>q_ref_string</code> are read-only. The only nested
 sub-table is <code>http_content_routing_list</code>. <strong>REF</strong> = the field names another cmdb
 object (a dependency edge); the rest are scalars/enums/ints.</p>
-<h3 id="21-identity-deployment">2.1 Identity / deployment</h3>
+<h3 id="21-identity--deployment">2.1 Identity / deployment</h3>
 <p><code>name</code> · <code>deployment_mode</code> (enum) · <code>protocol</code> (enum) · <code>status</code> (enable/disable) ·
 <code>comment</code> · <code>case_sensitive</code> · <code>noparse</code> (passthrough) · <code>tags</code> · <code>monitor_mode</code>
 (detection-only) · <code>tlog</code> (traffic logging) · <code>ssl</code> · <code>implicit_ssl</code>.</p>
-<h3 id="22-connectivity-server-objects-refs">2.2 Connectivity (Server Objects) — REFs</h3>
+<h3 id="22-connectivity-server-objects--refs">2.2 Connectivity (Server Objects) — REFs</h3>
 <table>
 <thead>
 <tr>
@@ -182,7 +182,7 @@ object (a dependency edge); the rest are scalars/enums/ints.</p>
 </tr>
 </tbody>
 </table>
-<h3 id="23-protection-refs">2.3 Protection — REFs</h3>
+<h3 id="23-protection--refs">2.3 Protection — REFs</h3>
 <table>
 <thead>
 <tr>
@@ -221,7 +221,7 @@ object (a dependency edge); the rest are scalars/enums/ints.</p>
 </tr>
 </tbody>
 </table>
-<h3 id="24-tls-certificates">2.4 TLS / certificates</h3>
+<h3 id="24-tls--certificates">2.4 TLS / certificates</h3>
 <p><code>certificate_type</code> (local/letsencrypt/multi) ·
 <code>certificate</code> <strong>REF</strong> → <code>system/certificate.local</code> ·
 <code>multi_certificate</code> · <code>certificate_group</code> / <code>intermediate_certificate_group</code> <strong>REF</strong>
@@ -236,19 +236,19 @@ object (a dependency edge); the rest are scalars/enums/ints.</p>
 <code>server-policy/ssl-ciphers.predefined</code> / <code>.custom</code> · <code>ssl_cipher</code> · <code>ssl_custom_cipher</code>
 · <code>tls13_custom_cipher</code> · <code>tls_v10</code> / <code>tls_v11</code> / <code>tls_v12</code> / <code>tls_v13</code> · <code>ssl_noreg</code> ·
 <code>rfc7919_comply</code> / <code>supported_groups</code> · <code>ssl_quiet_shutdown</code> · <code>ssl_session_timeout</code>.</p>
-<h3 id="25-hsts-hpkp-csp-cookies">2.5 HSTS / HPKP / CSP / cookies</h3>
+<h3 id="25-hsts--hpkp--csp--cookies">2.5 HSTS / HPKP / CSP / cookies</h3>
 <p><code>hsts_header</code> · <code>hsts_max_age</code> · <code>hsts_include_subdomains</code> · <code>hsts_preload</code> ·
 <code>hpkp_header</code> <strong>REF</strong> (HPKP profile — <em>no endpoint</em>) · <code>content_security_policy_inline</code>
 · <code>sessioncookie_enforce</code> · <code>internal_cookie_httponly</code> / <code>_secure</code> / <code>_samesite</code> /
 <code>_samesite_value</code>.</p>
-<h3 id="26-retry-timeouts-buffers">2.6 Retry / timeouts / buffers</h3>
+<h3 id="26-retry--timeouts--buffers">2.6 Retry / timeouts / buffers</h3>
 <p><code>retry_on</code> · <code>retry_on_cache_size</code> · <code>retry_on_connect_failure</code> ·
 <code>retry_times_on_connect_failure</code> · <code>retry_on_http_layer</code> · <code>retry_times_on_http_layer</code>
 · <code>retry_on_http_response_codes</code> · <code>replacemsg_on_connect_failure</code> ·
 <code>tcp_recv_timeout</code> · <code>http_header_timeout</code> · <code>tcp_conn_timeout</code> · <code>client_timeout</code> ·
 <code>half_open_threshold</code> · <code>send_buffers_number</code> · <code>http_parse_max_size</code> · <code>http_pipeline</code>
 · <code>http2</code> · <code>chunk_encoding</code> · <code>payload_based_content_type</code>.</p>
-<h3 id="27-traffic-mirror-content-routing-misc">2.7 Traffic mirror / content routing / misc</h3>
+<h3 id="27-traffic-mirror--content-routing--misc">2.7 Traffic mirror / content routing / misc</h3>
 <p><code>traffic_mirror</code> (enum) · <code>traffic_mirror_profile</code> <strong>REF</strong> (<em>no endpoint</em>) ·
 <code>traffic_mirror_type</code> · <code>sz_http_content_routing_list</code> (row count) ·
 <code>http_content_routing_list</code> (<strong>sub-table</strong> → §3, active when
@@ -257,7 +257,7 @@ object (a dependency edge); the rest are scalars/enums/ints.</p>
 <code>forward_expect_100_continue</code> · <code>transaction_based_persistence</code> · <code>syncookie</code> ·
 <code>http_to_https</code> · <code>redirect_naked_domain</code> · <code>data_capture_port</code>.</p>
 <hr>
-<h2 id="3-dependency-graph-linked-objects">3. Dependency graph — linked objects</h2>
+<h2 id="3-dependency-graph--linked-objects">3. Dependency graph — linked objects</h2>
 <p>Every object a Server Policy references, or that hangs under it, in the order the
 tree (<code>dependencies.py SERVER_POLICY</code>) walks them. <strong>via</strong> = the parent field that
 points at the child. ⊂ = by-parent sub-table.</p>
@@ -438,7 +438,7 @@ points at the child. ⊂ = by-parent sub-table.</p>
 <p>⚠ <strong>Health-check sub-table:</strong> the SDK attribute is misspelled <code>healt_list</code>, but the
 REST wire name is <code>health-list</code> — always use <code>health-list</code> in calls/clones.</p>
 <hr>
-<h2 id="4-web-protection-profile-35-sub-policy-references">4. Web Protection Profile — 35 sub-policy references</h2>
+<h2 id="4-web-protection-profile--35-sub-policy-references">4. Web Protection Profile — 35 sub-policy references</h2>
 <p>The inline WPP (<code>WebProtectionProfileInline</code>) holds <strong>no nested objects</strong>: each
 sub-policy is a <strong>string field naming another <code>cmdb/waf/*</code> object</strong>. 35 reference
 fields drive the ~40-node <code>WEB_PROTECTION_PROFILE</code> tree. Grouped as the 7.6 GUI does:</p>
@@ -472,7 +472,7 @@ fields drive the ~40-node <code>WEB_PROTECTION_PROFILE</code> tree. Grouped as t
 tree (e.g. URL Rewriting → Rewrite Rules → match/header inserts; Signatures →
 classes/disabled/filters; Bot Mitigation → known-bots/deception/biometrics/…).</p>
 <hr>
-<h2 id="5-shared-vs-owned-the-cascade-delete-contract">5. Shared vs owned — the cascade-delete contract</h2>
+<h2 id="5-shared-vs-owned--the-cascade-delete-contract">5. Shared vs owned — the cascade-delete contract</h2>
 <p>Deleting a Server Policy must <strong>not</strong> blindly delete its dependencies: most are
 reusable objects that other policies point at. Classification used by safe cascade:</p>
 <table>
@@ -511,7 +511,7 @@ matches) on the box and tallies which named objects they bind. An object with
 count 0 outside the target policy is <em>exclusive</em> and safe to remove; anything else
 is <em>shared</em> and is listed but skipped.</p>
 <hr>
-<h2 id="6-auditing-persistence-who-when-what">6. Auditing &amp; persistence (who / when / what)</h2>
+<h2 id="6-auditing--persistence-who--when--what">6. Auditing &amp; persistence (who / when / what)</h2>
 <p>Every mutation is recorded so a change is fully reconstructable:</p>
 <ul>
 <li><strong>Snapshot before</strong> — <code>SnapshotStore</code> writes the object's prior JSON under
@@ -572,7 +572,7 @@ and the before/after</em> — never appliance secrets (those live in the OS keyr
 <code>/Volumes/DEBIAN 12_5/py_scripts/fortiweb_api/.../v2_0/cmdb/</code> — 272 object schemas
 (<code>server_policy/</code> 33, <code>waf/</code> 172, <code>system/</code> 27).</p>
 <hr>
-<h2 id="8-coverage-cross-validation-official-docs-2026-06-20">8. Coverage &amp; cross-validation (official docs, 2026-06-20)</h2>
+<h2 id="8-coverage--cross-validation-official-docs-2026-06-20">8. Coverage &amp; cross-validation (official docs, 2026-06-20)</h2>
 <p>The SDK-derived tree was cross-validated against the <strong>official FortiWeb 7.6
 admin guide</strong> (docs.fortinet.com — JS SPA, scraped via the internal Firecrawl,
 [[internal-firecrawl-lan]]; 559 pages, 163 relevant) and <strong>probed live on {device}

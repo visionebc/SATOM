@@ -65,8 +65,8 @@
       <a href="#providers">Providers</a>
       <a href="#two-extra-gates-before-anything-leaves-the-lan">Two extra gates before anything leaves the LAN</a>
       <a href="#redaction-and-the-pre-send-preview">Redaction and the pre-send preview</a>
-      <a href="#prompt-injection-the-risk-this-feature-invites-by-design">Prompt injection — the risk this feature invites by design</a>
-      <a href="#mode-c-in-practice-the-tool-loop">Mode C in practice — the tool loop</a>
+      <a href="#prompt-injection--the-risk-this-feature-invites-by-design">Prompt injection — the risk this feature invites by design</a>
+      <a href="#mode-c-in-practice--the-tool-loop">Mode C in practice — the tool loop</a>
       <a href="#what-a-call-costs-and-the-ledger">What a call costs, and the ledger</a>
       <a href="#the-write-boundary-mode-d">The write boundary (mode D)</a>
       <a href="#permissions">Permissions</a>
@@ -177,7 +177,7 @@ sent until that confirmation is accepted. Every message actually sent to an
 external provider is also logged (<code>AdvisorExportLog</code> — provider, destination
 host, bytes sent, redaction count) in addition to the normal audit-log entry
 every SATOM action gets (<code>advisor.send</code>).</p>
-<h2 id="prompt-injection-the-risk-this-feature-invites-by-design">Prompt injection — the risk this feature invites by design</h2>
+<h2 id="prompt-injection--the-risk-this-feature-invites-by-design">Prompt injection — the risk this feature invites by design</h2>
 <p>The FortiWeb-false-positive use case feeds <strong>attacker-influenced text</strong>
 (a WAF log line, a blocked request's payload) into the model's context. A
 capable attacker can craft a request that trips the block and whose payload
@@ -193,7 +193,7 @@ globally"</em>. Two mitigations, both load-bearing:</p>
    appliance without a human explicitly applying a validated draft through
    SATOM's own form.</li>
 </ol>
-<h2 id="mode-c-in-practice-the-tool-loop">Mode C in practice — the tool loop</h2>
+<h2 id="mode-c-in-practice--the-tool-loop">Mode C in practice — the tool loop</h2>
 <p>The catalog is not a menu the operator picks from. When tools are on, the
 model is told what exists and may ask for one mid-answer; SATOM runs it and
 hands back the result, and the model continues. That exchange is what turns

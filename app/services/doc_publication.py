@@ -58,6 +58,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import posixpath
 import re
 
 ROOT_DIR = pathlib.Path(__file__).resolve().parents[2]
@@ -344,6 +345,25 @@ FORBIDDEN: list[tuple[str, re.Pattern]] = [
 MD_EXTENSIONS = ["toc", "fenced_code", "tables", "sane_lists", "attr_list"]
 
 
+def github_slug(value: str, separator: str = "-") -> str:
+    """Heading id the way GitHub computes it, which is how the docs link.
+
+    Every in-page link in docs/*.md is written against GitHub's anchors, because
+    that is where the Markdown is read. python-markdown's default slugify
+    COLLAPSES the run a removed "&" or "—" leaves ("objects & the" -> one
+    hyphen) where GitHub keeps both, so 14 table-of-contents links on the
+    published site pointed at ids that did not exist. Headings without such
+    punctuation get the same id either way.
+    """
+    s = re.sub(r"[^\w\- ]", "", value.strip().lower())
+    return s.replace(" ", separator)
+
+
+MD_EXTENSION_CONFIGS = {"toc": {"slugify": github_slug}}
+
+SOURCE_URL = "https://github.com/visionebc/SATOM"
+
+
 # ---------------------------------------------------------------------------
 # Cross-references between documents.
 #
@@ -369,16 +389,42 @@ _DEAD_ANCHOR = re.compile(
     r'<a\b[^>]*href="[^"]*\.md(?:#[^"]*)?"[^>]*>(.*?)</a>', re.DOTALL)
 
 
-def relink(body_html: str) -> str:
-    """Rewrite inter-document Markdown links to their published slugs."""
+# A relative link to anything that is not a document or a page: LICENSE,
+# NOTICE, deploy/satom-installer.sudoers. Correct in the repository, a 404 on
+# the site, which publishes none of those files.
+_REPO_HREF = re.compile(
+    r'href="(?!(?:[a-z][a-z0-9+.-]*:|#|/))([^"#?]+?)(#[^"]*)?"')
+
+
+def relink(body_html: str, base: str = "docs", prefix: str = "") -> str:
+    """Rewrite inter-document Markdown links to their published slugs.
+
+    ``base`` is the repository directory the Markdown lives in (``docs`` for the
+    manual, ``""`` for CHANGELOG.md), so a relative link to a repository file
+    resolves to the right path. ``prefix`` is how the rendered page reaches the
+    manual: ``""`` from site/docs/, ``../docs/`` from site/releases/,
+    ``docs/`` from the site root. Without it every cross-reference inside a
+    release page pointed at site/releases/cli.html, which does not exist.
+    """
     def _to_slug(m: re.Match) -> str:
         filename, fragment = m.group(1), m.group(2) or ""
         slug = SLUG_BY_FILE.get(filename)
         if slug is None:
             return m.group(0)  # unpublished — unwrapped below
-        return f'href="{slug}.html{fragment}"'
+        return f'href="{prefix}{slug}.html{fragment}"'
+
+    def _to_source(m: re.Match) -> str:
+        target, fragment = m.group(1), m.group(2) or ""
+        if target.endswith((".md", ".html")):
+            return m.group(0)
+        path = posixpath.normpath(posixpath.join(base, target))
+        if path.startswith("..") or not (ROOT_DIR / path).exists():
+            return m.group(0)
+        kind = "tree" if (ROOT_DIR / path).is_dir() else "blob"
+        return f'href="{SOURCE_URL}/{kind}/main/{path}{fragment}"'
 
     body_html = _MD_HREF.sub(_to_slug, body_html)
+    body_html = _REPO_HREF.sub(_to_source, body_html)
     # A link that cannot resolve is downgraded to its own text: the sentence
     # still reads, and nothing invites a click that 404s.
     return _DEAD_ANCHOR.sub(lambda m: m.group(1), body_html)

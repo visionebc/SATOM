@@ -67,11 +67,11 @@
       <a href="#5-where-it-lives-in-the-repo">5. Where it lives in the repo</a>
       <a href="#6-inject-to-the-device-save-to-policy">6. Inject to the device (&quot;save to policy&quot;)</a>
       <a href="#7-git-share-multi-user-desired-state">7. Git-share (multi-user desired-state)</a>
-      <a href="#8-caveats-not-yet">8. Caveats / not yet</a>
-      <a href="#9-signature-carve-outs-same-model-same-page-store-v8">9. Signature carve-outs — same model, SAME page (store v8)</a>
+      <a href="#8-caveats--not-yet">8. Caveats / not yet</a>
+      <a href="#9-signature-carve-outs--same-model-same-page-store-v8">9. Signature carve-outs — same model, SAME page (store v8)</a>
     </aside>
     <div class="doc-body mdx">
-<h1 id="wpp-exceptions-workflow-data-model-field-reference">WPP Exceptions — workflow, data model &amp; field reference</h1>
+<h1 id="wpp-exceptions--workflow-data-model--field-reference">WPP Exceptions — workflow, data model &amp; field reference</h1>
 <blockquote>
 <p>How the manager authors WAF <strong>exceptions</strong> for a Server Policy's Web Protection
 Profile, the <strong>FortiWeb 7.6.4 field reference</strong> for each exception dialog (GUI
@@ -596,7 +596,7 @@ secrets), mirroring <code>_inventory.json</code>:</p>
   device + WPP + type + payload + policy set) so re-syncing is idempotent and never
   overwrites a local row.</li>
 </ul>
-<h2 id="8-caveats-not-yet">8. Caveats / not yet</h2>
+<h2 id="8-caveats--not-yet">8. Caveats / not yet</h2>
 <ul>
 <li><strong>Inject is authored/desired-state</strong> — see §6's note: the entry posts to a chosen
   target; container auto-create AND auto-bind (for the 4 supported types) are wired,
@@ -612,7 +612,7 @@ secrets), mirroring <code>_inventory.json</code>:</p>
   without a device. The alignment report's stale detection needs the device's live
   bindings (passed from the page; no network in the dialog).</li>
 </ul>
-<h2 id="9-signature-carve-outs-same-model-same-page-store-v8">9. Signature carve-outs — same model, SAME page (store v8)</h2>
+<h2 id="9-signature-carve-outs--same-model-same-page-store-v8">9. Signature carve-outs — same model, SAME page (store v8)</h2>
 <p>The same desired-state, policy-bound store ALSO tracks <strong>signature</strong> customizations.
 They used to live on a separate 🔏 Signatures page; <strong>as of 2026-06-21 that page was
 FOLDED INTO ⚠ Exceptions</strong> ("they'll ultimately be managed this way and must be

@@ -60,16 +60,16 @@
   <div class="doc">
     <aside class="toc">
       <div class="toc-title">On this page</div>
-      <a href="#1-scope-what-the-compose-deployment-is-and-what-it-is-not">1. Scope — what the Compose deployment is, and what it is not</a>
-      <a href="#2-quick-start-a-satom-setupsh-guided-recommended">2. Quick start A — satom-setup.sh (guided, recommended)</a>
-      <a href="#3-quick-start-b-manual-without-the-installer">3. Quick start B — manual, without the installer</a>
+      <a href="#1-scope--what-the-compose-deployment-is-and-what-it-is-not">1. Scope — what the Compose deployment is, and what it is not</a>
+      <a href="#2-quick-start-a--satom-setupsh-guided-recommended">2. Quick start A — satom-setup.sh (guided, recommended)</a>
+      <a href="#3-quick-start-b--manual-without-the-installer">3. Quick start B — manual, without the installer</a>
       <a href="#4-host-layout-and-volumes">4. Host layout and volumes</a>
       <a href="#5-service-reference">5. Service reference</a>
       <a href="#6-permissions-and-privilege-model">6. Permissions and privilege model</a>
       <a href="#7-the-operations-agent">7. The operations agent</a>
       <a href="#8-configuration-reference">8. Configuration reference</a>
       <a href="#9-tls">9. TLS</a>
-      <a href="#10-high-availability-primary-standby">10. High availability: primary + standby</a>
+      <a href="#10-high-availability-primary--standby">10. High availability: primary + standby</a>
       <a href="#11-operations">11. Operations</a>
       <a href="#12-troubleshooting">12. Troubleshooting</a>
       <a href="#13-hardening-recommendations-not-applied-by-the-stack">13. Hardening recommendations (not applied by the stack)</a>
@@ -77,7 +77,7 @@
       <a href="#15-source-files">15. Source files</a>
     </aside>
     <div class="doc-body mdx">
-<h1 id="running-satom-with-docker-compose-operator-manual">Running SATOM with Docker Compose — operator manual</h1>
+<h1 id="running-satom-with-docker-compose--operator-manual">Running SATOM with Docker Compose — operator manual</h1>
 <p>Status: <strong>operator reference</strong> for SATOM <strong>2.1.2</strong>. Every statement on this page
 is taken from the files that implement the stack, which are listed in §15.
 Where the code does not provide something, this page says so rather than
@@ -88,7 +88,7 @@ is. This page covers <em>how to run it</em>: installing, what each service is al
 to do, configuring, operating and recovering. The two pages are meant to be
 read together; this one does not repeat the rationale.</p>
 <hr>
-<h2 id="1-scope-what-the-compose-deployment-is-and-what-it-is-not">1. Scope — what the Compose deployment is, and what it is not</h2>
+<h2 id="1-scope--what-the-compose-deployment-is-and-what-it-is-not">1. Scope — what the Compose deployment is, and what it is not</h2>
 <h3 id="11-what-it-is">1.1 What it is</h3>
 <p>The SATOM application packaged as one image (<code>satom:&lt;tag&gt;</code>, built from the
 repository's <code>Dockerfile</code>), plus its dependencies as stock images, started as
@@ -260,7 +260,7 @@ activation button, use a host install (<a href="install.html"><code>INSTALL.md</
 <p>For fleet-dependent sizing see <a href="sizing.html"><code>sizing.md</code></a>. That page describes
 host installs; the container memory ceilings above apply on top of it.</p>
 <hr>
-<h2 id="2-quick-start-a-satom-setupsh-guided-recommended">2. Quick start A — <code>satom-setup.sh</code> (guided, recommended)</h2>
+<h2 id="2-quick-start-a--satom-setupsh-guided-recommended">2. Quick start A — <code>satom-setup.sh</code> (guided, recommended)</h2>
 <p><code>installers/satom-setup.sh</code> installs, updates and uninstalls the Docker variant.
 It must run as root.</p>
 <h3 id="21-interactive">2.1 Interactive</h3>
@@ -270,7 +270,7 @@ sudo bash satom-setup.sh             # choose &quot;docker&quot; when asked for 
 </code></pre>
 <p>Yes/no questions take <code>y</code>/<code>n</code>. <code>--help</code> prints every option and every
 <code>SETUP_*</code> variable.</p>
-<h3 id="22-unattended-yes">2.2 Unattended (<code>--yes</code>)</h3>
+<h3 id="22-unattended---yes">2.2 Unattended (<code>--yes</code>)</h3>
 <p>With <code>--yes</code>, every question reads its <code>SETUP_*</code> variable from the environment
 or from the <code>--answers</code> file. If a variable is unset, the question takes its
 default. If there is no default either, the script stops and names the missing
@@ -490,7 +490,7 @@ network.</p>
 <p><strong>You back up the external database yourself.</strong> The probe container is not a
 database.</p>
 <hr>
-<h2 id="3-quick-start-b-manual-without-the-installer">3. Quick start B — manual, without the installer</h2>
+<h2 id="3-quick-start-b--manual-without-the-installer">3. Quick start B — manual, without the installer</h2>
 <p>The manual route runs the stack from a source checkout with
 <code>deploy/docker/satom-docker.sh</code> (or plain <code>docker compose</code>). It covers the
 development, single-node production and primary/standby shapes. It does <strong>not</strong>
@@ -543,7 +543,7 @@ engine does not have, Compose tries to pull it from a registry. For
 <code>satom-setup.sh</code> deliberately avoids. Check first:</p>
 <pre><code class="language-bash">docker image inspect satom:2.1.2 --format '{{.Id}}'
 </code></pre>
-<h3 id="34-deploydockersatom-dockersh-subcommand-reference">3.4 <code>deploy/docker/satom-docker.sh</code> — subcommand reference</h3>
+<h3 id="34-deploydockersatom-dockersh--subcommand-reference">3.4 <code>deploy/docker/satom-docker.sh</code> — subcommand reference</h3>
 <p>The script reads <code>deploy/docker/.env</code> (it sources the file with <code>set -a</code>, so
 the file must be valid shell). It picks the compose files like this:
 <code>compose.yaml</code>; plus <code>compose.prod.yaml</code> when <code>SATOM_ENV=prod</code>; plus
@@ -1491,7 +1491,7 @@ docker inspect --format '{{json .State.Health}}' {node}  # details of the last p
 <p>Only <code>postgres</code>, <code>proxy</code> and <code>web</code> have healthchecks. <code>scheduler</code> and <code>cron</code>
 are deliberately unchecked. The stack defines none for <code>redis</code> and
 <code>victoria-metrics</code>. For what each check proves, see §11.5.</p>
-<h3 id="74-setup_agent-composeagentyaml">7.4 <code>SETUP_AGENT</code> / <code>compose.agent.yaml</code></h3>
+<h3 id="74-setup_agent--composeagentyaml">7.4 <code>SETUP_AGENT</code> / <code>compose.agent.yaml</code></h3>
 <p><code>satom-setup.sh</code> offers the agent <strong>only if</strong> the release tree contains
 <code>deploy/docker/compose.agent.yaml</code>. The installer's wrapper includes that file
 only when <code>SATOM_SETUP_AGENT=yes</code> <em>and</em> the file exists. <strong>No release up to and
@@ -1906,7 +1906,7 @@ the port when it is 443</strong>. With <code>SATOM_HTTPS_BIND=0.0.0.0:8443</code
 access works. If you need the redirect to be correct, keep 443 or put a proxy
 in front.</p>
 <hr>
-<h2 id="10-high-availability-primary-standby">10. High availability: primary + standby</h2>
+<h2 id="10-high-availability-primary--standby">10. High availability: primary + standby</h2>
 <h3 id="101-topology">10.1 Topology</h3>
 <p>Two nodes, each running the full stack:</p>
 <ul>
@@ -2214,7 +2214,7 @@ satom-docker logs postgres              # includes [pg-standby] and [initdb] lin
 <p>Production rotates the app, database, Redis and metrics logs at 20 MB × 5
 files. <code>proxy</code> and <code>tls-init</code> use the engine's default logging driver settings.
 <code>/var/log/satom</code> inside the app containers is not on a volume.</p>
-<h3 id="115-health-checks-what-each-proves">11.5 Health checks — what each proves</h3>
+<h3 id="115-health-checks--what-each-proves">11.5 Health checks — what each proves</h3>
 <table>
 <thead>
 <tr>

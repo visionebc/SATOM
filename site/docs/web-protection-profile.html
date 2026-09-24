@@ -62,15 +62,15 @@
       <div class="toc-title">On this page</div>
       <a href="#1-what-a-web-protection-profile-is">1. What a Web Protection Profile is</a>
       <a href="#2-wpp-field-inventory-54-fields">2. WPP field inventory (~54 fields)</a>
-      <a href="#3-dependency-graph-the-sub-policy-chains">3. Dependency graph — the sub-policy chains</a>
+      <a href="#3-dependency-graph--the-sub-policy-chains">3. Dependency graph — the sub-policy chains</a>
       <a href="#4-enum-vocabularies-fortiweb-764-gui">4. Enum vocabularies (FortiWeb 7.6.4 GUI)</a>
       <a href="#5-editing-model-how-the-app-exposes-all-of-this">5. Editing model (how the app exposes all of this)</a>
       <a href="#6-shared-vs-owned">6. Shared vs owned</a>
       <a href="#7-where-this-lives-in-the-repo">7. Where this lives in the repo</a>
-      <a href="#8-coverage-cross-validation-2026-06-21">8. Coverage &amp; cross-validation (2026-06-21)</a>
+      <a href="#8-coverage--cross-validation-2026-06-21">8. Coverage &amp; cross-validation (2026-06-21)</a>
     </aside>
     <div class="doc-body mdx">
-<h1 id="web-protection-profile-full-reference">Web Protection Profile — full reference</h1>
+<h1 id="web-protection-profile--full-reference">Web Protection Profile — full reference</h1>
 <blockquote>
 <p>Authoritative, field-level reference for the FortiWeb <strong>Web Protection Profile</strong>
 (WPP) and its entire ~40-sub-policy dependency graph. Source of truth: the team's
@@ -119,7 +119,7 @@ form that <code>app/views/objedit.py</code> renders through
 <h2 id="2-wpp-field-inventory-54-fields">2. WPP field inventory (~54 fields)</h2>
 <p><code>name</code> is the mkey. <code>q_ref</code> / <code>q_ref_string</code> are read-only. <strong>REF</strong> = the field names
 another <code>cmdb/waf/*</code> object (a dependency edge → §3); the rest are scalars/enums.</p>
-<h3 id="21-sub-policy-references-36-refs-the-dropdowns">2.1 Sub-policy references (36 REFs — the dropdowns)</h3>
+<h3 id="21-sub-policy-references-36-refs--the-dropdowns">2.1 Sub-policy references (36 REFs — the dropdowns)</h3>
 <p>Grouped as the 7.6 GUI menu does (label · <code>wpp-field</code> → target object):</p>
 <ul>
 <li><strong>Standard Protection</strong> — Signatures <code>signature-rule</code>→<code>signature</code> · HTTP Protocol
@@ -154,7 +154,7 @@ another <code>cmdb/waf/*</code> object (a dependency edge → §3); the rest are
 <li><strong>Tracking</strong> — User Tracking <code>user-tracking-policy</code>→<code>user-tracking.policy</code> ·
   Threat Scoring <code>threat-score-profile</code>.</li>
 </ul>
-<h3 id="22-scalars-enums-not-edges">2.2 Scalars / enums (not edges)</h3>
+<h3 id="22-scalars--enums-not-edges">2.2 Scalars / enums (not edges)</h3>
 <p><code>client-management</code> · <code>http-session-cookie</code> · <code>http-session-timeout</code> ·
 <code>ip-intelligence</code> · <code>mobile-app-identification</code> · <code>amf3-protocol-detection</code> ·
 <code>redirect-url</code> · <code>rdt-reason</code> · <code>custom-response</code> · <code>owasp-api-top10-log-field</code> ·
@@ -162,7 +162,7 @@ another <code>cmdb/waf/*</code> object (a dependency edge → §3); the rest are
 (FortiGate integration):</strong> <code>fortigate-quarantined-ips</code> ·
 <code>quarantined-ip-action</code> · <code>quarantined-ip-severity</code> · <code>quarantined-ip-trigger</code>.</p>
 <hr>
-<h2 id="3-dependency-graph-the-sub-policy-chains">3. Dependency graph — the sub-policy chains</h2>
+<h2 id="3-dependency-graph--the-sub-policy-chains">3. Dependency graph — the sub-policy chains</h2>
 <p>Each sub-policy is its own object; many hang <strong>rule-lists</strong> and <strong>member-lists</strong>
 under themselves. Two structural shapes recur:</p>
 <ul>
@@ -341,7 +341,7 @@ policy reused across the fleet). So:</p>
 <p>Vendor SDK (offline ground truth, not committed):
 <code>/Volumes/DEBIAN 12_5/py_scripts/fortiweb_api/.../v2_0/cmdb/waf/</code> — 172 schemas.</p>
 <hr>
-<h2 id="8-coverage-cross-validation-2026-06-21">8. Coverage &amp; cross-validation (2026-06-21)</h2>
+<h2 id="8-coverage--cross-validation-2026-06-21">8. Coverage &amp; cross-validation (2026-06-21)</h2>
 <ul>
 <li><strong>Registry:</strong> every one of the 136 <code>WEB_PROTECTION_PROFILE</code> tree nodes resolves to
   an <code>endpoints.yaml</code> endpoint (<code>dependencies.coverage</code> → 136/136, 0 missing).</li>

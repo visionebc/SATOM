@@ -67,10 +67,10 @@
       <a href="#5-recipes">5. Recipes</a>
       <a href="#6-reconciling-the-catalog-against-the-fleet">6. Reconciling the catalog against the fleet</a>
       <a href="#7-firmware-lines-which-fields-a-line-actually-serves">7. Firmware lines: which fields a line actually serves</a>
-      <a href="#8-limits-gotchas">8. Limits &amp; gotchas</a>
+      <a href="#8-limits--gotchas">8. Limits &amp; gotchas</a>
     </aside>
     <div class="doc-body mdx">
-<h1 id="device-apis-the-endpoint-registry">Device APIs &amp; the endpoint registry</h1>
+<h1 id="device-apis--the-endpoint-registry">Device APIs &amp; the endpoint registry</h1>
 <p>There are <strong>two</strong> different APIs in this product, and confusing them is the
 most common way to waste an afternoon.</p>
 <table>
@@ -216,7 +216,7 @@ upgrades:</p>
   the raw response.</li>
 </ul>
 <p>The catalogs are product-scoped, so work in one never touches another.</p>
-<h3 id="21-fortiweb-webapi-explorer">2.1 FortiWeb — <code>/web/api-explorer/</code></h3>
+<h3 id="21-fortiweb--webapi-explorer">2.1 FortiWeb — <code>/web/api-explorer/</code></h3>
 <p>REST over <code>/api/v2.0/…</code> with ordinary HTTP methods. The catalog tree is grouped
 into the sections the appliance itself uses:</p>
 <blockquote>
@@ -231,11 +231,11 @@ User &amp; Authentication · Log &amp; Report · Other</p>
 (§3), not by the dropdown.</p>
 <p>The older standalone Registry page was folded into this one. Existing links to
 it still resolve — they redirect here.</p>
-<h3 id="22-fortiadc-adcapi">2.2 FortiADC — <code>/adc/api/</code></h3>
+<h3 id="22-fortiadc--adcapi">2.2 FortiADC — <code>/adc/api/</code></h3>
 <p>The same page scoped to FortiADC. The transport difference worth knowing:
 <strong>FortiADC REST paths carry no version segment</strong> — they are <code>/api/&lt;object&gt;</code>.
 The catalog is browsed as the FortiADC menu.</p>
-<h3 id="23-fortianalyzer-fazapi">2.3 FortiAnalyzer — <code>/faz/api/</code></h3>
+<h3 id="23-fortianalyzer--fazapi">2.3 FortiAnalyzer — <code>/faz/api/</code></h3>
 <p>FortiAnalyzer does not expose a REST tree at all. <strong>Every call is a <code>POST</code> to a
 single <code>/jsonrpc</code> endpoint</strong>, so the console asks for a JSON-RPC <em>verb</em> instead
 of an HTTP method:</p>
@@ -509,7 +509,7 @@ being believed endpoint by endpoint.</p>
 </table>
 <p><code>unsweepable</code> exists as its own bucket for one reason: filing those under "never
 measured" would tell an operator to run a sweep that structurally cannot answer.</p>
-<h3 id="63-the-firmware-caveat-read-this-before-disabling-anything">6.3 The firmware caveat — read this before disabling anything</h3>
+<h3 id="63-the-firmware-caveat--read-this-before-disabling-anything">6.3 The firmware caveat — read this before disabling anything</h3>
 <p><strong>Absence is a claim about a firmware, not about an endpoint.</strong> The catalog is a
 deliberate cross-firmware superset, so on a fleet where every witness runs the
 same line, <em>"absent everywhere"</em> means <strong>"not in that release"</strong> — not "dead".</p>
@@ -634,7 +634,7 @@ that is the build a caller is about to write to.</p>
 <li><strong>"Absent on the other line" requires the other line to have been measured.</strong>
    Present-here / unknown-there is reported as unknown, never as removed.</li>
 </ol>
-<h3 id="74-preflight-asking-before-you-write">7.4 Preflight — asking before you write</h3>
+<h3 id="74-preflight--asking-before-you-write">7.4 Preflight — asking before you write</h3>
 <p>The page carries a preflight box, and the CLI carries the same answer for a node
 whose web interface is down:</p>
 <pre><code>satom get api versions [&lt;product&gt;]
@@ -719,7 +719,7 @@ directory exists to prevent.</p>
 <p>CLI dumps carry their build as well as their line, and both filters are
 <strong>filters, never fallbacks</strong>: no dump on <code>8.0.5</code> means <em>no evidence for 8.0.5</em>,
 not the <code>8.0.3</code> dump relabelled.</p>
-<h2 id="8-limits-gotchas">8. Limits &amp; gotchas</h2>
+<h2 id="8-limits--gotchas">8. Limits &amp; gotchas</h2>
 <ul>
 <li><strong>A "not found" is usually the truth.</strong> The catalog is a cross-firmware
   superset; an endpoint your firmware does not implement is a correct empty

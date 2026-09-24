@@ -62,7 +62,7 @@
       <div class="toc-title">On this page</div>
       <a href="#table-of-contents">Table of contents</a>
       <a href="#1-system-architecture">1. System architecture</a>
-      <a href="#2-runtime-deployment">2. Runtime &amp; deployment</a>
+      <a href="#2-runtime--deployment">2. Runtime &amp; deployment</a>
       <a href="#3-products-adoms-and-request-scoping">3. Products (ADOMs) and request scoping</a>
       <a href="#4-data-layer">4. Data layer</a>
       <a href="#5-the-endpoint-registry">5. The endpoint registry</a>
@@ -73,10 +73,10 @@
       <a href="#10-testing">10. Testing</a>
       <a href="#11-background-jobs-framework">11. Background jobs framework</a>
       <a href="#12-extending-the-app">12. Extending the app</a>
-      <a href="#13-conventions-hard-won-gotchas">13. Conventions &amp; hard-won gotchas</a>
+      <a href="#13-conventions--hard-won-gotchas">13. Conventions &amp; hard-won gotchas</a>
     </aside>
     <div class="doc-body mdx">
-<h1 id="satom-engineering-manual">SATOM — Engineering Manual</h1>
+<h1 id="satom--engineering-manual">SATOM — Engineering Manual</h1>
 <blockquote>
 <p><strong>Audience:</strong> developers extending the codebase and platform engineers
 operating a deployment. Companion documents: field-level object references
@@ -139,7 +139,7 @@ the background-job workers and the scheduler sidecar run them headless.</p>
   bindings can't be verified; sync aborts rather than overwrite the cache
   with an empty snapshot.</li>
 </ul>
-<h2 id="2-runtime-deployment">2. Runtime &amp; deployment</h2>
+<h2 id="2-runtime--deployment">2. Runtime &amp; deployment</h2>
 <ul>
 <li><strong>Process model:</strong> gunicorn <code>4 workers × 8 gthread threads</code> binding
   <code>0.0.0.0:8000</code>, fronted by an edge nginx (TLS, gzip, <code>/static/</code> proxy
@@ -560,7 +560,7 @@ safe:</p>
 <li><strong>Versioning:</strong> repo-root <code>VERSION</code> + tags; keep additive DB changes in
   <code>_ensure_columns()</code> <em>and</em> a real Alembic migration for fresh installs.</li>
 </ul>
-<h2 id="13-conventions-hard-won-gotchas">13. Conventions &amp; hard-won gotchas</h2>
+<h2 id="13-conventions--hard-won-gotchas">13. Conventions &amp; hard-won gotchas</h2>
 <p>The internal project knowledge base carries the full, dated history. The ones you will hit first:</p>
 <ol>
 <li><strong>License-locked devices 423 the whole REST API</strong> (<code>-20010</code>) with no

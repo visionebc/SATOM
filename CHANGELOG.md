@@ -31,6 +31,25 @@ Behaviour is unchanged apart from two operator-visible details:
 Quoted requests in this changelog, in the safeguards log and in a few specs,
 code comments and tests were translated as well.
 
+### Fixed — broken links and topology in the published manual (2026-09-24)
+
+A crawl of the public site found 25 links that returned 404 and a handful of
+internal container ids and paths that the redaction did not cover.
+
+- **Table-of-contents anchors.** The Markdown is written against GitHub's
+  heading ids, which keep the double hyphen a removed `&` or `—` leaves
+  (`#1-signing-in--accounts`). The site generator collapsed it, so 14 entries
+  in the user guide and the engineering notes pointed at ids that did not
+  exist. Headings now get GitHub's ids; headings without such punctuation keep
+  the id they had.
+- **Release pages** linked `cli.html`, `sizing.html`, `safeguards.html` and
+  similar as if they lived next to them; they now point at `../docs/`.
+- **Repository files** linked from the manual (`LICENSE`, `NOTICE`,
+  `deploy/satom-installer.sudoers`) are not part of the site; those links now
+  go to the file in the public source repository.
+- A new check (`tests/test_site_links.py`) follows every link and anchor in the
+  generated site, so a page that returns 200 but links to a 404 fails the build.
+
 ### Added — a dedicated Docker Compose manual (2026-09-24)
 
 `docs/docker-compose.md` is the operator manual for running SATOM with Docker

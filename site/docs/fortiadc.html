@@ -62,11 +62,11 @@
       <div class="toc-title">On this page</div>
       <a href="#rest-conventions">REST conventions</a>
       <a href="#where-things-live">Where things live</a>
-      <a href="#status-pending-needs-the-lab-vm">Status / pending (needs the lab VM)</a>
-      <a href="#virtual-server-dependency-chain-create-field-seed-verified-live-fadc-803-2026-07-07">Virtual server dependency chain + create-field seed (verified live, fadc 8.0.3, 2026-07-07)</a>
+      <a href="#status--pending-needs-the-lab-vm">Status / pending (needs the lab VM)</a>
+      <a href="#virtual-server-dependency-chain--create-field-seed-verified-live-fadc-803-2026-07-07">Virtual server dependency chain + create-field seed (verified live, fadc 8.0.3, 2026-07-07)</a>
     </aside>
     <div class="doc-body mdx">
-<h1 id="fortiadc-api-conventions-area-status">FortiADC — API conventions &amp; area status</h1>
+<h1 id="fortiadc--api-conventions--area-status">FortiADC — API conventions &amp; area status</h1>
 <blockquote>
 <p>Ground truth for the FortiADC side of the manager. Built 2026-07-07 from the
 FortiADC <strong>8.0.3</strong> admin guide + CLI reference (docs.fortinet.com, Firecrawl
@@ -137,7 +137,7 @@ lands: probe the registry, verify a write round-trip, then update this file.</p>
 </tr>
 </tbody>
 </table>
-<h2 id="status-pending-needs-the-lab-vm">Status / pending (needs the lab VM)</h2>
+<h2 id="status--pending-needs-the-lab-vm">Status / pending (needs the lab VM)</h2>
 <ul>
 <li>Registry URNs are docs/SDK-derived; expect a few phantoms — probe with the
   device and disable/fix rows from the Registry page (product filter TBD).</li>
@@ -148,7 +148,7 @@ lands: probe the registry, verify a write round-trip, then update this file.</p>
 <li>Candidate next steps once verified: field-spec catalog, DB-first cache,
   objedit-style forms, backups/upgrade runbook parity.</li>
 </ul>
-<h2 id="virtual-server-dependency-chain-create-field-seed-verified-live-fadc-803-2026-07-07">Virtual server dependency chain + create-field seed (verified live, fadc 8.0.3, 2026-07-07)</h2>
+<h2 id="virtual-server-dependency-chain--create-field-seed-verified-live-fadc-803-2026-07-07">Virtual server dependency chain + create-field seed (verified live, fadc 8.0.3, 2026-07-07)</h2>
 <p>A FortiADC <strong>virtual server</strong> is NOT a flat "name + IP" object — the device
 refuses a create that has no load-balance pool, and the pool needs a real-server
 member. Full chain (create in this order):</p>

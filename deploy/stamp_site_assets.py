@@ -80,14 +80,24 @@ def shipped_version() -> str:
 
 
 INSTALLER = os.path.join(ROOT, "installers", "install-satom.sh")
+# The guided installer (satom-setup.sh) pins the release it installs to the one
+# it ships with. Same failure class as the banner: a literal only a human bumps
+# is a guided installer that keeps installing the previous release.
+SETUP_INSTALLER = os.path.join(ROOT, "installers", "satom-setup.sh")
+INSTALLERS = (INSTALLER, SETUP_INSTALLER)
 # The installer prints its own version in the banner. Anchored at line start so
 # it cannot match a VERSION= assignment nested inside a function or heredoc.
-INSTALLER_VERSION_RE = re.compile(r'(?m)^VERSION="[^"]*"')
+# The optional prefix is the release pipeline's contract: it reads the FIRST
+# line matching ^(?:SATOM_|SETUP_)?VERSION="x.y.z"$ of each shipped installer
+# and refuses to publish unless it equals the release -- so the stamper has to
+# own every name that contract accepts, and keep the name it found.
+INSTALLER_VERSION_RE = re.compile(r'(?m)^((?:SATOM_|SETUP_)?VERSION)="[^"]*"')
 
 
 def stamp_installer(text: str, version: str) -> str:
-    """Rewrite the installer's own VERSION literal."""
-    return INSTALLER_VERSION_RE.sub('VERSION="%s"' % version, text, count=1)
+    """Rewrite the installer's own top-level version literal."""
+    return INSTALLER_VERSION_RE.sub(
+        lambda m: '%s="%s"' % (m.group(1), version), text, count=1)
 
 
 def stamp_version(text: str, version: str) -> str:
@@ -114,15 +124,17 @@ def main(argv: "list[str]") -> int:
         with io.open(page, "w", encoding="utf-8") as fh:
             fh.write(out)
         written += 1
-    if os.path.exists(INSTALLER):
-        with io.open(INSTALLER, encoding="utf-8") as fh:
+    for installer in INSTALLERS:
+        if not os.path.exists(installer):
+            continue
+        with io.open(installer, encoding="utf-8") as fh:
             isrc = fh.read()
         iout = stamp_installer(isrc, version)
         if iout != isrc:
             if check:
-                stale.append(os.path.relpath(INSTALLER, ROOT))
+                stale.append(os.path.relpath(installer, ROOT))
             else:
-                with io.open(INSTALLER, "w", encoding="utf-8") as fh:
+                with io.open(installer, "w", encoding="utf-8") as fh:
                     fh.write(iout)
                 written += 1
     if check:

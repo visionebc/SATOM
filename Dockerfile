@@ -62,7 +62,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # uid/gid 999 matches the `satom` service account on the host installs, so a
 # data/ directory rsynced from a node keeps its ownership instead of arriving
 # as a pile of files the app cannot write.
-RUN groupadd -g 999 satom && useradd -u 999 -g 999 -M -s /usr/sbin/nologin satom
+#
+# WITH a home directory that exists and the account owns. It used to be
+# created with -M, so $HOME was /home/satom and did not exist: gunicorn (>= 25)
+# puts its control socket under $HOME/.gunicorn/ and logged "Failed to start
+# control socket: Permission denied: '/home/satom'" on every boot, and anything
+# else that keeps per-user state under ~ (the operator CLI's history in
+# `docker compose exec web satom`) failed the same way. On a host install the
+# account's home is the app directory, which it owns.
+RUN groupadd -g 999 satom \
+    && useradd -u 999 -g 999 -m -d /home/satom -s /usr/sbin/nologin satom
 
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH" \
@@ -101,10 +110,19 @@ RUN mkdir -p /opt/satom/data /opt/satom/instance /opt/satom/state \
 # explains why this is an env var and not autodetection: the HA nodes are LXC
 # containers, so any /proc-based probe answers True there too and would disable
 # self-update on production.
+#
+# SATOM_ADMIN_PASSWORD_FILE: with no $SATOM_ADMIN_PASSWORD the first start
+# generates the admin password and writes it ONLY to this file (0600). The
+# default is the app root, which in the image is root-owned and not writable
+# by uid 999 -- so the write failed, no admin was created, and every restart
+# retried and failed again: a stack with no way in. The instance volume is the
+# account's own and survives image replacement. Read it with
+#   docker compose exec web cat /opt/satom/instance/initial-admin-password
 ENV SATOM_RUNTIME=container \
     FLASK_APP=wsgi.py \
     FLASK_ENV=production \
-    SATOM_ROLE=web
+    SATOM_ROLE=web \
+    SATOM_ADMIN_PASSWORD_FILE=/opt/satom/instance/initial-admin-password
 
 ENTRYPOINT ["/opt/satom/deploy/docker/entrypoint.sh"]
 

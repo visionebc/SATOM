@@ -61,6 +61,7 @@
     <aside class="toc">
       <div class="toc-title">On this page</div>
       <a href="#unreleased">[Unreleased]</a>
+      <a href="#213-2026-09-24">[2.1.3] - 2026-09-24</a>
       <a href="#212-2026-09-24">[2.1.2] - 2026-09-24</a>
       <a href="#211-2026-09-23">[2.1.1] - 2026-09-23</a>
       <a href="#210-2026-09-22">[2.1.0] - 2026-09-22</a>
@@ -110,6 +111,40 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h2 id="213-2026-09-24">[2.1.3] - 2026-09-24</h2>
+<h3 id="changed-the-installers-speak-english-2026-09-24">Changed — the installers speak English (2026-09-24)</h3>
+<p><code>satom-setup.sh</code> and <code>install-satom.sh</code> asked every question, printed every
+error and wrote every summary in Spanish, while the README, the manual and the
+release pages are in English: an operator following the documentation met
+prompts and failure messages the manual never mentions and could not search
+for. Both installers, the three offline-bundle builders and the <code>deploy/</code>
+scripts (the privileged update runner, the de-privilege migration, the HA data
+sync, the CLI installer and checks, the installer sudoers file) are now English
+only — messages, <code>--help</code>, generated file headers and comments. There is no
+language switch: the product ships in one language.</p>
+<p>Behaviour is unchanged apart from two operator-visible details:</p>
+<ul>
+<li>Yes/no questions show <code>(y/n)</code> / <code>[Y/n]</code> and accept <code>y</code> / <code>yes</code>. <code>s</code> and <code>si</code>
+  are still accepted, silently, so answer files written for 2.1.2 and earlier
+  keep working.</li>
+<li><code>satom-setup.sh --uninstall --purge</code> now asks you to type <code>DELETE</code> (it was
+  <code>BORRAR</code>) before it removes the data volumes. <code>--yes</code> still skips the prompt.</li>
+</ul>
+<p>Quoted requests in this changelog, in the safeguards log and in a few specs,
+code comments and tests were translated as well.</p>
+<h3 id="added-a-dedicated-docker-compose-manual-2026-09-24">Added — a dedicated Docker Compose manual (2026-09-24)</h3>
+<p><code>docs/docker-compose.md</code> is the operator manual for running SATOM with Docker
+Compose: supported shapes and requirements, the guided and the manual install,
+every volume, a full reference for every service (image, account, ports,
+volumes, health check, limits), the permission model per container, the
+configuration reference, TLS, primary/standby, update, backup and restore,
+uninstall, troubleshooting, and hardening that the stack does not yet apply.</p>
+<p>It states plainly that <strong>no operations agent ships for Docker</strong>: the container
+runtime renounces in-place self-update, service control, certificate
+activation and unit health, and the manual gives the command that replaces
+each one. It also records the permission boundary any future agent must keep.
+Writing it surfaced defects in the Docker path that 2.1.3 does not fix; they
+are listed in the manual's section 14.</p>
 <h2 id="212-2026-09-24">[2.1.2] - 2026-09-24</h2>
 <h3 id="fixed-a-fresh-native-install-died-at-flask-create-db-2026-09-24">Fixed — a fresh native install died at <code>flask create-db</code> (2026-09-24)</h3>
 <p>The documentation-redaction rules are read from

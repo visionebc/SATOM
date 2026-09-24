@@ -42,21 +42,22 @@ rm -rf "${LIB_DIR}.old"
 mv "$STAGE" "$LIB_DIR"
 rm -rf "${LIB_DIR}.old"
 
-# ---- Interprete del lanzador --------------------------------------------
-# [SATOM-CLI-SHEBANG] El lanzador declara '#!/usr/bin/env python3'. Eso NO es
-# portable y dejaba el CLI instalado y MUERTO fuera de Debian:
-#   * openSUSE Leap 15.6 instala 'python311' y NO crea el enlace 'python3'
-#     -> /usr/bin/env: 'python3': No such file or directory  (exit 127)
-#   * RHEL 9 trae un 'python3' que es 3.9, por debajo del minimo del CLI.
-# El instalador degradaba el fallo a una advertencia y aun asi imprimia
-# "instalacion COMPLETA". El CLI de operador existe precisamente para
-# diagnosticar un nodo sin ruta a la documentacion: no puede depender de un
-# enlace que la distro no garantiza.
+# ---- Launcher interpreter -------------------------------------------------
+# [SATOM-CLI-SHEBANG] The launcher declares '#!/usr/bin/env python3'. That is
+# NOT portable and left the CLI installed but DEAD outside Debian:
+#   * openSUSE Leap 15.6 installs 'python311' and does NOT create the
+#     'python3' link -> /usr/bin/env: 'python3': No such file or directory
+#     (exit 127)
+#   * RHEL 9 ships a 'python3' that is 3.9, below the CLI's minimum.
+# The installer downgraded the failure to a warning and still printed
+# "installation COMPLETE". The operator CLI exists precisely to diagnose a
+# node with no path to the documentation: it cannot depend on a link the
+# distro does not guarantee.
 #
-# NO se usa el python del venv A PROPOSITO: 'satom diagnose python' tiene que
-# poder ejecutarse cuando el venv esta roto, que es justo el caso que lo
-# justifica. Y nunca un interprete dentro del arbol de la app: el objetivo de
-# sudo debe ser codigo que la cuenta de servicio no pueda reescribir.
+# The venv's python is NOT used ON PURPOSE: 'satom diagnose python' has to be
+# able to run when the venv is broken, which is exactly the case that
+# justifies it. And never an interpreter inside the app tree: the sudo target
+# must be code the service account cannot rewrite.
 pick_cli_python() {
   local c v
   for c in /usr/bin/python3 /usr/bin/python3.13 /usr/bin/python3.12 \
@@ -74,18 +75,18 @@ pick_cli_python() {
 }
 
 CLI_PY="$(pick_cli_python)" || {
-  echo "install-cli.sh: no hay un Python >= 3.10 del sistema para el lanzador." >&2
-  echo "  El CLI de operador NO queda instalado. Instala python3.11 (o superior)" >&2
-  echo "  y repite con: bash ${APP_DIR}/deploy/install-cli.sh" >&2
+  echo "install-cli.sh: no system Python >= 3.10 available for the launcher." >&2
+  echo "  The operator CLI is NOT installed. Install python3.11 (or newer)" >&2
+  echo "  and retry with: bash ${APP_DIR}/deploy/install-cli.sh" >&2
   exit 1
 }
 
 head -n1 "$LAUNCHER" | grep -q '^#!' || {
-  echo "install-cli.sh: ${LAUNCHER} no empieza por shebang — no lo sello a ciegas" >&2
+  echo "install-cli.sh: ${LAUNCHER} does not start with a shebang — not stamping it blindly" >&2
   exit 1
 }
 
-# Sellar SOLO la primera linea. El resto del lanzador viaja intacto.
+# Stamp ONLY the first line. The rest of the launcher travels untouched.
 STAGEBIN="$(mktemp)"
 { echo "#!${CLI_PY}"; tail -n +2 "$LAUNCHER"; } > "$STAGEBIN"
 install -o root -g root -m 0755 "$STAGEBIN" "$BIN"

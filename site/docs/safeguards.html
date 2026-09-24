@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../assets/site.css?v=72c63f9378">
+<link rel="stylesheet" href="../assets/site.css?v=b0cf1dde95">
 <script src="../assets/site.js?v=bf3b55a92e" defer></script>
 </head>
 <body class="wide">
@@ -6519,7 +6519,7 @@ generator, put the vendor-named preset back, and re-add the vendor comment to
 <p><code>tests/test_upgrade_prep_chrome.py</code> — 12 guards, 11 mutations, all 11 bite.</p>
 <p>Reported 2026-08-10 on <code>/appliances/&lt;id&gt;/upgrade/prep</code>: the result text ran past
 the cards, the sizing did not match the product, and the device CLI output
-"no se ve por los colores". Three defects, none of which can raise, because a
+"can't be read because of the colours". Three defects, none of which can raise, because a
 page that renders is not a page that reads.</p>
 <p><strong>1. <code>.fw-pre</code> was a dark-theme leftover.</strong> <code>rgba(0,0,0,0.30)</code> over a WHITE card
 composites to a light-grey slab, and <code>#94a3b8</code> on that slab is about <strong>1.3:1</strong>.
@@ -9295,8 +9295,8 @@ only rc==1 counts, restored in <code>finally</code>, post-restore baseline 0), d
 plan balanced to ±0.06% over 263 files, 2841 orphaned temp roots swept.</p>
 <h2 id="99-a-class-that-matches-no-rule-cannot-fail-teststest_tool_modal_chromepy">§99 — a class that matches no rule cannot fail (<code>tests/test_tool_modal_chrome.py</code>)</h2>
 <p>Reported by the user twice on 2026-08-17: <em>"Certificate inspector /
-False-positive explainer / Transaction tracer tienen todavia el formato
-viejo"</em>. The first review of it called the divergence a style drift. It was
+False-positive explainer / Transaction tracer still have the old
+format"</em>. The first review of it called the divergence a style drift. It was
 not: <strong><code>fw-btn-primary</code> matches no selector in any stylesheet the product
 loads.</strong> The real class is <code>btn-fw-primary</code> — the word order is reversed, and
 the two are indistinguishable at a glance in a diff.</p>
@@ -11337,8 +11337,8 @@ would change what the report counts.</p>
    writer's bug: assert on the stored blob.</li>
 <li>A test asserting the delete flash said "guess" passed against a flash that
    said nothing — the page's own header prose contains the word. Match a
-   sentence only the handler can produce. (Ninth aserto-que-casa-su-propio-
-   contexto.)</li>
+   sentence only the handler can produce. (Ninth assertion-that-matches-its-own-
+   context.)</li>
 </ol>
 <p><strong>Verified by render</strong> against the live node: <code>/web/line-profiles/</code> 200, the
 four real catalog lines listed, every undeclared line badged <code>inferred</code>,
@@ -11392,8 +11392,8 @@ shows {device}'s own hostname, a dry run of line <code>A</code> refuses with
 <code>pol-dev-billing</code> is refused with <code>policy_exists</code> — read from {device}'s
 REAL policy list, not a fixture.</p>
 <h2 id="134-the-wizards-script-was-blocked-by-the-csp-so-the-page-was-furniture-2026-08-27">§134 — the wizard's script was blocked by the CSP, so the page was furniture (2026-08-27)</h2>
-<p>Reported by the user: <em>"agregue un segmento /web/segments/ y no me aparecen las
-opciones dadas de alta en /web/workspace/26/spo-wizard"</em>.</p>
+<p>Reported by the user: <em>"I added a segment in /web/segments/ and the options
+registered there don't show up in /web/workspace/26/spo-wizard"</em>.</p>
 <p><strong>The segment was never the problem.</strong> Measured against the live database of
 a1: <code>line_plan('P','fortiweb')</code> returned all three segments of line P —
 <code>LineP_Internal_LB</code>, <code>LineP_External_LB</code> and the newly added <code>x</code> — and the
@@ -11654,10 +11654,10 @@ script. Each must be killed by the guard it names, measured by <strong>rc, and o
   red on an unmapped endpoint.</li>
 </ul>
 <h2 id="137-the-operator-chooses-the-backend-and-the-choice-is-checked-2026-08-28">§137 — the operator chooses the backend, and the choice is checked (2026-08-28)</h2>
-<p><strong>What the user reported.</strong> <em>"Se agregó una sección de que se puede agregar a
-diferentes IPAMs en settings, por lo que aquí deben de aparecer las opciones
-que se tengan de alta para que el usuario pueda elegir dónde y cómo las
-quiere."</em> The registry shipped the same morning (§136); the wizard was still
+<p><strong>What the user reported.</strong> <em>"A section was added in settings for adding
+different IPAMs, so the options that are registered should appear here, so
+that the user can choose where and how they want
+them."</em> The registry shipped the same morning (§136); the wizard was still
 resolving silently and offering nothing.</p>
 <p><strong>The shape of the risk.</strong> §136 turned "there is nothing to decide" into a
 resolution. Adding a manual override on top turns it into a resolution with
@@ -12215,7 +12215,7 @@ python3 /tmp/mut.py                # 25 mutations, all must print KILLED
 <p>Measure by <strong>return code</strong>, only <code>rc==1</code> is a failure, the baseline must be green
 before mutating, and every anchor must match <strong>exactly once</strong> in its file.</p>
 <h2 id="145-a-copy-button-that-could-not-report-its-own-failure-2026-08-30">§145 — a copy button that could not report its own failure (2026-08-30)</h2>
-<p><strong>Report:</strong> <em>"error DD5943CE, el botón de copy tampoco sirve"</em>.</p>
+<p><strong>Report:</strong> <em>"error DD5943CE, the copy button doesn't work either"</em>.</p>
 <h3 id="the-500-was-not-a-defect-in-shipped-code">The 500 was not a defect in shipped code</h3>
 <p><code>DD5943CE</code> is in <code>data/logs/satom.log</code>: <code>GET /settings/ ::
 UndefinedError: 'dict object' has no attribute 'log_days'</code>, raised at
@@ -12953,8 +12953,8 @@ comes from the name (<code>fmw-backup-YYYYmmdd-HHMMSS</code>), which is written 
 same clock. The name is a <strong>fallback</strong>, never the first source: preferring it
 over an explicit timestamp is a separate lie, and both directions have a test.</p>
 <h2 id="155-a-failover-with-no-api-and-a-command-the-running-firmware-does-not-have-2026-09-08">§155 — a failover with no API, and a command the running firmware does not have (2026-09-08)</h2>
-<p>The ask was to schedule a cluster failover, with the honest caveat <em>"no sé si
-haya un api call para eso"</em>. There isn't one, and finding that out is most of
+<p>The ask was to schedule a cluster failover, with the honest caveat <em>"I don't know
+if there's an api call for that"</em>. There isn't one, and finding that out is most of
 this section.</p>
 <h3 id="what-was-actually-checked-and-how">What was actually checked, and how</h3>
 <p><code>main.a86d971ced4a7ee7.js</code> and <code>app.min.js</code> were downloaded <strong>from the live
@@ -13032,8 +13032,8 @@ FortiWeb CLI syntax comes from Fortinet's 8.0.x reference, not from a box that
 answered it.</p>
 <h2 id="156-a-disruptive-verb-on-the-device-page-route-gates-not-hidden-buttons-2026-09-08">§156 — a disruptive verb on the device page: route gates, not hidden buttons (2026-09-08)</h2>
 <p>The failover was plannable from the calendar and unreachable from the box an
-operator actually has open. The ask was <em>"metelo dentro del device ... ahi si es
-un cluster debera venir la opcion de hacer un failover"</em>. Guarded by
+operator actually has open. The ask was <em>"put it inside the device ... there, if it is
+a cluster, the option to do a failover should come up"</em>. Guarded by
 <code>tests/test_appliance_failover_page.py</code> (31 tests, 18/18 mutations bite).</p>
 <h3 id="what-the-guards-protect">What the guards protect</h3>
 <ol>
@@ -13423,7 +13423,7 @@ family (<code>kind</code>) and automation owner (<code>owner</code>). Read aloud
 Automations (fleet work), System Automations"</em>: one word, three meanings, one
 row. Being independent they also multiplied — <code>kind=change&amp;owner=user</code> is a
 legal URL in which the owner half decides nothing, so the bar offered states
-that do not exist. The user's verdict was <em>"no tiene sentido"</em>, and it was
+that do not exist. The user's verdict was <em>"it makes no sense"</em>, and it was
 right: a filter bar is a LIST OF THE THINGS A PAGE CAN DRAW, and this one had
 stopped being that.</p>
 <p><strong>The rules the rewrite rests on.</strong></p>
@@ -14846,8 +14846,8 @@ both scopes verbatim to defend exactly this; the join now <em>prints</em> them.<
   covered without touching it.</li>
 </ul>
 <h2 id="181-a-new-firmware-line-must-not-be-able-to-delete-a-decision-teststest_absence_corroborationpy-teststest_release_notespy-2026-09-18">§181 — a new firmware line must not be able to delete a decision (<code>tests/test_absence_corroboration.py</code>, <code>tests/test_release_notes.py</code>, 2026-09-18)</h2>
-<p><strong>The ask.</strong> <em>"todo esto debe de ser compatible con todas las versiones. ejemplo
-si sale una version 8.1 deberia de poderse ver la diferencia."</em></p>
+<p><strong>The ask.</strong> <em>"all of this has to be compatible with every version. for example,
+if an 8.1 comes out, the difference should be visible."</em></p>
 <p><strong>Measured before writing anything.</strong> A simulated <code>8.1</code> line was injected into
 the live matrix and the page rendered against the real database: scopes, the
 default pick, <code>line_pairs</code>, <code>ledger_scope</code>, <code>api_matrix.diff</code>, the page and the

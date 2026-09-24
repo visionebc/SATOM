@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../assets/site.css?v=72c63f9378">
+<link rel="stylesheet" href="../assets/site.css?v=b0cf1dde95">
 <script src="../assets/site.js?v=bf3b55a92e" defer></script>
 </head>
 <body class="wide">
@@ -284,8 +284,8 @@ and where each verb lives now; §43 of the <a href="user-guide.html">user guide<
 the operator-facing version of the same answer, including the one case where
 nothing replaces the control on purpose.</p>
 <h3 id="added-the-scout-name-field-gets-a-picker-and-it-offers-the-union-of-both-sources-2026-09-10">Added — the Scout name field gets a picker, and it offers the UNION of both sources (2026-09-10)</h3>
-<p>Asked for in one line: <em>"al seleccionar el fortiweb o fortiadc, deberá aparecer
-en un select todos los Server policy / virtual server"</em>. The list is the easy
+<p>Asked for in one line: <em>"when the fortiweb or fortiadc is selected, every Server
+policy / virtual server should appear in a select"</em>. The list is the easy
 half; which list, and what it must never claim, is the design.</p>
 <ul>
 <li><strong>Union, never intersection.</strong> Measured on <code>{device}</code> the same day: the
@@ -350,8 +350,8 @@ round.</strong> Every test asserts on names, and no name is plural or overflows:
   meant: no <strong>inline</strong> script, and no origin but our own static tree.</li>
 </ul>
 <h3 id="fixed-the-scout-report-stops-cutting-itself-in-silence-and-its-chrome-names-classes-that-exist-2026-09-10">Fixed — the Scout report stops cutting itself in silence, and its chrome names classes that exist (2026-09-10)</h3>
-<p>Reported in one sentence — <em>"quitaste los filtros y divisiones, y el reporte
-está como cortado, los campos no están completos"</em> — and every clause of it
+<p>Reported in one sentence — <em>"you removed the filters and dividers, and the report
+looks cut off, the fields are not complete"</em> — and every clause of it
 described something real, although nothing had been removed and nothing raised.</p>
 <ul>
 <li><strong>Six rungs trimmed their evidence with no marker.</strong> <code>layer_device</code>,
@@ -2289,7 +2289,7 @@ an opaque <code>-651</code> at deploy time.</p>
 </li>
 <li>
 <p><strong>Scope labels name the DEVICE, not its management address.</strong> Reported for
-  "todas las secciones" of <code>/artifacts/*</code>: an operator standing on
+  "all the sections" of <code>/artifacts/*</code>: an operator standing on
   <code>{device} / adom_prod</code> was told they were on <code>{ip}</code> — the address of a
   chassis carrying four ADOM rows, so it names none of them. Every label now
   goes through <code>models.appliance_name_parts</code> (the product's one answer to
@@ -2312,7 +2312,7 @@ an opaque <code>-651</code> at deploy time.</p>
 <li>
 <p><strong><code>/artifacts/*</code> takes its (device, ADOM) from the SESSION, like every other
   per-device page — and nothing in the section answers for anything else.</strong>
-  Reported a third time (<em>"estamos en un device x con el adom y y veo todo"</em>),
+  Reported a third time (<em>"we're on device x with adom y and I see everything"</em>),
   and the two fixes before it could not have helped: they narrowed by
   <code>?appl=</code>, <strong>a query argument the operator's navigation never produces</strong>. The
   operator picks a device on the Architecture map; that lands in
@@ -2328,7 +2328,7 @@ an opaque <code>-651</code> at deploy time.</p>
     pair before a figure is computed; with <strong>no</strong> device chosen they send the
     operator to the map, as Backups does, instead of showing the fleet.</p>
 </li>
-<li><strong>The pickers were the other half of the report</strong> (<em>"en los filtros"</em>).
+<li><strong>The pickers were the other half of the report</strong> (<em>"in the filters"</em>).
     Every <code>&lt;select name="appliance_id"&gt;</code> now offers that pair alone, the
     inventory's appliance filter — whose neutral option was the page's own way
     back to the fleet — is replaced by a <em>within-scope</em> <code>held=own|library</code>, and

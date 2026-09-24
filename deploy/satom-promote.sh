@@ -13,9 +13,9 @@
 # (see the runbook), not this script.
 set -uo pipefail
 
-# Este script SI necesita root: usa `runuser -u postgres` y toca unidades
-# de systemd. Falla ruidosamente si lo lanza la cuenta de servicio.
-[ "$(id -u)" -eq 0 ] || { echo "satom-promote: ejecutar como root (sudo)" >&2; exit 1; }
+# This script DOES need root: it uses `runuser -u postgres` and touches systemd
+# units. It fails loudly if the service account launches it.
+[ "$(id -u)" -eq 0 ] || { echo "satom-promote: run as root (sudo)" >&2; exit 1; }
 
 PGVER="${FM_PGVER:-15}"
 SERVICE="${FM_SERVICE:-satom.service}"

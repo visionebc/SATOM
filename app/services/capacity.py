@@ -5,7 +5,7 @@ in Appendix B / the model datasheet (e.g. a FortiWeb-VM04 on 7.6 accepts N
 server policies). Those ceilings are stored, per row, in ``CapacityLimit``
 (``hard_max``). Because the lab fleet is unlicensed VMs that cannot self-report
 a SKU, the admin ENTERS/confirms each ``hard_max`` and may set a lower
-``operational_cap`` (the "espacio de sobra" buffer). Automations call
+``operational_cap`` (the "room to spare" buffer). Automations call
 ``check_headroom`` BEFORE creating an object so they never push the box past a
 limit it will reject.
 

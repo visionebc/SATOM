@@ -251,12 +251,12 @@ def parse_local(value: Any) -> Any:
         return dt.replace(tzinfo=None) if dt.tzinfo is not None else dt
 
 
-#: Los valores que este ajuste guardaba antes de tener un roster. Eran
-#: TitleCase y ademas de un vocabulario distinto del de ``Appliance.kind``
-#: (minusculas), asi que el ajuste no podia casar con el formulario que decia
-#: rellenar. ``FortiWeb-Cloud`` no es una familia de appliance: SATOM no tiene
-#: cliente para ella (app/models.py no la enruta), de modo que se pliega a
-#: fortiweb en vez de conservarse como una opcion que no lleva a ninguna parte.
+#: The values this setting stored before it had a roster. They were
+#: TitleCase and also from a different vocabulary than ``Appliance.kind``
+#: (lowercase), so the setting could not match the form it claimed to fill
+#: in. ``FortiWeb-Cloud`` is not an appliance family: SATOM has no client for
+#: it (app/models.py does not route it), so it folds into fortiweb instead of
+#: being kept as an option that leads nowhere.
 _LEGACY_DEFAULT_KIND = {
     "fortiweb": "fortiweb",
     "fortiweb-cloud": "fortiweb",
@@ -267,21 +267,21 @@ _LEGACY_DEFAULT_KIND = {
 
 
 def platform_choices() -> tuple[tuple[str, str], ...]:
-    """El roster de plataformas, del registro de ADOMs. Un solo autor."""
+    """The platform roster, from the ADOM registry. A single author."""
     from .product_scope import device_products
     return device_products()
 
 
 def normalise_default_kind(value: Any) -> str:
-    """La clave de plataforma valida mas cercana a ``value``.
+    """The valid platform key closest to ``value``.
 
-    La plantilla es una pista; esto es la regla. Sin ella un ``default_kind``
-    posteado a mano se guardaba tal cual o se plegaba en silencio a FortiWeb,
-    que es como elegir FortiAuthenticator acababa siendo FortiWeb sin decirlo.
+    The template is a hint; this is the rule. Without it a hand-posted
+    ``default_kind`` was stored as-is or silently folded into FortiWeb, which
+    is how choosing FortiAuthenticator ended up as FortiWeb without saying so.
     """
     try:
         valid = {key for key, _ in platform_choices()}
-    except Exception:  # noqa: BLE001 -- un registro roto no puede perder el valor
+    except Exception:  # noqa: BLE001 -- a broken registry must not lose the value
         valid = set(_LEGACY_DEFAULT_KIND.values())
     raw = str(value or "").strip().lower()
     candidate = _LEGACY_DEFAULT_KIND.get(raw, raw)

@@ -971,9 +971,9 @@
 
   {% if is_admin %}
   <!-- VAULT TAB -->
-  {# Este panel ANADE un sitio donde puede vivir una credencial. No quita el
-     local: 'local' sigue siendo el default y una instalacion que nunca abra
-     esta pagina se comporta exactamente igual que antes. #}
+  {# This panel ADDS a place where a credential can live. It does not remove
+     the local one: 'local' is still the default, and an install that never
+     opens this page behaves exactly as before. #}
   <div class="tab-pane fade" id="tab-vault">
     <form method="post" action="{{ url_for('settings.save_vault') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -5610,8 +5610,8 @@ document.addEventListener('DOMContentLoaded', function() {
 </script>
 
 <script nonce="{{ csp_nonce }}">
-// Vault tab — test + migrate. Un fallo se PINTA como fallo: una tabla vacia y
-// una migracion que no copio nada se ven igual y significan lo contrario.
+// Vault tab — test + migrate. A failure is SHOWN as a failure: an empty table
+// and a migration that copied nothing look the same and mean the opposite.
 (function () {
   var testBtn = document.getElementById('vault-test-btn');
   var out = document.getElementById('vault-test-result');

@@ -115,7 +115,7 @@ def list_exceptions(id):
         t = store.type_for(key)
         present_types.setdefault(key, t['label'] if t else key)
 
-    # Which Server Policy holds how many — the "¿qué SPO la tiene?" half of the
+    # Which Server Policy holds how many — the "which SPO has it?" half of the
     # ask, answered on the scope the operator is standing on.
     by_policy: dict[str, int] = {}
     for i in all_items:

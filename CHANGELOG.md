@@ -123,10 +123,10 @@ stage 2. Stage 3 still opens only for the change the page was asked for
 
 ### Changed — evidence is indexed by firmware BUILD, and three pages stopped answering about a firmware nobody chose (2026-09-16)
 
-Asked for as *"no vale la pena tenerlo ahí porque no sabremos por versión qué
-es… mejor es establecer con las versiones que tenemos"*, and then, precisely:
-*"dentro de una misma versión 8.0 puede haber un 8.0.4 y un 8.0.7 y dentro de
-esas puede haber ya diferencias en el CLI"*. That is the whole defect, and it
+Asked for as *"it's not worth having it there because we won't know by version
+what it is… better to pin it to the versions we have"*, and then, precisely:
+*"within one and the same version 8.0 there can be an 8.0.4 and an 8.0.7, and
+between those there can already be differences in the CLI"*. That is the whole defect, and it
 was load-bearing.
 
 **The mechanism.** `api_matrix` keyed its evidence by firmware **line**
@@ -216,9 +216,9 @@ prove it, because production data cannot.
 
 ### Fixed — nothing on the discovery card is a synchronous request any more, and no "running" outlives its worker (2026-09-15)
 
-Asked for as *"cuando se crea y ejecuta, ¿cómo sabe el usuario que está
-corriendo? … se debería de crear un job y avisar al usuario cuando este job
-finalice"*, then *"arréglalo para que ya quede"*.
+Asked for as *"when it is created and run, how does the user know it is
+running? … a job should be created and the user told when that job
+finishes"*, then *"fix it so it stays fixed"*.
 
 **Four defects, and they are four shapes of the same lie: a screen reporting a
 state nobody is in.**
@@ -297,9 +297,9 @@ one.
 
 ### Fixed — one appliance for the discovery run, and the firmware it is running (2026-09-15)
 
-Asked for as *"no es redundante? … abajo volver a seleccionar un fortiweb no
-tiene caso"*, then *"checa que en automatico detecte la version del fortiweb o
-fortidevice y guarde la version"*.
+Asked for as *"isn't it redundant? … selecting a fortiweb again further down
+makes no sense"*, then *"make sure it automatically detects the version of the
+fortiweb or fortidevice and saves the version"*.
 
 **The redundancy was real and it was hiding something worse.** The card had two
 appliance pickers — *Load API catalog + CLI configuration from* and *Ask this
@@ -358,7 +358,7 @@ override being declared and then ignored.
 
 ### Fixed — the discovery run is the FIRST card, and its buttons actually run (2026-09-15)
 
-Asked for as *"ponlo hasta arriba"*, after *"donde pusiste el boton?"*.
+Asked for as *"put it at the very top"*, after *"where did you put the button?"*.
 
 **Position was the request; the defect found while moving it is the bigger
 half.** The app-wide CSP (`app/__init__.py` `after_request`) sends
@@ -404,9 +404,9 @@ relative to `_cli_coverage.html` is first-where-it-acts / last-where-it-cannot.
 
 ### Added — The catalog can finally GROW from what a device serves (2026-09-15)
 
-Asked for as *"al final dónde tenemos el botón o función para generar esa
-biblioteca del `/api-explorer/`?"*, then *"sí hazlo, y debe de cargar tanto el
-api como el cli"*.
+Asked for as *"so where, in the end, is the button or function that generates
+that `/api-explorer/` library?"*, then *"yes, do it, and it has to load both the
+api and the cli"*.
 
 **The premise was inverted, and that is the finding.** The library is not
 produced by scanning a FortiWeb — the scan is *driven by* the library:
@@ -467,8 +467,8 @@ in the menu — which reads as a failed write.
 
 ### Added — The CLI-only elements now appear in `/web/structure/` (2026-09-15)
 
-Asked for as *"lo que necesito es que los elementos del spo también … von der
-cli que no aparecen en la estructura aparezcan"*.
+Asked for as *"what I need is for the spo elements too … from the
+cli that don't appear in the structure to appear"*.
 
 The dependency tree was captured by walking REST, so anything REST never names
 is missing from it **by construction** — not because the box lacks it. Those
@@ -506,8 +506,8 @@ reads as "no rows matched".
 
 ### Added — Every page that lists an endpoint now says which transport serves it (2026-09-15)
 
-Asked for as *"aquí debería de verse también qué cosas son del CLI y qué cosas
-son vía API"*, naming `/web/registry/versions`, `/web/api-explorer/` and
+Asked for as *"here it should also show which things come from the CLI and which
+come via the API"*, naming `/web/registry/versions`, `/web/api-explorer/` and
 `/web/structure/`.
 
 **One authority, not three.** `cli_coverage.provenance()` projects the diff those
@@ -548,7 +548,7 @@ is the right place for a fact about the whole product rather than each row.
 
 ### Added — The sweep can now capture what the CLI serves, in the same pass (2026-09-15)
 
-Asked for as *"si hazlo"* on the one item the previous round left needing an
+Asked for as *"yes, do it"* on the one item the previous round left needing an
 explicit OK: hooking the CLI capture onto the rediscovery sweep.
 
 **It is hooked as a third pass, not folded inline.** The sweep's own snapshot
@@ -608,10 +608,10 @@ Guards: `tests/test_rediscovery_cli_capture.py` (§170), `docs/safeguards.md`.
 
 ### Added — What the CLI serves and the catalog does not know: coverage on the API hub (2026-09-15)
 
-Asked for as *"hay elementos en el fortiweb que no estan en el api, y que solo se
-ven por ejemplo cuando sea conecta via ssh y se hace un comando full… comparar
-que se tiene via api y que no y poner esto tambien en la libreria"*, scoped to
-*"hazlo en la misma pagina el proceso solo amplialo"*.
+Asked for as *"there are elements on the fortiweb that are not in the api, and that
+only show up, for example, when you connect via ssh and run a full command…
+compare what we have via the api and what we don't, and put this in the library
+too"*, scoped to *"do it on the same page, just extend the process"*.
 
 **The premise was half right, and the wrong half was the useful one.** The CLI
 dump was already being captured: `backup.ssh_config_backup` has run
@@ -735,10 +735,10 @@ reproduce the endpoints we know would not find the ones we do not.
 
 ### Added — Scout reads the release notes before the firmware is sent (2026-09-14)
 
-Asked for as *"cuando se actualice sería bueno que Scout, si es que está
-activado, revise si hay algún problema con la versión a la que se va que pueda
-echar a perder, como lo que vimos en la versión 8.0.7 — agrega esta sección en
-el dry-run y en el upgrade"*, plus an explicit opt-in checkbox.
+Asked for as *"when it gets upgraded it would be good for Scout, if it is
+enabled, to check whether there is any problem with the target version that
+could break things, like what we saw in version 8.0.7 — add this section to
+the dry-run and to the upgrade"*, plus an explicit opt-in checkbox.
 
 The verdicts are **not new**. `services/release_advisor` has answered "what will
 stop this window" over the harvested vendor prose since 2026-09-13; it simply
@@ -786,7 +786,7 @@ that had nothing to say.
 
 ### Added — A change request can be corrected while it is still open (2026-09-14)
 
-Asked for as *"no puedo editar el change request, debería de poder hacerlo"*,
+Asked for as *"I can't edit the change request, I should be able to"*,
 after CR-2026-0012 sat **approved and un-runnable** with `no maintenance window`.
 
 `window_start` is **optional when a change is raised** and **required before it
@@ -837,7 +837,7 @@ posted value verbatim reported a change on every save. Correcting a change's
 
 ### Fixed — A button label is one phrase, never prose (2026-09-14)
 
-Reported as *"el botón de cancel no se ve bien, está como en doble línea"*.
+Reported as *"the cancel button doesn't look right, it's kind of on two lines"*.
 Measured in a real browser: the **Cancel CR** button on a change request
 rendered **80px wide and 73px tall — three lines** — at 1600px, 1280px and
 1024px alike. Not a narrow-viewport problem: the reason input beside it claimed
@@ -1228,8 +1228,8 @@ nothing replaces the control on purpose.
 
 ### Added — the Scout name field gets a picker, and it offers the UNION of both sources (2026-09-10)
 
-Asked for in one line: *"al seleccionar el fortiweb o fortiadc, deberá aparecer
-en un select todos los Server policy / virtual server"*. The list is the easy
+Asked for in one line: *"when the fortiweb or fortiadc is selected, every Server
+policy / virtual server should appear in a select"*. The list is the easy
 half; which list, and what it must never claim, is the design.
 
 - **Union, never intersection.** Measured on `fortiweb13` the same day: the
@@ -1296,8 +1296,8 @@ round.** Every test asserts on names, and no name is plural or overflows:
 
 ### Fixed — the Scout report stops cutting itself in silence, and its chrome names classes that exist (2026-09-10)
 
-Reported in one sentence — *"quitaste los filtros y divisiones, y el reporte
-está como cortado, los campos no están completos"* — and every clause of it
+Reported in one sentence — *"you removed the filters and dividers, and the report
+looks cut off, the fields are not complete"* — and every clause of it
 described something real, although nothing had been removed and nothing raised.
 
 - **Six rungs trimmed their evidence with no marker.** `layer_device`,
@@ -3273,7 +3273,7 @@ an opaque `-651` at deploy time.
     stores nothing.
 
 - **Scope labels name the DEVICE, not its management address.** Reported for
-  "todas las secciones" of `/artifacts/*`: an operator standing on
+  "all the sections" of `/artifacts/*`: an operator standing on
   `fortiweb12 / adom_prod` was told they were on `192.0.2.14` — the address of a
   chassis carrying four ADOM rows, so it names none of them. Every label now
   goes through `models.appliance_name_parts` (the product's one answer to
@@ -3293,7 +3293,7 @@ an opaque `-651` at deploy time.
 
 - **`/artifacts/*` takes its (device, ADOM) from the SESSION, like every other
   per-device page — and nothing in the section answers for anything else.**
-  Reported a third time (*"estamos en un device x con el adom y y veo todo"*),
+  Reported a third time (*"we're on device x with adom y and I see everything"*),
   and the two fixes before it could not have helped: they narrowed by
   `?appl=`, **a query argument the operator's navigation never produces**. The
   operator picks a device on the Architecture map; that lands in
@@ -3307,7 +3307,7 @@ an opaque `-651` at deploy time.
   * `index`, `inventory`, `object` and `audit` narrow to the session
     pair before a figure is computed; with **no** device chosen they send the
     operator to the map, as Backups does, instead of showing the fleet.
-  * **The pickers were the other half of the report** (*"en los filtros"*).
+  * **The pickers were the other half of the report** (*"in the filters"*).
     Every `<select name="appliance_id">` now offers that pair alone, the
     inventory's appliance filter — whose neutral option was the page's own way
     back to the fleet — is replaced by a *within-scope* `held=own|library`, and

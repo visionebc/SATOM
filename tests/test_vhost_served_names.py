@@ -62,19 +62,19 @@ def test_the_shipped_vhost_actually_sets_http_host(path):
 # ---------------------------------------------------------------------------
 def test_installer_asks_for_the_served_dns_names():
     txt = INSTALLER.read_text()
-    # Anclado al ARTEFACTO exacto, no a una subcadena. El nombre de la variable
-    # aparece TAMBIEN en la asignacion de dentro del if, asi que un `in txt`
-    # seguia pasando con la condicion mutada -- el quinto falso positivo de esta
-    # clase en este repo. Un guardia se ata a lo que se inserta, nunca a la prosa.
+    # Anchored to the exact ARTIFACT, not to a substring. The variable name
+    # ALSO appears in the assignment inside the if, so an `in txt` kept
+    # passing with the condition mutated -- the fifth false positive of this
+    # class in this repo. A guard is tied to what gets inserted, never to prose.
     assert 'if [ -n "${SATOM_SERVED_NAMES:-}" ]; then' in txt, (
         "There is no non-interactive override for the served names, so an "
         "unattended install cannot set them.")
     assert 'SERVED_NAMES="$SATOM_SERVED_NAMES"' in txt, (
         "The override is tested for but never assigned.")
-    # Lo que este guardia promete es que PREGUNTA, no con que primitiva. Desde
-    # [SATOM-LOUD-READ] todo prompt pasa por ask/ask_secret para no morir mudo
-    # al agotarse la entrada, asi que se aceptan ambas formas -- atarlo a
-    # `read -rp` convertia una mejora del mecanismo en un fallo de la suite.
+    # What this guard promises is that it ASKS, not with which primitive. Since
+    # [SATOM-LOUD-READ] every prompt goes through ask/ask_secret so it does not
+    # die mute when input runs out, so both forms are accepted -- tying it to
+    # `read -rp` turned an improvement of the mechanism into a suite failure.
     assert re.search(r"(read -rp .*SERVED_NAMES|^\s*ask SERVED_NAMES )", txt, re.M), (
         "The installer never prompts for the names it is about to mint into "
         "the vhost and the certificate.")

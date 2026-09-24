@@ -1,13 +1,13 @@
-"""Guardias del backend de secretos (local Fernet <-> vault externo).
+"""Guards for the secrets backend (local Fernet <-> external vault).
 
-Lo que estos guardias defienden, en una linea: **anadir el vault no puede
-cambiar el comportamiento de una instalacion que no lo configura**, y cuando el
-vault SI es la unica copia, un fallo tiene que ROMPER en vez de degradar a una
-contrasena vacia o a un centinela.
+What these guards defend, in one line: **adding the vault cannot change the
+behaviour of an install that does not configure it**, and when the vault IS
+the only copy, a failure has to FAIL LOUDLY instead of degrading to an empty
+password or to a sentinel.
 
-No hablan con ningun vault real: la capa de transporte (``_request``) se
-sustituye por un doble que ademas CUENTA las llamadas, porque media docena de
-estos defectos solo se ven en el numero de peticiones, no en el resultado.
+They do not talk to any real vault: the transport layer (``_request``) is
+replaced by a double that also COUNTS the calls, because half a dozen of these
+defects only show up in the number of requests, not in the result.
 """
 import json
 
@@ -18,10 +18,10 @@ from app.services import encryption, secret_backend as sb
 
 
 # ---------------------------------------------------------------------------
-# dobles
+# doubles
 # ---------------------------------------------------------------------------
 class FakeVault:
-    """Un KV v2 en memoria con contador de llamadas."""
+    """An in-memory KV v2 with a call counter."""
 
     def __init__(self, fail_reads=False, fail_login=False):
         self.store = {}
@@ -34,7 +34,7 @@ class FakeVault:
         self.calls.append((method, path))
         if path == "auth/approle/login":
             if self.fail_login:
-                raise sb.VaultError("login rechazado")
+                raise sb.VaultError("login rejected")
             self.logins += 1
             return {"auth": {"client_token": "tok-%d" % self.logins,
                              "lease_duration": 3600,
@@ -45,11 +45,11 @@ class FakeVault:
             return {"data": {"policies": ["satom-app"]}}
         if path.endswith("/metadata?list=true"):
             return {"data": {"keys": []}}
-        # KV v2: "<mount>/data/<ruta>"
+        # KV v2: "<mount>/data/<path>"
         mount, _, rest = path.partition("/data/")
         if method == "GET":
             if self.fail_reads:
-                raise sb.VaultError("GET %s -> vault caido" % path)
+                raise sb.VaultError("GET %s -> vault down" % path)
             if rest not in self.store:
                 raise sb.VaultError("GET %s -> HTTP 404" % path)
             return {"data": {"data": dict(self.store[rest])}}
@@ -59,7 +59,7 @@ class FakeVault:
         if method == "DELETE":
             self.store.pop(rest, None)
             return {}
-        raise AssertionError("metodo inesperado %s %s" % (method, path))
+        raise AssertionError("unexpected method %s %s" % (method, path))
 
 
 @pytest.fixture()
@@ -89,11 +89,11 @@ def make_appliance(name="fw1", password="s3cr3t"):
 
 
 # ---------------------------------------------------------------------------
-# 1. el default no toca el vault
+# 1. the default does not touch the vault
 # ---------------------------------------------------------------------------
 def test_default_mode_is_local_and_the_vault_is_never_contacted(app, monkeypatch):
     def explode(*a, **k):
-        raise AssertionError("el vault fue contactado con la configuracion por defecto")
+        raise AssertionError("the vault was contacted with the default configuration")
 
     monkeypatch.setattr(sb, "_request", explode)
     with app.app_context():
@@ -106,9 +106,9 @@ def test_default_mode_is_local_and_the_vault_is_never_contacted(app, monkeypatch
 
 
 def test_enabled_but_mode_local_still_never_contacts_the_vault(app, monkeypatch):
-    """Encender el interruptor sin cambiar de modo NO puede mover secretos."""
+    """Flipping the switch without changing mode CANNOT move secrets."""
     def explode(*a, **k):
-        raise AssertionError("el vault fue contactado en modo local")
+        raise AssertionError("the vault was contacted in local mode")
 
     with app.app_context():
         sb.save({"enabled": True, "mode": sb.MODE_LOCAL,
@@ -120,7 +120,7 @@ def test_enabled_but_mode_local_still_never_contacts_the_vault(app, monkeypatch)
 
 
 # ---------------------------------------------------------------------------
-# 2. configuracion
+# 2. configuration
 # ---------------------------------------------------------------------------
 def test_blank_secret_field_keeps_the_stored_credential(app, vault):
     with app.app_context():
@@ -128,7 +128,7 @@ def test_blank_secret_field_keeps_the_stored_credential(app, vault):
         assert sb.config()["has_secret_id"] is True
         sb.save({"enabled": True, "mode": sb.MODE_MIRROR,
                  "addr": "https://vault.test:8200", "role_id": "rid",
-                 "secret_id": ""})          # en blanco = conservar
+                 "secret_id": ""})          # blank = keep
         assert sb.config()["has_secret_id"] is True
         assert sb.config(reveal=True)["secret_id"] == "sid"
 
@@ -148,46 +148,46 @@ def test_enabling_without_an_address_is_refused(app):
 
 
 def test_an_unknown_mode_is_never_PERSISTED(app):
-    """La validacion de ``save()`` y la normalizacion de ``config()`` son DOS
-    reglas distintas, y hay que pinarlas por separado.
+    """The validation in ``save()`` and the normalisation in ``config()`` are TWO
+    different rules, and they have to be pinned separately.
 
-    Un aserto sobre ``config()`` no distingue una de otra: con la validacion de
-    ``save()`` quitada sigue pasando, porque ``config()`` normaliza al leer. Este
-    mira la FILA en bruto.
+    An assertion on ``config()`` cannot tell one from the other: with the
+    ``save()`` validation removed it still passes, because ``config()``
+    normalises on read. This one looks at the raw ROW.
     """
     with app.app_context():
-        sb.save({"enabled": True, "mode": "haz-lo-que-quieras",
+        sb.save({"enabled": True, "mode": "do-whatever-you-like",
                  "addr": "https://vault.test:8200"})
         raw = json.loads(AppSetting.get(sb.K_CONFIG))
         assert raw["mode"] == sb.MODE_LOCAL
 
 
 def test_a_bad_mode_already_in_the_database_is_normalised_on_read(app):
-    """La otra mitad: una fila escrita a mano o por una version anterior."""
+    """The other half: a row written by hand or by an earlier version."""
     with app.app_context():
         sb.save({"enabled": True, "mode": sb.MODE_MIRROR,
                  "addr": "https://vault.test:8200"})
         raw = json.loads(AppSetting.get(sb.K_CONFIG))
-        raw["mode"] = "modo-de-otra-version"
+        raw["mode"] = "mode-from-another-version"
         AppSetting.set(sb.K_CONFIG, json.dumps(raw))
         assert sb.config()["mode"] == sb.MODE_LOCAL
         assert sb.active() is False
 
 
 # ---------------------------------------------------------------------------
-# 3. modo mirror
+# 3. mirror mode
 # ---------------------------------------------------------------------------
 def test_mirror_writes_both_copies_and_reads_the_vault_first(app, vault):
     with app.app_context():
         configure(sb.MODE_MIRROR)
         a = make_appliance(password="original")
         assert vault.store["appliances/fw1"]["password"] == "original"
-        # la copia local sigue siendo utilizable: eso es lo que hace reversible
-        # el modo mirror
+        # the local copy is still usable: that is what makes mirror mode
+        # reversible
         assert encryption.decrypt(a.password_enc) == "original"
 
-        vault.store["appliances/fw1"]["password"] = "cambiado-en-el-vault"
-        assert a.password == "cambiado-en-el-vault"
+        vault.store["appliances/fw1"]["password"] = "changed-in-the-vault"
+        assert a.password == "changed-in-the-vault"
 
 
 def test_mirror_falls_back_to_local_when_the_vault_is_down(app, vault):
@@ -207,24 +207,24 @@ def test_mirror_falls_back_when_the_vault_simply_has_no_such_secret(app, vault):
 
 
 # ---------------------------------------------------------------------------
-# 4. modo vault (autoritativo) — aqui un fallo TIENE que romper
+# 4. vault mode (authoritative) — here a failure HAS to fail loudly
 # ---------------------------------------------------------------------------
 def test_vault_only_stores_a_sentinel_locally_not_the_password(app, vault):
     with app.app_context():
         configure(sb.MODE_VAULT)
-        a = make_appliance(password="solo-en-el-vault")
-        assert vault.store["appliances/fw1"]["password"] == "solo-en-el-vault"
-        # el defecto que esto impide: dejar la contrasena vieja en la columna
-        # local, donde sigue abriendo sesiones
+        a = make_appliance(password="only-in-the-vault")
+        assert vault.store["appliances/fw1"]["password"] == "only-in-the-vault"
+        # the defect this prevents: leaving the old password in the local
+        # column, where it still opens sessions
         assert encryption.decrypt(a.password_enc) == sb.VAULT_SENTINEL
-        assert a.password == "solo-en-el-vault"
+        assert a.password == "only-in-the-vault"
 
 
 def test_vault_only_raises_instead_of_returning_the_sentinel(app, vault):
-    """Degradar aqui mandaria el literal '__stored-in-vault__' al aparato."""
+    """Degrading here would send the literal '__stored-in-vault__' to the appliance."""
     with app.app_context():
         configure(sb.MODE_VAULT)
-        a = make_appliance(password="solo-en-el-vault")
+        a = make_appliance(password="only-in-the-vault")
         vault.fail_reads = True
         with pytest.raises(sb.VaultError):
             _ = a.password
@@ -233,7 +233,7 @@ def test_vault_only_raises_instead_of_returning_the_sentinel(app, vault):
 def test_vault_only_raises_when_the_secret_is_missing(app, vault):
     with app.app_context():
         configure(sb.MODE_VAULT)
-        a = make_appliance(password="solo-en-el-vault")
+        a = make_appliance(password="only-in-the-vault")
         vault.store.clear()
         with pytest.raises(sb.VaultError):
             _ = a.password
@@ -243,18 +243,18 @@ def test_vault_only_write_failure_does_not_silently_write_locally(app, vault, mo
     with app.app_context():
         configure(sb.MODE_VAULT)
         monkeypatch.setattr(sb, "write", lambda *a, **k: (_ for _ in ()).throw(
-            sb.VaultError("sin espacio")))
+            sb.VaultError("out of space")))
         a = Appliance(name="fw9", kind="fortiweb", host="192.0.2.9", port=443,
                       username="admin")
         with pytest.raises(sb.VaultError):
-            a.password = "nunca-guardada"
+            a.password = "never-saved"
 
 
 # ---------------------------------------------------------------------------
-# 5. la ruta ES el nombre
+# 5. the path IS the name
 # ---------------------------------------------------------------------------
 def test_an_unnamed_appliance_is_never_written_to_the_vault(app, vault):
-    """Todas las filas sin nombre compartirian la ruta 'appliances/'."""
+    """Every unnamed row would share the path 'appliances/'."""
     with app.app_context():
         configure(sb.MODE_MIRROR)
         a = Appliance(name="", kind="fortiweb", host="192.0.2.2", port=443,
@@ -266,7 +266,7 @@ def test_an_unnamed_appliance_is_never_written_to_the_vault(app, vault):
 
 
 # ---------------------------------------------------------------------------
-# 6. cache del token — un barrido de flota no puede abrir una sesion por equipo
+# 6. token cache — a fleet sweep cannot open one session per appliance
 # ---------------------------------------------------------------------------
 def test_many_reads_share_one_login(app, vault):
     with app.app_context():
@@ -281,14 +281,15 @@ def test_many_reads_share_one_login(app, vault):
 
 
 def test_a_credential_change_made_elsewhere_invalidates_the_cached_token(app, vault):
-    """El caso real es OTRO worker de gunicorn, no el que guardo el formulario.
+    """The real case is ANOTHER gunicorn worker, not the one that saved the form.
 
-    ``save()`` llama a ``invalidate_token()``, pero eso solo limpia la cache del
-    proceso que atendio el POST; los otros workers siguen con su token viejo.
-    Por eso la cache lleva HUELLA de la credencial: el siguiente worker recalcula
-    la huella desde la configuracion nueva de la BD, no casa, y vuelve a
-    autenticar. Un test que llame a ``save()`` NO PUEDE ver ese defecto — pasa
-    igual con la huella quitada, que es exactamente lo que midio la mutacion.
+    ``save()`` calls ``invalidate_token()``, but that only clears the cache of
+    the process that handled the POST; the other workers keep their old token.
+    That is why the cache carries a FINGERPRINT of the credential: the next
+    worker recomputes the fingerprint from the new configuration in the DB, it
+    does not match, and it re-authenticates. A test that calls ``save()``
+    CANNOT see that defect — it passes just the same with the fingerprint
+    removed, which is exactly what the mutation measured.
     """
     with app.app_context():
         configure(sb.MODE_MIRROR)
@@ -296,8 +297,8 @@ def test_a_credential_change_made_elsewhere_invalidates_the_cached_token(app, va
         sb.get_appliance_password("fw1")
         first = vault.logins
 
-        # Un worker hermano cambia la credencial: la fila cambia y ESTA cache no
-        # se entera por ningun otro medio.
+        # A sibling worker changes the credential: the row changes and THIS
+        # cache finds out by no other means.
         raw = json.loads(AppSetting.get(sb.K_CONFIG))
         raw["role_id"] = "rid-2"
         raw["secret_id_enc"] = encryption.encrypt("sid-2")
@@ -305,7 +306,7 @@ def test_a_credential_change_made_elsewhere_invalidates_the_cached_token(app, va
 
         sb.get_appliance_password("fw1")
         assert vault.logins == first + 1, (
-            "se reutilizo un token minteado con la credencial ANTERIOR")
+            "a token minted with the PREVIOUS credential was reused")
 
 
 # ---------------------------------------------------------------------------
@@ -329,7 +330,7 @@ def test_health_never_raises_when_the_vault_is_unreachable(app, vault):
 
 
 def test_health_says_sealed_instead_of_ok(app, vault, monkeypatch):
-    """Un vault sellado responde — y no puede contestar por ningun secreto."""
+    """A sealed vault responds — and cannot answer for any secret."""
     with app.app_context():
         configure(sb.MODE_MIRROR)
 
@@ -344,7 +345,7 @@ def test_health_says_sealed_instead_of_ok(app, vault, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# 8. migracion
+# 8. migration
 # ---------------------------------------------------------------------------
 def test_dry_run_migration_writes_nothing(app, vault):
     with app.app_context():
@@ -368,12 +369,12 @@ def test_migration_verifies_by_reading_back(app, vault):
 
 
 def test_a_write_that_stores_nothing_is_reported_as_failed(app, vault, monkeypatch):
-    """200 OK y nada guardado es EL modo de fallo que la relectura existe para cazar."""
+    """200 OK with nothing stored is THE failure mode the read-back exists to catch."""
     with app.app_context():
         make_appliance(name="fw1", password="p1")
         configure(sb.MODE_MIRROR)
         vault.store.clear()
-        monkeypatch.setattr(sb, "write", lambda path, data: None)   # traga y no guarda
+        monkeypatch.setattr(sb, "write", lambda path, data: None)   # swallows, stores nothing
         res = sb.migrate_local_to_vault(dry_run=False)
         assert res["ok"] is False and res["failed"] == 1
 
@@ -399,16 +400,16 @@ def test_already_vaulted_rows_are_skipped_not_recopied(app, vault):
         configure(sb.MODE_VAULT)
         make_appliance(name="fw1", password="p1")
         res = sb.migrate_local_to_vault(dry_run=False)
-        # Acotado al item del aparato: los dos secretos de directorio no estan
-        # configurados en este test y tambien cuentan como "skipped", asi que
-        # un aserto sobre el TOTAL pasaria aunque la fila se hubiera recopiado.
+        # Scoped to the appliance's item: the two directory secrets are not
+        # configured in this test and also count as "skipped", so an assertion
+        # on the TOTAL would pass even if the row had been re-copied.
         row = [i for i in res["items"] if i["name"] == "fw1"][0]
         assert row["status"] == "skipped" and row["detail"] == "already vault-owned"
         assert res["copied"] == 0
 
 
 # ---------------------------------------------------------------------------
-# 9. el secreto compartido del FortiAuthenticator
+# 9. the FortiAuthenticator shared secret
 # ---------------------------------------------------------------------------
 def test_fortiauthenticator_secret_reads_from_the_vault_when_active(app, vault):
     from app.services import auth_store
@@ -447,7 +448,7 @@ def test_no_vault_means_auth_store_behaves_exactly_as_before(app, monkeypatch):
     from app.services import auth_store
 
     def explode(*a, **k):
-        raise AssertionError("el vault fue contactado sin estar configurado")
+        raise AssertionError("the vault was contacted without being configured")
 
     monkeypatch.setattr(sb, "_request", explode)
     with app.app_context():

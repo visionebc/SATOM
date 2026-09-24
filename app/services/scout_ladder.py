@@ -428,8 +428,8 @@ def _capped(ev: list, pairs, cap: int, noun: str) -> list:
     the cut.  A list that stops silently does not read as "the first six of
     twelve" — it reads as "six", which is the whole point of listing them.  The
     operator then diagnoses a pool whose remaining members were never shown,
-    from a report that looks complete.  Reported as "el reporte está cortado,
-    los campos no están completos" on 2026-09-10, and that was exactly right.
+    from a report that looks complete.  Reported as "the report is cut off,
+    the fields are not complete" on 2026-09-10, and that was exactly right.
 
     The cut is named as SCOUT'S — "not shown here" — because the alternative
     phrasing ("no more") is a claim about the device that this page has no

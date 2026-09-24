@@ -1,21 +1,21 @@
-"""El catalogo compilado es un ARTEFACTO, y su entrega tiene que estar cubierta.
+"""The compiled catalogue is an ARTEFACT, and its delivery has to be covered.
 
-Contexto medido el 2026-08-10: los cuatro `.mo` viajaban en el repo y llevaban
-identificadores internos reales -- `example.net` (x6), direcciones `10.0.0.x`
-(x16), `hypervisor03` (x2), `backup-server` (x8-10). Eso dejaba al publicador entre dos
-fallos:
+Context measured on 2026-08-10: the four `.mo` files shipped in the repo and
+carried real internal identifiers -- `example.net` (x6), `10.0.0.x` addresses
+(x16), `hypervisor03` (x2), `backup-server` (x8-10). That left the publisher caught
+between two failures:
 
-* Sanear el binario (lo que hacia) reescribe bytes DENTRO del `.mo`, desplaza
-  su tabla de offsets y el fichero publicado revienta al abrirlo. Una
-  instalacion hecha desde el repo publico daba 500 en cada pagina en
-  es/de/fr/it, y el publicador reportaba `RESULT: OK`.
-* Saltarse el saneado para binarios publica la infraestructura interna.
+* Sanitising the binary (what it did) rewrites bytes INSIDE the `.mo`, shifts
+  its offset table, and the published file blows up when opened. An install
+  made from the public repo returned 500 on every page in es/de/fr/it, and the
+  publisher reported `RESULT: OK`.
+* Skipping sanitisation for binaries publishes the internal infrastructure.
 
-La salida no es elegir el menos malo: es que un artefacto derivado no viaje. El
-`.po` es texto, se sanea bien, y el `.mo` se genera donde se instala -- por eso
-estas pruebas miran las DOS rutas de entrega (instalador y runner de update).
-Sin ellas, "ya no versionamos el .mo" se convierte en "la interfaz esta en
-ingles y nadie sabe por que".
+The way out is not picking the lesser evil: it is that a derived artefact does
+not ship. The `.po` is text, it sanitises cleanly, and the `.mo` is generated
+where it is installed -- which is why these tests check BOTH delivery paths
+(installer and update runner). Without them, "we no longer version the .mo"
+turns into "the interface is in English and nobody knows why".
 """
 from __future__ import annotations
 
@@ -37,93 +37,98 @@ def _tracked() -> list[str]:
 
 
 def test_no_compiled_catalogue_is_tracked_by_git():
-    """El fallo concreto: cuatro binarios versionados que el saneado del
-    publicador no puede tocar sin romperlos ni dejar sin tocar sin filtrar."""
+    """The concrete failure: four versioned binaries that the publisher's
+    sanitiser can neither touch without breaking nor leave untouched without
+    leaking."""
     tracked = [p for p in _tracked() if p.endswith(".mo")]
     assert not tracked, (
-        f"catalogos compilados versionados: {tracked}. Son derivados del .po; "
-        "se generan en la instalacion (ver installers/install-satom.sh)"
+        f"compiled catalogues under version control: {tracked}. They are derived "
+        "from the .po; they are generated at install time (see "
+        "installers/install-satom.sh)"
     )
 
 
 def test_the_source_catalogues_are_tracked():
-    """La otra mitad. Sin `.po` versionado no hay nada de lo que derivar, y
-    "no versionamos el .mo" se habria convertido en perder la traduccion."""
+    """The other half. Without a versioned `.po` there is nothing to derive
+    from, and "we do not version the .mo" would have become losing the
+    translation."""
     tracked = set(_tracked())
     for code in SHIPPED:
         rel = f"app/translations/{code}/LC_MESSAGES/messages.po"
-        assert rel in tracked, f"falta el catalogo fuente {rel}"
+        assert rel in tracked, f"source catalogue {rel} is missing"
 
 
 def test_the_installer_compiles_the_catalogues():
-    """Una instalacion limpia clona el repo: sin este paso arranca sin ningun
-    `.mo` y sirve la interfaz en ingles aunque el perfil pida otro idioma --
-    en silencio, que es como se descubre un mes despues."""
+    """A clean install clones the repo: without this step it starts with no
+    `.mo` at all and serves the interface in English even when the profile
+    asks for another language -- silently, which is how it gets discovered a
+    month later."""
     body = INSTALLER.read_text(encoding="utf-8")
     assert "pybabel compile" in body, (
-        "el instalador no compila los catalogos; con el .mo fuera del repo "
-        "eso deja toda instalacion nueva en ingles"
+        "the installer does not compile the catalogues; with the .mo out of "
+        "the repo that leaves every new install in English"
     )
     assert "app/translations" in body
 
 
 def test_the_update_runner_compiles_the_catalogues():
-    """Un update de codigo trae `.po` nuevos y ningun `.mo`."""
+    """A code update brings new `.po` files and no `.mo`."""
     body = UPDATER.read_text(encoding="utf-8")
     assert "pybabel" in body and "compile" in body, (
-        "self_update_runner no recompila los catalogos tras traer codigo nuevo"
+        "self_update_runner does not recompile the catalogues after pulling "
+        "new code"
     )
 
 
 def test_the_update_runner_compiles_even_without_a_pip_step():
-    """Fuera del bloque ``do_pip``, a proposito: una actualizacion de solo
-    codigo tambien trae catalogos nuevos."""
+    """Outside the ``do_pip`` block, on purpose: a code-only update also brings
+    new catalogues."""
     body = UPDATER.read_text(encoding="utf-8")
     idx = body.index('pb = run([str(VENV / "pybabel")')
     before = body[:idx]
-    # La ultima linea con indentacion de 8 espacios antes del compile marca el
-    # nivel de bloque: si estuviera DENTRO de `if req.get("do_pip"...)` tendria
-    # 12 espacios.
+    # The last line indented by 8 spaces before the compile marks the block
+    # level: if it were INSIDE `if req.get("do_pip"...)` it would have 12
+    # spaces.
     line = body[idx - 8:idx]
     assert line == " " * 8, (
-        "el paso de compilacion quedo anidado dentro de do_pip; un update de "
-        "solo codigo no recompilaria"
+        "the compile step ended up nested inside do_pip; a code-only update "
+        "would not recompile"
     )
     assert 'if req.get("do_pip"' in before
 
 
 def test_the_compile_step_never_aborts_the_update():
-    """Un catalogo que no compila no puede tumbar una actualizacion: revertir
-    un update por una traduccion es peor que la traduccion vieja."""
+    """A catalogue that fails to compile cannot take down an update: rolling
+    back an update over a translation is worse than the old translation."""
     body = UPDATER.read_text(encoding="utf-8")
     idx = body.index('pb = run([str(VENV / "pybabel")')
     window = body[idx:idx + 400]
     assert "raise" not in window, (
-        "el paso de catalogos aborta el update; debe registrarse y seguir"
+        "the catalogue step aborts the update; it must log and carry on"
     )
 
 
 @pytest.mark.parametrize("code", SHIPPED)
 def test_the_catalogue_this_node_serves_is_compiled(code):
-    """En un nodo VIVO el `.mo` tiene que existir aunque no este versionado.
+    """On a LIVE node the `.mo` has to exist even though it is not versioned.
 
-    Se salta -- no falla -- en un checkout limpio: ahi su ausencia es correcta
-    y quien la corrige es el instalador, cubierto por la prueba de arriba.
+    It is skipped -- not failed -- on a clean checkout: there its absence is
+    correct, and the installer is what fixes it, covered by the test above.
     """
     mo = ROOT / "app" / "translations" / code / "LC_MESSAGES" / "messages.mo"
     po = mo.with_suffix(".po")
     if not mo.exists():
-        pytest.skip("checkout sin compilar: el instalador genera el .mo")
+        pytest.skip("uncompiled checkout: the installer generates the .mo")
     assert mo.stat().st_mtime >= po.stat().st_mtime, (
-        f"{code}: messages.mo mas viejo que su .po -- recompila"
+        f"{code}: messages.mo is older than its .po -- recompile"
     )
 
 
 @pytest.mark.parametrize("code", SHIPPED)
 def test_the_compiled_catalogue_is_ignored_by_git(code):
-    """`.gitignore` cubriendolo es lo que impide que vuelva al indice en el
-    proximo ``git add -A``."""
+    """`.gitignore` covering it is what stops it from returning to the index
+    on the next ``git add -A``."""
     rel = f"app/translations/{code}/LC_MESSAGES/messages.mo"
     out = subprocess.run(["git", "check-ignore", rel], cwd=ROOT,
                          capture_output=True, text=True, timeout=60)
-    assert out.returncode == 0, f"{rel} no esta cubierto por .gitignore"
+    assert out.returncode == 0, f"{rel} is not covered by .gitignore"

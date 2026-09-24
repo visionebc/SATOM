@@ -1,14 +1,14 @@
-"""Guardias del borrado de las copias locales (paso que cierra la exposicion).
+"""Guards for scrubbing the local copies (the step that closes the exposure).
 
-La afirmacion que defienden, en una linea: **el modo no mueve nada**. Cambiar a
-"vault only" solo decide donde va la SIGUIENTE escritura; mientras la columna
-Fernet siga teniendo la contrasena, la clave que la descifra sigue en el mismo
-disco y el agujero sigue abierto. Estos guardias fijan las dos mitades:
+The claim they defend, in one line: **the mode moves nothing**. Switching to
+"vault only" only decides where the NEXT write goes; as long as the Fernet
+column still holds the password, the key that decrypts it sits on the same
+disk and the hole stays open. These guards pin down both halves:
 
-1. que el borrado ocurra de verdad (el atacante con .env ya no saca nada), y
-2. que NUNCA borre una copia local sin haber leido del vault una copia
-   identica — destruir la ultima copia de una credencial es el unico fallo
-   aqui que ningun paso posterior puede deshacer.
+1. that the scrub really happens (an attacker with .env gets nothing out), and
+2. that it NEVER deletes a local copy without having read an identical copy
+   back from the vault — destroying the last copy of a credential is the only
+   failure here that no later step can undo.
 """
 import pytest
 
@@ -39,10 +39,10 @@ def _detail(res, name):
 
 
 # ---------------------------------------------------------------------------
-# 1. el modo manda: sin "vault only" no se borra nada
+# 1. the mode rules: without "vault only" nothing is deleted
 # ---------------------------------------------------------------------------
 def test_scrub_is_refused_in_mirror_mode_and_the_local_copy_survives(app, vault):
-    """mirror existe POR la copia local: quitarla lo convierte en vault-only."""
+    """mirror exists BECAUSE of the local copy: removing it turns it into vault-only."""
     with app.app_context():
         configure(sb.MODE_MIRROR)
         make_appliance("fw1", "s3cr3t")
@@ -63,7 +63,7 @@ def test_scrub_is_refused_in_local_mode(app):
 
 
 def test_scrub_is_refused_while_the_switch_is_off(app, vault):
-    """Modo vault pero interruptor apagado = el vault no esta en el camino."""
+    """Vault mode but the switch off = the vault is not in the path."""
     with app.app_context():
         configure(sb.MODE_MIRROR)
         make_appliance("fw1", "s3cr3t")
@@ -80,18 +80,18 @@ def test_scrub_is_refused_while_the_switch_is_off(app, vault):
 def test_dry_run_reports_the_work_without_doing_it(app, vault):
     with app.app_context():
         configure(sb.MODE_MIRROR)
-        make_appliance("fw1", "s3cr3t")        # queda en las dos copias
+        make_appliance("fw1", "s3cr3t")        # ends up in both copies
         configure(sb.MODE_VAULT)
         res = sb.scrub_local_copies(dry_run=True)
         assert res["dry_run"] is True
         assert res["ok"] is True
         assert _status(res, "fw1") == "scrubbed"
         assert res["scrubbed"] == 1
-        assert _local("fw1") == "s3cr3t"       # intacta
+        assert _local("fw1") == "s3cr3t"       # untouched
 
 
 # ---------------------------------------------------------------------------
-# 3. el borrado real
+# 3. the real scrub
 # ---------------------------------------------------------------------------
 def test_apply_replaces_the_local_copy_with_the_sentinel(app, vault):
     with app.app_context():
@@ -104,7 +104,7 @@ def test_apply_replaces_the_local_copy_with_the_sentinel(app, vault):
 
 
 def test_the_password_still_reads_after_the_scrub(app, vault):
-    """Borrar la copia local no puede romper el uso normal."""
+    """Deleting the local copy cannot break normal use."""
     with app.app_context():
         configure(sb.MODE_MIRROR)
         row = make_appliance("fw1", "s3cr3t")
@@ -114,10 +114,10 @@ def test_the_password_still_reads_after_the_scrub(app, vault):
 
 
 def test_after_the_scrub_the_fernet_key_alone_recovers_nothing(app, vault):
-    """La afirmacion entera del feature, escrita como aserto.
+    """The feature's whole claim, written as an assertion.
 
-    Quien roba disco y .env descifra la columna: tiene que salir el centinela,
-    no la contrasena.
+    Whoever steals the disk and .env decrypts the column: what comes out has to
+    be the sentinel, not the password.
     """
     with app.app_context():
         configure(sb.MODE_MIRROR)
@@ -131,22 +131,22 @@ def test_after_the_scrub_the_fernet_key_alone_recovers_nothing(app, vault):
 
 
 # ---------------------------------------------------------------------------
-# 4. lo que NUNCA se borra
+# 4. what is NEVER deleted
 # ---------------------------------------------------------------------------
 def test_a_row_the_vault_does_not_hold_keeps_its_local_copy(app, vault):
-    """El caso que justifica el read-back: sin copia remota, la local es la ultima."""
+    """The case that justifies the read-back: with no remote copy, the local one is the last."""
     with app.app_context():
         configure(sb.MODE_MIRROR)
         make_appliance("fw1", "s3cr3t")
-        vault.store.pop("appliances/fw1", None)      # el vault no la tiene
+        vault.store.pop("appliances/fw1", None)      # the vault does not have it
         configure(sb.MODE_VAULT)
         res = sb.scrub_local_copies(dry_run=False)
         assert res["ok"] is False
         assert _status(res, "fw1") == "failed"
         assert res["scrubbed"] == 0
         assert _local("fw1") == "s3cr3t"
-        # "no la tiene" y "la tiene distinta" se arreglan de forma distinta:
-        # un mensaje que los confunde manda al operador al sitio equivocado.
+        # "does not have it" and "has a different one" are fixed differently:
+        # a message that confuses them sends the operator to the wrong place.
         assert "no copy in the vault" in _detail(res, "fw1")
 
 
@@ -154,7 +154,7 @@ def test_a_vault_copy_that_differs_is_never_treated_as_a_backup(app, vault):
     with app.app_context():
         configure(sb.MODE_MIRROR)
         make_appliance("fw1", "s3cr3t")
-        vault.store["appliances/fw1"]["password"] = "otra-cosa"
+        vault.store["appliances/fw1"]["password"] = "something-else"
         configure(sb.MODE_VAULT)
         res = sb.scrub_local_copies(dry_run=False)
         assert res["ok"] is False
@@ -179,19 +179,19 @@ def test_one_bad_row_does_not_stop_the_good_ones(app, vault):
     with app.app_context():
         configure(sb.MODE_MIRROR)
         make_appliance("fw1", "s3cr3t")
-        make_appliance("fw2", "otra")
+        make_appliance("fw2", "another")
         vault.store.pop("appliances/fw2", None)
         configure(sb.MODE_VAULT)
         res = sb.scrub_local_copies(dry_run=False)
         assert _status(res, "fw1") == "scrubbed"
         assert _status(res, "fw2") == "failed"
         assert _local("fw1") == sb.VAULT_SENTINEL
-        assert _local("fw2") == "otra"
+        assert _local("fw2") == "another"
         assert res["ok"] is False
 
 
 # ---------------------------------------------------------------------------
-# 5. idempotencia
+# 5. idempotency
 # ---------------------------------------------------------------------------
 def test_running_it_twice_is_a_no_op_the_second_time(app, vault):
     with app.app_context():
@@ -218,7 +218,7 @@ def test_a_row_without_a_password_is_skipped_not_failed(app, vault):
 
 
 # ---------------------------------------------------------------------------
-# 6. los secretos de directorio
+# 6. the directory secrets
 # ---------------------------------------------------------------------------
 def test_the_radius_shared_secret_is_scrubbed_and_still_reads(app, vault):
     with app.app_context():
@@ -254,7 +254,7 @@ def test_a_directory_secret_that_is_not_configured_is_skipped(app, vault):
 
 
 # ---------------------------------------------------------------------------
-# 7. la ruta
+# 7. the route
 # ---------------------------------------------------------------------------
 def _ready(app):
     with app.app_context():
@@ -264,7 +264,7 @@ def _ready(app):
 
 
 def test_the_route_without_apply_destroys_nothing(app, client, vault):
-    """Un POST que olvida ``apply`` no puede borrar credenciales."""
+    """A POST that forgets ``apply`` cannot delete credentials."""
     _ready(app)
     login(client, admin_user_id(app))
     body = client.post("/settings/vault/scrub").get_json()
@@ -286,7 +286,7 @@ def test_the_route_applies_only_with_apply_1(app, client, vault):
 
 def test_a_read_only_user_cannot_scrub(app, client, vault):
     _ready(app)
-    uid = make_user(app, username="lector", role="readonly")
+    uid = make_user(app, username="reader", role="readonly")
     login(client, uid)
     resp = client.post("/settings/vault/scrub", data={"apply": "1"})
     assert resp.status_code != 200

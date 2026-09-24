@@ -6570,7 +6570,7 @@ generator, put the vendor-named preset back, and re-add the vendor comment to
 
 Reported 2026-08-10 on `/appliances/<id>/upgrade/prep`: the result text ran past
 the cards, the sizing did not match the product, and the device CLI output
-"no se ve por los colores". Three defects, none of which can raise, because a
+"can't be read because of the colours". Three defects, none of which can raise, because a
 page that renders is not a page that reads.
 
 **1. `.fw-pre` was a dark-theme leftover.** `rgba(0,0,0,0.30)` over a WHITE card
@@ -9526,8 +9526,8 @@ plan balanced to ±0.06% over 263 files, 2841 orphaned temp roots swept.
 ## §99 — a class that matches no rule cannot fail (`tests/test_tool_modal_chrome.py`)
 
 Reported by the user twice on 2026-08-17: *"Certificate inspector /
-False-positive explainer / Transaction tracer tienen todavia el formato
-viejo"*. The first review of it called the divergence a style drift. It was
+False-positive explainer / Transaction tracer still have the old
+format"*. The first review of it called the divergence a style drift. It was
 not: **`fw-btn-primary` matches no selector in any stylesheet the product
 loads.** The real class is `btn-fw-primary` — the word order is reversed, and
 the two are indistinguishable at a glance in a diff.
@@ -11637,8 +11637,8 @@ would change what the report counts.
    writer's bug: assert on the stored blob.
 4. A test asserting the delete flash said "guess" passed against a flash that
    said nothing — the page's own header prose contains the word. Match a
-   sentence only the handler can produce. (Ninth aserto-que-casa-su-propio-
-   contexto.)
+   sentence only the handler can produce. (Ninth assertion-that-matches-its-own-
+   context.)
 
 **Verified by render** against the live node: `/web/line-profiles/` 200, the
 four real catalog lines listed, every undeclared line badged `inferred`,
@@ -11698,8 +11698,8 @@ REAL policy list, not a fixture.
 
 ## §134 — the wizard's script was blocked by the CSP, so the page was furniture (2026-08-27)
 
-Reported by the user: *"agregue un segmento /web/segments/ y no me aparecen las
-opciones dadas de alta en /web/workspace/26/spo-wizard"*.
+Reported by the user: *"I added a segment in /web/segments/ and the options
+registered there don't show up in /web/workspace/26/spo-wizard"*.
 
 **The segment was never the problem.** Measured against the live database of
 a1: `line_plan('P','fortiweb')` returned all three segments of line P —
@@ -11968,10 +11968,10 @@ script. Each must be killed by the guard it names, measured by **rc, and only
 
 ## §137 — the operator chooses the backend, and the choice is checked (2026-08-28)
 
-**What the user reported.** *"Se agregó una sección de que se puede agregar a
-diferentes IPAMs en settings, por lo que aquí deben de aparecer las opciones
-que se tengan de alta para que el usuario pueda elegir dónde y cómo las
-quiere."* The registry shipped the same morning (§136); the wizard was still
+**What the user reported.** *"A section was added in settings for adding
+different IPAMs, so the options that are registered should appear here, so
+that the user can choose where and how they want
+them."* The registry shipped the same morning (§136); the wizard was still
 resolving silently and offering nothing.
 
 **The shape of the risk.** §136 turned "there is nothing to decide" into a
@@ -12569,7 +12569,7 @@ before mutating, and every anchor must match **exactly once** in its file.
 
 ## §145 — a copy button that could not report its own failure (2026-08-30)
 
-**Report:** *"error DD5943CE, el botón de copy tampoco sirve"*.
+**Report:** *"error DD5943CE, the copy button doesn't work either"*.
 
 ### The 500 was not a defect in shipped code
 
@@ -13408,8 +13408,8 @@ over an explicit timestamp is a separate lie, and both directions have a test.
 
 ## §155 — a failover with no API, and a command the running firmware does not have (2026-09-08)
 
-The ask was to schedule a cluster failover, with the honest caveat *"no sé si
-haya un api call para eso"*. There isn't one, and finding that out is most of
+The ask was to schedule a cluster failover, with the honest caveat *"I don't know
+if there's an api call for that"*. There isn't one, and finding that out is most of
 this section.
 
 ### What was actually checked, and how
@@ -13495,8 +13495,8 @@ answered it.
 ## §156 — a disruptive verb on the device page: route gates, not hidden buttons (2026-09-08)
 
 The failover was plannable from the calendar and unreachable from the box an
-operator actually has open. The ask was *"metelo dentro del device ... ahi si es
-un cluster debera venir la opcion de hacer un failover"*. Guarded by
+operator actually has open. The ask was *"put it inside the device ... there, if it is
+a cluster, the option to do a failover should come up"*. Guarded by
 `tests/test_appliance_failover_page.py` (31 tests, 18/18 mutations bite).
 
 ### What the guards protect
@@ -13957,7 +13957,7 @@ family (`kind`) and automation owner (`owner`). Read aloud, the bar was
 Automations (fleet work), System Automations"*: one word, three meanings, one
 row. Being independent they also multiplied — `kind=change&owner=user` is a
 legal URL in which the owner half decides nothing, so the bar offered states
-that do not exist. The user's verdict was *"no tiene sentido"*, and it was
+that do not exist. The user's verdict was *"it makes no sense"*, and it was
 right: a filter bar is a LIST OF THE THINGS A PAGE CAN DRAW, and this one had
 stopped being that.
 
@@ -15569,8 +15569,8 @@ What the guards fix, in the order it would rot:
 
 ## §181 — a new firmware line must not be able to delete a decision (`tests/test_absence_corroboration.py`, `tests/test_release_notes.py`, 2026-09-18)
 
-**The ask.** *"todo esto debe de ser compatible con todas las versiones. ejemplo
-si sale una version 8.1 deberia de poderse ver la diferencia."*
+**The ask.** *"all of this has to be compatible with every version. for example,
+if an 8.1 comes out, the difference should be visible."*
 
 **Measured before writing anything.** A simulated `8.1` line was injected into
 the live matrix and the page rendered against the real database: scopes, the

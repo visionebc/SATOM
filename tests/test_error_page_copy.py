@@ -9,8 +9,8 @@ the button still reported success.  An error reference that silently fails to
 copy is worse than no button: the operator pastes stale clipboard content into
 a support request.
 
-2026-08-30 — second round, from a real report ("el botón de copy tampoco
-sirve") that could not be reproduced.  The page, its CSP nonce and both copy
+2026-08-30 — second round, from a real report ("the copy button doesn't work
+either") that could not be reproduced.  The page, its CSP nonce and both copy
 paths were verified byte-for-byte in a real Chromium (secure origin, plain-http
 origin, and clipboard permission denied): all three copied.  What the code
 could not do was *tell anyone why* when it failed on a browser we do not have:

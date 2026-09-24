@@ -1,7 +1,7 @@
 """The document-language pick is a PROFILE preference, not a page default.
 
-Requested 2026-08-10: *"En donde pusiste el icono para cambiar el idioma, este
-se debe de guardar en las preferencias del usuario en el profile."*
+Requested 2026-08-10: *"Where you put the icon to change the language, it has
+to be saved in the user's preferences in the profile."*
 
 The defect class here has no exit code. A language question that answers itself
 produces a **complete, well-formed, signed document in a language nobody

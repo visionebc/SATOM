@@ -1,15 +1,15 @@
-"""Un control de formulario cuya unica clase no existe se pinta con los
-defaults del navegador: sin borde SATOM, sin focus ring, y un <select> sin
-'form-select' sale con el desplegable nativo del sistema operativo.
+"""A form control whose only class does not exist is painted with the
+browser defaults: no SATOM border, no focus ring, and a <select> without
+'form-select' comes out with the operating system's native dropdown.
 
-La pagina sigue devolviendo 200, ningun test de ruta se entera y nadie lo ve
-hasta que un humano mira. Eso es exactamente como 'fw-input' -- una clase que
-NO esta definida en ningun CSS -- sobrevivio 10 usos en console/index.html
-desde 2026-06-27 hasta 2026-09-21.
+The page still returns 200, no route test notices and nobody sees it until
+a human looks. That is exactly how 'fw-input' -- a class that is NOT defined
+in any CSS -- survived 10 uses in console/index.html from 2026-06-27 to
+2026-09-21.
 
-Este guardia lee los <input>/<select>/<textarea> de TODAS las plantillas y
-exige que al menos una de sus clases este definida en algun sitio real:
-app/static/css/*.css, bootstrap vendorizado, o el <style> de su propia pagina.
+This guard reads the <input>/<select>/<textarea> of ALL the templates and
+requires at least one of their classes to be defined somewhere real:
+app/static/css/*.css, vendored bootstrap, or the <style> of their own page.
 """
 import re
 import pathlib
@@ -23,15 +23,15 @@ CTRL = re.compile(r"<(input|select|textarea)\b[^>]*>", re.S)
 SELECTOR = re.compile(r"\.([A-Za-z][A-Za-z0-9_-]+)")
 STYLE_BLOCK = re.compile(r"<style[^>]*>(.*?)</style>", re.S)
 CLASS_ATTR = re.compile(r'class="([^"]*)"')
-# utilidades de espaciado/tamano: no aportan identidad visual, no cuentan
+# spacing/sizing utilities: they add no visual identity, they do not count
 UTILITY = re.compile(
     r"(m|p)[tbxysel]?-\d|w-\d+|h-\d+|d-\w+|flex-\S+|text-\S+|font-\S+"
     r"|align-\S+|float-\S+|g-\d"
 )
 
-# Deuda congelada, medida 2026-09-21. El guardia es una carraca: anadir un
-# control sin estilo FALLA, y arreglar uno de estos tambien falla (hay que
-# borrarlo de la lista a proposito). No se anaden entradas sin leer el control.
+# Frozen debt, measured 2026-09-21. The guard is a ratchet: adding an unstyled
+# control FAILS, and fixing one of these also fails (it has to be removed from
+# the list on purpose). No entries are added without reading the control.
 KNOWN_UNSTYLED = {
     ("exceptions/list.html", "det-pick"),
     ("faz/section.html", "fazdev-sel"),
@@ -63,7 +63,7 @@ def _offenders():
             attr = CLASS_ATTR.search(tag)
             if not attr:
                 continue
-            # un token con Jinja dentro no se puede resolver estaticamente
+            # a token with Jinja inside cannot be resolved statically
             classes = [c for c in attr.group(1).split() if "{" not in c and "}" not in c]
             meaningful = [c for c in classes if not UTILITY.fullmatch(c)]
             if meaningful and not any(c in known for c in meaningful):
@@ -73,34 +73,34 @@ def _offenders():
 
 
 def test_bootstrap_and_css_are_readable():
-    # si el CSS no se lee, todo saldria 'sin estilo' y el guardia mordería por
-    # la razon equivocada -- o peor, la lista congelada lo taparia
+    # if the CSS cannot be read, everything would come out 'unstyled' and the
+    # guard would bite for the wrong reason -- or worse, the frozen list would hide it
     assert BOOTSTRAP.exists(), BOOTSTRAP
     assert len(_global_selectors()) > 500
 
 
 def test_no_new_unstyled_form_controls():
     found = _offenders()
-    nuevos = found - KNOWN_UNSTYLED
-    assert not nuevos, (
-        "controles de formulario cuya unica clase no existe en ningun CSS "
-        "(se pintan con los defaults del navegador): " + repr(sorted(nuevos))
+    new = found - KNOWN_UNSTYLED
+    assert not new, (
+        "form controls whose only class does not exist in any CSS "
+        "(they are painted with the browser defaults): " + repr(sorted(new))
     )
 
 
 def test_frozen_list_has_not_silently_grown():
     found = _offenders()
-    arreglados = KNOWN_UNSTYLED - found
-    assert not arreglados, (
-        "estos ya estan arreglados: borralos de KNOWN_UNSTYLED para que la "
-        "carraca no permita reintroducirlos: " + repr(sorted(arreglados))
+    fixed = KNOWN_UNSTYLED - found
+    assert not fixed, (
+        "these are already fixed: remove them from KNOWN_UNSTYLED so the "
+        "ratchet does not allow reintroducing them: " + repr(sorted(fixed))
     )
 
 
 def test_console_page_uses_house_form_classes():
     raw = (TPL / "console" / "index.html").read_text()
-    assert "fw-input" not in raw, "fw-input no existe en ningun CSS"
-    assert raw.count("form-select fw-form-control") == 2, "los 2 <select>"
+    assert "fw-input" not in raw, "fw-input does not exist in any CSS"
+    assert raw.count("form-select fw-form-control") == 2, "the 2 <select>s"
     assert raw.count("form-control fw-form-control") == 8, "inputs + textareas"
     for match in CTRL.finditer(raw):
         tag = match.group(0)

@@ -294,6 +294,34 @@ def test_the_stamper_owns_the_setup_version():
         == 'VERSION="9.9.9"\nf() {\n  VERSION="x"\n}\n'
 
 
+@pytest.mark.parametrize("answer,default,expected", [
+    ("", "y", "YES"), ("", "n", "NO"),
+    ("y", "n", "YES"), ("YES", "n", "YES"), ("true", "n", "YES"), ("1", "n", "YES"),
+    # Answer files written for <= 2.1.2 said s/si: still honoured, never shown.
+    ("s", "n", "YES"), ("si", "n", "YES"),
+    ("n", "y", "NO"), ("no", "y", "NO"), ("sí", "y", "NO"), ("maybe", "y", "NO"),
+])
+def test_setup_yes_no_answers(answer, default, expected):
+    r = _run_setup_funcs(
+        ["ask", "ask_yn"],
+        'ask_yn "Open ports?" %s SETUP_X && echo YES || echo NO' % default,
+        ["ASSUME_YES=1", 'SETUP_X="%s"' % answer, 'info() { echo "INFO $*"; }'])
+    assert r.returncode == 0, r.stderr
+    out = r.stdout.splitlines()
+    assert out[-1] == expected, r.stdout
+    assert "(y/n)" in out[0] and "(s/n)" not in out[0], out[0]
+
+
+def test_setup_confirms_install_satom_in_english():
+    """The confirmation fed to install-satom.sh is 'y' (accepted by it since at
+    least 2.1.2); the old 's' is only accepted silently, for old answer files."""
+    lines = _executed(_extract("install_native", SETUP.read_text(encoding="utf-8")))
+    assert "printf '%s\\n' y" in lines
+    assert "printf '%s\\n' s" not in lines
+    callers = re.findall(r'(?<!# )ask_yn "[^"]*" (\S+)', SETUP.read_text(encoding="utf-8"))
+    assert callers and set(callers) <= {"y", "n"}, callers
+
+
 def _run_net_check(tree: pathlib.Path) -> subprocess.CompletedProcess:
     text = SETUP.read_text(encoding="utf-8")
     script = "\n".join([

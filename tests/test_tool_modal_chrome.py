@@ -1,7 +1,7 @@
 """The three tool modals must be built out of classes that actually exist.
 
 Reported 2026-08-17 by the user, twice: "Certificate inspector / False-positive
-explainer / Transaction tracer tienen todavia el formato viejo".
+explainer / Transaction tracer still have the old format".
 
 The cause was not a taste disagreement. ``fortiweb.css`` defines
 ``.btn-fw-primary`` / ``.btn-fw-outline`` / ``.btn-fw-secondary`` /

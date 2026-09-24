@@ -100,7 +100,7 @@
             <span class="text-muted">— <code>source;policy;destination</code></span></label>
           <textarea name="entries" rows="10" class="form-control fw-form-control font-monospace"
                     style="font-size:11.5px;"
-                    placeholder="# source;policy;destination&#10;fortiweb12;spo-tienda-mx;fortiweb13&#10;fortiweb12;spo-api-prod;fortiweb13&#10;fortiweb13;spo-solo-origen">{{ entries_raw }}</textarea>
+                    placeholder="# source;policy;destination&#10;fortiweb12;spo-shop-mx;fortiweb13&#10;fortiweb12;spo-api-prod;fortiweb13&#10;fortiweb13;spo-origin-only">{{ entries_raw }}</textarea>
           <div class="text-muted mt-1" style="font-size:11px;">
             Lines starting with <code>#</code> are ignored. A third field left empty checks
             the source only. Up to {{ max_lines }} lines per run.
@@ -266,9 +266,9 @@
         never reported as an outage and never as health.</p>
         <p class="mb-0"><strong>Example file</strong></p>
         <pre class="mt-1 mb-0" style="font-size:12px;">source;policy;destination
-fortiweb12;spo-tienda-mx;fortiweb13
+fortiweb12;spo-shop-mx;fortiweb13
 fortiweb12;spo-api-prod;fortiweb13
-fortiweb13;spo-solo-origen</pre>
+fortiweb13;spo-origin-only</pre>
       </div>
     </div>
     {% endif %}

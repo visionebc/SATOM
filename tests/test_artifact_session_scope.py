@@ -14,7 +14,7 @@ whole fleet: measured on the live node, 163 mentions of other pairs on one page.
 The second half is the half the earlier rounds could not see. Every guard I
 wrote stripped ``<select>`` before asserting, on the reasoning that a picker
 lists the fleet by design — so the fleet lived on in the controls, which is
-literally what the operator said he was still seeing ("en los filtros").
+literally what the operator said he was still seeing ("in the filters").
 A picker narrowed in the template is decoration, not a scope, so each guard on
 a control has a matching guard on the POST that control drives.
 """

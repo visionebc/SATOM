@@ -7,7 +7,7 @@ the two replicated settings it needs via raw ``psql`` (reads work on a hot
 standby) and does everything else with git + the filesystem queue that
 ``self_update`` already defines.
 
-Deploy modes ("las 2" -- both coexist; the operator toggles between them):
+Deploy modes ("both of them" -- both coexist; the operator toggles between them):
 
   * MANUAL  -- observe only. Records the drift and what it *would* do, logs it,
                but NEVER enqueues. The operator's Self-Update buttons stay the

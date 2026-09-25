@@ -1,0 +1,528 @@
+{
+ "captured_at": "2026-09-25T21:57:03",
+ "registry": {
+  "auth_iam_accounts": "/api/v1/iamaccounts/",
+  "auth_user_groups": "/api/v1/usergroups/",
+  "radius_clients": "/api/v1/radiusclients/",
+  "system_info": "/api/v1/systeminfo/"
+ },
+ "responses": {
+  "/api/v1/": {
+   "error": null,
+   "json": {
+    "auth": {
+     "list_endpoint": "/api/v1/auth",
+     "schema": "/api/v1/auth/schema"
+    },
+    "csv": {
+     "list_endpoint": "/api/v1/csv",
+     "schema": "/api/v1/csv/schema"
+    },
+    "emergencytoken": {
+     "list_endpoint": "/api/v1/emergencytoken",
+     "schema": "/api/v1/emergencytoken/schema"
+    },
+    "iamaccounts": {
+     "list_endpoint": "/api/v1/iamaccounts",
+     "schema": "/api/v1/iamaccounts/schema"
+    },
+    "radiusclients": {
+     "list_endpoint": "/api/v1/radiusclients",
+     "schema": "/api/v1/radiusclients/schema"
+    },
+    "recovery": {
+     "list_endpoint": "/api/v1/recovery",
+     "schema": "/api/v1/recovery/schema"
+    },
+    "systeminfo": {
+     "list_endpoint": "/api/v1/systeminfo",
+     "schema": "/api/v1/systeminfo/schema"
+    },
+    "usergroups": {
+     "list_endpoint": "/api/v1/usergroups",
+     "schema": "/api/v1/usergroups/schema"
+    }
+   },
+   "status": 200
+  },
+  "/api/v1/auth/?limit=1": {
+   "error": "405 method not allowed \u2014 this resource does not serve that verb (several FortiAuthenticator resources are POST-only actions, not readable config).",
+   "json": null,
+   "status": 405
+  },
+  "/api/v1/auth/schema/": {
+   "error": null,
+   "json": {
+    "allowed_detail_http_methods": [],
+    "allowed_list_http_methods": [
+     "post"
+    ],
+    "default_format": "application/json",
+    "default_limit": 20,
+    "fields": {
+     "id": {
+      "blank": true,
+      "default": "",
+      "help_text": "Integer data. Ex: 2673",
+      "nullable": false,
+      "primary_key": true,
+      "readonly": false,
+      "type": "integer",
+      "unique": true,
+      "verbose_name": "ID"
+     },
+     "resource_uri": {
+      "blank": false,
+      "default": "No default provided.",
+      "help_text": "Unicode string data. Ex: \"Hello World\"",
+      "nullable": false,
+      "primary_key": false,
+      "readonly": true,
+      "type": "string",
+      "unique": false,
+      "verbose_name": "resource uri"
+     },
+     "username": {
+      "blank": false,
+      "default": "No default provided.",
+      "help_text": "Required. 253 characters or fewer. Letters, digits and @/./+/-/_ only.",
+      "nullable": false,
+      "primary_key": false,
+      "readonly": false,
+      "type": "string",
+      "unique": true,
+      "verbose_name": "username"
+     }
+    }
+   },
+   "status": 200
+  },
+  "/api/v1/csv/?limit=1": {
+   "error": "403 forbidden \u2014 the API key authenticated but this resource is not permitted for 'api-user'.",
+   "json": null,
+   "status": 403
+  },
+  "/api/v1/csv/schema/": {
+   "error": "403 forbidden \u2014 the API key authenticated but this resource is not permitted for 'api-user'.",
+   "json": null,
+   "status": 403
+  },
+  "/api/v1/emergencytoken/?limit=1": {
+   "error": "405 method not allowed \u2014 this resource does not serve that verb (several FortiAuthenticator resources are POST-only actions, not readable config).",
+   "json": null,
+   "status": 405
+  },
+  "/api/v1/emergencytoken/schema/": {
+   "error": "HTTP 500: {\"error_message\": \"Sorry, this request could not be processed. Please try again later.\"}",
+   "json": null,
+   "status": 500
+  },
+  "/api/v1/iamaccounts/?limit=1": {
+   "error": null,
+   "json": {
+    "meta": {
+     "limit": 1,
+     "next": null,
+     "offset": 0,
+     "previous": null,
+     "total_count": 0
+    },
+    "objects": []
+   },
+   "status": 200
+  },
+  "/api/v1/iamaccounts/schema/": {
+   "error": null,
+   "json": {
+    "allowed_detail_http_methods": [
+     "get",
+     "post",
+     "patch",
+     "delete"
+    ],
+    "allowed_list_http_methods": [
+     "get",
+     "post",
+     "patch"
+    ],
+    "default_format": "application/json",
+    "default_limit": 20,
+    "fields": {
+     "alias": {
+      "blank": false,
+      "default": "No default provided.",
+      "help_text": "Unicode string data. Ex: \"Hello World\"",
+      "nullable": false,
+      "primary_key": false,
+      "readonly": false,
+      "type": "string",
+      "unique": false,
+      "verbose_name": "alias"
+     },
+     "id": {
+      "blank": false,
+      "default": "No default provided.",
+      "help_text": "Integer data. Ex: 2673",
+      "nullable": false,
+      "primary_key": true,
+      "readonly": true,
+      "type": "integer",
+      "unique": false,
+      "verbose_name": "id"
+     },
+     "name": {
+      "blank": false,
+      "default": "No default provided.",
+      "help_text": "Unicode string data. Ex: \"Hello World\"",
+      "nullable": false,
+      "primary_key": false,
+      "readonly": false,
+      "type": "string",
+      "unique": false,
+      "verbose_name": "name"
+     }
+    },
+    "filtering": {
+     "alias": [
+      "exact"
+     ],
+     "id": [
+      "exact",
+      "in"
+     ],
+     "name": [
+      "exact"
+     ]
+    },
+    "ordering": [
+     "name",
+     "alias"
+    ]
+   },
+   "status": 200
+  },
+  "/api/v1/radiusclients/?limit=1": {
+   "error": null,
+   "json": {
+    "meta": {
+     "limit": 1,
+     "next": "/api/v1/radiusclients?limit=1&offset=1",
+     "offset": 0,
+     "previous": null,
+     "total_count": 3
+    },
+    "objects": [
+     {
+      "accounting_usage": false,
+      "address": "x-address",
+      "disconnect": false,
+      "include_acct_session_id": false,
+      "name": "x-name",
+      "policies": [
+       "/api/v1/radiuspolicies/3"
+      ],
+      "require_message_authenticator": false,
+      "resource_uri": "/api/v1/radiusclients/2"
+     }
+    ]
+   },
+   "status": 200
+  },
+  "/api/v1/radiusclients/schema/": {
+   "error": null,
+   "json": {
+    "allowed_detail_http_methods": [
+     "get",
+     "put",
+     "delete"
+    ],
+    "allowed_list_http_methods": [
+     "get",
+     "post"
+    ],
+    "default_format": "application/json",
+    "default_limit": 20,
+    "fields": {
+     "accounting_usage": {
+      "blank": true,
+      "default": false,
+      "help_text": "Boolean data. Ex: True",
+      "nullable": false,
+      "primary_key": false,
+      "readonly": false,
+      "type": "boolean",
+      "unique": false,
+      "verbose_name": "accounting usage"
+     },
+     "address": {
+      "blank": false,
+      "default": "No default provided.",
+      "help_text": "Unicode string data. Ex: \"Hello World\"",
+      "nullable": false,
+      "primary_key": false,
+      "readonly": false,
+      "type": "string",
+      "unique": false,
+      "verbose_name": "address"
+     },
+     "disconnect": {
+      "blank": true,
+      "default": false,
+      "help_text": "Boolean data. Ex: True",
+      "nullable": false,
+      "primary_key": false,
+      "readonly": false,
+      "type": "boolean",
+      "unique": false,
+      "verbose_name": "disconnect"
+     },
+     "include_acct_session_id": {
+      "blank": true,
+      "default": false,
+      "help_text": "Boolean data. Ex: True",
+      "nullable": false,
+      "primary_key": false,
+      "readonly": false,
+      "type": "boolean",
+      "unique": false,
+      "verbose_name": "include acct session id"
+     },
+     "name": {
+      "blank": false,
+      "default": "No default provided.",
+      "help_text": "Unicode string data. Ex: \"Hello World\"",
+      "nullable": false,
+      "primary_key": false,
+      "readonly": false,
+      "type": "string",
+      "unique": false,
+      "verbose_name": "name"
+     },
+     "policies": {
+      "blank": false,
+      "default": "No default provided.",
+      "help_text": "Many related resources. Can be either a list of URIs or list of individually nested resource data.",
+      "nullable": true,
+      "primary_key": false,
+      "readonly": true,
+      "related_schema": "/api/v1/radiuspolicies/schema",
+      "related_type": "to_many",
+      "type": "related",
+      "unique": false,
+      "verbose_name": "policies"
+     },
+     "require_message_authenticator": {
+      "blank": true,
+      "default": false,
+      "help_text": "Boolean data. Ex: True",
+      "nullable": false,
+      "primary_key": false,
+      "readonly": false,
+      "type": "boolean",
+      "unique": false,
+      "verbose_name": "require message authenticator"
+     },
+     "resource_uri": {
+      "blank": false,
+      "default": "No default provided.",
+      "help_text": "Unicode string data. Ex: \"Hello World\"",
+      "nullable": false,
+      "primary_key": false,
+      "readonly": true,
+      "type": "string",
+      "unique": false,
+      "verbose_name": "resource uri"
+     },
+     "secret": {
+      "blank": false,
+      "default": "No default provided.",
+      "help_text": "Unicode string data. Ex: \"Hello World\"",
+      "nullable": true,
+      "primary_key": false,
+      "readonly": false,
+      "type": "string",
+      "unique": false,
+      "verbose_name": "secret"
+     }
+    },
+    "filtering": {
+     "name": [
+      "exact"
+     ]
+    }
+   },
+   "status": 200
+  },
+  "/api/v1/recovery/?limit=1": {
+   "error": "HTTP 500: {\"error_message\": \"Sorry, this request could not be processed. Please try again later.\"}",
+   "json": null,
+   "status": 500
+  },
+  "/api/v1/recovery/schema/": {
+   "error": "HTTP 500: {\"error_message\": \"Sorry, this request could not be processed. Please try again later.\"}",
+   "json": null,
+   "status": 500
+  },
+  "/api/v1/systeminfo/?limit=1": {
+   "error": null,
+   "json": {
+    "cpu": "x-cpu",
+    "disk": "x-disk",
+    "disk_usage_detail": {
+     "total": "x-total",
+     "used": "x-used"
+    },
+    "firmware": "FACVMKVM v8.0.3, build0099 (GA)",
+    "fsso_usage_detail": {
+     "max": 5,
+     "used": 0
+    },
+    "ftk_usage_detail": {
+     "populated": 0,
+     "used": 0
+    },
+    "ftm_usage_detail": {
+     "populated": 0,
+     "used": 0
+    },
+    "groups_usage_detail": {
+     "max": 3,
+     "used": 1
+    },
+    "ha_sn": "",
+    "memory": "x-memory",
+    "memory_usage_detail": {
+     "available": "x-available",
+     "total": "x-total",
+     "used": "x-used"
+    },
+    "sn": "FACVMTEST000000",
+    "ssoma_usage_detail": {
+     "max": 5,
+     "used": 0
+    },
+    "users_usage_detail": {
+     "max": 5,
+     "used": 3
+    }
+   },
+   "status": 200
+  },
+  "/api/v1/systeminfo/schema/": {
+   "error": "HTTP 500: {\"error_message\": \"Sorry, this request could not be processed. Please try again later.\"}",
+   "json": null,
+   "status": 500
+  },
+  "/api/v1/usergroups/?limit=1": {
+   "error": null,
+   "json": {
+    "meta": {
+     "limit": 1,
+     "next": null,
+     "offset": 0,
+     "previous": null,
+     "total_count": 1
+    },
+    "objects": [
+     {
+      "id": 1,
+      "name": "x-name",
+      "password_policy": "x-password_policy",
+      "resource_uri": "/api/v1/usergroups/1",
+      "users": [
+       "/api/v1/localusers/2",
+       "/api/v1/localusers/4"
+      ]
+     }
+    ]
+   },
+   "status": 200
+  },
+  "/api/v1/usergroups/schema/": {
+   "error": null,
+   "json": {
+    "allowed_detail_http_methods": [
+     "get",
+     "post",
+     "put",
+     "delete",
+     "patch"
+    ],
+    "allowed_list_http_methods": [
+     "get",
+     "post",
+     "put",
+     "delete",
+     "patch"
+    ],
+    "default_format": "application/json",
+    "default_limit": 20,
+    "fields": {
+     "id": {
+      "blank": true,
+      "default": "",
+      "help_text": "Integer data. Ex: 2673",
+      "nullable": false,
+      "primary_key": true,
+      "readonly": false,
+      "type": "integer",
+      "unique": true,
+      "verbose_name": "ID"
+     },
+     "name": {
+      "blank": false,
+      "default": "No default provided.",
+      "help_text": "Unicode string data. Ex: \"Hello World\"",
+      "nullable": false,
+      "primary_key": false,
+      "readonly": false,
+      "type": "string",
+      "unique": true,
+      "verbose_name": "name"
+     },
+     "password_policy": {
+      "blank": false,
+      "default": "Default",
+      "help_text": "Unicode string data. Ex: \"Hello World\"",
+      "nullable": false,
+      "primary_key": false,
+      "readonly": false,
+      "type": "string",
+      "unique": false,
+      "verbose_name": "password policy"
+     },
+     "resource_uri": {
+      "blank": false,
+      "default": "No default provided.",
+      "help_text": "Unicode string data. Ex: \"Hello World\"",
+      "nullable": false,
+      "primary_key": false,
+      "readonly": true,
+      "type": "string",
+      "unique": false,
+      "verbose_name": "resource uri"
+     },
+     "users": {
+      "blank": false,
+      "default": "No default provided.",
+      "help_text": "Many related resources. Can be either a list of URIs or list of individually nested resource data.",
+      "nullable": true,
+      "primary_key": false,
+      "readonly": false,
+      "related_schema": "/api/v1/localusers/schema",
+      "related_type": "to_many",
+      "type": "related",
+      "unique": false,
+      "verbose_name": "users"
+     }
+    },
+    "filtering": {
+     "name": [
+      "exact"
+     ]
+    }
+   },
+   "status": 200
+  }
+ }
+}

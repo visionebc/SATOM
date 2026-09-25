@@ -308,8 +308,13 @@ the only writer.</p>
 }
 </code></pre>
 <p><strong>Content hash.</strong> sha256 of the canonical JSON (<code>sort_keys</code>, compact) of the
-document with <code>captured_at</code> removed. The hash is unique per (product, source),
-so the same content captured twice is one row confirmed twice.</p>
+measurement and of who measured it: product, source, scope (without its build
+token), endpoints, health, summary and the witness (appliance id, or device
+name when there is none). <code>captured_at</code>, <code>origin_ref</code> and device decoration
+(serial, model, platform, raw firmware string, build token) are left out, so a
+live sweep and a later backfill of the same snapshot are one evidence row,
+while two appliances returning identical content stay two witnesses. The hash
+is unique per (product, source).</p>
 <p><strong>Health.</strong> A sweep in which more than <strong>25 %</strong> of the endpoints errored is
 stored with <code>healthy=False</code> and never folded into facts: a half-refused pass
 (a licence lapse, for instance) would otherwise read as a build that lost half

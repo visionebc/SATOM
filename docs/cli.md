@@ -680,8 +680,63 @@ any runnable command is missing from `--commands`.
 single separator space fused the path, the mark and the help into one
 unsplittable field for exactly the longest command.
 
+---
+
+## 8. Application commands: `flask apilib`
+
+Not every operator command lives in `satom`. Commands that need the application
+itself — its database models and its device clients — are Flask CLI commands.
+They run only on a node whose application imports, which is exactly what
+`satom` is built not to need; so they sit beside it rather than in it.
+
+The `apilib` group maintains the **API library**, the database record of which
+endpoints and fields each firmware build serves (full reference:
+[API library](api-library.md)). Run it from the installation directory, as the
+service account:
+
+```
+cd /opt/satom
+sudo -u satom env FLASK_APP=wsgi:app venv/bin/flask apilib --help
+```
+
+| Command | What it does |
+|---|---|
+| `flask apilib status` | One line per product — builds, endpoints, evidence documents per source, `(catalog only)` for FortiGate — then one line per product, build and source |
+| `flask apilib backfill [--data-root DIR] [--product P]...` | Ingest every on-disk evidence store: rediscovery snapshots (deleted appliances included), harvested field schemas and the frozen pre-build-axis matrices. `--data-root` defaults to the installation's `data/`; `--product` is repeatable |
+| `flask apilib import-vendor PATH` | Import an **extracted** vendor Ansible collection — `fortinet.fortios` (FortiGate) or `fortinet.fortianalyzer` (FortiAnalyzer). `PATH` is the directory holding `MANIFEST.json` |
+| `flask apilib ingest-file PATH` | Ingest one evidence document — plain or gzipped JSON, or a JSON list of documents |
+| `flask apilib harvest-fac [--appliance NAME]` | Read the live API schema of every FortiAuthenticator, or the named one (GET requests only), and ingest it. One unreachable box does not stop the others |
+
+**Every command is safe to re-run.** All of them write through one idempotent
+ingest: evidence whose content is already stored answers `"created": false` and
+only bumps its confirmation counter. Output is JSON (except `status`).
+
+**Refreshing vendor data.** Download the collection from Ansible Galaxy (the
+*Download tarball* link on its Galaxy page, or
+`ansible-galaxy collection download fortinet.fortios`), extract it, make it
+readable by the service account, and import the extracted directory:
+
+```
+mkdir -p /tmp/fortios
+tar -xzf fortinet-fortios-<version>.tar.gz -C /tmp/fortios
+chown -R satom: /tmp/fortios
+cd /opt/satom
+sudo -u satom env FLASK_APP=wsgi:app venv/bin/flask apilib import-vendor /tmp/fortios
+```
+
+A build newer than the newest one the imported collection knows about reads
+`unmeasured` until a newer collection is imported. The `fortinet.fortiweb` and
+`fortinet.fortiadc` collections carry no version data; importing one answers
+*carries no version data; nothing imported*.
+
+**Errors** are printed as `Error: …` with exit code `1`: a path that is not a
+collection (`no MANIFEST.json`), a file that is not JSON, an evidence document
+with an unknown source, or `harvest-fac` finding no FortiAuthenticator (or none
+by that name). These are Click's exit codes, not the `satom` contract in §4.
+
 ## Related
 
 * [`privilege-model.md`](privilege-model.md) — accounts, sudoers, HA trust
 * [`safeguards.md`](safeguards.md) §3 — the privilege boundary and how to verify it
 * [`INSTALL.md`](INSTALL.md) §1.2, §5 — installer privilege and hardening
+* [`api-library.md`](api-library.md) — the API library the `flask apilib` commands maintain

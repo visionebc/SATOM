@@ -67,6 +67,7 @@
       <a href="#5-extending-it">5. Extending it</a>
       <a href="#6-installation-and-drift">6. Installation and drift</a>
       <a href="#7-output-what-is-decoration-and-what-is-contract">7. Output: what is decoration and what is contract</a>
+      <a href="#8-application-commands-flask-apilib">8. Application commands: flask apilib</a>
       <a href="#related">Related</a>
     </aside>
     <div class="doc-body mdx">
@@ -1559,11 +1560,76 @@ any runnable command is missing from <code>--commands</code>.</p>
 <code>cut</code>/<code>awk</code>'d. That mattered: on the widest row the padding is zero, and a
 single separator space fused the path, the mark and the help into one
 unsplittable field for exactly the longest command.</p>
+<hr>
+<h2 id="8-application-commands-flask-apilib">8. Application commands: <code>flask apilib</code></h2>
+<p>Not every operator command lives in <code>satom</code>. Commands that need the application
+itself — its database models and its device clients — are Flask CLI commands.
+They run only on a node whose application imports, which is exactly what
+<code>satom</code> is built not to need; so they sit beside it rather than in it.</p>
+<p>The <code>apilib</code> group maintains the <strong>API library</strong>, the database record of which
+endpoints and fields each firmware build serves (full reference:
+<a href="api-library.html">API library</a>). Run it from the installation directory, as the
+service account:</p>
+<pre><code>cd /opt/satom
+sudo -u satom env FLASK_APP=wsgi:app venv/bin/flask apilib --help
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>flask apilib status</code></td>
+<td>One line per product — builds, endpoints, evidence documents per source, <code>(catalog only)</code> for FortiGate — then one line per product, build and source</td>
+</tr>
+<tr>
+<td><code>flask apilib backfill [--data-root DIR] [--product P]...</code></td>
+<td>Ingest every on-disk evidence store: rediscovery snapshots (deleted appliances included), harvested field schemas and the frozen pre-build-axis matrices. <code>--data-root</code> defaults to the installation's <code>data/</code>; <code>--product</code> is repeatable</td>
+</tr>
+<tr>
+<td><code>flask apilib import-vendor PATH</code></td>
+<td>Import an <strong>extracted</strong> vendor Ansible collection — <code>fortinet.fortios</code> (FortiGate) or <code>fortinet.fortianalyzer</code> (FortiAnalyzer). <code>PATH</code> is the directory holding <code>MANIFEST.json</code></td>
+</tr>
+<tr>
+<td><code>flask apilib ingest-file PATH</code></td>
+<td>Ingest one evidence document — plain or gzipped JSON, or a JSON list of documents</td>
+</tr>
+<tr>
+<td><code>flask apilib harvest-fac [--appliance NAME]</code></td>
+<td>Read the live API schema of every FortiAuthenticator, or the named one (GET requests only), and ingest it. One unreachable box does not stop the others</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Every command is safe to re-run.</strong> All of them write through one idempotent
+ingest: evidence whose content is already stored answers <code>"created": false</code> and
+only bumps its confirmation counter. Output is JSON (except <code>status</code>).</p>
+<p><strong>Refreshing vendor data.</strong> Download the collection from Ansible Galaxy (the
+<em>Download tarball</em> link on its Galaxy page, or
+<code>ansible-galaxy collection download fortinet.fortios</code>), extract it, make it
+readable by the service account, and import the extracted directory:</p>
+<pre><code>mkdir -p /tmp/fortios
+tar -xzf fortinet-fortios-&lt;version&gt;.tar.gz -C /tmp/fortios
+chown -R satom: /tmp/fortios
+cd /opt/satom
+sudo -u satom env FLASK_APP=wsgi:app venv/bin/flask apilib import-vendor /tmp/fortios
+</code></pre>
+<p>A build newer than the newest one the imported collection knows about reads
+<code>unmeasured</code> until a newer collection is imported. The <code>fortinet.fortiweb</code> and
+<code>fortinet.fortiadc</code> collections carry no version data; importing one answers
+<em>carries no version data; nothing imported</em>.</p>
+<p><strong>Errors</strong> are printed as <code>Error: …</code> with exit code <code>1</code>: a path that is not a
+collection (<code>no MANIFEST.json</code>), a file that is not JSON, an evidence document
+with an unknown source, or <code>harvest-fac</code> finding no FortiAuthenticator (or none
+by that name). These are Click's exit codes, not the <code>satom</code> contract in §4.</p>
 <h2 id="related">Related</h2>
 <ul>
 <li><a href="privilege-model.html"><code>privilege-model.md</code></a> — accounts, sudoers, HA trust</li>
 <li><a href="safeguards.html"><code>safeguards.md</code></a> §3 — the privilege boundary and how to verify it</li>
 <li><a href="install.html"><code>INSTALL.md</code></a> §1.2, §5 — installer privilege and hardening</li>
+<li><a href="api-library.html"><code>api-library.md</code></a> — the API library the <code>flask apilib</code> commands maintain</li>
 </ul>
     </div>
   </div>

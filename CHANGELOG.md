@@ -6,6 +6,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-09-26
+
 ### Added — a versioned API library for every product (2026-09-25)
 
 SATOM now keeps an **API library**: an append-only record, in the database, of

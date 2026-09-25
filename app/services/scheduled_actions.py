@@ -342,6 +342,23 @@ ADMIN_ACTIONS: list[ActionSpec] = [
                 "unknown is not 'absent'.",
     ),
     ActionSpec(
+        "apilib_harvest",
+        "API library — harvest appliances whose build has no evidence", "admin",
+        needs_targets=False,
+        products=("fortiweb", "fortiadc", "fortiauthenticator"),
+        summary="Find every FortiWeb, FortiADC and FortiAuthenticator whose "
+                "running build has no healthy evidence from its live source in "
+                "the API library, and harvest it now, one box at a time: a "
+                "rediscovery sweep (FortiWeb/FortiADC) or the Tastypie schema "
+                "read (FortiAuthenticator) (services.apilib_harvest). The "
+                "safety net behind the firmware probe, which queues a harvest "
+                "the moment it sees a build change. Read-only against the "
+                "boxes; appliances in maintenance or with a harvest already "
+                "queued are skipped and named. FortiAnalyzer and FortiGate "
+                "have no live harvester (vendor evidence only). Daily is "
+                "plenty.",
+    ),
+    ActionSpec(
         "metrics_scrape", "Fleet metrics — scrape to the local store", "admin",
         needs_targets=False,
         summary="Run every due scrape target (Monitoring → Collection): one "
@@ -688,6 +705,65 @@ def _do_metrics_scrape(params: dict, dry_run: bool = False) -> dict:
             "log": ""}
 
 
+def _do_apilib_harvest(params: dict, dry_run: bool = False) -> dict:
+    """Harvest every appliance whose running build the API library has not
+    measured from its live source.
+
+    Same ``ok`` contract as the other fleet sweeps: ok = THE ROUND RAN. A box
+    that cannot be read is a named failure in the summary, not a red action —
+    a license-locked appliance stays unmeasured until it is fixed, and a row
+    that is red every day for that teaches the operator to stop reading it.
+    Runs the harvests inline and in order (the scheduler already runs off the
+    request path), so the run log says which box produced which evidence.
+    """
+    from ..models import Appliance
+    from . import apilib_harvest as ah
+
+    rows = (Appliance.query.filter(Appliance.kind.in_(sorted(ah.LIVE_SOURCE)))
+            .order_by(Appliance.id).all())
+    due, parked, queued = [], [], []
+    for ap in rows:
+        if not ah.needs_harvest(ap):
+            continue
+        if getattr(ap, "maintenance", False):
+            parked.append(ap.name)
+        elif ah.active_job(ap.id) is not None:
+            queued.append(ap.name)
+        else:
+            due.append(ap)
+    notes = []
+    if parked:
+        notes.append("in maintenance, skipped: " + ", ".join(parked))
+    if queued:
+        notes.append("harvest already queued: " + ", ".join(queued))
+    tail = ("; " + "; ".join(notes)) if notes else ""
+    if dry_run:
+        return {"ok": True,
+                "summary": "[dry-run] would harvest %d appliance(s) whose build "
+                           "has no evidence%s" % (len(due), tail),
+                "log": "\n".join("%s (%s %s)" % (ap.name, ap.kind, ap.fw_version or "?")
+                                 for ap in due)[:4000]}
+    if not due:
+        return {"ok": True,
+                "summary": "Nothing to harvest: every appliance's build has "
+                           "evidence%s" % tail,
+                "log": ""}
+    ids = [(ap.id, ap.name) for ap in due]
+    lines, good, failed = [], 0, []
+    for aid, name in ids:
+        res = ah.run(aid)
+        if res.get("ok"):
+            good += 1
+        else:
+            failed.append(name)
+        lines.append("[%s] %s: %s" % ("ok" if res.get("ok") else "FAIL", name,
+                                      res.get("msg") or ""))
+    summary = "%d/%d appliance(s) harvested" % (good, len(ids))
+    if failed:
+        summary += " (failed: %s)" % ", ".join(failed)
+    return {"ok": True, "summary": summary + tail, "log": "\n".join(lines)[:_LOG_MAX]}
+
+
 def _do_sentinel_sweep(params: dict, dry_run: bool = False) -> dict:
     """Run the Sentinel hot path.
 
@@ -919,6 +995,8 @@ def run_action(spec, appliance, params: dict | None, dry_run: bool = False) -> d
             return _do_deep_monitor(params, dry_run)
         if key == "metrics_scrape":
             return _do_metrics_scrape(params, dry_run)
+        if key == "apilib_harvest":
+            return _do_apilib_harvest(params, dry_run)
         if key == "artifact_refs":
             return _do_artifact_refs(params, dry_run)
         if key == "netbox_reconcile":

@@ -198,7 +198,12 @@ class ApiLibSpan(db.Model):
 
 
 class ApiLibFieldMap(db.Model):
-    """An operator-authored rename. Without it a rename reads as lost + added."""
+    """An operator-authored rename. Without it a rename reads as lost + added.
+
+    Never deleted (rows are append-only like the rest of the library): a wrong
+    or superseded mapping is RETIRED — ``retired_at`` set — and every reader
+    skips it, while the audit trail keeps what was believed and when.
+    """
 
     __tablename__ = "api_lib_field_map"
     __table_args__ = (
@@ -215,6 +220,9 @@ class ApiLibFieldMap(db.Model):
     note = db.Column(db.String(500), nullable=False, default="")
     created_by = db.Column(db.String(64), nullable=False, default="")
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    #: NULL = in force. Set once, never cleared: re-adding the mapping is a new row.
+    retired_at = db.Column(db.DateTime, nullable=True)
+    retired_by = db.Column(db.String(64), nullable=False, default="")
 
 
 __all__ = [

@@ -19,6 +19,7 @@ contents belong to the Policy Inspector; this sweep is the object-list layer.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import socket
 import threading
@@ -39,7 +40,17 @@ _APP = None
 
 
 def _get_flask_app():
-    from flask import current_app
+    """The ACTIVE app context first; ``_APP`` only for the bare worker thread.
+
+    ``_APP`` is a module global that outlives the app it was captured from.
+    Preferring it let a synchronous ``_run`` (a harvest job, a test) write the
+    firmware column, the matrix export and the library evidence into ANOTHER
+    app's database — the 2026-09-15 contamination. Every DB write in this
+    module goes through here, so the rule lives here once.
+    """
+    from flask import current_app, has_app_context
+    if has_app_context():
+        return current_app._get_current_object()
     if _APP is not None:
         return _APP
     return current_app._get_current_object()
@@ -55,6 +66,7 @@ INTERRUPTED = "interrupted"
 FAILED = "failed"
 
 _HOST = socket.gethostname()
+_log = logging.getLogger(__name__)
 
 
 def _data_dir() -> Path:
@@ -667,6 +679,15 @@ def _sweep(appliance_snap: SimpleNamespace, by: str, deep: bool = False,
     # ``_config.json`` is the LATEST; this is the history, and it is what makes
     # a firmware upgrade stop destroying the evidence for the previous version.
     archive_snapshot(aid, snapshot)
+    # ...and into the API library, which is where the evidence is KEPT: the two
+    # files above are rewritten by the next sweep, a library row never is. The
+    # outcome rides in the progress state under its own key so "the library
+    # refused it" never reads as "the sweep failed" (the files are on disk).
+    lib = _ingest_library(appliance_snap, snapshot)
+    if lib.get("error"):
+        state["apilib_error"] = lib["error"]
+    else:
+        state["apilib"] = lib
     state.update(state="done", done=total, percent=100, objects=total_objects,
                  section_count=len(sections), errors=errors, finished=generated_at,
                  absent_count=len(absent),
@@ -711,7 +732,14 @@ def _persist_firmware(appliance_id: int, firmware: str) -> None:
         app = _get_flask_app()
         with app.app_context():
             row = db.session.get(Appliance, appliance_id)
-            if row is None or (row.firmware or "") == firmware:
+            # Compared NORMALIZED: the sweep only knows X.Y.Z, so a row the
+            # firmware probe filled with the full string of the SAME version
+            # ("FortiWeb-KVM 7.6.8,build1128...") is already right and richer.
+            # Overwriting it dropped the build token, and made every sweep
+            # after a probe file its evidence under a different device
+            # identity — a new library row instead of a confirmation.
+            from . import firmware_versions
+            if row is None or firmware_versions.normalize(row.firmware) == firmware:
                 return
             row.firmware = firmware
             db.session.commit()
@@ -742,6 +770,77 @@ def _refresh_api_matrix(appliance_snap) -> None:
             absence_record.record(kind)
     except Exception:  # noqa: BLE001
         pass
+
+
+def _library_app():
+    """The app whose database the library write goes to.
+
+    The ACTIVE app context first, ``_APP`` only as the fallback for the bare
+    worker thread ``start()`` spawns. The order is the point: ``_APP`` is a
+    module global that outlives the app it was captured from, so a synchronous
+    ``_run`` inside a harvest job (or a test) that preferred it could write
+    evidence into ANOTHER app's database — the 2026-09-15 contamination, moved
+    from files into rows. There is deliberately no third fallback: with no app
+    to ask, the write fails and says so instead of guessing a database.
+    """
+    return _get_flask_app()
+
+
+def _library_device(appliance_id: int, appliance_snap) -> dict:
+    """Device identity copied INTO the evidence, so it outlives the row.
+
+    Read from the row at sweep time (serial/model/hw_type are not part of the
+    client snapshot), falling back to the snapshot when the row is gone —
+    a sweep of a device deleted mid-run is still evidence about its build.
+    ``firmware_raw`` is the row's full string because the sweep itself keeps
+    only X.Y.Z; ``evidence_from_sweep`` takes the build token from it only
+    when it names the SAME version the sweep measured.
+    """
+    from ..extensions import db
+    from ..models import Appliance
+    row = db.session.get(Appliance, appliance_id)
+    src = row if row is not None else appliance_snap
+    return {"appliance_id": appliance_id,
+            "name": str(getattr(src, "name", "") or ""),
+            "serial": str(getattr(src, "serial", "") or ""),
+            "model": str(getattr(src, "model", "") or ""),
+            "hw_type": str(getattr(src, "hw_type", "") or ""),
+            "firmware_raw": str(getattr(src, "firmware", "") or "")}
+
+
+def _ingest_library(appliance_snap, snapshot: dict) -> dict:
+    """File this sweep's snapshot as API-library evidence. NEVER raises.
+
+    Returns ``{evidence_id, created, healthy, skip_reason}`` or ``{error}``.
+    A library failure is logged and reported, but it cannot fail the sweep:
+    ``_config.json`` and the by-version archive are already on disk and stay
+    the export every existing consumer reads.
+    """
+    aid = appliance_snap.id
+    try:
+        from ..extensions import db
+        from . import api_library
+        product = getattr(appliance_snap, "kind", "") or "fortiweb"
+        version = _version_of(snapshot)
+        # Same origin_ref shape as api_library.backfill, so the provenance of
+        # a live ingest and of a later backfill of the same file reads alike.
+        ref = "rediscovery:%d@%s" % (aid, version or "unversioned")
+        with _library_app().app_context():
+            try:
+                doc = api_library.evidence_from_sweep(
+                    product, snapshot, _library_device(aid, appliance_snap), ref)
+                res = api_library.ingest(doc, raw=snapshot)
+            except Exception:
+                db.session.rollback()
+                raise
+        return {"evidence_id": res.get("evidence_id"),
+                "created": bool(res.get("created")),
+                "healthy": bool(doc.get("healthy")),
+                "skip_reason": doc.get("skip_reason") or ""}
+    except Exception as exc:  # noqa: BLE001 — never let the library sink a sweep
+        _log.warning("rediscovery: API library ingest failed for appliance %s: %s",
+                     aid, exc, exc_info=True)
+        return {"error": ("%s: %s" % (type(exc).__name__, exc))[:200]}
 
 
 def _run_deep(appliance_snap: SimpleNamespace, progress_path, state: dict) -> None:

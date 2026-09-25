@@ -195,3 +195,76 @@ def test_backfill_cli(ctx, tmp_path):
                                              str(tmp_path), "--product", "fortiadc"])
     assert res.exit_code == 0, res.output
     assert json.loads(res.output)["by_product"]["fortiadc"]["documents"] == 2
+
+
+# --------------------------------------------------------------------------
+# a live sweep ingest and a backfill of the same file are ONE measurement
+# --------------------------------------------------------------------------
+
+_LEDGER = {"admin": {"urn": "/api/v2.0/cmdb/system/admin", "section": "System",
+                     "verdict": "ok", "rows": 1}}
+_SECTIONS = {"System": {"admin": [{"name": "admin", "q_type": 1}]}}
+
+
+def _live_device(aid, name):
+    """What rediscovery._library_device copies from the appliance row."""
+    return {"appliance_id": aid, "name": name, "serial": "FVVM%04d" % aid,
+            "model": "FortiWeb-KVM 7.6.8", "hw_type": "vm",
+            "firmware_raw": "FortiWeb-KVM 7.6.8,build1128(GA.M),260602"}
+
+
+def _live_ingest(aid, name, snap):
+    doc = lib.evidence_from_sweep("fortiweb", snap, _live_device(aid, name),
+                                  "rediscovery:%d@7.6.8" % aid)
+    return lib.ingest(doc, raw=snap)
+
+
+def _archive_file(root, aid, snap):
+    _write(root / "rediscovery" / str(aid) / "by-version" / "7.6.8.json", snap)
+
+
+def test_backfill_after_a_live_ingest_confirms_instead_of_duplicating(ctx, tmp_path):
+    snap = _snap("fw-live", 41, "7.6.8", _LEDGER, _SECTIONS)
+    live = _live_ingest(41, "fw-live", snap)
+    _archive_file(tmp_path, 41, snap)
+    res = lib.backfill(str(tmp_path))
+    assert (res["created"], res["confirmed"]) == (0, 1)
+    ev = ApiLibEvidence.query.one()
+    assert ev.id == live["evidence_id"] and ev.confirmations == 2
+    # The live row's richer identity is what stays.
+    assert (ev.device_serial, ev.device_model) == ("FVVM0041", "FortiWeb-KVM 7.6.8")
+
+
+def test_a_live_ingest_after_a_backfill_confirms_and_fills_the_blanks(ctx, tmp_path):
+    snap = _snap("fw-live", 41, "7.6.8", _LEDGER, _SECTIONS)
+    _archive_file(tmp_path, 41, snap)
+    lib.backfill(str(tmp_path))
+    ev = ApiLibEvidence.query.one()
+    assert (ev.device_serial, ev.device_model) == ("", "")
+    res = _live_ingest(41, "fw-live", snap)
+    assert res["created"] is False and ApiLibEvidence.query.count() == 1
+    ev = ApiLibEvidence.query.one()
+    assert ev.confirmations == 2
+    assert (ev.device_serial, ev.device_model, ev.device_hw_type) == \
+        ("FVVM0041", "FortiWeb-KVM 7.6.8", "vm")
+    # Filled, never overwritten: the backfill's raw firmware string stays.
+    assert ev.firmware_raw == "7.6.8"
+    assert db.session.get(ApiLibBuild, ev.build_id).build == "build1128"
+
+
+def test_two_devices_with_identical_content_stay_two_witnesses(ctx, tmp_path):
+    """Dropping device identity from the hash must not merge two boxes that
+    happen to answer identically on one build: that would lose a witness."""
+    for aid, name in ((41, "boxA"), (42, "boxB")):
+        snap = _snap(name, aid, "7.6.8", _LEDGER, _SECTIONS)
+        _live_ingest(aid, name, snap)
+        _archive_file(tmp_path, aid, snap)
+    res = lib.backfill(str(tmp_path))
+    assert (res["created"], res["confirmed"]) == (0, 2)
+    rows = ApiLibEvidence.query.order_by(ApiLibEvidence.appliance_id).all()
+    assert [(r.device_name, r.confirmations) for r in rows] == [("boxA", 2), ("boxB", 2)]
+    assert ApiLibEndpointFact.query.one().witnesses == ["boxA", "boxB"]
+    assert lib.endpoints_at("fortiweb", "7.6.8")["admin"]["witnesses"] == ["boxA", "boxB"]
+    doc = lib.matrix_doc("fortiweb")
+    assert doc["versions"]["7.6.8"]["devices"] == ["boxA", "boxB"]
+    assert {w["name"] for w in doc["witnesses"]} == {"boxA", "boxB"}

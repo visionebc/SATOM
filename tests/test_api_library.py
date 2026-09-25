@@ -173,6 +173,34 @@ def test_sweep_adapter_empty_rows_are_blind_not_empty():
     assert doc["scope"] == {"kind": "build", "version": "8.0.5", "build": "build0123"}
 
 
+def test_sweep_adapter_files_a_line_only_firmware_as_point_evidence():
+    """A box that reported only "8.0" was still ONE box asked once: point
+    evidence about a patch-unknown build, not a claim about the whole line."""
+    snap = {"firmware": "8.0", "generated_at": "2026-09-01T00:00:00",
+            "endpoint_status": {"a": {"urn": "/api/v2.0/cmdb/a", "section": "S",
+                                      "verdict": "ok", "rows": 0}}, "sections": {}}
+    doc = lib.evidence_from_sweep("fortiweb", snap, {"name": "fw"}, "t")
+    assert doc["scope"] == {"kind": "build", "version": "8.0", "build": ""}
+
+
+def test_content_hash_ignores_decoration_but_not_the_witness_or_the_measurement():
+    base = _doc(appliance_id=7)
+    decorated = _doc(appliance_id=7, captured="2030-01-01T00:00:00")
+    decorated["device"].update(name="renamed", serial="S1", model="M", hw_type="hw",
+                               firmware_raw="7.6.8,build1128")
+    decorated["scope"]["build"] = "build1128"
+    decorated["origin_ref"] = "elsewhere"
+    assert lib.content_hash(decorated) == lib.content_hash(base)
+    assert lib.content_hash(_doc(appliance_id=8)) != lib.content_hash(base)
+    # Without an appliance id the name is the witness.
+    assert lib.content_hash(_doc(device="fwA")) != lib.content_hash(_doc(device="fwB"))
+    changed = _doc(appliance_id=7)
+    changed["endpoints"]["admin"]["verdict"] = "absent"
+    assert lib.content_hash(changed) != lib.content_hash(base)
+    rescoped = _doc(appliance_id=7, version="7.6.9")
+    assert lib.content_hash(rescoped) != lib.content_hash(base)
+
+
 # --------------------------------------------------------------------------
 # blind vs measured-empty vs unmeasured vs absent
 # --------------------------------------------------------------------------

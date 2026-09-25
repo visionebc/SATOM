@@ -763,10 +763,6 @@ def test_line_only_evidence_answers_for_itself_in_the_library(isolated, app):
     assert rollup["silent_on"] == ["8.0.5"]
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "api_library.matrix_doc folds a line-only build into the line rollup and "
-    "gives it no version-axis entry, so the matrix resolves '8.0' to the merge. "
-    "Fix belongs in matrix_doc (wave-1 library), not in api_matrix."))
 def test_a_line_only_build_resolves_to_ITSELF_not_to_its_rollup(isolated, app):
     """``8.0`` can be BOTH a build key (evidence whose patch was never
     recorded) and a line key. Resolving it to the rollup would hand back a
@@ -784,3 +780,23 @@ def test_a_line_only_build_resolves_to_ITSELF_not_to_its_rollup(isolated, app):
     assert doc["devices"] == ["boxA"]
     # and the rollup, asked for by nobody here, still merged both
     assert m["lines"]["8.0"]["measured_versions"] == ["8.0", "8.0.5"]
+    assert doc["line_only"] is True
+    assert list(doc["endpoints"]) == ["only_here"]
+
+
+def test_line_scoped_evidence_on_the_same_line_only_build_stays_in_the_rollup(isolated, app):
+    """One "8.0" row can hold BOTH kinds: a sweep of a box that reported only
+    "8.0" (point) and a frozen line matrix (line). Only the point evidence is
+    that build's entry; the line evidence stays a rollup fact, never promoted
+    into an answer about the one snapshot."""
+    a = _appliance("boxA", kind="fortiadc", firmware="8.0")
+    _store_legacy_matrix(isolated)          # line-scoped: endpoint "x", gone01
+    _archive(isolated, a, "8.0", _ledger(swept="ok"))
+    m = am.build("fortiadc")
+    entry = m["versions"]["8.0"]
+    assert sorted(entry["endpoints"]) == ["swept"]
+    assert entry["devices"] == ["boxA"]
+    line = m["lines"]["8.0"]
+    assert sorted(line["endpoints"]) == ["swept", "x"]
+    assert line["endpoints"]["x"]["origin"] == "legacy_matrix"
+    assert line["measured_versions"] == ["8.0"]

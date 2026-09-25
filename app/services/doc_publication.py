@@ -164,6 +164,11 @@ PUBLIC_DOCS: list[tuple[str, str, str, str, str]] = [
      "How a third party authenticates and drives the platform with a token."),
     ("device-api.md", "device-api", "Device APIs & the endpoint registry", "\U0001f52d",
      "The API consoles that drive the appliances, the registry that makes a moved firmware URI a row edit instead of a release, and the firmware-line evidence that says which fields a release actually takes."),
+    ("api-library.md", "api-library", "API library — what each firmware build serves", "\U0001f4da",
+     "The append-only record of every endpoint and field each firmware build "
+     "serves, per product: where the evidence comes from, how vendor data is "
+     "kept apart from measurements, the flask apilib commands, refreshing "
+     "vendor collections, harvesting, and troubleshooting."),
     ("fortiauthenticator.md", "fortiauthenticator",
      "FortiAuthenticator — product integration", "\U0001f194",
      "How the identity product is wired: its Tastypie REST dialect, the "
@@ -200,7 +205,7 @@ GROUPS: list[tuple[str, str, list[str]]] = [
      "what the fleet is being attacked with.",
      ["encryption", "acme", "sentinel", "ai-advisor"]),
     ("Build & integrate", "For developers extending the platform or driving it from outside.",
-     ["api", "device-api", "fortiauthenticator", "engineering",
+     ["api", "device-api", "api-library", "fortiauthenticator", "engineering",
       "source-of-truth", "release-pipeline",
       "release-notes"]),
     ("What changed", "Release history for the platform itself.",

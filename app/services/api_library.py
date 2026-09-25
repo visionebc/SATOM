@@ -132,14 +132,47 @@ def _canonical(doc: dict) -> str:
     return json.dumps(doc, sort_keys=True, separators=(",", ":"), default=str)
 
 
-def content_hash(doc: dict) -> str:
-    """sha256 of the canonical document WITHOUT ``captured_at``.
+def _witness_key(device) -> dict | None:
+    """WHO measured, reduced to the identity that does not drift.
 
-    ``captured_at`` is excluded because re-harvesting identical content is a
-    confirmation, not new evidence — keying on the timestamp is what would
-    make evidence grow with the number of sweeps.
+    The appliance id when there is one (a live row and a snapshot of a
+    deleted box agree on it), else the device name; ``None`` for vendor or
+    manual evidence that no device produced.
     """
-    body = {k: v for k, v in doc.items() if k != "captured_at"}
+    if not isinstance(device, dict):
+        return None
+    if isinstance(device.get("appliance_id"), int):
+        return {"appliance_id": device["appliance_id"]}
+    name = str(device.get("name") or "")
+    return {"name": name} if name else None
+
+
+def content_hash(doc: dict) -> str:
+    """sha256 of the MEASUREMENT and of who measured it — nothing else.
+
+    Covered: product, source, scope (without its build token), endpoints,
+    health, summary, and :func:`_witness_key`. Left out: ``captured_at``
+    (re-harvesting identical content is a confirmation, not new evidence),
+    ``origin_ref`` and the device DECORATION (serial, model, hw type, raw
+    firmware string, display name, build token). The decoration depends on
+    which path read the snapshot: a live sweep copies it from the appliance
+    row, a backfill of the same by-version file reconstructs it from the
+    snapshot. Hashing it filed one measurement twice.
+
+    Why the hash and not a backfill-side dedupe on the raw snapshot: this
+    keeps ONE definition of "same evidence" for every path and every order
+    (a backfill can also run before the live ingest), with no blob to
+    decompress per candidate row. The witness stays IN the hash so two
+    different boxes that return identical content on one build remain two
+    evidence rows and two witnesses.
+    """
+    scope = {k: v for k, v in (doc.get("scope") or {}).items() if k != "build"}
+    body = {"product": doc.get("product"), "source": doc.get("source"), "scope": scope,
+            "endpoints": doc.get("endpoints") or {},
+            "healthy": bool(doc.get("healthy", True)),
+            "skip_reason": doc.get("skip_reason") or "",
+            "summary": doc.get("summary") or {},
+            "witness": _witness_key(doc.get("device"))}
     return hashlib.sha256(_canonical(body).encode("utf-8")).hexdigest()
 
 
@@ -362,6 +395,7 @@ def _ingest(doc: dict, raw, sha: str) -> dict:
     if ev is not None:
         ev.last_confirmed_at = now
         ev.confirmations = (ev.confirmations or 0) + 1
+        _fill_identity(ev, doc)
         db.session.commit()
         return {"evidence_id": ev.id, "created": False, "facts": {}}
 
@@ -425,6 +459,32 @@ def _ingest(doc: dict, raw, sha: str) -> dict:
             facts = _fold_point(product, source, build, ev, device, endpoints, captured)
     db.session.commit()
     return {"evidence_id": ev.id, "created": True, "facts": facts}
+
+
+def _fill_identity(ev: ApiLibEvidence, doc: dict) -> None:
+    """Fill BLANK device decoration from a confirming document; never overwrite.
+
+    Decoration is not in the hash, so whichever path ingested first owns the
+    row. A backfill that ran before the live sweep would otherwise leave the
+    evidence without the serial/model and its build without the token the
+    appliance row knows. The measurement itself is untouched.
+    """
+    device = doc.get("device") or {}
+    if not isinstance(device, dict):
+        return
+    placeholder = "appliance #%s" % ev.appliance_id
+    if device.get("name") and ev.device_name in ("", placeholder):
+        ev.device_name = str(device["name"])[:128]
+    for col, key, size in (("device_serial", "serial", 64), ("device_model", "model", 128),
+                           ("device_hw_type", "hw_type", 16),
+                           ("firmware_raw", "firmware_raw", 128)):
+        if not getattr(ev, col) and device.get(key):
+            setattr(ev, col, str(device[key])[:size])
+    token = (doc.get("scope") or {}).get("build")
+    if token and ev.build_id is not None:
+        b = db.session.get(ApiLibBuild, ev.build_id)
+        if b is not None and not b.build:
+            b.build = token
 
 
 def _fold_point(product, source, build, ev, device, endpoints, seen) -> dict:
@@ -642,10 +702,12 @@ def evidence_from_sweep(product: str, snapshot: dict, device: dict | None,
     if fv.normalize(device.get("firmware_raw")) != version:
         device["firmware_raw"] = raw_fw
 
-    if version and fv.is_line_only(version):
-        scope = {"kind": "line", "line": version}
-    else:
-        scope = {"kind": "build", "version": version, "build": token}
+    # Always POINT evidence, even when the box reported only "8.0": one box
+    # was asked once, so this is a measurement of one (patch-unknown) build,
+    # not a claim about every 8.0.x. ``matrix_doc`` gives it its own
+    # version-axis entry; only line-harvested stores (schema dirs, legacy
+    # matrices) stay line-scoped.
+    scope = {"kind": "build", "version": version, "build": token}
 
     ledger = snapshot.get("endpoint_status") or {}
     rows_by_ep: dict = {}
@@ -1559,6 +1621,14 @@ def matrix_doc(product: str, versions=None) -> dict:
     retired device's evidence stays and it is listed in ``witnesses`` with
     ``retired: True``), and vendor range coverage appears as endpoints with
     ``origin: vendor_doc`` for products that have it.
+
+    Which builds get a ``versions`` entry is decided by the evidence SCOPE,
+    not by the version string: a build with point evidence (``scope_kind ==
+    "build"``, e.g. a sweep whose box reported only ``8.0``) is its own
+    entry, marked ``line_only``, so ``resolve_scope("8.0")`` answers from
+    that snapshot and not from the merge of every 8.0.x. Line-scoped evidence
+    (schema dirs, ``legacy_matrix``) names no build: it only joins the rollup
+    and reaches builds as ``granularity: "line"`` objects.
     """
     from . import api_matrix
 
@@ -1594,40 +1664,60 @@ def matrix_doc(product: str, versions=None) -> dict:
 
     line_builds = {b.version: b for b in all_builds.values() if b.line_only}
 
-    def _objects(bid, granular_line=None) -> dict:
-        objs = {}
+    # (build_id, source) pairs backed by healthy POINT evidence. Facts are
+    # keyed (thing, build, source), so the source is what tells a line-only
+    # build's sweep facts apart from the schema/legacy facts filed on the
+    # same "8.0" row at line granularity.
+    point_src = {(bid, src) for bid, src in db.session.execute(
+        select(ApiLibEvidence.build_id, ApiLibEvidence.source).distinct()
+        .where(ApiLibEvidence.product == product, ApiLibEvidence.scope_kind == "build",
+               ApiLibEvidence.healthy.is_(True), ApiLibEvidence.build_id.isnot(None)))}
+
+    def _facts(bid, point_scoped: bool) -> dict:
+        """``{endpoint: {source: rec}}`` of one build, point OR line part."""
+        out = {}
         for name, by_src in (point.get(bid) or {}).items():
+            d = {s: r for s, r in by_src.items() if ((bid, s) in point_src) == point_scoped}
+            if d:
+                out[name] = d
+        return out
+
+    def _objects(bid, facts, granularity=None, line=None) -> dict:
+        objs = {}
+        for name, by_src in facts.items():
             rec = by_src.get(SOURCE_SCHEMA)
             if rec is None:
                 continue
             meta = (obj_meta.get(bid) or {}).get(name) or {}
             o = _matrix_obj(name, rec, meta)
-            if granular_line:
-                o = dict(o, granularity="line", line=granular_line)
+            if granularity:
+                o = dict(o, granularity=granularity, line=line)
             objs[o["object"]] = o
         return objs
 
     # --- the atomic axis ---------------------------------------------------
     out_versions: dict = {}
     for b in sorted(all_builds.values(), key=lambda x: x.sort_key):
-        if b.line_only or (wanted and b.version not in wanted):
+        if wanted and b.version not in wanted:
             continue
+        own = _facts(b.id, point_scoped=True)
         by_ep = {n: {s: r for s, r in d.items() if s != SOURCE_SCHEMA}
-                 for n, d in (point.get(b.id) or {}).items()}
+                 for n, d in own.items()}
         for n, d in _vendor_state(product, b.sort_key, None, True, vendor).items():
             by_ep.setdefault(n, {}).update(d)
         eps = {n: _matrix_ep(n, d) for n, d in sorted(by_ep.items()) if d}
-        objects = _objects(b.id, granular_line=None)
-        for o in objects.values():
-            o.update(granularity="build", line=b.line)
+        objects = _objects(b.id, own, "build", b.line)
+        # A line-only build with nothing but line-scoped evidence stops here:
+        # it stays a line, exactly as before.
         if not eps and not objects:
             continue
         lb = line_builds.get(b.line)
         if lb is not None:
-            for k, o in _objects(lb.id, granular_line=b.line).items():
+            for k, o in _objects(lb.id, _facts(lb.id, point_scoped=False),
+                                 "line", b.line).items():
                 objects.setdefault(k, o)
         out_versions[b.version] = {
-            "version": b.version, "line": b.line, "line_only": False,
+            "version": b.version, "line": b.line, "line_only": bool(b.line_only),
             "sources": [fv.SOURCE_EVIDENCE], "manual": False, "declared": False,
             "in_fleet": b.version in fleet_versions,
             "measured": bool(eps),
@@ -1636,7 +1726,7 @@ def matrix_doc(product: str, versions=None) -> dict:
         }
 
     # --- the rollup --------------------------------------------------------
-    lines_with_facts = {v for v, b in line_builds.items() if point.get(b.id)}
+    lines_with_facts = {v for v, b in line_builds.items() if _facts(b.id, point_scoped=False)}
     if wanted:
         lines_with_facts = {ln for ln in lines_with_facts
                             if ln in wanted or any(fv.line_of(w) == ln for w in wanted)}
@@ -1648,6 +1738,10 @@ def matrix_doc(product: str, versions=None) -> dict:
         measured_members = [v for v in members if out_versions[v]["measured"]]
         eps: dict = {}
         for version in measured_members:
+            # A line-only member (a box that reported only "8.0") joins the
+            # merge but names no build, so it cannot be listed as a build
+            # that attested or stayed silent — partials stay a build-level fact.
+            pinned = not out_versions[version]["line_only"]
             for name, rec in out_versions[version]["endpoints"].items():
                 agg = eps.setdefault(name, {
                     "endpoint": name, "urn": rec.get("urn") or "",
@@ -1662,9 +1756,11 @@ def matrix_doc(product: str, versions=None) -> dict:
                     agg["measured_at"] = rec.get("measured_at") or ""
                 if rec["verdict"] == VERDICT_OK:
                     agg["verdict"] = VERDICT_OK
-                    agg["attested_on"].append(version)
+                    if pinned:
+                        agg["attested_on"].append(version)
                 else:
-                    agg["silent_on"].append(version)
+                    if pinned:
+                        agg["silent_on"].append(version)
                     if rec["verdict"] == VERDICT_ABSENT and agg["verdict"] != VERDICT_OK:
                         agg["verdict"] = VERDICT_ABSENT
                     elif agg["verdict"] is None:
@@ -1676,8 +1772,9 @@ def matrix_doc(product: str, versions=None) -> dict:
         # rollup it was recorded for. It names no build, so it never adds to
         # ``attested_on`` — it cannot say which build served the endpoint.
         lb = line_builds.get(line)
+        line_facts = _facts(lb.id, point_scoped=False) if lb is not None else {}
         if lb is not None:
-            for name, by_src in (point.get(lb.id) or {}).items():
+            for name, by_src in line_facts.items():
                 d = {s: r for s, r in by_src.items() if s != SOURCE_SCHEMA}
                 if not d:
                     continue
@@ -1694,9 +1791,7 @@ def matrix_doc(product: str, versions=None) -> dict:
         partial = [{"endpoint": name, "attested_on": r["attested_on"],
                     "silent_on": r["silent_on"], "urn": r.get("urn", "")}
                    for name, r in sorted(eps.items()) if r["attested_on"] and r["silent_on"]]
-        objects = {}
-        if lb is not None:
-            objects = _objects(lb.id)
+        objects = _objects(lb.id, line_facts) if lb is not None else {}
         counts = _counts(eps, objects)
         counts.update(versions=len(members), measured_versions=len(measured_members),
                       partial=len(partial))

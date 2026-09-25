@@ -357,32 +357,67 @@ other is the failure this page exists to surface **before** the write.
 |---|---|---|
 | FortiWeb | API explorer → **API versions** | `/web/registry/versions` |
 | FortiADC | API hub → **API versions** | `/adc/api/versions` |
+| FortiAuthenticator, FortiAnalyzer, FortiGate | the **product selector** on either page | `/web/registry/versions?product=<key>` |
 
-### 7.1 The unit is (product, firmware line, endpoint)
+### 7.1 Where the evidence lives: the API library
 
-A **line** is `major.minor`. A patch release is not a new API surface, and
-keying by the full build string would give every build its own column of
-one-device evidence that never accumulates — the same granularity the capacity
-limits and `data/field_schemas/<product>/<line>/` already use.
+Since 2.2.0 every answer on this page comes from the **API library**: a set of
+append-only tables in the application database (`api_lib_*`), described in full
+in [API library](api-library.md). In short:
 
-The matrix is **derived, not authored**. It is a file under `data/api_matrix/`,
-rebuilt from evidence that already exists on disk; delete it and a rebuild
-reconstructs it exactly. It is deliberately *not* a database table: a derived
-view in Postgres would sit in a different backup path from the evidence it
-summarises, and both of those evidence trees are already carried by the standby
-sync and by the system bundles.
+* **Evidence is stored once and never rewritten.** Each sweep snapshot,
+  harvested field schema, vendor range and frozen legacy matrix is one row, with
+  its raw payload and a content hash. The same content arriving again only
+  confirms the existing row.
+* **Facts are keyed by (endpoint or field, build, source).** They grow with the
+  number of builds, not with the number of sweeps.
+* **Nothing is filtered by the live appliance table.** The device's identity is
+  copied into its evidence, so a retired or deleted appliance keeps what it
+  proved and is listed as a `retired` witness.
 
-### 7.2 Two kinds of evidence, never subtracted from each other
+The matrix this section describes is **derived, not authored**: the library
+assembles it on request (`api_library.matrix_doc`), in the same document shape
+it always had, so every consumer — the page, `preflight`, `version_compat`, the
+absence ledger — reads it unchanged. **Rebuild** still writes
+`data/api_matrix/<product>.json`, but only as an **export** for the stdlib CLI
+below; nothing in the application reads the file back.
+
+*Why it moved out of the file.* The file was rewritten wholesale on every
+rebuild, and the rebuild filtered its evidence through the live appliance table.
+Deleting an appliance therefore deleted the proof of what its firmware served —
+that is how the 8.0.3 build, measured on two FortiADC appliances since retired,
+disappeared — and a test run once overwrote the production matrix with an empty
+one. `flask apilib backfill` re-read every archived snapshot into the library,
+and 8.0.3 is back.
+
+The **line** is `major.minor`. It survives as a rollup and as the granularity
+of `data/field_schemas/<product>/<line>/`, but the atomic key is the full build
+(§7.5).
+
+### 7.2 Kinds of evidence, never subtracted from each other
 
 * **sweep** — the rediscovery snapshot. The keys of the objects it read back
   *are* the fields that firmware serves.
-* **schema** — the harvested field specs under `data/field_schemas/`. This is
-  the only evidence for FortiWeb 8.0 today, because no 8.0 FortiWeb is left in
-  the fleet; that folder was harvested from an appliance since retired. The page
-  says so on the line itself (**in fleet: no**) rather than presenting archived
-  evidence as current.
+* **schema** — the harvested field specs under `data/field_schemas/`, one
+  reference appliance per firmware line. A folder harvested from an appliance
+  since retired stays evidence; the page says so on the build itself (**in
+  fleet: no**) rather than presenting archived evidence as current.
+* **schema, live** — FortiAuthenticator describes its own API. SATOM reads its
+  Tastypie directory and per-resource schema (`GET` only) and files the answer
+  per build.
+* **vendor_doc** — the vendor's Ansible collections (`fortinet.fortios` for
+  FortiGate, `fortinet.fortianalyzer` for FortiAnalyzer), whose modules carry a
+  firmware range per endpoint and per field. It is a **claim, not a
+  measurement**: it is labelled as such on every page, never outranks a sweep,
+  and an open range stops at the newest version the collection knows — a later
+  build is `unmeasured`. A vendor-only absence **warns**; only an appliance
+  rejecting the URN blocks. The FortiWeb and FortiADC collections carry no
+  version data and are not used.
+* **legacy_matrix** — the frozen line-only FortiADC matrix from before the build
+  axis. It names a line, not a build.
 
-**A delta is only ever computed sweep↔sweep or schema↔schema.** The first
+**A delta is only ever computed within one kind of evidence** (sweep↔sweep,
+schema↔schema). The first
 version of the comparison merged them and reported **56 removed fields** for
 7.6 → 8.0 that were nothing but a filter: a sweep field set is the raw dict the
 appliance puts on the wire, carrying the `_val` companion of every enum plus
@@ -435,11 +470,18 @@ evidence" through the same `rc`. `rc 2` stays what it always was — you typed t
 command wrong — so *"is 9.0 supported?"*, the question somebody asks the week
 before an upgrade, never looks like a usage error.
 
-The CLI is stdlib-only and reads the matrix file directly: no database, no app
-import. The consequence is stated rather than hidden — the file is a snapshot,
-so both commands print its `built_at`, and a matrix nobody rebuilt reports what
-was true then. **Rebuild** on the page (or the first access after the file is
-removed) recomputes it.
+The CLI is stdlib-only and reads the exported matrix file directly: no database,
+no app import. The consequence is stated rather than hidden — the file is a
+snapshot of the library, so both commands print its `built_at`, and an export
+nobody refreshed reports what was true then. **Rebuild** on the page (or the
+first access after the file is removed) writes a fresh export from the library.
+
+The web pages ask the library directly and need no rebuild. Their build-aware
+answers go further than the CLI's: the clone pre-flight resolves both
+appliances to their exact builds, honours the operator's field renames
+(`/web/registry/field-map`) and offers the fields the destination build adds;
+the API explorer marks each endpoint served / absent / unknown on the selected
+appliance's build and refuses an unserved one unless confirmed.
 
 ---
 
@@ -465,11 +507,14 @@ action is a write to a production appliance.
 | patch unknown | `8.0` *as a build* | evidence whose patch level was never recorded. **Not** `8.0.0` — that would mint a build nobody runs |
 
 Sweeps are archived per build under
-`data/rediscovery/<appliance_id>/by-version/<version>.json`. `_config.json`
-stays what it always was — the latest sweep — so every existing consumer is
-untouched. There is deliberately **no retention cap**: a cap would drop the
-evidence for a build somebody is still running, which is the failure this
-directory exists to prevent.
+`data/rediscovery/<appliance_id>/by-version/<version>.json`, and every sweep
+also ingests its snapshot into the library, which is where the evidence is
+**kept**. `_config.json` stays what it always was — the latest sweep — so every
+existing consumer is untouched. There is deliberately **no retention cap**: a
+cap would drop the evidence for a build somebody is still running, which is the
+failure this directory exists to prevent. When the firmware probe sees an
+appliance change build, it queues a harvest of the new build (see
+[API library](api-library.md) §8.4).
 
 `preflight` gains one status:
 

@@ -16167,3 +16167,74 @@ comparison) there.
 **Verified 2026-09-23** (as recorded in `fd4e2ba`): 9 mutations, 9 bite, 0
 survive, run on a copy of the tree; 2097 targeted and touched-area tests rc=0.
 The order-dependent red from the same run is §189.
+
+## §192 — an evidence store that forgot a build when its appliance was deleted (`tests/test_api_library.py`, `tests/test_api_library_backfill.py`, `tests/test_apilib_vendor.py`, `tests/test_apilib_fac.py`, `tests/test_rediscovery_apilib.py`, 2026-09-25)
+
+**The defect.** The firmware matrix (`data/api_matrix/<product>.json`) was
+derived and rewritten wholesale on every rebuild, and the rebuild filtered its
+evidence through the live appliance table. Deleting an appliance deleted the
+proof of what its firmware served: the **8.0.3** build, measured on two FortiADC
+appliances that were later retired, disappeared from every page. A test run
+once overwrote the production matrix with an empty one, and a sweep run inside
+a job once wrote into another application's database (2026-09-15). Nothing
+failed in any of these cases. The page simply stopped listing a build.
+
+**The fix, and its shape.** The evidence moved into the append-only
+**API library** (`api_lib_*` tables, `app/services/api_library.py`,
+[API library](api-library.md)). `api_library.ingest` is the only writer, and no
+code path in the feature deletes a row. The matrix file is now an export only.
+`flask apilib backfill` re-read every archived snapshot, and 8.0.3 is back.
+
+| Guard | What it kills |
+|---|---|
+| **Idempotent ingest.** Evidence is unique on (product, source, sha256 of the canonical document without `captured_at`); identical content bumps `last_confirmed_at` / `confirmations` and returns `created: false`. A concurrent duplicate insert is retried, not raised. `test_same_content_twice_is_one_row_confirmed_twice`, `test_content_change_is_new_evidence`, `test_backfill_reads_every_store_and_is_idempotent`, `test_a_second_identical_sweep_confirms_instead_of_duplicating` | a re-run of backfill, an import or a daily sweep of an unchanged box adding rows; a timestamp making identical evidence look new |
+| **Bounded facts.** Endpoint and field facts are unique on (endpoint or field, build, source), not per harvest. `test_facts_are_bounded_by_builds_not_sweeps` | table growth with the number of sweeps instead of the number of builds |
+| **Unhealthy evidence is stored, never folded.** A pass in which more than 25 % of the reads errored (sweep or FortiAuthenticator schema) is kept with `healthy=False` and produces no facts. `test_unhealthy_evidence_is_stored_but_never_folded`, `test_sweep_adapter_applies_error_ratio`, `test_error_ratio_over_a_quarter_is_unhealthy`, `test_failed_directory_claims_nothing` | a licence-locked or half-reachable appliance reading as a build that lost half its API |
+| **Retired evidence is kept.** Device identity (name, serial, model, platform, raw firmware) is copied into the evidence row, `appliance_id` has no foreign key, and no reader filters by the live table. `test_retired_device_evidence_stays_in_matrix_doc`, `test_a_retired_devices_build_is_still_on_the_page`, `test_a_deleted_row_still_files_evidence_under_the_snapshot_identity` | deleting or retiring an appliance deleting the evidence for its build |
+| **Blind is not empty; unknown is not compatible.** `fields=None` never sets `fields_known`; a build with no evidence is `unmeasured`; "removed" needs both builds measured; fields compare only within one kind of evidence. `test_fields_none_is_blind_and_empty_dict_is_measured`, `test_removal_requires_both_builds_measured`, `test_compare_fields_only_within_one_kind_of_evidence`, `test_the_comparison_keeps_unknown_apart_from_removed` | an empty FortiWeb collection inventing dozens of removed fields; a sweep-versus-schema subtraction inventing 56 |
+| **Open vendor ranges are capped.** A vendor document speaks only inside its own [min, max]; an open end stops at the newest version the collection names, and a later build is `unmeasured`. Where two collections cover a build, the one that knows newer firmware wins. `test_open_vendor_range_is_capped_at_max_version`, `test_newer_vendor_collection_supersedes_older` | a collection released before a firmware asserting that firmware serves everything it listed |
+| **Vendor data is a claim.** `vendor_doc` is last in source priority, never outranks a sweep, is labelled on every page, and a vendor-only absence warns instead of blocking. `test_sweep_outranks_vendor_claim`, `test_a_vendor_only_answer_is_labelled_a_claim`, `test_a_vendor_claimed_absence_warns_and_never_blocks` | the vendor's tooling overruling what a real box answered; a clone blocked on a documentation table |
+| **Vendor code is never executed.** Collections are read with `ast` / `literal_eval`; a module whose structure is not recognised is skipped and listed with its reason. Collections without version data (`fortinet.fortiweb`, `fortinet.fortiadc`) yield nothing. `test_fortios_vendor_code_is_never_imported`, `test_collections_without_version_data_yield_nothing`, `test_not_a_collection_is_an_error` | third-party module code running inside SATOM; a range-less endpoint list asserting "valid on every build" |
+| **The FortiAuthenticator harvest is read-only.** It issues GET requests only. `test_harvest_only_issues_gets_and_matches_the_normaliser` | a schema harvest writing to an identity appliance |
+| **Writes go to the active application's database.** Every database write in the rediscovery sweep resolves the app from the active context first; with no app at all the ingest fails and says so instead of guessing. A library failure is recorded as `apilib_error` and never fails the sweep. `test_ingest_goes_to_the_active_app_context_not_a_stale_global`, `test_every_db_write_uses_the_active_app_not_the_captured_global`, `test_no_app_at_all_is_a_recorded_failure_not_a_guessed_database`, `test_a_library_failure_does_not_fail_the_sweep` | a harvest job or a test writing evidence, the firmware column or the export into another application's database |
+| **The schema matches the models.** `test_migration_chain_and_schema_match_models` | a migration that creates tables the models do not describe |
+
+**How to verify it is armed:**
+
+```
+venv/bin/python -m pytest -q tests/test_api_library.py \
+  tests/test_api_library_backfill.py tests/test_apilib_vendor.py \
+  tests/test_apilib_fac.py tests/test_rediscovery_apilib.py \
+  tests/test_api_versions_library.py tests/test_version_compat_library.py
+```
+
+On a running node, `flask apilib backfill` run twice must report `created: 0`
+the second time, and `flask apilib status` must still list every build a
+retired appliance measured.
+
+## §193 — a request console that sent anything anywhere, and a clone that could add what nobody chose (`tests/test_api_explorer_firmware.py`, `tests/test_clone_new_fields.py`, `tests/test_apilib_fieldmap.py`, `tests/test_apilib_harvest.py`, `tests/test_firmware_probe_harvest.py`, `tests/test_scheduled_actions_apilib.py`, 2026-09-25)
+
+**The defect.** The API explorer was keyed on the API *version* only, so a
+7.6.8 box and an 8.0.5 box looked identical and `execute()` sent any endpoint
+to any build. The clone pre-flight named the fields a destination build adds
+and could do nothing with them. Once the library could say what a build
+serves, each of those surfaces needed a rule that the page's own JavaScript
+could not talk its way around.
+
+| Guard | What it kills |
+|---|---|
+| **Server-side refusal of an unserved endpoint.** `execute()` resolves the appliance's exact build and answers **409** with `needs_confirm` when the library says the build does not serve the URN (measured or vendor-claimed, and it says which). Only an explicit truthy `confirm_unserved` sends it, and the audit record carries `library_state` and `confirm_unserved`. The URN decides, not the leaf name; path spelling cannot dodge it; duplicate URNs never refuse on a tie. Unknown passes with an *Unverified* warning. The write-permission check still runs first. `test_execute_refuses_an_endpoint_the_build_does_not_serve`, `test_execute_sends_an_unserved_endpoint_only_with_confirmation`, `test_confirm_flag_must_be_truthy`, `test_a_stale_leaf_name_cannot_override_the_urn`, `test_path_normalisation_cannot_dodge_the_guard`, `test_duplicate_urns_never_refuse_on_a_tie`, `test_unknown_endpoint_passes_with_a_warning`, `test_write_guard_still_applies_before_the_library` | a request to a build known not to serve it going out on a stale or forged page; the guard refusing on ignorance and locking operators out of every build nobody has measured |
+| **New fields are opt-in only.** The clone dialog pre-fills nothing, and a blank value is dropped before the request. The engine re-validates every value (`version_compat.validate_new_values`): the destination build must be known to serve the field and the source build must lack it, and the value must fit its type and options. One bad value refuses the whole set before any device is read. Values land only on objects the run **creates**, never overwrite a field the source carries, and a value for an object the run does not create is reported, not dropped. `test_nothing_filled_means_nothing_added`, `test_a_field_the_destination_is_not_known_to_serve_is_refused`, `test_a_field_the_source_already_has_is_not_new_and_is_refused`, `test_one_bad_value_refuses_the_whole_set`, `test_values_land_only_on_objects_this_run_creates`, `test_a_value_never_overwrites_what_the_source_copies`, `test_perform_one_refuses_invalid_values_before_touching_any_device`, `test_without_values_the_write_is_exactly_as_before` | a clone adding fields nobody chose; a stale form writing a field the destination silently discards; a new-field value editing live configuration the operator never saw |
+| **Renames are authored and never deleted.** `api_lib_field_map` rows are added and retired under `registry_edit`, with CSRF and audit; a retired row is kept, listed on request, and applied by no reader. `test_retire_never_deletes_and_is_audited`, `test_a_retired_mapping_is_not_honoured`, `test_the_page_needs_the_registry_edit_permission`, `test_retire_is_refused_without_a_csrf_token` | a wrong mapping erasing the record of who believed what; an unauthenticated edit changing every comparison |
+| **One harvest per appliance, only where it measures something.** `enqueue` never raises, queues at most one pending harvest per appliance, skips appliances in maintenance, names products with no live harvester, and is off under `TESTING` unless `APILIB_HARVEST_DISPATCH` is set. A harvest is green only when it stored healthy evidence. The firmware probe queues on a normalized version change only, and a library fault never fails the probe. `test_enqueue_dedups_one_pending_harvest_per_appliance`, `test_enqueue_is_off_under_testing_unless_asked`, `test_enqueue_skips_maintenance_and_missing`, `test_run_unhealthy_sweep_is_not_ok`, `test_the_same_version_does_not_enqueue`, `test_a_library_fault_never_fails_the_probe`, `test_the_real_enqueue_stays_off_under_testing` | a test probing a fake appliance starting a real sweep on the network; repeated probes queueing a sweep each; an unhealthy harvest reading green |
+| **The scheduled action is declared, not scheduled.** `apilib_harvest` is an admin action with a dry run that contacts nothing, and it is not in the install seed plan. `test_it_is_declared_but_not_seeded_into_production`, `test_dry_run_lists_what_would_be_harvested_and_contacts_nothing` | a fresh install sweeping every appliance on its first night without the operator asking |
+| **The harvest button is gated like the other sweep route.** POST only, `appliances.apply`, and an installation without the harvest module answers `503` with a message instead of crashing the page's script. `test_harvest_is_gated_like_the_other_sweep_route`, `test_harvest_is_post_only`, `test_harvest_without_the_module_answers_with_a_message` | any logged-in user starting a full read of an appliance from the explorer |
+
+**How to verify it is armed:**
+
+```
+venv/bin/python -m pytest -q tests/test_api_explorer_firmware.py \
+  tests/test_clone_new_fields.py tests/test_apilib_fieldmap.py \
+  tests/test_apilib_harvest.py tests/test_firmware_probe_harvest.py \
+  tests/test_scheduled_actions_apilib.py
+```

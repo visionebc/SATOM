@@ -6,6 +6,84 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — a versioned API library for every product (2026-09-25)
+
+SATOM now keeps an **API library**: an append-only record, in the database, of
+which endpoints and fields each firmware build serves, with every fact
+traceable to the evidence it came from. Evidence is stored once with a content
+hash and never rewritten; re-harvesting the same content only confirms it.
+Facts are kept per (field, build, source), so the library grows with the
+number of builds, not the number of sweeps. Reference:
+[`docs/api-library.md`](docs/api-library.md).
+
+- **Five products.** FortiWeb (sweeps and harvested schemas), FortiADC (sweeps
+  and the frozen pre-build-axis matrix), FortiAuthenticator (its own API
+  schema, read live and GET-only: 58 resources and 316 fields on 8.0.3),
+  FortiAnalyzer and FortiGate. The last two come from the vendor's Ansible
+  collections: `fortinet.fortianalyzer` 1.10.0 gives 202 endpoints and 2,275
+  fields across 56 builds (6.2.1 – 7.6.4), and `fortinet.fortios` 2.6.0 gives
+  723 endpoints and 11,049 fields across 37 builds (6.0.0 – 8.0.0). FortiGate
+  is catalog-only: SATOM does not manage it. Vendor data is labelled
+  `vendor_doc`, never outranks a measurement of a real box, and an open vendor
+  range stops at the newest build the collection knows about. The FortiWeb and
+  FortiADC collections carry no version data and are not used.
+- **`flask apilib`** — `backfill`, `import-vendor PATH`, `ingest-file PATH`,
+  `harvest-fac [--appliance NAME]` and `status`. Every command is safe to
+  re-run. To refresh vendor data, download the collection from Ansible Galaxy,
+  extract it and run `flask apilib import-vendor <dir>`
+  ([`docs/cli.md`](docs/cli.md) §8).
+- **The API versions page covers every product.** A product selector reaches
+  FortiAuthenticator, FortiAnalyzer and FortiGate; the new **Library
+  comparison** compares any two builds (endpoints and fields added, removed,
+  retyped and renamed, with unknowns kept apart), and the **Endpoint
+  drill-down** lists a build's fields and answers *since which build?* for any
+  of them.
+- **API field renames** (`/web/registry/field-map`, `registry_edit`). An
+  operator can record that a firmware renamed a field, so comparisons and
+  pre-flights report a rename instead of a field lost plus one added. Mappings
+  are retired, never deleted.
+- **The API explorer knows the build.** It resolves the selected appliance to
+  its exact build, shows the build and its evidence in a banner, marks every
+  endpoint in the menu `served`, `absent` or `unknown`, lists the fields the
+  endpoint serves on that build, and offers **Harvest this appliance now** for
+  a build nobody has measured.
+- **The clone dialog offers the destination's new fields.** Fields the
+  destination build serves and the source's build lacks are listed with their
+  type, options and evidence. Nothing is added unless you fill a value, and
+  every value is re-checked on the server.
+- **Harvests happen on their own.** Every rediscovery sweep files its snapshot
+  in the library. When the firmware probe sees an appliance change build, it
+  queues one background harvest (switch: `APILIB_HARVEST_DISPATCH`, on by
+  default). A new scheduled action, `apilib_harvest`, harvests every appliance
+  whose build has no evidence; it is declared but not scheduled by default.
+
+### Changed — firmware answers come from the library, not from a file (2026-09-25)
+
+- The firmware matrix, the clone and upgrade pre-flights and the API versions
+  page read the library. `data/api_matrix/<product>.json` is still written by
+  **Rebuild**, as an export for `satom get api versions` and
+  `satom get api preflight` on a node whose database is down; nothing in the
+  application reads it back.
+- The clone and upgrade pre-flights resolve both appliances to their **exact**
+  builds and say which kind of evidence each answer rests on. An absence that
+  only the vendor's documentation claims is a warning; only an appliance that
+  rejected the endpoint blocks.
+- The API explorer refuses, on the server, to send a request to an endpoint
+  the appliance's build is known not to serve, unless you confirm it. The
+  override is audited. An endpoint nobody has measured is sent with a warning.
+
+### Fixed — evidence lost with its appliance (2026-09-25)
+
+- Deleting or retiring an appliance no longer deletes the evidence for its
+  build. The 8.0.3 build, measured on two FortiADC appliances since retired,
+  had disappeared this way; `flask apilib backfill` restored it from the
+  archived snapshots.
+- A rediscovery sweep run inside a job or a test could write the firmware
+  column, the export and the evidence into another application's database. It
+  now always writes to the database of the application running it.
+- A sweep after a firmware check no longer overwrites the appliance's full
+  firmware string (with its build number) with the bare version.
+
 ## [2.1.3] - 2026-09-24
 
 ### Changed — the installers speak English (2026-09-24)

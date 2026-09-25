@@ -373,7 +373,7 @@ def _resolved(product: str) -> dict:
         # looked at it. Those live in ``object_absences`` and are joined here.
         #
         # NO SECOND VERDICT. The state printed on the row is still the one this
-        # view computed live, per BUILD, from the evidence on disk. The ledger
+        # view computed live, per BUILD, from the library evidence. The ledger
         # contributes only what a live computation cannot know -- first proof,
         # repetition, and the review decision -- and its own scopes travel with
         # it so a line-scoped row can never be read as a claim about two

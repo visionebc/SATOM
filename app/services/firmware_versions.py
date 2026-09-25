@@ -13,6 +13,12 @@ So the unit of evidence becomes the **full version** (``8.0.3``) and the
 ``api_matrix``'s docstring is still right *for aggregating*; what was wrong was
 aggregating in silence.
 
+Where the evidence lives: the API library (``services.api_library``, the
+``api_lib_*`` tables; contract in ``docs/api-library.md``). ``api_matrix``
+serves it in the matrix shape via ``api_library.matrix_doc``, and
+``data/api_matrix/<product>.json`` is only an export of that document —
+nothing in this module reads it.
+
 Three rules this module is shaped around:
 
 1. **A version with no patch component is not the patch ``.0``.** ``"8.0"``
@@ -46,7 +52,7 @@ SOURCE_LABEL = {
     SOURCE_UPLOAD: "firmware image uploaded",
     SOURCE_MANUAL: "declared by an operator",
     SOURCE_FLEET: "an appliance is running it",
-    SOURCE_EVIDENCE: "evidence on disk",
+    SOURCE_EVIDENCE: "evidence in the API library",
 }
 
 _VER_RE = re.compile(r"(\d+)\.(\d+)(?:\.(\d+))?")
@@ -247,8 +253,9 @@ def _fleet_versions(product: str) -> dict:
 def catalog(product: str, measured: dict | None = None) -> dict:
     """Every version SATOM knows of for ``product``, merged from all sources.
 
-    ``measured`` is ``{version: True}`` (or any mapping keyed by version) from
-    the evidence store; a version present there gains ``SOURCE_EVIDENCE`` and
+    ``measured`` is ``{version: True}`` (or any mapping keyed by version) —
+    in practice the ``versions`` axis of the matrix the API library serves;
+    a version present there gains ``SOURCE_EVIDENCE`` and
     ``measured=True``. RULE 2 is the return value's whole shape: ``declared``
     and ``measured`` are separate booleans and a row can be the first without
     the second.
@@ -307,17 +314,16 @@ def _empty_line(line: str) -> dict:
 def overlay(product: str, matrix: dict) -> dict:
     """``matrix`` plus every DECLARED version, merged at read time.
 
-    Declarations are authored data in Postgres; the matrix is derived evidence
-    in a file. They are merged here, on read, for two reasons that are both
-    failures avoided:
+    Declarations are authored rows (``firmware_version_decls``); the matrix
+    is evidence the API library serves from its ``api_lib_*`` tables. They
+    are kept apart and merged here, on read, because:
 
-    * A declaration made through the form would otherwise be invisible until
-      somebody pressed **Rebuild** — an action that appears to do nothing is an
-      action operators stop trusting.
-    * The alternative (declaring triggers a rebuild) is worse: ``build``
-      filters witnesses through the live appliance table, so on a product whose
-      witnesses have been deleted a rebuild DESTROYS its evidence. Typing a
-      version number must not be able to do that.
+    * A declaration must show the moment it is made, without anybody pressing
+      **Rebuild** (which now only rewrites the JSON export) — an action that
+      appears to do nothing is an action operators stop trusting.
+    * Declaring must never write evidence. If a typed version number became
+      a row in the library, "somebody intends to run this" would read as
+      "somebody measured this" — RULE 2 broken at the source.
 
     A declared version never gains measurements it does not have: it arrives
     with ``measured=False`` and empty counts, which the page renders as

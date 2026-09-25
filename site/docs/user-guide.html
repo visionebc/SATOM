@@ -3958,6 +3958,8 @@ an endpoint, choose a method, supply a JSON body, execute.</p>
 <p>Unlike the FortiAuthenticator console (§17.2), the FortiWeb explorer's writes are
 <strong>not dry-run by default</strong> — this is the raw request console, and the confirmation
 is the permission.</p>
+<p>Since 2.2.0 the explorer also knows <strong>which firmware build</strong> the selected
+appliance runs and what that build serves: see §30.10.</p>
 <p>Endpoint conventions, dialects and per-product quirks:
 <a href="device-api.html">docs/device-api.md</a>.</p>
 <h3 id="304-reconcile-what-the-fleet-says-about-the-catalog">30.4 Reconcile: what the fleet says about the catalog</h3>
@@ -4024,6 +4026,15 @@ them.</p>
 <h3 id="305-api-versions-what-each-firmware-build-actually-takes">30.5 API versions: what each firmware build actually takes</h3>
 <p><strong>API explorer → API versions</strong> (<code>/web/registry/versions</code>, and the FortiADC
 twin at <code>/adc/api/versions</code>). Also <code>registry_edit</code>.</p>
+<p><strong>Where the answers come from (2.2.0).</strong> Everything on this page is read from
+the <strong>API library</strong> — the append-only record, in the database, of what each
+build serves (<a href="api-library.html">API library</a>). Evidence is never rewritten and a
+retired appliance keeps what it proved, so a build does not vanish from this
+page when its last appliance is deleted. The <strong>API library:</strong> selector under
+the title switches product: FortiWeb and FortiADC get this whole page;
+FortiAuthenticator, FortiAnalyzer and FortiGate get the library cards only
+(§30.8). The <strong>Library comparison</strong> and <strong>Endpoint drill-down</strong> cards at the
+foot of the page are described there too.</p>
 <p><strong>Two firmware builds can speak the same API version and still not accept the
 same payload — and so can two builds of the same line.</strong> FortiWeb 7.6 and 8.0
 are both <code>v2.0</code>; measured on this fleet's own data, <code>admin</code> has 40 fields on 7.6
@@ -4043,7 +4054,9 @@ row cannot — see <em>heterogeneous lines</em> below.</p>
    captured on it, and <em>why SATOM knows about it at all</em> — an uploaded firmware
    image, an appliance running it, or an operator declaring it by hand. A build
    that is registered and never swept reads <strong><code>declared · unmeasured</code></strong>, which
-   is not the same as a measured build that turned out empty.
+   is not the same as a measured build that turned out empty. <strong>Evidence</strong>
+   counts the library documents stored for the build and <strong>First / last seen</strong>
+   dates them; a retired appliance still counts as a witness.
    Each row also carries a <strong>Discovery run</strong> link, scoped to that build: it
    aims the <strong>Discovery run — API + CLI</strong> card directly below this table, so
    the candidates, the appliances offered and the findings all answer about
@@ -4179,8 +4192,10 @@ the endpoints only <em>some</em> of them served. Those are reported as <strong>p
 never as "the line serves it" — a merge is not a box. When every line holds a
 single measured build there is nothing to say and nothing is shown.</p>
 <p><strong><code>unmeasured</code> is an answer, never a yes.</strong> If SATOM has never seen that build,
-it says so rather than guessing; the fix is to sweep an appliance running it, or
-harvest its field schemas, and press <strong>Rebuild</strong>.</p>
+it says so rather than guessing; the fix is to harvest an appliance running it
+(<strong>Harvest this appliance now</strong> in the API explorer, §30.10) or its field
+schemas. The page reads the library directly, so the new evidence shows on the
+next load.</p>
 <p><strong><code>version_unmeasured</code> is the narrower one, and it is the whole point of the
 build axis.</strong> It means <em>that build</em> has no evidence while other builds of its
 line do — and SATOM will not answer for it out of theirs, because 8.0.4 is not
@@ -4192,11 +4207,11 @@ read, so no upload path can forget to register one. The form at the foot of the
 table is for the builds nothing proves yet ("8.0.7 is coming and I want to see
 its column"). Forgetting one only removes the hand-written note; a build an
 image or an appliance proves stays listed.</p>
-<p><strong>A matrix built before 2026-09-16</strong> has no per-build rows, and the page says so
-rather than reinterpreting it. It is deliberately <em>not</em> rebuilt for you: a
-rebuild drops every witness whose appliance row has since been deleted, and
-doing that as a side effect of opening a page would destroy evidence. Press
-<strong>Rebuild</strong> when that is what you want.</p>
+<p><strong>Evidence from before 2026-09-16</strong> (the frozen FortiADC matrix) names a line,
+not a build. It is kept as <code>legacy_matrix</code> evidence and shown as <strong>patch
+unknown</strong> rather than reinterpreted as a build nobody ran. Nothing drops a
+witness any more: an appliance deleted since its sweep is listed as <code>retired</code>,
+and its build stays.</p>
 <p>The same answers are available on a node whose web interface is down:</p>
 <pre><code>satom get api versions
 satom get api preflight {device} admin fortiai old-password
@@ -4205,8 +4220,9 @@ satom get api preflight 8.0 admin fortiai old-password
 <p>Exit codes: <code>0</code> understood, <code>1</code> some field is not on that line, <code>4</code> unmeasured,
 <code>2</code> you typed the command wrong. <code>4</code> is separate from <code>0</code> deliberately — a
 script must never reach "go ahead" from "I have no evidence".</p>
-<p>Both commands print when the matrix was built, because it is a snapshot of the
-evidence, not a live query. Details, evidence rules and the CLI contract:
+<p>Both commands print when the matrix was built, because they read the export
+file <strong>Rebuild</strong> writes from the library — a snapshot, not a live query. The
+page itself needs no rebuild. Details, evidence rules and the CLI contract:
 <a href="device-api.html">docs/device-api.md</a> §6–§7.</p>
 <h3 id="306-when-an-object-disappears-who-the-finding-is-about">30.6 When an object disappears: who the finding is about</h3>
 <p>A comparison that reports an object as <strong>gone on 8.0.5</strong> is stating that the
@@ -4357,6 +4373,185 @@ wrong one. So the page offers no apply button rather than one that always
 refuses. Giving the catalog a per-line dimension is what would unblock it, and
 that is a change to the resolution path every service in the product goes
 through.</p>
+<h3 id="308-the-api-library-on-the-api-versions-page-products-compare-history">30.8 The API library on the API versions page: products, compare, history</h3>
+<p>Since 2.2.0 the API versions page (§30.5) is a window on the <strong>API library</strong>:
+the database record of every endpoint and field each firmware build serves,
+where each fact came from, and when it was first and last seen. Evidence is
+only ever added — re-harvesting the same build confirms what is there, and a
+retired appliance's evidence stays. The reference is
+<a href="api-library.html">API library</a>.</p>
+<p><strong>The product selector.</strong> Under the page title, <strong>API library:</strong> lists one
+button per product, with the number of builds the library holds for it
+(hover for endpoints and evidence documents). FortiWeb and FortiADC open their
+full page. <strong>FortiAuthenticator</strong>, <strong>FortiAnalyzer</strong> and <strong>FortiGate</strong> open a
+library-only page — the three cards below and nothing else, with <strong>Back to</strong>
+returning you to the page you came from. FortiGate carries a <strong>catalogue</strong>
+badge: SATOM does not manage FortiGates, and their API is held for reference.</p>
+<p>Where each product's knowledge comes from:</p>
+<table>
+<thead>
+<tr>
+<th>product</th>
+<th>evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>FortiWeb</td>
+<td>rediscovery sweeps of your appliances, and harvested field schemas</td>
+</tr>
+<tr>
+<td>FortiADC</td>
+<td>sweeps, and a frozen line-level matrix from before the build axis</td>
+</tr>
+<tr>
+<td>FortiAuthenticator</td>
+<td>the appliance's own API schema, read live and read-only</td>
+</tr>
+<tr>
+<td>FortiAnalyzer, FortiGate</td>
+<td>the vendor's Ansible collections — a <strong>claim, not a measurement</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Every source is shown as a badge (<code>sweep</code>, <code>schema</code>, <code>vendor_doc</code>,
+<code>legacy_matrix</code>, <code>manual</code>); hover one for what it means. Vendor evidence never
+outranks a measurement of a real box, and an open vendor range stops at the
+newest build the vendor data knew about — a later build reads <strong>unmeasured</strong>.</p>
+<p><strong>Library builds</strong> (on the library-only page) lists every version the library
+knows, measured or not: <strong>Status</strong> (<code>measured</code>, <code>vendor only</code>, <code>unmeasured</code>),
+<strong>Origin</strong>, <strong>Sources</strong>, <strong>Evidence</strong> (documents stored), <strong>In fleet</strong> and
+<strong>First seen</strong> / <strong>Last seen</strong>. A build whose patch level was never recorded is
+marked <strong>patch unknown</strong>. On the FortiWeb and FortiADC pages the same
+information lives in the <strong>Firmware versions</strong> table.</p>
+<p><strong>Library comparison</strong> — pick a <strong>base</strong> and a <strong>target</strong> build and press
+<strong>Compare</strong>. The default pair is the two newest measured builds, because the
+usual question is <em>"what does the next upgrade change?"</em>. The badges total
+<strong>endpoints added / removed / unknown</strong> and <strong>fields added / removed / retyped
+/ renamed</strong>; below them:</p>
+<ul>
+<li><strong>Endpoints added or removed</strong> — served on one build and absent on the other,
+  both measured;</li>
+<li><strong>Field changes on endpoints both builds serve</strong> — added, removed, retyped
+  and <strong>renamed</strong> fields (renames come from §30.9);</li>
+<li><strong>Unknown — not a change</strong> — evidence on one side only, or the two sides
+  measured with different kinds of evidence. <em>Why the fields cannot be
+  compared</em> says which. None of these is a removal or an addition.</li>
+</ul>
+<p>A side that is <code>unmeasured</code> or <code>vendor only</code> is flagged above the totals, so a
+claim is never read as a measurement.</p>
+<p><strong>Endpoint drill-down</strong> — pick a build and type an endpoint name (the box
+suggests the endpoints that build serves), then <strong>Show fields</strong>. You get the
+endpoint's status on that build (<code>measured</code>, <code>blind</code> — it answered but no row
+revealed its fields, <code>absent</code>, <code>unmeasured</code>), a provenance table (which source
+said what, its witnesses, first and last seen, and which one the answer
+<strong>used</strong>), and the fields with <strong>Type</strong>, <strong>Required</strong>, <strong>Default</strong>, <strong>Options</strong>
+and <strong>Evidence</strong>.</p>
+<p><strong>Since which build?</strong> Every field row has this button. It opens the field's
+history: <strong>first seen on</strong> and <strong>last seen on</strong>, every build and source that
+recorded it, and any vendor range — an open range is marked <strong>open, capped</strong>.</p>
+<p>A FortiGate catalogue is about 720 endpoints per build across dozens of builds;
+the page never renders it whole, so it opens as fast as the FortiWeb one.</p>
+<h3 id="309-api-field-renames-telling-the-library-a-field-was-renamed">30.9 API field renames: telling the library a field was renamed</h3>
+<p><code>/web/registry/field-map</code> — find it on the Concept Map (§39) as <strong>API Field
+Renames</strong>; the page links back to API versions. Needs <code>registry_edit</code>.</p>
+<p>When a firmware renames a field, the library otherwise reads it as <strong>one field
+lost and an unrelated one added</strong>: the clone pre-flight warns that the old name
+is dropped and offers the new one as a stranger, and the upgrade pre-flight
+counts a loss that the firmware migrates on its own. A mapping here makes the
+build comparison (§30.8), the clone pre-flight (§41.8) and the upgrade
+pre-flight report it as a <strong>rename</strong>.</p>
+<p><strong>Add a rename</strong> — product, endpoint, <strong>old field name</strong>, <strong>new field name</strong>,
+optionally <strong>from build</strong> and <strong>up to build</strong>, and a note saying where the
+rename is documented. Leave a build empty for "any": the mapping applies to a
+comparison that crosses it — the old name on or before the first build, the new
+name on or after the second. The form refuses two identical names, an old build
+that is not earlier than the new one, a note over 500 characters, and a
+mapping identical to one already in force.</p>
+<p>After saving, the page tells you whether the library already has evidence for
+both names. A mapping for a field nobody has measured yet is kept, and applies
+once a build that serves it is measured.</p>
+<p><strong>Mappings are never deleted.</strong> A wrong one is <strong>retired</strong>: the <strong>Retire</strong>
+button stamps who retired it and when, every reader stops applying it, and
+<strong>Show retired</strong> lists it for the record. Re-adding it later creates a new
+row with its own author. Both actions are audited.</p>
+<p><strong>What a rename changes elsewhere.</strong> On an upgrade a mapped rename is not a
+loss — the firmware converts the configuration — and the pre-flight says
+<code>N field(s) renamed</code>. On a <strong>clone</strong> it is still a warning: the copy carries
+the source's old name, which the destination discards, so the clone dialog
+offers the new field with the source's value beside it (§41.9).</p>
+<h3 id="3010-the-api-explorer-knows-the-build">30.10 The API explorer knows the build</h3>
+<p>The FortiWeb API explorer (§30.3) used to be keyed on the API <em>version</em> only,
+so a 7.6.8 box and an 8.0.5 box looked identical and a request went anywhere.
+Since 2.2.0 it resolves the selected appliance to its <strong>exact firmware build</strong>
+and asks the API library what that build serves.</p>
+<p><strong>The build banner</strong> (above the console) names the product and version and
+carries one status:</p>
+<table>
+<thead>
+<tr>
+<th>status</th>
+<th>meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>measured by</strong> sweep / schema</td>
+<td>a real appliance on this build was measured</td>
+</tr>
+<tr>
+<td><strong>vendor data only</strong></td>
+<td>only the vendor's documentation covers it — a claim, not a measurement</td>
+</tr>
+<tr>
+<td><strong>unmeasured</strong></td>
+<td>the library has no evidence for this build</td>
+</tr>
+<tr>
+<td><strong>firmware unknown</strong></td>
+<td>the appliance's firmware was never read from it</td>
+</tr>
+</tbody>
+</table>
+<p>Below it: the tally <em>API Menu on this build: N served · N absent · N unknown</em>,
+and the evidence behind the answer (source, device, whether it covers the
+build, its line or a vendor range, and when). The banner refreshes whenever
+you pick another appliance; it is empty rather than guessed while it loads.</p>
+<p><strong>The API menu is marked</strong> per endpoint:</p>
+<ul>
+<li><strong>served</strong> — the library measured this build serving it;</li>
+<li><strong>absent</strong> — measured, and this build does not serve it (struck through);</li>
+<li><strong>unknown</strong> — nobody measured it on this build. Unknown is its own state,
+  never "served".</li>
+</ul>
+<p>Tick <strong>Only what this build serves</strong> to hide everything else.</p>
+<p><strong>Fields on this build</strong> — selecting an endpoint lists the fields it serves on
+this build with type, options and default. A field that is provably newer than
+an older measured build carries a <em>since</em> hint. If this build is blind (an
+empty table revealed no fields) and a schema was harvested for its line, the
+line's fields are shown separately, labelled as the line's and not this
+build's.</p>
+<p><strong>Sending a request</strong> is checked on the server, whatever the page shows:</p>
+<ul>
+<li><strong>served</strong> — sent as before;</li>
+<li><strong>unknown</strong> — sent, with an <em>Unverified</em> warning beside the response: the
+  appliance decides;</li>
+<li><strong>absent</strong> — <strong>refused</strong>, naming the build and whether the library measured
+  it or the vendor's data says so. The browser asks you to confirm; confirming
+  sends it once, with a <em>Sent despite the library</em> warning, and the audit
+  record notes that you overrode it.</li>
+</ul>
+<p>The write permission (<code>registry.execute_write</code>) is checked first, as before.</p>
+<p><strong>Harvest this appliance now.</strong> When the build is unmeasured, vendor-only or
+its firmware unknown, the banner offers this button. It queues one background
+harvest of that appliance — a rediscovery sweep for FortiWeb and FortiADC, a
+read-only schema read for FortiAuthenticator — visible in the Job Manager. It
+needs <code>appliances.apply</code>. The answer says so when it cannot: the product has
+no live harvester (FortiAnalyzer, FortiGate), the appliance is in maintenance,
+a harvest is already pending, or background harvesting is switched off on this
+installation. SATOM also queues a harvest by itself when it sees an appliance
+change firmware build; the <code>apilib_harvest</code> scheduled action (not scheduled by
+default) sweeps up any build still missing.</p>
 <h2 id="31-release-notes--the-satom-changelog">31. Release notes &amp; the SATOM changelog</h2>
 <p><strong>Two different things share the name "release notes", and confusing them wastes
 an afternoon.</strong> One is the <strong>vendor's</strong> notes for the <em>appliance</em> firmware,
@@ -5422,8 +5617,8 @@ the page instead of on a manual.</p>
 discipline:</p>
 <ol>
 <li><strong>The URL map is the authority on what exists.</strong> Every parameterless page in
-   the console is either <strong>on the map</strong> (107 today) or <strong>excluded with a written
-   reason</strong> (137 today — JSON feeds, downloads, redirects and fragments that
+   the console is either <strong>on the map</strong> (108 today) or <strong>excluded with a written
+   reason</strong> (139 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.</li>
 <li><strong>Nothing here is a second source of truth.</strong> Paths are generated from the
@@ -6533,11 +6728,19 @@ written:</p>
 <li>fields the destination build has <strong>no evidence for</strong> — a cmdb write answers
   <strong>200 and discards them</strong>, so the copy looks complete in the destination GUI
   and is not;</li>
-<li>object types the destination <strong>does not serve at all</strong> (this one blocks);</li>
-<li>fields that exist on the destination and never existed on the source —
-  things to review <em>after</em> the copy;</li>
+<li>object types the destination <strong>does not serve at all</strong> (this one blocks when
+  a real appliance was measured rejecting it; when only the vendor's data says
+  so, it is a warning);</li>
+<li>fields <strong>renamed</strong> between the two builds, when an operator has recorded the
+  rename (§30.9) — a warning on a clone, because the copy carries the old name;</li>
+<li>fields that exist on the destination and never existed on the source — the
+  dialog now <strong>offers</strong> them (§41.9);</li>
 <li>everything that could <strong>not</strong> be measured, named rather than implied.</li>
 </ul>
+<p><strong>Where the answer comes from.</strong> Both appliances are resolved to their
+<strong>exact</strong> firmware builds and compared in the API library (§30.8). Every line
+says what kind of evidence it rests on: an object judged on the vendor's
+documentation only is counted and labelled as a <em>claim</em>, not a measurement.</p>
 <p><strong>Before an upgrade</strong> (Upgrade flow → pre-flight sweep, once a target version
 is picked). The same comparison, run against the appliance's <strong>stored</strong>
 configuration — offline, so it costs the appliance nothing and works on a box
@@ -6551,7 +6754,60 @@ running it — and a build whose collection is <strong>empty</strong> records no
 all. Asking about a version nothing in the fleet runs answers <code>no evidence for
 that build</code>, never "compatible". In the current lab that is why
 <code>server_policy</code> compares as <em>fields never measured</em> against 8.0.5: the one
-8.0.5 appliance has no server policies on it.</p>
+8.0.5 appliance has no server policies on it. SATOM harvests a build as soon as
+it sees an appliance running it; to do it by hand, use <strong>Harvest this
+appliance now</strong> in the API explorer (§30.10).</p>
+<h3 id="419-the-fields-the-destination-build-adds-clone-dialog">41.9 The fields the destination build adds (clone dialog)</h3>
+<p>When the pre-flight finds fields the <strong>destination build</strong> serves that the
+source's build never had, the clone and migrate dialog shows them in a table,
+<strong>Fields the destination build adds (optional)</strong>, below the checklist:</p>
+<table>
+<thead>
+<tr>
+<th>column</th>
+<th>what it says</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Object</strong></td>
+<td>the object type, with <code>×N</code> when this run creates several</td>
+</tr>
+<tr>
+<td><strong>Field</strong></td>
+<td>the field, its type and default; a renamed field says <em>renamed from</em> <code>old</code> and shows the source's value under the old name</td>
+</tr>
+<tr>
+<td><strong>Evidence</strong></td>
+<td><strong>measured</strong> (a real box on that build) or <strong>vendor claims</strong> (only the vendor's documentation)</td>
+</tr>
+<tr>
+<td><strong>Value</strong></td>
+<td>a list when the field has documented options, a text box otherwise</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Nothing is added unless you fill a value.</strong> Every row starts at <em>leave
+unset</em>; a blank row is not sent. Sub-table fields cannot be set here — the row
+says to set them on the destination after the copy.</p>
+<p>Rules the server enforces, whatever the page sent:</p>
+<ul>
+<li>only fields the destination build is <strong>known</strong> to serve, and the source's
+  build lacks, are accepted; anything else refuses the run;</li>
+<li>each value is checked against the field's type and options (integer, IP
+  address, one of the listed options, enable/disable…);</li>
+<li><strong>one bad value refuses the whole set</strong> — nothing is written, and the error
+  names the field;</li>
+<li>values go only onto objects <strong>this run creates</strong>. An object the destination
+  already has is not edited, and a value meant for one is reported as <em>not
+  set</em> with the reason;</li>
+<li>a value never overwrites a field the source object already carries.</li>
+</ul>
+<p>Changing a value clears the preview, so the preview you apply is the one that
+shows the values. The result lists each <strong>new field</strong> set, and each one <strong>not
+set</strong> with the reason. Nothing is offered when the destination build is
+unmeasured, and only recorded renames when the source build is: SATOM does not
+offer a field nobody knows the destination serves.</p>
     </div>
   </div>
 </section>

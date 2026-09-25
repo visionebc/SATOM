@@ -15520,6 +15520,130 @@ comparison) there.</p>
 <p><strong>Verified 2026-09-23</strong> (as recorded in <code>fd4e2ba</code>): 9 mutations, 9 bite, 0
 survive, run on a copy of the tree; 2097 targeted and touched-area tests rc=0.
 The order-dependent red from the same run is §189.</p>
+<h2 id="192--an-evidence-store-that-forgot-a-build-when-its-appliance-was-deleted-teststest_api_librarypy-teststest_api_library_backfillpy-teststest_apilib_vendorpy-teststest_apilib_facpy-teststest_rediscovery_apilibpy-2026-09-25">§192 — an evidence store that forgot a build when its appliance was deleted (<code>tests/test_api_library.py</code>, <code>tests/test_api_library_backfill.py</code>, <code>tests/test_apilib_vendor.py</code>, <code>tests/test_apilib_fac.py</code>, <code>tests/test_rediscovery_apilib.py</code>, 2026-09-25)</h2>
+<p><strong>The defect.</strong> The firmware matrix (<code>data/api_matrix/&lt;product&gt;.json</code>) was
+derived and rewritten wholesale on every rebuild, and the rebuild filtered its
+evidence through the live appliance table. Deleting an appliance deleted the
+proof of what its firmware served: the <strong>8.0.3</strong> build, measured on two FortiADC
+appliances that were later retired, disappeared from every page. A test run
+once overwrote the production matrix with an empty one, and a sweep run inside
+a job once wrote into another application's database (2026-09-15). Nothing
+failed in any of these cases. The page simply stopped listing a build.</p>
+<p><strong>The fix, and its shape.</strong> The evidence moved into the append-only
+<strong>API library</strong> (<code>api_lib_*</code> tables, <code>app/services/api_library.py</code>,
+<a href="api-library.html">API library</a>). <code>api_library.ingest</code> is the only writer, and no
+code path in the feature deletes a row. The matrix file is now an export only.
+<code>flask apilib backfill</code> re-read every archived snapshot, and 8.0.3 is back.</p>
+<table>
+<thead>
+<tr>
+<th>Guard</th>
+<th>What it kills</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Idempotent ingest.</strong> Evidence is unique on (product, source, sha256 of the canonical document without <code>captured_at</code>); identical content bumps <code>last_confirmed_at</code> / <code>confirmations</code> and returns <code>created: false</code>. A concurrent duplicate insert is retried, not raised. <code>test_same_content_twice_is_one_row_confirmed_twice</code>, <code>test_content_change_is_new_evidence</code>, <code>test_backfill_reads_every_store_and_is_idempotent</code>, <code>test_a_second_identical_sweep_confirms_instead_of_duplicating</code></td>
+<td>a re-run of backfill, an import or a daily sweep of an unchanged box adding rows; a timestamp making identical evidence look new</td>
+</tr>
+<tr>
+<td><strong>Bounded facts.</strong> Endpoint and field facts are unique on (endpoint or field, build, source), not per harvest. <code>test_facts_are_bounded_by_builds_not_sweeps</code></td>
+<td>table growth with the number of sweeps instead of the number of builds</td>
+</tr>
+<tr>
+<td><strong>Unhealthy evidence is stored, never folded.</strong> A pass in which more than 25 % of the reads errored (sweep or FortiAuthenticator schema) is kept with <code>healthy=False</code> and produces no facts. <code>test_unhealthy_evidence_is_stored_but_never_folded</code>, <code>test_sweep_adapter_applies_error_ratio</code>, <code>test_error_ratio_over_a_quarter_is_unhealthy</code>, <code>test_failed_directory_claims_nothing</code></td>
+<td>a licence-locked or half-reachable appliance reading as a build that lost half its API</td>
+</tr>
+<tr>
+<td><strong>Retired evidence is kept.</strong> Device identity (name, serial, model, platform, raw firmware) is copied into the evidence row, <code>appliance_id</code> has no foreign key, and no reader filters by the live table. <code>test_retired_device_evidence_stays_in_matrix_doc</code>, <code>test_a_retired_devices_build_is_still_on_the_page</code>, <code>test_a_deleted_row_still_files_evidence_under_the_snapshot_identity</code></td>
+<td>deleting or retiring an appliance deleting the evidence for its build</td>
+</tr>
+<tr>
+<td><strong>Blind is not empty; unknown is not compatible.</strong> <code>fields=None</code> never sets <code>fields_known</code>; a build with no evidence is <code>unmeasured</code>; "removed" needs both builds measured; fields compare only within one kind of evidence. <code>test_fields_none_is_blind_and_empty_dict_is_measured</code>, <code>test_removal_requires_both_builds_measured</code>, <code>test_compare_fields_only_within_one_kind_of_evidence</code>, <code>test_the_comparison_keeps_unknown_apart_from_removed</code></td>
+<td>an empty FortiWeb collection inventing dozens of removed fields; a sweep-versus-schema subtraction inventing 56</td>
+</tr>
+<tr>
+<td><strong>Open vendor ranges are capped.</strong> A vendor document speaks only inside its own [min, max]; an open end stops at the newest version the collection names, and a later build is <code>unmeasured</code>. Where two collections cover a build, the one that knows newer firmware wins. <code>test_open_vendor_range_is_capped_at_max_version</code>, <code>test_newer_vendor_collection_supersedes_older</code></td>
+<td>a collection released before a firmware asserting that firmware serves everything it listed</td>
+</tr>
+<tr>
+<td><strong>Vendor data is a claim.</strong> <code>vendor_doc</code> is last in source priority, never outranks a sweep, is labelled on every page, and a vendor-only absence warns instead of blocking. <code>test_sweep_outranks_vendor_claim</code>, <code>test_a_vendor_only_answer_is_labelled_a_claim</code>, <code>test_a_vendor_claimed_absence_warns_and_never_blocks</code></td>
+<td>the vendor's tooling overruling what a real box answered; a clone blocked on a documentation table</td>
+</tr>
+<tr>
+<td><strong>Vendor code is never executed.</strong> Collections are read with <code>ast</code> / <code>literal_eval</code>; a module whose structure is not recognised is skipped and listed with its reason. Collections without version data (<code>fortinet.fortiweb</code>, <code>fortinet.fortiadc</code>) yield nothing. <code>test_fortios_vendor_code_is_never_imported</code>, <code>test_collections_without_version_data_yield_nothing</code>, <code>test_not_a_collection_is_an_error</code></td>
+<td>third-party module code running inside SATOM; a range-less endpoint list asserting "valid on every build"</td>
+</tr>
+<tr>
+<td><strong>The FortiAuthenticator harvest is read-only.</strong> It issues GET requests only. <code>test_harvest_only_issues_gets_and_matches_the_normaliser</code></td>
+<td>a schema harvest writing to an identity appliance</td>
+</tr>
+<tr>
+<td><strong>Writes go to the active application's database.</strong> Every database write in the rediscovery sweep resolves the app from the active context first; with no app at all the ingest fails and says so instead of guessing. A library failure is recorded as <code>apilib_error</code> and never fails the sweep. <code>test_ingest_goes_to_the_active_app_context_not_a_stale_global</code>, <code>test_every_db_write_uses_the_active_app_not_the_captured_global</code>, <code>test_no_app_at_all_is_a_recorded_failure_not_a_guessed_database</code>, <code>test_a_library_failure_does_not_fail_the_sweep</code></td>
+<td>a harvest job or a test writing evidence, the firmware column or the export into another application's database</td>
+</tr>
+<tr>
+<td><strong>The schema matches the models.</strong> <code>test_migration_chain_and_schema_match_models</code></td>
+<td>a migration that creates tables the models do not describe</td>
+</tr>
+</tbody>
+</table>
+<p><strong>How to verify it is armed:</strong></p>
+<pre><code>venv/bin/python -m pytest -q tests/test_api_library.py \
+  tests/test_api_library_backfill.py tests/test_apilib_vendor.py \
+  tests/test_apilib_fac.py tests/test_rediscovery_apilib.py \
+  tests/test_api_versions_library.py tests/test_version_compat_library.py
+</code></pre>
+<p>On a running node, <code>flask apilib backfill</code> run twice must report <code>created: 0</code>
+the second time, and <code>flask apilib status</code> must still list every build a
+retired appliance measured.</p>
+<h2 id="193--a-request-console-that-sent-anything-anywhere-and-a-clone-that-could-add-what-nobody-chose-teststest_api_explorer_firmwarepy-teststest_clone_new_fieldspy-teststest_apilib_fieldmappy-teststest_apilib_harvestpy-teststest_firmware_probe_harvestpy-teststest_scheduled_actions_apilibpy-2026-09-25">§193 — a request console that sent anything anywhere, and a clone that could add what nobody chose (<code>tests/test_api_explorer_firmware.py</code>, <code>tests/test_clone_new_fields.py</code>, <code>tests/test_apilib_fieldmap.py</code>, <code>tests/test_apilib_harvest.py</code>, <code>tests/test_firmware_probe_harvest.py</code>, <code>tests/test_scheduled_actions_apilib.py</code>, 2026-09-25)</h2>
+<p><strong>The defect.</strong> The API explorer was keyed on the API <em>version</em> only, so a
+7.6.8 box and an 8.0.5 box looked identical and <code>execute()</code> sent any endpoint
+to any build. The clone pre-flight named the fields a destination build adds
+and could do nothing with them. Once the library could say what a build
+serves, each of those surfaces needed a rule that the page's own JavaScript
+could not talk its way around.</p>
+<table>
+<thead>
+<tr>
+<th>Guard</th>
+<th>What it kills</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Server-side refusal of an unserved endpoint.</strong> <code>execute()</code> resolves the appliance's exact build and answers <strong>409</strong> with <code>needs_confirm</code> when the library says the build does not serve the URN (measured or vendor-claimed, and it says which). Only an explicit truthy <code>confirm_unserved</code> sends it, and the audit record carries <code>library_state</code> and <code>confirm_unserved</code>. The URN decides, not the leaf name; path spelling cannot dodge it; duplicate URNs never refuse on a tie. Unknown passes with an <em>Unverified</em> warning. The write-permission check still runs first. <code>test_execute_refuses_an_endpoint_the_build_does_not_serve</code>, <code>test_execute_sends_an_unserved_endpoint_only_with_confirmation</code>, <code>test_confirm_flag_must_be_truthy</code>, <code>test_a_stale_leaf_name_cannot_override_the_urn</code>, <code>test_path_normalisation_cannot_dodge_the_guard</code>, <code>test_duplicate_urns_never_refuse_on_a_tie</code>, <code>test_unknown_endpoint_passes_with_a_warning</code>, <code>test_write_guard_still_applies_before_the_library</code></td>
+<td>a request to a build known not to serve it going out on a stale or forged page; the guard refusing on ignorance and locking operators out of every build nobody has measured</td>
+</tr>
+<tr>
+<td><strong>New fields are opt-in only.</strong> The clone dialog pre-fills nothing, and a blank value is dropped before the request. The engine re-validates every value (<code>version_compat.validate_new_values</code>): the destination build must be known to serve the field and the source build must lack it, and the value must fit its type and options. One bad value refuses the whole set before any device is read. Values land only on objects the run <strong>creates</strong>, never overwrite a field the source carries, and a value for an object the run does not create is reported, not dropped. <code>test_nothing_filled_means_nothing_added</code>, <code>test_a_field_the_destination_is_not_known_to_serve_is_refused</code>, <code>test_a_field_the_source_already_has_is_not_new_and_is_refused</code>, <code>test_one_bad_value_refuses_the_whole_set</code>, <code>test_values_land_only_on_objects_this_run_creates</code>, <code>test_a_value_never_overwrites_what_the_source_copies</code>, <code>test_perform_one_refuses_invalid_values_before_touching_any_device</code>, <code>test_without_values_the_write_is_exactly_as_before</code></td>
+<td>a clone adding fields nobody chose; a stale form writing a field the destination silently discards; a new-field value editing live configuration the operator never saw</td>
+</tr>
+<tr>
+<td><strong>Renames are authored and never deleted.</strong> <code>api_lib_field_map</code> rows are added and retired under <code>registry_edit</code>, with CSRF and audit; a retired row is kept, listed on request, and applied by no reader. <code>test_retire_never_deletes_and_is_audited</code>, <code>test_a_retired_mapping_is_not_honoured</code>, <code>test_the_page_needs_the_registry_edit_permission</code>, <code>test_retire_is_refused_without_a_csrf_token</code></td>
+<td>a wrong mapping erasing the record of who believed what; an unauthenticated edit changing every comparison</td>
+</tr>
+<tr>
+<td><strong>One harvest per appliance, only where it measures something.</strong> <code>enqueue</code> never raises, queues at most one pending harvest per appliance, skips appliances in maintenance, names products with no live harvester, and is off under <code>TESTING</code> unless <code>APILIB_HARVEST_DISPATCH</code> is set. A harvest is green only when it stored healthy evidence. The firmware probe queues on a normalized version change only, and a library fault never fails the probe. <code>test_enqueue_dedups_one_pending_harvest_per_appliance</code>, <code>test_enqueue_is_off_under_testing_unless_asked</code>, <code>test_enqueue_skips_maintenance_and_missing</code>, <code>test_run_unhealthy_sweep_is_not_ok</code>, <code>test_the_same_version_does_not_enqueue</code>, <code>test_a_library_fault_never_fails_the_probe</code>, <code>test_the_real_enqueue_stays_off_under_testing</code></td>
+<td>a test probing a fake appliance starting a real sweep on the network; repeated probes queueing a sweep each; an unhealthy harvest reading green</td>
+</tr>
+<tr>
+<td><strong>The scheduled action is declared, not scheduled.</strong> <code>apilib_harvest</code> is an admin action with a dry run that contacts nothing, and it is not in the install seed plan. <code>test_it_is_declared_but_not_seeded_into_production</code>, <code>test_dry_run_lists_what_would_be_harvested_and_contacts_nothing</code></td>
+<td>a fresh install sweeping every appliance on its first night without the operator asking</td>
+</tr>
+<tr>
+<td><strong>The harvest button is gated like the other sweep route.</strong> POST only, <code>appliances.apply</code>, and an installation without the harvest module answers <code>503</code> with a message instead of crashing the page's script. <code>test_harvest_is_gated_like_the_other_sweep_route</code>, <code>test_harvest_is_post_only</code>, <code>test_harvest_without_the_module_answers_with_a_message</code></td>
+<td>any logged-in user starting a full read of an appliance from the explorer</td>
+</tr>
+</tbody>
+</table>
+<p><strong>How to verify it is armed:</strong></p>
+<pre><code>venv/bin/python -m pytest -q tests/test_api_explorer_firmware.py \
+  tests/test_clone_new_fields.py tests/test_apilib_fieldmap.py \
+  tests/test_apilib_harvest.py tests/test_firmware_probe_harvest.py \
+  tests/test_scheduled_actions_apilib.py
+</code></pre>
     </div>
   </div>
 </section>

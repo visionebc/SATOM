@@ -211,10 +211,10 @@ def test_the_coverage_file_is_never_read_as_an_object(tmp_path, monkeypatch):
     # The hostile shape: a coverage file that DOES carry the key.
     (d / fc.COVERAGE_FILENAME).write_text(json.dumps(
         {"object": "_coverage", "fields": [{"name": "trap"}], "objects": {}}))
-    monkeypatch.setattr(am, "SCHEMA_ROOT", str(tmp_path))
-    lines = am._schema_evidence("fortiweb")
-    assert set(lines["8.0"]) == {"dns"}, \
-        "a bookkeeping file was read as an object: %s" % sorted(lines["8.0"])
+    from app.services import api_library as lib
+    doc = lib.evidence_from_schema_dir("fortiweb", "8.0", str(d))
+    assert set(doc["endpoints"]) == {"dns"}, \
+        "a bookkeeping file was read as an object: %s" % sorted(doc["endpoints"])
 
 
 def test_the_matrix_explains_the_holes_of_the_tree_it_read(tmp_path, monkeypatch):

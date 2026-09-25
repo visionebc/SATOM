@@ -203,8 +203,20 @@ def upgrade():
             sa.Column('note', sa.String(500), nullable=False, server_default=''),
             sa.Column('created_by', sa.String(64), nullable=False, server_default=''),
             _ts('created_at'),
+            _ts('retired_at', nullable=True),
+            sa.Column('retired_by', sa.String(64), nullable=False, server_default=''),
             indexes=(('ix_api_lib_field_map_product_endpoint', ('product', 'endpoint')),),
         )
+    else:
+        # ``db.create_all()`` at boot may have built the table from a model that
+        # predates retirement. Same idempotence rule as the tables themselves.
+        have = {c['name'] for c in sa.inspect(op.get_bind()).get_columns('api_lib_field_map')}
+        if 'retired_at' not in have:
+            op.add_column('api_lib_field_map', _ts('retired_at', nullable=True))
+        if 'retired_by' not in have:
+            op.add_column('api_lib_field_map',
+                          sa.Column('retired_by', sa.String(64), nullable=False,
+                                    server_default=''))
 
 
 def downgrade():

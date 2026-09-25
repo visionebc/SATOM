@@ -136,7 +136,9 @@ All tables are portable (PostgreSQL in production, SQLite in tests).
   known version: a later build is `unmeasured`, not `ok`.
 - `api_lib_field_map` — operator-authored renames: `product, endpoint,
   from_version, from_field, to_version, to_field, note, created_by,
-  created_at`. Without it a rename reads as "field lost + field added".
+  created_at, retired_at, retired_by`. Without it a rename reads as "field lost +
+  field added". A wrong mapping is retired (`retired_at` set), never deleted;
+  readers skip retired rows. Edited at `/web/registry/field-map`.
 
 Rows are never deleted by any code path in this feature.
 
@@ -185,10 +187,36 @@ Query:
 - `/web/registry/versions` lists every product including FortiGate, reads
   `builds()` and `compare()` directly (the FortiGate matrix is too large to
   render as a whole document).
-- `version_compat` reads `fields_at()` and `compare()`.
+- `version_compat` reads `fields_at()` and `compare()` (exact builds via
+  `resolve_appliance`); every result carries its provenance so a page can say
+  "vendor claims" rather than "measured". The clone pre-flight also offers the
+  destination's new fields from the same answer (opt-in, validated server-side).
 - API Explorer resolves the selected appliance to a build, marks endpoints
   the build does not serve, and warns before sending.
 - `firmware_probe` enqueues a harvest when an appliance changes build.
+
+## Incremental harvest (`app/services/apilib_harvest.py`)
+
+- Every rediscovery sweep ingests its own snapshot (`evidence_from_sweep`,
+  device identity copied from the appliance row) right after writing
+  `_config.json` and the by-version archive. The files stay as an export. A
+  library failure is logged and recorded as `apilib_error` in the sweep's
+  progress state; it never fails the sweep. The write goes to the database of
+  the active app context, never to a module-level or hard-coded one.
+- `firmware_probe.refresh` calls `enqueue(appliance_id, reason)` when the
+  normalized version changes (or on the first version ever, if that build
+  `needs_harvest`). The harvest runs as a background job (`jobs`, type
+  `apilib_harvest`), at most one pending per appliance. Dispatch is controlled
+  by `APILIB_HARVEST_DISPATCH` (default on, off under `TESTING`).
+- `run(appliance_id)`: FortiWeb/FortiADC run the rediscovery sweep,
+  FortiAuthenticator runs `apilib_fac.harvest` + `ingest`. FortiAnalyzer and
+  FortiGate answer "no live harvester for <product>".
+- `needs_harvest(appliance)`: the exact build has no healthy build-scoped
+  evidence from the product's live source (`sweep` for FortiWeb/FortiADC,
+  `schema` for FortiAuthenticator).
+- Scheduled action `apilib_harvest` (admin, dry-run capable) harvests every
+  appliance where `needs_harvest` is true. It is declared only; it is not
+  in the install seed plan.
 
 ## Limits that do not go away
 

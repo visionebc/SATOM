@@ -1312,7 +1312,8 @@ def _renames(product: str, names, base: str, target: str) -> dict:
     out: dict = {}
     for chunk in _chunks(names):
         for m in ApiLibFieldMap.query.filter(ApiLibFieldMap.product == product,
-                                             ApiLibFieldMap.endpoint.in_(chunk)).all():
+                                             ApiLibFieldMap.endpoint.in_(chunk),
+                                             ApiLibFieldMap.retired_at.is_(None)).all():
             fk = version_key(m.from_version) or None
             tk = version_key(m.to_version) or None
             if kb <= kt and (fk is None or kb <= fk) and (tk is None or kt >= tk):

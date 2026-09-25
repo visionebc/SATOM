@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% from "partials/_cli_provenance.html" import prov_badge with context %}
 {% from "partials/_cli_probe_tools.html" import filter_box, test_btn, probe_bar with context %}
+{% from "registry/_apilib.html" import lib_selector, lib_source_badge, lib_status_badge, lib_compare_card, lib_drill_card with context %}
 {% block title %}API Versions{% endblock %}
 
 {# The kind of evidence a number rests on. THREE outcomes, not two: a record
@@ -9,6 +10,7 @@
 {% macro origin_badge(o) -%}
   {%- if o == 'sweep' -%}<span class="fw-badge fw-badge-info" title="Read off a live sweep: the raw collection the appliance put on the wire.">sweep</span>
   {%- elif o == 'schema' -%}<span class="fw-badge fw-badge-secondary" title="Read off a harvested field schema, which strips the wire-only companions a sweep carries. That is why the two kinds are never subtracted from one another.">schema</span>
+  {%- elif o in ('vendor_doc', 'legacy_matrix', 'manual') -%}{{ lib_source_badge(o) }}
   {%- else -%}<span class="text-muted dv-unmeasured" title="This record carries no evidence kind. Naming one would be a guess.">&mdash;</span>{%- endif -%}
 {%- endmacro %}
 
@@ -386,8 +388,9 @@
       The line (<code>8.0</code>) survives as a rollup you can still compare
       against below, but it is not tabulated twice: it is called out only when
       more than one build backs it.
-      Built {{ matrix.built_at or '—' }} (UTC).
+      Built {{ matrix.built_at or '—' }} (UTC) from the API library.
     </p>
+    {{ lib_selector() }}
   </div>
   <div class="d-flex gap-2">
     <a class="btn btn-sm btn-outline-secondary" href="{{ url_for(hub_endpoint) }}">
@@ -400,19 +403,6 @@
   </div>
 </div>
 
-{% if stale_format %}
-<div class="alert alert-warning" style="font-size:13px;">
-  <strong>This matrix was built before evidence was indexed by build.</strong>
-  It is shown exactly as it was stored — nothing has been reinterpreted — but it
-  has no per-version rows, and <code>preflight</code> will refuse to answer a
-  build-scoped question out of it rather than guess.
-  It is <em>not</em> rebuilt automatically: a rebuild drops every witness whose
-  appliance row has since been deleted, and destroying evidence as a side effect
-  of opening a page is not an upgrade path. Press <strong>Rebuild</strong> when
-  you have decided that is what you want.
-</div>
-{% endif %}
-
 {% if not matrix.sweepable %}
 <div class="alert alert-warning" style="font-size:13px;">
   <strong>{{ product_key }} has no rediscovery sweep.</strong> Its catalog can only ever be
@@ -424,52 +414,68 @@
 {# ── the builds ────────────────────────────────────────────────────────── #}
 <div class="fw-card mb-3">
   <div class="fw-card-header"><i class="bi bi-hdd-stack me-2"></i>Firmware versions
-    <span class="text-muted" style="font-weight:400;">— evidence held per build</span></div>
+    <span class="text-muted" style="font-weight:400;">— evidence held per build, from the API library</span></div>
   <div class="table-responsive">
     <table class="table fw-table mb-0" id="fwVersions">
       <thead><tr>
-        <th>Version</th><th>Line</th><th>Known because</th><th>Witnesses</th>
+        <th>Version</th><th>Line</th><th>Known because</th>
+        <th class="text-end" title="{{ _('Evidence documents the library stored for this build') }}">{{ _('Evidence') }}</th>
+        <th>Witnesses</th>
         <th class="text-end">Endpoints swept</th><th class="text-end">served</th>
         <th class="text-end">absent</th><th class="text-end">with field evidence</th>
         <th class="text-end">Schema objects</th>
+        <th>{{ _('First / last seen') }}</th>
         <th>CLI evidence</th><th style="width:1%;"></th>
       </tr></thead>
       <tbody>
-      {% for v in versions %}
-        {% set V = vdocs[v] %}
+      {#- One row per build the LIBRARY lists (``api_library.builds``): evidence,
+          vendor ranges, declarations and the builds the fleet runs. The counts
+          come from the matrix document for the same build; a line-only build
+          has no build-level document, and says so instead of printing zeros. -#}
+      {% for B in lib_builds %}
+        {% set v = B.version %}
+        {% set V = vdocs.get(v) or {} %}
         <tr>
-          <td><code>{{ v }}</code>
-            {% if V.line_only %}<br><span class="fw-badge fw-badge-secondary"
+          <td><code>{{ v }}</code>{% if B.build %} <span class="text-muted" style="font-size:11px;">{{ B.build }}</span>{% endif %}
+            {% if B.line_only %}<br><span class="fw-badge fw-badge-secondary"
               title="Only the line was ever recorded for this evidence — the patch level is unknown. It is not the patch .0.">patch unknown</span>{% endif %}
           </td>
-          <td><code class="text-muted">{{ V.line }}</code></td>
+          <td><code class="text-muted">{{ B.line }}</code></td>
           <td style="font-size:12px;">
-            {% for s in V.sources %}
-              <span class="fw-badge {% if s == 'evidence' %}fw-badge-info{% else %}fw-badge-secondary{% endif %} me-1"
+            {{ lib_status_badge(B.status) }}
+            {% for s in B.sources %}{{ lib_source_badge(s) }} {% endfor %}
+            {% for s in B.declared_sources %}
+              <span class="fw-badge fw-badge-secondary me-1"
                     title="{{ source_label.get(s, s) }}">{{ s }}</span>
             {% endfor %}
-            {% if V.in_fleet %}<span class="fw-badge fw-badge-success">in fleet</span>{% endif %}
+            {% if B.in_fleet %}<span class="fw-badge fw-badge-success">in fleet</span>{% endif %}
             {# RULE: declared is not measured. A build somebody registered and
                nobody swept must never render as a measured build that happens
                to be empty — an empty measured row reads as "no differences". #}
-            {% if not V.measured %}
+            {% if not B.measured and B.declared %}
               <span class="fw-badge fw-badge-warning">declared · unmeasured</span>
             {% endif %}
             {% if V.note %}<div class="text-muted">{{ V.note }}</div>{% endif %}
           </td>
-          <td style="font-size:12px;">{{ V.devices|join(', ') or '—' }}</td>
+          <td class="text-end">{{ B.evidence }}</td>
+          <td style="font-size:12px;">{{ (V.devices or [])|join(', ') or '—' }}</td>
           {% if V.measured %}
             <td class="text-end">{{ V.counts.swept }}</td>
             <td class="text-end">{{ V.counts.ok }}</td>
             <td class="text-end">{{ V.counts.absent }}</td>
             <td class="text-end">{{ V.counts.endpoints_with_fields }}</td>
+          {% elif B.line_only and B.measured %}
+            <td class="text-end text-muted" colspan="4">{{ _('line-scoped evidence — it names no build, so it is counted in the %(l)s rollup only', l=B.line) }}</td>
+          {% elif B.vendor_only %}
+            <td class="text-end text-muted" colspan="4">{{ _('vendor_doc only — nothing of ours has swept this build') }}</td>
           {% else %}
             <td class="text-end text-muted" colspan="4">never swept — nothing has been
               asked of a box running this build</td>
           {% endif %}
-          <td class="text-end">{{ V.counts.schema_objects }}
-            {% if V.counts.schema_objects %}<br><span class="text-muted" style="font-size:11px;"
-              title="Field schemas are harvested per line, so they describe {{ V.line }}, not this build specifically.">line-granular</span>{% endif %}</td>
+          <td class="text-end">{{ (V.counts or {}).schema_objects or 0 }}
+            {% if (V.counts or {}).schema_objects %}<br><span class="text-muted" style="font-size:11px;"
+              title="Field schemas are harvested per line, so they describe {{ B.line }}, not this build specifically.">line-granular</span>{% endif %}</td>
+          <td style="font-size:11.5px;" class="text-nowrap">{{ (B.first_seen or '')[:10] or '—' }}<br>{{ (B.last_seen or '')[:10] or '—' }}</td>
           <td style="font-size:12px;">{{ cli_cell(ver_prov.get(v)) }}</td>
           <td class="text-nowrap">
             {# The row IS the build, so this is where the capture card is aimed
@@ -487,7 +493,7 @@
                title="{{ _('Scope the capture card below to this build: its CLI evidence and the appliances it offers') }}">
               <i class="bi bi-binoculars"></i></a>
             {% endif %}
-            {% if V.manual and forget_endpoint %}
+            {% if 'manual' in B.declared_sources and forget_endpoint %}
             <form method="post" action="{{ url_for(forget_endpoint) }}" class="d-inline">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <input type="hidden" name="version" value="{{ v }}">
@@ -499,7 +505,7 @@
           </td>
         </tr>
       {% else %}
-        <tr><td colspan="11" class="text-muted">No firmware version is known yet.
+        <tr><td colspan="13" class="text-muted">No firmware version is known yet.
           Sweep an appliance, upload a firmware image, or declare one below.</td></tr>
       {% endfor %}
       </tbody>
@@ -979,6 +985,16 @@
     </ul>
   </div>
 </div>
+
+{# ── the API library, read directly ──────────────────────────────────────
+   The comparison above is the matrix view (one row per finding, CLI and
+   ledger beside it). These two cards ask the library itself: retyped and
+   renamed fields, which source each fact rests on, and "since which build"
+   for one field. Below the preflight legend on purpose: they are separate
+   cards, and the matrix comparison stays exactly one table. #}
+<div class="mt-3"></div>
+{{ lib_compare_card() }}
+{{ lib_drill_card() }}
 
 {# Rendered once: the appliance picker and the output panel every Test button
    on this page writes into. A row with a Test button and no bar would look

@@ -259,4 +259,42 @@ def refresh(appliance) -> dict:
     res["checked_at"] = now.isoformat()
     res["hostname_at"] = (appliance.device_hostname_at.isoformat()
                           if res.get("hostname") else None)
+    # LAST, after everything above is committed and reported: the library is
+    # a consumer of this observation, never a condition on it.
+    harvest = _maybe_enqueue_harvest(appliance, previous, res["firmware"])
+    if harvest is not None:
+        res["apilib_harvest"] = harvest
     return res
+
+
+def _maybe_enqueue_harvest(appliance, previous: str, current: str) -> dict | None:
+    """Queue an API-library harvest when this probe saw the box change build.
+
+    Keyed on the NORMALIZED version, so a probe that re-reads the same build
+    (the common case: every probe) queues nothing, and neither does a cosmetic
+    change in the raw string. The first version ever recorded queues only when
+    the library has no evidence for that build yet — registering the tenth box
+    on a build that is already measured is not new knowledge.
+
+    Returns the enqueue answer, ``None`` when nothing was asked. NEVER raises:
+    the probe's answer is the observation, and a library or job-ledger fault
+    must not turn a successful read into a 500.
+    """
+    try:
+        from . import apilib_harvest
+        from . import firmware_versions as fv
+        old, new = fv.normalize(previous), fv.normalize(current)
+        if not new or old == new:
+            return None
+        if not old and not apilib_harvest.needs_harvest(appliance):
+            return None
+        return apilib_harvest.enqueue(
+            appliance.id, reason="firmware_change:%s->%s" % (old or "none", new))
+    except Exception as exc:  # noqa: BLE001 — a probe must never 500 its caller
+        try:
+            from ..extensions import db
+            db.session.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        return {"queued": False, "reason": "error",
+                "msg": ("%s: %s" % (type(exc).__name__, exc))[:200]}

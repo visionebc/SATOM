@@ -132,8 +132,9 @@ def prepare(appliance, *, do_backup: bool = True, do_health: bool = True,
             out["services"] = {"ok": False, "error": f"{type(exc).__name__}: {exc}"[:200]}
 
     # API SURFACE of the version this box is about to run. Offline: it reads
-    # the harvested config and the evidence matrix, so it costs the appliance
-    # nothing and works on a box that is already unreachable.
+    # the harvested config and the API library (both in the database), so it
+    # costs the appliance nothing and works on a box that is already
+    # unreachable.
     #
     # Deliberately NOT graded by ``prep_store.verdict``: a field the new build
     # drops is something to decide about, not a reason the window cannot open,

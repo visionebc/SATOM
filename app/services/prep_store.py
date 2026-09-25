@@ -124,6 +124,12 @@ def verdict(result: dict | None) -> tuple[bool, str]:
         elif api.get("new_total"):
             parts.append("API surface: %d new field(s) on %s"
                          % (api["new_total"], api.get("target_version") or "?"))
+        elif api.get("renamed_total"):
+            # A mapped rename is not a loss on an upgrade (the firmware converts
+            # the configuration), but it is a change, and "no field change"
+            # would be false.
+            parts.append("API surface: %d field(s) renamed on %s"
+                         % (api["renamed_total"], api.get("target_version") or "?"))
         else:
             parts.append("API surface: no field change measured")
     if result.get("permission") is False:

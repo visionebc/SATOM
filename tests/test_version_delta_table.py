@@ -38,7 +38,7 @@ from app.services import api_matrix as am
 from app.services import field_catalog as fc
 from tests.conftest import admin_user_id, login
 from tests.test_firmware_version_axis import (  # noqa: F401 — fixtures by name
-    _appliance, _archive, _ledger, isolated,
+    _appliance, _archive, _ingest, _ledger, isolated,
 )
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -58,6 +58,7 @@ def _schema(isolated, line, obj, fields, endpoint=None):
         "fields": [{"name": f} for f in fields],
         "generated_at": "2099-01-01T00:00:00", "source": "harvest",
     }))
+    _ingest(isolated)
 
 
 @pytest.fixture()

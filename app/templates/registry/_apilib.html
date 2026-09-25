@@ -1,0 +1,312 @@
+{#- The API library cards (docs/api-library.md). Imported ``with context`` by
+    ``versions.html`` (the mount's own product, beside the matrix-backed
+    comparison) and by ``versions_library.html`` (every other product the
+    library holds, FortiGate included). ONE author for this markup: two copies
+    of "what vendor_doc means" is how the two pages would start disagreeing
+    about the same build. -#}
+
+{#- A link on this page that keeps the library product. The mount's own
+    product is the page's default, so it is never spelled into the URL. -#}
+{% macro lib_url() -%}
+{{ url_for(page_endpoint, product=(lib_product if lib_product != product_key else None), **kwargs) }}
+{%- endmacro %}
+
+{#- The provenance of a library fact. ``vendor_doc`` is the one that must never
+    be read as a measurement, so it is the one badge that is always explained. -#}
+{% macro lib_source_badge(s) -%}
+  {%- if s == 'sweep' -%}<span class="fw-badge fw-badge-info apilib-src" title="{{ _('Measured by a rediscovery sweep of a real appliance running this build.') }}">sweep</span>
+  {%- elif s == 'schema' -%}<span class="fw-badge fw-badge-secondary apilib-src" title="{{ _('A harvested field schema from a real appliance.') }}">schema</span>
+  {%- elif s == 'vendor_doc' -%}<span class="fw-badge fw-badge-warning apilib-src apilib-vendor" title="{{ _('A claim by the vendor tooling (Ansible collection version ranges), not a measurement of a real box. It never outranks a sweep, and it stops at the newest build the vendor data knew.') }}">vendor_doc</span>
+  {%- elif s == 'legacy_matrix' -%}<span class="fw-badge fw-badge-secondary apilib-src" title="{{ _('Imported from a frozen line-only matrix file whose appliances are gone. It names a line, not a build.') }}">legacy_matrix</span>
+  {%- elif s == 'manual' -%}<span class="fw-badge fw-badge-primary apilib-src" title="{{ _('Entered by an operator.') }}">manual</span>
+  {%- else -%}<span class="fw-badge fw-badge-secondary apilib-src">{{ s }}</span>{%- endif -%}
+{%- endmacro %}
+
+{% macro lib_status_badge(st) -%}
+  {%- if st == 'measured' -%}<span class="fw-badge fw-badge-success apilib-status" title="{{ _('At least one real appliance or harvest measured this build.') }}">{{ _('measured') }}</span>
+  {%- elif st == 'vendor_only' -%}<span class="fw-badge fw-badge-warning apilib-status" title="{{ _('Only vendor_doc evidence covers this build. Nothing of ours has confirmed it.') }}">{{ _('vendor only') }}</span>
+  {%- else -%}<span class="fw-badge fw-badge-secondary apilib-status" title="{{ _('Nothing has been measured on this build. Every endpoint is unknown here, never compatible.') }}">{{ _('unmeasured') }}</span>{%- endif -%}
+{%- endmacro %}
+
+{% macro lib_names(names, cls) -%}
+  {%- if names|length > 12 -%}
+  <details><summary><span class="fw-badge {{ cls }}">{{ names|length }}</span></summary>
+    <code style="font-size:11.5px;">{{ names|join(', ') }}</code></details>
+  {%- elif names -%}<code style="font-size:11.5px;">{{ names|join(', ') }}</code>
+  {%- else -%}<span class="text-muted">&mdash;</span>{%- endif -%}
+{%- endmacro %}
+
+{# ── product selector ─────────────────────────────────────────────────── #}
+{% macro lib_selector() -%}
+<div class="d-flex gap-2 flex-wrap align-items-center mt-2" id="apilibProducts">
+  <span class="text-muted" style="font-size:12.5px;">{{ _('API library:') }}</span>
+  {% for p in lib_products %}
+    <a class="btn btn-sm {% if p.product == lib_product %}btn-primary{% else %}btn-outline-primary{% endif %}"
+       href="{{ url_for(page_endpoint, product=(p.product if p.product != product_key else None)) }}"
+       title="{{ _('%(b)s build(s), %(e)s endpoint(s), %(n)s evidence document(s)', b=p.builds, e=p.endpoints, n=p.evidence) }}{% if p.catalog_only %} &mdash; {{ _('catalogue only: SATOM does not manage this product') }}{% endif %}">
+      {{ p.product }} <span class="fw-badge fw-badge-secondary">{{ p.builds }}</span>{% if p.catalog_only %} <span class="fw-badge fw-badge-warning">{{ _('catalogue') }}</span>{% endif %}</a>
+  {% endfor %}
+</div>
+{%- endmacro %}
+
+{# ── builds, as the library lists them ────────────────────────────────── #}
+{% macro lib_builds_table() -%}
+<div class="fw-card mb-3">
+  <div class="fw-card-header"><i class="bi bi-hdd-stack me-2"></i>{{ _('Library builds') }}
+    <span class="text-muted" style="font-weight:400;">&mdash; {{ _('every version the API library holds evidence for, measured or not') }}</span></div>
+  <div class="table-responsive">
+    <table class="table fw-table mb-0" id="apilibBuilds">
+      <thead><tr>
+        <th>{{ _('Version') }}</th><th>{{ _('Line') }}</th><th>{{ _('Status') }}</th>
+        <th>{{ _('Origin') }}</th><th>{{ _('Sources') }}</th>
+        <th class="text-end">{{ _('Evidence') }}</th><th>{{ _('In fleet') }}</th>
+        <th>{{ _('First seen') }}</th><th>{{ _('Last seen') }}</th>
+      </tr></thead>
+      <tbody>
+      {% for B in lib_builds %}
+        <tr>
+          <td><code>{{ B.version }}</code>{% if B.build %} <span class="text-muted" style="font-size:11px;">{{ B.build }}</span>{% endif %}
+            {% if B.line_only %}<br><span class="fw-badge fw-badge-secondary" title="{{ _('Only the line was ever recorded for this evidence; the patch level is unknown.') }}">{{ _('patch unknown') }}</span>{% endif %}</td>
+          <td><code class="text-muted">{{ B.line }}</code></td>
+          <td>{{ lib_status_badge(B.status) }}</td>
+          <td style="font-size:12px;">{{ B.origin }}</td>
+          <td style="font-size:12px;">{% for s in B.sources %}{{ lib_source_badge(s) }} {% endfor %}
+            {% for s in B.declared_sources %}<span class="fw-badge fw-badge-secondary">{{ s }}</span> {% endfor %}</td>
+          <td class="text-end">{{ B.evidence }}</td>
+          <td>{% if B.in_fleet %}<span class="fw-badge fw-badge-success">{{ _('in fleet') }}</span>{% else %}<span class="text-muted">&mdash;</span>{% endif %}</td>
+          <td style="font-size:12px;">{{ (B.first_seen or '')[:10] or '—' }}</td>
+          <td style="font-size:12px;">{{ (B.last_seen or '')[:10] or '—' }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="9" class="text-muted">{{ _('The API library holds no build of %(p)s yet.', p=lib_product) }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{%- endmacro %}
+
+{# ── A → B, from api_library.compare() ────────────────────────────────── #}
+{% macro lib_compare_card() -%}
+{% set C = lib_compare %}
+<div class="fw-card mb-3" id="apilibCompare">
+  <div class="fw-card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <span><i class="bi bi-journal-code me-2"></i>{{ _('Library comparison') }}
+      <span class="text-muted" style="font-weight:400;">&mdash; {{ _('endpoints and fields, build to build, with every source kept apart') }}</span></span>
+    <form method="get" action="{{ url_for(page_endpoint) }}" class="d-flex gap-2 align-items-center mb-0">
+      {% if lib_product != product_key %}<input type="hidden" name="product" value="{{ lib_product }}">{% endif %}
+      <select name="base" class="form-select form-select-sm" style="width:auto;" aria-label="{{ _('Base build') }}">
+        {% for B in lib_builds %}<option value="{{ B.version }}" {% if B.version == lib_base %}selected{% endif %}>{{ B.version }}{% if B.status != 'measured' %} ({{ B.status|replace('_', ' ') }}){% endif %}</option>{% endfor %}
+      </select>
+      <span class="text-muted">&rarr;</span>
+      <select name="target" class="form-select form-select-sm" style="width:auto;" aria-label="{{ _('Target build') }}">
+        {% for B in lib_builds %}<option value="{{ B.version }}" {% if B.version == lib_target %}selected{% endif %}>{{ B.version }}{% if B.status != 'measured' %} ({{ B.status|replace('_', ' ') }}){% endif %}</option>{% endfor %}
+      </select>
+      <button class="btn btn-sm btn-outline-secondary" type="submit">{{ _('Compare') }}</button>
+    </form>
+  </div>
+  {% if not C %}
+    <div class="p-3 text-muted" style="font-size:13px;">{{ _('Pick two different builds the library knows to compare them.') }}</div>
+  {% else %}
+  <div class="p-3">
+    <div class="mb-2" style="font-size:13px;">
+      <code>{{ C.base }}</code> {{ lib_status_badge(lib_base_row.status) }}
+      &rarr; <code>{{ C.target }}</code> {{ lib_status_badge(lib_target_row.status) }}
+    </div>
+    {% for side in (lib_base_row, lib_target_row) %}
+      {% if side.status == 'unmeasured' %}
+      <div class="alert alert-warning py-2" style="font-size:12.5px;">{{ _('Nothing has been measured on %(v)s, so every endpoint it might serve is listed as unknown below, never as removed or added.', v=side.version) }}</div>
+      {% elif side.status == 'vendor_only' %}
+      <div class="alert alert-warning py-2 apilib-vendor-note" style="font-size:12.5px;">{{ _('%(v)s is described by vendor_doc evidence only: what the vendor tooling claims, not what a box served.', v=side.version) }}</div>
+      {% endif %}
+    {% endfor %}
+    <div class="d-flex gap-2 flex-wrap mb-3" id="apilibTotals" style="font-size:12.5px;">
+      <span class="fw-badge fw-badge-success" title="{{ _('Absent on the base build, served on the target build. Both were measured.') }}">{{ _('endpoints added') }}: {{ C.endpoints_added|length }}</span>
+      <span class="fw-badge fw-badge-danger" title="{{ _('Served on the base build, absent on the target build. Both were measured.') }}">{{ _('endpoints removed') }}: {{ C.endpoints_removed|length }}</span>
+      <span class="fw-badge fw-badge-secondary" title="{{ _('Known on one side only. A gap in the evidence, not a change.') }}">{{ _('endpoints unknown') }}: {{ C.endpoints_unknown|length }}</span>
+      <span class="fw-badge fw-badge-success">{{ _('fields added') }}: {{ C.totals.fields_added }}</span>
+      <span class="fw-badge fw-badge-danger">{{ _('fields removed') }}: {{ C.totals.fields_removed }}</span>
+      <span class="fw-badge fw-badge-warning">{{ _('fields retyped') }}: {{ C.totals.fields_retyped }}</span>
+      <span class="fw-badge fw-badge-info">{{ _('fields renamed') }}: {{ C.totals.fields_renamed }}</span>
+      <span class="fw-badge fw-badge-secondary" title="{{ _('Endpoints served on both builds whose fields cannot be compared.') }}">{{ _('field sets unknown') }}: {{ C.totals.fields_unknown }}</span>
+    </div>
+
+    {% if C.endpoints_added or C.endpoints_removed %}
+    <h6 class="mt-2">{{ _('Endpoints added or removed') }}</h6>
+    <div class="table-responsive"><table class="table fw-table table-sm mb-3" id="apilibEndpointChanges">
+      <thead><tr><th>{{ _('Endpoint') }}</th><th>{{ _('Change') }}</th><th>{{ _('Evidence') }}</th><th>URN</th></tr></thead>
+      <tbody>
+      {% for r in C.endpoints_added %}
+        <tr><td><a href="{{ lib_url(base=C.base, target=C.target, ep=r.endpoint, at=C.target) }}#apilibDrill"><code>{{ r.endpoint }}</code></a></td>
+          <td><span class="fw-badge fw-badge-success">{{ _('added') }}</span></td>
+          <td>{% for s in r.sources %}{{ lib_source_badge(s) }} {% endfor %}</td>
+          <td><code class="text-muted" style="font-size:11.5px;">{{ r.urn }}</code></td></tr>
+      {% endfor %}
+      {% for r in C.endpoints_removed %}
+        <tr><td><a href="{{ lib_url(base=C.base, target=C.target, ep=r.endpoint, at=C.base) }}#apilibDrill"><code>{{ r.endpoint }}</code></a></td>
+          <td><span class="fw-badge fw-badge-danger">{{ _('removed') }}</span></td>
+          <td>{% for s in r.sources %}{{ lib_source_badge(s) }} {% endfor %}</td>
+          <td><code class="text-muted" style="font-size:11.5px;">{{ r.urn }}</code></td></tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    {% endif %}
+
+    {% if C.field_changes %}
+    <h6 class="mt-2">{{ _('Field changes on endpoints both builds serve') }}</h6>
+    <div class="table-responsive"><table class="table fw-table table-sm mb-3" id="apilibFieldChanges">
+      <thead><tr><th>{{ _('Endpoint') }}</th><th>{{ _('Evidence') }}</th><th>{{ _('Added') }}</th>
+        <th>{{ _('Removed') }}</th><th>{{ _('Retyped') }}</th><th>{{ _('Renamed') }}</th></tr></thead>
+      <tbody>
+      {% for r in C.field_changes %}
+        <tr><td><a href="{{ lib_url(base=C.base, target=C.target, ep=r.endpoint, at=C.target) }}#apilibDrill"><code>{{ r.endpoint }}</code></a></td>
+          <td>{{ lib_source_badge(r.source) }}</td>
+          <td>{{ lib_names(r.added, 'fw-badge-success') }}</td>
+          <td>{{ lib_names(r.removed, 'fw-badge-danger') }}</td>
+          <td style="font-size:11.5px;">{% for x in r.retyped %}<code>{{ x.field }}</code> {{ x.from }}&rarr;{{ x.to }}{% if not loop.last %}, {% endif %}{% else %}<span class="text-muted">&mdash;</span>{% endfor %}</td>
+          <td style="font-size:11.5px;">{% for x in r.renamed %}<code>{{ x.from }}</code>&rarr;<code>{{ x.to }}</code>{% if x.note %} <span class="text-muted">({{ x.note }})</span>{% endif %}{% if not loop.last %}, {% endif %}{% else %}<span class="text-muted">&mdash;</span>{% endfor %}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    {% endif %}
+
+    {# Unknown is its own section, never rows of the tables above: a side
+       nobody measured proves nothing, and counted as a change it becomes a
+       removal that never happened. #}
+    {% if C.endpoints_unknown or C.field_unknown %}
+    <div class="border rounded p-2 mt-2" id="apilibUnknown" style="border-color:var(--fw-border) !important; background:var(--fw-surface-alt);">
+      <h6 class="mb-1">{{ _('Unknown — not a change') }}</h6>
+      <p class="text-muted mb-2" style="font-size:12.5px;">{{ _('Evidence exists on one side only, or the two sides were measured with different kinds of evidence. None of these is a removal or an addition.') }}</p>
+      {% if C.endpoints_unknown %}
+      <div class="table-responsive"><table class="table fw-table table-sm mb-2" id="apilibUnknownEndpoints">
+        <thead><tr><th>{{ _('Endpoint') }}</th><th>{{ _('Known on') }}</th><th><code>{{ C.base }}</code></th><th><code>{{ C.target }}</code></th><th>URN</th></tr></thead>
+        <tbody>
+        {% for r in C.endpoints_unknown %}
+          <tr><td><code>{{ r.endpoint }}</code></td>
+            <td>{{ C.base if r.known_on == 'base' else C.target }}</td>
+            <td>{{ r.base_verdict or _('not measured') }}</td>
+            <td>{{ r.target_verdict or _('not measured') }}</td>
+            <td><code class="text-muted" style="font-size:11.5px;">{{ r.urn }}</code></td></tr>
+        {% endfor %}
+        </tbody>
+      </table></div>
+      {% endif %}
+      {% if C.field_unknown %}
+      <div class="table-responsive"><table class="table fw-table table-sm mb-0" id="apilibUnknownFields">
+        <thead><tr><th>{{ _('Endpoint served on both') }}</th><th>{{ _('Why the fields cannot be compared') }}</th>
+          <th>{{ _('Field evidence on %(v)s', v=C.base) }}</th><th>{{ _('Field evidence on %(v)s', v=C.target) }}</th></tr></thead>
+        <tbody>
+        {% for r in C.field_unknown %}
+          <tr><td><code>{{ r.endpoint }}</code></td><td style="font-size:12px;">{{ r.reason }}</td>
+            <td>{% for s in r.base_sources %}{{ lib_source_badge(s) }} {% else %}<span class="text-muted">&mdash;</span>{% endfor %}</td>
+            <td>{% for s in r.target_sources %}{{ lib_source_badge(s) }} {% else %}<span class="text-muted">&mdash;</span>{% endfor %}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table></div>
+      {% endif %}
+    </div>
+    {% endif %}
+    {% if not (C.endpoints_added or C.endpoints_removed or C.field_changes or C.endpoints_unknown or C.field_unknown) %}
+      <div class="text-muted" style="font-size:13px;">{{ _('No difference between the two builds in the evidence the library holds.') }}</div>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+{%- endmacro %}
+
+{# ── one endpoint at one build, and "since which build" ─────────────────── #}
+{% macro lib_drill_card() -%}
+{% set D = lib_drill %}
+<div class="fw-card mb-3" id="apilibDrill">
+  <div class="fw-card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <span><i class="bi bi-search me-2"></i>{{ _('Endpoint drill-down') }}</span>
+    <form method="get" action="{{ url_for(page_endpoint) }}#apilibDrill" class="d-flex gap-2 align-items-center mb-0">
+      {% if lib_product != product_key %}<input type="hidden" name="product" value="{{ lib_product }}">{% endif %}
+      {% if lib_base %}<input type="hidden" name="base" value="{{ lib_base }}">{% endif %}
+      {% if lib_target %}<input type="hidden" name="target" value="{{ lib_target }}">{% endif %}
+      <select name="at" class="form-select form-select-sm" style="width:auto;" aria-label="{{ _('Build') }}">
+        {% for B in lib_builds %}<option value="{{ B.version }}" {% if B.version == D.at %}selected{% endif %}>{{ B.version }}</option>{% endfor %}
+      </select>
+      <input name="ep" list="apilibEndpointNames" value="{{ D.endpoint }}" class="form-control form-control-sm"
+             style="width:260px;" placeholder="{{ _('endpoint name') }}" aria-label="{{ _('Endpoint') }}">
+      <datalist id="apilibEndpointNames">{% for n in D.names %}<option value="{{ n }}">{% endfor %}</datalist>
+      <button class="btn btn-sm btn-outline-secondary" type="submit">{{ _('Show fields') }}</button>
+    </form>
+  </div>
+  <div class="p-3">
+  {% if not D.fields %}
+    <div class="text-muted" style="font-size:13px;">{{ _('Pick a build and an endpoint. %(v)s serves %(n)s endpoint(s) the library knows of.', v=D.at or '—', n=D.names|length) }}</div>
+  {% else %}
+    {% set F = D.fields %}
+    <div class="mb-2" style="font-size:13px;"><code>{{ F.endpoint }}</code> {{ _('at') }} <code>{{ F.version }}</code> &mdash;
+      {% if F.status == 'measured' %}<span class="fw-badge fw-badge-success apilib-fstatus">measured</span> {{ _('%(n)s field(s)', n=F.fields|length) }}
+      {% elif F.status == 'blind' %}<span class="fw-badge fw-badge-warning apilib-fstatus" title="{{ _('The endpoint answered, but no row revealed its fields. This is not an endpoint with no fields.') }}">blind</span>
+      {% elif F.status == 'absent' %}<span class="fw-badge fw-badge-danger apilib-fstatus" title="{{ _('Measured, and this build does not serve the endpoint.') }}">absent</span>
+      {% else %}<span class="fw-badge fw-badge-secondary apilib-fstatus" title="{{ _('Nobody asked this build about this endpoint. Unknown, never compatible.') }}">unmeasured</span>{% endif %}
+    </div>
+    {% if F.provenance %}
+    <div class="table-responsive"><table class="table fw-table table-sm mb-3" id="apilibProvenance">
+      <thead><tr><th>{{ _('Source') }}</th><th>{{ _('Verdict') }}</th><th class="text-end">{{ _('Fields') }}</th>
+        <th>{{ _('Witnesses') }}</th><th>{{ _('First seen') }}</th><th>{{ _('Last seen') }}</th><th>{{ _('Used') }}</th></tr></thead>
+      <tbody>
+      {% for p in F.provenance %}
+        <tr><td>{{ lib_source_badge(p.source) }}</td><td>{{ p.verdict }}</td>
+          <td class="text-end">{% if p.fields_known %}{{ p.field_count }}{% else %}<span class="text-muted" title="{{ _('This source never revealed the field set.') }}">{{ _('unknown') }}</span>{% endif %}</td>
+          <td style="font-size:12px;">{{ p.witnesses|join(', ') or '—' }}</td>
+          <td style="font-size:12px;">{{ (p.first_seen or '')[:10] or '—' }}</td>
+          <td style="font-size:12px;">{{ (p.last_seen or '')[:10] or '—' }}</td>
+          <td>{% if p.used %}<span class="fw-badge fw-badge-success">{{ _('yes') }}</span>{% else %}<span class="text-muted">&mdash;</span>{% endif %}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    {% endif %}
+    {% if F.fields %}
+    <div class="table-responsive"><table class="table fw-table table-sm mb-0" id="apilibFields">
+      <thead><tr><th>{{ _('Field') }}</th><th>{{ _('Type') }}</th><th>{{ _('Required') }}</th><th>{{ _('Default') }}</th>
+        <th>{{ _('Options') }}</th><th>{{ _('Evidence') }}</th><th></th></tr></thead>
+      <tbody>
+      {% for name, f in F.fields.items() %}
+        <tr><td><code>{{ name }}</code></td><td style="font-size:12px;">{{ f.type or '—' }}</td>
+          <td style="font-size:12px;">{% if f.required is none %}&mdash;{% elif f.required %}{{ _('yes') }}{% else %}{{ _('no') }}{% endif %}</td>
+          <td style="font-size:12px;">{% if f.default is not none %}<code>{{ f.default }}</code>{% else %}&mdash;{% endif %}</td>
+          <td style="font-size:11.5px;">{{ (f.options or [])|join(', ') or '—' }}</td>
+          <td>{% for s in f.sources %}{{ lib_source_badge(s) }} {% endfor %}</td>
+          <td><a class="btn btn-sm btn-fw-outline py-0" href="{{ lib_url(base=lib_base or None, target=lib_target or None, at=D.at, ep=F.endpoint, field=name) }}#apilibHistory"
+                 title="{{ _('Every build this field was seen on, and since which build it exists') }}">{{ _('since which build?') }}</a></td></tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    {% endif %}
+  {% endif %}
+
+  {% if D.history %}
+    {% set H = D.history %}
+    <div class="border rounded p-2 mt-3" id="apilibHistory" style="border-color:var(--fw-border) !important; background:var(--fw-surface-alt);">
+      <h6 class="mb-1"><code>{{ H.endpoint }}.{{ H.field }}</code> &mdash; {{ _('field history') }}</h6>
+      {% if not H.known %}
+        <div class="text-muted" style="font-size:13px;">{{ _('The library has never seen this field on this endpoint.') }}</div>
+      {% else %}
+        <div style="font-size:13px;" class="mb-2">
+          {{ _('First seen on') }} <code class="apilib-first">{{ H.first_build or '—' }}</code>,
+          {{ _('last seen on') }} <code class="apilib-last">{{ H.last_build or '—' }}</code>.
+          {% for s in H.sources %}{{ lib_source_badge(s) }} {% endfor %}
+        </div>
+        {% if H.builds %}
+        <table class="table fw-table table-sm mb-2">
+          <thead><tr><th>{{ _('Build') }}</th><th>{{ _('Source') }}</th><th>{{ _('Type') }}</th><th>{{ _('First seen') }}</th><th>{{ _('Last seen') }}</th></tr></thead>
+          <tbody>{% for b in H.builds %}<tr><td><code>{{ b.version }}</code></td><td>{{ lib_source_badge(b.source) }}</td>
+            <td style="font-size:12px;">{{ b.type or '—' }}</td><td style="font-size:12px;">{{ (b.first_seen or '')[:10] }}</td>
+            <td style="font-size:12px;">{{ (b.last_seen or '')[:10] }}</td></tr>{% endfor %}</tbody>
+        </table>
+        {% endif %}
+        {% if H.vendor_spans %}
+        <div style="font-size:12.5px;">{{ lib_source_badge('vendor_doc') }} {{ _('ranges:') }}
+          {% for s in H.vendor_spans %}<code>{{ s.from }}</code> &rarr; <code>{{ s.to or s.to_capped }}</code>{% if not s.to %} <span class="text-muted" title="{{ _('An open vendor range is capped at the newest build that vendor data knew about.') }}">({{ _('open, capped') }})</span>{% endif %} <span class="text-muted">{{ s.origin_ref }}</span>{% if not loop.last %}; {% endif %}{% endfor %}
+        </div>
+        {% endif %}
+      {% endif %}
+    </div>
+  {% endif %}
+  </div>
+</div>
+{%- endmacro %}

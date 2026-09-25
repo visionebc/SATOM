@@ -26,6 +26,7 @@ import pytest
 
 from app.extensions import db
 from app.models import Appliance
+from app.services import api_library as lib
 from app.services import api_matrix as am
 from app.services import cli_coverage, firmware_versions as fv
 from tests.conftest import admin_user_id, login
@@ -40,11 +41,10 @@ def isolated(app, session, tmp_path, monkeypatch):
     sch = tmp_path / "field_schemas"
     for p in (red, sch, mat):
         p.mkdir()
-    monkeypatch.setattr(am, "REDISCOVERY_ROOT", str(red))
     monkeypatch.setattr(am, "SCHEMA_ROOT", str(sch))
     monkeypatch.setattr(am, "MATRIX_ROOT", str(mat))
     monkeypatch.setenv("SATOM_REDISCOVERY_DIR", str(red))
-    return {"rediscovery": red, "api_matrix": mat}
+    return {"rediscovery": red, "api_matrix": mat, "root": tmp_path}
 
 
 def _box(name, firmware="8.0.5", kind="fortiweb"):
@@ -67,6 +67,8 @@ def _sweep(isolated, box, version, **verdicts):
                             for k, v in verdicts.items()},
         "sections": {},
     }))
+    # Stored in the API library, as a real sweep does; the matrix reads it there.
+    lib.backfill(str(isolated["root"]))
 
 
 @pytest.fixture()

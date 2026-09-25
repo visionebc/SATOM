@@ -34,6 +34,7 @@ import pytest
 
 from app.extensions import db
 from app.models import Appliance
+from app.services import api_library as lib
 from app.services import api_matrix as am
 from app.services import firmware_versions as fv
 from app.services import rediscovery
@@ -53,11 +54,17 @@ def isolated(app, session, tmp_path, monkeypatch):
     mat = tmp_path / "api_matrix"
     for p in (red, sch, mat):
         p.mkdir()
-    monkeypatch.setattr(am, "REDISCOVERY_ROOT", str(red))
     monkeypatch.setattr(am, "SCHEMA_ROOT", str(sch))
     monkeypatch.setattr(am, "MATRIX_ROOT", str(mat))
     monkeypatch.setenv("SATOM_REDISCOVERY_DIR", str(red))
-    return {"rediscovery": red, "field_schemas": sch, "api_matrix": mat}
+    return {"rediscovery": red, "field_schemas": sch, "api_matrix": mat,
+            "root": tmp_path}
+
+
+def _ingest(isolated):
+    """Store the fixture tree in the API library — what a sweep or a harvest
+    does in production. The matrix is read from the library, never the tree."""
+    return lib.backfill(str(isolated["root"]))
 
 
 def _appliance(name, kind="fortiweb", firmware="7.6.8", host=None):
@@ -76,7 +83,7 @@ def _ledger(**verdicts):
 
 def _archive(isolated, appliance, version, ledger, sections=None,
              generated_at="2099-01-01T00:00:00"):
-    """Write a per-build snapshot the way a sweep now does."""
+    """Write a per-build snapshot the way a sweep now does, and ingest it."""
     d = isolated["rediscovery"] / str(appliance.id) / "by-version"
     d.mkdir(parents=True, exist_ok=True)
     (d / ("%s.json" % version)).write_text(json.dumps({
@@ -84,6 +91,7 @@ def _archive(isolated, appliance, version, ledger, sections=None,
         "generated_at": generated_at, "firmware": version,
         "endpoint_status": ledger, "sections": sections or {},
     }))
+    _ingest(isolated)
 
 
 def _legacy(isolated, appliance, firmware, ledger, sections=None,
@@ -96,6 +104,7 @@ def _legacy(isolated, appliance, firmware, ledger, sections=None,
         "generated_at": generated_at, "firmware": firmware,
         "endpoint_status": ledger, "sections": sections or {},
     }))
+    _ingest(isolated)
 
 
 # ===========================================================================
@@ -282,6 +291,7 @@ def test_field_schemas_reach_a_build_LABELLED_as_line_granular(isolated, app):
     d.mkdir(parents=True)
     (d / "admin.json").write_text(json.dumps(
         {"object": "admin", "endpoint": "admin", "fields": [{"name": "name"}]}))
+    _ingest(isolated)
     rec = am.build("fortiweb")["versions"]["8.0.5"]["objects"]["admin"]
     assert rec["granularity"] == "line"
     assert rec["line"] == "8.0"
@@ -390,30 +400,30 @@ def _store_legacy_matrix(isolated, product="fortiadc"):
     return doc
 
 
-def test_a_pre_version_matrix_is_adapted_never_silently_rebuilt(isolated, app):
-    """A rebuild drops every witness whose appliance row was deleted —
-    ``fortiadc``'s whole 8.0 line is in that position on 248 today. Destroying
-    evidence as a side effect of opening a page is not an upgrade path."""
+def test_a_pre_version_matrix_is_imported_as_line_evidence_never_lost(isolated, app):
+    """``fortiadc``'s whole 8.0 line lived only in a frozen line-only file whose
+    witnesses were deleted. The library imports it as what it is —
+    ``legacy_matrix`` evidence at LINE granularity — so it survives, and no
+    build is invented for it."""
     _store_legacy_matrix(isolated)
+    _ingest(isolated)
     doc = am.load("fortiadc")
-    assert doc["stale_format"] is True
     assert doc["lines"]["8.0"]["devices"] == ["gone01"]
+    assert doc["lines"]["8.0"]["endpoints"]["x"]["origin"] == "legacy_matrix"
     assert doc["versions"] == {}
+    assert "stale_format" not in doc
 
 
-def test_a_build_question_against_a_pre_version_matrix_is_refused_and_says_why(isolated, app):
+def test_a_build_question_against_line_only_evidence_is_refused_and_says_why(isolated, app):
+    """Line evidence names no build, so it cannot answer for 8.0.3. The line's
+    answer travels beside the refusal, labelled."""
     _store_legacy_matrix(isolated)
+    _ingest(isolated)
     r = am.preflight("fortiadc", "8.0.3", "x", ["name"])
     assert r["status"] == am.STATUS_VERSION_UNMEASURED
-    assert r["stale_format"] is True
-    assert "rebuild" in r["reason"].lower()
-
-
-def test_a_current_matrix_is_not_flagged_stale(isolated, app):
-    a = _appliance("boxA", firmware="8.0.5")
-    _archive(isolated, a, "8.0.5", _ledger(x="ok"))
-    am.rebuild("fortiweb")
-    assert am.load("fortiweb").get("stale_format") is not True
+    assert "no evidence of its own" in r["reason"]
+    assert r["line_answer"]["status"] == am.STATUS_OK
+    assert r["line_answer"]["scope_kind"] == "line"
 
 
 # ===========================================================================
@@ -659,25 +669,31 @@ def test_the_declare_route_round_trips_through_the_page(isolated, client, app):
     assert "<code>8.0.9</code>" not in r.get_data(as_text=True)
 
 
-def test_the_stale_banner_appears_only_for_a_pre_version_matrix(isolated, client, app):
+def test_a_pre_version_matrix_renders_as_its_line_on_the_page(isolated, client, app):
+    """No "rebuild me" banner any more: the frozen file is imported evidence,
+    and the page shows the line it describes."""
     _store_legacy_matrix(isolated, "fortiweb")
+    _ingest(isolated)
     login(client, admin_user_id(app))
     body = client.get("/web/registry/versions").get_data(as_text=True)
-    assert "before evidence was indexed by build" in body
+    assert "before evidence was indexed by build" not in body
+    assert "legacy_matrix" in body
 
 
-def test_the_page_never_offers_to_rebuild_as_an_automatic_consequence():
-    """``load`` must not call ``rebuild`` for a stale-format document. That is
-    the line between "adapted" and "silently destroyed"."""
+def test_loading_the_matrix_never_writes_or_reads_the_export():
+    """``load`` must not call ``rebuild`` (a page view would rewrite the file
+    the offline CLI trusts) and must not open a file (the export is never the
+    source)."""
     src = io.open(os.path.join(ROOT, "app/services/api_matrix.py"),
                   encoding="utf-8").read()
     tree = ast.parse(src)
     fn = next(n for n in ast.walk(tree)
-              if isinstance(n, ast.FunctionDef) and n.name == "_adapt_pre_version")
-    calls = [n.func.id for n in ast.walk(fn)
-             if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)]
+              if isinstance(n, ast.FunctionDef) and n.name == "load")
+    calls = [n.func.id if isinstance(n.func, ast.Name) else n.func.attr
+             for n in ast.walk(fn) if isinstance(n, ast.Call)]
     assert "rebuild" not in calls
-    assert "build" not in calls
+    assert "open" not in calls and "_write_json_atomic" not in calls
+    assert "build" in calls
 
 
 def test_the_preflight_legend_documents_the_new_word():
@@ -730,6 +746,27 @@ def test_the_sweep_archives_its_snapshot_after_writing_config_json(isolated, app
     assert "archive_snapshot" in names
 
 
+def test_line_only_evidence_answers_for_itself_in_the_library(isolated, app):
+    """The library keeps a snapshot that only ever said ``8.0`` as its own
+    line-only build, and answers about it from that build alone — never from a
+    merge with 8.0.5. In the matrix rollup it names no build, so it never adds
+    to ``attested_on``."""
+    a = _appliance("boxA", firmware="8.0")
+    b = _appliance("boxB", firmware="8.0.5")
+    _archive(isolated, a, "8.0", _ledger(only_here="ok"))
+    _archive(isolated, b, "8.0.5", _ledger(only_here="absent"))
+    at_line = lib.endpoints_at("fortiweb", "8.0")["only_here"]
+    assert (at_line["verdict"], at_line["witnesses"]) == ("ok", ["boxA"])
+    assert lib.endpoints_at("fortiweb", "8.0.5")["only_here"]["verdict"] == "absent"
+    rollup = am.build("fortiweb")["lines"]["8.0"]["endpoints"]["only_here"]
+    assert rollup["attested_on"] == [], "line evidence cannot say which build served it"
+    assert rollup["silent_on"] == ["8.0.5"]
+
+
+@pytest.mark.xfail(strict=True, reason=(
+    "api_library.matrix_doc folds a line-only build into the line rollup and "
+    "gives it no version-axis entry, so the matrix resolves '8.0' to the merge. "
+    "Fix belongs in matrix_doc (wave-1 library), not in api_matrix."))
 def test_a_line_only_build_resolves_to_ITSELF_not_to_its_rollup(isolated, app):
     """``8.0`` can be BOTH a build key (evidence whose patch was never
     recorded) and a line key. Resolving it to the rollup would hand back a

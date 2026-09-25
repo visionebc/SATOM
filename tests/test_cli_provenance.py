@@ -546,9 +546,7 @@ def two_line_matrix(app, seeded):
     what the last real sweep had found — and it broke the moment the suite was
     correctly isolated from that tree.
     """
-    import json
-
-    from app.services import api_matrix, cli_coverage
+    from app.services import cli_coverage
 
     # The endpoint the row is about is TAKEN FROM THE DUMP, not invented: the
     # base column must carry a real CLI verdict, and a made-up name is "not an
@@ -596,9 +594,13 @@ def two_line_matrix(app, seeded):
         "lines": {"7.6": _line("7.6", ["fwA"], {ep_name: absent76}),
                   "8.0": _line("8.0", ["fwB"], {ep_name: only80})},
     }
-    pathlib.Path(api_matrix.MATRIX_ROOT).mkdir(parents=True, exist_ok=True)
-    with io.open(api_matrix.matrix_path("fortiweb"), "w", encoding="utf-8") as fh:
-        json.dump(matrix, fh)
+    # Stored the way a frozen line-only matrix reaches the API library: as
+    # ``legacy_matrix`` evidence at LINE granularity. The page reads the
+    # library, never a file.
+    from app.services import api_library
+    with app.app_context():
+        for doc in api_library.evidence_from_legacy_matrix("fortiweb", matrix):
+            api_library.ingest(doc)
     return matrix
 
 

@@ -86,3 +86,15 @@ def test_no_field_change_is_stated_rather_than_left_blank():
         "apisurface": {"ok": True, "dropped_total": 0, "new_total": 0,
                        "absent_total": 0, "target_version": "8.0.5"}})
     assert "no field change measured" in summary
+
+
+def test_a_rename_is_named_in_the_summary_and_not_called_no_change():
+    """An upgrade converts a renamed field itself, so it is not a loss — but
+    "no field change measured" would be false."""
+    _ok, summary = prep_store.verdict({
+        "backup": {"ok": True},
+        "apisurface": {"ok": True, "dropped_total": 0, "new_total": 0,
+                       "absent_total": 0, "renamed_total": 2,
+                       "target_version": "8.0.5"}})
+    assert "2 field(s) renamed on 8.0.5" in summary
+    assert "no field change" not in summary

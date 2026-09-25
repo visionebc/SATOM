@@ -75,7 +75,46 @@
   #apiTree .api-tree-leaf-btn:focus { box-shadow: none; }
   #apiTree .api-tree-copy { opacity: 0; transition: opacity .12s ease; }
   #apiTree .api-tree-leaf:hover .api-tree-copy { opacity: 1; }
+  /* Build awareness — light chrome only: --fw-* tokens and .fw-badge-*. */
+  #build-banner .build-prov { font-size: 11.5px; color: var(--fw-text-secondary); }
+  #build-banner .build-prov li { margin-bottom: 2px; }
+  #apiTree .api-build-mark { font-size: 9.5px; padding: 1px 6px; margin-left: 4px; }
+  #apiTree .api-tree-leaf[data-mark="absent"] .api-tree-leaf-btn > span:nth-child(2) { text-decoration: line-through; color: var(--fw-text-secondary); }
+  #fields-table td, #fields-table th { font-size: 11.5px; padding: 4px 6px; vertical-align: top; }
+  #fields-table code { font-size: 11px; }
+  #resp-warning { font-size: 12px; border-bottom: 1px solid var(--fw-border-light); background: var(--fw-surface-alt); }
 </style>
+
+{# The selected appliance's BUILD, as the API library knows it. Filled by
+   /api-explorer/build whenever the appliance picker changes — rendered empty
+   rather than guessed, because a banner that names the wrong build is worse
+   than none. #}
+<div class="fw-card mb-3" id="build-banner"
+     data-build-url="{{ url_for('api_explorer.build_info') }}"
+     data-fields-url="{{ url_for('api_explorer.endpoint_fields') }}"
+     data-execute-url="{{ url_for('api_explorer.execute') }}"
+     data-harvest-url="{{ url_for('api_explorer.harvest', appliance_id=0) }}">
+  <div class="fw-card-body d-flex flex-wrap align-items-start gap-3" style="font-size:13px;">
+    <div>
+      <i class="bi bi-cpu text-accent me-1"></i><strong>{{ _('Build') }}</strong>
+      <span id="build-product" class="ms-1"></span>
+      <code id="build-version" class="ms-1"></code>
+      <span id="build-status" class="fw-badge fw-badge-secondary ms-1">{{ _('select an appliance') }}</span>
+      <div class="text-muted mt-1" style="font-size:12px;" id="build-counts"></div>
+    </div>
+    <div class="flex-grow-1">
+      <ul class="build-prov list-unstyled mb-0" id="build-prov"></ul>
+    </div>
+    <div id="build-harvest-wrap" class="d-none">
+      <button type="button" class="btn btn-sm btn-fw-primary" id="btn-harvest">
+        <i class="bi bi-cloud-download me-1"></i>{{ _('Harvest this appliance now') }}
+      </button>
+      <div class="text-muted mt-1" style="font-size:11px; max-width:260px;">
+        {{ _('No real box has been measured on this build. A harvest records what it serves.') }}
+      </div>
+    </div>
+  </div>
+</div>
 
 <div class="row g-3">
   <!-- API Menu: registry-backed section > endpoint tree; editable in place when can_edit -->
@@ -121,6 +160,18 @@
                  style="padding-left:34px; font-size:13px;">
         </div>
         <div class="px-2 pt-2">{{ prov_legend(cc_prov) }}</div>
+        {# Build marks: served / absent / unknown on the SELECTED appliance's
+           build. "Unknown" is its own state — the library never had evidence,
+           which is not the same as "served". #}
+        <div class="px-3 pt-2 d-flex flex-wrap align-items-center gap-2" style="font-size:11.5px;">
+          <label class="d-flex align-items-center gap-1 mb-0">
+            <input type="checkbox" id="apiTreeServedOnly" disabled>
+            {{ _('Only what this build serves') }}
+          </label>
+          <span class="fw-badge fw-badge-success api-legend">{{ _('served') }}</span>
+          <span class="fw-badge fw-badge-danger api-legend">{{ _('absent') }}</span>
+          <span class="fw-badge fw-badge-secondary api-legend">{{ _('unknown') }}</span>
+        </div>
         <div id="apiTree" style="max-height:640px; overflow-y:auto;">
           {% if api_tree and api_tree.child_nodes() %}
             {% for section in api_tree.child_nodes() %}
@@ -139,13 +190,15 @@
                   {% for ep in section.endpoints %}
                     {% set method = ep.method or 'GET' %}
                     {% set row = db_rows.get(ep.name) if can_edit else none %}
-                    <div class="api-tree-leaf d-flex align-items-center"
+                    <div class="api-tree-leaf d-flex align-items-center" data-name="{{ ep.name }}"
                          data-search="{{ (ep.name ~ ' ' ~ (ep.urn or ep.path or ''))|lower }}">
                       <button type="button" class="btn btn-link text-start flex-grow-1 text-decoration-none api-tree-leaf-btn"
                               data-method="{{ method }}" data-path="{{ ep.urn or ep.path or '' }}"
+                              data-name="{{ ep.name }}"
                               style="padding:6px 8px 6px 24px;">
                         <span class="fw-api-method fw-api-method-{{ method|lower }} me-1" style="font-size:9px;">{{ method }}</span>
                         <span style="font-size:12.5px;">{{ ep.name }}</span>
+                        <span class="fw-badge api-build-mark d-none"></span>
                         <br><code class="text-muted" style="font-size:10.5px;">{{ ep.urn or ep.path }}</code>
                         {% set pv = cc_prov.by_name.get(ep.name) if cc_prov else none %}
                         {% if cc_prov %}<br>{{ prov_badge(pv or cc_prov.for_name(ep.name), show_path=True) }}{% endif %}
@@ -300,6 +353,28 @@
       </div>
     </div>
 
+    <!-- Fields the selected endpoint serves on the selected build -->
+    <div class="fw-card mb-3" id="fields-card">
+      <div class="fw-card-header">
+        <span class="fw-card-title"><i class="bi bi-list-columns me-2 text-accent"></i>{{ _('Fields on this build') }}</span>
+        <span id="fields-status" class="fw-badge fw-badge-secondary">—</span>
+      </div>
+      <div class="fw-card-body p-0">
+        <div id="fields-note" class="text-muted px-3 py-2" style="font-size:12px;">
+          {{ _('Pick an endpoint in the API Menu to see its fields on the selected build.') }}
+        </div>
+        <div style="max-height:260px; overflow-y:auto;">
+          <table class="table table-sm mb-0 d-none" id="fields-table">
+            <thead><tr>
+              <th>{{ _('Field') }}</th><th>{{ _('Type') }}</th>
+              <th>{{ _('Options / default') }}</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
     <!-- Request History -->
     <div class="fw-card">
       <div class="fw-card-header">
@@ -328,6 +403,7 @@
         </div>
       </div>
       <div class="fw-card-body p-0" style="height: calc(100% - 52px);">
+        <div id="resp-warning" class="px-3 py-2 d-none"></div>
         <pre id="resp-body"
              class="fw-code-block m-0"
              style="min-height:500px; border-radius:0 0 8px 8px;">Execute a request to see the response here.</pre>
@@ -386,10 +462,36 @@
 <script nonce="{{ csp_nonce }}">
 var requestHistory = [];
 
+// Every fetch in this app carries the CSRF token, and every JSON error comes
+// back in `msg`.
+function csrfToken() {
+  return (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
+}
+function explorerUrl(key) { return document.getElementById('build-banner').dataset[key]; }
+
+function showWarning(text) {
+  const el = document.getElementById('resp-warning');
+  if (!el) return;
+  el.textContent = text || '';
+  el.classList.toggle('d-none', !text);
+}
+
+// POSTs to /api-explorer/execute — the route that holds the firmware guard.
+// (Until 2026-09-26 this page went through the generic /api/<fw|adc>/proxy,
+// where no guard can live without guarding every other caller too.)
+async function postExecute(fields) {
+  const fd = new FormData();
+  Object.keys(fields).forEach(function (k) { fd.append(k, fields[k]); });
+  const r = await fetch(explorerUrl('executeUrl'), {
+    method: 'POST', body: fd, headers: { 'X-CSRF-Token': csrfToken() }
+  });
+  const data = await r.json().catch(function () { return { ok: false, msg: 'HTTP ' + r.status }; });
+  return { http: r.status, data: data };
+}
+
 async function runRequest() {
   const btn      = document.getElementById('btn-execute');
   const appId    = document.getElementById('sel-appliance').value;
-  const kind     = document.querySelector('#sel-appliance option:checked')?.dataset.kind || 'FortiWeb';
   const method   = document.getElementById('sel-method').value;
   let   path     = document.getElementById('inp-path').value.trim().replace(/^\//, '');
   const mkey     = document.getElementById('inp-mkey').value.trim();
@@ -403,43 +505,54 @@ async function runRequest() {
 
   if (mkey) path += '?mkey=' + encodeURIComponent(mkey);
 
-  const prefix = (kind || '').toLowerCase().includes('adc') ? 'adc' : 'fw';
-  const url    = '/api/' + prefix + '/' + appId + '/proxy/' + path;
-
   btn.disabled = true;
   btn.innerHTML = '<span class="fw-loading-spinner"></span> Executing…';
   respEl.textContent = 'Loading…';
   statusEl.textContent = '…';
   statusEl.className = 'fw-badge fw-badge-secondary';
   timeEl.textContent = '';
+  showWarning('');
 
   const t0 = Date.now();
 
   try {
-    const opts = {
-      method,
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''
+    const fields = { appliance_id: appId, endpoint: '/' + path, method: method,
+                     body: (method !== 'GET' && method !== 'DELETE') ? bodyTxt : '' };
+    let res = await postExecute(fields);
+    // Known NOT served on this build: the server refused. Only an explicit
+    // yes from the operator sends it again, and the audit log records that.
+    if (res.data && res.data.needs_confirm) {
+      if (!window.confirm((res.data.msg || 'This build does not serve this endpoint.') +
+                          '\n\nSend it anyway?')) {
+        statusEl.textContent = 'Refused';
+        statusEl.className = 'fw-badge fw-badge-danger';
+        respEl.textContent = res.data.msg || 'Refused by the firmware guard.';
+        return;
       }
-    };
-    if (bodyTxt && method !== 'GET' && method !== 'DELETE') {
-      opts.body = bodyTxt;
+      fields.confirm_unserved = '1';
+      res = await postExecute(fields);
     }
-
-    const r    = await fetch(url, opts);
     const ms   = Date.now() - t0;
-    const data = await r.json().catch(() => r.text());
+    const data = res.data || {};
+    timeEl.textContent = ms + 'ms';
+    showWarning(data.warning || (data.library && data.library.warning) || '');
 
-    statusEl.textContent = r.status + ' ' + r.statusText;
-    statusEl.className   = 'fw-badge ' + (r.ok ? 'fw-badge-success' : 'fw-badge-danger');
-    timeEl.textContent   = ms + 'ms';
+    if (!data.ok) {
+      statusEl.textContent = 'Error';
+      statusEl.className   = 'fw-badge fw-badge-danger';
+      respEl.textContent   = data.msg || data.error || 'Request failed.';
+      return;
+    }
+    const code = data.status;
+    statusEl.textContent = String(code);
+    statusEl.className   = 'fw-badge ' + (code >= 200 && code < 300 ? 'fw-badge-success' : 'fw-badge-danger');
 
-    const formatted = typeof data === 'object' ? JSON.stringify(data, null, 2) : String(data);
-    respEl.innerHTML = syntaxHighlight(formatted);
+    const out = data.result;
+    const formatted = typeof out === 'object' ? JSON.stringify(out, null, 2) : String(out);
+    respEl.innerHTML = syntaxHighlight(escapeHtml(formatted));
 
     // Add to history
-    addHistory(method, path.split('?')[0], r.status);
+    addHistory(method, path.split('?')[0], code);
 
   } catch (err) {
     statusEl.textContent = 'Error';
@@ -451,6 +564,12 @@ async function runRequest() {
     btn.disabled = false;
     btn.innerHTML = '<i class="bi bi-play-circle me-1"></i>Execute Request';
   }
+}
+
+// Device output is untrusted: neutralise markup before highlighting. Quotes
+// stay as they are so syntaxHighlight can still find the JSON strings.
+function escapeHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 function syntaxHighlight(json) {
@@ -529,7 +648,7 @@ function copyResponse() {
 // --- API Menu tree (left sidebar) ----------------------------------------
 
 // Fill the executor's method + path inputs from a tree leaf and surface the URN.
-function loadEndpoint(method, path) {
+function loadEndpoint(method, path, name) {
   const methodEl = document.getElementById('sel-method');
   const pathEl   = document.getElementById('inp-path');
   const urnEl    = document.getElementById('selected-urn');
@@ -537,6 +656,178 @@ function loadEndpoint(method, path) {
   if (pathEl)   pathEl.value   = path;
   if (urnEl)    urnEl.textContent = 'URN: ' + path;
   if (pathEl)   pathEl.focus();
+  loadFields(name || '', path || '');
+}
+
+// --- Build awareness ------------------------------------------------------
+
+var BUILD = null;          // last /build answer for the selected appliance
+var LAST_ENDPOINT = null;  // {name, path} of the leaf whose fields are shown
+
+var MARK_BADGE = { served: 'fw-badge-success', absent: 'fw-badge-danger', unknown: 'fw-badge-secondary' };
+var STATUS_BADGE = { measured: 'fw-badge-success', vendor_only: 'fw-badge-info',
+                     unmeasured: 'fw-badge-warning', unknown_firmware: 'fw-badge-warning' };
+
+function paintMarks(marks) {
+  document.querySelectorAll('#apiTree .api-tree-leaf').forEach(function (leaf) {
+    const badge = leaf.querySelector('.api-build-mark');
+    const state = marks ? (marks[leaf.dataset.name] || 'unknown') : '';
+    if (state) leaf.dataset.mark = state; else delete leaf.dataset.mark;
+    if (!badge) return;
+    badge.className = 'fw-badge api-build-mark' + (state ? ' ' + MARK_BADGE[state] : ' d-none');
+    badge.textContent = state;
+  });
+  const only = document.getElementById('apiTreeServedOnly');
+  if (only) { only.disabled = !marks; if (!marks) only.checked = false; }
+  filterApiTree(document.getElementById('apiTreeSearch').value);
+}
+
+function paintBanner(d) {
+  const b = (d && d.build) || {};
+  document.getElementById('build-product').textContent = b.product || '';
+  document.getElementById('build-version').textContent = b.version || b.firmware_raw || '';
+  const st = document.getElementById('build-status');
+  st.className = 'fw-badge ms-1 ' + (STATUS_BADGE[b.status] || 'fw-badge-secondary');
+  st.textContent = d ? (b.status_label || b.status || '') : 'select an appliance';
+  const c = (d && d.counts) || null;
+  document.getElementById('build-counts').textContent = c
+    ? ('API Menu on this build: ' + c.served + ' served · ' + c.absent + ' absent · ' +
+       c.unknown + ' unknown')
+    : '';
+  const ul = document.getElementById('build-prov');
+  ul.innerHTML = '';
+  ((d && d.provenance) || []).forEach(function (p) {
+    const li = document.createElement('li');
+    li.textContent = p.source + ' · ' + p.scope + (p.device ? ' · ' + p.device : '') +
+                     (p.captured_at ? ' · ' + p.captured_at : '') +
+                     (p.origin_ref && !p.device ? ' · ' + p.origin_ref : '') +
+                     (p.healthy ? '' : ' · unhealthy (kept, not counted)');
+    ul.appendChild(li);
+  });
+  if (d && !(d.provenance || []).length) {
+    const li = document.createElement('li');
+    li.textContent = 'No evidence in the library for this build.';
+    ul.appendChild(li);
+  }
+  document.getElementById('build-harvest-wrap').classList.toggle('d-none', !(d && d.harvestable));
+}
+
+async function loadBuild() {
+  const appId = document.getElementById('sel-appliance').value;
+  BUILD = null;
+  paintBanner(null);
+  paintMarks(null);
+  if (!appId) return;
+  try {
+    const r = await fetch(explorerUrl('buildUrl') + '?appliance_id=' + encodeURIComponent(appId),
+                          { headers: { 'X-CSRF-Token': csrfToken() } });
+    const d = await r.json();
+    if (!d.ok) { window.FW.toast(d.msg || 'Could not resolve the build', 'warning'); return; }
+    // The picker may have moved on while this was in flight.
+    if (document.getElementById('sel-appliance').value !== appId) return;
+    BUILD = d;
+    paintBanner(d);
+    paintMarks(d.marks);
+    if (LAST_ENDPOINT) loadFields(LAST_ENDPOINT.name, LAST_ENDPOINT.path);
+  } catch (err) {
+    window.FW.toast('Could not resolve the build: ' + err.message, 'danger');
+  }
+}
+
+function fmtVal(v) {
+  if (v === null || v === undefined || v === '') return '';
+  return typeof v === 'object' ? JSON.stringify(v) : String(v);
+}
+
+function paintFields(d) {
+  const st = document.getElementById('fields-status');
+  const note = document.getElementById('fields-note');
+  const table = document.getElementById('fields-table');
+  const tbody = table.querySelector('tbody');
+  tbody.innerHTML = '';
+  let fields = d.fields || {};
+  let label = d.status;
+  let text = '';
+  if (d.status === 'measured') {
+    text = d.endpoint + ' on ' + d.version + ': ' + Object.keys(fields).length + ' fields (' +
+           (d.provenance || []).filter(function (p) { return p.used; })
+              .map(function (p) { return p.source; }).join(' + ') + ').';
+  } else if (d.line_fallback) {
+    fields = d.line_fallback.fields || {};
+    label = d.status + ' · line ' + d.line_fallback.line;
+    text = 'Not measured on ' + d.version + ' (' + d.status + '). Showing the schema harvested ' +
+           'for line ' + d.line_fallback.line + ' — a line-level claim, not this build.';
+  } else {
+    text = {
+      blind: 'The endpoint answered on this build but no row revealed its fields.',
+      absent: 'This build does not serve this endpoint.',
+      unmeasured: 'Nobody measured this endpoint on this build.'
+    }[d.status] || '';
+  }
+  st.className = 'fw-badge ' + ({ measured: 'fw-badge-success', absent: 'fw-badge-danger',
+                                  blind: 'fw-badge-warning' }[d.status] || 'fw-badge-secondary');
+  st.textContent = label;
+  note.textContent = text;
+  const names = Object.keys(fields);
+  table.classList.toggle('d-none', !names.length);
+  names.forEach(function (n) {
+    const f = fields[n] || {};
+    const tr = document.createElement('tr');
+    const td1 = document.createElement('td');
+    const code = document.createElement('code');
+    code.textContent = n;
+    td1.appendChild(code);
+    if (f.required) { const r = document.createElement('span'); r.className = 'text-danger ms-1'; r.textContent = '*'; td1.appendChild(r); }
+    if (f.since) {
+      const s = document.createElement('span');
+      s.className = 'fw-badge fw-badge-info ms-1';
+      s.textContent = 'since ' + f.since;
+      s.title = 'First seen on build ' + f.since + ' (' + (f.since_source || '') +
+                '); an older build measured this endpoint without it.';
+      td1.appendChild(s);
+    }
+    const td2 = document.createElement('td');
+    td2.textContent = f.type || '';
+    const td3 = document.createElement('td');
+    const opts = Array.isArray(f.options) ? f.options.join(' | ') : fmtVal(f.options);
+    td3.textContent = [opts, f.default !== null && f.default !== undefined && f.default !== ''
+                       ? 'default: ' + fmtVal(f.default) : ''].filter(Boolean).join(' · ');
+    tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3);
+    tbody.appendChild(tr);
+  });
+}
+
+async function loadFields(name, path) {
+  LAST_ENDPOINT = { name: name, path: path };
+  const appId = document.getElementById('sel-appliance').value;
+  if (!appId || !(name || path)) return;
+  const qs = '?appliance_id=' + encodeURIComponent(appId) + '&endpoint=' + encodeURIComponent(name) +
+             '&path=' + encodeURIComponent(path);
+  try {
+    const r = await fetch(explorerUrl('fieldsUrl') + qs, { headers: { 'X-CSRF-Token': csrfToken() } });
+    const d = await r.json();
+    if (!d.ok) { window.FW.toast(d.msg || 'Could not load fields', 'warning'); return; }
+    paintFields(d);
+  } catch (err) {
+    window.FW.toast('Could not load fields: ' + err.message, 'danger');
+  }
+}
+
+async function harvestNow() {
+  const appId = document.getElementById('sel-appliance').value;
+  if (!appId) return;
+  const btn = document.getElementById('btn-harvest');
+  btn.disabled = true;
+  try {
+    const url = explorerUrl('harvestUrl').replace(/\/0$/, '/' + encodeURIComponent(appId));
+    const r = await fetch(url, { method: 'POST', headers: { 'X-CSRF-Token': csrfToken() } });
+    const d = await r.json().catch(function () { return { ok: false, msg: 'HTTP ' + r.status }; });
+    window.FW.toast(d.msg || (d.ok ? 'Harvest queued' : 'Harvest failed'), d.ok ? 'success' : 'danger');
+  } catch (err) {
+    window.FW.toast('Harvest failed: ' + err.message, 'danger');
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 // Copy a leaf's URN to the clipboard ("Copy URN" affordance).
@@ -550,16 +841,19 @@ function copyUrn(urn) {
 // auto-expand the ones that still have matches while a query is active.
 function filterApiTree(q) {
   q = (q || '').toLowerCase().trim();
+  const onlyEl = document.getElementById('apiTreeServedOnly');
+  const servedOnly = !!(onlyEl && onlyEl.checked && !onlyEl.disabled);
   document.querySelectorAll('#apiTree .api-tree-section').forEach(function (sec) {
     let any = false;
     sec.querySelectorAll('.api-tree-leaf').forEach(function (leaf) {
-      const hit = !q || (leaf.dataset.search || '').includes(q);
+      const hit = (!q || (leaf.dataset.search || '').includes(q)) &&
+                  (!servedOnly || leaf.dataset.mark === 'served');
       leaf.style.display = hit ? '' : 'none';
       if (hit) any = true;
     });
     sec.style.display = any ? '' : 'none';
     const body = sec.querySelector('.collapse');
-    if (body && q) body.classList.toggle('show', any);
+    if (body && (q || servedOnly)) body.classList.toggle('show', any);
   });
 }
 
@@ -581,8 +875,14 @@ document.addEventListener('keydown', function (e) {
   // Tree leaf: load into the executor. Delegated so edit/disable/copy buttons
   // nested in the same leaf don't hijack the click, and only the leaf button fires.
   document.querySelectorAll('#apiTree .api-tree-leaf-btn').forEach(function (btn) {
-    btn.addEventListener('click', function (event) { loadEndpoint(this.dataset.method, this.dataset.path); });
+    btn.addEventListener('click', function (event) { loadEndpoint(this.dataset.method, this.dataset.path, this.dataset.name); });
   });
+  document.getElementById('apiTreeServedOnly').addEventListener('change', function () {
+    filterApiTree(document.getElementById('apiTreeSearch').value);
+  });
+  document.getElementById('sel-appliance').addEventListener('change', loadBuild);
+  document.getElementById('btn-harvest').addEventListener('click', harvestNow);
+  loadBuild();
   document.querySelectorAll('#apiTree .api-tree-copy[data-urn]').forEach(function (btn) {
     btn.addEventListener('click', function (event) { copyUrn(this.dataset.urn); });
   });

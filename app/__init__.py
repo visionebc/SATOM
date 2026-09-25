@@ -1500,6 +1500,10 @@ def create_app(config_override: object | None = None) -> Flask:
         print('rollback artifact retained at %s' % cb.stored_path)
         _sys.exit(0 if verdict['passed'] else 1)
 
+    # ``flask apilib ...`` — the API library's operator commands.
+    from .cli_apilib import apilib_cli
+    app.cli.add_command(apilib_cli)
+
     @app.cli.command('create-db')
     def create_db_cmd():
         """Initialise database tables and seed the first admin user.
@@ -2057,6 +2061,10 @@ def create_app(config_override: object | None = None) -> Flask:
             # create_all() never makes device_identity and every page that
             # names the owner of an old backup 500s.
             from . import models_identity  # noqa: F401
+            # API library (versioned evidence of what each build serves).
+            # Without this import create_all() never makes the api_lib_*
+            # tables and the first backfill 500s.
+            from . import models_apilib  # noqa: F401
             # Sentinel's two collectors (http_status, infra) join the
             # fleet collection registry here so the scheduler sidecar — which
             # never imports a view — provisions and runs them like any other.

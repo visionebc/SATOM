@@ -1,48 +1,55 @@
-"""Firmware-keyed API matrix: what each firmware LINE actually serves.
+"""Firmware-keyed API matrix: what each firmware BUILD actually serves.
 
 The problem this exists for: FortiWeb 7.6 and 8.0 speak the **same API
 version** (``v2.0``). The registry's ``api_version`` axis therefore cannot
 express the difference between them — and the difference is real: measured on
 this fleet's own artifacts, ``admin`` has 40 fields on 7.6 and **42** on 8.0,
 ``global`` 60 vs **63**, ``ntp`` 3 vs **4**. Code that builds a payload from
-one line and writes it to a box running the other is the failure this module
+one build and writes it to a box running another is the failure this module
 is here to make visible BEFORE the write, not after the device rejects it.
 
-So the unit of knowledge here is the **(product, firmware line, endpoint)**
-triple, and the value is the set of field names that line was observed to
-serve. ``line`` is ``major.minor`` — the same granularity ``CapacityLimit``
-and ``data/field_schemas/<product>/<line>/`` already use, so a build number
-does not mint a new line on every patch release.
+The unit of knowledge is the **(product, firmware version, endpoint)** triple,
+and the value is the set of field names that build was observed to serve. The
+``major.minor`` line survives as a rollup that always declares which builds it
+merged (``versions``, ``heterogeneous``, per endpoint ``attested_on`` /
+``silent_on``).
 
-Two evidence sources, both already on disk and both already replicated to the
-standby by ``satom-ha-datasync``:
+Where the evidence lives
+------------------------
+In the database, in the append-only ``api_lib_*`` tables owned by
+:mod:`app.services.api_library` (contract: ``docs/api-library.md``). Every
+sweep snapshot, harvested field schema, vendor range and frozen legacy matrix
+is stored there ONCE by ``api_library.ingest``; :func:`build` and :func:`load`
+ask ``api_library.matrix_doc`` for the same document shape this module always
+returned, so its consumers (``diff``, ``preflight``, ``version_compat``,
+``absence_record``, ``cli_coverage``, the versions and structure pages) did
+not have to change.
 
-* **sweep** — ``data/rediscovery/<appliance_id>/_config.json``. The sweep
-  already records a per-endpoint verdict (``endpoint_status``) *and* the
-  objects it read back (``sections``); the keys of those objects ARE the
-  fields that firmware serves. Nobody read them.
-* **schema** — ``data/field_schemas/<product>/<line>/<object>.json``, the
-  harvested field specs. This is the ONLY evidence for FortiWeb 8.0 today,
-  because no 8.0 FortiWeb is left in the fleet — the 8.0 folder was harvested
-  from ``fw1``, since retired.
+Why a table and not the file it used to be: the file was DERIVED and rewritten
+wholesale on every rebuild, and the rebuild filtered its evidence through the
+live appliance table. Deleting or retiring an appliance therefore deleted the
+proof of what its firmware served — that is how the 8.0.3 build disappeared —
+and a test run once overwrote the production matrix with an empty one. An
+evidence row is never deleted and carries the device identity it was measured
+on, so a retired device keeps its evidence and is listed in ``witnesses`` as
+``retired`` instead of silently dropping out.
 
-Deliberately NOT a database table. Everything here is *derived*: throw the
-file away and a rebuild reconstructs it exactly. Putting a derived view in
-Postgres would also put it in a different backup path from the evidence it
-summarises, which are already carried by the same rsync and the same bundle.
+``rebuild`` still writes ``data/api_matrix/<product>.json``, as an EXPORT
+only: the stdlib CLI (``deploy/satom_cli/cmd_apiver.py``) reads it on a node
+whose venv or database is down. Nothing in the app reads it back.
 
-Three rules that the whole module is shaped around, each one a way this could
+Three rules the whole module is shaped around, each one a way this could
 quietly lie instead of loudly not-knowing:
 
 1. **``fields=None`` is not ``fields=[]``.** An endpoint that answered ``ok``
    with zero rows tells you the endpoint EXISTS and tells you NOTHING about
-   its fields. Folding that into an empty set would make a line look like it
+   its fields. Folding that into an empty set would make a build look like it
    "lost" every field of an empty collection — the diff against a populated
-   line would invent dozens of removals that never happened.
-2. **A line with no evidence is ``unmeasured``, never ``compatible``.** The
+   build would invent dozens of removals that never happened.
+2. **A build with no evidence is ``unmeasured``, never ``compatible``.** The
    preflight's default answer is "I don't know", because the caller's next
    action is a write to a real appliance.
-3. **"Absent on the other line" requires the other line to have been
+3. **"Absent on the other build" requires the other build to have been
    measured.** Present-here/unknown-there is reported as unknown, never as
    removed.
 """
@@ -52,50 +59,51 @@ import json
 import os
 import re
 import tempfile
-from datetime import datetime
+
+from . import api_library as _lib
 
 # ---------------------------------------------------------------------------
-# paths
+# paths — the EXPORT file, and the schema tree ``diff`` reads coverage from
 # ---------------------------------------------------------------------------
 
 _ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 SCHEMA_ROOT = os.path.join(_ROOT, "data", "field_schemas")
 
-#: The in-tree locations, kept as their own names so documentation guards can
-#: assert where this data lives WITHOUT reading whatever a test run redirected
-#: it to.
-REDISCOVERY_ROOT_DEFAULT = os.path.join(_ROOT, "data", "rediscovery")
+#: The in-tree location, kept as its own name so documentation guards can
+#: assert where the export lives WITHOUT reading whatever a test run
+#: redirected it to.
 MATRIX_ROOT_DEFAULT = os.path.join(_ROOT, "data", "api_matrix")
 
-# Redirected by the same env vars ``rediscovery`` honours, resolved at IMPORT so
-# the existing monkeypatch-the-constant tests keep working. This is the fix for
-# a measured contamination: a sweep driven against the TEST database rebuilt the
-# PRODUCTION matrix from the test tree and left ``swept: 0, devices: []`` where
-# 326 endpoints and three witnesses had been (2026-09-15). The file is
-# untracked, so git reported nothing, and an empty matrix renders as a page
-# with no differences rather than as an error.
-REDISCOVERY_ROOT = os.environ.get("SATOM_REDISCOVERY_DIR") or REDISCOVERY_ROOT_DEFAULT
+# Redirected by env, resolved at IMPORT so the monkeypatch-the-constant tests
+# keep working. The file is only an export now, but it is still the one the
+# offline CLI trusts: a test run that wrote its fixture into the production
+# path would have that CLI answer from fixtures (2026-09-15: a test sweep left
+# ``swept: 0, devices: []`` where 326 endpoints had been).
 MATRIX_ROOT = os.environ.get("SATOM_API_MATRIX_DIR") or MATRIX_ROOT_DEFAULT
 
-# Products that have a sweep plan (``rediscovery.plan_for``). FAZ and FAC have
-# a catalog but no sweep, so their matrix can only ever be schema-derived —
-# stated here rather than discovered as an empty page.
-SWEPT_PRODUCTS = ("fortiweb", "fortiadc")
+# ---------------------------------------------------------------------------
+# products — from the library, so a product the library learns is one list
+# ---------------------------------------------------------------------------
 
-# Kind string on ``Appliance`` per product key.
-_KIND_FOR = {"fortiweb": "fortiweb", "fortiadc": "fortiadc",
-             "fortianalyzer": "fortianalyzer", "fortiauthenticator": "fortiauthenticator"}
+PRODUCTS = _lib.PRODUCTS
+CATALOG_ONLY_PRODUCTS = _lib.CATALOG_ONLY_PRODUCTS
 
-# A ledger that is mostly errors is not evidence about the CATALOG, it is
-# evidence about that appliance. Same threshold and same reason as
-# ``registry_reconcile``: fortiweb08 answers -20010 (peer VM licence) to 283 of
-# 321 CMDB reads while the inventory still calls it online, and reading it
-# naively would attribute 283 phantom absences to the 7.6 line.
-MAX_ERROR_RATIO = 0.25
+# Kind string on ``Appliance`` per product key. Catalog-only products have no
+# appliance rows (SATOM does not manage FortiGates), so they have no kind.
+_KIND_FOR = {p: p for p in PRODUCTS if p not in CATALOG_ONLY_PRODUCTS}
 
-VERDICT_OK = "ok"
-VERDICT_ABSENT = "absent"
-VERDICT_ERROR = "error"
+# Products the rediscovery sweep walks (``rediscovery.plan_for`` has a plan
+# for exactly these). FAZ and FAC are described by schema or vendor evidence
+# only — stated here rather than discovered as an empty page.
+SWEPT_PRODUCTS = tuple(p for p in _KIND_FOR if p in ("fortiweb", "fortiadc"))
+
+# Same threshold as the library's healthy-evidence gate, re-exported so the
+# docs guards and the page quote one number.
+MAX_ERROR_RATIO = _lib.MAX_ERROR_RATIO
+
+VERDICT_OK = _lib.VERDICT_OK
+VERDICT_ABSENT = _lib.VERDICT_ABSENT
+VERDICT_ERROR = _lib.VERDICT_ERROR
 
 
 # ---------------------------------------------------------------------------
@@ -105,9 +113,9 @@ VERDICT_ERROR = "error"
 def firmware_line(version: str | None) -> str:
     """``"7.6.8 build1128"`` → ``"7.6"``. Empty string when there is no version.
 
-    Truncating to major.minor is the whole point: a patch release is not a new
-    API surface, and keying by the full string would give every build its own
-    column of one-device evidence that never accumulates.
+    Truncating to major.minor is what makes a rollup possible: a patch release
+    is not a new line, and keying the rollup by the full string would give
+    every build its own column of one-device evidence that never accumulates.
     """
     if not version:
         return ""
@@ -146,14 +154,6 @@ def resolve_scope(matrix: dict, scope: str) -> tuple:
     return None, None
 
 
-def _read_json(path: str):
-    try:
-        with open(path) as fh:
-            return json.load(fh)
-    except (OSError, ValueError):
-        return None
-
-
 def _write_json_atomic(path: str, payload) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), suffix=".tmp")
@@ -161,10 +161,9 @@ def _write_json_atomic(path: str, payload) -> None:
         with os.fdopen(fd, "w") as fh:
             json.dump(payload, fh, indent=1, sort_keys=True)
         # mkstemp hands back 0600. Every other artifact under data/ is 0644
-        # and this one holds no secret — it is a derived summary of endpoint
-        # names and field names. An inherited mode is an accident; a stated
-        # one is a decision, and the decision here is "same as its siblings",
-        # so a mode audit does not turn up one odd file with no reason.
+        # and this one holds no secret — it is an export of endpoint names and
+        # field names. A stated mode, not an inherited one, so a mode audit
+        # does not turn up one odd file with no reason.
         os.chmod(tmp, 0o644)
         os.replace(tmp, path)
     except BaseException:
@@ -180,25 +179,24 @@ def matrix_path(product: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# witnesses — from the appliance TABLE, never from the snapshot directory
+# the live fleet — ``in_fleet`` and witness liveness, never an evidence filter
 # ---------------------------------------------------------------------------
 
 def _live_appliances(product: str) -> dict:
     """``{appliance_id: {"name","firmware","version","line"}}`` for live boxes.
 
-    Half of ``data/rediscovery/`` belongs to appliances that were deleted, and
-    four more are the retired ``*.invalid`` hosts. A firmware line justified by
-    a device nobody can re-probe is a claim nobody can reproduce, so the
-    witness list is built from the table and the snapshots are filtered by it.
-
-    ``version`` is the FULL string (``8.0.3``); ``line`` is its rollup. Both
-    are carried because they answer different questions and collapsing them is
-    what this round exists to undo.
+    Used to say which builds the fleet runs TODAY (``in_fleet``) and which
+    witnesses can still be re-probed. It no longer filters evidence: a box in
+    maintenance, on a ``*.invalid`` host or deleted outright still measured
+    what it measured, and the library keeps that evidence under the device
+    identity recorded at the time.
     """
     from ..models import Appliance
     from . import firmware_versions as fv
 
-    kind = _KIND_FOR.get(product, product)
+    kind = _KIND_FOR.get(product)
+    if not kind:
+        return {}
     out: dict = {}
     for ap in Appliance.query.filter_by(kind=kind).all():
         if getattr(ap, "maintenance", False):
@@ -213,384 +211,105 @@ def _live_appliances(product: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# evidence 1 — the sweep
+# build / load — read from the library; rebuild — the export
 # ---------------------------------------------------------------------------
 
-def _sweep_evidence(product: str, witnesses: dict) -> tuple[dict, list]:
-    """``({version: {endpoint: record}}, [note, ...])`` from the snapshot archive.
-
-    The key changed from LINE to FULL VERSION, and that is the whole point of
-    this round. Measured on this fleet on 2026-09-15: ``fortiweb16`` and
-    ``fortiweb17`` report **8.0.3**, appliance 34 reports **8.0.5**, all three
-    were folded into ``8.0``, and the merge rule below is *"OK from any healthy
-    witness wins"* — so an endpoint served only by 8.0.5 was attributed to the
-    line, and ``preflight`` answered **compatible** for a 8.0.3 box about
-    something that box does not serve.
-
-    Evidence is read from ``<id>/by-version/<version>.json`` (every version that
-    device was ever swept at) and falls back to ``<id>/_config.json`` for a
-    device whose archive has not been backfilled yet. The fallback is a
-    fallback, never a merge: when the archive holds the same version, the
-    archive wins, because ``_config.json`` is whatever the last sweep left and
-    the archive entry is that version's own file.
-    """
-    from . import firmware_versions as fv
-
-    versions: dict = {}
-    notes: list = []
-    if not os.path.isdir(REDISCOVERY_ROOT):
-        return versions, notes
-
-    for entry in sorted(os.listdir(REDISCOVERY_ROOT)):
-        try:
-            aid = int(entry)
-        except ValueError:
-            continue
-        wit = witnesses.get(aid)
-        if wit is None:
-            continue
-
-        snaps: dict = {}
-        vdir = os.path.join(REDISCOVERY_ROOT, entry, "by-version")
-        if os.path.isdir(vdir):
-            for fname in sorted(os.listdir(vdir)):
-                if not fname.endswith(".json"):
-                    continue
-                doc = _read_json(os.path.join(vdir, fname))
-                if isinstance(doc, dict):
-                    snaps[fname[:-5]] = doc
-        latest = _read_json(os.path.join(REDISCOVERY_ROOT, entry, "_config.json"))
-        if isinstance(latest, dict):
-            v = fv.normalize(latest.get("firmware"))
-            if v and v not in snaps:
-                snaps[v] = latest
-            elif not v and not snaps:
-                # A snapshot that never recorded its firmware cannot be filed
-                # under a version, and guessing one would credit this evidence
-                # to a build nobody measured.
-                notes.append({"device": wit["name"],
-                              "skipped": "snapshot has no firmware"})
-
-        for version, snap in sorted(snaps.items(), key=lambda kv: fv.sort_key(kv[0])):
-            _absorb_snapshot(versions, notes, wit, version, snap)
-
-    return versions, notes
+def _library_doc(product: str, versions=None) -> dict:
+    """The one call into the library, so there is one place to read it from."""
+    return _lib.matrix_doc(product, versions=versions)
 
 
-def _absorb_snapshot(versions: dict, notes: list, wit: dict,
-                     version: str, snap: dict) -> None:
-    """Fold one device-at-one-version snapshot into the version bucket."""
-    ledger = snap.get("endpoint_status") or {}
-    if not ledger:
-        notes.append({"device": wit["name"], "version": version,
-                      "skipped": "pre-ledger snapshot"})
-        return
-
-    errs = sum(1 for v in ledger.values() if v.get("verdict") == VERDICT_ERROR)
-    if errs and errs / max(len(ledger), 1) > MAX_ERROR_RATIO:
-        notes.append({"device": wit["name"], "version": version,
-                      "line": version.rsplit(".", 1)[0] if version.count(".") > 1 else version,
-                      "skipped": "%d/%d endpoints errored — the device is "
-                                 "unhealthy, not the catalog" % (errs, len(ledger))})
-        return
-
-    at = str(snap.get("generated_at") or "")[:19]
-    bucket = versions.setdefault(version, {})
-
-    seen_fields: dict = {}
-    for _section, eps in (snap.get("sections") or {}).items():
-        if not isinstance(eps, dict):
-            continue
-        for ep_name, rows in eps.items():
-            if not isinstance(rows, list):
-                continue
-            keys: set = set()
-            for row in rows:
-                if isinstance(row, dict):
-                    keys.update(str(k) for k in row.keys())
-            if keys:
-                seen_fields.setdefault(ep_name, set()).update(keys)
-
-    for ep_name, info in ledger.items():
-        verdict = info.get("verdict") or VERDICT_ERROR
-        rec = bucket.setdefault(ep_name, {
-            "endpoint": ep_name, "urn": info.get("urn") or "",
-            "section": info.get("section") or "",
-            "verdict": None, "fields": None, "origin": "sweep",
-            "devices": [], "measured_at": at,
-        })
-        if wit["name"] not in rec["devices"]:
-            rec["devices"].append(wit["name"])
-        if at > (rec["measured_at"] or ""):
-            rec["measured_at"] = at
-
-        # Verdict merge, now WITHIN one version. Two boxes running the same
-        # build are genuinely interchangeable evidence; two boxes running
-        # different builds are not, and that distinction is what this key
-        # change buys.
-        if verdict == VERDICT_OK:
-            rec["verdict"] = VERDICT_OK
-        elif verdict == VERDICT_ABSENT and rec["verdict"] != VERDICT_OK:
-            rec["verdict"] = VERDICT_ABSENT
-        elif rec["verdict"] is None:
-            rec["verdict"] = VERDICT_ERROR
-
-        keys = seen_fields.get(ep_name)
-        if keys:
-            # RULE 1: only a row with keys creates a field set.
-            rec["fields"] = sorted(set(rec["fields"] or []) | keys)
-
-
-# ---------------------------------------------------------------------------
-# evidence 2 — the harvested field schemas
-# ---------------------------------------------------------------------------
-
-def _schema_evidence(product: str) -> dict:
-    """``{line: {object: record}}`` from ``data/field_schemas/<product>/<line>``.
-
-    ``_default`` is excluded: it is the fallback for lines that have not
-    diverged, so counting it as a line would invent a firmware that no
-    appliance runs.
-    """
-    lines: dict = {}
-    base = os.path.join(SCHEMA_ROOT, product)
-    if not os.path.isdir(base):
-        return lines
-    for line in sorted(os.listdir(base)):
-        if line == "_default" or not os.path.isdir(os.path.join(base, line)):
-            continue
-        bucket = lines.setdefault(line, {})
-        for fname in sorted(os.listdir(os.path.join(base, line))):
-            # ``_coverage.json`` (what the last harvest could and could not do)
-            # lives in this directory too. It is skipped by RULE: it happens to
-            # carry no ``object`` key, so the check below would drop it anyway,
-            # and a file that is excluded only by accident is one field away
-            # from being read as an object.
-            if not fname.endswith(".json") or fname.startswith("_"):
-                continue
-            doc = _read_json(os.path.join(base, line, fname))
-            if not isinstance(doc, dict) or "object" not in doc:
-                continue
-            fields = [f.get("name") for f in (doc.get("fields") or [])
-                      if isinstance(f, dict) and f.get("name")]
-            bucket[doc["object"]] = {
-                "endpoint": doc.get("endpoint") or doc["object"],
-                "object": doc["object"],
-                "fields": sorted(set(fields)) if fields else None,
-                "origin": "schema",
-                "source": doc.get("source") or "",
-                "device_firmware": doc.get("device_firmware") or "",
-                "measured_at": str(doc.get("generated_at") or "")[:19],
-            }
-    return lines
-
-
-# ---------------------------------------------------------------------------
-# build
-# ---------------------------------------------------------------------------
-
-def build(product: str) -> dict:
-    """Derive the whole matrix for one product. Pure read — writes nothing.
+def build(product: str, versions=None) -> dict:
+    """The matrix for one product, from the API library. Writes nothing.
 
     Two axes come out of here and they are not the same kind of thing:
 
     * ``versions`` — the ATOMIC evidence, one bucket per full firmware version
       (``8.0.3``). Nothing is merged across builds.
-    * ``lines`` — the ``major.minor`` ROLLUP. The aggregation argument that
-      shaped the first version of this module is still right *for aggregating*;
-      what was wrong was aggregating in silence. A rollup now always declares
-      ``versions`` it is made of, ``heterogeneous``, and — per endpoint —
-      ``attested_on`` / ``silent_on``, so "8.0 serves this" can never again be
-      read as "every 8.0.x serves this".
+    * ``lines`` — the ``major.minor`` ROLLUP, which always declares the
+      ``versions`` it is made of, ``heterogeneous``, and per endpoint
+      ``attested_on`` / ``silent_on``, so "8.0 serves this" can never be read
+      as "every 8.0.x serves this".
+
+    ``versions`` limits the version axis (and the rollups of their lines) to
+    the builds named. Pass it for vendor-heavy products: the FortiGate
+    catalogue is ~720 endpoints per build across dozens of builds, and the
+    whole document is never what a page needs.
+
+    Declarations are NOT baked in: they are authored rows, and
+    ``firmware_versions.overlay`` merges them on read.
     """
-    from . import firmware_versions as fv
+    return _library_doc(product, versions=versions)
 
-    witnesses = _live_appliances(product)
-    sweep, notes = _sweep_evidence(product, witnesses)
-    schema = _schema_evidence(product)
 
-    # Declarations are NOT baked in here. The file this builds is DERIVED
-    # evidence; a declaration is authored data in Postgres, and
-    # ``firmware_versions.overlay`` merges the two on read. Persisting one into
-    # the other was a measured defect: forgetting a declaration left its row on
-    # the page forever, because the next ``load`` read it back out of the file
-    # that had captured it. Two stores, one merge point, and the merge point is
-    # the reader.
-    fleet_versions = sorted({w["version"] for w in witnesses.values() if w["version"]},
-                            key=fv.sort_key)
-    fleet_lines = sorted({w["line"] for w in witnesses.values() if w["line"]})
+def load(product: str, versions=None) -> dict | None:
+    """The matrix for ``product`` — ``None`` only when the library cannot answer.
 
-    # --- the atomic axis ---------------------------------------------------
-    versions: dict = {}
-    for version in sorted(sweep, key=fv.sort_key):
-        eps = {name: dict(rec) for name, rec in (sweep.get(version) or {}).items()}
-        line = fv.line_of(version)
-        # Schema evidence is harvested per LINE (``data/field_schemas/<product>/
-        # <line>/``), so it cannot be attributed to one build. It is carried
-        # here LABELLED ``granularity: line`` rather than dropped — dropping it
-        # would make every version look field-blind — and never silently, so a
-        # reader can tell a build-level measurement from a line-level one.
-        objects = {}
-        for obj, rec in (schema.get(line) or {}).items():
-            objects[obj] = dict(rec, granularity="line", line=line)
-        meta = {"version": version, "line": line,
-                "line_only": fv.is_line_only(version),
-                "sources": [fv.SOURCE_EVIDENCE], "manual": False,
-                "declared": False, "measured": True}
-        ok = sum(1 for r in eps.values() if r["verdict"] == VERDICT_OK)
-        absent = sum(1 for r in eps.values() if r["verdict"] == VERDICT_ABSENT)
-        versions[version] = {
-            **meta,
-            "version": version, "line": line,
-            "in_fleet": version in fleet_versions,
-            "measured": bool(eps),
-            "devices": sorted({d for r in eps.values() for d in r["devices"]}),
-            "endpoints": eps, "objects": objects,
-            "counts": {
-                "swept": len(eps), "ok": ok, "absent": absent,
-                "error": len(eps) - ok - absent,
-                "endpoints_with_fields": sum(1 for r in eps.values() if r["fields"]),
-                "schema_objects": len(objects),
-                "schema_fields": sum(len(r["fields"] or []) for r in objects.values()),
-            },
-        }
-
-    # --- the rollup --------------------------------------------------------
-    all_lines = sorted({fv.line_of(v) for v in versions if fv.line_of(v)} | set(schema))
-    lines: dict = {}
-    for line in all_lines:
-        members = sorted([v for v in versions if fv.line_of(v) == line], key=fv.sort_key)
-        measured_members = [v for v in members if versions[v]["measured"]]
-
-        eps: dict = {}
-        for version in measured_members:
-            for name, rec in versions[version]["endpoints"].items():
-                agg = eps.setdefault(name, {
-                    "endpoint": name, "urn": rec.get("urn") or "",
-                    "section": rec.get("section") or "",
-                    "verdict": None, "fields": None, "origin": "sweep",
-                    "devices": [], "measured_at": rec.get("measured_at") or "",
-                    "attested_on": [], "silent_on": [],
-                })
-                for d in rec["devices"]:
-                    if d not in agg["devices"]:
-                        agg["devices"].append(d)
-                if (rec.get("measured_at") or "") > (agg["measured_at"] or ""):
-                    agg["measured_at"] = rec.get("measured_at") or ""
-                if rec["verdict"] == VERDICT_OK:
-                    agg["verdict"] = VERDICT_OK
-                    agg["attested_on"].append(version)
-                else:
-                    agg["silent_on"].append(version)
-                    if rec["verdict"] == VERDICT_ABSENT and agg["verdict"] != VERDICT_OK:
-                        agg["verdict"] = VERDICT_ABSENT
-                    elif agg["verdict"] is None:
-                        agg["verdict"] = VERDICT_ERROR
-                if rec.get("fields"):
-                    agg["fields"] = sorted(set(agg["fields"] or []) | set(rec["fields"]))
-
-        # An endpoint attested by SOME but not ALL measured builds of the line
-        # is the exact shape of the false positive. It is counted and listed,
-        # never folded into "the line serves it".
-        partial = [
-            {"endpoint": name, "attested_on": r["attested_on"],
-             "silent_on": r["silent_on"], "urn": r.get("urn", "")}
-            for name, r in sorted(eps.items())
-            if r["attested_on"] and r["silent_on"]
-        ]
-
-        objects = {obj: dict(rec) for obj, rec in (schema.get(line) or {}).items()}
-        ok = sum(1 for r in eps.values() if r["verdict"] == VERDICT_OK)
-        absent = sum(1 for r in eps.values() if r["verdict"] == VERDICT_ABSENT)
-        lines[line] = {
-            "line": line,
-            "in_fleet": line in fleet_lines,
-            "versions": members,
-            "measured_versions": measured_members,
-            "declared_versions": [v for v in members if versions[v].get("declared")],
-            # A line built from more than one measured build cannot speak for
-            # any single one of them without saying so.
-            "heterogeneous": len(measured_members) > 1,
-            "measured": bool(eps) or bool(objects),
-            "devices": sorted({d for r in eps.values() for d in r["devices"]}),
-            "endpoints": eps,
-            "objects": objects,
-            "partial_endpoints": partial,
-            "counts": {
-                "swept": len(eps), "ok": ok, "absent": absent,
-                "error": len(eps) - ok - absent,
-                "endpoints_with_fields": sum(1 for r in eps.values() if r["fields"]),
-                "schema_objects": len(objects),
-                "schema_fields": sum(len(r["fields"] or []) for r in objects.values()),
-                "versions": len(members),
-                "measured_versions": len(measured_members),
-                "partial": len(partial),
-            },
-        }
-
-    return {
-        "product": product,
-        "built_at": datetime.utcnow().isoformat(timespec="seconds"),
-        "sweepable": product in SWEPT_PRODUCTS,
-        "fleet_lines": fleet_lines,
-        "fleet_versions": fleet_versions,
-        "witnesses": [{"id": k, **v} for k, v in sorted(witnesses.items())],
-        "notes": notes,
-        "versions": versions,
-        "lines": lines,
-    }
+    Never reads the export file. A cold or broken database answers ``None``
+    rather than a stale file, because a stale file is exactly the store whose
+    silent drift this replaced; callers already treat ``None`` as "no evidence".
+    """
+    try:
+        return build(product, versions=versions)
+    except Exception:  # noqa: BLE001 — a page must not 500 on a cold store
+        from ..extensions import db
+        db.session.rollback()
+        return None
 
 
 def rebuild(product: str) -> dict:
-    """Build and persist. Returns the matrix."""
+    """Write the export file from the library. Returns the matrix.
+
+    An export, not a derivation: no evidence is read from disk and nothing is
+    filtered, so running it can no longer lose a retired device's evidence.
+    """
     matrix = build(product)
     _write_json_atomic(matrix_path(product), matrix)
     return matrix
 
 
-def _adapt_pre_version(doc: dict) -> dict:
-    """Make a line-only matrix (written before 2026-09-16) safe to read.
+def _scope_versions(product: str, scopes) -> list:
+    """Every build an answer about ``scopes`` can depend on.
 
-    It is deliberately NOT rebuilt here. ``build`` filters witnesses through
-    the live appliance table, so a rebuild silently drops every line whose
-    witnesses have since been deleted — ``fortiadc``'s whole 8.0 line is in
-    that position today. Destroying evidence as a side effect of somebody
-    opening a page is not an upgrade path.
-
-    So the old document is served as-is, with an empty version axis and
-    ``stale_format`` set. The page can then say "rebuild me" and
-    :func:`preflight` can refuse to answer a BUILD-scoped question out of
-    LINE-scoped data — which is the whole point of the round that introduced
-    the axis.
+    Each named build, plus every build of its line: a line rollup is made of
+    them, and a version-scoped ``preflight`` that finds no evidence of its own
+    reports the line's answer beside its refusal.
     """
-    doc = dict(doc, versions={}, fleet_versions=[], stale_format=True)
-    for ln in (doc.get("lines") or {}).values():
-        ln.setdefault("versions", [])
-        ln.setdefault("measured_versions", [])
-        ln.setdefault("declared_versions", [])
-        ln.setdefault("heterogeneous", False)
-        ln.setdefault("partial_endpoints", [])
-        ln.setdefault("measured", True)
-        counts = ln.setdefault("counts", {})
-        counts.setdefault("partial", 0)
-        counts.setdefault("versions", 0)
-        counts.setdefault("measured_versions", 0)
-    return doc
+    from sqlalchemy import select
+
+    from ..extensions import db
+    from ..models_apilib import ApiLibBuild
+    from . import firmware_versions as fv
+
+    named = {fv.normalize(s) for s in scopes if fv.normalize(s)}
+    lines = {fv.line_of(s) for s in named if fv.line_of(s)}
+    if not lines:
+        return sorted(named)
+    same_line = {v for (v,) in db.session.execute(
+        select(ApiLibBuild.version).where(ApiLibBuild.product == product,
+                                          ApiLibBuild.line.in_(sorted(lines))))}
+    return sorted(named | same_line, key=fv.sort_key)
 
 
-def load(product: str, rebuild_if_missing: bool = True) -> dict | None:
-    """The stored matrix, rebuilt on first access when absent."""
-    doc = _read_json(matrix_path(product))
-    if isinstance(doc, dict) and doc.get("product") == product:
-        if "versions" not in doc:
-            return _adapt_pre_version(doc)
-        return doc
-    if rebuild_if_missing:
-        try:
-            return rebuild(product)
-        except Exception:  # noqa: BLE001 — a page must not 500 on a cold store
-            return None
-    return None
+def _load_for(product: str, *scopes) -> dict:
+    """The matrix restricted to what an answer about ``scopes`` reads.
+
+    Equivalent to the whole document for those scopes (see
+    :func:`_scope_versions`), and it keeps a single preflight against a
+    catalogue the size of FortiGate's from resolving every build it holds.
+    """
+    empty = {"lines": {}, "versions": {}}
+    try:
+        wanted = _scope_versions(product, scopes)
+    except Exception:  # noqa: BLE001 — same contract as ``load``
+        from ..extensions import db
+        db.session.rollback()
+        return empty
+    if not wanted:
+        # Nothing nameable was asked about. ``matrix_doc(versions=[])`` would
+        # mean "every build", which is the opposite of what was asked.
+        return empty
+    return load(product, versions=wanted) or empty
 
 
 # ---------------------------------------------------------------------------
@@ -616,6 +335,9 @@ BUCKET_LABEL = {
 
 ALL_BUCKETS = tuple(BUCKET_LABEL)
 
+#: Order in which same-kind field deltas are reported for one key.
+_ORIGIN_ORDER = ("schema", "sweep", "legacy_matrix", "manual", "vendor_doc")
+
 
 def diff(product: str, base_line: str, target_line: str, matrix: dict | None = None) -> dict:
     """What ``target_line`` adds/removes relative to ``base_line``.
@@ -630,7 +352,7 @@ def diff(product: str, base_line: str, target_line: str, matrix: dict | None = N
     naive set difference and mean opposite things to whoever is about to write
     a payload.
     """
-    matrix = matrix or load(product) or {"lines": {}, "versions": {}}
+    matrix = matrix or _load_for(product, base_line, target_line)
     a, a_kind = resolve_scope(matrix, base_line)
     b, b_kind = resolve_scope(matrix, target_line)
     a = a or {}
@@ -714,9 +436,12 @@ def diff(product: str, base_line: str, target_line: str, matrix: dict | None = N
         nothing but that filter — a page whose headline number is noise is a
         page the operator learns to ignore.
 
-        So a delta is only ever computed sweep↔sweep or schema↔schema. A key
-        known by different kinds on the two lines is *incomparable*, and says
-        so.
+        So a delta is only ever computed between two sets of the SAME kind.
+        A key known by different kinds on the two sides is *incomparable*, and
+        says so. Endpoint evidence is keyed by the origin the library recorded
+        (``sweep``, ``vendor_doc``, ``legacy_matrix``) rather than assumed to be
+        a sweep: a vendor claim labelled ``sweep`` would present the vendor's
+        tooling as a measurement of a real box.
         """
         out: dict = {}
         for obj, rec in (line_doc.get("objects") or {}).items():
@@ -724,13 +449,14 @@ def diff(product: str, base_line: str, target_line: str, matrix: dict | None = N
                 out.setdefault(obj, {})["schema"] = set(rec["fields"])
         for name, rec in (line_doc.get("endpoints") or {}).items():
             if rec.get("fields"):
-                out.setdefault(name, {})["sweep"] = set(rec["fields"])
+                out.setdefault(name, {})[rec.get("origin") or "sweep"] = set(rec["fields"])
         return out
 
     fa, fb = _field_map(a), _field_map(b)
     for key in sorted(set(fa) | set(fb)):
         ia, ib = fa.get(key) or {}, fb.get(key) or {}
-        shared = [o for o in ("schema", "sweep") if o in ia and o in ib]
+        shared = sorted(set(ia) & set(ib),
+                        key=lambda o: (_ORIGIN_ORDER.index(o) if o in _ORIGIN_ORDER else 99, o))
         if not shared:
             if ia and ib:
                 fields_incomparable.append({
@@ -1007,7 +733,7 @@ def preflight(product: str, line: str, key: str, keys,
     from . import firmware_versions as fv
 
     keys = sorted({str(k) for k in (keys or [])})
-    matrix = matrix or load(product) or {"lines": {}, "versions": {}}
+    matrix = matrix or _load_for(product, line)
     doc, kind = resolve_scope(matrix, line)
 
     if doc is not None:
@@ -1018,12 +744,8 @@ def preflight(product: str, line: str, key: str, keys,
         ldoc = (matrix.get("lines") or {}).get(parent)
         if ldoc:
             siblings = ldoc.get("measured_versions") or []
-            stale = (" The stored matrix predates version indexing — rebuild "
-                     "it before reading this as a fact about %s."
-                     % parent) if matrix.get("stale_format") else ""
             return {
                 "status": STATUS_VERSION_UNMEASURED, "line": line, "scope": line,
-                "stale_format": bool(matrix.get("stale_format")),
                 "scope_kind": "version", "key": key, "unknown": [], "known": [],
                 "measured_siblings": siblings, "rollup_line": parent,
                 "line_answer": _answer(ldoc, "line", parent, key, keys),
@@ -1031,7 +753,7 @@ def preflight(product: str, line: str, key: str, keys,
                           "measured on %s — what those builds serve is not "
                           "proof about this one. The line-granular answer is "
                           "reported beside this one, labelled."
-                          % (line, parent, ", ".join(siblings) or "nothing") + stale,
+                          % (line, parent, ", ".join(siblings) or "nothing"),
             }
 
     return {"status": STATUS_UNMEASURED, "line": line, "scope": line,
@@ -1066,7 +788,7 @@ def preflight_for_appliance(appliance, key: str, keys) -> dict:
 __all__ = [
     "firmware_line", "firmware_version", "resolve_scope", "build", "rebuild",
     "load", "diff", "preflight", "preflight_for_appliance", "matrix_path",
-    "MATRIX_ROOT", "MATRIX_ROOT_DEFAULT", "REDISCOVERY_ROOT_DEFAULT",
+    "MATRIX_ROOT", "MATRIX_ROOT_DEFAULT", "PRODUCTS", "CATALOG_ONLY_PRODUCTS",
     "SWEPT_PRODUCTS", "STATUS_OK", "STATUS_UNMEASURED", "STATUS_ABSENT",
     "STATUS_FIELDS_UNKNOWN", "STATUS_UNKNOWN_FIELDS",
     "STATUS_VERSION_UNMEASURED", "known_fields",

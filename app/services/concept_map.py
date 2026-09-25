@@ -347,6 +347,11 @@ PAGES: tuple[dict, ...] = (
        "fortiweb unmeasured",
        "Which fields each firmware line really carries — the same API "
        "version is not the same set of fields."),
+    _p("apilib_fieldmap.index", "API Field Renames", "config",
+       "api field rename renamed map mapping firmware upgrade clone lost "
+       "added library version compat",
+       "Tell the API library that a field was renamed between two builds, "
+       "so a rename is not reported as a field lost plus one added."),
     _p("adc_api.reconcile", "Registry Reconcile (FortiADC)", "adc",
        "reconcile registry drift sweep dead endpoint retire confirm apply "
        "fortiadc missing stale",
@@ -612,6 +617,8 @@ EXCLUDED: dict[str, str] = {
     "adc_api.api_versions_export": "file download",
     "adc_api.api_versions_export_pdf": "file download",
     "api_explorer.cli_coverage_block": "json feed",
+    "api_explorer.build_info": "json feed",
+    "api_explorer.endpoint_fields": "json feed",
     "adc_api.cli_coverage_block": "json feed",
     "firmware.parse_name": "json feed",
     "system_backup.external_files": "json feed", "system_backup.external_outline": "json feed",

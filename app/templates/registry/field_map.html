@@ -1,0 +1,198 @@
+{% extends "base.html" %}
+{% block title %}{{ _('API field renames') }}{% endblock %}
+
+{% macro seen(h) -%}
+  {%- if h and h.known -%}
+    <span class="text-muted" style="font-size:11.5px;">{{ h.first_build or '?' }} &ndash; {{ h.last_build or '?' }}
+    {% for s in h.sources %}<span class="fw-badge {{ 'fw-badge-warning' if s == 'vendor_doc' else 'fw-badge-info' }} ms-1"
+      title="{{ _('vendor_doc = the vendor\'s tooling claims it; anything else was measured on a box or harvested schema.') }}">{{ s }}</span>{% endfor %}</span>
+  {%- else -%}
+    <span class="fw-badge fw-badge-secondary" title="{{ _('No evidence in the API library for this field on this endpoint yet.') }}">{{ _('no evidence') }}</span>
+  {%- endif -%}
+{%- endmacro %}
+
+{% block content %}
+<div class="fw-page-header">
+  <h4 class="mb-1"><i class="bi bi-arrow-left-right me-2"></i>{{ _('API field renames') }}</h4>
+  <p class="text-muted mb-0" style="font-size:13px;">
+    {{ _('When a firmware renames a field, the API library otherwise reads it as one field lost and an unrelated one added. A mapping here makes the build comparison, the clone pre-flight and the upgrade pre-flight report it as a') }}
+    <strong>{{ _('rename') }}</strong>.
+    {{ _('Mappings are never deleted: a wrong one is') }} <strong>{{ _('retired') }}</strong>{{ _(', and the list keeps who believed what, and until when.') }}
+    <a href="{{ url_for('registry.api_versions') }}">{{ _('API versions') }}</a>
+  </p>
+</div>
+
+<div class="fw-card mb-3" style="padding:12px 14px;">
+  <form method="get" action="{{ url_for('apilib_fieldmap.index') }}" class="row g-2 align-items-end">
+    <div class="col-md-3">
+      <label class="fw-fld-label" for="fmFilterProduct">{{ _('Product') }}</label>
+      <select class="form-select form-select-sm" id="fmFilterProduct" name="product">
+        <option value="">{{ _('all products') }}</option>
+        {% for p in products %}<option value="{{ p }}" {{ 'selected' if p == f_product }}>{{ p }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="col-md-4">
+      <label class="fw-fld-label" for="fmFilterEndpoint">{{ _('Endpoint') }}</label>
+      <input class="form-control form-control-sm" id="fmFilterEndpoint" name="endpoint" value="{{ f_endpoint }}" autocomplete="off">
+    </div>
+    <div class="col-md-3">
+      <div class="form-check mb-1">
+        <input class="form-check-input" type="checkbox" id="fmShowRetired" name="retired" value="1" {{ 'checked' if show_retired }}>
+        <label class="form-check-label" for="fmShowRetired" style="font-size:13px;">{{ _('Show retired') }} ({{ retired_count }})</label>
+      </div>
+    </div>
+    <div class="col-md-2 text-end">
+      <button class="btn btn-sm btn-fw-outline" type="submit"><i class="bi bi-funnel me-1"></i>{{ _('Filter') }}</button>
+    </div>
+  </form>
+</div>
+
+<div class="fw-card mb-3">
+  <div style="padding:10px 14px;border-bottom:1px solid var(--fw-border, #e3e8ef);">
+    <strong><i class="bi bi-check2-square me-1"></i>{{ _('In force') }}</strong>
+    <span class="fw-badge fw-badge-secondary ms-1">{{ active|length }}</span>
+    {% if truncated %}<span class="text-muted ms-2" style="font-size:12px;">{{ _('showing the first %(n)s rows — narrow the filter', n=limit) }}</span>{% endif %}
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm mb-0 align-middle" id="fmActive">
+      <thead><tr>
+        <th>{{ _('Product') }}</th><th>{{ _('Endpoint') }}</th>
+        <th>{{ _('Old name') }}</th><th>{{ _('New name') }}</th>
+        <th>{{ _('Builds') }}</th><th>{{ _('Note') }}</th><th>{{ _('Added') }}</th><th></th>
+      </tr></thead>
+      <tbody>
+      {% for r in active %}
+        <tr data-map-id="{{ r.id }}">
+          <td><code>{{ r.product }}</code></td>
+          <td><code>{{ r.endpoint }}</code></td>
+          <td><code>{{ r.from_field }}</code><div>{{ seen(r.from_seen) }}</div></td>
+          <td><code>{{ r.to_field }}</code><div>{{ seen(r.to_seen) }}</div></td>
+          <td style="font-size:12px;">{{ r.from_version or _('any') }} &rarr; {{ r.to_version or _('any') }}</td>
+          <td style="font-size:12px;">{{ r.note }}</td>
+          <td class="text-muted" style="font-size:11.5px;">{{ r.created_by or '—' }}<br>{{ r.created_at.strftime('%Y-%m-%d %H:%M') if r.created_at else '' }}</td>
+          <td class="text-end">
+            <button type="button" class="btn btn-sm btn-outline-secondary fm-retire"
+                    data-url="{{ url_for('apilib_fieldmap.retire', map_id=r.id) }}"
+                    data-label="{{ r.endpoint }}: {{ r.from_field }} → {{ r.to_field }}">
+              <i class="bi bi-archive me-1"></i>{{ _('Retire') }}</button>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="8" class="text-muted small py-3">{{ _('No mapping in force. Every field that disappears between two builds is reported as lost.') }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% if show_retired %}
+<div class="fw-card mb-3">
+  <div style="padding:10px 14px;border-bottom:1px solid var(--fw-border, #e3e8ef);">
+    <strong><i class="bi bi-archive me-1"></i>{{ _('Retired') }}</strong>
+    <span class="text-muted ms-1" style="font-size:12px;">{{ _('kept for the record; no reader applies them') }}</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm mb-0 align-middle">
+      <thead><tr>
+        <th>{{ _('Product') }}</th><th>{{ _('Endpoint') }}</th><th>{{ _('Old name') }}</th>
+        <th>{{ _('New name') }}</th><th>{{ _('Builds') }}</th><th>{{ _('Added') }}</th><th>{{ _('Retired') }}</th>
+      </tr></thead>
+      <tbody>
+      {% for r in retired %}
+        <tr class="text-muted">
+          <td><code>{{ r.product }}</code></td><td><code>{{ r.endpoint }}</code></td>
+          <td><code>{{ r.from_field }}</code></td><td><code>{{ r.to_field }}</code></td>
+          <td style="font-size:12px;">{{ r.from_version or _('any') }} &rarr; {{ r.to_version or _('any') }}</td>
+          <td style="font-size:11.5px;">{{ r.created_by or '—' }} · {{ r.created_at.strftime('%Y-%m-%d') if r.created_at else '' }}</td>
+          <td style="font-size:11.5px;">{{ r.retired_by or '—' }} · {{ r.retired_at.strftime('%Y-%m-%d %H:%M') if r.retired_at else '' }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="7" class="text-muted small py-3">{{ _('Nothing retired.') }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<div class="fw-card mb-3">
+  <div style="padding:10px 14px;border-bottom:1px solid var(--fw-border, #e3e8ef);">
+    <strong><i class="bi bi-plus-lg me-1"></i>{{ _('Add a rename') }}</strong>
+  </div>
+  <div style="padding:12px 14px;">
+    <form method="post" action="{{ url_for('apilib_fieldmap.add') }}" class="row g-2 align-items-end" id="fmAddForm">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="col-md-2">
+        <label class="fw-fld-label" for="fmProduct">{{ _('Product') }}</label>
+        <select class="form-select form-select-sm" id="fmProduct" name="product" required>
+          {% for p in products %}<option value="{{ p }}" {{ 'selected' if p == (f_product or 'fortiweb') }}>{{ p }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="fw-fld-label" for="fmEndpoint">{{ _('Endpoint') }}</label>
+        <input class="form-control form-control-sm" id="fmEndpoint" name="endpoint" required
+               pattern="[A-Za-z0-9_.\-]{1,160}" value="{{ f_endpoint }}" autocomplete="off"
+               placeholder="webprotection_profile_inline">
+      </div>
+      <div class="col-md-2">
+        <label class="fw-fld-label" for="fmFromField">{{ _('Old field name') }}</label>
+        <input class="form-control form-control-sm" id="fmFromField" name="from_field" required
+               pattern="[A-Za-z0-9_.\-]{1,160}" autocomplete="off">
+      </div>
+      <div class="col-md-1">
+        <label class="fw-fld-label" for="fmFromVersion">{{ _('up to build') }}</label>
+        <input class="form-control form-control-sm" id="fmFromVersion" name="from_version" placeholder="7.6.8" autocomplete="off">
+      </div>
+      <div class="col-md-2">
+        <label class="fw-fld-label" for="fmToField">{{ _('New field name') }}</label>
+        <input class="form-control form-control-sm" id="fmToField" name="to_field" required
+               pattern="[A-Za-z0-9_.\-]{1,160}" autocomplete="off">
+      </div>
+      <div class="col-md-1">
+        <label class="fw-fld-label" for="fmToVersion">{{ _('from build') }}</label>
+        <input class="form-control form-control-sm" id="fmToVersion" name="to_version" placeholder="8.0.5" autocomplete="off">
+      </div>
+      <div class="col-md-1 text-end">
+        <button class="btn btn-sm btn-fw-primary" type="submit"><i class="bi bi-plus-lg me-1"></i>{{ _('Add') }}</button>
+      </div>
+      <div class="col-12">
+        <label class="fw-fld-label" for="fmNote">{{ _('Note (where the rename is documented)') }}</label>
+        <input class="form-control form-control-sm" id="fmNote" name="note" maxlength="500" autocomplete="off">
+        <div class="form-text" style="font-size:12px;">{{ _('Leave a build empty for "any". The mapping applies to a comparison that crosses it: the old name on or before the first build, the new name on or after the second.') }}</div>
+      </div>
+    </form>
+  </div>
+</div>
+<div id="fmError" class="fw-alert fw-alert-warning d-none"></div>
+{% endblock %}
+
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var meta = document.querySelector('meta[name="csrf-token"]');
+  var CSRF = meta ? meta.content : '';
+  var MSG_CONFIRM = {{ _('Retire this mapping? It stays in the list as retired; no comparison applies it any more.')|tojson }};
+  function showErr(msg) {
+    var e = document.getElementById('fmError');
+    e.textContent = msg; e.classList.remove('d-none');
+  }
+  document.querySelectorAll('#fmActive .fm-retire').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      if (!window.confirm(MSG_CONFIRM + '\n\n' + btn.dataset.label)) return;
+      btn.disabled = true;
+      fetch(btn.dataset.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CSRF },
+        body: '{}'
+      }).then(function (r) {
+        return r.json().catch(function () { return { ok: false, error: 'HTTP ' + r.status }; });
+      }).then(function (d) {
+        if (!d.ok) { btn.disabled = false; showErr(d.error || 'Retire failed'); return; }
+        var tr = btn.closest('tr');
+        if (tr) tr.parentNode.removeChild(tr);
+      }).catch(function (e) { btn.disabled = false; showErr('' + e); });
+    });
+  });
+})();
+</script>
+{% endblock %}

@@ -68,6 +68,42 @@ def clean_iface_map(action, raw):
         out[s] = d
     return out, None
 
+_NF_NAME_RE = re.compile(r'^[A-Za-z0-9_.\-]{1,160}$')
+_NF_MAX_KEYS, _NF_MAX_FIELDS, _NF_MAX_LEN = 50, 100, 1024
+
+
+def clean_new_field_values(action, raw):
+    """Shape-check the dialog's ``{object: {field: value}}`` new-field answers.
+
+    Returns ``(values, error)``. SHAPE only — names, scalar values, sizes. The
+    authoritative rule (the destination build is known to serve the field, the
+    source lacks it, the value fits its type/options) is enforced by
+    ``version_compat.validate_new_values`` inside the engine, so a caller that
+    skips this route is held to it too. Empty values are "not opted in" and
+    are dropped here, so "left blank" reaches the engine as absent.
+    """
+    if action not in policy_ops._CLONE_ACTIONS or raw in (None, {}, ''):
+        return {}, None
+    if not isinstance(raw, dict) or len(raw) > _NF_MAX_KEYS:
+        return {}, 'new field values must be an object of {object: {field: value}}'
+    out = {}
+    for key, fields in raw.items():
+        key = str(key or '')
+        if not _NF_NAME_RE.match(key) or not isinstance(fields, dict) \
+                or len(fields) > _NF_MAX_FIELDS:
+            return {}, 'new field values for %r are malformed' % key[:80]
+        for f, v in fields.items():
+            f = str(f or '')
+            if not _NF_NAME_RE.match(f):
+                return {}, '%r is not a field name' % f[:80]
+            if v is None or (isinstance(v, str) and not v.strip()):
+                continue
+            if not isinstance(v, (str, int, float, bool)) or len(str(v)) > _NF_MAX_LEN:
+                return {}, 'value for %s.%s must be short text' % (key, f)
+            out.setdefault(key, {})[f] = v
+    return out, None
+
+
 _SAVE_EPS = {EP_POLICY, EP_POOL, EP_WPP, EP_VIPLIST, EP_PSERVER}
 _CHILD_EPS = {EP_VIPLIST, EP_PSERVER}
 
@@ -272,6 +308,14 @@ def _parse_action(appliance_id):
         if bad is not None:
             return _err('interface name %r is not a valid port name' % bad)
         opts['iface_map'] = iface_map
+        # The destination's NEW fields the operator chose to set (opt-in; the
+        # default is to add nothing). Read from the request every time, like
+        # the artifact acknowledgement, and re-validated by the engine.
+        nf_values, nf_bad = clean_new_field_values(action, body.get('new_field_values'))
+        if nf_bad is not None:
+            return _err(nf_bad)
+        if nf_values:
+            opts['new_field_values'] = nf_values
         # The operator's acknowledgement that a file-backed object (XML schema,
         # DTD, WSDL, OpenAPI, gRPC IDL, Lua script) whose CONTENT SATOM cannot
         # obtain may be skipped. Read from the REQUEST every time, never cached

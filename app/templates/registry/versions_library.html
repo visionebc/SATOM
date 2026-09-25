@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% from "registry/_apilib.html" import lib_selector, lib_builds_table, lib_compare_card, lib_drill_card with context %}
+{% block title %}API Versions{% endblock %}
+
+{#- Another product's API library, reached from this ADOM's versions page with
+    ``?product=``. Only the library cards: the CLI evidence, the absence
+    ledger, the discovery run and the exports describe appliances the mount
+    manages, and this product may have none (FortiGate is catalogue-only).
+    The whole matrix document is never built here — see ``_apiversions._library``. -#}
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-diagram-2 me-2 text-accent"></i>API versions
+      <span class="fw-badge fw-badge-secondary">{{ lib_product }}</span></h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      {{ _('What the API library knows about each build of this product: which endpoints and fields it serves, where that knowledge came from, and what changes between two builds.') }}
+      {% if lib_catalog_only %}{{ _('SATOM does not manage this product: its catalogue is held for reference and comes from vendor evidence, not from appliances in the fleet.') }}{% endif %}
+    </p>
+    {{ lib_selector() }}
+  </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for(page_endpoint) }}">
+      <i class="bi bi-arrow-left me-1"></i>{{ _('Back to %(p)s', p=product_key) }}</a>
+  </div>
+</div>
+
+{{ lib_builds_table() }}
+{{ lib_compare_card() }}
+{{ lib_drill_card() }}
+{% endblock %}

@@ -352,6 +352,25 @@
           </div>
           <div class="form-text" id="actionArtHint" style="font-size:12px;"></div>
         </div>
+        {# The destination build's NEW fields — offered, never added by default.
+           Rows come from the server's checklist (version_compat via the API
+           library); a blank value means "leave unset", and the engine
+           re-validates every filled value against the destination build. #}
+        <div id="actionFieldNewFields" class="mb-3 d-none">
+          <label class="fw-fld-label">{{ _('Fields the destination build adds (optional)') }}</label>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-1">
+              <thead><tr>
+                <th>{{ _('Object') }}</th>
+                <th>{{ _('Field') }}</th>
+                <th>{{ _('Evidence') }}</th>
+                <th>{{ _('Value') }}</th>
+              </tr></thead>
+              <tbody id="actionNewFieldsBody"></tbody>
+            </table>
+          </div>
+          <div class="form-text" id="actionNewFieldsHint" style="font-size:12px;">{{ _('Nothing is added unless you fill a value. Values are checked against the destination build\'s type and options before anything is written, and only objects this run CREATES receive them.') }}</div>
+        </div>
         <div id="actionBulkIpNote" class="mb-3 d-none">
           <span class="fw-badge fw-badge-secondary">{{ _('Bulk') }}</span>
           <span class="text-muted" style="font-size:12.5px;">{{ _('Each copy\'s VIP gets a') }} <strong>{{ _('dummy IP') }}</strong> automatically, per the admin rules:
@@ -692,6 +711,11 @@
     document.getElementById('actionFieldArtifacts').classList.add('d-none');
     document.getElementById('actionArtBody').innerHTML = '';
     document.getElementById('actionArtHint').textContent = '';
+    // New-field answers reset with the dialog: a value typed for one policy's
+    // destination build must never ride into a run against another.
+    nfState = { rows: [], chosen: {} };
+    document.getElementById('actionFieldNewFields').classList.add('d-none');
+    document.getElementById('actionNewFieldsBody').innerHTML = '';
     document.getElementById('actionBulkIpNote').classList.toggle('d-none', !(isClone && !single));
     // WPP options: admin defaults, editable only after "Override admin defaults".
     document.getElementById('actionFieldWppOpts').classList.toggle('d-none', !isClone);
@@ -828,6 +852,78 @@
     runChecklist();
   });
 
+  // The destination build's NEW fields (server-computed offer) and the values
+  // the operator typed. `chosen` holds ONLY non-empty answers, keyed
+  // "object|field": blank means "leave unset" and never reaches the server.
+  var nfState = { rows: [], chosen: {} };
+  function escAttr(s) {
+    return esc(s).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  function renderNewFields(rows) {
+    var box = document.getElementById('actionFieldNewFields');
+    rows = rows || [];
+    nfState.rows = rows;
+    // Answers for fields the latest checklist no longer offers are dropped:
+    // sending them would only earn a refusal from the engine.
+    var live = {};
+    rows.forEach(function (r) { live[r.key + '|' + r.field] = 1; });
+    Object.keys(nfState.chosen).forEach(function (k) { if (!live[k]) delete nfState.chosen[k]; });
+    if (!rows.length) { box.classList.add('d-none'); document.getElementById('actionNewFieldsBody').innerHTML = ''; return; }
+    box.classList.remove('d-none');
+    document.getElementById('actionNewFieldsBody').innerHTML = rows.map(function (r) {
+      var k = r.key + '|' + r.field, cur = nfState.chosen[k] || '';
+      var ev = r.claim === 'vendor'
+        ? '<span class="fw-badge fw-badge-warning" title="' + escAttr('Only the vendor\'s documentation says ' + (r.target_version || 'the destination') + ' serves this field; no box running it was measured.') + '">vendor claims</span>'
+        : '<span class="fw-badge fw-badge-info" title="' + escAttr('Measured: ' + (r.sources || []).join(', ')) + '">measured</span>';
+      var typ = (r.type || 'text') + (r.default !== null && r.default !== undefined && r.default !== '' ? ' · default ' + r.default : '');
+      var input;
+      var opts = r.options || [];
+      if (!r.settable) {
+        input = '<span class="text-muted" style="font-size:11.5px;">sub-table — set it on the destination after the copy</span>';
+      } else if (opts.length || r.type === 'bool') {
+        if (!opts.length) opts = ['enable', 'disable'];
+        input = '<select class="form-select form-select-sm fw-nf-input" data-k="' + escAttr(k) + '">'
+          + '<option value="">— leave unset —</option>'
+          + opts.map(function (o) { return '<option value="' + escAttr(o) + '"' + (String(o) === cur ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join('')
+          + '</select>';
+      } else {
+        input = '<input type="text" class="form-control form-control-sm fw-nf-input" data-k="' + escAttr(k)
+          + '" value="' + escAttr(cur) + '" placeholder="leave unset" autocomplete="off" maxlength="1024">';
+      }
+      var ren = r.renamed_from
+        ? '<div style="font-size:11.5px;color:#7A5700;">renamed from <code>' + esc(r.renamed_from) + '</code>'
+          + (r.source_value !== undefined ? ' — source value <code>' + esc(r.source_value) + '</code>' : '') + '</div>' : '';
+      return '<tr><td class="font-monospace" style="font-size:12px;">' + esc(r.key)
+        + (r.objects > 1 ? ' <span class="text-muted">×' + r.objects + '</span>' : '') + '</td>'
+        + '<td class="font-monospace" style="font-size:12px;">' + esc(r.field) + ren
+        + '<div class="text-muted" style="font-size:11.5px;">' + esc(typ) + '</div></td>'
+        + '<td>' + ev + '</td><td style="min-width:180px;">' + input + '</td></tr>';
+    }).join('');
+  }
+
+  // A value typed or picked changes what Apply would write, so the preview on
+  // screen no longer describes it: invalidate, exactly like the other knobs.
+  document.getElementById('actionNewFieldsBody').addEventListener('change', function (e) {
+    var el = e.target.closest('.fw-nf-input');
+    if (!el) return;
+    var v = (el.value || '').trim();
+    if (v) nfState.chosen[el.dataset.k] = v; else delete nfState.chosen[el.dataset.k];
+    chk.previewDone = false;
+    document.getElementById('actionPreview').classList.add('d-none');
+    updateApply();
+  });
+
+  function newFieldValues() {
+    var out = {}, n = 0;
+    Object.keys(nfState.chosen).forEach(function (k) {
+      var i = k.indexOf('|'), key = k.slice(0, i), field = k.slice(i + 1);
+      if (!nfState.chosen[k]) return;
+      (out[key] = out[key] || {})[field] = nfState.chosen[k]; n++;
+    });
+    return n ? out : null;
+  }
+
   function ifaceMapValue() {
     var out = {};
     Object.keys(ifaceState.chosen).forEach(function (k) {
@@ -853,6 +949,8 @@
       if (single) p.vip_ip = document.getElementById('actionVipIp').value.trim();
       if (NEEDS_DEST[current.action]) p.iface_map = ifaceMapValue();
       p.accept_missing_artifacts = !!artState.accepted;
+      var nfv = newFieldValues();
+      if (nfv) p.new_field_values = nfv;
       p.additive_only = document.getElementById('actionAdditiveOnly').checked;
       var choice = wppChoiceValue();
       if (choice === 'use_dest') {
@@ -886,6 +984,9 @@
     // policies can share one schema file, and showing it twice would invite
     // two separate decisions about one object.
     var artRows = [], artSeen = {}, artNeed = false;
+    // New-field offers, merged across the selected policies by object+field:
+    // one answer per field of one object type, whichever policy offered it.
+    var nfRows = [], nfSeen = {};
     (data.policies || []).forEach(function (pr) {
       html += '<div style="margin:6px 0 2px;"><strong>' + esc(pr.policy) + '</strong></div>';
       (pr.checks || []).forEach(function (c) {
@@ -912,6 +1013,11 @@
         if (!prev) { ifaceSuggest.interfaces.push(Object.assign({}, r, { fields: (r.fields || []).slice() })); return; }
         (r.fields || []).forEach(function (f) { if (prev.fields.indexOf(f) < 0) prev.fields.push(f); });
       });
+      (sg.new_fields_offer || []).forEach(function (r) {
+        var k = r.key + '|' + r.field;
+        if (!nfSeen[k]) { nfSeen[k] = Object.assign({}, r); nfRows.push(nfSeen[k]); return; }
+        nfSeen[k].objects = (nfSeen[k].objects || 0) + (r.objects || 0);
+      });
       if (sg.artifacts_need_ack) artNeed = true;
       (sg.artifacts || []).forEach(function (r) {
         var k = r.kind + ' ' + r.name;
@@ -925,6 +1031,7 @@
     });
     renderIfaceMap(ifaceSuggest);
     renderArtifacts(artRows, artNeed);
+    renderNewFields(nfRows);
     document.getElementById('actionChecklistBody').innerHTML = html || '<span class="text-muted">No checks.</span>';
     chk.hasBlock = hasBlock;
     // Prefill the VIP suggestion (single) from the admin dummy-IP rules.
@@ -994,6 +1101,16 @@
         var s = det.summary;
         body += '<div class="text-muted">to create: ' + (s.to_create || 0)
           + ' · already exists: ' + (s.exists || 0) + ' · total: ' + (s.total || 0) + '</div>';
+      }
+      if (det.new_fields && ((det.new_fields.applied || []).length || (det.new_fields.not_applied || []).length)) {
+        var nf = det.new_fields;
+        body += '<div style="font-size:12px;margin:2px 0;">'
+          + (nf.applied || []).map(function (a) {
+              return '<div><span class="fw-badge fw-badge-info">new field</span> ' + esc(a.key + '.' + a.field) + ' on ' + esc(a.mkey) + '</div>';
+            }).join('')
+          + (nf.not_applied || []).map(function (a) {
+              return '<div class="text-muted"><span class="fw-badge fw-badge-secondary">not set</span> ' + esc(a.key + '.' + a.field) + ' — ' + esc(a.reason) + '</div>';
+            }).join('') + '</div>';
       }
       if (det.cascade_plan) {
         var cp = det.cascade_plan;

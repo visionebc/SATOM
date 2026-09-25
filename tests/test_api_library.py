@@ -388,17 +388,28 @@ def test_retired_device_evidence_stays_in_matrix_doc(ctx):
     assert doc["versions"]["8.0.3"]["in_fleet"] is False
 
 
-def _keys_match(a: dict, b: dict, where: str, extra=()):
-    assert set(a) <= set(b), "%s: library lacks %s" % (where, sorted(set(a) - set(b)))
-    assert set(b) - set(a) <= set(extra), "%s: unexpected %s" % (where, sorted(set(b) - set(a)))
+#: The document shape ``api_matrix.build`` returned when it read files, frozen
+#: here because that reader is gone: every consumer indexes these keys.
+_TOP_KEYS = {"product", "built_at", "sweepable", "fleet_lines", "fleet_versions",
+             "witnesses", "notes", "versions", "lines"}
+_VERSION_KEYS = {"version", "line", "line_only", "sources", "manual", "declared",
+                 "measured", "in_fleet", "devices", "endpoints", "objects", "counts"}
+_COUNT_KEYS = {"swept", "ok", "absent", "error", "endpoints_with_fields",
+               "schema_objects", "schema_fields"}
+_EP_KEYS = {"endpoint", "urn", "section", "verdict", "fields", "origin", "devices",
+            "measured_at"}
+_OBJ_KEYS = {"endpoint", "object", "fields", "origin", "source", "device_firmware",
+             "measured_at", "granularity", "line"}
+_LINE_KEYS = {"line", "in_fleet", "versions", "measured_versions", "declared_versions",
+              "heterogeneous", "measured", "devices", "endpoints", "objects",
+              "partial_endpoints", "counts"}
+_WITNESS_KEYS = {"id", "name", "firmware", "version", "line"}
 
 
-def test_matrix_doc_has_the_api_matrix_shape(ctx, tmp_path, monkeypatch):
+def test_matrix_doc_has_the_api_matrix_shape(ctx, tmp_path):
     red, sch = tmp_path / "rediscovery", tmp_path / "field_schemas"
     red.mkdir()
     sch.mkdir()
-    monkeypatch.setattr(am, "REDISCOVERY_ROOT", str(red))
-    monkeypatch.setattr(am, "SCHEMA_ROOT", str(sch))
     a1 = _appliance("fw1", firmware="7.6.8")
     a2 = _appliance("fw2", firmware="7.6.9")
     for ap, fw in ((a1, "7.6.8"), (a2, "7.6.9")):
@@ -421,42 +432,50 @@ def test_matrix_doc_has_the_api_matrix_shape(ctx, tmp_path, monkeypatch):
         "object": "admin", "endpoint": "system_admin", "source": "live:fw1@7.6",
         "generated_at": "2026-06-28", "fields": [{"name": "name"}, {"name": "access"}]}))
 
-    old = am.build("fortiweb")
     lib.backfill(str(tmp_path))
     new = lib.matrix_doc("fortiweb")
 
-    _keys_match(old, new, "top")
-    assert sorted(old["versions"]) == sorted(new["versions"]) == ["7.6.8", "7.6.9"]
-    assert sorted(old["lines"]) == sorted(new["lines"]) == ["7.6"]
-    for v in old["versions"]:
-        o, n = old["versions"][v], new["versions"][v]
-        _keys_match(o, n, "versions[%s]" % v)
-        _keys_match(o["counts"], n["counts"], "versions[%s].counts" % v)
-        assert o["counts"] == n["counts"]
-        assert sorted(o["endpoints"]) == sorted(n["endpoints"])
-        for e in o["endpoints"]:
-            _keys_match(o["endpoints"][e], n["endpoints"][e], "versions[%s].%s" % (v, e))
-            for k in ("verdict", "fields", "urn", "section", "origin", "devices"):
-                assert o["endpoints"][e][k] == n["endpoints"][e][k], (v, e, k)
-        assert sorted(o["objects"]) == sorted(n["objects"])
-        for obj in o["objects"]:
-            _keys_match(o["objects"][obj], n["objects"][obj], "objects[%s]" % obj)
-            assert o["objects"][obj]["fields"] == n["objects"][obj]["fields"]
-            assert n["objects"][obj]["granularity"] == "line"
-    lo, lnw = old["lines"]["7.6"], new["lines"]["7.6"]
-    _keys_match(lo, lnw, "lines[7.6]")
-    _keys_match(lo["counts"], lnw["counts"], "lines[7.6].counts")
-    assert lo["counts"] == lnw["counts"]
-    assert lo["partial_endpoints"] == lnw["partial_endpoints"]
-    for e in lo["endpoints"]:
-        _keys_match(lo["endpoints"][e], lnw["endpoints"][e], "lines.%s" % e)
-        assert lo["endpoints"][e]["attested_on"] == lnw["endpoints"][e]["attested_on"]
-    for obj in lo["objects"]:
-        _keys_match(lo["objects"][obj], lnw["objects"][obj], "lines.objects[%s]" % obj)
-    for w_old, w_new in zip(old["witnesses"], new["witnesses"]):
-        _keys_match(w_old, w_new, "witness", extra=("retired", "live"))
-    assert old["fleet_versions"] == new["fleet_versions"]
-    assert old["fleet_lines"] == new["fleet_lines"]
+    assert _TOP_KEYS <= set(new)
+    assert sorted(new["versions"]) == ["7.6.8", "7.6.9"]
+    assert sorted(new["lines"]) == ["7.6"]
+    for v, doc in new["versions"].items():
+        assert _VERSION_KEYS <= set(doc), v
+        assert set(doc["counts"]) == _COUNT_KEYS
+        for e, rec in doc["endpoints"].items():
+            assert set(rec) == _EP_KEYS, (v, e)
+        for obj, rec in doc["objects"].items():
+            assert _OBJ_KEYS <= set(rec), (v, obj)
+            assert rec["granularity"] == "line"
+            assert rec["fields"] == ["access", "name"]
+    v8, v9 = new["versions"]["7.6.8"], new["versions"]["7.6.9"]
+    assert v8["counts"] == {"swept": 3, "ok": 2, "absent": 1, "error": 0,
+                            "endpoints_with_fields": 1, "schema_objects": 1,
+                            "schema_fields": 2}
+    assert (v9["counts"]["ok"], v9["counts"]["absent"]) == (3, 0)
+    admin = v8["endpoints"]["admin"]
+    assert (admin["verdict"], admin["fields"], admin["origin"], admin["devices"]) == \
+        ("ok", ["access", "name"], "sweep", ["fw1"])
+    assert admin["urn"] == "/api/v2.0/cmdb/system/admin" and admin["section"] == "S"
+    assert v8["endpoints"]["empty"]["fields"] is None, "rule 1: blind is not empty"
+    assert v8["endpoints"]["ntp"]["verdict"] == "absent"
+
+    line = new["lines"]["7.6"]
+    assert _LINE_KEYS <= set(line)
+    assert set(line["counts"]) == _COUNT_KEYS | {"versions", "measured_versions", "partial"}
+    assert line["measured_versions"] == ["7.6.8", "7.6.9"] and line["heterogeneous"]
+    assert line["partial_endpoints"] == [{"endpoint": "ntp", "attested_on": ["7.6.9"],
+                                          "silent_on": ["7.6.8"],
+                                          "urn": "/api/v2.0/cmdb/system/ntp"}]
+    assert line["endpoints"]["admin"]["attested_on"] == ["7.6.8", "7.6.9"]
+    for w in new["witnesses"]:
+        assert _WITNESS_KEYS <= set(w)
+    assert new["fleet_versions"] == ["7.6.8", "7.6.9"]
+    assert new["fleet_lines"] == ["7.6"]
+
+    # ``api_matrix`` is now a thin reader over the library: the same document.
+    via_am = am.build("fortiweb")
+    assert {k: v for k, v in via_am.items() if k != "built_at"} == \
+        {k: v for k, v in new.items() if k != "built_at"}
     # Existing consumers keep working on the library document.
     d = am.diff("fortiweb", "7.6.8", "7.6.9", matrix=new)
     assert [r["endpoint"] for r in d["endpoints_added"]] == ["ntp"]

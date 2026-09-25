@@ -13,10 +13,22 @@ about a box that does not serve it. The atomic axis is now the full version
 (``8.0.5``); the line survives as a rollup that always DECLARES which builds it
 merged and which endpoints only some of them attested.
 
+Where the answers come from (SATOM 2.2.0): the append-only API library
+(``api_library``, ``docs/api-library.md``). The builds table reads
+``api_library.builds()`` and the library comparison reads
+``api_library.compare()`` directly; the per-row comparison with its CLI,
+corroboration and ledger columns still reads ``api_matrix``, which is itself
+served from the library. The product selector reaches every product the
+library holds — including FortiGate, which SATOM does not manage and whose
+catalogue is vendor evidence only. Those products get the library cards alone,
+and never the whole matrix document: FortiGate's is ~720 endpoints per build
+across dozens of builds.
+
 Read-only except ``rebuild`` / ``declare`` / ``forget``. ``rebuild`` writes only
-the DERIVED matrix file (``data/api_matrix/<product>.json``); the other two
-write one row of operator-authored text. All three are gated on REGISTRY_EDIT:
-the same audience as the reconcile page and strictly less dangerous than it.
+the EXPORT file (``data/api_matrix/<product>.json``, read by the offline CLI);
+the other two write one row of operator-authored text. All three are gated on
+REGISTRY_EDIT: the same audience as the reconcile page and strictly less
+dangerous than it.
 """
 from __future__ import annotations
 
@@ -27,9 +39,120 @@ from flask import (Response, flash, redirect, render_template, request,
                    url_for)
 from flask_login import current_user
 
-from ..services import (absence_corroboration, absence_record, api_matrix,
-                        cli_coverage, firmware_versions, pdf_kit)
+from ..services import (absence_corroboration, absence_record, api_library,
+                        api_matrix, cli_coverage, firmware_versions, pdf_kit)
 from ..services.audit import log_action
+
+
+# ---------------------------------------------------------------------------
+#  The API library cards: every product, per build                           #
+# ---------------------------------------------------------------------------
+
+def _lib_product(mount: str) -> str:
+    """The product the library cards describe: ``?product=``, else the mount's.
+
+    An unknown key falls back to the mount rather than rendering an empty
+    library, which would read as "this product has no API".
+    """
+    asked = (request.args.get("product") or "").strip().lower()
+    return asked if asked in api_library.PRODUCTS else mount
+
+
+def _build_status(row: dict) -> str:
+    """One word per build, and three of them on purpose.
+
+    ``vendor_only`` is not ``measured``: it is a claim by the vendor's tooling
+    that no box of ours has confirmed. ``unmeasured`` is not "nothing changed":
+    nobody asked that build anything.
+    """
+    if row.get("vendor_only"):
+        return "vendor_only"
+    return "measured" if row.get("measured") else "unmeasured"
+
+
+def _lib_pick(rows: list) -> tuple:
+    """Default library pair: the two NEWEST measured builds.
+
+    Newest pair rather than oldest to newest: on a vendor catalogue spanning a
+    decade of builds the widest pair is a wall of changes nobody asked about,
+    and the question an operator brings is "what does the next upgrade
+    change". Line-only builds are skipped — they name no build to compare.
+    """
+    measured = [r["version"] for r in rows if r["measured"] and not r["line_only"]]
+    if len(measured) >= 2:
+        return measured[-2], measured[-1]
+    return "", ""
+
+
+def _lib_compare(product: str, keys: set, base: str, target: str):
+    """``api_library.compare`` for two known builds, shaped for the template.
+
+    ``None`` unless both sides are builds the library lists and they differ:
+    an empty comparison and "you asked about a build nobody knows" must never
+    render the same way.
+    """
+    if not base or not target or base == target or base not in keys \
+            or target not in keys:
+        return None
+    cmp = api_library.compare(product, base, target)
+    per_ep = cmp.get("endpoints") or {}
+    # Unknown field sets are a SEPARATE list, never rows of the change table:
+    # "fields known on one side only" is a gap in the evidence, and summed with
+    # the changes it becomes a removal nobody measured.
+    cmp["field_changes"] = [dict(r, endpoint=n) for n, r in sorted(per_ep.items())
+                            if not r.get("unknown")]
+    cmp["field_unknown"] = [dict(r, endpoint=n) for n, r in sorted(per_ep.items())
+                            if r.get("unknown")]
+    return cmp
+
+
+def _lib_drill(product: str, keys: list, default_at: str) -> dict:
+    """The endpoint drill-down: fields at one build, and "since which build".
+
+    ``field_history`` is asked for ONE field at a time, on click: resolving it
+    for every field of a FortiGate endpoint would be a query per field per
+    page view for a column most readers never open.
+    """
+    at = firmware_versions.normalize(request.args.get("at") or "")
+    if at not in keys:
+        at = default_at if default_at in keys else ""
+    endpoint = (request.args.get("ep") or "").strip()
+    field = (request.args.get("field") or "").strip()
+    out = {"at": at, "endpoint": endpoint, "field": field,
+           "names": sorted(api_library.endpoints_at(product, at)) if at else [],
+           "fields": None, "history": None}
+    if endpoint and at:
+        out["fields"] = api_library.fields_at(product, endpoint, at)
+    if endpoint and field:
+        out["history"] = api_library.field_history(product, endpoint, field)
+    return out
+
+
+def _library(product: str, base: str = "", target: str = "") -> dict:
+    """Everything the library cards render, for ONE product.
+
+    Never calls ``matrix_doc``: builds, one comparison and one drill-down are a
+    handful of queries whatever the catalogue's size, which is what keeps the
+    FortiGate page as fast as the FortiWeb one.
+    """
+    rows = api_library.builds(product)
+    for r in rows:
+        r["status"] = _build_status(r)
+    keys = [r["version"] for r in rows]
+    d_base, d_target = _lib_pick(rows)
+    base = base if base in keys else d_base
+    target = target if target in keys else d_target
+    by_version = {r["version"]: r for r in rows}
+    return {
+        "lib_product": product,
+        "lib_products": api_library.products(),
+        "lib_catalog_only": product in api_library.CATALOG_ONLY_PRODUCTS,
+        "lib_builds": rows,
+        "lib_base": base, "lib_target": target,
+        "lib_base_row": by_version.get(base), "lib_target_row": by_version.get(target),
+        "lib_compare": _lib_compare(product, set(keys), base, target),
+        "lib_drill": _lib_drill(product, keys, target or (keys[-1] if keys else "")),
+    }
 
 
 def _scopes(matrix: dict) -> list:
@@ -134,11 +257,10 @@ def _resolved(product: str) -> dict:
     it is always the one nobody looks at that goes wrong first — here that is
     the download, which is also the copy that leaves the building.
     """
-    # Read-time merge of the DERIVED matrix (a file on disk) with the AUTHORED
-    # declarations (rows in Postgres). Two stores on purpose — one is rebuilt
-    # from evidence, the other is typed by a person — and merged here so a
-    # declaration is visible the moment it is made, without a rebuild that
-    # would drop evidence from deleted witnesses.
+    # Read-time merge of the EVIDENCE (the API library) with the AUTHORED
+    # declarations (``firmware_version_decls``). Two stores on purpose — one
+    # is measured, the other is typed by a person — merged here so a
+    # declaration is visible the moment it is made and never becomes evidence.
     matrix = firmware_versions.overlay(product, api_matrix.load(product) or _empty(product))
     vdocs = matrix.get("versions") or {}
     versions = sorted(vdocs, key=firmware_versions.sort_key)
@@ -287,6 +409,17 @@ def render_page(product: str, hub_endpoint: str, rebuild_endpoint: str,
                 page_endpoint: str, declare_endpoint: str = "",
                 forget_endpoint: str = "", export_endpoint: str = "",
                 export_pdf_endpoint: str = "", review_endpoint: str = ""):
+    lib_product = _lib_product(product)
+    if lib_product != product:
+        # Another product's library, on this ADOM's page. Only the library
+        # cards: the matrix-backed half (CLI evidence, the absence ledger, the
+        # discovery run, the exports) is about appliances this mount manages.
+        L = _library(lib_product, request.args.get("base") or "",
+                     request.args.get("target") or "")
+        return render_template("registry/versions_library.html",
+                               product_key=product, hub_endpoint=hub_endpoint,
+                               page_endpoint=page_endpoint, **L)
+
     R = _resolved(product)
     matrix, vdocs = R["matrix"], R["vdocs"]
     versions, lines, scopes = R["versions"], R["lines"], R["scopes"]
@@ -337,7 +470,6 @@ def render_page(product: str, hub_endpoint: str, rebuild_endpoint: str,
         "registry/versions.html", product_key=product, matrix=matrix, lines=lines,
         versions=versions, vdocs=vdocs, scopes=scopes,
         discover=discover, **cc_ctx, **dr_ctx,
-        stale_format=bool(matrix.get("stale_format")),
         probe_appliances=probe_appliances,
         exec_endpoint=("%s.execute" % _hub_bp) if _hub_bp else "",
         live_endpoint=("%s.cli_coverage_live" % _hub_bp) if _hub_bp else "",
@@ -356,6 +488,9 @@ def render_page(product: str, hub_endpoint: str, rebuild_endpoint: str,
         # guard for it asks the SERVER for the page instead of the resolver.
         ledger_orphans=R["ledger_orphans"],
         source_label=firmware_versions.SOURCE_LABEL,
+        # The library cards share the page's pair when both sides are builds;
+        # a line rollup is not a build the library can compare.
+        **_library(product, base, target),
     )
 
 
@@ -767,7 +902,7 @@ def rebuild_page(product: str, page_endpoint: str):
         return redirect(url_for(page_endpoint))
     vers = matrix.get("versions") or {}
     measured = [v for v, d in vers.items() if d.get("measured")]
-    flash("Matrix rebuilt from evidence on disk — %d firmware version(s), %d of "
+    flash("Matrix exported from the API library — %d firmware version(s), %d of "
           "them measured: %s."
           % (len(vers), len(measured),
              ", ".join(sorted(measured, key=firmware_versions.sort_key)) or "none"),

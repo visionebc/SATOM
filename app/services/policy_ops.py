@@ -247,7 +247,8 @@ def clone_policy(planner, ops, policy: str, *, new_name: str, dry_run: bool,
                  dst_wpp: str = "",
                  wpp_only_if_missing: bool = False,
                  certs: dict | None = None,
-                 wpp_decisions: dict | None = None) -> list[clone.CloneItem]:
+                 wpp_decisions: dict | None = None,
+                 new_fields: dict | None = None) -> list[clone.CloneItem]:
     """Plan the full policy tree on the source and create the missing objects on
     the ``ops`` device (same box or another). The new root is left DISABLED.
 
@@ -297,6 +298,14 @@ def clone_policy(planner, ops, policy: str, *, new_name: str, dry_run: bool,
       leaving the subtree on: an existing profile's object is already left
       alone, but its ~40 sub-tables are not, so today a clone can add a
       signature list to a live profile that other policies share.
+
+    * ``new_fields`` — ``{"values": {logical: {field: value}}}``: fields the
+      DESTINATION build serves that the source object lacks, which the operator
+      opted in to set. The values must already have passed
+      ``version_compat.validate_new_values`` (``perform_one`` does that); here
+      they are merged into the objects this run CREATES and nothing else, and
+      the outcome is written back as ``new_fields["report"]``. Absent/empty
+      keeps the write exactly as it was.
 
     The three profile behaviours are mutually exclusive by construction and the
     refusals live in this function, not only in the caller: a second caller
@@ -384,6 +393,12 @@ def clone_policy(planner, ops, policy: str, *, new_name: str, dry_run: bool,
             items, wpp_decisions.get("accepted") or (),
             wpp_decisions.get("shown") or (), dst_reader=planner.dst)
         wpp_decisions["applied"] = clone_decisions
+    # The destination's NEW fields the operator opted in to. After every plan
+    # rewrite that decides WHICH objects are created, before anything counts,
+    # renders or writes them — the preview then shows the merged payload.
+    if isinstance(new_fields, dict) and new_fields.get("values"):
+        from . import version_compat as _vc
+        new_fields["report"] = _vc.merge_new_values(items, new_fields["values"])
     if not dry_run:
         # HARD BLOCK: never write a partial tree. A referenced object that came
         # back empty from the source (renamed/deleted/unreadable) would leave the
@@ -593,7 +608,8 @@ def migrate_policy(dst_planner, dst_ops, src_ops, policy: str, *,
                    dst_wpp: str = "",
                    wpp_only_if_missing: bool = False,
                    certs: dict | None = None,
-                   wpp_decisions: dict | None = None) -> dict:
+                   wpp_decisions: dict | None = None,
+                   new_fields: dict | None = None) -> dict:
     """Clone the policy tree onto the destination, then — ONLY on a clean clone
     and a real apply — disable the SOURCE policy (rollback-friendly; the source
     is kept). A failed clone leaves the source LIVE and untouched."""
@@ -605,7 +621,7 @@ def migrate_policy(dst_planner, dst_ops, src_ops, policy: str, *,
                          additive_only=additive_only,
                          dst_wpp=dst_wpp,
                          wpp_only_if_missing=wpp_only_if_missing, certs=certs,
-                         wpp_decisions=wpp_decisions)
+                         wpp_decisions=wpp_decisions, new_fields=new_fields)
     summary = clone_summary(items)
     clone_ok = summary["failed"] == 0 and (dry_run or summary["created"] > 0
                                            or summary["updated"] > 0
@@ -844,6 +860,25 @@ def perform_one(action: str, *, source_appl, dest_appl=None, policy: str,
     art_ctx = _artifact_ctx(source_appl, dest_appl, opts)
     rec = {"policy": policy, "action": action, "ok": False, "error": "",
            "detail": {}}
+    # The destination's NEW fields the operator filled in. Validated HERE,
+    # against the library, before any device read — the checklist's offer is
+    # a hint, this is the rule — and a fresh context per call: the bulk job
+    # runs this per policy, and a shared dict would carry one policy's report
+    # into the next.
+    nf_ctx = None
+    nf_raw = opts.get("new_field_values") or None
+    if nf_raw and action in _CLONE_ACTIONS:
+        try:
+            from . import version_compat as _vc
+            nf_clean, nf_err = _vc.validate_for_clone(source_appl, dest_appl, nf_raw)
+        except Exception as exc:  # noqa: BLE001 — refuse, never guess
+            nf_clean, nf_err = {}, ["%s: %s" % (type(exc).__name__, exc)]
+        if nf_err:
+            rec["error"] = ("new field values refused (nothing was written): "
+                            + "; ".join(nf_err[:6]))
+            rec["detail"] = {"new_fields": {"errors": nf_err}}
+            return rec
+        nf_ctx = {"values": nf_clean} if nf_clean else None
     try:
         if action in ("enable", "disable"):
             res = set_status(_ops(source_appl), policy,
@@ -912,7 +947,8 @@ def perform_one(action: str, *, source_appl, dest_appl=None, policy: str,
                                  additive_only=additive_only,
                                  dst_wpp=dst_wpp,
                                  wpp_only_if_missing=wpp_only_if_missing,
-                                 certs=cert_ctx, wpp_decisions=wpp_decisions)
+                                 certs=cert_ctx, wpp_decisions=wpp_decisions,
+                                 new_fields=nf_ctx)
             summary = clone_summary(items)
             rec["ok"] = summary["failed"] == 0 and (
                 dry_run or summary["created"] > 0 or summary["updated"] > 0)
@@ -927,6 +963,8 @@ def perform_one(action: str, *, source_appl, dest_appl=None, policy: str,
             elif not dry_run and summary["created"] == 0:
                 rec["ok"], rec["error"] = False, 'nothing to create — "%s" exists' % new_name
             rec["detail"]["certificates"] = cert_ctx.get("rows") or []
+            if nf_ctx:
+                rec["detail"]["new_fields"] = nf_ctx.get("report") or {}
             if probe_backends and not dry_run:
                 rec["detail"]["backends"] = probe_backends_after(
                     source_appl, [new_name or policy], use_ssh=probe_ssh)
@@ -941,7 +979,8 @@ def perform_one(action: str, *, source_appl, dest_appl=None, policy: str,
                                  additive_only=additive_only,
                                  dst_wpp=dst_wpp,
                                  wpp_only_if_missing=wpp_only_if_missing,
-                                 certs=cert_ctx, wpp_decisions=wpp_decisions)
+                                 certs=cert_ctx, wpp_decisions=wpp_decisions,
+                                 new_fields=nf_ctx)
             summary = clone_summary(items)
             rec["ok"] = summary["failed"] == 0 and (dry_run or summary["created"] > 0
                                                     or summary["updated"] > 0
@@ -956,6 +995,8 @@ def perform_one(action: str, *, source_appl, dest_appl=None, policy: str,
             if summary["failed"]:
                 rec["error"] = "%s on %s" % (_failed_msg(report), dest_appl.name)
             rec["detail"]["certificates"] = cert_ctx.get("rows") or []
+            if nf_ctx:
+                rec["detail"]["new_fields"] = nf_ctx.get("report") or {}
             if probe_backends and not dry_run:
                 rec["detail"]["backends"] = probe_backends_after(
                     dest_appl, [new_name or policy], use_ssh=probe_ssh)
@@ -970,7 +1011,8 @@ def perform_one(action: str, *, source_appl, dest_appl=None, policy: str,
                                  additive_only=additive_only,
                                  dst_wpp=dst_wpp,
                                  wpp_only_if_missing=wpp_only_if_missing,
-                                 certs=cert_ctx, wpp_decisions=wpp_decisions)
+                                 certs=cert_ctx, wpp_decisions=wpp_decisions,
+                                 new_fields=nf_ctx)
             rec["ok"] = out["ok"]
             report = clone.outcome(out["items"])
             rec["detail"] = {"summary": out["summary"],
@@ -987,6 +1029,8 @@ def perform_one(action: str, *, source_appl, dest_appl=None, policy: str,
                 rec["error"] = ("%s — source left live" % _failed_msg(report)
                                 if report["failed"] else "clone failed — source left live")
             rec["detail"]["certificates"] = cert_ctx.get("rows") or []
+            if nf_ctx:
+                rec["detail"]["new_fields"] = nf_ctx.get("report") or {}
             if probe_backends and not dry_run:
                 rec["detail"]["backends"] = probe_backends_after(
                     dest_appl, [new_name or policy], use_ssh=probe_ssh)
@@ -1359,6 +1403,42 @@ def _apiver_targets(items) -> tuple[list, list]:
     return sorted((k, sorted(v)) for k, v in targets.items()), sorted(outside)
 
 
+def _new_fields_offer(rep: dict, items) -> list[dict]:
+    """The destination's new fields, as rows the clone dialog can offer.
+
+    Only for objects this run CREATES: an object the destination already owns
+    is not written, and adding a field to it would edit live configuration.
+    Each row carries the library's type/options/default and the evidence kind
+    (``claim``: measured vs vendor), plus — for a mapped rename — the old name
+    and the source's value under it, so the operator can carry it by hand.
+    Nothing is pre-filled: the default is to add nothing.
+    """
+    creates: dict[str, list] = {}
+    for it in items or []:
+        if getattr(it, "kind", "") == "object" and getattr(it, "status", "") == "create" \
+                and getattr(it, "logical", None):
+            creates.setdefault(it.logical, []).append(it)
+    out = []
+    for r in (rep or {}).get("rows") or []:
+        its = creates.get(r.get("key"))
+        if not its:
+            continue
+        for field, spec in sorted((r.get("new_field_specs") or {}).items()):
+            row = {"key": r["key"], "field": field, "objects": len(its),
+                   "target_version": rep.get("target_version") or "",
+                   "type": spec.get("type"), "options": spec.get("options") or [],
+                   "default": spec.get("default"), "required": spec.get("required"),
+                   "sources": spec.get("sources") or [],
+                   "claim": spec.get("claim") or "", "settable": not spec.get("children"),
+                   "renamed_from": spec.get("renamed_from") or ""}
+            if row["renamed_from"]:
+                val = (its[0].payload or {}).get(row["renamed_from"])
+                if isinstance(val, (str, int, float, bool)):
+                    row["source_value"] = str(val)[:200]
+            out.append(row)
+    return out
+
+
 def preflight(action: str, *, source_appl, dest_appl=None, policies: list[str],
               new_name: str = "", opts: dict | None = None) -> dict:
     """The clone/migrate PRE-FLIGHT CHECKLIST the dialog shows before anything
@@ -1644,20 +1724,43 @@ def preflight(action: str, *, source_appl, dest_appl=None, policies: list[str],
                         for r in _drop[:4])
                 else:
                     _detail = _vc.STATE_LABEL.get(_rep["state"], _rep["state"])
+                _level = _rep["level"]
+                _ren = [(r["key"], x) for r in _rep["rows"] for x in r.get("renamed") or []]
+                if _ren:
+                    # The engine reports a mapped rename as a rename, not a
+                    # loss. A CLONE still writes the old name, and a build that
+                    # only knows the new one answers 200 and discards it — so
+                    # here, unlike an upgrade, it is a warn until the operator
+                    # sets the new field below.
+                    _detail += (" Renamed on %s: %s — the copy carries the old "
+                                "name, which is discarded unless the new field "
+                                "is set below."
+                                % (_rep["target_version"] or dest.name,
+                                   ", ".join("%s.%s \u2192 %s" % (k, x["from"], x["to"])
+                                             for k, x in _ren[:4])))
+                    if _level == "ok":
+                        _level = "warn"
                 if _rep["new_total"]:
                     _detail += (" %d field(s) exist on %s that %s never had — "
-                                "review them after the copy."
+                                "review them below; nothing is added unless you "
+                                "fill a value."
                                 % (_rep["new_total"], _rep["target_version"],
                                    _rep["source_version"] or "the source"))
                 if _rep["new_unmeasured"]:
                     _detail += (" Gains unknown for %d object(s)."
                                 % _rep["new_unmeasured"])
-                add("apiver", _rep["level"],
+                if (_rep.get("claims") or {}).get(_vc.CLAIM_VENDOR):
+                    _detail += (" %d object(s) are judged on VENDOR documentation "
+                                "only — a claim, not a measurement of a box."
+                                % _rep["claims"][_vc.CLAIM_VENDOR])
+                add("apiver", _level,
                     "API surface: %s (%s) \u2192 %s (%s)"
                     % (source_appl.name, _rep.get("source_version") or "?",
                        dest.name, _rep.get("target_version") or "?"),
                     _detail + _tail)
                 suggest["apiver"] = _rep
+                suggest["new_fields_offer"] = _new_fields_offer(
+                    _rep, items if (live_ok and items) else [])
         except Exception as exc:  # noqa: BLE001 — a checklist never crashes
             add("apiver", "warn", "API surface could NOT be compared",
                 "%s: %s \u2014 this is 'not measured', not 'fine'"

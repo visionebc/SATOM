@@ -27,6 +27,7 @@ import pytest
 
 from app.extensions import db
 from app.models import Appliance
+from app.services import api_library as lib
 from app.services import api_matrix as am
 from tests.conftest import admin_user_id, login, make_user
 
@@ -37,20 +38,27 @@ from tests.conftest import admin_user_id, login, make_user
 
 @pytest.fixture()
 def isolated(app, session, tmp_path, monkeypatch):
-    """Redirect BOTH evidence roots and the store.
+    """A throwaway evidence tree, the schema-coverage root and the export.
 
-    Without this a test writes into the live node's ``data/`` and the real
-    API-versions page starts reporting fixtures as fleet evidence.
+    The matrix is read from the API library (the test database), so the tree
+    only matters once :func:`_ingest` has stored it — exactly as a sweep or a
+    harvest does in production. Redirecting the export keeps a test from
+    writing the file the offline CLI trusts.
     """
     red = tmp_path / "rediscovery"
     sch = tmp_path / "field_schemas"
     mat = tmp_path / "api_matrix"
     for p in (red, sch, mat):
         p.mkdir()
-    monkeypatch.setattr(am, "REDISCOVERY_ROOT", str(red))
     monkeypatch.setattr(am, "SCHEMA_ROOT", str(sch))
     monkeypatch.setattr(am, "MATRIX_ROOT", str(mat))
-    return {"rediscovery": red, "field_schemas": sch, "api_matrix": mat}
+    return {"rediscovery": red, "field_schemas": sch, "api_matrix": mat,
+            "root": tmp_path}
+
+
+def _ingest(isolated):
+    """Store everything the fixture tree holds in the library. Idempotent."""
+    return lib.backfill(str(isolated["root"]))
 
 
 def _appliance(name, kind="fortiweb", firmware="7.6.8", host=None,
@@ -73,6 +81,7 @@ def _snapshot(isolated, appliance, ledger, sections=None, firmware="7.6.8",
         "generated_at": generated_at, "firmware": firmware,
         "endpoint_status": ledger, "sections": sections or {},
     }))
+    _ingest(isolated)
 
 
 def _schema(isolated, product, line, obj, fields, endpoint=None):
@@ -83,6 +92,7 @@ def _schema(isolated, product, line, obj, fields, endpoint=None):
         "product": product, "line": line, "source": f"live:test@{line}",
         "fields": [{"name": f} for f in fields],
     }))
+    _ingest(isolated)
 
 
 def _ok(n=1):
@@ -341,13 +351,14 @@ def test_both_origins_present_compares_each_kind_separately(app, isolated):
 
 
 # --------------------------------------------------------------------------
-# witnesses — the appliance TABLE, and only healthy ones
+# witnesses — every device that left evidence, and only healthy evidence
 # --------------------------------------------------------------------------
 
-def test_snapshot_of_a_deleted_appliance_is_ignored(app, isolated):
-    """Half of ``data/rediscovery/`` belongs to appliances that no longer
-    exist. A firmware claim justified by a device nobody can re-probe is a
-    claim nobody can reproduce."""
+def test_snapshot_of_a_deleted_appliance_is_kept_and_named_retired(app, isolated):
+    """The file store filtered evidence through the live appliance table, and
+    that is how the 8.0.3 build disappeared: deleting a box deleted the proof
+    of what its firmware served. The library keeps it, under the identity the
+    snapshot recorded, and says the witness is retired rather than hiding it."""
     ghost = isolated["rediscovery"] / "999"
     ghost.mkdir()
     (ghost / "_config.json").write_text(json.dumps({
@@ -355,7 +366,12 @@ def test_snapshot_of_a_deleted_appliance_is_ignored(app, isolated):
         "generated_at": "2099-01-01T00:00:00",
         "endpoint_status": {"x": _ok(1)}, "sections": {},
     }))
-    assert am.build("fortiweb")["lines"] == {}
+    _ingest(isolated)
+    m = am.build("fortiweb")
+    assert m["versions"]["9.9.9"]["devices"] == ["ghost"]
+    assert m["versions"]["9.9.9"]["in_fleet"] is False
+    wit = {w["id"]: w for w in m["witnesses"]}
+    assert wit[999]["name"] == "ghost" and wit[999]["retired"] is True
 
 
 def test_unhealthy_witness_is_excluded_with_a_reason(app, isolated):
@@ -384,12 +400,19 @@ def test_a_few_errors_do_not_exclude_a_witness(app, isolated):
     assert m["lines"]["7.6"]["counts"]["ok"] == 90
 
 
-def test_maintenance_and_invalid_hosts_are_not_witnesses(app, isolated):
+def test_maintenance_and_invalid_hosts_keep_evidence_but_are_not_the_fleet(app, isolated):
+    """A parked or re-hosted box still measured what it measured. It is not
+    what the fleet runs TODAY, so it never makes a build ``in_fleet``."""
     a = _appliance("parked", maintenance=True)
     b = _appliance("retired", host="fw7.invalid")
     for ap in (a, b):
         _snapshot(isolated, ap, {"x": _ok(1)}, sections={"s": {"x": [{"k": 1}]}})
-    assert am.build("fortiweb")["lines"] == {}
+    m = am.build("fortiweb")
+    assert m["versions"]["7.6.8"]["devices"] == ["parked", "retired"]
+    assert m["versions"]["7.6.8"]["in_fleet"] is False
+    assert m["fleet_versions"] == []
+    assert {w["name"]: w["live"] for w in m["witnesses"]} == {"parked": False,
+                                                             "retired": False}
 
 
 def test_snapshot_without_firmware_is_skipped_with_a_reason(app, isolated):
@@ -473,11 +496,16 @@ def test_schema_only_line_still_appears(app, isolated):
 # store
 # --------------------------------------------------------------------------
 
-def test_rebuild_persists_and_load_reads_it_back(app, isolated):
+def test_rebuild_writes_the_export_and_load_never_needs_it(app, isolated):
+    """The file is an export for the offline CLI. The app's answer comes from
+    the library whether or not the file exists."""
     a = _appliance("fw09")
     _snapshot(isolated, a, {"x": _ok(1)})
     am.rebuild("fortiweb")
     assert os.path.exists(am.matrix_path("fortiweb"))
+    assert json.loads(io.open(am.matrix_path("fortiweb")).read())[
+        "lines"]["7.6"]["counts"]["ok"] == 1
+    os.unlink(am.matrix_path("fortiweb"))
     assert am.load("fortiweb")["lines"]["7.6"]["counts"]["ok"] == 1
 
 
@@ -511,15 +539,17 @@ def test_rebuild_over_an_existing_file_is_atomic(app, isolated):
     assert [f for f in os.listdir(am.MATRIX_ROOT) if f.endswith(".tmp")] == []
 
 
-def test_load_of_a_foreign_product_file_is_rejected(app, isolated):
-    """A file whose ``product`` does not match is not this product's matrix —
-    serving it would answer FortiADC questions with FortiWeb evidence."""
+def test_load_never_reads_the_export_file(app, isolated):
+    """Whatever sits in the export path — a foreign product's file, a stale
+    one — is never the answer. Serving it would answer FortiADC questions with
+    FortiWeb evidence, or today's questions with last month's file."""
     os.makedirs(am.MATRIX_ROOT, exist_ok=True)
     io.open(am.matrix_path("fortiadc"), "w").write(
-        json.dumps({"product": "fortiweb", "lines": {"7.6": {}}}))
+        json.dumps({"product": "fortiweb", "lines": {"7.6": {}},
+                    "versions": {"7.6.8": {}}}))
     out = am.load("fortiadc")
     assert out["product"] == "fortiadc"
-    assert out["lines"] == {}
+    assert out["lines"] == {} and out["versions"] == {}
 
 
 # --------------------------------------------------------------------------

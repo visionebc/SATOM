@@ -140,3 +140,32 @@ def test_a_preupgrade_without_the_section_keeps_its_old_summary_exactly():
 # of which ride on an earlier round that is still UNCOMMITTED; keeping them
 # here would put six red tests on the branch for a dependency that is not on
 # it.
+
+
+def test_surface_b_reads_the_library_offline(app, monkeypatch):
+    """The box is never asked: cached config in, library evidence out."""
+    from app.services import api_library as lib
+
+    def ep(fields):
+        return {"urn": "/u", "section": "s", "verdict": "ok", "rows": None,
+                "fields": {f: {"type": "str"} for f in fields}}
+
+    with app.app_context():
+        for v, f in (("7.6.8", ["name", "old"]), ("8.0.5", ["name", "new"])):
+            lib.ingest({"product": "fortiweb", "source": "sweep",
+                        "captured_at": "2026-01-01", "origin_ref": "t@" + v,
+                        "device": None, "healthy": True, "skip_reason": "",
+                        "scope": {"kind": "build", "version": v, "build": ""},
+                        "endpoints": {"widget": ep(f)}})
+        monkeypatch.setattr(upgrade, "firmware_version", lambda c: "7.6.8")
+        monkeypatch.setattr(upgrade, "check_permission", lambda c: True)
+        monkeypatch.setattr(vc, "cached_config_fields",
+                            lambda aid: ([("widget", ["name", "old"])], 1))
+        appl = _Appl()
+        appl.build_client = lambda: object()
+        out = upgrade.prepare(appl, do_backup=False, do_health=False,
+                              do_services=False, target_version="8.0.5")
+    api = out["apisurface"]
+    assert api["ok"] is True and api["evidence"] == "library"
+    assert api["dropped_total"] == 1 and api["new_total"] == 1
+    assert api["rows"][0]["claim"] == vc.CLAIM_MEASURED

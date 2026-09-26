@@ -141,14 +141,14 @@ resolves. The key is unique; the catalogs never collide.</p>
 auditable and every operator edit is attributable.</p>
 <p>Because it is an ordinary table, the nightly database backup already contains
 it — a restored database restores your endpoint edits with it.</p>
-<h3 id="13-the-three-catalogs">1.3 The three catalogs</h3>
+<h3 id="13-the-four-catalogs">1.3 The four catalogs</h3>
 <table>
 <thead>
 <tr>
 <th>Product</th>
 <th><code>api_version</code></th>
 <th>Transport</th>
-<th>Seed file</th>
+<th>Seeded from baseline</th>
 <th>Entries</th>
 </tr>
 </thead>
@@ -157,28 +157,38 @@ it — a restored database restores your endpoint edits with it.</p>
 <td>FortiWeb</td>
 <td><code>v2.0</code></td>
 <td>REST, <code>/api/v2.0/…</code></td>
-<td><code>endpoints.yaml</code></td>
-<td>507</td>
+<td>FortiWeb 7.6.8</td>
+<td>517</td>
 </tr>
 <tr>
 <td>FortiADC</td>
 <td><code>v1</code></td>
 <td>REST, <code>/api/&lt;object&gt;</code></td>
-<td><code>endpoints_fortiadc.yaml</code></td>
+<td>FortiADC 8.0.3</td>
 <td>255</td>
 </tr>
 <tr>
 <td>FortiAnalyzer</td>
 <td><code>jsonrpc</code></td>
 <td>JSON-RPC, <code>POST /jsonrpc</code></td>
-<td><code>endpoints_fortianalyzer.yaml</code></td>
+<td>FortiAnalyzer 7.6.7</td>
 <td>64</td>
+</tr>
+<tr>
+<td>FortiAuthenticator</td>
+<td><code>v1</code></td>
+<td>REST, <code>/api/v1/&lt;resource&gt;/</code></td>
+<td>FortiAuthenticator 8.0.3</td>
+<td>40</td>
 </tr>
 </tbody>
 </table>
-<p>826 entries seeded in total. Counts are what the shipped seeds contain; the
-live catalog is whatever your administrators have made of it — on the reference
-installation 11 FortiADC entries are disabled, so 815 are active.</p>
+<p>876 entries in the shipped baselines. Each catalog is seeded from its
+product's endpoint baseline, pinned to the firmware build it was promoted from
+(<code>flask apilib baseline status</code>; <a href="api-library.html">api-library.md</a> §9). The
+live catalog is whatever your administrators have made of it: on the reference
+installation 11 FortiADC entries and 1 FortiWeb entry are disabled, and 2
+FortiWeb entries were added by hand.</p>
 <p>The FortiADC URNs are derived from the appliance's own CLI object tree, which
 makes them predictable: <code>config load-balance virtual-server</code> becomes
 <code>/api/load_balance_virtual_server</code>.</p>

@@ -49,8 +49,8 @@ Tastypie's `/schema/` introspection crashes on the non-ORM singletons, so 22 of
 anyway (`systeminfo`, `logsettings`, `snmpgeneral`, `userlockoutpolicy`,
 `scheduledbackupsettings`, `fortitokenmobileprovisioning`,
 `fortitokenmobilelicenses`, `fortiguardmessages`). A registry seeded from "does
-`/schema/` work?" would have silently dropped them. The census in
-`endpoints_fortiauthenticator.yaml` is keyed on the **list** response instead.
+`/schema/` work?" would have silently dropped them. The census below is
+keyed on the **list** response instead.
 
 ### Secrets are write-only — verified, not assumed
 
@@ -79,16 +79,19 @@ API console shows the body verbatim for exactly this reason.
 | Forbidden (403) | 4 | `csv`, `oauth`, `pushpoll`, `transfertoken` — refused even with a valid key |
 | Other | 3 | `faccloudhost` (401), `recovery` (500), `userfortitokenpolicy` (400) |
 
-The full census, with each rejection's reason, lives at the tail of
-`endpoints_fortiauthenticator.yaml` so a future reader knows the other 18 were
-considered and rejected, not overlooked.
+This table is the census, with each rejection's reason, so a future reader
+knows the other 18 were considered and rejected, not overlooked. (It used to
+live at the tail of the retired `endpoints_fortiauthenticator.yaml`.) The
+POST-only resources are `auth`, `emergencytoken`, `idpsessiondata`,
+`licensing`, `localapiadmin`, `offlinehotpupdate`, `offlineotp`, `realmauth`,
+`ssoauth`, `system` and `upgrade`.
 
 ## 3. Where each piece lives
 
 | concern | file |
 |---|---|
-| Registry seed | `endpoints_fortiauthenticator.yaml` (repo root) |
-| Registry loader | `app/registry/loader.py` → `resolve_fac`, `seed_fac_from_yaml` |
+| Registry seed | baseline `app/registry/baselines/fortiauthenticator.json` (FortiAuthenticator 8.0.3), applied by `app/services/api_baseline.py` |
+| Registry loader | `app/registry/loader.py` → `resolve_fac` |
 | REST client | `app/clients/fortiauthenticator.py` |
 | Sidebar / section map | `app/services/fac_menu.py` |
 | Section pages | `app/views/fac.py`, `app/templates/fac/` |
@@ -96,7 +99,7 @@ considered and rejected, not overlooked.
 | Config harvest | `app/services/device_sync.py` → `snapshot_from_fac` |
 | Guards | `tests/test_fac.py` |
 
-The registry is **DB-first**: the YAML is an INSERT-ONLY seed and operator edits
+The registry is **DB-first**: the baseline is the seed and operator edits
 always win. When a firmware upgrade moves a resource, fix the URN on
 *FortiAuthenticator → API → Registry* — no code change, no deploy.
 

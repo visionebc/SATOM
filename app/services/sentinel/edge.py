@@ -75,7 +75,7 @@ from ...models_sentinel import SentinelEdgeMap
 from . import config
 
 #: The JSON-RPC routes this module drives. NOT registry-resolved, and that is
-#: on purpose: every FortiAnalyzer entry in ``endpoints_fortianalyzer.yaml``
+#: on purpose: every FortiAnalyzer entry of the endpoint baseline
 #: is pinned to ``adom/root``, and letting the operator choose the ADOM is the
 #: entire point of this feature. Resolving through the registry would silently
 #: query the wrong ADOM on any multi-ADOM collector — which returns zero rows,

@@ -1601,6 +1601,26 @@ sudo -u satom env FLASK_APP=wsgi:app venv/bin/flask apilib --help
 <td><code>flask apilib harvest-fac [--appliance NAME]</code></td>
 <td>Read the live API schema of every FortiAuthenticator, or the named one (GET requests only), and ingest it. One unreachable box does not stop the others</td>
 </tr>
+<tr>
+<td><code>flask apilib baseline status</code></td>
+<td>The endpoint baseline each registry product is seeded from: pinned build, protocol, entries per provenance, applied or not</td>
+</tr>
+<tr>
+<td><code>flask apilib baseline promote --product P --build X [--apply] [--export]</code></td>
+<td>Show what promoting the library's measurements of build X would change in the registry; <code>--apply</code> does it, <code>--export</code> rewrites the shipped artifact. Refuses a build nobody measured</td>
+</tr>
+<tr>
+<td><code>flask apilib baseline check [--product P]</code></td>
+<td>Drift between the registry, the baseline and the evidence of every build the fleet runs. Exit status 1 on drift</td>
+</tr>
+<tr>
+<td><code>flask apilib baseline resolve --product P [--build X] NAME</code></td>
+<td>Which URN NAME resolves to on build X, and on what authority</td>
+</tr>
+<tr>
+<td><code>flask apilib baseline apply\|export\|adopt</code></td>
+<td>Re-apply the active baseline; rewrite the artifacts; one-time adoption of a legacy map. See <a href="api-library.html">api-library.md</a> §9</td>
+</tr>
 </tbody>
 </table>
 <p><strong>Every command is safe to re-run.</strong> All of them write through one idempotent

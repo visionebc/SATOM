@@ -1,7 +1,7 @@
 """Rediscovery — re-read **all** config objects of a FortiWeb in one sweep.
 
 The user's "rediscovery" button: a single read-only pass that GETs every
-top-level CMDB endpoint in the registry (``endpoints.yaml``), captures the
+top-level CMDB endpoint in the registry (seeded from the FortiWeb baseline), captures the
 object lists section by section, and writes a ``_config.json`` snapshot under
 ``data/rediscovery/<appliance_id>/`` so the whole box's state is refreshed at
 once.

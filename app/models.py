@@ -1046,11 +1046,13 @@ class AppSetting(db.Model):
 class RegistryEndpoint(db.Model):
     """One REST endpoint of the API registry (logical name → URN).
 
-    The git-tracked ``endpoints.yaml`` is only the SEED: at boot an insert-only
-    sync adds names the DB doesn't have yet (``registry.loader.seed_from_yaml``).
+    The product's endpoint BASELINE is only the SEED (``services.api_baseline``):
+    at boot the registry is reconciled to it once per promotion, and a row whose
+    ``updated_by`` is not ``seed``/``baseline:*`` belongs to an operator and is
+    never touched.
     Operator edits live here and always win; ``pg_dump`` backs them up with the
     rest of the runtime data. ``enabled=False`` is a SOFT delete — the row must
-    stay so the boot seeder does not resurrect the name from the YAML.
+    stay (an operator row), so the baseline never re-enables the name.
 
     Two-dimensional key (product, api_version) so a future FortiWeb API v3 or a
     second product (FortiADC) is schema-ready — today everything is

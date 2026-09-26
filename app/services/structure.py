@@ -9,7 +9,7 @@ inventory delta) so the shape can be tweaked without touching code. An empty
 overlay renders exactly like ``dependencies.ROOTS``.
 
 This is the layer that ties the dependency tree to the **endpoint registry**:
-for every node carrying a REST ``urn`` it resolves the matching ``endpoints.yaml``
+for every node carrying a REST ``urn`` it resolves the matching registry
 logical name (via :mod:`app.registry.loader`), which powers the coverage
 cross-reference (matched / fetchable / missing) the Structure page shows.
 
@@ -33,7 +33,7 @@ from ..registry import dependencies as deps
 from ..registry import loader
 
 # The overlay keys the catalog understands (a single overlay, not version-keyed —
-# the web registry is a flat endpoints.yaml, not version-aware like the desktop).
+# the web registry is a flat name -> urn map, not version-aware like the desktop).
 _OVERLAY_KEYS = ("added", "edited", "removed", "order", "functions")
 _EDITABLE_FIELDS = ("label", "urn", "via", "section", "endpoint")
 
@@ -529,7 +529,7 @@ class StructureCatalog:
 
 def load_catalog(overlay: dict[str, Any] | None = None) -> StructureCatalog:
     """The catalog the page uses: built-in seed + the supplied overlay, with the
-    registry index built from ``endpoints.yaml`` (read lazily here, never at
+    registry index built from the endpoint registry (read lazily here, never at
     import time). The overlay is normally ``settings_store.get_json(
     'structure.overlay', {})`` passed in by the view.
     """

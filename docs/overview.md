@@ -112,7 +112,7 @@ Browser ──▶ edge nginx (LXC 241 @ 192.0.2.40)
 | Blueprints (one per feature area) | `app/views/*.py`, `app/api/` |
 | Business logic | `app/services/*.py` |
 | REST / SSH clients | `app/clients/` |
-| Endpoint registry (DB + YAML seed) | `app/registry/`, `endpoints.yaml` |
+| Endpoint registry (DB + baseline seed) | `app/registry/`, `app/registry/baselines/`, `app/services/api_baseline.py` |
 | Templates / styles | `app/templates/`, `app/static/css/fortiweb.css` |
 | Background jobs | `app/services/jobs.py`, Global → Jobs |
 | This documentation | `docs/*.md` → the **Documentation** sidebar link |

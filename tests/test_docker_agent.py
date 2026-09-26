@@ -664,3 +664,26 @@ def test_a_release_without_the_agent_is_refused_before_anything_changes(ag, monk
         ag.do_update(st, "2.1.3")
     assert built == [], "nothing is built or recreated for a refused release"
     assert env.read_text() == "SATOM_IMAGE=satom:2.3.0\n"
+
+
+def test_only_the_build_helper_gets_a_network(ag, monkeypatch):
+    """A compose run needs nothing but the socket; a BuildKit build needs the
+    client to reach the registry for the pull token."""
+    bodies = []
+    monkeypatch.setattr(ag, "ensure_cli_image", lambda st=None: None)
+
+    def fake_api_json(method, path, body=None, timeout=30, query=None, ok=None):
+        if path == "/containers/create":
+            bodies.append(body)
+            return {"Id": "h1"}
+        if path.endswith("/wait"):
+            return {"StatusCode": 0}
+        return None
+    monkeypatch.setattr(ag, "api_json", fake_api_json)
+    monkeypatch.setattr(ag, "api", lambda *a, **k: (200, b""))
+    ag.run_helper(["docker", "compose", "up"], timeout=5)
+    ag.run_helper(["docker", "build", "."], timeout=5, network="bridge")
+    ag.run_helper(["docker", "build", "."], timeout=5, network="host")
+    assert [b["HostConfig"]["NetworkMode"] for b in bodies] == ["none", "bridge", "none"]
+    assert all("/var/run/docker.sock:/var/run/docker.sock" in b["HostConfig"]["Binds"] for b in bodies)
+    assert not any(b["HostConfig"].get("Privileged") for b in bodies)

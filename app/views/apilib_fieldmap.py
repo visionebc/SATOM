@@ -86,7 +86,7 @@ def index():
     return render_template(
         'registry/field_map.html', active=active,
         retired=retired if show_retired else [], retired_count=len(retired),
-        show_retired=show_retired, products=list(lib.PRODUCTS),
+        show_retired=show_retired, lib_products=list(lib.PRODUCTS),
         f_product=product, f_endpoint=endpoint, limit=_LIST_LIMIT,
         truncated=len(rows) >= _LIST_LIMIT)
 

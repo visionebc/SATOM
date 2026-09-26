@@ -709,3 +709,18 @@ def test_an_update_reloads_the_proxy_before_trusting_web_health(ag, monkeypatch,
     ag.do_update(_St(), "9.9.9")
     assert order == ["reload", "wait"]
     assert "SATOM_IMAGE=satom:9.9.9" in (tmp_path / "satom.env").read_text()
+
+
+def test_the_heartbeat_is_refreshed_before_a_request_is_reported_done(ag, queue, monkeypatch):
+    """The console answers from the heartbeat; a stale one described the
+    state before the action (the import answered with the old certificate)."""
+    req, sta, calls = queue
+    order = []
+    monkeypatch.setattr(ag, "write_heartbeat", lambda: order.append("heartbeat"))
+    real_finish = ag.Status.finish
+    monkeypatch.setattr(ag.Status, "finish", lambda self, state, **kw:
+                        (order.append("finish:" + state), real_finish(self, state, **kw)))
+    p = req / (UID + ".json")
+    p.write_bytes(_req(kind="ctr-cert", cert_pem=CERT, key_pem=KEY))
+    ag.handle(p)
+    assert order == ["heartbeat", "finish:success"]

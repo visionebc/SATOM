@@ -28,7 +28,7 @@
       <label class="fw-fld-label" for="fmFilterProduct">{{ _('Product') }}</label>
       <select class="form-select form-select-sm" id="fmFilterProduct" name="product">
         <option value="">{{ _('all products') }}</option>
-        {% for p in products %}<option value="{{ p }}" {{ 'selected' if p == f_product }}>{{ p }}</option>{% endfor %}
+        {% for p in lib_products %}<option value="{{ p }}" {{ 'selected' if p == f_product }}>{{ p }}</option>{% endfor %}
       </select>
     </div>
     <div class="col-md-4">
@@ -125,7 +125,7 @@
       <div class="col-md-2">
         <label class="fw-fld-label" for="fmProduct">{{ _('Product') }}</label>
         <select class="form-select form-select-sm" id="fmProduct" name="product" required>
-          {% for p in products %}<option value="{{ p }}" {{ 'selected' if p == (f_product or 'fortiweb') }}>{{ p }}</option>{% endfor %}
+          {% for p in lib_products %}<option value="{{ p }}" {{ 'selected' if p == (f_product or 'fortiweb') }}>{{ p }}</option>{% endfor %}
         </select>
       </div>
       <div class="col-md-3">

@@ -16238,3 +16238,18 @@ venv/bin/python -m pytest -q tests/test_api_explorer_firmware.py \
   tests/test_apilib_harvest.py tests/test_firmware_probe_harvest.py \
   tests/test_scheduled_actions_apilib.py
 ```
+
+## §194 — a view keyword that shadows a layout global (`tests/test_template_context_shadowing.py`, 2026-09-26)
+
+The field-map page passed `products=[...]` to `render_template`. That replaced
+the `products` dict that `base.html` iterates with `.items()` for the ADOM
+navigation, and the page answered 500 in production while its own tests were
+green: the test app has no ADOM registry, so the navigation block never ran.
+
+- **Guard:** every `render_template` keyword in `app/` is compared with the keys
+  the context processors inject. A match fails unless it is on a short allowlist
+  of overrides that pass the same shape (`product.py`, `naming.py`).
+- **Vacuity check:** a second test asserts `products` is among the collected
+  keys, so a processor that stops answering cannot turn the guard into a pass.
+- **Verify:** `pytest tests/test_template_context_shadowing.py -q`.
+

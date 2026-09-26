@@ -15657,6 +15657,162 @@ green: the test app has no ADOM registry, so the navigation block never ran.</p>
   keys, so a processor that stops answering cannot turn the guard into a pass.</li>
 <li><strong>Verify:</strong> <code>pytest tests/test_template_context_shadowing.py -q</code>.</li>
 </ul>
+<h2 id="195--a-container-console-that-could-only-refuse-and-the-agent-that-gives-it-back-without-giving-the-web-the-socket-teststest_docker_agentpy-teststest_container_opspy-teststest_container_runtimepy-2026-09-26">§195 — a container console that could only refuse, and the agent that gives it back without giving the web the socket (<code>tests/test_docker_agent.py</code>, <code>tests/test_container_ops.py</code>, <code>tests/test_container_runtime.py</code>, 2026-09-26)</h2>
+<p><strong>The defect.</strong> The container runtime renounced four capabilities —
+<code>self_update</code>, <code>service_control</code>, <code>cert_activation</code>, <code>unit_health</code> — because no
+root runner exists in the stack. That was honest, and it left a Docker node's
+console able only to refuse: every restart, release switch and certificate
+change meant a shell on the host. And one privileged action was <strong>not</strong>
+renounced: the HA panel's <code>/promote</code> was gated only by <code>promote_eligible()</code>, so
+in a container it queued a failover for a runner that does not exist and
+reported it as queued — on the node the operator was trying to save.</p>
+<p><strong>The fix, and its shape.</strong> An optional <code>agent</code> service
+(<code>deploy/docker/compose.agent.yaml</code>, <code>deploy/docker/satom_agent.py</code>) is the
+host's privileged runner in container form (<a href="privilege-model.html">privilege-model.md</a>
+§4b). The web writes a request file into a volume; the agent, the only
+container holding <code>/var/run/docker.sock</code>, re-validates it against a closed list
+and acts; the result comes back as a status file. <code>ha_promote</code> became a
+host-only capability of its own. The operator's view is
+<a href="docker-compose.html">docker-compose.md</a> §7; the decisions and why:</p>
+<table>
+<thead>
+<tr>
+<th>Guard</th>
+<th>What it kills</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Declared AND live.</strong> A capability is delegated only when the overlay declares the agent (<code>SATOM_AGENT=docker</code>, honoured in the container runtime only) <em>and</em> its heartbeat is at most 60 s old. A heartbeat from the future is a clock problem, not life. A silent agent is absent, and the reason says so. <code>test_a_live_agent_delegates_exactly_the_four</code>, <code>test_a_silent_agent_is_treated_as_absent_and_says_so</code>, <code>test_a_heartbeat_from_the_future_is_not_proof_of_life</code>, <code>test_a_missing_or_broken_heartbeat_is_not_life</code>, <code>test_a_heartbeat_without_the_declaration_delegates_nothing</code>, <code>test_the_declaration_means_nothing_on_a_host</code>, <code>test_nothing_is_queued_without_a_live_agent</code>, <code>test_the_page_refuses_with_a_silent_agent</code></td>
+<td>the failure the runtime gate was written against, reintroduced: a request "queued" forever behind a dead agent, an action the operator watched succeed that never happened; a file in a volume, or a stray variable on a host, turning delegation on</td>
+</tr>
+<tr>
+<td><strong>Only the agent holds the socket.</strong> No other service in any compose file mounts it, and the installer's overlay never does. <code>test_only_the_agent_mounts_the_engine_socket_in_any_compose_file</code>, <code>test_the_installer_overlay_never_gives_the_socket_to_anyone</code></td>
+<td>root on the host reaching the process that parses appliance input and HTTP requests</td>
+</tr>
+<tr>
+<td><strong>Not on the stack network, listening on nothing.</strong> The agent has no port and sits on its own bridge; its only input is the request volume. <code>test_the_agent_listens_on_nothing_and_is_not_on_the_stack_network</code></td>
+<td>a compromised container of the stack connecting to the holder of the socket</td>
+</tr>
+<tr>
+<td><strong>Confined as far as its job allows.</strong> <code>cap_drop: [ALL]</code> plus <code>CHOWN</code>, <code>DAC_OVERRIDE</code>, <code>FOWNER</code>; <code>no-new-privileges</code>; read-only root; stdlib-only code. <code>test_the_agent_is_confined_as_far_as_its_job_allows</code>, <code>test_the_agent_is_stdlib_only</code></td>
+<td>a larger review surface in the one file that is root on the host; importing the app package out of a tree the app account shares</td>
+</tr>
+<tr>
+<td><strong>A closed list, re-validated by the agent.</strong> Three kinds, exact fields per kind (an unexpected one is refused, not ignored), strings only, a fixed service → action table in which nothing that removes the way back is stoppable, <code>X.Y.Z</code> versions, PEM-only certificates with the key in the key slot only. The web's copy of the list must equal the agent's, and every request the web writes is fed through the agent's own validator. <code>test_every_kind_outside_the_closed_list_is_refused</code>, <code>test_an_unexpected_field_is_refused_not_ignored</code>, <code>test_the_policy_matrix_is_exactly_what_is_accepted</code>, <code>test_nothing_that_removes_the_way_back_can_be_stopped</code>, <code>test_the_agent_and_the_one_shot_job_are_never_controllable</code>, <code>test_a_private_key_in_the_certificate_slot_is_refused</code>, <code>test_web_and_agent_allowlists_are_identical</code>, <code>test_the_web_refuses_what_the_agent_would_refuse</code>, the round-trip tests</td>
+<td>a compromised web asking for a free-form image, command, path, compose argument or service; a stopped <code>web</code>, <code>proxy</code>, <code>postgres</code> or <code>agent</code> with no way to start it again from the console; a private key served to every client from the certificate slot</td>
+</tr>
+<tr>
+<td><strong>The request is consumed before it is acted on.</strong> The agent deletes the file first — also when it refuses it — and never writes the key into a status row. <code>test_a_valid_request_is_executed_consumed_and_reported</code>, <code>test_a_certificate_request_is_deleted_even_when_refused</code>, <code>test_the_status_row_never_carries_the_key</code>, <code>test_a_certificate_request_round_trips_and_the_row_has_no_key</code></td>
+<td>a private key lingering in a volume the web can read; a request that crashes the agent replaying on every start</td>
+</tr>
+<tr>
+<td><strong>Symlink-safe writes, link-free reads.</strong> Status files are written to an <code>O_EXCL</code> temporary and renamed over the target; requests are opened with <code>O_NOFOLLOW</code>, must be regular files and are bounded while reading. <code>test_a_status_write_replaces_a_planted_symlink_instead_of_following_it</code>, <code>test_a_request_that_is_a_symlink_is_not_read</code>, <code>test_a_request_that_is_not_a_regular_file_is_refused</code>, <code>test_an_oversized_request_file_is_refused_while_reading</code></td>
+<td>the web, which owns the queue directories, planting <code>&lt;uid&gt;.json → satom.env</code> and having root overwrite it</td>
+</tr>
+<tr>
+<td><strong>Stale requests are refused.</strong> A request older than 600 s at pickup fails as expired. <code>test_a_stale_request_is_refused_not_executed_late</code></td>
+<td>a restart queued while the agent was down firing hours later, on a stack the operator has since fixed by hand</td>
+</tr>
+<tr>
+<td><strong>The web never mounts <code>satom-pki</code>.</strong> The volume also holds the private key and the internal CA; the agent forwards the public certificate only, and refuses to forward a file with key material. <code>test_the_app_services_get_the_queue_and_the_declaration</code>, <code>test_the_public_certificate_forwarder_refuses_key_material</code>, <code>test_the_served_certificate_comes_from_the_heartbeat</code>, <code>test_certificate_activation_goes_to_the_agent_and_writes_nothing_here</code></td>
+<td>the node's private key and CA one permission bit away from the process that parses appliance input</td>
+</tr>
+<tr>
+<td><strong>The agent never recreates itself.</strong> An update recreates every service except <code>agent</code>; the heartbeat reports both versions so the drift is visible. An update needs the installer layout, and the running version is refused. <code>test_update_needs_the_installer_layout</code>, <code>test_update_to_the_running_version_is_refused</code></td>
+<td>an agent losing the status of the request it is reporting; a broken new agent taking the console's only way back with it</td>
+</tr>
+<tr>
+<td><strong><code>ha_promote</code> is never delegable.</strong> Host-only, not in <code>AGENT_DELEGABLE</code>, and <code>request_promote()</code> calls <code>runtime.require("ha_promote")</code>; the agent refuses the kind as well. The git and pip updaters still refuse in a container and point to Container operations. <code>test_promotion_is_never_delegated</code>, <code>test_promotion_is_refused_in_a_container_even_with_the_agent</code>, <code>test_the_git_updater_still_refuses_and_points_to_the_image_update</code>, <code>test_every_declared_capability_has_a_call_site</code></td>
+<td>a failover reported as queued that nothing executes; a second, broken way to update an image in place</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Two defects found while building it.</strong></p>
+<ul>
+<li><strong>A <code>$</code> anchor accepted <code>"2.3.0\n"</code> as a version.</strong> In Python, <code>$</code> also
+  matches before a trailing newline, so <code>^…\.…\.…$</code> let a version carrying a
+  newline through — and a version becomes an image tag, a directory name and
+  part of a download URL. Both copies of the pattern (<code>satom_agent.py</code> and
+  <code>app/services/container_ops.py</code>) now end in <code>\Z</code>, as does the request-id
+  pattern. <code>test_anything_but_x_y_z_is_refused</code> carries the <code>"2.3.0\n"</code> case,
+  and <code>test_web_and_agent_allowlists_are_identical</code> compares the two patterns,
+  so one copy cannot be fixed alone.</li>
+<li><strong>Python 3.11.2 has no <code>tarfile</code> data filter.</strong> The filter arrived in
+  3.11.4, and the appliance's Python the tests run on is 3.11.2. Relying on it
+  would have left the one place a hostile archive meets a root process
+  unguarded there. The archive checks are therefore the agent's own
+  (<code>safe_extract</code>: top directory stripped; absolute paths, <code>..</code>, links leaving
+  the tree and special files refused; modes masked, owners reset), and the
+  filter is applied as a second layer where the interpreter has it.
+  <code>test_extraction_refuses_to_leave_the_destination</code>,
+  <code>test_extraction_strips_the_top_directory</code>.</li>
+</ul>
+<p><strong>Found by the end-to-end test on a real Docker host.</strong> Four defects no unit
+test had predicted, each measured on a stack installed with <code>satom-setup.sh</code>
+and <code>SETUP_AGENT=yes</code>, and each now guarded:</p>
+<table>
+<thead>
+<tr>
+<th>Defect</th>
+<th>Fix</th>
+<th>Guard</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>A certificate import restarted the proxy</strong>, which cut the operator's own HTTP request (it travels through that proxy), so the console reported a failure for an import that had worked.</td>
+<td>The agent runs <code>nginx -t</code> in every proxy container, then sends SIGHUP to the nginx master: a graceful reload in which open connections survive. If <code>nginx -t</code> fails, the previous <code>server.crt</code>, <code>server.key</code> and <code>meta.json</code> are restored and nothing is reloaded.</td>
+<td><code>tests/test_docker_agent.py::test_a_certificate_is_applied_by_reload_never_by_restart</code>, <code>::test_a_certificate_the_proxy_rejects_is_rolled_back</code></td>
+</tr>
+<tr>
+<td><strong>The build helper had no network</strong>, and BuildKit fetches the registry pull token from the client: the first <code>FROM</code> failed.</td>
+<td>Only the <code>docker build</code> helper runs with <code>NetworkMode: bridge</code>; the compose helpers keep <code>none</code>, and any other value falls back to <code>none</code>.</td>
+<td><code>tests/test_docker_agent.py::test_only_the_build_helper_gets_a_network</code></td>
+</tr>
+<tr>
+<td><strong>The proxy kept a dead upstream</strong> — a defect of every Docker install, older than the agent. nginx resolved <code>web:8000</code> once at start; recreating <code>web</code> (<code>up -d</code>, the installer's update, a console update) gave it a new address, and the console answered 502 until the proxy was restarted. And because the proxy runs a stock image, an update never recreated it, so the vhost <code>tls-init</code> rewrites on every <code>up</code> was never loaded.</td>
+<td><code>proxy-init.sh</code> passes <code>--resolver 127.0.0.11</code> (Docker's embedded DNS), and the container vhost re-resolves the app per request (<code>resolver … valid=10s ipv6=off; set $satom_upstream http://web:8000; proxy_pass $satom_upstream;</code>); host installs keep <code>proxy_pass http://127.0.0.1:8000;</code>. The installer's update mode (<code>satom-docker kill -s HUP proxy</code> after <code>up -d --remove-orphans</code>) and the agent's update (between the recreate and the wait for <code>web</code> to be healthy) both reload the proxy gracefully.</td>
+<td><code>tests/test_docker_agent.py::test_an_update_reloads_the_proxy_before_trusting_web_health</code>; <code>tests/test_tls_by_default.py::test_a_container_vhost_resolves_the_app_per_request</code>, <code>::test_a_host_vhost_keeps_its_literal_loopback_upstream</code>, <code>::test_the_resolver_must_be_an_address</code>, <code>::test_the_container_proxy_asks_for_dockers_resolver</code>, <code>::test_an_installer_update_reloads_the_proxy</code></td>
+</tr>
+<tr>
+<td><strong>A stale heartbeat answered for a finished request.</strong> The console answers from the heartbeat, and one up to 15 s old described the state before the action: a certificate import returned the previous certificate.</td>
+<td>The agent rewrites the heartbeat after a successful request and before it reports the request done.</td>
+<td><code>tests/test_docker_agent.py::test_the_heartbeat_is_refreshed_before_a_request_is_reported_done</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>The end-to-end result</strong>, on a real Docker host installed with the installer
+and <code>SETUP_AGENT=yes</code>:</p>
+<ul>
+<li>restart, stop and start through the Container operations page and through
+  Settings → Services; a restart of <code>web</code>; a certificate import, then served
+  by the proxy; container health; <code>/promote</code> refused;</li>
+<li>a hostile round writing straight into the request volume — a host-runner
+  kind, the agent as target, an extra <code>image</code> field, the version <code>2.3.0\n</code>, a
+  compose argument in the service name, a symlink planted at the status path
+  pointing to the stack's env file, a file name that is not a request id, a
+  request that is itself a symlink: every one refused or neutralised, the env
+  file unchanged, the queue empty afterwards;</li>
+<li>a console update to a staged release: built through the helper, the stack
+  recreated without the agent, the proxy reloaded, <code>web</code> healthy,
+  <code>SATOM_IMAGE</code> and <code>current</code> switched;</li>
+<li>a switch to 2.1.3, downloaded from GitHub, refused before anything was
+  built;</li>
+<li>the agent stopped: the page showed <strong>not answering</strong>, requests were refused
+  with 409 and nothing was queued; the agent started: <strong>live</strong> again.</li>
+</ul>
+<p><strong>Mutation result.</strong> 32 mutations, 32 killed (first harness).
+After the end-to-end fixes the harness was extended to 45 mutations; all 45 are killed. One survived the first pass (the build helper silently losing its network): the only guard called <code>run_helper</code> directly, so nothing asserted that an update passes the network to the build. <code>test_an_update_builds_with_a_network_and_recreates_without_one</code> closes it.</p>
+<p><strong>How to verify it is armed:</strong></p>
+<pre><code>venv/bin/python -m pytest -q tests/test_docker_agent.py \
+  tests/test_container_ops.py tests/test_container_runtime.py \
+  tests/test_tls_by_default.py
+</code></pre>
+<p>On a container node with the agent, the runtime summary
+(<code>docker-compose.md</code> §7.2) must show the four delegable capabilities <code>true</code>
+and <code>ha_promote</code> <code>false</code>; stopping the agent must turn all four <code>false</code> once
+its last heartbeat is more than 60 s old, with the "not answering" reason.</p>
     </div>
   </div>
 </section>

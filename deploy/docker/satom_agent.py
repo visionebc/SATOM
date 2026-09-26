@@ -576,13 +576,16 @@ def _demux(raw: bytes) -> str:
     return b"".join(out).decode("utf-8", "replace")
 
 
-def run_helper(argv: list[str], timeout: float) -> tuple[int, str]:
+def run_helper(argv: list[str], timeout: float, network: str = "none") -> tuple[int, str]:
     """Run *argv* in a throwaway Docker CLI container.
 
     The argv is built by this module from fixed paths -- no request field
     reaches it except a version that already matched VERSION_RE. The helper
     gets the socket and the installer directory at its HOST path (so compose
-    can hand host paths to the daemon), and no network.
+    can hand host paths to the daemon), and no network -- except a build,
+    which passes ``network="bridge"``: BuildKit fetches the registry pull
+    token from the CLIENT, and with no network the first ``FROM`` fails
+    (measured end to end, not anticipated).
     """
     ensure_cli_image()
     body = {
@@ -590,7 +593,7 @@ def run_helper(argv: list[str], timeout: float) -> tuple[int, str]:
         "Labels": {"io.satom.agent.helper": "1"},
         "HostConfig": {
             "Binds": ["%s:%s" % (DOCKER_SOCKET, DOCKER_SOCKET), "%s:%s" % (HOME, HOME)],
-            "NetworkMode": "none",
+            "NetworkMode": network if network in ("none", "bridge") else "none",
         },
     }
     created = api_json("POST", "/containers/create", body)
@@ -827,7 +830,8 @@ def do_update(st: Status, version: str) -> None:
                       "it with satom-setup.sh --version %s on the host" % (version, version))
     if image not in image_tags():
         st.step("build %s" % image, True, "started (5-15 min the first time)")
-        rc, out = run_helper(["docker", "build", "-t", image, str(tree)], timeout=3600)
+        rc, out = run_helper(["docker", "build", "-t", image, str(tree)], timeout=3600,
+                             network="bridge")
         st.step("build %s" % image, rc == 0, out[-400:])
         if rc != 0:
             raise DockerError("image build failed")

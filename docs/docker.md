@@ -16,23 +16,41 @@ permissions, configuration, HA, updates, backups and troubleshooting — is
 ## Read this before you choose the container shape
 
 **SATOM is an appliance that administers its own host.** A container controls
-none of that host, so the container shape *renounces* four capabilities rather
-than pretending to have them:
+none of that host, so the container shape *renounces* five capabilities rather
+than pretending to have them. The optional operations agent gives four of them
+back to the console; the fifth, HA promotion, stays manual:
 
 | capability | why it is gone | what to do instead |
 |---|---|---|
-| **Software Update & HA** (in-place self-update) | the updater installs unit files and restarts services as root | deploy a new image tag and recreate the stack |
-| **Service control** (start/stop/restart of node units) | there is no systemd here | `docker compose restart <service>` |
-| **Certificate activation** | it writes the node PKI and reloads the *host* nginx, which is a sibling container here | the stack already serves TLS; replace the certificate with `tls-bootstrap.sh import-cert` and restart `proxy` |
-| **systemd unit health** | there are no units to read | container health comes from the container engine |
+| **Software Update** (self-update) | the updater installs unit files and restarts services as root | deploy a new image tag and recreate the stack — or, with the agent, switch releases from the console |
+| **Service control** (start/stop/restart) | there is no systemd here | `docker compose restart <service>` — or, with the agent, from the console |
+| **Certificate activation** | it writes the node PKI and reloads the *host* nginx, which is a sibling container here | the stack already serves TLS; replace the certificate with `tls-bootstrap.sh import-cert` and restart `proxy` — or, with the agent, upload it from the console |
+| **systemd unit health** | there are no units to read | container health comes from the container engine — with the agent, the console reads it |
+| **HA promotion** (`ha_promote`) | promotion is run by the host's root runner, which does not exist here | fail over by hand; the console refuses it even with the agent |
 
 These are enforced in code (`app/runtime.py`), not by documentation. Each one
 refuses with a message naming the alternative. Everything else — device
 management, probes and monitors, the metrics store, backups and restore, the
 SoT, reports, the CLI, RBAC and SSO — behaves identically to a host install.
 
-**If you need in-place self-update, use a host install.** TLS is *not* on
-that list any more: since 1.20.1 the container stack terminates it itself.
+**The optional operations agent gives four of them back** (since 2.3.0, off
+by default). It is one extra container, `agent`
+(`deploy/docker/compose.agent.yaml`), and the only one that mounts the Docker
+socket. The web never touches the engine: it drops a JSON request into a
+volume, and the agent re-validates it against a closed list — restart a named
+service of this stack, switch the stack to a release `X.Y.Z`, install the
+proxy certificate — and reports container health. The console page is
+**System → Container operations**. A capability is delegated only while the
+agent is declared by the overlay *and* its heartbeat is fresh; a silent agent
+counts as absent. HA promotion is never delegated: failover stays manual.
+
+The cost is the same as on a host: the socket is root on the host, exactly
+like `satom-updater.service`. Read [`docker-compose.md`](docker-compose.md) §7
+— the boundary, what each request does, and the residual risk — before you
+enable it. Without the agent, the table above is the whole story, and the git
+and library (pip) updaters stay host-only either way: in a container the code
+is the image. TLS is *not* on that list any more: since 1.20.1 the container
+stack terminates it itself.
 
 ### The runtime is declared, never detected
 
@@ -121,6 +139,24 @@ Left empty it falls back to the container's hostname, which is almost never
 right — and a SAN that does not cover the name in the address bar produces a
 browser warning on a certificate the install just reported as issued, with no
 remedy but to reissue.
+
+### The proxy follows `web` when it is recreated
+
+The vhost reaches the app **by service name, re-resolved per request**
+through Docker's embedded DNS (`resolver 127.0.0.11 valid=10s`). Before 2.3.0
+it named `web:8000` in a plain `proxy_pass`, which nginx resolves once, at
+start: every recreate of `web` — an `up -d` that touched it, an installer
+update — gave the container a new address, the proxy kept the old one, and
+the console answered 502 until someone restarted the proxy. Every Docker
+install had that defect. A host install is unaffected: its upstream is the
+literal `127.0.0.1:8000`.
+
+The proxy runs a stock image, so an update does not recreate it either, and
+the vhost `tls-init` rewrites on every `up` would stay unread. The installer's
+update mode and the operations agent's update therefore **reload** it
+gracefully (SIGHUP to the nginx master; open connections survive). The
+agent's certificate import reloads it the same way, and never restarts it
+(§7.6 of [`docker-compose.md`](docker-compose.md)).
 
 ### Replacing the certificate
 

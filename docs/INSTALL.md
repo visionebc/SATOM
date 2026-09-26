@@ -376,22 +376,38 @@ that difference is invisible until a scheduled action behaves differently from
 the same action fired by hand.
 
 **It is not the full install in a box, and the difference is deliberate.** A
-container administers no host, so this shape **renounces** four capabilities
-instead of shipping them broken:
+container administers no host, so this shape **renounces** five capabilities
+instead of shipping them broken — **unless the optional operations agent is
+enabled**. The agent (`deploy/docker/compose.agent.yaml`, off by default) is
+one extra container that holds the Docker socket; the web only drops a request
+into a volume, and the agent re-validates it against a closed list and does the
+work. With it, the four come back in the console under **System → Container
+operations**:
 
-| capability | what to do instead |
-|---|---|
-| **Software Update & HA** (in-place self-update) | deploy a new image tag and recreate the stack |
-| **Service control** (start/stop/restart of node units) | `docker compose restart <service>` |
-| **Certificate activation** | the stack serves TLS already; swap the certificate with `deploy/tls-bootstrap.sh import-cert` and restart `proxy` |
-| **systemd unit health** | read container health from the container engine |
+| capability | without the agent | with the agent (System → Container operations) |
+|---|---|---|
+| **Software Update** (self-update) | deploy a new image tag and recreate the stack | switch the stack to another release `X.Y.Z`: download, build, recreate, roll back if `web` does not come back healthy |
+| **Service control** (start/stop/restart) | `docker compose restart <service>` | restart the stack's services from the console (start/stop only for `scheduler` and `cron`) |
+| **Certificate activation** | the stack serves TLS already; swap the certificate with `deploy/tls-bootstrap.sh import-cert` and restart `proxy` | upload a certificate and key; the agent imports them and reloads `proxy` gracefully (no restart: open connections survive), restoring the previous certificate if nginx rejects the new one |
+| **systemd unit health** | read container health from the container engine | service-health reads return the stack's containers as the engine reports them, instead of systemd units |
+| **HA promotion** (`ha_promote`) | fail over by hand | **still refused** — failover stays a manual PostgreSQL procedure |
 
-Each of the four refuses with a message naming its alternative; none of them
-fails silently, and the refusals are asserted in `tests/test_container_runtime.py`
-rather than promised here. Everything else — device management, probes and
-monitors, the metrics store, backups and restore, the source of truth, reports,
-the CLI, RBAC and SSO — behaves exactly as on a host install.
-**If you need in-place self-update, install on a host.**
+Each renounced capability refuses with a message naming its alternative; none
+of them fails silently, and the refusals are asserted in
+`tests/test_container_runtime.py` and `tests/test_container_ops.py` rather than
+promised here. A capability is delegated only while the agent is both declared
+by the overlay and answering (a heartbeat younger than 60 s); an agent that
+stopped reporting is treated as absent, so nothing is ever queued behind it.
+Everything else — device management, probes and monitors, the metrics store,
+backups and restore, the source of truth, reports, the CLI, RBAC and SSO —
+behaves exactly as on a host install.
+
+Self-update from the console exists only as a **release switch** through the
+agent, and only on an installer layout (`/opt/satom-docker`). The git and
+library (pip) updaters stay host-only in every container: the code is the
+image. **The agent mounts the Docker socket, so whoever controls it is root on
+the host** — read [`docker-compose.md`](docker-compose.md) §7 before enabling
+it.
 
 **TLS is provisioned by the stack itself**, like every other install shape: the
 `proxy` service terminates HTTPS on `:443` with a certificate issued at first
@@ -430,8 +446,9 @@ backup: the source-of-truth index lives in PostgreSQL while its blobs live in
 the data volume, so restoring only the database leaves rows pointing at
 nothing.) **Operator manual: [`docker-compose.md`](docker-compose.md)** — every
 service with its user, ports, volumes and permissions, the configuration
-reference, the procedures that replace the four renounced capabilities,
-failover, updates, backup and restore, and troubleshooting.
+reference, the optional operations agent and the manual procedures that
+replace the four renounced capabilities when it is not enabled, failover,
+updates, backup and restore, and troubleshooting.
 
 ---
 

@@ -58,17 +58,21 @@ auditable and every operator edit is attributable.
 Because it is an ordinary table, the nightly database backup already contains
 it — a restored database restores your endpoint edits with it.
 
-### 1.3 The three catalogs
+### 1.3 The four catalogs
 
-| Product | `api_version` | Transport | Seed file | Entries |
+| Product | `api_version` | Transport | Seeded from baseline | Entries |
 |---|---|---|---|---|
-| FortiWeb | `v2.0` | REST, `/api/v2.0/…` | `endpoints.yaml` | 507 |
-| FortiADC | `v1` | REST, `/api/<object>` | `endpoints_fortiadc.yaml` | 255 |
-| FortiAnalyzer | `jsonrpc` | JSON-RPC, `POST /jsonrpc` | `endpoints_fortianalyzer.yaml` | 64 |
+| FortiWeb | `v2.0` | REST, `/api/v2.0/…` | FortiWeb 7.6.8 | 517 |
+| FortiADC | `v1` | REST, `/api/<object>` | FortiADC 8.0.3 | 255 |
+| FortiAnalyzer | `jsonrpc` | JSON-RPC, `POST /jsonrpc` | FortiAnalyzer 7.6.7 | 64 |
+| FortiAuthenticator | `v1` | REST, `/api/v1/<resource>/` | FortiAuthenticator 8.0.3 | 40 |
 
-826 entries seeded in total. Counts are what the shipped seeds contain; the
-live catalog is whatever your administrators have made of it — on the reference
-installation 11 FortiADC entries are disabled, so 815 are active.
+876 entries in the shipped baselines. Each catalog is seeded from its
+product's endpoint baseline, pinned to the firmware build it was promoted from
+(`flask apilib baseline status`; [api-library.md](api-library.md) §9). The
+live catalog is whatever your administrators have made of it: on the reference
+installation 11 FortiADC entries and 1 FortiWeb entry are disabled, and 2
+FortiWeb entries were added by hand.
 
 The FortiADC URNs are derived from the appliance's own CLI object tree, which
 makes them predictable: `config load-balance virtual-server` becomes

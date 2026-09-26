@@ -1,7 +1,7 @@
 """FortiWeb endpoint registry — catalog editor + reads.
 
-Reads come from :mod:`app.registry.loader` (DB-first, ``endpoints.yaml`` as
-seed/fallback). Writes are gated on ``Permission.REGISTRY_EDIT``, audited, and
+Reads come from :mod:`app.registry.loader` (DB-first, the endpoint
+baseline as seed/fallback). Writes are gated on ``Permission.REGISTRY_EDIT``, audited, and
 soft-delete only (``enabled=False``) so the boot seeder never resurrects a
 name the operator removed.
 

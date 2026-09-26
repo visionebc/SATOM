@@ -3912,17 +3912,25 @@ importantly, the <strong>registry model all four share</strong>.</p>
 firmware. There is one catalog per product, each with its own API dialect
 (FortiWeb <code>v2.0</code>, FortiADC <code>v1</code>, FortiAuthenticator <code>v1</code>, FortiAnalyzer
 JSON-RPC).</p>
-<p>It is <strong>DB-first with the YAML as seed and fallback</strong>:</p>
+<p>It is <strong>DB-first, seeded from an endpoint baseline</strong>:</p>
 <ul>
 <li>the live catalog is a database table, editable from the console and captured by
   the nightly database dump;</li>
-<li>the git-tracked <code>endpoints*.yaml</code> files at the repository root are the <strong>seed</strong>.
-  At boot they are synced <strong>INSERT-ONLY</strong>: a name already present in the database
-  is never touched, so an operator edit always wins over the shipped file;</li>
+<li>its <strong>seed</strong> is the product's endpoint baseline: the catalog promoted from what
+  the API library measured on one firmware build (FortiWeb 7.6.8, FortiADC 8.0.3,
+  FortiAuthenticator 8.0.3 and FortiAnalyzer 7.6.7 today), shipped sealed with
+  each release. At boot the registry is reconciled to it once per promotion. A
+  row you edited, disabled or created is <strong>never</strong> touched: the <em>updated by</em>
+  column tells the two apart (<code>baseline:&lt;product&gt;@&lt;build&gt;</code> is the baseline's,
+  anything else is an operator's);</li>
 <li>if the database cannot serve the catalog at all — an early script, a standalone
-  tool, a fresh tree — the YAML is served directly, so nothing ever breaks for
-  want of a table.</li>
+  tool, a fresh tree — the shipped baseline is served directly, so nothing ever
+  breaks for want of a table.</li>
 </ul>
+<p>A newer firmware is followed by <strong>promoting</strong> a baseline from its measurements
+(<code>flask apilib baseline promote</code>), not by editing a file. The operator's view of
+that, and <code>flask apilib baseline check</code> for drift, are in
+<a href="api-library.html">api-library.md</a> §9.</p>
 <p>Reads go through a short-lived per-process cache. An edit invalidates the cache
 of the worker that served it immediately; the other workers converge within a
 minute.</p>

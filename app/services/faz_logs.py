@@ -31,7 +31,7 @@ from __future__ import annotations
 from datetime import datetime
 
 #: The two JSON-RPC routes. NOT registry-resolved: every FortiAnalyzer entry in
-#: ``endpoints_fortianalyzer.yaml`` is pinned to ``adom/root``, and choosing the
+#: the FortiAnalyzer endpoint baseline is pinned to ``adom/root``, and choosing the
 #: ADOM is the whole point — resolving through the registry would silently query
 #: the wrong ADOM, which returns zero rows, which reads exactly like "the
 #: collector never saw this flow".

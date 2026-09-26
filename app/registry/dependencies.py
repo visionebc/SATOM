@@ -13,7 +13,7 @@ no longer needs the USB to know the shape of a FortiWeb config. It mirrors the
 exporter's ``fetch_policy_full`` (the server-policy side) and its ``FIELD_MAP`` +
 ``SUB_MAP`` (the web-protection-profile side), keyed by the **FortiWeb GUI name**
 of each object together with the REST ``urn`` it resolves to. Because those URNs
-are the same ones used in ``endpoints.yaml``, the tree can be cross-referenced
+are the same ones the FortiWeb endpoint registry uses, the tree can be cross-referenced
 against the endpoint **registry** — see ``services/structure.py`` — so the
 Structure page can show, side by side, the *endpoint library* AND the *functional
 dependency tree* the exporter walks.
@@ -52,7 +52,7 @@ class DepNode:
 
     ``fortiweb`` — the label as it reads in the FortiWeb 7.6 GUI (what the user
     sees on the box). ``urn`` — the REST path the exporter fetches it from; it
-    matches an ``endpoints.yaml`` urn when the object is in the registry (blank
+    matches a registry urn when the object is in the registry (blank
     for pure grouping nodes). ``via`` — the *field on the parent* that
     references this object, i.e. the dependency edge (e.g. a Server Policy links
     its pool through the ``server-pool`` field). ``note`` — GUI section or a
@@ -380,7 +380,7 @@ _BOT_EXCEPTION_REF: DepNode = _n(
 # by returning the PARENT OBJECT, so a typo here yields a "row" that is really
 # the rule itself and would be POSTed back as a bogus filter. ``subtable_rows``
 # in services/clone.py drops that echo, and tests/test_clone_subtables.py pins
-# both halves. Keep these names in sync with endpoints.yaml.
+# both halves. Keep these names in sync with the FortiWeb registry.
 # The Custom Signature subtree, factored out because TWO places reach it: the
 # Signatures node of a Web Protection Profile (via the signature object's
 # `custom-protection-group` field) and the Custom Signature FILTER of a Custom
@@ -529,7 +529,7 @@ WEB_PROTECTION_PROFILE: DepNode = _n(
         # the GUI and enforces nothing. Verified on fortiweb08: car-ratelimit
         # carried url-filter(^/api/) + access-limit-filter(100) and migrated to
         # fortiweb09 with both empty. The 17 names below are the registry's
-        # (endpoints.yaml), NOT guesses: an invented sub-table path does not 404
+        # (FortiWeb baseline), NOT guesses: an invented sub-table path does not 404
         # on FortiWeb — it ECHOES THE PARENT OBJECT back (see clone.subtable_rows).
         _n("Custom Access Policy", "cmdb/waf/custom-access.policy", "custom-access-policy",
            "Standard Protection",

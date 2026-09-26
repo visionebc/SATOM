@@ -488,7 +488,7 @@ def create_app(config_override: object | None = None) -> Flask:
                        'templates', 'capacity',
                        'api_tokens', 'api_v1',
                        # NOT lua_studio: FortiAuthenticator has no scripting
-                       # object (endpoints_fortiauthenticator.yaml declares
+                       # object (its endpoint baseline declares
                        # none) and LuaScript.TARGETS therefore cannot list it.
                        # Letting the ADOM reach the studio only produced an
                        # editor with zero valid targets.

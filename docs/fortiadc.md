@@ -30,7 +30,7 @@
 
 | Concern | File |
 |---|---|
-| Endpoint seed (product=fortiadc, api_version=v1) | `endpoints_fortiadc.yaml` → `registry_endpoints` table |
+| Endpoint seed (product=fortiadc, api_version=v1) | baseline `app/registry/baselines/fortiadc.json` (FortiADC 8.0.3) → `registry_endpoints` table |
 | Registry access | `app/registry/loader.py` (`load_adc_registry` / `resolve_adc` / `seed_adc_from_yaml`) |
 | REST client (Bearer + cookie, payload envelope, generic CRUD) | `app/clients/fortiadc.py` |
 | GUI menu tree (Server LB / Link LB / Global LB / WAF / …) | `app/services/adc_menu.py` |

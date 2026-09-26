@@ -19,7 +19,7 @@ This product does NOT speak the Fortinet CMDB dialect the other three do:
   system_log_settings, policy_user_lockout, …) answer a *bare object*. The
   shape is detected at RUNTIME rather than from a hand-maintained list of
   singleton names — a second list would rot out of sync with
-  ``endpoints_fortiauthenticator.yaml`` the first time the vendor moves a
+  the FortiAuthenticator endpoint baseline the first time the vendor moves a
   resource between shapes.
 * **Pagination is mandatory, and ``limit=0`` does NOT mean "all".** The default
   page is 20 rows and ``limit=0`` is clamped by the server to ``MAX_LIMIT``

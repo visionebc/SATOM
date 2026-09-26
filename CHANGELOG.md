@@ -6,6 +6,43 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Changed — the endpoint registry is seeded from a build-pinned baseline (2026-09-27)
+
+The four hand-written `endpoints*.yaml` files at the repository root are gone.
+They never said which firmware they described, and their insert-only seed could
+add a name but never correct one. Asked for by the user: *"even the seed changes
+with the firmware; in three years it will not be the same seed"*. Reference:
+[`docs/api-library.md`](docs/api-library.md) §9.
+
+- **Endpoint baselines.** Each registry product's seed is now a baseline pinned
+  to one firmware build and promoted from what the API library **measured** on
+  that build (`flask apilib baseline promote --product P --build X`): served
+  names come in with the evidence's URN, names measured absent go out, the rest
+  are carried and labelled. A build nobody measured cannot be promoted. Tables
+  `api_lib_baseline` / `api_lib_baseline_entry` (migration `apibl01`).
+- **Shipped sealed, applied at boot.** `app/registry/baselines/<product>.json`
+  is generated, one entry per line, and sealed with SHA-256; a hand-edited
+  artifact is refused. Boot inserts the shipped baseline and reconciles the
+  registry once per promotion, on every install path (fresh installs never run
+  alembic, so the data does not travel as a migration).
+- **Operator rows still win.** Rows the baseline wrote are tagged
+  `baseline:<product>@<build>`; a row an operator edited, disabled or created is
+  never touched. Unlike the old seed, a promotion **can** correct a URN the
+  vendor moved.
+- **New commands:** `flask apilib baseline status | promote | check | resolve |
+  apply | export | adopt`. `check` compares the registry, the baseline and the
+  evidence of every build the fleet runs, and exits 1 on drift.
+- **First baselines**, adopted from the YAML with every entry labelled against
+  the evidence: FortiWeb 7.6.8 (517: 287 measured, 191 legacy, 39
+  contradicted), FortiADC 8.0.3 (255: 217 measured, 38 legacy), FortiAnalyzer
+  7.6.7 (64 legacy), FortiAuthenticator 8.0.3 (40 measured). No URN conflicted
+  with the evidence, and the registry serves exactly what it served before.
+- **Known and reported, not changed:** 39 FortiWeb registry names (among them
+  `web_protection_profile`, `load_balance`, `server_pool_rule`) were measured
+  **absent** on 7.6.8. They stay until a FortiWeb promotion drops them.
+- Device fingerprinting of retired snapshots now reads the registry instead of
+  the YAML files. Safeguards §196.
+
 ## [2.3.0] - 2026-09-26
 
 ### Added — the Docker operations agent (2026-09-26)

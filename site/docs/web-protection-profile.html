@@ -76,7 +76,7 @@
 (WPP) and its entire ~40-sub-policy dependency graph. Source of truth: the team's
 <code>fortiweb_api</code> SDK (<code>cmdb/waf/</code> marshmallow schemas, FortiWeb OS 7.6 / API <code>v2.0</code>,
 <strong>172 schemas</strong>), cross-checked against the in-repo registry
-(<code>app/registry/data/endpoints.yaml</code>, <strong>191 <code>cmdb/waf/*</code> endpoints</strong>), the
+(<code>app/registry/baselines/fortiweb.json</code>, <strong>191 <code>cmdb/waf/*</code> endpoints</strong>), the
 dependency tree (<code>app/registry/dependencies.py</code>, <code>WEB_PROTECTION_PROFILE</code>,
 <strong>136 nodes, depth 7</strong>), and the <strong>official FortiWeb 7.6.4 admin guide</strong>
 (docs.fortinet.com — a JS SPA, scraped via the internal Firecrawl,
@@ -310,7 +310,7 @@ policy reused across the fleet). So:</p>
 </tr>
 <tr>
 <td>Endpoint URNs per API version</td>
-<td><code>app/registry/data/endpoints.yaml</code> (191 <code>cmdb/waf/*</code>)</td>
+<td><code>app/registry/baselines/fortiweb.json</code> (191 <code>cmdb/waf/*</code>)</td>
 </tr>
 <tr>
 <td>Curated edit specs (the ~160 forms)</td>
@@ -344,7 +344,7 @@ policy reused across the fleet). So:</p>
 <h2 id="8-coverage--cross-validation-2026-06-21">8. Coverage &amp; cross-validation (2026-06-21)</h2>
 <ul>
 <li><strong>Registry:</strong> every one of the 136 <code>WEB_PROTECTION_PROFILE</code> tree nodes resolves to
-  an <code>endpoints.yaml</code> endpoint (<code>dependencies.coverage</code> → 136/136, 0 missing).</li>
+  a registry endpoint (<code>dependencies.coverage</code> → 136/136, 0 missing).</li>
 <li><strong>Specs:</strong> all 36 sub-policies + their named rules + sub-tables + leaf rows are
   curated (<code>app/registry/data/waf_specs.json</code>, 166 kinds); <code>tests/test_objform.py</code>
   and <code>tests/test_objedit.py</code> assert that every collection, sub-table segment and

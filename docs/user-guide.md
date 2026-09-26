@@ -3413,16 +3413,25 @@ firmware. There is one catalog per product, each with its own API dialect
 (FortiWeb `v2.0`, FortiADC `v1`, FortiAuthenticator `v1`, FortiAnalyzer
 JSON-RPC).
 
-It is **DB-first with the YAML as seed and fallback**:
+It is **DB-first, seeded from an endpoint baseline**:
 
 - the live catalog is a database table, editable from the console and captured by
   the nightly database dump;
-- the git-tracked `endpoints*.yaml` files at the repository root are the **seed**.
-  At boot they are synced **INSERT-ONLY**: a name already present in the database
-  is never touched, so an operator edit always wins over the shipped file;
+- its **seed** is the product's endpoint baseline: the catalog promoted from what
+  the API library measured on one firmware build (FortiWeb 7.6.8, FortiADC 8.0.3,
+  FortiAuthenticator 8.0.3 and FortiAnalyzer 7.6.7 today), shipped sealed with
+  each release. At boot the registry is reconciled to it once per promotion. A
+  row you edited, disabled or created is **never** touched: the *updated by*
+  column tells the two apart (`baseline:<product>@<build>` is the baseline's,
+  anything else is an operator's);
 - if the database cannot serve the catalog at all — an early script, a standalone
-  tool, a fresh tree — the YAML is served directly, so nothing ever breaks for
-  want of a table.
+  tool, a fresh tree — the shipped baseline is served directly, so nothing ever
+  breaks for want of a table.
+
+A newer firmware is followed by **promoting** a baseline from its measurements
+(`flask apilib baseline promote`), not by editing a file. The operator's view of
+that, and `flask apilib baseline check` for drift, are in
+[api-library.md](api-library.md) §9.
 
 Reads go through a short-lived per-process cache. An edit invalidates the cache
 of the worker that served it immediately; the other workers converge within a

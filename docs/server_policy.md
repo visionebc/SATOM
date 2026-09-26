@@ -3,7 +3,7 @@
 > Authoritative, field-level reference for the FortiWeb **Server Policy** object and
 > its entire dependency graph. Source of truth: the team's `fortiweb_api` SDK
 > (`cmdb/` marshmallow schemas, FortiWeb OS 7.6 / API `v2.0`) cross-checked against
-> the in-repo registry (`app/registry/data/endpoints.yaml`) and dependency tree
+> the in-repo registry (`app/registry/baselines/fortiweb.json`) and dependency tree
 > (`app/registry/dependencies.py`). Built because firecrawl/docs.fortinet.com is a
 > JS-rendered SPA that the built-in fetchers can't read — the SDK is more complete
 > and exact than the public docs anyway, and it is the same SDK the registry was
@@ -238,7 +238,7 @@ and the before/after* — never appliance secrets (those live in the OS keyring)
 
 | Concern | File |
 |---|---|
-| Endpoint URNs per API version | `app/registry/data/endpoints.yaml` |
+| Endpoint URNs per API version | `app/registry/baselines/fortiweb.json` |
 | Dependency tree (this graph, as data) | `app/registry/dependencies.py` (`SERVER_POLICY`, `WEB_PROTECTION_PROFILE`; 131 nodes) |
 | Composite read (walk a policy's whole graph) | `app/clients/fortiweb.py` (`FortiWebClient.policy_full`), `app/services/read_layer.py` (`policy_full_cached`), `app/services/inspector.py` |
 | CRUD with snapshot + audit + dry-run | `app/services/fortiweb_ops.py` (`FortiWebOps`) |

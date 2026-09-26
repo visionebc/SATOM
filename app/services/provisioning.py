@@ -148,7 +148,7 @@ class SystemProfile:
 # --------------------------------------------------------------------------- #
 #  The baseline catalog — "the basic elements of the new system"                #
 # --------------------------------------------------------------------------- #
-# Endpoints are registry logical names (see endpoints.yaml). singleton/sensitive
+# Endpoints are registry logical names (see the FortiWeb endpoint baseline). singleton/sensitive
 # are best-effort per FortiWeb's cmdb conventions — desired-state authoring, to be
 # validated live on a target box (see docs/engineering.md §13). The desktop's endpoint=None
 # rows (SMTP, certificate) are intentionally dropped here.

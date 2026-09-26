@@ -105,7 +105,7 @@ _TOKEN_SPLIT = re.compile(r"[-_./]+")
 
 # The FortiADC catalog marks child tables with a literal ``child`` infix
 # (``load_balance_pool_child_pool_member``, documented in
-# endpoints_fortiadc.yaml). The CLI has no such word. Dropped on the CATALOG
+# the FortiADC endpoint baseline). The CLI has no such word. Dropped on the CATALOG
 # side only — inventing the convention on the CLI side would match blocks that
 # really do have a "child" token.
 _ADC_DROP_TOKENS = frozenset({"child"})

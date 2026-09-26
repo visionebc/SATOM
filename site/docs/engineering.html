@@ -274,12 +274,16 @@ requests + events, bug reports, capacity limits, DB reports.</p>
 <ul>
 <li><strong>Storage:</strong> Postgres table <code>registry_endpoints (product, api_version,
   name, urn, enabled, updated_by, updated_at)</code> — unique per
-  (product, api_version, name). Three catalogs: 507 FortiWeb rows (<code>v2.0</code>),
-  255 FortiADC rows (<code>v1</code>) and 64 FortiAnalyzer rows (<code>jsonrpc</code>), seeded
-  <strong>insert-only</strong> from <code>endpoints.yaml</code> / <code>endpoints_fortiadc.yaml</code> /
-  <code>endpoints_fortianalyzer.yaml</code> at boot: an operator's edit or disable is
-  never clobbered by a deploy. YAML remains the fallback when the DB is
-  unavailable (scripts without app context).</li>
+  (product, api_version, name). Four catalogs: FortiWeb (<code>v2.0</code>), FortiADC
+  (<code>v1</code>), FortiAnalyzer (<code>jsonrpc</code>) and FortiAuthenticator (<code>v1</code>), seeded from
+  each product's <strong>endpoint baseline</strong> (<code>app/services/api_baseline.py</code>,
+  artifact <code>app/registry/baselines/&lt;product&gt;.json</code>, pinned to a firmware build,
+  sealed with SHA-256). Boot reconciles the registry to the active baseline once
+  per promotion; rows whose <code>updated_by</code> is not <code>seed</code>/<code>baseline:*</code> are an
+  operator's and are never touched. The artifact is the fallback when the DB is
+  unavailable (scripts without app context). The four <code>endpoints*.yaml</code> seeds
+  are gone: never reintroduce a hand-written seed. See
+  <a href="api-library.html">api-library.md</a> §9.</li>
 <li><strong>Loader:</strong> <code>app/registry/loader.py</code> — DB-first with a 60s per-process TTL
   cache; <code>resolve(name)</code> / <code>resolve_adc(name)</code> / <code>resolve_faz(name)</code> by
   logical name. After an edit the serving worker invalidates immediately;

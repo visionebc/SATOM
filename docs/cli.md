@@ -706,6 +706,11 @@ sudo -u satom env FLASK_APP=wsgi:app venv/bin/flask apilib --help
 | `flask apilib import-vendor PATH` | Import an **extracted** vendor Ansible collection — `fortinet.fortios` (FortiGate) or `fortinet.fortianalyzer` (FortiAnalyzer). `PATH` is the directory holding `MANIFEST.json` |
 | `flask apilib ingest-file PATH` | Ingest one evidence document — plain or gzipped JSON, or a JSON list of documents |
 | `flask apilib harvest-fac [--appliance NAME]` | Read the live API schema of every FortiAuthenticator, or the named one (GET requests only), and ingest it. One unreachable box does not stop the others |
+| `flask apilib baseline status` | The endpoint baseline each registry product is seeded from: pinned build, protocol, entries per provenance, applied or not |
+| `flask apilib baseline promote --product P --build X [--apply] [--export]` | Show what promoting the library's measurements of build X would change in the registry; `--apply` does it, `--export` rewrites the shipped artifact. Refuses a build nobody measured |
+| `flask apilib baseline check [--product P]` | Drift between the registry, the baseline and the evidence of every build the fleet runs. Exit status 1 on drift |
+| `flask apilib baseline resolve --product P [--build X] NAME` | Which URN NAME resolves to on build X, and on what authority |
+| `flask apilib baseline apply\|export\|adopt` | Re-apply the active baseline; rewrite the artifacts; one-time adoption of a legacy map. See [api-library.md](api-library.md) §9 |
 
 **Every command is safe to re-run.** All of them write through one idempotent
 ingest: evidence whose content is already stored answers `"created": false` and

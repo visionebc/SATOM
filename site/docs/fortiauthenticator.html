@@ -138,8 +138,8 @@ short read is never reported as a successful read.</p>
 anyway (<code>systeminfo</code>, <code>logsettings</code>, <code>snmpgeneral</code>, <code>userlockoutpolicy</code>,
 <code>scheduledbackupsettings</code>, <code>fortitokenmobileprovisioning</code>,
 <code>fortitokenmobilelicenses</code>, <code>fortiguardmessages</code>). A registry seeded from "does
-<code>/schema/</code> work?" would have silently dropped them. The census in
-<code>endpoints_fortiauthenticator.yaml</code> is keyed on the <strong>list</strong> response instead.</p>
+<code>/schema/</code> work?" would have silently dropped them. The census below is
+keyed on the <strong>list</strong> response instead.</p>
 <h3 id="secrets-are-write-only--verified-not-assumed">Secrets are write-only — verified, not assumed</h3>
 <p>A canary round-trip on 2026-08-05 created a RADIUS client with a known secret
 and a local user with a known password, read both back and deleted them. The
@@ -186,9 +186,12 @@ API console shows the body verbatim for exactly this reason.</p>
 </tr>
 </tbody>
 </table>
-<p>The full census, with each rejection's reason, lives at the tail of
-<code>endpoints_fortiauthenticator.yaml</code> so a future reader knows the other 18 were
-considered and rejected, not overlooked.</p>
+<p>This table is the census, with each rejection's reason, so a future reader
+knows the other 18 were considered and rejected, not overlooked. (It used to
+live at the tail of the retired <code>endpoints_fortiauthenticator.yaml</code>.) The
+POST-only resources are <code>auth</code>, <code>emergencytoken</code>, <code>idpsessiondata</code>,
+<code>licensing</code>, <code>localapiadmin</code>, <code>offlinehotpupdate</code>, <code>offlineotp</code>, <code>realmauth</code>,
+<code>ssoauth</code>, <code>system</code> and <code>upgrade</code>.</p>
 <h2 id="3-where-each-piece-lives">3. Where each piece lives</h2>
 <table>
 <thead>
@@ -200,11 +203,11 @@ considered and rejected, not overlooked.</p>
 <tbody>
 <tr>
 <td>Registry seed</td>
-<td><code>endpoints_fortiauthenticator.yaml</code> (repo root)</td>
+<td>baseline <code>app/registry/baselines/fortiauthenticator.json</code> (FortiAuthenticator 8.0.3), applied by <code>app/services/api_baseline.py</code></td>
 </tr>
 <tr>
 <td>Registry loader</td>
-<td><code>app/registry/loader.py</code> → <code>resolve_fac</code>, <code>seed_fac_from_yaml</code></td>
+<td><code>app/registry/loader.py</code> → <code>resolve_fac</code></td>
 </tr>
 <tr>
 <td>REST client</td>
@@ -232,7 +235,7 @@ considered and rejected, not overlooked.</p>
 </tr>
 </tbody>
 </table>
-<p>The registry is <strong>DB-first</strong>: the YAML is an INSERT-ONLY seed and operator edits
+<p>The registry is <strong>DB-first</strong>: the baseline is the seed and operator edits
 always win. When a firmware upgrade moves a resource, fix the URN on
 <em>FortiAuthenticator → API → Registry</em> — no code change, no deploy.</p>
 <h2 id="4-the-menu-mirrors-the-unit-not-the-guide">4. The menu mirrors the unit, not the guide</h2>

@@ -8043,7 +8043,7 @@ msgstr ""
 msgid "The endpoint"
 msgstr ""
 
-msgid "The endpoint registry is seeded from endpoints.yaml at first boot."
+msgid "The endpoint registry is seeded from the product endpoint baseline at boot."
 msgstr ""
 
 msgid ""

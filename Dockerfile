@@ -95,7 +95,6 @@ COPY migrations/     ./migrations/
 COPY deploy/         ./deploy/
 COPY scripts/        ./scripts/
 COPY wsgi.py VERSION requirements.txt babel.cfg pytest.ini ./
-COPY endpoints.yaml endpoints_fortiadc.yaml endpoints_fortianalyzer.yaml endpoints_fortiauthenticator.yaml ./
 COPY acme_providers.yaml ./
 COPY LICENSE NOTICE README.md CHANGELOG.md ./
 

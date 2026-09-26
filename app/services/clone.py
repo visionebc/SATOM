@@ -156,10 +156,10 @@ _NOOP: OnLog = lambda _m: None  # noqa: E731
 #  registry urn -> logical index (the web registry is a flat {logical: urn})    #
 # --------------------------------------------------------------------------- #
 def registry_urn_index() -> dict[str, str]:
-    """``{collection: logical}`` inverted from ``endpoints.yaml``.
+    """``{collection: logical}`` inverted from the FortiWeb registry.
 
     Keyed by the NORMALISED collection (``objform.collection_of``) because
-    ``endpoints.yaml`` spells urns as full REST paths (``/api/v2.0/cmdb/waf/…``)
+    the registry spells urns as full REST paths (``/api/v2.0/cmdb/waf/…``)
     while ``dependencies.py`` uses the bare ``cmdb/waf/…`` form — both reduce to
     the same ``waf/…`` collection, which is how a tree urn finds its logical name."""
     return {objform.collection_of(urn): logical for logical, urn in load_registry().items()}

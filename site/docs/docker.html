@@ -104,8 +104,9 @@ permissions, configuration, HA, updates, backups and troubleshooting — is
 <a href="docker-compose.html"><code>docker-compose.md</code></a>.</p>
 <h2 id="read-this-before-you-choose-the-container-shape">Read this before you choose the container shape</h2>
 <p><strong>SATOM is an appliance that administers its own host.</strong> A container controls
-none of that host, so the container shape <em>renounces</em> four capabilities rather
-than pretending to have them:</p>
+none of that host, so the container shape <em>renounces</em> five capabilities rather
+than pretending to have them. The optional operations agent gives four of them
+back to the console; the fifth, HA promotion, stays manual:</p>
 <table>
 <thead>
 <tr>
@@ -116,24 +117,29 @@ than pretending to have them:</p>
 </thead>
 <tbody>
 <tr>
-<td><strong>Software Update &amp; HA</strong> (in-place self-update)</td>
+<td><strong>Software Update</strong> (self-update)</td>
 <td>the updater installs unit files and restarts services as root</td>
-<td>deploy a new image tag and recreate the stack</td>
+<td>deploy a new image tag and recreate the stack — or, with the agent, switch releases from the console</td>
 </tr>
 <tr>
-<td><strong>Service control</strong> (start/stop/restart of node units)</td>
+<td><strong>Service control</strong> (start/stop/restart)</td>
 <td>there is no systemd here</td>
-<td><code>docker compose restart &lt;service&gt;</code></td>
+<td><code>docker compose restart &lt;service&gt;</code> — or, with the agent, from the console</td>
 </tr>
 <tr>
 <td><strong>Certificate activation</strong></td>
 <td>it writes the node PKI and reloads the <em>host</em> nginx, which is a sibling container here</td>
-<td>the stack already serves TLS; replace the certificate with <code>tls-bootstrap.sh import-cert</code> and restart <code>proxy</code></td>
+<td>the stack already serves TLS; replace the certificate with <code>tls-bootstrap.sh import-cert</code> and restart <code>proxy</code> — or, with the agent, upload it from the console</td>
 </tr>
 <tr>
 <td><strong>systemd unit health</strong></td>
 <td>there are no units to read</td>
-<td>container health comes from the container engine</td>
+<td>container health comes from the container engine — with the agent, the console reads it</td>
+</tr>
+<tr>
+<td><strong>HA promotion</strong> (<code>ha_promote</code>)</td>
+<td>promotion is run by the host's root runner, which does not exist here</td>
+<td>fail over by hand; the console refuses it even with the agent</td>
 </tr>
 </tbody>
 </table>
@@ -141,8 +147,23 @@ than pretending to have them:</p>
 refuses with a message naming the alternative. Everything else — device
 management, probes and monitors, the metrics store, backups and restore, the
 SoT, reports, the CLI, RBAC and SSO — behaves identically to a host install.</p>
-<p><strong>If you need in-place self-update, use a host install.</strong> TLS is <em>not</em> on
-that list any more: since 1.20.1 the container stack terminates it itself.</p>
+<p><strong>The optional operations agent gives four of them back</strong> (since 2.3.0, off
+by default). It is one extra container, <code>agent</code>
+(<code>deploy/docker/compose.agent.yaml</code>), and the only one that mounts the Docker
+socket. The web never touches the engine: it drops a JSON request into a
+volume, and the agent re-validates it against a closed list — restart a named
+service of this stack, switch the stack to a release <code>X.Y.Z</code>, install the
+proxy certificate — and reports container health. The console page is
+<strong>System → Container operations</strong>. A capability is delegated only while the
+agent is declared by the overlay <em>and</em> its heartbeat is fresh; a silent agent
+counts as absent. HA promotion is never delegated: failover stays manual.</p>
+<p>The cost is the same as on a host: the socket is root on the host, exactly
+like <code>satom-updater.service</code>. Read <a href="docker-compose.html"><code>docker-compose.md</code></a> §7
+— the boundary, what each request does, and the residual risk — before you
+enable it. Without the agent, the table above is the whole story, and the git
+and library (pip) updaters stay host-only either way: in a container the code
+is the image. TLS is <em>not</em> on that list any more: since 1.20.1 the container
+stack terminates it itself.</p>
 <h3 id="the-runtime-is-declared-never-detected">The runtime is declared, never detected</h3>
 <p>The image sets <code>SATOM_RUNTIME=container</code>. Nothing infers it, and that is
 deliberate: <code>system_health.is_container()</code> already returns <strong>true on the
@@ -212,6 +233,21 @@ an image that also runs in production.</p>
 right — and a SAN that does not cover the name in the address bar produces a
 browser warning on a certificate the install just reported as issued, with no
 remedy but to reissue.</p>
+<h3 id="the-proxy-follows-web-when-it-is-recreated">The proxy follows <code>web</code> when it is recreated</h3>
+<p>The vhost reaches the app <strong>by service name, re-resolved per request</strong>
+through Docker's embedded DNS (<code>resolver 127.0.0.11 valid=10s</code>). Before 2.3.0
+it named <code>web:8000</code> in a plain <code>proxy_pass</code>, which nginx resolves once, at
+start: every recreate of <code>web</code> — an <code>up -d</code> that touched it, an installer
+update — gave the container a new address, the proxy kept the old one, and
+the console answered 502 until someone restarted the proxy. Every Docker
+install had that defect. A host install is unaffected: its upstream is the
+literal <code>127.0.0.1:8000</code>.</p>
+<p>The proxy runs a stock image, so an update does not recreate it either, and
+the vhost <code>tls-init</code> rewrites on every <code>up</code> would stay unread. The installer's
+update mode and the operations agent's update therefore <strong>reload</strong> it
+gracefully (SIGHUP to the nginx master; open connections survive). The
+agent's certificate import reloads it the same way, and never restarts it
+(§7.6 of <a href="docker-compose.html"><code>docker-compose.md</code></a>).</p>
 <h3 id="replacing-the-certificate">Replacing the certificate</h3>
 <p>The install ships a working certificate; you replace it whenever you like.</p>
 <pre><code class="language-bash">docker compose exec -u 0 tls-init sh -c '

@@ -6,6 +6,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-09-26
+
 ### Added — the Docker operations agent (2026-09-26)
 
 A Docker node's console can now restart the stack's services, switch the

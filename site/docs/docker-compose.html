@@ -73,12 +73,12 @@
       <a href="#11-operations">11. Operations</a>
       <a href="#12-troubleshooting">12. Troubleshooting</a>
       <a href="#13-hardening-recommendations-not-applied-by-the-stack">13. Hardening recommendations (not applied by the stack)</a>
-      <a href="#14-known-defects-and-gaps-in-212">14. Known defects and gaps in 2.1.2</a>
+      <a href="#14-known-defects-and-gaps-in-230">14. Known defects and gaps in 2.3.0</a>
       <a href="#15-source-files">15. Source files</a>
     </aside>
     <div class="doc-body mdx">
 <h1 id="running-satom-with-docker-compose--operator-manual">Running SATOM with Docker Compose — operator manual</h1>
-<p>Status: <strong>operator reference</strong> for SATOM <strong>2.1.2</strong>. Every statement on this page
+<p>Status: <strong>operator reference</strong> for SATOM <strong>2.3.0</strong>. Every statement on this page
 is taken from the files that implement the stack, which are listed in §15.
 Where the code does not provide something, this page says so rather than
 filling the gap. Paragraphs marked <strong>Recommendation</strong> or <strong>Design requirement</strong>
@@ -96,7 +96,9 @@ one Compose project named <code>satom</code> (<code>name: satom</code> in
 <code>deploy/docker/compose.yaml</code>). The web worker, the scheduler and the periodic
 jobs are <strong>the same image</strong>; the entrypoint selects the role from <code>SATOM_ROLE</code>.</p>
 <p>The image declares <code>SATOM_RUNTIME=container</code>. That declaration makes
-<code>app/runtime.py</code> deny four host-only capabilities (§7). Apart from those four,
+<code>app/runtime.py</code> deny five host-only capabilities (§7.2). The optional
+operations agent (§7) performs four of them on the web's behalf; the fifth,
+HA promotion, stays manual. Apart from those,
 <a href="docker.html"><code>docker.md</code></a> states that the product behaves as it does on a host
 install.</p>
 <h3 id="12-what-it-is-not">1.2 What it is not</h3>
@@ -155,14 +157,16 @@ install.</p>
 <td><code>installers/satom-setup.sh</code> (§11.8 for the manual route)</td>
 </tr>
 <tr>
-<td>An operations agent that performs the four renounced capabilities from the web UI</td>
-<td><strong>not shipped</strong> in any 2.1.2 file</td>
+<td>A root runner that performs the renounced capabilities from the web UI</td>
+<td><strong>optional</strong>: the operations agent (<code>compose.agent.yaml</code>, off by default) performs four of them — restart, release switch, certificate import, container health. It does <strong>not</strong> perform git/pip updates or HA promotion.</td>
 <td>§7</td>
 </tr>
 </tbody>
 </table>
-<p>If you need in-place self-update, the in-product HA promotion or the certificate
-activation button, use a host install (<a href="install.html"><code>INSTALL.md</code></a>).</p>
+<p>If you need git or library (pip) updates in place, or the in-product HA
+promotion, use a host install (<a href="install.html"><code>INSTALL.md</code></a>). Release switches,
+service restarts and the certificate button are available in a container only
+with the agent enabled.</p>
 <h3 id="13-supported-shapes">1.3 Supported shapes</h3>
 <table>
 <thead>
@@ -195,6 +199,8 @@ activation button, use a host install (<a href="install.html"><code>INSTALL.md</
 </tr>
 </tbody>
 </table>
+<p>Any of these shapes can add the optional operations agent: <code>compose.agent.yaml</code>
+is then layered <strong>last</strong>, after every file above (§7.1).</p>
 <h3 id="14-requirements">1.4 Requirements</h3>
 <table>
 <thead>
@@ -264,7 +270,7 @@ host installs; the container memory ceilings above apply on top of it.</p>
 <p><code>installers/satom-setup.sh</code> installs, updates and uninstalls the Docker variant.
 It must run as root.</p>
 <h3 id="21-interactive">2.1 Interactive</h3>
-<pre><code class="language-bash">curl -fsSLO https://github.com/visionebc/SATOM/releases/download/v2.1.2/satom-setup.sh
+<pre><code class="language-bash">curl -fsSLO https://github.com/visionebc/SATOM/releases/download/v2.3.0/satom-setup.sh
 sudo bash satom-setup.sh --check     # system checks only; installs nothing
 sudo bash satom-setup.sh             # choose &quot;docker&quot; when asked for the mode
 </code></pre>
@@ -361,8 +367,8 @@ script generates a password and writes it <strong>only</strong> to
 </tr>
 <tr>
 <td><code>SETUP_AGENT</code></td>
-<td><code>yes</code> | <code>no</code></td>
-<td><strong>Has no effect in 2.1.2</strong> (§7.4).</td>
+<td><code>yes</code> | <code>no</code>; default <code>no</code></td>
+<td>Enables the operations agent when the release ships <code>compose.agent.yaml</code> (2.3.0 does); ignored with a warning on a release that does not. Also asked in update mode when the install runs without the agent (§7.1, §7.4).</td>
 </tr>
 <tr>
 <td><code>SETUP_CERT</code></td>
@@ -408,13 +414,14 @@ native mode only.</p>
 <h3 id="24-what-the-installer-does-in-order-docker-mode">2.4 What the installer does, in order (Docker mode)</h3>
 <ol>
 <li>Checks the OS, CPU, RAM, disk, ports 80/443 and Internet access, and
-   resolves the version (its own <code>SETUP_VERSION</code>, 2.1.2, unless <code>--version</code> is
+   resolves the version (its own <code>SETUP_VERSION</code>, 2.3.0, unless <code>--version</code> is
    given). Refuses if the machine already has a <strong>native</strong> install.</li>
 <li>Ensures Docker is running and Compose v2 is at least 2.20.0, installing
    them if allowed.</li>
-<li>Asks for the names, IP and port; the database; the role; the agent option;
-   the certificate; and the <code>admin</code> password. The password is not asked on a
-   standby.</li>
+<li>Asks for the names, IP and port; the database; the role; the agent option
+   (offered only when the release tree ships <code>compose.agent.yaml</code>, so the
+   source is downloaded at this point); the certificate; and the <code>admin</code>
+   password. The password is not asked on a standby.</li>
 <li>Downloads the release source from GitHub into
    <code>/opt/satom-docker/releases/&lt;ver&gt;</code>. It <strong>refuses</strong> a tree that contains an
    invalid network literal (a network written with host bits set).</li>
@@ -436,7 +443,9 @@ native mode only.</p>
    a throwaway <code>postgres:15-bookworm</code> container.</li>
 <li>Pulls the base images <strong>by name</strong>, excluding <code>satom:*</code>. It deliberately does
    not run <code>compose pull</code>, which would try to fetch <code>satom:&lt;ver&gt;</code> from Docker
-   Hub.</li>
+   Hub. With the agent enabled it also pulls <code>docker:27-cli</code>, the image the
+   agent borrows to build and recreate on an update (§7.4); a failed pull stops
+   the install.</li>
 <li>If <code>SETUP_CERT=import</code>, imports the certificate into the <code>satom-pki</code>
     volume (the same command as §7.3.3).</li>
 <li>Runs <code>satom-docker up -d</code>, passing the admin password in the process
@@ -497,7 +506,7 @@ development, single-node production and primary/standby shapes. It does <strong>
 cover external PostgreSQL.</p>
 <h3 id="31-get-the-source">3.1 Get the source</h3>
 <pre><code class="language-bash">mkdir -p /opt/satom-src &amp;&amp; cd /opt/satom-src
-curl -fsSL https://codeload.github.com/visionebc/SATOM/tar.gz/refs/tags/v2.1.2 \
+curl -fsSL https://codeload.github.com/visionebc/SATOM/tar.gz/refs/tags/v2.3.0 \
   | tar -xz --strip-components=1
 cd /opt/satom-src/deploy/docker
 </code></pre>
@@ -524,12 +533,12 @@ refuses to run when no placeholder is left, so it can never overwrite a real
 <h3 id="33-production-single-node">3.3 Production, single node</h3>
 <pre><code class="language-bash">cd /opt/satom-src/deploy/docker
 ./satom-docker.sh gen-secrets
-./satom-docker.sh build satom:2.1.2
+./satom-docker.sh build satom:2.3.0
 </code></pre>
 <p>Edit <code>.env</code>:</p>
 <pre><code class="language-ini">SATOM_ENV=prod                      # satom-docker.sh reads it from .env; see §3.4
 SATOM_NODE_ROLE=primary
-SATOM_IMAGE=satom:2.1.2             # compose.prod.yaml requires it to be set; it does NOT reject :local
+SATOM_IMAGE=satom:2.3.0             # compose.prod.yaml requires it to be set; it does NOT reject :local
 SATOM_SERVED_NAMES=&quot;satom.example.com&quot;   # quote it if it has spaces (§12)
 SATOM_PG_BIND=127.0.0.1:5432        # required by compose.prod.yaml even on a single node
 TZ=UTC
@@ -541,14 +550,15 @@ TZ=UTC
 engine does not have, Compose tries to pull it from a registry. For
 <code>satom:&lt;tag&gt;</code> that registry is Docker Hub, which is the substitution
 <code>satom-setup.sh</code> deliberately avoids. Check first:</p>
-<pre><code class="language-bash">docker image inspect satom:2.1.2 --format '{{.Id}}'
+<pre><code class="language-bash">docker image inspect satom:2.3.0 --format '{{.Id}}'
 </code></pre>
 <h3 id="34-deploydockersatom-dockersh--subcommand-reference">3.4 <code>deploy/docker/satom-docker.sh</code> — subcommand reference</h3>
 <p>The script reads <code>deploy/docker/.env</code> (it sources the file with <code>set -a</code>, so
 the file must be valid shell). It picks the compose files like this:
 <code>compose.yaml</code>; plus <code>compose.prod.yaml</code> when <code>SATOM_ENV=prod</code>; plus
-<code>compose.standby.yaml</code> when additionally <code>SATOM_NODE_ROLE=standby</code>.
-<code>SATOM_ENV</code> can live in <code>.env</code> or in the calling environment.</p>
+<code>compose.standby.yaml</code> when additionally <code>SATOM_NODE_ROLE=standby</code>; plus, last,
+<code>compose.agent.yaml</code> when <code>SATOM_SETUP_AGENT=yes</code> (in any shape, development
+included). <code>SATOM_ENV</code> can live in <code>.env</code> or in the calling environment.</p>
 <table>
 <thead>
 <tr>
@@ -610,8 +620,8 @@ the file must be valid shell). It picks the compose files like this:
 </tr>
 <tr>
 <td><code>health</code></td>
-<td><code>ps</code>, node role, <code>/healthz</code>, runtime capabilities</td>
-<td><strong>aborts at the <code>/healthz</code> step in 2.1.2</strong> (§14)</td>
+<td><code>ps</code>, node role, <code>https://127.0.0.1:&lt;port&gt;/healthz</code> through the proxy (<code>-k</code>; the port is taken from <code>SATOM_HTTPS_BIND</code>, default 443), runtime summary (§7.2)</td>
+<td>fixed in 2.3.0; earlier releases aborted at the <code>/healthz</code> step</td>
 </tr>
 </tbody>
 </table>
@@ -631,6 +641,7 @@ that applies the same file order. Define it in the shell you operate from:</p>
 dc() { docker compose -f compose.yaml -f compose.prod.yaml --env-file .env &quot;$@&quot;; }
 # production standby: add the standby overlay LAST
 # dc() { docker compose -f compose.yaml -f compose.prod.yaml -f compose.standby.yaml --env-file .env &quot;$@&quot;; }
+# with SATOM_SETUP_AGENT=yes: append  -f compose.agent.yaml  after every other file
 dc ps
 </code></pre>
 <p><code>dc</code> skips the two checks above. Order matters: Compose merges left to right,
@@ -640,7 +651,9 @@ and with the files reversed the development defaults win.</p>
 <code>satom.env</code>, so <code>satom-docker.sh</code> appears to work there. It does not pass the
 installer's <code>compose.setup.yaml</code> or <code>-p satom --project-directory</code>. On an
 external-database node it would therefore start a real bundled PostgreSQL and
-point the application at it. <strong>On an installer-managed node, use only
+point the application at it; with the agent enabled it would recreate the
+agent without <code>SATOM_AGENT_HOME</code>, so console updates would start being
+refused. <strong>On an installer-managed node, use only
 <code>/usr/local/sbin/satom-docker</code>.</strong> That wrapper passes all of its arguments to
 <code>docker compose</code> (for example <code>satom-docker ps</code>, <code>satom-docker logs -f web</code>,
 <code>satom-docker restart proxy</code>). It does <strong>not</strong> run <code>satom-docker.sh</code>'s
@@ -673,9 +686,14 @@ point the application at it. <strong>On an installer-managed node, use only
 <td>the installer's overlay (§5.10). Written at install; <strong>not rewritten by an update</strong>.</td>
 </tr>
 <tr>
+<td><code>/opt/satom-docker/compose.setup-agent.yaml</code></td>
+<td>0600 root</td>
+<td>only with the operations agent: its installer layout (§5.10). Layered only together with <code>compose.agent.yaml</code>.</td>
+</tr>
+<tr>
 <td><code>/opt/satom-docker/releases/&lt;ver&gt;/</code></td>
 <td>root</td>
-<td>the downloaded release source for each installed version</td>
+<td>the downloaded release source for each installed version; with the agent, also every version switched to from the console (§7.6)</td>
 </tr>
 <tr>
 <td><code>/opt/satom-docker/current</code></td>
@@ -794,7 +812,7 @@ engine's data root (<code>/var/lib/docker/volumes</code> by default).</p>
 </tr>
 <tr>
 <td><code>satom-pki</code></td>
-<td><code>/opt/satom/pki</code> (tls-init — rw; proxy — <strong>ro</strong>)</td>
+<td><code>/opt/satom/pki</code> (tls-init — rw; proxy — <strong>ro</strong>; agent — rw, overlay only)</td>
 <td>the internal CA (<code>internal-ca/</code>), the node leaf certificate, and <code>public/server.{crt,key}</code> plus <code>meta.json</code></td>
 <td>an <strong>imported</strong> certificate and key must be re-imported if this volume is lost; a self-issued one is reissued</td>
 <td>Recommended when you imported a certificate</td>
@@ -811,6 +829,20 @@ engine's data root (<code>/var/lib/docker/volumes</code> by default).</p>
 <td><code>/var/www/satom-acme</code> (tls-init — rw; proxy — <strong>ro</strong>)</td>
 <td>the ACME http-01 webroot</td>
 <td>no</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>satom-agent-requests</code></td>
+<td><strong>agent overlay only.</strong> <code>/queue/requests</code> (agent — rw); <code>/opt/satom/data/update-requests</code> (web, scheduler, cron — rw)</td>
+<td>request files waiting for the agent. A certificate request carries the private key until the agent consumes it (§7.6).</td>
+<td>no</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>satom-agent-status</code></td>
+<td><strong>agent overlay only.</strong> <code>/queue/status</code> (agent — rw); <code>/opt/satom/data/update-status</code> (web, scheduler, cron — rw)</td>
+<td>one <code>&lt;uid&gt;.json</code> status file per request, and <code>agent.heartbeat</code></td>
+<td>no; the request history is lost</td>
 <td>No</td>
 </tr>
 </tbody>
@@ -903,14 +935,24 @@ disappear when the container is recreated: <code>/opt/satom/reports</code> and
 <td>none</td>
 <td><strong>disabled</strong></td>
 </tr>
+<tr>
+<td><code>agent</code> (<strong>optional</strong>, <code>compose.agent.yaml</code>)</td>
+<td><code>${SATOM_IMAGE:-satom:local}</code></td>
+<td><strong>root</strong> (<code>user: "0:0"</code>), all capabilities dropped but <code>CHOWN</code>, <code>DAC_OVERRIDE</code>, <code>FOWNER</code></td>
+<td><code>unless-stopped</code> (not changed by prod)</td>
+<td>none</td>
+<td>heartbeat file younger than 60 s</td>
+</tr>
 </tbody>
 </table>
-<p>No overlay shipped in 2.1.2 adds a service. <code>compose.agent.yaml</code>, which the
-installer's wrapper would include, does not exist (§7.4).</p>
-<p>All services join the single bridge network <code>satom</code> (on the host:
+<p>One overlay adds a service: <code>compose.agent.yaml</code> adds <code>agent</code> (§5.11, §7). No
+other shipped overlay adds one.</p>
+<p>All base services join the single bridge network <code>satom</code> (on the host:
 <code>satom_satom</code>), subnet <code>${SATOM_NETWORK_SUBNET:-{ip}/16}</code>. Only <code>proxy</code>
 has a fixed address (<code>${SATOM_PROXY_IP:-{ip}}</code>); every other service
-gets a dynamic one and is reached by its service name.</p>
+gets a dynamic one and is reached by its service name. The <code>agent</code> is the
+exception: it is <strong>not</strong> on <code>satom</code>, only on its own bridge <code>satom-agent</code>
+(§6.3).</p>
 <p>Production adds <code>logging: json-file, max-size 20m, max-file 5</code> to <code>postgres</code>,
 <code>redis</code>, <code>victoria-metrics</code>, <code>web</code>, <code>scheduler</code> and <code>cron</code>. <code>proxy</code> and
 <code>tls-init</code> keep the engine's default logging.</p>
@@ -997,7 +1039,7 @@ asserts that the port stays unpublished and that the tag stays equal to
 </tr>
 <tr>
 <td>What it does</td>
-<td><code>tls-bootstrap.sh ensure-pki</code> → <code>tls-bootstrap.sh write-vhost --port 443 --upstream web:8000 --default-server</code> → deletes the stock <code>default.conf</code> from the conf volume → <code>chmod 600</code> on <code>public/server.key</code> → prints <code>meta.json</code></td>
+<td><code>tls-bootstrap.sh ensure-pki</code> → <code>tls-bootstrap.sh write-vhost --port 443 --upstream web:8000 --resolver 127.0.0.11 --default-server</code> → deletes the stock <code>default.conf</code> from the conf volume → <code>chmod 600</code> on <code>public/server.key</code> → prints <code>meta.json</code></td>
 </tr>
 <tr>
 <td>Why root</td>
@@ -1006,7 +1048,8 @@ asserts that the port stays unpublished and that the tag stays equal to
 </tbody>
 </table>
 <p>It runs on every <code>up</code>. An existing valid certificate is reused, and an
-imported one is never touched (§9).</p>
+imported one is never touched (§9). It rewrites the vhost every time, but the
+running <code>proxy</code> only reads it when it starts or reloads (§5.5).</p>
 <h3 id="55-proxy">5.5 <code>proxy</code></h3>
 <p>The TLS terminator, using stock <code>nginx:1.27-alpine</code> with nothing added.
 <strong>Not optional</strong> (§9.1).</p>
@@ -1040,10 +1083,28 @@ imported one is never touched (§9).</p>
 </tr>
 <tr>
 <td>vhost (generated)</td>
-<td><code>:443 ssl http2</code> for <code>SATOM_SERVED_NAMES</code>, TLSv1.2/1.3, <code>client_max_body_size 400M</code>, <code>proxy_read_timeout 120s</code>, <code>Host $http_host</code>, <code>X-Forwarded-Proto https</code>, <code>X-Forwarded-For</code>, <code>X-Real-IP</code>. <code>:80</code> serves <code>/.well-known/acme-challenge/</code> from <code>/var/www/satom-acme</code> and returns 301 to HTTPS for everything else. Both listeners claim <code>default_server</code>.</td>
+<td><code>:443 ssl http2</code> for <code>SATOM_SERVED_NAMES</code>, TLSv1.2/1.3, <code>client_max_body_size 400M</code>, <code>proxy_read_timeout 120s</code>, <code>Host $http_host</code>, <code>X-Forwarded-Proto https</code>, <code>X-Forwarded-For</code>, <code>X-Real-IP</code>. <code>:80</code> serves <code>/.well-known/acme-challenge/</code> from <code>/var/www/satom-acme</code> and returns 301 to HTTPS for everything else. Both listeners claim <code>default_server</code>. The upstream is <strong>re-resolved per request</strong>: <code>resolver 127.0.0.11 valid=10s ipv6=off; set $satom_upstream http://web:8000; proxy_pass $satom_upstream;</code> (127.0.0.11 is Docker's embedded DNS).</td>
 </tr>
 </tbody>
 </table>
+<p><strong>Why the upstream is re-resolved (fixed in 2.3.0).</strong> nginx resolves a literal
+<code>proxy_pass</code> host once, at start, and then connects to that address forever.
+Before 2.3.0 the vhost said <code>proxy_pass http://web:8000;</code>, so every time <code>web</code>
+was recreated — any <code>satom-docker up -d</code> that recreated it, the installer's
+update mode, a console update — it came back on a new address and the proxy
+kept the old one: the console answered <strong>502</strong> until <code>proxy</code> was restarted.
+This affected every Docker install. With a resolver the name is looked up per
+request, with a 10 s cache. Host installs are unchanged: their vhost keeps the
+literal <code>proxy_pass http://127.0.0.1:8000;</code>. <code>tls-bootstrap.sh</code> accepts only an
+IPv4 address for <code>--resolver</code>.</p>
+<p><strong><code>proxy</code> is not recreated by an update.</strong> It runs a stock image, so a new
+<code>SATOM_IMAGE</code> does not recreate it, and the vhost <code>tls-init</code> rewrites on every
+<code>up</code> was never loaded. Since 2.3.0 the installer's update mode (§11.1) and the
+agent's update (§7.6) both <strong>reload</strong> it gracefully after recreating the stack
+(SIGHUP to the nginx master: open connections survive). After a manual
+<code>up -d</code>, reload it yourself when the vhost may have changed:
+<code>satom-docker kill -s HUP proxy</code> (manual: <code>dc kill -s HUP proxy</code>), or
+<code>restart proxy</code>.</p>
 <h3 id="56-web">5.6 <code>web</code></h3>
 <table>
 <thead>
@@ -1125,10 +1186,88 @@ and an existing admin is never modified (<code>_seed_admin()</code> in
 <code>SATOM_ADMIN_PASSWORD</code> line in <code>satom.env</code> has no effect on an
 installer-managed node. External-database mode also changes <code>postgres</code> and the
 three app services as described in §2.5.</p>
+<p>With the agent enabled, the installer writes a <strong>second</strong> overlay,
+<code>/opt/satom-docker/compose.setup-agent.yaml</code>, that gives <code>agent</code> the installer
+layout. It is a separate file on purpose: the wrappers layer it only together
+with <code>compose.agent.yaml</code>, so turning <code>SATOM_SETUP_AGENT</code> back to <code>no</code> never
+leaves a half <code>agent</code> service (no image) behind for Compose to reject. Written
+with the agent, deleted by an install without it:</p>
+<pre><code class="language-yaml">services:
+  agent:
+    environment:
+      SATOM_AGENT_HOME: /opt/satom-docker
+    volumes:
+      - /opt/satom-docker:/opt/satom-docker
+</code></pre>
+<p>The directory is mounted at the <strong>same path</strong> it has on the host, because an
+update hands host paths to a helper container (§7.6) and a path that differed
+inside the agent would point the engine at nothing. No other service receives
+it, and the overlay never mounts the Docker socket
+(<code>tests/test_docker_agent.py</code>).</p>
+<h3 id="511-agent-optional">5.11 <code>agent</code> (optional)</h3>
+<p>Defined in <code>deploy/docker/compose.agent.yaml</code>, which also adds the queue
+volumes and <code>SATOM_AGENT=docker</code> to <code>web</code>, <code>scheduler</code> and <code>cron</code>. Present
+only when <code>SATOM_SETUP_AGENT=yes</code> (§7.1).</p>
+<table>
+<thead>
+<tr>
+<th>Aspect</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Purpose</td>
+<td>performs, on request, four of the five capabilities the container runtime otherwise renounces (§7); HA promotion stays refused</td>
+</tr>
+<tr>
+<td>Image</td>
+<td><code>${SATOM_IMAGE:-satom:local}</code> — the SATOM image, for the stdlib-only <code>satom_agent.py</code> and <code>tls-bootstrap.sh</code>. No <code>:?</code> guard, even in production.</td>
+</tr>
+<tr>
+<td>Entrypoint</td>
+<td><code>python3 /opt/satom/deploy/docker/satom_agent.py</code></td>
+</tr>
+<tr>
+<td>Runs as</td>
+<td><code>user: "0:0"</code>; <code>cap_drop: [ALL]</code>, <code>cap_add: [CHOWN, DAC_OVERRIDE, FOWNER]</code>; <code>no-new-privileges:true</code>; <code>read_only: true</code> with a <code>tmpfs</code> on <code>/tmp</code></td>
+</tr>
+<tr>
+<td>Environment</td>
+<td><code>TZ</code> only. Installer overlay: <code>SATOM_AGENT_HOME=/opt/satom-docker</code>. <strong>No <code>env_file</code></strong>, so none of the <code>.env</code> secrets reach its environment.</td>
+</tr>
+<tr>
+<td>Volumes</td>
+<td><code>/var/run/docker.sock</code> (rw — the only mount of the engine socket in the stack); <code>satom-agent-requests:/queue/requests</code>; <code>satom-agent-status:/queue/status</code>; <code>satom-pki:/opt/satom/pki</code> (rw, for the certificate import). Installer overlay: <code>/opt/satom-docker</code> at the same path.</td>
+</tr>
+<tr>
+<td>Network</td>
+<td><code>satom-agent</code> (a bridge of its own). <strong>Not</strong> <code>satom</code>.</td>
+</tr>
+<tr>
+<td>Ports</td>
+<td>none; it listens on nothing</td>
+</tr>
+<tr>
+<td>Healthcheck</td>
+<td><code>python3</code> reads <code>/queue/status/agent.heartbeat</code> and fails if its <code>ts</code> is 60 s old or more; interval 30 s, timeout 10 s, 3 retries, start period 30 s. The image <code>HEALTHCHECK</code> (curl <code>:8000</code>) is replaced, because the agent serves nothing.</td>
+</tr>
+<tr>
+<td>Logging</td>
+<td><code>json-file</code>, 10 MB × 3</td>
+</tr>
+<tr>
+<td>Exit code 78 at start</td>
+<td><code>/var/run/docker.sock</code> is not mounted</td>
+</tr>
+</tbody>
+</table>
 <hr>
 <h2 id="6-permissions-and-privilege-model">6. Permissions and privilege model</h2>
-<p>This section states what each container <strong>can</strong> do given the 2.1.2 files. It
-is the container counterpart of <a href="privilege-model.html"><code>privilege-model.md</code></a>.</p>
+<p>This section states what each container <strong>can</strong> do given the 2.3.0 files. It
+is the container counterpart of <a href="privilege-model.html"><code>privilege-model.md</code></a>.
+Rows marked <em>agent overlay</em> apply only when <code>compose.agent.yaml</code> is layered
+(§7.1).</p>
 <h3 id="61-identities">6.1 Identities</h3>
 <table>
 <thead>
@@ -1174,6 +1313,16 @@ is the container counterpart of <a href="privilege-model.html"><code>privilege-m
 <td>the upstream image's default</td>
 <td>The stack sets no <code>user:</code></td>
 </tr>
+<tr>
+<td><code>agent</code> (<em>agent overlay</em>)</td>
+<td><strong>root (0:0)</strong>, with a reduced capability set (§6.2)</td>
+<td><code>compose.agent.yaml</code> <code>user: "0:0"</code>. It must use the engine socket (root-owned on the host) and chown the queue volumes to uid 999. Files it writes into the queue volumes are chowned to 999:999 so the web can read them.</td>
+</tr>
+<tr>
+<td>helper containers (<em>agent overlay</em>, during an update)</td>
+<td>the <code>docker:27-cli</code> image's default (root)</td>
+<td>Started by the agent with the engine socket and the installer directory bind-mounted, and removed when the command ends (§7.6). The compose helpers run with <code>NetworkMode: none</code>; only the <code>docker build</code> helper gets <code>bridge</code> (BuildKit needs it for the registry pull token). Any other value falls back to <code>none</code>. They carry the label <code>io.satom.agent.helper=1</code>.</td>
+</tr>
 </tbody>
 </table>
 <p>To confirm the stock images on your engine, rather than relying on this table:</p>
@@ -1183,11 +1332,21 @@ done          # an empty USER means the container starts as root
 satom-docker top web        # or: dc top web — shows the running processes and their users
 </code></pre>
 <h3 id="62-linux-capabilities-and-kernel-confinement">6.2 Linux capabilities and kernel confinement</h3>
-<p><strong>No compose file in 2.1.2 sets any of</strong> <code>cap_add</code>, <code>cap_drop</code>, <code>privileged</code>,
-<code>security_opt</code> (and therefore no <code>no-new-privileges</code>), <code>read_only</code>, <code>tmpfs</code>,
-<code>devices</code>, <code>network_mode</code>, <code>pid</code> or <code>ipc</code>, and <strong>nothing mounts
-<code>/var/run/docker.sock</code></strong>. The only <code>user:</code> key is <code>tls-init</code>'s <code>0:0</code>.</p>
-<p>Every container therefore runs with:</p>
+<p><strong>The base files (<code>compose.yaml</code>, <code>compose.prod.yaml</code>, <code>compose.standby.yaml</code>)
+set none of</strong> <code>cap_add</code>, <code>cap_drop</code>, <code>privileged</code>, <code>security_opt</code> (and
+therefore no <code>no-new-privileges</code>), <code>read_only</code>, <code>tmpfs</code>, <code>devices</code>,
+<code>network_mode</code>, <code>pid</code> or <code>ipc</code>, and <strong>none of them mounts
+<code>/var/run/docker.sock</code></strong>. Their only <code>user:</code> key is <code>tls-init</code>'s <code>0:0</code>.</p>
+<p><strong>The agent overlay is the one exception, and only for <code>agent</code>:</strong> <code>cap_drop:
+[ALL]</code> then <code>cap_add: [CHOWN, DAC_OVERRIDE, FOWNER]</code> (chown the queue volumes
+to uid 999 and write into them although it does not own them — nothing else),
+<code>security_opt: [no-new-privileges:true]</code>, <code>read_only: true</code> with a <code>tmpfs</code> on
+<code>/tmp</code>, and the only mount of <code>/var/run/docker.sock</code> in any compose file.
+<code>tests/test_docker_agent.py</code> asserts each of these, and fails if any other
+service in any compose file mounts the socket. None of it limits what the
+agent can do <strong>through the socket</strong>: the engine API is root on the host
+whatever the calling container's capabilities (§6.6).</p>
+<p>Every other container therefore runs with:</p>
 <ul>
 <li><strong>The Docker default capability set</strong>: <code>CHOWN</code>, <code>DAC_OVERRIDE</code>, <code>FOWNER</code>,
   <code>FSETID</code>, <code>KILL</code>, <code>SETGID</code>, <code>SETUID</code>, <code>SETPCAP</code>, <code>NET_BIND_SERVICE</code>,
@@ -1273,9 +1432,25 @@ satom-docker top web        # or: dc top web — shows the running processes and
 <td>nothing</td>
 <td></td>
 </tr>
+<tr>
+<td><code>agent</code> (<em>agent overlay</em>)</td>
+<td>nothing</td>
+<td>it listens on nothing; asserted by <code>tests/test_docker_agent.py</code></td>
+</tr>
 </tbody>
 </table>
-<p>The network is one flat bridge. It is not declared <code>internal</code>, and nothing
+<p><strong>The agent is not on the <code>satom</code> network.</strong> It sits alone on the bridge
+<code>satom-agent</code>, so no container of the stack can open a connection to it or
+even resolve its name, and it can reach none of them over the network. The
+bridge exists for one outbound purpose: downloading a release tree from GitHub
+for an update (§7.6). Everything else it does goes through the socket. Its
+only input is a file in the <code>satom-agent-requests</code> volume. The helper
+containers it starts for an update run with <code>NetworkMode: none</code>, except the
+one that runs <code>docker build</code>, which gets the default <code>bridge</code> network: BuildKit
+fetches the registry pull token from the client, and with no network the first
+<code>FROM</code> fails (measured). The helper code accepts only <code>none</code> and <code>bridge</code>, and
+falls back to <code>none</code> for anything else.</p>
+<p>The <code>satom</code> network is one flat bridge. It is not declared <code>internal</code>, and nothing
 separates the front end (proxy ↔ web) from the back end (database, Redis,
 metrics). <strong>Any container on the network can read and write Redis and query or
 write VictoriaMetrics without credentials.</strong> Every container can open outbound
@@ -1293,9 +1468,15 @@ connections.</p>
 <tbody>
 <tr>
 <td><code>web</code>, <code>scheduler</code>, <code>cron</code></td>
-<td><code>satom-data</code>, <code>satom-state</code>, <code>satom-instance</code> (volumes, uid 999); its own writable layer where uid 999 owns the path (<code>/opt/satom/reports</code>, <code>/var/log/satom</code>, <code>/home/satom</code>, <code>/tmp</code>)</td>
+<td><code>satom-data</code>, <code>satom-state</code>, <code>satom-instance</code> (volumes, uid 999); its own writable layer where uid 999 owns the path (<code>/opt/satom/reports</code>, <code>/var/log/satom</code>, <code>/home/satom</code>, <code>/tmp</code>). <em>Agent overlay:</em> also <code>satom-agent-requests</code> and <code>satom-agent-status</code>, mounted over <code>data/update-requests</code> and <code>data/update-status</code>.</td>
 <td>—</td>
-<td><strong>The application code under <code>/opt/satom</code> (<code>app/</code>, <code>deploy/</code>, …) is copied as root and is not writable by uid 999</strong>, so the web process cannot rewrite its own code. It cannot read <code>satom-pki</code>: no app service mounts it.</td>
+<td><strong>The application code under <code>/opt/satom</code> (<code>app/</code>, <code>deploy/</code>, …) is copied as root and is not writable by uid 999</strong>, so the web process cannot rewrite its own code. It cannot read <code>satom-pki</code>: no app service mounts it, with or without the agent (asserted by <code>tests/test_docker_agent.py</code>).</td>
+</tr>
+<tr>
+<td><code>agent</code> (<em>agent overlay</em>)</td>
+<td><code>satom-agent-requests</code>, <code>satom-agent-status</code>, <code>satom-pki</code>; installer: <code>/opt/satom-docker</code> (bind mount, including <code>satom.env</code>, <code>current</code> and <code>releases/</code>); <code>/tmp</code> (tmpfs). <strong>Through the socket: anything the engine can do.</strong></td>
+<td>its root filesystem (<code>read_only</code>)</td>
+<td>Writes into the queue volumes go to an <code>O_EXCL</code> temporary that is renamed over the target, so a symlink the web plants is replaced, never followed.</td>
 </tr>
 <tr>
 <td><code>tls-init</code></td>
@@ -1350,6 +1531,14 @@ connections.</p>
   flush it.</li>
 <li><code>satom-docker.sh config</code> and <code>docker compose config</code> print the fully
   interpolated configuration, secrets included.</li>
+<li><em>Agent overlay.</em> The agent has no <code>env_file</code>, so no secret reaches its
+  environment. On an installer layout it can nevertheless <strong>read and rewrite
+  <code>satom.env</code></strong> through the <code>/opt/satom-docker</code> mount (an update rewrites the
+  <code>SATOM_IMAGE</code> line), and through the socket it can read any container's
+  configuration. A certificate request carries the <strong>private key</strong> in the
+  request file, in the <code>satom-agent-requests</code> volume, until the agent picks it
+  up; the agent deletes the file before acting on it, also when it refuses the
+  request, and the status row it writes never contains the key.</li>
 </ul>
 <h3 id="66-who-is-effectively-root-on-the-host">6.6 Who is effectively root on the host</h3>
 <table>
@@ -1380,71 +1569,156 @@ connections.</p>
 <td>Anyone who can read <code>/root/satom-docker-join.env</code></td>
 <td>the same secrets, plus the primary's address. 0600 root; delete it after the standby joins.</td>
 </tr>
+<tr>
+<td><em>Agent overlay:</em> <strong>the <code>agent</code> container</strong>, and anyone who can run code in it</td>
+<td>it holds <code>/var/run/docker.sock</code>, which is root on the host (§7.8)</td>
+</tr>
+<tr>
+<td><em>Agent overlay:</em> anyone who can write the <code>satom-agent-requests</code> volume — in practice, code execution in <code>web</code>, <code>scheduler</code> or <code>cron</code>, or an admin of the console</td>
+<td><strong>can ask, not act.</strong> Such a principal can request only what the agent's closed list accepts (§7.6): restart a listed service, switch the stack to a release <code>X.Y.Z</code> (a <code>vX.Y.Z</code> tag of the public repository, or a tree already under <code>releases/</code>), replace the proxy certificate. It cannot name an image, a command, a path, a compose argument or a service outside the list. Only the agent acts.</td>
+</tr>
 </tbody>
 </table>
 <p><code>/usr/local/sbin/satom-docker</code> is 0755, but it sources the root-only
 <code>satom.env</code> and calls <code>docker</code>, so in practice only root can use it.</p>
 <hr>
 <h2 id="7-the-operations-agent">7. The operations agent</h2>
-<h3 id="71-what-212-ships-none">7.1 What 2.1.2 ships: none</h3>
-<p><strong>SATOM 2.1.2 ships no operations agent for Docker.</strong> No compose file mounts
-the Docker socket, no service performs privileged actions on request, and the
-web application has no code path that asks one to. The installer's
-<code>SETUP_AGENT</code> option exists for a future release (§7.4).</p>
-<p>What 2.1.2 ships instead is an explicit <strong>renunciation</strong>. The image declares
-<code>ENV SATOM_RUNTIME=container</code>. <code>app/runtime.py</code> then denies four capabilities
-through <code>capability()</code> / <code>require()</code>. It selects the container runtime only for
-the exact value <code>container</code> (case-insensitive, whitespace stripped); any other
+<h3 id="71-what-ships-and-how-to-enable-it">7.1 What ships, and how to enable it</h3>
+<p>A container administers no host, so by default the stack <strong>renounces</strong> what a
+host's root runner does. The image declares <code>ENV SATOM_RUNTIME=container</code>, and
+<code>app/runtime.py</code> then denies the host-only capabilities through
+<code>capability()</code> / <code>require()</code>. It selects the container runtime only for the
+exact value <code>container</code> (case-insensitive, whitespace stripped); any other
 value means <code>host</code>. Do <strong>not</strong> set <code>SATOM_RUNTIME</code> in <code>.env</code>: <code>env_file</code>
 values override the image's <code>ENV</code>.</p>
-<h3 id="72-the-four-renounced-capabilities">7.2 The four renounced capabilities</h3>
-<p>Each reason string below is quoted verbatim from <code>_REASONS</code> in
-<code>app/runtime.py</code>. The UI, the API error and the CLI all render this same
-string.</p>
+<p><strong>2.3.0 ships an optional operations agent, off by default,</strong> that gives four
+of those capabilities back to the console without giving the web the keys to
+the host:</p>
+<ul>
+<li><code>deploy/docker/satom_agent.py</code> — the agent. Stdlib-only Python, because the
+  file is reviewed as a security boundary.</li>
+<li><code>deploy/docker/compose.agent.yaml</code> — the overlay. It adds the <code>agent</code>
+  service (§5.11), two volumes that it shares with <code>web</code>, <code>scheduler</code> and
+  <code>cron</code>, and the declaration <code>SATOM_AGENT=docker</code> on those three.</li>
+</ul>
+<p>The model is the host's (<code>privilege-model.md</code> §4b): the web only drops a JSON
+request into a volume; the agent, the one container that holds
+<code>/var/run/docker.sock</code>, re-validates it against a closed list and does the
+work; the result comes back as a status file. <strong>The socket is root on the
+host.</strong> Read §7.5 and §7.8 before enabling it.</p>
+<table>
+<thead>
+<tr>
+<th>Route</th>
+<th>How to enable</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Installer, new install</td>
+<td>answer <code>y</code> to "Enable the agent?" (default <code>n</code>), or <code>SETUP_AGENT=yes</code> with <code>--yes</code>. Offered only when the release tree ships <code>compose.agent.yaml</code>.</td>
+</tr>
+<tr>
+<td>Installer, existing install</td>
+<td>run the installer in update mode (§11.1). When the install runs without the agent and the new release ships it, the installer asks the same question (<code>SETUP_AGENT</code> with <code>--yes</code>). An install that already runs the agent keeps it without asking.</td>
+</tr>
+<tr>
+<td>Manual checkout</td>
+<td>set <code>SATOM_SETUP_AGENT=yes</code> in <code>deploy/docker/.env</code>, then <code>./satom-docker.sh up</code>. The agent runs in the <strong>manual layout</strong>: restart, certificate and health work; updates from the console are refused (§7.6).</td>
+</tr>
+</tbody>
+</table>
+<p>Check the result on the host with <code>satom-docker ps agent</code> (healthy after its
+first heartbeat) and in the console under <strong>System → Container operations</strong>,
+whose <em>Operations agent</em> card must say <strong>live</strong>.</p>
+<h3 id="72-the-capabilities-without-and-with-the-agent">7.2 The capabilities, without and with the agent</h3>
+<p><code>app/runtime.py</code> names five host-only capabilities (<code>HOST_ONLY_CAPABILITIES</code>).
+Four of them are delegable (<code>AGENT_DELEGABLE</code>); <code>ha_promote</code> never is. A
+delegable capability is <strong>delegated</strong> — the enforcement point enqueues for the
+agent instead of refusing — only when both hold:</p>
+<ul>
+<li><strong>declared:</strong> <code>SATOM_AGENT=docker</code> in the app container's environment, set by
+  the overlay. It means nothing on a host install. A heartbeat file alone,
+  without the declaration, delegates nothing.</li>
+<li><strong>live:</strong> <code>update-status/agent.heartbeat</code> has a timestamp at most 60 s old
+  (<code>AGENT_MAX_SILENCE</code>, four missed beats). A timestamp more than 60 s in the
+  future is a clock problem and does not count as life either.</li>
+</ul>
+<p>Otherwise the capability is denied. Without the agent the reason is the
+<code>_REASONS</code> string; with an agent that is declared but silent it is:</p>
+<blockquote>
+<p>"The operations agent is enabled but not answering (<em>problem</em>), so
+'<em>capability</em>' is unavailable until it is back. Check it with 'satom-docker
+ps agent' and 'satom-docker logs agent'."</p>
+</blockquote>
+<p>where <em>problem</em> is one of "the agent has never reported (no heartbeat file)",
+"unreadable heartbeat: …", "last heartbeat <em>N</em> s ago" or "heartbeat timestamp
+is <em>N</em> s in the future". Nothing is queued behind a silent agent: accepting a
+request nobody will execute is the failure this gate exists to prevent.</p>
+<p>The reasons below are quoted verbatim from <code>_REASONS</code> in <code>app/runtime.py</code>. The
+UI, the API error and the CLI all render this same string. The four delegable
+ones end with the sentence "The optional operations agent
+(deploy/docker/compose.agent.yaml) performs it from the console."</p>
 <table>
 <thead>
 <tr>
 <th>Capability</th>
-<th>Where it is enforced</th>
-<th>Operator reason (verbatim)</th>
+<th>Enforcement point</th>
+<th>Without the agent (verbatim)</th>
+<th>With a live agent</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><code>self_update</code></td>
-<td><code>app/services/self_update.py</code> — <code>request_update()</code> and the library (pip) upgrade path both call <code>runtime.require("self_update")</code></td>
-<td>"In-place self-update is not available in the container runtime. Update by deploying a new image tag and recreating the stack."</td>
+<td><code>app/services/self_update.py</code> — <code>request_update()</code> (git) and <code>request_pip_change()</code> (libraries) call <code>runtime.require("self_update")</code></td>
+<td>"In-place self-update is not available in the container runtime. Update by deploying a new image tag and recreating the stack. The optional operations agent (deploy/docker/compose.agent.yaml) performs it from the console."</td>
+<td>The git and pip updaters <strong>still refuse</strong>, now with <code>CONTAINER_UPDATE_REDIRECT</code>: "In the container runtime the code is the image: the git and library updaters do not apply. Switch the stack to another release from System → Container operations." That page enqueues a <code>ctr-update</code> (§7.6).</td>
 </tr>
 <tr>
 <td><code>service_control</code></td>
-<td><code>app/services/service_control.py</code> — <code>runtime.require("service_control")</code></td>
-<td>"Service control is not available in the container runtime. Use the container engine (docker compose restart \&lt;service&gt;) instead."</td>
+<td><code>app/services/service_control.py</code> — <code>request_service_action()</code> calls <code>runtime.require("service_control")</code>; <code>states()</code> draws the Services card</td>
+<td>"Service control is not available in the container runtime. Use the container engine (docker compose restart \&lt;service&gt;) instead. The optional operations agent (deploy/docker/compose.agent.yaml) performs it from the console." <code>states()</code> returns no rows, and the Services card shows this reason instead.</td>
+<td><code>states()</code> returns the stack's containers as the heartbeat reports them; an action enqueues a <code>ctr-restart</code> for the service (§7.6).</td>
 </tr>
 <tr>
 <td><code>cert_activation</code></td>
 <td><code>app/services/cert_service.py</code> <code>_install()</code> — <code>runtime.require("cert_activation")</code> before anything is written</td>
-<td>"Certificate activation is not available in the container runtime. This stack already serves TLS from its own proxy container; replace the certificate with 'deploy/tls-bootstrap.sh import-cert' and restart the proxy service."</td>
+<td>"Certificate activation is not available in the container runtime. This stack already serves TLS from its own proxy container; replace the certificate with 'deploy/tls-bootstrap.sh import-cert' and restart the proxy service. The optional operations agent (deploy/docker/compose.agent.yaml) performs it from the console."</td>
+<td>After the web's own validation, <code>_install()</code> enqueues a <code>ctr-cert</code> and <strong>waits up to 90 s</strong> for the verdict. The agent imports the pair and <strong>reloads</strong> <code>proxy</code> gracefully (<code>nginx -t</code>, then SIGHUP); it never restarts it (§7.6). A refusal reaches the caller as "the operations agent refused the certificate: …". <code>current()</code> reads the public certificate the agent forwards in its heartbeat — the web never mounts <code>satom-pki</code>. Issuing from the internal CA stays unavailable (<code>can_issue_internal</code> is <code>false</code>): the CA lives in <code>satom-pki</code>.</td>
 </tr>
 <tr>
 <td><code>unit_health</code></td>
-<td><code>app/services/system_health.py</code> — <code>runtime.capability("unit_health")</code></td>
-<td>"systemd unit health is not available in the container runtime. Container health is reported by the container engine."</td>
+<td><code>app/services/system_health.py</code> <code>service_status()</code> — <code>runtime.capability("unit_health")</code></td>
+<td>"systemd unit health is not available in the container runtime. Container health is reported by the container engine. The optional operations agent (deploy/docker/compose.agent.yaml) performs it from the console." The rows read "n/a (container runtime)".</td>
+<td>One row per container of the stack, "<em>service</em> (container)", with the engine's state and health from the heartbeat.</td>
+</tr>
+<tr>
+<td><code>ha_promote</code></td>
+<td><code>app/services/cluster.py</code> <code>request_promote()</code> — <code>runtime.require("ha_promote")</code>, reached from the HA panel's <code>/promote</code></td>
+<td>"Promotion is not available in the container runtime: no process in the stack executes it. Fail over by hand (docs/docker-compose.md §10.6)."</td>
+<td><strong>The same refusal.</strong> Never delegated, and the agent refuses any request kind but its own three.</td>
 </tr>
 </tbody>
 </table>
 <p>To see the live state on a node:</p>
 <pre><code class="language-bash">satom-docker exec -T web python -c &quot;import json,app.runtime as r; print(json.dumps(r.summary(), indent=2))&quot;
 </code></pre>
-<p><code>capabilities</code> should show all four as <code>false</code>, and <code>reasons</code> should show the
-strings above.</p>
-<p><strong>A gap the gate does not cover.</strong> The HA panel's <em>promote</em> action
-(<code>app/views/self_update.py</code> <code>/promote</code> → <code>app/services/cluster.py</code>
-<code>request_promote()</code>) is guarded only by <code>promote_eligible()</code>, not by
-<code>app/runtime.py</code>. It enqueues a request file for the host's root runner, which
-does not exist in the container stack, so <strong>nothing would ever execute it</strong>.
-Do not use it on a container node. Failover is a manual PostgreSQL operation
-(§10.6).</p>
-<h3 id="73-operator-procedures-that-replace-them">7.3 Operator procedures that replace them</h3>
+<p>Besides <code>runtime</code>, the summary has four keys. <code>capabilities</code> lists all five
+names: without the
+agent all are <code>false</code>; with a live agent the four delegable ones are <code>true</code>
+and <code>ha_promote</code> is <code>false</code>. <code>delegated</code> lists the four delegable names.
+<code>reasons</code> holds the refusal string of every capability that is currently
+denied. <code>agent</code> holds <code>declared</code>, <code>live</code>, <code>age</code> (seconds since the last
+heartbeat), <code>problem</code> and <code>version</code> (the agent's own release).
+<code>./satom-docker.sh health</code> prints the same summary.</p>
+<p>Before 2.3.0 the HA panel's promote action was not gated by <code>app/runtime.py</code>:
+in a container it enqueued a request no process would ever execute. It now
+refuses, with or without the agent (<code>tests/test_container_ops.py</code>).</p>
+<h3 id="73-operator-procedures-without-the-agent">7.3 Operator procedures without the agent</h3>
+<p>These remain the path when the agent is not enabled or not answering, and for
+updates on a manual checkout. They also keep working with the agent enabled:
+the agent adds a way, it removes none.</p>
 <h4 id="731-instead-of-self_update-new-image-tag-recreate">7.3.1 Instead of <code>self_update</code>: new image tag, recreate</h4>
 <ul>
 <li><strong>Installer-managed:</strong> run a newer <code>satom-setup.sh</code>, or the current one with
@@ -1493,56 +1767,455 @@ are deliberately unchecked. The stack defines none for <code>redis</code> and
 <code>victoria-metrics</code>. For what each check proves, see §11.5.</p>
 <h3 id="74-setup_agent--composeagentyaml">7.4 <code>SETUP_AGENT</code> / <code>compose.agent.yaml</code></h3>
 <p><code>satom-setup.sh</code> offers the agent <strong>only if</strong> the release tree contains
-<code>deploy/docker/compose.agent.yaml</code>. The installer's wrapper includes that file
-only when <code>SATOM_SETUP_AGENT=yes</code> <em>and</em> the file exists. <strong>No release up to and
-including 2.1.2 contains it.</strong> The installer therefore reports that the agent
-is not included in this version, sets <code>SATOM_SETUP_AGENT=no</code>, and ignores
-<code>SETUP_AGENT=yes</code> with a warning. Its message points to the <code>satom-docker</code>
-wrapper for the four operations.</p>
-<p>The installer's own description of the future agent is the only specification
-in the tree:</p>
-<ul>
-<li>it mounts <code>/var/run/docker.sock</code>, so whoever controls it is root on the host;</li>
-<li>the web application only drops requests into a volume;</li>
-<li>the agent accepts a closed list of actions.</li>
-</ul>
-<h3 id="75-permission-boundary-any-future-agent-must-respect">7.5 Permission boundary any future agent must respect</h3>
-<blockquote>
-<p><strong>Design requirement, not existing behaviour.</strong> Nothing in this subsection is
-implemented in 2.1.2. It restates the host model of
-<a href="privilege-model.html"><code>privilege-model.md</code></a> §4 for a container agent, so that
-an agent can be reviewed against it.</p>
-</blockquote>
+<code>deploy/docker/compose.agent.yaml</code> (2.3.0 does). On a release that does not,
+it says so, keeps <code>SATOM_SETUP_AGENT=no</code>, and ignores <code>SETUP_AGENT=yes</code> with a
+warning; the four operations are then done with the <code>satom-docker</code> wrapper
+(§7.3). Before the question it states the risk: the agent mounts
+<code>/var/run/docker.sock</code>, so whoever controls it is root on the host; the web UI
+only drops requests into a volume; the agent accepts a closed list of actions.</p>
+<p>With the agent enabled, the installer:</p>
 <ol>
-<li><strong>The web worker only enqueues.</strong> As on a host, the process that parses
-   appliance input and HTTP requests must not hold the privilege it asks for.
-   <code>web</code> writes a request, for example a JSON file in a volume. It must never
-   mount the Docker socket, never talk to the engine API, and never be given
-   credentials to the agent.</li>
-<li><strong>The privileged side re-validates against a closed allowlist.</strong> The web
-   worker's validation is a UX affordance. The agent's is the security
-   boundary. Each request maps to one of a fixed set of actions (the natural
-   set is the four in §7.2: recreate on a new <em>allowlisted</em> image tag, restart
-   a <em>named</em> service of this project, import a certificate into <code>satom-pki</code>
-   and restart <code>proxy</code>, and report container health). The agent must never
-   accept free-form image names, compose arguments, bind-mount paths, commands
-   or service names outside the project. A compromised web worker can enqueue
-   whatever it likes and must still only get the curated set.</li>
-<li><strong>Treat the Docker socket as host root.</strong> An agent that mounts
-   <code>/var/run/docker.sock</code> is equivalent to root on the host (§6.6), in the same
-   way that <code>satom-updater.service</code> is root on a host install. It must be the
-   <em>only</em> container with that mount. It must not be reachable over the network,
-   so it should publish no port and listen on nothing the <code>satom</code> network can
-   reach. It should also have the smallest footprint possible.</li>
-<li><strong>Results travel back the same way.</strong> The agent writes a status file that
-   the UI polls, like <code>data/update-status/&lt;uid&gt;.json</code> on a host. It does not
-   call back into the web process.</li>
-<li><strong>The runtime gate must change deliberately.</strong> In 2.1.2, <code>app/runtime.py</code>
-   denies the four capabilities based only on <code>SATOM_RUNTIME</code>. An agent does
-   not re-enable them by existing. A release that ships one has to change the
-   gate and the enforcement points in §7.2, and <code>tests/test_container_runtime.py</code>
-   requires every declared capability to keep a call site.</li>
+<li>writes <code>SATOM_SETUP_AGENT=yes</code> into <code>satom.env</code>;</li>
+<li>writes <code>compose.setup-agent.yaml</code> — <code>SATOM_AGENT_HOME</code> and the
+   <code>/opt/satom-docker</code> bind mount at the same path (§5.10). In update mode
+   enabling the agent also regenerates <code>compose.setup.yaml</code> (same content);</li>
+<li>writes the <code>satom-docker</code> wrapper, which layers <code>compose.agent.yaml</code> and
+   then <code>compose.setup-agent.yaml</code> <strong>last</strong>, after <code>compose.setup.yaml</code>, and
+   only when <code>SATOM_SETUP_AGENT=yes</code> <em>and</em> <code>compose.agent.yaml</code> exists in
+   <code>current</code>;</li>
+<li>pre-pulls <code>docker:27-cli</code>, the image the agent borrows to run <code>docker build</code>
+   and <code>docker compose</code> for an update (§7.6). A new install stops if the pull
+   fails; update mode only warns, and the agent pulls it on first use. The tag
+   is pinned by major so that Compose understands <code>!reset</code> (≥ 2.24.4, used by
+   the standby overlay). The installer's <code>AGENT_CLI_IMAGE</code> and the agent's
+   <code>CLI_IMAGE</code> must be equal (<code>tests/test_docker_agent.py</code>).</li>
 </ol>
+<p>The install summary line reports <code>agent yes</code> or <code>agent no</code>.</p>
+<p>On a manual checkout none of this applies: <code>satom-docker.sh</code> layers
+<code>compose.agent.yaml</code> last when <code>SATOM_SETUP_AGENT=yes</code> (<code>env.example</code> ships
+<code>SATOM_SETUP_AGENT=no</code>), and the agent runs without <code>SATOM_AGENT_HOME</code>.</p>
+<h3 id="75-the-permission-boundary-and-how-the-agent-implements-it">7.5 The permission boundary, and how the agent implements it</h3>
+<p>These five requirements were written before the agent existed, as the host
+model of <a href="privilege-model.html"><code>privilege-model.md</code></a> §4 restated for a
+container. The agent was reviewed against them. Each is implemented as below,
+and guarded by the named tests (all in <code>tests/test_docker_agent.py</code> unless
+another file is named).</p>
+<ol>
+<li><strong>The web worker only enqueues.</strong> The process that parses appliance input
+   and HTTP requests must not hold the privilege it asks for.
+   <em>Implementation:</em> <code>app/services/container_ops.py</code> writes a <code>queued</code> status
+   row, then the request (to a dot-temporary, renamed into place) into
+   <code>data/update-requests/</code> — the same order and the same rename as the host
+   enqueues. Nothing in the web talks to the engine. <code>web</code> never mounts the
+   socket and holds no credential to the agent; there is none to hold.
+   <em>Guarded by:</em> <code>test_only_the_agent_mounts_the_engine_socket_in_any_compose_file</code>,
+   <code>test_the_installer_overlay_never_gives_the_socket_to_anyone</code>,
+   <code>test_the_app_services_get_the_queue_and_the_declaration</code>, and in
+   <code>tests/test_container_ops.py</code> <code>test_nothing_is_queued_without_a_live_agent</code>.</li>
+<li><strong>The privileged side re-validates against a closed allowlist.</strong> The web
+   worker's validation is a UX affordance; the agent's is the security
+   boundary. <em>Implementation:</em> <code>validate_request()</code> accepts a file only if its
+   name is a request id, the <code>id</code> inside equals it, it is at most 64 KiB of
+   UTF-8 JSON, its <code>kind</code> is one of three, it carries exactly the fields of
+   that kind (an unexpected field is refused, not ignored) and every field is
+   a string. Services come from a fixed table, versions must be <code>X.Y.Z</code>, PEMs
+   are checked for shape and slot (§7.6). The checks run again at the point of
+   use. No request field reaches an image name, a command, a path or a compose
+   argument, except a version that already matched the regular expression:
+   the compose command line is built from fixed paths, and the service list
+   for <code>up</code> comes from <code>compose config --services</code>. The web keeps a copy of
+   the allowlist so the UI offers only what the agent accepts; the two copies
+   must be identical. <em>Guarded by:</em> the validator tests
+   (<code>test_every_kind_outside_the_closed_list_is_refused</code>,
+   <code>test_an_unexpected_field_is_refused_not_ignored</code>,
+   <code>test_the_policy_matrix_is_exactly_what_is_accepted</code>,
+   <code>test_anything_but_x_y_z_is_refused</code>, the PEM tests), and in
+   <code>tests/test_container_ops.py</code> <code>test_web_and_agent_allowlists_are_identical</code>,
+   <code>test_the_web_refuses_what_the_agent_would_refuse</code> and the round-trip tests,
+   which feed every request the web writes through the agent's own validator.</li>
+<li><strong>Treat the Docker socket as host root.</strong> <em>Implementation:</em> <code>agent</code> is the
+   only service in any compose file that mounts <code>/var/run/docker.sock</code>. It
+   publishes no port, listens on nothing, and is not on the <code>satom</code> network
+   (§6.3). Its footprint: <code>cap_drop: [ALL]</code> plus <code>CHOWN</code>, <code>DAC_OVERRIDE</code>,
+   <code>FOWNER</code>; <code>no-new-privileges</code>; a read-only root filesystem; no <code>env_file</code>;
+   stdlib-only code. <em>Guarded by:</em>
+   <code>test_only_the_agent_mounts_the_engine_socket_in_any_compose_file</code>,
+   <code>test_the_agent_listens_on_nothing_and_is_not_on_the_stack_network</code>,
+   <code>test_the_agent_is_confined_as_far_as_its_job_allows</code>,
+   <code>test_the_agent_is_stdlib_only</code>.</li>
+<li><strong>Results travel back the same way.</strong> <em>Implementation:</em> the agent writes
+   <code>&lt;uid&gt;.json</code> into <code>satom-agent-status</code> in the host runner's shape, with
+   <code>"runner": "container-agent"</code>, so the existing status polls render it. It
+   never calls the web. Every write into a volume the web can also write is
+   symlink-safe: a fresh <code>O_EXCL</code> temporary renamed over the target, so a
+   symlink the web plants at <code>&lt;uid&gt;.json</code> is replaced, never followed as root.
+   Requests are opened with <code>O_NOFOLLOW</code> and must be regular files.
+   <em>Guarded by:</em> <code>test_a_valid_request_is_executed_consumed_and_reported</code>,
+   <code>test_a_status_write_replaces_a_planted_symlink_instead_of_following_it</code>,
+   <code>test_a_request_that_is_a_symlink_is_not_read</code>,
+   <code>test_the_status_row_never_carries_the_key</code>,
+   <code>test_the_agent_queue_paths_match_the_app_side</code>,
+   <code>test_the_heartbeat_is_not_listed_as_an_update</code>.</li>
+<li><strong>The runtime gate changes deliberately.</strong> An agent does not re-enable the
+   capabilities by existing. <em>Implementation:</em> <code>AGENT_DELEGABLE</code> names the
+   four explicitly; delegation needs the declaration <em>and</em> a fresh heartbeat
+   (§7.2); each enforcement point has an explicit agent branch; <code>ha_promote</code>
+   is host-only and not delegable. <em>Guarded by</em> <code>tests/test_container_ops.py</code>:
+   <code>test_a_live_agent_delegates_exactly_the_four</code>,
+   <code>test_promotion_is_never_delegated</code>,
+   <code>test_a_silent_agent_is_treated_as_absent_and_says_so</code>,
+   <code>test_a_heartbeat_from_the_future_is_not_proof_of_life</code>,
+   <code>test_a_heartbeat_without_the_declaration_delegates_nothing</code>,
+   <code>test_the_declaration_means_nothing_on_a_host</code>; and
+   <code>tests/test_container_runtime.py</code>
+   <code>test_every_declared_capability_has_a_call_site</code>.</li>
+</ol>
+<h3 id="76-what-the-agent-does-request-by-request">7.6 What the agent does, request by request</h3>
+<p><strong>The loop.</strong> Every 2 s the agent lists <code>*.json</code> in <code>/queue/requests</code>, in name
+order, and handles them one at a time:</p>
+<ol>
+<li>It reads the file without following links; a file that is not a regular
+   file, or is larger than 64 KiB, is deleted and logged with no status row.</li>
+<li>It <strong>deletes the request before acting on it</strong>. A certificate request
+   carries a private key, and a request that crashed the agent must not replay
+   forever.</li>
+<li>If the file name is a request id, it writes <code>&lt;uid&gt;.json</code> with
+   <code>"state": "running"</code>.</li>
+<li>It validates the request (§7.5 item 2). A request whose file is <strong>older than
+   600 s</strong> at pickup is refused — "request expired: queued <em>N</em> s ago (limit
+   600 s); it is not executed late" — so a restart queued while the agent was
+   down cannot fire hours later on a stack the operator has since fixed by
+   hand.</li>
+<li>It executes it and finishes the status row with <code>"state": "success"</code> or
+   <code>"failed"</code>, the steps it took and, on failure, <code>error</code>.</li>
+</ol>
+<p><strong>Request files.</strong> Name <code>&lt;id&gt;.json</code>, with <code>&lt;id&gt;</code> of the form
+<code>YYYYMMDD-HHMMSS-xxxxxx</code> (six lowercase hex digits). Fields that any request may
+carry, informational only and copied into the status row: <code>id</code> (must equal the
+file name), <code>kind</code>, <code>requested_by</code>, <code>requested_at</code>, <code>node</code>, <code>role</code>, <code>origin</code>.</p>
+<table>
+<thead>
+<tr>
+<th><code>kind</code></th>
+<th>Required</th>
+<th>Optional</th>
+<th>Checks</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ctr-restart</code></td>
+<td><code>service</code>, <code>action</code></td>
+<td>—</td>
+<td>the service is in the table below and the action is allowed on it</td>
+</tr>
+<tr>
+<td><code>ctr-update</code></td>
+<td><code>version</code></td>
+<td>—</td>
+<td><code>X.Y.Z</code>: three numbers of 1–4 digits, no leading zero, nothing before or after (not <code>v2.3.0</code>, not <code>2.3.0-rc1</code>, not <code>2.3.0\n</code>)</td>
+</tr>
+<tr>
+<td><code>ctr-cert</code></td>
+<td><code>cert_pem</code>, <code>key_pem</code></td>
+<td><code>chain_pem</code></td>
+<td>PEM blocks only; at most 32 KiB (certificate, chain) and 16 KiB (key); <code>key_pem</code> must contain a private key; <code>cert_pem</code> and <code>chain_pem</code> must <strong>not</strong> (a key in the certificate slot would be served to every client); an empty chain is accepted</td>
+</tr>
+</tbody>
+</table>
+<p>Any other kind is refused, naming the three accepted. A host-runner request
+(git update, pip, unit install, promotion) lands here on purpose.</p>
+<p><strong>The service table.</strong> The same rule as the host's
+(<code>app/services/service_control.py</code>): nothing that would remove the only way to
+undo it is ever stoppable.</p>
+<table>
+<thead>
+<tr>
+<th>Service</th>
+<th>Allowed actions</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>web</code></td>
+<td><code>restart</code></td>
+<td>a stop would take away the page that could start it again</td>
+</tr>
+<tr>
+<td><code>scheduler</code></td>
+<td><code>start</code>, <code>stop</code>, <code>restart</code></td>
+<td></td>
+</tr>
+<tr>
+<td><code>cron</code></td>
+<td><code>start</code>, <code>stop</code>, <code>restart</code></td>
+<td></td>
+</tr>
+<tr>
+<td><code>proxy</code></td>
+<td><code>restart</code></td>
+<td>a stop ends the session with no way back except a shell</td>
+</tr>
+<tr>
+<td><code>postgres</code></td>
+<td><code>restart</code></td>
+<td>never stopped from the console</td>
+</tr>
+<tr>
+<td><code>redis</code></td>
+<td><code>restart</code></td>
+<td>derivable state; a restart resets rate-limit windows</td>
+</tr>
+<tr>
+<td><code>victoria-metrics</code></td>
+<td><code>restart</code></td>
+<td>dashboards report query errors while it is down</td>
+</tr>
+<tr>
+<td><code>agent</code>, <code>tls-init</code></td>
+<td><strong>never</strong></td>
+<td>stopping the agent bricks the queue that would start it again; <code>tls-init</code> is a run-once job. Refused even if a future edit listed them.</td>
+</tr>
+</tbody>
+</table>
+<p><strong><code>ctr-restart</code>.</strong> The agent finds the containers of the service in the
+Compose project <code>satom</code> (one-off containers excluded); none is a refusal. It
+calls the engine's start/stop/restart on each (20 s stop timeout). After a
+<code>start</code> or <code>restart</code> it waits up to 180 s for every container of the service to
+run and, where it has a healthcheck, to be healthy; otherwise the request
+fails. A <code>stop</code> is not waited on.</p>
+<p><strong><code>ctr-update</code></strong> — installer layout only. Without <code>SATOM_AGENT_HOME</code> it is
+refused: "updating from the console needs the installer layout
+(/opt/satom-docker). On a manual checkout build the new tag and run
+./satom-docker.sh up." A version whose image <code>satom.env</code> already names is
+refused ("the stack already runs satom:<em>X.Y.Z</em>"). Then:</p>
+<ol>
+<li><strong>Stage the release tree.</strong> If <code>/opt/satom-docker/releases/X.Y.Z/Dockerfile</code>
+   exists, the tree is reused as it is. Otherwise the agent downloads
+   <code>https://codeload.github.com/visionebc/SATOM/tar.gz/refs/tags/vX.Y.Z</code>
+   (at most 400 MB) into a temporary directory under <code>releases/</code> and extracts
+   it with its own checks: the top directory is stripped; absolute paths,
+   <code>..</code>, links pointing outside the tree and anything that is not a file,
+   directory or link are refused; modes are masked to 0755 and owners set to
+   root. Python's <code>tarfile</code> data filter is applied as a second layer where the
+   interpreter has it. The tree must contain <code>Dockerfile</code> and
+   <code>deploy/docker/compose.yaml</code>, and must carry no network literal with host
+   bits set (the 2.1.1 mirror defect; the installer's rule). A tree without
+   <code>compose.agent.yaml</code> (any release before 2.3.0) is then <strong>refused</strong>, before
+   anything is built or switched: "release v<em>X.Y.Z</em> does not ship the
+   operations agent; switch to it with satom-setup.sh --version <em>X.Y.Z</em> on the
+   host" (§7.8).</li>
+<li><strong>Build</strong> <code>satom:X.Y.Z</code> unless the engine already has it: <code>docker build</code> in
+   a throwaway <code>docker:27-cli</code> helper container (pulled if absent), with the
+   socket and <code>/opt/satom-docker</code> bind-mounted at the same path. <strong>This helper
+   alone runs with <code>NetworkMode: bridge</code>:</strong> BuildKit fetches the registry pull
+   token from the client, and with no network the first <code>FROM</code> fails
+   (measured). Up to 60 minutes; the first build takes 5–15.</li>
+<li><strong>Switch.</strong> Repoint <code>current</code> to the new tree, link its
+   <code>deploy/docker/.env</code> to <code>satom.env</code>, set <code>SATOM_IMAGE=satom:X.Y.Z</code> in
+   <code>satom.env</code>, then, in a helper, run <code>docker compose config --services</code> and
+   <code>docker compose up -d --remove-orphans</code> with <strong>every service except
+   <code>agent</code></strong>. The compose files are chosen exactly as the installer's wrapper
+   chooses them. These compose helpers run with <code>NetworkMode: none</code>.</li>
+<li><strong>Reload the proxy.</strong> <code>proxy</code> runs a stock image, so the switch does not
+   recreate it, and it would keep serving the old vhost while <code>tls-init</code> has
+   just rewritten it. The agent runs <code>nginx -t</code> in every proxy container and,
+   if all pass, sends SIGHUP to each nginx master: a graceful reload that also
+   re-resolves the upstream (§5.5). A failed <code>nginx -t</code> fails the update.</li>
+<li><strong>Verify.</strong> Wait up to 420 s for <code>web</code> to be running and healthy.</li>
+<li><strong>Roll back</strong> if step 3, 4 or 5 fails: repoint <code>current</code> to the previous tree,
+   restore <code>satom.env</code> exactly as it was, and recreate the stack (again
+   without <code>agent</code>) on the previous image. The request then fails with "the
+   update did not come up healthy; rolled back", and the rollback is a step
+   of its own in the log. The rollback restores files and images, <strong>not the
+   database</strong>.</li>
+</ol>
+<p>No backup is taken first. <strong>The agent never recreates itself</strong>: it keeps
+running the version it started with until an operator runs <code>satom-docker up
+-d</code> (or the installer's update). An agent that replaced itself mid-request
+would lose the status of the very request it was reporting, and a broken new
+agent would take the console's only way back with it. The heartbeat reports
+both versions, so the drift is visible (§7.7).</p>
+<p><strong><code>ctr-cert</code>.</strong> The agent re-checks the PEMs, writes them to a private
+temporary directory in its <code>tmpfs</code> <code>/tmp</code>, runs <code>tls-bootstrap.sh import-cert
+--pki /opt/satom/pki --cert … --key … [--chain …]</code> (the §7.3.3 command, which
+refuses a pair that does not match), and deletes the temporary files. It
+then <strong>reloads <code>proxy</code>, it never restarts it</strong>: <code>nginx -t</code> in every proxy
+container, then SIGHUP to the nginx master, a graceful reload in which open
+connections survive. The reason was measured end to end: the operator's own
+HTTP request travels through that proxy and is waiting for this answer, so a
+restart cut it and the console reported a failure for an import that had
+worked. (A host install does <code>systemctl reload nginx</code> for the same reason.)
+If <code>nginx -t</code> fails, the previous <code>server.crt</code>, <code>server.key</code> and <code>meta.json</code>
+are put back, nothing is reloaded, and the request fails with "the proxy
+rejected the new certificate; nothing changed". A stack with no <code>proxy</code>
+container is refused before anything is written. The web side validates the
+pair first and waits up to 90 s for the agent's verdict.</p>
+<p><strong>The heartbeat.</strong> Every 15 s the agent rewrites
+<code>/queue/status/agent.heartbeat</code> (seen by the web as
+<code>data/update-status/agent.heartbeat</code>). It is not named <code>*.json</code> on purpose: the
+UI lists <code>update-status/*.json</code> as request history. It is also rewritten
+<strong>after every successful request, before the request is reported done</strong>: the
+console answers from the heartbeat, so the page the operator lands on — and the
+certificate details a successful import returns — describe the state after the
+action, not a beat taken up to 15 s before it. It contains:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ts</code>, <code>at</code></td>
+<td>time of the beat (epoch seconds, UTC ISO)</td>
+</tr>
+<tr>
+<td><code>busy</code></td>
+<td>id of the request being executed, or empty</td>
+</tr>
+<tr>
+<td><code>agent_version</code></td>
+<td>the <code>VERSION</code> of the image the agent runs</td>
+</tr>
+<tr>
+<td><code>layout</code></td>
+<td><code>installer</code> (with <code>SATOM_AGENT_HOME</code>) or <code>manual</code></td>
+</tr>
+<tr>
+<td><code>project</code>, <code>policy</code></td>
+<td><code>satom</code>, and the service table above</td>
+</tr>
+<tr>
+<td><code>containers</code></td>
+<td>per container of the project: service, name, state, status, image, health</td>
+</tr>
+<tr>
+<td><code>engine_ok</code>, <code>engine_error</code></td>
+<td>whether the engine API answered</td>
+</tr>
+<tr>
+<td><code>stack_image</code></td>
+<td>the image of the <code>web</code> container</td>
+</tr>
+<tr>
+<td><code>configured_image</code></td>
+<td><code>SATOM_IMAGE</code> from <code>satom.env</code> (installer layout only)</td>
+</tr>
+<tr>
+<td><code>versions</code></td>
+<td>each <code>X.Y.Z</code> with a local <code>satom:</code> image and/or a tree under <code>releases/</code></td>
+</tr>
+<tr>
+<td><code>cert</code></td>
+<td>the <strong>public</strong> certificate <code>proxy</code> serves (<code>public/server.crt</code>) and its <code>source</code> from <code>meta.json</code>. A file that contains key material is not forwarded; the entry then carries an <code>error</code>.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="77-operating-the-agent">7.7 Operating the agent</h3>
+<table>
+<thead>
+<tr>
+<th>What</th>
+<th>How</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Is it live?</td>
+<td><strong>System → Container operations</strong>, <em>Operations agent</em> card: <strong>live</strong> with the heartbeat age, <strong>not answering</strong> with the problem, or <strong>not enabled</strong></td>
+</tr>
+<tr>
+<td>Container state</td>
+<td><code>satom-docker ps agent</code> (manual: <code>dc ps agent</code>, or <code>./satom-docker.sh ps</code> for the whole stack) — healthy while the heartbeat is younger than 60 s</td>
+</tr>
+<tr>
+<td>What it did</td>
+<td><code>satom-docker logs agent</code> (manual: <code>./satom-docker.sh logs agent</code>). Lines read <code>[satom-agent] &lt;UTC time&gt; &lt;message&gt;</code>; each step of a request is <code>&lt;id&gt; ok  &lt;step&gt;: &lt;detail&gt;</code> or <code>&lt;id&gt; ERR &lt;step&gt;: &lt;detail&gt;</code>. The same steps are in the request's status row and in the <em>Recent agent requests</em> card.</td>
+</tr>
+<tr>
+<td>The heartbeat itself</td>
+<td><code>satom-docker exec -T web cat /opt/satom/data/update-status/agent.heartbeat</code> — rewritten every 15 s and after every successful request, before it is reported done (§7.6), so what the page shows after an action is the state after it</td>
+</tr>
+<tr>
+<td>Restart it</td>
+<td><code>satom-docker restart agent</code>, on the host. The console cannot: <code>agent</code> is not in the service table.</td>
+</tr>
+<tr>
+<td>Bring it to the stack's version</td>
+<td><code>satom-docker up -d</code> after a console update (the page shows <strong>agent and stack differ</strong> until then)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>What a silent agent looks like.</strong> After 60 s without a heartbeat the page
+shows <strong>not answering</strong> and the problem, the <em>Services of this stack</em> card is
+empty and shows the reason instead, the update and certificate controls are
+disabled, and every action is refused (HTTP 409) with nothing queued. The same
+reason appears on the Settings → Services card and in the runtime summary.
+The container's own healthcheck turns <code>unhealthy</code> after three failed checks,
+30 s apart. A request queued just before the agent went
+silent is executed if the agent picks it up within 600 s, and refused as
+expired after that.</p>
+<p>An agent that is alive but cannot reach the engine keeps writing heartbeats
+with <code>engine_ok: false</code> and no containers: the page says <strong>live</strong>, and every
+service of the table shows <strong>no container</strong>. Read <code>engine_error</code> in the
+heartbeat, or the agent's log.</p>
+<p><strong>Disabling it.</strong></p>
+<ul>
+<li><strong>Installer layout.</strong> In <code>/opt/satom-docker/satom.env</code> set
+  <code>SATOM_SETUP_AGENT=no</code>. The wrapper then layers neither <code>compose.agent.yaml</code>
+  nor <code>compose.setup-agent.yaml</code>; the latter can stay on disk. Then:</li>
+</ul>
+<p><code>bash
+  satom-docker config -q &amp;&amp; satom-docker up -d --remove-orphans</code></p>
+<p><code>--remove-orphans</code> removes the <code>agent</code> container, which is no longer part of
+  the project; <code>web</code>, <code>scheduler</code> and <code>cron</code> are recreated without
+  <code>SATOM_AGENT</code> and without the queue volumes.
+* <strong>Manual checkout.</strong> Set <code>SATOM_SETUP_AGENT=no</code> in <code>.env</code>, then
+  <code>./satom-docker.sh up --remove-orphans</code>.</p>
+<p>The volumes <code>satom_satom-agent-requests</code> and <code>satom_satom-agent-status</code> and the
+network <code>satom_satom-agent</code> are left behind; remove them with
+<code>docker volume rm</code> / <code>docker network rm</code> if you want them gone. From then on
+the capabilities are denied with the plain reasons of §7.2, and §7.3 applies.</p>
+<h3 id="78-residual-risk">7.8 Residual risk</h3>
+<p>What the design does not remove, stated so it can be weighed before enabling:</p>
+<ul>
+<li><strong>Whoever controls the agent is root on the host.</strong> It holds the engine
+  socket, exactly as <code>satom-updater.service</code> holds root on a host install. Its
+  capability drop, read-only root and missing network do not limit what it can
+  ask the engine to do. Its code comes from the SATOM image, which the app
+  account cannot rewrite (§6.4).</li>
+<li><strong>A compromised web — or any console admin — can ask for anything on the
+  list, and nothing else.</strong> That is: restart any listed service, as often as
+  it likes (an availability attack, not an escalation); stop <code>scheduler</code> or
+  <code>cron</code>; switch the stack to any <code>X.Y.Z</code> tag of the public repository,
+  <strong>older ones included</strong>; replace the certificate <code>proxy</code> serves with any
+  matching pair it holds. It cannot name an image, command, path, compose
+  argument or service outside the table.</li>
+<li><strong>A downgrade is a database question.</strong> The agent will switch to an older
+  release, and its rollback restores files and images, not the database. The
+  code makes no promise that an older image runs against a database a newer
+  version has already started on (§11.1). Back up before any switch.</li>
+<li><strong>Downloads are not signature-verified.</strong> The release tree is fetched over
+  HTTPS from <code>codeload.github.com</code> and checked for structure and for invalid
+  network literals, not for authenticity — the same trust as the installer's
+  own download. A tree already under <code>releases/X.Y.Z</code> is used as it is, so
+  whoever can write <code>/opt/satom-docker</code> chooses what a console update builds
+  (they are root on the host already, §6.6). The build helper has network
+  access (<code>bridge</code>), as any <code>docker build</code> that pulls its base images must;
+  the Dockerfile it builds is the release's own.</li>
+<li><strong>Agent and stack drift.</strong> An update never recreates the agent, so after a
+  console update the agent runs the previous release until <code>satom-docker up
+  -d</code>. Fixes to the agent itself arrive only then. The page shows the drift;
+  it does not correct it.</li>
+<li><strong>Switching to a release without the agent</strong> (anything before 2.3.0) is
+  <strong>refused</strong> before anything is built or changed: this install's overlays
+  define the agent and such a release cannot, so the switch would fail
+  half-way. Go back to it with <code>satom-setup.sh --version &lt;ver&gt;</code> on the host
+  (<code>tests/test_docker_agent.py</code>).</li>
+</ul>
 <hr>
 <h2 id="8-configuration-reference">8. Configuration reference</h2>
 <h3 id="81-how-a-value-reaches-a-container">8.1 How a value reaches a container</h3>
@@ -1736,10 +2409,24 @@ files</strong>. Neither will regenerate an existing <code>FERNET_KEY</code>.</p>
 <td>—</td>
 <td>first <code>admin</code> password (manual route; ignored on installer-managed nodes, §5.10)</td>
 </tr>
+<tr>
+<td><code>SATOM_SETUP_AGENT</code></td>
+<td><code>no</code> (<code>env.example</code>)</td>
+<td>—</td>
+<td><code>yes</code> makes <code>satom-docker.sh</code> and the installer's wrapper layer <code>compose.agent.yaml</code> last (§7.1). The installer writes it too (§8.6).</td>
+</tr>
+<tr>
+<td><code>SATOM_AGENT</code></td>
+<td>unset</td>
+<td>—</td>
+<td><strong>set by <code>compose.agent.yaml</code> on <code>web</code>, <code>scheduler</code> and <code>cron</code>; do not set it by hand.</strong> The declaration half of delegation (§7.2): <code>docker</code> means "this stack runs the agent". Honoured only in the container runtime, and only together with a fresh heartbeat, so setting it without the agent delegates nothing — the capabilities simply report "not answering".</td>
+</tr>
 </tbody>
 </table>
 <p><code>env.example</code> lists <code>SATOM_IMAGE</code> twice with the same value; the last
-occurrence wins.</p>
+occurrence wins. <code>SATOM_IMAGE</code> is also the <code>agent</code>'s image. A console update
+rewrites the <code>SATOM_IMAGE</code> line of <code>satom.env</code> (every occurrence becomes one
+line with the new tag).</p>
 <h3 id="84-tunables-read-inside-the-containers">8.4 Tunables read inside the containers</h3>
 <table>
 <thead>
@@ -1805,6 +2492,12 @@ occurrence wins.</p>
 <td><code>proxy-init.sh</code></td>
 <td><strong>no</strong> (<code>tls-init</code> receives only the three variables in §5.4)</td>
 </tr>
+<tr>
+<td><code>SATOM_AGENT_QUEUE</code></td>
+<td><code>/queue</code></td>
+<td><code>satom_agent.py</code></td>
+<td><strong>no</strong>: the overlay does not pass it, so the default always applies (the queue volumes are mounted under <code>/queue</code>)</td>
+</tr>
 </tbody>
 </table>
 <h3 id="85-set-by-the-image-dockerfile">8.5 Set by the image (<code>Dockerfile</code>)</h3>
@@ -1814,9 +2507,14 @@ occurrence wins.</p>
 <code>/opt/venv/bin</code> first.</p>
 <h3 id="86-written-only-by-the-installer">8.6 Written only by the installer</h3>
 <p><code>SATOM_ENV=prod</code> (every installer-managed node uses the production overlay),
-<code>SATOM_SETUP_AGENT</code>, <code>SATOM_EXT_DB_HOST</code>, <code>SATOM_EXT_DB_PORT</code>,
-<code>SATOM_EXT_DB_NAME</code>, <code>SATOM_EXT_DB_USER</code>, <code>SATOM_EXT_DB_URI</code>. The installer
-writes values containing spaces or URI characters in single quotes.
+<code>SATOM_SETUP_AGENT</code> (<code>yes</code> or <code>no</code>; also in <code>env.example</code> since 2.3.0),
+<code>SATOM_EXT_DB_HOST</code>, <code>SATOM_EXT_DB_PORT</code>, <code>SATOM_EXT_DB_NAME</code>,
+<code>SATOM_EXT_DB_USER</code>, <code>SATOM_EXT_DB_URI</code>. The installer writes values containing
+spaces or URI characters in single quotes.</p>
+<p><code>SATOM_AGENT_HOME=/opt/satom-docker</code> is not in <code>satom.env</code>: the installer puts
+it in <code>compose.setup-agent.yaml</code> (§5.10). It tells the agent
+where the installer layout lives; without it the agent runs in the manual
+layout and refuses updates (§7.6). Do not set it on a manual checkout.
 <code>SATOM_SETUP_ADMIN_PW</code> exists only in the environment of the installer's <code>up</code>
 command.</p>
 <hr>
@@ -1858,25 +2556,30 @@ reissues, then <code>restart proxy</code> (§9.4).</p>
 <p>The stack has <strong>no renewal job</strong>; <code>satom-cert-renew</code> is not reproduced. The
 self-issued leaf is only re-evaluated when <code>tls-init</code> runs, which happens on
 <code>up</code>. A leaf reissued during <code>up</code> is written to the volume, but the running
-nginx keeps what it loaded at start. <strong>Restart <code>proxy</code> after any certificate
-change.</strong> An imported certificate is never renewed by the stack: replace it
-with §7.3.3 before it expires.</p>
+nginx keeps what it loaded at its last start or reload. <strong>Restart or reload
+<code>proxy</code> after any certificate change you make by hand</strong> (<code>restart proxy</code>, or
+<code>kill -s HUP proxy</code> for a graceful reload). An imported certificate is never
+renewed by the stack: replace it with §7.3.3 (or, with the agent, from
+System → Container operations, which reloads <code>proxy</code> gracefully for you and
+puts the previous certificate back if nginx rejects the new one) before it
+expires.</p>
 <h3 id="95-acme-http-01">9.5 ACME http-01</h3>
 <p><code>:80</code> serves <code>/.well-known/acme-challenge/</code> from the <code>satom-acme</code> volume, and
 answers everything else with a 301. That listener exists because http-01 is
 always validated over plain <code>:80</code>.</p>
-<p><strong>2.1.2 provides no ACME client for the stack's own certificate.</strong> In detail:</p>
+<p><strong>2.3.0 provides no ACME client for the stack's own certificate.</strong> In detail:</p>
 <ul>
 <li>the image does not install one (no ACME client in the <code>Dockerfile</code>);</li>
 <li>only <code>tls-init</code> can write the <code>satom-acme</code> volume, and no app service
-  mounts it;</li>
+  mounts it (neither does the agent);</li>
 <li>the Certificate Manager's activation step for the node certificate is
-  <code>cert_activation</code>, which is denied.</li>
+  <code>cert_activation</code>, which is denied unless the operations agent is enabled
+  and answering (§7.2).</li>
 </ul>
 <p>To use ACME you need an external client that can write challenge files into
 the <code>satom_satom-acme</code> volume (or that uses DNS-01 elsewhere). Import the
-certificate it obtains with §7.3.3. Neither SATOM nor its tests cover such a
-client.</p>
+certificate it obtains with §7.3.3, or from System → Container operations with
+the agent. Neither SATOM nor its tests cover such a client.</p>
 <h3 id="96-a-further-proxy-in-front">9.6 A further proxy in front</h3>
 <p>An edge or DMZ load balancer in front of the stack should connect to <code>:443</code>.
 It must pass <code>Host</code> <strong>including the port</strong> and declare the scheme, as
@@ -1958,7 +2661,7 @@ overlay does not publish anyway.</p>
 cannot attach"). Primary <code>.env</code>:</p>
 <pre><code class="language-ini">SATOM_ENV=prod
 SATOM_NODE_ROLE=primary
-SATOM_IMAGE=satom:2.1.2
+SATOM_IMAGE=satom:2.3.0
 SATOM_PG_BIND=192.0.2.10:5432         # the address the standby reaches, never 0.0.0.0
 </code></pre>
 <p>Standby <code>.env</code>: a copy of the primary's, then:</p>
@@ -2045,9 +2748,10 @@ the standby, drop the slot on the primary:
 <blockquote>
 <p>SATOM ships <strong>no container failover command</strong>. The host's
 <code>deploy/satom-promote.sh</code> is run by the host's root runner, which does not
-exist here, and the UI's promote action is not executed in a container
-(§7.2). The procedure below is derived from the stack's code and standard
-PostgreSQL. It is not covered by tests.</p>
+exist here. The UI's promote action refuses in a container, and the
+operations agent does not perform it either (§7.2). The procedure below is
+derived from the stack's code and standard PostgreSQL. It is not covered by
+tests.</p>
 </blockquote>
 <ol>
 <li>Make sure the old primary is <strong>really down</strong>. Promotion is never automatic,
@@ -2125,11 +2829,11 @@ primary. Back up <code>satom-data</code> on the primary (§11.2) with that in mi
 </tr>
 <tr>
 <td><strong>Docker, installer-managed</strong></td>
-<td>re-run <code>satom-setup.sh</code></td>
+<td>re-run <code>satom-setup.sh</code>; or, with the operations agent, <strong>System → Container operations → Update</strong> (§7.6)</td>
 </tr>
 <tr>
 <td><strong>Docker, manual</strong></td>
-<td>new image tag + recreate</td>
+<td>new image tag + recreate (the agent, if enabled, refuses updates on this layout)</td>
 </tr>
 </tbody>
 </table>
@@ -2139,13 +2843,26 @@ sudo bash satom-setup.sh --yes          # on an existing Docker install, the mod
 </code></pre>
 <p>The update path downloads and builds the new version, repoints
 <code>/opt/satom-docker/current</code>, sets <code>SATOM_IMAGE=satom:&lt;new&gt;</code>, rewrites the
-wrapper, runs <code>satom-docker up -d --remove-orphans</code>, and waits for <code>/healthz</code>.
-It does <strong>not</strong>:</p>
+wrapper, runs <code>satom-docker up -d --remove-orphans</code>, <strong>reloads the proxy</strong>
+(<code>satom-docker kill -s HUP proxy</code>: a graceful reload, so the vhost <code>tls-init</code>
+has just rewritten is actually served; a failure only warns and suggests
+<code>satom-docker restart proxy</code>), and waits for <code>/healthz</code>. It also asks whether to enable the operations agent when the install runs
+without it and the new release ships it (§7.1). It does <strong>not</strong>:</p>
 <ul>
 <li>take a backup first;</li>
-<li>rewrite <code>compose.setup.yaml</code>;</li>
+<li>rewrite <code>compose.setup.yaml</code>, except when you enable the agent (it is then
+  regenerated, with <code>compose.setup-agent.yaml</code> beside it);</li>
 <li>offer a rollback.</li>
 </ul>
+<p><strong>From the console, with the agent</strong> (installer layout only): type the version
+and <code>UPDATE</code> under System → Container operations → Update. The agent
+downloads the release tree if it is not under <code>releases/</code> yet, builds
+<code>satom:&lt;new&gt;</code>, recreates every service except itself, reloads the proxy
+(<code>nginx -t</code>, then SIGHUP), waits up to 420 s for <code>web</code> to be healthy, and rolls
+back the tree, the image and <code>satom.env</code> if it
+is not (§7.6). It takes no backup either, and its rollback does not touch the
+database. Afterwards run <code>satom-docker up -d</code> on the host to bring the agent
+itself to the new version.</p>
 <p>Earlier <code>releases/&lt;ver&gt;</code> trees and <code>satom:&lt;ver&gt;</code> images are left in place. The
 code makes no promise that an older image runs against a database a newer
 version has already started on.</p>
@@ -2154,6 +2871,7 @@ version has already started on.</p>
 cd deploy/docker &amp;&amp; ./satom-docker.sh build satom:&lt;new&gt;
 sed -i 's/^SATOM_IMAGE=.*/SATOM_IMAGE=satom:&lt;new&gt;/' .env      # both SATOM_IMAGE lines
 ./satom-docker.sh up
+dc kill -s HUP proxy          # load the vhost tls-init has just rewritten (§5.5); satom-docker.sh has no reload subcommand
 </code></pre>
 <p>Extracting over the checkout replaces the tracked files and keeps <code>.env</code>,
 because <code>.env</code> is not in the archive.</p>
@@ -2179,7 +2897,7 @@ standby.</p>
    mkdir -p /root/satom-backup
    docker run --rm -u 0 --entrypoint tar \
      -v satom_satom-data:/d:ro -v /root/satom-backup:/out \
-     satom:2.1.2 -czf /out/satom-data-$(date +%F).tar.gz -C /d .</code></p>
+     satom:2.3.0 -czf /out/satom-data-$(date +%F).tar.gz -C /d .</code></p>
 <p>This uses the SATOM image with <code>-u 0</code> so that it needs no extra image;
    <a href="docker.html"><code>docker.md</code></a> shows the same with <code>alpine</code>.
 4. <code>satom-pki</code> if you imported a certificate, and <code>satom-instance</code>. Back them up
@@ -2198,7 +2916,7 @@ satom-docker exec -T postgres pg_restore -U satom -d satom --clean --if-exists &
 # 3. data volume
 docker run --rm -u 0 --entrypoint tar \
   -v satom_satom-data:/d -v /root/satom-backup:/in:ro \
-  satom:2.1.2 -xzf /in/satom-data-DATE.tar.gz -C /d
+  satom:2.3.0 -xzf /in/satom-data-DATE.tar.gz -C /d
 # 4. start
 satom-docker up -d
 </code></pre>
@@ -2209,10 +2927,12 @@ restore behave as on a host install.</p>
 satom-docker logs --tail=100 scheduler cron
 satom-docker logs tls-init              # certificate decisions of the last up
 satom-docker logs postgres              # includes [pg-standby] and [initdb] lines
+satom-docker logs agent                 # agent overlay: [satom-agent] lines, one per request step
 ./satom-docker.sh logs web              # manual: always --tail=200 -f
 </code></pre>
 <p>Production rotates the app, database, Redis and metrics logs at 20 MB × 5
-files. <code>proxy</code> and <code>tls-init</code> use the engine's default logging driver settings.
+files. The <code>agent</code> rotates at 10 MB × 3 in every shape. <code>proxy</code> and <code>tls-init</code>
+use the engine's default logging driver settings.
 <code>/var/log/satom</code> inside the app containers is not on a volume.</p>
 <h3 id="115-health-checks--what-each-proves">11.5 Health checks — what each proves</h3>
 <table>
@@ -2251,13 +2971,20 @@ files. <code>proxy</code> and <code>tls-init</code> use the engine's default log
 </tr>
 <tr>
 <td>the runtime summary (§7.2)</td>
-<td>the four capabilities are denied</td>
-<td></td>
+<td>which capabilities are denied or delegated, and whether the agent is declared and live</td>
+<td>that the agent can reach the engine (read <code>engine_ok</code> in the heartbeat, §7.7)</td>
+</tr>
+<tr>
+<td><code>satom-docker ps agent</code> → healthy (<em>agent overlay</em>)</td>
+<td>the heartbeat is younger than 60 s</td>
+<td>that the last request succeeded</td>
 </tr>
 </tbody>
 </table>
-<p><code>satom-docker.sh health</code> is meant to run the last four. In 2.1.2 it stops at
-the <code>/healthz</code> step (§14), so run them individually.</p>
+<p><code>./satom-docker.sh health</code> runs <code>ps</code>, the node role, <code>/healthz</code> through the
+proxy (<code>https://127.0.0.1:&lt;port&gt;/healthz</code> with <code>-k</code>, the port taken from
+<code>SATOM_HTTPS_BIND</code>) and the runtime summary. The installer's <code>satom-docker</code>
+wrapper has no <code>health</code> subcommand: run the checks individually there.</p>
 <h3 id="116-starting-and-stopping">11.6 Starting and stopping</h3>
 <pre><code class="language-bash">satom-docker stop            # stop, keep containers
 satom-docker start
@@ -2293,8 +3020,10 @@ It is irreversible: the database, the device vault and the certificates go.
 <p>Manual equivalents: <code>./satom-docker.sh down</code> (keeps volumes) and
 <code>./satom-docker.sh down -v</code> (deletes them).</p>
 <h3 id="118-air-gapped-image-delivery">11.8 Air-gapped image delivery</h3>
-<p><code>satom-setup.sh</code> Docker mode cannot run offline in 2.1.2. The manual route can
-be used offline if you bring four things:</p>
+<p><code>satom-setup.sh</code> Docker mode cannot run offline in 2.3.0. Neither can a console
+update through the agent unless <code>releases/X.Y.Z</code> already holds the tree and the
+engine already has <code>satom:X.Y.Z</code> and <code>docker:27-cli</code>. The manual route can be
+used offline if you bring four things:</p>
 <ul>
 <li>the release source tree, which provides the compose files and the scripts
   that are bind-mounted;</li>
@@ -2304,8 +3033,8 @@ be used offline if you bring four things:</p>
   <code>apt-get</code> and <code>pip</code>.</li>
 </ul>
 <p>On the connected build node:</p>
-<pre><code class="language-bash">./satom-docker.sh build satom:2.1.2
-./satom-docker.sh export satom:2.1.2 /tmp/satom-2.1.2.tar.gz          # also writes /tmp/satom-2.1.2.tar.gz.sha256
+<pre><code class="language-bash">./satom-docker.sh build satom:2.3.0
+./satom-docker.sh export satom:2.3.0 /tmp/satom-2.3.0.tar.gz          # also writes /tmp/satom-2.3.0.tar.gz.sha256
 docker pull postgres:15-bookworm; docker pull redis:7-alpine
 docker pull victoriametrics/victoria-metrics:v1.148.0; docker pull nginx:1.27-alpine
 docker save postgres:15-bookworm redis:7-alpine victoriametrics/victoria-metrics:v1.148.0 nginx:1.27-alpine \
@@ -2313,7 +3042,7 @@ docker save postgres:15-bookworm redis:7-alpine victoriametrics/victoria-metrics
 </code></pre>
 <p>On the target, put the tarball and its <code>.sha256</code> <strong>at the same path</strong> as on
 the build node, then:</p>
-<pre><code class="language-bash">./satom-docker.sh import /tmp/satom-2.1.2.tar.gz
+<pre><code class="language-bash">./satom-docker.sh import /tmp/satom-2.3.0.tar.gz
 gunzip -c /tmp/satom-base-images.tar.gz | docker load
 </code></pre>
 <p><code>import</code> runs <code>sha256sum -c</code> <strong>before</strong> loading. The <code>.sha256</code> file records the
@@ -2444,7 +3173,7 @@ unverified.</p>
 <tr>
 <td>Long request ends with 504 after about 2 minutes</td>
 <td><code>proxy_read_timeout 120s</code> in the vhost, although gunicorn allows 600 s</td>
-<td>— (the generated vhost is not configurable in 2.1.2)</td>
+<td>— (the generated vhost is not configurable in 2.3.0)</td>
 </tr>
 <tr>
 <td><code>up</code> pulls or fails to pull <code>satom:&lt;tag&gt;</code></td>
@@ -2452,16 +3181,52 @@ unverified.</p>
 <td>build or import it first (§3.3)</td>
 </tr>
 <tr>
+<td>The console answers <strong>502</strong> after <code>up -d</code> or an update, on a release before 2.3.0</td>
+<td>the proxy resolved <code>web</code> once at start; the recreated <code>web</code> has a new address and the proxy still connects to the old one (§5.5)</td>
+<td><code>satom-docker restart proxy</code>. Fixed in 2.3.0: the vhost re-resolves <code>web</code> per request, and updates reload the proxy.</td>
+</tr>
+<tr>
 <td><code>satom-docker.sh health</code> prints <code>SATOM_HTTP_BIND: unbound variable</code></td>
-<td>defect in 2.1.2 (§14)</td>
-<td>run the checks individually (§11.5)</td>
+<td>a script from a release before 2.3.0</td>
+<td>use the 2.3.0 script, or run the checks individually (§11.5)</td>
+</tr>
+<tr>
+<td>Container operations says <strong>not answering</strong>; actions are refused with "The operations agent is enabled but not answering (…)"</td>
+<td>no heartbeat for more than 60 s: the <code>agent</code> container is stopped, crash-looping, or cannot write its status volume; or the clocks disagree ("heartbeat timestamp is … in the future") (§7.2)</td>
+<td><code>satom-docker ps agent</code>, <code>satom-docker logs agent</code>; <code>satom-docker up -d</code> recreates it. Exit code 78 at start means the socket is not mounted. Requests queued meanwhile are refused as expired after 600 s, never executed late.</td>
+</tr>
+<tr>
+<td>Container operations says <strong>live</strong> but every service shows <strong>no container</strong></td>
+<td>the agent cannot reach the engine (<code>engine_ok: false</code> in the heartbeat)</td>
+<td>read <code>engine_error</code> in the heartbeat (§7.7) and the agent's log</td>
+</tr>
+<tr>
+<td>Update refused: "updating from the console needs the installer layout (/opt/satom-docker) …"</td>
+<td>a manual checkout: the agent has no <code>SATOM_AGENT_HOME</code></td>
+<td>update by hand (§7.3.1), or move the node to the installer</td>
+</tr>
+<tr>
+<td>Update request <strong>failed</strong> with "the update did not come up healthy; rolled back"</td>
+<td>the recreate failed, or <code>web</code> was not healthy within 420 s on the new image</td>
+<td>read the steps in <em>Recent agent requests</em> (the build and recreate output is in the step details) and <code>satom-docker logs web</code>. The stack is back on the previous tree and image; the database was <strong>not</strong> rolled back (§7.6).</td>
+</tr>
+<tr>
+<td>Update refused: "release v… carries invalid networks" or "does not ship the Docker stack"</td>
+<td>the downloaded tree failed the agent's checks (§7.6)</td>
+<td>pick another release; do not place a hand-edited tree under <code>releases/</code> to get past it</td>
+</tr>
+<tr>
+<td>The <em>Operations agent</em> card shows <strong>agent and stack differ</strong></td>
+<td>an update from the console never recreates the agent (§7.6)</td>
+<td><code>satom-docker up -d</code> on the host</td>
 </tr>
 </tbody>
 </table>
 <hr>
 <h2 id="13-hardening-recommendations-not-applied-by-the-stack">13. Hardening recommendations (not applied by the stack)</h2>
 <blockquote>
-<p><strong>Recommendations.</strong> None of the following is configured in 2.1.2. They have
+<p><strong>Recommendations.</strong> None of the following is configured for the base
+services in 2.3.0 (the optional <code>agent</code> has its own confinement, §6.2). They have
 not been tested against the stack by the project. Apply them in an override
 file of your own, validate with <code>config</code>, and test before production.</p>
 </blockquote>
@@ -2508,11 +3273,17 @@ file of your own, validate with <code>config</code>, and test before production.
 <li><strong>Keep the <code>docker</code> group empty.</strong> Consider rootless Docker or user
     namespace remapping only after testing them against the uid-999 volume
     ownership.</li>
+<li><strong>Leave the operations agent off where the console does not need it.</strong> It
+    adds a root-equivalent container (§7.8). Where you enable it, restrict the
+    <code>user_manage</code> permission, which is what the Container operations page
+    requires, to the people who may restart, update and re-certify the node.</li>
 </ol>
 <hr>
-<h2 id="14-known-defects-and-gaps-in-212">14. Known defects and gaps in 2.1.2</h2>
+<h2 id="14-known-defects-and-gaps-in-230">14. Known defects and gaps in 2.3.0</h2>
 <p>Found in the code while writing this page. Each one is also referenced where
-it matters above.</p>
+it matters above. Two items of the 2.1.2 list are fixed in 2.3.0 and no longer
+appear: <code>satom-docker.sh health</code> now checks <code>/healthz</code> through the proxy, and
+the promote action is gated in a container (§7.2).</p>
 <table>
 <thead>
 <tr>
@@ -2521,10 +3292,6 @@ it matters above.</p>
 </tr>
 </thead>
 <tbody>
-<tr>
-<td><code>satom-docker.sh health</code> does not check the application</td>
-<td>Its <code>/healthz</code> step builds the URL from the retired <code>SATOM_HTTP_BIND</code> (<code>http://127.0.0.1:${SATOM_HTTP_BIND##*:}/healthz</code>) under <code>set -u</code>, and <code>load_env</code> only lets that variable be unset or empty. Unset: bash stops with "unbound variable", so the runtime-capability step never runs either. Empty: the URL has no port and does not reach gunicorn or the HTTPS listener.</td>
-</tr>
 <tr>
 <td>Redirect ignores a custom HTTPS port</td>
 <td><code>proxy-init.sh</code> always passes <code>--port 443</code> (§9.7).</td>
@@ -2542,10 +3309,6 @@ it matters above.</p>
 <td>it says <code>satom-docker.sh</code> verifies that <code>SATOM_PROXY_IP</code> is inside <code>SATOM_NETWORK_SUBNET</code>; it does not (§3.4).</td>
 </tr>
 <tr>
-<td>The promote action is not gated</td>
-<td><code>/promote</code> enqueues a request no container process executes (§7.2).</td>
-</tr>
-<tr>
 <td>The first admin password persists in container metadata</td>
 <td>§6.5, §13 item 9.</td>
 </tr>
@@ -2553,24 +3316,36 @@ it matters above.</p>
 <td>No <code>satom-data</code> replication, no certificate renewal job, no ACME client</td>
 <td>§10.9, §9.4, §9.5.</td>
 </tr>
+<tr>
+<td>A console update takes no backup, and its rollback does not restore the database</td>
+<td>§7.6, §7.8.</td>
+</tr>
+<tr>
+<td>An update never refreshes the agent</td>
+<td>by design; the drift is shown, not corrected (§7.8).</td>
+</tr>
 </tbody>
 </table>
 <hr>
 <h2 id="15-source-files">15. Source files</h2>
-<p>Everything above was taken from these files at release 2.1.2:</p>
+<p>Everything above was taken from these files at release 2.3.0:</p>
 <ul>
 <li><code>deploy/docker/compose.yaml</code>, <code>compose.prod.yaml</code>, <code>compose.standby.yaml</code>,
-  <code>env.example</code></li>
+  <code>compose.agent.yaml</code>, <code>env.example</code></li>
 <li><code>deploy/docker/entrypoint.sh</code>, <code>cron-runner.sh</code>, <code>node-role.sh</code>,
   <code>pg-standby-entrypoint.sh</code>, <code>proxy-init.sh</code>, <code>satom-docker.sh</code>,
-  <code>initdb.d/10-replication.sh</code></li>
+  <code>satom_agent.py</code>, <code>initdb.d/10-replication.sh</code></li>
 <li><code>Dockerfile</code>, <code>.dockerignore</code></li>
 <li><code>app/runtime.py</code>, and the enforcement points <code>app/services/self_update.py</code>,
   <code>service_control.py</code>, <code>cert_service.py</code>, <code>system_health.py</code>, <code>cluster.py</code>,
-  <code>app/views/self_update.py</code>, and <code>_seed_admin()</code> in <code>app/__init__.py</code></li>
+  <code>app/views/self_update.py</code>, <code>app/views/settings.py</code> (the Services card), and
+  <code>_seed_admin()</code> in <code>app/__init__.py</code></li>
+<li>the web half of the agent: <code>app/services/container_ops.py</code>,
+  <code>app/views/container_ops.py</code>, <code>app/templates/container_ops/index.html</code></li>
 <li><code>deploy/tls-bootstrap.sh</code></li>
 <li><code>installers/satom-setup.sh</code></li>
-<li><code>tests/test_container_runtime.py</code>, <code>tests/test_tls_by_default.py</code>,
+<li><code>tests/test_container_runtime.py</code>, <code>tests/test_docker_agent.py</code>,
+  <code>tests/test_container_ops.py</code>, <code>tests/test_tls_by_default.py</code>,
   <code>tests/test_guided_installer.py</code>: the invariants they assert are the ones
   this page relies on as guaranteed</li>
 </ul>

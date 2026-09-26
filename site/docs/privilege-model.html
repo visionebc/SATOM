@@ -64,6 +64,7 @@
       <a href="#2-accounts">2. Accounts</a>
       <a href="#3-sudo--and-what-is-deliberately-not-granted">3. sudo — and what is deliberately NOT granted</a>
       <a href="#4-the-privileged-runner-boundary">4. The privileged runner boundary</a>
+      <a href="#4b-the-container-counterpart-the-operations-agent">4b. The container counterpart: the operations agent</a>
       <a href="#5-ha-trust-between-nodes">5. HA trust between nodes</a>
       <a href="#5b-why-user-lives-in-a-drop-in-not-in-the-unit-file">5b. Why User= lives in a drop-in, not in the unit file</a>
       <a href="#6-migrating-an-existing-node">6. Migrating an existing node</a>
@@ -289,6 +290,67 @@ curated set.</p>
 <p><code>satom-updater.path</code> + <code>.service</code> are the only units that must stay root. If you
 find yourself adding a second one, you are probably about to reintroduce this
 whole problem.</p>
+<hr>
+<h2 id="4b-the-container-counterpart-the-operations-agent">4b. The container counterpart: the operations agent</h2>
+<p>The Docker stack has no systemd and no root runner, so by default it renounces
+what the runner does (<code>app/runtime.py</code>). Since 2.3.0 an <strong>optional</strong> <code>agent</code>
+service (<code>deploy/docker/compose.agent.yaml</code>, off by default) is the same model
+in container form. Nothing in the web changes side: it writes the same request
+file into the same <code>data/update-requests/</code> path and polls the same
+<code>data/update-status/&lt;uid&gt;.json</code> — in the container those two paths are the
+volumes <code>satom-agent-requests</code> and <code>satom-agent-status</code>, shared with the agent.</p>
+<table>
+<thead>
+<tr>
+<th>Host install</th>
+<th>Container stack with the agent</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>satom-updater.path</code> notices a file</td>
+<td>the agent polls <code>satom-agent-requests</code> every 2 s</td>
+</tr>
+<tr>
+<td><code>satom-updater.service</code>, root</td>
+<td><code>agent</code>, uid 0, the <strong>only</strong> container that mounts <code>/var/run/docker.sock</code> — which is root on the host</td>
+</tr>
+<tr>
+<td>re-validates against its own allowlist</td>
+<td>re-validates against its own closed tables (<code>deploy/docker/satom_agent.py</code>): three request kinds, a fixed set of keys per kind, a fixed service → action table, <code>X.Y.Z</code> versions only, PEM-only certificates</td>
+</tr>
+<tr>
+<td>pip / unit install / restart</td>
+<td>restart a service of the <code>satom</code> project; switch the stack to a release; import a certificate into <code>satom-pki</code> and reload <code>proxy</code> gracefully (<code>nginx -t</code>, then SIGHUP — never a restart)</td>
+</tr>
+<tr>
+<td>health check + auto-rollback</td>
+<td>an update waits up to 420 s for <code>web</code> to be healthy and otherwise rolls back to the previous tree and image</td>
+</tr>
+<tr>
+<td>writes <code>update-status/&lt;uid&gt;.json</code></td>
+<td>writes <code>&lt;uid&gt;.json</code> in the same shape (<code>"runner": "container-agent"</code>), symlink-safe</td>
+</tr>
+<tr>
+<td>promotion (<code>satom-promote.sh</code>)</td>
+<td><strong>not performed</strong> — <code>ha_promote</code> is never delegated; failover stays manual</td>
+</tr>
+</tbody>
+</table>
+<p>The same rule holds in both columns: <strong>the web worker's validation is a UX
+affordance; the privileged side's is the security boundary.</strong> The container
+adds two requirements the host does not need, because there the privileged
+side is a different container rather than a different Unix account:</p>
+<ul>
+<li><strong>Declared and alive.</strong> <code>app/runtime.py</code> delegates a capability only when
+  the overlay declares the agent (<code>SATOM_AGENT=docker</code>) <em>and</em> its heartbeat is
+  younger than 60 s. A queue nobody drains must refuse, not accept.</li>
+<li><strong>Unreachable.</strong> The agent publishes no port, listens on nothing and is not
+  on the <code>satom</code> network; its only input is the request volume.</li>
+</ul>
+<p>The agent is as much root as <code>satom-updater.service</code>, and more directly:
+whoever controls it controls the engine. The operator manual,
+<a href="docker-compose.html"><code>docker-compose.md</code></a> §7, is the review checklist.</p>
 <hr>
 <h2 id="5-ha-trust-between-nodes">5. HA trust between nodes</h2>
 <h3 id="what-was-wrong">What was wrong</h3>

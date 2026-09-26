@@ -605,40 +605,64 @@ three images would let the scheduler run code the web worker does not have, and
 that difference is invisible until a scheduled action behaves differently from
 the same action fired by hand.</p>
 <p><strong>It is not the full install in a box, and the difference is deliberate.</strong> A
-container administers no host, so this shape <strong>renounces</strong> four capabilities
-instead of shipping them broken:</p>
+container administers no host, so this shape <strong>renounces</strong> five capabilities
+instead of shipping them broken — <strong>unless the optional operations agent is
+enabled</strong>. The agent (<code>deploy/docker/compose.agent.yaml</code>, off by default) is
+one extra container that holds the Docker socket; the web only drops a request
+into a volume, and the agent re-validates it against a closed list and does the
+work. With it, the four come back in the console under <strong>System → Container
+operations</strong>:</p>
 <table>
 <thead>
 <tr>
 <th>capability</th>
-<th>what to do instead</th>
+<th>without the agent</th>
+<th>with the agent (System → Container operations)</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>Software Update &amp; HA</strong> (in-place self-update)</td>
+<td><strong>Software Update</strong> (self-update)</td>
 <td>deploy a new image tag and recreate the stack</td>
+<td>switch the stack to another release <code>X.Y.Z</code>: download, build, recreate, roll back if <code>web</code> does not come back healthy</td>
 </tr>
 <tr>
-<td><strong>Service control</strong> (start/stop/restart of node units)</td>
+<td><strong>Service control</strong> (start/stop/restart)</td>
 <td><code>docker compose restart &lt;service&gt;</code></td>
+<td>restart the stack's services from the console (start/stop only for <code>scheduler</code> and <code>cron</code>)</td>
 </tr>
 <tr>
 <td><strong>Certificate activation</strong></td>
 <td>the stack serves TLS already; swap the certificate with <code>deploy/tls-bootstrap.sh import-cert</code> and restart <code>proxy</code></td>
+<td>upload a certificate and key; the agent imports them and reloads <code>proxy</code> gracefully (no restart: open connections survive), restoring the previous certificate if nginx rejects the new one</td>
 </tr>
 <tr>
 <td><strong>systemd unit health</strong></td>
 <td>read container health from the container engine</td>
+<td>service-health reads return the stack's containers as the engine reports them, instead of systemd units</td>
+</tr>
+<tr>
+<td><strong>HA promotion</strong> (<code>ha_promote</code>)</td>
+<td>fail over by hand</td>
+<td><strong>still refused</strong> — failover stays a manual PostgreSQL procedure</td>
 </tr>
 </tbody>
 </table>
-<p>Each of the four refuses with a message naming its alternative; none of them
-fails silently, and the refusals are asserted in <code>tests/test_container_runtime.py</code>
-rather than promised here. Everything else — device management, probes and
-monitors, the metrics store, backups and restore, the source of truth, reports,
-the CLI, RBAC and SSO — behaves exactly as on a host install.
-<strong>If you need in-place self-update, install on a host.</strong></p>
+<p>Each renounced capability refuses with a message naming its alternative; none
+of them fails silently, and the refusals are asserted in
+<code>tests/test_container_runtime.py</code> and <code>tests/test_container_ops.py</code> rather than
+promised here. A capability is delegated only while the agent is both declared
+by the overlay and answering (a heartbeat younger than 60 s); an agent that
+stopped reporting is treated as absent, so nothing is ever queued behind it.
+Everything else — device management, probes and monitors, the metrics store,
+backups and restore, the source of truth, reports, the CLI, RBAC and SSO —
+behaves exactly as on a host install.</p>
+<p>Self-update from the console exists only as a <strong>release switch</strong> through the
+agent, and only on an installer layout (<code>/opt/satom-docker</code>). The git and
+library (pip) updaters stay host-only in every container: the code is the
+image. <strong>The agent mounts the Docker socket, so whoever controls it is root on
+the host</strong> — read <a href="docker-compose.html"><code>docker-compose.md</code></a> §7 before enabling
+it.</p>
 <p><strong>TLS is provisioned by the stack itself</strong>, like every other install shape: the
 <code>proxy</code> service terminates HTTPS on <code>:443</code> with a certificate issued at first
 start and redirects <code>:80</code> to it, and the application container publishes no
@@ -670,8 +694,9 @@ backup: the source-of-truth index lives in PostgreSQL while its blobs live in
 the data volume, so restoring only the database leaves rows pointing at
 nothing.) <strong>Operator manual: <a href="docker-compose.html"><code>docker-compose.md</code></a></strong> — every
 service with its user, ports, volumes and permissions, the configuration
-reference, the procedures that replace the four renounced capabilities,
-failover, updates, backup and restore, and troubleshooting.</p>
+reference, the optional operations agent and the manual procedures that
+replace the four renounced capabilities when it is not enabled, failover,
+updates, backup and restore, and troubleshooting.</p>
 <hr>
 <h2 id="3-what-the-installer-asks-in-this-order">3. What the installer asks (in this order)</h2>
 <p><strong>Step 0 — preflight.</strong> Before the first question it verifies that the machine

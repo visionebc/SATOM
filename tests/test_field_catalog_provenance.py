@@ -311,24 +311,17 @@ def test_the_override_is_recorded_in_the_artefact():
 # --------------------------------------------------------------------------- #
 #  4. every provisioning spec names a harvestable endpoint                      #
 # --------------------------------------------------------------------------- #
-def _yaml_keys(path):
-    keys = set()
-    for line in open(path, encoding="utf-8"):
-        m = re.match(r"^([A-Za-z0-9_.\-]+):\s+\S", line)
-        if m:
-            keys.add(m.group(1))
-    return keys
-
-
 def test_every_fortiweb_provisioning_spec_names_a_seeded_endpoint():
     from app.services import provisioning as prov
 
-    seeded = _yaml_keys(os.path.join(REPO, "endpoints.yaml"))
-    assert seeded, "endpoints.yaml parsed to zero keys — the parser is wrong, not the data"
+    from app.services import api_baseline
+
+    seeded = set(api_baseline.artifact_map("fortiweb"))
+    assert seeded, "the FortiWeb baseline read as empty — the reader is wrong, not the data"
     missing = sorted({s.endpoint for s in prov.PROVISION_CATALOG
                       if s.endpoint and s.endpoint not in seeded})
     assert not missing, (
-        "provisioning specs reference endpoint keys absent from endpoints.yaml: %s"
+        "provisioning specs reference endpoint keys absent from the FortiWeb baseline: %s"
         % missing)
 
 
@@ -337,8 +330,10 @@ def test_the_dead_network_interface_urn_is_not_reintroduced():
     the working URN is ``system/interface`` under the key ``interface_2``.
     Re-seeding the dead one puts it back in the API Explorer, where clicking it
     fails for a reason no message explains."""
-    text = open(os.path.join(REPO, "endpoints.yaml"), encoding="utf-8").read()
-    assert "system/network.interface" not in text
+    from app.services import api_baseline
+
+    urns = api_baseline.artifact_map("fortiweb").values()
+    assert not any("system/network.interface" in u for u in urns)
 
 
 def test_the_interface_spec_points_at_the_working_key():

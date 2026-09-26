@@ -1,14 +1,16 @@
-"""DB-first FortiWeb REST endpoint registry, seeded from ``endpoints.yaml``.
+"""DB-first REST endpoint registry, seeded from a build-pinned baseline.
 
 The registry lives in the ``registry_endpoints`` table (PostgreSQL — editable
 in production from the Registry page, captured by the nightly ``pg_dump``).
-The git-tracked ``endpoints.yaml`` (flat ``friendly_key: urn`` map) is the
-SEED and the fallback:
+Its seed is the product's endpoint BASELINE (``services.api_baseline``): the
+catalog promoted from what the API library measured on one firmware build and
+shipped sealed in ``app/registry/baselines/<product>.json``. The four
+hand-written ``endpoints*.yaml`` files this replaced are gone.
 
-* at boot :func:`seed_from_yaml` INSERT-ONLY syncs YAML → DB (a name already
-  in the DB is never touched, so operator edits/disables always win);
+* at boot ``api_baseline.boot`` inserts the shipped baseline and reconciles the
+  registry to it — rows an operator edited or disabled are never touched;
 * if the DB is unreachable or empty (early scripts, standalone tools), the
-  YAML map is served directly so nothing ever breaks on a fresh tree.
+  shipped baseline is served directly so nothing breaks on a fresh tree.
 
 Reads go through a per-process cache with a short TTL: an edit invalidates the
 cache of the worker that served it immediately, the other gunicorn workers
@@ -20,17 +22,14 @@ templates (``name``/``urn``/``path``/``section``/``methods``/``method``).
 """
 from __future__ import annotations
 
-import os
 import time
-
-import yaml
 
 _CACHE_TTL = 60.0  # seconds — cross-worker convergence window after an edit
 
 # The registry key is (product, api_version, name) — the ACTIVE api_version per
-# product, in ONE place, read by both the seeder and the reader.
+# product, in ONE place, read by the baseline and the reader.
 #
-# Until this existed the two halves disagreed: every ``seed_*_from_yaml`` has
+# Until this existed the two halves disagreed: every old YAML seeder had
 # always scoped its INSERT-ONLY check by api_version, while every reader
 # filtered on product alone and built ``{r.name: r.urn}``. The moment a second
 # api_version row exists for a name the dict collapses — one row wins by
@@ -48,7 +47,7 @@ API_VERSION = {
     "fortiauthenticator": "v1",
 }
 
-_yaml_cache: dict | None = None
+_shipped_cache: dict | None = None
 _db_cache: dict = {"map": None, "ts": 0.0}
 
 
@@ -56,23 +55,19 @@ _db_cache: dict = {"map": None, "ts": 0.0}
 # sources
 # ---------------------------------------------------------------------------
 
-def _yaml_registry() -> dict:
-    """The raw ``{friendly_key: urn}`` map from endpoints.yaml (cached)."""
-    global _yaml_cache
-    if _yaml_cache is None:
-        yaml_path = os.path.join(os.path.dirname(__file__), '..', '..', 'endpoints.yaml')
-        try:
-            with open(yaml_path) as f:
-                _yaml_cache = yaml.safe_load(f) or {}
-        except FileNotFoundError:
-            _yaml_cache = {}
-    return _yaml_cache
+def _shipped_registry() -> dict:
+    """``{name: urn}`` of the shipped fortiweb baseline — the no-database fallback."""
+    global _shipped_cache
+    if _shipped_cache is None:
+        from ..services.api_baseline import artifact_map
+        _shipped_cache = artifact_map("fortiweb")
+    return _shipped_cache
 
 
 def _db_registry() -> dict | None:
     """``{name: urn}`` from ``registry_endpoints`` (enabled rows only), or
     ``None`` when the DB can't serve it (no app context / table missing /
-    never seeded) — the caller then falls back to the YAML."""
+    never seeded) — the caller then falls back to the shipped baseline."""
     now = time.monotonic()
     if _db_cache["map"] is not None and (now - _db_cache["ts"]) < _CACHE_TTL:
         return _db_cache["map"]
@@ -83,7 +78,7 @@ def _db_registry() -> dict | None:
         if not rows:
             return None
         reg = {r.name: r.urn for r in rows}
-    except Exception:  # noqa: BLE001 — any DB hiccup → YAML fallback
+    except Exception:  # noqa: BLE001 — any DB hiccup → shipped baseline
         return None
     _db_cache["map"] = reg
     _db_cache["ts"] = now
@@ -97,77 +92,35 @@ def invalidate_cache() -> None:
 
 
 def load_registry() -> dict:
-    """Return the active ``{friendly_key: urn}`` map (DB first, YAML fallback)."""
+    """Return the active ``{friendly_key: urn}`` map (DB first, shipped-baseline fallback)."""
     reg = _db_registry()
     if reg is not None:
         return reg
-    return _yaml_registry()
+    return _shipped_registry()
 
-
-def seed_from_yaml() -> int:
-    """INSERT-ONLY sync endpoints.yaml → registry_endpoints; returns rows added.
-
-    A name already present in the DB (enabled OR disabled) is never modified —
-    operator edits and soft-deletes survive every boot/deploy. Unique-constraint
-    races between gunicorn workers roll back cleanly.
-    """
-    from sqlalchemy.exc import IntegrityError
-
-    from ..extensions import db
-    from ..models import RegistryEndpoint
-
-    yaml_map = _yaml_registry()
-    if not yaml_map:
-        return 0
-    existing = {
-        name for (name,) in db.session.query(RegistryEndpoint.name)
-        .filter_by(product="fortiweb", api_version=API_VERSION["fortiweb"])
-    }
-    added = 0
-    for name, urn in yaml_map.items():
-        if not urn or name in existing:
-            continue
-        db.session.add(RegistryEndpoint(
-            product="fortiweb", api_version=API_VERSION["fortiweb"],
-            name=str(name), urn=str(urn), updated_by="seed",
-        ))
-        added += 1
-    if added:
-        try:
-            db.session.commit()
-        except IntegrityError:
-            db.session.rollback()  # another worker seeded first — fine
-            added = 0
-    invalidate_cache()
-    return added
 
 
 # ---------------------------------------------------------------------------
 # FortiADC registry (product='fortiadc', api_version='v1')
 # ---------------------------------------------------------------------------
-# Same DB-first + YAML-fallback contract as FortiWeb, kept as a parallel,
+# Same DB-first + shipped-baseline contract as FortiWeb, kept as a parallel,
 # product-scoped set of helpers so the (hot) FortiWeb paths stay untouched.
 # FortiADC REST has no version segment in the URL (paths are /api/<object>);
-# 'v1' is the registry's own versioning bucket. Seed file: the repo-root
-# ``endpoints_fortiadc.yaml`` (flat ``friendly_key: urn`` map, urns derived
-# from the CLI object tree — ``config load-balance virtual-server`` →
+# 'v1' is the registry's own versioning bucket. URNs derive from the CLI
+# object tree (``config load-balance virtual-server`` →
 # ``/api/load_balance_virtual_server``).
 
-_adc_yaml_cache: dict | None = None
+_adc_shipped_cache: dict | None = None
 _adc_db_cache: dict = {"map": None, "ts": 0.0}
 
 
-def _adc_yaml_registry() -> dict:
-    global _adc_yaml_cache
-    if _adc_yaml_cache is None:
-        yaml_path = os.path.join(os.path.dirname(__file__), '..', '..',
-                                 'endpoints_fortiadc.yaml')
-        try:
-            with open(yaml_path) as f:
-                _adc_yaml_cache = yaml.safe_load(f) or {}
-        except FileNotFoundError:
-            _adc_yaml_cache = {}
-    return _adc_yaml_cache
+def _adc_shipped_registry() -> dict:
+    """``{name: urn}`` of the shipped fortiadc baseline — the no-database fallback."""
+    global _adc_shipped_cache
+    if _adc_shipped_cache is None:
+        from ..services.api_baseline import artifact_map
+        _adc_shipped_cache = artifact_map("fortiadc")
+    return _adc_shipped_cache
 
 
 def _adc_db_registry() -> dict | None:
@@ -181,7 +134,7 @@ def _adc_db_registry() -> dict | None:
         if not rows:
             return None
         reg = {r.name: r.urn for r in rows}
-    except Exception:  # noqa: BLE001 — any DB hiccup → YAML fallback
+    except Exception:  # noqa: BLE001 — any DB hiccup → shipped baseline
         return None
     _adc_db_cache["map"] = reg
     _adc_db_cache["ts"] = now
@@ -204,11 +157,11 @@ def invalidate_adc_cache() -> None:
 
 
 def load_adc_registry() -> dict:
-    """The active FortiADC ``{friendly_key: urn}`` map (DB first, YAML fallback)."""
+    """The active FortiADC ``{friendly_key: urn}`` map (DB first, shipped-baseline fallback)."""
     reg = _adc_db_registry()
     if reg is not None:
         return reg
-    return _adc_yaml_registry()
+    return _adc_shipped_registry()
 
 
 def resolve_adc(name: str) -> str:
@@ -220,66 +173,26 @@ def resolve_adc(name: str) -> str:
         raise KeyError(f"unknown FortiADC registry endpoint: {name!r}") from None
 
 
-def seed_adc_from_yaml() -> int:
-    """INSERT-ONLY sync endpoints_fortiadc.yaml → registry_endpoints
-    (product='fortiadc'); returns rows added. Operator edits/disables in the
-    DB always win — same contract as the FortiWeb seed."""
-    from sqlalchemy.exc import IntegrityError
-
-    from ..extensions import db
-    from ..models import RegistryEndpoint
-
-    yaml_map = _adc_yaml_registry()
-    if not yaml_map:
-        return 0
-    existing = {
-        name for (name,) in db.session.query(RegistryEndpoint.name)
-        .filter_by(product="fortiadc", api_version=API_VERSION["fortiadc"])
-    }
-    added = 0
-    for name, urn in yaml_map.items():
-        if not urn or name in existing:
-            continue
-        db.session.add(RegistryEndpoint(
-            product="fortiadc", api_version=API_VERSION["fortiadc"],
-            name=str(name), urn=str(urn), updated_by="seed",
-        ))
-        added += 1
-    if added:
-        try:
-            db.session.commit()
-        except IntegrityError:
-            db.session.rollback()  # another worker seeded first — fine
-            added = 0
-    invalidate_adc_cache()
-    return added
-
 
 # ---------------------------------------------------------------------------
 # FortiAnalyzer registry (product='fortianalyzer', api_version='jsonrpc')
 # ---------------------------------------------------------------------------
-# Same DB-first + YAML-fallback contract as FortiWeb/FortiADC, kept as a
+# Same DB-first + shipped-baseline contract as FortiWeb/FortiADC, kept as a
 # parallel, product-scoped set of helpers. URNs are JSON-RPC urls (single
 # transport POST /jsonrpc — dialect picked by the client from the URL family,
-# see app/clients/fortianalyzer.py). Seed file: the repo-root
-# ``endpoints_fortianalyzer.yaml`` (flat ``friendly_key: urn`` map, every
-# entry probed live against faz01 v7.6.7).
+# see app/clients/fortianalyzer.py).
 
-_faz_yaml_cache: dict | None = None
+_faz_shipped_cache: dict | None = None
 _faz_db_cache: dict = {"map": None, "ts": 0.0}
 
 
-def _faz_yaml_registry() -> dict:
-    global _faz_yaml_cache
-    if _faz_yaml_cache is None:
-        yaml_path = os.path.join(os.path.dirname(__file__), '..', '..',
-                                 'endpoints_fortianalyzer.yaml')
-        try:
-            with open(yaml_path) as f:
-                _faz_yaml_cache = yaml.safe_load(f) or {}
-        except FileNotFoundError:
-            _faz_yaml_cache = {}
-    return _faz_yaml_cache
+def _faz_shipped_registry() -> dict:
+    """``{name: urn}`` of the shipped fortianalyzer baseline — the no-database fallback."""
+    global _faz_shipped_cache
+    if _faz_shipped_cache is None:
+        from ..services.api_baseline import artifact_map
+        _faz_shipped_cache = artifact_map("fortianalyzer")
+    return _faz_shipped_cache
 
 
 def _faz_db_registry() -> dict | None:
@@ -293,7 +206,7 @@ def _faz_db_registry() -> dict | None:
         if not rows:
             return None
         reg = {r.name: r.urn for r in rows}
-    except Exception:  # noqa: BLE001 — any DB hiccup → YAML fallback
+    except Exception:  # noqa: BLE001 — any DB hiccup → shipped baseline
         return None
     _faz_db_cache["map"] = reg
     _faz_db_cache["ts"] = now
@@ -306,11 +219,11 @@ def invalidate_faz_cache() -> None:
 
 
 def load_faz_registry() -> dict:
-    """The active FortiAnalyzer ``{friendly_key: urn}`` map (DB first, YAML fallback)."""
+    """The active FortiAnalyzer ``{friendly_key: urn}`` map (DB first, shipped-baseline fallback)."""
     reg = _faz_db_registry()
     if reg is not None:
         return reg
-    return _faz_yaml_registry()
+    return _faz_shipped_registry()
 
 
 def resolve_faz(name: str) -> str:
@@ -322,67 +235,27 @@ def resolve_faz(name: str) -> str:
         raise KeyError(f"unknown FortiAnalyzer registry endpoint: {name!r}") from None
 
 
-def seed_faz_from_yaml() -> int:
-    """INSERT-ONLY sync endpoints_fortianalyzer.yaml → registry_endpoints
-    (product='fortianalyzer'); returns rows added. Operator edits/disables in
-    the DB always win — same contract as the FortiWeb/FortiADC seeds."""
-    from sqlalchemy.exc import IntegrityError
-
-    from ..extensions import db
-    from ..models import RegistryEndpoint
-
-    yaml_map = _faz_yaml_registry()
-    if not yaml_map:
-        return 0
-    existing = {
-        name for (name,) in db.session.query(RegistryEndpoint.name)
-        .filter_by(product="fortianalyzer", api_version=API_VERSION["fortianalyzer"])
-    }
-    added = 0
-    for name, urn in yaml_map.items():
-        if not urn or name in existing:
-            continue
-        db.session.add(RegistryEndpoint(
-            product="fortianalyzer", api_version=API_VERSION["fortianalyzer"],
-            name=str(name), urn=str(urn), updated_by="seed",
-        ))
-        added += 1
-    if added:
-        try:
-            db.session.commit()
-        except IntegrityError:
-            db.session.rollback()  # another worker seeded first — fine
-            added = 0
-    invalidate_faz_cache()
-    return added
-
 
 
 # ---------------------------------------------------------------------------
 # FortiAuthenticator registry (product='fortiauthenticator', api_version='v1')
 # ---------------------------------------------------------------------------
-# Same DB-first + YAML-fallback contract as the other three products, kept as a
+# Same DB-first + shipped-baseline contract as the other three products, kept as a
 # parallel, product-scoped set of helpers. URNs here are plain REST paths
 # (``/api/v1/<resource>/``) — FortiAuthenticator is a Django/Tastypie API, not
-# the Fortinet CMDB tree, and not JSON-RPC. Seed file: the repo-root
-# ``endpoints_fortiauthenticator.yaml``, every entry probed live against fac01
-# v8.0.3 build0099.
+# the Fortinet CMDB tree, and not JSON-RPC.
 
-_fac_yaml_cache: dict | None = None
+_fac_shipped_cache: dict | None = None
 _fac_db_cache: dict = {"map": None, "ts": 0.0}
 
 
-def _fac_yaml_registry() -> dict:
-    global _fac_yaml_cache
-    if _fac_yaml_cache is None:
-        yaml_path = os.path.join(os.path.dirname(__file__), '..', '..',
-                                 'endpoints_fortiauthenticator.yaml')
-        try:
-            with open(yaml_path) as f:
-                _fac_yaml_cache = yaml.safe_load(f) or {}
-        except FileNotFoundError:
-            _fac_yaml_cache = {}
-    return _fac_yaml_cache
+def _fac_shipped_registry() -> dict:
+    """``{name: urn}`` of the shipped fortiauthenticator baseline — the no-database fallback."""
+    global _fac_shipped_cache
+    if _fac_shipped_cache is None:
+        from ..services.api_baseline import artifact_map
+        _fac_shipped_cache = artifact_map("fortiauthenticator")
+    return _fac_shipped_cache
 
 
 def _fac_db_registry() -> dict | None:
@@ -397,7 +270,7 @@ def _fac_db_registry() -> dict | None:
         if not rows:
             return None
         reg = {r.name: r.urn for r in rows}
-    except Exception:  # noqa: BLE001 — any DB hiccup -> YAML fallback
+    except Exception:  # noqa: BLE001 — any DB hiccup -> shipped baseline
         return None
     _fac_db_cache["map"] = reg
     _fac_db_cache["ts"] = now
@@ -411,11 +284,11 @@ def invalidate_fac_cache() -> None:
 
 def load_fac_registry() -> dict:
     """The active FortiAuthenticator ``{friendly_key: urn}`` map (DB first,
-    YAML fallback)."""
+    shipped-baseline fallback)."""
     reg = _fac_db_registry()
     if reg is not None:
         return reg
-    return _fac_yaml_registry()
+    return _fac_shipped_registry()
 
 
 def resolve_fac(name: str) -> str:
@@ -428,39 +301,15 @@ def resolve_fac(name: str) -> str:
             f"unknown FortiAuthenticator registry endpoint: {name!r}") from None
 
 
-def seed_fac_from_yaml() -> int:
-    """INSERT-ONLY sync endpoints_fortiauthenticator.yaml -> registry_endpoints
-    (product='fortiauthenticator'); returns rows added. Operator edits/disables
-    in the DB always win — same contract as the other three seeds."""
-    from sqlalchemy.exc import IntegrityError
+def load_product_registry(product: str) -> dict:
+    """The active ``{name: urn}`` map of any registry product."""
+    return {
+        "fortiweb": load_registry,
+        "fortiadc": load_adc_registry,
+        "fortianalyzer": load_faz_registry,
+        "fortiauthenticator": load_fac_registry,
+    }[product]()
 
-    from ..extensions import db
-    from ..models import RegistryEndpoint
-
-    yaml_map = _fac_yaml_registry()
-    if not yaml_map:
-        return 0
-    existing = {
-        name for (name,) in db.session.query(RegistryEndpoint.name)
-        .filter_by(product="fortiauthenticator", api_version=API_VERSION["fortiauthenticator"])
-    }
-    added = 0
-    for name, urn in yaml_map.items():
-        if not urn or name in existing:
-            continue
-        db.session.add(RegistryEndpoint(
-            product="fortiauthenticator", api_version=API_VERSION["fortiauthenticator"],
-            name=str(name), urn=str(urn), updated_by="seed",
-        ))
-        added += 1
-    if added:
-        try:
-            db.session.commit()
-        except IntegrityError:
-            db.session.rollback()  # another worker seeded first — fine
-            added = 0
-    invalidate_fac_cache()
-    return added
 
 # ---------------------------------------------------------------------------
 # display helpers (unchanged contract)

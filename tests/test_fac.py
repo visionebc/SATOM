@@ -20,17 +20,16 @@ import os
 import re
 
 import pytest
-import yaml
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-YAML_PATH = os.path.join(REPO, "endpoints_fortiauthenticator.yaml")
 
 from app.services import fac_menu  # noqa: E402
 
 
 def _registry() -> dict:
-    with open(YAML_PATH) as f:
-        return yaml.safe_load(f) or {}
+    """The shipped FortiAuthenticator baseline (the registry seed)."""
+    from app.services import api_baseline
+    return api_baseline.artifact_map("fortiauthenticator")
 
 
 # --------------------------------------------------------------------------- #

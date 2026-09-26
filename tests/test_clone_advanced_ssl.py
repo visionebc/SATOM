@@ -118,9 +118,8 @@ def test_every_new_collection_is_registered(app):
     """The GROUP being registered while its ROWS are not is exactly how a group
     travels as an empty shell.  Three sibling sub-tables were already missing
     when this was written; they are registered in the same change."""
-    import yaml, io, os
-    path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "endpoints.yaml")
-    urns = set(yaml.safe_load(io.open(path, encoding="utf-8")).values())
+    from app.services import api_baseline
+    urns = set(api_baseline.artifact_map("fortiweb").values())
     for tail in ("system/certificate.hpkp",
                  "system/certificate.urlcert",
                  "system/certificate.urlcert/list",

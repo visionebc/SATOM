@@ -15,7 +15,7 @@ Three writers, and only three:
 
 The product of a device that no longer has an appliance row is established by
 :func:`fingerprint_product`, which matches the snapshot's own endpoint keys
-against the four shipped endpoint catalogs. That is a measurement of the
+against the four endpoint registries (seeded from each product's baseline). That is a measurement of the
 snapshot, not a guess from the name: a device called ``fw7`` and a device called
 ``fortiweb11`` are identified the same way, and a name that lies is ignored.
 A snapshot that matches nothing leaves the product EMPTY rather than picking the
@@ -26,16 +26,10 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from functools import lru_cache
-from pathlib import Path
 
-#: product key -> endpoint catalog filename at the repo root.
-CATALOGS = {
-    "fortiweb": "endpoints.yaml",
-    "fortiadc": "endpoints_fortiadc.yaml",
-    "fortianalyzer": "endpoints_fortianalyzer.yaml",
-    "fortiauthenticator": "endpoints_fortiauthenticator.yaml",
-}
+#: The products a snapshot can be fingerprinted as — the four with an
+#: endpoint registry.
+CATALOGS = ("fortiweb", "fortiadc", "fortianalyzer", "fortiauthenticator")
 
 #: A fingerprint is accepted only when the best family explains this fraction of
 #: the snapshot's endpoint keys. The four catalogs overlap on generic names
@@ -48,27 +42,26 @@ MIN_COVERAGE = 0.55
 MIN_MARGIN = 0.15
 
 
-def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[2]
-
-
 def slug_for(name: str) -> str:
     from .device_sync import slugify
     return slugify(name or "")
 
 
-@lru_cache(maxsize=1)
 def _catalog_keys() -> dict:
-    """product -> frozenset of endpoint keys, read from the shipped YAML."""
-    import yaml
+    """product -> frozenset of endpoint keys, read from the endpoint registry.
+
+    The registry is seeded from the product's baseline and falls back to the
+    shipped baseline without a database, so this works in a bare script too.
+    Not memoised here: the loader already caches with a TTL, and a promotion
+    must be able to change the answer without a restart.
+    """
+    from ..registry import loader
     out = {}
-    for product, fname in CATALOGS.items():
-        path = _repo_root() / fname
+    for product in CATALOGS:
         try:
-            data = yaml.safe_load(path.read_text()) or {}
-        except (OSError, ValueError):
-            data = {}
-        out[product] = frozenset(data) if isinstance(data, dict) else frozenset()
+            out[product] = frozenset(loader.load_product_registry(product))
+        except Exception:  # noqa: BLE001 — one product must not blind the rest
+            out[product] = frozenset()
     return out
 
 

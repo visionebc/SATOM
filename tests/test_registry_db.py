@@ -1,10 +1,11 @@
 """DB-backed endpoint registry: seed, loader, editor, and drift guards.
 
 Covers the 2026-07-05 migration of the registry from a read-only
-``endpoints.yaml`` to the ``registry_endpoints`` table:
+``endpoints.yaml`` to the ``registry_endpoints`` table, and the 2026-09-26 move
+of its seed from that YAML to the build-pinned endpoint baseline:
 
-* boot seed is INSERT-ONLY (operator edits / soft-deletes always survive);
-* ``loader.resolve`` reads the DB (YAML is only the fallback);
+* the boot seed applies the baseline and never touches an operator's row;
+* ``loader.resolve`` reads the DB (the shipped baseline is only the fallback);
 * the editor is gated on ``registry_edit`` and audited;
 * the Structure dependency tree must stay fully resolvable against the
   registry (the Registry <-> dependencies.py drift guard).
@@ -16,9 +17,9 @@ import pytest
 from tests.conftest import admin_user_id, login, make_user
 
 
-def _yaml_count():
-    from app.registry.loader import _yaml_registry
-    return len(_yaml_registry())
+def _baseline_count():
+    from app.services import api_baseline
+    return len(api_baseline.artifact_map("fortiweb"))
 
 
 # ---------------------------------------------------------------------------
@@ -29,30 +30,33 @@ def test_boot_seed_populates_registry_table(app):
     from app.models import RegistryEndpoint
 
     with app.app_context():
-        assert RegistryEndpoint.query.filter_by(product="fortiweb").count() == _yaml_count()
+        assert RegistryEndpoint.query.filter_by(product="fortiweb").count() == _baseline_count()
         row = RegistryEndpoint.query.filter_by(name="server_policy").first()
         assert row is not None
         assert row.urn.startswith("/api/")
         assert row.product == "fortiweb"
         assert row.api_version == "v2.0"
         assert row.enabled is True
+        assert row.updated_by.startswith("baseline:fortiweb@")
 
 
-def test_seed_is_insert_only(app):
-    """A re-seed never overwrites an operator edit nor resurrects a disable."""
+def test_reapplying_the_baseline_spares_operator_rows(app):
+    """Re-applying never overwrites an operator edit nor resurrects a disable."""
     from app.extensions import db
     from app.models import RegistryEndpoint
-    from app.registry import loader
+    from app.services import api_baseline
 
     with app.app_context():
         edited = RegistryEndpoint.query.filter_by(name="server_policy").first()
         edited.urn = "/api/v2.0/custom/edited-by-operator"
+        edited.updated_by = "operator"
         disabled = RegistryEndpoint.query.filter_by(name="vip").first()
         disabled.enabled = False
+        disabled.updated_by = "operator"
         db.session.commit()
 
-        added = loader.seed_from_yaml()
-        assert added == 0  # nothing new to add
+        res = api_baseline.apply(api_baseline.active("fortiweb"))
+        assert res["added"] == 0 and res["operator_rows"] == 2
 
         assert RegistryEndpoint.query.filter_by(name="server_policy").first().urn \
             == "/api/v2.0/custom/edited-by-operator"
@@ -63,7 +67,7 @@ def test_seed_is_insert_only(app):
 # loader
 # ---------------------------------------------------------------------------
 
-def test_resolve_reads_the_db_not_the_yaml(app):
+def test_resolve_reads_the_db_not_the_shipped_baseline(app):
     from app.extensions import db
     from app.models import RegistryEndpoint
     from app.registry import loader
@@ -204,7 +208,7 @@ def test_section_page_renders_unified_template(app, client):
 
 def test_structure_tree_fully_backed_by_registry(app):
     """Every fetchable node of the dependency tree must resolve against the
-    registry. This is the guard against endpoints.yaml/DB ↔ dependencies.py
+    registry. This is the guard against baseline/DB ↔ dependencies.py
     drift — a rename that breaks the Structure page breaks the build here."""
     from app.services import structure
 

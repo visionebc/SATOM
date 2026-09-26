@@ -17,20 +17,15 @@ Two failures met here, and they compound.
 So the two halves are pinned together: the registry cross-check keeps the tree
 complete, and the echo guard keeps completeness safe.
 """
-import os
-
-import yaml
-
 from app.registry import dependencies as deps
 from app.registry.dependencies import DepNode, ROOTS, iter_nodes
-from app.services import clone
-
-_YAML = os.path.join(os.path.dirname(__file__), '..', 'endpoints.yaml')
+from app.services import api_baseline, clone
 
 
 def _registry_collections() -> dict[str, str]:
-    """``{collection: friendly_key}`` for every cmdb entry in endpoints.yaml."""
-    reg = yaml.safe_load(open(_YAML)) or {}
+    """``{collection: friendly_key}`` for every cmdb entry of the shipped
+    FortiWeb baseline."""
+    reg = api_baseline.artifact_map("fortiweb")
     return {v.replace('/api/v2.0/', ''): k
             for k, v in reg.items()
             if isinstance(v, str) and '/cmdb/' in v}
@@ -138,7 +133,7 @@ def test_every_declared_filter_is_a_real_registry_path():
     # The echo quirk means a typo'd path cannot be caught at runtime by a 404.
     colls = _registry_collections()
     for child in _node_for('cmdb/waf/custom-access.rule').children:
-        assert child.urn in colls, 'not in endpoints.yaml: %s' % child.urn
+        assert child.urn in colls, 'not in the FortiWeb baseline: %s' % child.urn
 
 
 def test_filters_are_labelled_for_the_operator():

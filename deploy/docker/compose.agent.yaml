@@ -1,0 +1,102 @@
+# SATOM — operations agent overlay (optional). Layered LAST:
+#
+#   installer   SETUP_AGENT=yes         (the wrapper adds this file)
+#   manual      SATOM_SETUP_AGENT=yes in .env; ./satom-docker.sh adds it
+#
+# WHAT IT GIVES BACK
+# The container runtime renounces four capabilities (app/runtime.py). With
+# this overlay the web UI can ask for three of them again -- restart a service
+# of this stack, switch the stack to another release, install a certificate
+# for the proxy -- and it reads container health for the fourth. The web never
+# performs any of it: it drops a JSON request into a volume, and the `agent`
+# service re-validates it against a closed list and does the work.
+#
+# WHAT IT COSTS — read before enabling
+# The agent mounts /var/run/docker.sock. Access to the engine API is ROOT ON
+# THE HOST, exactly like satom-updater.service on a host install. Everything
+# below exists to keep that privilege in one small container that nothing can
+# reach; docs/docker-compose.md §7 is the review checklist.
+
+services:
+  agent:
+    # The SATOM image, for the stdlib-only agent program and tls-bootstrap.sh.
+    # An update from the console recreates every service EXCEPT this one, so
+    # the agent keeps the version it started with until `satom-docker up -d`.
+    image: ${SATOM_IMAGE:-satom:local}
+    restart: unless-stopped
+    user: "0:0"
+    entrypoint: ["python3", "/opt/satom/deploy/docker/satom_agent.py"]
+    environment:
+      TZ: ${TZ:-Europe/Zurich}
+    volumes:
+      # The ONLY mount of the engine socket in the whole stack. There is a test.
+      - /var/run/docker.sock:/var/run/docker.sock
+      - satom-agent-requests:/queue/requests
+      - satom-agent-status:/queue/status
+      # Read-write: a certificate import writes public/server.{crt,key} here,
+      # exactly what `tls-bootstrap.sh import-cert` does by hand (§7.3.3).
+      - satom-pki:/opt/satom/pki
+    # NOT on the `satom` network. It listens on nothing, and a container on the
+    # stack network (web, proxy, redis...) cannot even resolve it. Its own
+    # bridge exists for one outbound purpose: downloading a release tree from
+    # GitHub for an update. Everything else it does goes through the socket.
+    networks:
+      - satom-agent
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    cap_add:
+      # chown/chmod the queue volumes to the app account (uid 999), and write
+      # into them although it is not their owner. Nothing else.
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+    healthcheck:
+      # Healthy = the heartbeat is fresh. The image HEALTHCHECK curls :8000,
+      # which this service does not serve.
+      test: ["CMD", "python3", "-c", "import json,time,sys; d=json.load(open('/queue/status/agent.heartbeat')); sys.exit(0 if time.time()-d['ts'] < 60 else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # The app side of the queue. The volumes are mounted OVER the two paths the
+  # host runner already uses, so every existing enqueue and status poll in the
+  # app works unchanged -- only the reader on the other side is different.
+  # SATOM_AGENT is a declaration, like SATOM_RUNTIME: app/runtime.py delegates
+  # a capability only when it is declared AND the heartbeat is fresh.
+  web:
+    environment:
+      SATOM_AGENT: docker
+    volumes:
+      - satom-agent-requests:/opt/satom/data/update-requests
+      - satom-agent-status:/opt/satom/data/update-status
+  scheduler:
+    environment:
+      SATOM_AGENT: docker
+    volumes:
+      - satom-agent-requests:/opt/satom/data/update-requests
+      - satom-agent-status:/opt/satom/data/update-status
+  cron:
+    environment:
+      SATOM_AGENT: docker
+    volumes:
+      - satom-agent-requests:/opt/satom/data/update-requests
+      - satom-agent-status:/opt/satom/data/update-status
+
+volumes:
+  satom-agent-requests:
+  satom-agent-status:
+
+networks:
+  satom-agent:
+    driver: bridge

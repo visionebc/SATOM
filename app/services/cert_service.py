@@ -171,7 +171,20 @@ def ca_custody() -> dict:
 # Inspect
 # ---------------------------------------------------------------------------
 def current() -> dict:
+    from .. import runtime
     from . import encryption_health as eh
+    if runtime.delegated("cert_activation"):
+        # The web does not mount satom-pki (it also holds the key and the
+        # internal CA); the agent forwards the public certificate it serves.
+        from . import container_ops
+        pem, source = container_ops.served_cert_pem()
+        info = eh.node_cert(pem) if pem else eh.node_cert(b"")
+        info["source"] = source or "bootstrap"
+        info["installed_at"] = None
+        info["hostname"] = node_hostname()
+        info["can_issue_internal"] = False
+        info["renew_threshold_days"] = RENEW_THRESHOLD_DAYS
+        return info
     info = eh.node_cert()
     m = _meta()
     info["source"] = m.get("source", ss.get_str("security.node_cert.source", "bootstrap"))
@@ -263,6 +276,14 @@ def _install(cert_pem: bytes, key_pem: bytes, chain_pem: bytes | None,
     # about nginx on a node that has no nginx -- the wrong diagnosis, pointing
     # at the wrong container.
     runtime.require("cert_activation")
+    if runtime.is_container_runtime():
+        # Reached only with a live operations agent (require() passed). This
+        # process has no satom-pki and no nginx to reload; the agent writes the
+        # pair into the proxy's volume and restarts the proxy. It re-checks
+        # the PEMs itself, and tls-bootstrap refuses a mismatched pair.
+        from . import container_ops
+        container_ops.install_cert(cert_pem, key_pem, chain_pem, by=by)
+        return current()
 
     PUB.mkdir(parents=True, exist_ok=True)
     bak = PUB / ".rollback"

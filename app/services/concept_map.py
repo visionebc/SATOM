@@ -445,6 +445,9 @@ PAGES: tuple[dict, ...] = (
     _p("self_update.index", "Software Update & HA", "resilience",
        "update satom version upgrade self reconciler deploy release install",
        "Updating SATOM itself, on both nodes."),
+    _p("container_ops.index", "Container operations", "resilience",
+       "docker container compose agent restart update image release certificate proxy health stack",
+       "A Docker node's services, release and proxy certificate, through the operations agent."),
 
     # ---- Identity & Access -------------------------------------------------
     _p("users.index", "Users", "access",
@@ -609,6 +612,7 @@ EXCLUDED: dict[str, str] = {
     "settings.library_updates": "json feed", "settings.node_cert_state": "json feed",
     "settings.peer_libraries": "json feed", "settings.peer_services": "json feed",
     "settings.services_state": "json feed", "settings.services_peers": "json feed",
+    "container_ops.state": "json feed", "container_ops.status": "json feed",
     "settings.thresholds_state": "json feed", "settings.trust_store_state": "json feed",
     "system_backup.external_content": "json feed", "system_backup.external_diff": "json feed",
     "system_backup.external_download": "file download",

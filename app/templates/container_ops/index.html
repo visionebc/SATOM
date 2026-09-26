@@ -1,0 +1,239 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Container operations') }}{% endblock %}
+{% block content %}
+<div class="fw-page-header">
+  <div>
+    <h1 class="fw-page-title"><i class="bi bi-box-seam me-2 text-accent"></i>{{ _('Container operations') }}</h1>
+    <p class="text-muted mb-0" style="font-size:13px;">
+      {{ _('Restart a service of this stack, switch it to another release and install the proxy certificate. The console only queues a request; the operations agent re-checks it against a closed list and does the work.') }}</p>
+  </div>
+</div>
+
+{% if not is_container %}
+<div class="card"><div class="card-body text-muted" style="font-size:13px;">
+  {{ _('This node is a host install. Its services, updates and certificate are managed from Settings → Services, Software Update and Node certificate.') }}
+</div></div>
+{% else %}
+
+<div class="row g-3">
+  <!-- Agent -->
+  <div class="col-lg-5">
+    <div class="card mb-3" id="co-agent-card">
+      <div class="card-header d-flex align-items-center gap-2">
+        <strong>{{ _('Operations agent') }}</strong>
+        {% if agent.live %}<span class="fw-badge fw-badge-success">{{ _('live') }}</span>
+        {% elif agent.declared %}<span class="fw-badge fw-badge-danger">{{ _('not answering') }}</span>
+        {% else %}<span class="fw-badge fw-badge-secondary">{{ _('not enabled') }}</span>{% endif %}
+      </div>
+      <div class="card-body" style="font-size:13px;">
+        {% if agent.live %}
+          <div>{{ _('Last heartbeat') }}: <strong>{{ agent.age }} s</strong> {{ _('ago') }}</div>
+          <div>{{ _('Agent version') }}: <code>{{ versions.agent_version or '?' }}</code>
+            · {{ _('stack') }}: <code>{{ versions.current or '?' }}</code></div>
+          {% if versions.agent_version and versions.current and versions.agent_version != versions.current %}
+          <div class="fw-badge fw-badge-warning mt-2">{{ _('agent and stack differ') }}</div>
+          <div class="text-muted small mt-1">{{ _('An update never recreates the agent. Run') }} <code>satom-docker up -d</code> {{ _('on the host to bring it to the stack version.') }}</div>
+          {% endif %}
+          <div class="text-muted small mt-2">{{ _('Layout') }}: {{ versions.layout or '?' }}
+            {% if versions.layout == 'manual' %}— {{ _('updates from the console need the installer layout') }}{% endif %}</div>
+        {% elif agent.declared %}
+          <div class="text-danger">{{ agent.problem or _('no heartbeat') }}</div>
+          <div class="text-muted small mt-1">{{ _('Nothing is queued while the agent is silent. On the host:') }}
+            <code>satom-docker ps agent</code> · <code>satom-docker logs agent</code></div>
+        {% else %}
+          <div class="text-muted">{{ _('The stack runs without the optional agent, so these operations are done on the host with the satom-docker wrapper. To enable it, run the installer again and answer yes to the operations agent, or set SATOM_SETUP_AGENT=yes for a manual checkout.') }}</div>
+          <div class="text-muted small mt-2">{{ _('The agent mounts the Docker socket: whoever controls it is root on the host. Read docs/docker-compose.md §7 before enabling it.') }}</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="card mb-3">
+      <div class="card-header"><strong>{{ _('Capabilities') }}</strong></div>
+      <div class="card-body p-0">
+        <table class="table table-sm align-middle mb-0" style="font-size:12.5px;">
+          <tbody>
+          {% for name, ok in summary.capabilities.items() %}
+            <tr><td><code>{{ name }}</code></td>
+              <td>{% if ok %}<span class="fw-badge fw-badge-success">{{ _('via agent') }}</span>
+                  {% else %}<span class="fw-badge fw-badge-secondary">{{ _('unavailable') }}</span>{% endif %}</td>
+              <td class="text-muted" style="font-size:11.5px;">{{ summary.reasons.get(name, '') }}</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Services -->
+  <div class="col-lg-7">
+    <div class="card mb-3">
+      <div class="card-header"><strong>{{ _('Services of this stack') }}</strong></div>
+      <div class="card-body p-0">
+        <table class="table table-sm align-middle mb-0" style="font-size:12.5px;" id="co-services">
+          <thead><tr><th>{{ _('Service') }}</th><th>{{ _('State') }}</th><th>{{ _('Notes') }}</th><th class="text-end">{{ _('Actions') }}</th></tr></thead>
+          <tbody>
+          {% for s in services %}
+            <tr>
+              <td><strong>{{ s.label }}</strong><br><code style="font-size:11px;">{{ s.unit }}</code></td>
+              <td>{% if not s.installed %}<span class="fw-badge fw-badge-secondary">{{ _('no container') }}</span>
+                  {% elif s.ok %}<span class="fw-badge fw-badge-success">{{ s.active }}{% if s.sub %} · {{ s.sub }}{% endif %}</span>
+                  {% else %}<span class="fw-badge fw-badge-danger">{{ s.active }}{% if s.sub %} · {{ s.sub }}{% endif %}</span>{% endif %}</td>
+              <td class="text-muted" style="font-size:11.5px;">{{ s.note }}</td>
+              <td class="text-end">
+                {% for a in s.available %}
+                <button type="button" class="btn btn-sm btn-outline-secondary ms-1" style="font-size:11px;padding:1px 9px;"
+                        data-co-service="{{ s.unit }}" data-co-action="{{ a }}">{{ a }}</button>
+                {% else %}<span class="text-muted">—</span>{% endfor %}
+              </td>
+            </tr>
+          {% else %}
+            <tr><td colspan="4" class="text-muted" style="font-size:12px;">{{ summary.reasons.get('service_control', _('No agent, so no containers to control.')) }}</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card mb-3">
+      <div class="card-header"><strong>{{ _('Update') }}</strong></div>
+      <div class="card-body" style="font-size:13px;">
+        <div class="mb-2">{{ _('The stack runs') }} <code>{{ versions.current or '?' }}</code>.
+          {{ _('An update downloads the release from GitHub if it is not here yet, builds its image, recreates every service except the agent on it, and rolls back if the console does not come back healthy.') }}</div>
+        {% if versions.rows %}
+        <div class="text-muted small mb-2">{{ _('Already on this host') }}:
+          {% for v in versions.rows %}<code>{{ v.version }}</code>{% if not v.image %} ({{ _('tree only') }}){% endif %}{% if not loop.last %}, {% endif %}{% endfor %}</div>
+        {% endif %}
+        <div class="d-flex gap-2 align-items-center">
+          <input type="text" class="form-control form-control-sm" id="co-version" placeholder="2.3.1" style="max-width:120px;" {{ 'disabled' if not agent.live or versions.layout != 'installer' }}>
+          <input type="text" class="form-control form-control-sm" id="co-confirm" placeholder="{{ _('type UPDATE') }}" style="max-width:140px;" {{ 'disabled' if not agent.live or versions.layout != 'installer' }}>
+          <button type="button" class="btn btn-fw-primary btn-sm" id="co-update" {{ 'disabled' if not agent.live or versions.layout != 'installer' }}>
+            <i class="bi bi-download me-1"></i>{{ _('Update this node') }}</button>
+        </div>
+        <div class="text-muted small mt-2">{{ _('Per node: on a primary + standby pair, update the standby first. A release older than the one that introduced the agent has no Container operations page: after switching to it, use satom-docker on the host.') }}</div>
+      </div>
+    </div>
+
+    <div class="card mb-3">
+      <div class="card-header"><strong>{{ _('Proxy certificate') }}</strong></div>
+      <div class="card-body" style="font-size:13px;">
+        <form id="co-cert-form" enctype="multipart/form-data">
+          <div class="row g-2">
+            <div class="col-md-4"><label class="small text-muted">{{ _('Certificate (PEM)') }}</label><input type="file" name="cert" class="form-control form-control-sm" required></div>
+            <div class="col-md-4"><label class="small text-muted">{{ _('Private key (PEM)') }}</label><input type="file" name="key" class="form-control form-control-sm" required></div>
+            <div class="col-md-4"><label class="small text-muted">{{ _('Chain (optional)') }}</label><input type="file" name="chain" class="form-control form-control-sm"></div>
+          </div>
+          <button type="submit" class="btn btn-outline-secondary btn-sm mt-2" {{ 'disabled' if not agent.live }}>
+            <i class="bi bi-shield-lock me-1"></i>{{ _('Install and restart the proxy') }}</button>
+          <span id="co-cert-result" class="ms-2 small"></span>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-header"><strong>{{ _('Recent agent requests') }}</strong></div>
+  <div class="card-body p-0">
+    <table class="table table-sm align-middle mb-0" style="font-size:12.5px;">
+      <thead><tr><th>{{ _('Request') }}</th><th>{{ _('Kind') }}</th><th>{{ _('Target') }}</th><th>{{ _('By') }}</th><th>{{ _('State') }}</th><th>{{ _('Log') }}</th></tr></thead>
+      <tbody id="co-history">
+      {% for h in history %}
+        <tr data-co-uid="{{ h.id }}">
+          <td><code style="font-size:11px;">{{ h.id }}</code></td>
+          <td>{{ h.kind }}</td><td>{{ h.target or h.unit or '' }}{% if h.action %} · {{ h.action }}{% endif %}</td>
+          <td>{{ h.requested_by }}</td>
+          <td>{% if h.state == 'success' %}<span class="fw-badge fw-badge-success">success</span>
+              {% elif h.state == 'failed' %}<span class="fw-badge fw-badge-danger">failed</span>
+              {% else %}<span class="fw-badge fw-badge-warning">{{ h.state }}</span>{% endif %}</td>
+          <td class="text-muted" style="font-size:11px;">{% for s in h.steps or [] %}<div>{{ '✓' if s.ok else '✗' }} {{ s.name }}{% if s.detail %} — {{ s.detail[:160] }}{% endif %}</div>{% endfor %}{% if h.error %}<div class="text-danger">{{ h.error }}</div>{% endif %}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="6" class="text-muted">{{ _('No requests yet.') }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if is_container %}
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var csrf = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
+  function post(url, body) {
+    return fetch(url, {method: 'POST', credentials: 'same-origin',
+      headers: {'X-CSRFToken': csrf, 'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'},
+      body: JSON.stringify(body)}).then(function (r) {
+        return r.json().then(function (j) { return {ok: r.ok, j: j}; });
+      });
+  }
+  function watch(uid) {
+    /* The web may restart under us (restart web, update): a failed poll is the
+       expected middle of a restart, not a verdict. Keep polling. */
+    var n = 0;
+    function tick() {
+      n += 1;
+      fetch('{{ url_for("container_ops.status", uid="__UID__") }}'.replace('__UID__', uid),
+            {credentials: 'same-origin'})
+        .then(function (r) { return r.json(); })
+        .then(function (st) {
+          if (st.state === 'success' || st.state === 'failed') {
+            window.location = '{{ url_for("container_ops.index") }}?watch=' + encodeURIComponent(uid);
+          } else if (n < 600) { setTimeout(tick, 3000); }
+        })
+        .catch(function () { if (n < 600) setTimeout(tick, 3000); });
+    }
+    tick();
+  }
+  document.querySelectorAll('button[data-co-service]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var svc = b.getAttribute('data-co-service'), act = b.getAttribute('data-co-action');
+      if (!window.confirm(act + ' ' + svc + '?')) return;
+      b.disabled = true;
+      post('{{ url_for("container_ops.service_action") }}', {service: svc, action: act})
+        .then(function (res) {
+          if (!res.ok) { window.alert(res.j.error || 'refused'); b.disabled = false; return; }
+          watch(res.j.uid);
+        });
+    });
+  });
+  var up = document.getElementById('co-update');
+  if (up) up.addEventListener('click', function () {
+    var v = (document.getElementById('co-version').value || '').trim();
+    var c = (document.getElementById('co-confirm').value || '').trim();
+    up.disabled = true;
+    post('{{ url_for("container_ops.update") }}', {version: v, confirm: c})
+      .then(function (res) {
+        if (!res.ok) { window.alert(res.j.error || 'refused'); up.disabled = false; return; }
+        watch(res.j.uid);
+      });
+  });
+  var form = document.getElementById('co-cert-form');
+  if (form) form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var out = document.getElementById('co-cert-result');
+    out.textContent = '{{ _("installing…") }}';
+    fetch('{{ url_for("container_ops.cert") }}', {method: 'POST', credentials: 'same-origin',
+      headers: {'X-CSRFToken': csrf, 'X-Requested-With': 'XMLHttpRequest'},
+      body: new FormData(form)})
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        out.className = 'ms-2 small ' + (j.ok ? 'text-success' : 'text-danger');
+        out.textContent = j.ok ? ('installed: ' + (j.cert.subject || '') + ' · ' + (j.cert.days_left) + ' days')
+                               : (j.error || 'refused');
+      })
+      .catch(function () { out.className = 'ms-2 small text-danger'; out.textContent = 'request failed'; });
+  });
+  var w = '{{ watch }}';
+  if (w) {
+    var row = document.querySelector('tr[data-co-uid="' + w.replace(/[^A-Za-z0-9_-]/g, '') + '"]');
+    if (row) { row.classList.add('table-active'); row.scrollIntoView({block: 'center'}); }
+    if (row && row.querySelector('.fw-badge-warning')) watch(w);
+  }
+})();
+</script>
+{% endif %}
+{% endblock %}

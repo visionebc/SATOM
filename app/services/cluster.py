@@ -167,6 +167,11 @@ def request_promote(by: str) -> str:
     """Enqueue a guarded failover. The privileged root runner picks this up,
     runs ``deploy/satom-promote.sh`` (pg promote + start app), and writes a status
     JSON the UI polls. Returns the request uid."""
+    from .. import runtime
+    # No container process executes satom-promote.sh -- not even the
+    # operations agent, which refuses the kind. Accepting it would show a
+    # failover as queued on the node the operator is trying to save.
+    runtime.require("ha_promote")
     REQ_DIR.mkdir(parents=True, exist_ok=True)
     uid = "promote-" + datetime.utcnow().strftime("%Y%m%d-%H%M%S")
     payload = {

@@ -333,6 +333,11 @@ def request_update(target: str, by: str, *, do_pip: bool = True,
     # In a container the correct update is "deploy a new image tag", so a
     # second, broken way to update is worse than none.
     runtime.require("self_update")
+    if runtime.is_container_runtime():
+        # Reached only with a live agent (require() passed). The agent updates
+        # by release version, never by git revision: point there.
+        raise runtime.CapabilityUnavailable("self_update",
+                                            runtime.CONTAINER_UPDATE_REDIRECT)
 
     REQ_DIR.mkdir(parents=True, exist_ok=True)
     STATUS_DIR.mkdir(parents=True, exist_ok=True)
@@ -417,6 +422,9 @@ def request_pip_change(package: str, version: str, by: str, *,
     from .. import runtime
     # Same runner, same reason: pip changes are baked into the image.
     runtime.require("self_update")
+    if runtime.is_container_runtime():
+        raise runtime.CapabilityUnavailable("self_update",
+                                            runtime.CONTAINER_UPDATE_REDIRECT)
 
     package = (package or "").strip()
     version = (version or "").strip()

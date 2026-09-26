@@ -11,6 +11,7 @@ from flask import (Blueprint, render_template, request, redirect, url_for,
                    flash, jsonify)
 from flask_login import login_required, current_user
 
+from .. import runtime
 from ..auth.decorators import require_permission
 from ..services import self_update as su
 from ..services import cluster
@@ -73,12 +74,16 @@ def apply():
         flash("Already up to date — nothing to apply.", "info")
         return redirect(url_for("self_update.index"))
 
-    uid = su.request_update(
-        target,
-        by=getattr(current_user, "username", "?"),
-        do_pip="do_pip" in request.form,
-        do_migrate="do_migrate" in request.form,
-    )
+    try:
+        uid = su.request_update(
+            target,
+            by=getattr(current_user, "username", "?"),
+            do_pip="do_pip" in request.form,
+            do_migrate="do_migrate" in request.form,
+        )
+    except runtime.CapabilityUnavailable as exc:
+        flash(exc.reason, "warning")
+        return redirect(url_for("self_update.index"))
     flash("Update queued (%s). The privileged runner is applying it — watch the "
           "live status below. The service will restart mid-update." % uid,
           "success")
@@ -155,7 +160,11 @@ def promote():
         flash("Confirmation failed: type this node's hostname (%s) exactly to "
               "promote it." % this_node, "danger")
         return redirect(url_for("ha.index"))
-    uid = cluster.request_promote(by=getattr(current_user, "username", "?"))
+    try:
+        uid = cluster.request_promote(by=getattr(current_user, "username", "?"))
+    except runtime.CapabilityUnavailable as exc:
+        flash(exc.reason, "warning")
+        return redirect(url_for("ha.index"))
     flash("Failover queued (%s). The privileged runner is promoting this node to "
           "PRIMARY and starting the app — watch the status below. Only promote "
           "when the old primary is confirmed DOWN." % uid, "success")

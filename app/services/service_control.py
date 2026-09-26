@@ -173,6 +173,15 @@ def states() -> list[dict]:
     standalone install) comes back neutral with no buttons, never as a red
     'stopped' the operator would try to fix.
     """
+    from .. import runtime
+    if runtime.is_container_runtime():
+        # No systemd here. With the agent, the rows are the stack's containers
+        # as its heartbeat reports them; without it there is nothing honest to
+        # draw (systemctl would call every unit "not installed").
+        if runtime.delegated("service_control"):
+            from . import container_ops
+            return container_ops.service_rows()
+        return []
     out = []
     for unit, entry in POLICY.items():
         installed = _show(unit, "LoadState") != "not-found"
@@ -437,6 +446,11 @@ def request_service_action(unit: str, action: str, by: str,
     # would leave it "queued" forever -- an action the operator watched succeed
     # and that never happened.
     runtime.require("service_control")
+    if runtime.delegated("service_control"):
+        # Container with a live operations agent: the "units" are the stack's
+        # compose services, and the agent re-validates against its own table.
+        from . import container_ops
+        return container_ops.request_restart(unit, action, by=by, origin=origin)
 
     from . import self_update as su  # queue paths live in exactly one module
 

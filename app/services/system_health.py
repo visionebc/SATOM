@@ -268,6 +268,11 @@ def service_status(units: tuple[str, ...] = MONITORED_UNITS) -> list[dict]:
     ``LoadState`` tells them apart, so a missing unit is reported with
     ``ok=None`` (neutral, grey) instead of red.
     """
+    if runtime.delegated("unit_health"):
+        # Container with a live operations agent: report the containers, as
+        # the engine sees them, instead of units that do not exist.
+        from . import container_ops
+        return container_ops.health_rows()
     if not runtime.capability("unit_health"):
         # There is no systemd here. Letting the loop below run would report
         # every unit as "not installed" -- literally true, and operationally a

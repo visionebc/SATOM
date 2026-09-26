@@ -37,6 +37,12 @@ compose_files() {
             f+=(-f "$HERE/compose.standby.yaml")
         fi
     fi
+    # The optional operations agent (compose.agent.yaml): LAST, so its volumes
+    # land on the app services whatever the overlays above did. The variable
+    # carries the installer's name so one .env means the same on both routes.
+    if [ "${SATOM_SETUP_AGENT:-no}" = "yes" ]; then
+        f+=(-f "$HERE/compose.agent.yaml")
+    fi
     printf '%s\n' "${f[@]}"
 }
 
@@ -152,8 +158,12 @@ health)
     docker compose $(compose_files) --env-file "$ENV_FILE" \
         exec -T web /opt/satom/deploy/docker/node-role.sh || echo "(db not reachable)"
     echo
-    echo "== app =="
-    curl -fsS "http://127.0.0.1:${SATOM_HTTP_BIND##*:}/healthz" && echo
+    echo "== app (through the proxy) =="
+    # SATOM_HTTP_BIND is retired (load_env refuses it): the app is reached
+    # through the TLS proxy, like every browser. -k because the default
+    # certificate is the stack's own.
+    _port="${SATOM_HTTPS_BIND:-0.0.0.0:443}"; _port="${_port##*:}"
+    curl -fsSk --max-time 10 "https://127.0.0.1:${_port}/healthz" && echo || echo "(healthz did not answer on :${_port})"
     echo
     echo "== runtime capabilities =="
     docker compose $(compose_files) --env-file "$ENV_FILE" \

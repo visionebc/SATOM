@@ -336,12 +336,17 @@ def services_state():
     Read-only and unprivileged (`systemctl show` answers any user), so the card
     renders on every page load without opening a privileged path.
     """
+    from .. import runtime
     from ..services import service_control as svc
     from ..services import self_update as su
     return jsonify({
         'node': su.this_node_name(),
         'role': su.node_role(),
         'units': svc.states(),
+        # Empty on a host. In a container it is the reason there is nothing
+        # to control (no agent, or an agent that stopped answering).
+        'note': runtime.unavailable_reason('service_control'),
+        'runtime': runtime.runtime(),
     })
 
 

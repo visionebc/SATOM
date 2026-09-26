@@ -159,6 +159,7 @@ page.
 | [`source-of-truth-spec.md`](source-of-truth-spec.md) | The authoritative behavioural specification. |
 | [`api_v1.md`](api_v1.md) | Token authentication and the public API surface. |
 | [`device-api.md`](device-api.md) | The device API consoles, the endpoint registry behind them, reconciling that registry against the fleet, and the firmware-line field matrix. |
+| [`api-library.md`](api-library.md) | The versioned API library: what each firmware build of each product serves, field by field, where that evidence comes from (sweeps, live schemas, vendor data), and how it is refreshed. |
 | [`fortiauthenticator.md`](fortiauthenticator.md) | How the identity product is wired: its Django/Tastypie REST dialect, the per-user API key, the pagination trap and the 18-character product-key ceiling it exposed. |
 
 ### Managed-device reference

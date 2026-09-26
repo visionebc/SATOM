@@ -253,6 +253,9 @@ def compose_files(home: str, env: dict) -> list[str]:
     agent = os.path.join(d, "compose.agent.yaml")
     if env.get("SATOM_SETUP_AGENT", "no") == "yes" and os.path.isfile(agent):
         f += ["-f", agent]
+        setup_agent = os.path.join(home, "compose.setup-agent.yaml")
+        if os.path.isfile(setup_agent):
+            f += ["-f", setup_agent]
     return f
 
 
@@ -744,10 +747,6 @@ def stage_release(st: Status, version: str) -> Path:
         if not ((tree / "Dockerfile").is_file()
                 and (tree / "deploy" / "docker" / "compose.yaml").is_file()):
             raise Refused("release v%s does not ship the Docker stack" % version)
-        if not (tree / "deploy" / "docker" / "compose.agent.yaml").is_file():
-            st.step("release v%s has no operations agent" % version, True,
-                    "the console loses these controls after the switch; "
-                    "use satom-docker from then on")
         bad = bad_network_literals(tree)
         if bad:
             raise Refused("release v%s carries invalid networks: %s"
@@ -772,6 +771,12 @@ def do_update(st: Status, version: str) -> None:
         raise Refused("the stack already runs %s" % image)
     st.set(target=version, previous=old_image)
     tree = stage_release(st, version)
+    if not (tree / "deploy" / "docker" / "compose.agent.yaml").is_file():
+        # Refused, not attempted: this install's overlays define the agent, a
+        # release without compose.agent.yaml cannot, and the switch would fail
+        # half-way. Going back before the agent is the installer's job.
+        raise Refused("release v%s does not ship the operations agent; switch to "
+                      "it with satom-setup.sh --version %s on the host" % (version, version))
     if image not in image_tags():
         st.step("build %s" % image, True, "started (5-15 min the first time)")
         rc, out = run_helper(["docker", "build", "-t", image, str(tree)], timeout=3600)

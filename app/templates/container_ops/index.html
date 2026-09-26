@@ -109,7 +109,7 @@
           <button type="button" class="btn btn-fw-primary btn-sm" id="co-update" {{ 'disabled' if not agent.live or versions.layout != 'installer' }}>
             <i class="bi bi-download me-1"></i>{{ _('Update this node') }}</button>
         </div>
-        <div class="text-muted small mt-2">{{ _('Per node: on a primary + standby pair, update the standby first. A release older than the one that introduced the agent has no Container operations page: after switching to it, use satom-docker on the host.') }}</div>
+        <div class="text-muted small mt-2">{{ _('Per node: on a primary + standby pair, update the primary first — schema changes can only be applied on the writable primary — then the standby. Releases without the operations agent are refused here: switch to them with satom-setup.sh on the host.') }}</div>
       </div>
     </div>
 

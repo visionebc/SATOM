@@ -11506,8 +11506,8 @@ msgid "The endpoint"
 msgstr "Il punto finale"
 
 #: app/templates/registry/index.html:192
-msgid "The endpoint registry is seeded from endpoints.yaml at first boot."
-msgstr "Il registro degli endpoint viene popolato dai dati presenti nel file `endpoints.yaml` durante il primo avvio."
+msgid "The endpoint registry is seeded from the product endpoint baseline at boot."
+msgstr "Il registro degli endpoint viene popolato all'avvio dalla baseline degli endpoint del prodotto."
 
 #: app/templates/attack_search/index.html:168
 msgid "The feed is working — these are the newest rows this appliance holds. If the ID you searched is older than these, it has aged out of the log."

@@ -68,8 +68,9 @@
       <a href="#6-service-api-appservicesapi_librarypy">6. Service API (app/services/api_library.py)</a>
       <a href="#7-who-reads-it">7. Who reads it</a>
       <a href="#8-operations">8. Operations</a>
-      <a href="#9-limits-that-do-not-go-away">9. Limits that do not go away</a>
-      <a href="#10-troubleshooting">10. Troubleshooting</a>
+      <a href="#9-endpoint-baselines--the-registrys-seed">9. Endpoint baselines — the registry&#x27;s seed</a>
+      <a href="#10-limits-that-do-not-go-away">10. Limits that do not go away</a>
+      <a href="#11-troubleshooting">11. Troubleshooting</a>
     </aside>
     <div class="doc-body mdx">
 <h1 id="api-library--versioned-append-only-in-the-database">API library — versioned, append-only, in the database</h1>
@@ -78,7 +79,8 @@
 engineers who write an adapter or a reader. Operator walkthroughs of the
 pages built on it are in the <a href="user-guide.html">User guide</a> §30.5,
 §30.8–§30.10 and §41.8–§41.9; the guards are catalogued in
-<a href="safeguards.html">Safeguards</a> §192–§193.</p>
+<a href="safeguards.html">Safeguards</a> §192–§193 and §196 (endpoint baselines, §9
+below).</p>
 <p><strong>Since:</strong> SATOM 2.2.0.</p>
 </blockquote>
 <p>The API library is SATOM's record of <strong>which API each firmware build serves</strong>:
@@ -485,6 +487,10 @@ sudo -u satom env FLASK_APP=wsgi:app venv/bin/flask apilib &lt;command&gt;
 <td><code>flask apilib harvest-fac [--appliance NAME]</code></td>
 <td>reads the live schema of every FortiAuthenticator, or one, and ingests it</td>
 </tr>
+<tr>
+<td><code>flask apilib baseline status\|promote\|adopt\|export\|apply\|check\|resolve</code></td>
+<td>the endpoint baselines that seed the registry (§9)</td>
+</tr>
 </tbody>
 </table>
 <p>Every command writes through <code>ingest</code>, so every command is safe to re-run:
@@ -589,7 +595,252 @@ harvests; the scheduled action and the CLI still work.</p>
 database of the application that is running them, never to one captured
 earlier in the process.</p>
 <hr>
-<h2 id="9-limits-that-do-not-go-away">9. Limits that do not go away</h2>
+<h2 id="9-endpoint-baselines--the-registrys-seed">9. Endpoint baselines — the registry's seed</h2>
+<blockquote>
+<p><strong>Since:</strong> SATOM 2.4.0 (unreleased). Replaced the four <code>endpoints*.yaml</code>
+files at the repository root.</p>
+</blockquote>
+<p>The <strong>endpoint registry</strong> (<code>registry_endpoints</code>, the map from a logical name
+such as <code>server_policy</code> to the URN SATOM calls) is a different thing from the
+library: the library records <em>what each build serves</em>, the registry is <em>what
+SATOM calls</em>. Until 2.4 the registry was seeded from four hand-written YAML
+files that never said which firmware they described, and whose insert-only
+seed could add a name but never correct one. Such a seed goes stale by
+construction: three years on, it still describes whatever firmware was current
+when someone last edited it.</p>
+<p>A <strong>baseline</strong> is the registry's seed, pinned to one firmware build and
+produced from what the library measured on that build.</p>
+<h3 id="91-the-contract">9.1 The contract</h3>
+<ul>
+<li><strong>Pinned to a build.</strong> "The FortiWeb catalog as of 7.6.8", not "the FortiWeb
+  catalog". The API protocol (<code>v2.0</code>, <code>v1</code>, <code>jsonrpc</code>) is recorded separately:
+  it is not the firmware and it is not what changes between builds.</li>
+<li><strong>Promoted from measurements, never written by hand.</strong> Promotion takes the
+  library's measured sources for that build (<code>sweep</code>, <code>schema</code>, <code>manual</code>,
+  <code>legacy_matrix</code>; never <code>vendor_doc</code>). A build nobody measured cannot be
+  promoted.</li>
+<li><strong>Sealed.</strong> The content (product, build, protocol and every entry) is hashed
+  with SHA-256. Timestamps and the note are outside the hash, so promoting the
+  same content twice is one row.</li>
+<li><strong>Shipped as a generated artifact.</strong> Each product's active baseline lives in
+  <code>app/registry/baselines/&lt;product&gt;.json</code>, one entry per line so a promotion
+  reads as a reviewable <code>git diff</code>. The application <strong>refuses</strong> an artifact
+  whose seal does not match its content: a hand edit is rejected at boot, not
+  half-applied.</li>
+<li><strong>Applied at boot.</strong> On every install path (native, Docker, a fresh
+  database, an upgrade), the application inserts the shipped baseline if the
+  database lacks it and reconciles the registry to the active one, <strong>once per
+  promotion</strong>. The data does not travel as an alembic migration: a fresh
+  installation builds its schema with <code>db.create_all()</code> and never runs
+  <code>flask db upgrade</code>, so a data migration would never reach it. Migration
+  <code>apibl01</code> creates the two tables only.</li>
+<li><strong>Append-only.</strong> Promoting adds a baseline; it never rewrites an old one. The
+  active baseline of a product is the one promoted last. Re-promoting old
+  content re-activates the existing row instead of duplicating it.</li>
+<li><strong>Operators still win.</strong> A registry row the baseline wrote carries
+  <code>updated_by = baseline:&lt;product&gt;@&lt;build&gt;</code> (rows from before 2.4 carry the
+  legacy <code>seed</code> and are adopted). A row an operator edited, disabled or created
+  carries the operator's name and is <strong>never</strong> touched by a baseline.</li>
+</ul>
+<h3 id="92-entry-provenance">9.2 Entry provenance</h3>
+<p>Every entry says why it is in the baseline.</p>
+<table>
+<thead>
+<tr>
+<th>provenance</th>
+<th>meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>measured</code></td>
+<td>the baseline build served it; the URN comes from that evidence</td>
+</tr>
+<tr>
+<td><code>carried</code></td>
+<td>the baseline build has no evidence about it (no sweep reaches it); kept from the previous baseline, with <code>measured_on</code> naming the build that did prove it</td>
+</tr>
+<tr>
+<td><code>legacy</code></td>
+<td>adopted from the retired YAML seed and never measured on any build</td>
+</tr>
+<tr>
+<td><code>contradicted</code></td>
+<td>adopted from the YAML, but the baseline build measured it <strong>absent</strong>. Kept so that adoption changed nothing; the next promotion that measures it drops it, and <code>check</code> lists it</td>
+</tr>
+</tbody>
+</table>
+<h3 id="93-what-a-promotion-does">9.3 What a promotion does</h3>
+<p><code>flask apilib baseline promote --product P --build X</code> computes the new baseline
+and prints the diff against the active one. It changes nothing without
+<code>--apply</code>:</p>
+<ul>
+<li>a name build X <strong>served</strong> comes in (<code>+</code>), with the URN the evidence carries.
+  When the vendor moved a resource, this is how the registry follows (<code>~</code>);</li>
+<li>a name build X measured <strong>absent</strong> goes out (<code>-</code>);</li>
+<li>a name build X has <strong>no evidence about</strong> is carried, and says so.</li>
+</ul>
+<p>With <code>--apply</code> the baseline is stored and the registry is reconciled: missing
+rows are added, baseline-owned rows are corrected, re-tagged or soft-disabled,
+and operator rows are counted and left alone. <code>--export</code> also rewrites the
+product's artifact. That is release work: commit the artifact, and every
+installation receives the baseline on its next boot.</p>
+<h3 id="94-resolving-a-name-on-a-build">9.4 Resolving a name on a build</h3>
+<p><code>api_baseline.resolve_at(product, name, build)</code> (CLI:
+<code>flask apilib baseline resolve</code>) answers with an authority, in this order:</p>
+<table>
+<thead>
+<tr>
+<th>status</th>
+<th>when</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>override</code> / <code>disabled</code></td>
+<td>an operator's registry row exists for the name</td>
+</tr>
+<tr>
+<td><code>measured</code> / <code>absent</code></td>
+<td>the library measured that exact build</td>
+</tr>
+<tr>
+<td><code>baseline</code></td>
+<td>the build is not measured; the active baseline answers, labelled as an assumption</td>
+</tr>
+<tr>
+<td><code>absent</code></td>
+<td>a baseline exists and does not list the name</td>
+</tr>
+<tr>
+<td><code>unmeasured</code></td>
+<td>there is no baseline at all</td>
+</tr>
+</tbody>
+</table>
+<p>It never returns a guessed URN.</p>
+<h3 id="95-checking-for-drift">9.5 Checking for drift</h3>
+<p><code>flask apilib baseline check</code> compares, per product, the registry with the
+active baseline (missing rows, baseline-owned rows with the wrong URN, rows the
+baseline dropped that are still enabled, whether the baseline was applied) and
+the baseline with the evidence of <strong>every build the fleet runs today</strong> (served,
+measured absent, URN mismatches, names only the baseline vouches for).
+Operator rows are listed as overrides, not as drift. It exits with status 1
+when anything drifted, so it can gate a release.</p>
+<h3 id="96-commands">9.6 Commands</h3>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>flask apilib baseline status</code></td>
+<td>the active baseline of each registry product: build, protocol, method, entries per provenance, applied or not, seal</td>
+</tr>
+<tr>
+<td><code>flask apilib baseline promote --product P --build X [--apply] [--export] [--note TEXT]</code></td>
+<td>§9.3. Dry run without <code>--apply</code></td>
+</tr>
+<tr>
+<td><code>flask apilib baseline check [--product P]</code></td>
+<td>§9.5. Exit status 1 on drift</td>
+</tr>
+<tr>
+<td><code>flask apilib baseline resolve --product P [--build X] NAME</code></td>
+<td>§9.4</td>
+</tr>
+<tr>
+<td><code>flask apilib baseline apply [--product P]</code></td>
+<td>reconcile the registry to the active baseline again</td>
+</tr>
+<tr>
+<td><code>flask apilib baseline export [--product P]</code></td>
+<td>rewrite the artifact(s) from the active baseline</td>
+</tr>
+<tr>
+<td><code>flask apilib baseline adopt --product P --build X FILE</code></td>
+<td>one-time import of a legacy flat <code>name: urn</code> map as a product's <strong>first</strong> baseline; refused once one exists</td>
+</tr>
+</tbody>
+</table>
+<h3 id="97-the-first-baselines">9.7 The first baselines</h3>
+<p>The four shipped baselines were adopted from the retired YAML seeds, with each
+entry labelled against the library's evidence. Adoption changed nothing the
+registry serves: on the reference installation the 877 registry rows were
+identical (name, URN, enabled) before and after, and <code>check</code> reported no URN
+mismatch on any build the fleet runs.</p>
+<table>
+<thead>
+<tr>
+<th>product</th>
+<th>pinned build</th>
+<th>protocol</th>
+<th>entries</th>
+<th>provenance</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>FortiWeb</td>
+<td>7.6.8</td>
+<td><code>v2.0</code></td>
+<td>517</td>
+<td>287 measured, 191 legacy, 39 contradicted</td>
+</tr>
+<tr>
+<td>FortiADC</td>
+<td>8.0.3</td>
+<td><code>v1</code></td>
+<td>255</td>
+<td>217 measured, 38 legacy</td>
+</tr>
+<tr>
+<td>FortiAnalyzer</td>
+<td>7.6.7</td>
+<td><code>jsonrpc</code></td>
+<td>64</td>
+<td>64 legacy</td>
+</tr>
+<tr>
+<td>FortiAuthenticator</td>
+<td>8.0.3</td>
+<td><code>v1</code></td>
+<td>40</td>
+<td>40 measured</td>
+</tr>
+</tbody>
+</table>
+<p><strong>The 39 contradicted FortiWeb entries</strong> are names the 7.6.8 sweep measured as
+not served (36 of them are also absent on 8.0.5). They include
+<code>web_protection_profile</code>, <code>load_balance</code> and <code>server_pool_rule</code>. They stayed
+because dropping 39 names from what clones, sweeps and the explorer resolve is
+a change of behaviour, not a change of storage. The next FortiWeb promotion
+proposes to drop them, and the diff shows which ones.</p>
+<p><strong>What the YAML comments recorded</strong>, preserved here because the files are gone:</p>
+<ul>
+<li><em>FortiAnalyzer.</em> Every entry was probed live (<code>get</code>, code 0) against a
+  FortiAnalyzer 7.6.7 build 3737 on 2026-07-12. URNs are JSON-RPC URLs: two
+  dialects, picked by the client from the URL family (<code>/cli /dvmdb /sys /task</code>
+  use the legacy envelope; <code>/logview /eventmgmt /incidentmgmt /report
+  /fortiview /fazsys</code> use JSON-RPC 2.0 with <code>apiver 3</code>). ADOM-scoped URIs keep
+  <code>adom/root</code>, which works with Admin Domains disabled. The alert-log detail
+  needs <code>?alertid=&lt;id&gt;</code> (-32002 without it), and a report <code>get</code> needs
+  <code>state=generated</code> and a time range, which <code>faz_objform</code> supplies.</li>
+<li><em>FortiADC.</em> Derived on 2026-07-07 from the FortiADC 8.0.3 CLI Reference with
+  the rule <code>config a-b c-d</code> → <code>/api/a_b_c_d</code>. Child tables follow
+  <code>/api/&lt;parent&gt;_child_&lt;table&gt;?pkey=&lt;parent mkey&gt;</code>. <code>config user tacacs+</code> was
+  left out (the <code>+</code> does not map). 217 of the 255 were later measured on 8.0 and
+  8.0.3 appliances; the other 38 are <code>legacy</code>.</li>
+<li><em>FortiAuthenticator.</em> Every entry was probed live against a
+  FortiAuthenticator 8.0.3 build 0099 on 2026-08-05. The census of the 18
+  resources deliberately left out is in
+  <a href="fortiauthenticator.html">fortiauthenticator.md</a> §2.</li>
+</ul>
+<hr>
+<h2 id="10-limits-that-do-not-go-away">10. Limits that do not go away</h2>
 <ul>
 <li><strong>FortiWeb has no schema endpoint.</strong> An empty collection reveals no fields.
   Such endpoints are <code>blind</code>, never "no fields". Configure one row on a box
@@ -608,7 +859,7 @@ earlier in the process.</p>
   rename from a removal plus an addition until an operator says so.</li>
 </ul>
 <hr>
-<h2 id="10-troubleshooting">10. Troubleshooting</h2>
+<h2 id="11-troubleshooting">11. Troubleshooting</h2>
 <table>
 <thead>
 <tr>
@@ -680,6 +931,22 @@ earlier in the process.</p>
 <tr>
 <td><code>ingest-file</code>: <code>unknown evidence source</code></td>
 <td>The document's <code>source</code> is not one of <code>sweep</code>, <code>schema</code>, <code>vendor_doc</code>, <code>manual</code>, <code>legacy_matrix</code></td>
+</tr>
+<tr>
+<td><code>baseline promote</code>: <code>… has no measured evidence</code></td>
+<td>Nobody swept or harvested an appliance on that build. Promote a build that <code>flask apilib status</code> lists with a measured source, or sweep a box on the build first</td>
+</tr>
+<tr>
+<td><code>endpoint baseline of … not applied</code> in the log, and the registry is empty</td>
+<td>The shipped artifact was refused. The message names the file and the reason (<code>seal mismatch</code> means it was edited by hand: restore it from the release)</td>
+</tr>
+<tr>
+<td>An endpoint an operator fixed went back after an upgrade</td>
+<td>It did not, unless the row still carries <code>seed</code> or <code>baseline:…</code> in <code>updated_by</code>: then it was the baseline's row, not the operator's. Edit it from the Registry page; the edit makes it an operator row</td>
+</tr>
+<tr>
+<td><code>baseline check</code> exits 1</td>
+<td>Read the report: <code>wrong_urn</code> / <code>missing</code> / <code>stale_enabled</code> are registry rows out of step with the baseline (<code>flask apilib baseline apply</code> fixes them); <code>urn_mismatch</code> on a fleet build means the vendor moved a resource: promote that build</td>
 </tr>
 </tbody>
 </table>

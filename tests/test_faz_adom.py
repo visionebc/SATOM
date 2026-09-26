@@ -41,7 +41,7 @@ def test_faz_dashboard_and_scaffolds_render(app, client):
 
 def test_faz_registry_seeded_and_api_explorer_renders(app, client):
     """The FortiAnalyzer endpoint registry seeds from
-    endpoints_fortianalyzer.yaml (DB-first, product='fortianalyzer') and the
+    its endpoint baseline (DB-first, product='fortianalyzer') and the
     JSON-RPC API explorer page renders with the catalog."""
     from app.registry import loader
     with app.app_context():

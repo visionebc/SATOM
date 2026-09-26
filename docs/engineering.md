@@ -214,12 +214,16 @@ The registry decouples the app from firmware-specific REST paths.
 
 - **Storage:** Postgres table `registry_endpoints (product, api_version,
   name, urn, enabled, updated_by, updated_at)` — unique per
-  (product, api_version, name). Three catalogs: 507 FortiWeb rows (`v2.0`),
-  255 FortiADC rows (`v1`) and 64 FortiAnalyzer rows (`jsonrpc`), seeded
-  **insert-only** from `endpoints.yaml` / `endpoints_fortiadc.yaml` /
-  `endpoints_fortianalyzer.yaml` at boot: an operator's edit or disable is
-  never clobbered by a deploy. YAML remains the fallback when the DB is
-  unavailable (scripts without app context).
+  (product, api_version, name). Four catalogs: FortiWeb (`v2.0`), FortiADC
+  (`v1`), FortiAnalyzer (`jsonrpc`) and FortiAuthenticator (`v1`), seeded from
+  each product's **endpoint baseline** (`app/services/api_baseline.py`,
+  artifact `app/registry/baselines/<product>.json`, pinned to a firmware build,
+  sealed with SHA-256). Boot reconciles the registry to the active baseline once
+  per promotion; rows whose `updated_by` is not `seed`/`baseline:*` are an
+  operator's and are never touched. The artifact is the fallback when the DB is
+  unavailable (scripts without app context). The four `endpoints*.yaml` seeds
+  are gone: never reintroduce a hand-written seed. See
+  [api-library.md](api-library.md) §9.
 - **Loader:** `app/registry/loader.py` — DB-first with a 60s per-process TTL
   cache; `resolve(name)` / `resolve_adc(name)` / `resolve_faz(name)` by
   logical name. After an edit the serving worker invalidates immediately;

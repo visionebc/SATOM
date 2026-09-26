@@ -41,7 +41,7 @@ Full treatment in [`git-backup-and-outage.md`](git-backup-and-outage.md). The gu
 | `git.ahead_unpushed` alert | A push that has been failing for days while every UI stays green. Keys off the **age** of the oldest unpushed commit, not the count | `app/services/alerts.py::_check_git` |
 | `git bundle --all` | Total loss of the repo. One verifiable, clonable file carrying every ref — including the `refs/backup/*` above — replicated to the standby, pushed off-rack to backup-server, downloadable | `app/services/git_backup.py` |
 | Bundle delete is primary-only | Deleting on the standby, where `satom-ha-datasync --delete` would restore it within 5 min and make the UI look broken | `app/views/system_backup.py` |
-| INSERT-ONLY registry seeds | A deploy overwriting endpoint/provider rows the operator corrected. A vendor moving a REST URI stays a row edit, not a release | `app/registry/loader.py`, `app/services/acme_providers.py` |
+| Operator rows are never the seed's | A deploy or a baseline promotion overwriting endpoint/provider rows the operator corrected. The endpoint baseline only touches rows tagged `seed`/`baseline:*` (§196); the ACME providers seed is INSERT-ONLY | `app/services/api_baseline.py`, `app/services/acme_providers.py` |
 
 ## 2. Updating code and dependencies
 
@@ -5664,7 +5664,7 @@ from anything. `car-ratelimit` migrated between two appliances that way, losing
 the URL filter and the rate limit that were the entire rule.
 
 The guard is a cross-check, not a list to maintain by hand: for every object
-node in the tree, every collection in `endpoints.yaml` one level below its urn
+node in the tree, every collection in the FortiWeb baseline one level below its urn
 must be declared as a child. Adding an endpoint without wiring it fails the
 build. Objects that are deliberately not expanded are named in
 `_INTENTIONALLY_NOT_EXPANDED` **with the reason** — today only
@@ -16354,3 +16354,37 @@ On a container node with the agent, the runtime summary
 and `ha_promote` `false`; stopping the agent must turn all four `false` once
 its last heartbeat is more than 60 s old, with the "not answering" reason.
 
+## §196 — a registry seed that never said which firmware it described (`tests/test_api_baseline.py`, `tests/test_registry_db.py`, 2026-09-27)
+
+**The defect.** The endpoint registry was seeded from four hand-written YAML
+files at the repository root. Nothing in them said which firmware build they
+described, nothing regenerated them from what appliances actually served, and
+the insert-only seed could add a name but never correct one. On the reference
+installation the library had measured 39 of the 517 FortiWeb names as *not
+served* on 7.6.8, and the seed kept offering all of them. A vendor moving a
+resource could only ever be fixed by hand, one row per installation.
+
+**The fix.** A per-product endpoint baseline, pinned to a build, promoted from
+the library's measurements, sealed, shipped as a generated artifact and applied
+at boot ([api-library.md](api-library.md) §9). The YAML files are deleted.
+
+| Guard | What it kills |
+|---|---|
+| **The seal is checked.** An artifact whose SHA-256 does not match its content, or that names another product, is refused, and the no-database fallback then serves nothing rather than the edited map. `test_a_hand_edited_artifact_is_refused`, `test_an_artifact_for_another_product_is_refused`, `test_every_registry_product_ships_a_sealed_pinned_baseline` | the artifact becoming the next YAML: a file people "just fix" by hand, drifting from what was measured |
+| **Measured, or not promotable.** A build with no measured evidence cannot be promoted, and vendor claims do not count as measurements. `test_an_unmeasured_build_cannot_be_promoted`, `test_vendor_claims_alone_do_not_make_a_build_promotable` | a baseline assembled from what the vendor's tooling says, or from a build number someone typed |
+| **In, out, carried — and labelled.** Served names come in with the evidence's URN; measured-absent names go out; names the build has no evidence about are carried and say so; a contradicted entry keeps its label until measured. `test_plan_promotion_adds_measured_drops_absent_and_carries_the_rest`, `test_contradicted_entries_leave_on_the_next_promotion_that_measures_them` | a promotion that silently drops every sub-table no sweep reaches (the 191 `legacy` FortiWeb entries), or launders an unproven entry into a measured one |
+| **Operator rows are never touched.** Only rows tagged `seed` or `baseline:*` are the baseline's. `test_promote_reconciles_the_registry_and_spares_operator_rows`, `test_reapplying_the_baseline_spares_operator_rows` | a release reverting the URN an operator fixed on the Registry page |
+| **A moved URN is corrected.** `test_a_urn_move_on_a_newer_build_corrects_the_registry` | the failure the insert-only seed could never fix |
+| **Boot applies, once, without changing what is served.** Every product's registry equals its shipped baseline after boot; a second boot writes nothing; legacy `seed` rows are re-tagged without changing a URN. `test_boot_makes_the_registry_serve_the_shipped_baseline`, `test_boot_is_idempotent`, `test_boot_upgrades_legacy_seed_rows_without_changing_what_is_served` | a fresh installation (which never runs alembic) with an empty registry; an upgrade that changes behaviour as a side effect of changing storage |
+| **Identical content is one row.** `test_re_promoting_an_old_baseline_reactivates_it_without_a_duplicate` | a baseline table that grows on every no-op promotion |
+| **Resolution has an authority.** Operator row > evidence of that build > baseline > absent; a baseline answer is labelled as one. `test_resolve_at_authority_order` | an assumption reported as a measurement |
+| **Drift exits non-zero.** `test_check_is_clean_after_boot_and_reports_owned_drift`, `test_check_lists_operator_rows_without_calling_them_drift`, `test_cli_check_exits_nonzero_on_drift` | a registry out of step with its baseline, discovered at the first failed write |
+| **The YAML stays gone.** `test_the_retired_yaml_seeds_are_gone` | a second, hand-written source of truth coming back |
+
+Verified with 14 mutations of `api_baseline.py` and `loader.py` (seal check
+removed, every row owned, absent not dropped, removal not applied, boot never
+applying, override ignored, vendor counted as measured, contradicted laundered,
+insert-only apply, drift ignored, empty fallback, adoption dropping an entry,
+unmeasured build promotable, identical re-promotion duplicated): all 14 caught.
+On the reference installation adoption left the 877 registry rows identical
+(name, URN, enabled) and `baseline check` reported no drift.

@@ -327,7 +327,7 @@ def test_the_fac_adom_gets_the_topbar_search_icon(app, client):
 
 def test_the_fac_adom_cannot_reach_lua_studio(app, client):
     """FortiAuthenticator has no scripting object (nothing in
-    ``endpoints_fortiauthenticator.yaml``), so ``LuaScript.TARGETS`` cannot
+    its endpoint baseline), so ``LuaScript.TARGETS`` cannot
     list it and the studio would open with zero valid targets. The ADOM must
     not reach the page at all."""
     login(client, admin_user_id(app), product="global")

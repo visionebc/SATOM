@@ -260,7 +260,7 @@ def bound_logicals() -> tuple:
     """Every registry logical bound by the menu, in menu order.
 
     Used by the guard test that asserts the menu and
-    ``endpoints_fortiauthenticator.yaml`` cover exactly the same set: a
+    FortiAuthenticator endpoint baseline cover exactly the same set: a
     resource that falls out of the menu becomes unreachable from the UI while
     still being harvested, and one bound twice renders the same table on two
     pages. Neither failure raises an error on its own.

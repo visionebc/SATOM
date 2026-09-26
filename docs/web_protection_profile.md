@@ -4,7 +4,7 @@
 > (WPP) and its entire ~40-sub-policy dependency graph. Source of truth: the team's
 > `fortiweb_api` SDK (`cmdb/waf/` marshmallow schemas, FortiWeb OS 7.6 / API `v2.0`,
 > **172 schemas**), cross-checked against the in-repo registry
-> (`app/registry/data/endpoints.yaml`, **191 `cmdb/waf/*` endpoints**), the
+> (`app/registry/baselines/fortiweb.json`, **191 `cmdb/waf/*` endpoints**), the
 > dependency tree (`app/registry/dependencies.py`, `WEB_PROTECTION_PROFILE`,
 > **136 nodes, depth 7**), and the **official FortiWeb 7.6.4 admin guide**
 > (docs.fortinet.com — a JS SPA, scraped via the internal Firecrawl,
@@ -222,7 +222,7 @@ policy reused across the fleet). So:
 | Concern | File |
 |---|---|
 | WPP dependency tree (this graph, as data) | `app/registry/dependencies.py` (`WEB_PROTECTION_PROFILE`; 136 nodes) |
-| Endpoint URNs per API version | `app/registry/data/endpoints.yaml` (191 `cmdb/waf/*`) |
+| Endpoint URNs per API version | `app/registry/baselines/fortiweb.json` (191 `cmdb/waf/*`) |
 | Curated edit specs (the ~160 forms) | `app/registry/data/waf_specs.json` (166 kinds) + `app/services/waf_specs.py` (registration) |
 | The FortiWeb-style WPP form | `app/views/objedit.py` (`edit`) + `app/templates/objedit/editor.html` |
 | The shared object-edit engine | `app/services/objform.py` + `app/services/fortiweb_field_schema.py` (`KIND_SPECS`, `build_groups`); the ref `✎` comes from `objedit._enable_ref_actions` |
@@ -238,7 +238,7 @@ Vendor SDK (offline ground truth, not committed):
 ## 8. Coverage & cross-validation (2026-06-21)
 
 - **Registry:** every one of the 136 `WEB_PROTECTION_PROFILE` tree nodes resolves to
-  an `endpoints.yaml` endpoint (`dependencies.coverage` → 136/136, 0 missing).
+  a registry endpoint (`dependencies.coverage` → 136/136, 0 missing).
 - **Specs:** all 36 sub-policies + their named rules + sub-tables + leaf rows are
   curated (`app/registry/data/waf_specs.json`, 166 kinds); `tests/test_objform.py`
   and `tests/test_objedit.py` assert that every collection, sub-table segment and

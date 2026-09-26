@@ -22,7 +22,7 @@
   <div>
     <h1 class="fw-page-title"><i class="bi bi-table me-2 text-accent"></i>{{ _('FortiWeb Endpoint Registry') }}</h1>
     <p class="text-muted mb-0" style="font-size:13px;">
-      The single source of API paths — stored in the database (seeded from <code>endpoints.yaml</code>),
+      The single source of API paths — stored in the database (seeded from the FortiWeb endpoint baseline),
       read by the API Explorer, Structure and every service.
       {% if can_edit %}Changes are audited and survive deploys (nightly DB backup).{% endif %}
     </p>
@@ -189,7 +189,7 @@
                     <div class="fw-empty-state-icon"><i class="bi bi-table"></i></div>
                     <div class="fw-empty-state-title">{{ _('No endpoints in registry') }}</div>
                     <div class="fw-empty-state-text">
-                      {{ _('The endpoint registry is seeded from endpoints.yaml at first boot.') }}
+                      {{ _('The endpoint registry is seeded from the product endpoint baseline at boot.') }}
                     </div>
                   </div>
                 </td>

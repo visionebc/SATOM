@@ -352,6 +352,58 @@ def test_the_status_row_never_carries_the_key(ag, queue):
     assert "PRIVATE KEY" not in (sta / (UID + ".json")).read_text()
 
 
+class _St:
+    def __init__(self):
+        self.steps = []
+
+    def step(self, name, ok=True, detail=""):
+        self.steps.append((name, ok))
+
+    def set(self, **kw):
+        pass
+
+
+def _cert_rig(ag, tmp_path, monkeypatch, nginx_rc):
+    pub = tmp_path / "public"
+    pub.mkdir()
+    (pub / "server.crt").write_text("OLD CERT")
+    (pub / "server.key").write_text("OLD KEY")
+    monkeypatch.setattr(ag, "PKI_DIR", tmp_path)
+    monkeypatch.setattr(ag, "service_containers",
+                        lambda s: [{"Id": "p1", "Names": ["/satom-proxy-1"]}] if s == "proxy" else [])
+
+    def fake_import(args, **kw):
+        (pub / "server.crt").write_text("NEW CERT")
+        (pub / "server.key").write_text("NEW KEY")
+        return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+    monkeypatch.setattr(ag.subprocess, "run", fake_import)
+    monkeypatch.setattr(ag, "exec_in", lambda cid, argv, timeout=30: (nginx_rc, "nginx: test"))
+    calls = []
+    monkeypatch.setattr(ag, "api_json", lambda m, p, body=None, timeout=30, query=None, ok=None:
+                        calls.append((m, p, query)))
+    monkeypatch.setattr(ag, "do_restart", lambda *a: calls.append(("RESTART",) + a[1:]))
+    return pub, calls
+
+
+def test_a_certificate_is_applied_by_reload_never_by_restart(ag, tmp_path, monkeypatch):
+    """The operator's request travels through the proxy; a restart cuts it and
+    the console reports a failure for an import that worked (seen end to end)."""
+    pub, calls = _cert_rig(ag, tmp_path, monkeypatch, nginx_rc=0)
+    ag.do_cert(_St(), {"cert_pem": CERT, "key_pem": KEY})
+    assert ("POST", "/containers/p1/kill", {"signal": "HUP"}) in calls
+    assert not any(c[0] == "RESTART" for c in calls)
+    assert (pub / "server.crt").read_text() == "NEW CERT"
+
+
+def test_a_certificate_the_proxy_rejects_is_rolled_back(ag, tmp_path, monkeypatch):
+    pub, calls = _cert_rig(ag, tmp_path, monkeypatch, nginx_rc=1)
+    with pytest.raises(ag.DockerError, match="rejected"):
+        ag.do_cert(_St(), {"cert_pem": CERT, "key_pem": KEY})
+    assert (pub / "server.crt").read_text() == "OLD CERT"
+    assert (pub / "server.key").read_text() == "OLD KEY"
+    assert calls == [], "no reload of a configuration nginx refused"
+
+
 def test_the_heartbeat_is_not_listed_as_an_update(ag):
     """The UI lists update-status/*.json as update history."""
     assert not ag.HEARTBEAT.name.endswith(".json")

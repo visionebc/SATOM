@@ -202,7 +202,10 @@ def internode_channel() -> dict:
 # ---------------------------------------------------------------------------
 # Node service certificate (served by nginx on :8443)
 # ---------------------------------------------------------------------------
-def node_cert() -> dict:
+def node_cert(data: bytes | None = None) -> dict:
+    """The node certificate's fields. *data* is the PEM when the caller already
+    holds it (the container runtime, where the operations agent forwards the
+    served certificate); otherwise it is read from ``NODE_CERT``."""
     # source is NODE-LOCAL (meta.json) — NOT the replicated app_setting, which on
     # a standby would reflect the PRIMARY's cert origin, not this node's.
     src = "bootstrap"
@@ -217,7 +220,8 @@ def node_cert() -> dict:
     try:
         from cryptography import x509
         from cryptography.hazmat.primitives.serialization import Encoding  # noqa: F401
-        data = NODE_CERT.read_bytes()
+        if data is None:
+            data = NODE_CERT.read_bytes()
         cert = x509.load_pem_x509_certificate(data)
         out["present"] = True
         out["subject"] = cert.subject.rfc4514_string()

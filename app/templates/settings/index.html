@@ -5404,6 +5404,12 @@ document.addEventListener('DOMContentLoaded', function() {
     var meta = document.getElementById('svc-node');
     if (meta) meta.textContent = LOCAL ? (LOCAL + ' \u00b7 ' + (data.role || '?')) : '';
     body.innerHTML = rows(data.units || [], LOCAL, false);
+    /* A container node without a live operations agent has no units to draw.
+       Say why, instead of an empty table that reads as "nothing to control". */
+    if (!(data.units || []).length && data.note) {
+      body.innerHTML = '<tr><td colspan="5" class="text-muted" style="font-size:12px;">' +
+        esc(data.note) + '</td></tr>';
+    }
   }
 
   var HEAD_STYLE = 'padding:6px 10px;border-radius:8px;background:var(--fw-surface-alt);' +

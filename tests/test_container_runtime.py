@@ -53,6 +53,7 @@ def code_of(path: Path) -> str:
 @pytest.fixture(autouse=True)
 def _clean_runtime_env(monkeypatch):
     monkeypatch.delenv("SATOM_RUNTIME", raising=False)
+    monkeypatch.delenv("SATOM_AGENT", raising=False)
 
 
 def _runtime():

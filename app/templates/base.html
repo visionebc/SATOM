@@ -469,6 +469,10 @@
             <i class="bi bi-safe fw-nav-icon"></i><span>System Backup &amp; Restore</span></a>
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'self_update' else '' }}" href="{{ url_for('self_update.index') }}">
             <i class="bi bi-arrow-repeat fw-nav-icon"></i><span>{{ _('Software Update') }}</span></a>
+          {% if satom_container_runtime %}
+          <a class="fw-nav-item {{ 'active' if request.blueprint == 'container_ops' else '' }}" href="{{ url_for('container_ops.index') }}">
+            <i class="bi bi-box-seam fw-nav-icon"></i><span>{{ _('Container operations') }}</span></a>
+          {% endif %}
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'ha' else '' }}" href="{{ url_for('ha.index') }}">
             <i class="bi bi-diagram-3 fw-nav-icon"></i><span>{{ _('High Availability') }}</span></a>
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'reports' else '' }}" href="{{ url_for('reports.inbox') }}">

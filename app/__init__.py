@@ -2281,6 +2281,7 @@ def _register_blueprints(app: Flask) -> None:
         ("app.views.database", "bp"),
         ("app.views.system_backup", "bp"),
         ("app.views.self_update", "bp"),
+        ("app.views.container_ops", "bp"),
         ("app.views.ha", "bp"),
         ("app.views.plugins", "bp"),
         ("app.views.lua_studio", "bp"),

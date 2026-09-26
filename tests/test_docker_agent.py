@@ -687,3 +687,25 @@ def test_only_the_build_helper_gets_a_network(ag, monkeypatch):
     assert [b["HostConfig"]["NetworkMode"] for b in bodies] == ["none", "bridge", "none"]
     assert all("/var/run/docker.sock:/var/run/docker.sock" in b["HostConfig"]["Binds"] for b in bodies)
     assert not any(b["HostConfig"].get("Privileged") for b in bodies)
+
+
+def test_an_update_reloads_the_proxy_before_trusting_web_health(ag, monkeypatch, tmp_path):
+    """The proxy is not recreated by a switch; without a reload it keeps the
+    old vhost (and, before 2.3.0, the old address of web: 502)."""
+    rel = tmp_path / "releases" / "9.9.9"
+    (rel / "deploy" / "docker").mkdir(parents=True)
+    (rel / "Dockerfile").write_text("FROM x\n")
+    for f in ("compose.yaml", "compose.agent.yaml"):
+        (rel / "deploy" / "docker" / f).write_text("services: {}\n")
+    (tmp_path / "releases" / "2.3.0").mkdir()
+    os.symlink(str(tmp_path / "releases" / "2.3.0"), str(tmp_path / "current"))
+    (tmp_path / "satom.env").write_text("SATOM_IMAGE=satom:2.3.0\n")
+    monkeypatch.setattr(ag, "HOME", str(tmp_path))
+    monkeypatch.setattr(ag, "image_tags", lambda *a: ["satom:9.9.9"])
+    monkeypatch.setattr(ag, "run_helper", lambda argv, timeout, network="none": (0, "web\nproxy\n"))
+    order = []
+    monkeypatch.setattr(ag, "reload_proxy", lambda st: order.append("reload") or True)
+    monkeypatch.setattr(ag, "wait_service", lambda *a, **k: order.append("wait") or (True, "healthy"))
+    ag.do_update(_St(), "9.9.9")
+    assert order == ["reload", "wait"]
+    assert "SATOM_IMAGE=satom:9.9.9" in (tmp_path / "satom.env").read_text()

@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import pathlib
 import re
+import subprocess
 
 import pytest
 import yaml
@@ -81,6 +82,8 @@ VHOST_INVARIANTS = (
 
 #: The files that AUTHOR a vhost. Any new one has to satisfy the invariants.
 VHOST_AUTHORS = (BOOTSTRAP, TURNKEY)
+PROXY_INIT_FOR_RESOLVER = BOOTSTRAP.parent / "docker" / "proxy-init.sh"
+TURNKEY_SETUP_FOR_RELOAD = BOOTSTRAP.parents[1] / "installers" / "satom-setup.sh"
 
 
 def read(p: pathlib.Path) -> str:
@@ -568,3 +571,51 @@ def test_every_host_installer_clears_the_packaged_default_site(
     assert re.search(r"rm\s+-f\b[^\n]*conf\.d/default\.conf", body), (
         "%s leaves the packaged conf.d/default.conf in place" % script.name
     )
+
+
+# ---------------------------------------------------------------------------
+# The container upstream is a name that moves
+# ---------------------------------------------------------------------------
+
+def _write_vhost(tmp_path, *extra):
+    out = tmp_path / "satom.conf"
+    subprocess.run(["bash", str(BOOTSTRAP), "write-vhost", "--out", str(out), "--pki", "/x",
+                    "--names", "a", "--acme-webroot", str(tmp_path / "acme"), *extra],
+                   check=True, capture_output=True)
+    return out.read_text()
+
+
+def test_a_container_vhost_resolves_the_app_per_request(tmp_path):
+    """nginx resolves a literal proxy_pass host once, at start. Recreating
+    `web` gives it a new address, and the proxy went on connecting to the old
+    one: 502 until someone restarted it (measured end to end, 2026-09-26)."""
+    body = _write_vhost(tmp_path, "--upstream", "web:8000", "--resolver", "127.0.0.11")
+    assert "resolver 127.0.0.11 valid=10s" in body
+    assert "set $satom_upstream http://web:8000;" in body
+    assert "proxy_pass $satom_upstream;" in body
+    assert "proxy_pass http://web:8000" not in body
+
+
+def test_a_host_vhost_keeps_its_literal_loopback_upstream(tmp_path):
+    body = _write_vhost(tmp_path)
+    assert "proxy_pass http://127.0.0.1:8000;" in body
+    assert "resolver" not in body
+
+
+def test_the_resolver_must_be_an_address(tmp_path):
+    with pytest.raises(subprocess.CalledProcessError):
+        _write_vhost(tmp_path, "--resolver", "127.0.0.11; include /etc/passwd")
+
+
+def test_the_container_proxy_asks_for_dockers_resolver():
+    body = code_only(read(PROXY_INIT_FOR_RESOLVER))
+    assert "--resolver 127.0.0.11" in body
+
+
+def test_an_installer_update_reloads_the_proxy():
+    """The proxy's image does not change in an update, so it is not recreated
+    and would keep serving the previous vhost."""
+    body = read(TURNKEY_SETUP_FOR_RELOAD)
+    upd = body[body.index('if [ "$upgrading" -eq 1 ]; then'):]
+    upd = upd[:upd.index("return")]
+    assert upd.index("kill -s HUP proxy") > upd.index("up -d --remove-orphans")

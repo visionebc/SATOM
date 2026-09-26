@@ -44,7 +44,7 @@ SATOM_SERVED_NAMES="$NAMES" \
 SATOM_ACME_WEBROOT="$ACME" \
 /opt/satom/deploy/tls-bootstrap.sh write-vhost \
     --pki "$PKI" --out "$CONF_OUT" --port 443 --upstream "$UPSTREAM" \
-    --default-server
+    --resolver 127.0.0.11 --default-server
 
 # MEASURED, not defensive: on the first `up` Docker copies the nginx image's
 # own /etc/nginx/conf.d into this volume -- population happens when the proxy

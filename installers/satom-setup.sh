@@ -864,6 +864,9 @@ install_docker() {
         env_set SATOM_IMAGE "satom:$VERSION"
         write_wrapper
         /usr/local/sbin/satom-docker up -d --remove-orphans >>"$LOG" 2>&1
+        # The proxy runs a stock image, so an update does not recreate it: a
+        # graceful reload loads the vhost tls-init has just rewritten.
+        /usr/local/sbin/satom-docker kill -s HUP proxy >>"$LOG" 2>&1 || warn "Could not reload the proxy (satom-docker restart proxy)"
         WEB_PORT="$(env_get SATOM_HTTPS_BIND | sed 's/.*://')"; NAMES="$(env_get SATOM_SERVED_NAMES)"
         wait_docker_healthy
         SUMMARY_MODE="docker — updated to v${VERSION} (agent ${agent})"

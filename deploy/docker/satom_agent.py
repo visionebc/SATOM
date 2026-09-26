@@ -646,6 +646,27 @@ def exec_in(cid: str, argv: list[str], timeout: float = 30) -> tuple[int, str]:
 _CERT_FILES = (("server.crt", 0o644), ("server.key", 0o600), ("meta.json", 0o644))
 
 
+def reload_proxy(st: Status) -> bool:
+    """``nginx -t`` in every proxy container, then SIGHUP (graceful reload:
+    open connections -- the operator's own included -- survive). Returns
+    False, and reloads nothing, if any proxy rejects its configuration."""
+    proxies = service_containers("proxy")
+    if not proxies:
+        st.step("reload proxy", False, "no proxy container")
+        return False
+    for c in proxies:
+        name = (c.get("Names") or ["?"])[0].lstrip("/")
+        rc, out = exec_in(c["Id"], ["nginx", "-t"])
+        st.step("nginx -t in %s" % name, rc == 0, out[-300:])
+        if rc != 0:
+            return False
+    for c in proxies:
+        api_json("POST", "/containers/%s/kill" % c["Id"], query={"signal": "HUP"})
+        st.step("reload %s (graceful, connections kept)"
+                % (c.get("Names") or ["?"])[0].lstrip("/"), True)
+    return True
+
+
 def do_cert(st: Status, params: dict) -> None:
     """Install a certificate for the proxy and RELOAD it -- never restart it.
 
@@ -689,23 +710,15 @@ def do_cert(st: Status, params: dict) -> None:
             raise DockerError("import-cert refused the certificate")
     finally:
         shutil.rmtree(d, ignore_errors=True)
-    for c in proxies:
-        name = (c.get("Names") or ["?"])[0].lstrip("/")
-        rc, out = exec_in(c["Id"], ["nginx", "-t"])
-        st.step("nginx -t in %s" % name, rc == 0, out[-300:])
-        if rc != 0:
-            for fname, mode in _CERT_FILES:
-                if backup[fname] is None:
-                    continue
-                p = pub / fname
-                p.write_bytes(backup[fname])
-                os.chmod(str(p), mode)
-            st.step("previous certificate restored", True)
-            raise DockerError("the proxy rejected the new certificate; nothing changed")
-    for c in proxies:
-        api_json("POST", "/containers/%s/kill" % c["Id"], query={"signal": "HUP"})
-        st.step("reload %s (graceful, connections kept)"
-                % (c.get("Names") or ["?"])[0].lstrip("/"), True)
+    if not reload_proxy(st):
+        for fname, mode in _CERT_FILES:
+            if backup[fname] is None:
+                continue
+            p = pub / fname
+            p.write_bytes(backup[fname])
+            os.chmod(str(p), mode)
+        st.step("previous certificate restored", True)
+        raise DockerError("the proxy rejected the new certificate; nothing changed")
 
 
 def _read_env() -> tuple[Path, str, dict]:
@@ -857,6 +870,11 @@ def do_update(st: Status, version: str) -> None:
     rc, out = switch_to(tree, image, env_text)
     st.step("recreate the stack on %s" % image, rc == 0, out[-400:])
     ok = rc == 0
+    if ok:
+        # The proxy runs a stock image, so the switch does not recreate it:
+        # it would keep the vhost tls-init has just rewritten unread. A
+        # graceful reload loads it (and re-resolves the upstream).
+        ok = reload_proxy(st)
     if ok:
         ok, detail = wait_service("web", WEB_HEALTH_TIMEOUT, want_healthy=True)
         st.step("web healthy on %s" % image, ok, detail)

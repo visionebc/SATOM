@@ -630,10 +630,42 @@ def do_restart(st: Status, service: str, action: str) -> None:
         raise DockerError("%s did not come back: %s" % (service, detail))
 
 
+def exec_in(cid: str, argv: list[str], timeout: float = 30) -> tuple[int, str]:
+    """Run a FIXED command in a container of this project (Engine exec API)."""
+    ex = api_json("POST", "/containers/%s/exec" % cid,
+                  {"Cmd": argv, "AttachStdout": True, "AttachStderr": True})
+    _st, raw = api("POST", "/exec/%s/start" % ex["Id"], {"Detach": False, "Tty": False},
+                   timeout=timeout)
+    info = api_json("GET", "/exec/%s/json" % ex["Id"]) or {}
+    return int(info.get("ExitCode") if info.get("ExitCode") is not None else 1), _demux(raw)
+
+
+_CERT_FILES = (("server.crt", 0o644), ("server.key", 0o600), ("meta.json", 0o644))
+
+
 def do_cert(st: Status, params: dict) -> None:
+    """Install a certificate for the proxy and RELOAD it -- never restart it.
+
+    The operator's own HTTP request travels through that proxy and is waiting
+    for this answer: a restart cuts it, and the console reports a failure for
+    an import that succeeded. ``nginx -t`` first, then SIGHUP to the master,
+    which is a graceful reload (the host install does ``systemctl reload
+    nginx`` for the same reason). If the proxy rejects the new pair, the
+    previous files are put back, so the next restart does not fail on them.
+    """
     for k in ("cert_pem", "key_pem", "chain_pem"):
         if k in params:
             check_pem(k, params[k], optional=(k == "chain_pem"))
+    proxies = service_containers("proxy")
+    if not proxies:
+        raise Refused("the stack has no proxy container to serve a certificate")
+    pub = PKI_DIR / "public"
+    backup = {}
+    for name, _mode in _CERT_FILES:
+        try:
+            backup[name] = (pub / name).read_bytes()
+        except OSError:
+            backup[name] = None
     d = tempfile.mkdtemp(prefix="satom-cert-")
     try:
         os.chmod(d, 0o700)
@@ -654,7 +686,23 @@ def do_cert(st: Status, params: dict) -> None:
             raise DockerError("import-cert refused the certificate")
     finally:
         shutil.rmtree(d, ignore_errors=True)
-    do_restart(st, "proxy", "restart")
+    for c in proxies:
+        name = (c.get("Names") or ["?"])[0].lstrip("/")
+        rc, out = exec_in(c["Id"], ["nginx", "-t"])
+        st.step("nginx -t in %s" % name, rc == 0, out[-300:])
+        if rc != 0:
+            for fname, mode in _CERT_FILES:
+                if backup[fname] is None:
+                    continue
+                p = pub / fname
+                p.write_bytes(backup[fname])
+                os.chmod(str(p), mode)
+            st.step("previous certificate restored", True)
+            raise DockerError("the proxy rejected the new certificate; nothing changed")
+    for c in proxies:
+        api_json("POST", "/containers/%s/kill" % c["Id"], query={"signal": "HUP"})
+        st.step("reload %s (graceful, connections kept)"
+                % (c.get("Names") or ["?"])[0].lstrip("/"), True)
 
 
 def _read_env() -> tuple[Path, str, dict]:

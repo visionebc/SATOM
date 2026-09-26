@@ -54,6 +54,7 @@
 41. [Stored Assets: what each ADOM actually holds](#41-stored-assets-what-each-adom-actually-holds)
 42. [Process: procedures the system walks for you](#42-process-procedures-the-system-walks-for-you)
 43. [Upgrading to 2.0](#43-upgrading-to-20)
+44. [Container operations (Docker nodes)](#44-container-operations-docker-nodes)
 
 ---
 
@@ -1938,7 +1939,11 @@ rights to install packages or restart services.
 > work a container cannot do to a host it does not own. The equivalent there is
 > to deploy a new image tag and recreate the stack. Service control (§26) and
 > certificate activation (§10) are absent for the same reason, each refusing
-> with a message that names its alternative rather than failing obscurely. See
+> with a message that names its alternative rather than failing obscurely.
+> **With the optional operations agent** (since 2.3.0), a container node
+> switches release, restarts its services and installs its certificate from
+> **System → Container operations** instead (§44); the git and library updaters
+> on this page stay unavailable there, and say so. See
 > [Running SATOM in containers](docker.md).
 
 ### 22.1 Applying an offline package
@@ -4888,8 +4893,8 @@ Three rules keep the map honest, and each is enforced by a test rather than by
 discipline:
 
 1. **The URL map is the authority on what exists.** Every parameterless page in
-   the console is either **on the map** (108 today) or **excluded with a written
-   reason** (139 today — JSON feeds, downloads, redirects and fragments that
+   the console is either **on the map** (109 today) or **excluded with a written
+   reason** (141 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.
 2. **Nothing here is a second source of truth.** Paths are generated from the
@@ -5891,3 +5896,186 @@ shows the values. The result lists each **new field** set, and each one **not
 set** with the reason. Nothing is offered when the destination build is
 unmeasured, and only recorded renames when the source build is: SATOM does not
 offer a field nobody knows the destination serves.
+
+## 44. Container operations (Docker nodes)
+
+**System → Container operations** (`/system/container/`, admin: the
+`user_manage` permission). It is the container counterpart of Software Update
+(§22), Settings → Services (§26.1b) and Node TLS (§26.8): restart a
+service of this stack, switch the stack to another release, install the
+certificate the proxy serves.
+
+The nav entry appears **only on a container node**. On a host install the page
+says *"This node is a host install. Its services, updates and certificate are
+managed from Settings → Services, Software Update and Node certificate."* and
+offers nothing.
+
+**Nothing on this page does the work itself.** Every button only queues a
+request. The work is done by the optional **operations agent**, a separate
+container that is the only one holding the Docker socket; it re-checks each
+request against a closed list and refuses anything else. Without the agent
+the page still opens, explains why nothing can be done, and the operator
+works on the host with the `satom-docker` wrapper instead. The agent is off by
+default, because whoever controls it is root on the host: the operator manual,
+[docker-compose.md](docker-compose.md) §7, explains the trade-off and how to
+enable it.
+
+Every request is recorded in the Audit Log (§34) as `container_ops.service`,
+`container_ops.update` or `container_ops.cert`.
+
+### 44.1 Operations agent
+
+The card's badge says which of three states the node is in:
+
+| Badge | Meaning | What the card shows |
+|---|---|---|
+| **live** | the agent is enabled and has reported within the last 60 s | the age of the last heartbeat; the agent's version and the stack's; the **layout** (`installer` or `manual`) |
+| **not answering** | the agent is enabled but has not reported for more than 60 s (or never has) | the reason, and *"Nothing is queued while the agent is silent. On the host:"* `satom-docker ps agent` · `satom-docker logs agent` |
+| **not enabled** | the stack runs without the agent | how to enable it (run the installer again and answer yes, or set `SATOM_SETUP_AGENT=yes` on a manual checkout) and the warning that the agent mounts the Docker socket |
+
+Two notes can appear under **live**:
+
+* **agent and stack differ** — an update from this page recreates every
+  service *except* the agent, so after an update the agent still runs the
+  previous version. Run `satom-docker up -d` on the host to bring it level.
+  Until then everything keeps working; the note is there so the difference is
+  not a surprise.
+* **updates from the console need the installer layout** — on a node set up
+  by hand rather than with `satom-setup.sh`, the agent restarts services,
+  installs certificates and reports health, but does not update. The Update
+  card is disabled there.
+
+### 44.2 Capabilities
+
+One row per capability the container runtime withholds from a host-style
+console: `self_update`, `service_control`, `cert_activation`, `unit_health`
+and `ha_promote`. Each is either **via agent** (the agent performs it now) or
+**unavailable**, with the reason in the third column — the same sentence the
+rest of the console shows when you try the action elsewhere.
+
+`ha_promote` is always **unavailable** on a container node, with or without
+the agent: failover is a manual PostgreSQL procedure there
+([docker-compose.md](docker-compose.md) §10.6). The other four are **via
+agent** exactly while the agent is **live**.
+
+### 44.3 Services of this stack
+
+One row per service the agent may act on, with its container state and
+health, a note on what the service is, and the buttons it allows:
+
+| Service | Buttons offered |
+|---|---|
+| Web application (`web`) | **restart** only — a stop would take away the page that could start it again |
+| Scheduler (`scheduler`) | **restart** and **stop** while it runs; **start** while it is stopped |
+| Periodic jobs (`cron`) | the same as the scheduler |
+| TLS proxy (nginx) (`proxy`) | **restart** only — a stop ends your session with no way back except a shell |
+| PostgreSQL (`postgres`) | **restart** only; the application reconnects |
+| Redis (rate limits) (`redis`) | **restart** only; rate-limit windows reset |
+| Metrics store (`victoria-metrics`) | **restart** only; dashboards report query errors while it is down |
+
+The state badge is green when every container of the service runs and is
+healthy (or has no healthcheck), red otherwise, and grey **no container** when
+the stack has none. The agent itself and the one-shot `tls-init` job are never
+listed: they cannot be controlled from the console.
+
+Each button asks for confirmation, queues the request, and follows it until it
+finishes; the page then reloads with the request highlighted in *Recent agent
+requests* (§44.6). After a start or restart the agent waits up to three
+minutes for the service to be running and healthy, and reports a failure if
+it is not. **Restarting `web` or `proxy` interrupts the page for a moment.**
+That is expected: the page keeps polling through the gap.
+
+When the agent is not live the table is empty and shows the reason instead.
+The **Services** card on the General settings tab (§26.1b) behaves the same
+way on a container node: the stack's containers with the agent, the reason without it.
+
+### 44.4 Update
+
+The card states the release the stack runs and lists the releases already on
+this host (**tree only** marks a release whose source is present but whose
+image is not built yet).
+
+To update: type the version (`X.Y.Z`, for example `2.3.1`), type `UPDATE` in
+the confirmation box, and press **Update this node**. Without the typed
+confirmation nothing is queued. The agent then:
+
+1. downloads the release's source from GitHub, unless it is already on this
+   host, and refuses a tree that is not a SATOM Docker release, that carries
+   invalid networks, or that predates the agent (a release before 2.3.0 is
+   switched to with `satom-setup.sh --version` on the host instead);
+2. builds its image (5–15 minutes the first time);
+3. recreates every service **except the agent** on the new image, then
+   reloads the proxy gracefully so it serves the new release's configuration;
+4. waits up to 7 minutes for the console to come back healthy — and **rolls
+   back** to the previous release and image if it does not.
+
+The console restarts during step 3, so the page loses its connection for a
+while; it keeps polling and reloads when the request finishes. The steps, with
+the build and recreate output, are in *Recent agent requests*.
+
+What the update does **not** do: it takes no backup, and a rollback restores
+the previous release's files and image, **not the database**. Back up first
+([docker-compose.md](docker-compose.md) §11.2). Older versions are accepted
+too, as long as they ship the operations agent (2.3.0 or later), which makes a
+downgrade possible and just as much a database question.
+
+The card's own note: *"Per node: on a primary + standby pair, update the
+primary first — schema changes can only be applied on the writable primary —
+then the standby. Releases without the operations agent are refused here:
+switch to them with satom-setup.sh on the host."*
+
+The fields are disabled when the agent is not **live**, and on a manual
+layout (§44.1). The Software Update page (§22) stays unavailable on a
+container node even with the agent: its git and library updaters do not apply
+where the code is the image, and their refusal points here.
+
+### 44.5 Proxy certificate
+
+Choose the **Certificate (PEM)**, the **Private key (PEM)** and, optionally,
+the **Chain**, then press **Install and reload the proxy**. The files go
+through the same validation, renewal journal and audit as the node
+certificate import (§26.8); a pair that does not match is refused before
+anything is queued. The agent then imports the pair into the proxy's
+certificate store and **reloads** the proxy gracefully — it checks the
+configuration with `nginx -t` first, then tells nginx to reload. It does not
+restart it: your own request travels through that proxy, and a restart would
+cut it and report a failure for an import that worked. If nginx rejects the
+new pair, the previous certificate is put back and nothing changes.
+
+The page waits up to 90 seconds for the agent's verdict and shows either
+*installed:* with the subject and the days left — of the certificate now
+served, because the agent refreshes its report before it answers — or the
+reason for the refusal. The private key travels only inside the request, which the agent
+deletes as soon as it picks it up — also when it refuses it. It never appears
+in the request history.
+
+The button is disabled when the agent is not **live**. Issuing a certificate
+from the internal CA is not available on a container node, with or without
+the agent; import one instead.
+
+### 44.6 Recent agent requests
+
+The last 15 requests handled by the agent, newest first:
+
+| Column | Content |
+|---|---|
+| **Request** | the request id |
+| **Kind** | `ctr-restart`, `ctr-update` or `ctr-cert` |
+| **Target** | the service and action, the version, or *proxy certificate* |
+| **By** | the user who asked |
+| **State** | **success**, **failed**, or — in yellow — **queued** or **running** |
+| **Log** | each step with ✓ or ✗ and its detail, and the error of a failed request |
+
+A request that waited more than 10 minutes before the agent picked it up is
+**failed** with *request expired*: the agent does not run a restart or an
+update late, on a stack that may since have been fixed by hand.
+
+### 44.7 When the agent is off or silent
+
+| Agent | What you see | What to do |
+|---|---|---|
+| **not enabled** | the badge, how to enable it, every capability **unavailable** with its reason, an empty service table, disabled update and certificate controls | do the operation on the host with `satom-docker` ([docker-compose.md](docker-compose.md) §7.3), or enable the agent (§7.1 there) |
+| **not answering** | the badge and the reason (for example *last heartbeat 95 s ago*), every capability **unavailable** with *"The operations agent is enabled but not answering …"*, an empty service table, disabled controls; any action you still send is refused and nothing is queued | on the host: `satom-docker ps agent` and `satom-docker logs agent`; `satom-docker up -d` recreates it |
+
+Nothing is ever queued behind a silent agent, so nothing fires later by
+surprise when it comes back.

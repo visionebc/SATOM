@@ -167,6 +167,43 @@ whole problem.
 
 ---
 
+## 4b. The container counterpart: the operations agent
+
+The Docker stack has no systemd and no root runner, so by default it renounces
+what the runner does (`app/runtime.py`). Since 2.3.0 an **optional** `agent`
+service (`deploy/docker/compose.agent.yaml`, off by default) is the same model
+in container form. Nothing in the web changes side: it writes the same request
+file into the same `data/update-requests/` path and polls the same
+`data/update-status/<uid>.json` — in the container those two paths are the
+volumes `satom-agent-requests` and `satom-agent-status`, shared with the agent.
+
+| Host install | Container stack with the agent |
+|---|---|
+| `satom-updater.path` notices a file | the agent polls `satom-agent-requests` every 2 s |
+| `satom-updater.service`, root | `agent`, uid 0, the **only** container that mounts `/var/run/docker.sock` — which is root on the host |
+| re-validates against its own allowlist | re-validates against its own closed tables (`deploy/docker/satom_agent.py`): three request kinds, a fixed set of keys per kind, a fixed service → action table, `X.Y.Z` versions only, PEM-only certificates |
+| pip / unit install / restart | restart a service of the `satom` project; switch the stack to a release; import a certificate into `satom-pki` and reload `proxy` gracefully (`nginx -t`, then SIGHUP — never a restart) |
+| health check + auto-rollback | an update waits up to 420 s for `web` to be healthy and otherwise rolls back to the previous tree and image |
+| writes `update-status/<uid>.json` | writes `<uid>.json` in the same shape (`"runner": "container-agent"`), symlink-safe |
+| promotion (`satom-promote.sh`) | **not performed** — `ha_promote` is never delegated; failover stays manual |
+
+The same rule holds in both columns: **the web worker's validation is a UX
+affordance; the privileged side's is the security boundary.** The container
+adds two requirements the host does not need, because there the privileged
+side is a different container rather than a different Unix account:
+
+* **Declared and alive.** `app/runtime.py` delegates a capability only when
+  the overlay declares the agent (`SATOM_AGENT=docker`) *and* its heartbeat is
+  younger than 60 s. A queue nobody drains must refuse, not accept.
+* **Unreachable.** The agent publishes no port, listens on nothing and is not
+  on the `satom` network; its only input is the request volume.
+
+The agent is as much root as `satom-updater.service`, and more directly:
+whoever controls it controls the engine. The operator manual,
+[`docker-compose.md`](docker-compose.md) §7, is the review checklist.
+
+---
+
 ## 5. HA trust between nodes
 
 ### What was wrong

@@ -724,3 +724,26 @@ def test_the_heartbeat_is_refreshed_before_a_request_is_reported_done(ag, queue,
     p.write_bytes(_req(kind="ctr-cert", cert_pem=CERT, key_pem=KEY))
     ag.handle(p)
     assert order == ["heartbeat", "finish:success"]
+
+
+def test_an_update_builds_with_a_network_and_recreates_without_one(ag, monkeypatch, tmp_path):
+    """The build is the only helper that needs the registry (BuildKit asks
+    for the pull token from the client); compose runs never get a network."""
+    rel = tmp_path / "releases" / "9.9.9"
+    (rel / "deploy" / "docker").mkdir(parents=True)
+    (rel / "Dockerfile").write_text("FROM x\n")
+    for f in ("compose.yaml", "compose.agent.yaml"):
+        (rel / "deploy" / "docker" / f).write_text("services: {}\n")
+    (tmp_path / "releases" / "2.3.0").mkdir()
+    os.symlink(str(tmp_path / "releases" / "2.3.0"), str(tmp_path / "current"))
+    (tmp_path / "satom.env").write_text("SATOM_IMAGE=satom:2.3.0\n")
+    monkeypatch.setattr(ag, "HOME", str(tmp_path))
+    monkeypatch.setattr(ag, "image_tags", lambda *a: [])
+    seen = []
+    monkeypatch.setattr(ag, "run_helper", lambda argv, timeout, network="none":
+                        seen.append((argv[1], network)) or (0, "web\n"))
+    monkeypatch.setattr(ag, "reload_proxy", lambda st: True)
+    monkeypatch.setattr(ag, "wait_service", lambda *a, **k: (True, "healthy"))
+    ag.do_update(_St(), "9.9.9")
+    assert seen[0] == ("build", "bridge")
+    assert seen[1:] and all(net == "none" for verb, net in seen[1:]), seen

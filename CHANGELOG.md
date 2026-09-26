@@ -6,6 +6,90 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — the Docker operations agent (2026-09-26)
+
+A Docker node's console can now restart the stack's services, switch the
+stack to another release and install the proxy certificate — the operations
+the container runtime used to renounce outright. The web still never touches
+the Docker engine: it drops a request into a volume, and a new, **optional**
+`agent` service, the only container that mounts `/var/run/docker.sock`,
+re-validates it against a closed list and does the work. **Off by default:**
+the socket is root on the host. Reference:
+[`docs/docker-compose.md`](docs/docker-compose.md) §7.
+
+- **System → Container operations** (`/system/container/`, `user_manage`,
+  shown only on a container node). Cards: *Operations agent* (live / not
+  answering / not enabled, versions, layout), *Capabilities*, *Services of this
+  stack*, *Update* (typed `UPDATE` confirmation), *Proxy certificate* and
+  *Recent agent requests*. User guide §44.
+- **What the agent accepts.** Three request kinds: `ctr-restart` (a fixed
+  service → action table; `web`, `proxy`, `postgres`, `redis` and
+  `victoria-metrics` restart only; `scheduler` and `cron` also start and stop;
+  the agent and `tls-init` never), `ctr-update` (a release `X.Y.Z`) and
+  `ctr-cert` (PEM certificate, key and optional chain). Anything else is
+  refused. A request older than 600 s at pickup is refused, not run late.
+- **Certificate import reloads the proxy, it never restarts it.** The agent
+  runs `nginx -t` in every proxy container, then sends SIGHUP to the nginx
+  master, so open connections — the operator's own request included — survive.
+  If nginx rejects the new pair, the previous certificate is put back and
+  nothing is reloaded. The heartbeat is refreshed before a request is reported
+  done, so the page and the import's answer show the certificate now served.
+- **Release switch with rollback.** The agent downloads the release tree from
+  GitHub if it is not on the host yet, refuses a tree with invalid network
+  literals, builds the image in a throwaway `docker:27-cli` container (the only
+  helper given a network: BuildKit needs it for the registry token),
+  recreates every service except itself, reloads the proxy gracefully, waits
+  up to 420 s for `web` to be
+  healthy and rolls back the tree, the image and `satom.env` if it is not. It
+  takes no backup and does not roll back the database. It never recreates
+  itself; `satom-docker up -d` brings it to the new version, and the page shows
+  the drift until then. Updates need the installer layout; on a manual
+  checkout the agent restarts, installs certificates and reports health only.
+- **Delegation needs a declaration and a heartbeat.** `app/runtime.py`
+  delegates `self_update`, `service_control`, `cert_activation` and
+  `unit_health` only when the overlay declares the agent (`SATOM_AGENT=docker`)
+  and its heartbeat is at most 60 s old. A silent agent is treated as absent,
+  with the reason "The operations agent is enabled but not answering (…)", and
+  nothing is queued behind it. The Services card, container health and the node
+  certificate read the agent's heartbeat; the web never mounts `satom-pki`.
+- **Installer.** `SETUP_AGENT=yes` now enables the agent when the release
+  ships `compose.agent.yaml`, and update mode offers it on an existing install.
+  A separate installer overlay, `compose.setup-agent.yaml`, gives the agent
+  the installer layout (`SATOM_AGENT_HOME`) and is layered only with the agent,
+  so disabling it is one line in `satom.env`; the image `docker:27-cli` is
+  pulled up front. A console switch to a release without the agent is refused.
+  Manual checkouts: `SATOM_SETUP_AGENT=yes` in `.env` (new in `env.example`,
+  default `no`).
+- **New host-only capability `ha_promote`**, never delegated: failover on a
+  container node stays a manual PostgreSQL procedure.
+- The git and library (pip) updaters still refuse in a container, and now point
+  to System → Container operations.
+- Safeguards §195; `tests/test_docker_agent.py`, `tests/test_container_ops.py`.
+
+### Fixed
+
+- **`satom-docker.sh health` checks the application again.** It built its
+  `/healthz` URL from the retired `SATOM_HTTP_BIND` and stopped with "unbound
+  variable" before the runtime summary; it now requests
+  `https://127.0.0.1:<SATOM_HTTPS_BIND port>/healthz` through the proxy.
+- **`/promote` is refused in a container.** It was gated only by
+  `promote_eligible()`, so on a container node it queued a failover that no
+  process would ever execute and reported it as queued.
+- **Release versions are anchored with `\Z`, not `$`.** `$` also matches before
+  a trailing newline, so the version pattern accepted `"2.3.0\n"`. Both copies
+  (the agent and the console) are fixed, before either shipped.
+- **Docker: the proxy re-resolves the app per request; a recreated `web` no
+  longer leaves the console answering 502 until the proxy is restarted**
+  (every Docker install before 2.3.0). `proxy-init.sh` passes
+  `--resolver 127.0.0.11` (Docker's embedded DNS) and the container vhost looks
+  `web` up per request instead of once at start. Host installs keep their
+  literal `127.0.0.1:8000` upstream.
+- **Docker: the installer's update mode reloads the proxy, so the vhost
+  `tls-init` rewrites is actually served.** The proxy runs a stock image and an
+  update never recreated it; the installer now runs
+  `satom-docker kill -s HUP proxy` after `up -d --remove-orphans`, a graceful
+  reload.
+
 ## [2.2.0] - 2026-09-26
 
 ### Added — a versioned API library for every product (2026-09-25)

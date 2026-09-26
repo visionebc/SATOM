@@ -966,12 +966,16 @@ def _read(p: Path) -> str:
         return ""
 
 
+def write_heartbeat() -> None:
+    try:
+        write_owned(HEARTBEAT, json.dumps(heartbeat_doc(), indent=1).encode())
+    except Exception as exc:  # noqa: BLE001
+        log("heartbeat failed: %s" % exc)
+
+
 def heartbeat_loop(stop: threading.Event) -> None:
     while not stop.is_set():
-        try:
-            write_owned(HEARTBEAT, json.dumps(heartbeat_doc(), indent=1).encode())
-        except Exception as exc:  # noqa: BLE001
-            log("heartbeat failed: %s" % exc)
+        write_heartbeat()
         stop.wait(HEARTBEAT_SECONDS)
 
 
@@ -1013,6 +1017,11 @@ def handle(path: Path) -> None:
         elif kind == "ctr-cert":
             st.set(target="proxy certificate")
             do_cert(st, params)
+        # Refreshed BEFORE the request is reported done: the console answers
+        # from the heartbeat, and a 15-second-old one described the state
+        # before the action -- the certificate import answered with the
+        # previous certificate (measured end to end).
+        write_heartbeat()
         st.finish("success")
     except Refused as exc:
         if st:

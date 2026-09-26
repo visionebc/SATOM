@@ -378,11 +378,12 @@ def test_compose_files_follow_the_installer_wrapper(ag, tmp_path):
     d = home / "current" / "deploy" / "docker"
     d.mkdir(parents=True)
     (d / "compose.agent.yaml").write_text("services: {}\n")
+    (home / "compose.setup-agent.yaml").write_text("services: {}\n")
     env = {"SATOM_ENV": "prod", "SATOM_NODE_ROLE": "standby", "SATOM_SETUP_AGENT": "yes"}
     files = [f for f in ag.compose_files(str(home), env) if f != "-f"]
     assert [Path(f).name for f in files] == [
         "compose.yaml", "compose.prod.yaml", "compose.standby.yaml",
-        "compose.setup.yaml", "compose.agent.yaml"]
+        "compose.setup.yaml", "compose.agent.yaml", "compose.setup-agent.yaml"]
     # Without the agent answer the overlay is not layered: an update would
     # otherwise recreate web WITHOUT the queue volumes and cut its own agent off.
     files = [f for f in ag.compose_files(str(home), {"SATOM_ENV": "prod"}) if f != "-f"]
@@ -570,3 +571,44 @@ def test_the_agent_is_stdlib_only():
     import sys
     stdlib = set(sys.stdlib_module_names) | {"__future__"}
     assert mods <= stdlib, mods - stdlib
+
+
+def test_the_installer_overlay_never_defines_the_agent():
+    """The agent's layout has its own overlay, layered only with
+    compose.agent.yaml. In compose.setup.yaml it would leave a half `agent`
+    service (no image) behind the moment the agent is disabled, and every
+    compose command would fail until someone edited a generated file."""
+    text = INSTALLER.read_text()
+    start = text.index("write_setup_overlay() {")
+    body = text[start:text.index("\n}\n", start)]
+    main = body[:body.index('> "$DOCKER_HOME/compose.setup.yaml"')]
+    assert '"  agent:"' not in main
+    assert 'compose.setup-agent.yaml' in body
+    assert 'rm -f "$DOCKER_HOME/compose.setup-agent.yaml"' in body
+
+
+def test_the_installer_wrapper_layers_the_agent_layout_only_with_the_agent():
+    text = INSTALLER.read_text()
+    w = text[text.index("write_wrapper() {"):]
+    w = w[:w.index("\nWRAP\n")]
+    agent_if = w.index('if [ "${SATOM_SETUP_AGENT:-no}" = yes ]')
+    assert w.index("compose.setup-agent.yaml") > agent_if
+    assert w.index("compose.setup-agent.yaml") < w.index("\nfi", agent_if)
+
+
+def test_a_release_without_the_agent_is_refused_before_anything_changes(ag, monkeypatch, tmp_path):
+    rel = tmp_path / "releases" / "2.1.3"
+    (rel / "deploy" / "docker").mkdir(parents=True)
+    (rel / "Dockerfile").write_text("FROM x\n")
+    (rel / "deploy" / "docker" / "compose.yaml").write_text("services: {}\n")
+    env = tmp_path / "satom.env"
+    env.write_text("SATOM_IMAGE=satom:2.3.0\n")
+    monkeypatch.setattr(ag, "HOME", str(tmp_path))
+    built = []
+    monkeypatch.setattr(ag, "run_helper", lambda *a, **k: built.append(a) or (0, ""))
+    monkeypatch.setattr(ag, "image_tags", lambda *a: [])
+    st = type("S", (), {"set": lambda *a, **k: None, "step": lambda *a, **k: None})()
+    with pytest.raises(ag.Refused, match="does not ship the operations agent"):
+        ag.do_update(st, "2.1.3")
+    assert built == [], "nothing is built or recreated for a refused release"
+    assert env.read_text() == "SATOM_IMAGE=satom:2.3.0\n"

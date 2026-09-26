@@ -15644,6 +15644,19 @@ could not talk its way around.</p>
   tests/test_apilib_harvest.py tests/test_firmware_probe_harvest.py \
   tests/test_scheduled_actions_apilib.py
 </code></pre>
+<h2 id="194--a-view-keyword-that-shadows-a-layout-global-teststest_template_context_shadowingpy-2026-09-26">§194 — a view keyword that shadows a layout global (<code>tests/test_template_context_shadowing.py</code>, 2026-09-26)</h2>
+<p>The field-map page passed <code>products=[...]</code> to <code>render_template</code>. That replaced
+the <code>products</code> dict that <code>base.html</code> iterates with <code>.items()</code> for the ADOM
+navigation, and the page answered 500 in production while its own tests were
+green: the test app has no ADOM registry, so the navigation block never ran.</p>
+<ul>
+<li><strong>Guard:</strong> every <code>render_template</code> keyword in <code>app/</code> is compared with the keys
+  the context processors inject. A match fails unless it is on a short allowlist
+  of overrides that pass the same shape (<code>product.py</code>, <code>naming.py</code>).</li>
+<li><strong>Vacuity check:</strong> a second test asserts <code>products</code> is among the collected
+  keys, so a processor that stops answering cannot turn the guard into a pass.</li>
+<li><strong>Verify:</strong> <code>pytest tests/test_template_context_shadowing.py -q</code>.</li>
+</ul>
     </div>
   </div>
 </section>

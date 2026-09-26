@@ -225,7 +225,67 @@ class ApiLibFieldMap(db.Model):
     retired_by = db.Column(db.String(64), nullable=False, default="")
 
 
+class ApiLibBaseline(db.Model):
+    """The endpoint catalog SATOM ships for one product, pinned to one build.
+
+    This replaces the hand-written ``endpoints*.yaml`` seeds. A baseline is
+    PROMOTED from what the library measured on one build (``flask apilib
+    baseline promote``), sealed with a content hash, and exported to
+    ``app/registry/baselines/<product>.json`` so a fresh installation receives
+    it. Append-only like the rest of the library: promoting a new baseline adds
+    a row and never rewrites an old one. The active baseline of a product is
+    the one promoted last.
+    """
+
+    __tablename__ = "api_lib_baseline"
+    __table_args__ = (
+        db.UniqueConstraint("product", "sha256", name="uq_api_lib_baseline_product_sha"),
+        db.Index("ix_api_lib_baseline_product_promoted", "product", "promoted_at"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    product = db.Column(db.String(32), nullable=False)
+    #: Firmware build the baseline is pinned to (``firmware_versions.normalize``).
+    version = db.Column(db.String(32), nullable=False)
+    #: API protocol of the product (``v2.0``, ``v1``, ``jsonrpc``) — NOT the firmware.
+    api_version = db.Column(db.String(16), nullable=False, default="")
+    sha256 = db.Column(db.String(64), nullable=False)
+    #: 'promoted' (from measurements) | 'adopted' (one-time import of a legacy map).
+    method = db.Column(db.String(16), nullable=False, default="promoted")
+    promoted_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    promoted_by = db.Column(db.String(64), nullable=False, default="")
+    note = db.Column(db.String(500), nullable=False, default="")
+    #: When the registry was last reconciled to this baseline. NULL = not yet.
+    applied_at = db.Column(db.DateTime, nullable=True)
+
+
+class ApiLibBaselineEntry(db.Model):
+    """One logical endpoint name of a baseline and the URN it resolves to."""
+
+    __tablename__ = "api_lib_baseline_entry"
+    __table_args__ = (
+        db.UniqueConstraint("baseline_id", "name", name="uq_api_lib_baseline_entry_name"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    baseline_id = db.Column(db.Integer, db.ForeignKey("api_lib_baseline.id"),
+                            nullable=False, index=True)
+    name = db.Column(db.String(160), nullable=False)
+    urn = db.Column(db.String(255), nullable=False)
+    #: 'measured'   — the baseline build served it, URN confirmed by evidence;
+    #: 'carried'    — the baseline build has no evidence about it, kept from
+    #:                the previous baseline;
+    #: 'legacy'     — adopted from the retired YAML seed, never measured;
+    #: 'contradicted' — adopted, but the baseline build measured it ABSENT
+    #:                (kept so adoption changes nothing; the next promotion
+    #:                drops it, and ``baseline check`` reports it).
+    provenance = db.Column(db.String(16), nullable=False, default="measured")
+    #: The build whose evidence backs the entry ('' when none does).
+    measured_on = db.Column(db.String(32), nullable=False, default="")
+
+
 __all__ = [
     "ApiLibBuild", "ApiLibEvidence", "ApiLibEndpoint", "ApiLibEndpointFact",
     "ApiLibField", "ApiLibFieldFact", "ApiLibSpan", "ApiLibFieldMap",
+    "ApiLibBaseline", "ApiLibBaselineEntry",
 ]

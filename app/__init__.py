@@ -2901,43 +2901,22 @@ def _seed_themes() -> None:
 
 
 def _seed_registry() -> None:
-    """Insert-only seed of the endpoint registry from the git-tracked
-    ``endpoints.yaml`` (rows already in the DB — operator edits, disables —
-    are never touched; see ``registry.loader.seed_from_yaml``)."""
+    """Seed the endpoint registry from each product's endpoint baseline.
+
+    The shipped baselines (``app/registry/baselines/<product>.json``, sealed,
+    pinned to a firmware build) are inserted if the database lacks them, and
+    the registry is reconciled to the active baseline once per promotion. Rows
+    an operator edited or disabled are never touched; see
+    ``services.api_baseline``. This replaced the insert-only sync from the four
+    hand-written ``endpoints*.yaml`` files.
+    """
     import logging
 
     try:
-        from .registry import loader
-        added = loader.seed_from_yaml()
-        if added:
+        from .services import api_baseline
+        applied = api_baseline.boot()
+        for product, res in applied.items():
             logging.getLogger(__name__).info(
-                "Registry seed: %d endpoints imported from endpoints.yaml", added)
-    except Exception:  # noqa: BLE001 — never block boot on seeding
-        db.session.rollback()
-    try:
-        from .registry import loader
-        added = loader.seed_adc_from_yaml()
-        if added:
-            logging.getLogger(__name__).info(
-                "Registry seed: %d FortiADC endpoints imported from "
-                "endpoints_fortiadc.yaml", added)
-    except Exception:  # noqa: BLE001 — never block boot on seeding
-        db.session.rollback()
-    try:
-        from .registry import loader
-        added = loader.seed_faz_from_yaml()
-        if added:
-            logging.getLogger(__name__).info(
-                "Registry seed: %d FortiAnalyzer endpoints imported from "
-                "endpoints_fortianalyzer.yaml", added)
-    except Exception:  # noqa: BLE001 — never block boot on seeding
-        db.session.rollback()
-    try:
-        from .registry import loader
-        added = loader.seed_fac_from_yaml()
-        if added:
-            logging.getLogger(__name__).info(
-                "Registry seed: %d FortiAuthenticator endpoints imported from "
-                "endpoints_fortiauthenticator.yaml", added)
+                "Endpoint baseline applied to the %s registry: %s", product, res)
     except Exception:  # noqa: BLE001 — never block boot on seeding
         db.session.rollback()

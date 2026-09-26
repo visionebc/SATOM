@@ -132,3 +132,152 @@ def status_cmd():
         for product, version, source, n in sorted(
                 rows, key=lambda r: (r[0], fv.sort_key(r[1]), r[2])):
             click.echo("  %-20s %-12s %-14s %d" % (product, version, source, n))
+
+
+# ---------------------------------------------------------------------------
+# ``flask apilib baseline ...`` — the endpoint registry's seed (docs §9)
+# ---------------------------------------------------------------------------
+
+baseline_cli = AppGroup("baseline", help="Endpoint baselines: the registry seed, "
+                                          "pinned to a firmware build.")
+apilib_cli.add_command(baseline_cli)
+
+
+def _actor() -> str:
+    return "cli:%s" % (os.environ.get("SUDO_USER") or os.environ.get("USER") or "unknown")
+
+
+def _baseline_products(product):
+    from .services import api_baseline
+    if product and product not in api_baseline.products():
+        raise click.ClickException("unknown product %r (known: %s)"
+                                   % (product, ", ".join(api_baseline.products())))
+    return [product] if product else list(api_baseline.products())
+
+
+@baseline_cli.command("status")
+def baseline_status_cmd():
+    """The active baseline of every registry product."""
+    from .services import api_baseline
+    for p in api_baseline.products():
+        s = api_baseline.summary(api_baseline.active(p))
+        if s is None:
+            click.echo("%-20s (no baseline)" % p)
+            continue
+        click.echo("%-20s %-8s %-8s %-8s entries=%-4d %s  applied=%s  sha=%s" % (
+            p, s["version"], s["api_version"], s["method"], s["entries"],
+            " ".join("%s:%d" % kv for kv in sorted(s["by_provenance"].items())),
+            "yes" if s["applied_at"] else "NO", s["sha256"][:12]))
+
+
+@baseline_cli.command("promote")
+@click.option("--product", required=True)
+@click.option("--build", "version", required=True,
+              help="Firmware build to pin the baseline to (e.g. 7.6.8). Must be measured.")
+@click.option("--apply", "do_apply", is_flag=True,
+              help="Write the baseline and reconcile the registry. Without it: dry run.")
+@click.option("--export", "do_export", is_flag=True,
+              help="Also write app/registry/baselines/<product>.json (release work).")
+@click.option("--note", default="", help="Why this baseline was promoted.")
+def baseline_promote_cmd(product, version, do_apply, do_export, note):
+    """Promote what the library measured on BUILD as PRODUCT's baseline."""
+    from .services import api_baseline
+    _baseline_products(product)
+    try:
+        plan = api_baseline.plan_promotion(product, version)
+    except ValueError as exc:
+        raise click.ClickException(str(exc))
+    d = plan["diff"]
+    prev = plan["previous"]
+    click.echo("%s: %s -> %s  (%d entries: %s)" % (
+        product, (prev or {}).get("version", "none"), plan["version"], len(plan["entries"]),
+        " ".join("%s:%d" % kv for kv in sorted(plan["by_provenance"].items()))))
+    for name in d["added"]:
+        click.echo("  + %s" % name)
+    for name in d["removed"]:
+        click.echo("  - %s   (measured absent on %s)" % (name, plan["version"]))
+    for c in d["urn_changed"]:
+        click.echo("  ~ %s   %s -> %s" % (c["name"], c["from"], c["to"]))
+    if plan["identical"]:
+        click.echo("identical to the active baseline; nothing to promote.")
+        return
+    if not do_apply:
+        click.echo("dry run: re-run with --apply to promote.")
+        return
+    res = api_baseline.promote(product, version, actor=_actor(), note=note)
+    _print({"baseline": res["baseline"], "created": res["created"],
+            "applied": res.get("applied")})
+    if do_export:
+        click.echo("exported %s" % api_baseline.export(product))
+
+
+@baseline_cli.command("adopt")
+@click.option("--product", required=True)
+@click.option("--build", "version", required=True,
+              help="Firmware build the legacy map was written against.")
+@click.argument("path", type=click.Path(exists=True, dir_okay=False))
+@click.option("--note", default="")
+def baseline_adopt_cmd(product, version, path, note):
+    """One-time: adopt a legacy flat ``name: urn`` map as the FIRST baseline."""
+    import yaml
+
+    from .services import api_baseline
+    _baseline_products(product)
+    with open(path, encoding="utf-8") as fh:
+        mapping = yaml.safe_load(fh) or {}
+    if not isinstance(mapping, dict):
+        raise click.ClickException("%s is not a flat name: urn map" % path)
+    try:
+        res = api_baseline.adopt(product, version, mapping, actor=_actor(), note=note)
+    except ValueError as exc:
+        raise click.ClickException(str(exc))
+    _print(res)
+
+
+@baseline_cli.command("export")
+@click.option("--product", default=None, help="One product (default: all).")
+def baseline_export_cmd(product):
+    """Write the active baseline(s) to app/registry/baselines/."""
+    from .services import api_baseline
+    for p in _baseline_products(product):
+        try:
+            click.echo("exported %s" % api_baseline.export(p))
+        except ValueError as exc:
+            click.echo("%s: %s" % (p, exc))
+
+
+@baseline_cli.command("apply")
+@click.option("--product", default=None, help="One product (default: all).")
+def baseline_apply_cmd(product):
+    """Reconcile the registry to the active baseline (operator rows spared)."""
+    from .services import api_baseline
+    out = {}
+    for p in _baseline_products(product):
+        b = api_baseline.active(p)
+        out[p] = api_baseline.apply(b) if b is not None else "no baseline"
+    _print(out)
+
+
+@baseline_cli.command("check")
+@click.option("--product", default=None, help="One product (default: all).")
+def baseline_check_cmd(product):
+    """Drift: registry vs baseline vs the evidence of every build the fleet runs.
+
+    Exit status 1 when anything drifted, so it can gate a release.
+    """
+    from .services import api_baseline
+    reports = [api_baseline.check(p) for p in _baseline_products(product)]
+    _print(reports)
+    if not all(r["ok"] for r in reports):
+        raise SystemExit(1)
+
+
+@baseline_cli.command("resolve")
+@click.option("--product", required=True)
+@click.option("--build", "version", default=None, help="Firmware build (optional).")
+@click.argument("name")
+def baseline_resolve_cmd(product, version, name):
+    """How NAME resolves on BUILD, and on what authority."""
+    from .services import api_baseline
+    _baseline_products(product)
+    _print(api_baseline.resolve_at(product, name, version))

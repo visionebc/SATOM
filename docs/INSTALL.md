@@ -447,7 +447,7 @@ the data volume, so restoring only the database leaves rows pointing at
 nothing.) **Operator manual: [`docker-compose.md`](docker-compose.md)** — every
 service with its user, ports, volumes and permissions, the configuration
 reference, the optional operations agent and the manual procedures that
-replace the four renounced capabilities when it is not enabled, failover,
+replace the five renounced capabilities when it is not enabled, failover,
 updates, backup and restore, and troubleshooting.
 
 ---

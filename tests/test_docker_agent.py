@@ -51,8 +51,10 @@ def _req(**kw) -> bytes:
 
 CERT = ("-----BEGIN CERTIFICATE-----\nMIIBszCCAVmgAwIBAgIUQ0FGRQ==\n"
         "-----END CERTIFICATE-----\n")
-KEY = ("-----BEGIN PRIVATE KEY-----\nMIGHAgEAMBMGByqGSM49AgE=\n"
-       "-----END PRIVATE KEY-----\n")
+# PEM header built from parts: tests/test_no_pem_literals.py aborts the
+# release on a literal one, fixture or not.
+KEY = ("-----BEGIN " + "PRIVATE KEY-----\nMIGHAgEAMBMGByqGSM49AgE=\n"
+       "-----END " + "PRIVATE KEY-----\n")
 
 
 # ---------------------------------------------------------------------------

@@ -277,7 +277,7 @@ cover external PostgreSQL.
 
 ```bash
 mkdir -p /opt/satom-src && cd /opt/satom-src
-curl -fsSL https://codeload.github.com/visionebc/SATOM/tar.gz/refs/tags/v2.4.0 \
+curl -fsSL https://codeload.github.com/visionebc/SATOM/tar.gz/refs/tags/v2.4.1 \
   | tar -xz --strip-components=1
 cd /opt/satom-src/deploy/docker
 ```
@@ -296,11 +296,11 @@ release pipeline from the same code as that release's offline bundles, for
 
 ```bash
 cd /tmp
-curl -fLO https://github.com/visionebc/SATOM/releases/download/v2.4.0/satom-image-2.4.0-amd64.tar.gz
-curl -fLO https://github.com/visionebc/SATOM/releases/download/v2.4.0/satom-image-2.4.0-amd64.tar.gz.sha256
-sha256sum -c satom-image-2.4.0-amd64.tar.gz.sha256     # must print OK; stop if it does not
-gunzip -c satom-image-2.4.0-amd64.tar.gz | docker load  # Loaded image: satom:2.4.0
-docker image inspect satom:2.4.0 --format '{{index .Config.Labels "org.opencontainers.image.version"}}'   # 2.4.0
+curl -fLO https://github.com/visionebc/SATOM/releases/download/v2.4.1/satom-image-2.4.1-amd64.tar.gz
+curl -fLO https://github.com/visionebc/SATOM/releases/download/v2.4.1/satom-image-2.4.1-amd64.tar.gz.sha256
+sha256sum -c satom-image-2.4.1-amd64.tar.gz.sha256     # must print OK; stop if it does not
+gunzip -c satom-image-2.4.1-amd64.tar.gz | docker load  # Loaded image: satom:2.4.1
+docker image inspect satom:2.4.1 --format '{{index .Config.Labels "org.opencontainers.image.version"}}'   # 2.4.1
 ```
 
 The `.sha256` names the file without a directory, so run `sha256sum -c` in
@@ -338,7 +338,7 @@ Change it after logging in, then delete the file:
 ```bash
 cd /opt/satom-src/deploy/docker
 ./satom-docker.sh gen-secrets
-./satom-docker.sh build satom:2.4.0     # or load the published image instead (§3.1)
+./satom-docker.sh build satom:2.4.1     # or load the published image instead (§3.1)
 ```
 
 Edit `.env`:
@@ -346,7 +346,7 @@ Edit `.env`:
 ```ini
 SATOM_ENV=prod                      # satom-docker.sh reads it from .env; see §3.4
 SATOM_NODE_ROLE=primary
-SATOM_IMAGE=satom:2.4.0             # compose.prod.yaml requires it to be set; it does NOT reject :local
+SATOM_IMAGE=satom:2.4.1             # compose.prod.yaml requires it to be set; it does NOT reject :local
 SATOM_SERVED_NAMES="satom.example.com"   # quote it if it has spaces (§12)
 SATOM_PG_BIND=127.0.0.1:5432        # required by compose.prod.yaml even on a single node
 TZ=UTC
@@ -363,7 +363,7 @@ engine does not have, Compose tries to pull it from a registry. For
 `satom-setup.sh` deliberately avoids. Check first:
 
 ```bash
-docker image inspect satom:2.4.0 --format '{{.Id}}'
+docker image inspect satom:2.4.1 --format '{{.Id}}'
 ```
 
 ### 3.4 `deploy/docker/satom-docker.sh` — subcommand reference
@@ -1985,8 +1985,8 @@ The published image needs no conversion: copy the two files, run
 connected node:
 
 ```bash
-./satom-docker.sh build satom:2.4.0
-./satom-docker.sh export satom:2.4.0 /tmp/satom-2.4.0.tar.gz          # also writes /tmp/satom-2.4.0.tar.gz.sha256
+./satom-docker.sh build satom:2.4.1
+./satom-docker.sh export satom:2.4.1 /tmp/satom-2.4.1.tar.gz          # also writes /tmp/satom-2.4.1.tar.gz.sha256
 docker pull postgres:15-bookworm; docker pull redis:7-alpine
 docker pull victoriametrics/victoria-metrics:v1.148.0; docker pull nginx:1.27-alpine
 docker save postgres:15-bookworm redis:7-alpine victoriametrics/victoria-metrics:v1.148.0 nginx:1.27-alpine \
@@ -1997,7 +1997,7 @@ On the target, put the tarball and its `.sha256` **at the same path** as on
 the build node, then:
 
 ```bash
-./satom-docker.sh import /tmp/satom-2.4.0.tar.gz
+./satom-docker.sh import /tmp/satom-2.4.1.tar.gz
 gunzip -c /tmp/satom-base-images.tar.gz | docker load
 ```
 
@@ -2109,6 +2109,16 @@ Found in the code while writing this page. Each one is also referenced where
 it matters above. Two items of the 2.1.2 list are fixed in 2.3.0 and no longer
 appear: `satom-docker.sh health` now checks `/healthz` through the proxy, and
 the promote action is gated in a container (§7.2).
+
+**Fixed in 2.4.1 — the 2.4.0 source tree does not start.** In the public
+source of 2.4.0 (and of the 2.x releases before it) the publication step
+rewrote the proxy's fixed address in `compose.yaml`, `env.example` and
+`satom-docker.sh` to `203.0.113.10` while leaving `SATOM_NETWORK_SUBNET` at
+`172.28.0.0/16`, so `docker compose up` stopped with *"no configured subnet
+contains IP address 203.0.113.10"*. The published image was not affected, and
+neither was a native install. Install 2.4.1 or later; on an existing 2.4.0
+checkout, set `SATOM_PROXY_IP=172.28.0.10` and `TRUSTED_PROXIES=172.28.0.10`
+in `.env`.
 
 | Item | Detail |
 |---|---|

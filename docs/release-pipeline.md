@@ -175,6 +175,16 @@ It carries that payload's sha256 as an image label, and verification loads
 the published tarball back and refuses it unless the label matches the
 bundles' payload and `/opt/satom/VERSION` inside it matches the release.
 
+The builders (one per bundle family, plus the Docker builder) are build-only
+machines that do not start at boot. Verification and publication start them
+again to read their artefacts, so the run stops every one of them when it
+ends, whether it succeeded or failed, and logs any it could not stop. After
+the public result has been read back, the download catalog's version record is
+set to the release, so the catalog never names a version nobody can download.
+The last step reads the health of both nodes. The standby is only ever read:
+the pipeline's key is accepted there solely for a fixed, read-only probe
+(`/healthz`, failed units, `HEAD`), whatever command the pipeline sends.
+
 Three properties of this stage are worth stating because none of them announces
 itself when it breaks:
 

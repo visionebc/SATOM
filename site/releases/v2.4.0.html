@@ -5,8 +5,8 @@
 <meta charset="UTF-8">
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Version 1.17.1 — SATOM</title>
-<meta name="description" content="Released on 2026-08-23 — Fixed · 1 entry.">
+<title>Version 2.4.0 — SATOM</title>
+<meta name="description" content="Released on 2026-09-28 — Changed — the endpoint registry is seeded from a build-pinned baseline (2026-09-27) · 7 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -45,8 +45,8 @@
 
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
-  <h1>Version 1.17.1 <span class="rel-badge">superseded</span></h1>
-  <p class="sub">Released on 2026-08-23 — Fixed · 1 entry.</p>
+  <h1>Version 2.4.0 <span class="rel-badge rel-now">current release</span></h1>
+  <p class="sub">Released on 2026-09-28 — Changed — the endpoint registry is seeded from a build-pinned baseline (2026-09-27) · 7 entries.</p>
 </header>
 
 <section class="wrap">
@@ -62,7 +62,7 @@
         <span class="rel-nav-meta">unreleased · Changes · 0 entries</span>
         <ul class="rel-leads"></ul>
       </a>
-      <a class="rel-nav-item" href="v2.4.0.html" data-rel-version="2.4.0">
+      <a class="rel-nav-item is-active" href="v2.4.0.html" data-rel-version="2.4.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 2.4.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
         <span class="rel-nav-meta">2026-09-28 · Changed — the endpoint registry is seeded from a build-pinned baseline (2026-09-27) · 7 entries</span>
         <ul class="rel-leads"><li>Endpoint baselines</li><li>Shipped sealed, applied at boot</li><li>Operator rows still win</li><li class="rel-more">… and 4 more</li></ul>
@@ -117,7 +117,7 @@
         <span class="rel-nav-meta">2026-08-23 · Added · Fixed · 6 entries</span>
         <ul class="rel-leads"><li>Border corroboration — Sentinel can ask the firewall in front whether a source is a real peer</li><li>The mechanism is unverified and the console says so</li><li class="rel-more">… and 4 more</li></ul>
       </a>
-      <a class="rel-nav-item is-active" href="v1.17.1.html" data-rel-version="1.17.1">
+      <a class="rel-nav-item" href="v1.17.1.html" data-rel-version="1.17.1">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 1.17.1</span></span>
         <span class="rel-nav-meta">2026-08-23 · Fixed · 1 entry</span>
         <ul class="rel-leads"><li>The two buttons that reveal a sibling pane did nothing</li></ul>
@@ -295,25 +295,45 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
-<h3 id="fixed">Fixed</h3>
+<p>The first published release since 2.2.0. It also ships everything listed
+under [2.3.0] below: that version was cut but never published.</p>
+<h3 id="changed--the-endpoint-registry-is-seeded-from-a-build-pinned-baseline-2026-09-27">Changed — the endpoint registry is seeded from a build-pinned baseline (2026-09-27)</h3>
+<p>The four hand-written <code>endpoints*.yaml</code> files at the repository root are gone.
+They never said which firmware they described, and their insert-only seed could
+add a name but never correct one. Asked for by the user: <em>"even the seed changes
+with the firmware; in three years it will not be the same seed"</em>. Reference:
+<a href="../docs/api-library.html"><code>docs/api-library.md</code></a> §9.</p>
 <ul>
-<li><strong>The two buttons that reveal a sibling pane did nothing.</strong> <em>Response engine
-  → Response policy</em> (in the Incidents console) and <em>Architecture → Incidents
-  console</em> both carried <code>data-bs-toggle="tab"</code> while sitting inside a card,
-  outside the tab list. Bootstrap 5.3 resolves a tab list with
-  <code>closest('.list-group, .nav, [role="tablist"]')</code> and <strong>returns</strong> when it
-  finds nothing — but the element still matches the click data-api, so its
-  handler runs into <code>querySelectorAll.call(undefined, …)</code> and throws
-  <code>Illegal invocation</code>. Nothing failed server-side: valid markup, 200 on the
-  route, every render assertion green. The only symptom was a button that did
-  nothing, which looks exactly like a button nobody pressed. Both now forward
-  the click to the menu entry that owns the pane — the trigger Bootstrap can
-  actually construct — which also keeps the menu highlighting the section the
-  operator is looking at. Each carries a fallback URL to its standalone page,
-  so "nothing happens" is not an available outcome. Reported by an operator;
-  measured and re-verified in chromium under the app's real CSP.</li>
+<li><strong>Endpoint baselines.</strong> Each registry product's seed is now a baseline pinned
+  to one firmware build and promoted from what the API library <strong>measured</strong> on
+  that build (<code>flask apilib baseline promote --product P --build X</code>): served
+  names come in with the evidence's URN, names measured absent go out, the rest
+  are carried and labelled. A build nobody measured cannot be promoted. Tables
+  <code>api_lib_baseline</code> / <code>api_lib_baseline_entry</code> (migration <code>apibl01</code>).</li>
+<li><strong>Shipped sealed, applied at boot.</strong> <code>app/registry/baselines/&lt;product&gt;.json</code>
+  is generated, one entry per line, and sealed with SHA-256; a hand-edited
+  artifact is refused. Boot inserts the shipped baseline and reconciles the
+  registry once per promotion, on every install path (fresh installs never run
+  alembic, so the data does not travel as a migration).</li>
+<li><strong>Operator rows still win.</strong> Rows the baseline wrote are tagged
+  <code>baseline:&lt;product&gt;@&lt;build&gt;</code>; a row an operator edited, disabled or created is
+  never touched. Unlike the old seed, a promotion <strong>can</strong> correct a URN the
+  vendor moved.</li>
+<li><strong>New commands:</strong> <code>flask apilib baseline status | promote | check | resolve |
+  apply | export | adopt</code>. <code>check</code> compares the registry, the baseline and the
+  evidence of every build the fleet runs, and exits 1 on drift.</li>
+<li><strong>First baselines</strong>, adopted from the YAML with every entry labelled against
+  the evidence: FortiWeb 7.6.8 (517: 287 measured, 191 legacy, 39
+  contradicted), FortiADC 8.0.3 (255: 217 measured, 38 legacy), FortiAnalyzer
+  7.6.7 (64 legacy), FortiAuthenticator 8.0.3 (40 measured). No URN conflicted
+  with the evidence, and the registry serves exactly what it served before.</li>
+<li><strong>Known and reported, not changed:</strong> 39 FortiWeb registry names (among them
+  <code>web_protection_profile</code>, <code>load_balance</code>, <code>server_pool_rule</code>) were measured
+  <strong>absent</strong> on 7.6.8. They stay until a FortiWeb promotion drops them.</li>
+<li>Device fingerprinting of retired snapshots now reads the registry instead of
+  the YAML files. Safeguards §196.</li>
 </ul>
-<p class="rel-prevnext"><a href="v1.18.0.html">← Version 1.18.0</a> · <a href="v1.17.0.html">Version 1.17.0 →</a></p>
+<p class="rel-prevnext"><a href="unreleased.html">← Unreleased — the next release</a> · <a href="v2.3.0.html">Version 2.3.0 →</a></p>
       </div>
       <div class="callout" style="margin-top:24px;">
         <span class="cico">🗒️</span>

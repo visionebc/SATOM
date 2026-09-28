@@ -61,6 +61,7 @@
     <aside class="toc">
       <div class="toc-title">On this page</div>
       <a href="#unreleased">[Unreleased]</a>
+      <a href="#241---2026-09-29">[2.4.1] - 2026-09-29</a>
       <a href="#240---2026-09-28">[2.4.0] - 2026-09-28</a>
       <a href="#230---2026-09-26">[2.3.0] - 2026-09-26</a>
       <a href="#220---2026-09-26">[2.2.0] - 2026-09-26</a>
@@ -104,7 +105,6 @@
       <a href="#121---2026-07-27">[1.2.1] - 2026-07-27</a>
       <a href="#12---2026-07-27">[1.2] - 2026-07-27</a>
       <a href="#11---2026-07-15">[1.1] - 2026-07-15</a>
-      <a href="#10---2026-07-14">[1.0] - 2026-07-14</a>
     </aside>
     <div class="doc-body mdx">
 <h1 id="changelog">Changelog</h1>
@@ -112,6 +112,21 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h2 id="241---2026-09-29">[2.4.1] - 2026-09-29</h2>
+<h3 id="fixed--a-docker-install-from-the-published-source-starts-again-2026-09-29">Fixed — a Docker install from the published source starts again (2026-09-29)</h3>
+<p>The public source of 2.4.0 did not start under Docker: the publication step
+rewrote the proxy's fixed address in <code>deploy/docker/compose.yaml</code>,
+<code>env.example</code> and <code>satom-docker.sh</code> to <code>203.0.113.10</code> and left the network at
+<code>{ip}/16</code>, so <code>docker compose up</code> refused with <em>"no configured subnet
+contains IP address 203.0.113.10"</em>. <code>satom-setup.sh</code> Docker mode and the
+manual route both failed; native installs and the published image were not
+affected. The publication step now leaves the product's own container network
+alone. On a 2.4.0 checkout, set <code>SATOM_PROXY_IP={ip}</code> and
+<code>TRUSTED_PROXIES={ip}</code> in <code>.env</code>, or install 2.4.1. Reference:
+<code>docs/docker-compose.md</code> §14.</p>
+<p>This is also the first release whose <code>satom-setup.sh</code> loads the published
+image (below): the image was attached to 2.4.0 after its release, and the
+installer shipped with 2.4.0 still builds.</p>
 <h3 id="added--the-container-image-is-published-with-every-release-2026-09-28">Added — the container image is published with every release (2026-09-28)</h3>
 <p>Asked for by the user: <em>"publish the Docker image for installing, and update
 the documentation"</em>. Each GitHub release now carries

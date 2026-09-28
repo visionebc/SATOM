@@ -6,6 +6,25 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [2.4.1] - 2026-09-29
+
+### Fixed — a Docker install from the published source starts again (2026-09-29)
+
+The public source of 2.4.0 did not start under Docker: the publication step
+rewrote the proxy's fixed address in `deploy/docker/compose.yaml`,
+`env.example` and `satom-docker.sh` to `203.0.113.10` and left the network at
+`172.28.0.0/16`, so `docker compose up` refused with *"no configured subnet
+contains IP address 203.0.113.10"*. `satom-setup.sh` Docker mode and the
+manual route both failed; native installs and the published image were not
+affected. The publication step now leaves the product's own container network
+alone. On a 2.4.0 checkout, set `SATOM_PROXY_IP=172.28.0.10` and
+`TRUSTED_PROXIES=172.28.0.10` in `.env`, or install 2.4.1. Reference:
+`docs/docker-compose.md` §14.
+
+This is also the first release whose `satom-setup.sh` loads the published
+image (below): the image was attached to 2.4.0 after its release, and the
+installer shipped with 2.4.0 still builds.
+
 ### Added — the container image is published with every release (2026-09-28)
 
 Asked for by the user: *"publish the Docker image for installing, and update

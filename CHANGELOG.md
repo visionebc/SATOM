@@ -6,6 +6,19 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — the container image is published with every release (2026-09-28)
+
+Asked for by the user: *"publish the Docker image for installing, and update
+the documentation"*. Each GitHub release now carries
+`satom-image-<ver>-amd64.tar.gz` and its `.sha256`: `satom:<ver>` for
+`linux/amd64`, built by the release pipeline from the same redacted code as the
+offline bundles. 2.4.0 received it after its release. `satom-setup.sh` Docker
+mode now downloads it, stops on a checksum mismatch, and loads it, instead of
+building for 5–15 minutes; it builds only when the release publishes no image,
+on a non-`x86_64` host, or with the new `SETUP_IMAGE=build`. The console update
+through the operations agent still builds. Reference: `docs/docker-compose.md`
+§2.4, §3.1, §11.1, §11.8, §14.
+
 ## [2.4.0] - 2026-09-28
 
 The first published release since 2.2.0. It also ships everything listed

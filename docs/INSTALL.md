@@ -427,7 +427,11 @@ Production runs two nodes: a primary, and a **standby** whose PostgreSQL is a
 streaming replica and whose scheduler idles until the database is promoted (two
 nodes must never both fire the same action — a duplicated firmware upgrade is a
 double flash). A node with no route to a registry is served the same way the
-offline bundles are, as a file:
+offline bundles are, as a file. From 2.4.0 on every release publishes the image
+as `satom-image-<ver>-amd64.tar.gz` + `.sha256` next to the bundles, and
+`satom-setup.sh` (newer than 2.4.0) downloads and verifies it instead of
+building ([`docker-compose.md`](docker-compose.md) §3.1). An image you build
+yourself travels with `export` / `import`:
 
 ```bash
 ./satom-docker.sh export satom:<ver> /tmp/satom-<ver>.tar.gz

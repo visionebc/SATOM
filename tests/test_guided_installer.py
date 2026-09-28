@@ -400,3 +400,98 @@ def test_setup_uses_the_sibling_installer_inside_a_bundle():
          + '\ninstaller_version "%s"' % INSTALL_SATOM],
         capture_output=True, text=True)
     assert r.stdout.strip() == VERSION, r.stderr
+
+
+# --------------------------------------------------------------------------- #
+#  [SATOM-SETUP-IMAGE] the published container image (2.4.0+)                  #
+# --------------------------------------------------------------------------- #
+
+_IMAGE_STUBS = r'''
+STATE="$(mktemp -d)"; : > "$STATE/calls"
+LOG=/dev/null; GH_URL="https://github.example/o/r"
+[ "${PRESENT:-0}" = 1 ] && touch "$STATE/have"
+uname() { echo "${ARCH:-x86_64}"; }
+curl() { echo "curl" >> "$STATE/calls"; echo "${HTTP:-200}"; }
+fetch() { local o=""; while [ $# -gt 0 ]; do [ "$1" = -o ] && { o="$2"; shift; }; shift; done
+          echo data > "$o"; echo "fetch" >> "$STATE/calls"; }
+sha256sum() { echo "sha256sum" >> "$STATE/calls"; return "${SHA_RC:-0}"; }
+gunzip() { echo layers; }
+docker() {
+    case "$1" in
+        image) [ -f "$STATE/have" ] && { echo 104857600; return 0; }; return 1 ;;
+        load)  cat > /dev/null; touch "$STATE/have"; echo "load" >> "$STATE/calls" ;;
+    esac
+}
+build_image() { echo "build" >> "$STATE/calls"; touch "$STATE/have"; }
+'''
+
+
+def _get_image(env: dict) -> tuple[subprocess.CompletedProcess, list[str]]:
+    env_lines = ['%s="%s"' % kv for kv in env.items()]
+    r = _run_setup_funcs(
+        ["get_image"],
+        _IMAGE_STUBS + '\nget_image 9.9.9; echo "LOADED=$([ -f "$STATE/have" ] && echo y)"; '
+        'echo "CALLS=$(tr "\\n" " " < "$STATE/calls")"',
+        env_lines)
+    calls = []
+    for line in r.stdout.splitlines():
+        if line.startswith("CALLS="):
+            calls = line[6:].split()
+    return r, calls
+
+
+def test_setup_loads_the_published_image_instead_of_building():
+    r, calls = _get_image({})
+    assert r.returncode == 0, r.stderr
+    assert "LOADED=y" in r.stdout
+    assert calls == ["curl", "fetch", "fetch", "sha256sum", "load"], calls
+    assert "build" not in calls
+
+
+def test_setup_builds_only_when_the_release_publishes_no_image():
+    r, calls = _get_image({"HTTP": "404"})
+    assert r.returncode == 0, r.stderr
+    assert calls == ["curl", "build"], calls
+
+
+def test_a_download_that_fails_its_checksum_stops_and_never_builds():
+    """A corrupt or substituted image is a stop, not a cue to build something
+    else quietly and report success."""
+    r, _ = _get_image({"SHA_RC": "1"})
+    assert r.returncode != 0
+    assert "does NOT match its .sha256" in r.stderr
+    assert "LOADED=y" not in r.stdout
+
+
+@pytest.mark.parametrize("env", [{"SETUP_IMAGE": "build"}, {"ARCH": "aarch64"}])
+def test_forced_or_non_amd64_builds_without_downloading(env):
+    r, calls = _get_image(env)
+    assert r.returncode == 0, r.stderr
+    assert calls == ["build"], calls
+
+
+def test_an_image_already_in_the_engine_is_reused():
+    r, calls = _get_image({"PRESENT": "1"})
+    assert r.returncode == 0, r.stderr
+    assert calls == [], calls
+
+
+def test_setup_image_rejects_unknown_values():
+    r, _ = _get_image({"SETUP_IMAGE": "pull"})
+    assert r.returncode != 0 and "SETUP_IMAGE must be release or build" in r.stderr
+
+
+def test_both_docker_paths_get_the_image_through_get_image():
+    """Install and update: build_image is only reached through get_image."""
+    body = "\n".join(_executed(_extract("install_docker", SETUP.read_text(encoding="utf-8"))))
+    assert body.count('get_image "$VERSION"') == 2, body
+    assert "build_image" not in body
+
+
+def test_the_image_name_matches_what_the_release_pipeline_publishes():
+    """The pipeline (mobile-apps satom_release._image_name) publishes
+    satom-image-<ver>-amd64.tar.gz; a rename on either side 404s every install
+    into a silent local build."""
+    body = _extract("get_image", SETUP.read_text(encoding="utf-8"))
+    assert 'name="satom-image-${v}-amd64.tar.gz"' in body
+    assert '"${GH_URL}/releases/download/v${v}/${name}"' in body

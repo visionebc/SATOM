@@ -255,8 +255,15 @@ a round trip.</p>
 <h2 id="stage-4--publish">Stage 4 — Publish</h2>
 <p>On a clean gate the sanitized history is force-pushed to the <strong>public GitHub
 mirror</strong> — one destination, with every version tag repointed at the sanitized
-commit that carries the same tree — and the release artefacts (installer +
-offline bundles + <code>SHA256</code>) are attached to the matching <strong>GitHub Release</strong>.</p>
+commit that carries the same tree — and the release artefacts (installers +
+offline bundles + the container image + <code>SHA256</code>) are attached to the
+matching <strong>GitHub Release</strong>.</p>
+<p>The container image (<code>satom-image-&lt;ver&gt;-amd64.tar.gz</code>, <code>docker save | gzip</code>
+of <code>satom:&lt;ver&gt;</code>) is built in the same step as the bundles, on a dedicated
+Docker builder, from the <strong>same redacted payload</strong> — never from a checkout.
+It carries that payload's sha256 as an image label, and verification loads
+the published tarball back and refuses it unless the label matches the
+bundles' payload and <code>/opt/satom/VERSION</code> inside it matches the release.</p>
 <p>Three properties of this stage are worth stating because none of them announces
 itself when it breaks:</p>
 <ul>

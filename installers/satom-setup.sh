@@ -106,6 +106,8 @@ Variables for --yes (all optional unless stated otherwise):
   SETUP_CERT=self|import, SETUP_CERT_FILE, SETUP_KEY_FILE, SETUP_CHAIN_FILE
   SETUP_FIREWALL=yes|no               (open ports if firewalld/ufw is active)
   SETUP_INSTALL_DOCKER=yes|no         (install Docker if missing)
+  SETUP_IMAGE=release|build           (docker: download the release's published image
+                                       (default; built here if the release has none) or build it)
   SETUP_JOIN_KEY                      (native secondary: the primary's join key)
   SETUP_SECONDARY_IP                  (native primary)
   SETUP_JOIN_FILE                     (docker standby: join file generated on the primary)
@@ -714,6 +716,44 @@ fetch_source() {  # fetch_source VERSION -> $DOCKER_HOME/releases/<ver>
     ok "Code v${v} in ${dest}"
 }
 
+get_image() {  # get_image VERSION -> satom:<ver> in the local engine
+    # The release's published image first (satom-image-<ver>-amd64.tar.gz, from
+    # 2.4.0 on): same code as the offline bundles, a download instead of a
+    # 5–15 min build. A local build only when there is none to download: an
+    # older release, a non-amd64 host, or SETUP_IMAGE=build. A download that
+    # does NOT match its .sha256 stops the install -- it is never "fixed" by
+    # quietly building something else.
+    local v="$1" name url dir code
+    CURRENT_STEP="3 · docker: image satom:$v"
+    if docker image inspect "satom:$v" >/dev/null 2>&1; then ok "Image satom:$v already exists"; return; fi
+    case "${SETUP_IMAGE:-release}" in release|build) ;; *) die "SETUP_IMAGE must be release or build" ;; esac
+    if [ "${SETUP_IMAGE:-release}" = build ]; then build_image "$v"; return; fi
+    if [ "$(uname -m)" != x86_64 ]; then
+        info "The published image is linux/amd64 and this host is $(uname -m): building it here"
+        build_image "$v"; return
+    fi
+    name="satom-image-${v}-amd64.tar.gz"
+    url="${GH_URL}/releases/download/v${v}/${name}"
+    code="$(curl -sSL -o /dev/null -w '%{http_code}' -r 0-0 --connect-timeout 15 "$url" 2>/dev/null || true)"
+    if [ "$code" != 200 ] && [ "$code" != 206 ]; then
+        info "Release v${v} publishes no container image (HTTP ${code:-none}): building it here"
+        build_image "$v"; return
+    fi
+    dir="$(mktemp -d /tmp/satom-image.XXXX)"
+    say "Downloading the satom:${v} image (~160 MB)"
+    fetch -o "$dir/$name" "$url" && fetch -o "$dir/$name.sha256" "$url.sha256" \
+        || { rm -rf "$dir"; die "Could not download ${name} from ${GH_URL} (SETUP_IMAGE=build builds it here instead)"; }
+    ( cd "$dir" && sha256sum -c "$name.sha256" ) >>"$LOG" 2>&1 \
+        || { rm -rf "$dir"; die "${name} does NOT match its .sha256: the download is corrupt or not the published file"; }
+    ok "Image verified (sha256)"
+    gunzip -c "$dir/$name" | docker load >>"$LOG" 2>&1 \
+        || { rm -rf "$dir"; die "docker load of ${name} failed (details at the end of ${LOG})"; }
+    rm -rf "$dir"
+    docker image inspect "satom:$v" >/dev/null 2>&1 \
+        || die "${name} loaded, but it does not contain satom:${v}"
+    ok "Image satom:$v loaded ($(docker image inspect "satom:$v" -f '{{.Size}}' | awk '{printf "%.0f MB", $1/1048576}'))"
+}
+
 build_image() {  # build_image VERSION
     CURRENT_STEP="3 · docker: build image satom:$1"
     if docker image inspect "satom:$1" >/dev/null 2>&1; then ok "Image satom:$1 already exists"; return; fi
@@ -844,7 +884,7 @@ install_docker() {
     ensure_docker
 
     if [ "$upgrading" -eq 1 ]; then
-        fetch_source "$VERSION"; build_image "$VERSION"
+        fetch_source "$VERSION"; get_image "$VERSION"
         CURRENT_STEP="docker: update"
         local had_agent; had_agent="$(env_get SATOM_SETUP_AGENT)"
         agent="${had_agent:-no}"
@@ -940,7 +980,7 @@ install_docker() {
     [ "$ASSUME_YES" -eq 1 ] || ask_yn "Continue?" y || die "Cancelled by the user"
 
     # ── Installation ─────────────────────────────────────────────────────────
-    build_image "$VERSION"
+    get_image "$VERSION"
     CURRENT_STEP="docker: configuration"
     mkdir -p "$DOCKER_HOME"; chmod 700 "$DOCKER_HOME"
     ln -sfn "$DOCKER_HOME/releases/$VERSION" "$DOCKER_HOME/current"

@@ -313,7 +313,14 @@ primary as the new standby, or discard the promoted node's volume explicitly.
 A DMZ node cannot reach the LAN registry (measured 2026-08-31: the fleet
 registry is unreachable from the DMZ subnet), and opening the firewall to buy
 that convenience is a poor trade. Ship the image the same way the product
-already ships installers — as an offline artifact:
+already ships installers — as an offline artifact.
+
+From 2.4.0 on the release publishes that artifact itself:
+`satom-image-<ver>-amd64.tar.gz` and its `.sha256` are attached to every
+GitHub release, built from the same code as the offline bundles. Copy both,
+run `sha256sum -c` next to them, and `gunzip -c … | docker load`
+([`docker-compose.md`](docker-compose.md) §3.1). An image you build yourself
+travels the same way through `export` / `import`:
 
 ```bash
 # on the build node

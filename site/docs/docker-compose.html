@@ -91,7 +91,8 @@ read together; this one does not repeat the rationale.</p>
 <h2 id="1-scope--what-the-compose-deployment-is-and-what-it-is-not">1. Scope — what the Compose deployment is, and what it is not</h2>
 <h3 id="11-what-it-is">1.1 What it is</h3>
 <p>The SATOM application packaged as one image (<code>satom:&lt;tag&gt;</code>, built from the
-repository's <code>Dockerfile</code>), plus its dependencies as stock images, started as
+repository's <code>Dockerfile</code>; from 2.4.0 on every release also publishes it
+prebuilt, §3.1), plus its dependencies as stock images, started as
 one Compose project named <code>satom</code> (<code>name: satom</code> in
 <code>deploy/docker/compose.yaml</code>). The web worker, the scheduler and the periodic
 jobs are <strong>the same image</strong>; the entrypoint selects the role from <code>SATOM_ROLE</code>.</p>
@@ -253,8 +254,8 @@ is then layered <strong>last</strong>, after every file above (§7.1).</p>
 </tr>
 <tr>
 <td>Internet access</td>
-<td><code>satom-setup.sh</code> Docker mode downloads the release source from GitHub, builds the image (the build runs <code>apt-get</code> and <code>pip</code>) and pulls the base images. <strong>Without Internet access it stops.</strong></td>
-<td><code>install_docker()</code>, <code>fetch_source()</code></td>
+<td><code>satom-setup.sh</code> Docker mode downloads the release source and the published image from GitHub, and pulls the base images. It builds the image itself (the build runs <code>apt-get</code> and <code>pip</code>) only when the release publishes none (§2.4 step 5). <strong>Without Internet access it stops.</strong></td>
+<td><code>install_docker()</code>, <code>fetch_source()</code>, <code>get_image()</code></td>
 </tr>
 <tr>
 <td>Host tools for the installer</td>
@@ -396,6 +397,11 @@ script generates a password and writes it <strong>only</strong> to
 <td>Installs Docker and/or the Compose v2 plugin if missing.</td>
 </tr>
 <tr>
+<td><code>SETUP_IMAGE</code></td>
+<td><code>release</code> | <code>build</code>; default <code>release</code></td>
+<td><code>release</code> downloads the release's published image and builds only when there is none; <code>build</code> always builds from the source tree (§2.4 step 5). Installers newer than 2.4.0 only.</td>
+</tr>
+<tr>
 <td><code>SETUP_EXISTING</code></td>
 <td><code>update</code> | <code>abort</code>; default <code>update</code></td>
 <td>Used when a Docker install already exists (§11.1). <code>reinstall</code> is a native-mode answer only.</td>
@@ -425,7 +431,14 @@ native mode only.</p>
 <li>Downloads the release source from GitHub into
    <code>/opt/satom-docker/releases/&lt;ver&gt;</code>. It <strong>refuses</strong> a tree that contains an
    invalid network literal (a network written with host bits set).</li>
-<li>Builds <code>satom:&lt;ver&gt;</code> from that tree. The first build takes 5–15 minutes.</li>
+<li>Gets <code>satom:&lt;ver&gt;</code>. It downloads <code>satom-image-&lt;ver&gt;-amd64.tar.gz</code> and its <code>.sha256</code> from
+   the release, <strong>stops</strong> if the checksum does not match (it never falls back
+   to a build after a bad download), and loads it with <code>docker load</code>. It builds
+   from the tree instead — 5–15 minutes the first time — only when the release
+   publishes no image (HTTP 404: releases before 2.4.0), when the host is not
+   <code>x86_64</code> (the image is <code>linux/amd64</code>), or with <code>SETUP_IMAGE=build</code>. An image
+   already in the engine is reused. The <code>satom-setup.sh</code> shipped <em>with</em> 2.4.0
+   predates this step and always builds.</li>
 <li>Writes <code>/opt/satom-docker/satom.env</code> from <code>env.example</code> with generated
    <code>SECRET_KEY</code>, <code>FERNET_KEY</code>, <code>POSTGRES_PASSWORD</code> and <code>SATOM_REPL_PASSWORD</code>.
    If the file already exists, its secrets are <strong>reused and never
@@ -506,13 +519,30 @@ development, single-node production and primary/standby shapes. It does <strong>
 cover external PostgreSQL.</p>
 <h3 id="31-get-the-source">3.1 Get the source</h3>
 <pre><code class="language-bash">mkdir -p /opt/satom-src &amp;&amp; cd /opt/satom-src
-curl -fsSL https://codeload.github.com/visionebc/SATOM/tar.gz/refs/tags/v2.3.0 \
+curl -fsSL https://codeload.github.com/visionebc/SATOM/tar.gz/refs/tags/v2.4.0 \
   | tar -xz --strip-components=1
 cd /opt/satom-src/deploy/docker
 </code></pre>
 <p>This is the same archive <code>satom-setup.sh</code> downloads. Keep the checkout
 root-owned (§6.6): the compose files and two scripts bind-mounted into
 <code>postgres</code> (§5.1) come from this tree.</p>
+<h4 id="the-published-image-240-and-later">The published image (2.4.0 and later)</h4>
+<p>Every release from 2.4.0 on attaches the image to its GitHub release as
+<code>satom-image-&lt;ver&gt;-amd64.tar.gz</code> with a <code>.sha256</code> next to it. It is built by the
+release pipeline from the same code as that release's offline bundles, for
+<code>linux/amd64</code>, and loads as <code>satom:&lt;ver&gt;</code>. Downloading it replaces the
+<code>build</code> step below:</p>
+<pre><code class="language-bash">cd /tmp
+curl -fLO https://github.com/visionebc/SATOM/releases/download/v2.4.0/satom-image-2.4.0-amd64.tar.gz
+curl -fLO https://github.com/visionebc/SATOM/releases/download/v2.4.0/satom-image-2.4.0-amd64.tar.gz.sha256
+sha256sum -c satom-image-2.4.0-amd64.tar.gz.sha256     # must print OK; stop if it does not
+gunzip -c satom-image-2.4.0-amd64.tar.gz | docker load  # Loaded image: satom:2.4.0
+docker image inspect satom:2.4.0 --format '{{index .Config.Labels &quot;org.opencontainers.image.version&quot;}}'   # 2.4.0
+</code></pre>
+<p>The <code>.sha256</code> names the file without a directory, so run <code>sha256sum -c</code> in
+the directory that holds both files. Use the image of the <strong>same</strong> version as
+the source tree: the compose files and the image are one release. Other
+architectures build it (§3.2, §3.3).</p>
 <h3 id="32-development-node">3.2 Development node</h3>
 <pre><code class="language-bash">cd /opt/satom-src/deploy/docker
 ./satom-docker.sh gen-secrets            # creates .env from env.example if missing, fills the four secrets, chmod 0600
@@ -533,12 +563,12 @@ refuses to run when no placeholder is left, so it can never overwrite a real
 <h3 id="33-production-single-node">3.3 Production, single node</h3>
 <pre><code class="language-bash">cd /opt/satom-src/deploy/docker
 ./satom-docker.sh gen-secrets
-./satom-docker.sh build satom:2.3.0
+./satom-docker.sh build satom:2.4.0     # or load the published image instead (§3.1)
 </code></pre>
 <p>Edit <code>.env</code>:</p>
 <pre><code class="language-ini">SATOM_ENV=prod                      # satom-docker.sh reads it from .env; see §3.4
 SATOM_NODE_ROLE=primary
-SATOM_IMAGE=satom:2.3.0             # compose.prod.yaml requires it to be set; it does NOT reject :local
+SATOM_IMAGE=satom:2.4.0             # compose.prod.yaml requires it to be set; it does NOT reject :local
 SATOM_SERVED_NAMES=&quot;satom.example.com&quot;   # quote it if it has spaces (§12)
 SATOM_PG_BIND=127.0.0.1:5432        # required by compose.prod.yaml even on a single node
 TZ=UTC
@@ -546,11 +576,11 @@ TZ=UTC
 <pre><code class="language-bash">./satom-docker.sh config &gt; /dev/null &amp;&amp; echo config-ok   # the rendered config contains your secrets: do not paste it anywhere
 ./satom-docker.sh up
 </code></pre>
-<p><strong>Build or import the image before <code>up</code>.</strong> If <code>SATOM_IMAGE</code> names an image the
+<p><strong>Build, load (§3.1) or import the image before <code>up</code>.</strong> If <code>SATOM_IMAGE</code> names an image the
 engine does not have, Compose tries to pull it from a registry. For
 <code>satom:&lt;tag&gt;</code> that registry is Docker Hub, which is the substitution
 <code>satom-setup.sh</code> deliberately avoids. Check first:</p>
-<pre><code class="language-bash">docker image inspect satom:2.3.0 --format '{{.Id}}'
+<pre><code class="language-bash">docker image inspect satom:2.4.0 --format '{{.Id}}'
 </code></pre>
 <h3 id="34-deploydockersatom-dockersh--subcommand-reference">3.4 <code>deploy/docker/satom-docker.sh</code> — subcommand reference</h3>
 <p>The script reads <code>deploy/docker/.env</code> (it sources the file with <code>set -a</code>, so
@@ -2841,7 +2871,8 @@ primary. Back up <code>satom-data</code> on the primary (§11.2) with that in mi
 <pre><code class="language-bash">curl -fsSLO https://github.com/visionebc/SATOM/releases/download/v&lt;new&gt;/satom-setup.sh
 sudo bash satom-setup.sh --yes          # on an existing Docker install, the mode defaults to docker and the answer to update
 </code></pre>
-<p>The update path downloads and builds the new version, repoints
+<p>The update path downloads the new version's source and its published image
+(building it only when the release publishes none, §2.4 step 5), repoints
 <code>/opt/satom-docker/current</code>, sets <code>SATOM_IMAGE=satom:&lt;new&gt;</code>, rewrites the
 wrapper, runs <code>satom-docker up -d --remove-orphans</code>, <strong>reloads the proxy</strong>
 (<code>satom-docker kill -s HUP proxy</code>: a graceful reload, so the vhost <code>tls-init</code>
@@ -2862,13 +2893,14 @@ downloads the release tree if it is not under <code>releases/</code> yet, builds
 back the tree, the image and <code>satom.env</code> if it
 is not (§7.6). It takes no backup either, and its rollback does not touch the
 database. Afterwards run <code>satom-docker up -d</code> on the host to bring the agent
-itself to the new version.</p>
+itself to the new version. The agent <strong>builds</strong> the image; it does not use the
+published one (§14).</p>
 <p>Earlier <code>releases/&lt;ver&gt;</code> trees and <code>satom:&lt;ver&gt;</code> images are left in place. The
 code makes no promise that an older image runs against a database a newer
 version has already started on.</p>
 <p>Manual:</p>
 <pre><code class="language-bash">cd /opt/satom-src &amp;&amp; curl -fsSL https://codeload.github.com/visionebc/SATOM/tar.gz/refs/tags/v&lt;new&gt; | tar -xz --strip-components=1
-cd deploy/docker &amp;&amp; ./satom-docker.sh build satom:&lt;new&gt;
+cd deploy/docker &amp;&amp; ./satom-docker.sh build satom:&lt;new&gt;      # or load the published image (§3.1)
 sed -i 's/^SATOM_IMAGE=.*/SATOM_IMAGE=satom:&lt;new&gt;/' .env      # both SATOM_IMAGE lines
 ./satom-docker.sh up
 dc kill -s HUP proxy          # load the vhost tls-init has just rewritten (§5.5); satom-docker.sh has no reload subcommand
@@ -3020,21 +3052,24 @@ It is irreversible: the database, the device vault and the certificates go.
 <p>Manual equivalents: <code>./satom-docker.sh down</code> (keeps volumes) and
 <code>./satom-docker.sh down -v</code> (deletes them).</p>
 <h3 id="118-air-gapped-image-delivery">11.8 Air-gapped image delivery</h3>
-<p><code>satom-setup.sh</code> Docker mode cannot run offline in 2.3.0. Neither can a console
+<p><code>satom-setup.sh</code> Docker mode cannot run offline. Neither can a console
 update through the agent unless <code>releases/X.Y.Z</code> already holds the tree and the
 engine already has <code>satom:X.Y.Z</code> and <code>docker:27-cli</code>. The manual route can be
-used offline if you bring four things:</p>
+used offline if you bring three things:</p>
 <ul>
 <li>the release source tree, which provides the compose files and the scripts
   that are bind-mounted;</li>
-<li>the SATOM image;</li>
-<li>the four stock images;</li>
-<li>an image built on a node with Internet access, because the build needs
-  <code>apt-get</code> and <code>pip</code>.</li>
+<li>the SATOM image — from 2.4.0 on, the release's published
+  <code>satom-image-&lt;ver&gt;-amd64.tar.gz</code> and its <code>.sha256</code> (§3.1), downloaded on any connected
+  machine. Building it yourself needs Internet access (<code>apt-get</code>, <code>pip</code>);</li>
+<li>the four stock images.</li>
 </ul>
-<p>On the connected build node:</p>
-<pre><code class="language-bash">./satom-docker.sh build satom:2.3.0
-./satom-docker.sh export satom:2.3.0 /tmp/satom-2.3.0.tar.gz          # also writes /tmp/satom-2.3.0.tar.gz.sha256
+<p>The published image needs no conversion: copy the two files, run
+<code>sha256sum -c</code> next to them on the target, then <code>gunzip -c … | docker load</code>
+(§3.1). For an image you built yourself, and for the stock images, on the
+connected node:</p>
+<pre><code class="language-bash">./satom-docker.sh build satom:2.4.0
+./satom-docker.sh export satom:2.4.0 /tmp/satom-2.4.0.tar.gz          # also writes /tmp/satom-2.4.0.tar.gz.sha256
 docker pull postgres:15-bookworm; docker pull redis:7-alpine
 docker pull victoriametrics/victoria-metrics:v1.148.0; docker pull nginx:1.27-alpine
 docker save postgres:15-bookworm redis:7-alpine victoriametrics/victoria-metrics:v1.148.0 nginx:1.27-alpine \
@@ -3042,7 +3077,7 @@ docker save postgres:15-bookworm redis:7-alpine victoriametrics/victoria-metrics
 </code></pre>
 <p>On the target, put the tarball and its <code>.sha256</code> <strong>at the same path</strong> as on
 the build node, then:</p>
-<pre><code class="language-bash">./satom-docker.sh import /tmp/satom-2.3.0.tar.gz
+<pre><code class="language-bash">./satom-docker.sh import /tmp/satom-2.4.0.tar.gz
 gunzip -c /tmp/satom-base-images.tar.gz | docker load
 </code></pre>
 <p><code>import</code> runs <code>sha256sum -c</code> <strong>before</strong> loading. The <code>.sha256</code> file records the
@@ -3323,6 +3358,10 @@ the promote action is gated in a container (§7.2).</p>
 <tr>
 <td>An update never refreshes the agent</td>
 <td>by design; the drift is shown, not corrected (§7.8).</td>
+</tr>
+<tr>
+<td>A console update builds the image</td>
+<td>the agent downloads the release tree and runs <code>docker build</code>; it does not use the published image that <code>satom-setup.sh</code> loads (§7.6, §11.1).</td>
 </tr>
 </tbody>
 </table>

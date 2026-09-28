@@ -112,6 +112,17 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="added--the-container-image-is-published-with-every-release-2026-09-28">Added — the container image is published with every release (2026-09-28)</h3>
+<p>Asked for by the user: <em>"publish the Docker image for installing, and update
+the documentation"</em>. Each GitHub release now carries
+<code>satom-image-&lt;ver&gt;-amd64.tar.gz</code> and its <code>.sha256</code>: <code>satom:&lt;ver&gt;</code> for
+<code>linux/amd64</code>, built by the release pipeline from the same redacted code as the
+offline bundles. 2.4.0 received it after its release. <code>satom-setup.sh</code> Docker
+mode now downloads it, stops on a checksum mismatch, and loads it, instead of
+building for 5–15 minutes; it builds only when the release publishes no image,
+on a non-<code>x86_64</code> host, or with the new <code>SETUP_IMAGE=build</code>. The console update
+through the operations agent still builds. Reference: <code>docs/docker-compose.md</code>
+§2.4, §3.1, §11.1, §11.8, §14.</p>
 <h2 id="240---2026-09-28">[2.4.0] - 2026-09-28</h2>
 <p>The first published release since 2.2.0. It also ships everything listed
 under [2.3.0] below: that version was cut but never published.</p>

@@ -679,7 +679,11 @@ variable can never quietly disarm an appliance.</p>
 streaming replica and whose scheduler idles until the database is promoted (two
 nodes must never both fire the same action — a duplicated firmware upgrade is a
 double flash). A node with no route to a registry is served the same way the
-offline bundles are, as a file:</p>
+offline bundles are, as a file. From 2.4.0 on every release publishes the image
+as <code>satom-image-&lt;ver&gt;-amd64.tar.gz</code> + <code>.sha256</code> next to the bundles, and
+<code>satom-setup.sh</code> (newer than 2.4.0) downloads and verifies it instead of
+building (<a href="docker-compose.html"><code>docker-compose.md</code></a> §3.1). An image you build
+yourself travels with <code>export</code> / <code>import</code>:</p>
 <pre><code class="language-bash">./satom-docker.sh export satom:&lt;ver&gt; /tmp/satom-&lt;ver&gt;.tar.gz
 # copy the tarball AND its .sha256, then on the target
 ./satom-docker.sh import /tmp/satom-&lt;ver&gt;.tar.gz

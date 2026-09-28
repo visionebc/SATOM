@@ -6,6 +6,11 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-09-28
+
+The first published release since 2.2.0. It also ships everything listed
+under [2.3.0] below: that version was cut but never published.
+
 ### Changed — the endpoint registry is seeded from a build-pinned baseline (2026-09-27)
 
 The four hand-written `endpoints*.yaml` files at the repository root are gone.
@@ -44,6 +49,10 @@ with the firmware; in three years it will not be the same seed"*. Reference:
   the YAML files. Safeguards §196.
 
 ## [2.3.0] - 2026-09-26
+
+**Never published.** The 2.3.0 release run failed its test suite before it
+tagged anything: no tag, package, GitHub release or site ever carried this
+version. Its content ships in [2.4.0].
 
 ### Added — the Docker operations agent (2026-09-26)
 

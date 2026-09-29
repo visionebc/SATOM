@@ -16434,3 +16434,38 @@ already calls the product's `loader.invalidate_*`, which drops the views.
 venv/bin/python -m pytest -q tests/test_registry_resolve_for.py \
   tests/test_api_baseline.py
 ```
+
+## §198 — a console update that built what the release already published (`tests/test_docker_agent.py`, 2026-09-29)
+
+**The defect.** Since 2.4.0 every release publishes `satom-image-<ver>-amd64.tar.gz`
+and its `.sha256`, and `satom-setup.sh` loads it. The Docker operations agent
+still built `satom:<ver>` with a `docker:27-cli` helper on every console update:
+5–15 minutes of build, a network-attached helper, and an image that was not
+the one the pipeline verified.
+
+**The fix.** A console update never trades a bad image for a build. The
+operations agent follows the installer's `get_image`: the release's published
+image is downloaded with its `.sha256` and must match it. Its `manifest.json`
+must name exactly `satom:<ver>`, so a load cannot retag the running image the
+rollback depends on. Once loaded, it must prove it is `<ver>`: the OCI version
+label, the pipeline's payload digest label, and the `/opt/satom/VERSION` read
+from a container that is never started. All of this happens before `current`
+is relinked or `SATOM_IMAGE` changes. A mismatch, a missing checksum, a broken
+download or any HTTP error other than 404 fails the request, removes the tag it
+created, and leaves the stack untouched. Only a 404 (a release before 2.4.0), a
+non-amd64 engine or an explicit `SATOM_AGENT_IMAGE=build` leads to a local
+build. The status log says which path ran (`image: downloaded and verified
+(<sha256>)` / `image: built here (<reason>)`).
+
+**Mutation result.** 17 mutations (checksum compare, `.sha256` file name,
+fallback-to-build on a failed download, on a missing checksum and on a 5xx, 404
+failing instead of building, the architecture check, the `build` opt-out and
+its validation, each of the three post-load proofs, the tag cleanup, the
+manifest tag check, obtaining the image after the switch, the status wording):
+17 killed, every assertion made through `do_update`.
+
+**How to verify it is armed:**
+
+```
+venv/bin/python -m pytest -q tests/test_docker_agent.py
+```

@@ -79,8 +79,8 @@
 engineers who write an adapter or a reader. Operator walkthroughs of the
 pages built on it are in the <a href="user-guide.html">User guide</a> §30.5,
 §30.8–§30.10 and §41.8–§41.9; the guards are catalogued in
-<a href="safeguards.html">Safeguards</a> §192–§193 and §196 (endpoint baselines, §9
-below).</p>
+<a href="safeguards.html">Safeguards</a> §192–§193, §196 (endpoint baselines, §9
+below) and §197 (per-build resolution, §9.8).</p>
 <p><strong>Since:</strong> SATOM 2.2.0.</p>
 </blockquote>
 <p>The API library is SATOM's record of <strong>which API each firmware build serves</strong>:
@@ -839,6 +839,103 @@ proposes to drop them, and the diff shows which ones.</p>
   resources deliberately left out is in
   <a href="fortiauthenticator.html">fortiauthenticator.md</a> §2.</li>
 </ul>
+<h3 id="98-per-build-resolution-in-the-services">9.8 Per-build resolution in the services</h3>
+<p>A baseline pinned at one build disables the names that build measured absent.
+The registry still holds one URN per name for the whole fleet, so without more
+work a box on a newer build would lose names it does serve: promoting the
+FortiWeb baseline at 7.6.8 disables 39 names, and 8 of them
+(<code>system_captcha_puzzle</code>, <code>system_certificate_eab_credentials</code>,
+<code>system_certificate_ocsp_signing_certs_group</code>, <code>waf_custom_tracking_policy</code>,
+<code>waf_file_list</code>, <code>waf_mcp_security_exception</code>, <code>waf_mcp_security_policy</code>,
+<code>waf_mcp_security_rule</code>) are served on 8.0.5. The services therefore resolve a
+name <strong>for the build of the box they are talking to</strong>
+(<code>app/registry/loader.py</code>).</p>
+<p><code>loader.resolve_for(product, name, version)</code> returns a URN or raises:</p>
+<ol>
+<li><strong>An operator's row wins.</strong> Enabled: its URN. Disabled:
+   <code>loader.EndpointNotServed</code>.</li>
+<li><strong>The evidence of that exact build.</strong> When <code>version</code> is an X.Y.Z build and
+   the library measured the name on it (measured sources only, never
+   <code>vendor_doc</code>): served with a URN → that URN; measured absent →
+   <code>EndpointNotServed</code>.</li>
+<li><strong>The enabled registry</strong> otherwise.</li>
+<li><strong><code>KeyError</code></strong> with the same message the product's registry resolver
+   has always raised.</li>
+</ol>
+<p><code>EndpointNotServed</code> is a <code>KeyError</code>, so every caller that turned an unknown
+name into a named error keeps doing so. It carries <code>product</code>, <code>name</code>,
+<code>version</code> and <code>authority</code>, and reads <em>"<code>&lt;name&gt;</code> is not served by <code>&lt;product&gt;</code>
+<code>&lt;version&gt;</code> (<code>&lt;authority&gt;</code>)"</em>. An empty or unparseable version, or a line
+without a patch (<code>8.0</code>), gives exactly the registry's answer. If the evidence
+cannot be read (a DB error), resolution falls through to the registry and logs
+a warning: an unreadable library never breaks a caller.</p>
+<p><code>loader.registry_for(product, version)</code> applies the same rules to the whole
+map: the enabled registry, minus names measured absent on the build (unless an
+operator's enabled row), with the measured URN in place of the registry's
+(unless an operator's row), <strong>plus</strong> names whose baseline-owned row is disabled
+and that the build measured served. It only adds names that have a registry
+row: a sweep driven by this map never calls an endpoint nobody catalogued.
+Maps are cached per (product, build) with the registry's 60-second TTL and
+dropped by every registry write (<code>loader.invalidate_*</code>) and by a baseline
+apply (<code>api_baseline._invalidate</code>).</p>
+<p><strong>The fleet view.</strong> <code>loader.get_all_endpoints()</code> feeds consumers that serve
+the whole fleet at once. It returns the enabled registry plus every name whose
+baseline-owned row is disabled and that is measured served on at least one
+build a live FortiWeb runs today (not in maintenance, host not <code>*.invalid</code>).
+When the last 8.0.x box leaves the fleet, the 8 names leave the menus.
+<code>loader.load_registry()</code> and <code>loader.resolve()</code> stay the pure registry, and
+<code>loader.get_registry_endpoints()</code> is the pure registry as display dicts.
+<code>objform.known_collections()</code> (the generic editor's allow-list) is memoised
+for the life of the process, so it picks up a fleet change on the next restart.</p>
+<table>
+<thead>
+<tr>
+<th>Consumer</th>
+<th>Reads</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Nav menus (<code>server_objects</code>, <code>config_sections</code>, <code>wp_menu</code>), <code>config_catalog</code>, <code>rediscovery.sweep_plan</code>, <code>objform</code> allow-lists, provisioning (service and page), <code>read_layer</code>, the API Explorer tree and its per-build marks, the custom-REST picker of scheduled actions</td>
+<td>fleet view (<code>get_all_endpoints</code>)</td>
+</tr>
+<tr>
+<td>Registry search page, Structure page and <code>structure.registry_urn_index</code> / <code>load_catalog</code> (coverage accounting)</td>
+<td>pure registry (<code>get_registry_endpoints</code>)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Call sites that resolve per build:</strong></p>
+<ul>
+<li>the FortiADC, FortiAnalyzer and FortiAuthenticator clients (<code>_resolve</code>), and
+  the new <code>FortiWebClient.resolve</code>. Each client keeps <code>appliance.fw_version</code>;
+  a name the build does not serve comes back from <code>list_with_error</code> as its
+  message, not a 500;</li>
+<li><code>services/backup.py</code> (local backup list, download, create, restore);</li>
+<li><code>services/exception_inject.py</code> (<code>plan_injection(..., version=)</code>,
+  <code>apply_injection</code> from <code>ops.appliance</code>, <code>candidate_targets</code> from the client);
+  the API v1 WAF-exception plan passes the appliance's build;</li>
+<li><code>services/clone.py</code>: <code>ClonePlanner</code> indexes the <strong>target</strong> box's map;
+  <code>ClientReader.get_object</code> uses its own client's build;</li>
+<li><code>services/write_through.py</code>: <code>diff_object</code>, <code>local_update</code> and
+  <code>local_delete</code> map a collection with the cached appliance's build;</li>
+<li><code>services/device_sync.py</code>: the FortiAnalyzer and FortiAuthenticator config
+  sweeps use <code>registry_for</code> of the box;</li>
+<li>the <code>execute</code> consoles of <code>views/adc_api.py</code>, <code>faz_api.py</code> and <code>fac_api.py</code>;</li>
+<li>the custom-REST scheduled action (<code>scheduled_actions.resolve_endpoint</code>).</li>
+</ul>
+<p><strong>Still registry-only</strong> (no appliance or build reachable without changing many
+signatures): the FortiWeb tab pages (<code>server_objects</code>, <code>section_config</code>,
+<code>web_protection</code>) reading menu URNs; the FortiWeb device sweep
+(<code>device_sync.snapshot_from_device</code>, fleet <code>sweep_plan</code>) and the FortiADC
+discovery plan (<code>adc_ops.discovery_plan</code>); the FortiAnalyzer and
+FortiAuthenticator tab pages (<code>views/faz.py</code>, <code>views/fac.py</code>); the catalog
+pages of the three explorers; <code>policy_ops._apiver_targets</code> and
+<code>deep_capture._lg</code>; <code>exception_deploy.push_plan</code>; <code>lua_studio</code>; the
+fleet-level analyses (<code>analysis_adc</code>, <code>analysis_fac</code>) and the FortiAuthenticator
+harvest (<code>apilib_fac</code>, which measures against the registry on purpose);
+<code>cli_coverage</code>, <code>discovery_run</code> and <code>device_identity</code>, which account for the
+registry itself.</p>
 <hr>
 <h2 id="10-limits-that-do-not-go-away">10. Limits that do not go away</h2>
 <ul>

@@ -15937,6 +15937,14 @@ per-appliance call sites resolve per build
 </tr>
 </tbody>
 </table>
+<p><strong>The promotion side (2026-09-29).</strong> The first promotion at 7.6.8 dropped all
+39 names 7.6.8 measured absent, including the 8 that 8.0.5 serves. On an
+existing install the rows survived as disabled, so the fleet view still found
+them. A fresh install, though, would have shipped no row for them, and its
+sweep, driven by the registry, would never have probed them. <code>plan_promotion</code>
+now keeps a name another measured build serves, labelled <code>carried</code> from that
+build. <code>test_a_name_absent_here_but_served_on_another_measured_build_is_carried</code>
+guards it, and disabling the rule makes it fail.</p>
 <p><strong>Mutation result.</strong> 38 mutations of <code>loader.py</code>, the four clients, the call
 sites and the two pure-registry pages (every rule of <code>resolve_for</code> and
 <code>registry_for</code>, the cache key, each <code>invalidate_*</code>, the fleet view's three

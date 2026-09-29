@@ -62,12 +62,12 @@ it — a restored database restores your endpoint edits with it.
 
 | Product | `api_version` | Transport | Seeded from baseline | Entries |
 |---|---|---|---|---|
-| FortiWeb | `v2.0` | REST, `/api/v2.0/…` | FortiWeb 7.6.8 | 517 |
+| FortiWeb | `v2.0` | REST, `/api/v2.0/…` | FortiWeb 7.6.8 | 486 |
 | FortiADC | `v1` | REST, `/api/<object>` | FortiADC 8.0.3 | 255 |
 | FortiAnalyzer | `jsonrpc` | JSON-RPC, `POST /jsonrpc` | FortiAnalyzer 7.6.7 | 64 |
 | FortiAuthenticator | `v1` | REST, `/api/v1/<resource>/` | FortiAuthenticator 8.0.3 | 40 |
 
-876 entries in the shipped baselines. Each catalog is seeded from its
+845 entries in the shipped baselines. Each catalog is seeded from its
 product's endpoint baseline, pinned to the firmware build it was promoted from
 (`flask apilib baseline status`; [api-library.md](api-library.md) §9). The
 live catalog is whatever your administrators have made of it: on the reference

@@ -6,7 +6,7 @@ shows three things over the built-in exporter capture
 
 * (a) the ``├──/└──`` **box tree** of FortiWeb objects and sub-elements,
 * (b) a **cross-reference table** [object | URN | in registry?] resolved against
-  the endpoint registry (:func:`app.registry.loader.get_all_endpoints`),
+  the endpoint registry (:func:`app.registry.loader.get_registry_endpoints`),
 * (c) **coverage stats** (matched / fetchable / missing).
 
 An admin-only **overlay** (persisted as ``settings_store('structure.overlay')``)
@@ -164,7 +164,7 @@ def index():
         fetchable=fetchable,
         missing=missing,
         total_nodes=structure.node_count(tree),
-        total_endpoints=len(loader.get_all_endpoints()),
+        total_endpoints=len(loader.get_registry_endpoints()),
         pct=(round(matched * 100 / fetchable) if fetchable else 0),
         show_urn=show_urn,
         has_overlay=bool(overlay),

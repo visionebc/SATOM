@@ -14,6 +14,19 @@ class FortiWebClient(BaseClient):
         self._username = appliance.username
         self._password = appliance.password
         self._vdom = getattr(appliance, 'vdom', None)
+        # The build this box runs: names resolve per build (registry.loader.resolve_for).
+        from ..registry import loader
+        self.fw_version = loader.version_of(appliance)
+
+    def resolve(self, logical: str) -> str:
+        """Registry name -> URN for THIS box's build (``loader.resolve_for``).
+
+        Raises ``KeyError`` for an unknown name and its subclass
+        ``loader.EndpointNotServed`` when the build (or an operator) says the
+        name is not served here.
+        """
+        from ..registry import loader
+        return loader.resolve_for('fortiweb', logical, getattr(self, 'fw_version', ''))
 
     def _auth_token(self) -> str:
         payload = {"username": self._username, "password": self._password}

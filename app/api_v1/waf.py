@@ -256,7 +256,8 @@ def waf_create_exception():
 
     # ---- the device plan is ALWAYS returned, applied or not ----------------
     target = str(body.get("target") or "").strip()
-    plan = exception_inject.plan_injection(exc_type, payload, target)
+    plan = exception_inject.plan_injection(exc_type, payload, target,
+                                           version=appliance.fw_version)
 
     out = {
         "ok": True,

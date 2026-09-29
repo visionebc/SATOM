@@ -6,6 +6,30 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Changed — endpoint names resolve per firmware build (2026-09-29)
+
+- Endpoint names now resolve per firmware build: the FortiADC, FortiAnalyzer
+  and FortiAuthenticator clients, `FortiWebClient.resolve`, backup, exception
+  inject, clone (the target's build), write-through, the FortiAnalyzer and
+  FortiAuthenticator config sweeps and the explorer consoles use the box's
+  build. An operator's registry row wins, then what the API library measured on
+  that build, then the registry. A name the build does not serve fails with a
+  readable "not served by" error instead of "unknown endpoint".
+- The fleet-wide menus and the sweep keep offering an endpoint the baseline
+  disabled while a live box still serves it; the Registry search and the
+  Structure coverage keep reading the registry itself.
+
+### Changed — Docker console updates load the published image (2026-09-29)
+
+- The operations agent now downloads `satom-image-<ver>-amd64.tar.gz`, verifies
+  it against its `.sha256`, checks that it really is `<ver>` (OCI label,
+  payload label, `/opt/satom/VERSION`) and loads it, instead of building
+  `satom:<ver>` for 5–15 minutes. It builds only when the release publishes no
+  image, the engine is not x86_64, or `SATOM_AGENT_IMAGE=build`; a failed or
+  mismatching download fails the update and leaves the stack as it was. An
+  agent started from 2.4.1 or earlier keeps building until
+  `satom-docker up -d` recreates it.
+
 ## [2.4.1] - 2026-09-29
 
 ### Fixed — a Docker install from the published source starts again (2026-09-29)

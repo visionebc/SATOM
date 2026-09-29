@@ -495,7 +495,9 @@ than installing an application that cannot start.</p>
   carries <code>satom-setup.sh</code> next to <code>install-satom.sh</code>; run from inside the
   extracted <code>satom-installer/</code> directory it uses that sibling installer and
   downloads nothing. Roles: standalone, primary, secondary (join key).</li>
-<li><strong>Docker</strong> — builds the image <code>satom:&lt;ver&gt;</code> from the release's source, keeps
+<li><strong>Docker</strong> — loads the release's published image <code>satom:&lt;ver&gt;</code> (verified
+  against its <code>.sha256</code>; built from the release's source only when the release
+  publishes none, the host is not x86_64, or <code>SETUP_IMAGE=build</code>), keeps
   its secrets in <code>/opt/satom-docker/satom.env</code> (<code>0600</code>; back it up —
   <code>FERNET_KEY</code> cannot be regenerated) and installs the <code>satom-docker</code> wrapper
   (<code>satom-docker ps</code>, <code>satom-docker logs -f web</code>). PostgreSQL in the stack or an
@@ -624,7 +626,7 @@ operations</strong>:</p>
 <tr>
 <td><strong>Software Update</strong> (self-update)</td>
 <td>deploy a new image tag and recreate the stack</td>
-<td>switch the stack to another release <code>X.Y.Z</code>: download, build, recreate, roll back if <code>web</code> does not come back healthy</td>
+<td>switch the stack to another release <code>X.Y.Z</code>: download the release and its published image (checked against its <code>.sha256</code> and its version; built here only when the release publishes none), recreate, roll back if <code>web</code> does not come back healthy</td>
 </tr>
 <tr>
 <td><strong>Service control</strong> (start/stop/restart)</td>

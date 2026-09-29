@@ -457,8 +457,8 @@ native mode only.</p>
 <li>Pulls the base images <strong>by name</strong>, excluding <code>satom:*</code>. It deliberately does
    not run <code>compose pull</code>, which would try to fetch <code>satom:&lt;ver&gt;</code> from Docker
    Hub. With the agent enabled it also pulls <code>docker:27-cli</code>, the image the
-   agent borrows to build and recreate on an update (§7.4); a failed pull stops
-   the install.</li>
+   agent borrows to recreate the stack on an update (and to build the image
+   when it has to, §7.6) (§7.4); a failed pull stops the install.</li>
 <li>If <code>SETUP_CERT=import</code>, imports the certificate into the <code>satom-pki</code>
     volume (the same command as §7.3.3).</li>
 <li>Runs <code>satom-docker up -d</code>, passing the admin password in the process
@@ -1472,8 +1472,8 @@ whatever the calling container's capabilities (§6.6).</p>
 <p><strong>The agent is not on the <code>satom</code> network.</strong> It sits alone on the bridge
 <code>satom-agent</code>, so no container of the stack can open a connection to it or
 even resolve its name, and it can reach none of them over the network. The
-bridge exists for one outbound purpose: downloading a release tree from GitHub
-for an update (§7.6). Everything else it does goes through the socket. Its
+bridge exists for one outbound purpose: downloading a release tree and its
+published image from GitHub for an update (§7.6). Everything else it does goes through the socket. Its
 only input is a file in the <code>satom-agent-requests</code> volume. The helper
 containers it starts for an update run with <code>NetworkMode: none</code>, except the
 one that runs <code>docker build</code>, which gets the default <code>bridge</code> network: BuildKit
@@ -1813,8 +1813,9 @@ only drops requests into a volume; the agent accepts a closed list of actions.</
    then <code>compose.setup-agent.yaml</code> <strong>last</strong>, after <code>compose.setup.yaml</code>, and
    only when <code>SATOM_SETUP_AGENT=yes</code> <em>and</em> <code>compose.agent.yaml</code> exists in
    <code>current</code>;</li>
-<li>pre-pulls <code>docker:27-cli</code>, the image the agent borrows to run <code>docker build</code>
-   and <code>docker compose</code> for an update (§7.6). A new install stops if the pull
+<li>pre-pulls <code>docker:27-cli</code>, the image the agent borrows to run <code>docker compose</code>
+   (and <code>docker build</code>, when an update has to build the image) for an update
+   (§7.6). A new install stops if the pull
    fails; update mode only warns, and the agent pulls it on first use. The tag
    is pinned by major so that Compose understands <code>!reset</code> (≥ 2.24.4, used by
    the standby overlay). The installer's <code>AGENT_CLI_IMAGE</code> and the agent's
@@ -2036,12 +2037,47 @@ refused ("the stack already runs satom:<em>X.Y.Z</em>"). Then:</p>
    anything is built or switched: "release v<em>X.Y.Z</em> does not ship the
    operations agent; switch to it with satom-setup.sh --version <em>X.Y.Z</em> on the
    host" (§7.8).</li>
-<li><strong>Build</strong> <code>satom:X.Y.Z</code> unless the engine already has it: <code>docker build</code> in
-   a throwaway <code>docker:27-cli</code> helper container (pulled if absent), with the
-   socket and <code>/opt/satom-docker</code> bind-mounted at the same path. <strong>This helper
-   alone runs with <code>NetworkMode: bridge</code>:</strong> BuildKit fetches the registry pull
-   token from the client, and with no network the first <code>FROM</code> fails
-   (measured). Up to 60 minutes; the first build takes 5–15.</li>
+<li><strong>Get the image</strong> <code>satom:X.Y.Z</code>, unless the engine already has it. The
+   policy is the installer's (<code>get_image</code>, §2.4 step 5), chosen by
+   <code>SATOM_AGENT_IMAGE</code> in <code>satom.env</code> (<code>release</code>, the default, or <code>build</code>;
+   any other value refuses the update before anything is downloaded):
+   * <strong>The published image</strong> (default). The agent downloads
+     <code>https://github.com/visionebc/SATOM/releases/download/vX.Y.Z/satom-image-X.Y.Z-amd64.tar.gz</code>
+     (at most 400 MB, 60 s per read, 30 minutes in all) and its <code>.sha256</code>
+     into a private temporary directory under <code>releases/</code>, and compares the
+     digest: the <code>.sha256</code> must be one <code>sha256sum</code> line naming that file.
+     Before the engine sees the archive, its <code>manifest.json</code> must name exactly
+     <code>satom:X.Y.Z</code> — <code>docker load</code> tags whatever the archive names, and an
+     archive tagged <code>satom:&lt;the running version&gt;</code> would repoint the tag the
+     rollback uses. The archive is loaded through the Engine API
+     (<code>POST /images/load</code>, the gzip file as the body — no helper container),
+     then proven to be the release: the label
+     <code>org.opencontainers.image.version</code> must be <code>X.Y.Z</code>, the label
+     <code>com.visionebc.satom.payload-sha256</code> (set only by the release pipeline)
+     must be a digest, and <code>/opt/satom/VERSION</code> inside the image must read
+     <code>X.Y.Z</code> — read through the engine's archive API from a container that is
+     created and removed, never started. The step reads
+     <strong><code>image: downloaded and verified (&lt;sha256&gt;)</code></strong>.
+   * <strong>Anything that goes wrong with an image that exists fails the update</strong>:
+     a digest that does not match, a missing <code>.sha256</code>, a download that
+     breaks off, an HTTP error other than 404, an archive that names another
+     tag, an image that is not <code>X.Y.Z</code> (its tag is removed again). It never
+     falls back to a build, and nothing has been switched yet, so the stack
+     keeps running as it was. <code>SATOM_AGENT_IMAGE=build</code> is the way to build
+     on purpose.
+   * <strong>A local build</strong> only when the release publishes no image (HTTP 404 —
+     any release before 2.4.0), when the engine is not <code>x86_64</code> (the published
+     image is <code>linux/amd64</code>), or with <code>SATOM_AGENT_IMAGE=build</code>: <code>docker build</code>
+     in a throwaway <code>docker:27-cli</code> helper container (pulled if absent), with
+     the socket and <code>/opt/satom-docker</code> bind-mounted at the same path. <strong>This
+     helper alone runs with <code>NetworkMode: bridge</code>:</strong> BuildKit fetches the
+     registry pull token from the client, and with no network the first <code>FROM</code>
+     fails (measured). Up to 60 minutes; the first build takes 5–15. The step
+     reads <strong><code>image: built here (&lt;reason&gt;)</code></strong>.
+   An agent started from 2.4.1 or earlier always builds, as those releases
+   did: an update does not refresh the agent (below), so the published image
+   is used from the first update after <code>satom-docker up -d</code> has brought the
+   agent itself to a release that has this step.</li>
 <li><strong>Switch.</strong> Repoint <code>current</code> to the new tree, link its
    <code>deploy/docker/.env</code> to <code>satom.env</code>, set <code>SATOM_IMAGE=satom:X.Y.Z</code> in
    <code>satom.env</code>, then, in a helper, run <code>docker compose config --services</code> and
@@ -2231,7 +2267,10 @@ the capabilities are denied with the plain reasons of §7.2, and §7.3 applies.<
 <li><strong>Downloads are not signature-verified.</strong> The release tree is fetched over
   HTTPS from <code>codeload.github.com</code> and checked for structure and for invalid
   network literals, not for authenticity — the same trust as the installer's
-  own download. A tree already under <code>releases/X.Y.Z</code> is used as it is, so
+  own download. The published image is checked against the <code>.sha256</code> beside
+  it on the same release: that proves the file arrived whole, not who made it.
+  What the agent adds is that the loaded image must say it is <code>X.Y.Z</code> (labels
+  and <code>/opt/satom/VERSION</code>) and may carry no other tag. A tree already under <code>releases/X.Y.Z</code> is used as it is, so
   whoever can write <code>/opt/satom-docker</code> chooses what a console update builds
   (they are root on the host already, §6.6). The build helper has network
   access (<code>bridge</code>), as any <code>docker build</code> that pulls its base images must;
@@ -2527,6 +2566,12 @@ line with the new tag).</p>
 <td><code>/queue</code></td>
 <td><code>satom_agent.py</code></td>
 <td><strong>no</strong>: the overlay does not pass it, so the default always applies (the queue volumes are mounted under <code>/queue</code>)</td>
+</tr>
+<tr>
+<td><code>SATOM_AGENT_IMAGE</code></td>
+<td><code>release</code></td>
+<td><code>satom_agent.py</code></td>
+<td>yes: <code>compose.agent.yaml</code> passes it from <code>satom.env</code>. <code>release</code> or <code>build</code> (§7.6 step 2); any other value refuses console updates. The agent reads it when it starts, so after changing it run <code>satom-docker up -d agent</code>.</td>
 </tr>
 </tbody>
 </table>
@@ -2887,14 +2932,16 @@ without it and the new release ships it (§7.1). It does <strong>not</strong>:</
 </ul>
 <p><strong>From the console, with the agent</strong> (installer layout only): type the version
 and <code>UPDATE</code> under System → Container operations → Update. The agent
-downloads the release tree if it is not under <code>releases/</code> yet, builds
-<code>satom:&lt;new&gt;</code>, recreates every service except itself, reloads the proxy
+downloads the release tree if it is not under <code>releases/</code> yet, gets
+<code>satom:&lt;new&gt;</code> the way the installer does — the release's published image,
+verified against its <code>.sha256</code> and proven to be <code>&lt;new&gt;</code> before anything is
+switched, built only when the release publishes none —, recreates every
+service except itself, reloads the proxy
 (<code>nginx -t</code>, then SIGHUP), waits up to 420 s for <code>web</code> to be healthy, and rolls
 back the tree, the image and <code>satom.env</code> if it
 is not (§7.6). It takes no backup either, and its rollback does not touch the
 database. Afterwards run <code>satom-docker up -d</code> on the host to bring the agent
-itself to the new version. The agent <strong>builds</strong> the image; it does not use the
-published one (§14).</p>
+itself to the new version.</p>
 <p>Earlier <code>releases/&lt;ver&gt;</code> trees and <code>satom:&lt;ver&gt;</code> images are left in place. The
 code makes no promise that an older image runs against a database a newer
 version has already started on.</p>
@@ -3054,7 +3101,8 @@ It is irreversible: the database, the device vault and the certificates go.
 <h3 id="118-air-gapped-image-delivery">11.8 Air-gapped image delivery</h3>
 <p><code>satom-setup.sh</code> Docker mode cannot run offline. Neither can a console
 update through the agent unless <code>releases/X.Y.Z</code> already holds the tree and the
-engine already has <code>satom:X.Y.Z</code> and <code>docker:27-cli</code>. The manual route can be
+engine already has <code>satom:X.Y.Z</code> (load the published image by hand, §3.1) and
+<code>docker:27-cli</code>. The manual route can be
 used offline if you bring three things:</p>
 <ul>
 <li>the release source tree, which provides the compose files and the scripts
@@ -3246,6 +3294,11 @@ unverified.</p>
 <td>read the steps in <em>Recent agent requests</em> (the build and recreate output is in the step details) and <code>satom-docker logs web</code>. The stack is back on the previous tree and image; the database was <strong>not</strong> rolled back (§7.6).</td>
 </tr>
 <tr>
+<td>Update request <strong>failed</strong> with "… does NOT match its .sha256", "… but no .sha256", "… is labelled version …", "… contains /opt/satom/VERSION …" or "download of … failed"</td>
+<td>the published image could not be downloaded or verified; the agent does not fall back to a build</td>
+<td>nothing was switched: the stack still runs the previous image. Retry later for a network error; for a mismatch, check the release assets on GitHub. To build instead, set <code>SATOM_AGENT_IMAGE=build</code> in <code>satom.env</code>, run <code>satom-docker up -d agent</code>, and request the update again (§7.6 step 2).</td>
+</tr>
+<tr>
 <td>Update refused: "release v… carries invalid networks" or "does not ship the Docker stack"</td>
 <td>the downloaded tree failed the agent's checks (§7.6)</td>
 <td>pick another release; do not place a hand-edited tree under <code>releases/</code> to get past it</td>
@@ -3367,10 +3420,6 @@ in <code>.env</code>.</p>
 <tr>
 <td>An update never refreshes the agent</td>
 <td>by design; the drift is shown, not corrected (§7.8).</td>
-</tr>
-<tr>
-<td>A console update builds the image</td>
-<td>the agent downloads the release tree and runs <code>docker build</code>; it does not use the published image that <code>satom-setup.sh</code> loads (§7.6, §11.1).</td>
 </tr>
 </tbody>
 </table>

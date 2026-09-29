@@ -6950,7 +6950,7 @@ way on a container node: the stack's containers with the agent, the reason witho
 <h3 id="444-update">44.4 Update</h3>
 <p>The card states the release the stack runs and lists the releases already on
 this host (<strong>tree only</strong> marks a release whose source is present but whose
-image is not built yet).</p>
+image is not on this host yet).</p>
 <p>To update: type the version (<code>X.Y.Z</code>, for example <code>2.3.1</code>), type <code>UPDATE</code> in
 the confirmation box, and press <strong>Update this node</strong>. Without the typed
 confirmation nothing is queued. The agent then:</p>
@@ -6959,7 +6959,15 @@ confirmation nothing is queued. The agent then:</p>
    host, and refuses a tree that is not a SATOM Docker release, that carries
    invalid networks, or that predates the agent (a release before 2.3.0 is
    switched to with <code>satom-setup.sh --version</code> on the host instead);</li>
-<li>builds its image (5–15 minutes the first time);</li>
+<li>gets its image: it downloads the image the release publishes on GitHub,
+   checks it against the published <code>.sha256</code>, loads it, and checks that it
+   really is the version you typed. It builds the image on this host (5–15
+   minutes the first time) only when the release publishes none (releases
+   before 2.4.0), when the host is not x86_64, or when the operator set
+   <code>SATOM_AGENT_IMAGE=build</code>. A download that fails or does not match is
+   <strong>not</strong> replaced by a build: the request fails and the stack keeps running
+   the current release. The request's steps say which way it went —
+   <em>image: downloaded and verified</em> or <em>image: built here</em> and why;</li>
 <li>recreates every service <strong>except the agent</strong> on the new image, then
    reloads the proxy gracefully so it serves the new release's configuration;</li>
 <li>waits up to 7 minutes for the console to come back healthy — and <strong>rolls
@@ -6967,7 +6975,7 @@ confirmation nothing is queued. The agent then:</p>
 </ol>
 <p>The console restarts during step 3, so the page loses its connection for a
 while; it keeps polling and reloads when the request finishes. The steps, with
-the build and recreate output, are in <em>Recent agent requests</em>.</p>
+the download, build and recreate output, are in <em>Recent agent requests</em>.</p>
 <p>What the update does <strong>not</strong> do: it takes no backup, and a rollback restores
 the previous release's files and image, <strong>not the database</strong>. Back up first
 (<a href="docker-compose.html">docker-compose.md</a> §11.2). Older versions are accepted

@@ -212,8 +212,15 @@ def test_structure_tree_fully_backed_by_registry(app):
     drift — a rename that breaks the Structure page breaks the build here."""
     from app.services import structure
 
+    from app.services.clone import _REST_UNREACHABLE
+
     with app.app_context():
         tree = structure.load_catalog({}).tree()
         matched, fetchable, missing = structure.coverage(tree)
-        assert missing == [] or missing == 0, f"structure nodes missing from registry: {missing}"
-        assert matched == fetchable
+        # A node whose collection was MEASURED unreachable over REST (the FTP
+        # protection profile answers -20001 on every build) is named in the tree
+        # on purpose and has no registry row; everything else must resolve.
+        unreachable = [u for u in missing if u in _REST_UNREACHABLE]
+        missing = [u for u in missing if u not in _REST_UNREACHABLE]
+        assert missing == [], f"structure nodes missing from registry: {missing}"
+        assert matched + len(unreachable) == fetchable

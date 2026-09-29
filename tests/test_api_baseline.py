@@ -238,11 +238,26 @@ def test_re_promoting_an_old_baseline_reactivates_it_without_a_duplicate(ctx):
     assert ApiLibBaseline.query.filter_by(product=FAC).count() == n
 
 
+def _fortiweb_baseline_with_contradicted(n=3):
+    """Make the active FortiWeb baseline carry ``n`` contradicted entries.
+
+    Self-contained on purpose: the shipped artifact stopped carrying any on
+    2026-09-29, and a guard that reads it would skip forever.
+    """
+    shipped = ab.artifact_map("fortiweb")
+    names = sorted(shipped)[:n]
+    entries = [{"name": k, "urn": u,
+                "provenance": ab.PROV_CONTRADICTED if k in names else ab.PROV_LEGACY,
+                "measured_on": "9.9.2" if k in names else ""}
+               for k, u in sorted(shipped.items())]
+    ab._store("fortiweb", "9.9.2", "v2.0", entries, method=ab.METHOD_PROMOTED,
+              actor="test", note="")
+    db.session.commit()
+    return [e for e in entries if e["provenance"] == ab.PROV_CONTRADICTED]
+
+
 def test_contradicted_entries_leave_on_the_next_promotion_that_measures_them(ctx):
-    doc = ab.read_artifact("fortiweb")
-    contra = [e for e in doc["entries"] if e["provenance"] == ab.PROV_CONTRADICTED]
-    if not contra:
-        pytest.skip("the shipped FortiWeb baseline has no contradicted entries")
+    contra = _fortiweb_baseline_with_contradicted()
     victim = contra[0]
     _sweep("fortiweb", "9.9.3", {victim["name"]: _ep(victim["urn"], verdict="absent"),
                                  "server_policy": _ep(ab.artifact_map("fortiweb")["server_policy"])})
@@ -252,6 +267,28 @@ def test_contradicted_entries_leave_on_the_next_promotion_that_measures_them(ctx
     left = {e["name"]: e for e in plan["entries"]}
     for e in contra[1:]:
         assert left[e["name"]]["provenance"] == ab.PROV_CONTRADICTED
+
+
+def test_a_name_absent_here_but_served_on_another_measured_build_is_carried(ctx):
+    """Promoting at 7.6.8 must not drop what 8.0.5 serves (MCP security & co.):
+    a fresh install would get no row, never sweep it, and an 8.0.x box would
+    never see it. It stays, carried from the build that serves it."""
+    shipped = ab.artifact_map("fortiweb")
+    newer, dead, kept = sorted(shipped)[:3]
+    _sweep("fortiweb", "9.9.8", {newer: _ep("/api/v2.0/cmdb/newer/path"),
+                                 dead: _ep(shipped[dead], verdict="absent")},
+           device="box-new")
+    _sweep("fortiweb", "9.9.7", {newer: _ep(shipped[newer], verdict="absent"),
+                                 dead: _ep(shipped[dead], verdict="absent"),
+                                 kept: _ep(shipped[kept])})
+    plan = ab.plan_promotion("fortiweb", "9.9.7")
+    by = {e["name"]: e for e in plan["entries"]}
+    assert dead in plan["diff"]["removed"]               # absent everywhere measured
+    assert newer not in plan["diff"]["removed"]
+    assert by[newer]["provenance"] == ab.PROV_CARRIED
+    assert by[newer]["measured_on"] == "9.9.8"
+    assert by[newer]["urn"] == "/api/v2.0/cmdb/newer/path"  # the build that serves it
+    assert by[kept]["provenance"] == ab.PROV_MEASURED
 
 
 # --------------------------------------------------------------------------

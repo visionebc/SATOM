@@ -52,7 +52,9 @@ dependency it does not import is one fewer thing to review.
 """
 from __future__ import annotations
 
+import hashlib
 import http.client
+import io
 import ipaddress
 import json
 import os
@@ -68,6 +70,7 @@ import tarfile
 import tempfile
 import threading
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
@@ -93,9 +96,9 @@ TLS_BOOTSTRAP = "/opt/satom/deploy/tls-bootstrap.sh"
 #: manual checkout, where updates from the console are refused.
 HOME = os.environ.get("SATOM_AGENT_HOME", "").strip()
 RELEASE_REPO = "visionebc/SATOM"
-#: The Docker CLI image the agent borrows to run ``docker build`` and
-#: ``docker compose``. Pinned by major so compose understands ``!reset``
-#: (>= 2.24.4, needed by the standby overlay).
+#: The Docker CLI image the agent borrows to run ``docker compose`` (and
+#: ``docker build``, when an update has to build the image). Pinned by major so
+#: compose understands ``!reset`` (>= 2.24.4, needed by the standby overlay).
 CLI_IMAGE = "docker:27-cli"
 APP_UID = 999
 APP_GID = 999
@@ -109,7 +112,27 @@ REQUEST_MAX_AGE = 600
 MAX_REQUEST_BYTES = 64 * 1024
 MAX_PEM_BYTES = {"cert_pem": 32 * 1024, "key_pem": 16 * 1024, "chain_pem": 32 * 1024}
 MAX_DOWNLOAD_BYTES = 400 * 1024 * 1024
+#: Per socket operation, and for a whole download.
+DOWNLOAD_TIMEOUT = 60
+DOWNLOAD_DEADLINE = 1800
+MAX_CHECKSUM_BYTES = 4096
 WEB_HEALTH_TIMEOUT = 420
+
+# The published image (2.4.0 and later): ``docker save satom:<ver> | gzip``,
+# built by the release pipeline from the same redacted payload as the offline
+# bundles, attached to the GitHub release with a ``.sha256`` next to it. Same
+# names and policy as ``get_image`` in installers/satom-setup.sh.
+IMAGE_ASSET = "satom-image-%s-amd64.tar.gz"
+RELEASE_ASSET_URL = "https://github.com/%s/releases/download/v%s/%s"
+#: ``SATOM_AGENT_IMAGE``: ``release`` (default) loads the published image and
+#: builds only when the release has none or the engine is not amd64; ``build``
+#: always builds. The installer's ``SETUP_IMAGE``, for the console update.
+IMAGE_SOURCES = ("release", "build")
+IMAGE_ARCHES = ("x86_64", "amd64")
+OCI_VERSION_LABEL = "org.opencontainers.image.version"
+PAYLOAD_LABEL = "com.visionebc.satom.payload-sha256"
+_SHA_LINE_RE = re.compile(r"^([0-9a-f]{64}) [ *](\S+)\Z")
+_HEX64_RE = re.compile(r"^[0-9a-f]{64}\Z")
 
 # ---------------------------------------------------------------------------
 # The allowlist. ``app/services/container_ops.py`` keeps its own copy for the
@@ -221,6 +244,26 @@ def check_service_action(service: str, action: str) -> None:
 def check_version(version: str) -> None:
     if not VERSION_RE.match(version):
         raise Refused("version %r is not X.Y.Z" % version[:40])
+
+
+def image_source() -> str:
+    """``SATOM_AGENT_IMAGE``, validated like the installer's ``SETUP_IMAGE``:
+    unset or empty means ``release``; anything else but ``build`` is refused
+    before the update touches anything."""
+    v = os.environ.get("SATOM_AGENT_IMAGE", "") or "release"
+    if v not in IMAGE_SOURCES:
+        raise Refused("SATOM_AGENT_IMAGE must be release or build, not %r" % v[:40])
+    return v
+
+
+def parse_checksum(text: str, name: str) -> str:
+    """The digest from a ``sha256sum`` line for *name*. One line, the file
+    name must be the asset's own -- what ``sha256sum -c`` would check."""
+    lines = [l for l in text.splitlines() if l.strip()]
+    m = _SHA_LINE_RE.match(lines[0].strip()) if len(lines) == 1 else None
+    if not m or m.group(2) != name:
+        raise DockerError("%s.sha256 is not a sha256sum line for %s" % (name, name))
+    return m.group(1)
 
 
 def check_pem(name: str, value: str, optional: bool = False) -> None:
@@ -443,6 +486,11 @@ class DockerError(RuntimeError):
     pass
 
 
+class AssetMissing(DockerError):
+    """HTTP 404 for a download. The only answer that lets a missing published
+    image fall back to a local build; every other failure is final."""
+
+
 def api(method: str, path: str, body=None, timeout: float = 30,
         query: dict | None = None) -> tuple[int, bytes]:
     if query:
@@ -475,6 +523,22 @@ def api_json(method: str, path: str, body=None, timeout: float = 30,
         return json.loads(raw)
     except ValueError:
         return raw
+
+
+def api_upload(path: str, fh, size: int, timeout: float,
+               query: dict | None = None) -> tuple[int, bytes]:
+    """POST a file to the engine as the request body, streamed from *fh*."""
+    if query:
+        path += "?" + urllib.parse.urlencode(query)
+    conn = _UnixConnection(DOCKER_SOCKET, timeout)
+    try:
+        conn.request("POST", path, body=fh,
+                     headers={"Content-Type": "application/x-tar",
+                              "Content-Length": str(size)})
+        r = conn.getresponse()
+        return r.status, r.read()
+    finally:
+        conn.close()
 
 
 def project_containers() -> list[dict]:
@@ -548,6 +612,113 @@ def image_tags(repo: str = "satom") -> list[str]:
             if t.startswith(repo + ":"):
                 tags.append(t)
     return sorted(set(tags))
+
+
+def engine_arch() -> str:
+    """The engine's architecture (``/info``). The image is loaded into the
+    engine, so it is the engine that must be amd64, not this container."""
+    return str((api_json("GET", "/info") or {}).get("Architecture") or "")
+
+
+def check_image_archive(path: Path, image: str) -> None:
+    """Before the engine sees it: the archive names exactly *image*.
+
+    ``docker load`` tags whatever the archive's manifest names. An archive
+    tagged ``satom:<the running version>`` would silently repoint the tag the
+    rollback relies on, so one that names another tag -- or several images,
+    or none -- is refused before it is loaded.
+    """
+    manifest = None
+    try:
+        with tarfile.open(str(path), "r|gz") as tf:
+            for m in tf:
+                if m.name in ("manifest.json", "./manifest.json") and m.isfile():
+                    if m.size > MAX_REQUEST_BYTES:
+                        raise DockerError("%s: manifest.json is too large" % path.name)
+                    manifest = json.loads(tf.extractfile(m).read().decode("utf-8"))
+                    break
+    except (tarfile.TarError, OSError, EOFError, ValueError) as exc:
+        raise DockerError("%s is not a docker save archive: %s" % (path.name, exc)) from None
+    if manifest is None:
+        raise DockerError("%s has no manifest.json: not a docker save archive" % path.name)
+    tags = None
+    if isinstance(manifest, list) and len(manifest) == 1 and isinstance(manifest[0], dict):
+        tags = manifest[0].get("RepoTags")
+    if tags != [image]:
+        raise DockerError("%s names %s, not exactly %s: it is not loaded"
+                          % (path.name, json.dumps(tags)[:120], image))
+
+
+def load_image(path: Path) -> None:
+    """``docker load`` through the Engine API, the gzip archive as the body
+    (the engine decompresses it, as it does for the CLI)."""
+    with open(str(path), "rb") as fh:
+        code, raw = api_upload("/images/load", fh, os.fstat(fh.fileno()).st_size,
+                               timeout=900, query={"quiet": "1"})
+    text = raw.decode("utf-8", "replace")
+    if code != 200 or '"error"' in text:
+        raise DockerError("the engine did not load %s: HTTP %s %s" % (path.name, code, text[-300:]))
+
+
+def read_image_file(image: str, path: str, limit: int = 4096) -> bytes:
+    """One small file out of *image* without running it: a container is
+    created (never started, no network), the engine's archive API copies the
+    file out, and the container is removed."""
+    created = api_json("POST", "/containers/create", {
+        "Image": image, "NetworkDisabled": True,
+        "Labels": {"io.satom.agent.helper": "1"},
+        "HostConfig": {"NetworkMode": "none"}})
+    cid = created["Id"]
+    try:
+        code, raw = api("GET", "/containers/%s/archive" % cid, query={"path": path})
+        if code != 200:
+            raise DockerError("%s has no %s (HTTP %s)" % (image, path, code))
+        try:
+            with tarfile.open(fileobj=io.BytesIO(raw)) as tf:
+                m = next((m for m in tf.getmembers() if m.isfile()), None)
+                if m is None or m.size > limit:
+                    raise DockerError("%s: %s is not a small regular file" % (image, path))
+                return tf.extractfile(m).read()
+        except tarfile.TarError as exc:
+            raise DockerError("%s: could not read %s: %s" % (image, path, exc)) from None
+    finally:
+        try:
+            api("DELETE", "/containers/%s" % cid, query={"force": "1"})
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def verify_image(image: str, version: str) -> str:
+    """The loaded image IS release *version* -- the release pipeline's own
+    ``_verify_image`` checks, read back from this engine: the OCI version
+    label, a payload digest label (only the pipeline sets it), and the
+    ``/opt/satom/VERSION`` the code inside carries. Returns the payload digest.
+    """
+    code, raw = api("GET", "/images/%s/json" % urllib.parse.quote(image, safe=""))
+    if code != 200:
+        raise DockerError("the archive loaded, but the engine has no %s" % image)
+    try:
+        labels = ((json.loads(raw) or {}).get("Config") or {}).get("Labels") or {}
+    except (ValueError, AttributeError):
+        labels = {}
+    got = str(labels.get(OCI_VERSION_LABEL, ""))
+    if got != version:
+        raise DockerError("%s is labelled version %r, not %s" % (image, got[:40], version))
+    payload = str(labels.get(PAYLOAD_LABEL, ""))
+    if not _HEX64_RE.match(payload):
+        raise DockerError("%s carries no release payload digest (%s)" % (image, PAYLOAD_LABEL))
+    inside = read_image_file(image, "/opt/satom/VERSION").decode("utf-8", "replace").strip()
+    if inside != version:
+        raise DockerError("%s contains /opt/satom/VERSION %r, not %s"
+                          % (image, inside[:40], version))
+    return payload
+
+
+def untag(image: str) -> None:
+    try:
+        api("DELETE", "/images/%s" % urllib.parse.quote(image, safe=""))
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def ensure_cli_image(st: Status | None = None) -> None:
@@ -783,6 +954,46 @@ def safe_extract(tgz: Path, dest: Path) -> None:
             tf.extractall(str(dest), members=members)
 
 
+def download(url: str, dest: Path, limit: int = MAX_DOWNLOAD_BYTES) -> tuple[str, int]:
+    """Stream *url* into the NEW file *dest* -- at most *limit* bytes and
+    DOWNLOAD_DEADLINE seconds -- and return ``(sha256, size)``.
+
+    *dest* is created O_EXCL|O_NOFOLLOW (the caller's private temporary
+    directory). HTTP 404 raises AssetMissing; any other failure, including a
+    transfer that breaks off half-way, raises DockerError.
+    """
+    deadline = time.monotonic() + DOWNLOAD_DEADLINE
+    try:
+        r = urllib.request.urlopen(url, timeout=DOWNLOAD_TIMEOUT)
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            raise AssetMissing("%s: HTTP 404" % url) from None
+        raise DockerError("download of %s failed: HTTP %s" % (url, exc.code)) from None
+    except (OSError, http.client.HTTPException) as exc:
+        raise DockerError("download of %s failed: %s" % (url, exc)) from None
+    h = hashlib.sha256()
+    total = 0
+    fd = os.open(str(dest), os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with r, os.fdopen(fd, "wb") as fh:
+        while True:
+            try:
+                b = r.read(1 << 20)
+            except (OSError, http.client.HTTPException) as exc:
+                raise DockerError("download of %s broke off after %d bytes: %s"
+                                  % (url, total, exc)) from None
+            if not b:
+                break
+            total += len(b)
+            if total > limit:
+                raise DockerError("download larger than %d bytes" % limit)
+            if time.monotonic() > deadline:
+                raise DockerError("download of %s took longer than %d s"
+                                  % (url, DOWNLOAD_DEADLINE))
+            h.update(b)
+            fh.write(b)
+    return h.hexdigest(), total
+
+
 def stage_release(st: Status, version: str) -> Path:
     rel = Path(HOME) / "releases"
     dest = rel / version
@@ -794,16 +1005,7 @@ def stage_release(st: Status, version: str) -> Path:
     tmpd = Path(tempfile.mkdtemp(prefix="satom-src-", dir=str(rel)))
     try:
         tgz = tmpd / "src.tar.gz"
-        with urllib.request.urlopen(url, timeout=60) as r, open(tgz, "wb") as fh:
-            total = 0
-            while True:
-                b = r.read(1 << 20)
-                if not b:
-                    break
-                total += len(b)
-                if total > MAX_DOWNLOAD_BYTES:
-                    raise DockerError("download larger than %d bytes" % MAX_DOWNLOAD_BYTES)
-                fh.write(b)
+        _sha, total = download(url, tgz)
         st.step("download v%s" % version, True, "%s (%d bytes)" % (url, total))
         tree = tmpd / "tree"
         tree.mkdir()
@@ -822,12 +1024,95 @@ def stage_release(st: Status, version: str) -> Path:
         shutil.rmtree(str(tmpd), ignore_errors=True)
 
 
+def fetch_published_image(st: Status, version: str) -> tuple[str, str] | None:
+    """Download the release's published image and its ``.sha256``, verify,
+    load, and prove the loaded image is *version*. Returns ``(sha256 of the
+    archive, payload digest)``, or None when the release publishes no image
+    (HTTP 404 -- a release before 2.4.0).
+
+    Everything else that goes wrong raises, and the caller does NOT fall back
+    to a build: an image that exists but cannot be downloaded or verified is
+    never "fixed" by quietly building something else (installers/satom-setup.sh
+    get_image, same rule).
+    """
+    name = IMAGE_ASSET % version
+    url = RELEASE_ASSET_URL % (RELEASE_REPO, version, name)
+    image = "satom:%s" % version
+    hint = " (SATOM_AGENT_IMAGE=build builds it here instead)"
+    tmpd = Path(tempfile.mkdtemp(prefix="satom-img-", dir=str(Path(HOME) / "releases")))
+    try:
+        try:
+            got, size = download(url, tmpd / name)
+        except AssetMissing:
+            return None
+        except DockerError as exc:
+            raise DockerError("%s%s" % (exc, hint)) from None
+        try:
+            download(url + ".sha256", tmpd / (name + ".sha256"), limit=MAX_CHECKSUM_BYTES)
+        except AssetMissing:
+            raise DockerError("release v%s publishes %s but no .sha256: an image that "
+                              "cannot be verified is not loaded" % (version, name)) from None
+        except DockerError as exc:
+            raise DockerError("%s%s" % (exc, hint)) from None
+        want = parse_checksum((tmpd / (name + ".sha256")).read_text(errors="replace"), name)
+        if got != want:
+            raise DockerError("%s does NOT match its .sha256 (got %s, published %s): the "
+                              "download is corrupt or not the published file"
+                              % (name, got[:16], want[:16]))
+        st.step("download %s" % name, True, "%s (%d bytes, sha256 %s)" % (url, size, got))
+        check_image_archive(tmpd / name, image)
+        try:
+            load_image(tmpd / name)
+            payload = verify_image(image, version)
+        except Exception:
+            # Only reached when satom:<version> did not exist before the load
+            # (get_image checks first), so the tag removed is the one just made.
+            untag(image)
+            raise
+    finally:
+        shutil.rmtree(str(tmpd), ignore_errors=True)
+    return got, payload
+
+
+def get_image(st: Status, version: str, tree: Path) -> None:
+    """``satom:<version>`` in the engine -- installers/satom-setup.sh
+    ``get_image``, for the console. The published image first; a local build
+    only when the release has none (404), the engine is not amd64, or
+    ``SATOM_AGENT_IMAGE=build``. The step says which of the two ran."""
+    image = "satom:%s" % version
+    if image in image_tags():
+        st.step("image %s present" % image, True)
+        return
+    if image_source() == "build":
+        reason = "SATOM_AGENT_IMAGE=build"
+    else:
+        arch = engine_arch()
+        if arch not in IMAGE_ARCHES:
+            reason = "the engine is %s and the published image is linux/amd64" % (arch[:20] or "?")
+        else:
+            got = fetch_published_image(st, version)
+            if got:
+                st.step("image: downloaded and verified (%s)" % got[0], True,
+                        "%s loaded; label version %s, /opt/satom/VERSION %s, payload %s"
+                        % (image, version, version, got[1]))
+                return
+            reason = "release v%s publishes no image (HTTP 404)" % version
+    st.step("build %s" % image, True, "started, %s (5-15 min the first time)" % reason)
+    rc, out = run_helper(["docker", "build", "-t", image, str(tree)], timeout=3600,
+                         network="bridge")
+    if rc != 0:
+        st.step("build %s" % image, False, out[-400:])
+        raise DockerError("image build failed")
+    st.step("image: built here (%s)" % reason, True, out[-400:])
+
+
 def do_update(st: Status, version: str) -> None:
     check_version(version)
     if not HOME:
         raise Refused("updating from the console needs the installer layout "
                       "(/opt/satom-docker). On a manual checkout build the new "
                       "tag and run ./satom-docker.sh up.")
+    image_source()  # an invalid SATOM_AGENT_IMAGE is refused before anything is fetched
     envp, env_text, env = _read_env()
     old_image = env.get("SATOM_IMAGE", "")
     image = "satom:%s" % version
@@ -841,15 +1126,9 @@ def do_update(st: Status, version: str) -> None:
         # half-way. Going back before the agent is the installer's job.
         raise Refused("release v%s does not ship the operations agent; switch to "
                       "it with satom-setup.sh --version %s on the host" % (version, version))
-    if image not in image_tags():
-        st.step("build %s" % image, True, "started (5-15 min the first time)")
-        rc, out = run_helper(["docker", "build", "-t", image, str(tree)], timeout=3600,
-                             network="bridge")
-        st.step("build %s" % image, rc == 0, out[-400:])
-        if rc != 0:
-            raise DockerError("image build failed")
-    else:
-        st.step("image %s present" % image, True)
+    # Before anything is relinked: a failure here leaves the running stack,
+    # `current` and satom.env exactly as they were.
+    get_image(st, version, tree)
 
     home = Path(HOME)
     current = home / "current"
@@ -1064,7 +1343,9 @@ def main() -> int:
     signal.signal(signal.SIGINT, lambda *_: stop.set())
     t = threading.Thread(target=heartbeat_loop, args=(stop,), daemon=True)
     t.start()
-    log("started: project=%s layout=%s queue=%s" % (PROJECT, "installer" if HOME else "manual", QUEUE))
+    log("started: project=%s layout=%s queue=%s image=%s"
+        % (PROJECT, "installer" if HOME else "manual", QUEUE,
+           (os.environ.get("SATOM_AGENT_IMAGE", "") or "release")[:40]))
     while not stop.is_set():
         try:
             for p in sorted(REQ_DIR.glob("*.json")):

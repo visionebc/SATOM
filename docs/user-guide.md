@@ -6002,7 +6002,7 @@ way on a container node: the stack's containers with the agent, the reason witho
 
 The card states the release the stack runs and lists the releases already on
 this host (**tree only** marks a release whose source is present but whose
-image is not built yet).
+image is not on this host yet).
 
 To update: type the version (`X.Y.Z`, for example `2.3.1`), type `UPDATE` in
 the confirmation box, and press **Update this node**. Without the typed
@@ -6012,7 +6012,15 @@ confirmation nothing is queued. The agent then:
    host, and refuses a tree that is not a SATOM Docker release, that carries
    invalid networks, or that predates the agent (a release before 2.3.0 is
    switched to with `satom-setup.sh --version` on the host instead);
-2. builds its image (5–15 minutes the first time);
+2. gets its image: it downloads the image the release publishes on GitHub,
+   checks it against the published `.sha256`, loads it, and checks that it
+   really is the version you typed. It builds the image on this host (5–15
+   minutes the first time) only when the release publishes none (releases
+   before 2.4.0), when the host is not x86_64, or when the operator set
+   `SATOM_AGENT_IMAGE=build`. A download that fails or does not match is
+   **not** replaced by a build: the request fails and the stack keeps running
+   the current release. The request's steps say which way it went —
+   *image: downloaded and verified* or *image: built here* and why;
 3. recreates every service **except the agent** on the new image, then
    reloads the proxy gracefully so it serves the new release's configuration;
 4. waits up to 7 minutes for the console to come back healthy — and **rolls
@@ -6020,7 +6028,7 @@ confirmation nothing is queued. The agent then:
 
 The console restarts during step 3, so the page loses its connection for a
 while; it keeps polling and reloads when the request finishes. The steps, with
-the build and recreate output, are in *Recent agent requests*.
+the download, build and recreate output, are in *Recent agent requests*.
 
 What the update does **not** do: it takes no backup, and a rollback restores
 the previous release's files and image, **not the database**. Back up first

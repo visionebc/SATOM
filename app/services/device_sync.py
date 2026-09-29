@@ -155,8 +155,9 @@ _FAZ_SOT_EXCLUDE = {
 def snapshot_from_faz(appliance, *, timeout: float = 20.0) -> dict:
     """Live, read-only sweep of a FortiAnalyzer unit -> snapshot dict.
 
-    The FAZ counterpart of :func:`snapshot_from_adc`: every enabled
-    ``product='fortianalyzer'`` registry endpoint except the operational ones
+    The FAZ counterpart of :func:`snapshot_from_adc`: every
+    ``product='fortianalyzer'`` endpoint of the box's build
+    (``loader.registry_for``) except the operational ones
     (``_FAZ_SOT_EXCLUDE``), fetched over one authenticated JSON-RPC session,
     emitting the SAME snapshot shape so ``device_store.ingest_snapshot`` + the
     ``reports/<slug>/_config.json`` writer + git publish are shared verbatim.
@@ -166,7 +167,10 @@ def snapshot_from_faz(appliance, *, timeout: float = 20.0) -> dict:
     from ..registry import loader
     from . import faz_menu
 
-    reg = loader.load_faz_registry()
+    # The map of THIS box's build (loader.registry_for): a name its build
+    # measured absent is not swept, one it serves after the baseline disabled
+    # it still is.
+    reg = loader.registry_for("fortianalyzer", loader.version_of(appliance))
     section_of: dict[str, str] = {}
     try:
         for g in faz_menu.menu():
@@ -226,9 +230,10 @@ _FAC_SOT_EXCLUDE = {
 def snapshot_from_fac(appliance, *, timeout: float = 20.0) -> dict:
     """Live, read-only sweep of a FortiAuthenticator unit -> snapshot dict.
 
-    The FAC counterpart of :func:`snapshot_from_faz`: every enabled
-    ``product='fortiauthenticator'`` registry endpoint except the operational
-    ones (``_FAC_SOT_EXCLUDE``), emitting the SAME snapshot shape so
+    The FAC counterpart of :func:`snapshot_from_faz`: every
+    ``product='fortiauthenticator'`` endpoint of the box's build
+    (``loader.registry_for``) except the operational ones
+    (``_FAC_SOT_EXCLUDE``), emitting the SAME snapshot shape so
     ``device_store.ingest_snapshot`` + the ``reports/<slug>/_config.json``
     writer + the SoT store are shared verbatim. Sections come from the FAC menu
     groups; unmapped endpoints land in "Other".
@@ -244,7 +249,8 @@ def snapshot_from_fac(appliance, *, timeout: float = 20.0) -> dict:
     from ..registry import loader
     from . import fac_menu
 
-    reg = loader.load_fac_registry()
+    # Per build, as for FortiAnalyzer above.
+    reg = loader.registry_for("fortiauthenticator", loader.version_of(appliance))
     section_of: dict[str, str] = {}
     try:
         for g in fac_menu.visible_menu():

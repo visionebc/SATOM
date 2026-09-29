@@ -17,8 +17,8 @@ faz01 v7.6.7-build3737 on 2026-07-12; single endpoint ``POST /jsonrpc``):
     ``{"result": {"data": …, "status": …}}`` or a top-level ``{"error"}``.
 * JSON-RPC verbs are lowercase: ``get`` / ``exec`` / ``add`` / ``set`` /
   ``update`` / ``delete`` (NOT HTTP verbs).
-* paths are registry-resolved (``registry.loader.resolve_faz``) — callers
-  never hardcode URLs. ADOM-scoped URIs keep working with ``adom/root`` even
+* paths are registry-resolved per build (``registry.loader.resolve_for``) —
+  callers never hardcode URLs. ADOM-scoped URIs keep working with ``adom/root`` even
   when Admin Domains are disabled on the unit (verified).
 """
 from __future__ import annotations
@@ -44,6 +44,9 @@ class FortiAnalyzerClient(BaseClient):
         self._username = appliance.username
         self._password = appliance.password
         self._session = None
+        # The build this box runs: names resolve per build (registry.loader.resolve_for).
+        from ..registry import loader
+        self.fw_version = loader.version_of(appliance)
 
     # -- transport ------------------------------------------------------------
 
@@ -128,7 +131,7 @@ class FortiAnalyzerClient(BaseClient):
 
     def _resolve(self, logical: str) -> str:
         from ..registry import loader
-        return loader.resolve_faz(logical)
+        return loader.resolve_for('fortianalyzer', logical, getattr(self, 'fw_version', ''))
 
     def list_with_error(self, logical: str, **params):
         """(rows, error) for a registry endpoint — device refusals surface as

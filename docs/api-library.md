@@ -4,8 +4,8 @@
 > engineers who write an adapter or a reader. Operator walkthroughs of the
 > pages built on it are in the [User guide](user-guide.md) §30.5,
 > §30.8–§30.10 and §41.8–§41.9; the guards are catalogued in
-> [Safeguards](safeguards.md) §192–§193 and §196 (endpoint baselines, §9
-> below).
+> [Safeguards](safeguards.md) §192–§193, §196 (endpoint baselines, §9
+> below) and §197 (per-build resolution, §9.8).
 >
 > **Since:** SATOM 2.2.0.
 
@@ -601,6 +601,96 @@ proposes to drop them, and the diff shows which ones.
   FortiAuthenticator 8.0.3 build 0099 on 2026-08-05. The census of the 18
   resources deliberately left out is in
   [fortiauthenticator.md](fortiauthenticator.md) §2.
+
+### 9.8 Per-build resolution in the services
+
+A baseline pinned at one build disables the names that build measured absent.
+The registry still holds one URN per name for the whole fleet, so without more
+work a box on a newer build would lose names it does serve: promoting the
+FortiWeb baseline at 7.6.8 disables 39 names, and 8 of them
+(`system_captcha_puzzle`, `system_certificate_eab_credentials`,
+`system_certificate_ocsp_signing_certs_group`, `waf_custom_tracking_policy`,
+`waf_file_list`, `waf_mcp_security_exception`, `waf_mcp_security_policy`,
+`waf_mcp_security_rule`) are served on 8.0.5. The services therefore resolve a
+name **for the build of the box they are talking to**
+(`app/registry/loader.py`).
+
+`loader.resolve_for(product, name, version)` returns a URN or raises:
+
+1. **An operator's row wins.** Enabled: its URN. Disabled:
+   `loader.EndpointNotServed`.
+2. **The evidence of that exact build.** When `version` is an X.Y.Z build and
+   the library measured the name on it (measured sources only, never
+   `vendor_doc`): served with a URN → that URN; measured absent →
+   `EndpointNotServed`.
+3. **The enabled registry** otherwise.
+4. **`KeyError`** with the same message the product's registry resolver
+   has always raised.
+
+`EndpointNotServed` is a `KeyError`, so every caller that turned an unknown
+name into a named error keeps doing so. It carries `product`, `name`,
+`version` and `authority`, and reads *"`<name>` is not served by `<product>`
+`<version>` (`<authority>`)"*. An empty or unparseable version, or a line
+without a patch (`8.0`), gives exactly the registry's answer. If the evidence
+cannot be read (a DB error), resolution falls through to the registry and logs
+a warning: an unreadable library never breaks a caller.
+
+`loader.registry_for(product, version)` applies the same rules to the whole
+map: the enabled registry, minus names measured absent on the build (unless an
+operator's enabled row), with the measured URN in place of the registry's
+(unless an operator's row), **plus** names whose baseline-owned row is disabled
+and that the build measured served. It only adds names that have a registry
+row: a sweep driven by this map never calls an endpoint nobody catalogued.
+Maps are cached per (product, build) with the registry's 60-second TTL and
+dropped by every registry write (`loader.invalidate_*`) and by a baseline
+apply (`api_baseline._invalidate`).
+
+**The fleet view.** `loader.get_all_endpoints()` feeds consumers that serve
+the whole fleet at once. It returns the enabled registry plus every name whose
+baseline-owned row is disabled and that is measured served on at least one
+build a live FortiWeb runs today (not in maintenance, host not `*.invalid`).
+When the last 8.0.x box leaves the fleet, the 8 names leave the menus.
+`loader.load_registry()` and `loader.resolve()` stay the pure registry, and
+`loader.get_registry_endpoints()` is the pure registry as display dicts.
+`objform.known_collections()` (the generic editor's allow-list) is memoised
+for the life of the process, so it picks up a fleet change on the next restart.
+
+| Consumer | Reads |
+|---|---|
+| Nav menus (`server_objects`, `config_sections`, `wp_menu`), `config_catalog`, `rediscovery.sweep_plan`, `objform` allow-lists, provisioning (service and page), `read_layer`, the API Explorer tree and its per-build marks, the custom-REST picker of scheduled actions | fleet view (`get_all_endpoints`) |
+| Registry search page, Structure page and `structure.registry_urn_index` / `load_catalog` (coverage accounting) | pure registry (`get_registry_endpoints`) |
+
+**Call sites that resolve per build:**
+
+- the FortiADC, FortiAnalyzer and FortiAuthenticator clients (`_resolve`), and
+  the new `FortiWebClient.resolve`. Each client keeps `appliance.fw_version`;
+  a name the build does not serve comes back from `list_with_error` as its
+  message, not a 500;
+- `services/backup.py` (local backup list, download, create, restore);
+- `services/exception_inject.py` (`plan_injection(..., version=)`,
+  `apply_injection` from `ops.appliance`, `candidate_targets` from the client);
+  the API v1 WAF-exception plan passes the appliance's build;
+- `services/clone.py`: `ClonePlanner` indexes the **target** box's map;
+  `ClientReader.get_object` uses its own client's build;
+- `services/write_through.py`: `diff_object`, `local_update` and
+  `local_delete` map a collection with the cached appliance's build;
+- `services/device_sync.py`: the FortiAnalyzer and FortiAuthenticator config
+  sweeps use `registry_for` of the box;
+- the `execute` consoles of `views/adc_api.py`, `faz_api.py` and `fac_api.py`;
+- the custom-REST scheduled action (`scheduled_actions.resolve_endpoint`).
+
+**Still registry-only** (no appliance or build reachable without changing many
+signatures): the FortiWeb tab pages (`server_objects`, `section_config`,
+`web_protection`) reading menu URNs; the FortiWeb device sweep
+(`device_sync.snapshot_from_device`, fleet `sweep_plan`) and the FortiADC
+discovery plan (`adc_ops.discovery_plan`); the FortiAnalyzer and
+FortiAuthenticator tab pages (`views/faz.py`, `views/fac.py`); the catalog
+pages of the three explorers; `policy_ops._apiver_targets` and
+`deep_capture._lg`; `exception_deploy.push_plan`; `lua_studio`; the
+fleet-level analyses (`analysis_adc`, `analysis_fac`) and the FortiAuthenticator
+harvest (`apilib_fac`, which measures against the registry on purpose);
+`cli_coverage`, `discovery_run` and `device_identity`, which account for the
+registry itself.
 
 ---
 

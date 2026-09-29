@@ -41,7 +41,7 @@ from ..registry.dependencies import (
     field_ref_edges,
     when_holds,
 )
-from ..registry.loader import load_registry
+from ..registry.loader import registry_for, version_of
 from .fortiweb_field_schema import (
     REST_UNREADABLE as _REST_UNREADABLE)
 from .fortiweb_ops import sanitize_payload as clean_for_write
@@ -155,18 +155,27 @@ _NOOP: OnLog = lambda _m: None  # noqa: E731
 # --------------------------------------------------------------------------- #
 #  registry urn -> logical index (the web registry is a flat {logical: urn})    #
 # --------------------------------------------------------------------------- #
-def registry_urn_index() -> dict[str, str]:
+def registry_urn_index(version: str = "") -> dict[str, str]:
     """``{collection: logical}`` inverted from the FortiWeb registry.
 
     Keyed by the NORMALISED collection (``objform.collection_of``) because
     the registry spells urns as full REST paths (``/api/v2.0/cmdb/waf/…``)
     while ``dependencies.py`` uses the bare ``cmdb/waf/…`` form — both reduce to
-    the same ``waf/…`` collection, which is how a tree urn finds its logical name."""
-    return {objform.collection_of(urn): logical for logical, urn in load_registry().items()}
+    the same ``waf/…`` collection, which is how a tree urn finds its logical name.
+
+    ``version`` is a box's build: the map is ``loader.registry_for`` of that
+    build (empty → the pure registry)."""
+    return {objform.collection_of(urn): logical
+            for logical, urn in registry_for("fortiweb", version).items()}
 
 
-def _logical_to_urn(logical: str) -> str:
-    return load_registry().get(logical, "")
+def _logical_to_urn(logical: str, version: str = "") -> str:
+    return registry_for("fortiweb", version).get(logical, "")
+
+
+def _reader_version(reader: Any) -> str:
+    """The build behind a clone Reader (its client's box), ``""`` if unknown."""
+    return version_of(getattr(reader, "client", None))
 
 
 # --------------------------------------------------------------------------- #
@@ -227,7 +236,7 @@ class ClientReader:
             return []
 
     def get_object(self, logical: str, mkey: str = "") -> list[dict]:
-        urn = _logical_to_urn(logical)
+        urn = _logical_to_urn(logical, version_of(self.client))
         if not urn:
             return []
         try:
@@ -557,7 +566,9 @@ class ClonePlanner:
     def __init__(self, src: Reader, dst: Reader) -> None:
         self.src = src
         self.dst = dst
-        self.urn_index = registry_urn_index()  # collection -> logical
+        # collection -> logical, from the TARGET box's build: what the plan
+        # can write is what the destination serves.
+        self.urn_index = registry_urn_index(_reader_version(dst))
         self._follow_wpp = True  # set per-plan; False prunes the WPP subtree
         #: ``{(urn, mkey): {(parent_urn, parent_mkey), …}}`` — WHO names each
         #: collected object. A same-device clone needs it because re-pointing a

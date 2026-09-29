@@ -34,7 +34,7 @@ This product does NOT speak the Fortinet CMDB dialect the other three do:
   ``statue``. :meth:`api_call` returns the decoded body untouched so the
   explorer shows that reality instead of a normalised fiction.
 
-Paths are registry-resolved (``registry.loader.resolve_fac``) — callers never
+Paths are registry-resolved per build (``registry.loader.resolve_for``) — callers never
 hardcode a URL, so a firmware upgrade that moves a resource is a row edit on
 the Registry page, not a deploy.
 """
@@ -74,6 +74,9 @@ class FortiAuthenticatorClient(BaseClient):
         super().__init__(appliance.host, appliance.port, appliance.verify_ssl, timeout)
         self._username = appliance.username or ''
         self._api_key = appliance.password or ''
+        # The build this box runs: names resolve per build (registry.loader.resolve_for).
+        from ..registry import loader
+        self.fw_version = loader.version_of(appliance)
 
     # -- transport ------------------------------------------------------------
 
@@ -145,7 +148,8 @@ class FortiAuthenticatorClient(BaseClient):
 
     def _resolve(self, logical: str) -> str:
         from ..registry import loader
-        return loader.resolve_fac(logical)
+        return loader.resolve_for('fortiauthenticator', logical,
+                                  getattr(self, 'fw_version', ''))
 
     def list_with_error(self, logical: str, **params):
         """(rows, error) for a registry endpoint, fully paginated.

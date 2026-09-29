@@ -570,17 +570,26 @@ mismatch on any build the fleet runs.
 
 | product | pinned build | protocol | entries | provenance |
 |---|---|---|---|---|
-| FortiWeb | 7.6.8 | `v2.0` | 517 | 287 measured, 191 legacy, 39 contradicted |
+| FortiWeb | 7.6.8 | `v2.0` | 486 | 287 measured, 191 legacy, 8 carried from 8.0.5 (promoted 2026-09-29; adopted with 517) |
 | FortiADC | 8.0.3 | `v1` | 255 | 217 measured, 38 legacy |
 | FortiAnalyzer | 7.6.7 | `jsonrpc` | 64 | 64 legacy |
 | FortiAuthenticator | 8.0.3 | `v1` | 40 | 40 measured |
 
-**The 39 contradicted FortiWeb entries** are names the 7.6.8 sweep measured as
-not served (36 of them are also absent on 8.0.5). They include
-`web_protection_profile`, `load_balance` and `server_pool_rule`. They stayed
-because dropping 39 names from what clones, sweeps and the explorer resolve is
-a change of behaviour, not a change of storage. The next FortiWeb promotion
-proposes to drop them, and the diff shows which ones.
+**The 39 contradicted FortiWeb entries** were names the 7.6.8 sweep measured as
+not served, among them `web_protection_profile`, `load_balance` and
+`server_pool_rule`. Adoption kept them, because dropping names from what clones,
+sweeps and the explorer resolve is a change of behaviour, not a change of
+storage. They left with the promotion of 2026-09-29
+(`flask apilib baseline promote --product fortiweb --build 7.6.8 --apply
+--export`): read live, each of their URNs answered FortiWeb's `-20001` *"The
+REST API has invalid URL"*, while the object's real path (for example
+`waf/web-protection-profile.inline-protection`) is a valid URL. 31 of them are
+absent on 8.0.5 too, and those 31 left. The other 8 (`waf_mcp_security_policy`,
+`waf_file_list`, `system_captcha_puzzle` and five more) are served on 8.0.5, so
+they stay, labelled `carried` with `measured_on: 8.0.5`. A promotion never drops
+a name another measured build serves, because a fresh install would then ship
+no row for it: its sweep would never probe it, and a box on that build would
+never see it. Per-build resolution (§9.8) keeps them off a 7.6.8 box.
 
 **What the YAML comments recorded**, preserved here because the files are gone:
 

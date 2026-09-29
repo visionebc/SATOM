@@ -6,7 +6,7 @@
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unreleased — the next release — SATOM</title>
-<meta name="description" content="Merged and not yet cut into a release — Changed — endpoint names resolve per firmware build (2026-09-29) · 3 entries.">
+<meta name="description" content="Merged and not yet cut into a release — Changed — endpoint names resolve per firmware build (2026-09-29) · 5 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -46,7 +46,7 @@
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
   <h1>Unreleased — the next release <span class="rel-badge rel-next">not yet released</span></h1>
-  <p class="sub">Merged and not yet cut into a release — Changed — endpoint names resolve per firmware build (2026-09-29) · 3 entries.</p>
+  <p class="sub">Merged and not yet cut into a release — Changed — endpoint names resolve per firmware build (2026-09-29) · 5 entries.</p>
 </header>
 
 <section class="wrap">
@@ -59,8 +59,8 @@
       </form>
       <a class="rel-nav-item is-active" href="unreleased.html" data-rel-version="Unreleased">
         <span class="rel-nav-head"><span class="rel-nav-v">Unreleased — the next release</span><span class="rel-nav-tag rel-nav-next">next</span></span>
-        <span class="rel-nav-meta">unreleased · Changed — endpoint names resolve per firmware build (2026-09-29) · 3 entries</span>
-        <ul class="rel-leads"><li class="rel-more">… and 3 more</li></ul>
+        <span class="rel-nav-meta">unreleased · Changed — endpoint names resolve per firmware build (2026-09-29) · 5 entries</span>
+        <ul class="rel-leads"><li class="rel-more">… and 5 more</li></ul>
       </a>
       <a class="rel-nav-item" href="v2.4.1.html" data-rel-version="2.4.1">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 2.4.1</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
@@ -312,6 +312,19 @@
 <li>The fleet-wide menus and the sweep keep offering an endpoint the baseline
   disabled while a live box still serves it; the Registry search and the
   Structure coverage keep reading the registry itself.</li>
+</ul>
+<h3 id="changed--the-fortiweb-baseline-drops-31-dead-endpoints-2026-09-29">Changed — the FortiWeb baseline drops 31 dead endpoints (2026-09-29)</h3>
+<ul>
+<li>The FortiWeb endpoint baseline is promoted again at 7.6.8 (517 → 486
+  entries). The 31 names measured absent on every measured build leave; each of
+  their URNs answers FortiWeb's <code>-20001</code> "The REST API has invalid URL". Among
+  them are <code>web_protection_profile</code>, <code>load_balance</code>, <code>health_check</code> and
+  <code>http_service</code>, whose real objects live under other paths.</li>
+<li>A promotion no longer drops a name that another measured build serves. It
+  stays, labelled <code>carried</code> from that build. Before this change, the 8 endpoints
+  8.0.5 added (MCP security, file list, captcha puzzle, custom tracking and two
+  certificate tables) would have shipped with no row, so a fresh install would
+  never sweep them. Per-build resolution keeps them off a 7.6.8 box.</li>
 </ul>
 <h3 id="changed--docker-console-updates-load-the-published-image-2026-09-29">Changed — Docker console updates load the published image (2026-09-29)</h3>
 <ul>

@@ -98,7 +98,7 @@
       <div class="card-header"><strong>{{ _('Update') }}</strong></div>
       <div class="card-body" style="font-size:13px;">
         <div class="mb-2">{{ _('The stack runs') }} <code>{{ versions.current or '?' }}</code>.
-          {{ _('An update downloads the release from GitHub if it is not here yet, builds its image, recreates every service except the agent on it, and rolls back if the console does not come back healthy.') }}</div>
+          {{ _('An update downloads the release from GitHub if it is not here yet, loads the image the release publishes (checked against its checksum and its version; built here only when the release publishes none), recreates every service except the agent on it, and rolls back if the console does not come back healthy.') }}</div>
         {% if versions.rows %}
         <div class="text-muted small mb-2">{{ _('Already on this host') }}:
           {% for v in versions.rows %}<code>{{ v.version }}</code>{% if not v.image %} ({{ _('tree only') }}){% endif %}{% if not loop.last %}, {% endif %}{% endfor %}</div>

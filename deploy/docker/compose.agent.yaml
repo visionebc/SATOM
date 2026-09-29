@@ -28,6 +28,11 @@ services:
     entrypoint: ["python3", "/opt/satom/deploy/docker/satom_agent.py"]
     environment:
       TZ: ${TZ:-Europe/Zurich}
+      # How a console update gets satom:<ver>: `release` downloads the
+      # release's published image, checks its .sha256 and loads it (a build
+      # only when the release has none or the engine is not amd64); `build`
+      # always builds. Anything else fails the update. docs/docker-compose.md §7.6.
+      SATOM_AGENT_IMAGE: ${SATOM_AGENT_IMAGE:-release}
     volumes:
       # The ONLY mount of the engine socket in the whole stack. There is a test.
       - /var/run/docker.sock:/var/run/docker.sock
@@ -38,8 +43,9 @@ services:
       - satom-pki:/opt/satom/pki
     # NOT on the `satom` network. It listens on nothing, and a container on the
     # stack network (web, proxy, redis...) cannot even resolve it. Its own
-    # bridge exists for one outbound purpose: downloading a release tree from
-    # GitHub for an update. Everything else it does goes through the socket.
+    # bridge exists for one outbound purpose: downloading a release tree and
+    # its published image from GitHub for an update. Everything else it does
+    # goes through the socket.
     networks:
       - satom-agent
     security_opt:

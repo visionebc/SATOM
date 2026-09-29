@@ -65,7 +65,8 @@ def search():
     term = request.args.get('q', '').strip().lower()
     results = []
     if term:
-        for e in loader.get_all_endpoints():
+        # The Registry page searches the registry itself, not the fleet view.
+        for e in loader.get_registry_endpoints():
             if term in e['name'].lower() or term in (e['urn'] or '').lower():
                 results.append({'section': e['section'], 'endpoint': e})
     return render_template(

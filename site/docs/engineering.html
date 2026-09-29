@@ -287,7 +287,15 @@ requests + events, bug reports, capacity limits, DB reports.</p>
 <li><strong>Loader:</strong> <code>app/registry/loader.py</code> — DB-first with a 60s per-process TTL
   cache; <code>resolve(name)</code> / <code>resolve_adc(name)</code> / <code>resolve_faz(name)</code> by
   logical name. After an edit the serving worker invalidates immediately;
-  others converge ≤60s.</li>
+  others converge ≤60s. Code that talks to ONE box resolves for that box's
+  build: <code>resolve_for(product, name, appliance.fw_version)</code> /
+  <code>registry_for(product, version)</code> (operator row, then the library's evidence
+  of that exact build, then the registry; a name the build does not serve
+  raises <code>EndpointNotServed</code>, a <code>KeyError</code>). The clients do it for you
+  (<code>_resolve</code>, <code>FortiWebClient.resolve</code>). <code>get_all_endpoints()</code> is the FLEET
+  view (registry plus names a live build still serves);
+  <code>get_registry_endpoints()</code> is the pure registry. See
+  <a href="api-library.html">api-library.md</a> §9.8.</li>
 <li><strong>Editor:</strong> the standalone Registry page was FUSED into the API console
   (2026-07-05); <code>/web/registry</code> and its section links redirect there. The
   write path (<code>registry.save</code> / <code>registry.toggle</code>, permission
@@ -596,7 +604,9 @@ safe:</p>
     <code>-20010</code>/<code>-901</code>; the SSH <code>show full-configuration</code> fallback is the
     reliable path (and the vault note records why).</li>
 <li><strong>The registry is a cross-firmware superset:</strong> an endpoint absent on a
-    given firmware answers <code>-20001</code> and must degrade to "empty", not error.</li>
+    given firmware answers <code>-20001</code> and must degrade to "empty", not error.
+    Where a box is known, resolve per build (<code>loader.resolve_for</code>) instead
+    of calling a name its firmware was measured not to serve.</li>
 </ol>
     </div>
   </div>

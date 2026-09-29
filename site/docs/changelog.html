@@ -112,6 +112,30 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="changed--endpoint-names-resolve-per-firmware-build-2026-09-29">Changed — endpoint names resolve per firmware build (2026-09-29)</h3>
+<ul>
+<li>Endpoint names now resolve per firmware build: the FortiADC, FortiAnalyzer
+  and FortiAuthenticator clients, <code>FortiWebClient.resolve</code>, backup, exception
+  inject, clone (the target's build), write-through, the FortiAnalyzer and
+  FortiAuthenticator config sweeps and the explorer consoles use the box's
+  build. An operator's registry row wins, then what the API library measured on
+  that build, then the registry. A name the build does not serve fails with a
+  readable "not served by" error instead of "unknown endpoint".</li>
+<li>The fleet-wide menus and the sweep keep offering an endpoint the baseline
+  disabled while a live box still serves it; the Registry search and the
+  Structure coverage keep reading the registry itself.</li>
+</ul>
+<h3 id="changed--docker-console-updates-load-the-published-image-2026-09-29">Changed — Docker console updates load the published image (2026-09-29)</h3>
+<ul>
+<li>The operations agent now downloads <code>satom-image-&lt;ver&gt;-amd64.tar.gz</code>, verifies
+  it against its <code>.sha256</code>, checks that it really is <code>&lt;ver&gt;</code> (OCI label,
+  payload label, <code>/opt/satom/VERSION</code>) and loads it, instead of building
+  <code>satom:&lt;ver&gt;</code> for 5–15 minutes. It builds only when the release publishes no
+  image, the engine is not x86_64, or <code>SATOM_AGENT_IMAGE=build</code>; a failed or
+  mismatching download fails the update and leaves the stack as it was. An
+  agent started from 2.4.1 or earlier keeps building until
+  <code>satom-docker up -d</code> recreates it.</li>
+</ul>
 <h2 id="241---2026-09-29">[2.4.1] - 2026-09-29</h2>
 <h3 id="fixed--a-docker-install-from-the-published-source-starts-again-2026-09-29">Fixed — a Docker install from the published source starts again (2026-09-29)</h3>
 <p>The public source of 2.4.0 did not start under Docker: the publication step

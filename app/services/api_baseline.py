@@ -334,6 +334,19 @@ def _measured_builds(product: str) -> list:
             if b.get("measured") and not b.get("vendor_only")]
 
 
+def _served_elsewhere(product: str, version: str) -> dict:
+    """``{name: (build, urn)}`` served (``ok`` with a URN) on a measured build
+    other than ``version``; the newest such build wins."""
+    out: dict = {}
+    for other in sorted(_measured_builds(product), key=fv.sort_key):
+        if other == version:
+            continue
+        for name, e in _measured_at(product, other).items():
+            if e["verdict"] == "ok" and e.get("urn"):
+                out[name] = (other, e["urn"])
+    return out
+
+
 def plan_promotion(product: str, version) -> dict:
     """What promoting ``product`` at ``version`` would change. Writes nothing."""
     if product not in products():
@@ -351,6 +364,7 @@ def plan_promotion(product: str, version) -> dict:
             % (product, v, ", ".join(_measured_builds(product)) or "none"))
     prev = active(product)
     prev_entries = {e.name: e for e in entries_of(prev)} if prev else {}
+    elsewhere = _served_elsewhere(product, v)
 
     new: dict = {}
     for name, e in measured.items():
@@ -365,7 +379,16 @@ def plan_promotion(product: str, version) -> dict:
             continue
         me = measured.get(name)
         if me is not None and me["verdict"] == "absent":
-            continue  # measured and not served on this build: it leaves
+            if name in elsewhere:
+                # Not served on THIS build, but another measured build serves
+                # it (an endpoint a newer firmware added). It stays, carried
+                # from that build: dropping it would leave a fresh install with
+                # no row to sweep, so its boxes on that build would never see
+                # it. Per-build resolution keeps it off this build.
+                other, eurn = elsewhere[name]
+                new[name] = {"name": name, "urn": eurn, "provenance": PROV_CARRIED,
+                             "measured_on": other}
+            continue  # measured and not served on this build (nor any other): it leaves
         keep = pe.provenance if pe.provenance in (PROV_LEGACY, PROV_CONTRADICTED) \
             else PROV_CARRIED
         new[name] = {"name": name, "urn": pe.urn, "provenance": keep,
@@ -441,13 +464,7 @@ def classify_legacy(product: str, version, mapping: dict) -> tuple:
     if not v:
         raise ValueError("%r is not a firmware version" % (version,))
     here = _measured_at(product, v)
-    elsewhere: dict = {}
-    for other in sorted(_measured_builds(product), key=fv.sort_key):
-        if other == v:
-            continue
-        for name, e in _measured_at(product, other).items():
-            if e["verdict"] == "ok" and e.get("urn"):
-                elsewhere[name] = (other, e["urn"])
+    elsewhere = _served_elsewhere(product, v)
     entries, conflicts = [], []
     for name, urn in sorted(mapping.items()):
         name, urn = str(name), str(urn or "")

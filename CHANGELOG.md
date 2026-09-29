@@ -19,6 +19,19 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   disabled while a live box still serves it; the Registry search and the
   Structure coverage keep reading the registry itself.
 
+### Changed — the FortiWeb baseline drops 31 dead endpoints (2026-09-29)
+
+- The FortiWeb endpoint baseline is promoted again at 7.6.8 (517 → 486
+  entries). The 31 names measured absent on every measured build leave; each of
+  their URNs answers FortiWeb's `-20001` "The REST API has invalid URL". Among
+  them are `web_protection_profile`, `load_balance`, `health_check` and
+  `http_service`, whose real objects live under other paths.
+- A promotion no longer drops a name that another measured build serves. It
+  stays, labelled `carried` from that build. Before this change, the 8 endpoints
+  8.0.5 added (MCP security, file list, captcha puzzle, custom tracking and two
+  certificate tables) would have shipped with no row, so a fresh install would
+  never sweep them. Per-build resolution keeps them off a 7.6.8 box.
+
 ### Changed — Docker console updates load the published image (2026-09-29)
 
 - The operations agent now downloads `satom-image-<ver>-amd64.tar.gz`, verifies

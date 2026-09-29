@@ -787,8 +787,8 @@ mismatch on any build the fleet runs.</p>
 <td>FortiWeb</td>
 <td>7.6.8</td>
 <td><code>v2.0</code></td>
-<td>517</td>
-<td>287 measured, 191 legacy, 39 contradicted</td>
+<td>486</td>
+<td>287 measured, 191 legacy, 8 carried from 8.0.5 (promoted 2026-09-29; adopted with 517)</td>
 </tr>
 <tr>
 <td>FortiADC</td>
@@ -813,12 +813,21 @@ mismatch on any build the fleet runs.</p>
 </tr>
 </tbody>
 </table>
-<p><strong>The 39 contradicted FortiWeb entries</strong> are names the 7.6.8 sweep measured as
-not served (36 of them are also absent on 8.0.5). They include
-<code>web_protection_profile</code>, <code>load_balance</code> and <code>server_pool_rule</code>. They stayed
-because dropping 39 names from what clones, sweeps and the explorer resolve is
-a change of behaviour, not a change of storage. The next FortiWeb promotion
-proposes to drop them, and the diff shows which ones.</p>
+<p><strong>The 39 contradicted FortiWeb entries</strong> were names the 7.6.8 sweep measured as
+not served, among them <code>web_protection_profile</code>, <code>load_balance</code> and
+<code>server_pool_rule</code>. Adoption kept them, because dropping names from what clones,
+sweeps and the explorer resolve is a change of behaviour, not a change of
+storage. They left with the promotion of 2026-09-29
+(<code>flask apilib baseline promote --product fortiweb --build 7.6.8 --apply
+--export</code>): read live, each of their URNs answered FortiWeb's <code>-20001</code> <em>"The
+REST API has invalid URL"</em>, while the object's real path (for example
+<code>waf/web-protection-profile.inline-protection</code>) is a valid URL. 31 of them are
+absent on 8.0.5 too, and those 31 left. The other 8 (<code>waf_mcp_security_policy</code>,
+<code>waf_file_list</code>, <code>system_captcha_puzzle</code> and five more) are served on 8.0.5, so
+they stay, labelled <code>carried</code> with <code>measured_on: 8.0.5</code>. A promotion never drops
+a name another measured build serves, because a fresh install would then ship
+no row for it: its sweep would never probe it, and a box on that build would
+never see it. Per-build resolution (§9.8) keeps them off a 7.6.8 box.</p>
 <p><strong>What the YAML comments recorded</strong>, preserved here because the files are gone:</p>
 <ul>
 <li><em>FortiAnalyzer.</em> Every entry was probed live (<code>get</code>, code 0) against a

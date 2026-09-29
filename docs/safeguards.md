@@ -16420,6 +16420,15 @@ per-appliance call sites resolve per build
 | **The fleet view tracks the live fleet.** A disabled baseline name stays on offer while a live box's build serves it, never after an operator disabled it, and leaves when the last such box leaves; the Registry search and the Structure coverage read the pure registry. `test_fleet_view_offers_a_disabled_name_while_a_live_build_serves_it`, `test_fleet_view_never_resurrects_an_operator_disable`, `test_fleet_view_consumers_see_the_extra_name`, `test_registry_search_page_reads_the_pure_registry` | the 8 names vanishing from the menus and the sweep; a registry page showing rows it does not hold |
 | **The call sites use it.** The three clients' `_resolve`, `FortiWebClient.resolve`, the explorer consoles, backup, exception inject, clone (target build), write-through, the FortiAnalyzer config sweep and the custom-REST action. `test_client_resolve_is_per_build`, `test_explorer_consoles_refuse_a_name_the_box_does_not_serve`, `test_fortiweb_client_resolve_is_per_build`, `test_backup_resolves_for_the_clients_build`, `test_exception_inject_plans_against_the_target_build`, `test_clone_planner_indexes_the_target_build`, `test_write_through_maps_collections_for_the_cached_appliances_build`, `test_device_sync_sweeps_the_faz_map_of_the_boxs_build`, `test_scheduled_custom_rest_resolves_for_the_target_build` | a resolver nobody calls; a not-served name surfacing as a 500 instead of the named error |
 
+**The promotion side (2026-09-29).** The first promotion at 7.6.8 dropped all
+39 names 7.6.8 measured absent, including the 8 that 8.0.5 serves. On an
+existing install the rows survived as disabled, so the fleet view still found
+them. A fresh install, though, would have shipped no row for them, and its
+sweep, driven by the registry, would never have probed them. `plan_promotion`
+now keeps a name another measured build serves, labelled `carried` from that
+build. `test_a_name_absent_here_but_served_on_another_measured_build_is_carried`
+guards it, and disabling the rule makes it fail.
+
 **Mutation result.** 38 mutations of `loader.py`, the four clients, the call
 sites and the two pure-registry pages (every rule of `resolve_for` and
 `registry_for`, the cache key, each `invalidate_*`, the fleet view's three

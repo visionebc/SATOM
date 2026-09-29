@@ -253,7 +253,9 @@ than installing an application that cannot start.
   carries `satom-setup.sh` next to `install-satom.sh`; run from inside the
   extracted `satom-installer/` directory it uses that sibling installer and
   downloads nothing. Roles: standalone, primary, secondary (join key).
-- **Docker** — builds the image `satom:<ver>` from the release's source, keeps
+- **Docker** — loads the release's published image `satom:<ver>` (verified
+  against its `.sha256`; built from the release's source only when the release
+  publishes none, the host is not x86_64, or `SETUP_IMAGE=build`), keeps
   its secrets in `/opt/satom-docker/satom.env` (`0600`; back it up —
   `FERNET_KEY` cannot be regenerated) and installs the `satom-docker` wrapper
   (`satom-docker ps`, `satom-docker logs -f web`). PostgreSQL in the stack or an
@@ -386,7 +388,7 @@ operations**:
 
 | capability | without the agent | with the agent (System → Container operations) |
 |---|---|---|
-| **Software Update** (self-update) | deploy a new image tag and recreate the stack | switch the stack to another release `X.Y.Z`: download, build, recreate, roll back if `web` does not come back healthy |
+| **Software Update** (self-update) | deploy a new image tag and recreate the stack | switch the stack to another release `X.Y.Z`: download the release and its published image (checked against its `.sha256` and its version; built here only when the release publishes none), recreate, roll back if `web` does not come back healthy |
 | **Service control** (start/stop/restart) | `docker compose restart <service>` | restart the stack's services from the console (start/stop only for `scheduler` and `cron`) |
 | **Certificate activation** | the stack serves TLS already; swap the certificate with `deploy/tls-bootstrap.sh import-cert` and restart `proxy` | upload a certificate and key; the agent imports them and reloads `proxy` gracefully (no restart: open connections survive), restoring the previous certificate if nginx rejects the new one |
 | **systemd unit health** | read container health from the container engine | service-health reads return the stack's containers as the engine reports them, instead of systemd units |

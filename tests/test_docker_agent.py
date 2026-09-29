@@ -9,12 +9,14 @@ nothing can reach it) that the refusal relies on.
 """
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import io
 import json
 import os
 import tarfile
 import time
+import urllib.error
 from pathlib import Path
 
 import pytest
@@ -741,6 +743,7 @@ def test_an_update_builds_with_a_network_and_recreates_without_one(ag, monkeypat
     (tmp_path / "satom.env").write_text("SATOM_IMAGE=satom:2.3.0\n")
     monkeypatch.setattr(ag, "HOME", str(tmp_path))
     monkeypatch.setattr(ag, "image_tags", lambda *a: [])
+    monkeypatch.setenv("SATOM_AGENT_IMAGE", "build")
     seen = []
     monkeypatch.setattr(ag, "run_helper", lambda argv, timeout, network="none":
                         seen.append((argv[1], network)) or (0, "web\n"))
@@ -749,3 +752,327 @@ def test_an_update_builds_with_a_network_and_recreates_without_one(ag, monkeypat
     ag.do_update(_St(), "9.9.9")
     assert seen[0] == ("build", "bridge")
     assert seen[1:] and all(net == "none" for verb, net in seen[1:]), seen
+
+
+# ---------------------------------------------------------------------------
+# The image an update runs: the release's published one, or a local build
+# (installers/satom-setup.sh get_image, same policy). Every test goes through
+# do_update, with the network and the engine faked at their lowest seam, so
+# the choice, the download, the checksum, the load and the version proof all
+# run as they do in production.
+# ---------------------------------------------------------------------------
+
+V = "9.9.9"
+IMG = "satom:" + V
+ASSET = "satom-image-%s-amd64.tar.gz" % V
+ASSET_URL = "https://github.com/visionebc/SATOM/releases/download/v%s/%s" % (V, ASSET)
+PAYLOAD = "ab" * 32
+
+
+def _image_tgz(tags) -> bytes:
+    """A minimal ``docker save | gzip``: the manifest is what the agent reads."""
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tf:
+        for name, data in (("blobs/sha256/00", b"layer" * 100),
+                           ("manifest.json", json.dumps(
+                               [{"Config": "blobs/sha256/00", "RepoTags": tags,
+                                 "Layers": []}]).encode())):
+            ti = tarfile.TarInfo(name)
+            ti.size = len(data)
+            tf.addfile(ti, io.BytesIO(data))
+    return buf.getvalue()
+
+
+def _sha_line(data: bytes, name: str = ASSET) -> bytes:
+    return ("%s  %s\n" % (hashlib.sha256(data).hexdigest(), name)).encode()
+
+
+class _Resp:
+    def __init__(self, data: bytes, break_after: int | None = None):
+        self._b = io.BytesIO(data)
+        self._break = break_after
+
+    def read(self, n=-1):
+        if self._break is not None and self._b.tell() >= self._break:
+            raise ConnectionResetError("connection reset by peer")
+        return self._b.read(min(n, self._break) if self._break else n)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+class _Net:
+    """urlopen: url -> bytes | HTTP status | exception | _Resp."""
+
+    def __init__(self, routes):
+        self.routes = routes
+        self.requested = []
+
+    def urlopen(self, url, timeout=None):
+        self.requested.append(url)
+        r = self.routes.get(url, 404)
+        if isinstance(r, int):
+            raise urllib.error.HTTPError(url, r, "HTTP %d" % r, {}, None)
+        if isinstance(r, Exception):
+            raise r
+        return r if isinstance(r, _Resp) else _Resp(r)
+
+
+class _Engine:
+    """The Engine API seam (``api`` / ``api_upload``) of a daemon that has
+    *tags*, runs on *arch*, and -- once an archive is loaded -- holds an image
+    with *labels* whose /opt/satom/VERSION is *version_file*."""
+
+    def __init__(self, arch="x86_64", loads=(IMG,), labels=None, version_file=V + "\n"):
+        self.arch = arch
+        self.tags = {"satom:2.3.0"}
+        self.loads = list(loads)
+        self.labels = labels if labels is not None else {
+            "org.opencontainers.image.version": V,
+            "com.visionebc.satom.payload-sha256": PAYLOAD}
+        self.version_file = version_file.encode()
+        self.loaded = []
+        self.untagged = []
+        self.probes = {}
+
+    def api(self, method, path, body=None, timeout=30, query=None):
+        from urllib.parse import unquote
+        p = unquote(path)
+        if (method, p) == ("GET", "/images/json"):
+            return 200, json.dumps([{"RepoTags": sorted(self.tags)}]).encode()
+        if (method, p) == ("GET", "/info"):
+            return 200, json.dumps({"Architecture": self.arch}).encode()
+        if method == "GET" and p.startswith("/images/") and p.endswith("/json"):
+            tag = p[len("/images/"):-len("/json")]
+            if tag not in self.tags:
+                return 404, b'{"message":"No such image"}'
+            return 200, json.dumps({"Config": {"Labels": self.labels}}).encode()
+        if (method, p) == ("POST", "/containers/create"):
+            assert body["HostConfig"]["NetworkMode"] == "none"
+            self.probes["probe1"] = body["Image"]
+            return 201, b'{"Id":"probe1"}'
+        if method == "GET" and p == "/containers/probe1/archive":
+            buf = io.BytesIO()
+            with tarfile.open(fileobj=buf, mode="w") as tf:
+                ti = tarfile.TarInfo("VERSION")
+                ti.size = len(self.version_file)
+                tf.addfile(ti, io.BytesIO(self.version_file))
+            return 200, buf.getvalue()
+        if method == "DELETE" and p.startswith("/containers/"):
+            self.probes.pop(p.split("/")[2], None)
+            return 204, b""
+        if method == "DELETE" and p.startswith("/images/"):
+            tag = p[len("/images/"):]
+            self.untagged.append(tag)
+            self.tags.discard(tag)
+            return 200, b"[]"
+        raise AssertionError("unexpected engine call %s %s" % (method, path))
+
+    def upload(self, path, fh, size, timeout, query=None):
+        assert path == "/images/load"
+        self.loaded.append(fh.read())
+        self.tags.update(self.loads)
+        return 200, json.dumps({"stream": "Loaded image: %s\n" % self.loads[0]}).encode()
+
+
+class _Rec:
+    def __init__(self):
+        self.steps = []
+
+    def step(self, name, ok=True, detail=""):
+        self.steps.append((name, ok, detail))
+
+    def set(self, **kw):
+        pass
+
+    def names(self):
+        return [s[0] for s in self.steps]
+
+
+def _image_rig(ag, tmp_path, monkeypatch, routes, engine=None, staged=True):
+    """An installer layout on 2.3.0, an update to 9.9.9 whose tree is staged."""
+    if staged:
+        rel = tmp_path / "releases" / V
+        (rel / "deploy" / "docker").mkdir(parents=True)
+        (rel / "Dockerfile").write_text("FROM x\n")
+        for f in ("compose.yaml", "compose.agent.yaml"):
+            (rel / "deploy" / "docker" / f).write_text("services: {}\n")
+    (tmp_path / "releases" / "2.3.0").mkdir(parents=True)
+    os.symlink(str(tmp_path / "releases" / "2.3.0"), str(tmp_path / "current"))
+    (tmp_path / "satom.env").write_text("SATOM_IMAGE=satom:2.3.0\n")
+    monkeypatch.setattr(ag, "HOME", str(tmp_path))
+    monkeypatch.delenv("SATOM_AGENT_IMAGE", raising=False)
+    eng = engine or _Engine()
+    monkeypatch.setattr(ag, "api", eng.api)
+    monkeypatch.setattr(ag, "api_upload", eng.upload)
+    net = _Net(routes)
+    monkeypatch.setattr(ag.urllib.request, "urlopen", net.urlopen)
+    helpers = []
+    monkeypatch.setattr(ag, "run_helper", lambda argv, timeout, network="none":
+                        helpers.append(list(argv)) or (0, "web\nproxy\n"))
+    monkeypatch.setattr(ag, "reload_proxy", lambda st: True)
+    monkeypatch.setattr(ag, "wait_service", lambda *a, **k: (True, "healthy"))
+    return eng, net, helpers
+
+
+def _builds(helpers):
+    return [h for h in helpers if h[:2] == ["docker", "build"]]
+
+
+def _untouched(tmp_path):
+    """The running stack's two switches are exactly as before the request."""
+    assert (tmp_path / "satom.env").read_text() == "SATOM_IMAGE=satom:2.3.0\n"
+    assert os.readlink(str(tmp_path / "current")) == str(tmp_path / "releases" / "2.3.0")
+
+
+def test_an_update_loads_the_published_image_and_builds_nothing(ag, tmp_path, monkeypatch):
+    data = _image_tgz([IMG])
+    eng, net, helpers = _image_rig(ag, tmp_path, monkeypatch,
+                                   {ASSET_URL: data, ASSET_URL + ".sha256": _sha_line(data)})
+    st = _Rec()
+    ag.do_update(st, V)
+    assert "image: downloaded and verified (%s)" % hashlib.sha256(data).hexdigest() in st.names()
+    assert not any(n.startswith("image: built here") for n in st.names())
+    assert _builds(helpers) == [], "a published image is loaded, never built"
+    assert eng.loaded == [data], "the verified archive itself reaches the engine"
+    assert eng.probes == {}, "the version probe container is removed"
+    assert "SATOM_IMAGE=%s" % IMG in (tmp_path / "satom.env").read_text()
+    assert os.readlink(str(tmp_path / "current")) == str(tmp_path / "releases" / V)
+    assert not list((tmp_path / "releases").glob("satom-img-*")), "the download is cleaned up"
+
+
+@pytest.mark.parametrize("sha", [
+    _sha_line(b"something else"),                      # wrong digest
+    _sha_line(_image_tgz([IMG]), "satom-image-9.9.8-amd64.tar.gz"),  # another file's line
+    b"not a checksum\n",
+])
+def test_a_checksum_mismatch_fails_the_update_without_a_build_or_a_switch(
+        ag, tmp_path, monkeypatch, sha):
+    data = _image_tgz([IMG])
+    eng, net, helpers = _image_rig(ag, tmp_path, monkeypatch,
+                                   {ASSET_URL: data, ASSET_URL + ".sha256": sha})
+    st = _Rec()
+    with pytest.raises(ag.DockerError, match="sha256"):
+        ag.do_update(st, V)
+    assert helpers == [], "no build, and no compose run: nothing is switched"
+    assert eng.loaded == []
+    assert not any(n.startswith("image: ") for n in st.names())
+    _untouched(tmp_path)
+
+
+@pytest.mark.parametrize("routes", [
+    # the image exists and breaks off half-way
+    lambda d: {ASSET_URL: _Resp(d, break_after=64), ASSET_URL + ".sha256": _sha_line(d)},
+    # the image exists, the server fails
+    lambda d: {ASSET_URL: 503, ASSET_URL + ".sha256": _sha_line(d)},
+    # the image exists, its checksum cannot be fetched
+    lambda d: {ASSET_URL: d, ASSET_URL + ".sha256": 500},
+    # the image exists, and there is no checksum to verify it against
+    lambda d: {ASSET_URL: d, ASSET_URL + ".sha256": 404},
+    # no answer at all is not a 404 either
+    lambda d: {ASSET_URL: OSError("Network is unreachable")},
+])
+def test_a_failed_download_of_an_existing_image_fails_and_never_builds(
+        ag, tmp_path, monkeypatch, routes):
+    data = _image_tgz([IMG])
+    eng, net, helpers = _image_rig(ag, tmp_path, monkeypatch, routes(data))
+    with pytest.raises(ag.DockerError):
+        ag.do_update(_Rec(), V)
+    assert helpers == [], "a download failure is final: no build, no switch"
+    assert eng.loaded == []
+    _untouched(tmp_path)
+
+
+def test_a_release_without_a_published_image_is_built_here(ag, tmp_path, monkeypatch):
+    eng, net, helpers = _image_rig(ag, tmp_path, monkeypatch, {ASSET_URL: 404})
+    st = _Rec()
+    ag.do_update(st, V)
+    assert net.requested == [ASSET_URL], "no checksum is fetched for an image that is not there"
+    assert [h[:4] for h in _builds(helpers)] == [["docker", "build", "-t", IMG]]
+    assert "image: built here (release v%s publishes no image (HTTP 404))" % V in st.names()
+    assert eng.loaded == []
+    assert "SATOM_IMAGE=%s" % IMG in (tmp_path / "satom.env").read_text()
+
+
+@pytest.mark.parametrize("arch", ["aarch64", "arm64", ""])
+def test_an_engine_that_is_not_amd64_builds_and_downloads_nothing(ag, tmp_path, monkeypatch, arch):
+    data = _image_tgz([IMG])
+    eng, net, helpers = _image_rig(ag, tmp_path, monkeypatch,
+                                   {ASSET_URL: data, ASSET_URL + ".sha256": _sha_line(data)},
+                                   engine=_Engine(arch=arch))
+    st = _Rec()
+    ag.do_update(st, V)
+    assert net.requested == []
+    assert len(_builds(helpers)) == 1
+    assert any(n.startswith("image: built here (the engine is ") for n in st.names())
+
+
+def test_the_build_opt_out_builds_and_downloads_nothing(ag, tmp_path, monkeypatch):
+    data = _image_tgz([IMG])
+    eng, net, helpers = _image_rig(ag, tmp_path, monkeypatch,
+                                   {ASSET_URL: data, ASSET_URL + ".sha256": _sha_line(data)})
+    monkeypatch.setenv("SATOM_AGENT_IMAGE", "build")
+    st = _Rec()
+    ag.do_update(st, V)
+    assert net.requested == [] and eng.loaded == []
+    assert len(_builds(helpers)) == 1
+    assert "image: built here (SATOM_AGENT_IMAGE=build)" in st.names()
+
+
+@pytest.mark.parametrize("value", ["Release", "BUILD", "build ", "none", "local", "pull"])
+def test_an_invalid_image_source_is_refused_before_anything_is_fetched(
+        ag, tmp_path, monkeypatch, value):
+    eng, net, helpers = _image_rig(ag, tmp_path, monkeypatch, {}, staged=False)
+    monkeypatch.setenv("SATOM_AGENT_IMAGE", value)
+    with pytest.raises(ag.Refused, match="SATOM_AGENT_IMAGE must be release or build"):
+        ag.do_update(_Rec(), V)
+    assert net.requested == [], "not even the release tree is downloaded"
+    assert helpers == [] and eng.loaded == []
+    _untouched(tmp_path)
+
+
+@pytest.mark.parametrize("engine", [
+    lambda: _Engine(labels={"org.opencontainers.image.version": "2.4.0",
+                            "com.visionebc.satom.payload-sha256": PAYLOAD}),
+    lambda: _Engine(version_file="2.4.0\n"),
+    lambda: _Engine(labels={"org.opencontainers.image.version": V}),  # not the pipeline's
+    lambda: _Engine(loads=("satom:other",)),                          # tag never appears
+])
+def test_a_loaded_image_that_is_not_the_release_fails_and_leaves_the_stack(
+        ag, tmp_path, monkeypatch, engine):
+    data = _image_tgz([IMG])
+    eng, net, helpers = _image_rig(ag, tmp_path, monkeypatch,
+                                   {ASSET_URL: data, ASSET_URL + ".sha256": _sha_line(data)},
+                                   engine=engine())
+    st = _Rec()
+    with pytest.raises(ag.DockerError):
+        ag.do_update(st, V)
+    assert eng.loaded == [data]
+    assert IMG not in eng.tags, "the wrong image does not stay behind under the release's tag"
+    assert helpers == [], "no build and no switch"
+    assert not any(n.startswith("image: ") for n in st.names())
+    _untouched(tmp_path)
+
+
+@pytest.mark.parametrize("tags", [["satom:2.3.0"], [IMG, "satom:2.3.0"], [], None])
+def test_an_archive_that_names_another_tag_is_never_loaded(ag, tmp_path, monkeypatch, tags):
+    """docker load would repoint that tag -- the running one, the rollback's."""
+    data = _image_tgz(tags)
+    eng, net, helpers = _image_rig(ag, tmp_path, monkeypatch,
+                                   {ASSET_URL: data, ASSET_URL + ".sha256": _sha_line(data)})
+    with pytest.raises(ag.DockerError, match="not exactly"):
+        ag.do_update(_Rec(), V)
+    assert eng.loaded == [] and helpers == []
+    _untouched(tmp_path)
+
+
+def test_the_published_image_name_is_the_installers():
+    ag = _load()
+    text = INSTALLER.read_text()
+    assert 'name="satom-image-${v}-amd64.tar.gz"' in text
+    assert ag.IMAGE_ASSET % "${v}" == "satom-image-${v}-amd64.tar.gz"
+    assert 'case "${SETUP_IMAGE:-release}" in release|build)' in text
+    assert ag.IMAGE_SOURCES == ("release", "build")

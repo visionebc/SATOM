@@ -11,8 +11,6 @@ path — a stale cache row just gets refreshed on the next ⟳.
 """
 from __future__ import annotations
 
-import functools
-
 from . import device_store
 
 
@@ -26,22 +24,39 @@ def _norm_tail(urn: str) -> str:
     return u.strip("/")
 
 
-@functools.lru_cache(maxsize=1)
-def _tail_to_logical() -> dict:
-    """Reverse the registry {logical: urn} into {cmdb-tail: logical}."""
+def _tail_to_logical(version: str = "") -> dict:
+    """Reverse the registry {logical: urn} into {cmdb-tail: logical}.
+
+    ``version`` is the box's build (``loader.registry_for``; empty → the pure
+    registry). Not memoised here: the loader already caches the map with its
+    TTL, and a process-lifetime memo never saw a registry edit.
+    """
     from ..registry import loader
     out = {}
-    for logical, urn in (loader.load_registry() or {}).items():
+    for logical, urn in (loader.registry_for("fortiweb", version) or {}).items():
         out[_norm_tail(urn)] = logical
     return out
 
 
-def logical_for_collection(coll: str) -> str | None:
+def _version_for(session, appliance_id) -> str:
+    """The build the cached appliance runs, ``""`` when unknown."""
+    if appliance_id is None:
+        return ""
+    try:
+        from ..models import Appliance
+        from ..registry import loader
+        return loader.version_of(session.get(Appliance, appliance_id))
+    except Exception:  # noqa: BLE001 — best-effort, like the rest of this module
+        return ""
+
+
+def logical_for_collection(coll: str, version: str = "") -> str | None:
     """Map an objedit collection (``server-policy/server-pool``) to the cache
-    logical name (``server_pool``). Falls back to None when unknown."""
+    logical name (``server_pool``) for a box on ``version``. Falls back to
+    None when unknown."""
     if not coll:
         return None
-    return _tail_to_logical().get(coll.strip("/"))
+    return _tail_to_logical(version).get(coll.strip("/"))
 
 
 def _find(session, appliance_id, mkey, logical=None):
@@ -58,7 +73,7 @@ def diff_object(appliance_id, coll, mkey, proposed, *, session=None):
     vs the cached before-state. Unknown/absent cache → all proposed are 'new'."""
     from ..extensions import db
     session = session or db.session
-    logical = logical_for_collection(coll)
+    logical = logical_for_collection(coll, _version_for(session, appliance_id))
     obj = _find(session, appliance_id, mkey, logical)
     before = (obj.payload if obj and obj.payload else {}) or {}
     changes = {}
@@ -75,7 +90,7 @@ def local_update(appliance_id, coll, mkey, fields, *, session=None):
     updated."""
     from ..extensions import db
     session = session or db.session
-    logical = logical_for_collection(coll)
+    logical = logical_for_collection(coll, _version_for(session, appliance_id))
     obj = _find(session, appliance_id, mkey, logical)
     if obj is None:
         return False
@@ -96,7 +111,7 @@ def local_delete(appliance_id, coll, mkey, *, session=None):
     from ..extensions import db
     from ..models_cache import DeviceObject
     session = session or db.session
-    logical = logical_for_collection(coll)
+    logical = logical_for_collection(coll, _version_for(session, appliance_id))
     obj = _find(session, appliance_id, mkey, logical)
     if obj is None:
         return False

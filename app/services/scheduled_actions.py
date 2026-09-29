@@ -37,7 +37,7 @@ from ..models import (Appliance, ChangeRequest, ScheduledAction,
                       ScheduledActionRun, db)
 from . import backup, scheduler, signature_catalog
 from .fortiweb_ops import FortiWebOps
-from ..registry.loader import load_registry
+from ..registry import loader as _loader
 
 
 def _configured_tz() -> str:
@@ -1463,17 +1463,24 @@ def _do_upgrade(appliance, params: dict, dry_run: bool) -> dict:
     }
 
 
-def resolve_endpoint(value: str) -> str:
+def resolve_endpoint(value: str, version: str = "") -> str:
     """Map a registry friendly key OR a raw ``/api/...`` path to a concrete URN.
 
-    Returns ``""`` when it resolves to neither (so the executor can refuse).
+    A key resolves for the target box's build ``version``
+    (``loader.resolve_for``; empty → the pure registry), because the picker
+    offers the FLEET catalog (``loader.get_all_endpoints``). Returns ``""``
+    when it resolves to neither, or the build does not serve it (so the
+    executor can refuse).
     """
     v = (value or "").strip()
     if not v:
         return ""
     if v.startswith("/"):
         return v
-    return load_registry().get(v, "")
+    try:
+        return _loader.resolve_for("fortiweb", v, version)
+    except KeyError:
+        return ""
 
 
 def _do_health_check(appliance, dry_run: bool) -> dict:
@@ -1628,7 +1635,7 @@ def _do_custom_rest(appliance, params: dict, dry_run: bool) -> dict:
 
     if method not in _ALLOWED_METHODS:
         return {"ok": False, "summary": f"method {method!r} not allowed.", "log": ""}
-    path = resolve_endpoint(raw_ep)
+    path = resolve_endpoint(raw_ep, _loader.version_of(appliance))
     if not path:
         return {"ok": False,
                 "summary": (f"could not resolve endpoint {raw_ep!r} "

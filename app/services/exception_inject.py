@@ -135,9 +135,15 @@ def rest_for(exc_type: str) -> ExcRest | None:
             or EXCEPTION_REST.get(_cat.canonical_type(exc_type)))
 
 
-def resolve_collection(logical: str) -> str | None:
-    """Registry logical name → bare cmdb collection (``None`` if unknown)."""
-    urn = loader.load_registry().get(logical)
+def resolve_collection(logical: str, version: str = "") -> str | None:
+    """Registry logical name → bare cmdb collection (``None`` if unknown).
+
+    ``version`` is the target box's build: the name resolves through
+    ``loader.registry_for`` so a build that does not serve it answers ``None``
+    and a build that serves it after the baseline disabled it still resolves.
+    Empty → the pure registry.
+    """
+    urn = loader.registry_for("fortiweb", version).get(logical)
     return objform.collection_of(urn) if urn else None
 
 
@@ -168,13 +174,15 @@ def _plan(status: str, *, error: str = "", **extra) -> dict:
     return base
 
 
-def plan_injection(exc_type: str, payload: dict, target: str) -> dict:
+def plan_injection(exc_type: str, payload: dict, target: str, *,
+                   version: str = "") -> dict:
     """Resolve the single write that pushes *payload* onto *target*.
 
     Returns a plan dict with ``status`` ∈ ``ready`` / ``no-endpoint`` (no
     registry mapping) / ``no-target`` (no parent object chosen, or an update
     missing its key field) / ``invalid`` (the catalogue refuses the body).
-    ``endpoint`` is the full scoped REST path.
+    ``endpoint`` is the full scoped REST path. ``version`` is the target
+    box's build (see :func:`resolve_collection`); empty → the pure registry.
 
     ``invalid`` closes a hole the deploy work opened: the catalogue's required
     fields and enums were enforced by the AUTHORING FORM only, so every other
@@ -186,7 +194,7 @@ def plan_injection(exc_type: str, payload: dict, target: str) -> dict:
     rest = rest_for(exc_type)
     if rest is None:
         return _plan("no-endpoint", error=f"no inject mapping for {exc_type!r}")
-    coll = resolve_collection(rest.item_logical)
+    coll = resolve_collection(rest.item_logical, version)
     if not coll:
         return _plan("no-endpoint",
                      error=f"registry has no endpoint {rest.item_logical!r}")
@@ -311,7 +319,8 @@ def apply_injection(ops, *, exc_type: str, payload: dict, target: str,
     there, so a caller can say "nothing to do" instead of either "created" or
     "rejected", both of which would be false.
     """
-    plan = plan_injection(exc_type, payload, target)
+    version = loader.version_of(getattr(ops, "appliance", None))
+    plan = plan_injection(exc_type, payload, target, version=version)
     if plan["status"] != "ready":
         return {"ok": False, "plan": plan, "steps": [], "dry_run": dry_run,
                 "already_present": False}
@@ -320,7 +329,7 @@ def apply_injection(ops, *, exc_type: str, payload: dict, target: str,
     steps: list[dict] = []
 
     if create_container and not rest.inline and rest.parent_logical not in _NO_CONTAINER:
-        pcoll = resolve_collection(rest.parent_logical)
+        pcoll = resolve_collection(rest.parent_logical, version)
         if pcoll:
             present = None if dry_run else container_exists(ops, pcoll, target)
             if present is True:
@@ -360,7 +369,7 @@ def candidate_targets(client, exc_type: str) -> list[str]:
         # letting the view say "no target needed" is the honest answer; an
         # empty picker with no explanation reads as an unreachable device.
         return []
-    coll = resolve_collection(rest.parent_logical)
+    coll = resolve_collection(rest.parent_logical, loader.version_of(client))
     if not coll:
         return []
     try:

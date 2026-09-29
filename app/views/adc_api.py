@@ -149,7 +149,9 @@ def execute():
     path = endpoint
     if not endpoint.startswith('/'):
         try:
-            path = loader.resolve_adc(endpoint)
+            path = loader.resolve_for('fortiadc', endpoint, appliance.fw_version)
+        except loader.EndpointNotServed as exc:
+            return jsonify(ok=False, error=str(exc))
         except KeyError:
             return jsonify(ok=False, error=f'Unknown FortiADC endpoint: {endpoint}')
 

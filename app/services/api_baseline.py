@@ -34,7 +34,9 @@ A baseline replaces them. Contract (``docs/api-library.md`` §9):
 :func:`resolve_at` answers the per-build question — which URN, and on what
 authority, does ``name`` resolve to on build X — and :func:`check` runs it over
 the live fleet so drift between the registry, the baseline and the evidence is
-reported instead of discovered.
+reported instead of discovered. The services resolve per build through
+``registry.loader.resolve_for`` / ``registry_for`` (same authority order,
+without the baseline-assumption step: the registry already serves it).
 """
 from __future__ import annotations
 
@@ -500,6 +502,9 @@ def _invalidate(product: str) -> None:
     {"fortiweb": loader.invalidate_cache, "fortiadc": loader.invalidate_adc_cache,
      "fortianalyzer": loader.invalidate_faz_cache,
      "fortiauthenticator": loader.invalidate_fac_cache}.get(product, lambda: None)()
+    # The per-build views (``loader.registry_for`` / ``resolve_for``) and the
+    # fleet view are derived from the rows this just rewrote.
+    loader.invalidate_build_views(product)
 
 
 def apply(b: ApiLibBaseline) -> dict:

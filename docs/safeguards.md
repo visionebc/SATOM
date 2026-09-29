@@ -16388,3 +16388,49 @@ insert-only apply, drift ignored, empty fallback, adoption dropping an entry,
 unmeasured build promotable, identical re-promotion duplicated): all 14 caught.
 On the reference installation adoption left the 877 registry rows identical
 (name, URN, enabled) and `baseline check` reported no drift.
+
+## §197 — one URN for the whole fleet, whatever build the box runs (`tests/test_registry_resolve_for.py`, 2026-09-29)
+
+**The defect.** The endpoint registry holds one URN per name for the whole
+fleet, and every service resolved names through it with no notion of the
+box's firmware. Promoting the FortiWeb baseline at 7.6.8 disables the 39 names
+7.6.8 measured absent, and 8 of them (`waf_mcp_security_policy`,
+`waf_file_list`, `system_captcha_puzzle` and five more) are served on 8.0.5.
+Without per-build resolution an 8.0.5 box would lose them as "unknown registry
+endpoint", the menus and the sweep would stop offering them, and a 7.6.8 box
+would keep being sent names it was measured not to serve.
+
+**The fix.** `loader.resolve_for(product, name, version)` and
+`loader.registry_for(product, version)`: an operator's row wins, then the
+library's measured evidence of that exact build, then the enabled registry. A
+name the build (or an operator) does not serve raises `EndpointNotServed`, a
+`KeyError` with a readable message. `get_all_endpoints()` becomes the fleet
+view (registry plus names a live build still serves); pages that account for
+the registry itself read `get_registry_endpoints()`. The clients and the
+per-appliance call sites resolve per build
+([api-library.md](api-library.md) §9.8).
+
+| Guard | What it kills |
+|---|---|
+| **The authority order.** Operator row > measured evidence of the build > registry > `KeyError`. `test_resolve_for_operator_row_wins_over_the_evidence`, `test_resolve_for_measured_urn_and_measured_absent`, `test_resolve_for_serves_a_disabled_baseline_row_the_build_measured`, `test_resolve_for_unknown_name_keeps_each_products_message` | evidence overriding an operator's fix; an 8.0.5 box losing a name the baseline dropped; a name the build does not serve being called anyway |
+| **No build, no change.** Empty, unparseable or line-only (`8.0`) versions give exactly the registry's answer and error. `test_resolve_for_without_a_build_is_exactly_the_registry` | a box with unknown firmware changing behaviour; line evidence passed off as a build |
+| **Evidence is never a new failure mode.** A DB error while reading evidence falls back to the registry and logs a warning. `test_resolve_for_falls_back_to_the_registry_when_evidence_is_unreadable` | a backup, clone or sweep failing because the library is unreadable |
+| **The whole map follows the same rules.** Absent dropped, measured URN in, operator rows untouched, owned-disabled served names added, nothing added without a registry row. `test_registry_for_applies_every_rule` | a sweep calling absent endpoints; a sweep of every name the library ever saw |
+| **Cached per build, dropped on edit.** `test_registry_for_caches_per_version`, `test_registry_edits_drop_the_per_build_views`, `test_an_operator_edit_is_seen_by_the_next_per_build_read` | an 8.0.6 box served 8.0.5's map; a registry fix invisible for the life of the process |
+| **The fleet view tracks the live fleet.** A disabled baseline name stays on offer while a live box's build serves it, never after an operator disabled it, and leaves when the last such box leaves; the Registry search and the Structure coverage read the pure registry. `test_fleet_view_offers_a_disabled_name_while_a_live_build_serves_it`, `test_fleet_view_never_resurrects_an_operator_disable`, `test_fleet_view_consumers_see_the_extra_name`, `test_registry_search_page_reads_the_pure_registry` | the 8 names vanishing from the menus and the sweep; a registry page showing rows it does not hold |
+| **The call sites use it.** The three clients' `_resolve`, `FortiWebClient.resolve`, the explorer consoles, backup, exception inject, clone (target build), write-through, the FortiAnalyzer config sweep and the custom-REST action. `test_client_resolve_is_per_build`, `test_explorer_consoles_refuse_a_name_the_box_does_not_serve`, `test_fortiweb_client_resolve_is_per_build`, `test_backup_resolves_for_the_clients_build`, `test_exception_inject_plans_against_the_target_build`, `test_clone_planner_indexes_the_target_build`, `test_write_through_maps_collections_for_the_cached_appliances_build`, `test_device_sync_sweeps_the_faz_map_of_the_boxs_build`, `test_scheduled_custom_rest_resolves_for_the_target_build` | a resolver nobody calls; a not-served name surfacing as a 500 instead of the named error |
+
+**Mutation result.** 38 mutations of `loader.py`, the four clients, the call
+sites and the two pure-registry pages (every rule of `resolve_for` and
+`registry_for`, the cache key, each `invalidate_*`, the fleet view's three
+conditions, and each wired call site reverted to the registry): 37 killed. The
+survivor removes the explicit `invalidate_build_views` call from
+`api_baseline._invalidate`; it is redundant by design, because `_invalidate`
+already calls the product's `loader.invalidate_*`, which drops the views.
+
+**How to verify it is armed:**
+
+```
+venv/bin/python -m pytest -q tests/test_registry_resolve_for.py \
+  tests/test_api_baseline.py
+```

@@ -9,8 +9,8 @@ SDK; re-verify live once a lab device exists — see docs/fortiadc.md):
   (the official httpapi plugin sends both).
 * object paths mirror the CLI tree with separators flattened to underscores:
   ``config load-balance virtual-server`` → ``/api/load_balance_virtual_server``.
-  Paths are registry-resolved (``registry.loader.resolve_adc``) — callers
-  never hardcode URLs.
+  Paths are registry-resolved per build (``registry.loader.resolve_for``) —
+  callers never hardcode URLs.
 * responses wrap data in ``{"payload": …}`` — an array for collection GETs,
   an object/1-element array for single reads, a NUMBER for write results
   (negative = device error code).
@@ -39,6 +39,9 @@ class FortiADCClient(BaseClient):
         self._password = appliance.password
         self._token = None
         self._cookies = None
+        # The build this box runs: names resolve per build (registry.loader.resolve_for).
+        from ..registry import loader
+        self.fw_version = loader.version_of(appliance)
 
     def login(self):
         resp = self._request(
@@ -100,7 +103,7 @@ class FortiADCClient(BaseClient):
 
     def _resolve(self, logical: str) -> str:
         from ..registry import loader
-        return loader.resolve_adc(logical)
+        return loader.resolve_for('fortiadc', logical, getattr(self, 'fw_version', ''))
 
     def list_with_error(self, logical: str, **params):
         """(rows, error) for a collection endpoint — device refusals surface

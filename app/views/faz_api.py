@@ -115,7 +115,9 @@ def execute():
     path = endpoint
     if not endpoint.startswith('/'):
         try:
-            path = loader.resolve_faz(endpoint)
+            path = loader.resolve_for('fortianalyzer', endpoint, appliance.fw_version)
+        except loader.EndpointNotServed as exc:
+            return jsonify(ok=False, error=str(exc))
         except KeyError:
             return jsonify(ok=False, error=f'Unknown FortiAnalyzer endpoint: {endpoint}')
 

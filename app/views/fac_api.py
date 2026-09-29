@@ -96,8 +96,12 @@ def index():
     )
 
 
-def _resolve_target(endpoint: str):
-    """(path, error) for a logical registry name OR a raw ``/api/v1/…`` path."""
+def _resolve_target(endpoint: str, version: str = ''):
+    """(path, error) for a logical registry name OR a raw ``/api/v1/…`` path.
+
+    A name resolves for the box's build (``loader.resolve_for``); a name the
+    build does not serve comes back as the ``EndpointNotServed`` message.
+    """
     if endpoint.startswith('/'):
         if not _PATH_RE.match(endpoint):
             return None, ('Raw paths must live under /api/v1/ — the console '
@@ -106,7 +110,7 @@ def _resolve_target(endpoint: str):
     if not _NAME_RE.match(endpoint):
         return None, 'Invalid endpoint name.'
     try:
-        return loader.resolve_fac(endpoint), None
+        return loader.resolve_for('fortiauthenticator', endpoint, version), None
     except KeyError as exc:
         return None, str(exc)
 
@@ -132,7 +136,7 @@ def execute():
     if appliance.kind != 'fortiauthenticator':
         return jsonify(ok=False, error='Selected device is not a FortiAuthenticator.')
 
-    path, err = _resolve_target(endpoint)
+    path, err = _resolve_target(endpoint, appliance.fw_version)
     if err:
         return jsonify(ok=False, error=err)
 

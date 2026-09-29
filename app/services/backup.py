@@ -2,8 +2,8 @@
 local-backup / restore REST calls.
 
 All device paths are resolved from the endpoint registry
-(``registry.loader.resolve``) — no hardcoded URLs (docs/engineering.md §13). The real
-FortiWeb endpoints were confirmed live on fw3 (7.6.8):
+(``registry.loader.resolve_for``, per the box's build) — no hardcoded URLs
+(docs/engineering.md §13). The real FortiWeb endpoints were confirmed live on fw3 (7.6.8):
 
 * ``local_backup_list``   → ``system/maintenance.localbackup.list``   (GET, 200)
 * ``local_backup_download``→ ``system/maintenance.localbackup.download``(GET + name)
@@ -42,9 +42,14 @@ RESTORE_FILE_FIELD = "file"
 # --------------------------------------------------------------------------- #
 # Device REST calls (resolver-driven)                                          #
 # --------------------------------------------------------------------------- #
+def _resolve(client: Any, name: str) -> str:
+    """``name`` for the build the client's box runs (``loader.resolve_for``)."""
+    return loader.resolve_for("fortiweb", name, loader.version_of(client))
+
+
 def list_backups(client: Any) -> list[dict[str, Any]]:
     """On-device local backups (``maintenance.localbackup.list``)."""
-    resp = client.get(loader.resolve("local_backup_list"))
+    resp = client.get(_resolve(client, "local_backup_list"))
     data = resp.json()
     if isinstance(data, dict):
         res = data.get("results", data.get("payload", []))
@@ -54,7 +59,7 @@ def list_backups(client: Any) -> list[dict[str, Any]]:
 
 def download_backup(client: Any, backup_name: str) -> bytes:
     """Download a named on-device backup (``maintenance.localbackup.download``)."""
-    path = loader.resolve("local_backup_download") + "?mkey=" + quote(backup_name, safe="")
+    path = _resolve(client, "local_backup_download") + "?mkey=" + quote(backup_name, safe="")
     resp = client.get(path)
     if hasattr(resp, "raise_for_status"):
         resp.raise_for_status()
@@ -73,7 +78,7 @@ def create_backup(client: Any, name: str | None = None) -> dict[str, Any]:
     # runs the backup, returning -901 only when a backup password blocks it).
     # The box auto-names the file, so `name` is kept for API compat but unused.
     _ = name
-    resp = client.get(loader.resolve("local_backup"))
+    resp = client.get(_resolve(client, "local_backup"))
     try:
         return resp.json()
     except Exception:  # noqa: BLE001
@@ -94,7 +99,7 @@ def restore(client: Any, file_bytes: bytes, filename: str, *,
         "dry_run": dry_run,
         "filename": filename,
         "size": size,
-        "endpoint": loader.resolve("system_restore"),
+        "endpoint": _resolve(client, "system_restore"),
         "encrypted": is_encrypted(file_bytes),
     }
     if size == 0:

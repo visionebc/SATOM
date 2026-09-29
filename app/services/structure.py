@@ -158,10 +158,12 @@ def registry_urn_index(endpoints: list[dict] | None = None) -> dict[str, str]:
 
     Both the exact normalized URN and its action-stripped base form are indexed
     (exact wins) so a dependency node matches whether or not it carries a
-    ``.action`` suffix. ``endpoints`` defaults to ``loader.get_all_endpoints()``.
+    ``.action`` suffix. ``endpoints`` defaults to
+    ``loader.get_registry_endpoints()`` — coverage is accounted against the
+    registry itself, not the fleet view.
     """
     if endpoints is None:
-        endpoints = loader.get_all_endpoints()
+        endpoints = loader.get_registry_endpoints()
     index: dict[str, str] = {}
     for ep in endpoints:
         name = ep.get("name", "")
@@ -533,7 +535,7 @@ def load_catalog(overlay: dict[str, Any] | None = None) -> StructureCatalog:
     import time). The overlay is normally ``settings_store.get_json(
     'structure.overlay', {})`` passed in by the view.
     """
-    return StructureCatalog(loader.get_all_endpoints(), overlay or {})
+    return StructureCatalog(loader.get_registry_endpoints(), overlay or {})
 
 
 # --------------------------------------------------------------------------- #

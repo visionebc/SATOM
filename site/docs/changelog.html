@@ -132,6 +132,21 @@ source-available project — see <a href="https://github.com/visionebc/SATOM/blo
   <code>manylinux_2_28</code> or older) instead of for the build host, and accepts the
   pipeline's payload (<code>APP_TARBALL</code> + <code>COMMIT</code>).</li>
 </ul>
+<h3 id="fixed--an-offline-installed-node-could-never-apply-an-update-package-2026-10-01">Fixed — an offline-installed node could never apply an update package (2026-10-01)</h3>
+<ul>
+<li>An offline install extracts the bundle's <code>app.tar.gz</code>, so <code>/opt/satom</code> was
+  not a git checkout. The update runner relies on git for its rollback
+  snapshot, for the files a new revision drops and for the commit that
+  records what is deployed. It refused every package at <em>"count local
+  commits — not a git repository"</em>. No offline-installed node could ever be
+  updated from Settings → Software Update. Found by applying the 2.5.0 package
+  to a 2.4.1 openSUSE offline install with no network.</li>
+<li>The installer now records the extracted tree as a git baseline, and the
+  runner adopts a tree that is not a checkout before its snapshot. A node
+  installed offline <strong>before</strong> 2.5.0 still applies its first package with the
+  old runner, so it needs a one-time baseline commit:
+  <code>docs/offline-update-packages.md</code> §4.1.</li>
+</ul>
 <h3 id="fixed--database-migrations-never-ran-on-an-installed-node-2026-10-01">Fixed — database migrations never ran on an installed node (2026-10-01)</h3>
 <ul>
 <li>The installer built the schema with <code>create-db</code> and recorded no Alembic

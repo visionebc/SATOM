@@ -1100,6 +1100,23 @@ fi
 mkdir -p "$APP_DIR/data" "$LOG_DIR"
 cd "$APP_DIR"
 
+# [SATOM-ADOPT-TREE] A bundle install has no .git, and every offline update
+# package leans on git (rollback snapshot, dropped files, the deployed-revision
+# commit): before 2.5.0 no package could ever be applied to an offline node.
+# Commit the tree as extracted -- it IS the release archive, and the shipped
+# .gitignore keeps every node-local path out. Ownership is handed to the
+# service account below, together with the rest of the tree.
+if [ $OFFLINE -eq 1 ] && [ ! -d "$APP_DIR/.git" ]; then
+    if git -C "$APP_DIR" init -q >>"$INSTALL_LOG" 2>&1 \
+       && git -C "$APP_DIR" add -A >>"$INSTALL_LOG" 2>&1 \
+       && git -C "$APP_DIR" -c user.name=SATOM -c user.email=satom@localhost \
+              commit -q -m "baseline: SATOM ${VERSION} as installed (offline bundle)" >>"$INSTALL_LOG" 2>&1; then
+        ok "Application tree recorded as a git baseline (offline update packages need it)"
+    else
+        warn "Could not record the application tree in git — the first offline update package will do it"
+    fi
+fi
+
 "$PYBIN" -m venv venv
 if [ $OFFLINE -eq 1 ]; then
     venv/bin/pip install --no-index --find-links "$BUNDLE_DIR/wheels" --upgrade pip >>"$INSTALL_LOG" 2>&1 || true

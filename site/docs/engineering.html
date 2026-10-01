@@ -442,6 +442,77 @@ importing a concrete client in views.</p>
 <li><strong>Per-tab ADOM:</strong> <code>sessionStorage.fmAdom</code> + <code>X-ADOM</code> header stamping in
   <code>turbo-boot.js</code> / the global fetch wrapper (§3).</li>
 </ul>
+<h3 id="91-third-party-browser-assets-vendored-never-a-cdn">9.1 Third-party browser assets (vendored, never a CDN)</h3>
+<p>The console <strong>never loads a script, stylesheet or font from another origin</strong>.
+SATOM installs into isolated management networks, and an offline install must
+render exactly like an online one. A CDN reference there shows no error
+message: every reload waits for the request to time out (10–20 s per F5) and
+the page comes back without icons. 2.4.1 shipped in that state, with Bootstrap
+Icons loading from <code>cdn.jsdelivr.net</code>.</p>
+<p>Every third-party file is served from <code>app/static/vendor/</code> and ships inside
+every package (offline bundles, the Docker image, the source tree). The list,
+with the upstream link each file was taken from:</p>
+<table>
+<thead>
+<tr>
+<th>Asset</th>
+<th>Version</th>
+<th>License</th>
+<th>Upstream</th>
+<th>Taken from</th>
+<th>Local path</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Bootstrap</td>
+<td>5.3.3</td>
+<td>MIT</td>
+<td>https://getbootstrap.com/</td>
+<td>https://registry.npmjs.org/bootstrap/-/bootstrap-5.3.3.tgz</td>
+<td><code>vendor/bootstrap/</code></td>
+</tr>
+<tr>
+<td>Bootstrap Icons</td>
+<td>1.11.3</td>
+<td>MIT</td>
+<td>https://icons.getbootstrap.com/</td>
+<td>https://registry.npmjs.org/bootstrap-icons/-/bootstrap-icons-1.11.3.tgz</td>
+<td><code>vendor/bootstrap-icons/</code> (CSS + <code>fonts/</code> + <code>LICENSE</code>)</td>
+</tr>
+<tr>
+<td>Chart.js</td>
+<td>4.4.4</td>
+<td>MIT</td>
+<td>https://www.chartjs.org/</td>
+<td>https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js</td>
+<td><code>vendor/chart/</code></td>
+</tr>
+</tbody>
+</table>
+<p><code>app/static/vendor/MANIFEST.json</code> is the authoritative record: version,
+license, source URL and the SHA-256 of every file. Each file was checked
+byte-identical to its source when it was vendored.</p>
+<p><strong>Adding or upgrading an asset:</strong></p>
+<ol>
+<li>Download it from the package registry and check the package against its
+   published integrity (<code>npm view &lt;pkg&gt;@&lt;ver&gt; dist.integrity</code> against
+   <code>openssl dgst -sha512 -binary &lt;tgz&gt; | base64</code>).</li>
+<li>Copy the files you need into <code>app/static/vendor/&lt;asset&gt;/</code>, keeping the
+   relative layout the stylesheet expects (Bootstrap Icons' CSS reaches its
+   fonts by <code>url("fonts/...")</code>).</li>
+<li>Add the entry and its <code>sha256sum</code> values to <code>MANIFEST.json</code>, a row to the
+   table above, and the credit to <code>NOTICE</code>.</li>
+<li>Reference it with <code>url_for('static', filename='vendor/...')</code>. Never add an
+   origin to the CSP in <code>app/__init__.py</code>: it names none for scripts, styles
+   or fonts, so a CDN reference is blocked even if one gets through.</li>
+</ol>
+<p><code>tests/test_offline_assets.py</code> enforces all of this. It checks the shape of
+the reference, not a list of names: any template, first-party stylesheet or
+script that loads from another origin fails, as does a CSP that allows one, a
+vendored file missing from the manifest or with a different hash, a vendored
+stylesheet pointing at a file that does not ship, and an asset absent from
+this table or from <code>NOTICE</code> (safeguards §199).</p>
 <h2 id="10-testing">10. Testing</h2>
 <ul>
 <li><strong>Run:</strong> <code>TMPDIR=$PWD/data/tmp venv/bin/python -m pytest -q</code> (create the

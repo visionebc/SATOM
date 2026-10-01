@@ -112,6 +112,29 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="fixed--offline-installs-slow-reloads-missing-icons-a-form-that-could-not-be-clicked-2026-10-01">Fixed — offline installs: slow reloads, missing icons, a form that could not be clicked (2026-10-01)</h3>
+<ul>
+<li><strong>The console no longer loads anything from the Internet.</strong> Bootstrap Icons
+  came from <code>cdn.jsdelivr.net</code> in the main layout and the four sign-in pages.
+  On an isolated network every page reload waited 10–20 s for that request to
+  time out, and every icon (menu, bookmarks, buttons) was blank. The icon
+  font is now vendored (1.11.3, byte-identical to the npm package) under
+  <code>app/static/vendor/bootstrap-icons/</code>. The Content-Security-Policy no longer
+  names <code>cdn.jsdelivr.net</code> for scripts, styles or fonts.</li>
+<li><strong>New: <code>app/static/vendor/MANIFEST.json</code></strong> records every third-party browser
+  asset: version, license, upstream URL and SHA-256 per file. The engineering
+  manual §9.1 lists the same assets with their links, and <code>NOTICE</code> credits
+  Bootstrap Icons. <code>tests/test_offline_assets.py</code> fails on any template,
+  stylesheet, script or CSP directive that loads from another origin.</li>
+<li><strong>Dialogs opened on a page could not be clicked</strong> when the operating system
+  asks to reduce motion (Windows with animation effects off, common on
+  servers and RDP sessions). The page fade-in class was removed only on
+  <code>animationend</code>, which never fires when animations are disabled. The class
+  stayed, made <code>#fw-main</code> a stacking context, and Bootstrap's backdrop covered
+  every dialog inside it, for example <em>Add appliance</em>. The fade is now skipped
+  under reduced motion, and the class is also removed on <code>animationcancel</code> and
+  after 1 s.</li>
+</ul>
 <h3 id="changed--endpoint-names-resolve-per-firmware-build-2026-09-29">Changed — endpoint names resolve per firmware build (2026-09-29)</h3>
 <ul>
 <li>Endpoint names now resolve per firmware build: the FortiADC, FortiAnalyzer

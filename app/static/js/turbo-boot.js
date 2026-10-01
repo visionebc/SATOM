@@ -84,15 +84,27 @@
     var target = whole ? document.body : main;
     if (!target) return;
     var cls = whole ? 'fw-entering-page' : 'fw-entering';
-    // Cross-fade the freshly-rendered view in. Self-clean on animationend;
-    // guard on ev.target so a child's animationend (gradient buttons, skeleton
-    // shimmer) bubbling up cannot cut the page fade short.
+    // Reduced motion: fortiweb.css sets `animation: none`, so animationend
+    // never fires and the class would stay for the life of the page. While it
+    // stays, its will-change:transform makes #fw-main a stacking context that
+    // traps every modal inside it beneath Bootstrap's body-level backdrop: the
+    // form is visible and cannot be clicked. No fade, no class.
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    // Cross-fade the freshly-rendered view in. Self-clean on animationend or
+    // animationcancel; guard on ev.target so a child's animation event
+    // (gradient buttons, skeleton shimmer) bubbling up cannot cut the page
+    // fade short. The timer is the last resort: removal never depends on a
+    // single event arriving (the fade itself lasts 0.45 s).
     target.classList.add(cls);
-    target.addEventListener('animationend', function handler(ev) {
-      if (ev.target !== target) return;
+    var done = function (ev) {
+      if (ev && ev.target !== target) return;
       target.classList.remove(cls);
-      target.removeEventListener('animationend', handler);
-    });
+      target.removeEventListener('animationend', done);
+      target.removeEventListener('animationcancel', done);
+    };
+    target.addEventListener('animationend', done);
+    target.addEventListener('animationcancel', done);
+    setTimeout(done, 1000);
   });
   // Safety: clear dim/fade if render happens without a load (cached pages).
   origAdd('turbo:before-render', function () {

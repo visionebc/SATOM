@@ -33,6 +33,11 @@ renders correctly:
 
   Chart.js            https://www.chartjs.org/            MIT License
   Bootstrap           https://getbootstrap.com/           MIT License
+  Bootstrap Icons     https://icons.getbootstrap.com/     MIT License
+
+The exact versions, the URL each file was taken from and its SHA-256 are in
+app/static/vendor/MANIFEST.json; Bootstrap Icons ships its own LICENSE file
+next to it.
 
 Python dependencies are declared in requirements.txt and, for offline
 installs, staged as wheels inside the bundle. They are not modified; each

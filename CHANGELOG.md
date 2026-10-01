@@ -6,6 +6,29 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed — offline installs: slow reloads, missing icons, a form that could not be clicked (2026-10-01)
+
+- **The console no longer loads anything from the Internet.** Bootstrap Icons
+  came from `cdn.jsdelivr.net` in the main layout and the four sign-in pages.
+  On an isolated network every page reload waited 10–20 s for that request to
+  time out, and every icon (menu, bookmarks, buttons) was blank. The icon
+  font is now vendored (1.11.3, byte-identical to the npm package) under
+  `app/static/vendor/bootstrap-icons/`. The Content-Security-Policy no longer
+  names `cdn.jsdelivr.net` for scripts, styles or fonts.
+- **New: `app/static/vendor/MANIFEST.json`** records every third-party browser
+  asset: version, license, upstream URL and SHA-256 per file. The engineering
+  manual §9.1 lists the same assets with their links, and `NOTICE` credits
+  Bootstrap Icons. `tests/test_offline_assets.py` fails on any template,
+  stylesheet, script or CSP directive that loads from another origin.
+- **Dialogs opened on a page could not be clicked** when the operating system
+  asks to reduce motion (Windows with animation effects off, common on
+  servers and RDP sessions). The page fade-in class was removed only on
+  `animationend`, which never fires when animations are disabled. The class
+  stayed, made `#fw-main` a stacking context, and Bootstrap's backdrop covered
+  every dialog inside it, for example *Add appliance*. The fade is now skipped
+  under reduced motion, and the class is also removed on `animationcancel` and
+  after 1 s.
+
 ### Changed — endpoint names resolve per firmware build (2026-09-29)
 
 - Endpoint names now resolve per firmware build: the FortiADC, FortiAnalyzer

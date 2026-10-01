@@ -1138,16 +1138,19 @@ def create_app(config_override: object | None = None) -> Flask:
         # own relaxed CSP for author-supplied HTML/CSS/JS inside a sandboxed
         # iframe. Don't clobber it with the app-wide strict/nonce-based policy.
         if "Content-Security-Policy" not in response.headers:
+            # No third-party origin anywhere: every script, stylesheet and font
+            # is vendored under static/vendor/ (offline installs, see
+            # docs/engineering.md §9.1). tests/test_offline_assets.py pins it.
             response.headers["Content-Security-Policy"] = (
                 "default-src 'self'; "
-                f"script-src 'self' 'nonce-{nonce}' https://cdn.jsdelivr.net; "
-                f"script-src-elem 'self' 'nonce-{nonce}' https://cdn.jsdelivr.net; "
+                f"script-src 'self' 'nonce-{nonce}'; "
+                f"script-src-elem 'self' 'nonce-{nonce}'; "
                 "script-src-attr 'none'; "
-                "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
-                f"style-src-elem 'self' 'nonce-{nonce}' https://cdn.jsdelivr.net; "
+                "style-src 'self' 'unsafe-inline'; "
+                f"style-src-elem 'self' 'nonce-{nonce}'; "
                 "style-src-attr 'unsafe-inline'; "
                 "img-src 'self' data: https:; "
-                "font-src 'self' data: https://cdn.jsdelivr.net;"
+                "font-src 'self' data:;"
             )
         # Never serve authenticated HTML (e.g. the nav menu) from a stale
         # browser cache after a deploy. Static assets stay cacheable.

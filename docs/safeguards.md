@@ -383,7 +383,8 @@ assertion is therefore about the **input**: `docs/api_v1.md` must still contain
 something the scanner recognises, or the leak tests above have gone vacuous.
 
 **Second-order property, easy to lose.** The four sign-in pages load their
-stylesheet from `static/vendor/`, not from a CDN. This product ships offline
+stylesheets, the icon font included, from `static/vendor/`, not from a CDN
+(until 2.4.1 the icon font still came from jsdelivr; see §199). This product ships offline
 installers for isolated networks; a login screen that only lays itself out with
 public internet does not lay itself out where it matters most.
 
@@ -16477,4 +16478,90 @@ manifest tag check, obtaining the image after the switch, the status wording):
 
 ```
 venv/bin/python -m pytest -q tests/test_docker_agent.py
+```
+
+## §199 — an offline install that still waited on a CDN, and a dialog nobody could click (`tests/test_offline_assets.py`, 2026-10-01)
+
+**The defect, as an operator saw it.** Reported from a SUSE offline install
+outside the lab (4 vCPU / 4 GB): *"every refresh is extremely slow"*, *"no
+icons, not even the bookmarks one"*, and *"adding a FortiWeb appliance, it is
+as if a div sat on top of the form"*. Two defects:
+
+1. **Bootstrap Icons came from `cdn.jsdelivr.net`** in `base.html` and the
+   four sign-in pages, and the CSP allowed that origin for scripts, styles and
+   fonts. The server answered in 17–27 ms. The browser, on a network with no
+   route out, waited for the stylesheet request to time out before painting
+   (10–20 s per F5), then rendered every `bi-*` icon blank. Turbo navigations
+   keep the `<head>`, so only full reloads paid it. `login.html` carried the
+   comment *"Vendored, not a CDN"* directly above the CDN line: Bootstrap had
+   been vendored and the icon font next to it had not. The guards of the time
+   (`test_public_docs`, `test_monitor_analytics`) looked for `bootstrap@` and
+   Chart.js by name, so a third asset walked past both.
+2. **`#fw-main.fw-entering` never left under reduced motion.** `turbo-boot.js`
+   removed the fade class only on `animationend`. `fortiweb.css` sets
+   `animation: none` under `prefers-reduced-motion: reduce`, so that event
+   never fires. The class kept `will-change: opacity, transform`, which makes
+   `#fw-main` a stacking context. Every modal inside it (28 templates) then sat
+   beneath Bootstrap's `.modal-backdrop`, which hangs from `<body>`: a visible
+   form that swallows every click. Windows turns on reduced motion whenever
+   *Animation effects* are off, which is common on servers, RDP sessions and
+   jump hosts, and the lab browsers never had it on.
+
+**The fix.**
+- Bootstrap Icons 1.11.3 is vendored under `app/static/vendor/bootstrap-icons/`
+  (CSS, `fonts/`, `LICENSE`), byte-identical to the npm tarball, whose sha512
+  integrity was checked against the registry. All five templates use
+  `url_for('static', …)`. The CSP names no third-party origin for
+  `default-src`, scripts, styles or fonts (`img-src https:` remains for
+  operator-supplied theme images).
+- `app/static/vendor/MANIFEST.json` records every vendored asset: name,
+  version, license, homepage, the exact source URL and the SHA-256 of each
+  file. Bootstrap and Chart.js were re-verified byte-identical to their
+  sources. The engineering manual §9.1 lists the assets with their links;
+  `NOTICE` credits each one.
+- `turbo-boot.js` skips the fade under reduced motion, and otherwise removes
+  the class on `animationend` **or** `animationcancel` **or** after 1 s,
+  whichever comes first (the fade lasts 0.45 s).
+
+**Why the guard is a shape, not a list.** The previous guards named the assets
+they knew about, which is exactly how the next one slipped past them. The new
+test forbids any asset-loading construct that targets another origin
+(`<link|script|img|iframe|…>` with an absolute or protocol-relative URL, CSS
+`url()`/`@import`, JS `import()`/`from`/`importScripts`/`.src =`) in every
+template and every first-party stylesheet and script. It asserts the scanners
+match each forbidden form, so the scans cannot go vacuous. It also checks that
+every vendored file is in the manifest with a matching hash, that vendored CSS
+only references files that ship, that the icon fonts are served with
+`font/woff2` / `font/woff`, and that `NOTICE` and §9.1 credit every asset.
+
+**Behavioural reproduction (the dialog).** Headless Chromium with production
+`bootstrap.min.css` / `bootstrap.bundle.min.js` / `fortiweb.css` / `turbo.min.js`,
+a modal inside `#fw-main`, and both `turbo-boot.js` versions:
+
+```
+ORIG  [no-preference] main='fw-main'             -> typed 'fwb01'
+ORIG  [reduce       ] main='fw-main fw-entering' -> CLICK BLOCKED: modal-backdrop intercepts pointer events
+FIXED [no-preference] main='fw-main'             -> typed 'fwb01'
+FIXED [reduce       ] main='fw-main'             -> typed 'fwb01'
+```
+
+The pytest guards for `turbo-boot.js` are source-level (no browser in the test
+environment). The Chromium run above is the behavioural evidence.
+
+**Release path checked before committing.** The release payload redactor
+leaves the five new vendor files byte-identical, so it does not abort on the
+binary fonts.
+
+**Mutation result.** 13 mutations: one template back to the CDN, a
+protocol-relative `<script>` in `base.html`, jsdelivr back in `font-src`, an
+external `@import` in `fortiweb.css`, an external `.src =` in `main.js`, a
+missing `.woff2`, an altered vendored stylesheet, an undeclared vendor file,
+the `NOTICE` credit dropped, the manual row's version changed, and each of
+the three `turbo-boot.js` safeguards removed. 13 killed.
+
+**How to verify it is armed:**
+
+```
+venv/bin/python -m pytest -q tests/test_offline_assets.py
+grep -rn "jsdelivr\|unpkg\|cdnjs\|googleapis" app/templates app/__init__.py   # nothing
 ```

@@ -386,6 +386,50 @@ Grouped tour of `app/services/` (~80 modules):
 - **Per-tab ADOM:** `sessionStorage.fmAdom` + `X-ADOM` header stamping in
   `turbo-boot.js` / the global fetch wrapper (§3).
 
+### 9.1 Third-party browser assets (vendored, never a CDN)
+
+The console **never loads a script, stylesheet or font from another origin**.
+SATOM installs into isolated management networks, and an offline install must
+render exactly like an online one. A CDN reference there shows no error
+message: every reload waits for the request to time out (10–20 s per F5) and
+the page comes back without icons. 2.4.1 shipped in that state, with Bootstrap
+Icons loading from `cdn.jsdelivr.net`.
+
+Every third-party file is served from `app/static/vendor/` and ships inside
+every package (offline bundles, the Docker image, the source tree). The list,
+with the upstream link each file was taken from:
+
+| Asset | Version | License | Upstream | Taken from | Local path |
+|---|---|---|---|---|---|
+| Bootstrap | 5.3.3 | MIT | https://getbootstrap.com/ | https://registry.npmjs.org/bootstrap/-/bootstrap-5.3.3.tgz | `vendor/bootstrap/` |
+| Bootstrap Icons | 1.11.3 | MIT | https://icons.getbootstrap.com/ | https://registry.npmjs.org/bootstrap-icons/-/bootstrap-icons-1.11.3.tgz | `vendor/bootstrap-icons/` (CSS + `fonts/` + `LICENSE`) |
+| Chart.js | 4.4.4 | MIT | https://www.chartjs.org/ | https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js | `vendor/chart/` |
+
+`app/static/vendor/MANIFEST.json` is the authoritative record: version,
+license, source URL and the SHA-256 of every file. Each file was checked
+byte-identical to its source when it was vendored.
+
+**Adding or upgrading an asset:**
+
+1. Download it from the package registry and check the package against its
+   published integrity (`npm view <pkg>@<ver> dist.integrity` against
+   `openssl dgst -sha512 -binary <tgz> | base64`).
+2. Copy the files you need into `app/static/vendor/<asset>/`, keeping the
+   relative layout the stylesheet expects (Bootstrap Icons' CSS reaches its
+   fonts by `url("fonts/...")`).
+3. Add the entry and its `sha256sum` values to `MANIFEST.json`, a row to the
+   table above, and the credit to `NOTICE`.
+4. Reference it with `url_for('static', filename='vendor/...')`. Never add an
+   origin to the CSP in `app/__init__.py`: it names none for scripts, styles
+   or fonts, so a CDN reference is blocked even if one gets through.
+
+`tests/test_offline_assets.py` enforces all of this. It checks the shape of
+the reference, not a list of names: any template, first-party stylesheet or
+script that loads from another origin fails, as does a CSP that allows one, a
+vendored file missing from the manifest or with a different hash, a vendored
+stylesheet pointing at a file that does not ship, and an asset absent from
+this table or from `NOTICE` (safeguards §199).
+
 ## 10. Testing
 
 - **Run:** `TMPDIR=$PWD/data/tmp venv/bin/python -m pytest -q` (create the

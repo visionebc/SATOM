@@ -2391,6 +2391,12 @@ node</strong> — none of it replicates. Apply on each node, then confirm each o
 <pre><code class="language-bash">satom diagnose updates    # trust store, runner, staged packages
 satom diagnose code       # is the running process actually on the new code?
 </code></pre>
+<p>Every release from 2.5.0 publishes its package, its <code>.sha256</code> and the public
+key it is signed with (<code>satom-release-2026.pub</code>). A node installed <strong>before</strong>
+2.5.0 trusts that key only after <code>satom execute trust add-key
+satom-release-2026.pub</code>, run once per node; compare the fingerprint in the
+release notes first. Database migrations run as part of the apply. If one
+fails, the update rolls back and the status log says which backup to restore.</p>
 <p>How packages are built and signed:
 <a href="offline-update-packages.html">docs/offline-update-packages.md</a>.</p>
 <h2 id="23-studio-custom-views-plugins--lua">23. Studio: custom views, plugins &amp; Lua</h2>

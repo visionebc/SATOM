@@ -30,6 +30,12 @@ python3 deploy/sign_update_package.py sign dist/satom-update-<version>.tar.gz \
 An **unsigned package is refused by every node**, so shipping one is a mistake
 that fails closed rather than one that ships.
 
+**You normally do not build one.** From 2.5.0 every release publishes its
+package — `satom-update-<version>.tar.gz`, its `.sha256`, and the public key it
+is signed with (`satom-release-2026.pub`) — as assets of the GitHub release and
+in the download catalog. A node installed before 2.5.0 must trust that key once
+before it accepts the package: see §4.1.
+
 ---
 
 ## 2. Why it is signed, and what that buys
@@ -42,14 +48,29 @@ store the web worker cannot write**.
 Three properties hold the design together. Breaking any one of them makes the
 other two decorative.
 
-### The private key never touches the fleet
+### The private key never touches a managed node
 
 The build host holds no secret; signing is a separate step that runs wherever
-the key is. The key is an encrypted PKCS#8 PEM, protected by a passphrase, kept
-offline and backed up offline.
+the key is. The key is an encrypted PKCS#8 PEM, protected by a passphrase.
 
 Signing is not part of the build on purpose: a build host is disposable, and a
 disposable machine must not be able to mint packages.
+
+Vision EBC ships two public keys in `deploy/update-keys/`, and the installer
+trusts both:
+
+| Key | Fingerprint | Who signs with it |
+|---|---|---|
+| `satom-release-2026.pub` | `SHA256:cYv9NxiJjMn/K6srKxXg2kdvROP2g6fzgfMXU6sxPyA` | the release pipeline, for every published package from 2.5.0 on |
+| `visionebc-release.pub` | `SHA256:d3co+lEJupVmbaov0mGPonUfdNHM1/FW5q4sHcDI4Fo` | a key held offline, for packages signed by hand |
+
+The pipeline's key lives on the release host — the machine that already builds
+and publishes the offline bundles and the container image — never on a SATOM
+node and never on the host that builds the package. Packages are built on one
+machine and signed on another. The trade is stated plainly: whoever controls
+the release host can sign a package every node trusts. That is the same trust
+an operator already places in the bundles that host publishes. If it is ever
+lost, `trust remove-key` revokes it on each node (§4).
 
 ### The public key is public, and that is not a weakness
 
@@ -114,6 +135,25 @@ check afterwards only enforces it.
 Operators and forks can add their own keys and sign their own packages. Nothing
 in the product contains a secret, so nothing about this depends on the vendor.
 
+### 4.1 Upgrading a node installed before 2.5.0
+
+Packages published from 2.5.0 on are signed with `satom-release-2026.pub`. An
+installer before 2.5.0 did not ship that key, so an older node refuses the
+package (*"signed by a key this node does not trust"*) until it is installed
+**once** — after which every later package applies with no further step:
+
+```
+# 1. take satom-release-2026.pub from the release (or extract it from the
+#    package: satom-update-<v>/app.tar.gz -> deploy/update-keys/)
+# 2. compare the fingerprint with the one published in the release notes:
+#      SHA256:cYv9NxiJjMn/K6srKxXg2kdvROP2g6fzgfMXU6sxPyA
+satom execute trust add-key satom-release-2026.pub
+satom show trust            # lists it next to visionebc-release
+```
+
+Do it on **every** node of a pair: each trust store is local and does not
+replicate.
+
 ### Rotating a key
 
 1. Generate the new pair where the new key will live.
@@ -171,7 +211,8 @@ The web worker only stages the file and writes a request. The privileged runner
 7. **Park local commits** — anything not on the remote goes to `refs/backup/`
 8. **Install the tree**, hand ownership back to the service account
 9. **`pip install --no-index`** — strictly from the package's own wheels
-10. **Migrations**, units, the operator CLI and the runner itself
+10. **Migrations** (fatal on failure, §6.1), units, the operator CLI and the
+    runner itself
 11. **Restart**, then prove it works: HTTP 200 on `/healthz`
 12. **Commit** the deployed revision
 
@@ -183,6 +224,52 @@ previous one passed.
 **On failure, anything at all**: the tree is reset to the pre-update commit,
 files the package added are removed, the venv is restored from the freeze, the
 services restart, and health is re-checked. The status log records every step.
+
+### 6.1 Database changes
+
+A schema change reaches a node by two routes, and both run on every update:
+
+- **At boot**, the application creates any missing table (`create_all`) and adds
+  any missing column (`_ensure_columns`, `_ensure_widths`). These only ever
+  **add**.
+- **Alembic** (`flask db upgrade`, step 10) runs the versioned migrations in
+  `migrations/versions/`. This is the only route for a change that transforms
+  data: a rename, a backfill, a dropped column, a `NOT NULL` with a default.
+
+Until 2.5.0 the second route never worked on an installed node. The installer
+built the schema with `create-db` and recorded no Alembic revision, so the
+first update started from the first migration, died on a table that already
+existed, logged the error as *best-effort* and finished green with nothing
+migrated. Three changes close it:
+
+1. **Every migration is idempotent.** `app/migration_guard.py` wraps
+   `create_table`, `add_column`, `create_index` and `create_foreign_key` so they
+   skip what already exists. On a node whose schema `create_all` built, the
+   whole chain runs as no-ops and ends **stamped at head**. A node installed
+   before 2.5.0 is repaired this way by its first 2.5.0 update, with no manual
+   step.
+2. **The installer stamps.** Right after `create-db` it runs
+   `flask db stamp head`. The schema it just built is head by construction.
+3. **A failed migration fails the update.** The runner aborts and rolls back
+   the code and the Python dependencies. It **cannot roll back the database**:
+   if a migration got part of the way, restore the bundle the *database backup*
+   step took (`satom get backup list`, then
+   `satom execute restore db <bundle> --yes`) before retrying. The message on
+   the status page says so.
+
+The standby never migrates; its schema arrives by replication. The Docker web
+container migrates the primary before it starts gunicorn and refuses to serve
+if the migration fails (`deploy/docker/entrypoint.sh`, `migrate_primary`).
+
+*One hop is still special.* A node on 2.4.x applies the 2.5.0 package with the
+runner it already has, in which the migration step is best-effort. The hop
+works anyway, because the 2.5.0 migrations are idempotent: `upgrade` succeeds
+and stamps. The fatal behaviour starts with the next update, after step 10 has
+installed the new runner.
+
+`tests/test_migrations_idempotent.py` runs `create-db` and then `db upgrade`
+for real against a fresh database, so a new migration that is not idempotent
+fails there rather than on a customer's node.
 
 ### Rollback removes only what the package added
 
@@ -272,6 +359,15 @@ Uses `git archive HEAD`, never the working tree: the package must contain the
 committed revision, not whatever happens to be lying around on the build host.
 Set `MIN_FROM_VERSION` to raise the minimum version a node may apply it from.
 
+The release pipeline instead passes `APP_TARBALL=<payload>` and `COMMIT=<sha>`:
+the package then carries the same redacted payload as the offline bundles and
+the container image, byte for byte, and verification refuses it otherwise.
+
+Wheels are resolved for the nodes, not for the build host: CPython 3.11 on
+`manylinux_2_28` or older (`WHEEL_PYTHON_VERSION`, `WHEEL_PLATFORMS`). All three
+supported families run 3.11, and RHEL 9's glibc (2.34) is the oldest of them. A
+wheel resolved for a newer build host could need a glibc RHEL 9 does not have.
+
 ### Create a signing key (once)
 
 ```
@@ -289,6 +385,10 @@ installing the key can compare it.
 python3 deploy/sign_update_package.py sign <package> --key release.key
 python3 deploy/sign_update_package.py verify <package> --pub release.pub
 ```
+
+Unattended signing (the release pipeline) reads the passphrase with
+`--passphrase-file <path>`, never `--passphrase`: an argument is readable by
+every user on the host through the process table.
 
 The signer needs only Python and `cryptography`. The **verifier** needs neither
 — it is pure standard library, because it has to run on a node whose venv is

@@ -175,6 +175,19 @@ It carries that payload's sha256 as an image label, and verification loads
 the published tarball back and refuses it unless the label matches the
 bundles' payload and `/opt/satom/VERSION` inside it matches the release.
 
+The **offline update package** (`satom-update-<ver>.tar.gz`) is built in the
+same step from the same payload. It is application code plus pinned wheels,
+which an existing node applies from Settings → Software Update. It is built on
+the primary but **signed on the release host**, with the pipeline's release key
+(an encrypted key whose passphrase is read from a file, never from a command
+line). Verification checks it with the product's own stdlib verifier against
+the public key the tagged code ships (`deploy/update-keys/satom-release-2026.pub`),
+and refuses it unless its manifest names this version and commit and its
+`app.tar.gz` is the bundles' payload byte for byte. A package signed by a key
+the product does not ship stops the release here, not on a customer's node.
+The public key is published next to it, and the release notes print its
+fingerprint.
+
 The builders (one per bundle family, plus the Docker builder) are build-only
 machines that do not start at boot. Verification and publication start them
 again to read their artefacts, so the run stops every one of them when it

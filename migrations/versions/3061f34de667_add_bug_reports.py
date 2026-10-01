@@ -6,6 +6,7 @@ Create Date: 2026-07-01 18:54:47.757357
 
 """
 from alembic import op
+from app import migration_guard as guard
 import sqlalchemy as sa
 
 
@@ -17,7 +18,9 @@ depends_on = None
 
 
 def upgrade():
-    op.create_table(
+    # Idempotent (app.migration_guard): on an installed node create_all has
+    # already built these tables, and this revision must not die on them.
+    guard.create_table(
         'bug_reports',
         sa.Column('id', sa.Integer(), nullable=False),
         sa.Column('reporter_id', sa.Integer(), nullable=True),
@@ -36,8 +39,8 @@ def upgrade():
         sa.ForeignKeyConstraint(['resolved_by_id'], ['users.id'], ondelete='SET NULL'),
         sa.PrimaryKeyConstraint('id'),
     )
-    op.create_index(op.f('ix_bug_reports_reporter_id'), 'bug_reports', ['reporter_id'], unique=False)
-    op.create_index(op.f('ix_bug_reports_status'), 'bug_reports', ['status'], unique=False)
+    guard.create_index(op.f('ix_bug_reports_reporter_id'), 'bug_reports', ['reporter_id'], unique=False)
+    guard.create_index(op.f('ix_bug_reports_status'), 'bug_reports', ['status'], unique=False)
 
 
 def downgrade():

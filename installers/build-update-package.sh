@@ -21,13 +21,30 @@ APP="$(cd "$HERE/.." && pwd)"
 OUT="${OUT_DIR:-$APP/dist}"
 PY="${PYTHON:-$APP/venv/bin/python3}"
 MIN_FROM="${MIN_FROM_VERSION:-1.0}"
+# The release pipeline builds from the REDACTED payload it already ships in the
+# offline bundles and the image (APP_TARBALL), unpacked into a plain directory
+# that is not a git checkout -- so it hands over the commit too. Both or neither.
+APP_TARBALL="${APP_TARBALL:-}"
+# Wheels for every supported node, not for the build host. All three families
+# run CPython 3.11; manylinux_2_28 is the newest glibc baseline every one of
+# them satisfies (RHEL 9 ships glibc 2.34, Debian 12 2.36, Leap 15.6 2.38).
+# A wheel resolved for the build host's own glibc can be one RHEL 9 cannot load.
+WHEEL_PY="${WHEEL_PYTHON_VERSION:-3.11}"
+WHEEL_PLATFORMS="${WHEEL_PLATFORMS:-manylinux_2_28_x86_64 manylinux2014_x86_64}"
 
 [ -x "$PY" ] || PY="$(command -v python3)"
 [ -n "$PY" ] || { echo "no python3 found" >&2; exit 1; }
 
 VERSION="$(tr -d ' \t\n\r' < "$APP/VERSION")"
 [ -n "$VERSION" ] || { echo "VERSION is empty" >&2; exit 1; }
-COMMIT="$(git -C "$APP" rev-parse HEAD 2>/dev/null || echo "")"
+if [ -n "$APP_TARBALL" ]; then
+  COMMIT="${COMMIT:-}"
+  [ -f "$APP_TARBALL" ] || { echo "APP_TARBALL $APP_TARBALL does not exist" >&2; exit 1; }
+  [[ "$COMMIT" =~ ^[0-9a-f]{40}$ ]] \
+    || { echo "APP_TARBALL needs COMMIT=<full sha> of the revision it was archived from" >&2; exit 1; }
+else
+  COMMIT="$(git -C "$APP" rev-parse HEAD 2>/dev/null || echo "")"
+fi
 BUILT_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 NAME="satom-update-$VERSION"
@@ -42,7 +59,10 @@ echo "==> SATOM update package $VERSION (${COMMIT:0:12})"
 # git archive, not a copy of the working tree: the package must contain the
 # committed revision, never whatever happens to be lying around on the build
 # host (a stale or dirty tree already shipped once in this project's history).
-if [ -n "$COMMIT" ]; then
+if [ -n "$APP_TARBALL" ]; then
+  echo "--> app.tar.gz from $APP_TARBALL"
+  cp "$APP_TARBALL" "$PKG/app.tar.gz"
+elif [ -n "$COMMIT" ]; then
   echo "--> app.tar.gz from git archive HEAD"
   git -C "$APP" archive --format=tar HEAD | gzip -9 > "$PKG/app.tar.gz"
 else
@@ -51,8 +71,11 @@ else
 fi
 
 # ------------------------------------------------------------------- wheels
-echo "--> downloading wheels for requirements.txt"
+echo "--> downloading wheels for requirements.txt (cp${WHEEL_PY/./}, ${WHEEL_PLATFORMS// /, })"
+PLAT_ARGS=()
+for p in $WHEEL_PLATFORMS; do PLAT_ARGS+=(--platform "$p"); done
 "$PY" -m pip download --quiet --only-binary=:all: \
+      --python-version "$WHEEL_PY" --implementation cp "${PLAT_ARGS[@]}" \
       --dest "$PKG/wheels" -r "$APP/requirements.txt" \
   || { echo "!!! pip download failed — the package would apply with no deps" >&2; exit 1; }
 WHEELS=$(find "$PKG/wheels" -name '*.whl' | wc -l)
@@ -61,7 +84,7 @@ echo "    $WHEELS wheel(s)"
 
 # --------------------------------------------------------------- manifest
 echo "--> manifest.json"
-MIN_FROM="$MIN_FROM" PKG_DIR="$PKG" APP_DIR="$APP" \
+MIN_FROM="$MIN_FROM" PKG_DIR="$PKG" APP_DIR="$APP" WHEEL_PY="$WHEEL_PY" \
 VERSION="$VERSION" COMMIT="$COMMIT" BUILT_AT="$BUILT_AT" \
 "$PY" - <<'PYEOF'
 import os, re, sys, sysconfig
@@ -93,7 +116,8 @@ pure = all(re.search(r"-(?:py2\.)?py3-none-any\.whl$", n) for n in names)
 if pure:
     tags = ["*"]
 else:
-    tags = ["cp%d%d" % sys.version_info[:2]]
+    # The interpreter the wheels were RESOLVED for, not the one running this.
+    tags = ["cp" + os.environ["WHEEL_PY"].replace(".", "")]
 
 manifest = up.build_manifest(
     version=os.environ["VERSION"],

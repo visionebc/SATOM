@@ -6,6 +6,26 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — API packs: the API library for offline nodes (2026-10-02)
+
+- **`flask apilib pack export | inspect | import`** moves what one SATOM knows
+  about vendor APIs to another installation as one signed tarball,
+  `satom-apipack-<version>.tar.gz`: the API library evidence (sweeps,
+  schemas, vendor data), the release notes with the full vendor text, the
+  harvested field schemas, and the CLI-vs-API coverage digest. An offline
+  node, or one with no appliance of a given build, has no other way to learn
+  any of it.
+- **Nothing identifying leaves.** Sweeps are re-derived from their stored
+  snapshot to field names and types (no configuration values), and must
+  reproduce the stored hash. Device names become stable pseudonyms; serials
+  and appliance ids are dropped. The export is refused whole if a device
+  name, serial or appliance address survives anywhere.
+- **Import only adds.** Evidence this node measured itself, release notes it
+  already holds and field schemas it already has are never replaced. Same
+  signature check and trust store as the offline update packages.
+- Phase 1 of 4: the Software Update page, the installers and the release
+  pipeline do not use packs yet. See `docs/api-library.md` §11.
+
 ### Added — an update shows what it is doing while it runs (2026-10-02)
 
 - **The update runner publishes the step in flight**, not only the steps that

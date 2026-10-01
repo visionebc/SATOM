@@ -573,6 +573,14 @@ management network deliberately cannot reach — and the ACME client <code>lego<
 without them a minimal image with no network failed halfway through the
 installation, with the service account already created. Bundles 1.1 and earlier
 carried neither those nor <code>lego</code> in the RHEL variant.</p>
+<p><strong>The browser does not need the Internet either.</strong> Every script, stylesheet
+and font the console uses (Bootstrap, Bootstrap Icons, Chart.js) is vendored
+inside the application and served by the node itself; the Content-Security-
+Policy names no other origin for them. Up to <strong>2.4.1</strong> Bootstrap Icons still
+came from <code>cdn.jsdelivr.net</code>: on an isolated network every page reload waited
+10–20 s for that request to time out, and the menu showed no icons. The full
+list, with each asset's upstream link and license, is in the engineering
+manual, §9.1 <em>Third-party browser assets</em>.</p>
 <p>The bundle is a <strong>snapshot of the repository at build time</strong>: the guards it
 contains are the ones that existed then. To know exactly which version you have
 before installing:</p>

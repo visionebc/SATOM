@@ -281,3 +281,81 @@ def baseline_resolve_cmd(product, version, name):
     from .services import api_baseline
     _baseline_products(product)
     _print(api_baseline.resolve_at(product, name, version))
+
+
+# ---------------------------------------------------------------------------
+# ``flask apilib pack ...`` — signed API packs for offline nodes (docs §11)
+# ---------------------------------------------------------------------------
+
+pack_cli = AppGroup("pack", help="Signed API packs: export this node's API knowledge, "
+                                  "inspect a pack, import it.")
+apilib_cli.add_command(pack_cli)
+
+
+@pack_cli.command("export")
+@click.option("--version", "version", required=True, help="Pack version (normally the release).")
+@click.option("--out", "out_dir", required=True, type=click.Path(file_okay=False))
+@click.option("--product", "products", multiple=True, help="Limit to one product (repeatable).")
+@click.option("--section", "sections", multiple=True,
+              type=click.Choice(["library", "docs", "cli-coverage"]),
+              help="Limit to one section (repeatable; default: all).")
+@click.option("--notes", default="")
+@click.option("--sign-key", default=None, type=click.Path(exists=True, dir_okay=False),
+              help="Private key to sign with (else sign later with sign_update_package.py).")
+@click.option("--passphrase-file", default=None, type=click.Path(exists=True, dir_okay=False))
+def pack_export_cmd(version, out_dir, products, sections, notes, sign_key, passphrase_file):
+    """Build satom-apipack-VERSION.tar.gz (anonymised; refused on any leak)."""
+    from .services import api_pack
+    try:
+        res = api_pack.export_pack(out_dir, version, products=list(products) or None,
+                                   sections=list(sections) or api_pack.SECTIONS,
+                                   notes=notes, sign_key=sign_key,
+                                   passphrase_file=passphrase_file)
+    except api_pack.PackError as exc:
+        raise click.ClickException(str(exc))
+    _print(res)
+
+
+def _trust_opt(f):
+    return click.option("--trust-dir", default=None, type=click.Path(file_okay=False),
+                        help="Trust store (default: the update-package trust store).")(f)
+
+
+@pack_cli.command("inspect")
+@click.argument("path", type=click.Path(exists=True, dir_okay=False))
+@_trust_opt
+def pack_inspect_cmd(path, trust_dir):
+    """Verify a pack and show what importing each item would do."""
+    from .services import api_pack
+    try:
+        res = api_pack.inspect_pack(path, trust_dir=trust_dir)
+    except api_pack.PackError as exc:
+        raise click.ClickException(str(exc))
+    click.echo("pack %s  built %s  signed by %s" % (
+        res["version"], res["built_at"], res["signed_by"]["fingerprint"]))
+    for it in res["items"]:
+        extra = it.get("new_versions") or it.get("new_objects") or ""
+        click.echo("  %-8s %-62s %s" % (it["state"], it["id"],
+                                        ("+" + ",".join(extra)) if extra else ""))
+
+
+@pack_cli.command("import")
+@click.argument("path", type=click.Path(exists=True, dir_okay=False))
+@click.option("--product", "products", multiple=True)
+@click.option("--section", "sections", multiple=True,
+              type=click.Choice(["library", "docs", "cli-coverage"]))
+@click.option("--item", "ids", multiple=True, help="One item id from `inspect` (repeatable).")
+@click.option("--dry-run", is_flag=True)
+@_trust_opt
+def pack_import_cmd(path, products, sections, ids, dry_run, trust_dir):
+    """Import the selected NEW items. Local measurements are never overwritten."""
+    from .services import api_pack
+    try:
+        res = api_pack.import_pack(path, trust_dir=trust_dir, products=products,
+                                   sections=sections, ids=ids, dry_run=dry_run,
+                                   actor=_actor())
+    except api_pack.PackError as exc:
+        raise click.ClickException(str(exc))
+    _print(res)
+    if res["errors"]:
+        raise SystemExit(1)

@@ -44,6 +44,7 @@ fi
 # 5. Initialise database and seed admin user
 echo "==> Initialising database (create-db)"
 FLASK_APP=wsgi.py venv/bin/flask create-db
+FLASK_APP=wsgi.py venv/bin/flask db stamp head
 
 # 6. Install and enable systemd service
 echo "==> Installing systemd service"

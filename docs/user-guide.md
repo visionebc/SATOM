@@ -1988,6 +1988,13 @@ satom diagnose updates    # trust store, runner, staged packages
 satom diagnose code       # is the running process actually on the new code?
 ```
 
+Every release from 2.5.0 publishes its package, its `.sha256` and the public
+key it is signed with (`satom-release-2026.pub`). A node installed **before**
+2.5.0 trusts that key only after `satom execute trust add-key
+satom-release-2026.pub`, run once per node; compare the fingerprint in the
+release notes first. Database migrations run as part of the apply. If one
+fails, the update rolls back and the status log says which backup to restore.
+
 How packages are built and signed:
 [docs/offline-update-packages.md](offline-update-packages.md).
 

@@ -44,7 +44,7 @@
 # ============================================================================
 set -euo pipefail
 
-VERSION="2.4.1"
+VERSION="2.5.0"
 APP_DIR="/opt/satom"
 ACME_WEBROOT="/var/www/acme"
 LEGO_VERSION="5.2.2"
@@ -1603,6 +1603,12 @@ if [ "$ROLE" != "secondary" ]; then
         || die "flask create-db failed — the schema could not be initialized.
        Check the end of $INSTALL_LOG (usual cause: the app cannot
        authenticate against PostgreSQL)"
+    # [SATOM-ALEMBIC-STAMP] create-db builds the schema from the models, which
+    # IS the head revision -- but without a recorded revision the first update's
+    # `flask db upgrade` starts from the very first migration. Record it now.
+    FLASK_APP=wsgi.py venv/bin/flask db stamp head >>"$INSTALL_LOG" 2>&1 \
+        || die "flask db stamp head failed — the schema exists but its revision
+       could not be recorded. Check the end of $INSTALL_LOG"
     export SATOM_ADMIN_PASS="$ADMIN_PASS"
     venv/bin/python - <<PYADM >>"$INSTALL_LOG" 2>&1 \
         || die "Could not set the 'admin' password (check $INSTALL_LOG)"

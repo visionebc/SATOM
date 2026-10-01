@@ -113,6 +113,17 @@ def load_private_seed(path: Path, passphrase: str | None) -> bytes:
 # ---------------------------------------------------------------------------
 # commands
 # ---------------------------------------------------------------------------
+def _passphrase_from_file(path) -> str:
+    """First line of a 0600-style file, so an unattended signer (the release
+    pipeline) never puts the passphrase on a command line, where every user on
+    the host can read it from the process table."""
+    text = Path(path).read_text(encoding="utf-8")
+    line = text.splitlines()[0].strip() if text.strip() else ""
+    if not line:
+        raise SystemExit("%s is empty" % path)
+    return line
+
+
 def cmd_genkey(args) -> int:
     out = Path(args.out)
     key_path, pub_path = Path(str(out) + ".key"), Path(str(out) + ".pub")
@@ -124,7 +135,9 @@ def cmd_genkey(args) -> int:
     seed = os.urandom(32)
     pub = up.ed25519_public_from_seed(seed)
     passphrase = ""
-    if not args.insecure_plain_key:
+    if args.passphrase_file and not args.insecure_plain_key:
+        passphrase = _passphrase_from_file(args.passphrase_file)
+    elif not args.insecure_plain_key:
         passphrase = getpass.getpass("Passphrase for the new private key: ")
         if passphrase != getpass.getpass("Repeat passphrase: "):
             raise SystemExit("passphrases do not match")
@@ -154,7 +167,12 @@ def _sign_dir(pkg_dir: Path, seed: bytes) -> str:
 
 def cmd_sign(args) -> int:
     target = Path(args.package)
-    seed = load_private_seed(Path(args.key), args.passphrase)
+    passphrase = args.passphrase
+    if args.passphrase_file:
+        if passphrase is not None:
+            raise SystemExit("--passphrase and --passphrase-file are exclusive")
+        passphrase = _passphrase_from_file(args.passphrase_file)
+    seed = load_private_seed(Path(args.key), passphrase)
     if target.is_dir():
         fp = _sign_dir(target, seed)
         print("signed %s with %s" % (target, fp))
@@ -233,6 +251,8 @@ def main(argv=None) -> int:
     g.add_argument("--force", action="store_true")
     g.add_argument("--insecure-plain-key", action="store_true",
                    help="store the private key unencrypted (tests only)")
+    g.add_argument("--passphrase-file", default=None,
+                   help="read the new key's passphrase from this file")
     g.set_defaults(func=cmd_genkey)
 
     s = sub.add_parser("sign", help="sign a package (directory or .tar.gz)")
@@ -240,6 +260,8 @@ def main(argv=None) -> int:
     s.add_argument("--key", required=True)
     s.add_argument("--passphrase", default=None,
                    help="avoid on a shared machine; prompted when omitted")
+    s.add_argument("--passphrase-file", default=None,
+                   help="read the passphrase from this file (unattended signing)")
     s.set_defaults(func=cmd_sign)
 
     v = sub.add_parser("verify", help="verify a package")

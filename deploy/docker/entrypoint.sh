@@ -109,6 +109,34 @@ ensure_publication_overlay() {
     fi
 }
 
+# ---------------------------------------------------------------------------
+# [SATOM-ALEMBIC-STAMP] Apply migrations on the primary before serving.
+#
+# The app factory's create_all() + _ensure_columns() only ever ADD tables and
+# columns. A migration that transforms data has no other way to run in a
+# container: there is no update runner here, an update is a new image. Every
+# migration is idempotent (app.migration_guard), so a database create_all
+# already built walks the chain as no-ops and ends stamped at head.
+#
+# Primary only -- a standby's database is a read-only replica and receives the
+# schema by replication. Fatal on failure: serving new code on a schema that
+# did not migrate is the silent half-update this exists to prevent, and a web
+# container that will not start is what makes the agent roll the update back.
+# ---------------------------------------------------------------------------
+migrate_primary() {
+    case "$(/opt/satom/deploy/docker/node-role.sh 2>/dev/null || true)" in
+        f) ;;
+        t) log "standby: schema arrives by replication, not migrating"; return 0 ;;
+        *) log "cannot tell primary from standby; not migrating"; return 0 ;;
+    esac
+    if ! out=$(flask db upgrade 2>&1); then
+        printf '%s\n' "$out" | tail -20 >&2
+        log "flask db upgrade FAILED -- refusing to serve on an unmigrated schema"
+        exit 70
+    fi
+    log "database migrated to $(flask db current 2>/dev/null | tail -1 || echo '?')"
+}
+
 role="${SATOM_ROLE:-web}"
 log "role=${role} runtime=${SATOM_RUNTIME:-host} version=$(cat /opt/satom/VERSION 2>/dev/null || echo '?')"
 case "$role" in web|scheduler|cron|shell) ensure_publication_overlay ;; esac
@@ -117,6 +145,7 @@ case "$role" in
     web)
         reject_placeholder_secrets
         wait_for_db
+        migrate_primary
         # --timeout must stay ABOVE the advisor provider timeout
         # (app/services/advisor_providers.py DEFAULT_TIMEOUT), exactly as in
         # deploy/satom.service: below it a slow model has its worker killed

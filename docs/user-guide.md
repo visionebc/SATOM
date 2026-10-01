@@ -1998,6 +1998,31 @@ fails, the update rolls back and the status log says which backup to restore.
 How packages are built and signed:
 [docs/offline-update-packages.md](offline-update-packages.md).
 
+### 22.3 API library packs
+
+The same page carries a third card, **API library packs**. A pack holds what
+SATOM has learned about vendor APIs — which endpoints and fields each firmware
+build serves (from real sweeps, anonymised), the vendor release notes and field
+catalog, and the CLI-only blocks per firmware line — for a node that has no
+appliance of a build, no Internet and no documentation crawler to learn them.
+It never carries a configuration value or a device name.
+
+1. **Pick a pack.** The release you run carries its own (*this release*); you
+   can also upload one downloaded from the release page.
+2. **Read the table.** Every item says what importing it would do: `new` (will
+   be imported), `present` (already on this node) or `local` (this node
+   measured it itself — local evidence always wins). Filter by product and by
+   section; only `new` items can be ticked.
+3. **Import selected.** It runs as a background job with per-item progress.
+   Importing only adds; nothing this node holds is replaced.
+
+Packs are checked against the same trust store as update packages, so a pack
+signed by an untrusted key is refused with the command that fixes it. On a
+pair, import on the **primary**: the standby receives the library by
+replication and the files by the data sync, and its card is read-only. The
+console equivalent is `sudo satom execute apipack import shipped --yes`.
+Details: [api-library.md §11](api-library.md).
+
 ## 23. Studio: custom views, plugins & Lua
 
 Three admin-only authoring tools, grouped under **Studio**. In the Global ADOM

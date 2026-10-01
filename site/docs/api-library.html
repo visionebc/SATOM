@@ -70,7 +70,8 @@
       <a href="#8-operations">8. Operations</a>
       <a href="#9-endpoint-baselines--the-registrys-seed">9. Endpoint baselines — the registry&#x27;s seed</a>
       <a href="#10-limits-that-do-not-go-away">10. Limits that do not go away</a>
-      <a href="#11-troubleshooting">11. Troubleshooting</a>
+      <a href="#11-api-packs--the-library-for-nodes-that-cannot-measure-it">11. API packs — the library for nodes that cannot measure it</a>
+      <a href="#12-troubleshooting">12. Troubleshooting</a>
     </aside>
     <div class="doc-body mdx">
 <h1 id="api-library--versioned-append-only-in-the-database">API library — versioned, append-only, in the database</h1>
@@ -965,7 +966,263 @@ registry itself.</p>
   rename from a removal plus an addition until an operator says so.</li>
 </ul>
 <hr>
-<h2 id="11-troubleshooting">11. Troubleshooting</h2>
+<h2 id="11-api-packs--the-library-for-nodes-that-cannot-measure-it">11. API packs — the library for nodes that cannot measure it</h2>
+<p>An installation learns what a build serves by sweeping a box that runs it,
+from vendor collections downloaded from Galaxy, and from docs.fortinet.com
+through Firecrawl. An offline node has none of those, and a node with no
+FortiADC will never measure FortiADC. An <strong>API pack</strong> carries what one SATOM
+knows to another as one signed tarball (<code>app/services/api_pack.py</code>).</p>
+<h3 id="111-what-a-pack-carries">11.1 What a pack carries</h3>
+<table>
+<thead>
+<tr>
+<th>Section</th>
+<th>Content</th>
+<th>Source on the exporting node</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>library</code></td>
+<td>One evidence document per healthy evidence row: sweeps, schemas, <code>legacy_matrix</code>, <code>vendor_doc</code></td>
+<td><code>api_lib_evidence</code></td>
+</tr>
+<tr>
+<td><code>docs</code></td>
+<td>Release notes <strong>with the full vendor text</strong> (issues, workarounds, prose sections); harvested field schemas per line; the FortiWeb field overlay</td>
+<td><code>reports/_release_notes.json</code>, <code>data/field_schemas/</code>, <code>data/fortiweb_field_schema.json</code></td>
+</tr>
+<tr>
+<td><code>cli-coverage</code></td>
+<td>Per product and firmware version: the CLI-only blocks and near matches, with their <code>set</code> names and counts</td>
+<td>the newest usable CLI dump per version in the device vault (<code>cli_coverage</code>)</td>
+</tr>
+</tbody>
+</table>
+<p>Layout:</p>
+<pre><code>satom-apipack-&lt;version&gt;/
+    manifest.json      signed: items + sha256 of every file
+    manifest.sig       Ed25519 over manifest.json's exact bytes
+    library/&lt;product&gt;/&lt;source&gt;-&lt;scope&gt;-&lt;sha12&gt;.json.gz
+    docs/release-notes/&lt;product&gt;.json.gz
+    docs/field-schemas/&lt;product&gt;/&lt;line&gt;.json.gz
+    docs/fortiweb-field-overlay.json.gz
+    cli-coverage/&lt;product&gt;/&lt;version&gt;.json.gz
+</code></pre>
+<h3 id="112-what-a-pack-never-carries">11.2 What a pack never carries</h3>
+<ul>
+<li><strong>No configuration.</strong> A sweep's evidence row stores the raw snapshot, and
+  the snapshot holds the rows the box returned. Export re-derives the
+  normalised document (field <strong>names and types</strong> only) and keeps it only if
+  it reproduces the row's stored <code>sha256</code>. A row that does not reproduce is
+  listed under <code>skipped</code> and is not exported. The CLI digest carries block
+  paths, <code>set</code> names and counts, never an <code>edit</code> name, a value or a line of
+  the dump.</li>
+<li><strong>No estate identity.</strong> Device names become <code>witness-&lt;hmac&gt;</code>, keyed by a
+  per-installation secret (<code>data/apipacks/witness.salt</code>), so the same box gets
+  the same pseudonym in every pack and re-importing a newer pack confirms
+  evidence instead of duplicating it. Serials and appliance ids are dropped.
+  Witness slots (<code>device.name</code>, <code>witnesses[]</code>, <code>appliance</code>, <code>witness</code>, and the
+  name inside a harvest <code>source</code> such as <code>live:{device}@8.0</code>) are replaced <strong>by
+  position</strong>, whatever the name. A deny-list alone missed a deleted box named
+  only inside a schema document.</li>
+<li><strong>The export is refused whole</strong> if any witness slot holds something other
+  than a pseudonym, or any payload holds a known device name, serial,
+  appliance address or an IPv4 on an appliance's /16. The release-notes text
+  is exempt from the address check only, because it is vendor prose.</li>
+<li>Evidence that came from a pack is never re-exported.</li>
+</ul>
+<h3 id="113-import-rules">11.3 Import rules</h3>
+<p>Importing only ever <strong>adds</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Imported when</th>
+<th>Skipped as</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Library document</td>
+<td>its hash is not stored yet</td>
+<td><code>present</code> (same hash), or <code>local</code>: this node holds its own healthy evidence of the same source for that build or line</td>
+</tr>
+<tr>
+<td>Release notes</td>
+<td>for each (product, version) the node does not hold</td>
+<td><code>present</code>. A version scanned locally is never replaced</td>
+</tr>
+<tr>
+<td>Field schemas</td>
+<td>per object file that does not exist locally</td>
+<td><code>present</code></td>
+</tr>
+<tr>
+<td>Field overlay</td>
+<td>when the node has none</td>
+<td><code>present</code></td>
+</tr>
+<tr>
+<td>CLI digest</td>
+<td>always (pack-owned, <code>data/apipacks/cli-coverage/</code>)</td>
+<td><code>present</code> when byte-identical</td>
+</tr>
+</tbody>
+</table>
+<p>Imported evidence carries <code>origin_ref = apipack:&lt;version&gt;:&lt;source&gt;</code> and
+pseudonymous witnesses, so it is distinguishable everywhere a witness is
+listed. <strong>Known limit:</strong> a pack sweep imported <em>before</em> the node sweeps the
+same build itself is merged with the later local sweep under the library's
+normal rule (an <code>ok</code> from any healthy witness wins on that build).</p>
+<p>A pack is verified with the update-package verifier
+(<code>deploy/update_package.py</code>) against the same root-owned trust store
+(<code>/etc/satom/update-keys</code>): signature first, then every file's hash, then
+schema (<code>satom.api-pack/1</code>). An unsigned pack, a pack signed by an untrusted
+key, and an altered pack are all refused before anything is read. Each import
+that changed something is logged in <code>data/apipacks/imports/</code>.</p>
+<h3 id="114-commands">11.4 Commands</h3>
+<pre><code class="language-bash"># export (as the service account); unsigned unless --sign-key is given
+flask apilib pack export --version 2.6.0 --out /tmp/packs \
+      [--product fortiweb] [--section library|docs|cli-coverage] \
+      [--sign-key satom-release.key --passphrase-file pass]
+
+# sign later with the update-package tool
+python3 deploy/sign_update_package.py sign /tmp/packs/satom-apipack-2.6.0.tar.gz --key …
+
+# what importing would do, per item: new / present / local
+flask apilib pack inspect satom-apipack-2.6.0.tar.gz
+
+# import everything new, or a selection
+flask apilib pack import satom-apipack-2.6.0.tar.gz [--product fortiadc] \
+      [--section docs] [--item library/fortiadc/sweep-8.0.3-…] [--dry-run]
+</code></pre>
+<p><code>inspect</code> and <code>import</code> take <code>--trust-dir</code> for a non-default trust store.</p>
+<p>The operator console wraps the import for root, so nobody has to assemble the
+service account's environment by hand:</p>
+<pre><code class="language-bash">satom show apipack                                   # packs on this node + import log
+sudo satom execute apipack import shipped            # dry run of the release's own pack
+sudo satom execute apipack import shipped --yes      # import it
+sudo satom execute apipack import ./satom-apipack-2.6.0.tar.gz --yes \
+     [--product fortiweb,fortiadc] [--section docs]
+</code></pre>
+<p>It runs <code>flask apilib pack import</code> <strong>as the service account</strong> (<code>runuser -m</code>):
+run as root, the release notes and field schemas it writes would become files
+the web worker can no longer update. A pack outside the application tree (an
+operator's home is <code>0700</code>) is first copied to <code>data/apipack-uploads/</code>. It
+refuses on a standby. Without <code>--yes</code> it only reports what would happen.</p>
+<h3 id="115-how-a-node-gets-a-pack">11.5 How a node gets a pack</h3>
+<p>The release pipeline builds one pack per release and commits it to
+<strong><code>api-packs/</code></strong> in the repository, before the tag (§11.6). Because the pack
+lives in the tree, it travels the way the code does, and no node downloads
+anything to get it:</p>
+<table>
+<thead>
+<tr>
+<th>Path</th>
+<th>How the pack arrives</th>
+<th>How it is imported</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Online install</td>
+<td><code>git clone</code> of the public repository</td>
+<td>the installer, after the health check</td>
+</tr>
+<tr>
+<td>Offline install</td>
+<td>the bundle's <code>app.tar.gz</code></td>
+<td>the installer, after the health check</td>
+</tr>
+<tr>
+<td>Update (git or offline package)</td>
+<td>the new tree</td>
+<td><strong>Settings → Software Update → API library packs</strong></td>
+</tr>
+<tr>
+<td>Standalone</td>
+<td><code>satom-apipack-&lt;version&gt;.tar.gz</code> (+ <code>.sha256</code>) from the GitHub release, the download catalog or <code>/downloads</code></td>
+<td>upload it on that page, or <code>satom execute apipack import &lt;file&gt; --yes</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Installer.</strong> On a standalone node or a cluster primary, once <code>/healthz</code>
+answers, the installer runs <code>satom execute apipack import shipped --yes</code>. It is
+never fatal: the installation is complete at that point, and a pack that does
+not import is a warning with the command to retry. A secondary is skipped: its
+database is read-only, and it gets the library by replication and the files
+by the data sync. Two environment variables control it, and they are
+variables rather than prompts on purpose — a new prompt would shift every
+answer file written for an earlier release by one line:</p>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Values</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>SATOM_API_PACK</code></td>
+<td><code>all</code> · <code>none</code> · a path to a pack</td>
+<td><code>all</code> (the release's own pack)</td>
+</tr>
+<tr>
+<td><code>SATOM_API_PACK_PRODUCTS</code></td>
+<td>comma list, e.g. <code>fortiweb,fortiadc</code></td>
+<td>every product</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Software Update.</strong> The <em>API library packs</em> card lists the release's pack
+(<em>this release</em>) and any uploaded pack (the newest five are kept). Selecting
+one verifies it and shows every item with its state — <code>new</code>, <code>present</code>, or
+<code>local</code> (this node measured it itself) — filterable by product and by section.
+Only <code>new</code> items can be ticked; <em>Import selected</em> runs as a background job with
+per-item progress, and the page re-reads the states when it ends. A failed item
+turns the job red but keeps what was imported and says which items failed. The
+standby page shows the card read-only and the import route refuses there. A
+pack signed by a key the node does not trust is refused with the
+<code>satom execute trust add-key</code> command that fixes it.</p>
+<h3 id="116-built-by-the-release-pipeline">11.6 Built by the release pipeline</h3>
+<p>The pipeline step <code>api_pack</code> (after <code>docs_gate</code>, before the push and the tag)
+checks that <code>api-packs/</code> in the release commit holds exactly this release's
+pack and its <code>.sha256</code>, that the checksum matches, that the signature verifies
+against the public key the product ships (<code>deploy/update-keys/</code>), and that the
+manifest names this version. When it does not, the repair <code>build_api_pack</code>
+exports the pack on the primary from its live library, signs it on the release
+host with the release key (the same key as the update packages; the primary
+never sees the private half), and commits exactly <code>api-packs/</code> — the new pack
+in, the previous release's pack out — after refusing a dirty work tree. The
+publish steps attach the pack, taken from the tag, to the GitHub release and
+the download catalog.</p>
+<p>The pipeline also reads every file inside the pack with the <strong>public mirror's
+own redaction and secret rules</strong>. The mirror cannot do it: the pack is a gzip
+of gzips, which the history rewrite skips as binary. One exception, for the
+vendor release notes only: a rule match that is a bare IPv4 address is
+Fortinet's example text, not ours. Any other match stops the release, and it
+is never auto-repaired — rebuilding would export the same text again.</p>
+<h3 id="117-cli-coverage-from-a-pack">11.7 CLI coverage from a pack</h3>
+<p>The CLI-coverage card (API explorer and the ADC API page) diffs a stored CLI
+dump. When the node has <strong>no dump</strong> for the firmware asked about, it falls
+back to an imported digest for <strong>that exact version</strong> (or line, when the page
+is scoped by line) and says so: the evidence line names the pack's witness,
+version and capture date. The block text is not offered — the node never had
+the dump. Other readers of the coverage report (Structure, discovery) ignore
+the digests, because they act on a stored dump.</p>
+<h3 id="118-limits">11.8 Limits</h3>
+<ul>
+<li>A container install has no Software Update page (§22 of the user guide) and
+  its installer path is the stack, not <code>install-satom.sh</code>: importing a pack
+  there is not covered yet. The image does carry <code>api-packs/</code>.</li>
+<li><code>short</code> and <code>partial</code> releases publish code only: the pack rides in the
+  repository and the bundles, but is attached as a release asset only by a
+  <code>full</code> release.</li>
+</ul>
+<hr>
+<h2 id="12-troubleshooting">12. Troubleshooting</h2>
 <table>
 <thead>
 <tr>
@@ -1053,6 +1310,22 @@ registry itself.</p>
 <tr>
 <td><code>baseline check</code> exits 1</td>
 <td>Read the report: <code>wrong_urn</code> / <code>missing</code> / <code>stale_enabled</code> are registry rows out of step with the baseline (<code>flask apilib baseline apply</code> fixes them); <code>urn_mismatch</code> on a fleet build means the vendor moved a resource: promote that build</td>
+</tr>
+<tr>
+<td><code>pack import</code>: <code>manifest.sig is missing — the package is unsigned</code></td>
+<td>Sign it (§11.4) or get the signed pack from the release. Unsigned packs are never imported</td>
+</tr>
+<tr>
+<td><code>pack import</code>: <code>no key in the trust store signed this package</code></td>
+<td>The signing key is not trusted here: <code>satom execute trust add-key &lt;key&gt;.pub</code> (same store as update packages)</td>
+</tr>
+<tr>
+<td><code>pack export</code>: <code>identifying data survived the scrub</code></td>
+<td>The message names the file and the value. A device name used as an API key or field name is the usual cause; nothing was written</td>
+</tr>
+<tr>
+<td>A pack item stays <code>local</code> and is never imported</td>
+<td>Expected: this node measured that build itself (§11.3)</td>
 </tr>
 </tbody>
 </table>

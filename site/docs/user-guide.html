@@ -2399,6 +2399,29 @@ release notes first. Database migrations run as part of the apply. If one
 fails, the update rolls back and the status log says which backup to restore.</p>
 <p>How packages are built and signed:
 <a href="offline-update-packages.html">docs/offline-update-packages.md</a>.</p>
+<h3 id="223-api-library-packs">22.3 API library packs</h3>
+<p>The same page carries a third card, <strong>API library packs</strong>. A pack holds what
+SATOM has learned about vendor APIs — which endpoints and fields each firmware
+build serves (from real sweeps, anonymised), the vendor release notes and field
+catalog, and the CLI-only blocks per firmware line — for a node that has no
+appliance of a build, no Internet and no documentation crawler to learn them.
+It never carries a configuration value or a device name.</p>
+<ol>
+<li><strong>Pick a pack.</strong> The release you run carries its own (<em>this release</em>); you
+   can also upload one downloaded from the release page.</li>
+<li><strong>Read the table.</strong> Every item says what importing it would do: <code>new</code> (will
+   be imported), <code>present</code> (already on this node) or <code>local</code> (this node
+   measured it itself — local evidence always wins). Filter by product and by
+   section; only <code>new</code> items can be ticked.</li>
+<li><strong>Import selected.</strong> It runs as a background job with per-item progress.
+   Importing only adds; nothing this node holds is replaced.</li>
+</ol>
+<p>Packs are checked against the same trust store as update packages, so a pack
+signed by an untrusted key is refused with the command that fixes it. On a
+pair, import on the <strong>primary</strong>: the standby receives the library by
+replication and the files by the data sync, and its card is read-only. The
+console equivalent is <code>sudo satom execute apipack import shipped --yes</code>.
+Details: <a href="api-library.html">api-library.md §11</a>.</p>
 <h2 id="23-studio-custom-views-plugins--lua">23. Studio: custom views, plugins &amp; Lua</h2>
 <p>Three admin-only authoring tools, grouped under <strong>Studio</strong>. In the Global ADOM
 they sit at Administrator → Studio; in the FortiWeb and FortiADC ADOMs the same

@@ -288,6 +288,128 @@
     </div>
   </div>
 </div>
+<div class="row g-3" id="api-packs">
+  <!-- ==================== API library packs ==================== -->
+  <div class="col-12">
+    <div class="card mb-3">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <strong><i class="bi bi-journal-code me-1"></i>{{ _('API library packs') }}</strong>
+        <span class="text-muted small">{{ _('vendor API knowledge for nodes with no appliance, no internet or no crawler') }}</span>
+      </div>
+      <div class="card-body">
+        <p class="text-muted small">
+          {{ _('A pack carries what SATOM has learned about vendor APIs: the endpoints and fields each firmware build serves (from sweeps, anonymised), the vendor documentation (release notes, field catalog) and the CLI-only blocks per firmware line. It never carries a configuration or the name of a device.') }}
+          <strong>{{ _('Import only adds:') }}</strong> {{ _('what this node measured itself always wins, and nothing it already holds is overwritten. Packs are signed and checked against the same trust store as update packages.') }}
+        </p>
+        {% if api_packs.error %}
+          <div class="alert alert-danger py-2 small"><i class="bi bi-exclamation-octagon me-1"></i>{{ api_packs.error }}</div>
+        {% endif %}
+        {% if api_packs.role == 'standby' %}
+          <div class="alert alert-warning py-2 small"><i class="bi bi-hdd-network me-1"></i>
+            {{ _('This node is the standby: its database is read-only, so packs are imported on the primary. The library replicates here, and the data sync copies the release notes and field schemas.') }}</div>
+        {% endif %}
+
+        <div class="row g-3">
+          <div class="col-lg-4">
+            <div class="text-muted small mb-1">{{ _('Available packs') }}</div>
+            {% set shipped = api_packs.packs|selectattr('source', 'equalto', 'shipped')|list %}
+            {% set uploaded = api_packs.packs|selectattr('source', 'equalto', 'uploaded')|list %}
+            <ul class="list-group list-group-flush mb-2" id="apk-list">
+              {% for p in shipped %}
+              <li class="list-group-item px-0 py-1 d-flex justify-content-between align-items-center">
+                <button type="button" class="btn btn-link btn-sm p-0 text-start"
+                        data-js="apk-select" data-source="shipped" data-name="{{ p.name }}">
+                  <span class="font-monospace">{{ p.name }}</span></button>
+                <span class="badge text-bg-light border" title="{{ _('In the code tree (api-packs/): it came with this release') }}">{{ _('this release') }}</span>
+              </li>
+              {% endfor %}
+              {% for p in uploaded %}
+              <li class="list-group-item px-0 py-1 d-flex justify-content-between align-items-center">
+                <button type="button" class="btn btn-link btn-sm p-0 text-start"
+                        data-js="apk-select" data-source="uploaded" data-name="{{ p.name }}">
+                  <span class="font-monospace">{{ p.name }}</span></button>
+                <span>
+                  <span class="text-muted small me-2">{{ (p.size / 1048576)|round(1) }} MB</span>
+                  <form method="post" class="d-inline" action="{{ url_for('self_update.apipack_delete') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="name" value="{{ p.name }}">
+                    <button class="btn btn-outline-secondary btn-sm py-0" type="submit"
+                            title="{{ _('Remove the uploaded pack') }}"><i class="bi bi-trash"></i></button>
+                  </form>
+                </span>
+              </li>
+              {% endfor %}
+              {% if not api_packs.packs %}
+              <li class="list-group-item px-0 py-1 small text-muted">
+                {{ _('No pack on this node. A release that carries one has it in api-packs/; you can also upload one downloaded from the release page.') }}</li>
+              {% endif %}
+            </ul>
+
+            <form method="post" enctype="multipart/form-data" action="{{ url_for('self_update.apipack_upload') }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <label class="form-label small mb-1" for="apk-file">
+                {{ _('Upload') }} <code>satom-apipack-&lt;version&gt;.tar.gz</code></label>
+              <input class="form-control form-control-sm mb-2" type="file" id="apk-file"
+                     name="apipack" accept=".gz,.tgz,application/gzip">
+              <button class="btn btn-fw-primary btn-sm" type="submit">
+                <i class="bi bi-upload me-1"></i>{{ _('Upload & check') }}</button>
+            </form>
+
+            {% if api_packs.history %}
+            <div class="mt-3">
+              <div class="text-muted small mb-1">{{ _('Recent imports') }}</div>
+              <table class="table table-sm small mb-0" id="apk-history">
+                <tbody>
+                {% for h in api_packs.history %}
+                  <tr>
+                    <td class="text-nowrap">{{ h.at[:16]|replace('T', ' ') }}</td>
+                    <td class="font-monospace">{{ h.version }}</td>
+                    <td>{{ h.imported }} {{ _('imported') }}{% if h.errors %} · <span class="text-danger">{{ h.errors }} {{ _('failed') }}</span>{% endif %}</td>
+                    <td class="text-muted">{{ h.actor }}</td>
+                  </tr>
+                {% endfor %}
+                </tbody>
+              </table>
+            </div>
+            {% endif %}
+          </div>
+
+          <div class="col-lg-8">
+            <div id="apk-detail" class="small text-muted">
+              {% if api_packs.packs %}{{ _('Select a pack to see what it carries and what importing it would do.') }}
+              {% else %}{{ _('Upload a pack to see its contents.') }}{% endif %}
+            </div>
+            <div id="apk-pick" class="d-none mt-2">
+              <div class="d-flex flex-wrap gap-3 align-items-center mb-2 small" id="apk-filters"></div>
+              <div class="table-responsive" style="max-height:420px;overflow:auto;">
+                <table class="table table-sm small mb-2 align-middle">
+                  <thead><tr>
+                    <th style="width:28px;"><input class="form-check-input" type="checkbox" id="apk-all"
+                        title="{{ _('Tick every item that would be imported') }}"></th>
+                    <th>{{ _('Product') }}</th><th>{{ _('What') }}</th><th>{{ _('State') }}</th>
+                  </tr></thead>
+                  <tbody id="apk-items"></tbody>
+                </table>
+              </div>
+              <div class="d-flex align-items-center gap-2">
+                <button type="button" class="btn btn-fw-primary btn-sm" id="apk-import-btn"
+                        {{ 'disabled' if api_packs.role == 'standby' else '' }}>
+                  <i class="bi bi-box-arrow-in-down me-1"></i>{{ _('Import selected') }}</button>
+                <span class="text-muted small" id="apk-count"></span>
+              </div>
+            </div>
+            <div id="apk-progress" class="d-none mt-3" role="status" aria-live="polite">
+              <div class="progress mb-1" style="height:6px;">
+                <div class="progress-bar" id="apk-bar" style="width:0%"></div></div>
+              <div class="small" id="apk-msg"></div>
+              <ul class="small mb-0 mt-2" id="apk-results"></ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -490,6 +612,201 @@
   (function () {
     var pre = {{ (request.args.get('pkg') or '')|tojson }};
     if (pre) { pkgLoad(pre); }
+  })();
+
+  // --- API library packs ---------------------------------------------------
+  var APK_INSPECT_URL = '{{ url_for("self_update.apipack_inspect") }}';
+  var APK_IMPORT_URL = '{{ url_for("self_update.apipack_import") }}';
+  var APK_STATE = {
+    'new': ['bg-primary', 'will be imported'],
+    'present': ['bg-secondary', 'already on this node'],
+    'local': ['bg-success', 'measured by this node — local evidence wins']
+  };
+  var apk = {source: '', name: '', items: [], off: {}};
+  function apkWhat(it) {
+    if (it.section === 'library') {
+      var sc = it.scope || {};
+      return 'API library · ' + (it.source || '') + ' · ' +
+             (sc.version || sc.line || it.scope_kind || '') + ' · ' +
+             (it.endpoints || 0) + ' endpoints, ' + (it.fields || 0) + ' fields';
+    }
+    if (it.kind === 'release-notes') {
+      var nv = it.new_versions || [];
+      return 'Release notes · ' + (it.versions || []).length + ' version(s)' +
+             (nv.length ? ' · new: ' + nv.join(', ') : '');
+    }
+    if (it.kind === 'field-schemas') {
+      var no = it.new_objects || [];
+      return 'Field catalog · line ' + (it.line || '') + ' · ' + (it.objects || []).length +
+             ' object(s)' + (no.length ? ' · ' + no.length + ' new' : '');
+    }
+    if (it.kind === 'field-overlay') return 'Field help overlay (admin guide)';
+    if (it.section === 'cli-coverage') {
+      return 'CLI-only blocks · ' + (it.version || '') + ' · ' + (it.cli_only || 0) +
+             ' CLI-only, ' + (it.near_match || 0) + ' near match';
+    }
+    return it.id;
+  }
+  function apkVisible(it) {
+    return !apk.off['p:' + it.product] && !apk.off['s:' + it.section];
+  }
+  function apkCount() {
+    var n = document.querySelectorAll('#apk-items input[data-id]:checked').length;
+    document.getElementById('apk-count').textContent = n + ' item(s) selected';
+    var b = document.getElementById('apk-import-btn');
+    if (n && {{ (api_packs.role != 'standby')|tojson }}) b.removeAttribute('disabled');
+    else b.setAttribute('disabled', 'disabled');
+  }
+  function apkRenderItems() {
+    var rows = apk.items.filter(apkVisible).map(function (it) {
+      var st = APK_STATE[it.state] || ['bg-secondary', it.state];
+      var can = it.state === 'new';
+      return '<tr><td><input class="form-check-input" type="checkbox" data-id="' +
+             escapeHtml(it.id) + '"' + (can ? ' checked' : ' disabled') + '></td>' +
+             '<td class="text-nowrap">' + escapeHtml(it.product || '') + '</td>' +
+             '<td>' + escapeHtml(apkWhat(it)) + '</td>' +
+             '<td class="text-nowrap"><span class="badge ' + st[0] + '" title="' +
+             escapeHtml(st[1]) + '">' + escapeHtml(it.state) + '</span></td></tr>';
+    }).join('');
+    document.getElementById('apk-items').innerHTML = rows ||
+      '<tr><td colspan="4" class="text-muted">Nothing matches the filters.</td></tr>';
+    apkCount();
+  }
+  function apkRenderFilters() {
+    function uniq(key) {
+      var seen = {}; apk.items.forEach(function (it) { if (it[key]) seen[it[key]] = 1; });
+      return Object.keys(seen).sort();
+    }
+    var html = '<span class="text-muted">Products:</span>';
+    uniq('product').forEach(function (p) {
+      html += '<label class="form-check-label"><input class="form-check-input me-1" type="checkbox" ' +
+              'data-apk-filter="p:' + escapeHtml(p) + '" checked>' + escapeHtml(p) + '</label>';
+    });
+    html += '<span class="text-muted ms-2">Sections:</span>';
+    uniq('section').forEach(function (s) {
+      html += '<label class="form-check-label"><input class="form-check-input me-1" type="checkbox" ' +
+              'data-apk-filter="s:' + escapeHtml(s) + '" checked>' + escapeHtml(s) + '</label>';
+    });
+    document.getElementById('apk-filters').innerHTML = html;
+  }
+  function apkLoad(source, name) {
+    var box = document.getElementById('apk-detail');
+    apk = {source: source, name: name, items: [], off: {}};
+    document.getElementById('apk-pick').classList.add('d-none');
+    box.className = 'small';
+    box.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Verifying ' +
+                    escapeHtml(name) + '…';
+    fetch(APK_INSPECT_URL + '?source=' + encodeURIComponent(source) + '&name=' +
+          encodeURIComponent(name), {credentials: 'same-origin',
+          headers: {'X-Requested-With': 'XMLHttpRequest'}})
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.error) {
+          box.innerHTML = '<div class="alert alert-danger py-2 mb-0"><i class="bi bi-shield-exclamation me-1"></i>' +
+            escapeHtml(d.error) + '<div class="mt-1">Packs are verified with the update trust store: ' +
+            '<code>satom execute trust add-key satom-release-2026.pub</code> installs the release key.</div></div>';
+          return;
+        }
+        apk.items = d.items || [];
+        var counts = {'new': 0, present: 0, local: 0};
+        apk.items.forEach(function (it) { counts[it.state] = (counts[it.state] || 0) + 1; });
+        box.innerHTML = '<div><span class="font-monospace">' + escapeHtml(d.version) + '</span> ' +
+          '<span class="text-muted">built ' + escapeHtml(d.built_at || '') + ' · signed by ' +
+          escapeHtml((d.signed_by || {}).fingerprint || '') + '</span></div>' +
+          '<div class="text-muted">' + apk.items.length + ' item(s): ' + counts['new'] + ' new, ' +
+          counts.present + ' already present, ' + counts.local + ' measured locally</div>' +
+          (d.refusal ? '<div class="text-warning mt-1">' + escapeHtml(d.refusal) + '</div>' : '');
+        apkRenderFilters();
+        apkRenderItems();
+        document.getElementById('apk-pick').classList.remove('d-none');
+      })
+      .catch(function (e) {
+        box.innerHTML = '<span class="text-danger">Could not read the pack: ' +
+                        escapeHtml(String(e)) + '</span>';
+      });
+  }
+  function apkFollow(jobId) {
+    var wrap = document.getElementById('apk-progress');
+    var bar = document.getElementById('apk-bar');
+    var msg = document.getElementById('apk-msg');
+    var res = document.getElementById('apk-results');
+    wrap.classList.remove('d-none'); res.innerHTML = '';
+    if (window.JobsUI && window.JobsUI.trackJob) {
+      window.JobsUI.trackJob(jobId, 'API pack import');
+    }
+    function poll() {
+      fetch('/jobs/' + encodeURIComponent(jobId), {credentials: 'same-origin',
+            headers: {'X-Requested-With': 'XMLHttpRequest'}})
+        .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+        .then(function (j) {
+          bar.style.width = (j.percent || 0) + '%';
+          msg.textContent = j.message || j.status;
+          if (j.status === 'success' || j.status === 'error' || j.status === 'cancelled') {
+            bar.style.width = '100%';
+            bar.classList.toggle('bg-danger', j.status !== 'success');
+            if (j.error) msg.textContent = j.error;
+            ((j.result || {}).items || []).forEach(function (r) {
+              var li = document.createElement('li');
+              li.className = r.error ? 'text-danger' : (r.imported ? 'text-success' : 'text-muted');
+              li.textContent = r.id + ' — ' + (r.error || (r.imported ? 'imported' : r.state));
+              res.appendChild(li);
+            });
+            apkLoad(apk.source, apk.name);   // the states moved: re-read them
+            return;
+          }
+          setTimeout(poll, 1000);
+        })
+        .catch(function () { setTimeout(poll, 3000); });
+    }
+    poll();
+  }
+  document.addEventListener('click', function (ev) {
+    var t = ev.target.closest ? ev.target.closest('[data-js="apk-select"]') : null;
+    if (t) { ev.preventDefault(); apkLoad(t.getAttribute('data-source'), t.getAttribute('data-name')); }
+  });
+  document.addEventListener('change', function (ev) {
+    var t = ev.target;
+    if (t.matches && t.matches('[data-apk-filter]')) {
+      apk.off[t.getAttribute('data-apk-filter')] = !t.checked;
+      apkRenderItems();
+    } else if (t.id === 'apk-all') {
+      document.querySelectorAll('#apk-items input[data-id]:not([disabled])')
+        .forEach(function (cb) { cb.checked = t.checked; });
+      apkCount();
+    } else if (t.matches && t.matches('#apk-items input[data-id]')) {
+      apkCount();
+    }
+  });
+  var apkBtn = document.getElementById('apk-import-btn');
+  if (apkBtn) apkBtn.addEventListener('click', function () {
+    var ids = Array.prototype.map.call(
+      document.querySelectorAll('#apk-items input[data-id]:checked'),
+      function (cb) { return cb.getAttribute('data-id'); });
+    if (!ids.length) return;
+    var fd = new FormData();
+    fd.append('source', apk.source); fd.append('name', apk.name);
+    ids.forEach(function (i) { fd.append('ids', i); });
+    apkBtn.setAttribute('disabled', 'disabled');
+    fetch(APK_IMPORT_URL, {method: 'POST', body: fd, credentials: 'same-origin',
+          headers: {'X-CSRFToken': csrf, 'X-Requested-With': 'XMLHttpRequest'}})
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.error || !d.job_id) {
+          document.getElementById('apk-progress').classList.remove('d-none');
+          document.getElementById('apk-msg').innerHTML = '<span class="text-danger">' +
+            escapeHtml(d.error || 'The import was not started.') + '</span>';
+          apkCount();
+          return;
+        }
+        apkFollow(d.job_id);
+      })
+      .catch(function (e) { apkCount();
+        document.getElementById('apk-msg').textContent = 'Import request failed: ' + e; });
+  });
+  (function () {
+    var pre = {{ (request.args.get('apipack') or '')|tojson }};
+    var cut = pre.indexOf(':');
+    if (cut > 0) { apkLoad(pre.slice(0, cut), pre.slice(cut + 1)); }
   })();
 
   function escapeHtml(s) {

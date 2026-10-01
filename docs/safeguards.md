@@ -16705,3 +16705,51 @@ measurement ignored; release notes overwritten; contents not verified;
 signature not checked; raw sweep shipped; imported evidence re-exported. The
 survivor, a serial left on `device`, is caught by the second layer (the
 scrub drops any value equal to a known serial), as designed.
+
+## §203 — a pack the public mirror could not read, and an import that would have run as root (`tests/test_api_pack.py`, `tests/test_cli.py`, pipeline harness §26, 2026-10-02)
+
+**The risk.** The API pack is published three ways: in `api-packs/` on the
+public mirror, as a release asset and on `/downloads`. The mirror protects
+every published text file by rewriting internal identifiers, but it skips
+binary blobs, and a pack is a gzip of gzips: none of its text ever reaches
+the mirror's rules. Second, a pack imported by root (the installer, an
+operator with `sudo`) writes release notes and field schemas the web worker
+can then no longer update.
+
+**What a real pack showed.** The mirror's rules, run by hand over a real
+export's decompressed contents, matched once: Fortinet's own release notes
+quote `set dst 203.0.113.15/32` in a static-route example, which the
+private-network rule matches. The rules are all regexes (none is a literal),
+so "tolerate regex rules in vendor prose" would also have tolerated one of
+our host names there. The exception is therefore decided by the match itself.
+
+**The guards.**
+- Pipeline gate `api_pack` (harness §26): the release commit holds exactly
+  this release's pack and `.sha256`; the checksum matches; the signature
+  verifies against `deploy/update-keys/satom-release-2026.pub`; the manifest
+  names the version; and every member, decompressed, passes the mirror's
+  redaction and secret rules. The only exception is a match in the vendor
+  release notes that is a bare IPv4 address. A mirror-rule hit is in
+  `NEVER_REPAIR`.
+- The pack commit refuses a dirty tree **before** staging anything, and
+  stages only `api-packs/` paths (executed against a scratch repository in
+  the harness, with and without a stray file).
+- `satom execute apipack import` runs the import as the service account
+  (`runuser -m`), copies a pack from outside the tree to the staging area,
+  refuses on a standby, and only dry-runs without `--yes`.
+- The installer step runs only where the database is writable, after the
+  health check. It is never fatal and adds no prompt.
+- Names are matched against the pack pattern before they are joined to a
+  directory: `../`, absolute paths and update-package names never reach the
+  filesystem.
+
+**Real run.** The pipeline's own `build_api_pack` exported a pack on a1,
+signed it on the release host with the release key (`SHA256:cYv9…`), verified
+it, and scanned it clean: 22 items, 396 KB.
+
+**Mutations: 20/20 bite on the product side, 11/11 on the pipeline.** The two
+pipeline survivors of the first pass were string checks, which still found
+their text after the mutation. They are now behavioural: `st_verify_public`
+runs against a fake release without the pack, and the commit script runs in a
+scratch repository.
+

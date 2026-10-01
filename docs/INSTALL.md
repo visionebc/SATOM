@@ -337,6 +337,26 @@ without them a minimal image with no network failed halfway through the
 installation, with the service account already created. Bundles 1.1 and earlier
 carried neither those nor `lego` in the RHEL variant.
 
+**The API library comes with it.** The application tree carries the release's
+signed **API library pack** in `api-packs/`: which endpoints and fields each
+firmware build serves, the vendor release notes and field catalog, and the
+CLI-only blocks per firmware line. Without it an isolated node with no appliance
+of a given build has no way to learn any of that. On a standalone node or a
+cluster primary the installer imports it once the console answers its health
+check (online installs get the same pack from the clone). Control it with
+environment variables — not prompts, so answer files written for earlier
+releases keep working:
+
+```bash
+sudo SATOM_API_PACK=none bash install-satom.sh                         # skip it
+sudo SATOM_API_PACK_PRODUCTS=fortiweb,fortiadc bash install-satom.sh   # some products only
+sudo SATOM_API_PACK=/path/satom-apipack-<ver>.tar.gz bash install-satom.sh   # another pack
+```
+
+A pack that does not import is a warning, never a failed install; retry with
+`sudo satom execute apipack import shipped --yes`. Details:
+[api-library.md §11](api-library.md).
+
 **The browser does not need the Internet either.** Every script, stylesheet
 and font the console uses (Bootstrap, Bootstrap Icons, Chart.js) is vendored
 inside the application and served by the node itself; the Content-Security-
@@ -726,6 +746,9 @@ satom diagnose all           # the whole node, a single exit code
 - Health: `curl -k https://<IP>:<port>/healthz` → `200`.
 - Services: `systemctl status satom satom-scheduler`.
 - Logs: `/var/log/satom/` and `journalctl -u satom`.
+- API library: `satom show apipack` lists the release's pack and what was
+  imported from it; the installer's line *API library pack imported* (or its
+  warning) is in `/var/log/satom-install.log`.
 
 ### Mandatory post-installation hardening
 1. **Withdraw the installation permission**: `rm /etc/sudoers.d/satom-installer`

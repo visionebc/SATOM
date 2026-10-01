@@ -573,6 +573,22 @@ management network deliberately cannot reach — and the ACME client <code>lego<
 without them a minimal image with no network failed halfway through the
 installation, with the service account already created. Bundles 1.1 and earlier
 carried neither those nor <code>lego</code> in the RHEL variant.</p>
+<p><strong>The API library comes with it.</strong> The application tree carries the release's
+signed <strong>API library pack</strong> in <code>api-packs/</code>: which endpoints and fields each
+firmware build serves, the vendor release notes and field catalog, and the
+CLI-only blocks per firmware line. Without it an isolated node with no appliance
+of a given build has no way to learn any of that. On a standalone node or a
+cluster primary the installer imports it once the console answers its health
+check (online installs get the same pack from the clone). Control it with
+environment variables — not prompts, so answer files written for earlier
+releases keep working:</p>
+<pre><code class="language-bash">sudo SATOM_API_PACK=none bash install-satom.sh                         # skip it
+sudo SATOM_API_PACK_PRODUCTS=fortiweb,fortiadc bash install-satom.sh   # some products only
+sudo SATOM_API_PACK=/path/satom-apipack-&lt;ver&gt;.tar.gz bash install-satom.sh   # another pack
+</code></pre>
+<p>A pack that does not import is a warning, never a failed install; retry with
+<code>sudo satom execute apipack import shipped --yes</code>. Details:
+<a href="api-library.html">api-library.md §11</a>.</p>
 <p><strong>The browser does not need the Internet either.</strong> Every script, stylesheet
 and font the console uses (Bootstrap, Bootstrap Icons, Chart.js) is vendored
 inside the application and served by the node itself; the Content-Security-
@@ -965,6 +981,9 @@ satom diagnose all           # the whole node, a single exit code
 <li>Health: <code>curl -k https://&lt;IP&gt;:&lt;port&gt;/healthz</code> → <code>200</code>.</li>
 <li>Services: <code>systemctl status satom satom-scheduler</code>.</li>
 <li>Logs: <code>/var/log/satom/</code> and <code>journalctl -u satom</code>.</li>
+<li>API library: <code>satom show apipack</code> lists the release's pack and what was
+  imported from it; the installer's line <em>API library pack imported</em> (or its
+  warning) is in <code>/var/log/satom-install.log</code>.</li>
 </ul>
 <h3 id="mandatory-post-installation-hardening">Mandatory post-installation hardening</h3>
 <ol>

@@ -112,6 +112,77 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h3 id="added--api-packs-the-api-library-for-offline-nodes-2026-10-02">Added — API packs: the API library for offline nodes (2026-10-02)</h3>
+<ul>
+<li><strong><code>flask apilib pack export | inspect | import</code></strong> moves what one SATOM knows
+  about vendor APIs to another installation as one signed tarball,
+  <code>satom-apipack-&lt;version&gt;.tar.gz</code>: the API library evidence (sweeps,
+  schemas, vendor data), the release notes with the full vendor text, the
+  harvested field schemas, and the CLI-vs-API coverage digest. An offline
+  node, or one with no appliance of a given build, has no other way to learn
+  any of it.</li>
+<li><strong>Nothing identifying leaves.</strong> Sweeps are re-derived from their stored
+  snapshot to field names and types (no configuration values), and must
+  reproduce the stored hash. Device names become stable pseudonyms; serials
+  and appliance ids are dropped. The export is refused whole if a device
+  name, serial or appliance address survives anywhere.</li>
+<li><strong>Import only adds.</strong> Evidence this node measured itself, release notes it
+  already holds and field schemas it already has are never replaced. Same
+  signature check and trust store as the offline update packages.</li>
+<li><strong>Every release carries its pack in <code>api-packs/</code></strong>, so it arrives the way
+  the code does: the online clone, every offline bundle, the update package
+  and the public repository. It is also attached to the GitHub release on its
+  own, for a node that only needs the pack.</li>
+<li><strong>The installers import it.</strong> On a standalone node or a cluster primary,
+  once the console answers its health check, online and offline alike. A pack
+  that does not import is a warning with the command to retry, never a failed
+  install. <code>SATOM_API_PACK=none</code> skips it, <code>SATOM_API_PACK=&lt;file&gt;</code> imports
+  another pack, <code>SATOM_API_PACK_PRODUCTS=fortiweb,fortiadc</code> limits it to some
+  products. Environment variables, not prompts: existing answer files keep
+  working.</li>
+<li><strong>Settings → Software Update → API library packs.</strong> Lists the release's
+  pack and uploaded ones, and shows every item as <code>new</code>, <code>present</code> or <code>local</code>
+  (measured by this node). Filter by product and section, tick what to
+  import, and follow it as a background job with per-item progress. A failed
+  item turns the job red and says which items went in. Read-only on a standby.</li>
+<li><strong><code>satom show apipack</code></strong> and <strong><code>satom execute apipack import &lt;file|shipped&gt;
+  [--yes] [--product …] [--section …]</code></strong> do the same from the console, as the
+  service account. Dry run unless <code>--yes</code>.</li>
+<li><strong>The CLI-coverage card reads an imported digest</strong> when this node has no
+  CLI dump for the firmware asked about, and names the pack as its evidence.
+  It never borrows a digest from another version.</li>
+<li><strong>The release pipeline builds the pack.</strong> A new <code>api_pack</code> gate verifies the
+  release commit's pack against the product's public key. When the pack is
+  missing or stale, it exports it on the primary, signs it on the release
+  host and commits exactly <code>api-packs/</code>. It also scans the pack's contents
+  with the public mirror's redaction rules, which cannot see inside a gzip.
+  See <code>docs/api-library.md</code> §11.</li>
+</ul>
+<h3 id="added--an-update-shows-what-it-is-doing-while-it-runs-2026-10-02">Added — an update shows what it is doing while it runs (2026-10-02)</h3>
+<ul>
+<li><strong>The update runner publishes the step in flight</strong>, not only the steps that
+  finished. The slow ones (database backup, offline <code>pip install</code>, migrations,
+  restart, health check) took minutes with nothing new on screen, so a working
+  update looked hung.</li>
+<li><strong>Settings → Software Update:</strong> the live panel shows <em>Running: <step></em> with
+  an elapsed timer, says <em>waiting for the update runner</em> while the request is
+  queued (and points at <code>satom-updater.path</code> after 30 s), and says <em>the service
+  is restarting — reconnecting</em> instead of going silent during the restart.
+  Reopening the page while an update runs resumes the live panel.</li>
+<li><strong><code>satom execute update package --yes</code></strong> prints each step as it starts, a
+  heartbeat line every 15 s while it runs, and a warning if the runner has not
+  picked the request up after 30 s.</li>
+<li>A node shows the running step from the update <strong>after</strong> the one that
+  installs this runner: the update that delivers it is still driven by the
+  previous runner (the console panel still shows elapsed time and the restart).</li>
+</ul>
+<h3 id="fixed--the-switch-product-icon-was-a-broken-image-on-line-profiles-2026-10-02">Fixed — the Switch Product icon was a broken image on Line profiles (2026-10-02)</h3>
+<ul>
+<li><code>/web/line-profiles</code> passed the ADOM key to its template as <code>product</code>, a
+  string that shadowed the branding object <code>base.html</code> reads, so the Switch
+  Product mark rendered as <code>&lt;img src="/static/"&gt;</code>. The key is now
+  <code>product_key</code>; a render test pins the mark.</li>
+</ul>
 <h2 id="250---2026-10-01">[2.5.0] - 2026-10-01</h2>
 <h3 id="added--every-release-publishes-a-signed-offline-update-package-2026-10-01">Added — every release publishes a signed offline update package (2026-10-01)</h3>
 <ul>

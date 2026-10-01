@@ -2022,6 +2022,38 @@ if [ "$HEALTH" = ok ]; then
             SEAL_PASS=""
         fi
     fi
+    # [SATOM-APIPACK] The release carries a signed API library pack in
+    # api-packs/ (online: the clone; offline: the bundle's app.tar.gz). Without
+    # it a node with no appliance of a given build, no internet and no crawler
+    # starts with an empty API library, release notes and field catalog -- and
+    # has no way to fill them. Imported only where the database is writable;
+    # a secondary gets it by replication and the data sync. Never fatal: the
+    # installation is complete and healthy at this point, and a pack that does
+    # not import is a warning with the command to retry, not a failed install.
+    # SATOM_API_PACK: all (default) | none | /path/to/satom-apipack-<v>.tar.gz
+    # SATOM_API_PACK_PRODUCTS: e.g. fortiweb,fortiadc (default: every product)
+    # Environment variables, NOT prompts: a new prompt would shift every
+    # answer file written for an earlier release by one line.
+    if [ "$ROLE" != "secondary" ]; then
+        APIPACK_SRC=""
+        case "${SATOM_API_PACK:-all}" in
+            none|no|off) ok "API library pack: skipped (SATOM_API_PACK=${SATOM_API_PACK})" ;;
+            all|yes) ls "$APP_DIR"/api-packs/satom-apipack-*.tar.gz >/dev/null 2>&1 \
+                         && APIPACK_SRC="shipped" \
+                         || warn "This release carries no API library pack (api-packs/ is empty)" ;;
+            *) APIPACK_SRC="$SATOM_API_PACK" ;;
+        esac
+        if [ -n "$APIPACK_SRC" ]; then
+            APIPACK_ARGS=(execute apipack import "$APIPACK_SRC" --yes)
+            [ -n "${SATOM_API_PACK_PRODUCTS:-}" ] && APIPACK_ARGS+=(--product "$SATOM_API_PACK_PRODUCTS")
+            if /usr/local/sbin/satom "${APIPACK_ARGS[@]}" >>"$INSTALL_LOG" 2>&1; then
+                ok "API library pack imported (vendor API knowledge, release notes, field catalog)"
+            else
+                warn "The API library pack did not import (see $INSTALL_LOG). Retry with:
+       sudo satom execute apipack import ${APIPACK_SRC} --yes"
+            fi
+        fi
+    fi
 else
     warn "healthz did not answer within 30 s — check: journalctl -u satom -n 50"
 fi

@@ -73,7 +73,7 @@ def context(product: str, *, page_endpoint: str, block_endpoint: str = "",
     scope_line = "" if scope else (request.args.get("line") or "")
     try:
         rep = cli_coverage.report(product, backup_id, version=scope,
-                                  line=scope_line)
+                                  line=scope_line, allow_pack=True)
     except Exception as exc:  # noqa: BLE001 — the API hub must not 500 on this
         # A failure here is reported as a failure. An empty section and "the
         # parse blew up" look identical and mean opposite things.

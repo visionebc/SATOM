@@ -364,7 +364,7 @@ longer matches the console you are running.
 
 <!-- BEGIN GENERATED COMMAND REFERENCE -->
 
-*104 commands in 38 groups. This table is generated from `deploy/satom_cli/tree.py` by `deploy/gen_cli_reference.py` — it cannot drift from the console you are running. `!` marks a command that changes state destructively and demands `--yes`.*
+*106 commands in 39 groups. This table is generated from `deploy/satom_cli/tree.py` by `deploy/gen_cli_reference.py` — it cannot drift from the console you are running. `!` marks a command that changes state destructively and demands `--yes`.*
 
 ### `get`
 
@@ -407,6 +407,7 @@ Configuration, reference material and the console's own map. Also unprivileged: 
 |---|:--:|:--:|---|
 | `satom show trust` | — | — | Public keys this node accepts update packages from. |
 | `satom show package <file.tar.gz>` | — | — | Inspect an update package without applying it. |
+| `satom show apipack` | — | — | API library packs on this node and what was imported from them. |
 | `satom show config` | — | — | The .env, with secrets redacted. |
 | `satom show units` | — | — | Alias -> systemd unit map, with install state. |
 | `satom show services` | — | — | What each unit is FOR, and which ones are off limits. |
@@ -473,6 +474,7 @@ Everything that changes state. **Root required.** Without it each command refuse
 | `satom execute reinstall cli` | yes | — | Refresh the root-owned copy of this CLI from the repo. |
 | `satom execute reinstall runner` | yes | — | Refresh the root-owned copy of the privileged update runner. |
 | `satom execute reinstall metrics-store` | yes | — | Install or re-assert the node-local metrics store (VictoriaMetrics). |
+| `satom execute apipack import <file.tar.gz\|shipped> [--yes] [--product <p>[,<p>...]] [--section <s>[,<s>...]]` | yes | — | Import a SIGNED API pack. Dry run unless --yes; never replaces local data. |
 | `satom execute trust add-key <file.pub> [--name <slug>]` | yes | — | Install a signing public key into the trust store. |
 | `satom execute trust remove-key <name\|fingerprint> --yes` | yes | ! | Stop accepting packages signed by a key. Needs --yes. |
 | `satom execute repair permissions` | yes | — | Give root-owned files in the app tree back to the service account. |

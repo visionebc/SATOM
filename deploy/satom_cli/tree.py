@@ -11,6 +11,7 @@ help text or a declared privilege level. A command that forgets to say it needs
 root would otherwise fail with a traceback for an unprivileged operator — the
 one moment a traceback is least useful.
 """
+from . import cmd_apipack as ap
 from . import cmd_apiver as v
 from . import cmd_checks as k
 from . import cmd_diagnose as d
@@ -134,6 +135,8 @@ ROOT = Node("satom", "SATOM operator CLI", children=dict([
            run=u.show_trust),
         _n("package", "Inspect an update package without applying it.",
            run=u.show_package, usage="show package <file.tar.gz>"),
+        _n("apipack", "API library packs on this node and what was imported from them.",
+           run=ap.show_apipacks),
         _n("config", "The .env, with secrets redacted.", run=s.config),
         _n("units", "Alias -> systemd unit map, with install state.", run=s.units),
         _n("services", "What each unit is FOR, and which ones are off limits.",
@@ -256,6 +259,10 @@ ROOT = Node("satom", "SATOM operator CLI", children=dict([
                run=u.reinstall_runner, needs_root=True),
             _n("metrics-store", "Install or re-assert the node-local metrics store (VictoriaMetrics).",
                run=e.reinstall_metrics_store, needs_root=True),
+        ),
+        _group("apipack", "API library packs: vendor API knowledge for offline nodes.",
+            _n("import", "Import a SIGNED API pack. Dry run unless --yes; never replaces local data.",
+               run=ap.import_apipack, needs_root=True, usage=ap.USAGE),
         ),
         _group("trust", "Public keys this node accepts update packages from.",
             _n("add-key", "Install a signing public key into the trust store.",

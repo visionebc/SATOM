@@ -22,12 +22,39 @@ from ..services.audit import log_action
 bp = Blueprint("self_update", __name__, url_prefix="/self-update")
 
 
+def _active_update(history, max_age_s=7200):
+    """The update still in flight, if any, so the page resumes watching it.
+
+    The live panel used to appear only behind ``?watch=<uid>``: reloading the
+    page, or coming back to it from another one, dropped the operator into the
+    history table with no sign that an update was still running. Requests
+    older than ``max_age_s`` are left out so an orphaned "queued" file cannot
+    pin the panel open for ever (it still shows in the history).
+    """
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    for h in history or []:
+        if h.get("state") not in ("queued", "running"):
+            continue
+        try:
+            at = datetime.fromisoformat(
+                str(h.get("updated_at") or "").replace("Z", "+00:00"))
+            if at.tzinfo is None:
+                at = at.replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+        if (now - at).total_seconds() <= max_age_s:
+            return h.get("id") or ""
+    return ""
+
+
 @bp.route("/")
 @login_required
 @require_permission("user_manage")
 def index():
     su.self_report()  # refresh this node's entry in the shared (replicated) state
     check = su.check_remote(fetch=False)  # cheap: no network on page load
+    history = su.recent_updates()
     return render_template(
         "self_update/index.html",
         current=check["current"],
@@ -35,13 +62,13 @@ def index():
         this_node=su.this_node_name(),
         this_role=su.node_role(),
         validated=su.validated_state(),
-        history=su.recent_updates(),
+        history=history,
         branch=su.BRANCH,
         ha=cluster.full_state(),
         deploy_mode=reconciler.deploy_mode_orm(),
         reconcile=reconciler.last_status_orm(),
         watch_promote=request.args.get("watch_promote", ""),
-        watch=request.args.get("watch", ""),
+        watch=request.args.get("watch", "") or _active_update(history),
         uploads=upkg.list_uploads(),
         trust=upkg.trust_state(),
     )

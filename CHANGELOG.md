@@ -6,6 +6,31 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — an update shows what it is doing while it runs (2026-10-02)
+
+- **The update runner publishes the step in flight**, not only the steps that
+  finished. The slow ones (database backup, offline `pip install`, migrations,
+  restart, health check) took minutes with nothing new on screen, so a working
+  update looked hung.
+- **Settings → Software Update:** the live panel shows *Running: <step>* with
+  an elapsed timer, says *waiting for the update runner* while the request is
+  queued (and points at `satom-updater.path` after 30 s), and says *the service
+  is restarting — reconnecting* instead of going silent during the restart.
+  Reopening the page while an update runs resumes the live panel.
+- **`satom execute update package --yes`** prints each step as it starts, a
+  heartbeat line every 15 s while it runs, and a warning if the runner has not
+  picked the request up after 30 s.
+- A node shows the running step from the update **after** the one that
+  installs this runner: the update that delivers it is still driven by the
+  previous runner (the console panel still shows elapsed time and the restart).
+
+### Fixed — the Switch Product icon was a broken image on Line profiles (2026-10-02)
+
+- `/web/line-profiles` passed the ADOM key to its template as `product`, a
+  string that shadowed the branding object `base.html` reads, so the Switch
+  Product mark rendered as `<img src="/static/">`. The key is now
+  `product_key`; a render test pins the mark.
+
 ## [2.5.0] - 2026-10-01
 
 ### Added — every release publishes a signed offline update package (2026-10-01)

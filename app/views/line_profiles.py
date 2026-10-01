@@ -45,8 +45,11 @@ def _wpp_choices(product: str):
 
 
 def _view_model(product: str) -> dict:
+    # The ADOM key goes out as ``product_key``: base.html reads ``product``
+    # as the branding object (switch-product mark, ADOM badge, nav), and a
+    # plain string under that name rendered the switch icon as src="/static/".
     return {
-        'product': product,
+        'product_key': product,
         'lines': lp.lines_overview(product),
         'profiles': {p.line: p.public() for p in
                      LineProfile.query.filter_by(product=product).all()},

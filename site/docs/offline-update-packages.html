@@ -97,6 +97,11 @@ python3 deploy/sign_update_package.py sign dist/satom-update-&lt;version&gt;.tar
 </code></pre>
 <p>An <strong>unsigned package is refused by every node</strong>, so shipping one is a mistake
 that fails closed rather than one that ships.</p>
+<p><strong>You normally do not build one.</strong> From 2.5.0 every release publishes its
+package — <code>satom-update-&lt;version&gt;.tar.gz</code>, its <code>.sha256</code>, and the public key it
+is signed with (<code>satom-release-2026.pub</code>) — as assets of the GitHub release and
+in the download catalog. A node installed before 2.5.0 must trust that key once
+before it accepts the package: see §4.1.</p>
 <hr>
 <h2 id="2-why-it-is-signed-and-what-that-buys">2. Why it is signed, and what that buys</h2>
 <p>Uploading code that a root process installs is, by construction, remote code
@@ -105,12 +110,41 @@ already trusts. That proof is an Ed25519 signature checked against a <strong>tru
 store the web worker cannot write</strong>.</p>
 <p>Three properties hold the design together. Breaking any one of them makes the
 other two decorative.</p>
-<h3 id="the-private-key-never-touches-the-fleet">The private key never touches the fleet</h3>
+<h3 id="the-private-key-never-touches-a-managed-node">The private key never touches a managed node</h3>
 <p>The build host holds no secret; signing is a separate step that runs wherever
-the key is. The key is an encrypted PKCS#8 PEM, protected by a passphrase, kept
-offline and backed up offline.</p>
+the key is. The key is an encrypted PKCS#8 PEM, protected by a passphrase.</p>
 <p>Signing is not part of the build on purpose: a build host is disposable, and a
 disposable machine must not be able to mint packages.</p>
+<p>Vision EBC ships two public keys in <code>deploy/update-keys/</code>, and the installer
+trusts both:</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Fingerprint</th>
+<th>Who signs with it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>satom-release-2026.pub</code></td>
+<td><code>SHA256:cYv9NxiJjMn/K6srKxXg2kdvROP2g6fzgfMXU6sxPyA</code></td>
+<td>the release pipeline, for every published package from 2.5.0 on</td>
+</tr>
+<tr>
+<td><code>visionebc-release.pub</code></td>
+<td><code>SHA256:d3co+lEJupVmbaov0mGPonUfdNHM1/FW5q4sHcDI4Fo</code></td>
+<td>a key held offline, for packages signed by hand</td>
+</tr>
+</tbody>
+</table>
+<p>The pipeline's key lives on the release host — the machine that already builds
+and publishes the offline bundles and the container image — never on a SATOM
+node and never on the host that builds the package. Packages are built on one
+machine and signed on another. The trade is stated plainly: whoever controls
+the release host can sign a package every node trusts. That is the same trust
+an operator already places in the bundles that host publishes. If it is ever
+lost, <code>trust remove-key</code> revokes it on each node (§4).</p>
 <h3 id="the-public-key-is-public-and-that-is-not-a-weakness">The public key is public, and that is not a weakness</h3>
 <p>A public key can only <strong>verify</strong>. Nobody can sign with it. That is why it ships
 in the repository and gets installed on every node — exactly like an SSH
@@ -156,6 +190,20 @@ trusting it. Installing a key is the moment the trust decision is made; every
 check afterwards only enforces it.</p>
 <p>Operators and forks can add their own keys and sign their own packages. Nothing
 in the product contains a secret, so nothing about this depends on the vendor.</p>
+<h3 id="41-upgrading-a-node-installed-before-250">4.1 Upgrading a node installed before 2.5.0</h3>
+<p>Packages published from 2.5.0 on are signed with <code>satom-release-2026.pub</code>. An
+installer before 2.5.0 did not ship that key, so an older node refuses the
+package (<em>"signed by a key this node does not trust"</em>) until it is installed
+<strong>once</strong> — after which every later package applies with no further step:</p>
+<pre><code># 1. take satom-release-2026.pub from the release (or extract it from the
+#    package: satom-update-&lt;v&gt;/app.tar.gz -&gt; deploy/update-keys/)
+# 2. compare the fingerprint with the one published in the release notes:
+#      SHA256:cYv9NxiJjMn/K6srKxXg2kdvROP2g6fzgfMXU6sxPyA
+satom execute trust add-key satom-release-2026.pub
+satom show trust            # lists it next to visionebc-release
+</code></pre>
+<p>Do it on <strong>every</strong> node of a pair: each trust store is local and does not
+replicate.</p>
 <h3 id="rotating-a-key">Rotating a key</h3>
 <ol>
 <li>Generate the new pair where the new key will live.</li>
@@ -249,7 +297,8 @@ property.</p>
 <li><strong>Park local commits</strong> — anything not on the remote goes to <code>refs/backup/</code></li>
 <li><strong>Install the tree</strong>, hand ownership back to the service account</li>
 <li><strong><code>pip install --no-index</code></strong> — strictly from the package's own wheels</li>
-<li><strong>Migrations</strong>, units, the operator CLI and the runner itself</li>
+<li><strong>Migrations</strong> (fatal on failure, §6.1), units, the operator CLI and the
+    runner itself</li>
 <li><strong>Restart</strong>, then prove it works: HTTP 200 on <code>/healthz</code></li>
 <li><strong>Commit</strong> the deployed revision</li>
 </ol>
@@ -260,6 +309,48 @@ previous one passed.</p>
 <p><strong>On failure, anything at all</strong>: the tree is reset to the pre-update commit,
 files the package added are removed, the venv is restored from the freeze, the
 services restart, and health is re-checked. The status log records every step.</p>
+<h3 id="61-database-changes">6.1 Database changes</h3>
+<p>A schema change reaches a node by two routes, and both run on every update:</p>
+<ul>
+<li><strong>At boot</strong>, the application creates any missing table (<code>create_all</code>) and adds
+  any missing column (<code>_ensure_columns</code>, <code>_ensure_widths</code>). These only ever
+  <strong>add</strong>.</li>
+<li><strong>Alembic</strong> (<code>flask db upgrade</code>, step 10) runs the versioned migrations in
+  <code>migrations/versions/</code>. This is the only route for a change that transforms
+  data: a rename, a backfill, a dropped column, a <code>NOT NULL</code> with a default.</li>
+</ul>
+<p>Until 2.5.0 the second route never worked on an installed node. The installer
+built the schema with <code>create-db</code> and recorded no Alembic revision, so the
+first update started from the first migration, died on a table that already
+existed, logged the error as <em>best-effort</em> and finished green with nothing
+migrated. Three changes close it:</p>
+<ol>
+<li><strong>Every migration is idempotent.</strong> <code>app/migration_guard.py</code> wraps
+   <code>create_table</code>, <code>add_column</code>, <code>create_index</code> and <code>create_foreign_key</code> so they
+   skip what already exists. On a node whose schema <code>create_all</code> built, the
+   whole chain runs as no-ops and ends <strong>stamped at head</strong>. A node installed
+   before 2.5.0 is repaired this way by its first 2.5.0 update, with no manual
+   step.</li>
+<li><strong>The installer stamps.</strong> Right after <code>create-db</code> it runs
+   <code>flask db stamp head</code>. The schema it just built is head by construction.</li>
+<li><strong>A failed migration fails the update.</strong> The runner aborts and rolls back
+   the code and the Python dependencies. It <strong>cannot roll back the database</strong>:
+   if a migration got part of the way, restore the bundle the <em>database backup</em>
+   step took (<code>satom get backup list</code>, then
+   <code>satom execute restore db &lt;bundle&gt; --yes</code>) before retrying. The message on
+   the status page says so.</li>
+</ol>
+<p>The standby never migrates; its schema arrives by replication. The Docker web
+container migrates the primary before it starts gunicorn and refuses to serve
+if the migration fails (<code>deploy/docker/entrypoint.sh</code>, <code>migrate_primary</code>).</p>
+<p><em>One hop is still special.</em> A node on 2.4.x applies the 2.5.0 package with the
+runner it already has, in which the migration step is best-effort. The hop
+works anyway, because the 2.5.0 migrations are idempotent: <code>upgrade</code> succeeds
+and stamps. The fatal behaviour starts with the next update, after step 10 has
+installed the new runner.</p>
+<p><code>tests/test_migrations_idempotent.py</code> runs <code>create-db</code> and then <code>db upgrade</code>
+for real against a fresh database, so a new migration that is not idempotent
+fails there rather than on a customer's node.</p>
 <h3 id="rollback-removes-only-what-the-package-added">Rollback removes only what the package added</h3>
 <p>Not a blanket <code>git clean</code>. The untracked-file list is captured before the tree
 is replaced and only the difference is deleted — destroying an operator's
@@ -323,6 +414,13 @@ update path is unaffected — it is gated by the remote, not by local trust.</p>
 <p>Uses <code>git archive HEAD</code>, never the working tree: the package must contain the
 committed revision, not whatever happens to be lying around on the build host.
 Set <code>MIN_FROM_VERSION</code> to raise the minimum version a node may apply it from.</p>
+<p>The release pipeline instead passes <code>APP_TARBALL=&lt;payload&gt;</code> and <code>COMMIT=&lt;sha&gt;</code>:
+the package then carries the same redacted payload as the offline bundles and
+the container image, byte for byte, and verification refuses it otherwise.</p>
+<p>Wheels are resolved for the nodes, not for the build host: CPython 3.11 on
+<code>manylinux_2_28</code> or older (<code>WHEEL_PYTHON_VERSION</code>, <code>WHEEL_PLATFORMS</code>). All three
+supported families run 3.11, and RHEL 9's glibc (2.34) is the oldest of them. A
+wheel resolved for a newer build host could need a glibc RHEL 9 does not have.</p>
 <h3 id="create-a-signing-key-once">Create a signing key (once)</h3>
 <pre><code>python3 deploy/sign_update_package.py genkey \
         --out release --comment &quot;&lt;who this key belongs to&gt;&quot;
@@ -334,6 +432,9 @@ installing the key can compare it.</p>
 <pre><code>python3 deploy/sign_update_package.py sign &lt;package&gt; --key release.key
 python3 deploy/sign_update_package.py verify &lt;package&gt; --pub release.pub
 </code></pre>
+<p>Unattended signing (the release pipeline) reads the passphrase with
+<code>--passphrase-file &lt;path&gt;</code>, never <code>--passphrase</code>: an argument is readable by
+every user on the host through the process table.</p>
 <p>The signer needs only Python and <code>cryptography</code>. The <strong>verifier</strong> needs neither
 — it is pure standard library, because it has to run on a node whose venv is
 broken.</p>

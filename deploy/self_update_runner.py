@@ -523,11 +523,18 @@ def process(req_path):
             env = dict(os.environ, FLASK_APP="wsgi.py")
             m = run([str(VENV / "flask"), "db", "upgrade"], timeout=600,
                     user=APP_USER, cwd=str(APP), env=env)
-            # Best-effort: the app's authoritative schema step is boot-time
-            # create_all()/_ensure_columns(); a spurious alembic error must not
-            # block the update — the post-restart health check is the real gate.
-            st.step("flask db upgrade (best-effort)", m.returncode == 0,
+            # [SATOM-ALEMBIC-STAMP] Fatal. This step used to be best-effort on
+            # the theory that boot-time create_all()/_ensure_columns() is the
+            # real schema step -- but those only ADD. A migration that
+            # transforms data has nowhere else to run, and on every installed
+            # node (no alembic_version) the first revision died, the error was
+            # logged as a warning, and the update finished green having
+            # migrated nothing. Every migration is idempotent now
+            # (app.migration_guard), so a failure here is a real one.
+            st.step("flask db upgrade", m.returncode == 0,
                     (m.stderr or m.stdout))
+            if m.returncode != 0:
+                raise RuntimeError(MIGRATION_FAILED)
         elif is_standby:
             st.step("flask db upgrade", True, "skipped (standby; schema via replication)")
 
@@ -809,6 +816,14 @@ def pip_change(req_path):
 # ---------------------------------------------------------------------------
 # offline update packages (kind: "package")
 # ---------------------------------------------------------------------------
+# What the operator reads when a migration fails. The rollback restores code and
+# dependencies; it cannot un-run DDL, so say so and say where the way back is.
+MIGRATION_FAILED = (
+    "flask db upgrade failed -- the update is rolled back (code and Python "
+    "dependencies). The DATABASE is not rolled back: if the migration got part "
+    "of the way, restore the newest bundle from 'satom get backup list' "
+    "with 'satom execute restore db <bundle> --yes' before retrying.")
+
 UPLOADS = APP / "data" / "update-uploads"
 TRUST_DIR = os.environ.get("SATOM_TRUST_DIR", "/etc/satom/update-keys")
 RUNNER_LIB = "/usr/local/lib/satom-runner"
@@ -1081,8 +1096,11 @@ def package_change(req_path):
             env = dict(os.environ, FLASK_APP="wsgi.py")
             m = run([str(VENV / "flask"), "db", "upgrade"], timeout=600,
                     user=APP_USER, cwd=str(APP), env=env)
-            st.step("flask db upgrade (best-effort)", m.returncode == 0,
+            # [SATOM-ALEMBIC-STAMP] Fatal, same reason as the git path.
+            st.step("flask db upgrade", m.returncode == 0,
                     (m.stderr or m.stdout or "")[-300:])
+            if m.returncode != 0:
+                raise RuntimeError(MIGRATION_FAILED)
         else:
             st.step("flask db upgrade", True,
                     "skipped (standby; schema arrives by replication)")

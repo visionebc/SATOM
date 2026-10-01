@@ -6,6 +6,45 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-10-01
+
+### Added — every release publishes a signed offline update package (2026-10-01)
+
+- **`satom-update-<version>.tar.gz` is now a release asset**, next to the offline
+  bundles and the container image, with its `.sha256` and the public key that
+  signs it (`satom-release-2026.pub`, fingerprint
+  `SHA256:cYv9NxiJjMn/K6srKxXg2kdvROP2g6fzgfMXU6sxPyA`). It carries the application code and every pinned wheel,
+  but no OS packages, and an existing node applies it from Settings → Software
+  Update or with `satom execute update package`. The release pipeline builds it
+  from the same redacted payload as the bundles, signs it on the release host
+  and verifies it against the key the product ships before anything is published.
+- **The installer trusts the new key.** A node installed before 2.5.0 must trust
+  it once (`satom execute trust add-key satom-release-2026.pub`) before it
+  accepts the package: see `docs/offline-update-packages.md` §4.1.
+- `sign_update_package.py` gains `--passphrase-file`, so unattended signing never
+  puts the passphrase on a command line.
+- `build-update-package.sh` resolves wheels for the nodes (CPython 3.11,
+  `manylinux_2_28` or older) instead of for the build host, and accepts the
+  pipeline's payload (`APP_TARBALL` + `COMMIT`).
+
+### Fixed — database migrations never ran on an installed node (2026-10-01)
+
+- The installer built the schema with `create-db` and recorded no Alembic
+  revision. The first update's `flask db upgrade` therefore started from the
+  first migration and died on a table that already existed. The update runner
+  logged that as *best-effort* and finished green. Additive changes still
+  arrived through the boot-time `create_all`/`_ensure_columns`, but a migration
+  that transforms data would have been skipped in silence.
+- **Every migration is now idempotent** (`app/migration_guard.py`). On a database
+  `create_all` built, the chain runs as no-ops and ends stamped at head, so a
+  node installed before 2.5.0 is repaired by its first 2.5.0 update.
+- **The installer runs `flask db stamp head`** right after `create-db`.
+- **A failed migration now fails the update** in both runner paths (git and
+  package). The code and the dependencies roll back. The database cannot, so
+  the message names the backup to restore.
+- **The Docker web container migrates the primary before serving** and exits
+  (code 70) if the migration fails. Until now a container never ran Alembic.
+
 ### Fixed — offline installs: slow reloads, missing icons, a form that could not be clicked (2026-10-01)
 
 - **The console no longer loads anything from the Internet.** Bootstrap Icons

@@ -16565,3 +16565,59 @@ the three `turbo-boot.js` safeguards removed. 13 killed.
 venv/bin/python -m pytest -q tests/test_offline_assets.py
 grep -rn "jsdelivr\|unpkg\|cdnjs\|googleapis" app/templates app/__init__.py   # nothing
 ```
+
+## §200 — an update that migrated nothing and said it had (`tests/test_migrations_idempotent.py`, 2026-10-01)
+
+**The defect.** Asked how an offline update applies a change to the database,
+the answer on reading the code was: on an installed node, it does not. The
+installer builds the schema with `flask create-db` (`db.create_all()`) and
+recorded no Alembic revision. The first update's `flask db upgrade` started
+from `ae0c4a5637e6`, whose unguarded `op.create_table('app_settings', …)` died
+on a table that already existed. Both runner paths (git and package) logged
+the step as `flask db upgrade (best-effort)` and carried on. Every installed
+node finished every update green with no `alembic_version` table. Additive
+changes still arrived through the boot-time `create_all`/`_ensure_columns`,
+which is why nothing looked wrong. A migration that transforms data would have
+been skipped in silence on exactly the nodes customers run. The lab never saw
+it: a1 grew from a git checkout and has carried its revision since before the
+installer existed. The Docker runtime had the same gap from the other side,
+because no container ever ran Alembic.
+
+**The fix.**
+- `app/migration_guard.py`: `create_table`, `add_column`, `create_index`,
+  `create_foreign_key` and a `batch_alter_table` stand-in, each a no-op when
+  its target exists. For indexes and foreign keys the check is by name **or**
+  column shape, because `create_all` names some of them differently. The four
+  unguarded migrations (`ae0c4a5637e6`, `6a13b09b7e79`, `ha01clusters1`,
+  `3061f34de667`) use it in `upgrade()`. `downgrade()` keeps plain `op`, since
+  a downgrade that silently skips a drop is worse than one that fails.
+- `install-satom.sh` (and the dev `deploy/install.sh`) run
+  `flask db stamp head` after `create-db`, and die if it fails.
+- `self_update_runner.py`: both `flask db upgrade` calls raise
+  `MIGRATION_FAILED`. The rollback restores code and dependencies, and the
+  message says the database is not rolled back and names the restore commands.
+- `deploy/docker/entrypoint.sh` `migrate_primary`: on the primary, the web
+  role runs `flask db upgrade` before gunicorn and exits 70 if it fails. A
+  standby is skipped. An unknown role is skipped too, never guessed.
+
+**The guard.** `tests/test_migrations_idempotent.py` runs the real
+`flask create-db` then `flask db upgrade` in a subprocess, against a fresh
+database, and asserts `alembic_version` equals the single head. It then
+asserts a second upgrade is a no-op and `stamp head` records the head. A
+subprocess because `migrations/env.py` calls `logging.config.fileConfig`, which
+disables every existing logger and would break unrelated tests in the same
+session. Static backstops check that every `upgrade()` that creates schema goes
+through a check, that the installer stamps, that the runner raises on both
+paths, and that the container migrates before `exec gunicorn`.
+
+**Mutations (7 of 8 bite):** baseline `create_table` unguarded; `has_table`
+blind; `add_column` check blind; installer without the stamp; runner git path
+back to best-effort; entrypoint without `migrate_primary`; entrypoint
+non-fatal. The survivor, an index name check made blind, is redundant by
+design: the column-shape match catches the same index.
+
+**What it does not cover.** The tests run on SQLite. The Postgres proof is
+the end-to-end run of a 2.4.1 node applying the 2.5.0 package (release
+notes 2.5.0). A node on 2.4.x applies that package with its old, best-effort
+runner. It works because the migrations are idempotent, and the fatal
+behaviour starts with the following update.

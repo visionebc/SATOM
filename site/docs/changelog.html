@@ -61,6 +61,7 @@
     <aside class="toc">
       <div class="toc-title">On this page</div>
       <a href="#unreleased">[Unreleased]</a>
+      <a href="#250---2026-10-01">[2.5.0] - 2026-10-01</a>
       <a href="#241---2026-09-29">[2.4.1] - 2026-09-29</a>
       <a href="#240---2026-09-28">[2.4.0] - 2026-09-28</a>
       <a href="#230---2026-09-26">[2.3.0] - 2026-09-26</a>
@@ -104,7 +105,6 @@
       <a href="#122---2026-07-27">[1.2.2] - 2026-07-27</a>
       <a href="#121---2026-07-27">[1.2.1] - 2026-07-27</a>
       <a href="#12---2026-07-27">[1.2] - 2026-07-27</a>
-      <a href="#11---2026-07-15">[1.1] - 2026-07-15</a>
     </aside>
     <div class="doc-body mdx">
 <h1 id="changelog">Changelog</h1>
@@ -112,6 +112,44 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h2 id="250---2026-10-01">[2.5.0] - 2026-10-01</h2>
+<h3 id="added--every-release-publishes-a-signed-offline-update-package-2026-10-01">Added — every release publishes a signed offline update package (2026-10-01)</h3>
+<ul>
+<li><strong><code>satom-update-&lt;version&gt;.tar.gz</code> is now a release asset</strong>, next to the offline
+  bundles and the container image, with its <code>.sha256</code> and the public key that
+  signs it (<code>satom-release-2026.pub</code>, fingerprint
+  <code>SHA256:cYv9NxiJjMn/K6srKxXg2kdvROP2g6fzgfMXU6sxPyA</code>). It carries the application code and every pinned wheel,
+  but no OS packages, and an existing node applies it from Settings → Software
+  Update or with <code>satom execute update package</code>. The release pipeline builds it
+  from the same redacted payload as the bundles, signs it on the release host
+  and verifies it against the key the product ships before anything is published.</li>
+<li><strong>The installer trusts the new key.</strong> A node installed before 2.5.0 must trust
+  it once (<code>satom execute trust add-key satom-release-2026.pub</code>) before it
+  accepts the package: see <code>docs/offline-update-packages.md</code> §4.1.</li>
+<li><code>sign_update_package.py</code> gains <code>--passphrase-file</code>, so unattended signing never
+  puts the passphrase on a command line.</li>
+<li><code>build-update-package.sh</code> resolves wheels for the nodes (CPython 3.11,
+  <code>manylinux_2_28</code> or older) instead of for the build host, and accepts the
+  pipeline's payload (<code>APP_TARBALL</code> + <code>COMMIT</code>).</li>
+</ul>
+<h3 id="fixed--database-migrations-never-ran-on-an-installed-node-2026-10-01">Fixed — database migrations never ran on an installed node (2026-10-01)</h3>
+<ul>
+<li>The installer built the schema with <code>create-db</code> and recorded no Alembic
+  revision. The first update's <code>flask db upgrade</code> therefore started from the
+  first migration and died on a table that already existed. The update runner
+  logged that as <em>best-effort</em> and finished green. Additive changes still
+  arrived through the boot-time <code>create_all</code>/<code>_ensure_columns</code>, but a migration
+  that transforms data would have been skipped in silence.</li>
+<li><strong>Every migration is now idempotent</strong> (<code>app/migration_guard.py</code>). On a database
+  <code>create_all</code> built, the chain runs as no-ops and ends stamped at head, so a
+  node installed before 2.5.0 is repaired by its first 2.5.0 update.</li>
+<li><strong>The installer runs <code>flask db stamp head</code></strong> right after <code>create-db</code>.</li>
+<li><strong>A failed migration now fails the update</strong> in both runner paths (git and
+  package). The code and the dependencies roll back. The database cannot, so
+  the message names the backup to restore.</li>
+<li><strong>The Docker web container migrates the primary before serving</strong> and exits
+  (code 70) if the migration fails. Until now a container never ran Alembic.</li>
+</ul>
 <h3 id="fixed--offline-installs-slow-reloads-missing-icons-a-form-that-could-not-be-clicked-2026-10-01">Fixed — offline installs: slow reloads, missing icons, a form that could not be clicked (2026-10-01)</h3>
 <ul>
 <li><strong>The console no longer loads anything from the Internet.</strong> Bootstrap Icons

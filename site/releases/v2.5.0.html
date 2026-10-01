@@ -5,8 +5,8 @@
 <meta charset="UTF-8">
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Version 1.16.0 — SATOM</title>
-<meta name="description" content="Released on 2026-08-23 — Added · Fixed · 6 entries.">
+<title>Version 2.5.0 — SATOM</title>
+<meta name="description" content="Released on 2026-10-01 — Added — every release publishes a signed offline update package (2026-10-01) · 17 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -45,8 +45,8 @@
 
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
-  <h1>Version 1.16.0 <span class="rel-badge">superseded</span></h1>
-  <p class="sub">Released on 2026-08-23 — Added · Fixed · 6 entries.</p>
+  <h1>Version 2.5.0 <span class="rel-badge rel-now">current release</span></h1>
+  <p class="sub">Released on 2026-10-01 — Added — every release publishes a signed offline update package (2026-10-01) · 17 entries.</p>
 </header>
 
 <section class="wrap">
@@ -62,7 +62,7 @@
         <span class="rel-nav-meta">unreleased · Changes · 0 entries</span>
         <ul class="rel-leads"></ul>
       </a>
-      <a class="rel-nav-item" href="v2.5.0.html" data-rel-version="2.5.0">
+      <a class="rel-nav-item is-active" href="v2.5.0.html" data-rel-version="2.5.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 2.5.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
         <span class="rel-nav-meta">2026-10-01 · Added — every release publishes a signed offline update package (2026-10-01) · 17 entries</span>
         <ul class="rel-leads"><li>satom-update-&lt;version&gt;.tar.gz is now a release asset</li><li>The installer trusts the new key</li><li>Every migration is now idempotent</li><li class="rel-more">… and 14 more</li></ul>
@@ -142,7 +142,7 @@
         <span class="rel-nav-meta">2026-08-23 · Fixed · Added · 3 entries</span>
         <ul class="rel-leads"><li>The Admin Console side menu expands again</li><li>Ten more inline blocks were in the same state</li><li>tests/test_csp_nonce.py (safeguards §108)</li></ul>
       </a>
-      <a class="rel-nav-item is-active" href="v1.16.0.html" data-rel-version="1.16.0">
+      <a class="rel-nav-item" href="v1.16.0.html" data-rel-version="1.16.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 1.16.0</span></span>
         <span class="rel-nav-meta">2026-08-23 · Added · Fixed · 6 entries</span>
         <ul class="rel-leads"><li>A &quot;?&quot; beside every element of Settings → Sentinel → Settings</li><li>config.SPEC[].hint and config.UI_HINTS</li><li>app/templates/partials/_hint.html</li><li class="rel-more">… and 3 more</li></ul>
@@ -305,50 +305,104 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
-<p>Every control in the Sentinel settings section explains itself, on hover.</p>
-<h3 id="added">Added</h3>
+<h3 id="added--every-release-publishes-a-signed-offline-update-package-2026-10-01">Added — every release publishes a signed offline update package (2026-10-01)</h3>
 <ul>
-<li><strong>A "?" beside every element of <code>Settings → Sentinel → Settings</code></strong> — all 25
-  knobs, the five group headings, the four health chips and the three links
-  out. Hovering (or focusing, or tapping) one opens a panel of prose that says
-  what the control actually does, where the code reads it, and what breaks at
-  each extreme. Seven settings previously had no explanation anywhere at all —
-  the correlation windows, the severity floor, the mirror source and the three
-  AI endpoint fields.</li>
-<li><strong><code>config.SPEC[*].hint</code> and <code>config.UI_HINTS</code></strong> — the explanations live in
-  the same catalog the form is generated from, next to the knob each one
-  describes. The catalog docstring already argued this for the FORM; nothing
-  fails when prose and control drift apart, and a stale explanation of a
-  switch that arms a firewall is worse than no explanation.</li>
-<li><strong><code>app/templates/partials/_hint.html</code></strong> — one macro, importable anywhere. The
-  text goes in <code>title</code>, so with JavaScript unavailable the browser still shows
-  its native tooltip; a component whose only job is to explain must not go
-  silent when a script fails to load. <code>type="button"</code> because these sit inside
-  the settings form, and a default <code>&lt;button&gt;</code> would have saved the page every
-  time someone read a hint.</li>
-<li><strong><code>app/static/js/fw_hints.js</code></strong> — upgrades those to Bootstrap tooltips,
-  with the container pinned to <code>&lt;body&gt;</code>. <code>.fw-card</code> is <code>overflow: hidden</code>, and
-  a panel parented inside it is clipped — measured headless, a 132px
-  explanation in a 123px card paints 58px — while still looking like a working
-  tooltip. Bootstrap 5 already defaults to <code>&lt;body&gt;</code>, so the pin is a lock
-  against a future default, not a fix for today's. Loaded in <code>&lt;head&gt;</code>, so its
-  Turbo listeners
-  register once, and it disposes every tooltip on <code>turbo:before-render</code> —
-  Popper's panels are not part of Turbo's body swap, so without that each
-  visit strands its own and a hover pops up help for a control that is gone.</li>
-<li><strong><code>tests/test_sentinel_hints.py</code></strong> (13 tests, safeguards §107) — a knob added
-  to <code>SPEC</code> without a hint fails here, as does a hint that never reaches the
-  HTML on <strong>either</strong> surface. 16 mutations, all biting.</li>
+<li><strong><code>satom-update-&lt;version&gt;.tar.gz</code> is now a release asset</strong>, next to the offline
+  bundles and the container image, with its <code>.sha256</code> and the public key that
+  signs it (<code>satom-release-2026.pub</code>, fingerprint
+  <code>SHA256:cYv9NxiJjMn/K6srKxXg2kdvROP2g6fzgfMXU6sxPyA</code>). It carries the application code and every pinned wheel,
+  but no OS packages, and an existing node applies it from Settings → Software
+  Update or with <code>satom execute update package</code>. The release pipeline builds it
+  from the same redacted payload as the bundles, signs it on the release host
+  and verifies it against the key the product ships before anything is published.</li>
+<li><strong>The installer trusts the new key.</strong> A node installed before 2.5.0 must trust
+  it once (<code>satom execute trust add-key satom-release-2026.pub</code>) before it
+  accepts the package: see <code>docs/offline-update-packages.md</code> §4.1.</li>
+<li><code>sign_update_package.py</code> gains <code>--passphrase-file</code>, so unattended signing never
+  puts the passphrase on a command line.</li>
+<li><code>build-update-package.sh</code> resolves wheels for the nodes (CPython 3.11,
+  <code>manylinux_2_28</code> or older) instead of for the build host, and accepts the
+  pipeline's payload (<code>APP_TARBALL</code> + <code>COMMIT</code>).</li>
 </ul>
-<h3 id="fixed">Fixed</h3>
+<h3 id="fixed--database-migrations-never-ran-on-an-installed-node-2026-10-01">Fixed — database migrations never ran on an installed node (2026-10-01)</h3>
 <ul>
-<li>Two of those guards read <code>fw_hints.js</code> for <code>container: 'body'</code> and
-  <code>turbo:before-render</code> and were answered by the file's own header comment,
-  which names both — they passed against code that said the opposite. Guards
-  now strip comments before asserting. Eighth occurrence of this failure in
-  this repo; the helper is now shared.</li>
+<li>The installer built the schema with <code>create-db</code> and recorded no Alembic
+  revision. The first update's <code>flask db upgrade</code> therefore started from the
+  first migration and died on a table that already existed. The update runner
+  logged that as <em>best-effort</em> and finished green. Additive changes still
+  arrived through the boot-time <code>create_all</code>/<code>_ensure_columns</code>, but a migration
+  that transforms data would have been skipped in silence.</li>
+<li><strong>Every migration is now idempotent</strong> (<code>app/migration_guard.py</code>). On a database
+  <code>create_all</code> built, the chain runs as no-ops and ends stamped at head, so a
+  node installed before 2.5.0 is repaired by its first 2.5.0 update.</li>
+<li><strong>The installer runs <code>flask db stamp head</code></strong> right after <code>create-db</code>.</li>
+<li><strong>A failed migration now fails the update</strong> in both runner paths (git and
+  package). The code and the dependencies roll back. The database cannot, so
+  the message names the backup to restore.</li>
+<li><strong>The Docker web container migrates the primary before serving</strong> and exits
+  (code 70) if the migration fails. Until now a container never ran Alembic.</li>
 </ul>
-<p class="rel-prevnext"><a href="v1.16.1.html">← Version 1.16.1</a> · <a href="v1.15.0.html">Version 1.15.0 →</a></p>
+<h3 id="fixed--offline-installs-slow-reloads-missing-icons-a-form-that-could-not-be-clicked-2026-10-01">Fixed — offline installs: slow reloads, missing icons, a form that could not be clicked (2026-10-01)</h3>
+<ul>
+<li><strong>The console no longer loads anything from the Internet.</strong> Bootstrap Icons
+  came from <code>cdn.jsdelivr.net</code> in the main layout and the four sign-in pages.
+  On an isolated network every page reload waited 10–20 s for that request to
+  time out, and every icon (menu, bookmarks, buttons) was blank. The icon
+  font is now vendored (1.11.3, byte-identical to the npm package) under
+  <code>app/static/vendor/bootstrap-icons/</code>. The Content-Security-Policy no longer
+  names <code>cdn.jsdelivr.net</code> for scripts, styles or fonts.</li>
+<li><strong>New: <code>app/static/vendor/MANIFEST.json</code></strong> records every third-party browser
+  asset: version, license, upstream URL and SHA-256 per file. The engineering
+  manual §9.1 lists the same assets with their links, and <code>NOTICE</code> credits
+  Bootstrap Icons. <code>tests/test_offline_assets.py</code> fails on any template,
+  stylesheet, script or CSP directive that loads from another origin.</li>
+<li><strong>Dialogs opened on a page could not be clicked</strong> when the operating system
+  asks to reduce motion (Windows with animation effects off, common on
+  servers and RDP sessions). The page fade-in class was removed only on
+  <code>animationend</code>, which never fires when animations are disabled. The class
+  stayed, made <code>#fw-main</code> a stacking context, and Bootstrap's backdrop covered
+  every dialog inside it, for example <em>Add appliance</em>. The fade is now skipped
+  under reduced motion, and the class is also removed on <code>animationcancel</code> and
+  after 1 s.</li>
+</ul>
+<h3 id="changed--endpoint-names-resolve-per-firmware-build-2026-09-29">Changed — endpoint names resolve per firmware build (2026-09-29)</h3>
+<ul>
+<li>Endpoint names now resolve per firmware build: the FortiADC, FortiAnalyzer
+  and FortiAuthenticator clients, <code>FortiWebClient.resolve</code>, backup, exception
+  inject, clone (the target's build), write-through, the FortiAnalyzer and
+  FortiAuthenticator config sweeps and the explorer consoles use the box's
+  build. An operator's registry row wins, then what the API library measured on
+  that build, then the registry. A name the build does not serve fails with a
+  readable "not served by" error instead of "unknown endpoint".</li>
+<li>The fleet-wide menus and the sweep keep offering an endpoint the baseline
+  disabled while a live box still serves it; the Registry search and the
+  Structure coverage keep reading the registry itself.</li>
+</ul>
+<h3 id="changed--the-fortiweb-baseline-drops-31-dead-endpoints-2026-09-29">Changed — the FortiWeb baseline drops 31 dead endpoints (2026-09-29)</h3>
+<ul>
+<li>The FortiWeb endpoint baseline is promoted again at 7.6.8 (517 → 486
+  entries). The 31 names measured absent on every measured build leave; each of
+  their URNs answers FortiWeb's <code>-20001</code> "The REST API has invalid URL". Among
+  them are <code>web_protection_profile</code>, <code>load_balance</code>, <code>health_check</code> and
+  <code>http_service</code>, whose real objects live under other paths.</li>
+<li>A promotion no longer drops a name that another measured build serves. It
+  stays, labelled <code>carried</code> from that build. Before this change, the 8 endpoints
+  8.0.5 added (MCP security, file list, captcha puzzle, custom tracking and two
+  certificate tables) would have shipped with no row, so a fresh install would
+  never sweep them. Per-build resolution keeps them off a 7.6.8 box.</li>
+</ul>
+<h3 id="changed--docker-console-updates-load-the-published-image-2026-09-29">Changed — Docker console updates load the published image (2026-09-29)</h3>
+<ul>
+<li>The operations agent now downloads <code>satom-image-&lt;ver&gt;-amd64.tar.gz</code>, verifies
+  it against its <code>.sha256</code>, checks that it really is <code>&lt;ver&gt;</code> (OCI label,
+  payload label, <code>/opt/satom/VERSION</code>) and loads it, instead of building
+  <code>satom:&lt;ver&gt;</code> for 5–15 minutes. It builds only when the release publishes no
+  image, the engine is not x86_64, or <code>SATOM_AGENT_IMAGE=build</code>; a failed or
+  mismatching download fails the update and leaves the stack as it was. An
+  agent started from 2.4.1 or earlier keeps building until
+  <code>satom-docker up -d</code> recreates it.</li>
+</ul>
+<p class="rel-prevnext"><a href="unreleased.html">← Unreleased — the next release</a> · <a href="v2.4.1.html">Version 2.4.1 →</a></p>
       </div>
       <div class="callout" style="margin-top:24px;">
         <span class="cico">🗒️</span>

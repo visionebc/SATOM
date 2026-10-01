@@ -723,7 +723,115 @@ registry itself.
 
 ---
 
-## 11. Troubleshooting
+## 11. API packs — the library for nodes that cannot measure it
+
+An installation learns what a build serves by sweeping a box that runs it,
+from vendor collections downloaded from Galaxy, and from docs.fortinet.com
+through Firecrawl. An offline node has none of those, and a node with no
+FortiADC will never measure FortiADC. An **API pack** carries what one SATOM
+knows to another as one signed tarball (`app/services/api_pack.py`).
+
+### 11.1 What a pack carries
+
+| Section | Content | Source on the exporting node |
+|---|---|---|
+| `library` | One evidence document per healthy evidence row: sweeps, schemas, `legacy_matrix`, `vendor_doc` | `api_lib_evidence` |
+| `docs` | Release notes **with the full vendor text** (issues, workarounds, prose sections); harvested field schemas per line; the FortiWeb field overlay | `reports/_release_notes.json`, `data/field_schemas/`, `data/fortiweb_field_schema.json` |
+| `cli-coverage` | Per product and firmware version: the CLI-only blocks and near matches, with their `set` names and counts | the newest usable CLI dump per version in the device vault (`cli_coverage`) |
+
+Layout:
+
+```
+satom-apipack-<version>/
+    manifest.json      signed: items + sha256 of every file
+    manifest.sig       Ed25519 over manifest.json's exact bytes
+    library/<product>/<source>-<scope>-<sha12>.json.gz
+    docs/release-notes/<product>.json.gz
+    docs/field-schemas/<product>/<line>.json.gz
+    docs/fortiweb-field-overlay.json.gz
+    cli-coverage/<product>/<version>.json.gz
+```
+
+### 11.2 What a pack never carries
+
+- **No configuration.** A sweep's evidence row stores the raw snapshot, and
+  the snapshot holds the rows the box returned. Export re-derives the
+  normalised document (field **names and types** only) and keeps it only if
+  it reproduces the row's stored `sha256`. A row that does not reproduce is
+  listed under `skipped` and is not exported. The CLI digest carries block
+  paths, `set` names and counts, never an `edit` name, a value or a line of
+  the dump.
+- **No estate identity.** Device names become `witness-<hmac>`, keyed by a
+  per-installation secret (`data/apipacks/witness.salt`), so the same box gets
+  the same pseudonym in every pack and re-importing a newer pack confirms
+  evidence instead of duplicating it. Serials and appliance ids are dropped.
+  Witness slots (`device.name`, `witnesses[]`, `appliance`, `witness`, and the
+  name inside a harvest `source` such as `live:fw1@8.0`) are replaced **by
+  position**, whatever the name. A deny-list alone missed a deleted box named
+  only inside a schema document.
+- **The export is refused whole** if any witness slot holds something other
+  than a pseudonym, or any payload holds a known device name, serial,
+  appliance address or an IPv4 on an appliance's /16. The release-notes text
+  is exempt from the address check only, because it is vendor prose.
+- Evidence that came from a pack is never re-exported.
+
+### 11.3 Import rules
+
+Importing only ever **adds**:
+
+| Item | Imported when | Skipped as |
+|---|---|---|
+| Library document | its hash is not stored yet | `present` (same hash), or `local`: this node holds its own healthy evidence of the same source for that build or line |
+| Release notes | for each (product, version) the node does not hold | `present`. A version scanned locally is never replaced |
+| Field schemas | per object file that does not exist locally | `present` |
+| Field overlay | when the node has none | `present` |
+| CLI digest | always (pack-owned, `data/apipacks/cli-coverage/`) | `present` when byte-identical |
+
+Imported evidence carries `origin_ref = apipack:<version>:<source>` and
+pseudonymous witnesses, so it is distinguishable everywhere a witness is
+listed. **Known limit:** a pack sweep imported *before* the node sweeps the
+same build itself is merged with the later local sweep under the library's
+normal rule (an `ok` from any healthy witness wins on that build).
+
+A pack is verified with the update-package verifier
+(`deploy/update_package.py`) against the same root-owned trust store
+(`/etc/satom/update-keys`): signature first, then every file's hash, then
+schema (`satom.api-pack/1`). An unsigned pack, a pack signed by an untrusted
+key, and an altered pack are all refused before anything is read. Each import
+that changed something is logged in `data/apipacks/imports/`.
+
+### 11.4 Commands
+
+```bash
+# export (as the service account); unsigned unless --sign-key is given
+flask apilib pack export --version 2.6.0 --out /tmp/packs \
+      [--product fortiweb] [--section library|docs|cli-coverage] \
+      [--sign-key satom-release.key --passphrase-file pass]
+
+# sign later with the update-package tool
+python3 deploy/sign_update_package.py sign /tmp/packs/satom-apipack-2.6.0.tar.gz --key …
+
+# what importing would do, per item: new / present / local
+flask apilib pack inspect satom-apipack-2.6.0.tar.gz
+
+# import everything new, or a selection
+flask apilib pack import satom-apipack-2.6.0.tar.gz [--product fortiadc] \
+      [--section docs] [--item library/fortiadc/sweep-8.0.3-…] [--dry-run]
+```
+
+`inspect` and `import` take `--trust-dir` for a non-default trust store.
+
+### 11.5 Not yet
+
+The pack format and the CLI are phase 1. Selecting items in **Settings →
+Software Update**, importing at install time from the offline bundles,
+producing the pack in the release pipeline, and publishing it (release asset,
+`api-packs/` in the repository, `/downloads`) are the next phases. The
+CLI-coverage digest is stored on import but no page reads it yet.
+
+---
+
+## 12. Troubleshooting
 
 | Symptom | Cause / fix |
 |---|---|
@@ -747,3 +855,7 @@ registry itself.
 | `endpoint baseline of … not applied` in the log, and the registry is empty | The shipped artifact was refused. The message names the file and the reason (`seal mismatch` means it was edited by hand: restore it from the release) |
 | An endpoint an operator fixed went back after an upgrade | It did not, unless the row still carries `seed` or `baseline:…` in `updated_by`: then it was the baseline's row, not the operator's. Edit it from the Registry page; the edit makes it an operator row |
 | `baseline check` exits 1 | Read the report: `wrong_urn` / `missing` / `stale_enabled` are registry rows out of step with the baseline (`flask apilib baseline apply` fixes them); `urn_mismatch` on a fleet build means the vendor moved a resource: promote that build |
+| `pack import`: `manifest.sig is missing — the package is unsigned` | Sign it (§11.4) or get the signed pack from the release. Unsigned packs are never imported |
+| `pack import`: `no key in the trust store signed this package` | The signing key is not trusted here: `satom execute trust add-key <key>.pub` (same store as update packages) |
+| `pack export`: `identifying data survived the scrub` | The message names the file and the value. A device name used as an API key or field name is the usual cause; nothing was written |
+| A pack item stays `local` and is never imported | Expected: this node measured that build itself (§11.3) |

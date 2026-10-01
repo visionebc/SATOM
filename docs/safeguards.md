@@ -16661,3 +16661,47 @@ runner (with `MIGRATION_FAILED`) was installed.
 **Mutations (4 of 4 bite):** `adopt_tree` a no-op; the package path not
 calling it; the installer without the baseline; `add -A -f` (ignoring
 `.gitignore`).
+
+## §202 — a published pack that would have carried our configuration and our device names (`tests/test_api_pack.py`, 2026-10-02)
+
+**The risk.** An API pack is published (release asset, repository, public
+site). The obvious export, writing out what `api_lib_evidence` stores, ships
+the sweep's `raw_gz`: the full snapshot of every row the box returned, with
+admin names, trusted hosts and every other configured value (up to 1 MB per
+sweep on a1). Device identity is a second channel. The evidence rows copy the
+device name and serial, and the schema documents name the box that was
+harvested inside `witnesses` lists and `source` strings.
+
+**What the first real export showed.** The deny-list (every device name,
+serial and address the node knows) passed it as clean, but an independent
+grep of the tarball found `"witnesses": ["fw1"]` and `live:fw1@8.0`. `fw1`
+is a deleted box with no row anywhere; its name exists only inside the
+documents. A deny-list cannot know a name nobody recorded.
+
+**The guards.**
+- Export re-derives each document from its blob and ships it only if it
+  reproduces the stored `sha256` (field names and types only).
+- Witness slots are pseudonymised **by position**: `device.name`,
+  `witnesses[]`, `appliance`, `witness`, and the name inside a harvest
+  `source`. Each name found that way joins the deny-list for the rest of the
+  scan.
+- `_leak_scan` runs two checks over every payload: an allow-list (a witness
+  slot must hold a `witness-…` pseudonym) and the deny-list (names, serials,
+  appliance addresses, IPv4 on an appliance's /16). Any hit refuses the
+  export, and nothing is written.
+- Import: signature, then hashes, then schema; local measurements are never
+  replaced.
+
+**Real run on a1.** 22 items: 13 library, 6 docs, 3 CLI digests. All 13
+healthy evidence rows reproduced their hash, and an independent grep found no
+device name, serial or `10.0.0.x` address. A dry-run import back into a1
+reported 11 `local`, 8 `present` and 3 `new`. An unsigned pack, a pack signed
+by a key outside the trust store, and a pack with one verdict changed were
+all refused.
+
+**Mutations (10 of 11 bite):** `source` slot not pseudonymised;
+`witnesses` lists kept; leak scan disabled; hash proof skipped; local
+measurement ignored; release notes overwritten; contents not verified;
+signature not checked; raw sweep shipped; imported evidence re-exported. The
+survivor, a serial left on `device`, is caught by the second layer (the
+scrub drops any value equal to a known serial), as designed.

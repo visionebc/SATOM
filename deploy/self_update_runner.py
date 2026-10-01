@@ -867,6 +867,39 @@ def runner_integrity_problem():
     return None
 
 
+ADOPT_IDENTITY = ("-c", "user.name=SATOM", "-c", "user.email=satom@localhost")
+
+
+def adopt_tree():
+    """(ok, detail). Make an application tree that is not a git checkout into one.
+
+    [SATOM-ADOPT-TREE] An offline install extracts the bundle's app.tar.gz:
+    there is no .git. Every step of a package apply leans on git -- the
+    snapshot it rolls back to, parking local commits, the list of files the new
+    revision dropped, the commit that records what is deployed -- so on every
+    offline-installed node before 2.5.0 the first package was refused at
+    "count local commits" and nothing could ever be applied.
+
+    One commit of the tree as it stands is the right baseline: the tree IS the
+    release archive. On a fresh offline install `git add -A` (honouring the
+    shipped .gitignore, which keeps data/, venv/, .env, pki/ and the other
+    node-local paths out) selects exactly the archive's files, no more. A
+    no-op on a checkout.
+    """
+    if (APP / ".git").exists():
+        return True, "already a git checkout"
+    for args in (("init", "-q"), ("add", "-A"),
+                 ADOPT_IDENTITY + ("commit", "-q", "-m",
+                  "baseline: SATOM %s as installed (adopted for package updates)"
+                  % (_current_version() or "?"))):
+        r = git(*args, timeout=300)
+        if r.returncode != 0:
+            return False, "git %s failed: %s" % (args[-1] if args[0] == "-c" else args[0],
+                                                 (r.stderr or r.stdout or "")[-300:])
+    n = len((git("ls-files", timeout=120).stdout or "").splitlines())
+    return True, "baseline commit of %d tracked file(s)" % n
+
+
 def _new_untracked(before):
     """Untracked, non-ignored paths that appeared since ``before``.
 
@@ -949,6 +982,14 @@ def package_change(req_path):
 
     up = None
     stage = None
+    ok_adopt, adopt_detail = adopt_tree()
+    if adopt_detail != "already a git checkout" or not ok_adopt:
+        st.step("adopt the installed tree into git", ok_adopt, adopt_detail)
+    if not ok_adopt:
+        st.finish("failed", package=req.get("package"), rolled_back=False,
+                  error="the application tree is not a git checkout and could "
+                        "not be adopted: %s" % adopt_detail)
+        return
     snapshot = git("rev-parse", "HEAD").stdout.strip()
     untracked_before = _untracked_set()
     freeze = None

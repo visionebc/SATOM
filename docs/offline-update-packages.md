@@ -154,6 +154,29 @@ satom show trust            # lists it next to visionebc-release
 Do it on **every** node of a pair: each trust store is local and does not
 replicate.
 
+**A node installed from an offline bundle before 2.5.0 needs one more step,
+once.** Its `/opt/satom` is not a git checkout: the bundle extracted
+`app.tar.gz`, and the runner those versions ship refuses every package at
+*"count local commits — not a git repository"* (it rolls back cleanly, nothing
+changes). From 2.5.0 the installer records the tree in git and the runner
+adopts a tree that is not one, but the hop **into** 2.5.0 runs on the old
+runner. Record the installed tree as a baseline first:
+
+```
+cd /opt/satom
+sudo -u satom git init -q
+sudo -u satom git add -A
+sudo -u satom git -c user.name=SATOM -c user.email=satom@localhost \
+     commit -qm "baseline: SATOM $(cat VERSION) as installed (offline)"
+sudo -u satom git status --short | wc -l      # 0
+```
+
+The shipped `.gitignore` keeps every node-local path out (`data/`, `venv/`,
+`.env`, `pki/`, the state directories). On a fresh 2.4.1 offline install the
+commit holds exactly the 1,439 files of the release archive. Then apply the
+2.5.0 package as usual. This path was run end to end on openSUSE Leap 15.6
+with no network: 2.4.1 → 2.5.0, migrations to head, `/healthz` 200.
+
 ### Rotating a key
 
 1. Generate the new pair where the new key will live.

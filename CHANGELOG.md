@@ -27,6 +27,21 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
   `manylinux_2_28` or older) instead of for the build host, and accepts the
   pipeline's payload (`APP_TARBALL` + `COMMIT`).
 
+### Fixed — an offline-installed node could never apply an update package (2026-10-01)
+
+- An offline install extracts the bundle's `app.tar.gz`, so `/opt/satom` was
+  not a git checkout. The update runner relies on git for its rollback
+  snapshot, for the files a new revision drops and for the commit that
+  records what is deployed. It refused every package at *"count local
+  commits — not a git repository"*. No offline-installed node could ever be
+  updated from Settings → Software Update. Found by applying the 2.5.0 package
+  to a 2.4.1 openSUSE offline install with no network.
+- The installer now records the extracted tree as a git baseline, and the
+  runner adopts a tree that is not a checkout before its snapshot. A node
+  installed offline **before** 2.5.0 still applies its first package with the
+  old runner, so it needs a one-time baseline commit:
+  `docs/offline-update-packages.md` §4.1.
+
 ### Fixed — database migrations never ran on an installed node (2026-10-01)
 
 - The installer built the schema with `create-db` and recorded no Alembic

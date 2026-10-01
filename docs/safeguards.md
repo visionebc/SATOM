@@ -16621,3 +16621,43 @@ the end-to-end run of a 2.4.1 node applying the 2.5.0 package (release
 notes 2.5.0). A node on 2.4.x applies that package with its old, best-effort
 runner. It works because the migrations are idempotent, and the fatal
 behaviour starts with the following update.
+
+## §201 — an update path that had never worked on the nodes it was built for (`tests/test_update_package.py`, 2026-10-01)
+
+**The defect.** The end-to-end run for §200 installed the published 2.4.1
+openSUSE bundle on a container with no network and then uploaded the 2.5.0
+package. The runner refused it at its sixth step, after verifying the
+signature, all 63 hashes and the version rules, and after the database
+backup: `count local commits — git rev-list failed (rc=128): not a git
+repository`. An offline install extracts `app.tar.gz` and has no `.git`. Every
+step that follows leans on git: the rollback snapshot (`rev-parse HEAD`), the
+files the new revision dropped (`ls-files`), and the deployed-revision commit.
+The feature had shipped since 2026-08-04 and had been exercised only on a1 and
+a2, which are git checkouts. Offline nodes were the reason it existed, and on
+every one of them it could not run. The rollback did its job: the node stayed
+on 2.4.1, healthy.
+
+**The fix.**
+- `adopt_tree()` in `self_update_runner.py`: on a tree with no `.git`, `git
+  init`, `git add -A`, and one commit "baseline: SATOM <ver> as installed",
+  run as the service account with a fixed identity. The package path calls it
+  before it takes the snapshot, and refuses the package if adoption fails.
+- `install-satom.sh`: in bundle mode the extracted tree is committed the same
+  way, before the ownership handoff.
+- Why `add -A` is safe: the shipped `.gitignore` excludes every node-local path.
+  On the fresh 2.4.1 install the adoption set and the release archive were
+  compared file by file: 1,439 and 1,439, no difference either way. A
+  node-local file in the baseline would later be deleted as "dropped by the
+  new revision"; the test pins that `data/`, `.env` and `venv/` stay out.
+
+**The hop that cannot be fixed in code.** A pre-2.5.0 node applies 2.5.0 with
+its own runner. The documented one-time baseline commit
+(`offline-update-packages.md` §4.1) was run on the same container, followed by
+the package. Result: success. The installed runner applied the 2.5.0 tree,
+`flask db upgrade` ran `… → upgtgt01 → apilib01 → apibl01` on Postgres,
+`alembic_version` = `apibl01` (head), `/healthz` 200 on 2.5.0, and the new
+runner (with `MIGRATION_FAILED`) was installed.
+
+**Mutations (4 of 4 bite):** `adopt_tree` a no-op; the package path not
+calling it; the installer without the baseline; `add -A -f` (ignoring
+`.gitignore`).

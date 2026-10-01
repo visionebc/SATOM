@@ -109,6 +109,25 @@ def pack_dir() -> Path:
     return p
 
 
+def shipped_dir() -> Path:
+    """``api-packs/`` in the code tree: the pack the release itself carries.
+
+    It arrives the way the code does — ``git clone``/``git pull`` online, the
+    bundle's ``app.tar.gz`` offline, an update package's payload — so every node
+    has the pack of the release it runs without downloading anything.
+    """
+    return Path(current_app.config.get("API_PACK_SHIPPED_DIR")
+                or (Path(current_app.root_path).parent / "api-packs"))
+
+
+def upload_dir() -> Path:
+    """Packs an operator uploaded through Software Update (a newer pack, or one
+    downloaded on its own from the release page)."""
+    p = Path(current_app.config.get("API_PACK_UPLOAD_DIR") or (data_root() / "apipack-uploads"))
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
 def _schema_root() -> Path:
     from . import field_catalog
     return Path(field_catalog.SCHEMA_ROOT)
@@ -809,11 +828,13 @@ def _import_one(pkg: Path, it: dict, st: dict) -> dict:
 
 
 def import_pack(path, *, trust_dir=None, products=None, sections=None, ids=None,
-                dry_run: bool = False, actor: str = "") -> dict:
+                dry_run: bool = False, actor: str = "", progress=None) -> dict:
     """Verify, then import the selected items that are ``new``.
 
     ``present`` and ``local`` items are reported and never touched (rule 3).
     Every run that imports something is logged under ``apipacks/imports/``.
+    ``progress(done, total, item_id)`` is called before each selected item, and
+    once more with ``item_id=None`` when the last one is finished.
     """
     products, sections, ids = set(products or ()), set(sections or ()), set(ids or ())
     tmp = Path(tempfile.mkdtemp(prefix="satom-apipack-"))
@@ -824,9 +845,11 @@ def import_pack(path, *, trust_dir=None, products=None, sections=None, ids=None,
             raise PackError("not in this pack: %s" % ", ".join(sorted(ids - known)))
         cache: dict = {}
         results = []
-        for it in manifest.get("items") or []:
-            if not _selected(it, products, sections, ids):
-                continue
+        chosen = [it for it in manifest.get("items") or []
+                  if _selected(it, products, sections, ids)]
+        for n, it in enumerate(chosen):
+            if progress:
+                progress(n, len(chosen), it["id"])
             st = _item_state(pkg, it, cache)
             rec = {"id": it["id"], "section": it["section"], "product": it.get("product"),
                    "state": st["state"]}
@@ -839,6 +862,8 @@ def import_pack(path, *, trust_dir=None, products=None, sections=None, ids=None,
                     db.session.rollback()
                     rec["error"] = "%s: %s" % (type(exc).__name__, exc)
             results.append(rec)
+        if progress:
+            progress(len(chosen), len(chosen), None)
         out = {"version": manifest.get("version"), "signed_by": key.get("fingerprint"),
                "dry_run": dry_run, "items": results,
                "imported": sum(1 for r in results if r.get("imported")),
@@ -855,5 +880,112 @@ def import_pack(path, *, trust_dir=None, products=None, sections=None, ids=None,
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+# ---------------------------------------------------------------------------
+# where packs come from: the release's own copy, or an operator's upload
+# ---------------------------------------------------------------------------
+
+SOURCE_SHIPPED = "shipped"
+SOURCE_UPLOADED = "uploaded"
+PACK_SOURCES = (SOURCE_SHIPPED, SOURCE_UPLOADED)
+MAX_UPLOAD_BYTES = 200 * 1024 * 1024
+KEEP_UPLOADS = 5
+
+
+def _source_dir(source: str) -> Path:
+    if source == SOURCE_SHIPPED:
+        return shipped_dir()
+    if source == SOURCE_UPLOADED:
+        return upload_dir()
+    raise PackError("unknown pack source %r" % source)
+
+
+def list_packs() -> list:
+    """Every pack this node can import from, newest first within each source."""
+    out = []
+    for source in PACK_SOURCES:
+        d = _source_dir(source)
+        if not d.is_dir():
+            continue
+        found = [p for p in d.glob("satom-apipack-*.tar.gz")
+                 if p.is_file() and PACK_NAME_RE.match(p.name)]
+        for p in sorted(found, key=lambda p: p.stat().st_mtime, reverse=True):
+            st = p.stat()
+            out.append({"source": source, "name": p.name, "size": st.st_size,
+                        "version": p.name[len("satom-apipack-"):-len(".tar.gz")],
+                        "mtime": datetime.utcfromtimestamp(int(st.st_mtime)).isoformat() + "Z"})
+    return out
+
+
+def resolve_pack(source: str, name: str) -> Path:
+    """The file behind a (source, name) pair the page or the CLI was given.
+
+    The name is matched against the pack pattern BEFORE it is joined to a
+    directory, so ``../`` or an absolute path can never reach the filesystem.
+    """
+    if not PACK_NAME_RE.match(name or ""):
+        raise PackError("%r is not an API pack name (satom-apipack-<version>.tar.gz)" % name)
+    p = _source_dir(source) / name
+    if not p.is_file():
+        raise PackError("no %s pack named %s on this node" % (source, name))
+    return p
+
+
+def save_upload(stream, filename: str) -> dict:
+    """Stage an uploaded pack. Staging verifies nothing: inspect and import do,
+    every time, against the trust store as it is then."""
+    name = os.path.basename(filename or "")
+    if not PACK_NAME_RE.match(name):
+        raise PackError("%r is not an API pack name (satom-apipack-<version>.tar.gz)" % name)
+    d = upload_dir()
+    part = d / (".%s.part" % name)
+    size = 0
+    try:
+        with open(part, "wb") as fh:
+            while True:
+                chunk = stream.read(1 << 20)
+                if not chunk:
+                    break
+                size += len(chunk)
+                if size > MAX_UPLOAD_BYTES:
+                    raise PackError("larger than %d MB — that is not an API pack"
+                                    % (MAX_UPLOAD_BYTES // 1048576))
+                fh.write(chunk)
+        os.replace(part, d / name)
+    finally:
+        part.unlink(missing_ok=True)
+    kept = sorted((p for p in d.glob("satom-apipack-*.tar.gz") if p.name != name),
+                  key=lambda p: p.stat().st_mtime, reverse=True)
+    for old in kept[KEEP_UPLOADS - 1:]:
+        old.unlink(missing_ok=True)
+    return {"name": name, "size": size}
+
+
+def delete_upload(name: str) -> None:
+    resolve_pack(SOURCE_UPLOADED, name).unlink()
+
+
+def import_history(limit: int = 10) -> list:
+    """The import log, newest first: what was imported, from which pack, by whom."""
+    d = pack_dir() / "imports"
+    if not d.is_dir():
+        return []
+    out = []
+    for f in sorted(d.glob("*.json"), reverse=True)[:limit]:
+        try:
+            rec = json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        stamp = f.name.split("-", 1)[0]
+        try:
+            at = datetime.strptime(stamp, "%Y%m%dT%H%M%SZ").isoformat() + "Z"
+        except ValueError:
+            at = stamp
+        out.append({"at": at, "version": rec.get("version"), "pack": rec.get("pack"),
+                    "actor": rec.get("actor") or "", "imported": rec.get("imported", 0),
+                    "errors": rec.get("errors", 0)})
+    return out
+
+
 __all__ = ["SCHEMA", "SECTIONS", "ORIGIN_PREFIX", "PackError", "rebuild_document",
-           "export_pack", "inspect_pack", "import_pack"]
+           "export_pack", "inspect_pack", "import_pack", "list_packs", "resolve_pack",
+           "save_upload", "delete_upload", "import_history"]

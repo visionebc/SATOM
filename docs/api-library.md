@@ -821,13 +821,101 @@ flask apilib pack import satom-apipack-2.6.0.tar.gz [--product fortiadc] \
 
 `inspect` and `import` take `--trust-dir` for a non-default trust store.
 
-### 11.5 Not yet
+The operator console wraps the import for root, so nobody has to assemble the
+service account's environment by hand:
 
-The pack format and the CLI are phase 1. Selecting items in **Settings →
-Software Update**, importing at install time from the offline bundles,
-producing the pack in the release pipeline, and publishing it (release asset,
-`api-packs/` in the repository, `/downloads`) are the next phases. The
-CLI-coverage digest is stored on import but no page reads it yet.
+```bash
+satom show apipack                                   # packs on this node + import log
+sudo satom execute apipack import shipped            # dry run of the release's own pack
+sudo satom execute apipack import shipped --yes      # import it
+sudo satom execute apipack import ./satom-apipack-2.6.0.tar.gz --yes \
+     [--product fortiweb,fortiadc] [--section docs]
+```
+
+It runs `flask apilib pack import` **as the service account** (`runuser -m`):
+run as root, the release notes and field schemas it writes would become files
+the web worker can no longer update. A pack outside the application tree (an
+operator's home is `0700`) is first copied to `data/apipack-uploads/`. It
+refuses on a standby. Without `--yes` it only reports what would happen.
+
+### 11.5 How a node gets a pack
+
+The release pipeline builds one pack per release and commits it to
+**`api-packs/`** in the repository, before the tag (§11.6). Because the pack
+lives in the tree, it travels the way the code does, and no node downloads
+anything to get it:
+
+| Path | How the pack arrives | How it is imported |
+|---|---|---|
+| Online install | `git clone` of the public repository | the installer, after the health check |
+| Offline install | the bundle's `app.tar.gz` | the installer, after the health check |
+| Update (git or offline package) | the new tree | **Settings → Software Update → API library packs** |
+| Standalone | `satom-apipack-<version>.tar.gz` (+ `.sha256`) from the GitHub release, the download catalog or `/downloads` | upload it on that page, or `satom execute apipack import <file> --yes` |
+
+**Installer.** On a standalone node or a cluster primary, once `/healthz`
+answers, the installer runs `satom execute apipack import shipped --yes`. It is
+never fatal: the installation is complete at that point, and a pack that does
+not import is a warning with the command to retry. A secondary is skipped: its
+database is read-only, and it gets the library by replication and the files
+by the data sync. Two environment variables control it, and they are
+variables rather than prompts on purpose — a new prompt would shift every
+answer file written for an earlier release by one line:
+
+| Variable | Values | Default |
+|---|---|---|
+| `SATOM_API_PACK` | `all` · `none` · a path to a pack | `all` (the release's own pack) |
+| `SATOM_API_PACK_PRODUCTS` | comma list, e.g. `fortiweb,fortiadc` | every product |
+
+**Software Update.** The *API library packs* card lists the release's pack
+(*this release*) and any uploaded pack (the newest five are kept). Selecting
+one verifies it and shows every item with its state — `new`, `present`, or
+`local` (this node measured it itself) — filterable by product and by section.
+Only `new` items can be ticked; *Import selected* runs as a background job with
+per-item progress, and the page re-reads the states when it ends. A failed item
+turns the job red but keeps what was imported and says which items failed. The
+standby page shows the card read-only and the import route refuses there. A
+pack signed by a key the node does not trust is refused with the
+`satom execute trust add-key` command that fixes it.
+
+### 11.6 Built by the release pipeline
+
+The pipeline step `api_pack` (after `docs_gate`, before the push and the tag)
+checks that `api-packs/` in the release commit holds exactly this release's
+pack and its `.sha256`, that the checksum matches, that the signature verifies
+against the public key the product ships (`deploy/update-keys/`), and that the
+manifest names this version. When it does not, the repair `build_api_pack`
+exports the pack on the primary from its live library, signs it on the release
+host with the release key (the same key as the update packages; the primary
+never sees the private half), and commits exactly `api-packs/` — the new pack
+in, the previous release's pack out — after refusing a dirty work tree. The
+publish steps attach the pack, taken from the tag, to the GitHub release and
+the download catalog.
+
+The pipeline also reads every file inside the pack with the **public mirror's
+own redaction and secret rules**. The mirror cannot do it: the pack is a gzip
+of gzips, which the history rewrite skips as binary. One exception, for the
+vendor release notes only: a rule match that is a bare IPv4 address is
+Fortinet's example text, not ours. Any other match stops the release, and it
+is never auto-repaired — rebuilding would export the same text again.
+
+### 11.7 CLI coverage from a pack
+
+The CLI-coverage card (API explorer and the ADC API page) diffs a stored CLI
+dump. When the node has **no dump** for the firmware asked about, it falls
+back to an imported digest for **that exact version** (or line, when the page
+is scoped by line) and says so: the evidence line names the pack's witness,
+version and capture date. The block text is not offered — the node never had
+the dump. Other readers of the coverage report (Structure, discovery) ignore
+the digests, because they act on a stored dump.
+
+### 11.8 Limits
+
+- A container install has no Software Update page (§22 of the user guide) and
+  its installer path is the stack, not `install-satom.sh`: importing a pack
+  there is not covered yet. The image does carry `api-packs/`.
+- `short` and `partial` releases publish code only: the pack rides in the
+  repository and the bundles, but is attached as a release asset only by a
+  `full` release.
 
 ---
 

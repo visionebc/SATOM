@@ -23,8 +23,34 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 - **Import only adds.** Evidence this node measured itself, release notes it
   already holds and field schemas it already has are never replaced. Same
   signature check and trust store as the offline update packages.
-- Phase 1 of 4: the Software Update page, the installers and the release
-  pipeline do not use packs yet. See `docs/api-library.md` §11.
+- **Every release carries its pack in `api-packs/`**, so it arrives the way
+  the code does: the online clone, every offline bundle, the update package
+  and the public repository. It is also attached to the GitHub release on its
+  own, for a node that only needs the pack.
+- **The installers import it.** On a standalone node or a cluster primary,
+  once the console answers its health check, online and offline alike. A pack
+  that does not import is a warning with the command to retry, never a failed
+  install. `SATOM_API_PACK=none` skips it, `SATOM_API_PACK=<file>` imports
+  another pack, `SATOM_API_PACK_PRODUCTS=fortiweb,fortiadc` limits it to some
+  products. Environment variables, not prompts: existing answer files keep
+  working.
+- **Settings → Software Update → API library packs.** Lists the release's
+  pack and uploaded ones, and shows every item as `new`, `present` or `local`
+  (measured by this node). Filter by product and section, tick what to
+  import, and follow it as a background job with per-item progress. A failed
+  item turns the job red and says which items went in. Read-only on a standby.
+- **`satom show apipack`** and **`satom execute apipack import <file|shipped>
+  [--yes] [--product …] [--section …]`** do the same from the console, as the
+  service account. Dry run unless `--yes`.
+- **The CLI-coverage card reads an imported digest** when this node has no
+  CLI dump for the firmware asked about, and names the pack as its evidence.
+  It never borrows a digest from another version.
+- **The release pipeline builds the pack.** A new `api_pack` gate verifies the
+  release commit's pack against the product's public key. When the pack is
+  missing or stale, it exports it on the primary, signs it on the release
+  host and commits exactly `api-packs/`. It also scans the pack's contents
+  with the public mirror's redaction rules, which cannot see inside a gzip.
+  See `docs/api-library.md` §11.
 
 ### Added — an update shows what it is doing while it runs (2026-10-02)
 

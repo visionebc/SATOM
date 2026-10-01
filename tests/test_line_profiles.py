@@ -466,6 +466,20 @@ def test_the_page_is_not_dark_themed():
         assert bad not in body, f"{bad} is fleet dark-theme chrome"
 
 
+def test_the_page_keeps_the_adom_chrome(app, client, catalog):
+    """The view model once carried the ADOM key as ``product`` - a string that
+    shadowed base.html's branding object, so the Switch Product icon rendered
+    as ``<img src="/static/">`` (a broken image) and the ADOM badge lost its
+    name."""
+    import re
+    from conftest import admin_user_id, login
+    login(client, admin_user_id(app))
+    body = client.get("/web/line-profiles/").get_data(as_text=True)
+    m = re.search(r'<img src="([^"]*)"[^>]*class="fw-switch-mark"', body)
+    assert m, "the Switch Product mark is gone"
+    assert re.fullmatch(r"/static/img/[\w-]+-mark\.svg", m.group(1)), m.group(1)
+
+
 def test_saving_an_unknown_segment_is_refused_not_dropped(app, client, catalog):
     from conftest import admin_user_id, login
     login(client, admin_user_id(app))

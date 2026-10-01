@@ -306,11 +306,13 @@ def restart_and_validate(st, is_standby, app_was_active, label):
     So: ask systemd what state the node was in, restore that state, and
     validate with the strongest check that state allows.
     """
+    st.begin("restart services")
     subprocess.run(["systemctl", "restart", SCHED], timeout=60)
     if app_was_active:
         subprocess.run(["systemctl", "restart", SERVICE], timeout=120)
         st.step("restart services", True, "%s + scheduler%s"
                 % (SERVICE, " (standby serving traffic)" if is_standby else ""))
+        st.begin("health check")
         if not health_ok():
             raise RuntimeError("health check did not return 200 within %ds"
                                % HEALTH_TIMEOUT)
@@ -323,6 +325,7 @@ def restart_and_validate(st, is_standby, app_was_active, label):
                 "scheduler only (%s was not running before the update)" % SERVICE)
         st.step("import smoke", True, "new code imports on %s" % label)
 
+    st.begin("route audit")
     status, detail = route_audit_ok()
     if status == "missing":
         raise RuntimeError("route audit: template references an endpoint that "
@@ -420,13 +423,28 @@ class Status:
         }
         self.flush()
 
+    def begin(self, name):
+        """Announce the step that is RUNNING now, before it ends.
+
+        Steps are only appended when they finish, and the slow ones (database
+        backup, offline pip install, migrations, restart) take minutes. Without
+        this the console and the CLI showed nothing new for that whole time and
+        an operator could not tell a working update from a hung one. The next
+        step() or finish() clears it.
+        """
+        self.d["current"] = {"name": name, "since": now()}
+        self.d["updated_at"] = now()
+        self.flush()
+
     def step(self, name, ok=True, detail=""):
+        self.d.pop("current", None)
         self.d["steps"].append({"name": name, "ok": bool(ok),
                                 "detail": (detail or "").strip()[-500:], "at": now()})
         self.d["updated_at"] = now()
         self.flush()
 
     def finish(self, state, **extra):
+        self.d.pop("current", None)
         self.d["state"] = state
         self.d.update(extra)
         self.d["updated_at"] = now()
@@ -468,6 +486,7 @@ def process(req_path):
 
     try:
         branch = req.get("branch", "main")
+        st.begin("git fetch origin %s" % branch)
         f = git("fetch", "origin", branch)
         st.step("git fetch origin %s" % branch, f.returncode == 0, f.stderr)
         if f.returncode != 0:
@@ -492,6 +511,7 @@ def process(req_path):
             raise RuntimeError("refusing to reset: local commits could not be "
                                "preserved")
 
+        st.begin("checkout %s" % target[:20])
         r = git("reset", "--hard", target)
         st.step("checkout %s" % target[:20], r.returncode == 0, r.stderr)
         if r.returncode != 0:
@@ -500,6 +520,7 @@ def process(req_path):
         git("checkout", "-B", branch, target)
 
         if req.get("do_pip", True):
+            st.begin("pip install -r requirements.txt")
             p = run([str(VENV / "pip"), "install", "-q", "-r",
                      str(APP / "requirements.txt")], timeout=900, user=APP_USER)
             st.step("pip install -r requirements.txt", p.returncode == 0, p.stderr)
@@ -511,6 +532,7 @@ def process(req_path):
         # until they are recompiled. Outside the do_pip block on purpose: a
         # code-only update also brings catalogues. Never aborts -- an old
         # catalogue is worse than a new one, but both beat a reverted update.
+        st.begin("pybabel compile (language catalogues)")
         pb = run([str(VENV / "pybabel"), "compile", "-d",
                   str(APP / "app" / "translations")], timeout=300, user=APP_USER)
         st.step("pybabel compile (language catalogues)",
@@ -521,6 +543,7 @@ def process(req_path):
         # read-only replica.
         if req.get("do_migrate", True) and not is_standby:
             env = dict(os.environ, FLASK_APP="wsgi.py")
+            st.begin("flask db upgrade")
             m = run([str(VENV / "flask"), "db", "upgrade"], timeout=600,
                     user=APP_USER, cwd=str(APP), env=env)
             # [SATOM-ALEMBIC-STAMP] Fatal. This step used to be best-effort on
@@ -567,6 +590,7 @@ def process(req_path):
                                      "metrics store")):
                 _p = APP / "deploy" / _script
                 if _p.exists():
+                    st.begin("refresh %s" % _label)
                     cr = subprocess.run(["bash", str(_p)], capture_output=True,
                                         text=True, timeout=180)
                     st.step("refresh %s" % _label, cr.returncode == 0,
@@ -602,6 +626,7 @@ def process(req_path):
         st.step("ERROR", False, str(e))
         # ---------------- rollback to the snapshot ----------------
         try:
+            st.begin("rollback to %s" % snapshot[:12])
             git("reset", "--hard", snapshot)
             if req.get("do_pip", True):
                 run([str(VENV / "pip"), "install", "-q", "-r",
@@ -1027,10 +1052,12 @@ def package_change(req_path):
         # root-only temp collapses read-verify-use into a single read.
         stage = Path(tempfile.mkdtemp(prefix="satom-pkg-", dir="/var/tmp"))
         os.chmod(stage, 0o700)
+        st.begin("extract to root-only staging")
         pkg_dir = up.extract_package(pkg_file, stage)
         st.step("extract to root-only staging", True, str(stage))
 
         # -- 3. signature + integrity ---------------------------------------
+        st.begin("verify signature")
         verified = up.verify_package(pkg_dir, TRUST_DIR)
         manifest = verified["manifest"]
         key = verified["key"]
@@ -1063,6 +1090,7 @@ def package_change(req_path):
         # A downgrade does not reverse migrations, so the database dump is the
         # only honest way back. If it cannot be taken, do not proceed.
         if req.get("do_backup", True) and not is_standby:
+            st.begin("database backup")
             b = subprocess.run(["/usr/local/sbin/satom", "execute", "backup", "db"],
                                capture_output=True, text=True, timeout=1200)
             ok = b.returncode == 0
@@ -1077,6 +1105,7 @@ def package_change(req_path):
 
         freeze = Path("/root/satom-venv-freeze-pre-package-%s.txt"
                       % datetime.utcnow().strftime("%Y%m%d-%H%M%S"))
+        st.begin("freeze current dependencies")
         fr = run([str(VENV / "pip"), "freeze"], timeout=180, user=APP_USER)
         if fr.returncode == 0:
             freeze.write_text(fr.stdout)
@@ -1099,6 +1128,7 @@ def package_change(req_path):
         tracked_now = {ln.strip() for ln in
                           (git("ls-files", timeout=120).stdout or "").splitlines()
                           if ln.strip()}
+        st.begin("install application tree")
         written = up.extract_app_tree(app_tar, APP)
         st.step("install application tree", True, "%d file(s) from %s"
                 % (len(written), name))
@@ -1124,6 +1154,7 @@ def package_change(req_path):
 
         # -- 7. dependencies, strictly offline -------------------------------
         wheels = pkg_dir / "wheels"
+        st.begin("pip install (offline, from the package)")
         p = run([str(VENV / "pip"), "install", "-q", "--no-index",
                  "--find-links", str(wheels), "-r", str(APP / "requirements.txt")],
                 timeout=1800, user=APP_USER)
@@ -1135,6 +1166,7 @@ def package_change(req_path):
         # -- 8. migrations (primary only) ------------------------------------
         if not is_standby:
             env = dict(os.environ, FLASK_APP="wsgi.py")
+            st.begin("flask db upgrade")
             m = run([str(VENV / "flask"), "db", "upgrade"], timeout=600,
                     user=APP_USER, cwd=str(APP), env=env)
             # [SATOM-ALEMBIC-STAMP] Fatal, same reason as the git path.
@@ -1162,6 +1194,7 @@ def package_change(req_path):
                               ("install-metrics-store.sh", "metrics store")):
             sp = APP / "deploy" / script
             if sp.exists():
+                st.begin("refresh %s" % label)
                 cr = subprocess.run(["bash", str(sp)], capture_output=True,
                                     text=True, timeout=180)
                 st.step("refresh %s" % label, cr.returncode == 0,
@@ -1200,6 +1233,7 @@ def package_change(req_path):
     except Exception as e:  # noqa: BLE001
         st.step("ERROR", False, str(e)[:400])
         try:
+            st.begin("rollback to %s" % snapshot[:12])
             git("reset", "--hard", snapshot)
             stray = _new_untracked(untracked_before)
             for rel in stray:

@@ -116,6 +116,14 @@
 <div id="live-panel" class="card mb-3 d-none"><div class="card-header"><strong>{{ _('Update in progress') }}</strong>
   <span id="live-state" class="badge bg-secondary ms-2">{{ _('queued') }}</span></div>
   <div class="card-body">
+    {# What the runner is doing RIGHT NOW. Steps only land when they finish, and
+       the slow ones (database backup, offline pip install, migrations, restart)
+       take minutes: without this line the panel sat still and a working update
+       looked hung. #}
+    <div id="live-current" class="small mb-2 d-none" role="status" aria-live="polite">
+      <span class="spinner-border spinner-border-sm me-2" style="color:#EF5424;" aria-hidden="true"></span>
+      <span id="live-current-text"></span>
+    </div>
     <ol id="live-steps" class="small mb-0" style="list-style:decimal inside;"></ol>
   </div>
 </div>
@@ -328,12 +336,45 @@
     var panel = document.getElementById('live-panel');
     var stateEl = document.getElementById('live-state');
     var stepsEl = document.getElementById('live-steps');
+    var curEl = document.getElementById('live-current');
+    var curText = document.getElementById('live-current-text');
     panel.classList.remove('d-none');
     var done = false;
+    var t0 = Date.now(), curName = null, curSince = Date.now(), nSteps = -1;
+    var cur = {state: 'queued', name: null, offline: false};
+    function fmt(ms) {
+      var s = Math.max(0, Math.floor(ms / 1000));
+      return s >= 60 ? Math.floor(s / 60) + 'm' + ('0' + (s % 60)).slice(-2) + 's' : s + 's';
+    }
+    function renderCurrent() {
+      if (done) { curEl.classList.add('d-none'); return; }
+      var now = Date.now(), txt;
+      if (cur.offline) {
+        txt = 'The service is restarting as part of the update — reconnecting… (' + fmt(now - curSince) + ')';
+      } else if (cur.state === 'queued') {
+        txt = 'Waiting for the update runner to pick the request up… (' + fmt(now - t0) + ')';
+        if (now - t0 > 30000) {
+          txt += ' — still queued: check that satom-updater.path is enabled on this node.';
+        }
+      } else if (cur.name) {
+        txt = 'Running: ' + cur.name + '… (' + fmt(now - curSince) + ')';
+      } else {
+        txt = 'Working… (' + fmt(now - curSince) + ' since the last step)';
+      }
+      curText.textContent = txt;
+      curEl.classList.remove('d-none');
+    }
+    setInterval(renderCurrent, 1000);
     function poll() {
       fetch('/self-update/status/' + encodeURIComponent(watch), {credentials: 'same-origin'})
-        .then(function (r) { return r.json(); })
+        .then(function (r) { if (!r.ok) { throw new Error(r.status); } return r.json(); })
         .then(function (s) {
+          var n = (s.steps || []).length;
+          var name = (s.current && s.current.name) || null;
+          if (cur.offline || n !== nSteps || name !== curName) { curSince = Date.now(); }
+          nSteps = n; curName = name;
+          cur = {state: s.state || 'unknown', name: name, offline: false};
+          renderCurrent();
           stateEl.textContent = s.state || 'unknown';
           stateEl.className = 'badge ms-2 ' + ({
             success: 'bg-success', failed: 'bg-danger', running: 'bg-warning text-dark',
@@ -347,13 +388,17 @@
             stepsEl.appendChild(li);
           });
           if (s.state === 'success' || s.state === 'failed') {
-            if (!done) { done = true;
+            if (!done) { done = true; renderCurrent();
               setTimeout(function () { window.location = '{{ url_for("self_update.index") }}'; }, 4000); }
             return;
           }
           setTimeout(poll, 2500);
         })
-        .catch(function () { setTimeout(poll, 4000); });  // survives the mid-update restart
+        .catch(function () {  // survives the mid-update restart — and says so
+          if (!cur.offline) { cur.offline = true; curSince = Date.now(); }
+          renderCurrent();
+          setTimeout(poll, 4000);
+        });
     }
     poll();
   }

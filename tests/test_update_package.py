@@ -663,3 +663,87 @@ def test_the_offline_installer_records_a_git_baseline():
     adopt = text.index('git -C "$APP_DIR" init -q', extract)
     chown = text.index('chown -R "${APP_USER}:${APP_USER}" "$APP_DIR"', adopt)
     assert extract < adopt < chown
+
+
+# ---------------------------------------------------------------------------
+# progress visibility: the step in flight is published before it ends
+# ---------------------------------------------------------------------------
+def test_the_runner_publishes_the_step_in_flight(tmp_path, monkeypatch):
+    """Steps used to land only when they finished, so a multi-minute database
+    backup or offline pip install left the console and the CLI showing nothing
+    new -- a working update looked hung."""
+    import json
+    mod = _load_runner(monkeypatch, tmp_path)
+    st = mod.Status("u1", {"requested_by": "t"})
+    st.begin("database backup")
+    d = json.loads((tmp_path / "data" / "update-status" / "u1.json").read_text())
+    assert d["current"]["name"] == "database backup"
+    assert d["current"]["since"]
+    st.step("database backup", True, "ok")
+    d = json.loads((tmp_path / "data" / "update-status" / "u1.json").read_text())
+    assert "current" not in d, "a finished step must clear the step in flight"
+    st.begin("flask db upgrade")
+    st.finish("failed")
+    d = json.loads((tmp_path / "data" / "update-status" / "u1.json").read_text())
+    assert "current" not in d, "a settled update must not claim a running step"
+
+
+def test_every_slow_package_step_is_announced_before_it_runs():
+    """The long operations of the offline apply each announce themselves."""
+    src = RUNNER_PATH.read_text()
+    body = src[src.index("# -- 5. backup BEFORE anything is replaced"):
+               src.index("# -- 11. record what is deployed")]
+    for name in ("database backup", "install application tree",
+                 "pip install (offline, from the package)", "flask db upgrade"):
+        assert 'st.begin("%s")' % name in body, name
+    rv = src[src.index("def restart_and_validate"):src.index("def ", src.index("def restart_and_validate") + 10)]
+    for name in ("restart services", "health check", "route audit"):
+        assert 'st.begin("%s")' % name in rv, name
+
+
+def test_the_cli_shows_progress_while_a_step_runs(tmp_path, monkeypatch, capsys):
+    """`satom execute update package --yes` prints the running step, a
+    heartbeat while it runs, and calls out a request nobody picked up."""
+    import json
+    import types
+    sys.path.insert(0, str(REPO / "deploy"))
+    from satom_cli import cmd_trust
+
+    sta = tmp_path / "data" / "update-status"
+    sta.mkdir(parents=True)
+    f = sta / "u1.json"
+    clock = {"t": 0.0}
+
+    def write(**d):
+        f.write_text(json.dumps(d))
+
+    def fake_sleep(n):
+        clock["t"] += n
+        t = clock["t"]
+        if 34 <= t < 60:
+            write(state="running", steps=[],
+                  current={"name": "database backup", "since": "x"})
+        elif 60 <= t < 70:
+            write(state="running",
+                  steps=[{"name": "database backup", "ok": True, "detail": ""}],
+                  current={"name": "flask db upgrade", "since": "x"})
+        elif t >= 70:
+            write(state="success",
+                  steps=[{"name": "database backup", "ok": True, "detail": ""},
+                         {"name": "flask db upgrade", "ok": True, "detail": ""}])
+
+    write(state="queued", steps=[])
+    monkeypatch.setattr(cmd_trust, "time",
+                        types.SimpleNamespace(time=lambda: clock["t"], sleep=fake_sleep))
+    ctx = types.SimpleNamespace(app_dir=tmp_path, json_mode=False)
+    r = cmd_trust._follow(ctx, "u1", "2.5.1")
+    out = capsys.readouterr().out
+    assert "Queued as u1" in out
+    assert "[WARN] still queued" in out and "satom-updater.path" in out
+    assert "[ .. ] database backup ..." in out
+    assert "still running: database backup (" in out
+    assert "[ ok ] database backup" in out
+    assert "[ .. ] flask db upgrade ..." in out
+    assert out.index("[ .. ] database backup") < out.index("[ ok ] database backup")
+    assert r.status == "ok"
+

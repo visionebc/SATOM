@@ -373,18 +373,34 @@ def _enqueue(ctx, name, *, allow_downgrade, do_backup):
     return uid
 
 
-def _follow(ctx, uid, target, timeout=2400):
-    """Print the runner's steps as they land.
+def _elapsed(seconds):
+    seconds = int(max(0, seconds))
+    return "%dm%02ds" % divmod(seconds, 60) if seconds >= 60 else "%ds" % seconds
+
+
+def _follow(ctx, uid, target, timeout=2400, heartbeat=15, queued_warn=30):
+    """Print the runner's steps as they land, and what it is doing meanwhile.
 
     The apply restarts the web service, so a console operator has no page to
-    watch. Without this the command would look hung for minutes during the very
-    operation most likely to need attention.
+    watch. Finished steps alone were not enough: the slow ones (database
+    backup, offline pip install, migrations) printed nothing for minutes and
+    the command looked hung during the very operation most likely to need
+    attention. So the step in flight is printed when it starts, a heartbeat
+    line repeats every ``heartbeat`` seconds while it runs, and a request the
+    runner never picks up is called out instead of waited on in silence.
     """
     path = ctx.app_dir / "data" / "update-status" / (uid + ".json")
-    deadline = time.time() + timeout
+    say = (lambda *a: None) if ctx.json_mode else (lambda m: print(m, flush=True))
+    say("Queued as %s. Waiting for the update runner (satom-updater) to start..."
+        % uid)
+    t0 = time.time()
+    deadline = t0 + timeout
     seen = 0
     state = "queued"
     steps = []
+    current, current_t = None, t0
+    last_beat = t0
+    warned_queued = False
     while time.time() < deadline:
         try:
             d = json.loads(path.read_text())
@@ -392,15 +408,32 @@ def _follow(ctx, uid, target, timeout=2400):
             time.sleep(2)
             continue
         steps = d.get("steps") or []
-        for s in steps[seen:]:
-            if not ctx.json_mode:
-                print("  %s %s%s" % ("[ ok ]" if s.get("ok") else "[FAIL]",
-                                     s.get("name", ""),
-                                     (" — " + s["detail"]) if s.get("detail") else ""))
+        for st_ in steps[seen:]:
+            say("  %s %s%s" % ("[ ok ]" if st_.get("ok") else "[FAIL]",
+                               st_.get("name", ""),
+                               (" — " + st_["detail"]) if st_.get("detail") else ""))
+        if len(steps) > seen:
+            last_beat = current_t = time.time()
         seen = len(steps)
         state = d.get("state") or "running"
         if state in ("success", "failed"):
             break
+        name = (d.get("current") or {}).get("name")
+        if name and name != current:
+            say("  [ .. ] %s ..." % name)
+            last_beat = current_t = time.time()
+        current = name
+        now_ = time.time()
+        if state == "queued" and not warned_queued and now_ - t0 >= queued_warn:
+            warned_queued = True
+            say("  [WARN] still queued after %s — the runner has not picked the "
+                "request up. Check: systemctl status satom-updater.path"
+                % _elapsed(now_ - t0))
+        elif state != "queued" and now_ - last_beat >= heartbeat:
+            last_beat = now_
+            say("         %s (%s)" % (
+                ("still running: %s" % current) if current
+                else "working", _elapsed(now_ - current_t)))
         time.sleep(2)
 
     r = Result("ok" if state == "success" else "bad",

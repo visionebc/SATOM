@@ -117,3 +117,39 @@ def test_load_nodes_defaults_to_self(tmp_path, monkeypatch):
     monkeypatch.setattr(su, "this_node_name", lambda: "solo")
     nodes = su.load_nodes()
     assert len(nodes) == 1 and nodes[0]["name"] == "solo"
+
+
+# ---------------------------------------------------------------------------
+# the live panel resumes when the page is reopened mid-update
+# ---------------------------------------------------------------------------
+def test_the_page_resumes_watching_an_update_in_flight():
+    from datetime import datetime, timedelta, timezone
+    from app.views.self_update import _active_update
+
+    def at(minutes_ago):
+        return (datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)
+                ).isoformat().replace("+00:00", "Z")
+
+    hist = [{"id": "done", "state": "success", "updated_at": at(1)},
+            {"id": "live", "state": "running", "updated_at": at(2)}]
+    assert _active_update(hist) == "live"
+    # an orphaned queued request must not pin the panel open for ever
+    assert _active_update([{"id": "old", "state": "queued",
+                            "updated_at": at(600)}]) == ""
+    assert _active_update([{"id": "x", "state": "failed",
+                            "updated_at": at(1)}]) == ""
+    assert _active_update([]) == ""
+    import inspect
+    from app.views import self_update as view
+    assert "_active_update(history)" in inspect.getsource(view.index), \
+        "index() must resume watching the update in flight"
+
+
+def test_the_live_panel_says_what_is_running_and_survives_the_restart():
+    from pathlib import Path
+    tpl = (Path(__file__).resolve().parents[1]
+           / "app/templates/self_update/index.html").read_text()
+    assert 'id="live-current"' in tpl
+    assert "s.current" in tpl, "the panel must render the runner's step in flight"
+    assert "reconnecting" in tpl, "a failed poll during the restart must be visible"
+

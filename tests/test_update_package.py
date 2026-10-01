@@ -602,3 +602,64 @@ def test_parking_local_state_ignores_untracked_files():
                 "git status here must exclude untracked files: %s" % values
             found = True
     assert found, "no git status call found in preserve_local_commits"
+
+
+# ---------------------------------------------------------------------------
+# [SATOM-ADOPT-TREE] an offline-installed tree has no .git
+# ---------------------------------------------------------------------------
+def _load_runner(monkeypatch, app_dir):
+    import importlib.util
+    monkeypatch.setenv("FM_APP_DIR", str(app_dir))
+    spec = importlib.util.spec_from_file_location("satom_runner_adopt", RUNNER_PATH)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    # No runuser: the test is not root, and the commands are the point.
+    monkeypatch.setattr(mod, "APP_USER", None)
+    return mod
+
+
+def test_adopting_an_offline_tree_commits_exactly_the_release_files(tmp_path, monkeypatch):
+    """Before 2.5.0 the first package on every offline node died at "count
+    local commits": the bundle extracts app.tar.gz, so there was no .git. The
+    adoption commit must hold the shipped files and NOTHING node-local -- a
+    node-local file in it would later be deleted as "dropped by the new
+    revision"."""
+    import subprocess
+    app = tmp_path / "satom"
+    (app / "app").mkdir(parents=True)
+    (app / "app" / "x.py").write_text("x = 1\n")
+    (app / "VERSION").write_text("2.4.1\n")
+    (app / ".gitignore").write_text("/data/\n.env\nvenv/\n")
+    (app / "data").mkdir()
+    (app / "data" / "secret.json").write_text("{}")
+    (app / ".env").write_text("SECRET_KEY=x\n")
+    (app / "venv").mkdir()
+    (app / "venv" / "pyvenv.cfg").write_text("")
+    mod = _load_runner(monkeypatch, app)
+
+    ok, detail = mod.adopt_tree()
+    assert ok, detail
+    tracked = set(subprocess.run(["git", "-C", str(app), "ls-files"], capture_output=True,
+                                 text=True, check=True).stdout.split())
+    assert tracked == {".gitignore", "VERSION", "app/x.py"}
+    log = subprocess.run(["git", "-C", str(app), "log", "--format=%s"], capture_output=True,
+                         text=True, check=True).stdout
+    assert "baseline: SATOM 2.4.1" in log
+
+    ok, detail = mod.adopt_tree()
+    assert ok and detail == "already a git checkout"
+
+
+def test_a_package_apply_adopts_before_it_snapshots():
+    src = RUNNER_PATH.read_text()
+    body = src.split("def package_change(", 1)[1]
+    assert body.index("adopt_tree()") < body.index('snapshot = git("rev-parse", "HEAD")'), (
+        "the package path must adopt a non-git tree before it takes its rollback snapshot")
+
+
+def test_the_offline_installer_records_a_git_baseline():
+    text = (RUNNER_PATH.parents[1] / "installers" / "install-satom.sh").read_text()
+    extract = text.index('tar -xzf "$BUNDLE_DIR/app.tar.gz" -C "$APP_DIR"')
+    adopt = text.index('git -C "$APP_DIR" init -q', extract)
+    chown = text.index('chown -R "${APP_USER}:${APP_USER}" "$APP_DIR"', adopt)
+    assert extract < adopt < chown

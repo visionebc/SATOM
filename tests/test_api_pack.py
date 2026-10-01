@@ -257,3 +257,221 @@ def test_selection_by_item_imports_only_that_item(env):
     assert [i["id"] for i in res["items"]] == [lib_id]
     with pytest.raises(ap.PackError, match="not in this pack"):
         ap.import_pack(p, trust_dir=env["trust"], ids=["library/nope"])
+
+
+# --------------------------------------------------------------------------
+# where packs come from: shipped with the release, or uploaded
+# --------------------------------------------------------------------------
+
+@pytest.fixture()
+def shipped(env, app):
+    """A signed pack in the release's api-packs/."""
+    _sweep()
+    _release_notes(env)
+    built = _export(env, "9.9.9")["path"]
+    d = env["tmp"] / "api-packs"
+    d.mkdir()
+    os.replace(built, d / "satom-apipack-9.9.9.tar.gz")
+    app.config["API_PACK_SHIPPED_DIR"] = str(d)
+    app.config["API_PACK_UPLOAD_DIR"] = str(env["tmp"] / "uploads")
+    return d / "satom-apipack-9.9.9.tar.gz"
+
+
+def test_the_release_pack_and_uploads_are_listed_by_source(env, shipped):
+    import io
+    ap.save_upload(io.BytesIO(shipped.read_bytes()), "satom-apipack-9.9.8.tar.gz")
+    got = {(p["source"], p["name"]) for p in ap.list_packs()}
+    assert got == {("shipped", "satom-apipack-9.9.9.tar.gz"),
+                   ("uploaded", "satom-apipack-9.9.8.tar.gz")}
+    assert ap.resolve_pack("shipped", "satom-apipack-9.9.9.tar.gz") == shipped
+
+
+@pytest.mark.parametrize("name", ["../../srv/x.tar.gz", "/srv/x", "evil.tar.gz",
+                                  "satom-update-1.0.0.tar.gz", "satom-apipack-x/../y.tar.gz"])
+def test_a_name_that_is_not_a_pack_never_reaches_the_filesystem(env, shipped, name):
+    with pytest.raises(ap.PackError, match="not an API pack name"):
+        ap.resolve_pack("shipped", name)
+
+
+def test_an_unknown_source_is_refused(env, shipped):
+    with pytest.raises(ap.PackError, match="unknown pack source"):
+        ap.resolve_pack("/srv", shipped.name)
+
+
+def test_an_oversized_or_misnamed_upload_leaves_nothing_behind(env, shipped, monkeypatch):
+    import io
+    with pytest.raises(ap.PackError, match="not an API pack name"):
+        ap.save_upload(io.BytesIO(b"x"), "notes.txt")
+    monkeypatch.setattr(ap, "MAX_UPLOAD_BYTES", 10)
+    with pytest.raises(ap.PackError, match="larger than"):
+        ap.save_upload(io.BytesIO(b"x" * 64), "satom-apipack-1.0.0.tar.gz")
+    assert list(ap.upload_dir().iterdir()) == []
+
+
+def test_uploads_keep_only_the_newest(env, shipped, monkeypatch):
+    import io
+    monkeypatch.setattr(ap, "KEEP_UPLOADS", 2)
+    for i in range(4):
+        ap.save_upload(io.BytesIO(b"x"), "satom-apipack-1.0.%d.tar.gz" % i)
+        os.utime(ap.upload_dir() / ("satom-apipack-1.0.%d.tar.gz" % i), (i + 1, i + 1))
+    assert sorted(p.name for p in ap.upload_dir().iterdir()) == [
+        "satom-apipack-1.0.2.tar.gz", "satom-apipack-1.0.3.tar.gz"]
+
+
+def test_import_reports_progress_per_item_and_logs_the_run(env, shipped):
+    _wipe_library()
+    seen = []
+    res = ap.import_pack(shipped, trust_dir=env["trust"], actor="ops",
+                         progress=lambda d, t, i: seen.append((d, t, i)))
+    total = len(res["items"])
+    assert seen[0] == (0, total, res["items"][0]["id"])
+    assert seen[-1] == (total, total, None)
+    assert len(seen) == total + 1
+    hist = ap.import_history()
+    assert hist[0]["version"] == "9.9.9" and hist[0]["actor"] == "ops"
+    assert hist[0]["imported"] == res["imported"] > 0
+
+
+# --------------------------------------------------------------------------
+# Software Update: API library packs section
+# --------------------------------------------------------------------------
+
+@pytest.fixture()
+def page(env, shipped, app, client, monkeypatch, tmp_path):
+    from conftest import admin_user_id, login
+    from app.services import jobs as jobsvc
+    monkeypatch.setattr(ap, "TRUST_DIR", env["trust"])
+    monkeypatch.setenv("SATOM_JOBS_DIR", str(tmp_path / "jobs"))
+    # The worker runs inline, so the test reads a finished job; an exception
+    # ends the job the way run_async's thread does.
+    def inline(a, jid, w):
+        try:
+            w(a, jid)
+        except Exception as exc:  # noqa: BLE001
+            jobsvc.finish_error(jid, "%s: %s" % (type(exc).__name__, exc))
+    monkeypatch.setattr(jobsvc, "run_async", inline)
+    login(client, admin_user_id(app))
+    return client
+
+
+def _inspect(page, shipped):
+    return page.get("/self-update/apipack/inspect?source=shipped&name=" + shipped.name)
+
+
+def test_the_page_inspects_the_shipped_pack(page, shipped):
+    r = _inspect(page, shipped)
+    assert r.status_code == 200, r.get_data(as_text=True)
+    d = r.get_json()
+    assert d["version"] == "9.9.9" and d["refusal"] == ""
+    # On the node it was built on nothing is new: its own sweep is "local".
+    assert {i["state"] for i in d["items"]} <= {"present", "local"}
+    assert any(i["state"] == "local" for i in d["items"])
+
+
+def test_a_bad_pack_name_is_a_400_with_the_reason(page):
+    r = page.get("/self-update/apipack/inspect?source=shipped&name=../../srv/x")
+    assert r.status_code == 400 and "not an API pack name" in r.get_json()["error"]
+
+
+def test_the_page_imports_the_ticked_items_as_a_job(page, shipped):
+    from app.services import jobs as jobsvc
+    _wipe_library()
+    items = _inspect(page, shipped).get_json()["items"]
+    lib_id = next(i["id"] for i in items if i["section"] == "library")
+    r = page.post("/self-update/apipack/import",
+                  data={"source": "shipped", "name": shipped.name, "ids": [lib_id]})
+    assert r.status_code == 202, r.get_data(as_text=True)
+    job = jobsvc.get_job(r.get_json()["job_id"])
+    assert job["status"] == "success", job
+    assert [i["id"] for i in job["result"]["items"]] == [lib_id]
+    assert job["result"]["imported"] == 1
+    assert ApiLibEvidence.query.count() == 1
+
+
+def test_a_failed_item_turns_the_job_red_but_keeps_the_results(page, shipped, monkeypatch):
+    from app.services import jobs as jobsvc
+    _wipe_library()
+
+    def boom(*a, **k):
+        raise RuntimeError("disk full")
+    monkeypatch.setattr(ap, "_import_one", boom)
+    items = _inspect(page, shipped).get_json()["items"]
+    r = page.post("/self-update/apipack/import", data={
+        "source": "shipped", "name": shipped.name,
+        "ids": [i["id"] for i in items if i["state"] == "new"][:1]})
+    job = jobsvc.get_job(r.get_json()["job_id"])
+    assert job["status"] == "error" and "1 of 1 item(s) failed" in job["error"]
+    assert job["result"]["items"][0]["error"].startswith("RuntimeError")
+
+
+def test_the_standby_refuses_to_import(page, shipped, monkeypatch):
+    from app.services import self_update as su
+    monkeypatch.setattr(su, "node_role", lambda: "standby")
+    r = page.post("/self-update/apipack/import",
+                  data={"source": "shipped", "name": shipped.name, "ids": ["x"]})
+    assert r.status_code == 409 and "PRIMARY" in r.get_json()["error"]
+    assert "STANDBY" in _inspect(page, shipped).get_json()["refusal"]
+
+
+def test_an_import_with_nothing_ticked_is_refused(page, shipped):
+    r = page.post("/self-update/apipack/import", data={"source": "shipped", "name": shipped.name})
+    assert r.status_code == 400
+
+
+def test_upload_then_delete_through_the_page(page, shipped):
+    import io
+    r = page.post("/self-update/apipack/upload", data={
+        "apipack": (io.BytesIO(shipped.read_bytes()), "satom-apipack-9.9.7.tar.gz")},
+        content_type="multipart/form-data")
+    assert r.status_code == 302 and "apipack=uploaded" in r.headers["Location"]
+    assert (ap.upload_dir() / "satom-apipack-9.9.7.tar.gz").exists()
+    r = page.post("/self-update/apipack/delete", data={"name": "satom-apipack-9.9.7.tar.gz"})
+    assert r.status_code == 302
+    assert not (ap.upload_dir() / "satom-apipack-9.9.7.tar.gz").exists()
+
+
+def test_the_section_is_on_the_update_page_and_wired_to_its_routes():
+    from pathlib import Path
+    tpl = (Path(__file__).resolve().parents[1]
+           / "app/templates/self_update/index.html").read_text()
+    for needle in ('id="api-packs"', "self_update.apipack_inspect",
+                   "self_update.apipack_import", "self_update.apipack_upload",
+                   "data-apk-filter", "apkFollow(d.job_id)", "'/jobs/'"):
+        assert needle in tpl, needle
+    import inspect
+    from app.views import self_update as view
+    assert "api_packs=_api_pack_state()" in inspect.getsource(view.index)
+
+
+# --------------------------------------------------------------------------
+# the installer imports the release's pack
+# --------------------------------------------------------------------------
+
+def _installer_block():
+    from pathlib import Path
+    src = (Path(__file__).resolve().parents[1] / "installers/install-satom.sh").read_text()
+    start = src.index("# [SATOM-APIPACK]")
+    return src, src[start:src.index("\nelse\n", start)]
+
+
+def test_the_installer_imports_the_shipped_pack_after_the_health_check():
+    src, block = _installer_block()
+    assert src.index("# [SATOM-APIPACK]") > src.index('if [ "$HEALTH" = ok ]; then')
+    assert "execute apipack import" in block
+    assert '"$ROLE" != "secondary"' in block, "a secondary's database is read-only"
+    assert "SATOM_API_PACK" in block and "SATOM_API_PACK_PRODUCTS" in block
+
+
+def test_the_installer_pack_step_never_prompts_and_never_fails_the_install():
+    _, block = _installer_block()
+    code = "\n".join(l for l in block.splitlines() if not l.strip().startswith("#"))
+    assert "ask " not in code and "read " not in code, \
+        "a new prompt shifts every existing answer file by one line"
+    assert "die " not in code, "the install is complete here; a pack is a warning"
+
+
+def test_the_repository_carries_the_api_packs_folder():
+    from pathlib import Path
+    readme = Path(__file__).resolve().parents[1] / "api-packs" / "README.md"
+    assert readme.is_file()
+    assert "satom execute apipack import" in readme.read_text()

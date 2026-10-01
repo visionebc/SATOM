@@ -695,8 +695,39 @@ def orphan_dumps() -> list:
     return out
 
 
+def pack_digest(product: str, *, version: str = "", line: str = "") -> dict | None:
+    """The CLI-only digest an imported API pack carries (docs/api-library.md §11).
+
+    A node with no appliance of a build has no dump to diff, and the pack is
+    the only way it can know which blocks that build keeps CLI-only. Same
+    filter rule as :func:`report`: ``version`` and ``line`` select, they never
+    fall back — a digest for 8.0.3 is not an answer about 8.0.5.
+    """
+    import json
+    from . import api_pack
+    from . import firmware_versions as fv
+    d = api_pack.pack_dir() / "cli-coverage" / product
+    if not d.is_dir():
+        return None
+    docs = []
+    for f in d.glob("*.json"):
+        try:
+            doc = json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(doc, dict) and doc.get("product") == product and doc.get("version"):
+            docs.append(doc)
+    if version:
+        docs = [x for x in docs if x["version"] == version]
+    elif line:
+        docs = [x for x in docs if x.get("line") == line]
+    if not docs:
+        return None
+    return max(docs, key=lambda x: fv.sort_key(x["version"]))
+
+
 def report(product: str, backup_id: int | None = None, *,
-           line: str = "", version: str = "") -> dict:
+           line: str = "", version: str = "", allow_pack: bool = False) -> dict:
     """The whole page payload for one product: evidence list + the diff.
 
     With no ``backup_id`` the newest usable dump for the product is used, so
@@ -728,8 +759,29 @@ def report(product: str, backup_id: int | None = None, *,
 
     if chosen is None:
         diff = compare(product, "") if product in SUPPORTED_PRODUCTS else compare(product, "")
-        diff["no_evidence"] = True
         diff["evidence_line"] = version or line
+        # ``allow_pack``: only the CLI-coverage card reads a pack digest. The
+        # other callers act on ``chosen`` (a stored dump), which a digest is not.
+        pk = (pack_digest(product, version=version, line=line)
+              if allow_pack and product in SUPPORTED_PRODUCTS else None)
+        if pk is not None:
+            diff[BUCKET_CLI_ONLY] = pk.get(BUCKET_CLI_ONLY) or []
+            diff[BUCKET_NEAR] = pk.get(BUCKET_NEAR) or []
+            # The digest carries no catalog-side list: "no block in this dump"
+            # would be a claim about a dump this node never saw.
+            diff[BUCKET_NO_BLOCK] = []
+            counts = dict(diff.get("counts") or {})
+            counts.update(pk.get("counts") or {})
+            counts["no_block"] = 0
+            diff["counts"] = counts
+            diff["no_evidence"] = False
+            return {"product": product, "evidence": evidence, "chosen": None,
+                    "pack": {"version": pk["version"], "line": pk.get("line", ""),
+                             "captured_at": pk.get("captured_at", ""),
+                             "witness": pk.get("witness", "")},
+                    "line_filter": line, "version_filter": version,
+                    "diff": diff, "orphans": orphan_dumps()}
+        diff["no_evidence"] = True
         return {"product": product, "evidence": evidence, "chosen": None,
                 "line_filter": line, "version_filter": version,
                 "diff": diff, "orphans": orphan_dumps()}

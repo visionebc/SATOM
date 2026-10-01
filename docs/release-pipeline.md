@@ -188,6 +188,19 @@ the product does not ship stops the release here, not on a customer's node.
 The public key is published next to it, and the release notes print its
 fingerprint.
 
+The **API library pack** (`satom-apipack-<ver>.tar.gz`) is different: it is
+committed to `api-packs/` in the repository **before the tag**, so the clone,
+every bundle's payload, the update package and the public mirror all carry it
+without any builder knowing about it. The `api_pack` gate checks the release
+commit holds exactly this release's pack, that it verifies against the
+product's public key and names this version, and reads every file inside it
+with the mirror's own redaction and secret rules — the mirror itself cannot,
+because the pack is a gzip of gzips. When the pack is missing or stale the
+repair builds it on the primary from the live API library, signs it here with
+the release key, and commits exactly `api-packs/`; a mirror-rule hit is never
+repaired. The publish step attaches the pack from the tag to the release.
+See [api-library.md §11.6](api-library.md).
+
 The builders (one per bundle family, plus the Docker builder) are build-only
 machines that do not start at boot. Verification and publication start them
 again to read their artefacts, so the run stops every one of them when it

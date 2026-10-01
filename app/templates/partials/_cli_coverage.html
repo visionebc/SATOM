@@ -150,6 +150,14 @@
             {{ _('in the catalog, no block in this dump') }}</div>
         </div>
 
+        {% if R.pack %}
+        <p class="text-muted" style="font-size:12px;" data-cc-source="apipack">
+          <i class="bi bi-journal-code me-1"></i>
+          {{ _('Evidence: an imported API pack') }} — <code>{{ R.pack.witness }}</code>,
+          {{ _('firmware') }} {{ R.pack.version }}, {{ _('captured') }} {{ R.pack.captured_at }}.
+          {{ _('This node holds no CLI dump for this firmware, so the block text cannot be shown; capture one to read it here.') }}
+        </p>
+        {% else %}
         <p class="text-muted" style="font-size:12px;">
           <i class="bi bi-info-circle me-1"></i>
           {{ _('Evidence:') }} <code>{{ R.chosen.appliance }}</code>,
@@ -157,6 +165,7 @@
           {{ _('captured') }} {{ R.chosen.created_at }}.
           {{ _('One dump is one device on one date — not a statement about the product.') }}
         </p>
+        {% endif %}
 
         {# ── THE ANSWER: config the CLI serves and the catalog does not ─── #}
         <h6 class="mt-3 mb-2" style="font-size:13px; font-weight:600;">
@@ -189,12 +198,14 @@
                 </td>
                 <td class="text-end">
                   {% if cc_can_read %}
+                    {% if not R.pack %}
                     <button type="button" class="btn btn-sm btn-fw-outline"
                             data-js="cc-block" data-path="{{ r.path }}"
                             title="{{ _('Show this block from the stored dump') }}"
                             style="padding:1px 7px;">
                       <i class="bi bi-file-earmark-text" style="font-size:11px;"></i>
                     </button>
+                    {% endif %}
                     {% if cc_appliances %}
                     <button type="button" class="btn btn-sm btn-fw-outline"
                             data-js="cc-live" data-path="{{ r.path }}"

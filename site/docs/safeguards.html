@@ -16144,6 +16144,85 @@ runner (with <code>MIGRATION_FAILED</code>) was installed.</p>
 <p><strong>Mutations (4 of 4 bite):</strong> <code>adopt_tree</code> a no-op; the package path not
 calling it; the installer without the baseline; <code>add -A -f</code> (ignoring
 <code>.gitignore</code>).</p>
+<h2 id="202--a-published-pack-that-would-have-carried-our-configuration-and-our-device-names-teststest_api_packpy-2026-10-02">§202 — a published pack that would have carried our configuration and our device names (<code>tests/test_api_pack.py</code>, 2026-10-02)</h2>
+<p><strong>The risk.</strong> An API pack is published (release asset, repository, public
+site). The obvious export, writing out what <code>api_lib_evidence</code> stores, ships
+the sweep's <code>raw_gz</code>: the full snapshot of every row the box returned, with
+admin names, trusted hosts and every other configured value (up to 1 MB per
+sweep on a1). Device identity is a second channel. The evidence rows copy the
+device name and serial, and the schema documents name the box that was
+harvested inside <code>witnesses</code> lists and <code>source</code> strings.</p>
+<p><strong>What the first real export showed.</strong> The deny-list (every device name,
+serial and address the node knows) passed it as clean, but an independent
+grep of the tarball found <code>"witnesses": ["{device}"]</code> and <code>live:{device}@8.0</code>. <code>{device}</code>
+is a deleted box with no row anywhere; its name exists only inside the
+documents. A deny-list cannot know a name nobody recorded.</p>
+<p><strong>The guards.</strong>
+- Export re-derives each document from its blob and ships it only if it
+  reproduces the stored <code>sha256</code> (field names and types only).
+- Witness slots are pseudonymised <strong>by position</strong>: <code>device.name</code>,
+  <code>witnesses[]</code>, <code>appliance</code>, <code>witness</code>, and the name inside a harvest
+  <code>source</code>. Each name found that way joins the deny-list for the rest of the
+  scan.
+- <code>_leak_scan</code> runs two checks over every payload: an allow-list (a witness
+  slot must hold a <code>witness-…</code> pseudonym) and the deny-list (names, serials,
+  appliance addresses, IPv4 on an appliance's /16). Any hit refuses the
+  export, and nothing is written.
+- Import: signature, then hashes, then schema; local measurements are never
+  replaced.</p>
+<p><strong>Real run on a1.</strong> 22 items: 13 library, 6 docs, 3 CLI digests. All 13
+healthy evidence rows reproduced their hash, and an independent grep found no
+device name, serial or <code>10.0.0.x</code> address. A dry-run import back into a1
+reported 11 <code>local</code>, 8 <code>present</code> and 3 <code>new</code>. An unsigned pack, a pack signed
+by a key outside the trust store, and a pack with one verdict changed were
+all refused.</p>
+<p><strong>Mutations (10 of 11 bite):</strong> <code>source</code> slot not pseudonymised;
+<code>witnesses</code> lists kept; leak scan disabled; hash proof skipped; local
+measurement ignored; release notes overwritten; contents not verified;
+signature not checked; raw sweep shipped; imported evidence re-exported. The
+survivor, a serial left on <code>device</code>, is caught by the second layer (the
+scrub drops any value equal to a known serial), as designed.</p>
+<h2 id="203--a-pack-the-public-mirror-could-not-read-and-an-import-that-would-have-run-as-root-teststest_api_packpy-teststest_clipy-pipeline-harness-26-2026-10-02">§203 — a pack the public mirror could not read, and an import that would have run as root (<code>tests/test_api_pack.py</code>, <code>tests/test_cli.py</code>, pipeline harness §26, 2026-10-02)</h2>
+<p><strong>The risk.</strong> The API pack is published three ways: in <code>api-packs/</code> on the
+public mirror, as a release asset and on <code>/downloads</code>. The mirror protects
+every published text file by rewriting internal identifiers, but it skips
+binary blobs, and a pack is a gzip of gzips: none of its text ever reaches
+the mirror's rules. Second, a pack imported by root (the installer, an
+operator with <code>sudo</code>) writes release notes and field schemas the web worker
+can then no longer update.</p>
+<p><strong>What a real pack showed.</strong> The mirror's rules, run by hand over a real
+export's decompressed contents, matched once: Fortinet's own release notes
+quote <code>set dst {ip}/32</code> in a static-route example, which the
+private-network rule matches. The rules are all regexes (none is a literal),
+so "tolerate regex rules in vendor prose" would also have tolerated one of
+our host names there. The exception is therefore decided by the match itself.</p>
+<p><strong>The guards.</strong>
+- Pipeline gate <code>api_pack</code> (harness §26): the release commit holds exactly
+  this release's pack and <code>.sha256</code>; the checksum matches; the signature
+  verifies against <code>deploy/update-keys/satom-release-2026.pub</code>; the manifest
+  names the version; and every member, decompressed, passes the mirror's
+  redaction and secret rules. The only exception is a match in the vendor
+  release notes that is a bare IPv4 address. A mirror-rule hit is in
+  <code>NEVER_REPAIR</code>.
+- The pack commit refuses a dirty tree <strong>before</strong> staging anything, and
+  stages only <code>api-packs/</code> paths (executed against a scratch repository in
+  the harness, with and without a stray file).
+- <code>satom execute apipack import</code> runs the import as the service account
+  (<code>runuser -m</code>), copies a pack from outside the tree to the staging area,
+  refuses on a standby, and only dry-runs without <code>--yes</code>.
+- The installer step runs only where the database is writable, after the
+  health check. It is never fatal and adds no prompt.
+- Names are matched against the pack pattern before they are joined to a
+  directory: <code>../</code>, absolute paths and update-package names never reach the
+  filesystem.</p>
+<p><strong>Real run.</strong> The pipeline's own <code>build_api_pack</code> exported a pack on a1,
+signed it on the release host with the release key (<code>SHA256:cYv9…</code>), verified
+it, and scanned it clean: 22 items, 396 KB.</p>
+<p><strong>Mutations: 20/20 bite on the product side, 11/11 on the pipeline.</strong> The two
+pipeline survivors of the first pass were string checks, which still found
+their text after the mutation. They are now behavioural: <code>st_verify_public</code>
+runs against a fake release without the pack, and the commit script runs in a
+scratch repository.</p>
     </div>
   </div>
 </section>

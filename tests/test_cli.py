@@ -170,3 +170,101 @@ def test_diagnose_privilege_flags_a_service_account_grant():
     src = (CLI_DIR / "cmd_diagnose.py").read_text()
     assert "/usr/local/sbin/satom" in src
     assert "NOPASSWD: ALL" in src
+
+
+# ---------------------------------------------------------------------------
+# execute apipack import
+# ---------------------------------------------------------------------------
+def _apk_ctx(tmp_path, role="primary"):
+    c = _ctx(root=True)
+    c.app_dir = tmp_path
+    c.app_user = "satom"
+    c._env = {"SQLALCHEMY_DATABASE_URI": "postgresql://x"}
+    c._role = role
+    (tmp_path / "venv" / "bin").mkdir(parents=True)
+    (tmp_path / "venv" / "bin" / "flask").write_text("")
+    return c
+
+
+def _body(res):
+    return " ".join(str(l) for _, (_, lines) in res.sections for l in lines)
+
+
+def test_apipack_import_refuses_on_the_standby(tmp_path):
+    from satom_cli import cmd_apipack as ap
+    res = ap.import_apipack(_apk_ctx(tmp_path, role="standby"), ["shipped"])
+    assert res.status == "bad" and "STANDBY" in _body(res)
+
+
+def test_apipack_import_without_a_shipped_pack_says_so(tmp_path):
+    from satom_cli import cmd_apipack as ap
+    res = ap.import_apipack(_apk_ctx(tmp_path), ["shipped", "--yes"])
+    assert res.status == "bad" and "carries no pack" in _body(res)
+
+
+def test_apipack_import_refuses_a_file_that_is_not_a_pack(tmp_path):
+    from satom_cli import cmd_apipack as ap
+    f = tmp_path / "notes.tar.gz"
+    f.write_text("x")
+    res = ap.import_apipack(_apk_ctx(tmp_path), [str(f), "--yes"])
+    assert res.status == "bad" and "not an API pack name" in _body(res)
+
+
+def test_apipack_import_runs_as_the_service_account_and_dry_runs_by_default(tmp_path, monkeypatch):
+    import json as _json
+    from satom_cli import cmd_apipack as ap
+    ctx = _apk_ctx(tmp_path)
+    packs = tmp_path / "api-packs"
+    packs.mkdir()
+    for v in ("1.9.0", "1.10.0"):
+        (packs / ("satom-apipack-%s.tar.gz" % v)).write_text("x")
+    calls = []
+
+    def fake_run(cmd, timeout=60, env=None, cwd=None, input_=None):
+        calls.append((cmd, env))
+        return 0, _json.dumps({"version": "1.10.0", "signed_by": "SHA256:k", "imported": 0,
+                               "errors": 0, "items": [{"id": "a", "state": "new"}]}), ""
+    monkeypatch.setattr(ap, "run", fake_run)
+    monkeypatch.setattr(ap.os, "geteuid", lambda: 0)
+    monkeypatch.delenv("SQLALCHEMY_DATABASE_URI", raising=False)   # sudo resets it
+    res = ap.import_apipack(ctx, ["shipped", "--product", "fortiweb,fortiadc"])
+    cmd, env = calls[0]
+    assert cmd[:5] == ["runuser", "-m", "-u", "satom", "--"]
+    assert cmd[-1] == "--dry-run", "no --yes means no import"
+    assert str(packs / "satom-apipack-1.10.0.tar.gz") in cmd, "newest by VERSION, not by name"
+    assert cmd.count("--product") == 2 and "fortiadc" in cmd
+    assert env["SQLALCHEMY_DATABASE_URI"] == "postgresql://x" and env["HOME"] == str(tmp_path)
+    assert res.status == "warn" and "--yes" in " ".join(res.notes)
+    ap.import_apipack(ctx, ["shipped", "--yes"])
+    assert "--dry-run" not in calls[-1][0]
+
+
+def test_apipack_import_stages_a_pack_from_outside_the_tree(tmp_path, monkeypatch):
+    import json as _json
+    from satom_cli import cmd_apipack as ap
+    ctx = _apk_ctx(tmp_path / "app")
+    home = tmp_path / "home"
+    home.mkdir()
+    src = home / "satom-apipack-2.0.0.tar.gz"
+    src.write_text("pack")
+    seen = []
+    monkeypatch.setattr(ap, "run", lambda cmd, **k: (seen.append(cmd) or 0, _json.dumps(
+        {"version": "2.0.0", "imported": 1, "errors": 0, "items": []}), ""))
+    monkeypatch.setattr(ap.os, "geteuid", lambda: 1000)
+    ap.import_apipack(ctx, [str(src), "--yes"])
+    staged = tmp_path / "app" / "data" / "apipack-uploads" / src.name
+    assert staged.read_text() == "pack"
+    assert str(staged) in seen[0], "the service account cannot read an operator's home"
+
+
+def test_apipack_a_failed_import_is_a_failing_exit_code(tmp_path, monkeypatch):
+    import json as _json
+    from satom_cli import cmd_apipack as ap
+    ctx = _apk_ctx(tmp_path)
+    (tmp_path / "api-packs").mkdir()
+    (tmp_path / "api-packs" / "satom-apipack-1.0.0.tar.gz").write_text("x")
+    monkeypatch.setattr(ap, "run", lambda cmd, **k: (1, _json.dumps(
+        {"version": "1.0.0", "imported": 0, "errors": 1,
+         "items": [{"id": "a", "state": "new", "error": "boom"}]}), ""))
+    res = ap.import_apipack(ctx, ["shipped", "--yes"])
+    assert res.status == "bad" and res.exit_code != 0 and "boom" in _body(res)

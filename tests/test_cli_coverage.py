@@ -509,6 +509,47 @@ def test_with_no_evidence_the_report_says_so_instead_of_showing_zero(app):
     assert "that is a gap in evidence, not a clean result" in page
 
 
+def _seed_pack_digest(app, tmp_path, version="7.6.8"):
+    import json
+    app.config["API_PACK_DIR"] = str(tmp_path / "apipacks")
+    d = tmp_path / "apipacks" / "cli-coverage" / "fortiweb"
+    d.mkdir(parents=True)
+    (d / ("%s.json" % version)).write_text(json.dumps({
+        "product": "fortiweb", "version": version, "line": version.rsplit(".", 1)[0],
+        "captured_at": "2026-09-20", "witness": "witness-0123456789",
+        "counts": {"cli_blocks": 40, "both": 30, "cli_only": 1, "cli_only_configured": 1,
+                   "near_match": 0, "no_block": 12},
+        "cli_only": [{"path": "system packcheck-only", "tokens": ["packcheck", "only"],
+                      "settings": ["status"], "configured": True}],
+        "near_match": []}))
+
+
+def test_with_no_dump_the_card_answers_from_an_imported_pack_digest(app, tmp_path):
+    """Imported by an API pack (docs/api-library.md §11), and read only here:
+    a node with no appliance of the build has no other way to know it."""
+    from app.services import cli_coverage as cc
+    _seed_pack_digest(app, tmp_path)
+    with app.app_context():
+        rep = cc.report("fortiweb", version="7.6.8", allow_pack=True)
+        assert rep["chosen"] is None and rep["diff"]["no_evidence"] is False
+        assert rep["pack"]["witness"] == "witness-0123456789"
+        assert [r["path"] for r in rep["diff"]["cli_only"]] == ["system packcheck-only"]
+        assert rep["diff"]["counts"]["no_block"] == 0 and rep["diff"]["no_block"] == []
+        # A digest for 7.6.8 is not an answer about 7.6.9 ...
+        assert cc.report("fortiweb", version="7.6.9", allow_pack=True)["diff"]["no_evidence"]
+        # ... and callers that act on a stored dump never get one.
+        assert cc.report("fortiweb", version="7.6.8")["diff"]["no_evidence"] is True
+
+
+def test_the_pack_digest_renders_as_pack_evidence_without_block_reading(app, client, tmp_path):
+    _seed_pack_digest(app, tmp_path)
+    login(client, admin_user_id(app))
+    page = client.get("/web/api-explorer/?version=7.6.8").get_data(as_text=True)
+    assert 'data-cc-source="apipack"' in page and "witness-0123456789" in page
+    assert "system packcheck-only" in page
+    assert 'data-js="cc-block" data-path="system packcheck-only"' not in page
+
+
 # ==========================================================================
 # fields — delegated, never recomputed
 # ==========================================================================

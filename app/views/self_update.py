@@ -8,7 +8,7 @@ web worker is never the thing restarting itself.
 from __future__ import annotations
 
 from flask import (Blueprint, render_template, request, redirect, url_for,
-                   flash, jsonify)
+                   flash, jsonify, current_app)
 from flask_login import login_required, current_user
 
 from .. import runtime
@@ -71,7 +71,20 @@ def index():
         watch=request.args.get("watch", "") or _active_update(history),
         uploads=upkg.list_uploads(),
         trust=upkg.trust_state(),
+        api_packs=_api_pack_state(),
     )
+
+
+def _api_pack_state() -> dict:
+    """What the API library packs section needs. Never raises: a broken pack
+    directory must not take the whole update page down with it."""
+    from ..services import api_pack
+    try:
+        return {"packs": api_pack.list_packs(), "history": api_pack.import_history(),
+                "role": su.node_role(), "error": ""}
+    except Exception as exc:  # noqa: BLE001 — shown in the card, not a 500
+        return {"packs": [], "history": [], "role": su.node_role(),
+                "error": "%s: %s" % (type(exc).__name__, exc)}
 
 
 @bp.route("/check", methods=["POST"])
@@ -339,3 +352,124 @@ def package_apply():
           "signature again and applying it — watch the live status below. The "
           "service restarts mid-update." % uid, "success")
     return redirect(url_for("self_update.index", watch=uid))
+
+
+# ---------------------------------------------------------------------------
+# API library packs (docs/api-library.md §11)
+# ---------------------------------------------------------------------------
+def _standby_refusal():
+    """A standby's Postgres is read-only: an import there could only fail half
+    way. Its library arrives by replication and its files by the data sync."""
+    if su.node_role() == "standby":
+        return ("This node is the STANDBY — its database is read-only. Import the "
+                "pack on the PRIMARY: the library replicates here, and the data "
+                "sync copies the release notes and field schemas.")
+    return ""
+
+
+@bp.route("/apipack/inspect")
+@login_required
+@require_permission("user_manage")
+def apipack_inspect():
+    from ..services import api_pack
+    source = request.args.get("source") or ""
+    name = request.args.get("name") or ""
+    try:
+        res = api_pack.inspect_pack(api_pack.resolve_pack(source, name))
+    except api_pack.PackError as exc:
+        return jsonify({"source": source, "name": name, "error": str(exc)}), 400
+    res.update(source=source, name=name, refusal=_standby_refusal())
+    return jsonify(res)
+
+
+@bp.route("/apipack/upload", methods=["POST"])
+@login_required
+@require_permission("user_manage")
+def apipack_upload():
+    from ..services import api_pack
+    f = request.files.get("apipack")
+    if not f or not f.filename:
+        flash("Choose an API pack file to upload.", "danger")
+        return redirect(url_for("self_update.index", _anchor="api-packs"))
+    try:
+        info = api_pack.save_upload(f.stream, f.filename)
+    except (api_pack.PackError, OSError) as exc:
+        flash("API pack upload rejected: %s" % exc, "danger")
+        return redirect(url_for("self_update.index", _anchor="api-packs"))
+    log_action("apipack.upload", target=info["name"], extra={"size": info["size"]})
+    flash("Staged %s. Pick the items to import below." % info["name"], "success")
+    return redirect(url_for("self_update.index", apipack="uploaded:" + info["name"],
+                            _anchor="api-packs"))
+
+
+@bp.route("/apipack/delete", methods=["POST"])
+@login_required
+@require_permission("user_manage")
+def apipack_delete():
+    from ..services import api_pack
+    name = request.form.get("name") or ""
+    try:
+        api_pack.delete_upload(name)
+        log_action("apipack.delete", target=name)
+        flash("Removed %s." % name, "info")
+    except (api_pack.PackError, OSError) as exc:
+        flash(str(exc), "danger")
+    return redirect(url_for("self_update.index", _anchor="api-packs"))
+
+
+def _apipack_worker(path: str, ids: list, actor: str):
+    def work(app, jid):
+        from ..services import api_pack
+        from ..services import jobs as jobsvc
+
+        def progress(done, total, item_id):
+            pct = int(done * 100 / total) if total else 100
+            jobsvc.set_progress(jid, pct, ("Importing %s (%d of %d)" % (item_id, done + 1, total))
+                                if item_id else "Imported %d item(s)" % total)
+
+        with app.app_context():
+            res = api_pack.import_pack(path, ids=ids, actor=actor, progress=progress)
+        # Recorded before the verdict, so a red job still shows item by item
+        # what went in and what did not.
+        jobsvc.update_job(jid, result=res)
+        if res["errors"]:
+            # Partial imports are kept (each item is independent); the job
+            # still ends red so nobody reads "some failed" as "done".
+            failed = [r["id"] for r in res["items"] if r.get("error")]
+            raise RuntimeError("%d of %d item(s) failed: %s — the other %d were imported"
+                               % (res["errors"], len(res["items"]), ", ".join(failed[:5]),
+                                  res["imported"]))
+        jobsvc.finish_success(jid, result=res, message="Imported %d item(s) from pack %s"
+                              % (res["imported"], res["version"]))
+        return res
+    return work
+
+
+@bp.route("/apipack/import", methods=["POST"])
+@login_required
+@require_permission("user_manage")
+def apipack_import():
+    """Import the ticked items as a background job; the page follows it."""
+    from ..services import api_pack
+    from ..services import jobs as jobsvc
+    refusal = _standby_refusal()
+    if refusal:
+        return jsonify({"error": refusal}), 409
+    source = request.form.get("source") or ""
+    name = request.form.get("name") or ""
+    ids = [i for i in request.form.getlist("ids") if i]
+    if not ids:
+        return jsonify({"error": "Tick at least one item to import."}), 400
+    try:
+        path = api_pack.resolve_pack(source, name)
+    except api_pack.PackError as exc:
+        return jsonify({"error": str(exc)}), 400
+    actor = getattr(current_user, "username", "") or ""
+    job = jobsvc.create_job("apipack_import", "Importing API pack %s" % name,
+                            by=actor, cancelable=False,
+                            meta={"pack": name, "source": source, "items": len(ids)})
+    jobsvc.run_async(current_app._get_current_object(), job["id"],
+                     _apipack_worker(str(path), ids, actor))
+    log_action("apipack.import", target=name, extra={"source": source, "items": len(ids),
+                                                     "job": job["id"]})
+    return jsonify({"job_id": job["id"]}), 202

@@ -643,7 +643,7 @@ check. <code>tests/test_docs_publication.py</code> fails the suite when this blo
 longer matches the console you are running.</p>
 <!-- BEGIN GENERATED COMMAND REFERENCE -->
 
-<p><em>104 commands in 38 groups. This table is generated from <code>deploy/satom_cli/tree.py</code> by <code>deploy/gen_cli_reference.py</code> — it cannot drift from the console you are running. <code>!</code> marks a command that changes state destructively and demands <code>--yes</code>.</em></p>
+<p><em>106 commands in 39 groups. This table is generated from <code>deploy/satom_cli/tree.py</code> by <code>deploy/gen_cli_reference.py</code> — it cannot drift from the console you are running. <code>!</code> marks a command that changes state destructively and demands <code>--yes</code>.</em></p>
 <h3 id="get"><code>get</code></h3>
 <p>Read state. Every command below works as <strong>any user</strong> — this is the half of the console that has to keep working when everything else does not.</p>
 <table>
@@ -837,6 +837,12 @@ longer matches the console you are running.</p>
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
 <td>Inspect an update package without applying it.</td>
+</tr>
+<tr>
+<td><code>satom show apipack</code></td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td>API library packs on this node and what was imported from them.</td>
 </tr>
 <tr>
 <td><code>satom show config</code></td>
@@ -1177,6 +1183,12 @@ longer matches the console you are running.</p>
 <td style="text-align: center;">yes</td>
 <td style="text-align: center;">—</td>
 <td>Install or re-assert the node-local metrics store (VictoriaMetrics).</td>
+</tr>
+<tr>
+<td><code>satom execute apipack import &lt;file.tar.gz\|shipped&gt; [--yes] [--product &lt;p&gt;[,&lt;p&gt;...]] [--section &lt;s&gt;[,&lt;s&gt;...]]</code></td>
+<td style="text-align: center;">yes</td>
+<td style="text-align: center;">—</td>
+<td>Import a SIGNED API pack. Dry run unless --yes; never replaces local data.</td>
 </tr>
 <tr>
 <td><code>satom execute trust add-key &lt;file.pub&gt; [--name &lt;slug&gt;]</code></td>

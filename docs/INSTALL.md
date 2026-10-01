@@ -337,6 +337,15 @@ without them a minimal image with no network failed halfway through the
 installation, with the service account already created. Bundles 1.1 and earlier
 carried neither those nor `lego` in the RHEL variant.
 
+**The browser does not need the Internet either.** Every script, stylesheet
+and font the console uses (Bootstrap, Bootstrap Icons, Chart.js) is vendored
+inside the application and served by the node itself; the Content-Security-
+Policy names no other origin for them. Up to **2.4.1** Bootstrap Icons still
+came from `cdn.jsdelivr.net`: on an isolated network every page reload waited
+10–20 s for that request to time out, and the menu showed no icons. The full
+list, with each asset's upstream link and license, is in the engineering
+manual, §9.1 *Third-party browser assets*.
+
 The bundle is a **snapshot of the repository at build time**: the guards it
 contains are the ones that existed then. To know exactly which version you have
 before installing:

@@ -302,8 +302,22 @@ class FortiWebReadonlySSH:
         command = assert_readonly(command)
         if not self._shell:
             raise FortiSSHError("SSH session is not connected")
-        self._shell.send(command + "\n")
-        return clean_output(self._read(quiet, maxt), command)
+        # One visible step per command inside a device job (job_progress).
+        from . import job_progress
+        sink = job_progress.current()
+        if sink is not None:
+            sink.before_call(f"ssh://{self.appliance.host}:{int(self.appliance.ssh_port or 22)}")
+        started = time.monotonic()
+        try:
+            self._shell.send(command + "\n")
+            out = clean_output(self._read(quiet, maxt), command)
+        except Exception as exc:
+            if sink is not None:
+                sink.after_call("SSH", command[:80], None, started, error=exc)
+            raise
+        if sink is not None:
+            sink.after_call("SSH", command[:80], "ok", started)
+        return out
 
     def _read_until(self, done, maxt: float) -> str:
         """Read until ``done`` matches, the prompt returns, or ``maxt`` elapses.

@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}{{ job.title }} - SATOM{% endblock %}
+{% block content %}
+<style nonce="{{ csp_nonce }}">
+.jw-card { max-width: 860px; }
+.jw-head { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.jw-title { font-size:1.1rem; font-weight:600; margin:0; flex:1; }
+.jw-msg { color:#3D4550; font-size:13px; margin:10px 0 6px; min-height:18px; word-break:break-word; }
+.jw-track { height:8px; background:#E6E8EC; border-radius:6px; overflow:hidden; }
+.jw-bar { height:100%; width:0; background:#EF5424; transition:width .3s ease; }
+.jw-bar.ok { background:#15692A; } .jw-bar.err { background:#8B1C2A; } .jw-bar.stop { background:#7A5700; }
+.jw-steps { margin:14px 0 0; padding-left:22px; max-height:340px; overflow:auto;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; color:#1f2937; }
+.jw-steps li { line-height:1.6; }
+.jw-steps li.bad { color:#8B1C2A; }
+.jw-steps .t { color:#6b7280; }
+.jw-note { font-size:12px; color:#6b7280; margin-top:12px; }
+</style>
+<div class="card shadow-sm jw-card" id="jw" data-job="{{ job.id }}">
+  <div class="card-header fw-card-header jw-head">
+    <i class="bi bi-hourglass-split"></i>
+    <h1 class="jw-title" id="jw-title">{{ job.title }}</h1>
+    <span class="fw-badge fw-badge-secondary" id="jw-status">{{ job.status }}</span>
+  </div>
+  <div class="card-body">
+    <div class="jw-track"><div class="jw-bar" id="jw-bar"></div></div>
+    <div class="jw-msg" id="jw-msg">{{ job.message or _('Starting…') }}</div>
+    <div class="d-flex gap-2 flex-wrap">
+      <button type="button" class="btn btn-sm btn-outline-danger" id="jw-stop" hidden>{{ _('Stop') }}</button>
+      {% if back %}<a class="btn btn-sm btn-fw-secondary" href="{{ back }}" id="jw-back">{{ _('Keep working — it continues in the background') }}</a>{% endif %}
+      <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('jobs.manager') }}?focus={{ job.id }}">{{ _('Open in Jobs') }}</a>
+      <a class="btn btn-sm btn-fw-primary" id="jw-result" href="{{ url_for('jobs.response', job_id=job.id) }}" hidden>{{ _('Show result') }}</a>
+    </div>
+    <ol class="jw-steps" id="jw-steps"></ol>
+    <div class="jw-note">{{ _('Each call to the device appears above as it happens. Leaving this page does not stop the action; the Jobs dock keeps following it.') }}</div>
+  </div>
+</div>
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var root = document.getElementById('jw'); if (!root) return;
+  var id = root.getAttribute('data-job');
+  var bar = document.getElementById('jw-bar'), msg = document.getElementById('jw-msg');
+  var badge = document.getElementById('jw-status'), stepsEl = document.getElementById('jw-steps');
+  var stop = document.getElementById('jw-stop'), result = document.getElementById('jw-result');
+  var BADGE = { running: 'fw-badge-info', pending: 'fw-badge-secondary', cancelling: 'fw-badge-warning',
+                success: 'fw-badge-success', error: 'fw-badge-danger', cancelled: 'fw-badge-warning',
+                paused: 'fw-badge-warning', pausing: 'fw-badge-warning' };
+  var timer = null, gone = false;
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function csrf() { var m = document.querySelector('meta[name="csrf-token"]'); return m ? m.content : ''; }
+  function render(j) {
+    var st = j.status || 'pending', m = j.meta || {};
+    badge.className = 'fw-badge ' + (BADGE[st] || 'fw-badge-secondary');
+    badge.textContent = (m.queued && st === 'running') ? 'queued' : st;
+    bar.style.width = (st === 'success' ? 100 : (j.percent || 0)) + '%';
+    bar.className = 'jw-bar' + (st === 'success' ? ' ok' : st === 'error' ? ' err' : st === 'cancelled' ? ' stop' : '');
+    msg.textContent = j.message || '';
+    var steps = m.steps || [];
+    stepsEl.innerHTML = steps.map(function (s) {
+      return '<li class="' + (s.ok === false ? 'bad' : '') + '"><span class="t">' + esc((s.at || '').slice(11)) +
+        '</span> ' + esc(s.label) + (s.outcome ? ' · ' + esc(s.outcome) : '') +
+        (s.ms != null ? ' <span class="t">' + (s.ms < 1000 ? s.ms + ' ms' : (s.ms / 1000).toFixed(1) + ' s') + '</span>' : '') + '</li>';
+    }).join('');
+    stepsEl.scrollTop = stepsEl.scrollHeight;
+    var active = ['pending', 'running', 'cancelling', 'pausing', 'paused'].indexOf(st) >= 0;
+    stop.hidden = !(active && j.cancelable !== false && st !== 'cancelling');
+    return active;
+  }
+  function finish(j) {
+    var st = j.status;
+    if (st === 'success' || st === 'error') {
+      // Hand over to the action's own response (redirect, page or file).
+      var url = '/jobs/' + encodeURIComponent(id) + '/response';
+      var kind = (j.result || {}).kind;
+      if (kind === 'file') { result.hidden = false; window.location.href = url; return; }
+      if (window.Turbo && window.Turbo.visit && kind !== 'json') window.Turbo.visit(url, { action: 'replace' });
+      else if (kind === 'json') { result.hidden = false; }
+      else window.location.replace(url);
+    }
+  }
+  function poll() {
+    if (gone) return;
+    fetch('/jobs/' + encodeURIComponent(id), { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) {
+        if (!j || gone) return;
+        if (render(j)) timer = setTimeout(poll, 1000);
+        else finish(j);
+      })
+      .catch(function () { if (!gone) timer = setTimeout(poll, 2500); });
+  }
+  stop.addEventListener('click', function () {
+    stop.disabled = true;
+    fetch('/jobs/' + encodeURIComponent(id) + '/cancel', { method: 'POST',
+      headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': csrf() } })
+      .then(function (r) { return r.json().catch(function () { return null; }); })
+      .then(function (d) { if (d && d.error) { msg.textContent = d.error; } stop.disabled = false; })
+      .catch(function () { stop.disabled = false; });
+  });
+  document.addEventListener('turbo:before-render', function h() {
+    gone = true; if (timer) clearTimeout(timer);
+    document.removeEventListener('turbo:before-render', h);
+  });
+  poll();
+})();
+</script>
+{% endblock %}

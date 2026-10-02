@@ -59,6 +59,73 @@
   </div></div>
 </div>
 
+<div class="card shadow-sm mb-4" id="dev-jobs" data-appliance="{{ appliance.id }}">
+  <div class="card-header fw-card-header d-flex justify-content-between align-items-center">
+    <span><i class="bi bi-list-task me-2"></i>{{ _('Jobs on this device') }}</span>
+    <a class="small" href="{{ url_for('jobs.manager') }}">{{ _('All jobs') }} &rarr;</a>
+  </div>
+  <div class="card-body p-0">
+    <table class="table table-sm mb-0 align-middle dj-table">
+      <tbody id="dev-jobs-body"><tr><td class="text-muted small px-3 py-2">{{ _('Every action on this device runs as a job; the running and most recent ones appear here.') }}</td></tr></tbody>
+    </table>
+  </div>
+</div>
+<style nonce="{{ csp_nonce }}">
+.dj-table td { font-size:13px; }
+.dj-msg { font-size:12px; color:#3D4550; max-width:520px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.dj-track { height:6px; background:#E6E8EC; border-radius:4px; overflow:hidden; width:120px; }
+.dj-bar { height:100%; background:#EF5424; }
+.dj-bar.ok { background:#15692A; } .dj-bar.err { background:#8B1C2A; } .dj-bar.stop { background:#7A5700; }
+</style>
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var root = document.getElementById('dev-jobs'); if (!root) return;
+  var aid = root.getAttribute('data-appliance'), body = document.getElementById('dev-jobs-body');
+  var BADGE = { running: 'fw-badge-info', pending: 'fw-badge-secondary', cancelling: 'fw-badge-warning',
+                success: 'fw-badge-success', error: 'fw-badge-danger', cancelled: 'fw-badge-warning',
+                paused: 'fw-badge-warning', pausing: 'fw-badge-warning' };
+  var ACTIVE = ['pending', 'running', 'cancelling', 'pausing', 'paused'];
+  var timer = null, gone = false, empty = body.innerHTML;
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function when(iso) { try { return new Date(iso + (/Z$|[+-]\d\d:\d\d$/.test(iso) ? '' : 'Z')).toLocaleString(); } catch (e) { return iso || ''; } }
+  function row(j) {
+    var st = j.status || 'pending', m = j.meta || {};
+    var label = (m.queued && st === 'running') ? 'queued' : st;
+    var cls = st === 'success' ? ' ok' : st === 'error' ? ' err' : st === 'cancelled' ? ' stop' : '';
+    var pct = st === 'success' ? 100 : (j.percent || 0);
+    var link = (ACTIVE.indexOf(st) >= 0 && m.device_job) ? '/jobs/' + encodeURIComponent(j.id) + '/wait'
+             : '/jobs/manager?focus=' + encodeURIComponent(j.id);
+    return '<tr><td class="ps-3"><span class="fw-badge ' + (BADGE[st] || 'fw-badge-secondary') + '">' + esc(label) + '</span></td>' +
+      '<td><a href="' + link + '">' + esc(j.title || j.type) + '</a><div class="dj-msg" title="' + esc(j.message) + '">' + esc(j.message) + '</div></td>' +
+      '<td><div class="dj-track"><div class="dj-bar' + cls + '" style="width:' + pct + '%"></div></div></td>' +
+      '<td class="small text-muted">' + esc(j.by || '') + '</td>' +
+      '<td class="small text-muted pe-3">' + esc(when(j.created)) + '</td></tr>';
+  }
+  function poll() {
+    if (gone) return;
+    fetch('/jobs/all?appliance=' + encodeURIComponent(aid) + '&limit=8', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        if (gone) return;
+        var list = (d && d.jobs) || [];
+        body.innerHTML = list.length ? list.map(row).join('') : empty;
+        var busy = list.some(function (j) { return ACTIVE.indexOf(j.status) >= 0; });
+        timer = setTimeout(poll, busy ? 2000 : 15000);
+      })
+      .catch(function () { if (!gone) timer = setTimeout(poll, 15000); });
+  }
+  function now() { if (timer) clearTimeout(timer); poll(); }
+  document.addEventListener('satom:job', now);
+  document.addEventListener('turbo:before-render', function h() {
+    gone = true; if (timer) clearTimeout(timer);
+    document.removeEventListener('satom:job', now);
+    document.removeEventListener('turbo:before-render', h);
+  });
+  poll();
+})();
+</script>
+
 <div class="card shadow-sm mb-4">
   <div class="card-header fw-card-header"><i class="bi bi-hdd-network me-2"></i>{{ _('Physical / Interfaces') }}</div>
   <div class="card-body">

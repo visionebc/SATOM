@@ -16799,3 +16799,55 @@ and left no file.
 
 **Mutations: 22/22 bite.** The one survivor of the first pass (an import that
 raises instead of returning non-zero) now has its own test.
+
+
+## §205 — device actions that ran inside the request (`tests/test_device_jobs.py`, 2026-10-02)
+
+**What was wrong.** About 150 POST routes talked to an appliance inside the
+HTTP request; 5 used the job framework. A slow device meant no feedback, and
+past gunicorn's 600 s timeout the request died while the device might be
+half-changed. Two operators could also write to the same box at the same time.
+
+**What changed.** One wrapper (`services/device_jobs.py`) replays each device
+POST in a job thread, returns inline when it finishes within 2 s, and
+otherwise answers `202` / redirects to a progress page. Each device call is a
+step (`services/job_progress.py`), and writes to one device are serialized by
+an `flock`.
+
+**The guards.**
+- Coverage: a POST of a device blueprint must be wrapped or listed in
+  `EXCLUDED` with a reason; `EXCLUDED` may only name real endpoints; a wrapped
+  view may not start its own job.
+- Fidelity: the replay runs `preprocess_request`, so CSRF, login, access gate,
+  ADOM/device gates and permission decorators apply again (tested with CSRF
+  on). The stored response is replayed only to the job's owner. The progress
+  page's *back* link only accepts a same-site path.
+- Stop is honest: a queued write can be stopped; a write holding the device
+  lock is `cancelable=False`. Read/write is decided by words in the endpoint
+  name and **any write word wins**, so a misread name errs towards "can't
+  stop", never towards "stopped mid-write".
+- Locks cannot leak: `flock` is dropped by the kernel when the process dies,
+  a job holds at most one lock and waits only while holding none (no
+  deadlock), and a wait gives up after 30 minutes.
+- Step labels drop query strings.
+- The ledger keeps device work only: an inline job with no device call is
+  deleted.
+- Standby, API tokens and the test suite keep the synchronous path.
+
+**Real run (a1, production app, fac01).** Test connection inline in 1.2 s,
+with one job and its step `GET /api/v1/systeminfo/ · 200`. On a throwaway
+gunicorn with `SATOM_JOB_INLINE_S=0`: `202` + `X-SATOM-Job`, replayed
+response identical; a form post went `303` to the progress page, which listed
+the step. Headless Chromium: the dock showed the job while it ran, then the
+page's own "Connection OK" appeared from the replayed response; the *Jobs on
+this device* card refreshed on the `satom:job` event.
+
+**Also found.** 93 buttons used `fw-btn-primary` / `fw-btn-secondary`, which
+no stylesheet defined. Both spellings now exist, and a test fails on any
+undefined button class.
+
+**Mutations: 18/18 bite.** The two survivors of the first pass were weak
+tests: the owner check on `/jobs/<id>/response` was hidden by a job with no
+stored response (404 either way), and the button-class check was satisfied by
+a `:hover` rule. Both tests now pin the real property.
+

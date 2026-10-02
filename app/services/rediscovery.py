@@ -64,6 +64,16 @@ def _get_flask_app():
 #: and the probe verdicts already follow.
 INTERRUPTED = "interrupted"
 FAILED = "failed"
+#: The operator pressed Stop. Its own word for the same reason as the two
+#: above: nothing failed and nothing was interrupted by accident.
+STOPPED = "stopped"
+#: States in which a worker is (or claims to be) working.
+ACTIVE_STATES = ("running", "deep-running", "cli-running")
+#: The Stop flag. A FILE, not a variable: the Stop request lands on whichever
+#: gunicorn worker the balancer picks, and the sweep thread lives in one of
+#: them. Checked between endpoints, so a stop takes effect once the request in
+#: flight returns (bounded by the client timeout).
+_STOP_FILE = "stop.request"
 
 _HOST = socket.gethostname()
 _log = logging.getLogger(__name__)
@@ -251,9 +261,71 @@ def status(appliance_id: int) -> dict | None:
     if not p.exists():
         return None
     try:
-        return json.loads(p.read_text(encoding="utf-8"))
+        st = json.loads(p.read_text(encoding="utf-8"))
     except Exception:  # noqa: BLE001
         return None
+    if st.get("state") in ACTIVE_STATES and _stop_requested(appliance_id):
+        st["stop_requested"] = True
+    return st
+
+
+def _stop_requested(appliance_id: int) -> bool:
+    return (_dev_dir(appliance_id) / _STOP_FILE).exists()
+
+
+def _clear_stop(appliance_id: int) -> None:
+    try:
+        (_dev_dir(appliance_id) / _STOP_FILE).unlink()
+    except FileNotFoundError:
+        pass
+
+
+def request_stop(appliance_id: int, by: str = "") -> dict:
+    """Ask the running sweep for ``appliance_id`` to stop.
+
+    * a sweep whose worker is alive gets the flag and stops at the next
+      endpoint boundary; the snapshot of the previous run is left untouched;
+    * a ``running`` file whose worker on THIS host is gone (a restart) is
+      closed as stopped right here, since nothing would ever read the flag;
+    * a run owned by the peer node is refused: its pid means nothing here.
+    """
+    st = status(appliance_id)
+    if not st or st.get("state") not in ACTIVE_STATES:
+        return {"stopped": False, "reason": "no discovery is running"}
+    if (st.get("host") or _HOST) != _HOST:
+        return {"stopped": False,
+                "reason": f"this sweep runs on {st.get('host')}; stop it there"}
+    pid = st.get("pid")
+    if pid and not _pid_alive(pid):
+        st.update(state=STOPPED, stopped_by=by,
+                  finished=datetime.utcnow().isoformat(),
+                  error="Stopped — the worker running this sweep was already "
+                        "gone. No snapshot was written.")
+        st.pop("stop_requested", None)
+        _write_json(_dev_dir(appliance_id) / "progress.json", st)
+        _clear_stop(appliance_id)
+        return {"stopped": True, "pending": False, "progress": st}
+    _write_json(_dev_dir(appliance_id) / _STOP_FILE,
+                {"by": by, "at": datetime.utcnow().isoformat()})
+    st["stop_requested"] = True
+    return {"stopped": True, "pending": True, "progress": st}
+
+
+def _stop_by(appliance_id: int) -> str:
+    try:
+        return json.loads((_dev_dir(appliance_id) / _STOP_FILE)
+                          .read_text(encoding="utf-8")).get("by", "")
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _finish_stopped(aid: int, progress_path, state: dict, message: str) -> None:
+    state.update(state=STOPPED, stopped_by=_stop_by(aid), error=message,
+                 finished=datetime.utcnow().isoformat(),
+                 heartbeat=datetime.utcnow().isoformat())
+    state.pop("stop_requested", None)
+    _write_json(progress_path, state)
+    _clear_stop(aid)
 
 
 def latest_snapshot_meta(appliance_id: int) -> dict | None:
@@ -631,6 +703,16 @@ def _sweep(appliance_snap: SimpleNamespace, by: str, deep: bool = False,
     absent: list[dict] = []
     ledger: dict[str, dict] = {}
     for i, ep in enumerate(plan, 1):
+        if _stop_requested(aid):
+            # No _config.json: a half sweep written as the LATEST snapshot
+            # would replace the last complete one and drive the inventory,
+            # the API matrix and the library from a partial picture.
+            state.update(done=i - 1, objects=total_objects,
+                         errors=errors[-25:], absent_count=len(absent))
+            _finish_stopped(aid, progress_path, state,
+                            f"Stopped at endpoint {i - 1}/{total}. No snapshot "
+                            f"was written; the previous one is unchanged.")
+            return
         try:
             rows, verdict, detail = _probe(ep)
             rows = [r for r in rows if isinstance(r, dict)]
@@ -700,14 +782,33 @@ def _sweep(appliance_snap: SimpleNamespace, by: str, deep: bool = False,
     _persist_firmware(aid, firmware)
     _refresh_api_matrix(appliance_snap)
 
+    # The snapshot is on disk from here on, so a stop only skips what is left.
+    # A deep or CLI pass already started runs to its end (CLI is capped at
+    # 300 s): neither has a boundary where it could stop cleanly.
+    def _stop_before(phase: str) -> bool:
+        if not _stop_requested(aid):
+            return False
+        _finish_stopped(aid, progress_path, state,
+                        f"Stopped before the {phase}. The sweep snapshot was "
+                        f"saved; the {phase} was skipped.")
+        return True
+
     if deep and not is_adc:  # deep capture is the FortiWeb WPP/policy layer
+        if _stop_before("deep capture"):
+            return
         _run_deep(appliance_snap, progress_path, state)
 
     # LAST, and only when asked. ``cli`` defaults to False so the post-
     # registration sweep (views.appliances) and every other internal caller
     # keep their current cost and their current side effects.
     if cli:
+        if _stop_before("CLI capture"):
+            return
         _run_cli(appliance_snap, progress_path, state)
+
+    # Pressed after the last phase began: nothing was left to stop. Drop the
+    # flag so it cannot stop the NEXT run before its first endpoint.
+    _clear_stop(aid)
 
 
 def _persist_firmware(appliance_id: int, firmware: str) -> None:
@@ -1062,6 +1163,7 @@ def start(appliance, by: str = "", deep: bool = False,
     # Resolve the plan HERE (request context): the registry is DB-first and the
     # worker thread has no app context to fall back through.
     plan = plan_for(appliance)
+    _clear_stop(appliance.id)   # a flag left by an earlier run must not stop this one
     _now = datetime.utcnow().isoformat()
     init = {"state": "running", "appliance_id": appliance.id, "appliance": appliance.name,
             "total": 0, "done": 0, "percent": 0, "objects": 0, "deep": bool(deep),
@@ -1156,7 +1258,8 @@ def reconcile_stale_runs(*, no_pid_stale_after_s: int = 900) -> list[dict]:
 
 
 __all__ = ["sweep_plan", "sweep_plan_adc", "plan_for", "status",
-           "reconcile_stale_runs", "INTERRUPTED", "FAILED",
+           "reconcile_stale_runs", "INTERRUPTED", "FAILED", "STOPPED",
+           "ACTIVE_STATES", "request_stop",
            "VERSION_DIR", "archive_snapshot", "version_snapshots",
            "migrate_version_archive",
            "latest_snapshot_meta", "start", "apply_inventory",

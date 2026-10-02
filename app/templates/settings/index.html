@@ -2818,7 +2818,7 @@
         <hr>
         <h6 class="mb-2"><i class="bi bi-upload me-1"></i>{{ _('Add certificate authorities') }}</h6>
         <p class="text-muted small">
-          {{ _('Two slots so a complete path goes in at once: the') }} <strong>{{ _('Root CA') }}</strong> {{ _('is the trust anchor, the') }} <strong>{{ _('Intermediate CA') }}</strong> {{ _('is usually what actually signed your appliances. Fill either, or both — a chain that stops at an intermediate whose issuer is missing imports cleanly and then fails every handshake with') }} <em>{{ _('unable to get issuer certificate') }}</em>{{ _(', a message that points at the device instead of at the gap.') }}
+          {{ _('Each slot has its own Save: the') }} <strong>{{ _('Root CA') }}</strong> {{ _('is the trust anchor, the') }} <strong>{{ _('Intermediate CA') }}</strong> {{ _('is usually what actually signed your appliances. Save both — a chain that stops at an intermediate whose issuer is missing imports cleanly and then fails every handshake with') }} <em>{{ _('unable to get issuer certificate') }}</em>{{ _(', a message that points at the device instead of at the gap.') }}
           <br><span class="text-body-secondary">The label is only a hint. Every certificate is
           classified from its own contents (<code>subject == issuer</code> means root), so one
           dropped in the wrong box is still filed correctly, and each box also accepts several
@@ -2851,6 +2851,8 @@
                         placeholder="-----BEGIN CERTIFICATE-----&#10;…&#10;-----END CERTIFICATE-----"></textarea>
               <label class="form-label small mt-2 mb-1">{{ _('…or upload a .pem / .crt / .cer file') }}</label>
               <input class="form-control form-control-sm" type="file" name="pem_file_root" accept=".pem,.crt,.cer,.der">
+              <button class="btn btn-sm btn-fw-primary mt-3" type="button" data-ct-save="root">
+                <i class="bi bi-save me-1"></i>{{ _('Save root CA') }}</button>
             </div>
           </div>
 
@@ -2867,13 +2869,13 @@
                         placeholder="-----BEGIN CERTIFICATE-----&#10;…&#10;-----END CERTIFICATE-----"></textarea>
               <label class="form-label small mt-2 mb-1">{{ _('…or upload a .pem / .crt / .cer file') }}</label>
               <input class="form-control form-control-sm" type="file" name="pem_file_intermediate" accept=".pem,.crt,.cer,.der">
+              <button class="btn btn-sm btn-fw-primary mt-3" type="button" data-ct-save="intermediate">
+                <i class="bi bi-save me-1"></i>{{ _('Save intermediate CA') }}</button>
             </div>
           </div>
 
-          <div class="col-12 d-flex align-items-center gap-2 flex-wrap">
-            <button class="fw-btn fw-btn-primary btn-sm" type="submit" id="ct-import-btn">
-              <i class="bi bi-plus-lg me-1"></i>{{ _('Import') }}</button>
-            <span class="text-muted small">{{ _('Both slots are read in a single pass — one dedupe check, one bundle rebuild. Re-importing a certificate already held updates it in place.') }}</span>
+          <div class="col-12">
+            <span class="text-muted small">{{ _('Saving a certificate already held updates it in place. Name and Note apply to the slot you save.') }}</span>
           </div>
           <div class="col-12"><div id="ct-import-msg" class="small mt-1"></div></div>
         </form>
@@ -2888,11 +2890,31 @@
             <select class="form-select form-select-sm" id="ct-appl"></select>
           </div>
           <div class="col-md-6">
-            <button class="fw-btn fw-btn-secondary btn-sm" type="button" id="ct-probe-btn">
+            <button class="btn btn-sm btn-fw-secondary" type="button" id="ct-probe-btn">
               <i class="bi bi-search me-1"></i>{{ _('Test TLS') }}</button>
           </div>
         </div>
         <div id="ct-probe-out" class="mt-3"></div>
+      </div>
+    </div>
+
+    <div class="modal fade" id="ct-content-modal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title"><i class="bi bi-file-earmark-text me-2"></i>{{ _('Certificate content') }}
+              <span class="text-muted small ms-1" id="ct-content-name"></span></h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
+          </div>
+          <div class="modal-body" id="ct-content-body"></div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="ct-content-copy">
+              <i class="bi bi-clipboard me-1"></i>{{ _('Copy PEM') }}</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="ct-content-dl">
+              <i class="bi bi-download me-1"></i>{{ _('Download .pem') }}</button>
+            <button type="button" class="btn btn-sm btn-fw-secondary" data-bs-dismiss="modal">{{ _('Close') }}</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -2939,10 +2961,13 @@
               +'<td class="small">'+esc((c.not_after||'').slice(0,10))+'</td>'
               +'<td>'+statusCell(c)+'</td>'
               +'<td class="text-end text-nowrap">'
-                +'<button class="fw-btn fw-btn-secondary btn-sm" data-ct-toggle="'+c.id+'">'
-                  +(c.enabled?'Disable':'Enable')+'</button> '
-                +'<button class="fw-btn fw-btn-danger btn-sm" data-ct-del="'+c.id+'" '
-                  +'data-ct-name="'+esc(c.name)+'">Delete</button>'
+                +'<button class="btn btn-sm btn-outline-primary" data-ct-content="'+c.id+'">'
+                  +'<i class="bi bi-file-earmark-text me-1"></i>Content</button> '
+                +'<button class="btn btn-sm btn-outline-secondary" data-ct-toggle="'+c.id+'">'
+                  +(c.enabled?'<i class="bi bi-pause-circle me-1"></i>Disable'
+                             :'<i class="bi bi-play-circle me-1"></i>Enable')+'</button> '
+                +'<button class="btn btn-sm btn-outline-danger" data-ct-del="'+c.id+'" '
+                  +'data-ct-name="'+esc(c.name)+'"><i class="bi bi-trash me-1"></i>Delete</button>'
               +'</td></tr>';
           }).join('');
         }
@@ -2972,34 +2997,119 @@
           .catch(function(){document.getElementById('ct-rows').innerHTML=
             '<tr><td colspan="7" class="text-danger">Could not load the trust store.</td></tr>';});
       }
-      document.getElementById('ct-form').addEventListener('submit', function(ev){
-        ev.preventDefault();
+      var form=document.getElementById('ct-form');
+      form.addEventListener('submit', function(ev){ ev.preventDefault(); });
+      // One Save per slot: only that slot's text/file (plus Name and Note) is
+      // sent, and only that slot is cleared afterwards. The server still files
+      // each certificate by its contents, so the reply names the role it got.
+      function save(slot, btn){
         var out=document.getElementById('ct-import-msg');
-        out.innerHTML='<span class="text-muted">Importing…</span>';
-        post('{{ url_for("settings.trust_store_import") }}', new FormData(ev.target), true)
+        var fd=new FormData();
+        fd.append('name', form.elements['name'].value);
+        fd.append('note', form.elements['note'].value);
+        var txt=form.elements['pem_text_'+slot], file=form.elements['pem_file_'+slot];
+        if(!txt.value.trim() && !(file.files && file.files.length)){
+          out.innerHTML='<span class="text-danger">Paste or choose a '+slot+' CA certificate first.</span>';
+          return;
+        }
+        fd.append('pem_text_'+slot, txt.value);
+        if(file.files && file.files.length) fd.append('pem_file_'+slot, file.files[0]);
+        btn.disabled=true;
+        out.innerHTML='<span class="text-muted">Saving the '+slot+' CA…</span>';
+        post('{{ url_for("settings.trust_store_import") }}', fd, true)
           .then(function(d){
             if(!d.ok){out.innerHTML='<span class="text-danger">'+esc(d.error)+'</span>';return;}
             var r=d.result, bits=[];
-            if(r.imported.length) bits.push('<span class="text-success">Imported: '+esc(r.imported.join(', '))+'</span>');
+            if(r.imported.length) bits.push('<span class="text-success">Saved: '+esc(r.imported.join(', '))+'</span>');
             if(r.updated.length)  bits.push('<span class="text-primary">Updated: '+esc(r.updated.join(', '))+'</span>');
+            (r.items||[]).forEach(function(x){
+              if(x.role!==slot) bits.push('<span class="text-warning-emphasis">'+esc(x.name)
+                +' was filed as <strong>'+esc(x.role)+'</strong>, not '+slot
+                +' — the role comes from the certificate itself (a root is its own issuer).</span>');});
             (r.rejected||[]).forEach(function(x){
               bits.push('<span class="text-danger">Rejected '+esc(x.name)+' — '+esc(x.reason)+'</span>');});
             if(!bits.length) bits.push('<span class="text-muted">Nothing to do.</span>');
             out.innerHTML=bits.join('<br>');
-            ev.target.reset(); load();
-          });
+            txt.value=''; file.value=''; load();
+          })
+          .catch(function(){out.innerHTML='<span class="text-danger">The save request failed.</span>';})
+          .then(function(){btn.disabled=false;});
+      }
+      var lastPem='', lastName='';
+      function row(k, v){
+        return '<tr><th style="width:170px;">'+esc(k)+'</th><td class="text-break">'+v+'</td></tr>';
+      }
+      function showContent(id){
+        var body=document.getElementById('ct-content-body');
+        body.innerHTML='<span class="text-muted">Loading…</span>';
+        document.getElementById('ct-content-name').textContent='';
+        var modal=document.getElementById('ct-content-modal');
+        // Out of the tab pane: a modal nested in a .fade pane stacks under its backdrop.
+        if(modal.parentNode!==document.body) document.body.appendChild(modal);
+        bootstrap.Modal.getOrCreateInstance(modal).show();
+        fetch('/settings/trust-store/'+id+'/content').then(function(r){return r.json();})
+          .then(function(d){
+            if(!d.ok){body.innerHTML='<span class="text-danger">'+esc(d.error||'not found')+'</span>';return;}
+            var c=d.ca, x=d.detail||{};
+            lastPem=x.pem||''; lastName=c.name||'ca';
+            document.getElementById('ct-content-name').textContent=c.name;
+            var h='';
+            if(x.error) h+='<div class="alert alert-warning py-2 small">'+esc(x.error)+'</div>';
+            if(x.subject){
+              h+='<table class="table table-sm small mb-3">'
+                +row('Role', roleBadge(c.role)+' '+statusCell(c))
+                +row('Subject', '<code>'+esc(x.subject)+'</code>')
+                +row('Issuer', '<code>'+esc(x.issuer)+'</code>')
+                +row('Serial', '<code>'+esc(x.serial)+'</code>')
+                +row('Valid from', esc(x.not_before)+' UTC')
+                +row('Valid until', esc(x.not_after)+' UTC')
+                +row('Public key', esc(x.public_key))
+                +row('Signature', esc(x.signature_algorithm))
+                +row('SHA-256', '<code>'+esc(x.sha256)+'</code>')
+                +row('SHA-1', '<code>'+esc(x.sha1)+'</code>')
+                +(x.extensions||[]).map(function(e){
+                  return row(e.name, esc(e.value||'—')+(e.critical?' <span class="fw-badge fw-badge-secondary">critical</span>':''));
+                }).join('')
+                +(c.note?row('Note', esc(c.note)):'')
+                +row('Added', esc((c.added_at||'').slice(0,19).replace('T',' '))+(c.added_by?' by '+esc(c.added_by):''))
+                +'</table>';
+            }
+            h+='<label class="form-label small mb-1">PEM</label>'
+              +'<pre class="border rounded p-2 small mb-0" style="background:var(--fw-content-bg);white-space:pre-wrap;">'
+              +esc(lastPem)+'</pre>';
+            body.innerHTML=h;
+          })
+          .catch(function(){body.innerHTML='<span class="text-danger">Could not load the certificate.</span>';});
+      }
+      document.getElementById('ct-content-copy').addEventListener('click', function(){
+        var b=this;
+        if(navigator.clipboard && lastPem){
+          navigator.clipboard.writeText(lastPem).then(function(){
+            b.innerHTML='<i class="bi bi-check2 me-1"></i>Copied';
+            setTimeout(function(){b.innerHTML='<i class="bi bi-clipboard me-1"></i>Copy PEM';}, 2000);});
+        }
+      });
+      document.getElementById('ct-content-dl').addEventListener('click', function(){
+        if(!lastPem) return;
+        var a=document.createElement('a');
+        a.href=URL.createObjectURL(new Blob([lastPem], {type:'application/x-pem-file'}));
+        a.download=lastName.replace(/[^A-Za-z0-9._-]+/g,'_')+'.pem';
+        document.body.appendChild(a); a.click(); a.remove();
       });
       document.addEventListener('click', function(ev){
-        var t=ev.target.closest('[data-ct-toggle],[data-ct-del]');
+        var t=ev.target.closest('[data-ct-save],[data-ct-content],[data-ct-toggle],[data-ct-del]');
         if(!t) return;
+        if(t.hasAttribute('data-ct-save')){ save(t.getAttribute('data-ct-save'), t); return; }
+        if(t.hasAttribute('data-ct-content')){ showContent(t.getAttribute('data-ct-content')); return; }
         if(t.hasAttribute('data-ct-toggle')){
           post('/settings/trust-store/'+t.getAttribute('data-ct-toggle')+'/toggle').then(load);
           return;
         }
         var id=t.getAttribute('data-ct-del');
         if(t.dataset.armed!=='1'){
-          t.dataset.armed='1'; t.textContent='Confirm delete';
-          setTimeout(function(){ if(t.dataset.armed==='1'){t.dataset.armed='0'; t.textContent='Delete';} }, 4000);
+          t.dataset.armed='1'; t.innerHTML='<i class="bi bi-trash me-1"></i>Confirm delete';
+          setTimeout(function(){ if(t.dataset.armed==='1'){t.dataset.armed='0';
+            t.innerHTML='<i class="bi bi-trash me-1"></i>Delete';} }, 4000);
           return;
         }
         post('/settings/trust-store/'+id+'/delete').then(load);

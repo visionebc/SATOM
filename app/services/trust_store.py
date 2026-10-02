@@ -61,6 +61,21 @@ _cached_digest: str | None = None
 _RESOLVE_TTL_S = 30.0
 _resolved: tuple[float, object] | None = None
 
+#: The app this process serves, for callers WITHOUT an app context. A sweep,
+#: a job or the scheduler reaches the client layer from a bare thread, where
+#: ``TrustedCa.query`` raises. Until 2026-10-02 that exception was swallowed by
+#: :func:`verify_param` and the answer became "public roots only" — so a
+#: rediscovery failed with CERTIFICATE_VERIFY_FAILED while the trust-store page,
+#: running inside a request, said the same device verified. Set once by
+#: :func:`init_app`; an ACTIVE app context always wins over it (the 2026-09-15
+#: rule: a module global must never route reads to another app's database).
+_APP = None
+
+
+def init_app(app) -> None:
+    global _APP
+    _APP = app
+
 
 def trust_dir() -> Path:
     return Path(os.environ.get("SATOM_TRUST_DIR") or _DEFAULT_DIR)
@@ -168,7 +183,11 @@ def import_pem(blob: str | bytes, actor: str = "", note: str = "",
     Partial success is a real outcome — pasting a full chain where the leaf came
     along is normal, and the two CAs in it should still land."""
     parsed = parse_pem(blob)
-    out: dict[str, list] = {"imported": [], "updated": [], "rejected": []}
+    # ``items`` carries the role each certificate was filed under, so a Save
+    # in the root slot can say "this one is an intermediate" instead of letting
+    # the operator believe the label they clicked.
+    out: dict[str, list] = {"imported": [], "updated": [], "rejected": [],
+                            "items": []}
     for info in parsed:
         label = info["common_name"] or info["subject"]
         if not info["is_ca"]:
@@ -190,6 +209,8 @@ def import_pem(blob: str | bytes, actor: str = "", note: str = "",
             if note:
                 row.note = note
             out["updated"].append(row.name)
+            out["items"].append({"name": row.name, "role": info["role"],
+                                 "action": "updated"})
             continue
         name = (name_hint or label or info["fingerprint"][:16]).strip()[:200]
         if len(parsed) > 1 and name_hint:
@@ -208,9 +229,82 @@ def import_pem(blob: str | bytes, actor: str = "", note: str = "",
             enabled=True, note=note, added_by=actor or "",
         ))
         out["imported"].append(name)
+        out["items"].append({"name": name, "role": info["role"],
+                             "action": "imported"})
     db.session.commit()
     invalidate()
     return out
+
+
+def _hex_colon(b: bytes) -> str:
+    return ":".join(f"{x:02X}" for x in b)
+
+
+def describe(pem: str) -> dict:
+    """What the Content view shows: the decoded fields an operator compares
+    against the CA they meant to import, plus the PEM itself. Public material
+    only — this table never holds a private key."""
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.asymmetric import dsa, ec, ed448, ed25519, rsa
+
+    cert = x509.load_pem_x509_certificate(pem.encode())
+    der = cert.public_bytes(Encoding.DER)
+    pk = cert.public_key()
+    if isinstance(pk, rsa.RSAPublicKey):
+        key = f"RSA {pk.key_size} bits"
+    elif isinstance(pk, ec.EllipticCurvePublicKey):
+        key = f"EC {pk.curve.name} ({pk.key_size} bits)"
+    elif isinstance(pk, ed25519.Ed25519PublicKey):
+        key = "Ed25519"
+    elif isinstance(pk, ed448.Ed448PublicKey):
+        key = "Ed448"
+    elif isinstance(pk, dsa.DSAPublicKey):
+        key = f"DSA {pk.key_size} bits"
+    else:
+        key = type(pk).__name__
+    oid = cert.signature_algorithm_oid
+    sig = getattr(oid, "_name", "") or oid.dotted_string
+
+    exts = []
+    for ext in cert.extensions:
+        v = ext.value
+        if isinstance(v, x509.BasicConstraints):
+            text = "CA:TRUE" if v.ca else "CA:FALSE"
+            if v.path_length is not None:
+                text += f", pathlen:{v.path_length}"
+        elif isinstance(v, x509.KeyUsage):
+            names = ("digital_signature", "content_commitment", "key_encipherment",
+                     "data_encipherment", "key_agreement", "key_cert_sign",
+                     "crl_sign")
+            text = ", ".join(n for n in names if getattr(v, n))
+        elif isinstance(v, x509.ExtendedKeyUsage):
+            text = ", ".join(u._name or u.dotted_string for u in v)
+        elif isinstance(v, x509.SubjectKeyIdentifier):
+            text = _hex_colon(v.digest)
+        elif isinstance(v, x509.AuthorityKeyIdentifier):
+            text = _hex_colon(v.key_identifier) if v.key_identifier else "—"
+        elif isinstance(v, x509.SubjectAlternativeName):
+            text = ", ".join(str(n.value) for n in v)
+        else:
+            text = ""
+        exts.append({"name": ext.oid._name or ext.oid.dotted_string,
+                     "critical": bool(ext.critical), "value": text})
+
+    return {
+        "subject": _dn(cert.subject),
+        "issuer": _dn(cert.issuer),
+        "serial": _hex_colon(cert.serial_number.to_bytes(
+            (cert.serial_number.bit_length() + 7) // 8 or 1, "big")),
+        "version": cert.version.name,
+        "not_before": _naive_utc(cert.not_valid_before_utc).isoformat(),
+        "not_after": _naive_utc(cert.not_valid_after_utc).isoformat(),
+        "public_key": key,
+        "signature_algorithm": sig,
+        "sha256": _hex_colon(hashlib.sha256(der).digest()),
+        "sha1": _hex_colon(cert.fingerprint(hashes.SHA1())),
+        "extensions": exts,
+        "pem": cert.public_bytes(Encoding.PEM).decode("ascii"),
+    }
 
 
 def invalidate() -> None:
@@ -269,6 +363,16 @@ def build_bundle() -> Path | None:
         return path
 
 
+def _build_with_context() -> Path | None:
+    """:func:`build_bundle` from any thread. No context and no registered app
+    still raises, and :func:`verify_param` turns that into public roots."""
+    from flask import has_app_context
+    if has_app_context() or _APP is None:
+        return build_bundle()
+    with _APP.app_context():
+        return build_bundle()
+
+
 def verify_param():
     """What to hand httpx / ssl as ``verify=``.
 
@@ -281,7 +385,7 @@ def verify_param():
     if cached is not None and (now - cached[0]) < _RESOLVE_TTL_S:
         return cached[1]
     try:
-        p = build_bundle()
+        p = _build_with_context()
         val: object = str(p) if p else True
     except Exception:  # noqa: BLE001 — a broken store must not disable TLS
         return True     # not cached: a transient failure must not stick

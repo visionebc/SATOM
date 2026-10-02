@@ -220,6 +220,24 @@
           {% endif %}
         </div>
 
+        <!-- system-upgrade feed (satom-system-upgrades/latest.json) -->
+        <div class="mb-3" id="feed-box">
+          <div class="d-flex flex-wrap align-items-center gap-2">
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="feed-check-btn">
+              <i class="bi bi-cloud-download me-1"></i>{{ _('Check for a newer package online') }}</button>
+            <span class="small text-muted" id="feed-msg">{{ _('Reads satom-system-upgrades/latest.json from the public repository. Nothing is downloaded until you press Download.') }}</span>
+          </div>
+          <div class="d-none mt-2 small" id="feed-offer">
+            <span id="feed-offer-text"></span>
+            <button type="button" class="btn btn-fw-primary btn-sm ms-2" id="feed-dl-btn">
+              <i class="bi bi-download me-1"></i>{{ _('Download & stage') }}</button>
+          </div>
+          <div class="d-none mt-2" id="feed-progress" role="status" aria-live="polite">
+            <div class="progress mb-1" style="height:6px;"><div class="progress-bar" id="feed-bar" style="width:0%"></div></div>
+            <div class="small" id="feed-progress-msg"></div>
+          </div>
+        </div>
+
         <div class="row g-3">
           <!-- upload -->
           <div class="col-lg-5">
@@ -307,6 +325,11 @@
         {% if api_packs.role == 'standby' %}
           <div class="alert alert-warning py-2 small"><i class="bi bi-hdd-network me-1"></i>
             {{ _('This node is the standby: its database is read-only, so packs are imported on the primary. The library replicates here, and the data sync copies the release notes and field schemas.') }}</div>
+        {% elif api_packs.pending %}
+          <div class="alert alert-info py-2 small" id="apk-pending"><i class="bi bi-info-circle me-1"></i>
+            {{ _('This release ships') }} <code>{{ api_packs.pending.name }}</code>{{ _(', which has not been imported on this node yet.') }}
+            <a href="{{ url_for('self_update.index', apipack='shipped:' + api_packs.pending.name, _anchor='api-packs') }}">{{ _('Review and import it') }}</a>
+            {{ _('— or from the console:') }} <code>sudo satom execute apipack import shipped --yes</code></div>
         {% endif %}
 
         <div class="row g-3">
@@ -808,6 +831,77 @@
     var cut = pre.indexOf(':');
     if (cut > 0) { apkLoad(pre.slice(0, cut), pre.slice(cut + 1)); }
   })();
+
+  // --- system-upgrade feed: check, then download into staging ---
+  var FEED_URL = '{{ url_for("self_update.package_feed") }}';
+  var FEED_FETCH_URL = '{{ url_for("self_update.package_fetch") }}';
+  var feedBtn = document.getElementById('feed-check-btn');
+  function feedSay(html) { document.getElementById('feed-msg').innerHTML = html; }
+  if (feedBtn) feedBtn.addEventListener('click', function () {
+    feedBtn.setAttribute('disabled', 'disabled');
+    feedSay('<span class="spinner-border spinner-border-sm me-1"></span>Checking…');
+    document.getElementById('feed-offer').classList.add('d-none');
+    fetch(FEED_URL, {credentials: 'same-origin', headers: {'X-Requested-With': 'XMLHttpRequest'}})
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        feedBtn.removeAttribute('disabled');
+        if (!d.reachable) {
+          feedSay('<span class="text-danger">' + escapeHtml(d.error) + '</span>');
+          return;
+        }
+        var pkg = d.package || {};
+        var mb = ((pkg.size || 0) / 1048576).toFixed(1);
+        if (!d.newer) {
+          feedSay('<span class="text-success">Up to date</span> — the newest package is ' +
+                  escapeHtml(d.version) + ' and this node runs ' + escapeHtml(d.current_version) + '.');
+          return;
+        }
+        feedSay('');
+        document.getElementById('feed-offer-text').innerHTML =
+          '<strong>' + escapeHtml(d.version) + '</strong> is available (this node runs ' +
+          escapeHtml(d.current_version) + '): <code>' + escapeHtml(pkg.name) + '</code>, ' + mb +
+          ' MB' + (d.staged ? ' — <em>already staged below</em>' : '') + '.';
+        document.getElementById('feed-offer').classList.remove('d-none');
+      })
+      .catch(function (e) { feedBtn.removeAttribute('disabled');
+        feedSay('<span class="text-danger">Check failed: ' + escapeHtml(e) + '</span>'); });
+  });
+  var feedDl = document.getElementById('feed-dl-btn');
+  if (feedDl) feedDl.addEventListener('click', function () {
+    feedDl.setAttribute('disabled', 'disabled');
+    var wrap = document.getElementById('feed-progress');
+    var bar = document.getElementById('feed-bar');
+    var msg = document.getElementById('feed-progress-msg');
+    wrap.classList.remove('d-none');
+    msg.textContent = 'Starting the download…';
+    jpost(FEED_FETCH_URL).then(function (r) { return r.json(); }).then(function (d) {
+      if (!d.job_id) { msg.textContent = d.error || 'The download was not started.'; return; }
+      (function poll() {
+        fetch('/jobs/' + encodeURIComponent(d.job_id), {credentials: 'same-origin',
+              headers: {'X-Requested-With': 'XMLHttpRequest'}})
+          .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+          .then(function (j) {
+            bar.style.width = (j.percent || 0) + '%';
+            msg.textContent = j.message || j.status;
+            if (j.status === 'success') {
+              bar.style.width = '100%';
+              var name = (j.result || {}).name || '';
+              window.location = '{{ url_for("self_update.index") }}?pkg=' + encodeURIComponent(name);
+              return;
+            }
+            if (j.status === 'error' || j.status === 'cancelled') {
+              bar.classList.add('bg-danger');
+              msg.textContent = j.error || j.status;
+              feedDl.removeAttribute('disabled');
+              return;
+            }
+            setTimeout(poll, 1000);
+          })
+          .catch(function () { setTimeout(poll, 3000); });
+      })();
+    }).catch(function (e) { msg.textContent = 'Download request failed: ' + e;
+      feedDl.removeAttribute('disabled'); });
+  });
 
   function escapeHtml(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {

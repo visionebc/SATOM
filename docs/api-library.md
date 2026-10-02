@@ -849,7 +849,7 @@ anything to get it:
 |---|---|---|
 | Online install | `git clone` of the public repository | the installer, after the health check |
 | Offline install | the bundle's `app.tar.gz` | the installer, after the health check |
-| Update (git or offline package) | the new tree | **Settings → Software Update → API library packs** |
+| Update (git or offline package) | the new tree | **the update runner, on the primary** (from 2.7.0); otherwise **Settings → Software Update → API library packs** |
 | Standalone | `satom-apipack-<version>.tar.gz` (+ `.sha256`) from the GitHub release, the download catalog or `/downloads` | upload it on that page, or `satom execute apipack import <file> --yes` |
 
 **Installer.** On a standalone node or a cluster primary, once `/healthz`
@@ -866,7 +866,21 @@ answer file written for an earlier release by one line:
 | `SATOM_API_PACK` | `all` · `none` · a path to a pack | `all` (the release's own pack) |
 | `SATOM_API_PACK_PRODUCTS` | comma list, e.g. `fortiweb,fortiadc` | every product |
 
-**Software Update.** The *API library packs* card lists the release's pack
+**Update.** From 2.7.0, after an update has passed its health check on a
+primary or standalone node, the runner imports the newest shipped pack itself
+(`satom execute apipack import shipped --yes`, step *import shipped API pack*
+in the update log). Like the installer's step it never fails the update: a
+pack that does not import is a red step with the command to retry, and the
+node stays on the new code. A standby is skipped. `SATOM_API_PACK_AUTO=0` in
+the runner's environment turns it off. The first update INTO 2.7.0 is applied
+by the previous runner, which does not have this step: import once by hand
+after it. While the newest shipped pack has never been imported on a node,
+Software Update says so above the pack list, with a link that opens it.
+
+`api-packs/` keeps **every** release's pack (about 400 KB each), so a node can
+import an older pack too; *shipped* means the newest by version.
+
+**Software Update.** The *API library packs* card lists the release's packs
 (*this release*) and any uploaded pack (the newest five are kept). Selecting
 one verifies it and shows every item with its state — `new`, `present`, or
 `local` (this node measured it itself) — filterable by product and by section.
@@ -887,7 +901,7 @@ manifest names this version. When it does not, the repair `build_api_pack`
 exports the pack on the primary from its live library, signs it on the release
 host with the release key (the same key as the update packages; the primary
 never sees the private half), and commits exactly `api-packs/` — the new pack
-in, the previous release's pack out — after refusing a dirty work tree. The
+in, every earlier release's pack kept — after refusing a dirty work tree. The
 publish steps attach the pack, taken from the tag, to the GitHub release and
 the download catalog.
 

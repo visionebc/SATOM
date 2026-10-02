@@ -364,7 +364,7 @@ longer matches the console you are running.
 
 <!-- BEGIN GENERATED COMMAND REFERENCE -->
 
-*106 commands in 39 groups. This table is generated from `deploy/satom_cli/tree.py` by `deploy/gen_cli_reference.py` — it cannot drift from the console you are running. `!` marks a command that changes state destructively and demands `--yes`.*
+*107 commands in 39 groups. This table is generated from `deploy/satom_cli/tree.py` by `deploy/gen_cli_reference.py` — it cannot drift from the console you are running. `!` marks a command that changes state destructively and demands `--yes`.*
 
 ### `get`
 
@@ -468,6 +468,7 @@ Everything that changes state. **Root required.** Without it each command refuse
 | `satom execute update code [<target>]` | yes | — | Queue a git update — or a rollback, by passing a commit. |
 | `satom execute update pip <package> <version>` | yes | — | Queue a curated-allowlist package change. Node-local. |
 | `satom execute update package <file.tar.gz> [--yes] [--allow-downgrade] [--no-backup]` | yes | ! | Apply a SIGNED offline update package. Works with no network. |
+| `satom execute update fetch [--yes] [--download-only] [--feed <https-url>]` | yes | ! | Download the newest signed package from the upgrade feed and apply it. |
 | `satom execute update status [<id>]` | — | — | Show the latest (or a specific) update record. |
 | `satom execute reinstall venv` | yes | ! | Recreate venv/ from requirements.txt. Needs --yes; keeps a freeze to roll back to. |
 | `satom execute reinstall units` | yes | — | Re-copy the systemd units AND re-pin User= via drop-in. |

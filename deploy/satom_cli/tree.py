@@ -245,6 +245,8 @@ ROOT = Node("satom", "SATOM operator CLI", children=dict([
             _n("package", "Apply a SIGNED offline update package. Works with no network.",
                run=u.update_package, needs_root=True, danger=True,
                usage="execute update package <file.tar.gz> [--yes] [--allow-downgrade] [--no-backup]"),
+            _n("fetch", "Download the newest signed package from the upgrade feed and apply it.",
+               run=u.update_fetch, needs_root=True, danger=True, usage=u.FETCH_USAGE),
             _n("status", "Show the latest (or a specific) update record.",
                run=e.update_status, usage="execute update status [<id>]"),
         ),

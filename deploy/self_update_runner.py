@@ -259,6 +259,43 @@ def flight(kind, label):
         return False, "flight(%s) error: %s" % (kind, exc)
 
 
+def import_shipped_api_pack(st):
+    """Import the API library pack the new release carries (api-packs/).
+
+    Before this, an update brought the new pack onto the disk and left the
+    library on the old one until someone pressed Import -- which nothing
+    prompted them to do. The import only ADDS (items this node measured or
+    already holds are skipped), so repeating it on every update is harmless.
+
+    Primary only (the caller checks): a standby's Postgres is read-only and its
+    library arrives by replication. NON-FATAL by design: the code update has
+    already passed its health gate, and API knowledge missing for a while is
+    not a reason to roll a healthy node back. ``SATOM_API_PACK_AUTO=0`` turns
+    it off. Runs through the operator CLI, which imports as the service
+    account and picks the newest pack by version.
+    """
+    if os.environ.get("SATOM_API_PACK_AUTO", "1").strip() == "0":
+        st.step("import shipped API pack", True, "skipped (SATOM_API_PACK_AUTO=0)")
+        return
+    if not any((APP / "api-packs").glob("satom-apipack-*.tar.gz")):
+        st.step("import shipped API pack", True, "skipped (this release ships no pack)")
+        return
+    cli = "/usr/local/sbin/satom"
+    st.begin("import shipped API pack")
+    try:
+        p = subprocess.run([cli, "execute", "apipack", "import", "shipped", "--yes"],
+                           capture_output=True, text=True, timeout=1800)
+        out = (p.stdout or p.stderr or "").strip()
+        ok = p.returncode == 0
+        detail = out[-300:] if ok else (
+            "%s -- the update itself is fine; retry with: "
+            "sudo %s execute apipack import shipped --yes" % (out[-250:], cli))
+    except Exception as exc:  # noqa: BLE001
+        ok, detail = False, "%s -- retry with: sudo %s execute apipack import shipped --yes" % (
+            str(exc)[:200], cli)
+    st.step("import shipped API pack", ok, detail)
+
+
 def route_audit_ok():
     """Every ``url_for()`` endpoint written in a template exists in the url_map.
 
@@ -613,6 +650,7 @@ def process(req_path):
             st.finish("success", result_sha=new, rolled_back=False, standby=True,
                       validated_on_primary=mok)
             return
+        import_shipped_api_pack(st)
         # POST-FLIGHT: compare the after-state against the preflight baseline.
         # Non-fatal: the health gate above already passed; this surfaces device /
         # replication / cert deltas the bare health check can't see.
@@ -1223,6 +1261,9 @@ def package_change(req_path):
                    req.get("requested_by") or "?"))
         st.step("record deployed revision", True,
                 (c.stdout or c.stderr or "nothing to commit").strip()[-200:])
+
+        if not is_standby:
+            import_shipped_api_pack(st)
 
         st.finish("success", package=name, applied_version=new,
                   previous_version=cur, rolled_back=False,

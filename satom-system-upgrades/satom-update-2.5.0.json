@@ -1,0 +1,18 @@
+{
+  "package": {
+    "name": "satom-update-2.5.0.tar.gz",
+    "sha256": "7ffd9bd689bcbb1180539daf9f7958a05f4c1f6d7fc0bc953c23103613249e18",
+    "size": 63635556,
+    "url": "https://github.com/visionebc/SATOM/releases/download/v2.5.0/satom-update-2.5.0.tar.gz"
+  },
+  "product": "satom",
+  "release_url": "https://github.com/visionebc/SATOM/releases/tag/v2.5.0",
+  "released": "2026-10-01",
+  "schema": "satom.upgrade-feed/1",
+  "signing_key": {
+    "fingerprint": "SHA256:cYv9NxiJjMn/K6srKxXg2kdvROP2g6fzgfMXU6sxPyA",
+    "name": "satom-release-2026.pub",
+    "url": "https://github.com/visionebc/SATOM/releases/download/v2.5.0/satom-release-2026.pub"
+  },
+  "version": "2.5.0"
+}

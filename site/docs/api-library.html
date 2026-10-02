@@ -1138,7 +1138,7 @@ anything to get it:</p>
 <tr>
 <td>Update (git or offline package)</td>
 <td>the new tree</td>
-<td><strong>Settings → Software Update → API library packs</strong></td>
+<td><strong>the update runner, on the primary</strong> (from 2.7.0); otherwise <strong>Settings → Software Update → API library packs</strong></td>
 </tr>
 <tr>
 <td>Standalone</td>
@@ -1176,7 +1176,19 @@ answer file written for an earlier release by one line:</p>
 </tr>
 </tbody>
 </table>
-<p><strong>Software Update.</strong> The <em>API library packs</em> card lists the release's pack
+<p><strong>Update.</strong> From 2.7.0, after an update has passed its health check on a
+primary or standalone node, the runner imports the newest shipped pack itself
+(<code>satom execute apipack import shipped --yes</code>, step <em>import shipped API pack</em>
+in the update log). Like the installer's step it never fails the update: a
+pack that does not import is a red step with the command to retry, and the
+node stays on the new code. A standby is skipped. <code>SATOM_API_PACK_AUTO=0</code> in
+the runner's environment turns it off. The first update INTO 2.7.0 is applied
+by the previous runner, which does not have this step: import once by hand
+after it. While the newest shipped pack has never been imported on a node,
+Software Update says so above the pack list, with a link that opens it.</p>
+<p><code>api-packs/</code> keeps <strong>every</strong> release's pack (about 400 KB each), so a node can
+import an older pack too; <em>shipped</em> means the newest by version.</p>
+<p><strong>Software Update.</strong> The <em>API library packs</em> card lists the release's packs
 (<em>this release</em>) and any uploaded pack (the newest five are kept). Selecting
 one verifies it and shows every item with its state — <code>new</code>, <code>present</code>, or
 <code>local</code> (this node measured it itself) — filterable by product and by section.
@@ -1195,7 +1207,7 @@ manifest names this version. When it does not, the repair <code>build_api_pack</
 exports the pack on the primary from its live library, signs it on the release
 host with the release key (the same key as the update packages; the primary
 never sees the private half), and commits exactly <code>api-packs/</code> — the new pack
-in, the previous release's pack out — after refusing a dirty work tree. The
+in, every earlier release's pack kept — after refusing a dirty work tree. The
 publish steps attach the pack, taken from the tag, to the GitHub release and
 the download catalog.</p>
 <p>The pipeline also reads every file inside the pack with the <strong>public mirror's

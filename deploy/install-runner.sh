@@ -39,7 +39,9 @@ TRUST_DIR="/etc/satom/update-keys"
 
 # Every file root executes or reads as a trust input. update_package.py is here
 # for the same reason as the runner: it IS the signature verifier.
-FILES="self_update_runner.py update_package.py"
+# upgrade_feed.py is what 'satom execute update fetch' runs as root to download
+# a package; loading it from the app tree would run service-account code as root.
+FILES="self_update_runner.py update_package.py upgrade_feed.py"
 
 # [SATOM-SBIN-ROOT-COPY]
 # Helper scripts that the units execute from /usr/local/sbin rather than from

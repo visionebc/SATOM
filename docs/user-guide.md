@@ -2021,7 +2021,18 @@ signed by an untrusted key is refused with the command that fixes it. On a
 pair, import on the **primary**: the standby receives the library by
 replication and the files by the data sync, and its card is read-only. The
 console equivalent is `sudo satom execute apipack import shipped --yes`.
+From 2.7.0 an update imports the newest shipped pack on the primary by itself,
+and the page shows a notice while the newest pack has never been imported.
 Details: [api-library.md §11](api-library.md).
+
+**Download the update package from the node itself.** In *Offline update
+package*, **Check for a newer package online** reads the release feed
+(`satom-system-upgrades/latest.json`); **Download & stage** fetches the
+package as a job, checks its sha256 and opens its preflight. Nothing is
+applied until you press **Apply**. From a shell:
+`sudo satom execute update fetch --yes`. A node with no internet still
+uploads the file. Details:
+[offline-update-packages.md §1.1](offline-update-packages.md).
 
 ## 23. Studio: custom views, plugins & Lua
 

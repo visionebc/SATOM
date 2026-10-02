@@ -2421,7 +2421,17 @@ signed by an untrusted key is refused with the command that fixes it. On a
 pair, import on the <strong>primary</strong>: the standby receives the library by
 replication and the files by the data sync, and its card is read-only. The
 console equivalent is <code>sudo satom execute apipack import shipped --yes</code>.
+From 2.7.0 an update imports the newest shipped pack on the primary by itself,
+and the page shows a notice while the newest pack has never been imported.
 Details: <a href="api-library.html">api-library.md §11</a>.</p>
+<p><strong>Download the update package from the node itself.</strong> In <em>Offline update
+package</em>, <strong>Check for a newer package online</strong> reads the release feed
+(<code>satom-system-upgrades/latest.json</code>); <strong>Download &amp; stage</strong> fetches the
+package as a job, checks its sha256 and opens its preflight. Nothing is
+applied until you press <strong>Apply</strong>. From a shell:
+<code>sudo satom execute update fetch --yes</code>. A node with no internet still
+uploads the file. Details:
+<a href="offline-update-packages.html">offline-update-packages.md §1.1</a>.</p>
 <h2 id="23-studio-custom-views-plugins--lua">23. Studio: custom views, plugins &amp; Lua</h2>
 <p>Three admin-only authoring tools, grouped under <strong>Studio</strong>. In the Global ADOM
 they sit at Administrator → Studio; in the FortiWeb and FortiADC ADOMs the same

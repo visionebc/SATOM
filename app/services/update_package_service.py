@@ -152,6 +152,61 @@ def delete_upload(name: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# the system-upgrade feed (satom-system-upgrades/latest.json)
+# ---------------------------------------------------------------------------
+def _load_upgrade_feed():
+    """``deploy/upgrade_feed.py`` by path, for the same reason as
+    ``_load_update_package``: the CLI loads the same file as root."""
+    path = Path(__file__).resolve().parents[2] / "deploy" / "upgrade_feed.py"
+    spec = importlib.util.spec_from_file_location("satom_upgrade_feed", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+feed = _load_upgrade_feed()
+FeedError = feed.FeedError
+
+
+def _current_version() -> str:
+    # The same answer preflight() compares against, so the feed and the
+    # preflight can never disagree about whether a package is newer.
+    from ..version import app_version
+    return app_version()
+
+
+def check_feed(url: str = "", timeout: float = 8) -> dict:
+    """What the feed offers compared with this node. Never raises: a node with
+    no internet gets ``reachable: False`` and the reason, which the page shows
+    next to the upload form."""
+    cur = _current_version()
+    try:
+        doc = feed.fetch_feed(url, timeout=timeout)
+    except FeedError as exc:
+        return {"reachable": False, "error": str(exc), "feed_url": url or feed.feed_url(),
+                "current_version": cur}
+    pkg = doc["package"]
+    staged = (upload_dir() / pkg["name"]).is_file()
+    return {"reachable": True, "error": "", "feed_url": doc["_feed_url"],
+            "current_version": cur, "version": doc["version"],
+            "released": doc.get("released") or "", "package": pkg,
+            "release_url": doc.get("release_url") or "",
+            "signing_key": doc.get("signing_key") or {},
+            "newer": up.compare_versions(doc["version"], cur) > 0,
+            "staged": staged}
+
+
+def download_from_feed(url: str = "", progress=None) -> dict:
+    """Fetch the feed's package into the staging area (sha256-checked), then
+    prune old uploads. Applying is still the operator's decision."""
+    doc = feed.fetch_feed(url)
+    path = feed.download_package(doc, upload_dir(), progress=progress)
+    _prune_uploads(keep=KEEP_UPLOADS, protect=path.name)
+    return {"name": path.name, "size": path.stat().st_size,
+            "version": doc["version"], "sha256": doc["package"]["sha256"]}
+
+
+# ---------------------------------------------------------------------------
 # trust store (read-only view for the UI)
 # ---------------------------------------------------------------------------
 def trust_state() -> dict:

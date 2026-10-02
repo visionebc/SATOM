@@ -194,13 +194,36 @@ node-join step with the cluster join key. <strong>No code moves <code>ca.key</co
 the join key is the sanctioned transport and it is operator-driven on purpose.</p>
 <h2 id="the-service-certificate--settings--node-tls-admin">The service certificate — Settings → <strong>Node TLS</strong> (admin)</h2>
 <p><code>app/services/cert_service.py</code>; endpoints in <code>app/views/settings.py</code>
-(<code>/settings/node-cert/{state,import,issue,renew}</code>), UI tab in
+(<code>/settings/node-cert/{state,import,issue,renew,csr}</code>), UI tab in
 <code>settings/index.html</code>.</p>
 <ul>
-<li><strong>Import</strong> a PEM cert (+ key, + optional chain): key/cert match is validated,
-  nginx is <code>-t</code>-tested and <strong>rolled back automatically</strong> if the new cert is bad.
-  Import is <em>import-only</em> — expiry is tracked and alerted, but not auto-renewed
-  (we didn't issue it).</li>
+<li><strong>Import</strong> a PEM cert (+ key, + optional chain), either <strong>pasted</strong> into text
+  fields or <strong>uploaded</strong> as files (one or the other per slot — both is refused):
+  key/cert match is validated, nginx is <code>-t</code>-tested and <strong>rolled back
+  automatically</strong> if the new cert is bad. Import is <em>import-only</em> — expiry is
+  tracked and alerted, but not auto-renewed (we didn't issue it).</li>
+<li><strong>Generate a CSR</strong> for a certificate issued by another CA (corporate PKI, a
+  public CA): common name (defaults to the node hostname), extra SANs (host
+  names or IPs; the CN is always included), optional O/OU/L/ST/C, RSA
+  2048/3072/4096 or ECDSA P-256/P-384. The private key is generated on the node
+  in <code>pki/csr/&lt;id&gt;.key</code> (dir <code>0700</code>, key <code>0600</code>) and <strong>never leaves it</strong>; the
+  page only shows the CSR, with Copy / Download / Discard. When the certificate
+  comes back, import it with the <strong>key left empty</strong>: it is paired with its
+  pending key by public-key fingerprint (<code>&lt;id&gt;</code> = first 16 hex of the SPKI
+  SHA-256), so a second CSR generated meanwhile does not orphan the first. The
+  pending entry is deleted once the install succeeds; the newest 10 are kept.
+  <code>pki/csr/</code> is node-local like the rest of <code>pki/</code> — a CSR names one node and
+  its key must not reach the peer. Not available in the container runtime.</li>
+<li><strong>Activation</strong> (<code>nginx -t</code> + <code>systemctl reload nginx</code>) uses the
+  <code>/etc/sudoers.d/satom</code> allowlist when the host's sudo honours it. When sudo
+  refuses (<code>a password is required</code>, <code>Sorry, user … is not allowed</code>, no sudo
+  binary — e.g. a managed <code>/etc/sudoers</code> without <code>@includedir /etc/sudoers.d</code>,
+  or an LDAP/SSSD sudo source), the same test + reload goes through the root
+  runner (<code>satom-updater.path</code> → <code>nginx.service reload</code>, which runs <code>nginx -t</code>
+  first) and the console waits up to 90 s for its verdict. A genuine <code>nginx -t</code>
+  failure is reported, never retried. If the runner does not pick the request
+  up, the error names <code>satom-updater.path</code>. The installer warns when sudo does
+  not honour the allowlist (<code>sudo -l -U satom</code> to inspect).</li>
 <li><strong>Issue from the internal CA</strong> (any node that holds <code>ca.key</code> — see <em>CA custody</em>
   above; that is meant to be both of them): mints a leaf for the node hostname,
   installs it, <code>source=issued</code>. Issued certs are <strong>per node</strong> and are never

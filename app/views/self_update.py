@@ -80,10 +80,12 @@ def _api_pack_state() -> dict:
     directory must not take the whole update page down with it."""
     from ..services import api_pack
     try:
-        return {"packs": api_pack.list_packs(), "history": api_pack.import_history(),
+        packs = api_pack.list_packs()
+        return {"packs": packs, "history": api_pack.import_history(),
+                "pending": api_pack.pending_shipped(packs),
                 "role": su.node_role(), "error": ""}
     except Exception as exc:  # noqa: BLE001 — shown in the card, not a 500
-        return {"packs": [], "history": [], "role": su.node_role(),
+        return {"packs": [], "history": [], "pending": None, "role": su.node_role(),
                 "error": "%s: %s" % (type(exc).__name__, exc)}
 
 
@@ -352,6 +354,47 @@ def package_apply():
           "signature again and applying it — watch the live status below. The "
           "service restarts mid-update." % uid, "success")
     return redirect(url_for("self_update.index", watch=uid))
+
+
+@bp.route("/package/feed")
+@login_required
+@require_permission("user_manage")
+def package_feed():
+    """What satom-system-upgrades/latest.json offers. Asked by the page AFTER
+    it renders, so a node with no internet never waits on it to load."""
+    return jsonify(upkg.check_feed())
+
+
+def _feed_worker():
+    def work(app, jid):
+        from ..services import jobs as jobsvc
+
+        def progress(done, total):
+            jobsvc.set_progress(jid, int(done * 100 / total) if total else 100,
+                                "Downloaded %d of %d MB" % (done >> 20, total >> 20))
+
+        with app.app_context():
+            res = upkg.download_from_feed(progress=progress)
+        jobsvc.finish_success(jid, result=res, message="Downloaded and staged %s"
+                              % res["name"])
+        return res
+    return work
+
+
+@bp.route("/package/fetch", methods=["POST"])
+@login_required
+@require_permission("user_manage")
+def package_fetch():
+    """Download the feed's package into staging as a background job. It is
+    staged, not applied: the operator still reads the preflight first."""
+    from ..services import jobs as jobsvc
+    actor = getattr(current_user, "username", "") or ""
+    job = jobsvc.create_job("update_package_download", "Downloading the update package",
+                            by=actor, cancelable=False, meta={})
+    jobsvc.run_async(current_app._get_current_object(), job["id"], _feed_worker())
+    log_action("update_package.download", target="feed",
+               extra={"feed": upkg.feed.feed_url(), "job": job["id"]})
+    return jsonify({"job_id": job["id"]}), 202
 
 
 # ---------------------------------------------------------------------------

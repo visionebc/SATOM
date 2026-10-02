@@ -244,6 +244,54 @@ def capacity_signal(caps) -> dict:
     return {"status": "ok", "text": f"{len(graded)} capped object types within budget"}
 
 
+# --- why a signal has nothing to say ------------------------------------------
+#: The scheduled action that feeds each signal. A fresh install seeds NONE of
+#: them on purpose (they are data; ``satom execute seed actions``), so on a new
+#: node "never harvested" and "probes have never run" are not device faults --
+#: nothing on this node is scheduled to do the work. Saying so, with the
+#: command, is the difference between a diagnosis and a dead end (SI-0006).
+_FEEDER = {"sync": "device_sync", "cache": "device_sync",
+           "probe": "deep_monitor"}
+SEED_HINT = "run: sudo satom execute seed actions --yes"
+
+
+def has_schedule(action: str, appliance_id: int | None = None) -> bool | None:
+    """Is an ENABLED scheduled action ``action`` covering this device?
+
+    ``targets == []`` means the whole fleet. None when the table cannot be
+    read: an unknown answer must not print a hint that may be false."""
+    import json
+    from ..models import ScheduledAction
+    try:
+        rows = ScheduledAction.query.filter(ScheduledAction.action == action,
+                                            ScheduledAction.enabled.is_(True)).all()
+    except Exception:  # noqa: BLE001
+        return None
+    for r in rows:
+        try:
+            targets = json.loads(r.targets or "[]")
+        except ValueError:
+            targets = []
+        if not targets or appliance_id is None or appliance_id in targets:
+            return True
+    return False
+
+
+def _schedule_hints(signals: dict, appliance_id) -> None:
+    """Append the missing-schedule reason to every signal it explains."""
+    seen: dict = {}
+    for key, action in _FEEDER.items():
+        sig = signals.get(key) or {}
+        if sig.get("status") == "ok":
+            continue
+        if action not in seen:
+            seen[action] = has_schedule(action, appliance_id)
+        if seen[action] is False:
+            sig["no_schedule"] = action
+            sig["text"] = (f"{sig.get('text', '')} - no '{action}' schedule "
+                           f"on this node ({SEED_HINT})")
+
+
 # --- roll-up -----------------------------------------------------------------
 
 def collect(appliance, caps=None, meta=None, hours: float | None = None,
@@ -265,6 +313,8 @@ def collect(appliance, caps=None, meta=None, hours: float | None = None,
         "probe": probe_signal(aid) if aid else {"status": "unknown", "text": "no device"},
         "capacity": capacity_signal(caps),
     }
+    if aid:
+        _schedule_hints(signals, aid)
     status = worst_of([s["status"] for s in signals.values()])
     reasons = [{"signal": k, "label": SIGNAL_LABEL[k], **v}
                for k, v in signals.items() if v["status"] != "ok"]

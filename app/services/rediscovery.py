@@ -126,14 +126,39 @@ def _mirror_job(state: dict) -> None:
     try:
         from . import jobs
         total, done = state.get("total") or 0, state.get("done") or 0
+        pct = int(state.get("percent") or 0)
         if state.get("state") == "running":
             msg = (f"{done}/{total} endpoints · {state.get('objects') or 0} objects"
                    + (f" · {state['section']}" if state.get("section") else ""))
+        elif state.get("state") == "deep-running" and state.get("deep_total"):
+            msg, pct = deep_line(state), int(state.get("deep_percent") or 0)
         else:
             msg = state.get("section") or state.get("state")
-        jobs.set_progress(jid, int(state.get("percent") or 0), msg)
+        jobs.set_progress(jid, pct, msg)
     except Exception:  # noqa: BLE001 — the mirror must never break the sweep
         pass
+
+
+def deep_line(state: dict) -> str:
+    """One line for the deep pass: which policy/WPP is being walked, out of how
+    many. Before the lists are read there is nothing to count yet, and the line
+    says so instead of a bare "running" (SI-0004)."""
+    if not state.get("deep_total"):
+        return "Deep capture: listing server policies and WPPs…"
+    phase = state.get("deep_phase") or ""
+    line = (f"Deep capture {state.get('deep_done', 0)}/{state['deep_total']} · "
+            f"{state.get('deep_policies', 0)} server policies, "
+            f"{state.get('deep_wpps', 0)} WPPs")
+    if phase in ("server policy", "WPP", "offline WPP"):
+        line += (f" · {phase} {state.get('deep_index', 0)}/"
+                 f"{state.get('deep_of', 0)}")
+        if state.get("deep_current"):
+            line += f": {state['deep_current']}"
+    elif phase == "certificates":
+        line += " · certificates and SNI"
+    elif phase == "done":
+        line += " · saving"
+    return line
 
 
 def _finish_job(appliance_id: int, job_id: str | None) -> None:
@@ -890,6 +915,12 @@ def _sweep(appliance_snap: SimpleNamespace, by: str, deep: bool = False,
         state["apilib_error"] = lib["error"]
     else:
         state["apilib"] = lib
+    # ...and into the local cache, which is what Device health, the section
+    # pages and the inventory read. Same outcome rule as the library: its own
+    # key, never the sweep's verdict.
+    cache = _feed_cache(appliance_snap, snapshot)
+    if cache.get("error"):
+        state["cache_error"] = cache["error"]
     state.update(state="done", done=total, percent=100, objects=total_objects,
                  section_count=len(sections), errors=errors, finished=generated_at,
                  absent_count=len(absent),
@@ -1029,6 +1060,43 @@ def _library_device(appliance_id: int, appliance_snap) -> dict:
             "firmware_raw": str(getattr(src, "firmware", "") or "")}
 
 
+#: The keys a harvest snapshot carries (``device_sync.snapshot_from_device``).
+#: The sweep adds its ledger on top; those extras stay out of the cache copy so
+#: the SoT store hashes a rediscovery and an hourly harvest of the same
+#: configuration to the SAME version instead of alternating between two.
+_HARVEST_KEYS = ("device", "appliance_id", "generated_at", "total_objects",
+                 "section_count", "sections", "errors")
+
+
+def _feed_cache(appliance_snap, snapshot: dict) -> dict:
+    """Ingest this sweep into the local cache as a harvest. NEVER raises.
+
+    The sweep reads the same plan the hourly harvest reads and produced the
+    same snapshot shape, and until 2026-10-03 it threw that away: a node whose
+    operator had just run a rediscovery still said "no cached configuration on
+    this node" and "never harvested" on Device health (SI-0006), because only
+    ``device_sync`` filled the cache and a fresh install seeds no schedule for
+    it. Recorded as a ``SyncRun`` with trigger ``rediscovery`` so the harvest
+    history says where the data came from.
+    """
+    try:
+        from . import device_sync
+        harvest = {k: snapshot[k] for k in _HARVEST_KEYS if k in snapshot}
+        with _get_flask_app().app_context():
+            run = device_sync.persist_snapshot(appliance_snap, harvest,
+                                               source="live",
+                                               trigger="rediscovery")
+            # Read inside the context: the row is detached once it closes.
+            status, detail = run.status, run.detail
+        if status != "ok":
+            return {"error": (detail or "cache ingest failed")[:200]}
+        return {"ok": True}
+    except Exception as exc:  # noqa: BLE001 — never let the cache sink a sweep
+        _log.warning("rediscovery: cache ingest failed for appliance %s: %s",
+                     appliance_snap.id, exc, exc_info=True)
+        return {"error": ("%s: %s" % (type(exc).__name__, exc))[:200]}
+
+
 def _ingest_library(appliance_snap, snapshot: dict) -> dict:
     """File this sweep's snapshot as API-library evidence. NEVER raises.
 
@@ -1070,13 +1138,31 @@ def _run_deep(appliance_snap: SimpleNamespace, progress_path, state: dict) -> No
     layer='deep'. Best-effort — a failure is recorded but never breaks the
     shallow rediscovery that already completed."""
     state.update(state="deep-running", section="deep capture (WPP + policy graph)",
-                 finished=None)
+                 finished=None, deep_total=0, deep_done=0, deep_percent=0)
     _write_json(progress_path, state)
+
+    def _progress(p: dict) -> None:
+        # Every policy/WPP walk is several reads, so one write per object is
+        # cheap -- and it is also the heartbeat: a long deep pass that never
+        # touched the file looked exactly like a dead one.
+        total = p.get("total") or 0
+        state.update(deep_total=total, deep_done=p.get("done", 0),
+                     deep_percent=(int(p.get("done", 0) * 100 / total)
+                                   if total else 0),
+                     deep_phase=p.get("phase", ""), deep_index=p.get("index", 0),
+                     deep_of=p.get("of", 0),
+                     deep_current=str(p.get("current") or "")[:120],
+                     deep_policies=p.get("policies", 0),
+                     deep_wpps=p.get("wpps", 0),
+                     heartbeat=datetime.utcnow().isoformat())
+        _write_json(progress_path, state)
+
     try:
         from . import device_sync
         app = _get_flask_app()
         with app.app_context():
-            snap = device_sync.deep_snapshot_from_device(appliance_snap)
+            snap = device_sync.deep_snapshot_from_device(appliance_snap,
+                                                         progress=_progress)
             device_sync.persist_deep_snapshot(appliance_snap, snap)
         state.update(state="done", section="deep capture complete",
                      deep_objects=snap.get("total_objects"),

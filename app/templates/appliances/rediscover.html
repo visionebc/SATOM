@@ -84,6 +84,22 @@
   const errs = document.getElementById('redisc-errors');
   let timer = null;
 
+  // Mirror of rediscovery.deep_line() — keep the two in step.
+  function deepLine(p) {
+    if (!p.deep_total) return 'Deep capture: listing server policies and WPPs…';
+    let t = `Deep capture ${p.deep_done || 0}/${p.deep_total} · `
+      + `${p.deep_policies || 0} server policies, ${p.deep_wpps || 0} WPPs`;
+    if (['server policy', 'WPP', 'offline WPP'].includes(p.deep_phase)) {
+      t += ` · ${p.deep_phase} ${p.deep_index || 0}/${p.deep_of || 0}`;
+      if (p.deep_current) t += `: ${p.deep_current}`;
+    } else if (p.deep_phase === 'certificates') {
+      t += ' · certificates and SNI';
+    } else if (p.deep_phase === 'done') {
+      t += ' · saving';
+    }
+    return t;
+  }
+
   function paint(p) {
     if (!p || p.state === 'idle') return;
     wrap.classList.remove('d-none');
@@ -102,7 +118,12 @@
     } else if (p.state === 'deep-running') {
       bar.classList.remove('bg-success');
       bar.classList.add('progress-bar-striped', 'progress-bar-animated');
-      line.textContent = 'Deep capture (WPP + policy graph) running…';
+      // The sweep is at 100 % by now; the bar switches to the deep pass's own
+      // count so it says which policy/WPP is being walked (SI-0004).
+      const dt = p.deep_total || 0, dp = p.deep_percent || 0;
+      bar.style.width = (dt ? dp : 100) + '%';
+      bar.textContent = dt ? 'Deep ' + dp + '%' : 'Deep…';
+      line.textContent = deepLine(p);
     } else if (p.state === 'cli-running') {
       bar.classList.remove('bg-success');
       bar.classList.add('progress-bar-striped', 'progress-bar-animated');
@@ -110,7 +131,9 @@
     } else if (p.state === 'done') {
       bar.classList.remove('progress-bar-striped', 'progress-bar-animated');
       let txt = p.summary || `${p.objects} objects across ${p.section_count} sections`;
-      if (p.deep_objects != null) txt += ` · depth: ${p.deep_objects} object(s)`;
+      if (p.deep_objects != null) txt += ` · depth: ${p.deep_objects} object(s)`
+        + (p.deep_total ? ` from ${p.deep_policies || 0} server policies and ${p.deep_wpps || 0} WPPs` : '');
+      if (p.cache_error) txt += ` · local cache not updated: ${p.cache_error}`;
       if (p.deep_error) txt += ` · depth error: ${p.deep_error}`;
       // Skipped and failed are DIFFERENT outcomes and are never collapsed:
       // "no dump was taken" and "a dump was attempted and lost" send the

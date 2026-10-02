@@ -117,7 +117,9 @@ explicitly confirm. Applied writes are snapshotted and audited.
 **Jobs dock.** Long operations (backups, discovery, deep captures, bulk
 applies, firmware) run as **background jobs**. A dock at the bottom of the
 screen tracks progress and survives page navigation; the **Jobs** page (Global
-→ Jobs) lists everything with Pause / Resume / Stop.
+→ Jobs) lists everything with Pause / Resume / Stop. Each toast in the dock can
+be minimised to one line (**−**) and restored (**□**, or a click on its title);
+the choice lasts for the browser session.
 
 **Notifications.** The bell in the top bar collects job results and system
 notices, scoped to the product you are working in.
@@ -190,9 +192,12 @@ maintenance devices, so this can never hand you a device the picker hides.
    account on the unit, and store that key as the appliance password.
 2. **Test connection** — validates REST reachability and credentials.
 3. **Discovery / Rediscovery** — sweeps every registry endpoint and stores the
-   device's full configuration in the local cache; also fills the hardware /
-   firmware inventory. Run it after registering and after any large
-   out-of-band change.
+   device's full configuration in the local cache (recorded as a harvest with
+   trigger `rediscovery`, so Device health counts it); also records the
+   firmware. Hardware is NOT collected here: use **Scan hardware (SSH)** on
+   Device health. Run it after registering and after any large out-of-band
+   change. With *Capture full WPP + policy depth* on, the deep pass shows which
+   server policy or WPP it is walking and how many are left.
 4. **Deep capture** — a deeper sweep that walks each server policy's whole
    object graph (pools, members, WAF profile sub-policies…). This is what
    powers the DB-first policy detail and the Architecture map. Can run
@@ -1154,7 +1159,11 @@ Fleet health is **two pages**, because a number is read as a claim about the
 page it sits on:
 
 - **Device health** (`/monitoring/`) — the appliance cards above. Present in
-  every workspace, scoped to that workspace's device kind.
+  every workspace, scoped to that workspace's device kind. On a new node,
+  *never harvested* / *probes have never run* usually means nothing is
+  scheduled to do that work: the reason then ends with *no 'device_sync'
+  schedule on this node* (or `deep_monitor`) and the command that creates
+  the schedules, `sudo satom execute seed actions --yes`.
 - **SATOM health** (`/monitoring/satom`) — the installation itself: cluster
   peers, repository, external backup server, database, systemd units,
   redundancy, **the host machine** and **Encryption in transit**, where every

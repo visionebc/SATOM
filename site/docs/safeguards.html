@@ -16307,6 +16307,35 @@ undefined button class.</p>
 tests: the owner check on <code>/jobs/&lt;id&gt;/response</code> was hidden by a job with no
 stored response (404 either way), and the button-class check was satisfied by
 a <code>:hover</code> rule. Both tests now pin the real property.</p>
+<h2 id="206--a-sweep-that-kept-what-it-read-to-itself-and-a-deep-pass-that-only-said-running-teststest_rediscovery_progress_cachepy-2026-10-03">§206 — a sweep that kept what it read to itself, and a deep pass that only said "running" (<code>tests/test_rediscovery_progress_cache.py</code>, 2026-10-03)</h2>
+<p>Three field reports from one customer evening (SI-0004/5/6).</p>
+<ul>
+<li><strong>The sweep feeds the cache.</strong> Rediscovery built the same snapshot as the
+  hourly harvest and discarded it, so Device health said <em>never harvested</em>
+  right after one. <code>_feed_cache</code> hands the snapshot to
+  <code>device_sync.persist_snapshot(trigger="rediscovery")</code>, with only the
+  harvest keys (<code>_HARVEST_KEYS</code>): the ledger (<code>endpoint_status</code>, <code>absent</code>,
+  <code>verdict_counts</code>) would make the SoT store hash a rediscovery and a harvest
+  of one configuration as two versions. Never raises; a failure lands in
+  <code>cache_error</code>, never in the sweep's verdict.</li>
+<li><strong>Found while writing the test:</strong> the first version read <code>run.status</code>
+  after its app context closed, which raises <code>DetachedInstanceError</code> — every
+  successful ingest would have been reported as a cache failure.</li>
+<li><strong>No schedule is named.</strong> A fresh install seeds no <code>device_sync</code> /
+  <code>deep_monitor</code> action. A non-ok Harvest / Cache / Deep monitors signal with
+  no enabled schedule covering the device (<code>targets == []</code> or containing it)
+  says so, with <code>sudo satom execute seed actions --yes</code>. Unreadable table →
+  no hint (an unknown answer must not print a claim).</li>
+<li><strong>The deep walk reports per object.</strong> <code>deep_sections(progress=)</code> lists
+  policies + inline + offline WPPs first so the total is known before the
+  first object; one tick per object, one for certificates, one at the end. A
+  raising callback is swallowed. <code>_run_deep</code> writes <code>deep_*</code> fields and the
+  heartbeat per tick and leaves the sweep's <code>percent</code> alone (the done state
+  must still paint 100 %); the job mirror uses <code>deep_percent</code>.</li>
+<li><strong>Toasts minimise.</strong> State in <code>sessionStorage</code> (<code>satom.jobtoast.min</code>),
+  cleared on dismiss.</li>
+</ul>
+<p><strong>Mutations: 17/17 bite.</strong></p>
     </div>
   </div>
 </section>

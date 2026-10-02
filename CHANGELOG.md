@@ -6,6 +6,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [2.9.0] - 2026-10-02
+
 ### Added — every action on a device runs as a job that shows where it is (2026-10-02)
 
 Requested: "every action inside the device must create a job, run in the

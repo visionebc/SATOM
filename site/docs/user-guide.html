@@ -333,6 +333,25 @@ that will not come online.</p>
 <p><strong>Capacity limits</strong> (Administrator → Capacity) define per-model object
 ceilings; clone and exception workflows check headroom before creating
 objects.</p>
+<p><strong>Every action on a device is a job.</strong> Test connection, console commands,
+restores, failovers, saves in the Workspace and the object editor, certificate
+pushes, searches on the box: each one runs in the background and shows what
+it is doing.</p>
+<ul>
+<li>An action that finishes within about two seconds behaves as it always did.</li>
+<li>A longer one appears in the Jobs dock (bottom right) with each call it makes
+  to the device, for example <code>GET /api/v2.0/cmdb/server-policy/policy · 200 ·
+  310 ms</code>. The page gets its normal result when the action ends, even if
+  you went to another page in the meantime.</li>
+<li>A form you submitted opens a progress page with the same steps. <em>Keep
+  working</em> takes you back; the action continues.</li>
+<li>Two changes to the same device run one after the other. The second shows
+  <strong>queued</strong> and can be stopped while it waits. Once a change has started on
+  the device it cannot be stopped, so the device is never left half-changed.</li>
+<li>The appliance page has a <strong>Jobs on this device</strong> card with the running and
+  recent jobs; every job is also on Global → Jobs, with its steps under
+  <em>Details</em>.</li>
+</ul>
 <h2 id="5-server-policy">5. Server Policy</h2>
 <p>FortiWeb ADOM → <strong>Server Policy</strong> (the landing page once a device is chosen).</p>
 <ul>

@@ -5,8 +5,8 @@
 <meta charset="UTF-8">
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Version 1.15.0 — SATOM</title>
-<meta name="description" content="Released on 2026-08-23 — Added · Changed · 8 entries.">
+<title>Version 2.9.0 — SATOM</title>
+<meta name="description" content="Released on 2026-10-02 — Added — every action on a device runs as a job that shows where it is (2026-10-02) · 8 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -45,8 +45,8 @@
 
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
-  <h1>Version 1.15.0 <span class="rel-badge">superseded</span></h1>
-  <p class="sub">Released on 2026-08-23 — Added · Changed · 8 entries.</p>
+  <h1>Version 2.9.0 <span class="rel-badge rel-now">current release</span></h1>
+  <p class="sub">Released on 2026-10-02 — Added — every action on a device runs as a job that shows where it is (2026-10-02) · 8 entries.</p>
 </header>
 
 <section class="wrap">
@@ -62,7 +62,7 @@
         <span class="rel-nav-meta">unreleased · Changes · 0 entries</span>
         <ul class="rel-leads"></ul>
       </a>
-      <a class="rel-nav-item" href="v2.9.0.html" data-rel-version="2.9.0">
+      <a class="rel-nav-item is-active" href="v2.9.0.html" data-rel-version="2.9.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 2.9.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
         <span class="rel-nav-meta">2026-10-02 · Added — every action on a device runs as a job that shows where it is (2026-10-02) · 8 entries</span>
         <ul class="rel-leads"><li>One mechanism for 221 routes</li><li>Fast stays fast</li><li>Where it is</li><li class="rel-more">… and 5 more</li></ul>
@@ -167,7 +167,7 @@
         <span class="rel-nav-meta">2026-08-23 · Added · Fixed · 6 entries</span>
         <ul class="rel-leads"><li>A &quot;?&quot; beside every element of Settings → Sentinel → Settings</li><li>config.SPEC[].hint and config.UI_HINTS</li><li>app/templates/partials/_hint.html</li><li class="rel-more">… and 3 more</li></ul>
       </a>
-      <a class="rel-nav-item is-active" href="v1.15.0.html" data-rel-version="1.15.0">
+      <a class="rel-nav-item" href="v1.15.0.html" data-rel-version="1.15.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 1.15.0</span></span>
         <span class="rel-nav-meta">2026-08-23 · Added · Changed · 8 entries</span>
         <ul class="rel-leads"><li>Settings → Sentinel → Architecture</li><li>app/templates/sentinel/_docs_section.html</li><li>sentinel.console_context() / sentinel.docs_context()</li><li class="rel-more">… and 5 more</li></ul>
@@ -325,49 +325,64 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
-<p>Sentinel's Architecture and Incidents console are rendered in the Admin
-Console, beside its settings.</p>
-<h3 id="added">Added</h3>
+<h3 id="added--every-action-on-a-device-runs-as-a-job-that-shows-where-it-is-2026-10-02">Added — every action on a device runs as a job that shows where it is (2026-10-02)</h3>
+<p>Requested: "every action inside the device must create a job, run in the
+background and show how far it has got". Until now a POST that talked to an
+appliance ran inside the HTTP request: a slow box meant a frozen button, no
+feedback, and past gunicorn's timeout a dead request with the device possibly
+half-changed. Only 5 of about 150 device routes used the job framework.</p>
 <ul>
-<li><strong><code>Settings → Sentinel → Architecture</code></strong> and <strong><code>Settings → Sentinel →
-  Incidents console</code></strong> are now <strong>panes</strong>, not links out. Both render the same
-  content their standalone URLs serve — the architecture document generated
-  from the live weight table, action catalog and settings spec; and the live
-  console with its four health tiles, the seven-day figures and the incident
-  table. Two of the three entries in a group about one subject used to take
-  the whole page away, and the way back was the browser.</li>
-<li><strong><code>app/templates/sentinel/_docs_section.html</code></strong> and
-  <strong><code>app/templates/sentinel/_console_section.html</code></strong> — one file per section,
-  included by its pane and by its own page. The same arrangement the Sentinel
-  settings section already used: a hand-copied second surface is a second
-  place for numbers generated from live tables to be read wrongly, and nothing
-  fails when two copies disagree.</li>
-<li><strong><code>sentinel.console_context()</code> / <code>sentinel.docs_context()</code></strong> — one context
-  builder per section, shared by both surfaces, so the pane and the page
-  cannot answer differently.</li>
+<li><strong>One mechanism for 221 routes.</strong> Every POST of the device areas
+  (appliances, Workspace, object editor, SPO wizard, Web Protection, Server
+  Objects, Exceptions, Certificate Manager, templates, change requests,
+  FortiADC/FAZ/FAC, attack search, transaction tracer, Lua studio, API
+  explorer, provisioning, upgrade flow, Sentinel, monitors…) is replayed in a
+  background job. The job runs the request again with the same body, cookie
+  and headers, so login, CSRF, permissions and the ADOM/device gates apply
+  exactly as before. No page had to be rewritten.</li>
+<li><strong>Fast stays fast.</strong> The request waits up to 2 s (<code>SATOM_JOB_INLINE_S</code>). An
+  action that finishes in that window returns its normal response. A slower
+  one answers at once: a script caller gets <code>202</code> and the Jobs dock follows
+  it, then hands the page its normal response when it finishes. A classic
+  form goes to a progress page (<code>/jobs/&lt;id&gt;/wait</code>) that switches to the
+  action's own result when done. Flash messages are kept.</li>
+<li><strong>Where it is.</strong> Each REST call and SSH command the action makes is one step
+  of the job (<code>GET /api/v2.0/cmdb/... · 200 · 310 ms</code>), shown in the dock, on
+  the progress page and in the Job Manager's details.</li>
+<li><strong>Queued writes.</strong> Two writes to the same device run one after the other.
+  The second shows <code>Queued — waiting for "&lt;first action&gt;"</code> and can be stopped
+  while it waits. Once a write has started on the device it can no longer be
+  stopped, because stopping between two calls would leave the device
+  half-changed. Read-only actions never queue and can be stopped between
+  calls.</li>
+<li><strong>Jobs on this device.</strong> The appliance page lists the running and recent
+  jobs for that device and refreshes as soon as one starts or ends.</li>
+<li><strong>Discovery / Rediscovery is a job too.</strong> It shows in the dock and on the
+  Jobs page with its progress. Stop works from either place, and from the
+  Discovery page as before.</li>
+<li>The Jobs page stays readable: an action that never reached a device (a
+  validation error, a database-only edit) leaves no job.</li>
+<li>Unchanged on purpose: API-token callers, the standby node and the routes
+  that already were jobs (firmware upgrade/downgrade, backups, signature
+  sync, monitor sweeps). <code>SATOM_DEVICE_JOBS=0</code> turns the mechanism off.</li>
 </ul>
-<h3 id="changed">Changed</h3>
-<ul>
-<li><strong>Controls inside the panes stay inside the console.</strong> The sweep and the
-  baseline rebuild carry <code>return_to</code> and come back to the pane they were fired
-  from; the status filter reloads Settings (<code>?sn_status=</code>) instead of jumping
-  to <code>/sentinel/</code>; the Architecture button switches the sibling pane. A
-  control that works perfectly <em>somewhere else</em> is the failure this removes.
-  Opening one incident still leaves, because an incident is a page of its own.</li>
-<li><strong>No entry in the Sentinel group carries the leaving arrow</strong> — none of them
-  leaves. The marker's branch stays in the menu for the next entry that really
-  does: an arrow on a row that only swaps a pane warns of a page change that
-  never happens.</li>
-<li>The incident table is wrapped in a scroller. Nine columns do not fit the
-  Admin Console's single, narrower column, and a table cut off at the edge
-  reports nothing.</li>
-<li><code>/settings/</code> builds the metrics-store health <strong>once</strong> and hands it to all
-  three Sentinel sections, rather than asking three times for an answer that
-  cannot have changed between them.</li>
-<li>§26 of the manual describes the three panes, and a new guard derived from
-  the menu literal fails if it goes back to calling two of them links out.</li>
-</ul>
-<p class="rel-prevnext"><a href="v1.16.0.html">← Version 1.16.0</a> · <a href="v1.14.0.html">Version 1.14.0 →</a></p>
+<h3 id="fixed--93-buttons-rendered-as-plain-text-2026-10-02">Fixed — 93 buttons rendered as plain text (2026-10-02)</h3>
+<p>Templates used <code>fw-btn-primary</code> / <code>fw-btn-secondary</code> (for example <em>Edit</em>,
+<em>Analysis / FortiView</em> and most appliance quick actions), but the stylesheet
+only defined <code>btn-fw-primary</code> / <code>btn-fw-secondary</code>. Those buttons had no
+background or border. Both spellings are now defined, and
+<code>tests/test_device_jobs.py</code> fails if a template uses a button class that no
+stylesheet defines.</p>
+<h3 id="fixed--installersbuild-update-packagesh-was-not-executable-2026-10-02">Fixed — <code>installers/build-update-package.sh</code> was not executable (2026-10-02)</h3>
+<p>The update-package builder was committed without the exec bit (<code>100644</code>)
+when it was added, unlike the three offline-bundle builders and both
+installers. On a fresh clone (GitHub or Gitea), running
+<code>./installers/build-update-package.sh</code> failed with <code>Permission denied</code>;
+only <code>bash installers/build-update-package.sh</code> worked. The script is now
+tracked as <code>100755</code>, and <code>tests/test_installer_exec_bits.py</code> fails if any
+<code>installers/*.sh</code> is committed without it. Nothing inside an update package
+or an installed node changes.</p>
+<p class="rel-prevnext"><a href="unreleased.html">← Unreleased — the next release</a> · <a href="v2.8.0.html">Version 2.8.0 →</a></p>
       </div>
       <div class="callout" style="margin-top:24px;">
         <span class="cico">🗒️</span>

@@ -622,6 +622,48 @@ safe:</p>
 <li>The generic error handler must not overwrite a worker-recorded error
   (guarded via the active-jobs set).</li>
 </ul>
+<h3 id="111-device-actions-run-as-jobs-servicesdevice_jobspy">11.1 Device actions run as jobs (<code>services/device_jobs.py</code>)</h3>
+<p>Every POST of a blueprint in <code>DEVICE_BLUEPRINTS</code> is wrapped at the end of
+<code>create_app</code> (<code>device_jobs.install</code>), except the endpoints in <code>EXCLUDED</code>
+(each with its reason). <code>tests/test_device_jobs.py</code> fails on a POST of those
+blueprints that is in neither list, and on a wrapped view that starts its own
+job.</p>
+<ul>
+<li><strong>Replay, not rewrite.</strong> A first <code>before_request</code> buffers the raw body of
+  wrapped POSTs before anything parses it. The wrapper creates a
+  <code>device_action</code> job and the job thread pushes a fresh request context built
+  from a copy of the environ with that body, then runs <code>preprocess_request</code>
+  and the original view. Errors go through <code>handle_user_exception</code>, as
+  inline.</li>
+<li><strong>Inline window.</strong> The request waits <code>INLINE_S</code> (2 s,
+  <code>SATOM_JOB_INLINE_S</code>). If the job finished, its response is returned and its
+  session changes (flashes) are applied. If not: <code>202</code> +
+  <code>X-SATOM-Job</code> for fetch callers (<code>Sec-Fetch-Mode</code> other than <code>navigate</code>),
+  <code>303 /jobs/&lt;id&gt;/wait</code> for navigations and Turbo forms.</li>
+<li><strong>Stored response.</strong> <code>data/jobs/responses/&lt;id&gt;.resp</code> (status, headers
+  without cookies/CSP, base64 body up to 50 MB, session diff). Replayed by
+  <code>GET /jobs/&lt;id&gt;/response</code>, owner only. Pruned with the job files.</li>
+<li><strong>Progress + queue</strong> (<code>services/job_progress.py</code>). The job thread binds a
+  <code>JobSink</code>. <code>BaseClient._request</code> and the read-only SSH console call
+  <code>before_call</code> / <code>after_call</code> on it: every call is a step, and the first
+  call of an exclusive (write) job takes an <code>flock</code> on
+  <code>data/jobs/locks/&lt;host&gt;.lock</code>. A job holds at most one lock and only waits
+  while it holds none, so there is no deadlock; the kernel releases the lock if
+  the worker dies. Holding the lock sets <code>cancelable=False</code>. Read/write is
+  decided by the endpoint's words (<code>is_read</code>): any write word wins.
+  <code>job_progress.step(label, percent)</code> adds a named phase.</li>
+<li><strong>Ledger hygiene.</strong> A job that finished inline without a single device call
+  is deleted.</li>
+<li><strong>Pass-through:</strong> non-POST, <code>Authorization: Bearer</code>, a standby node, the test
+  suite unless <code>DEVICE_JOBS_ENABLED</code>, <code>SATOM_DEVICE_JOBS=0</code>.</li>
+<li><strong>Frontend.</strong> <code>jobs.js</code> wraps <code>window.fetch</code>: a <code>202</code> with <code>X-SATOM-Job</code> is
+  tracked in the dock and the caller's promise resolves with
+  <code>/jobs/&lt;id&gt;/response</code>. Turbo keeps its own fetch (captured before), which
+  is why Turbo form posts get the redirect instead. The dock fires
+  <code>satom:job</code> events (<code>start</code> / <code>end</code>).</li>
+<li>Sub-threads that a view starts itself (thread pools) have no sink: their
+  calls are neither logged nor queued.</li>
+</ul>
 <h2 id="12-extending-the-app">12. Extending the app</h2>
 <ul>
 <li><strong>New REST endpoint:</strong> add a row from the product's API console (or the

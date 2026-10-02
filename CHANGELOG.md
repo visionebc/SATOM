@@ -6,6 +6,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [2.8.0] - 2026-10-02
+
 ### Fixed — Rediscovery ignored the TLS trust store: CERTIFICATE_VERIFY_FAILED with the CAs imported (2026-10-02)
 
 Reported by the user: the root and intermediate CAs were in Settings → TLS

@@ -1319,7 +1319,7 @@ def promote(req_path):
 # allowlist was moved out of. tests/test_service_control.py fails if the two
 # copies drift, which is what keeps a duplicate honest.
 _SVC_UNIT_RE = re.compile(r"^[A-Za-z0-9@:._-]+\.(service|timer|path)$")
-_SVC_ACTIONS = ("start", "stop", "restart")
+_SVC_ACTIONS = ("start", "stop", "restart", "reload")
 
 # Denied even if a future edit lists them: satom-updater IS this runner.
 # Stopping it means no later request can ever be processed -- including the one
@@ -1335,7 +1335,7 @@ _SERVICE_POLICY = {
     "satom-alerts.timer": ("start", "stop", "restart"),
     "satom-cert-renew.timer": ("start", "stop", "restart"),
     "satom-ha-datasync.timer": ("start", "stop", "restart"),
-    "nginx.service": ("start", "restart"),
+    "nginx.service": ("start", "restart", "reload"),
     "postgresql.service": ("restart",),
 }
 
@@ -1435,6 +1435,24 @@ def service_action(req_path):
 
     before = _svc_active(unit)
     st.step("state before", True, "%s is %s" % (unit, before))
+
+    if unit == "nginx.service" and action in ("reload", "restart"):
+        # A reload with a broken config is accepted by systemd and silently
+        # ignored by nginx; a restart with one takes the front down. Either
+        # way the config is tested first. This is also the certificate
+        # activation path when the host's sudo policy refuses the
+        # /etc/sudoers.d/satom allowlist (cert_service._reload_nginx).
+        try:
+            t = subprocess.run(["nginx", "-t"], capture_output=True, text=True,
+                               timeout=60)
+            tok, tdetail = t.returncode == 0, (t.stderr or t.stdout or "")
+        except Exception as e:  # noqa: BLE001
+            tok, tdetail = False, str(e)
+        st.step("nginx -t", tok, tdetail.strip()[-400:])
+        if not tok:
+            st.finish("failed", unit=unit, action=action, state_before=before,
+                      state_after=before, error="nginx -t failed")
+            return
 
     try:
         p = subprocess.run(["systemctl", action, unit],

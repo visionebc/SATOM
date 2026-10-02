@@ -102,6 +102,15 @@ validates and activates a new TLS certificate: it needs `nginx -t` (which reads
 private keys under `/etc/nginx/ssl`) and a reload. Nothing else in the web
 worker needs root.
 
+Whether this file APPLIES is the host's decision, not SATOM's: a managed
+`/etc/sudoers` without `@includedir /etc/sudoers.d`, an LDAP/SSSD sudo source or
+a later rule makes `sudo -n` answer "a password is required" on a correctly
+installed node. `cert_service` therefore treats a sudo refusal as "use the root
+runner": it enqueues `nginx.service reload` for `satom-updater.path`, whose
+handler runs `nginx -t` before the reload. `reload` is allowlisted for nginx
+only and is never drawn as a button. The installer checks the rule is honoured
+(`runuser -u satom -- sudo -n nginx -t`) and warns if not.
+
 ### Rejected: `sudo` for package installation
 
 A rule like `satom ALL=(root) NOPASSWD: /usr/bin/apt install *` **is root**, not

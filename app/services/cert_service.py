@@ -38,10 +38,13 @@ things under it do NOT share one rule — see ``docs/encryption-and-node-tls.md`
 """
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
+import re
 import shutil
 import subprocess
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -254,16 +257,110 @@ def _priv(argv: list[str]) -> list[str]:
     return argv if os.geteuid() == 0 else ["sudo", "-n", *argv]
 
 
+#: How long a certificate activation waits for the root runner. The runner
+#: config-tests nginx, reloads it and checks the front answers on :443 --
+#: seconds -- and the slack covers a request queued behind one it is applying.
+RUNNER_WAIT_SECONDS = 90
+
+
+class _SudoRefused(Exception):
+    """sudo itself said no -- as opposed to nginx failing its config test."""
+
+
+def _sudo_refused(proc) -> bool:
+    """sudo's own refusals start with 'sudo:' or 'Sorry, user'; nginx's start
+    with 'nginx:'. Telling them apart is the whole point: a refusal falls back
+    to the runner, a failed config test must NOT be retried anywhere."""
+    out = ((proc.stderr or "") + (proc.stdout or "")).strip()
+    return out.startswith(("sudo:", "Sorry, user")) or "is not in the sudoers" in out
+
+
+def _run_priv(argv: list[str]):
+    try:
+        p = subprocess.run(_priv(argv), capture_output=True, text=True)
+    except FileNotFoundError as e:  # no sudo binary at all
+        if os.geteuid() == 0:
+            raise
+        raise _SudoRefused(str(e))
+    if p.returncode != 0 and os.geteuid() != 0 and _sudo_refused(p):
+        raise _SudoRefused((p.stderr or p.stdout or "").strip()[-200:])
+    return p
+
+
 def _reload_nginx() -> None:
     """Validate config then reload. Raises RuntimeError with nginx's message on a
-    bad config (the caller has already restored the previous cert on failure)."""
-    t = subprocess.run(_priv(["nginx", "-t"]), capture_output=True, text=True)
-    if t.returncode != 0:
-        raise RuntimeError("nginx -t failed: " + (t.stderr or t.stdout)[-400:])
-    r = subprocess.run(_priv(["systemctl", "reload", "nginx"]),
-                       capture_output=True, text=True)
-    if r.returncode != 0:
-        raise RuntimeError("nginx reload failed: " + (r.stderr or r.stdout)[-400:])
+    bad config (the caller has already restored the previous cert on failure).
+
+    The sudoers allowlist is the fast path, but it is the HOST's sudo policy
+    that decides whether it applies: a managed sudoers without
+    ``@includedir /etc/sudoers.d``, an LDAP/SSSD sudo source or a later rule
+    can all turn ``sudo -n`` into "a password is required" on a node that was
+    installed correctly. When sudo refuses, the same test + reload goes through
+    the root runner (``satom-updater.path``), which already exists on every
+    node for updates and service control and does not depend on sudo at all.
+    """
+    try:
+        t = _run_priv(["nginx", "-t"])
+        if t.returncode != 0:
+            raise RuntimeError("nginx -t failed: " + (t.stderr or t.stdout)[-400:])
+        r = _run_priv(["systemctl", "reload", "nginx"])
+        if r.returncode != 0:
+            raise RuntimeError("nginx reload failed: " + (r.stderr or r.stdout)[-400:])
+    except _SudoRefused as e:
+        _reload_via_runner(refusal=str(e))
+
+
+def _reload_via_runner(refusal: str = "", wait: float = RUNNER_WAIT_SECONDS) -> None:
+    """Hand ``nginx -t`` + ``systemctl reload nginx`` to the root runner and wait
+    for its verdict. ``wait=0`` enqueues and returns (rollback path)."""
+    from . import service_control as sc
+    uid = sc.request_service_action("nginx.service", "reload", by="node-cert",
+                                    origin="node-cert")
+    if wait <= 0:
+        return
+    path = su.STATUS_DIR / (uid + ".json")
+    deadline = time.monotonic() + wait
+    st: dict = {}
+    while time.monotonic() < deadline:
+        try:
+            st = json.loads(path.read_text())
+        except Exception:  # noqa: BLE001 — being rewritten; read again
+            st = {}
+        if st.get("state") in ("success", "failed"):
+            break
+        time.sleep(1)
+    state = st.get("state")
+    if state == "success":
+        return
+    why = " (sudo: %s)" % refusal if refusal else ""
+    if state == "failed":
+        bad = [s for s in (st.get("steps") or []) if not s.get("ok")]
+        first = bad[0] if bad else {}
+        if first.get("name") == "nginx -t":
+            raise RuntimeError("nginx -t failed: " + (first.get("detail") or "")[-400:])
+        raise RuntimeError("nginx reload through the root runner failed at '%s': %s"
+                           % (first.get("name") or "?",
+                              (first.get("detail") or st.get("error") or "")[-300:]))
+    if state in (None, "queued"):
+        raise RuntimeError(
+            "sudo refused the nginx reload%s and the root runner did not pick up "
+            "the request within %ds. Check that the runner is armed: "
+            "systemctl enable --now satom-updater.path" % (why, int(wait)))
+    raise RuntimeError("the root runner is still applying the nginx reload after "
+                       "%ds (request %s) — see Settings → Software Update" % (int(wait), uid))
+
+
+def _rollback_reload() -> None:
+    """Best effort after the files were restored: never waits, never raises."""
+    try:
+        _run_priv(["systemctl", "reload", "nginx"])
+    except _SudoRefused:
+        try:
+            _reload_via_runner(wait=0)
+        except Exception:  # noqa: BLE001
+            pass
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _install(cert_pem: bytes, key_pem: bytes, chain_pem: bytes | None,
@@ -303,11 +400,7 @@ def _install(cert_pem: bytes, key_pem: bytes, chain_pem: bytes | None,
             b = bak / f.name
             if b.exists():
                 shutil.copy2(b, f)
-        try:
-            subprocess.run(_priv(["systemctl", "reload", "nginx"]),
-                           capture_output=True, text=True)
-        except Exception:
-            pass
+        _rollback_reload()
         raise
     # meta.json (node-local file) is the source of record for the cert origin —
     # it works even on a standby whose Postgres is read-only.
@@ -326,16 +419,36 @@ def _install(cert_pem: bytes, key_pem: bytes, chain_pem: bytes | None,
     return current()
 
 
-def import_pem(cert_pem: bytes, key_pem: bytes, chain_pem: bytes | None, by: str,
+def import_pem(cert_pem: bytes, key_pem: bytes | None, chain_pem: bytes | None, by: str,
                *, _log: bool = True) -> dict:
     """Validate + install an externally-issued cert. Import-only (no auto-renew).
+
+    ``key_pem`` may be empty when the certificate was issued from a CSR
+    generated on this node: the pending key whose public key the certificate
+    carries is used, and consumed once the install succeeds.
 
     _log=False when the caller already journals the attempt (autopull), so a
     single renewal does not produce two rows on the Renewals page."""
     from . import cert_renew_log as jrn
+    csr_id = None
     try:
+        cert_pem = _norm_pem(cert_pem)
+        chain_pem = _norm_pem(chain_pem) or None
+        key_pem = _norm_pem(key_pem)
+        if not cert_pem:
+            raise ValueError("the certificate is empty")
+        csr_id = _csr_id_for_cert(cert_pem)
+        if not key_pem:
+            if not csr_id:
+                raise ValueError(
+                    "no private key given, and no CSR generated on this node "
+                    "matches this certificate — paste or upload the key, or import "
+                    "the certificate your CA issued from a CSR generated here")
+            key_pem = (CSR_DIR / (csr_id + ".key")).read_bytes()
         validate_pem(cert_pem, key_pem, chain_pem)
         info = _install(cert_pem, key_pem, chain_pem, source="imported", by=by)
+        if csr_id:
+            _drop_csr(csr_id)   # the key now lives in pki/public; the CSR is spent
     except Exception as exc:  # noqa: BLE001 — _install already rolled nginx back
         if _log:
             jrn.record(jrn.CH_IMPORT, jrn.OK_ERROR, "import rejected — cert NOT installed",
@@ -345,6 +458,182 @@ def import_pem(cert_pem: bytes, key_pem: bytes, chain_pem: bytes | None, by: str
         jrn.record(jrn.CH_IMPORT, jrn.OK_RENEWED, "imported PEM installed", by=by,
                    days_left=info.get("days_left"), not_after=info.get("not_after"))
     return info
+
+
+# ---------------------------------------------------------------------------
+# CSR — let another CA issue the certificate, keep the key on this node
+# ---------------------------------------------------------------------------
+# The key is generated here and never leaves the node: only the CSR (public)
+# is shown. Pending entries are keyed by the fingerprint of their PUBLIC key,
+# so the certificate that comes back finds its key by content -- generating a
+# second CSR while the first is still at the CA does not orphan the first.
+# Node-local like the rest of pki/: a CSR names this node and its key must not
+# reach the peer, so it stays out of data/ (which the HA datasync replicates).
+CSR_DIR = PKI / "csr"
+CSR_KEEP = 10
+CSR_KEY_TYPES = {
+    "rsa2048": "RSA 2048", "rsa3072": "RSA 3072", "rsa4096": "RSA 4096",
+    "ec256": "ECDSA P-256", "ec384": "ECDSA P-384",
+}
+_CSR_ID_RE = re.compile(r"^[0-9a-f]{16}$")
+_DNS_RE = re.compile(r"^(\*\.)?([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)*"
+                     r"[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$")
+
+
+def _norm_pem(blob) -> bytes:
+    """Pasted PEM arrives with CRLF, indentation or trailing blanks."""
+    if not blob:
+        return b""
+    if isinstance(blob, str):
+        blob = blob.encode()
+    lines = [ln.strip() for ln in blob.replace(b"\r", b"").split(b"\n")]
+    text = b"\n".join(ln for ln in lines if ln)
+    return text + b"\n" if text else b""
+
+
+def _spki_id(public_key) -> str:
+    import hashlib
+    from cryptography.hazmat.primitives import serialization
+    der = public_key.public_bytes(serialization.Encoding.DER,
+                                  serialization.PublicFormat.SubjectPublicKeyInfo)
+    return hashlib.sha256(der).hexdigest()[:16]
+
+
+def _csr_id_for_cert(cert_pem: bytes) -> str | None:
+    try:
+        from cryptography import x509
+        cid = _spki_id(x509.load_pem_x509_certificate(cert_pem).public_key())
+    except Exception:  # noqa: BLE001 — validate_pem reports a bad cert properly
+        return None
+    return cid if (CSR_DIR / (cid + ".key")).exists() else None
+
+
+def _drop_csr(csr_id: str) -> None:
+    for ext in (".key", ".csr", ".json"):
+        try:
+            (CSR_DIR / (csr_id + ext)).unlink()
+        except OSError:
+            pass
+
+
+def _split_names(raw) -> list[str]:
+    if isinstance(raw, (list, tuple)):
+        raw = ",".join(str(x) for x in raw)
+    return [n.strip() for n in re.split(r"[,\s;]+", raw or "") if n.strip()]
+
+
+def generate_csr(by: str, common_name: str | None = None, sans=None,
+                 key_type: str = "rsa2048", organization: str = "",
+                 org_unit: str = "", locality: str = "", state: str = "",
+                 country: str = "") -> dict:
+    """Generate a private key + CSR on this node. Returns the pending entry
+    (CSR PEM included, key never)."""
+    from cryptography import x509
+    from cryptography.x509.oid import NameOID
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec, rsa
+    from .. import runtime
+    runtime.require("cert_activation")
+    if runtime.is_container_runtime():
+        raise RuntimeError("CSR generation is not available in the container "
+                           "runtime: generate the key and CSR elsewhere and "
+                           "import the certificate together with its key")
+
+    cn = (common_name or "").strip() or node_hostname()
+    if not _DNS_RE.match(cn) and not _is_ip(cn):
+        raise ValueError("common name %r is not a valid host name or IP address" % cn)
+    names = [cn] + [n for n in _split_names(sans) if n.lower() != cn.lower()]
+    alt = []
+    for n in dict.fromkeys(names):          # de-duplicated, order kept
+        if _is_ip(n):
+            alt.append(x509.IPAddress(ipaddress.ip_address(n)))
+        elif _DNS_RE.match(n):
+            alt.append(x509.DNSName(n))
+        else:
+            raise ValueError("%r is neither a host name nor an IP address" % n)
+    country = (country or "").strip().upper()
+    if country and not re.match(r"^[A-Z]{2}$", country):
+        raise ValueError("country must be a two-letter ISO code (e.g. CH, MX, US)")
+    if key_type not in CSR_KEY_TYPES:
+        raise ValueError("key type must be one of: %s" % ", ".join(CSR_KEY_TYPES))
+
+    if key_type.startswith("rsa"):
+        key = rsa.generate_private_key(public_exponent=65537, key_size=int(key_type[3:]))
+    else:
+        key = ec.generate_private_key(ec.SECP256R1() if key_type == "ec256" else ec.SECP384R1())
+
+    attrs = [x509.NameAttribute(NameOID.COMMON_NAME, cn)]
+    for oid, val in ((NameOID.ORGANIZATION_NAME, organization),
+                     (NameOID.ORGANIZATIONAL_UNIT_NAME, org_unit),
+                     (NameOID.LOCALITY_NAME, locality),
+                     (NameOID.STATE_OR_PROVINCE_NAME, state),
+                     (NameOID.COUNTRY_NAME, country)):
+        val = (val or "").strip()
+        if val:
+            attrs.append(x509.NameAttribute(oid, val[:64]))
+    csr = (x509.CertificateSigningRequestBuilder()
+           .subject_name(x509.Name(attrs))
+           .add_extension(x509.SubjectAlternativeName(alt), critical=False)
+           .sign(key, hashes.SHA256()))
+
+    cid = _spki_id(key.public_key())
+    CSR_DIR.mkdir(parents=True, exist_ok=True)
+    CSR_DIR.chmod(0o700)
+    kp = CSR_DIR / (cid + ".key")
+    fd = os.open(str(kp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "wb") as fh:
+        fh.write(key.private_bytes(serialization.Encoding.PEM,
+                                   serialization.PrivateFormat.TraditionalOpenSSL,
+                                   serialization.NoEncryption()))
+    csr_pem = csr.public_bytes(serialization.Encoding.PEM)
+    (CSR_DIR / (cid + ".csr")).write_bytes(csr_pem)
+    meta = {"id": cid, "common_name": cn, "sans": names, "key_type": key_type,
+            "subject": csr.subject.rfc4514_string(),
+            "created_at": datetime.now(timezone.utc).isoformat(), "created_by": by}
+    (CSR_DIR / (cid + ".json")).write_text(json.dumps(meta, indent=2))
+    for old in pending_csrs()[CSR_KEEP:]:
+        _drop_csr(old["id"])
+    return dict(meta, csr_pem=csr_pem.decode())
+
+
+def _is_ip(s: str) -> bool:
+    try:
+        ipaddress.ip_address(s)
+        return True
+    except ValueError:
+        return False
+
+
+def pending_csrs() -> list[dict]:
+    """CSRs waiting for their certificate, newest first. Only entries whose key
+    is still present count -- a CSR without its key can never be completed."""
+    out = []
+    if not CSR_DIR.is_dir():
+        return out
+    for meta in CSR_DIR.glob("*.json"):
+        cid = meta.stem
+        if not _CSR_ID_RE.match(cid) or not (CSR_DIR / (cid + ".key")).exists():
+            continue
+        try:
+            m = json.loads(meta.read_text())
+            m["csr_pem"] = (CSR_DIR / (cid + ".csr")).read_text()
+        except Exception:  # noqa: BLE001
+            continue
+        m["id"] = cid
+        m["key_label"] = CSR_KEY_TYPES.get(m.get("key_type"), m.get("key_type"))
+        out.append(m)
+    out.sort(key=lambda m: m.get("created_at") or "", reverse=True)
+    return out
+
+
+def discard_csr(csr_id: str) -> bool:
+    """Delete a pending CSR and its key. A certificate issued from it can no
+    longer be imported without its key -- which no longer exists anywhere."""
+    if not _CSR_ID_RE.match(csr_id or ""):
+        raise ValueError("invalid CSR id")
+    existed = (CSR_DIR / (csr_id + ".key")).exists()
+    _drop_csr(csr_id)
+    return existed
 
 
 # ---------------------------------------------------------------------------

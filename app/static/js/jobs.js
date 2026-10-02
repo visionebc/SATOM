@@ -109,7 +109,18 @@
       '.job-toast.stopped .jt-bar{background:#fbbf24}' +
       '.job-toast.ok .jt-title::before{content:"\\2713 ";color:#10b981}' +
       '.job-toast.err .jt-title::before{content:"\\26A0 ";color:#ef4444}' +
-      '.job-toast.stopped .jt-title::before{content:"\\23F9 ";color:#fbbf24}';
+      '.job-toast.stopped .jt-title::before{content:"\\23F9 ";color:#fbbf24}' +
+      // Minimised (SI-0005): one line with the title, the percent and a thin
+      // bar. The message and Stop come back on restore; nothing is lost.
+      '.job-toast .jt-min{cursor:pointer;opacity:.5;font-size:14px;line-height:1;border:0;' +
+      'background:none;color:inherit;padding:0 2px}.job-toast .jt-min:hover{opacity:1}' +
+      '.job-toast .jt-pct{display:none;font-size:11px;color:#94a3b8;' +
+      'font-variant-numeric:tabular-nums}' +
+      '.job-toast.min{padding:6px 10px;width:230px;align-self:flex-end}' +
+      '.job-toast.min .jt-title{font-size:12px;cursor:pointer}' +
+      '.job-toast.min .jt-pct{display:inline}' +
+      '.job-toast.min .jt-msg,.job-toast.min .jt-stop{display:none}' +
+      '.job-toast.min .jt-track{height:3px;margin-top:5px}';
     (document.head || document.documentElement).appendChild(css);
   }
   function ensureDock() {
@@ -118,6 +129,30 @@
     if (document.body && dock.parentNode !== document.body) document.body.appendChild(dock);
     return dock;
   }
+  // Which toasts are minimised. sessionStorage, so a full reload keeps them
+  // small; Turbo visits keep them anyway (the dock survives the swap).
+  var MIN_KEY = 'satom.jobtoast.min';
+  function minSet() {
+    try { return JSON.parse(sessionStorage.getItem(MIN_KEY) || '{}') || {}; }
+    catch (e) { return {}; }
+  }
+  function saveMin(key, on) {
+    try {
+      var m = minSet();
+      if (on) m[key] = 1; else delete m[key];
+      sessionStorage.setItem(MIN_KEY, JSON.stringify(m));
+    } catch (e) { /* private mode: minimise still works for this page */ }
+  }
+  function setMin(key, on) {
+    var t = toasts[key]; if (!t) return;
+    t.el.classList.toggle('min', !!on);
+    t.minBtn.innerHTML = on ? '&#9633;' : '&minus;';
+    t.minBtn.title = on ? 'Restore' : 'Minimize';
+    t.minBtn.setAttribute('aria-label', t.minBtn.title);
+    t.minBtn.setAttribute('aria-expanded', on ? 'false' : 'true');
+    saveMin(key, on);
+  }
+
   function showToast(key, o) {
     o = o || {};
     var t = toasts[key];
@@ -126,7 +161,9 @@
       el.className = 'job-toast';
       el.innerHTML =
         '<div class="jt-top"><div class="jt-title"></div>' +
+        '<span class="jt-pct"></span>' +
         '<button class="jt-stop" hidden>Stop</button>' +
+        '<button class="jt-min" title="Minimize" aria-label="Minimize" aria-expanded="true">&minus;</button>' +
         '<button class="jt-x" title="Dismiss">&times;</button></div>' +
         '<div class="jt-msg"></div>' +
         '<div class="jt-track"><div class="jt-bar"></div></div>';
@@ -135,15 +172,29 @@
       el.querySelector('.jt-stop').addEventListener('click', function () {
         var tt = toasts[key]; if (tt && tt.jobId) cancelJob(tt.jobId, key);
       });
+      el.querySelector('.jt-min').addEventListener('click', function () {
+        setMin(key, !el.classList.contains('min'));
+      });
+      // A minimised toast is small; its title is the obvious thing to click.
+      el.querySelector('.jt-title').addEventListener('click', function () {
+        if (el.classList.contains('min')) setMin(key, false);
+      });
       t = toasts[key] = { el: el, bar: el.querySelector('.jt-bar'),
                           title: el.querySelector('.jt-title'),
                           msg: el.querySelector('.jt-msg'),
+                          pct: el.querySelector('.jt-pct'),
+                          minBtn: el.querySelector('.jt-min'),
                           stop: el.querySelector('.jt-stop'), jobId: null };
+      if (minSet()[key]) setMin(key, true);
     }
     if (o.jobId != null) t.jobId = o.jobId;
     if (o.title != null) t.title.textContent = o.title;
     if (o.message != null) t.msg.textContent = o.message;
-    if (o.percent != null) t.bar.style.width = Math.max(0, Math.min(100, o.percent)) + '%';
+    if (o.percent != null) {
+      var pc = Math.max(0, Math.min(100, o.percent));
+      t.bar.style.width = pc + '%';
+      t.pct.textContent = Math.round(pc) + '%';
+    }
     t.el.classList.remove('ok', 'err', 'stopped');
     if (o.state === 'ok') t.el.classList.add('ok');
     else if (o.state === 'err') t.el.classList.add('err');
@@ -161,6 +212,7 @@
     var t = toasts[key];
     if (t && t.el && t.el.parentNode) t.el.parentNode.removeChild(t.el);
     delete toasts[key];
+    saveMin(key, false);
   }
   function autoDismiss(key, ms) { setTimeout(function () { removeToast(key); }, ms || 6000); }
 

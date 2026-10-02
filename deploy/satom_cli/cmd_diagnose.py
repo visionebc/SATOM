@@ -214,6 +214,21 @@ def privilege(ctx, args):
             _fail(r, "%s must be root-owned and not group/world writable." % p)
         if p.is_symlink():
             _fail(r, "%s is a SYMLINK. The sudo target must be a fixed real path." % p)
+    # /usr/bin/satom is what makes 'sudo satom' resolve on openSUSE/RHEL, whose
+    # sudo secure_path omits /usr/local/sbin. It must point at the launcher.
+    alias = Path("/usr/bin/satom")
+    if alias.is_symlink() and os.path.realpath(alias) == str(launcher):
+        rows.append((str(alias), "-> %s (correct)" % launcher))
+    elif alias.exists() or alias.is_symlink():
+        rows.append((str(alias), "NOT a link to %s" % launcher))
+        r.worst("warn")
+        r.note("%s is not SATOM's link. 'sudo satom' may run something else; "
+               "use 'sudo %s' and check what %s is." % (alias, launcher, alias))
+    else:
+        rows.append((str(alias), "missing"))
+        r.worst("warn")
+        r.note("'sudo satom' fails where sudo's secure_path omits /usr/local/sbin "
+               "(openSUSE, RHEL). Fix: sudo %s execute reinstall cli" % launcher)
     r.rows("", rows)
 
     rc, out, _ = run(["sudo", "-n", "-l"]) if ctx.have("sudo") else (1, "", "")

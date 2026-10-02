@@ -204,6 +204,14 @@ satom ALL=(root) NOPASSWD: SATOM_CERT_RELOAD
 validates and activates a new TLS certificate: it needs <code>nginx -t</code> (which reads
 private keys under <code>/etc/nginx/ssl</code>) and a reload. Nothing else in the web
 worker needs root.</p>
+<p>Whether this file APPLIES is the host's decision, not SATOM's: a managed
+<code>/etc/sudoers</code> without <code>@includedir /etc/sudoers.d</code>, an LDAP/SSSD sudo source or
+a later rule makes <code>sudo -n</code> answer "a password is required" on a correctly
+installed node. <code>cert_service</code> therefore treats a sudo refusal as "use the root
+runner": it enqueues <code>nginx.service reload</code> for <code>satom-updater.path</code>, whose
+handler runs <code>nginx -t</code> before the reload. <code>reload</code> is allowlisted for nginx
+only and is never drawn as a button. The installer checks the rule is honoured
+(<code>runuser -u satom -- sudo -n nginx -t</code>) and warns if not.</p>
 <h3 id="rejected-sudo-for-package-installation">Rejected: <code>sudo</code> for package installation</h3>
 <p>A rule like <code>satom ALL=(root) NOPASSWD: /usr/bin/apt install *</code> <strong>is root</strong>, not
 a subset of it. A <code>.deb</code> runs its own <code>preinst</code>/<code>postinst</code> scripts as root, so

@@ -475,3 +475,47 @@ def test_the_repository_carries_the_api_packs_folder():
     readme = Path(__file__).resolve().parents[1] / "api-packs" / "README.md"
     assert readme.is_file()
     assert "satom execute apipack import" in readme.read_text()
+
+
+# --------------------------------------------------------------------------
+# api-packs/ keeps every release's pack (2026-10-02)
+# --------------------------------------------------------------------------
+
+def test_shipped_packs_are_ordered_by_version_not_by_mtime(env, shipped):
+    import shutil as _sh
+    for v in ("9.9.10", "9.9.2"):
+        _sh.copy(shipped, shipped.parent / ("satom-apipack-%s.tar.gz" % v))
+    for p in shipped.parent.iterdir():
+        os.utime(p, (1, 1))     # a checkout gives every file the same mtime
+    got = [p["version"] for p in ap.list_packs() if p["source"] == "shipped"]
+    assert got == ["9.9.10", "9.9.9", "9.9.2"], "9.9.10 sorts after 9.9.9 as text"
+
+
+def test_the_newest_shipped_pack_is_pending_until_a_full_import(env, shipped):
+    import shutil as _sh
+    newest = shipped.parent / "satom-apipack-9.9.10.tar.gz"
+    _sh.copy(shipped, newest)
+    assert ap.pending_shipped()["name"] == newest.name
+    _wipe_library()
+    ap.import_pack(newest, trust_dir=env["trust"])
+    assert ap.pending_shipped() is None
+    # A full pass where everything is already present still counts: otherwise
+    # the notice could never go away on the node that built the pack.
+    _sh.rmtree(ap.pack_dir() / "imports")
+    res = ap.import_pack(newest, trust_dir=env["trust"])
+    assert res["imported"] == 0
+    assert ap.pending_shipped() is None
+
+
+def test_the_page_shows_the_pending_notice(page, shipped):
+    html = page.get("/self-update/").get_data(as_text=True)
+    assert 'id="apk-pending"' in html and shipped.name in html
+
+
+def test_the_repository_keeps_every_release_pack():
+    from pathlib import Path
+    d = Path(__file__).resolve().parents[1] / "api-packs"
+    packs = sorted(p.name for p in d.glob("satom-apipack-*.tar.gz"))
+    assert len(packs) >= 2, "api-packs/ must keep older releases' packs, not replace them"
+    for p in packs:
+        assert (d / (p + ".sha256")).is_file(), "%s has no .sha256" % p

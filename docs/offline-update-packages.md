@@ -36,6 +36,40 @@ is signed with (`satom-release-2026.pub`) — as assets of the GitHub release an
 in the download catalog. A node installed before 2.5.0 must trust that key once
 before it accepts the package: see §4.1.
 
+**A node that reaches GitHub does not need the download either** (2.7.0 on):
+`sudo satom execute update fetch --yes`, or *Software Update → Check for a
+newer package online → Download & stage*. See §1.1.
+
+### 1.1 The system-upgrade feed (`satom-system-upgrades/`)
+
+Every release writes `satom-system-upgrades/latest.json` in the public
+repository: the newest package's version, its release-asset URL, its size and
+its sha256 (plus one `satom-update-<version>.json` per release and a README
+table of all of them). The packages stay **release assets**; the folder holds
+only the index, because a 64 MB blob per release in git would grow every clone
+for ever, and GitHub refuses files over 100 MB.
+
+| Where | What it does |
+|---|---|
+| `sudo satom execute update fetch` | Reads the feed and shows what it would download (dry run). |
+| `… fetch --yes` | Downloads, checks the sha256 against the feed, then applies through `update package` (signature checked here and again by the runner). |
+| `… fetch --download-only` | Downloads and stages it for the console; nothing is applied. |
+| Software Update → *Check for a newer package online* | Same check; *Download & stage* runs the download as a job and opens the preflight. Applying is still the **Apply** button. |
+
+- The feed is an **address book, not a trust decision**. A download that does
+  not match the feed's size and sha256 is deleted before it gets a real name;
+  one that matches is still refused unless a trusted key signed it.
+- HTTPS only, redirects included. `SATOM_UPGRADE_FEED=<https-url>` points a
+  node at a mirror of `latest.json` (a proxy or an internal web server).
+- **Nothing polls.** The feed is read when an operator asks; an on-premise
+  security product does not phone home on a timer.
+- As root, the CLI loads the downloader only from the root-owned runner
+  library (`/usr/local/lib/satom-runner/upgrade_feed.py`, installed by
+  `install-runner.sh`), never from the application tree.
+- Written by the release pipeline after the package is built and verified
+  (`deploy/gen_upgrade_feed.py`), so it is committed after the tag: the
+  package contains the tree, and the tree cannot contain the package's hash.
+
 ---
 
 ## 2. Why it is signed, and what that buys
@@ -147,9 +181,14 @@ package (*"signed by a key this node does not trust"*) until it is installed
 #    package: satom-update-<v>/app.tar.gz -> deploy/update-keys/)
 # 2. compare the fingerprint with the one published in the release notes:
 #      SHA256:cYv9NxiJjMn/K6srKxXg2kdvROP2g6fzgfMXU6sxPyA
-satom execute trust add-key satom-release-2026.pub
-satom show trust            # lists it next to visionebc-release
+sudo /usr/local/sbin/satom execute trust add-key ./satom-release-2026.pub
+sudo /usr/local/sbin/satom show trust     # lists it next to visionebc-release
 ```
+
+Use the **full path** on nodes older than 2.7.0: sudo's `secure_path` on
+openSUSE and RHEL omits `/usr/local/sbin`, so `sudo satom` answers *command
+not found* there. From 2.7.0 `install-cli.sh` links `/usr/bin/satom` and the
+short form works everywhere.
 
 Do it on **every** node of a pair: each trust store is local and does not
 replicate.
@@ -163,13 +202,22 @@ adopts a tree that is not one, but the hop **into** 2.5.0 runs on the old
 runner. Record the installed tree as a baseline first:
 
 ```
-cd /opt/satom
-sudo -u satom git init -q
-sudo -u satom git add -A
-sudo -u satom git -c user.name=SATOM -c user.email=satom@localhost \
-     commit -qm "baseline: SATOM $(cat VERSION) as installed (offline)"
-sudo -u satom git status --short | wc -l      # 0
+G="sudo runuser -u satom -- env HOME=/opt/satom git -C /opt/satom"
+sudo test -d /opt/satom/.git || {
+  $G init -q
+  $G add -A
+  $G -c user.name=SATOM -c user.email=satom@localhost \
+     commit -qm "baseline: SATOM as installed (offline)"
+}
+$G status --short | wc -l      # 0
 ```
+
+`runuser` rather than `sudo -u satom`: many managed sudoers let an operator
+run commands as **root only**, and `sudo -u satom` is then refused
+(*"is not allowed to execute … as satom"*, reported from a customer node).
+`HOME` is explicit because sudo leaves `HOME=/root`, which the service account
+cannot read. `/opt/satom` is `satom:satom 750`, so do not `cd` into it as your
+own user.
 
 The shipped `.gitignore` keeps every node-local path out (`data/`, `venv/`,
 `.env`, `pki/`, the state directories). On a fresh 2.4.1 offline install the

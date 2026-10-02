@@ -6,6 +6,50 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — System-upgrade feed: a node downloads its own update package (2026-10-02)
+
+- **`satom-system-upgrades/`** in the repository indexes every release's
+  signed update package: `latest.json` (version, release-asset URL, size,
+  sha256, signing key), one `satom-update-<version>.json` per release, and a
+  README table with the download links. The packages stay release assets; the
+  folder holds only the index. Written by the release pipeline after the
+  package is built and verified (`deploy/gen_upgrade_feed.py`).
+- **`sudo satom execute update fetch`** reads the feed, downloads the newest
+  package, checks its size and sha256 against the feed and applies it through
+  the same path as `update package` (signature checked by the CLI and again by
+  the runner). `--download-only` stages it; without `--yes` it is a dry run.
+- **Software Update → Offline update package → Check for a newer package
+  online / Download & stage**: the same check and download as a background
+  job, then the usual preflight and **Apply**.
+- HTTPS only (redirects included); nothing polls the feed on its own;
+  `SATOM_UPGRADE_FEED` points a node at a mirror. As root, the CLI loads the
+  downloader only from the root-owned runner library.
+
+### Added — API packs: every release's pack kept, imported by the update (2026-10-02)
+
+- `api-packs/` keeps the pack of **every** release instead of replacing the
+  previous one; *shipped* means the newest by version (it was the newest by
+  file time, which a checkout makes meaningless).
+- After a successful update on a primary or standalone node, the runner
+  imports the newest shipped pack (step *import shipped API pack*). Never
+  fatal; skipped on a standby; `SATOM_API_PACK_AUTO=0` turns it off. Before,
+  an update put the new pack on disk and left the library on the old one.
+- Software Update shows a notice while the newest shipped pack has never been
+  imported on the node. A full import that finds nothing new is now recorded,
+  so the notice clears on the node that built the pack.
+
+### Fixed — `sudo satom` answered "command not found" on openSUSE and RHEL (2026-10-02)
+
+- sudo's `secure_path` there omits `/usr/local/sbin`, where the CLI lives, so
+  every `sudo satom …` printed by the installer, the CLI and the docs failed
+  outside Debian. `install-cli.sh` (run by the installer, by every update and
+  by `satom execute reinstall cli`) now links `/usr/bin/satom` to the
+  root-owned binary, and never replaces a `/usr/bin/satom` that is not a link.
+  `satom diagnose privilege` reports the link.
+- `offline-update-packages.md` §4.1 no longer tells operators to `cd
+  /opt/satom` or use `sudo -u satom` (refused where sudoers allow root only):
+  it uses `sudo runuser -u satom` and the full CLI path.
+
 ### Added — Node TLS: CSR generation and pasted PEM (2026-10-02)
 
 - **Settings → Node TLS → Certificate signing request (CSR)** generates a

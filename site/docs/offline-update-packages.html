@@ -102,6 +102,57 @@ package — <code>satom-update-&lt;version&gt;.tar.gz</code>, its <code>.sha256<
 is signed with (<code>satom-release-2026.pub</code>) — as assets of the GitHub release and
 in the download catalog. A node installed before 2.5.0 must trust that key once
 before it accepts the package: see §4.1.</p>
+<p><strong>A node that reaches GitHub does not need the download either</strong> (2.7.0 on):
+<code>sudo satom execute update fetch --yes</code>, or <em>Software Update → Check for a
+newer package online → Download &amp; stage</em>. See §1.1.</p>
+<h3 id="11-the-system-upgrade-feed-satom-system-upgrades">1.1 The system-upgrade feed (<code>satom-system-upgrades/</code>)</h3>
+<p>Every release writes <code>satom-system-upgrades/latest.json</code> in the public
+repository: the newest package's version, its release-asset URL, its size and
+its sha256 (plus one <code>satom-update-&lt;version&gt;.json</code> per release and a README
+table of all of them). The packages stay <strong>release assets</strong>; the folder holds
+only the index, because a 64 MB blob per release in git would grow every clone
+for ever, and GitHub refuses files over 100 MB.</p>
+<table>
+<thead>
+<tr>
+<th>Where</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>sudo satom execute update fetch</code></td>
+<td>Reads the feed and shows what it would download (dry run).</td>
+</tr>
+<tr>
+<td><code>… fetch --yes</code></td>
+<td>Downloads, checks the sha256 against the feed, then applies through <code>update package</code> (signature checked here and again by the runner).</td>
+</tr>
+<tr>
+<td><code>… fetch --download-only</code></td>
+<td>Downloads and stages it for the console; nothing is applied.</td>
+</tr>
+<tr>
+<td>Software Update → <em>Check for a newer package online</em></td>
+<td>Same check; <em>Download &amp; stage</em> runs the download as a job and opens the preflight. Applying is still the <strong>Apply</strong> button.</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>The feed is an <strong>address book, not a trust decision</strong>. A download that does
+  not match the feed's size and sha256 is deleted before it gets a real name;
+  one that matches is still refused unless a trusted key signed it.</li>
+<li>HTTPS only, redirects included. <code>SATOM_UPGRADE_FEED=&lt;https-url&gt;</code> points a
+  node at a mirror of <code>latest.json</code> (a proxy or an internal web server).</li>
+<li><strong>Nothing polls.</strong> The feed is read when an operator asks; an on-premise
+  security product does not phone home on a timer.</li>
+<li>As root, the CLI loads the downloader only from the root-owned runner
+  library (<code>/usr/local/lib/satom-runner/upgrade_feed.py</code>, installed by
+  <code>install-runner.sh</code>), never from the application tree.</li>
+<li>Written by the release pipeline after the package is built and verified
+  (<code>deploy/gen_upgrade_feed.py</code>), so it is committed after the tag: the
+  package contains the tree, and the tree cannot contain the package's hash.</li>
+</ul>
 <hr>
 <h2 id="2-why-it-is-signed-and-what-that-buys">2. Why it is signed, and what that buys</h2>
 <p>Uploading code that a root process installs is, by construction, remote code
@@ -199,9 +250,13 @@ package (<em>"signed by a key this node does not trust"</em>) until it is instal
 #    package: satom-update-&lt;v&gt;/app.tar.gz -&gt; deploy/update-keys/)
 # 2. compare the fingerprint with the one published in the release notes:
 #      SHA256:cYv9NxiJjMn/K6srKxXg2kdvROP2g6fzgfMXU6sxPyA
-satom execute trust add-key satom-release-2026.pub
-satom show trust            # lists it next to visionebc-release
+sudo /usr/local/sbin/satom execute trust add-key ./satom-release-2026.pub
+sudo /usr/local/sbin/satom show trust     # lists it next to visionebc-release
 </code></pre>
+<p>Use the <strong>full path</strong> on nodes older than 2.7.0: sudo's <code>secure_path</code> on
+openSUSE and RHEL omits <code>/usr/local/sbin</code>, so <code>sudo satom</code> answers <em>command
+not found</em> there. From 2.7.0 <code>install-cli.sh</code> links <code>/usr/bin/satom</code> and the
+short form works everywhere.</p>
 <p>Do it on <strong>every</strong> node of a pair: each trust store is local and does not
 replicate.</p>
 <p><strong>A node installed from an offline bundle before 2.5.0 needs one more step,
@@ -211,13 +266,21 @@ once.</strong> Its <code>/opt/satom</code> is not a git checkout: the bundle ext
 changes). From 2.5.0 the installer records the tree in git and the runner
 adopts a tree that is not one, but the hop <strong>into</strong> 2.5.0 runs on the old
 runner. Record the installed tree as a baseline first:</p>
-<pre><code>cd /opt/satom
-sudo -u satom git init -q
-sudo -u satom git add -A
-sudo -u satom git -c user.name=SATOM -c user.email=satom@localhost \
-     commit -qm &quot;baseline: SATOM $(cat VERSION) as installed (offline)&quot;
-sudo -u satom git status --short | wc -l      # 0
+<pre><code>G=&quot;sudo runuser -u satom -- env HOME=/opt/satom git -C /opt/satom&quot;
+sudo test -d /opt/satom/.git || {
+  $G init -q
+  $G add -A
+  $G -c user.name=SATOM -c user.email=satom@localhost \
+     commit -qm &quot;baseline: SATOM as installed (offline)&quot;
+}
+$G status --short | wc -l      # 0
 </code></pre>
+<p><code>runuser</code> rather than <code>sudo -u satom</code>: many managed sudoers let an operator
+run commands as <strong>root only</strong>, and <code>sudo -u satom</code> is then refused
+(<em>"is not allowed to execute … as satom"</em>, reported from a customer node).
+<code>HOME</code> is explicit because sudo leaves <code>HOME=/root</code>, which the service account
+cannot read. <code>/opt/satom</code> is <code>satom:satom 750</code>, so do not <code>cd</code> into it as your
+own user.</p>
 <p>The shipped <code>.gitignore</code> keeps every node-local path out (<code>data/</code>, <code>venv/</code>,
 <code>.env</code>, <code>pki/</code>, the state directories). On a fresh 2.4.1 offline install the
 commit holds exactly the 1,439 files of the release archive. Then apply the

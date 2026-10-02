@@ -6,6 +6,34 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Changed — Node TLS: certificate activation shows each step and warns about the nginx reload (2026-10-02)
+
+Requested by the user: when a certificate is imported or pasted under
+Settings → Node TLS, show what is happening, including the service restart,
+and always tell the operator that nginx is reloaded and that the browser may
+have to be closed.
+
+- **Import (paste or upload), Issue from internal CA and Renew now run as
+  jobs.** The routes answer `202 {job_id}` (input errors still answer `400`
+  immediately) and a progress panel on the tab follows `/jobs/<id>`: validate
+  (or mint) → write the files → `nginx -t` → reload nginx → check that nginx
+  serves the new certificate, plus "restore the previous certificate" when it
+  rolls back. When sudo is refused the panel shows the hand-over to the root
+  runner and how long it has waited (up to 90 s), instead of a frozen button.
+- **The reload warning is always shown**: a confirmation before starting, a
+  warning in the panel, and a reminder after success — open connections move to
+  the new certificate, and if the page stops responding or the browser shows a
+  certificate warning, close every browser window and open SATOM again.
+- **Lost connection is explained, not shown as a failure.** If the page cannot
+  reach the node right after the switch, the panel says so, keeps retrying for
+  three minutes and points to Jobs, where the outcome is kept.
+- **New check after the reload** (`cert_service.verify_served`): a handshake to
+  `127.0.0.1:8443` compares the served leaf with the installed one. A mismatch
+  ends the job with a warning (no rollback — nginx accepted the files). It runs
+  only for console activations; the nightly renewal timer does not pay for it.
+- Steps are reported through `cert_service.progress_sink`; without a sink (timer,
+  CLI) reporting is a no-op.
+
 ## [2.7.0] - 2026-10-02
 
 ### Added — System-upgrade feed: a node downloads its own update package (2026-10-02)

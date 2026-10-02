@@ -2049,13 +2049,66 @@ def node_cert_import():
         slots[name] = fdata or tdata
     if not slots['cert']:
         return jsonify({'ok': False, 'error': 'the certificate is required (file or pasted PEM)'}), 400
-    try:
-        info = cs.import_pem(slots['cert'], slots['key'] or None, slots['chain'] or None,
-                             by=getattr(current_user, 'username', ''))
-        log_action('node_cert.import', 'security', detail=info.get('subject'))
-        return jsonify({'ok': True, 'cert': info})
-    except Exception as e:  # noqa: BLE001
-        return jsonify({'ok': False, 'error': str(e)[:300]}), 400
+    by = getattr(current_user, 'username', '')
+    cert, key, chain = slots['cert'], slots['key'] or None, slots['chain'] or None
+    return _node_cert_job('import', 'Installing an imported certificate', by,
+                          lambda: cs.import_pem(cert, key, chain, by=by))
+
+
+def _node_cert_job(kind: str, title: str, by: str, fn):
+    """Run a certificate activation as a job the page follows step by step.
+
+    The activation ends by reloading the nginx that carries the operator's own
+    session, and the root-runner fallback can wait 90 s — done inside the
+    request, the page sat on a disabled button and then either said "done" or
+    lost the connection with no explanation. As a job, cert_service reports
+    each step through progress_sink and the page renders them, so the operator
+    sees the reload happen and is told why the browser may need reopening."""
+    from datetime import datetime
+    from ..services import cert_service as cs
+    from ..services import jobs as jobsvc
+    job = jobsvc.create_job('node_cert_' + kind, title, by=by, cancelable=False,
+                            meta={'steps': [], 'node': cs.node_hostname()})
+    jid = job['id']
+
+    def sink(key, label, state, detail):
+        now = datetime.utcnow().isoformat()
+
+        def upd(st):
+            steps = st.setdefault('meta', {}).setdefault('steps', [])
+            for s in steps:
+                if s['key'] == key:
+                    s.update(label=label, state=state, detail=detail or '', at=now)
+                    break
+            else:
+                steps.append({'key': key, 'label': label, 'state': state,
+                              'detail': detail or '', 'at': now})
+            st['message'] = label + (' — ' + detail if detail else '')
+            done = sum(1 for s in steps if s['state'] in ('ok', 'warn'))
+            st['percent'] = min(95, done * 18)
+        jobsvc.mutate_job(jid, upd)
+
+    def work(app, _jid):
+        with app.app_context():
+            with cs.progress_sink(sink):
+                try:
+                    res = fn()
+                except Exception as e:  # noqa: BLE001 — journalled by cert_service
+                    log_action('node_cert.' + kind + '_failed', 'security', detail=str(e)[:200],
+                               by=by)
+                    raise
+            if kind == 'renew':
+                info, result = cs.current(), res
+            else:
+                info, result = res, None
+            log_action('node_cert.' + kind, 'security', detail=(info or {}).get('subject'), by=by)
+            jobsvc.finish_success(_jid, result={'cert': info, 'result': result},
+                                  message=('Renewal skipped: ' + str(res.get('reason')))
+                                  if kind == 'renew' and not res.get('renewed')
+                                  else 'Certificate active: %s' % (info or {}).get('subject'))
+
+    jobsvc.run_async(current_app._get_current_object(), jid, work)
+    return jsonify({'ok': True, 'job_id': jid}), 202
 
 
 @bp.route('/node-cert/csr', methods=['POST'])
@@ -2097,12 +2150,12 @@ def node_cert_csr_discard(csr_id):
 @require_permission(Permission.USER_MANAGE)
 def node_cert_issue():
     from ..services import cert_service as cs
-    try:
-        info = cs.issue_internal(by=getattr(current_user, 'username', ''))
-        log_action('node_cert.issue', 'security', detail=info.get('subject'))
-        return jsonify({'ok': True, 'cert': info})
-    except Exception as e:  # noqa: BLE001
-        return jsonify({'ok': False, 'error': str(e)[:300]}), 400
+    if not cs.can_issue_internal():
+        return jsonify({'ok': False, 'error': 'internal CA key not present on this node — '
+                        'import a certificate instead'}), 400
+    by = getattr(current_user, 'username', '')
+    return _node_cert_job('issue', 'Issuing a certificate from the internal CA', by,
+                          lambda: cs.issue_internal(by=by))
 
 
 @bp.route('/node-cert/renew', methods=['POST'])
@@ -2110,12 +2163,9 @@ def node_cert_issue():
 @require_permission(Permission.USER_MANAGE)
 def node_cert_renew():
     from ..services import cert_service as cs
-    try:
-        res = cs.renew_if_needed(by=getattr(current_user, 'username', ''), force=True)
-        log_action('node_cert.renew', 'security', detail=str(res))
-        return jsonify({'ok': True, 'result': res, 'cert': cs.current()})
-    except Exception as e:  # noqa: BLE001
-        return jsonify({'ok': False, 'error': str(e)[:300]}), 400
+    by = getattr(current_user, 'username', '')
+    return _node_cert_job('renew', 'Renewing the service certificate', by,
+                          lambda: cs.renew_if_needed(by=by, force=True))
 
 
 # ---- TLS trust store: the CAs this node ACCEPTS from devices --------------

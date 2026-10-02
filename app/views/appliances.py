@@ -722,6 +722,24 @@ def rediscover_start(id):
     return jsonify(res)
 
 
+@bp.route('/<int:id>/rediscover/stop', methods=['POST'])
+@login_required
+@require_permission('appliances.apply')
+def rediscover_stop(id):
+    """Same permission as Start: whoever may launch a sweep may cancel it."""
+    appliance = _managed_or_404(id)
+    if appliance is None:
+        return jsonify({'stopped': False, 'reason': 'unsupported appliance kind'}), 400
+    from ..services import rediscovery
+    from flask_login import current_user
+    res = rediscovery.request_stop(appliance.id,
+                                   by=getattr(current_user, 'username', ''))
+    if res.get('stopped'):
+        log_action('appliance.rediscover_stop', target=appliance.name,
+                   extra={'pending': bool(res.get('pending'))})
+    return jsonify(res), (200 if res.get('stopped') else 409)
+
+
 @bp.route('/<int:id>/rediscover/status')
 @login_required
 @require_permission('appliances.view')

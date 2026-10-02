@@ -6,6 +6,49 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed — Rediscovery ignored the TLS trust store: CERTIFICATE_VERIFY_FAILED with the CAs imported (2026-10-02)
+
+Reported by the user: the root and intermediate CAs were in Settings → TLS
+trust store, and a rediscovery still failed with `certificate verify failed`.
+
+- **Cause:** a sweep dials the appliance from a background thread, which has
+  no Flask app context. Reading the trust store there raised, and
+  `verify_param()` turned that into "public roots only". Sweeps, jobs and
+  scheduled actions verified devices without the imported CAs, while the
+  page's own *Test TLS* (which runs inside the request) reported the same
+  device as verified.
+- **Fix:** `create_app` registers the app with the trust store, and a call
+  without a context opens one on that app. An active context still wins.
+  The fallback when nothing can be read is unchanged: public roots, never
+  "no verification".
+- The guard that only asserted "not False" from a thread is replaced by one
+  that asserts the private bundle is used.
+
+### Changed — TLS trust store: Save per slot, Content view, standard buttons (2026-10-02)
+
+- **Save root CA** and **Save intermediate CA** replace the single Import
+  button. Each sends only its own slot (plus Name and Note). The reply says
+  which role every certificate was filed under, so a certificate saved from
+  the wrong box is named, not silently re-labelled.
+- **Content** action: a modal with the decoded certificate (subject, issuer,
+  serial, validity, key, signature algorithm, SHA-256/SHA-1 and every
+  extension) plus the PEM, with Copy and Download. New route
+  `GET /settings/trust-store/<id>/content`.
+- Row and probe buttons used `fw-btn`, a class no stylesheet defines. They
+  now use the same Bootstrap/`btn-fw-*` classes as the rest of Settings.
+
+### Added — Stop button for Discovery / Rediscovery (2026-10-02)
+
+- **Stop** appears while a sweep runs (`POST /appliances/<id>/rediscover/stop`,
+  same permission as Start). It is a file flag, so it reaches the sweep from
+  any gunicorn worker. The sweep stops after the endpoint in flight returns
+  and writes **no** snapshot, so the previous complete one is kept. A stop
+  during the sweep skips the deep and CLI passes. Once one of those passes
+  has started, it runs to its end.
+- New terminal state `stopped` (with who stopped it). A `running` file whose
+  worker is already gone is closed immediately. A run owned by the peer node
+  is refused. A flag left over from an earlier run is cleared at start.
+
 ### Changed — Node TLS: certificate activation shows each step and warns about the nginx reload (2026-10-02)
 
 Requested by the user: when a certificate is imported or pasted under

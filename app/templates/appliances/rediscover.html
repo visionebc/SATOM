@@ -54,6 +54,7 @@
       </div>
       {% endif %}
       <button id="redisc-start" class="btn fw-btn-primary"><i class="bi bi-play-fill me-1"></i>Start {{ 'rediscovery' if snapshot else 'discovery' }}</button>
+      <button id="redisc-stop" class="btn btn-outline-danger d-none" title="{{ _('Stops after the endpoint being read returns. No snapshot is written; the previous one is kept.') }}"><i class="bi bi-stop-fill me-1"></i>{{ _('Stop') }}</button>
     </div>
   </div>
 </div>
@@ -75,6 +76,8 @@
 (function() {
   const token = document.querySelector('meta[name="csrf-token"]').content;
   const startBtn = document.getElementById('redisc-start');
+  const stopBtn = document.getElementById('redisc-stop');
+  const ACTIVE = ['running', 'deep-running', 'cli-running'];
   const wrap = document.getElementById('redisc-progress');
   const bar = document.getElementById('redisc-bar');
   const line = document.getElementById('redisc-line');
@@ -84,6 +87,13 @@
   function paint(p) {
     if (!p || p.state === 'idle') return;
     wrap.classList.remove('d-none');
+    const active = ACTIVE.includes(p.state);
+    stopBtn.classList.toggle('d-none', !active);
+    if (active) bar.classList.remove('bg-secondary', 'bg-warning');
+    stopBtn.disabled = !!p.stop_requested;
+    stopBtn.innerHTML = p.stop_requested
+      ? '<span class="spinner-border spinner-border-sm me-1"></span>Stopping…'
+      : '<i class="bi bi-stop-fill me-1"></i>Stop';
     const pct = p.percent || 0;
     bar.style.width = pct + '%'; bar.textContent = pct + '%';
     bar.classList.toggle('bg-success', p.state === 'done');
@@ -122,6 +132,15 @@
           + 'It wrote no snapshot; run it again.'
         : 'Failed — ' + (p.error || 'the sweep did not finish.'));
       startBtn.disabled = false;
+    } else if (p.state === 'stopped') {
+      bar.classList.remove('progress-bar-striped', 'progress-bar-animated', 'bg-success');
+      bar.classList.add('bg-secondary');
+      line.textContent = (p.error || 'Stopped.') + (p.stopped_by ? ' (by ' + p.stopped_by + ')' : '');
+      startBtn.disabled = false;
+    }
+    if (p.stop_requested && active) {
+      line.textContent += ' — stopping after the current '
+        + (p.state === 'running' ? 'endpoint' : 'step') + '…';
     }
     if (p.errors && p.errors.length) {
       const seen = {};
@@ -136,7 +155,7 @@
       const r = await fetch('{{ url_for("appliances.rediscover_status", id=appliance.id) }}');
       const p = await r.json();
       paint(p);
-      if (p.state === 'running' || p.state === 'deep-running' || p.state === 'cli-running') return;
+      if (ACTIVE.includes(p.state)) return;
     } catch (e) { /* keep polling */ return; }
     clearInterval(timer); timer = null;
   }
@@ -174,7 +193,23 @@
     }
   }
   startBtn.addEventListener('click', start);
-  {% if progress and progress.state in ['running', 'deep-running', 'cli-running'] %}if (!timer) timer = setInterval(poll, 1500); startBtn.disabled = true;{% endif %}
+  stopBtn.addEventListener('click', async function() {
+    stopBtn.disabled = true;
+    try {
+      const r = await fetch('{{ url_for("appliances.rediscover_stop", id=appliance.id) }}', {
+        method: 'POST',
+        headers: {'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content}
+      });
+      const j = await r.json();
+      if (!j.stopped) { errs.textContent = 'Could not stop: ' + (j.reason || r.status); stopBtn.disabled = false; return; }
+      paint(j.progress);
+      if (!timer) timer = setInterval(poll, 1500);
+    } catch (e) {
+      errs.textContent = 'Stop request failed: ' + e.message;
+      stopBtn.disabled = false;
+    }
+  });
+  {% if progress and progress.state in ['running', 'deep-running', 'cli-running'] %}if (!timer) timer = setInterval(poll, 1500); startBtn.disabled = true; paint({{ progress|tojson }});{% endif %}
 })();
 </script>
 {% endblock %}

@@ -98,6 +98,10 @@ def create_app(config_override: object | None = None) -> Flask:
 
     # -- extensions -------------------------------------------------------
     db.init_app(app)
+    # Background threads (sweeps, jobs, the scheduler) dial devices with no app
+    # context; the trust store needs this to read its CAs there.
+    from .services import trust_store as _trust_store
+    _trust_store.init_app(app)
     migrate.init_app(app, db)
     login_manager.init_app(app)
     csrf.init_app(app)

@@ -335,7 +335,7 @@ def test_start_forwards_the_flag_across_the_thread_boundary(app, monkeypatch):
     captured: dict = {}
 
     class _Stub:
-        def __init__(self, target=None, args=(), daemon=None):
+        def __init__(self, target=None, args=(), daemon=None, kwargs=None):
             captured["args"] = args
 
         def start(self):

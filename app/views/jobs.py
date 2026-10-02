@@ -15,7 +15,7 @@ an in-flight device write is never interrupted mid-call.
 """
 from __future__ import annotations
 
-from flask import Blueprint, jsonify, render_template, request
+from flask import Blueprint, abort, jsonify, render_template, request
 from flask_login import current_user, login_required
 
 from ..services import jobs as jobsvc
@@ -59,9 +59,14 @@ def all_jobs():
         limit = max(1, min(200, int(request.args.get("limit", 100))))
     except ValueError:
         limit = 100
+    try:
+        appliance_id = int(request.args["appliance"]) if request.args.get("appliance") else None
+    except ValueError:
+        appliance_id = None
     by = None if _is_admin() else _me()
     jobsvc.maybe_sweep_orphans()
-    jobs = jobsvc.list_jobs(limit=limit, by=by, status=status, type_=type_)
+    jobs = jobsvc.list_jobs(limit=limit, by=by, status=status, type_=type_,
+                            appliance_id=appliance_id)
     jobs = [j for j in jobs
             if visible_product((j.get("meta") or {}).get("product"))]
     return jsonify({"jobs": jobs, "admin": _is_admin(), "me": _me()})
@@ -143,3 +148,48 @@ def resume(job_id):
         return jsonify({"error": "This job is not paused.", "job": job}), 409
     updated = jobsvc.request_resume(job_id)
     return jsonify({"ok": True, "job": updated or job})
+
+
+# ── device actions running as jobs (services/device_jobs) ───────────────────
+def _safe_back(raw: str) -> str:
+    raw = (raw or "").strip()
+    if not raw.startswith("/") or raw.startswith("//") or "\\" in raw:
+        return ""
+    return raw
+
+
+@bp.route("/<job_id>/wait", methods=["GET"])
+@login_required
+def wait(job_id):
+    """Where a classic form lands when its device action outlives the inline
+    window: live progress + steps, Stop while it is still safe, and the
+    action's own response once it finishes. Leaving the page does not stop
+    anything — the job keeps running and the dock keeps showing it."""
+    job = jobsvc.get_job(job_id)
+    if not _can_see(job):
+        abort(404)
+    return render_template("jobs/wait.html", job=job,
+                           back=_safe_back(request.args.get("back", "")))
+
+
+@bp.route("/<job_id>/response", methods=["GET"])
+@login_required
+def response(job_id):
+    """Replay the response the device action produced (redirect, page, JSON
+    or file), with its flash messages, exactly as if it had run inline. Owner
+    only: the body can carry device configuration."""
+    from ..services import device_jobs
+    job = jobsvc.get_job(job_id)
+    if not _own(job):
+        return jsonify({"error": "not found"}), 404
+    if job.get("status") not in ("success", "error", "cancelled"):
+        return jsonify({"error": "still running", "job": job}), 409
+    cap = device_jobs.load_response(job_id)
+    if cap is None:
+        return jsonify({"error": "this job has no stored response",
+                        "message": job.get("message") or ""}), 404
+    if cap.get("truncated"):
+        return jsonify({"error": "the response was too large to keep",
+                        "message": job.get("message") or ""}), 410
+    device_jobs.apply_session(cap.get("session"))
+    return device_jobs.build_response(cap)

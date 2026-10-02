@@ -109,6 +109,53 @@ def _write_json(path: Path, obj: Any) -> None:
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(obj, indent=2, default=str), encoding="utf-8")
     os.replace(tmp, path)
+    if path.name == "progress.json" and isinstance(obj, dict):
+        _mirror_job(obj)
+
+
+def _mirror_job(state: dict) -> None:
+    """Every sweep started from the UI is also a job (``services.jobs``), so it
+    shows in the dock, on the Jobs page and on the appliance's "Jobs on this
+    device" card like every other device action. progress.json stays the
+    sweep's own record; this only copies its progress across. The terminal
+    state is set once, by :func:`_run`, after the deep/CLI passes."""
+    jid = state.get("job_id")
+    if not jid or state.get("state") not in ACTIVE_STATES:
+        return
+    try:
+        from . import jobs
+        total, done = state.get("total") or 0, state.get("done") or 0
+        if state.get("state") == "running":
+            msg = (f"{done}/{total} endpoints · {state.get('objects') or 0} objects"
+                   + (f" · {state['section']}" if state.get("section") else ""))
+        else:
+            msg = state.get("section") or state.get("state")
+        jobs.set_progress(jid, int(state.get("percent") or 0), msg)
+    except Exception:  # noqa: BLE001 — the mirror must never break the sweep
+        pass
+
+
+def _finish_job(appliance_id: int, job_id: str | None) -> None:
+    if not job_id:
+        return
+    try:
+        from . import jobs
+        st = status(appliance_id) or {}
+        if st.get("job_id") not in (None, job_id):
+            return
+        state = st.get("state")
+        result = {"objects": st.get("objects"), "errors": len(st.get("errors") or []),
+                  "absent": st.get("absent_count")}
+        if state == "done":
+            jobs.finish_success(job_id, message=st.get("summary") or "Discovery complete",
+                                result=result)
+        elif state == STOPPED:
+            jobs.finish_cancelled(job_id, message=st.get("error") or "Stopped",
+                                  result=result)
+        else:
+            jobs.finish_error(job_id, st.get("error") or f"Discovery ended in state {state!r}")
+    except Exception:  # noqa: BLE001
+        pass
 
 
 #: Sub-directory of a device's sweep dir holding ONE SNAPSHOT PER FIRMWARE
@@ -270,7 +317,19 @@ def status(appliance_id: int) -> dict | None:
 
 
 def _stop_requested(appliance_id: int) -> bool:
-    return (_dev_dir(appliance_id) / _STOP_FILE).exists()
+    if (_dev_dir(appliance_id) / _STOP_FILE).exists():
+        return True
+    # A Stop pressed in the dock or on the Jobs page lands on the job, not on
+    # the flag file; it means the same thing.
+    try:
+        st = json.loads((_dev_dir(appliance_id) / "progress.json").read_text(encoding="utf-8"))
+        jid = st.get("job_id") if st.get("state") in ACTIVE_STATES else None
+        if jid:
+            from . import jobs
+            return jobs.is_cancel_requested(jid)
+    except Exception:  # noqa: BLE001
+        pass
+    return False
 
 
 def _clear_stop(appliance_id: int) -> None:
@@ -304,9 +363,16 @@ def request_stop(appliance_id: int, by: str = "") -> dict:
         st.pop("stop_requested", None)
         _write_json(_dev_dir(appliance_id) / "progress.json", st)
         _clear_stop(appliance_id)
+        _finish_job(appliance_id, st.get("job_id"))
         return {"stopped": True, "pending": False, "progress": st}
     _write_json(_dev_dir(appliance_id) / _STOP_FILE,
                 {"by": by, "at": datetime.utcnow().isoformat()})
+    if st.get("job_id"):
+        try:
+            from . import jobs
+            jobs.request_cancel(st["job_id"])
+        except Exception:  # noqa: BLE001
+            pass
     st["stop_requested"] = True
     return {"stopped": True, "pending": True, "progress": st}
 
@@ -638,7 +704,8 @@ def _client_snapshot(appliance) -> SimpleNamespace:
 
 
 def _run(appliance_snap: SimpleNamespace, by: str, deep: bool = False,
-         plan: list[dict] | None = None, cli: bool = False) -> None:
+         plan: list[dict] | None = None, cli: bool = False,
+         job_id: str | None = None) -> None:
     """Thread entry point: :func:`_sweep` plus the one thing a file-backed
     status owes its readers — a TERMINAL state when the worker dies.
 
@@ -648,7 +715,7 @@ def _run(appliance_snap: SimpleNamespace, by: str, deep: bool = False,
     even that: appliance 4 sat at 71 % from 2026-07-03).
     """
     try:
-        _sweep(appliance_snap, by, deep, plan, cli)
+        _sweep(appliance_snap, by, deep, plan, cli, job_id=job_id)
     except BaseException as exc:  # noqa: BLE001 — record, then let it propagate
         try:
             p = _dev_dir(appliance_snap.id) / "progress.json"
@@ -661,10 +728,13 @@ def _run(appliance_snap: SimpleNamespace, by: str, deep: bool = False,
         except Exception:  # noqa: BLE001 — never mask the original failure
             pass
         raise
+    finally:
+        _finish_job(appliance_snap.id, job_id)
 
 
 def _sweep(appliance_snap: SimpleNamespace, by: str, deep: bool = False,
-           plan: list[dict] | None = None, cli: bool = False) -> None:
+           plan: list[dict] | None = None, cli: bool = False,
+           job_id: str | None = None) -> None:
     aid = appliance_snap.id
     devdir = _dev_dir(aid)
     progress_path = devdir / "progress.json"
@@ -684,6 +754,7 @@ def _sweep(appliance_snap: SimpleNamespace, by: str, deep: bool = False,
         # standby PULLS this whole data/ tree every 5 minutes, so a2 sees a1's
         # progress files and must never judge a pid that is not its own.
         "pid": os.getpid(), "host": _HOST, "heartbeat": started,
+        "job_id": job_id,
     }
     _write_json(progress_path, state)
 
@@ -1164,15 +1235,23 @@ def start(appliance, by: str = "", deep: bool = False,
     # worker thread has no app context to fall back through.
     plan = plan_for(appliance)
     _clear_stop(appliance.id)   # a flag left by an earlier run must not stop this one
+    from . import jobs
+    job = jobs.create_job(
+        "rediscovery", f"Discovery · {appliance.name}", by=by,
+        meta={"appliance_id": appliance.id, "appliance": appliance.name,
+              "deep": bool(deep), "cli": bool(cli)},
+        cancelable=True)
+    jobs.update_job(job["id"], status=jobs.RUNNING, pid=os.getpid())
     _now = datetime.utcnow().isoformat()
     init = {"state": "running", "appliance_id": appliance.id, "appliance": appliance.name,
             "total": 0, "done": 0, "percent": 0, "objects": 0, "deep": bool(deep),
             "cli": bool(cli),
             "started": _now, "by": by, "errors": [], "finished": None,
-            "pid": os.getpid(), "host": _HOST, "heartbeat": _now}
+            "pid": os.getpid(), "host": _HOST, "heartbeat": _now,
+            "job_id": job["id"]}
     _write_json(_dev_dir(appliance.id) / "progress.json", init)
     threading.Thread(target=_run, args=(snap, by, deep, plan, cli),
-                     daemon=True).start()
+                     kwargs={"job_id": job["id"]}, daemon=True).start()
     return {"started": True, "progress": init}
 
 

@@ -2195,6 +2195,11 @@ def create_app(config_override: object | None = None) -> Flask:
 
     app.wsgi_app = _legacy_web_rewrite
 
+    # Every POST that acts on a device runs as a background job with visible
+    # progress (services/device_jobs). Last, so every route is registered.
+    from .services import device_jobs
+    device_jobs.install(app)
+
     return app
 
 

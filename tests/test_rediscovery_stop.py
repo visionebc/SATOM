@@ -88,7 +88,7 @@ def test_a_leftover_flag_does_not_stop_the_next_run(app, monkeypatch):
         monkeypatch.setattr(rediscovery, "_APP", None)   # restored after the test
         started = []
         monkeypatch.setattr(rediscovery.threading, "Thread",
-                            lambda target, args, daemon: SimpleNamespace(
+                            lambda target, args, daemon, kwargs=None: SimpleNamespace(
                                 start=lambda: started.append(args)))
         assert rediscovery.start(a)["started"] is True
         assert started

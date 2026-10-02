@@ -213,6 +213,25 @@ Each appliance's detail page is the hub for device-level actions:
 ceilings; clone and exception workflows check headroom before creating
 objects.
 
+**Every action on a device is a job.** Test connection, console commands,
+restores, failovers, saves in the Workspace and the object editor, certificate
+pushes, searches on the box: each one runs in the background and shows what
+it is doing.
+
+- An action that finishes within about two seconds behaves as it always did.
+- A longer one appears in the Jobs dock (bottom right) with each call it makes
+  to the device, for example `GET /api/v2.0/cmdb/server-policy/policy · 200 ·
+  310 ms`. The page gets its normal result when the action ends, even if
+  you went to another page in the meantime.
+- A form you submitted opens a progress page with the same steps. *Keep
+  working* takes you back; the action continues.
+- Two changes to the same device run one after the other. The second shows
+  **queued** and can be stopped while it waits. Once a change has started on
+  the device it cannot be stopped, so the device is never left half-changed.
+- The appliance page has a **Jobs on this device** card with the running and
+  recent jobs; every job is also on Global → Jobs, with its steps under
+  *Details*.
+
 ## 5. Server Policy
 
 FortiWeb ADOM → **Server Policy** (the landing page once a device is chosen).

@@ -1,8 +1,11 @@
 import os
 import threading
+import time
 
 import httpx
 from typing import Optional
+
+from ..services import job_progress
 
 # Cap on the TCP/TLS connect leg. A request's total budget stays `timeout`,
 # but connecting to a dead/absent box must fail FAST: without this cap every
@@ -62,7 +65,21 @@ class BaseClient:
     def _request(self, method: str, path: str, **kwargs):
         url = self.base_url.rstrip('/') + '/' + path.lstrip('/')
         verify = self._verify_target()
-        with self._sem:
-            with httpx.Client(verify=verify, timeout=self._timeout) as client:
-                resp = client.request(method, url, **kwargs)
+        # Inside a device job (services/device_jobs) every call is one visible
+        # step, and the first write call takes the device's queue lock. The
+        # hook runs BEFORE the semaphore so a queued job holds no slot.
+        sink = job_progress.current()
+        if sink is not None:
+            sink.before_call(self.base_url)
+        started = time.monotonic()
+        try:
+            with self._sem:
+                with httpx.Client(verify=verify, timeout=self._timeout) as client:
+                    resp = client.request(method, url, **kwargs)
+        except Exception as exc:
+            if sink is not None:
+                sink.after_call(method, path, None, started, error=exc)
+            raise
+        if sink is not None:
+            sink.after_call(method, path, resp.status_code, started)
         return resp

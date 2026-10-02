@@ -6,6 +6,27 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed — Stop did not stop a running deep capture (2026-10-03)
+
+Pressing **Stop** while a rediscovery was in its deep pass (*Capture full WPP
++ policy depth*) said "stopping after the current step" and then walked every
+remaining server policy and WPP to the end. The deep pass now checks for a
+Stop before each object and before the certificate stores, finishes the object
+it is on, and ends as **Stopped** with where it was (for example *at object
+5/23 (WPP wpp-prod)*). What it had walked so far is discarded and the previous
+deep capture is kept: a partial one would read as the objects it never reached
+having been deleted. The sweep snapshot written before the deep pass is kept,
+and the CLI capture that would have followed is skipped. The page now says
+"stopping after the current object" during this pass.
+
+### Fixed — two API-hub tests failed since the API-pack release (2026-10-03)
+
+`test_version_scoped_pages.py` had two failing tests since 2.6.0: its spy on
+`cli_coverage.report` did not accept the new `allow_pack` argument, the hub
+caught the resulting `TypeError` as a section error, and the spy recorded
+nothing. The spy now forwards extra arguments. Product behaviour was not
+affected.
+
 ## [2.10.0] - 2026-10-03
 
 ### Added — job toasts can be minimised (2026-10-03)

@@ -460,11 +460,11 @@ def backfill_from_git(*, session=None) -> dict:
 
 
 def deep_snapshot_from_device(appliance, *, timeout: float = 30.0,
-                              progress=None) -> dict:
+                              progress=None, should_stop=None) -> dict:
     """Deep, read-only walk of every server policy + WPP -> enriched snapshot
     (by-parent sub-tables + named-rule objects nested under ``_deep``). Serial
     per box by design (gentle on the appliance); device-level fan-out lives in
-    services.deep_jobs. ``progress`` is handed to
+    services.deep_jobs. ``progress`` and ``should_stop`` are handed to
     :func:`deep_capture.deep_sections` unchanged."""
     from .deep_capture import deep_sections
     from ..clients.fortiweb import FortiWebClient
@@ -472,7 +472,7 @@ def deep_snapshot_from_device(appliance, *, timeout: float = 30.0,
 
     client = FortiWebClient(appliance, timeout=timeout)
     reader = clone.ClientReader(client)
-    sections = deep_sections(reader, progress=progress)
+    sections = deep_sections(reader, progress=progress, should_stop=should_stop)
     total = sum(len(rows) for sec in sections.values() for rows in sec.values())
     return {
         "device": appliance.name, "appliance_id": appliance.id,

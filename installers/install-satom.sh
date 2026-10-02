@@ -1996,6 +1996,25 @@ done
     || die "nginx started but does not accept connections on ${WEB_PORT} after 30s"
 ok "nginx serving HTTPS on ${NODE_IP}:${WEB_PORT}"
 
+# 'visudo -cf' above proves the file PARSES, not that sudo APPLIES it. A managed
+# /etc/sudoers without '@includedir /etc/sudoers.d', an LDAP/SSSD sudo source or
+# a later rule turns 'sudo -n nginx -t' into "a password is required". The console
+# then activates certificates through the satom-updater runner instead, so this
+# is a warning, not a failure -- but the operator should know which path is live.
+if command -v runuser >/dev/null 2>&1; then
+    if _sudo_out="$(runuser -u "$APP_USER" -- sudo -n "$NGINX_BIN" -t 2>&1)"; then
+        ok "sudoers: ${APP_USER} runs 'nginx -t' without a password"
+    else
+        case "$_sudo_out" in
+            sudo:*|Sorry,*|*"not in the sudoers"*)
+                warn "sudo does not honour /etc/sudoers.d/satom on this host (${_sudo_out%%$'\n'*})."
+                warn "Certificate activation will go through satom-updater.path instead. Check: sudo -l -U ${APP_USER}" ;;
+            *)
+                warn "'nginx -t' as ${APP_USER} via sudo failed: ${_sudo_out%%$'\n'*}" ;;
+        esac
+    fi
+fi
+
 # ─────────────────────────────────────────────────────────────────────────────
 # STEP 7 — HEALTH CHECK + SUMMARY
 # ─────────────────────────────────────────────────────────────────────────────

@@ -2489,17 +2489,72 @@
       </div>
 
       <div class="col-lg-6">
+        <div class="fw-card" id="nt-csr-card">
+          <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-file-earmark-lock me-2 text-accent"></i>{{ _('Certificate signing request (CSR)') }}</span></div>
+          <div class="fw-card-body">
+            <form id="nt-csr-form">
+              <div class="mb-2"><label class="form-label" style="font-size:12px;">{{ _('Common name') }}</label>
+                <input type="text" name="common_name" id="nt-csr-cn" class="form-control form-control-sm font-monospace" placeholder="{{ _('this node\'s host name') }}"></div>
+              <div class="mb-2"><label class="form-label" style="font-size:12px;">{{ _('Additional names (SAN)') }} <span class="text-muted">{{ _('(optional)') }}</span></label>
+                <textarea name="sans" rows="2" class="form-control form-control-sm font-monospace" placeholder="{{ _('satom.example.com, 192.0.2.5') }}"></textarea>
+                <div class="form-text" style="font-size:11px;">{{ _('Host names or IP addresses, comma- or line-separated. The common name is always included.') }}</div></div>
+              <div class="row g-2 mb-2">
+                <div class="col-6"><label class="form-label" style="font-size:12px;">{{ _('Organization') }}</label>
+                  <input type="text" name="organization" class="form-control form-control-sm"></div>
+                <div class="col-6"><label class="form-label" style="font-size:12px;">{{ _('Organizational unit') }}</label>
+                  <input type="text" name="org_unit" class="form-control form-control-sm"></div>
+                <div class="col-5"><label class="form-label" style="font-size:12px;">{{ _('City') }}</label>
+                  <input type="text" name="locality" class="form-control form-control-sm"></div>
+                <div class="col-4"><label class="form-label" style="font-size:12px;">{{ _('State') }}</label>
+                  <input type="text" name="state" class="form-control form-control-sm"></div>
+                <div class="col-3"><label class="form-label" style="font-size:12px;">{{ _('Country') }}</label>
+                  <input type="text" name="country" maxlength="2" class="form-control form-control-sm text-uppercase" placeholder="CH"></div>
+              </div>
+              <div class="mb-2"><label class="form-label" style="font-size:12px;">{{ _('Key') }}</label>
+                <select name="key_type" class="form-select form-select-sm">
+                  <option value="rsa2048">RSA 2048</option>
+                  <option value="rsa3072">RSA 3072</option>
+                  <option value="rsa4096">RSA 4096</option>
+                  <option value="ec256">ECDSA P-256</option>
+                  <option value="ec384">ECDSA P-384</option>
+                </select></div>
+              <button class="btn btn-sm fw-btn-primary" type="submit" id="nt-csr-btn"><i class="bi bi-file-earmark-plus me-1"></i>{{ _('Generate CSR') }}</button>
+            </form>
+            <div id="nt-csr-msg" class="mt-2" style="font-size:12px;"></div>
+            <div id="nt-csr-list" class="mt-2"></div>
+            <div class="text-muted mt-2" style="font-size:11px;">{{ _('The private key is generated on this node and never leaves it. Send the CSR to your CA; when the certificate comes back, import it below and leave the private key empty — it is paired with its pending key automatically.') }}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-lg-6">
         <div class="fw-card">
           <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-upload me-2 text-accent"></i>{{ _('Import certificate (PEM)') }}</span></div>
           <div class="fw-card-body">
+            <div class="btn-group btn-group-sm mb-2" role="group" aria-label="{{ _('Import mode') }}">
+              <input type="radio" class="btn-check" name="nt-import-mode" id="nt-mode-paste" value="paste" checked>
+              <label class="btn btn-outline-secondary" for="nt-mode-paste"><i class="bi bi-clipboard me-1"></i>{{ _('Paste PEM') }}</label>
+              <input type="radio" class="btn-check" name="nt-import-mode" id="nt-mode-file" value="file">
+              <label class="btn btn-outline-secondary" for="nt-mode-file"><i class="bi bi-file-earmark-arrow-up me-1"></i>{{ _('Upload files') }}</label>
+            </div>
             <form id="nt-import-form">
-              <div class="mb-2"><label class="form-label" style="font-size:12px;">{{ _('Certificate (PEM)') }}</label>
-                <input type="file" name="cert" accept=".pem,.crt,.cer" class="form-control form-control-sm" required></div>
-              <div class="mb-2"><label class="form-label" style="font-size:12px;">{{ _('Private key (PEM, unencrypted)') }}</label>
-                <input type="file" name="key" accept=".pem,.key" class="form-control form-control-sm" required></div>
-              <div class="mb-2"><label class="form-label" style="font-size:12px;">{{ _('Chain / intermediates (optional)') }}</label>
-                <input type="file" name="chain" accept=".pem,.crt,.cer" class="form-control form-control-sm"></div>
-              <button class="btn btn-sm fw-btn-primary" type="submit"><i class="bi bi-shield-check me-1"></i>Validate &amp; install</button>
+              <div data-nt-mode="paste">
+                <div class="mb-2"><label class="form-label" style="font-size:12px;">{{ _('Certificate (PEM)') }}</label>
+                  <textarea name="cert_text" rows="4" class="form-control form-control-sm font-monospace" style="font-size:11px;" placeholder="-----BEGIN CERTIFICATE-----&#10;…&#10;-----END CERTIFICATE-----"></textarea></div>
+                <div class="mb-2"><label class="form-label" style="font-size:12px;">{{ _('Private key (PEM, unencrypted)') }} <span class="text-muted">{{ _('(empty for a CSR generated here)') }}</span></label>
+                  <textarea name="key_text" rows="4" class="form-control form-control-sm font-monospace" style="font-size:11px;" autocomplete="off" spellcheck="false" placeholder="-----BEGIN PRIVATE KEY-----&#10;…&#10;-----END PRIVATE KEY-----"></textarea></div>
+                <div class="mb-2"><label class="form-label" style="font-size:12px;">{{ _('Chain / intermediates (optional)') }}</label>
+                  <textarea name="chain_text" rows="3" class="form-control form-control-sm font-monospace" style="font-size:11px;" placeholder="-----BEGIN CERTIFICATE-----&#10;…&#10;-----END CERTIFICATE-----"></textarea></div>
+              </div>
+              <div data-nt-mode="file" style="display:none;">
+                <div class="mb-2"><label class="form-label" style="font-size:12px;">{{ _('Certificate (PEM)') }}</label>
+                  <input type="file" name="cert" accept=".pem,.crt,.cer" class="form-control form-control-sm"></div>
+                <div class="mb-2"><label class="form-label" style="font-size:12px;">{{ _('Private key (PEM, unencrypted)') }} <span class="text-muted">{{ _('(empty for a CSR generated here)') }}</span></label>
+                  <input type="file" name="key" accept=".pem,.key" class="form-control form-control-sm"></div>
+                <div class="mb-2"><label class="form-label" style="font-size:12px;">{{ _('Chain / intermediates (optional)') }}</label>
+                  <input type="file" name="chain" accept=".pem,.crt,.cer" class="form-control form-control-sm"></div>
+              </div>
+              <button class="btn btn-sm fw-btn-primary" type="submit" id="nt-import-btn"><i class="bi bi-shield-check me-1"></i>Validate &amp; install</button>
             </form>
             <div class="text-muted mt-2" style="font-size:11px;">{{ _('The key must match the certificate; nginx is config-tested and rolled back automatically if the new cert is bad.') }}</div>
           </div>
@@ -2567,6 +2622,8 @@
             '<br>Identity key: '+(d.identity_key?'<span class="text-success">configured</span>':'<span class="text-danger">missing</span>');
           if(p.min_protocol) document.getElementById('nt-min-proto').value=p.min_protocol;
           if(p.ciphers!=null) document.getElementById('nt-ciphers').value=p.ciphers;
+          var cn=document.getElementById('nt-csr-cn');if(cn&&!cn.value) cn.value=d.hostname||'';
+          renderCsrs(d.csrs||[]);
         }).catch(function(){document.getElementById('nt-cert-loading').textContent='Failed to load node TLS state.';});
       }
       function busy(btn,on){btn.disabled=on;}
@@ -2580,10 +2637,60 @@
         post('{{ url_for("settings.node_cert_renew") }}','').then(function(d){
           document.getElementById('nt-cert-msg').innerHTML=d.ok?'<span class="text-success">'+esc(JSON.stringify(d.result))+'</span>':'<span class="text-danger">'+esc(d.error)+'</span>';
           loadState();}).finally(function(){busy(rb,false);});});
+      function importMode(){var r=document.querySelector('input[name="nt-import-mode"]:checked');return r?r.value:'paste';}
+      document.querySelectorAll('input[name="nt-import-mode"]').forEach(function(r){
+        r.addEventListener('change',function(){var m=importMode();
+          document.querySelectorAll('#nt-import-form [data-nt-mode]').forEach(function(el){
+            el.style.display=(el.getAttribute('data-nt-mode')===m)?'':'none';});});});
       document.getElementById('nt-import-form').addEventListener('submit',function(e){e.preventDefault();
-        post('{{ url_for("settings.node_cert_import") }}', new FormData(this), true).then(function(d){
+        // Only the visible mode is sent: a half-filled hidden mode must not ride along.
+        var m=importMode(), fd=new FormData();
+        this.querySelectorAll('[data-nt-mode="'+m+'"] [name]').forEach(function(el){
+          if(el.type==='file'){if(el.files&&el.files[0]) fd.append(el.name,el.files[0]);}
+          else if(el.value.trim()){fd.append(el.name,el.value);}});
+        var btn=document.getElementById('nt-import-btn');busy(btn,true);
+        post('{{ url_for("settings.node_cert_import") }}', fd, true).then(function(d){
           document.getElementById('nt-cert-msg').innerHTML=d.ok?'<span class="text-success">Imported '+esc(d.cert.subject)+'</span>':'<span class="text-danger">'+esc(d.error)+'</span>';
-          loadState();});});
+          if(d.ok){var kt=document.querySelector('#nt-import-form [name="key_text"]');if(kt) kt.value='';}
+          loadState();}).finally(function(){busy(btn,false);});});
+      function csrFile(c){return (c.common_name||'satom').replace(/[^A-Za-z0-9._-]/g,'_')+'.csr';}
+      function renderCsrs(list){
+        var box=document.getElementById('nt-csr-list');
+        if(!list||!list.length){box.innerHTML='';return;}
+        box.innerHTML='<div class="text-muted mb-1" style="font-size:12px;">'+esc('Pending CSRs (waiting for their certificate)')+'</div>'+
+          list.map(function(c,i){
+            return '<details class="mb-2"'+(i===0?' open':'')+'><summary style="font-size:12.5px;"><code>'+esc(c.common_name)+'</code> · '+esc(c.key_label||'')+
+              ' · <span class="text-muted">'+esc((c.created_at||'').slice(0,16).replace('T',' '))+'</span></summary>'+
+              '<textarea readonly rows="6" class="form-control form-control-sm font-monospace mt-1" style="font-size:11px;" data-csr-pem="'+esc(c.id)+'">'+esc(c.csr_pem)+'</textarea>'+
+              '<div class="d-flex gap-2 mt-1">'+
+              '<button type="button" class="btn btn-sm btn-outline-secondary" data-csr-copy="'+esc(c.id)+'"><i class="bi bi-clipboard me-1"></i>Copy</button>'+
+              '<button type="button" class="btn btn-sm btn-outline-secondary" data-csr-dl="'+esc(c.id)+'" data-csr-name="'+esc(csrFile(c))+'"><i class="bi bi-download me-1"></i>Download</button>'+
+              '<button type="button" class="btn btn-sm btn-outline-danger ms-auto" data-csr-discard="'+esc(c.id)+'"><i class="bi bi-trash me-1"></i>Discard</button>'+
+              '</div></details>';}).join('');
+      }
+      document.getElementById('nt-csr-list').addEventListener('click',function(e){
+        var b=e.target.closest('button');if(!b) return;
+        var id=b.getAttribute('data-csr-copy')||b.getAttribute('data-csr-dl')||b.getAttribute('data-csr-discard');
+        var ta=document.querySelector('textarea[data-csr-pem="'+id+'"]');
+        if(b.hasAttribute('data-csr-copy')&&ta){
+          var done=function(){b.innerHTML='<i class="bi bi-check2 me-1"></i>Copied';};
+          if(navigator.clipboard&&window.isSecureContext){navigator.clipboard.writeText(ta.value).then(done);}
+          else{ta.select();document.execCommand('copy');done();}
+        } else if(b.hasAttribute('data-csr-dl')&&ta){
+          var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([ta.value],{type:'application/pkcs10'}));
+          a.download=b.getAttribute('data-csr-name');document.body.appendChild(a);a.click();a.remove();
+        } else if(b.hasAttribute('data-csr-discard')){
+          if(!confirm('Discard this CSR and its private key? A certificate issued from it can no longer be imported.')) return;
+          post('{{ url_for("settings.node_cert_csr_discard", csr_id="CSRID") }}'.replace('CSRID',encodeURIComponent(id)),'').then(function(d){
+            if(d.ok) renderCsrs(d.csrs); else document.getElementById('nt-csr-msg').innerHTML='<span class="text-danger">'+esc(d.error)+'</span>';});
+        }
+      });
+      document.getElementById('nt-csr-form').addEventListener('submit',function(e){e.preventDefault();
+        var btn=document.getElementById('nt-csr-btn');busy(btn,true);
+        document.getElementById('nt-csr-msg').innerHTML='<span class="text-muted">Generating key and CSR…</span>';
+        post('{{ url_for("settings.node_cert_csr") }}', new FormData(this), true).then(function(d){
+          document.getElementById('nt-csr-msg').innerHTML=d.ok?'<span class="text-success">CSR generated for '+esc(d.csr.common_name)+' — copy or download it below.</span>':'<span class="text-danger">'+esc(d.error)+'</span>';
+          if(d.ok) renderCsrs(d.csrs);}).finally(function(){busy(btn,false);});});
       document.getElementById('nt-pgssl-form').addEventListener('submit',function(e){e.preventDefault();
         var body='min_protocol='+encodeURIComponent(document.getElementById('nt-min-proto').value)+
                  '&ciphers='+encodeURIComponent(document.getElementById('nt-ciphers').value);

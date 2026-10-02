@@ -251,3 +251,59 @@ def test_the_unit_regex_is_second_line_only():
     for unit in sc.POLICY:
         assert sc.UNIT_RE.match(unit), unit
     assert sc.UNIT_RE.match("satom.service; rm -rf /") is None
+
+
+# ---------------------------------------------------------------------------
+# nginx reload: the certificate-activation path when sudo is refused
+# ---------------------------------------------------------------------------
+
+def test_reload_is_permitted_for_nginx_only():
+    assert sc.allowed("nginx.service", "reload") is True
+    for unit in sc.POLICY:
+        if unit != "nginx.service":
+            assert sc.allowed(unit, "reload") is False, unit
+
+
+def test_reload_is_permitted_but_never_drawn_as_a_button():
+    for active in ("active", "inactive", "failed"):
+        assert "reload" not in sc.available_actions("nginx.service", active)
+
+
+def _runner_nginx(tmp_path, monkeypatch, nginx_t_rc):
+    (tmp_path / "data" / "update-requests").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "data" / "update-status").mkdir(parents=True, exist_ok=True)
+    runner = _load_runner(tmp_path)
+    ran = []
+
+    def fake_run(argv, **kw):
+        import subprocess as _sp
+        ran.append(list(argv))
+        if argv[:2] == ["nginx", "-t"]:
+            return _sp.CompletedProcess(argv, nginx_t_rc, "", "nginx: [emerg] boom"
+                                        if nginx_t_rc else "syntax is ok")
+        return _sp.CompletedProcess(argv, 0, "", "")
+    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+    monkeypatch.setattr(runner, "_svc_prop", lambda unit, prop: "loaded"
+                        if prop == "LoadState" else "active")
+    monkeypatch.setattr(runner, "health_ok", lambda *a, **k: True)
+    monkeypatch.setattr(runner, "front_ok", lambda *a, **k: True)
+    monkeypatch.setattr(runner.time, "sleep", lambda s: None)
+    req = tmp_path / "data" / "update-requests" / "r.json"
+    req.write_text(json.dumps({"id": "r", "kind": "service", "unit": "nginx.service",
+                               "action": "reload", "requested_by": "node-cert"}))
+    runner.service_action(str(req))
+    st = json.loads((tmp_path / "data" / "update-status" / "r.json").read_text())
+    return st, ran
+
+
+def test_the_runner_tests_the_config_before_reloading_nginx(tmp_path, monkeypatch):
+    st, ran = _runner_nginx(tmp_path, monkeypatch, 0)
+    assert st["state"] == "success"
+    assert ran.index(["nginx", "-t"]) < ran.index(["systemctl", "reload", "nginx.service"])
+
+
+def test_a_failed_config_test_never_reaches_systemctl(tmp_path, monkeypatch):
+    st, ran = _runner_nginx(tmp_path, monkeypatch, 1)
+    assert st["state"] == "failed" and st["error"] == "nginx -t failed"
+    assert [s for s in st["steps"] if s["name"] == "nginx -t"][0]["ok"] is False
+    assert not any(a[:1] == ["systemctl"] and "nginx.service" in a for a in ran)

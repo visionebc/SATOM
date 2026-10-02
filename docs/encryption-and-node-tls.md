@@ -90,13 +90,36 @@ the join key is the sanctioned transport and it is operator-driven on purpose.
 ## The service certificate — Settings → **Node TLS** (admin)
 
 `app/services/cert_service.py`; endpoints in `app/views/settings.py`
-(`/settings/node-cert/{state,import,issue,renew}`), UI tab in
+(`/settings/node-cert/{state,import,issue,renew,csr}`), UI tab in
 `settings/index.html`.
 
-- **Import** a PEM cert (+ key, + optional chain): key/cert match is validated,
-  nginx is `-t`-tested and **rolled back automatically** if the new cert is bad.
-  Import is *import-only* — expiry is tracked and alerted, but not auto-renewed
-  (we didn't issue it).
+- **Import** a PEM cert (+ key, + optional chain), either **pasted** into text
+  fields or **uploaded** as files (one or the other per slot — both is refused):
+  key/cert match is validated, nginx is `-t`-tested and **rolled back
+  automatically** if the new cert is bad. Import is *import-only* — expiry is
+  tracked and alerted, but not auto-renewed (we didn't issue it).
+- **Generate a CSR** for a certificate issued by another CA (corporate PKI, a
+  public CA): common name (defaults to the node hostname), extra SANs (host
+  names or IPs; the CN is always included), optional O/OU/L/ST/C, RSA
+  2048/3072/4096 or ECDSA P-256/P-384. The private key is generated on the node
+  in `pki/csr/<id>.key` (dir `0700`, key `0600`) and **never leaves it**; the
+  page only shows the CSR, with Copy / Download / Discard. When the certificate
+  comes back, import it with the **key left empty**: it is paired with its
+  pending key by public-key fingerprint (`<id>` = first 16 hex of the SPKI
+  SHA-256), so a second CSR generated meanwhile does not orphan the first. The
+  pending entry is deleted once the install succeeds; the newest 10 are kept.
+  `pki/csr/` is node-local like the rest of `pki/` — a CSR names one node and
+  its key must not reach the peer. Not available in the container runtime.
+- **Activation** (`nginx -t` + `systemctl reload nginx`) uses the
+  `/etc/sudoers.d/satom` allowlist when the host's sudo honours it. When sudo
+  refuses (`a password is required`, `Sorry, user … is not allowed`, no sudo
+  binary — e.g. a managed `/etc/sudoers` without `@includedir /etc/sudoers.d`,
+  or an LDAP/SSSD sudo source), the same test + reload goes through the root
+  runner (`satom-updater.path` → `nginx.service reload`, which runs `nginx -t`
+  first) and the console waits up to 90 s for its verdict. A genuine `nginx -t`
+  failure is reported, never retried. If the runner does not pick the request
+  up, the error names `satom-updater.path`. The installer warns when sudo does
+  not honour the allowlist (`sudo -l -U satom` to inspect).
 - **Issue from the internal CA** (any node that holds `ca.key` — see *CA custody*
   above; that is meant to be both of them): mints a leaf for the node hostname,
   installs it, `source=issued`. Issued certs are **per node** and are never

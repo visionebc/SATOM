@@ -1993,6 +1993,7 @@ def node_cert_state():
         'hostname': cs.node_hostname(),
         'renew_mode': cs.renew_mode(),
         'autopull': cs.autopull_config(),   # no secret revealed
+        'csrs': cs.pending_csrs(),          # CSRs are public; keys never leave pki/csr
     })
 
 
@@ -2033,18 +2034,60 @@ def node_cert_autopull():
 @login_required
 @require_permission(Permission.USER_MANAGE)
 def node_cert_import():
+    """Each slot comes as an uploaded file OR as pasted PEM text, never both.
+    The key may be left empty when the certificate was issued from a CSR
+    generated on this node (cert_service pairs it with the pending key)."""
     from ..services import cert_service as cs
-    cert = request.files.get('cert')
-    key = request.files.get('key')
-    chain = request.files.get('chain')
-    if not cert or not key or not cert.filename or not key.filename:
-        return jsonify({'ok': False, 'error': 'cert and key PEM files are required'}), 400
+    slots = {}
+    for name in ('cert', 'key', 'chain'):
+        up = request.files.get(name)
+        fdata = (up.read() or b'').strip() if (up and up.filename) else b''
+        tdata = (request.form.get(name + '_text') or '').strip().encode()
+        if fdata and tdata:
+            return jsonify({'ok': False, 'error': 'the %s was given both as a file and as '
+                            'pasted text — keep one' % name}), 400
+        slots[name] = fdata or tdata
+    if not slots['cert']:
+        return jsonify({'ok': False, 'error': 'the certificate is required (file or pasted PEM)'}), 400
     try:
-        chb = chain.read() if (chain and chain.filename) else None
-        info = cs.import_pem(cert.read(), key.read(), chb,
+        info = cs.import_pem(slots['cert'], slots['key'] or None, slots['chain'] or None,
                              by=getattr(current_user, 'username', ''))
         log_action('node_cert.import', 'security', detail=info.get('subject'))
         return jsonify({'ok': True, 'cert': info})
+    except Exception as e:  # noqa: BLE001
+        return jsonify({'ok': False, 'error': str(e)[:300]}), 400
+
+
+@bp.route('/node-cert/csr', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def node_cert_csr():
+    """Generate a key + CSR on this node for an external CA to sign."""
+    from ..services import cert_service as cs
+    f = request.form
+    try:
+        res = cs.generate_csr(by=getattr(current_user, 'username', ''),
+                              common_name=f.get('common_name'), sans=f.get('sans'),
+                              key_type=(f.get('key_type') or 'rsa2048').strip(),
+                              organization=f.get('organization') or '',
+                              org_unit=f.get('org_unit') or '',
+                              locality=f.get('locality') or '',
+                              state=f.get('state') or '', country=f.get('country') or '')
+        log_action('node_cert.csr', 'security', detail=res.get('subject'))
+        return jsonify({'ok': True, 'csr': res, 'csrs': cs.pending_csrs()})
+    except Exception as e:  # noqa: BLE001
+        return jsonify({'ok': False, 'error': str(e)[:300]}), 400
+
+
+@bp.route('/node-cert/csr/<csr_id>/discard', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def node_cert_csr_discard(csr_id):
+    from ..services import cert_service as cs
+    try:
+        existed = cs.discard_csr(csr_id)
+        log_action('node_cert.csr_discard', 'security', detail=csr_id)
+        return jsonify({'ok': True, 'discarded': existed, 'csrs': cs.pending_csrs()})
     except Exception as e:  # noqa: BLE001
         return jsonify({'ok': False, 'error': str(e)[:300]}), 400
 

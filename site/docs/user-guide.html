@@ -221,7 +221,9 @@ explicitly confirm. Applied writes are snapshotted and audited.</p>
 <p><strong>Jobs dock.</strong> Long operations (backups, discovery, deep captures, bulk
 applies, firmware) run as <strong>background jobs</strong>. A dock at the bottom of the
 screen tracks progress and survives page navigation; the <strong>Jobs</strong> page (Global
-→ Jobs) lists everything with Pause / Resume / Stop.</p>
+→ Jobs) lists everything with Pause / Resume / Stop. Each toast in the dock can
+be minimised to one line (<strong>−</strong>) and restored (<strong>□</strong>, or a click on its title);
+the choice lasts for the browser session.</p>
 <p><strong>Notifications.</strong> The bell in the top bar collects job results and system
 notices, scoped to the product you are working in.</p>
 <h2 id="3-products-adoms">3. Products (ADOMs)</h2>
@@ -312,9 +314,12 @@ that will not come online.</p>
    account on the unit, and store that key as the appliance password.
 2. <strong>Test connection</strong> — validates REST reachability and credentials.
 3. <strong>Discovery / Rediscovery</strong> — sweeps every registry endpoint and stores the
-   device's full configuration in the local cache; also fills the hardware /
-   firmware inventory. Run it after registering and after any large
-   out-of-band change.
+   device's full configuration in the local cache (recorded as a harvest with
+   trigger <code>rediscovery</code>, so Device health counts it); also records the
+   firmware. Hardware is NOT collected here: use <strong>Scan hardware (SSH)</strong> on
+   Device health. Run it after registering and after any large out-of-band
+   change. With <em>Capture full WPP + policy depth</em> on, the deep pass shows which
+   server policy or WPP it is walking and how many are left.
 4. <strong>Deep capture</strong> — a deeper sweep that walks each server policy's whole
    object graph (pools, members, WAF profile sub-policies…). This is what
    powers the DB-first policy detail and the Architecture map. Can run
@@ -1315,7 +1320,11 @@ down — not lowering the alert floor.</p>
 page it sits on:</p>
 <ul>
 <li><strong>Device health</strong> (<code>/monitoring/</code>) — the appliance cards above. Present in
-  every workspace, scoped to that workspace's device kind.</li>
+  every workspace, scoped to that workspace's device kind. On a new node,
+  <em>never harvested</em> / <em>probes have never run</em> usually means nothing is
+  scheduled to do that work: the reason then ends with <em>no 'device_sync'
+  schedule on this node</em> (or <code>deep_monitor</code>) and the command that creates
+  the schedules, <code>sudo satom execute seed actions --yes</code>.</li>
 <li><strong>SATOM health</strong> (<code>/monitoring/satom</code>) — the installation itself: cluster
   peers, repository, external backup server, database, systemd units,
   redundancy, <strong>the host machine</strong> and <strong>Encryption in transit</strong>, where every

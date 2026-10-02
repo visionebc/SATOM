@@ -191,7 +191,21 @@ def cert_sections(reader: Any, cache: dict) -> dict:
     return out
 
 
-def deep_sections(reader: Any, progress=None) -> dict:
+class DeepCaptureStopped(Exception):
+    """Raised by :func:`deep_sections` when ``should_stop`` says so.
+
+    Carries where the walk was, because "stopped" alone cannot tell the
+    operator how much of the box had been read. The partial graph is NOT
+    returned: a deep layer missing the objects that were never reached would
+    read as those objects having been deleted.
+    """
+
+    def __init__(self, done: int, total: int, phase: str, current: str):
+        self.done, self.total, self.phase, self.current = done, total, phase, current
+        super().__init__(f"stopped at {done}/{total} ({phase} {current})".strip())
+
+
+def deep_sections(reader: Any, progress=None, should_stop=None) -> dict:
     """Walk every server policy + every WPP (inline + offline), returning the
     enriched ``{section: {logical_name: [obj-with-_deep, ...]}}`` snapshot shape
     that ``device_store.ingest_sections`` consumes. A single shared collection
@@ -204,6 +218,11 @@ def deep_sections(reader: Any, progress=None) -> dict:
     many are left. The three lists are read up front for that reason: the total
     has to be known before the first object, or the bar can only say "running"
     (SI-0004). A broken callback never sinks the walk.
+
+    ``should_stop`` (optional) is asked before every object and before the
+    certificate stores; True raises :class:`DeepCaptureStopped`. An object
+    already being walked is finished first -- one object is a handful of reads,
+    and a half-walked object is the one thing worse than a skipped one.
     """
     cache: dict = {}
 
@@ -229,14 +248,20 @@ def deep_sections(reader: Any, progress=None) -> dict:
         except Exception:  # noqa: BLE001 — reporting never sinks the walk
             pass
 
+    def _check_stop(done: int, phase: str, current: str) -> None:
+        if should_stop is not None and should_stop():
+            raise DeepCaptureStopped(done, total, phase, current)
+
     policies: list[dict] = []
     wpps: list[dict] = []
     for done, (phase, node, nm, idx, of) in enumerate(work):
+        _check_stop(done, phase, nm)
         _tick(done, phase, idx, of, nm)
         g = _collect_node(reader, node, nm, set(), cache)
         if g:
             (policies if node is SERVER_POLICY else wpps).append(g)
 
+    _check_stop(len(work), "certificates", "")
     _tick(len(work), "certificates", 1, 1, "")
     sections = {
         "Server Policy": {"server_policy": policies},

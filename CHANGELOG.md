@@ -6,6 +6,17 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed — `installers/build-update-package.sh` was not executable (2026-10-02)
+
+The update-package builder was committed without the exec bit (`100644`)
+when it was added, unlike the three offline-bundle builders and both
+installers. On a fresh clone (GitHub or Gitea), running
+`./installers/build-update-package.sh` failed with `Permission denied`;
+only `bash installers/build-update-package.sh` worked. The script is now
+tracked as `100755`, and `tests/test_installer_exec_bits.py` fails if any
+`installers/*.sh` is committed without it. Nothing inside an update package
+or an installed node changes.
+
 ## [2.8.0] - 2026-10-02
 
 ### Fixed — Rediscovery ignored the TLS trust store: CERTIFICATE_VERIFY_FAILED with the CAs imported (2026-10-02)

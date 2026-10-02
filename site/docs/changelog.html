@@ -61,6 +61,7 @@
     <aside class="toc">
       <div class="toc-title">On this page</div>
       <a href="#unreleased">[Unreleased]</a>
+      <a href="#291---2026-10-02">[2.9.1] - 2026-10-02</a>
       <a href="#290---2026-10-02">[2.9.0] - 2026-10-02</a>
       <a href="#280---2026-10-02">[2.8.0] - 2026-10-02</a>
       <a href="#270---2026-10-02">[2.7.0] - 2026-10-02</a>
@@ -104,7 +105,6 @@
       <a href="#134---2026-08-04">[1.3.4] - 2026-08-04</a>
       <a href="#133---2026-08-04">[1.3.3] - 2026-08-04</a>
       <a href="#132---2026-08-04">[1.3.2] - 2026-08-04</a>
-      <a href="#131---2026-08-03">[1.3.1] - 2026-08-03</a>
     </aside>
     <div class="doc-body mdx">
 <h1 id="changelog">Changelog</h1>
@@ -112,6 +112,31 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h2 id="291---2026-10-02">[2.9.1] - 2026-10-02</h2>
+<h3 id="fixed--discovery-with-refused-credentials-locked-the-admin-account-and-left-an-empty-snapshot-2026-10-02">Fixed — Discovery with refused credentials locked the admin account and left an empty snapshot (2026-10-02)</h3>
+<p>Reported from the field: a rediscovery returned <code>HTTP 401</code> on all 295
+endpoints, and afterwards the appliance showed no configuration at all, not
+even NTP. The sweep sent one request per endpoint even after the first 401.
+On FortiWeb each of those requests is a failed admin login, and
+<code>admin-lockout-threshold</code> (3 by default) locks the account. A locked account
+returns 401 to everything, including the correct password, so the sweep kept
+the admin locked out for SATOM and for anyone using the GUI. It then saved the
+empty result as the latest snapshot, replacing the last good one.</p>
+<ul>
+<li><strong>A 401 stops discovery.</strong> If the first status read returns 401, the sweep
+  stops after that single failed login. If an endpoint returns 401 mid-sweep,
+  SATOM reads status once to check. If that read also returns 401, the sweep
+  stops. If it succeeds, the 401 was specific to that endpoint and the sweep
+  continues. The CLI-coverage discovery run stops the same way.</li>
+<li><strong>A sweep in which no endpoint answered writes no snapshot.</strong> It ends as
+  <em>Failed</em>, and the previous snapshot is kept.</li>
+<li><strong>The error says what to check:</strong> the credentials, the ADOM/vdom field, the
+  lockout, and the account's trusted hosts. <em>Test connection</em> now shows the
+  same message instead of a JSON parse error. Error details are taken from an
+  HTML page's <code>&lt;title&gt;</code> and the <code>WWW-Authenticate</code> header. Previously they
+  were the first 120 bytes of the page, which were only its doctype.</li>
+<li>Guard: <code>tests/test_rediscovery_auth.py</code>.</li>
+</ul>
 <h2 id="290---2026-10-02">[2.9.0] - 2026-10-02</h2>
 <h3 id="added--every-action-on-a-device-runs-as-a-job-that-shows-where-it-is-2026-10-02">Added — every action on a device runs as a job that shows where it is (2026-10-02)</h3>
 <p>Requested: "every action inside the device must create a job, run in the

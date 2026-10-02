@@ -5,8 +5,8 @@
 <meta charset="UTF-8">
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Version 1.13.0 — SATOM</title>
-<meta name="description" content="Released on 2026-08-23 — Added · Changed · 7 entries.">
+<title>Version 2.9.1 — SATOM</title>
+<meta name="description" content="Released on 2026-10-02 — Fixed — Discovery with refused credentials locked the admin account and left an empty snapshot (2026-10-02) · 4 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -45,8 +45,8 @@
 
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
-  <h1>Version 1.13.0 <span class="rel-badge">superseded</span></h1>
-  <p class="sub">Released on 2026-08-23 — Added · Changed · 7 entries.</p>
+  <h1>Version 2.9.1 <span class="rel-badge rel-now">current release</span></h1>
+  <p class="sub">Released on 2026-10-02 — Fixed — Discovery with refused credentials locked the admin account and left an empty snapshot (2026-10-02) · 4 entries.</p>
 </header>
 
 <section class="wrap">
@@ -62,7 +62,7 @@
         <span class="rel-nav-meta">unreleased · Changes · 0 entries</span>
         <ul class="rel-leads"></ul>
       </a>
-      <a class="rel-nav-item" href="v2.9.1.html" data-rel-version="2.9.1">
+      <a class="rel-nav-item is-active" href="v2.9.1.html" data-rel-version="2.9.1">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 2.9.1</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
         <span class="rel-nav-meta">2026-10-02 · Fixed — Discovery with refused credentials locked the admin account and left an empty snapshot (2026-10-02) · 4 entries</span>
         <ul class="rel-leads"><li>A 401 stops discovery</li><li>A sweep in which no endpoint answered writes no snapshot</li><li>The error says what to check:</li><li class="rel-more">… and 1 more</li></ul>
@@ -182,7 +182,7 @@
         <span class="rel-nav-meta">2026-08-23 · Added · Changed · Fixed · 6 entries</span>
         <ul class="rel-leads"><li>app/templates/settings/_nav.html — the menu, in one file</li><li>The standalone /settings/sentinel page keeps the submenu</li><li>Sentinel is the last group in the menu</li><li class="rel-more">… and 3 more</li></ul>
       </a>
-      <a class="rel-nav-item is-active" href="v1.13.0.html" data-rel-version="1.13.0">
+      <a class="rel-nav-item" href="v1.13.0.html" data-rel-version="1.13.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 1.13.0</span></span>
         <span class="rel-nav-meta">2026-08-23 · Added · Changed · 7 entries</span>
         <ul class="rel-leads"><li>/settings/sentinel — the whole Sentinel section</li><li>A demo lab: ten scenarios runnable against the live engine</li><li>Sentinel is its own group in the Admin Console menu</li><li class="rel-more">… and 4 more</li></ul>
@@ -330,54 +330,31 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
-<p>Settings → Sentinel is now a full section, not a form in a pane.</p>
-<h3 id="added">Added</h3>
+<h3 id="fixed--discovery-with-refused-credentials-locked-the-admin-account-and-left-an-empty-snapshot-2026-10-02">Fixed — Discovery with refused credentials locked the admin account and left an empty snapshot (2026-10-02)</h3>
+<p>Reported from the field: a rediscovery returned <code>HTTP 401</code> on all 295
+endpoints, and afterwards the appliance showed no configuration at all, not
+even NTP. The sweep sent one request per endpoint even after the first 401.
+On FortiWeb each of those requests is a failed admin login, and
+<code>admin-lockout-threshold</code> (3 by default) locks the account. A locked account
+returns 401 to everything, including the correct password, so the sweep kept
+the admin locked out for SATOM and for anyone using the GUI. It then saved the
+empty result as the latest snapshot, replacing the last good one.</p>
 <ul>
-<li><strong><code>/settings/sentinel</code> — the whole Sentinel section.</strong> The pane held the
-  form and nothing else, so "what will this thing actually DO?" was answered
-  only by the architecture page's prose. The section answers it in escalating
-  commitment before showing a single knob: the pipeline drawn stage by stage
-  (CSS-only animation, honours <code>prefers-reduced-motion</code>), the score bands and
-  the weight table rendered from the live <code>WEIGHTS</code> dict, and then the form —
-  the same catalog-generated form as before, in one place only.</li>
-<li><strong>A demo lab: ten scenarios runnable against the live engine.</strong> The same ten
-  scenarios the test suite asserts on every commit, pushed through the real
-  <code>score_context</code>, the real band thresholds and the real policy gates when
-  the button is pressed. Only the events and metric readings are staged; the
-  gate audit reads the installation's live kill switch, policy rows and hourly
-  budget. Nothing is written and no device is touched — both halves of that
-  sentence are asserted by <code>tests/test_sentinel_settings_page.py</code>, along
-  with each scenario's published band, so a weight tune that moves a scenario
-  breaks the build in the commit that tunes it instead of on the Settings page.</li>
-<li><strong>Sentinel is its own group in the Admin Console menu</strong>, holding three
-  entries: <strong>Settings</strong> (the section itself), <strong>Architecture</strong> and <strong>Incidents
-  console</strong>. It used to be one entry under <em>Monitoring &amp; Alerts</em>, which left
-  two of its three surfaces reachable only from a button inside the third.
-  The two page entries are drawn as links with a leaving arrow, because a row
-  that replaces the whole page must not look identical to one that swaps a
-  pane.</li>
-<li><strong>The Settings pane at <code>#tab-sentinel</code> renders the whole section inline</strong> —
-  pipeline, weights, demo lab and form — instead of a doorway card whose only
-  control opened another URL. Both surfaces render
-  <code>settings/_sentinel_section.html</code>, so there is still exactly one form: a
-  hand-copied second one would put a second <code>id="sn-enabled"</code> on the page and
-  point every <code>&lt;label for&gt;</code> at the wrong input.</li>
+<li><strong>A 401 stops discovery.</strong> If the first status read returns 401, the sweep
+  stops after that single failed login. If an endpoint returns 401 mid-sweep,
+  SATOM reads status once to check. If that read also returns 401, the sweep
+  stops. If it succeeds, the 401 was specific to that endpoint and the sweep
+  continues. The CLI-coverage discovery run stops the same way.</li>
+<li><strong>A sweep in which no endpoint answered writes no snapshot.</strong> It ends as
+  <em>Failed</em>, and the previous snapshot is kept.</li>
+<li><strong>The error says what to check:</strong> the credentials, the ADOM/vdom field, the
+  lockout, and the account's trusted hosts. <em>Test connection</em> now shows the
+  same message instead of a JSON parse error. Error details are taken from an
+  HTML page's <code>&lt;title&gt;</code> and the <code>WWW-Authenticate</code> header. Previously they
+  were the first 120 bytes of the page, which were only its doctype.</li>
+<li>Guard: <code>tests/test_rediscovery_auth.py</code>.</li>
 </ul>
-<h3 id="changed">Changed</h3>
-<ul>
-<li><strong>Monitoring &amp; Alerts moved to the bottom of the Settings menu</strong> (operator's
-  request): the alert plumbing is configured once and then left alone, unlike
-  the groups above it. Nothing was renamed — every <code>#tab-*</code> deep link still
-  lands where it did.</li>
-<li>Saving Sentinel settings returns <strong>where the form was rendered</strong>: the pane
-  posts <code>return_to=pane</code> and comes back to <code>/settings/#tab-sentinel</code>; anything
-  else (a deep link, a bookmark, a script) still lands on
-  <code>/settings/sentinel#config</code>. Being moved out of the console by pressing Save
-  is the indirection the inline section exists to remove.</li>
-<li>Concept Map gained the section (89 pages); user guide §26/§39 and the
-  Sentinel architecture document updated to match.</li>
-</ul>
-<p class="rel-prevnext"><a href="v1.14.0.html">← Version 1.14.0</a> · <a href="v1.12.0.html">Version 1.12.0 →</a></p>
+<p class="rel-prevnext"><a href="unreleased.html">← Unreleased — the next release</a> · <a href="v2.9.0.html">Version 2.9.0 →</a></p>
       </div>
       <div class="callout" style="margin-top:24px;">
         <span class="cico">🗒️</span>

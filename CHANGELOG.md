@@ -6,6 +6,31 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Fixed — Discovery with refused credentials locked the admin account and left an empty snapshot (2026-10-02)
+
+Reported from the field: a rediscovery returned `HTTP 401` on all 295
+endpoints, and afterwards the appliance showed no configuration at all, not
+even NTP. The sweep sent one request per endpoint even after the first 401.
+On FortiWeb each of those requests is a failed admin login, and
+`admin-lockout-threshold` (3 by default) locks the account. A locked account
+returns 401 to everything, including the correct password, so the sweep kept
+the admin locked out for SATOM and for anyone using the GUI. It then saved the
+empty result as the latest snapshot, replacing the last good one.
+
+- **A 401 stops discovery.** If the first status read returns 401, the sweep
+  stops after that single failed login. If an endpoint returns 401 mid-sweep,
+  SATOM reads status once to check. If that read also returns 401, the sweep
+  stops. If it succeeds, the 401 was specific to that endpoint and the sweep
+  continues. The CLI-coverage discovery run stops the same way.
+- **A sweep in which no endpoint answered writes no snapshot.** It ends as
+  *Failed*, and the previous snapshot is kept.
+- **The error says what to check:** the credentials, the ADOM/vdom field, the
+  lockout, and the account's trusted hosts. *Test connection* now shows the
+  same message instead of a JSON parse error. Error details are taken from an
+  HTML page's `<title>` and the `WWW-Authenticate` header. Previously they
+  were the first 120 bytes of the page, which were only its doctype.
+- Guard: `tests/test_rediscovery_auth.py`.
+
 ## [2.9.0] - 2026-10-02
 
 ### Added — every action on a device runs as a job that shows where it is (2026-10-02)

@@ -178,11 +178,38 @@ def test_request_actually_hands_the_bundle_to_httpx(app, clean, pki, monkeypatch
         assert seen.get("verify") is False
 
 
-def test_client_falls_back_to_public_roots_without_an_app_context(pki):
-    """Background threads reach the client layer without an app context. The
-    DB query raises there; the answer must be True, not False."""
+def test_client_falls_back_to_public_roots_without_an_app_context(pki, monkeypatch):
+    """No app context AND no registered app: the DB query raises, and the
+    answer must be True (public roots), never False."""
     from app.clients.base import BaseClient
-    assert BaseClient("h", 443, verify_ssl=True)._verify_target() is not False
+    monkeypatch.setattr(ts, "_APP", None)
+    ts.invalidate()
+    assert BaseClient("h", 443, verify_ssl=True)._verify_target() is True
+
+
+def test_a_worker_thread_uses_the_imported_cas(app, clean, pki):
+    """The 2026-10-02 report: root + intermediate imported, the page's own
+    probe said 'verified', and rediscovery still failed with
+    CERTIFICATE_VERIFY_FAILED. The sweep dials from a bare thread; there the
+    store query raised and verify_param quietly answered "public roots only".
+    create_app registers the app, so the thread must get the private bundle."""
+    from app.clients.base import BaseClient
+    with app.app_context():
+        ts.import_pem(_pem(pki["root"]) + _pem(pki["inter"]), actor="t")
+    ts.invalidate()
+    got = {}
+
+    def worker():
+        got["v"] = BaseClient("dev.example.invalid", 443,
+                              verify_ssl=True)._verify_target()
+
+    t = threading.Thread(target=worker)
+    t.start()
+    t.join()
+    assert isinstance(got["v"], str) and got["v"].endswith(ts.BUNDLE_NAME), (
+        f"a background thread got verify={got['v']!r}: the imported CAs are "
+        f"ignored by every sweep, job and scheduled action")
+    assert "Guard Issuing CA" in open(got["v"], encoding="utf-8").read()
 
 
 # --------------------------------------------------------------------------
@@ -471,3 +498,60 @@ def test_a_certificate_sent_in_both_slots_is_not_duplicated(
     })
     with app.app_context():
         assert TrustedCa.query.count() == 1
+
+
+# --------------------------------------------------------------------------
+# 6. the page: one Save per slot, Content view, the product's button classes
+# --------------------------------------------------------------------------
+
+def _trust_tab(html: str) -> str:
+    start = html.index('id="tab-catrust"')
+    return html[start:html.index('id="tab-hypervisors"', start)]
+
+
+def test_each_slot_has_its_own_save(app, clean, admin_client):
+    tab = _trust_tab(admin_client.get("/settings/").get_data(as_text=True))
+    assert 'data-ct-save="root"' in tab
+    assert 'data-ct-save="intermediate"' in tab
+    # The JS sends ONLY the clicked slot's fields.
+    assert "'pem_text_'+slot" in tab and "'pem_file_'+slot" in tab
+
+
+def test_trust_store_buttons_use_classes_the_stylesheet_defines(app, clean, admin_client):
+    """``fw-btn`` is defined in no stylesheet, so these buttons rendered as
+    bare browser buttons beside every styled table in the product."""
+    tab = _trust_tab(admin_client.get("/settings/").get_data(as_text=True))
+    assert "fw-btn " not in tab and '"fw-btn"' not in tab
+    for cls in ("btn-outline-primary", "btn-outline-secondary", "btn-outline-danger"):
+        assert cls in tab, cls
+
+
+def test_import_result_names_the_role_each_cert_was_filed_under(
+        app, clean, pki, admin_client):
+    """An intermediate saved from the ROOT slot is filed as intermediate; the
+    reply must say so, or the operator trusts the button over the cert."""
+    r = admin_client.post("/settings/trust-store/import", data={
+        "pem_text_root": _pem(pki["inter"])})
+    items = r.get_json()["result"]["items"]
+    assert [(i["role"], i["action"]) for i in items] == [(ROLE_INTERMEDIATE, "imported")]
+    r = admin_client.post("/settings/trust-store/import", data={
+        "pem_text_root": _pem(pki["inter"])})
+    assert r.get_json()["result"]["items"][0]["action"] == "updated"
+
+
+def test_content_shows_the_decoded_certificate_and_its_pem(app, clean, pki, admin_client):
+    admin_client.post("/settings/trust-store/import", data={
+        "pem_text_root": _pem(pki["root"])})
+    with app.app_context():
+        row = TrustedCa.query.one()
+        cid, fp = row.id, row.fingerprint
+    d = admin_client.get(f"/settings/trust-store/{cid}/content").get_json()
+    assert d["ok"] is True
+    x = d["detail"]
+    assert "Guard Root CA" in x["subject"] and x["subject"] == x["issuer"]
+    assert x["sha256"].replace(":", "").lower() == fp
+    assert x["pem"].strip() == _pem(pki["root"]).strip()
+    assert x["public_key"].startswith("EC ")
+    bc = [e for e in x["extensions"] if e["name"] == "basicConstraints"]
+    assert bc and bc[0]["value"].startswith("CA:TRUE") and bc[0]["critical"]
+    assert admin_client.get("/settings/trust-store/999999/content").status_code == 404

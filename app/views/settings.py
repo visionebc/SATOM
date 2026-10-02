@@ -2278,6 +2278,23 @@ def trust_store_delete(ca_id):
     return jsonify({'ok': True, 'deleted': name})
 
 
+@bp.route('/trust-store/<int:ca_id>/content')
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def trust_store_content(ca_id):
+    """The Content button: what was actually stored, decoded, plus the PEM.
+    "Is this the CA I meant?" is otherwise unanswerable from a name and a DN
+    truncated in a table cell."""
+    from ..services import trust_store as ts
+    from ..models_trust import TrustedCa
+    row = TrustedCa.query.get_or_404(ca_id)
+    try:
+        detail = ts.describe(row.pem)
+    except Exception as e:  # noqa: BLE001 — show the stored PEM even if it no longer parses
+        detail = {'pem': row.pem, 'error': str(e)[:300]}
+    return jsonify({'ok': True, 'ca': row.to_dict(), 'detail': detail})
+
+
 @bp.route('/trust-store/probe', methods=['POST'])
 @login_required
 @require_permission(Permission.USER_MANAGE)

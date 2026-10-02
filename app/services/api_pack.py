@@ -868,7 +868,10 @@ def import_pack(path, *, trust_dir=None, products=None, sections=None, ids=None,
                "dry_run": dry_run, "items": results,
                "imported": sum(1 for r in results if r.get("imported")),
                "errors": sum(1 for r in results if r.get("error"))}
-        if out["imported"] or out["errors"]:
+        # A full pass (no ticked subset: the CLI, the installer, the runner)
+        # is recorded even when everything was already here, so "this pack was
+        # imported" stays answerable (pending_shipped).
+        if not dry_run and (out["imported"] or out["errors"] or not ids):
             log = pack_dir() / "imports"
             log.mkdir(parents=True, exist_ok=True)
             stamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
@@ -899,8 +902,18 @@ def _source_dir(source: str) -> Path:
     raise PackError("unknown pack source %r" % source)
 
 
+def _pack_version_key(name: str):
+    ver = name[len("satom-apipack-"):-len(".tar.gz")]
+    return tuple((0, int(x), "") if x.isdigit() else (1, 0, x)
+                 for x in re.split(r"[.-]", ver))
+
+
 def list_packs() -> list:
-    """Every pack this node can import from, newest first within each source."""
+    """Every pack this node can import from, newest first within each source.
+
+    ``api-packs/`` keeps every release's pack, and a checkout gives them all
+    the same mtime, so shipped packs are ordered by VERSION; uploads by when
+    they arrived."""
     out = []
     for source in PACK_SOURCES:
         d = _source_dir(source)
@@ -908,7 +921,9 @@ def list_packs() -> list:
             continue
         found = [p for p in d.glob("satom-apipack-*.tar.gz")
                  if p.is_file() and PACK_NAME_RE.match(p.name)]
-        for p in sorted(found, key=lambda p: p.stat().st_mtime, reverse=True):
+        order = ((lambda p: _pack_version_key(p.name)) if source == SOURCE_SHIPPED
+                 else (lambda p: p.stat().st_mtime))
+        for p in sorted(found, key=order, reverse=True):
             st = p.stat()
             out.append({"source": source, "name": p.name, "size": st.st_size,
                         "version": p.name[len("satom-apipack-"):-len(".tar.gz")],
@@ -986,6 +1001,29 @@ def import_history(limit: int = 10) -> list:
     return out
 
 
+def pending_shipped(packs: list | None = None) -> dict | None:
+    """The newest shipped pack if this node has never imported it, else None.
+
+    An update brings a new pack into ``api-packs/`` and the runner imports it
+    on the primary; this is what the page uses to say so when that did not
+    happen (a standby promoted later, an update applied by an older runner, an
+    import that failed)."""
+    shipped = [p for p in (packs if packs is not None else list_packs())
+               if p["source"] == SOURCE_SHIPPED]
+    if not shipped:
+        return None
+    newest = shipped[0]
+    d = pack_dir() / "imports"
+    if d.is_dir():
+        for f in d.glob("*.json"):
+            try:
+                if json.loads(f.read_text(encoding="utf-8")).get("pack") == newest["name"]:
+                    return None
+            except (OSError, ValueError):
+                continue
+    return newest
+
+
 __all__ = ["SCHEMA", "SECTIONS", "ORIGIN_PREFIX", "PackError", "rebuild_document",
            "export_pack", "inspect_pack", "import_pack", "list_packs", "resolve_pack",
-           "save_upload", "delete_upload", "import_history"]
+           "save_upload", "delete_upload", "import_history", "pending_shipped"]

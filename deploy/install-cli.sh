@@ -113,8 +113,25 @@ fi
   exit 1
 }
 
+# ---- 'sudo satom' on openSUSE and RHEL ------------------------------------
+# sudo's secure_path there is /usr/sbin:/usr/bin:/sbin:/bin -- no
+# /usr/local/sbin -- so every 'sudo satom ...' the docs, the installer and this
+# CLI print answered "command not found" outside Debian (reported from a
+# customer node, 2026-10-01). A link in /usr/bin makes the printed commands
+# true everywhere. It is a link TO the root-owned binary, in a root-owned
+# directory, so it adds no path the service account can write; sudoers grants
+# that name /usr/local/sbin/satom keep matching (sudo resolves the link).
+# Never replace a /usr/bin/satom that is not ours.
+ALIAS="/usr/bin/satom"
+if [ -L "$ALIAS" ] || [ ! -e "$ALIAS" ]; then
+  ln -sfn "$BIN" "$ALIAS"
+elif [ "$(readlink -f "$ALIAS")" != "$BIN" ]; then
+  echo "install-cli.sh: ${ALIAS} exists and is not SATOM's — left alone; use ${BIN} with sudo." >&2
+fi
+
 echo "satom CLI installed:"
 echo "  binary : ${BIN} (root:root 0755)"
+echo "  alias  : ${ALIAS} -> ${BIN} (for sudo's secure_path)"
 echo "  library: ${LIB_DIR} (root:root)"
 echo "  verify : satom diagnose privilege"
 echo "  grant  : satom show sudoers <operator-account>"

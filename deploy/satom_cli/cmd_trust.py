@@ -319,6 +319,97 @@ def update_package(ctx, args):
     return _follow(ctx, uid, new)
 
 
+FETCH_USAGE = "execute update fetch [--yes] [--download-only] [--feed <https-url>]"
+
+
+def _feed_module():
+    """``upgrade_feed.py`` from the ROOT-OWNED runner library only. This runs
+    as root; loading it from the app tree would execute code the service
+    account can rewrite."""
+    path = RUNNER_LIB / "upgrade_feed.py"
+    if not path.is_file():
+        return None
+    spec = importlib.util.spec_from_file_location("satom_upgrade_feed", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def update_fetch(ctx, args):
+    """Download the newest signed package from the system-upgrade feed and
+    apply it — the online alternative to download + copy + ``update package``.
+
+    The feed (``satom-system-upgrades/latest.json``) is only an address: the
+    download must match the sha256 it declares, and the package then goes
+    through ``update_package`` exactly like an uploaded one (signature against
+    the trust store here, and again as root by the runner).
+    """
+    fd = _feed_module()
+    if fd is None:
+        return Result("bad", "update fetch").lines("", [
+            "%s/upgrade_feed.py is missing — this node's runner predates the "
+            "upgrade feed." % RUNNER_LIB,
+            "Refresh it with: satom execute reinstall runner"])
+    url = ""
+    if "--feed" in args:
+        i = args.index("--feed")
+        url = args[i + 1] if i + 1 < len(args) else ""
+    try:
+        doc = fd.fetch_feed(url)
+    except fd.FeedError as exc:
+        return Result("bad", "update fetch").lines("", [
+            str(exc), "",
+            "Offline node: download satom-update-<version>.tar.gz from the",
+            "release (satom-system-upgrades/ in the repository lists them) and run",
+            "  satom execute update package <file> --yes"])
+
+    pkg = doc["package"]
+    new = doc["version"]
+    cur = _version(ctx)
+    up = _up(ctx)
+    newer = up.compare_versions(new, cur) > 0 if up else True
+    rows = [("feed", doc["_feed_url"]), ("installed", cur),
+            ("offered", "%s (%s)" % (new, doc.get("released") or "?")),
+            ("package", "%s  %.1f MB" % (pkg["name"], pkg["size"] / 1048576.0)),
+            ("sha256", pkg["sha256"])]
+    if not newer:
+        r = Result("ok", "update fetch")
+        r.rows("", rows)
+        r.note("Already on %s or newer — nothing to download." % new)
+        return r
+    if "--yes" not in args and "--download-only" not in args:
+        r = Result("warn", "update fetch (dry run)")
+        r.rows("would download and apply", rows)
+        r.note("Re-run with --yes to download, verify and apply it, or with "
+               "--download-only to stage it for the console.")
+        return r
+
+    uploads = ctx.app_dir / "data" / "update-uploads"
+    uploads.mkdir(parents=True, exist_ok=True)
+    _chown_app(ctx, uploads)
+    start = time.monotonic()
+
+    def progress(done, total):
+        print("  [ .. ] downloading %s: %d of %d MB (%s)"
+              % (pkg["name"], done >> 20, total >> 20, _elapsed(time.monotonic() - start)),
+              flush=True)
+
+    try:
+        path = fd.download_package(doc, uploads, progress=progress)
+    except fd.FeedError as exc:
+        return Result("bad", "update fetch").lines("", ["download refused: %s" % exc])
+    _chown_app(ctx, path)
+
+    if "--download-only" in args:
+        r = Result("ok", "update fetch")
+        r.rows("staged", rows + [("file", str(path))])
+        r.note("sha256 matches the feed. Review and apply it in Software Update, "
+               "or: satom execute update package %s --yes" % path)
+        return r
+    return update_package(ctx, [str(path)] + [a for a in args if a in
+                                               ("--yes", "--no-backup")])
+
+
 def _version(ctx):
     try:
         return (ctx.app_dir / "VERSION").read_text().strip()

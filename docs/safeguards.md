@@ -16753,3 +16753,49 @@ their text after the mutation. They are now behavioural: `st_verify_public`
 runs against a fake release without the pack, and the commit script runs in a
 scratch repository.
 
+## §204 — an update that never brought its knowledge, and a download that is only an address (`tests/test_upgrade_feed.py`, `tests/test_api_pack.py`, 2026-10-02)
+
+**What was wrong.** Three gaps found by asking "does the pack download by
+itself?":
+
+1. An update put the new `api-packs/` pack on disk and nothing imported it.
+   The library stayed on the previous release's knowledge until someone
+   pressed Import, and nothing told them to.
+2. The update package for a node that reaches GitHub still had to be
+   downloaded by hand, copied over and checked with `sha256sum`.
+3. Every `sudo satom …` the product prints was *command not found* on
+   openSUSE and RHEL (`secure_path` omits `/usr/local/sbin`).
+
+**What changed.** The runner imports the newest shipped pack after a healthy
+update on the primary (never fatal). `satom-system-upgrades/latest.json`
+indexes the packages, and the node fetches from it on request (`satom
+execute update fetch`, or the Software Update button). `install-cli.sh` links
+`/usr/bin/satom`.
+
+**Why the package is not in git.** About 64 MB per release; every clone would
+carry all of them for ever, and GitHub refuses files over 100 MB. The folder is
+the index, the asset is the file.
+
+**The guards.**
+- The feed is never a trust decision: a download that does not match the
+  feed's size and sha256 is deleted before it has a real name, then the
+  package's signature is checked as for an upload. HTTPS only, redirects
+  included. Malformed feeds (schema, URL, name, sha256, size, version/name
+  mismatch) are refused; the generator runs the reader's validation, so the
+  pipeline cannot publish a feed nodes would refuse.
+- Downloading stages, it never applies.
+- The CLI loads `upgrade_feed.py` only from the root-owned runner library;
+  `install-runner.sh` installs it there.
+- The runner's import is primary-only, skippable, and reports a failure or a
+  hang as a red step instead of raising.
+- `install-cli.sh` never replaces a `/usr/bin/satom` that is not a link.
+- `api-packs/` keeps every release's pack, ordered by version; a full import
+  that finds nothing new is recorded, so the pending notice clears.
+
+**Real run.** `download_package` against the published 2.6.0 asset on GitHub:
+64,127,541 bytes through the CDN redirect in 2.7 s, sha256 `857055bf…` equal
+to the release's `.sha256`; the same download with a wrong sha256 was refused
+and left no file.
+
+**Mutations: 22/22 bite.** The one survivor of the first pass (an import that
+raises instead of returning non-zero) now has its own test.

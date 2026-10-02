@@ -2467,6 +2467,21 @@
           </div>
         </div>
       </div>
+      <div class="col-12" id="nt-activate" style="display:none;">
+        <div class="fw-card">
+          <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-arrow-repeat me-2 text-accent"></i><span id="nt-act-title">{{ _('Activating certificate') }}</span></span>
+            <span id="nt-act-state" class="ms-auto"></span></div>
+          <div class="fw-card-body">
+            <div class="fw-alert fw-alert-warning mb-2" style="font-size:12.5px;" id="nt-act-warn">
+              <i class="bi bi-exclamation-triangle me-1"></i><strong>{{ _('nginx is reloaded on this node to switch to the new certificate.') }}</strong>
+              {{ _('Your session is kept, but open connections — this page included — move to the new certificate. If the page stops responding or the browser shows a certificate warning, close every browser window and open SATOM again: the browser keeps the certificate it had already accepted for this address.') }}
+            </div>
+            <ol id="nt-act-steps" class="list-unstyled mb-2" style="font-size:13px;"></ol>
+            <div id="nt-act-lost" class="fw-alert fw-alert-info mb-2" style="font-size:12.5px;display:none;"></div>
+            <div id="nt-act-final" style="font-size:12.5px;"></div>
+          </div>
+        </div>
+      </div>
       <div class="col-lg-6">
         <div class="fw-card">
           <div class="fw-card-header"><span class="fw-card-title"><i class="bi bi-patch-check me-2 text-accent"></i>{{ _('Service certificate (nginx :443 / :8443)') }}</span></div>
@@ -2556,7 +2571,7 @@
               </div>
               <button class="btn btn-sm fw-btn-primary" type="submit" id="nt-import-btn"><i class="bi bi-shield-check me-1"></i>Validate &amp; install</button>
             </form>
-            <div class="text-muted mt-2" style="font-size:11px;">{{ _('The key must match the certificate; nginx is config-tested and rolled back automatically if the new cert is bad.') }}</div>
+            <div class="text-muted mt-2" style="font-size:11px;">{{ _('The key must match the certificate; nginx is config-tested, then reloaded, and rolled back automatically if the new cert is bad.') }}</div>
           </div>
         </div>
       </div>
@@ -2627,16 +2642,94 @@
         }).catch(function(){document.getElementById('nt-cert-loading').textContent='Failed to load node TLS state.';});
       }
       function busy(btn,on){btn.disabled=on;}
-      var ib=document.getElementById('nt-issue-btn');
-      ib.addEventListener('click',function(){busy(ib,true);
-        post('{{ url_for("settings.node_cert_issue") }}','').then(function(d){
-          document.getElementById('nt-cert-msg').innerHTML=d.ok?'<span class="text-success">Issued &amp; installed.</span>':'<span class="text-danger">'+esc(d.error)+'</span>';
-          loadState();}).finally(function(){busy(ib,false);});});
-      var rb=document.getElementById('nt-renew-btn');
-      rb.addEventListener('click',function(){busy(rb,true);
-        post('{{ url_for("settings.node_cert_renew") }}','').then(function(d){
-          document.getElementById('nt-cert-msg').innerHTML=d.ok?'<span class="text-success">'+esc(JSON.stringify(d.result))+'</span>':'<span class="text-danger">'+esc(d.error)+'</span>';
-          loadState();}).finally(function(){busy(rb,false);});});
+      // ---- activation as a followed job: every step, the reload, and what to
+      // do when the browser loses the connection because the certificate changed.
+      var NT_JOB='{{ url_for("jobs.get", job_id="JOBID") }}';
+      var NT_RELOAD_WARN='This reloads nginx on this node to switch to the new certificate.\n\n'+
+        'Open connections — this page included — move to the new certificate. If the page stops '+
+        'responding or the browser shows a certificate warning, close every browser window and '+
+        'open SATOM again.\n\nContinue?';
+      var NT_ICON={running:'<span class="spinner-border spinner-border-sm" style="width:13px;height:13px;color:#3D4550;"></span>',
+        ok:'<i class="bi bi-check-circle-fill" style="color:#15692A;"></i>',
+        warn:'<i class="bi bi-exclamation-triangle-fill" style="color:#7A5700;"></i>',
+        failed:'<i class="bi bi-x-circle-fill" style="color:#8B1C2A;"></i>'};
+      var ntRunning=false;
+      function ntButtons(on){['nt-issue-btn','nt-renew-btn','nt-import-btn'].forEach(function(id){
+        var b=document.getElementById(id); if(b) b.disabled=on;});}
+      function ntPanel(title){
+        var p=document.getElementById('nt-activate'); p.style.display='';
+        document.getElementById('nt-act-title').textContent=title;
+        document.getElementById('nt-act-state').innerHTML='<span class="fw-badge fw-badge-info">running</span>';
+        document.getElementById('nt-act-steps').innerHTML='<li class="text-muted">Starting…</li>';
+        document.getElementById('nt-act-lost').style.display='none';
+        document.getElementById('nt-act-final').innerHTML='';
+        p.scrollIntoView({behavior:'smooth',block:'start'});
+      }
+      function ntSteps(steps, failedJob){
+        if(!steps.length) return;
+        document.getElementById('nt-act-steps').innerHTML=steps.map(function(s){
+          var st=(failedJob&&s.state==='running')?'failed':s.state;
+          return '<li class="d-flex gap-2 align-items-start mb-1"><span style="width:16px;">'+(NT_ICON[st]||'')+'</span>'+
+            '<span><span'+(st==='running'?' class="fw-semibold"':'')+'>'+esc(s.label)+'</span>'+
+            (s.detail?'<br><span class="text-muted font-monospace" style="font-size:11.5px;white-space:pre-wrap;">'+esc(s.detail)+'</span>':'')+
+            '</span></li>';}).join('');
+      }
+      function ntFinish(j){
+        ntRunning=false; ntButtons(false);
+        var ok=j.status==='success', steps=(j.meta||{}).steps||[];
+        ntSteps(steps, !ok);
+        var warned=steps.some(function(s){return s.state==='warn';});
+        document.getElementById('nt-act-lost').style.display='none';
+        document.getElementById('nt-act-state').innerHTML=ok?(warned?'<span class="fw-badge fw-badge-warning">done with a warning</span>':
+          '<span class="fw-badge fw-badge-success">done</span>'):'<span class="fw-badge fw-badge-danger">failed</span>';
+        var reloaded=steps.some(function(s){return s.key==='reload'&&s.state==='ok';});
+        document.getElementById('nt-act-final').innerHTML=ok
+          ?'<div class="mb-1">'+esc(j.message||'Done.')+'</div>'+(reloaded?
+             '<div class="fw-alert fw-alert-warning mb-2"><i class="bi bi-arrow-clockwise me-1"></i>nginx was reloaded with the new certificate. '+
+             'If this or another SATOM tab stops responding or shows a certificate warning, close every browser window and open SATOM again.</div>'+
+             '<button type="button" class="btn btn-sm btn-outline-secondary" id="nt-act-reload"><i class="bi bi-arrow-clockwise me-1"></i>Reload this page</button>':'')
+          :'<span style="color:#8B1C2A;">'+esc(j.error||j.message||'Failed.')+'</span>'+
+            (steps.some(function(s){return s.key==='rollback';})?'<div class="text-muted mt-1">The previous certificate was put back; nginx keeps serving it.</div>':'');
+        var rl=document.getElementById('nt-act-reload'); if(rl) rl.addEventListener('click',function(){location.reload();});
+        loadState();
+      }
+      function ntFollow(id){
+        var started=Date.now();
+        function lost(){
+          var l=document.getElementById('nt-act-lost'); l.style.display='';
+          l.innerHTML='<i class="bi bi-wifi-off me-1"></i>No answer from this node — expected for a moment while nginx switches certificate. Still checking… '+
+            'If this does not clear in a few seconds, close every browser window and open SATOM again; the outcome is kept under '+
+            '<a href="{{ url_for("jobs.manager") }}">Jobs</a>.';
+        }
+        function tick(){
+          fetch(NT_JOB.replace('JOBID',encodeURIComponent(id)),{headers:{'X-Requested-With':'XMLHttpRequest'},cache:'no-store'})
+            .then(function(r){if(!r.ok) throw new Error('HTTP '+r.status);return r.json();})
+            .then(function(j){
+              document.getElementById('nt-act-lost').style.display='none';
+              if(j.status==='success'||j.status==='error'||j.status==='cancelled'){ntFinish(j);return;}
+              ntSteps((j.meta||{}).steps||[], false);
+              setTimeout(tick,1000);})
+            .catch(function(){lost();
+              if(Date.now()-started<180000){setTimeout(tick,2000);}
+              else{ntRunning=false;ntButtons(false);
+                document.getElementById('nt-act-state').innerHTML='<span class="fw-badge fw-badge-warning">connection lost</span>';}});
+        }
+        tick();
+      }
+      function ntActivate(url, body, isForm, title, after){
+        if(ntRunning) return;
+        if(!confirm(NT_RELOAD_WARN)) return;
+        ntRunning=true; ntButtons(true); ntPanel(title);
+        post(url, body, isForm).then(function(d){
+          if(!d.ok||!d.job_id){ntFinish({status:'error',error:d.error||'Refused.',meta:{steps:[]}});return;}
+          if(after) after();
+          ntFollow(d.job_id);
+        }).catch(function(){ntFinish({status:'error',error:'The request did not reach the server.',meta:{steps:[]}});});
+      }
+      document.getElementById('nt-issue-btn').addEventListener('click',function(){
+        ntActivate('{{ url_for("settings.node_cert_issue") }}','',false,'Issuing a certificate from the internal CA');});
+      document.getElementById('nt-renew-btn').addEventListener('click',function(){
+        ntActivate('{{ url_for("settings.node_cert_renew") }}','',false,'Renewing the service certificate');});
       function importMode(){var r=document.querySelector('input[name="nt-import-mode"]:checked');return r?r.value:'paste';}
       document.querySelectorAll('input[name="nt-import-mode"]').forEach(function(r){
         r.addEventListener('change',function(){var m=importMode();
@@ -2648,11 +2741,8 @@
         this.querySelectorAll('[data-nt-mode="'+m+'"] [name]').forEach(function(el){
           if(el.type==='file'){if(el.files&&el.files[0]) fd.append(el.name,el.files[0]);}
           else if(el.value.trim()){fd.append(el.name,el.value);}});
-        var btn=document.getElementById('nt-import-btn');busy(btn,true);
-        post('{{ url_for("settings.node_cert_import") }}', fd, true).then(function(d){
-          document.getElementById('nt-cert-msg').innerHTML=d.ok?'<span class="text-success">Imported '+esc(d.cert.subject)+'</span>':'<span class="text-danger">'+esc(d.error)+'</span>';
-          if(d.ok){var kt=document.querySelector('#nt-import-form [name="key_text"]');if(kt) kt.value='';}
-          loadState();}).finally(function(){busy(btn,false);});});
+        ntActivate('{{ url_for("settings.node_cert_import") }}', fd, true, 'Installing an imported certificate',
+          function(){var kt=document.querySelector('#nt-import-form [name="key_text"]');if(kt) kt.value='';});});
       function csrFile(c){return (c.common_name||'satom').replace(/[^A-Za-z0-9._-]/g,'_')+'.csr';}
       function renderCsrs(list){
         var box=document.getElementById('nt-csr-list');

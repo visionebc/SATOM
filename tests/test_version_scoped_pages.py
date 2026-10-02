@@ -82,10 +82,14 @@ def recorder(monkeypatch):
     seen: list = []
     real = cli_coverage.report
 
-    def spy(product, backup_id=None, *, line="", version=""):
+    # Extra keywords are forwarded, not rejected: a spy that raises on a new
+    # parameter (``allow_pack``, 2026-10-01) is swallowed by the hub's own
+    # "must not 500" handler and records nothing, which reads as "the view
+    # never asked" instead of "the spy broke".
+    def spy(product, backup_id=None, *, line="", version="", **kw):
         seen.append({"product": product, "backup_id": backup_id,
-                     "line": line, "version": version})
-        return real(product, backup_id, line=line, version=version)
+                     "line": line, "version": version, **kw})
+        return real(product, backup_id, line=line, version=version, **kw)
 
     # Patched on the MODULE, not on each importer: all three views reach the
     # same object, and three separate patches of one attribute would restore in

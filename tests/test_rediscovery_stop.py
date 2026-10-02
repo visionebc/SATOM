@@ -141,3 +141,110 @@ def test_the_page_offers_stop_wired_to_the_route(app):
     assert 'id="redisc-stop"' in src
     assert 'url_for("appliances.rediscover_stop"' in src
     assert "'stopped'" in src
+
+
+# --- Stop during the deep pass: between objects, partial capture discarded ---
+
+def _deep_reader():
+    from tests.test_deep_capture import FakeReader
+    return FakeReader({
+        "cmdb/server-policy/policy": {"": [{"name": "pol-a"}, {"name": "pol-b"}]},
+        "cmdb/waf/web-protection-profile.inline-protection":
+            {"": [{"name": "wpp-1"}, {"name": "wpp-2"}, {"name": "wpp-3"}]},
+        "cmdb/waf/web-protection-profile.offline-protection":
+            {"": [{"name": "off-1"}]},
+    })
+
+
+def _stop_on_ask(n):
+    asked = []
+
+    def should_stop():
+        asked.append(1)
+        return len(asked) >= n
+    return should_stop
+
+
+def test_the_deep_walk_stops_between_objects_and_says_where():
+    from app.services import deep_capture
+    ticks = []
+    with pytest.raises(deep_capture.DeepCaptureStopped) as exc:
+        deep_capture.deep_sections(_deep_reader(), progress=ticks.append,
+                                   should_stop=_stop_on_ask(3))
+    stop = exc.value
+    assert (stop.done, stop.total, stop.phase, stop.current) == (2, 7, "WPP", "wpp-1")
+    assert [t["current"] for t in ticks] == ["pol-a", "pol-b"], (
+        "the object after the Stop was started")
+
+
+def test_a_stop_before_the_certificates_skips_them_too():
+    from app.services import deep_capture
+    with pytest.raises(deep_capture.DeepCaptureStopped) as exc:
+        deep_capture.deep_sections(_deep_reader(), should_stop=_stop_on_ask(7))
+    assert (exc.value.done, exc.value.phase) == (6, "certificates")
+
+
+def test_no_stop_walks_everything():
+    from app.services import deep_capture
+    out = deep_capture.deep_sections(_deep_reader(), should_stop=lambda: False)
+    assert len(out["Server Policy"]["server_policy"]) == 2
+    assert len(out["Web Protection"]["web_protection_profile"]) == 4
+
+
+def test_stop_during_the_deep_pass_discards_it_and_skips_the_cli(app, monkeypatch):
+    from app.services import deep_capture, device_sync
+    aid = 46
+    monkeypatch.setattr(rediscovery, "_APP", app)
+    monkeypatch.setattr(rediscovery, "_probe_fortiweb",
+                        lambda client, ep: ([{"name": ep["name"]}],
+                                            rediscovery.VERDICT_OK, ""))
+    asks = []
+
+    def fake_snapshot(appliance, progress=None, should_stop=None, **kw):
+        assert should_stop is not None, "_run_deep handed the walk no stop check"
+        asks.append(should_stop())                 # nothing pressed yet
+        rediscovery.request_stop(aid, by="op")     # pressed mid-walk
+        asks.append(should_stop())
+        raise deep_capture.DeepCaptureStopped(1, 5, "WPP", "wpp-2")
+
+    persisted, cli = [], []
+    monkeypatch.setattr(device_sync, "deep_snapshot_from_device", fake_snapshot)
+    monkeypatch.setattr(device_sync, "persist_deep_snapshot",
+                        lambda *a, **k: persisted.append(1))
+    monkeypatch.setattr(rediscovery, "_run_cli", lambda *a, **k: cli.append(1))
+    rediscovery._write_json(rediscovery._dev_dir(aid) / "progress.json",
+                            {"state": "running", "pid": os.getpid(),
+                             "host": rediscovery._HOST})
+    rediscovery._run(_snap(aid), by="t", deep=True, cli=True, plan=PLAN)
+
+    assert asks == [False, True]
+    st = rediscovery.status(aid)
+    assert st["state"] == rediscovery.STOPPED
+    assert st["stopped_by"] == "op"
+    assert "1/5" in st["error"] and "WPP wpp-2" in st["error"]
+    assert "discarded" in st["error"]
+    assert persisted == [], "a partial deep capture was persisted"
+    assert cli == [], "the CLI pass ran after a Stop during the deep pass"
+    assert (rediscovery._dev_dir(aid) / "_config.json").exists()
+    assert not (rediscovery._dev_dir(aid) / rediscovery._STOP_FILE).exists()
+
+
+def test_the_page_says_the_deep_pass_stops_after_the_current_object(app):
+    src = open(os.path.join(app.root_path, "templates", "appliances",
+                            "rediscover.html"), encoding="utf-8").read()
+    assert "p.state === 'deep-running' ? 'object'" in src
+
+
+def test_device_sync_hands_the_stop_check_to_the_walk(monkeypatch):
+    from app.clients import fortiweb
+    from app.services import clone, deep_capture, device_sync
+    got = {}
+    monkeypatch.setattr(fortiweb, "FortiWebClient", lambda *a, **k: object())
+    monkeypatch.setattr(clone, "ClientReader", lambda c: object())
+    monkeypatch.setattr(deep_capture, "deep_sections",
+                        lambda reader, progress=None, should_stop=None:
+                        got.update(should_stop=should_stop) or {})
+    check = lambda: False  # noqa: E731
+    device_sync.deep_snapshot_from_device(SimpleNamespace(id=1, name="x"),
+                                          should_stop=check)
+    assert got["should_stop"] is check

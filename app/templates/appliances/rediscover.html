@@ -163,7 +163,8 @@
     }
     if (p.stop_requested && active) {
       line.textContent += ' — stopping after the current '
-        + (p.state === 'running' ? 'endpoint' : 'step') + '…';
+        + (p.state === 'running' ? 'endpoint'
+           : p.state === 'deep-running' ? 'object' : 'step') + '…';
     }
     if (p.errors && p.errors.length) {
       const seen = {};

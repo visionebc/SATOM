@@ -934,8 +934,8 @@ def _sweep(appliance_snap: SimpleNamespace, by: str, deep: bool = False,
     _refresh_api_matrix(appliance_snap)
 
     # The snapshot is on disk from here on, so a stop only skips what is left.
-    # A deep or CLI pass already started runs to its end (CLI is capped at
-    # 300 s): neither has a boundary where it could stop cleanly.
+    # The deep pass stops between objects (``_run_deep``); a CLI pass already
+    # started runs to its end (capped at 300 s): one SSH dump has no boundary.
     def _stop_before(phase: str) -> bool:
         if not _stop_requested(aid):
             return False
@@ -947,7 +947,8 @@ def _sweep(appliance_snap: SimpleNamespace, by: str, deep: bool = False,
     if deep and not is_adc:  # deep capture is the FortiWeb WPP/policy layer
         if _stop_before("deep capture"):
             return
-        _run_deep(appliance_snap, progress_path, state)
+        if _run_deep(appliance_snap, progress_path, state):
+            return   # stopped mid-walk: the CLI pass is skipped as well
 
     # LAST, and only when asked. ``cli`` defaults to False so the post-
     # registration sweep (views.appliances) and every other internal caller
@@ -1132,11 +1133,17 @@ def _ingest_library(appliance_snap, snapshot: dict) -> dict:
         return {"error": ("%s: %s" % (type(exc).__name__, exc))[:200]}
 
 
-def _run_deep(appliance_snap: SimpleNamespace, progress_path, state: dict) -> None:
+def _run_deep(appliance_snap: SimpleNamespace, progress_path, state: dict) -> bool:
     """Opt-in deep-capture pass appended after the shallow sweep: walk every
     server policy + WPP (sub-tables + named-rule objects nested) and ingest under
     layer='deep'. Best-effort — a failure is recorded but never breaks the
-    shallow rediscovery that already completed."""
+    shallow rediscovery that already completed.
+
+    Returns True when a Stop ended it. The stop is honoured between objects;
+    what was walked so far is DISCARDED, not persisted: a deep layer missing the
+    objects never reached would read as those objects having been deleted."""
+    from .deep_capture import DeepCaptureStopped
+    aid = appliance_snap.id
     state.update(state="deep-running", section="deep capture (WPP + policy graph)",
                  finished=None, deep_total=0, deep_done=0, deep_percent=0)
     _write_json(progress_path, state)
@@ -1161,16 +1168,27 @@ def _run_deep(appliance_snap: SimpleNamespace, progress_path, state: dict) -> No
         from . import device_sync
         app = _get_flask_app()
         with app.app_context():
-            snap = device_sync.deep_snapshot_from_device(appliance_snap,
-                                                         progress=_progress)
+            snap = device_sync.deep_snapshot_from_device(
+                appliance_snap, progress=_progress,
+                should_stop=lambda: _stop_requested(aid))
             device_sync.persist_deep_snapshot(appliance_snap, snap)
         state.update(state="done", section="deep capture complete",
                      deep_objects=snap.get("total_objects"),
                      finished=datetime.utcnow().isoformat())
+    except DeepCaptureStopped as stop:
+        where = f"{stop.phase} {stop.current}".strip()
+        _finish_stopped(aid, progress_path, state,
+                        f"Stopped during the deep capture, at object "
+                        f"{stop.done}/{stop.total}"
+                        + (f" ({where})" if where else "")
+                        + ". The sweep snapshot was saved; the partial deep "
+                          "capture was discarded and the previous one kept.")
+        return True
     except Exception as exc:  # noqa: BLE001
         state.update(state="done", deep_error=f"{type(exc).__name__}: {exc}"[:200],
                      finished=datetime.utcnow().isoformat())
     _write_json(progress_path, state)
+    return False
 
 
 # --------------------------------------------------------------------------- #

@@ -61,6 +61,7 @@
     <aside class="toc">
       <div class="toc-title">On this page</div>
       <a href="#unreleased">[Unreleased]</a>
+      <a href="#280---2026-10-02">[2.8.0] - 2026-10-02</a>
       <a href="#270---2026-10-02">[2.7.0] - 2026-10-02</a>
       <a href="#260---2026-10-02">[2.6.0] - 2026-10-02</a>
       <a href="#250---2026-10-01">[2.5.0] - 2026-10-01</a>
@@ -104,7 +105,6 @@
       <a href="#132---2026-08-04">[1.3.2] - 2026-08-04</a>
       <a href="#131---2026-08-03">[1.3.1] - 2026-08-03</a>
       <a href="#13---2026-08-02">[1.3] - 2026-08-02</a>
-      <a href="#122---2026-07-27">[1.2.2] - 2026-07-27</a>
     </aside>
     <div class="doc-body mdx">
 <h1 id="changelog">Changelog</h1>
@@ -112,6 +112,76 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h2 id="280---2026-10-02">[2.8.0] - 2026-10-02</h2>
+<h3 id="fixed--rediscovery-ignored-the-tls-trust-store-certificate_verify_failed-with-the-cas-imported-2026-10-02">Fixed — Rediscovery ignored the TLS trust store: CERTIFICATE_VERIFY_FAILED with the CAs imported (2026-10-02)</h3>
+<p>Reported by the user: the root and intermediate CAs were in Settings → TLS
+trust store, and a rediscovery still failed with <code>certificate verify failed</code>.</p>
+<ul>
+<li><strong>Cause:</strong> a sweep dials the appliance from a background thread, which has
+  no Flask app context. Reading the trust store there raised, and
+  <code>verify_param()</code> turned that into "public roots only". Sweeps, jobs and
+  scheduled actions verified devices without the imported CAs, while the
+  page's own <em>Test TLS</em> (which runs inside the request) reported the same
+  device as verified.</li>
+<li><strong>Fix:</strong> <code>create_app</code> registers the app with the trust store, and a call
+  without a context opens one on that app. An active context still wins.
+  The fallback when nothing can be read is unchanged: public roots, never
+  "no verification".</li>
+<li>The guard that only asserted "not False" from a thread is replaced by one
+  that asserts the private bundle is used.</li>
+</ul>
+<h3 id="changed--tls-trust-store-save-per-slot-content-view-standard-buttons-2026-10-02">Changed — TLS trust store: Save per slot, Content view, standard buttons (2026-10-02)</h3>
+<ul>
+<li><strong>Save root CA</strong> and <strong>Save intermediate CA</strong> replace the single Import
+  button. Each sends only its own slot (plus Name and Note). The reply says
+  which role every certificate was filed under, so a certificate saved from
+  the wrong box is named, not silently re-labelled.</li>
+<li><strong>Content</strong> action: a modal with the decoded certificate (subject, issuer,
+  serial, validity, key, signature algorithm, SHA-256/SHA-1 and every
+  extension) plus the PEM, with Copy and Download. New route
+  <code>GET /settings/trust-store/&lt;id&gt;/content</code>.</li>
+<li>Row and probe buttons used <code>fw-btn</code>, a class no stylesheet defines. They
+  now use the same Bootstrap/<code>btn-fw-*</code> classes as the rest of Settings.</li>
+</ul>
+<h3 id="added--stop-button-for-discovery--rediscovery-2026-10-02">Added — Stop button for Discovery / Rediscovery (2026-10-02)</h3>
+<ul>
+<li><strong>Stop</strong> appears while a sweep runs (<code>POST /appliances/&lt;id&gt;/rediscover/stop</code>,
+  same permission as Start). It is a file flag, so it reaches the sweep from
+  any gunicorn worker. The sweep stops after the endpoint in flight returns
+  and writes <strong>no</strong> snapshot, so the previous complete one is kept. A stop
+  during the sweep skips the deep and CLI passes. Once one of those passes
+  has started, it runs to its end.</li>
+<li>New terminal state <code>stopped</code> (with who stopped it). A <code>running</code> file whose
+  worker is already gone is closed immediately. A run owned by the peer node
+  is refused. A flag left over from an earlier run is cleared at start.</li>
+</ul>
+<h3 id="changed--node-tls-certificate-activation-shows-each-step-and-warns-about-the-nginx-reload-2026-10-02">Changed — Node TLS: certificate activation shows each step and warns about the nginx reload (2026-10-02)</h3>
+<p>Requested by the user: when a certificate is imported or pasted under
+Settings → Node TLS, show what is happening, including the service restart,
+and always tell the operator that nginx is reloaded and that the browser may
+have to be closed.</p>
+<ul>
+<li><strong>Import (paste or upload), Issue from internal CA and Renew now run as
+  jobs.</strong> The routes answer <code>202 {job_id}</code> (input errors still answer <code>400</code>
+  immediately) and a progress panel on the tab follows <code>/jobs/&lt;id&gt;</code>: validate
+  (or mint) → write the files → <code>nginx -t</code> → reload nginx → check that nginx
+  serves the new certificate, plus "restore the previous certificate" when it
+  rolls back. When sudo is refused the panel shows the hand-over to the root
+  runner and how long it has waited (up to 90 s), instead of a frozen button.</li>
+<li><strong>The reload warning is always shown</strong>: a confirmation before starting, a
+  warning in the panel, and a reminder after success — open connections move to
+  the new certificate, and if the page stops responding or the browser shows a
+  certificate warning, close every browser window and open SATOM again.</li>
+<li><strong>Lost connection is explained, not shown as a failure.</strong> If the page cannot
+  reach the node right after the switch, the panel says so, keeps retrying for
+  three minutes and points to Jobs, where the outcome is kept.</li>
+<li><strong>New check after the reload</strong> (<code>cert_service.verify_served</code>): a handshake to
+  <code>127.0.0.1:8443</code> compares the served leaf with the installed one. A mismatch
+  ends the job with a warning (no rollback — nginx accepted the files). It runs
+  only for console activations; the nightly renewal timer does not pay for it.</li>
+<li>Steps are reported through <code>cert_service.progress_sink</code>; without a sink (timer,
+  CLI) reporting is a no-op.</li>
+</ul>
 <h2 id="270---2026-10-02">[2.7.0] - 2026-10-02</h2>
 <h3 id="added--system-upgrade-feed-a-node-downloads-its-own-update-package-2026-10-02">Added — System-upgrade feed: a node downloads its own update package (2026-10-02)</h3>
 <ul>

@@ -6,6 +6,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [2.7.0] - 2026-10-02
+
 ### Added — System-upgrade feed: a node downloads its own update package (2026-10-02)
 
 - **`satom-system-upgrades/`** in the repository indexes every release's

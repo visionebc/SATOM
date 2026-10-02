@@ -33,6 +33,7 @@
   var toasts = {};        // key -> {el, bar, title, msg, stop, jobId}
   var dock = null;        // #job-toasts container — re-homed into each new <body>
   var tracked = {};       // finalize job ids currently being polled
+  var waiters = {};       // job id -> [fn(job)] called once the job is terminal
   var booted = false;
 
   // ── tiny helpers ────────────────────────────────────────────────────────────
@@ -256,9 +257,29 @@
       ? 'View clone report \u2192' : 'View before/after report \u2192';
   }
 
-  function trackJob(jobId, name) {
+  // Pages that list jobs (the appliance's "Jobs on this device" card) listen
+  // for these instead of waiting for their next slow poll.
+  function announce(jobId, phase, j) {
+    try { document.dispatchEvent(new CustomEvent('satom:job', { detail: { id: jobId, phase: phase, job: j || null } })); }
+    catch (e) { /* old browser: the page's own poll still catches up */ }
+  }
+  function notify(jobId, j) {
+    announce(jobId, 'end', j);
+    var w = waiters[jobId]; delete waiters[jobId];
+    (w || []).forEach(function (fn) { try { fn(j); } catch (e) { /* caller's problem */ } });
+  }
+  // A device action that ran as a job (services/device_jobs) and produced a
+  // page or a file: offer it from the toast when no page script consumed it.
+  function addResultLink(key, jobId, res) {
+    if (!res || !res.response_url) return;
+    if (res.kind === 'html' || res.kind === 'file') addToastLink(key, res.response_url, 'Show result \u2192');
+  }
+
+  function trackJob(jobId, name, onDone) {
+    if (onDone) (waiters[jobId] = waiters[jobId] || []).push(onDone);
     if (tracked[jobId]) return;
     tracked[jobId] = true;
+    announce(jobId, 'start');
     var key = 'job:' + jobId;
     var label = name || 'Firmware';
     showToast(key, { title: label, state: 'run', percent: 0, message: 'Finalizing…',
@@ -268,14 +289,18 @@
             { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
         .then(function (r) { return r.ok ? r.json() : null; })
         .then(function (j) {
-          if (!j) { delete tracked[jobId]; removeToast(key); return; }
+          if (!j) { delete tracked[jobId]; removeToast(key); notify(jobId, null); return; }
           if (j.status === 'success') {
             var res = j.result || {};
-            showToast(key, { title: (res.filename || label) + ' ready', state: 'ok',
+            showToast(key, { title: j.type === 'device_action' ? (label + ' — done')
+                                    : ((res.filename || label) + ' ready'), state: 'ok',
                              percent: 100, message: j.message || 'Done' });
             if (res.report_url) addToastLink(key, res.report_url, reportLabel(res.report_url));
+            var consumed = !!waiters[jobId];
+            if (!consumed) addResultLink(key, jobId, res);
             addToastLink(key, jobUrl(jobId), 'View job →');
             autoDismiss(key, res.report_url ? 60000 : 12000); delete tracked[jobId];
+            notify(jobId, j);
             if (res.reload && samePage(res.reload_path))
               setTimeout(function () {
                 if (window.Turbo && window.Turbo.visit) window.Turbo.visit(location.href, { action: 'replace' });
@@ -297,21 +322,25 @@
                              message: (j.message || 'Stopped') + extra });
             addToastLink(key, jobUrl(jobId), 'View job →');
             autoDismiss(key, (cres.mid_change && cres.mid_change.length) ? 60000 : 15000);
-            delete tracked[jobId]; return;
+            delete tracked[jobId]; notify(jobId, j); return;
           }
           if (j.status === 'error') {
             var eres = j.result || {};
             showToast(key, { title: label + ' failed', state: 'err',
                              message: j.error || j.message || 'Error' });
             if (eres.report_url) addToastLink(key, eres.report_url, reportLabel(eres.report_url));
+            if (!waiters[jobId]) addResultLink(key, jobId, eres);
             addToastLink(key, jobUrl(jobId), 'View job →');
-            autoDismiss(key, eres.report_url ? 60000 : 20000); delete tracked[jobId]; return;
+            autoDismiss(key, eres.report_url ? 60000 : 20000); delete tracked[jobId];
+            notify(jobId, j); return;
           }
           // running, pausing/paused or cancelling
           var stopping = j.status === 'cancelling';
+          var queued = !!(j.meta && j.meta.queued);
           var paused = j.status === 'paused' || j.status === 'pausing';
           showToast(key, { title: stopping ? ('Stopping ' + label)
-                                  : (paused ? (label + ' — paused') : label),
+                                  : (paused ? (label + ' — paused')
+                                  : (queued ? (label + ' — queued') : label)),
                            state: stopping ? 'cancelling' : (paused ? 'stopped' : 'run'),
                            percent: j.percent || 0,
                            message: j.message || (stopping ? 'Stopping…'
@@ -337,6 +366,8 @@
           // already filters these out of this feed; this is the second lock so
           // a stale cached jobs.js can't resurrect the dock noise.
           if (j.background) return;
+          // Its own wait page is already showing it in full.
+          if (location.pathname === '/jobs/' + j.id + '/wait') return;
           // Track ANY active job of this user (bulk applies, finalize, …);
           // tracked{} dedupes so calling this on every navigation is safe.
           var label = j.type === 'firmware_finalize'
@@ -355,6 +386,35 @@
           rs.forEach(function (r) { r.unregister(); });
         }).catch(function () {});
     } catch (e) {}
+  }
+
+  // ── device actions answered with 202 + X-SATOM-Job (services/device_jobs) ──
+  // Every page script that POSTs to a device route keeps its plain fetch():
+  // when the action outlives the server's inline window the response is a 202
+  // naming a job. This wrapper holds the caller's promise, shows the job (and
+  // each call it makes to the device) in the dock, and resolves the promise
+  // with the action's real response once it finishes — so no page needed a
+  // rewrite. Turbo captured its own fetch before this ran, which is right:
+  // Turbo form posts are navigations and go to the wait page instead.
+  var nativeFetch = window.fetch;
+  if (nativeFetch && !nativeFetch.__satomJobs) {
+    var jobFetch = function () {
+      return nativeFetch.apply(window, arguments).then(function (resp) {
+        var id = resp.headers.get('X-SATOM-Job');
+        if (resp.status !== 202 || !id) return resp;
+        var title = '';
+        try { title = decodeURIComponent(resp.headers.get('X-SATOM-Job-Title') || ''); } catch (e) {}
+        return new Promise(function (resolve) {
+          trackJob(id, title || 'Device action', function () {
+            nativeFetch('/jobs/' + encodeURIComponent(id) + '/response',
+                        { headers: { 'X-Requested-With': 'XMLHttpRequest' }, credentials: 'same-origin' })
+              .then(resolve, function () { resolve(resp); });
+          });
+        });
+      });
+    };
+    jobFetch.__satomJobs = true;
+    window.fetch = jobFetch;
   }
 
   window.JobsUI = { uploadWithProgress: uploadWithProgress, trackJob: trackJob,

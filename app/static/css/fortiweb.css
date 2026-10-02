@@ -513,7 +513,7 @@ div.fw-nav-section.fw-nav-context-label {
 /* ============================================================
    Buttons
    ============================================================ */
-.btn-fw-primary {
+.btn-fw-primary, .fw-btn-primary {
   background: var(--fw-accent);
   border-color: var(--fw-accent);
   color: #FFFFFF;
@@ -522,7 +522,8 @@ div.fw-nav-section.fw-nav-context-label {
   transition: background var(--fw-transition), border-color var(--fw-transition);
 }
 
-.btn-fw-primary:hover, .btn-fw-primary:focus {
+.btn-fw-primary:hover, .btn-fw-primary:focus,
+.fw-btn-primary:hover, .fw-btn-primary:focus {
   background: var(--fw-accent-hover);
   border-color: var(--fw-accent-hover);
   color: #FFFFFF;
@@ -551,7 +552,9 @@ div.fw-nav-section.fw-nav-context-label {
 /* Secondary (neutral) button — back/cancel/close actions. Added 2026-07-11:
    was used by 5 templates (cert_manager, provisioning, docs) + plugin/lua
    studio but never defined, so it fell back to an unstyled .btn. */
-.btn-fw-secondary {
+/* fw-btn-primary / fw-btn-secondary: 93 buttons in the templates used this
+   spelling while only btn-fw-* existed, so they rendered as bare text. */
+.btn-fw-secondary, .fw-btn-secondary {
   background: var(--fw-surface);
   border: 1px solid var(--fw-border);
   color: var(--fw-text-secondary);
@@ -559,7 +562,8 @@ div.fw-nav-section.fw-nav-context-label {
   border-radius: var(--fw-radius);
   transition: all var(--fw-transition);
 }
-.btn-fw-secondary:hover, .btn-fw-secondary:focus {
+.btn-fw-secondary:hover, .btn-fw-secondary:focus,
+.fw-btn-secondary:hover, .fw-btn-secondary:focus {
   background: var(--fw-border-light);
   color: var(--fw-text-primary);
   border-color: var(--fw-text-secondary);
@@ -1616,11 +1620,11 @@ body.fw-entering-page {
 .fw-page-header { padding-bottom: 14px; border-bottom: 1px solid var(--fw-border-light); }
 
 /* Primary button micro-interaction. */
-.btn-fw-primary { background-image: var(--fw-gradient-brand); border-color: transparent;
+.btn-fw-primary, .fw-btn-primary { background-image: var(--fw-gradient-brand); border-color: transparent;
   box-shadow: 0 1px 2px color-mix(in srgb, var(--fw-accent) 32%, transparent);
   transition: box-shadow var(--fw-transition), transform var(--fw-transition); }
-.btn-fw-primary:hover { box-shadow: 0 3px 10px color-mix(in srgb, var(--fw-glow) 45%, transparent); transform: translateY(-1px); }
-.btn-fw-primary:active { transform: none; box-shadow: 0 1px 2px color-mix(in srgb, var(--fw-accent) 32%, transparent); }
+.btn-fw-primary:hover, .fw-btn-primary:hover { box-shadow: 0 3px 10px color-mix(in srgb, var(--fw-glow) 45%, transparent); transform: translateY(-1px); }
+.btn-fw-primary:active, .fw-btn-primary:active { transform: none; box-shadow: 0 1px 2px color-mix(in srgb, var(--fw-accent) 32%, transparent); }
 
 /* ── Documentation section ─────────────────────────────────────────────── */
 .fw-doc-tile { transition: box-shadow var(--fw-transition), transform var(--fw-transition), border-color var(--fw-transition); }

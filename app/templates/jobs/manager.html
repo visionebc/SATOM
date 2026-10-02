@@ -111,6 +111,12 @@
 .jm-btn.pause:hover, .jm-btn.resume:hover { background:rgba(251,191,36,.18); border-color:#fbbf24; }
 .jm-btn[disabled] { opacity:.45; pointer-events:none; }
 .jm-detail td { background:var(--fw-content-bg); }
+.jm-steps { margin:0 0 8px; font-size:12px; }
+.jm-steps-h { font-weight:600; color:#3D4550; margin-bottom:4px; }
+.jm-steps ol { margin:0; padding-left:22px; max-height:240px; overflow:auto; }
+.jm-steps li { color:#1f2937; line-height:1.5; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11px; }
+.jm-steps li.bad { color:#8B1C2A; }
+.jm-steps .t { color:#6b7280; } .jm-steps .o { font-weight:600; }
 .jm-detail pre { font-size:11px; max-height:280px; overflow:auto; margin:0;
   white-space:pre-wrap; word-break:break-word; }
 tr.jm-row { cursor:pointer; }
@@ -209,13 +215,28 @@ tr.jm-row { cursor:pointer; }
       '<td>' + fmtDur(j) + '</td>' +
       '<td class="text-end">' + actionBtns(j) + '</td></tr>';
     if (open[j.id]) {
-      var det = { meta: j.meta || {}, result: j.result, error: j.error,
+      // Device jobs log one step per device call: show them as a list, not
+      // buried in the JSON dump.
+      var meta = Object.assign({}, j.meta || {});
+      var steps = meta.steps || [];
+      delete meta.steps;
+      var stepsHtml = '';
+      if (steps.length) {
+        stepsHtml = '<div class="jm-steps"><div class="jm-steps-h">Steps' +
+          (meta.step_count > steps.length ? ' (last ' + steps.length + ' of ' + meta.step_count + ')' : '') +
+          '</div><ol>' + steps.map(function (s) {
+            return '<li class="' + (s.ok === false ? 'bad' : '') + '"><span class="t">' + esc((s.at || '').slice(11)) +
+              '</span> ' + esc(s.label) + (s.outcome ? ' <span class="o">' + esc(s.outcome) + '</span>' : '') +
+              (s.ms != null ? ' <span class="t">' + (s.ms < 1000 ? s.ms + ' ms' : (s.ms / 1000).toFixed(1) + ' s') + '</span>' : '') + '</li>';
+          }).join('') + '</ol></div>';
+      }
+      var det = { meta: meta, result: j.result, error: j.error,
                   cancel_requested: j.cancel_requested, pause_requested: j.pause_requested,
                   host: j.host, pid: j.pid, created: j.created, updated: j.updated,
                   finished: j.finished };
       html += '<tr class="jm-detail" data-detail="' + esc(j.id) + '"><td colspan="9">' +
         '<div class="d-flex justify-content-end mb-1"><button class="jm-btn" data-act="copydetail" data-id="' + esc(j.id) + '"><i class="bi bi-clipboard me-1"></i>Copy</button></div>' +
-        '<pre>' + esc(JSON.stringify(det, null, 2)) + '</pre></td></tr>';
+        stepsHtml + '<pre>' + esc(JSON.stringify(det, null, 2)) + '</pre></td></tr>';
     }
     return html;
   }

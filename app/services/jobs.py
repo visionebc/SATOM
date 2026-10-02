@@ -318,10 +318,12 @@ def checkpoint(job_id: str) -> None:
 
 def list_jobs(*, limit: int = 30, by: str | None = None,
               active_only: bool = False, status: str | None = None,
-              type_: str | None = None) -> list[dict]:
+              type_: str | None = None,
+              appliance_id: int | None = None) -> list[dict]:
     """Most-recent first (the filename carries the UTC timestamp). ``by`` filters
     to one owner; ``active_only`` keeps only active (pending/running/cancelling/
-    pausing/paused) jobs; ``status``/``type_`` filter exactly."""
+    pausing/paused) jobs; ``status``/``type_`` filter exactly; ``appliance_id``
+    keeps the jobs that acted on that device (``meta.appliance_id``)."""
     out: list[dict] = []
     for p in sorted(_state_dir().glob("*.json"), reverse=True):
         try:
@@ -336,6 +338,12 @@ def list_jobs(*, limit: int = 30, by: str | None = None,
             continue
         if type_ and st.get("type") != type_:
             continue
+        if appliance_id is not None:
+            try:
+                if int((st.get("meta") or {}).get("appliance_id") or 0) != int(appliance_id):
+                    continue
+            except (TypeError, ValueError):
+                continue
         out.append(st)
         if len(out) >= limit:
             break
@@ -514,4 +522,14 @@ def prune(older_than_days: int = 7, *, keep_active: bool = True) -> int:
             removed += 1
         except Exception:  # noqa: BLE001
             continue
+    # Stored responses of device jobs (services/device_jobs) age out with the
+    # same cutoff; a response whose job file is gone is useless.
+    rdir = _state_dir() / "responses"
+    if rdir.is_dir():
+        for p in rdir.glob("*.resp"):
+            try:
+                if p.stat().st_mtime < cutoff or not _path(p.stem).exists():
+                    p.unlink()
+            except Exception:  # noqa: BLE001
+                continue
     return removed

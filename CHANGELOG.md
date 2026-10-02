@@ -6,6 +6,57 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — every action on a device runs as a job that shows where it is (2026-10-02)
+
+Requested: "every action inside the device must create a job, run in the
+background and show how far it has got". Until now a POST that talked to an
+appliance ran inside the HTTP request: a slow box meant a frozen button, no
+feedback, and past gunicorn's timeout a dead request with the device possibly
+half-changed. Only 5 of about 150 device routes used the job framework.
+
+- **One mechanism for 221 routes.** Every POST of the device areas
+  (appliances, Workspace, object editor, SPO wizard, Web Protection, Server
+  Objects, Exceptions, Certificate Manager, templates, change requests,
+  FortiADC/FAZ/FAC, attack search, transaction tracer, Lua studio, API
+  explorer, provisioning, upgrade flow, Sentinel, monitors…) is replayed in a
+  background job. The job runs the request again with the same body, cookie
+  and headers, so login, CSRF, permissions and the ADOM/device gates apply
+  exactly as before. No page had to be rewritten.
+- **Fast stays fast.** The request waits up to 2 s (`SATOM_JOB_INLINE_S`). An
+  action that finishes in that window returns its normal response. A slower
+  one answers at once: a script caller gets `202` and the Jobs dock follows
+  it, then hands the page its normal response when it finishes. A classic
+  form goes to a progress page (`/jobs/<id>/wait`) that switches to the
+  action's own result when done. Flash messages are kept.
+- **Where it is.** Each REST call and SSH command the action makes is one step
+  of the job (`GET /api/v2.0/cmdb/... · 200 · 310 ms`), shown in the dock, on
+  the progress page and in the Job Manager's details.
+- **Queued writes.** Two writes to the same device run one after the other.
+  The second shows `Queued — waiting for "<first action>"` and can be stopped
+  while it waits. Once a write has started on the device it can no longer be
+  stopped, because stopping between two calls would leave the device
+  half-changed. Read-only actions never queue and can be stopped between
+  calls.
+- **Jobs on this device.** The appliance page lists the running and recent
+  jobs for that device and refreshes as soon as one starts or ends.
+- **Discovery / Rediscovery is a job too.** It shows in the dock and on the
+  Jobs page with its progress. Stop works from either place, and from the
+  Discovery page as before.
+- The Jobs page stays readable: an action that never reached a device (a
+  validation error, a database-only edit) leaves no job.
+- Unchanged on purpose: API-token callers, the standby node and the routes
+  that already were jobs (firmware upgrade/downgrade, backups, signature
+  sync, monitor sweeps). `SATOM_DEVICE_JOBS=0` turns the mechanism off.
+
+### Fixed — 93 buttons rendered as plain text (2026-10-02)
+
+Templates used `fw-btn-primary` / `fw-btn-secondary` (for example *Edit*,
+*Analysis / FortiView* and most appliance quick actions), but the stylesheet
+only defined `btn-fw-primary` / `btn-fw-secondary`. Those buttons had no
+background or border. Both spellings are now defined, and
+`tests/test_device_jobs.py` fails if a template uses a button class that no
+stylesheet defines.
+
 ### Fixed — `installers/build-update-package.sh` was not executable (2026-10-02)
 
 The update-package builder was committed without the exec bit (`100644`)

@@ -6,6 +6,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [2.9.1] - 2026-10-02
+
 ### Fixed — Discovery with refused credentials locked the admin account and left an empty snapshot (2026-10-02)
 
 Reported from the field: a rediscovery returned `HTTP 401` on all 295

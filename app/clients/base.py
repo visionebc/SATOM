@@ -1,4 +1,6 @@
+import html
 import os
+import re
 import threading
 import time
 
@@ -21,6 +23,39 @@ _MAX_CONNECT_S = 10.0
 _HOST_CONCURRENCY = max(1, int(os.environ.get("FORTINET_HOST_CONCURRENCY", "4")))
 _host_sems: dict = {}
 _host_sems_lock = threading.Lock()
+
+
+class DeviceAuthError(Exception):
+    """The appliance answered HTTP 401: it refused the credentials.
+
+    Its own type because the right reaction is the opposite of every other
+    failure: retrying does not help, and on FortiWeb each further attempt is a
+    failed admin login. ``admin-lockout-threshold`` (3 by default) of those
+    lock the account — for SATOM and for the humans using the GUI — and a
+    locked account answers 401 to everything, valid password included. Loops
+    that catch per-item errors must let this one through."""
+
+
+def response_summary(resp, limit: int = 160) -> str:
+    """One readable line for a device answer that is not the JSON we asked for.
+
+    The first bytes of an HTML error page are its doctype, so cutting the raw
+    body (what callers used to do) kept exactly the part that says nothing:
+    a customer's sweep reported 295 times ``<!DOCTYPE HTML PUBLIC "-//W3C//DTD
+    HTML 4.01//EN" ... <title>401 Unaut``. An HTML page is reduced to its
+    ``<title>`` (or its text), and the ``WWW-Authenticate`` header — the only
+    explanation some firmware gives with an empty 401 — is appended."""
+    text = (getattr(resp, "text", "") or "").strip()
+    if "<" in text and ">" in text:
+        m = re.search(r"<title[^>]*>(.*?)</title>", text, re.I | re.S)
+        text = m.group(1) if m else re.sub(r"<[^>]+>", " ", text)
+        text = html.unescape(text)
+    text = " ".join(text.split())
+    headers = getattr(resp, "headers", None) or {}
+    challenge = headers.get("www-authenticate") if hasattr(headers, "get") else None
+    if challenge:
+        text = (text + " · " if text else "") + "WWW-Authenticate: " + challenge
+    return text[:limit]
 
 
 def _host_semaphore(host_key: str) -> threading.BoundedSemaphore:

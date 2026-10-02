@@ -36,6 +36,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable
 
+from ..clients.base import DeviceAuthError
 from . import api_matrix, cli_coverage
 
 #: Verdicts a candidate row can carry. The first three come straight from
@@ -268,6 +269,8 @@ def run(findings: Iterable[Finding], probe: Callable[[str], tuple],
             spent += 1
             try:
                 rows, verdict, detail = probe(cand.urn)
+            except DeviceAuthError:
+                raise                      # every further GET is a failed admin login
             except Exception as exc:       # noqa: BLE001 — one candidate, not the run
                 cand.verdict, cand.rows = ERROR, 0
                 cand.detail = "%s: %s" % (type(exc).__name__, exc)

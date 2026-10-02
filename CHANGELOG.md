@@ -6,6 +6,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [2.6.0] - 2026-10-02
+
 ### Added — API packs: the API library for offline nodes (2026-10-02)
 
 - **`flask apilib pack export | inspect | import`** moves what one SATOM knows

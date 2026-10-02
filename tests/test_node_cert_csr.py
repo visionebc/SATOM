@@ -213,6 +213,17 @@ def test_a_runner_that_never_answers_names_the_path_unit(monkeypatch, unprivileg
 # the route: pasted PEM, files, never both
 # ---------------------------------------------------------------------------
 
+def _wait_job(client, jid, timeout=10.0):
+    import time
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        j = client.get("/jobs/%s" % jid).get_json()
+        if j.get("status") in ("success", "error", "cancelled"):
+            return j
+        time.sleep(0.05)
+    pytest.fail("job %s never finished" % jid)
+
+
 def test_import_route_accepts_pasted_pem_and_an_empty_key(app, client, monkeypatch):
     seen = {}
 
@@ -224,9 +235,91 @@ def test_import_route_accepts_pasted_pem_and_an_empty_key(app, client, monkeypat
     r = client.post("/settings/node-cert/import", data={
         "cert_text": "-----BEGIN CERTIFICATE-----\nAAA\n-----END CERTIFICATE-----",
         "key_text": "", "chain_text": ""})
-    assert r.status_code == 200 and r.get_json()["ok"] is True
+    assert r.status_code == 202 and r.get_json()["ok"] is True
+    j = _wait_job(client, r.get_json()["job_id"])
+    assert j["status"] == "success" and j["result"]["cert"]["subject"] == "CN=x"
     assert seen["cert"].startswith(b"-----BEGIN CERTIFICATE-----")
     assert seen["key"] is None and seen["chain"] is None
+
+
+# ---------------------------------------------------------------------------
+# activation progress: the page follows a job, step by step
+# ---------------------------------------------------------------------------
+
+def test_activation_steps_reach_the_job_the_page_follows(app, client, monkeypatch):
+    def fake(cert, key, chain, by):
+        cs._step("validate", cs.L_VALIDATE, "ok", "CN=x")
+        cs._step("nginx_test", cs.L_TEST, "running")
+        cs._step("nginx_test", cs.L_TEST, "ok")
+        cs._step("reload", cs.L_RELOAD, "ok")
+        cs._step("verify", "Check", "warn", "nginx still presents the previous certificate")
+        return {"subject": "CN=x"}
+    monkeypatch.setattr(cs, "import_pem", fake)
+    login(client, admin_user_id(app))
+    r = client.post("/settings/node-cert/import", data={"cert_text": "-----BEGIN CERTIFICATE-----"})
+    j = _wait_job(client, r.get_json()["job_id"])
+    steps = {s["key"]: s for s in j["meta"]["steps"]}
+    # one row per step, updated in place — "running" became "ok", not a second row
+    assert [s["key"] for s in j["meta"]["steps"]] == ["validate", "nginx_test", "reload", "verify"]
+    assert steps["nginx_test"]["state"] == "ok" and steps["verify"]["state"] == "warn"
+    assert j["status"] == "success" and j["by"]
+
+
+def test_a_failed_activation_ends_the_job_red_with_the_reason(app, client, monkeypatch):
+    def fake(cert, key, chain, by):
+        cs._step("nginx_test", cs.L_TEST, "failed", "emerg: bad")
+        raise RuntimeError("nginx -t failed: emerg: bad")
+    monkeypatch.setattr(cs, "import_pem", fake)
+    login(client, admin_user_id(app))
+    r = client.post("/settings/node-cert/import", data={"cert_text": "-----BEGIN CERTIFICATE-----"})
+    j = _wait_job(client, r.get_json()["job_id"])
+    assert j["status"] == "error" and "nginx -t failed" in j["error"]
+    assert j["meta"]["steps"][0]["state"] == "failed"
+
+
+def test_issue_without_the_ca_key_is_refused_before_any_job(app, client, monkeypatch):
+    monkeypatch.setattr(cs, "can_issue_internal", lambda: False)
+    monkeypatch.setattr(cs, "issue_internal", lambda **k: pytest.fail("must not issue"))
+    login(client, admin_user_id(app))
+    r = client.post("/settings/node-cert/issue")
+    assert r.status_code == 400 and "job_id" not in r.get_json()
+
+
+def test_reload_reports_its_steps_only_to_a_sink(monkeypatch):
+    monkeypatch.setattr(cs.subprocess, "run", lambda *a, **k: _proc(0))
+    cs._reload_nginx()            # no sink: a silent no-op, as for the nightly timer
+    seen = []
+    with cs.progress_sink(lambda *a: seen.append(a[:3])):
+        cs._reload_nginx()
+    assert seen == [("nginx_test", cs.L_TEST, "running"), ("nginx_test", cs.L_TEST, "ok"),
+                    ("reload", cs.L_RELOAD, "running"), ("reload", cs.L_RELOAD, "ok")]
+
+
+def test_a_runner_activation_reports_the_handover(monkeypatch, unprivileged):
+    calls, runner = unprivileged
+    runner({"state": "success", "steps": []})
+    monkeypatch.setattr(cs.subprocess, "run", lambda *a, **k: _proc(1, "sudo: a password is required"))
+    seen = []
+    with cs.progress_sink(lambda *a: seen.append(a)):
+        cs._reload_nginx()
+    assert any("handed to the root runner" in s[3] for s in seen)
+    assert seen[-1][:3] == ("reload", cs.L_RELOAD, "ok") and "root runner" in seen[-1][3]
+
+
+def test_verify_served_compares_the_served_leaf(monkeypatch):
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "n")])
+    now = datetime.now(timezone.utc)
+    cert = (x509.CertificateBuilder().subject_name(name).issuer_name(name)
+            .public_key(key.public_key()).serial_number(1)
+            .not_valid_before(now).not_valid_after(now + timedelta(days=1))
+            .sign(key, hashes.SHA256()))
+    pem = cert.public_bytes(serialization.Encoding.PEM)
+    monkeypatch.setattr(cs, "_served_der", lambda: cert.public_bytes(serialization.Encoding.DER))
+    assert cs.verify_served(pem, wait=0)[0] is True
+    monkeypatch.setattr(cs, "_served_der", lambda: b"other")
+    ok, why = cs.verify_served(pem, wait=0)
+    assert ok is False and "previous certificate" in why
 
 
 def test_import_route_refuses_a_slot_given_twice(app, client, monkeypatch):
@@ -242,5 +335,6 @@ def test_settings_page_renders_the_csr_card_and_paste_mode(app, client):
     login(client, admin_user_id(app))
     html = client.get("/settings/").get_data(as_text=True)
     for mark in ('id="nt-csr-form"', 'name="cert_text"', 'name="key_text"',
-                 'id="nt-mode-file"', "/settings/node-cert/csr/CSRID/discard"):
+                 'id="nt-mode-file"', "/settings/node-cert/csr/CSRID/discard",
+                 'id="nt-activate"', "close every browser window", "/jobs/JOBID"):
         assert mark in html, mark

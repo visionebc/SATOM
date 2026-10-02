@@ -43,8 +43,12 @@ import json
 import os
 import re
 import shutil
+import socket
+import ssl
 import subprocess
+import threading
 import time
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -241,6 +245,77 @@ def validate_pem(cert_pem: bytes, key_pem: bytes, chain_pem: bytes | None = None
     }
 
 
+# ---------------------------------------------------------------------------
+# Activation progress — what the operator watches while nginx switches cert
+# ---------------------------------------------------------------------------
+# Activating a certificate is several steps, one of them possibly a 90 s wait
+# for the root runner, and it ends by reloading the nginx that carries the
+# operator's own browser session. The console runs it as a job and shows each
+# step as it happens; this module only REPORTS them, through a per-thread sink
+# the job installs. With no sink (the nightly timer, the CLI, tests) _step is
+# a no-op, so no caller has to know about jobs.
+_PROGRESS = threading.local()
+
+#: The listener verify_served() asks. :8443 carries only the SATOM vhost
+#: (default_server); :443 may also carry the pages vhost on SNI.
+SERVED_PORT = 8443
+SERVED_WAIT_SECONDS = 10
+
+
+@contextmanager
+def progress_sink(fn):
+    """Route this thread's activation steps to ``fn(key, label, state, detail)``.
+    ``state`` is one of running / ok / warn / failed."""
+    prev = getattr(_PROGRESS, "fn", None)
+    _PROGRESS.fn = fn
+    try:
+        yield
+    finally:
+        _PROGRESS.fn = prev
+
+
+def _step(key: str, label: str, state: str, detail: str = "") -> None:
+    fn = getattr(_PROGRESS, "fn", None)
+    if fn is None:
+        return
+    try:
+        fn(key, label, state, detail)
+    except Exception:  # noqa: BLE001 — a progress display never breaks an activation
+        pass
+
+
+def _served_der(port: int = SERVED_PORT, timeout: float = 3.0) -> bytes:
+    """The leaf nginx presents right now, as DER. Unverified on purpose: the
+    question is WHICH certificate is served, not whether we trust it."""
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    with socket.create_connection(("127.0.0.1", port), timeout=timeout) as raw:
+        with ctx.wrap_socket(raw, server_hostname=node_hostname()) as tls:
+            return tls.getpeercert(binary_form=True) or b""
+
+
+def verify_served(cert_pem: bytes, wait: float = SERVED_WAIT_SECONDS) -> tuple[bool, str]:
+    """After the reload, poll until nginx presents ``cert_pem``. A reload is
+    asynchronous (new workers take over as the old ones drain), so the first
+    handshake may still see the previous certificate."""
+    from cryptography import x509
+    from cryptography.hazmat.primitives import serialization
+    want = x509.load_pem_x509_certificate(cert_pem).public_bytes(serialization.Encoding.DER)
+    deadline = time.monotonic() + wait
+    last = ""
+    while True:
+        try:
+            if _served_der() == want:
+                return True, "nginx presents the new certificate on :%d" % SERVED_PORT
+            last = "nginx still presents the previous certificate on :%d" % SERVED_PORT
+        except OSError as exc:
+            last = "could not connect to :%d (%s)" % (SERVED_PORT, exc)
+        if time.monotonic() >= deadline:
+            return False, last
+        time.sleep(0.5)
+
+
 def _priv(argv: list[str]) -> list[str]:
     """Prefix a command with non-interactive sudo unless we are already root.
 
@@ -300,14 +375,27 @@ def _reload_nginx() -> None:
     node for updates and service control and does not depend on sudo at all.
     """
     try:
+        _step("nginx_test", L_TEST, "running")
         t = _run_priv(["nginx", "-t"])
         if t.returncode != 0:
+            _step("nginx_test", L_TEST, "failed", (t.stderr or t.stdout)[-400:])
             raise RuntimeError("nginx -t failed: " + (t.stderr or t.stdout)[-400:])
+        _step("nginx_test", L_TEST, "ok")
+        _step("reload", L_RELOAD, "running")
         r = _run_priv(["systemctl", "reload", "nginx"])
         if r.returncode != 0:
+            _step("reload", L_RELOAD, "failed", (r.stderr or r.stdout)[-400:])
             raise RuntimeError("nginx reload failed: " + (r.stderr or r.stdout)[-400:])
+        _step("reload", L_RELOAD, "ok")
     except _SudoRefused as e:
+        _step("nginx_test", L_TEST, "running",
+              "sudo refused (%s) — handed to the root runner" % str(e)[:120])
         _reload_via_runner(refusal=str(e))
+
+
+L_VALIDATE = "Validate the certificate, key and chain"
+L_TEST = "Test the nginx configuration (nginx -t)"
+L_RELOAD = "Reload nginx"
 
 
 def _reload_via_runner(refusal: str = "", wait: float = RUNNER_WAIT_SECONDS) -> None:
@@ -319,7 +407,8 @@ def _reload_via_runner(refusal: str = "", wait: float = RUNNER_WAIT_SECONDS) -> 
     if wait <= 0:
         return
     path = su.STATUS_DIR / (uid + ".json")
-    deadline = time.monotonic() + wait
+    started = time.monotonic()
+    deadline = started + wait
     st: dict = {}
     while time.monotonic() < deadline:
         try:
@@ -328,10 +417,17 @@ def _reload_via_runner(refusal: str = "", wait: float = RUNNER_WAIT_SECONDS) -> 
             st = {}
         if st.get("state") in ("success", "failed"):
             break
+        _step("nginx_test", L_TEST, "running",
+              "%s by the root runner (%ds of up to %ds)"
+              % ("waiting to be picked up" if st.get("state") in (None, "queued")
+                 else "being applied", time.monotonic() - started, wait))
         time.sleep(1)
     state = st.get("state")
     if state == "success":
+        _step("nginx_test", L_TEST, "ok", "through the root runner")
+        _step("reload", L_RELOAD, "ok", "through the root runner")
         return
+    _step("nginx_test", L_TEST, "failed", "root runner: %s" % (state or "no answer"))
     why = " (sudo: %s)" % refusal if refusal else ""
     if state == "failed":
         bad = [s for s in (st.get("steps") or []) if not s.get("ok")]
@@ -390,18 +486,33 @@ def _install(cert_pem: bytes, key_pem: bytes, chain_pem: bytes | None,
             shutil.copy2(f, bak / f.name)
     full = cert_pem if not chain_pem else (cert_pem.rstrip() + b"\n" + chain_pem.lstrip())
     try:
+        _step("write", "Write the certificate and key (previous pair kept for rollback)", "running")
         CRT.write_bytes(full)
         KEY.write_bytes(key_pem)
         KEY.chmod(0o600)
+        _step("write", "Write the certificate and key (previous pair kept for rollback)", "ok")
         _reload_nginx()
     except Exception:
         # roll back to the previous cert/key so :8443 keeps serving
+        _step("rollback", "Restore the previous certificate", "running")
         for f in (CRT, KEY):
             b = bak / f.name
             if b.exists():
                 shutil.copy2(b, f)
         _rollback_reload()
+        _step("rollback", "Restore the previous certificate", "ok",
+              "previous pair restored; nginx reload requested")
         raise
+    if getattr(_PROGRESS, "fn", None) is not None:
+        # Only when someone is watching (the console job): the nightly timer
+        # has no one to tell and must not pay a 10 s probe.
+        _step("verify", "Check that nginx serves the new certificate", "running")
+        ok, why = verify_served(cert_pem)
+        # Not fatal and no rollback: the files ARE in place and nginx accepted
+        # them. A mismatch means the reload has not taken (or the vhost reads
+        # other files) — what the operator must be told instead of "done".
+        _step("verify", "Check that nginx serves the new certificate",
+              "ok" if ok else "warn", why)
     # meta.json (node-local file) is the source of record for the cert origin —
     # it works even on a standby whose Postgres is read-only.
     _write_meta(source=source, installed_at=datetime.now(timezone.utc).isoformat(),
@@ -445,7 +556,14 @@ def import_pem(cert_pem: bytes, key_pem: bytes | None, chain_pem: bytes | None, 
                     "matches this certificate — paste or upload the key, or import "
                     "the certificate your CA issued from a CSR generated here")
             key_pem = (CSR_DIR / (csr_id + ".key")).read_bytes()
-        validate_pem(cert_pem, key_pem, chain_pem)
+        _step("validate", L_VALIDATE, "running")
+        try:
+            v = validate_pem(cert_pem, key_pem, chain_pem)
+        except Exception as exc:
+            _step("validate", L_VALIDATE, "failed", str(exc)[:300])
+            raise
+        _step("validate", L_VALIDATE, "ok", "%s%s" % (
+            v.get("subject") or "", " · key from the pending CSR" if csr_id else ""))
         info = _install(cert_pem, key_pem, chain_pem, source="imported", by=by)
         if csr_id:
             _drop_csr(csr_id)   # the key now lives in pki/public; the CSR is spent
@@ -683,8 +801,10 @@ def issue_internal(by: str, hostname: str | None = None, *, _log: bool = True) -
                            "cannot issue (only the CA holder / primary can). Import a cert instead.")
     hostname = hostname or node_hostname()
     try:
+        _step("mint", "Mint a certificate from the internal CA", "running", hostname)
         crt_pem, key_pem = _mint_leaf(hostname)
         ca_pem = (CA_DIR / "ca.crt").read_bytes()  # ship the internal CA as the chain
+        _step("mint", "Mint a certificate from the internal CA", "ok", hostname)
         info = _install(crt_pem, key_pem, ca_pem, source="issued", by=by)
     except Exception as exc:  # noqa: BLE001
         if _log:

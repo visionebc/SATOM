@@ -6,6 +6,30 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — Node TLS: CSR generation and pasted PEM (2026-10-02)
+
+- **Settings → Node TLS → Certificate signing request (CSR)** generates a
+  private key and a CSR on the node so another CA can issue the certificate:
+  common name (defaults to the node hostname), extra SANs (host names or IP
+  addresses), optional organization/unit/city/state/country, RSA 2048/3072/4096
+  or ECDSA P-256/P-384. The key never leaves the node; the CSR can be copied or
+  downloaded. When the certificate comes back, import it with the private key
+  left empty and it is paired with its pending key automatically.
+- **Import certificate (PEM)** accepts pasted text as well as files (a *Paste
+  PEM* / *Upload files* switch). CRLF and indentation from a paste are
+  normalised; a slot given both as a file and as text is refused.
+
+### Fixed — "Issue from internal CA" failed with `sudo: a password is required` (2026-10-02)
+
+- Activating a node certificate ran `sudo -n nginx -t`, so it depended on the
+  host applying `/etc/sudoers.d/satom`. A managed sudoers without
+  `@includedir /etc/sudoers.d` (or an LDAP/SSSD sudo source, or a later rule)
+  broke issuing, renewing and importing on a correctly installed node. A sudo
+  refusal now hands the config test and reload to the root runner
+  (`satom-updater.path`); a real `nginx -t` failure is still reported and
+  rolled back. The runner tests the nginx config before any nginx restart or
+  reload, and the installer warns when sudo does not honour the allowlist.
+
 ## [2.6.0] - 2026-10-02
 
 ### Added — API packs: the API library for offline nodes (2026-10-02)

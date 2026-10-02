@@ -71,7 +71,10 @@ from datetime import datetime
 UNIT_RE = re.compile(r"^[A-Za-z0-9@:._-]+\.(service|timer|path)$")
 
 #: Every action this module will ever emit. The runner refuses anything else.
-ACTIONS = ("start", "stop", "restart")
+#: ``reload`` exists for nginx only: it is how a certificate install activates
+#: when the host's sudo policy refuses /etc/sudoers.d/satom. It is permitted,
+#: never drawn -- ``available_actions`` offers start/stop/restart only.
+ACTIONS = ("start", "stop", "restart", "reload")
 
 #: unit -> (allowed actions, one-line purpose). See the module docstring for
 #: why the restricted entries are restricted; the reasons are load-bearing, not
@@ -120,10 +123,11 @@ POLICY: dict[str, dict] = {
                 "Role-guarded and inert on a primary.",
     },
     "nginx.service": {
-        "actions": ("start", "restart"),
+        "actions": ("start", "restart", "reload"),
         "label": "Web front (nginx)",
         "note": "Terminates TLS in front of the app. Restart only — a stop "
-                "ends this session with no way back except a shell.",
+                "ends this session with no way back except a shell. The "
+                "config is tested before a restart or reload.",
     },
     "postgresql.service": {
         "actions": ("restart",),

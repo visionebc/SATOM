@@ -277,7 +277,7 @@ cover external PostgreSQL.
 
 ```bash
 mkdir -p /opt/satom-src && cd /opt/satom-src
-curl -fsSL https://codeload.github.com/visionebc/SATOM/tar.gz/refs/tags/v2.6.0 \
+curl -fsSL https://codeload.github.com/visionebc/SATOM/tar.gz/refs/tags/v2.7.0 \
   | tar -xz --strip-components=1
 cd /opt/satom-src/deploy/docker
 ```
@@ -296,11 +296,11 @@ release pipeline from the same code as that release's offline bundles, for
 
 ```bash
 cd /tmp
-curl -fLO https://github.com/visionebc/SATOM/releases/download/v2.6.0/satom-image-2.6.0-amd64.tar.gz
-curl -fLO https://github.com/visionebc/SATOM/releases/download/v2.6.0/satom-image-2.6.0-amd64.tar.gz.sha256
-sha256sum -c satom-image-2.6.0-amd64.tar.gz.sha256     # must print OK; stop if it does not
-gunzip -c satom-image-2.6.0-amd64.tar.gz | docker load  # Loaded image: satom:2.6.0
-docker image inspect satom:2.6.0 --format '{{index .Config.Labels "org.opencontainers.image.version"}}'   # 2.6.0
+curl -fLO https://github.com/visionebc/SATOM/releases/download/v2.7.0/satom-image-2.7.0-amd64.tar.gz
+curl -fLO https://github.com/visionebc/SATOM/releases/download/v2.7.0/satom-image-2.7.0-amd64.tar.gz.sha256
+sha256sum -c satom-image-2.7.0-amd64.tar.gz.sha256     # must print OK; stop if it does not
+gunzip -c satom-image-2.7.0-amd64.tar.gz | docker load  # Loaded image: satom:2.7.0
+docker image inspect satom:2.7.0 --format '{{index .Config.Labels "org.opencontainers.image.version"}}'   # 2.7.0
 ```
 
 The `.sha256` names the file without a directory, so run `sha256sum -c` in
@@ -338,7 +338,7 @@ Change it after logging in, then delete the file:
 ```bash
 cd /opt/satom-src/deploy/docker
 ./satom-docker.sh gen-secrets
-./satom-docker.sh build satom:2.6.0     # or load the published image instead (§3.1)
+./satom-docker.sh build satom:2.7.0     # or load the published image instead (§3.1)
 ```
 
 Edit `.env`:
@@ -346,7 +346,7 @@ Edit `.env`:
 ```ini
 SATOM_ENV=prod                      # satom-docker.sh reads it from .env; see §3.4
 SATOM_NODE_ROLE=primary
-SATOM_IMAGE=satom:2.6.0             # compose.prod.yaml requires it to be set; it does NOT reject :local
+SATOM_IMAGE=satom:2.7.0             # compose.prod.yaml requires it to be set; it does NOT reject :local
 SATOM_SERVED_NAMES="satom.example.com"   # quote it if it has spaces (§12)
 SATOM_PG_BIND=127.0.0.1:5432        # required by compose.prod.yaml even on a single node
 TZ=UTC
@@ -363,7 +363,7 @@ engine does not have, Compose tries to pull it from a registry. For
 `satom-setup.sh` deliberately avoids. Check first:
 
 ```bash
-docker image inspect satom:2.6.0 --format '{{.Id}}'
+docker image inspect satom:2.7.0 --format '{{.Id}}'
 ```
 
 ### 3.4 `deploy/docker/satom-docker.sh` — subcommand reference
@@ -2028,8 +2028,8 @@ The published image needs no conversion: copy the two files, run
 connected node:
 
 ```bash
-./satom-docker.sh build satom:2.6.0
-./satom-docker.sh export satom:2.6.0 /tmp/satom-2.6.0.tar.gz          # also writes /tmp/satom-2.6.0.tar.gz.sha256
+./satom-docker.sh build satom:2.7.0
+./satom-docker.sh export satom:2.7.0 /tmp/satom-2.7.0.tar.gz          # also writes /tmp/satom-2.7.0.tar.gz.sha256
 docker pull postgres:15-bookworm; docker pull redis:7-alpine
 docker pull victoriametrics/victoria-metrics:v1.148.0; docker pull nginx:1.27-alpine
 docker save postgres:15-bookworm redis:7-alpine victoriametrics/victoria-metrics:v1.148.0 nginx:1.27-alpine \
@@ -2040,7 +2040,7 @@ On the target, put the tarball and its `.sha256` **at the same path** as on
 the build node, then:
 
 ```bash
-./satom-docker.sh import /tmp/satom-2.6.0.tar.gz
+./satom-docker.sh import /tmp/satom-2.7.0.tar.gz
 gunzip -c /tmp/satom-base-images.tar.gz | docker load
 ```
 

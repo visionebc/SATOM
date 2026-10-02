@@ -5,8 +5,8 @@
 <meta charset="UTF-8">
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Version 2.4.1 — SATOM</title>
-<meta name="description" content="Released on 2026-09-29 — Fixed — a Docker install from the published source starts again (2026-09-29) · 0 entries.">
+<title>Version 2.7.0 — SATOM</title>
+<meta name="description" content="Released on 2026-10-02 — Added — System-upgrade feed: a node downloads its own update package (2026-10-02) · 12 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -45,8 +45,8 @@
 
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
-  <h1>Version 2.4.1 <span class="rel-badge">superseded</span></h1>
-  <p class="sub">Released on 2026-09-29 — Fixed — a Docker install from the published source starts again (2026-09-29) · 0 entries.</p>
+  <h1>Version 2.7.0 <span class="rel-badge rel-now">current release</span></h1>
+  <p class="sub">Released on 2026-10-02 — Added — System-upgrade feed: a node downloads its own update package (2026-10-02) · 12 entries.</p>
 </header>
 
 <section class="wrap">
@@ -62,7 +62,7 @@
         <span class="rel-nav-meta">unreleased · Changes · 0 entries</span>
         <ul class="rel-leads"></ul>
       </a>
-      <a class="rel-nav-item" href="v2.7.0.html" data-rel-version="2.7.0">
+      <a class="rel-nav-item is-active" href="v2.7.0.html" data-rel-version="2.7.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 2.7.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
         <span class="rel-nav-meta">2026-10-02 · Added — System-upgrade feed: a node downloads its own update package (2026-10-02) · 12 entries</span>
         <ul class="rel-leads"><li>satom-system-upgrades/</li><li>sudo satom execute update fetch</li><li>Software Update → Offline update package → Check for a newer package online / Download &amp; stage</li><li class="rel-more">… and 9 more</li></ul>
@@ -77,7 +77,7 @@
         <span class="rel-nav-meta">2026-10-01 · Added — every release publishes a signed offline update package (2026-10-01) · 19 entries</span>
         <ul class="rel-leads"><li>satom-update-&lt;version&gt;.tar.gz is now a release asset</li><li>The installer trusts the new key</li><li>Every migration is now idempotent</li><li class="rel-more">… and 16 more</li></ul>
       </a>
-      <a class="rel-nav-item is-active" href="v2.4.1.html" data-rel-version="2.4.1">
+      <a class="rel-nav-item" href="v2.4.1.html" data-rel-version="2.4.1">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 2.4.1</span></span>
         <span class="rel-nav-meta">2026-09-29 · Fixed — a Docker install from the published source starts again (2026-09-29) · 0 entries</span>
         <ul class="rel-leads"></ul>
@@ -315,32 +315,75 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
-<h3 id="fixed--a-docker-install-from-the-published-source-starts-again-2026-09-29">Fixed — a Docker install from the published source starts again (2026-09-29)</h3>
-<p>The public source of 2.4.0 did not start under Docker: the publication step
-rewrote the proxy's fixed address in <code>deploy/docker/compose.yaml</code>,
-<code>env.example</code> and <code>satom-docker.sh</code> to <code>203.0.113.10</code> and left the network at
-<code>{ip}/16</code>, so <code>docker compose up</code> refused with <em>"no configured subnet
-contains IP address 203.0.113.10"</em>. <code>satom-setup.sh</code> Docker mode and the
-manual route both failed; native installs and the published image were not
-affected. The publication step now leaves the product's own container network
-alone. On a 2.4.0 checkout, set <code>SATOM_PROXY_IP={ip}</code> and
-<code>TRUSTED_PROXIES={ip}</code> in <code>.env</code>, or install 2.4.1. Reference:
-<code>docs/docker-compose.md</code> §14.</p>
-<p>This is also the first release whose <code>satom-setup.sh</code> loads the published
-image (below): the image was attached to 2.4.0 after its release, and the
-installer shipped with 2.4.0 still builds.</p>
-<h3 id="added--the-container-image-is-published-with-every-release-2026-09-28">Added — the container image is published with every release (2026-09-28)</h3>
-<p>Asked for by the user: <em>"publish the Docker image for installing, and update
-the documentation"</em>. Each GitHub release now carries
-<code>satom-image-&lt;ver&gt;-amd64.tar.gz</code> and its <code>.sha256</code>: <code>satom:&lt;ver&gt;</code> for
-<code>linux/amd64</code>, built by the release pipeline from the same redacted code as the
-offline bundles. 2.4.0 received it after its release. <code>satom-setup.sh</code> Docker
-mode now downloads it, stops on a checksum mismatch, and loads it, instead of
-building for 5–15 minutes; it builds only when the release publishes no image,
-on a non-<code>x86_64</code> host, or with the new <code>SETUP_IMAGE=build</code>. The console update
-through the operations agent still builds. Reference: <code>docs/docker-compose.md</code>
-§2.4, §3.1, §11.1, §11.8, §14.</p>
-<p class="rel-prevnext"><a href="v2.5.0.html">← Version 2.5.0</a> · <a href="v2.4.0.html">Version 2.4.0 →</a></p>
+<h3 id="added--system-upgrade-feed-a-node-downloads-its-own-update-package-2026-10-02">Added — System-upgrade feed: a node downloads its own update package (2026-10-02)</h3>
+<ul>
+<li><strong><code>satom-system-upgrades/</code></strong> in the repository indexes every release's
+  signed update package: <code>latest.json</code> (version, release-asset URL, size,
+  sha256, signing key), one <code>satom-update-&lt;version&gt;.json</code> per release, and a
+  README table with the download links. The packages stay release assets; the
+  folder holds only the index. Written by the release pipeline after the
+  package is built and verified (<code>deploy/gen_upgrade_feed.py</code>).</li>
+<li><strong><code>sudo satom execute update fetch</code></strong> reads the feed, downloads the newest
+  package, checks its size and sha256 against the feed and applies it through
+  the same path as <code>update package</code> (signature checked by the CLI and again by
+  the runner). <code>--download-only</code> stages it; without <code>--yes</code> it is a dry run.</li>
+<li><strong>Software Update → Offline update package → Check for a newer package
+  online / Download &amp; stage</strong>: the same check and download as a background
+  job, then the usual preflight and <strong>Apply</strong>.</li>
+<li>HTTPS only (redirects included); nothing polls the feed on its own;
+  <code>SATOM_UPGRADE_FEED</code> points a node at a mirror. As root, the CLI loads the
+  downloader only from the root-owned runner library.</li>
+</ul>
+<h3 id="added--api-packs-every-releases-pack-kept-imported-by-the-update-2026-10-02">Added — API packs: every release's pack kept, imported by the update (2026-10-02)</h3>
+<ul>
+<li><code>api-packs/</code> keeps the pack of <strong>every</strong> release instead of replacing the
+  previous one; <em>shipped</em> means the newest by version (it was the newest by
+  file time, which a checkout makes meaningless).</li>
+<li>After a successful update on a primary or standalone node, the runner
+  imports the newest shipped pack (step <em>import shipped API pack</em>). Never
+  fatal; skipped on a standby; <code>SATOM_API_PACK_AUTO=0</code> turns it off. Before,
+  an update put the new pack on disk and left the library on the old one.</li>
+<li>Software Update shows a notice while the newest shipped pack has never been
+  imported on the node. A full import that finds nothing new is now recorded,
+  so the notice clears on the node that built the pack.</li>
+</ul>
+<h3 id="fixed--sudo-satom-answered-command-not-found-on-opensuse-and-rhel-2026-10-02">Fixed — <code>sudo satom</code> answered "command not found" on openSUSE and RHEL (2026-10-02)</h3>
+<ul>
+<li>sudo's <code>secure_path</code> there omits <code>/usr/local/sbin</code>, where the CLI lives, so
+  every <code>sudo satom …</code> printed by the installer, the CLI and the docs failed
+  outside Debian. <code>install-cli.sh</code> (run by the installer, by every update and
+  by <code>satom execute reinstall cli</code>) now links <code>/usr/bin/satom</code> to the
+  root-owned binary, and never replaces a <code>/usr/bin/satom</code> that is not a link.
+  <code>satom diagnose privilege</code> reports the link.</li>
+<li><code>offline-update-packages.md</code> §4.1 no longer tells operators to <code>cd
+  /opt/satom</code> or use <code>sudo -u satom</code> (refused where sudoers allow root only):
+  it uses <code>sudo runuser -u satom</code> and the full CLI path.</li>
+</ul>
+<h3 id="added--node-tls-csr-generation-and-pasted-pem-2026-10-02">Added — Node TLS: CSR generation and pasted PEM (2026-10-02)</h3>
+<ul>
+<li><strong>Settings → Node TLS → Certificate signing request (CSR)</strong> generates a
+  private key and a CSR on the node so another CA can issue the certificate:
+  common name (defaults to the node hostname), extra SANs (host names or IP
+  addresses), optional organization/unit/city/state/country, RSA 2048/3072/4096
+  or ECDSA P-256/P-384. The key never leaves the node; the CSR can be copied or
+  downloaded. When the certificate comes back, import it with the private key
+  left empty and it is paired with its pending key automatically.</li>
+<li><strong>Import certificate (PEM)</strong> accepts pasted text as well as files (a <em>Paste
+  PEM</em> / <em>Upload files</em> switch). CRLF and indentation from a paste are
+  normalised; a slot given both as a file and as text is refused.</li>
+</ul>
+<h3 id="fixed--issue-from-internal-ca-failed-with-sudo-a-password-is-required-2026-10-02">Fixed — "Issue from internal CA" failed with <code>sudo: a password is required</code> (2026-10-02)</h3>
+<ul>
+<li>Activating a node certificate ran <code>sudo -n nginx -t</code>, so it depended on the
+  host applying <code>/etc/sudoers.d/satom</code>. A managed sudoers without
+  <code>@includedir /etc/sudoers.d</code> (or an LDAP/SSSD sudo source, or a later rule)
+  broke issuing, renewing and importing on a correctly installed node. A sudo
+  refusal now hands the config test and reload to the root runner
+  (<code>satom-updater.path</code>); a real <code>nginx -t</code> failure is still reported and
+  rolled back. The runner tests the nginx config before any nginx restart or
+  reload, and the installer warns when sudo does not honour the allowlist.</li>
+</ul>
+<p class="rel-prevnext"><a href="unreleased.html">← Unreleased — the next release</a> · <a href="v2.6.0.html">Version 2.6.0 →</a></p>
       </div>
       <div class="callout" style="margin-top:24px;">
         <span class="cico">🗒️</span>

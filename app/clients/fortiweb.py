@@ -1,7 +1,22 @@
 import base64
 import json
 from urllib.parse import quote
-from .base import BaseClient
+from .base import BaseClient, DeviceAuthError, response_summary  # noqa: F401 (re-export)
+
+
+#: What to check when a FortiWeb answers 401. Shared by the connection test
+#: and the discovery sweep so both say the same thing.
+AUTH_HINT = ("check the username and password on the appliance record, the "
+             "ADOM/vdom field (leave it empty when ADOMs are off), that the "
+             "admin account is not locked out (FortiWeb locks it for "
+             "admin-lockout-duration after admin-lockout-threshold failed "
+             "logins) and that its trusted hosts include this SATOM node")
+
+
+def auth_error_message(resp) -> str:
+    detail = response_summary(resp)
+    return ("HTTP 401: the appliance rejected the credentials"
+            + (" (%s)" % detail if detail else "") + " — " + AUTH_HINT)
 
 
 class FortiWebClient(BaseClient):
@@ -54,7 +69,10 @@ class FortiWebClient(BaseClient):
         return self._request('DELETE', path, headers=self._headers())
 
     def status_check(self):
-        return self.get('/api/v2.0/system/status.systemstatus').json()
+        resp = self.get('/api/v2.0/system/status.systemstatus')
+        if resp.status_code == 401:
+            raise DeviceAuthError(auth_error_message(resp))
+        return resp.json()
 
     def ha_status(self):
         """Best-effort live HA member/role info as a flat dict.

@@ -29,7 +29,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from ..clients.fortiweb import FortiWebClient
+from ..clients.base import response_summary
+from ..clients.fortiweb import DeviceAuthError, FortiWebClient, auth_error_message
 from ..registry import loader
 
 
@@ -394,6 +395,19 @@ def _finish_stopped(aid: int, progress_path, state: dict, message: str) -> None:
     _clear_stop(aid)
 
 
+def _finish_failed(progress_path, state: dict, message: str) -> None:
+    state.update(state=FAILED, error=message,
+                 finished=datetime.utcnow().isoformat(),
+                 heartbeat=datetime.utcnow().isoformat())
+    _write_json(progress_path, state)
+
+
+def _auth_stop_message(auth_error: str, done: int, total: int) -> str:
+    return (f"{auth_error}. Discovery stopped at endpoint {done}/{total} so it "
+            f"does not lock the admin account out with more failed logins. "
+            f"No snapshot was written; the previous one is unchanged.")
+
+
 def latest_snapshot_meta(appliance_id: int) -> dict | None:
     p = _dev_dir(appliance_id) / "_config.json"
     if not p.exists():
@@ -611,7 +625,7 @@ def _resp_message(resp) -> str:
             return str(body.get("message") or body.get("error") or "")[:120]
     except Exception:  # noqa: BLE001 — non-JSON body
         pass
-    return (getattr(resp, "text", "") or "")[:120]
+    return response_summary(resp, 120)
 
 
 def _device_firmware(appliance_snap, is_adc: bool) -> str:
@@ -641,6 +655,8 @@ def _device_firmware(appliance_snap, is_adc: bool) -> str:
         # and "8.0.3 build0093,260401" would be its own line on every rebuild.
         m = _re.search(r"\d+\.\d+(?:\.\d+)?", raw)
         return m.group(0) if m else ""
+    except DeviceAuthError:
+        raise  # not a version problem: the sweep must stop, see _sweep
     except Exception:  # noqa: BLE001 — never let a version read sink a sweep
         return ""
 
@@ -664,6 +680,11 @@ def _probe_fortiweb(client, ep: dict) -> tuple[list, str, str]:
     ``FortiWebClient.cmdb_names_checked`` already trusts.
     """
     resp = client.get(ep["urn"])
+    if resp.status_code == 401:
+        # Before calling it a per-endpoint refusal, ask once whether the
+        # credentials still work at all. If status answers 401 too, every
+        # remaining endpoint would be one more failed admin login.
+        client.status_check()  # raises DeviceAuthError -> _sweep stops
     code = client._errcode(resp)
     if code is not None and str(code) in client._ABSENT_ERRCODES:
         return [], VERDICT_ABSENT, f"errcode {code}"
@@ -743,7 +764,11 @@ def _sweep(appliance_snap: SimpleNamespace, by: str, deep: bool = False,
         plan = sweep_plan_adc() if is_adc else sweep_plan()
     total = len(plan)
     started = datetime.utcnow().isoformat()
-    firmware = _device_firmware(appliance_snap, is_adc)
+    auth_error = ""
+    try:
+        firmware = _device_firmware(appliance_snap, is_adc)
+    except DeviceAuthError as exc:
+        firmware, auth_error = "", str(exc)
     state = {
         "state": "running", "appliance_id": aid, "appliance": appliance_snap.name,
         "firmware": firmware,
@@ -757,6 +782,9 @@ def _sweep(appliance_snap: SimpleNamespace, by: str, deep: bool = False,
         "job_id": job_id,
     }
     _write_json(progress_path, state)
+    if auth_error:
+        _finish_failed(progress_path, state, _auth_stop_message(auth_error, 0, total))
+        return
 
     if is_adc:
         from . import adc_ops
@@ -787,6 +815,13 @@ def _sweep(appliance_snap: SimpleNamespace, by: str, deep: bool = False,
         try:
             rows, verdict, detail = _probe(ep)
             rows = [r for r in rows if isinstance(r, dict)]
+        except DeviceAuthError as exc:
+            # The one failure that DOES sink the sweep: see DeviceAuthError.
+            state.update(done=i - 1, objects=total_objects,
+                         errors=errors[-25:], absent_count=len(absent))
+            _finish_failed(progress_path, state,
+                           _auth_stop_message(str(exc), i - 1, total))
+            return
         except Exception as exc:  # noqa: BLE001 — one endpoint never sinks the sweep
             rows, verdict = [], VERDICT_ERROR
             detail = f"{type(exc).__name__}: {exc}"[:160]
@@ -807,6 +842,20 @@ def _sweep(appliance_snap: SimpleNamespace, by: str, deep: bool = False,
                          errors=errors[-25:], absent_count=len(absent),
                          heartbeat=datetime.utcnow().isoformat())
             _write_json(progress_path, state)
+
+    if errors and not any(v["verdict"] == VERDICT_OK for v in ledger.values()):
+        # Not one endpoint answered. Written as the LATEST snapshot this would
+        # replace the last good one with an empty configuration and feed the
+        # inventory, API matrix and library from it — "I ran discovery and
+        # there is absolutely nothing" (SI-0002) is what that looks like.
+        reasons = sorted({e["error"] for e in errors})
+        state.update(done=total, percent=100, errors=errors[-25:],
+                     absent_count=len(absent))
+        _finish_failed(progress_path, state,
+                       f"None of the {total} endpoint(s) answered "
+                       f"({len(errors)} error(s), e.g. {reasons[0][:160]}). "
+                       f"No snapshot was written; the previous one is unchanged.")
+        return
 
     generated_at = datetime.utcnow().isoformat()
     snapshot = {

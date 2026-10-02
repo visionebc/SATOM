@@ -6,6 +6,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [2.10.0] - 2026-10-03
+
 ### Added — job toasts can be minimised (2026-10-03)
 
 Requested from the field (SI-0005): "make the job notices minimisable, and

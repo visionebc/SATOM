@@ -5,8 +5,8 @@
 <meta charset="UTF-8">
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Version 1.15.0 — SATOM</title>
-<meta name="description" content="Released on 2026-08-23 — Added · Changed · 8 entries.">
+<title>Version 2.10.0 — SATOM</title>
+<meta name="description" content="Released on 2026-10-03 — Added — job toasts can be minimised (2026-10-03) · 2 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -45,8 +45,8 @@
 
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
-  <h1>Version 1.15.0 <span class="rel-badge">superseded</span></h1>
-  <p class="sub">Released on 2026-08-23 — Added · Changed · 8 entries.</p>
+  <h1>Version 2.10.0 <span class="rel-badge rel-now">current release</span></h1>
+  <p class="sub">Released on 2026-10-03 — Added — job toasts can be minimised (2026-10-03) · 2 entries.</p>
 </header>
 
 <section class="wrap">
@@ -62,7 +62,7 @@
         <span class="rel-nav-meta">unreleased · Changes · 0 entries</span>
         <ul class="rel-leads"></ul>
       </a>
-      <a class="rel-nav-item" href="v2.10.0.html" data-rel-version="2.10.0">
+      <a class="rel-nav-item is-active" href="v2.10.0.html" data-rel-version="2.10.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 2.10.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
         <span class="rel-nav-meta">2026-10-03 · Added — job toasts can be minimised (2026-10-03) · 2 entries</span>
         <ul class="rel-leads"><li>The sweep never fed the local cache</li><li>A fresh install schedules no harvest and no probe sweep</li></ul>
@@ -177,7 +177,7 @@
         <span class="rel-nav-meta">2026-08-23 · Added · Fixed · 6 entries</span>
         <ul class="rel-leads"><li>A &quot;?&quot; beside every element of Settings → Sentinel → Settings</li><li>config.SPEC[].hint and config.UI_HINTS</li><li>app/templates/partials/_hint.html</li><li class="rel-more">… and 3 more</li></ul>
       </a>
-      <a class="rel-nav-item is-active" href="v1.15.0.html" data-rel-version="1.15.0">
+      <a class="rel-nav-item" href="v1.15.0.html" data-rel-version="1.15.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 1.15.0</span></span>
         <span class="rel-nav-meta">2026-08-23 · Added · Changed · 8 entries</span>
         <ul class="rel-leads"><li>Settings → Sentinel → Architecture</li><li>app/templates/sentinel/_docs_section.html</li><li>sentinel.console_context() / sentinel.docs_context()</li><li class="rel-more">… and 5 more</li></ul>
@@ -335,49 +335,49 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
-<p>Sentinel's Architecture and Incidents console are rendered in the Admin
-Console, beside its settings.</p>
-<h3 id="added">Added</h3>
+<h3 id="added--job-toasts-can-be-minimised-2026-10-03">Added — job toasts can be minimised (2026-10-03)</h3>
+<p>Requested from the field (SI-0005): "make the job notices minimisable, and
+let them go back to their size". Each toast in the jobs dock has a <strong>−</strong>
+button. A minimised toast is one line with the title, the percent and a thin
+progress bar; <strong>□</strong> or a click on the title restores it with its message and
+Stop button. The choice survives page navigation and a reload for the rest of
+the browser session; dismissing a toast forgets it.</p>
+<h3 id="fixed--deep-capture-showed-running-at-100--with-no-count-2026-10-03">Fixed — Deep capture showed "running…" at 100 % with no count (2026-10-03)</h3>
+<p>Reported from the field (SI-0004): with <em>Capture full WPP + policy depth</em> on,
+the rediscovery bar reached 100 % and then said only "Deep capture (WPP +
+policy graph) running…" for as long as the walk took. The deep pass now lists
+the server policies and WPPs first and reports each object it starts: the bar
+switches to the deep pass's own percent, and the line reads e.g. <em>Deep capture
+5/23 · 8 server policies, 14 WPPs · WPP 3/12: wpp-shop</em>. The job in the dock
+and on the Jobs page shows the same line and percent. The finished summary
+says how many policies and WPPs the depth came from. Each object also
+refreshes the run's heartbeat, so a long deep pass no longer looks like a dead
+one.</p>
+<h3 id="fixed--device-health-said-never-harvested-right-after-a-rediscovery-2026-10-03">Fixed — Device health said "never harvested" right after a rediscovery (2026-10-03)</h3>
+<p>Reported from the field (SI-0006): after a rediscovery, Device health showed
+<em>no cached configuration on this node</em>, <em>never harvested</em> and <em>4 probes have
+never run</em>. Two causes:</p>
 <ul>
-<li><strong><code>Settings → Sentinel → Architecture</code></strong> and <strong><code>Settings → Sentinel →
-  Incidents console</code></strong> are now <strong>panes</strong>, not links out. Both render the same
-  content their standalone URLs serve — the architecture document generated
-  from the live weight table, action catalog and settings spec; and the live
-  console with its four health tiles, the seven-day figures and the incident
-  table. Two of the three entries in a group about one subject used to take
-  the whole page away, and the way back was the browser.</li>
-<li><strong><code>app/templates/sentinel/_docs_section.html</code></strong> and
-  <strong><code>app/templates/sentinel/_console_section.html</code></strong> — one file per section,
-  included by its pane and by its own page. The same arrangement the Sentinel
-  settings section already used: a hand-copied second surface is a second
-  place for numbers generated from live tables to be read wrongly, and nothing
-  fails when two copies disagree.</li>
-<li><strong><code>sentinel.console_context()</code> / <code>sentinel.docs_context()</code></strong> — one context
-  builder per section, shared by both surfaces, so the pane and the page
-  cannot answer differently.</li>
+<li><strong>The sweep never fed the local cache.</strong> Rediscovery reads the same
+  endpoints as the hourly harvest and builds the same snapshot, but only the
+  harvest (<code>device_sync</code>) wrote it to the cache that Device health, the
+  section pages and the inventory read. A successful sweep now ingests its
+  snapshot into that cache and records a harvest run with trigger
+  <code>rediscovery</code>. Only the harvest keys are stored, so a rediscovery and an
+  hourly harvest of the same configuration are one SoT version, not two. If
+  the cache write fails, the sweep is still <em>done</em> and the summary says
+  <em>local cache not updated</em> with the reason.</li>
+<li><strong>A fresh install schedules no harvest and no probe sweep</strong> (by design: they
+  are data, created with <code>sudo satom execute seed actions --yes</code>). Device
+  health now says so. When <em>Harvest</em>, <em>Cache</em> or <em>Deep monitors</em> has nothing
+  to report and no enabled <code>device_sync</code> / <code>deep_monitor</code> schedule covers the
+  device, the reason ends with <em>no 'device_sync' schedule on this node (run:
+  sudo satom execute seed actions --yes)</em>.</li>
 </ul>
-<h3 id="changed">Changed</h3>
-<ul>
-<li><strong>Controls inside the panes stay inside the console.</strong> The sweep and the
-  baseline rebuild carry <code>return_to</code> and come back to the pane they were fired
-  from; the status filter reloads Settings (<code>?sn_status=</code>) instead of jumping
-  to <code>/sentinel/</code>; the Architecture button switches the sibling pane. A
-  control that works perfectly <em>somewhere else</em> is the failure this removes.
-  Opening one incident still leaves, because an incident is a page of its own.</li>
-<li><strong>No entry in the Sentinel group carries the leaving arrow</strong> — none of them
-  leaves. The marker's branch stays in the menu for the next entry that really
-  does: an arrow on a row that only swaps a pane warns of a page change that
-  never happens.</li>
-<li>The incident table is wrapped in a scroller. Nine columns do not fit the
-  Admin Console's single, narrower column, and a table cut off at the edge
-  reports nothing.</li>
-<li><code>/settings/</code> builds the metrics-store health <strong>once</strong> and hands it to all
-  three Sentinel sections, rather than asking three times for an answer that
-  cannot have changed between them.</li>
-<li>§26 of the manual describes the three panes, and a new guard derived from
-  the menu literal fails if it goes back to calling two of them links out.</li>
-</ul>
-<p class="rel-prevnext"><a href="v1.16.0.html">← Version 1.16.0</a> · <a href="v1.14.0.html">Version 1.14.0 →</a></p>
+<p>The <em>no hardware inventory</em> note now names the <strong>Scan hardware (SSH)</strong> button:
+rediscovery, including its SSH CLI capture, does not collect hardware.</p>
+<p>Guard: <code>tests/test_rediscovery_progress_cache.py</code>.</p>
+<p class="rel-prevnext"><a href="unreleased.html">← Unreleased — the next release</a> · <a href="v2.9.1.html">Version 2.9.1 →</a></p>
       </div>
       <div class="callout" style="margin-top:24px;">
         <span class="cico">🗒️</span>

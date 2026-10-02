@@ -191,31 +191,53 @@ def cert_sections(reader: Any, cache: dict) -> dict:
     return out
 
 
-def deep_sections(reader: Any) -> dict:
+def deep_sections(reader: Any, progress=None) -> dict:
     """Walk every server policy + every WPP (inline + offline), returning the
     enriched ``{section: {logical_name: [obj-with-_deep, ...]}}`` snapshot shape
     that ``device_store.ingest_sections`` consumes. A single shared collection
     cache keeps the sweep box-gentle (each top-level object type is listed once);
     each object gets its OWN visited set so an object shared by two policies is
-    captured in full under each."""
+    captured in full under each.
+
+    ``progress`` (optional) is called with a dict before every object and once
+    at the end, so a caller can say WHICH policy or WPP is being walked and how
+    many are left. The three lists are read up front for that reason: the total
+    has to be known before the first object, or the bar can only say "running"
+    (SI-0004). A broken callback never sinks the walk.
+    """
     cache: dict = {}
 
+    pol_names = _list_names(reader, SERVER_POLICY.urn, cache)
+    wpp_names = _list_names(reader, WEB_PROTECTION_PROFILE.urn, cache)
+    off_names = _list_names(reader, _WPP_OFFLINE_URN, cache)
+    work = ([("server policy", SERVER_POLICY, n, i, len(pol_names))
+             for i, n in enumerate(pol_names, 1)]
+            + [("WPP", WEB_PROTECTION_PROFILE, n, i, len(wpp_names))
+               for i, n in enumerate(wpp_names, 1)]
+            + [("offline WPP", _WPP_OFFLINE_NODE, n, i, len(off_names))
+               for i, n in enumerate(off_names, 1)])
+    total = len(work) + 1   # +1: the certificate / SNI stores at the end
+
+    def _tick(done: int, phase: str, index: int, of: int, current: str) -> None:
+        if progress is None:
+            return
+        try:
+            progress({"done": done, "total": total, "phase": phase,
+                      "index": index, "of": of, "current": current,
+                      "policies": len(pol_names),
+                      "wpps": len(wpp_names) + len(off_names)})
+        except Exception:  # noqa: BLE001 — reporting never sinks the walk
+            pass
+
     policies: list[dict] = []
-    for nm in _list_names(reader, SERVER_POLICY.urn, cache):
-        g = _collect_node(reader, SERVER_POLICY, nm, set(), cache)
-        if g:
-            policies.append(g)
-
     wpps: list[dict] = []
-    for nm in _list_names(reader, WEB_PROTECTION_PROFILE.urn, cache):
-        w = _collect_node(reader, WEB_PROTECTION_PROFILE, nm, set(), cache)
-        if w:
-            wpps.append(w)
-    for nm in _list_names(reader, _WPP_OFFLINE_URN, cache):
-        w = _collect_node(reader, _WPP_OFFLINE_NODE, nm, set(), cache)
-        if w:
-            wpps.append(w)
+    for done, (phase, node, nm, idx, of) in enumerate(work):
+        _tick(done, phase, idx, of, nm)
+        g = _collect_node(reader, node, nm, set(), cache)
+        if g:
+            (policies if node is SERVER_POLICY else wpps).append(g)
 
+    _tick(len(work), "certificates", 1, 1, "")
     sections = {
         "Server Policy": {"server_policy": policies},
         "Web Protection": {"web_protection_profile": wpps},
@@ -223,4 +245,5 @@ def deep_sections(reader: Any) -> dict:
     certs = cert_sections(reader, cache)
     if certs:
         sections["Server Objects"] = certs
+    _tick(total, "done", 0, 0, "")
     return sections

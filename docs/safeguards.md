@@ -16851,3 +16851,33 @@ tests: the owner check on `/jobs/<id>/response` was hidden by a job with no
 stored response (404 either way), and the button-class check was satisfied by
 a `:hover` rule. Both tests now pin the real property.
 
+## §206 — a sweep that kept what it read to itself, and a deep pass that only said "running" (`tests/test_rediscovery_progress_cache.py`, 2026-10-03)
+
+Three field reports from one customer evening (SI-0004/5/6).
+
+- **The sweep feeds the cache.** Rediscovery built the same snapshot as the
+  hourly harvest and discarded it, so Device health said *never harvested*
+  right after one. `_feed_cache` hands the snapshot to
+  `device_sync.persist_snapshot(trigger="rediscovery")`, with only the
+  harvest keys (`_HARVEST_KEYS`): the ledger (`endpoint_status`, `absent`,
+  `verdict_counts`) would make the SoT store hash a rediscovery and a harvest
+  of one configuration as two versions. Never raises; a failure lands in
+  `cache_error`, never in the sweep's verdict.
+- **Found while writing the test:** the first version read `run.status`
+  after its app context closed, which raises `DetachedInstanceError` — every
+  successful ingest would have been reported as a cache failure.
+- **No schedule is named.** A fresh install seeds no `device_sync` /
+  `deep_monitor` action. A non-ok Harvest / Cache / Deep monitors signal with
+  no enabled schedule covering the device (`targets == []` or containing it)
+  says so, with `sudo satom execute seed actions --yes`. Unreadable table →
+  no hint (an unknown answer must not print a claim).
+- **The deep walk reports per object.** `deep_sections(progress=)` lists
+  policies + inline + offline WPPs first so the total is known before the
+  first object; one tick per object, one for certificates, one at the end. A
+  raising callback is swallowed. `_run_deep` writes `deep_*` fields and the
+  heartbeat per tick and leaves the sweep's `percent` alone (the done state
+  must still paint 100 %); the job mirror uses `deep_percent`.
+- **Toasts minimise.** State in `sessionStorage` (`satom.jobtoast.min`),
+  cleared on dismiss.
+
+**Mutations: 17/17 bite.**

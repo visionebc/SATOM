@@ -220,7 +220,7 @@
       }).join('');
       var note = dev.hw
         ? '<div class="mon-note"><i class="bi bi-clock-history me-1"></i>' + esc(dev.freshness) + '</div>'
-        : '<div class="mon-note"><i class="bi bi-cpu me-1"></i>no hardware inventory — run an SSH scan · ' + esc(dev.freshness) + '</div>';
+        : '<div class="mon-note"><i class="bi bi-cpu me-1"></i>no hardware inventory — use “Scan hardware (SSH)” above; rediscovery does not collect it · ' + esc(dev.freshness) + '</div>';
       return '<div class="fw-card"><div class="fw-card-body">' +
         head + sub + caps + devWhy(dev.health) + note +
         '</div></div>';

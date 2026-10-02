@@ -6,6 +6,55 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Added — job toasts can be minimised (2026-10-03)
+
+Requested from the field (SI-0005): "make the job notices minimisable, and
+let them go back to their size". Each toast in the jobs dock has a **−**
+button. A minimised toast is one line with the title, the percent and a thin
+progress bar; **□** or a click on the title restores it with its message and
+Stop button. The choice survives page navigation and a reload for the rest of
+the browser session; dismissing a toast forgets it.
+
+### Fixed — Deep capture showed "running…" at 100 % with no count (2026-10-03)
+
+Reported from the field (SI-0004): with *Capture full WPP + policy depth* on,
+the rediscovery bar reached 100 % and then said only "Deep capture (WPP +
+policy graph) running…" for as long as the walk took. The deep pass now lists
+the server policies and WPPs first and reports each object it starts: the bar
+switches to the deep pass's own percent, and the line reads e.g. *Deep capture
+5/23 · 8 server policies, 14 WPPs · WPP 3/12: wpp-shop*. The job in the dock
+and on the Jobs page shows the same line and percent. The finished summary
+says how many policies and WPPs the depth came from. Each object also
+refreshes the run's heartbeat, so a long deep pass no longer looks like a dead
+one.
+
+### Fixed — Device health said "never harvested" right after a rediscovery (2026-10-03)
+
+Reported from the field (SI-0006): after a rediscovery, Device health showed
+*no cached configuration on this node*, *never harvested* and *4 probes have
+never run*. Two causes:
+
+- **The sweep never fed the local cache.** Rediscovery reads the same
+  endpoints as the hourly harvest and builds the same snapshot, but only the
+  harvest (`device_sync`) wrote it to the cache that Device health, the
+  section pages and the inventory read. A successful sweep now ingests its
+  snapshot into that cache and records a harvest run with trigger
+  `rediscovery`. Only the harvest keys are stored, so a rediscovery and an
+  hourly harvest of the same configuration are one SoT version, not two. If
+  the cache write fails, the sweep is still *done* and the summary says
+  *local cache not updated* with the reason.
+- **A fresh install schedules no harvest and no probe sweep** (by design: they
+  are data, created with `sudo satom execute seed actions --yes`). Device
+  health now says so. When *Harvest*, *Cache* or *Deep monitors* has nothing
+  to report and no enabled `device_sync` / `deep_monitor` schedule covers the
+  device, the reason ends with *no 'device_sync' schedule on this node (run:
+  sudo satom execute seed actions --yes)*.
+
+The *no hardware inventory* note now names the **Scan hardware (SSH)** button:
+rediscovery, including its SSH CLI capture, does not collect hardware.
+
+Guard: `tests/test_rediscovery_progress_cache.py`.
+
 ## [2.9.1] - 2026-10-02
 
 ### Fixed — Discovery with refused credentials locked the admin account and left an empty snapshot (2026-10-02)

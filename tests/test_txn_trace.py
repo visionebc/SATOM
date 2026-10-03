@@ -551,26 +551,31 @@ def test_each_leg_records_the_egress_address_it_left_from():
     own address. The dialled ``ip`` is the destination."""
     import socket
     import threading
+    # Listen on another loopback address so the destination (127.0.0.2) and
+    # the source the kernel picks differ; the server records the real peer.
     srv = socket.socket()
-    srv.bind(("127.0.0.1", 0))
+    srv.bind(("127.0.0.2", 0))
     srv.listen(1)
     port = srv.getsockname()[1]
+    seen = {}
 
     def answer():
-        conn, _ = srv.accept()
+        conn, peer = srv.accept()
+        seen["peer"] = peer[0]
         conn.recv(4096)
         conn.sendall(b"HTTP/1.0 200 OK\r\nContent-Length: 2\r\n\r\nok")
         conn.close()
     t = threading.Thread(target=answer, daemon=True)
     t.start()
     try:
-        out = tt.send("127.0.0.1", port, host="h.example", scheme="http",
+        out = tt.send("127.0.0.2", port, host="h.example", scheme="http",
                       timeout=3)
     finally:
         t.join(3)
         srv.close()
     assert out["ok"] and out["status"] == 200
-    assert out["request"]["src_ip"] == "127.0.0.1"
+    assert out["request"]["src_ip"] == seen["peer"]
+    assert out["request"]["src_ip"] != out["request"]["ip"]
 
 
 def test_panel_correlates_on_the_egress_address():

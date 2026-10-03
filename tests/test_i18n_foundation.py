@@ -475,3 +475,20 @@ def test_a_whole_fence_is_stripped_but_an_inner_one_is_content():
     assert translator._clean("```text\nHola\n```") == "Hola"
     body = "Paso 1\n```\nexecute reboot\n```\nPaso 2"
     assert translator._clean(body) == body
+
+
+def test_a_disabled_provider_is_refused_before_any_call(app, monkeypatch,
+                                                         local_provider):
+    """The first-visit seed is disabled until an admin reviews and saves it;
+    a translation must not reach it either (Documentation Center audit,
+    2026-10-03)."""
+    local_provider["enabled"] = False
+    with app.app_context():
+        called = []
+        _send(monkeypatch, lambda *a, **k: called.append(1) or _Res("x"))
+        with pytest.raises(translator.TranslationError, match="disabled"):
+            translator.translate("Hello", src="en", dst="es")
+        assert not called
+        local_provider["enabled"] = True
+        translator.translate("Hello", src="en", dst="es")
+        assert called, "positive control: an enabled provider is called"

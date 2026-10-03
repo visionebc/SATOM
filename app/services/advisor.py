@@ -69,7 +69,10 @@ K_EXTERNAL_ALLOWED = "ai.external_allowed"  # "1"/"0" — extra gate before ANY
 K_DEFAULT_PROVIDER = "ai.default_provider"  # provider key
 K_PROVIDERS = "ai.providers"              # JSON list of provider dicts (no secrets)
 
-DEFAULT_OLLAMA_URL = "http://192.0.2.34:11434"
+#: Seed for the first-visit provider. Loopback, because a shipped LAN address
+#: names somebody else's network; the seeded row is DISABLED until an admin
+#: reviews it and saves it from Settings -> AI Advisor.
+DEFAULT_OLLAMA_URL = "http://localhost:11434"
 
 PROPOSAL_FENCE = "satom-proposal"
 TOOL_FENCE = "satom-tool"
@@ -279,7 +282,10 @@ def default_provider_key() -> str:
 
 
 def save_provider(*, key: str, kind: str, label: str, base_url: str, model: str,
-                   api_key: str | None, extra_headers: dict | None = None) -> None:
+                   api_key: str | None, extra_headers: dict | None = None,
+                   enabled: bool = True) -> None:
+    """Create or replace one provider. Saving from Settings always enables it:
+    the save IS the admin's review of the base URL."""
     if kind not in ("ollama", "openai", "anthropic"):
         raise ValueError(f"unknown provider kind {kind!r}")
     rows = sstore.get_json(K_PROVIDERS, [])
@@ -290,6 +296,7 @@ def save_provider(*, key: str, kind: str, label: str, base_url: str, model: str,
         "base_url": (base_url or "").rstrip("/"),
         "model": model or "",
         "extra_headers": extra_headers or {},
+        "enabled": bool(enabled),
     })
     sstore.set_json(K_PROVIDERS, rows)
     if api_key:
@@ -316,12 +323,16 @@ def _provider_secret(provider_key: str) -> str:
 
 
 def ensure_default_ollama() -> None:
-    """Seed a local Ollama provider on first use so the safest default (LAN
-    only, no external export) is one click away, not a form to fill in."""
+    """Seed a local Ollama provider on first use so the safest default (local,
+    no external export) is one review away, not a form to fill in.
+
+    Seeded DISABLED on loopback: nothing is sent until an admin opens it in
+    Settings -> AI Advisor, points it at the real Ollama host and saves."""
     if list_providers():
         return
     save_provider(key="ollama-local", kind="ollama", label="Local Ollama",
-                  base_url=DEFAULT_OLLAMA_URL, model="qwen2.5-coder:32b", api_key=None)
+                  base_url=DEFAULT_OLLAMA_URL, model="qwen2.5-coder:32b", api_key=None,
+                  enabled=False)
     sstore.set_str(K_DEFAULT_PROVIDER, "ollama-local")
 
 
@@ -751,6 +762,12 @@ def _resolve_provider(conv: AdvisorConversation) -> tuple[dict, bool]:
     provider = get_provider(conv.provider_key) or get_provider(default_provider_key())
     if not provider:
         raise ProviderError("no AI provider configured -- add one in Settings -> AI Advisor")
+    # Rows saved before the flag existed carry no key and stay usable.
+    if provider.get("enabled") is False:
+        raise ProviderError(
+            "the AI provider \"%s\" is disabled -- review its base URL and model "
+            "in Settings -> AI Advisor and save it to enable it"
+            % (provider.get("label") or provider.get("key")))
     is_external = leaves_lan(provider)
     if is_external and not external_allowed():
         raise ProviderError(

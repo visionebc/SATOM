@@ -1001,3 +1001,79 @@ def test_a_reported_zero_is_preserved_as_zero(monkeypatch):
                   system="", messages=[{"role": "user", "content": "q"}])
 
     assert res.prompt_tokens == 0 and res.completion_tokens == 0
+
+
+# ---------------------------------------------------------------------------
+# Documentation Center audit, 2026-10-03
+# ---------------------------------------------------------------------------
+
+def test_the_first_visit_seed_is_a_disabled_loopback_provider(app, monkeypatch):
+    """No shipped LAN host, and nothing is sent until an admin reviews the
+    seeded row and saves it."""
+    from app.services import advisor
+    from app.services.advisor_providers import ProviderError
+
+    with app.app_context():
+        advisor.ensure_default_ollama()
+        p = advisor.get_provider("ollama-local")
+        assert p["base_url"] == "http://localhost:11434"
+        assert p["enabled"] is False
+        advisor.set_flags(enabled_=True)
+        seen = _capture(monkeypatch)
+        conv = advisor.create_conversation("admin", provider_key="ollama-local")
+        with pytest.raises(ProviderError, match="disabled"):
+            advisor.send_message(conv, "admin", "hello")
+        assert "messages" not in seen
+
+        # Saving from Settings is the review: it enables the row.
+        advisor.save_provider(key="ollama-local", kind="ollama", label="Local",
+                              base_url="http://127.0.0.1:11434", model="m",
+                              api_key=None)
+        assert advisor.get_provider("ollama-local")["enabled"] is True
+        advisor.send_message(conv, "admin", "hello")
+        assert "messages" in seen
+
+
+def test_the_settings_save_endpoint_enables_a_provider(app, client):
+    from app.services import advisor
+    with app.app_context():
+        advisor.ensure_default_ollama()
+    login(client, admin_user_id(app))
+    r = client.post("/settings/ai/provider/save", json={
+        "key": "ollama-local", "kind": "ollama", "label": "Local",
+        "base_url": "http://127.0.0.1:11434", "model": "m"})
+    assert r.status_code == 200 and r.get_json()["ok"]
+    with app.app_context():
+        assert advisor.get_provider("ollama-local")["enabled"] is True
+
+
+def test_the_attach_menu_carries_no_dead_entries(app, client):
+    """The page only ever emitted exception attachments: the ``lua`` handler
+    had no menu item and ``/advisor/attach/sot-search`` had no caller (the
+    model reaches SoT search through its ``sot_search`` tool)."""
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parents[1]
+    page = (root / "app/templates/advisor/index.html").read_text(encoding="utf-8")
+    assert "attach === 'lua'" not in page
+    assert "sot-search" not in page
+    login(client, admin_user_id(app))
+    assert client.get("/advisor/attach/sot-search?q=x").status_code == 404
+
+
+def test_exception_advice_never_sends_to_a_disabled_provider(app, monkeypatch):
+    from app.services import advisor, advisor_providers, exception_advice
+    prov = {"key": "ollama-local", "kind": "ollama", "base_url": "http://127.0.0.1:11434",
+            "model": "m", "enabled": False}
+    sent = []
+    monkeypatch.setattr(exception_advice, "available", lambda: True)
+    monkeypatch.setattr(advisor, "get_provider", lambda k: prov)
+    monkeypatch.setattr(advisor, "default_provider_key", lambda: "ollama-local")
+    monkeypatch.setattr(advisor, "_provider_secret", lambda k: "")
+    monkeypatch.setattr(advisor_providers, "send",
+                        lambda *a, **k: sent.append(1) or _Reply("ok"))
+    with app.app_context():
+        out = exception_advice.analyse("url_exception", {"url": "/x"}, use_model=True)
+        assert "disabled" in (out.get("model_error") or "") and not sent
+        prov["enabled"] = True
+        exception_advice.analyse("url_exception", {"url": "/x"}, use_model=True)
+        assert sent, "positive control: an enabled provider is called"

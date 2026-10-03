@@ -80,6 +80,7 @@ def test_node_certificate_hostname_appends_no_domain_by_default(monkeypatch):
     "app/services/dns_tool.py",
     "app/services/release_notes.py",
     "app/services/cert_service.py",
+    "app/services/advisor.py",
     "scripts/build_field_catalog.py",
 ])
 def test_default_bearing_modules_name_no_internal_host(module_path):
@@ -97,6 +98,9 @@ def test_default_bearing_modules_name_no_internal_host(module_path):
     "installers/install-satom.sh",
     "installers/satom-setup.sh",
     "app/templates/auth/profile.html",
+    "app/templates/settings/_ai.html",
+    "app/templates/partials/release_notes_modal.html",
+    "app/static/js/txn_trace.js",
 ])
 def test_shipped_artefacts_are_generic(artefact):
     """These are executed or served verbatim on somebody else's machine.

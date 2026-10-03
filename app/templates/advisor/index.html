@@ -409,6 +409,9 @@
               (prev.redaction_count > 0
                  ? (prev.redaction_count + ' internal identifier(s) will be redacted first.\n\n')
                  : 'No known internal identifiers were found to redact.\n\n') +
+              (prev.history_turns > 0
+                 ? (prev.history_turns + ' earlier message(s) of this conversation are sent with it, redacted the same way.\n\n')
+                 : '') +
               'Outbound text:\n' + prev.outbound_text.slice(0, 600) +
               (prev.outbound_text.length > 600 ? '\n…(truncated)' : '') + '\n\nSend?';
             if (!confirm(msg)) return;

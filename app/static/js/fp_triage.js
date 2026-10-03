@@ -49,12 +49,23 @@
       '<button class="btn btn-sm btn-fw-primary" id="fw-fp-run"><i class="bi bi-search me-1"></i>Explain</button>' +
       '<button class="btn btn-sm btn-fw-outline" id="fw-fp-sample"><i class="bi bi-file-text me-1"></i>Load a sample</button>' +
       '<button class="btn btn-sm btn-fw-secondary" id="fw-fp-clear"><i class="bi bi-x-lg me-1"></i>Clear</button>' +
-      '</div></div>' +
+      '</div>' +
+      '<div class="col-md-6">' +
+      '<label class="form-label small fw-bold mb-1" for="fw-fp-wpp">Web Protection Profile' +
+      '<span class="text-muted fw-normal"> — optional, names it in the device path</span></label>' +
+      '<input id="fw-fp-wpp" class="form-control form-control-sm" placeholder="the profile on that server policy"></div>' +
+      '<div class="col-md-6">' +
+      '<label class="form-label small fw-bold mb-1" for="fw-fp-payload">Decode a payload on its own</label>' +
+      '<div class="input-group input-group-sm">' +
+      '<input id="fw-fp-payload" class="form-control font-monospace" placeholder="%3Cscript%3E… or base64">' +
+      '<button class="btn btn-sm btn-outline-secondary" id="fw-fp-decode" type="button">Decode</button></div></div>' +
+      '</div>' +
       '<div id="fw-fp-err" class="text-danger small mt-2"></div>' +
       '<div id="fw-fp-out" class="mt-3"></div>' +
       '</div></div></div>';
     document.body.appendChild(wrap);
     $('fw-fp-run').addEventListener('click', run);
+    $('fw-fp-decode').addEventListener('click', decodeOnly);
     $('fw-fp-sample').addEventListener('click', function () { $('fw-fp-in').value = SAMPLE; run(); });
     $('fw-fp-clear').addEventListener('click', function () {
       $('fw-fp-in').value = ''; $('fw-fp-out').innerHTML = ''; $('fw-fp-err').textContent = '';
@@ -78,13 +89,35 @@
     $('fw-fp-err').textContent = '';
     $('fw-fp-out').innerHTML = '<div class="text-muted small">' +
       '<span class="spinner-border spinner-border-sm me-2"></span>Reading the entry…</div>';
-    post('/fp-triage/triage', { text: text }).then(r => {
+    post('/fp-triage/triage', { text: text, wpp: $('fw-fp-wpp').value.trim() }).then(r => {
       if (!r.d || !r.d.ok) {
         $('fw-fp-out').innerHTML = '';
         $('fw-fp-err').textContent = (r.d && r.d.error) || 'Could not read that.';
         return;
       }
       render(r.d);
+    }).catch(e => { $('fw-fp-err').textContent = String(e); });
+  }
+
+  function decodedCard(layers) {
+    let h = '<div class="fw-card">' +
+      '<div class="fw-card-header"><h6 class="fw-card-title">Payload, decoded</h6></div>' +
+      '<div class="fw-card-body">';
+    layers.forEach(l => {
+      h += '<div class="small py-1 border-bottom"><span class="fw-badge fw-badge-info me-2">' +
+        esc(l.how) + '</span><span class="font-monospace">' + esc(l.value) + '</span></div>';
+    });
+    return h + '</div></div>';
+  }
+
+  function decodeOnly() {
+    const value = $('fw-fp-payload').value;
+    if (!value.trim()) { $('fw-fp-err').textContent = 'Paste a payload to decode.'; return; }
+    $('fw-fp-err').textContent = '';
+    post('/fp-triage/decode', { value: value }).then(r => {
+      if (!r.d || !r.d.ok) { $('fw-fp-err').textContent = (r.d && r.d.error) || 'Could not decode that.'; return; }
+      $('fw-fp-out').innerHTML = (r.d.layers || []).length ? decodedCard(r.d.layers)
+        : '<div class="small text-muted">No encoding layer found: the value is already readable, or it does not decode to readable text.</div>';
     }).catch(e => { $('fw-fp-err').textContent = String(e); });
   }
 
@@ -125,14 +158,7 @@
     }
 
     if (d.decoded && d.decoded.length) {
-      h += '<div class="fw-card">' +
-        '<div class="fw-card-header"><h6 class="fw-card-title">Payload, decoded</h6></div>' +
-        '<div class="fw-card-body">';
-      d.decoded.forEach(l => {
-        h += '<div class="small py-1 border-bottom"><span class="fw-badge fw-badge-info me-2">' +
-          esc(l.how) + '</span><span class="font-monospace">' + esc(l.value) + '</span></div>';
-      });
-      h += '</div></div>';
+      h += decodedCard(d.decoded);
     }
 
     // --- the carve-outs -------------------------------------------------
@@ -177,8 +203,9 @@
       (prev.errors || []).forEach(w => {
         h += '<div class="alert alert-danger py-1 px-2 small mb-1">' + esc(w) + '</div>';
       });
-      if (t.explain && t.explain.summary) {
-        h += '<div class="small text-muted mt-1">' + esc(t.explain.summary) + '</div>';
+      if (t.explain && (t.explain.gui_path || []).length) {
+        h += '<div class="small text-muted mt-1">Where on the device: ' +
+          esc(t.explain.gui_path.join(' → ')) + '</div>';
       }
       h += '</div></div>';
     });

@@ -565,7 +565,7 @@ EXCLUDED: dict[str, str] = {
     # must not resolve to two different answers.
     "process.import_xml": "form",
     # JSON feeds consumed by a page's own JS.
-    "advisor.attach_sot_search": "json feed", "advisor.attachable": "json feed",
+    "advisor.attachable": "json feed",
     "advisor.tools": "json feed", "advisor.usage": "json feed",
     "analysis.data": "json feed", "analysis.inventory": "json feed",
     "analysis.deep_objects": "json feed", "analysis.faz_ops": "json feed",

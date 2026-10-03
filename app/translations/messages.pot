@@ -9706,10 +9706,10 @@ msgstr ""
 msgid "http-01 — web authentication"
 msgstr ""
 
-msgid "http://192.0.2.34:11434 or https://api.openai.com/v1"
+msgid "http://ollama.example:11434 or https://api.openai.com/v1"
 msgstr ""
 
-msgid "http://192.0.2.66:3002"
+msgid "http://firecrawl.example:3002"
 msgstr ""
 
 msgid "https://192.0.2.80:443/"

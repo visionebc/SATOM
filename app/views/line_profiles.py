@@ -75,18 +75,18 @@ def save():
     f = request.form
     line = (f.get('line') or '').strip()
     if not line:
-        flash('No line was given.', 'error')
+        flash('No line was given.', 'danger')
         return redirect(url_for('line_profiles.index'))
     if line not in store.classification('lines'):
         # A profile for a line the catalog does not list would be invisible on
         # this page and unreachable from the wizard — a row that exists and
         # does nothing.
-        flash(f'{line!r} is not in the Lines catalog.', 'error')
+        flash(f'{line!r} is not in the Lines catalog.', 'danger')
         return redirect(url_for('line_profiles.index'))
 
     cert_class = (f.get('cert_class') or '').strip()
     if cert_class and cert_class not in store.CERT_CLASSES:
-        flash(f'{cert_class!r} is not a certificate class.', 'error')
+        flash(f'{cert_class!r} is not a certificate class.', 'danger')
         return redirect(url_for('line_profiles.index'))
 
     wpp_raw = (f.get('wpp_template_id') or '').strip()
@@ -96,7 +96,7 @@ def save():
         if tpl is None or tpl.kind != Template.KIND_WEB_PROTECTION \
                 or (tpl.product or '') != product:
             flash('That Web Protection Profile template does not belong to '
-                  'this product.', 'error')
+                  'this product.', 'danger')
             return redirect(url_for('line_profiles.index'))
 
     known = {(s.get('name') or '').strip() for s in store.segments()}
@@ -105,7 +105,7 @@ def save():
     if unknown:
         # Refused rather than dropped: a form that silently discards a choice
         # teaches the operator the choice was saved.
-        flash('Unknown segment(s): ' + ', '.join(sorted(unknown)), 'error')
+        flash('Unknown segment(s): ' + ', '.join(sorted(unknown)), 'danger')
         return redirect(url_for('line_profiles.index'))
 
     prof = lp.profile_for(line, product)
@@ -137,7 +137,7 @@ def delete():
     line = (request.form.get('line') or '').strip()
     prof = lp.profile_for(line, product)
     if prof is None:
-        flash(f'No profile for {line!r}.', 'error')
+        flash(f'No profile for {line!r}.', 'danger')
         return redirect(url_for('line_profiles.index'))
     db.session.delete(prof)
     db.session.commit()

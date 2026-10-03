@@ -248,6 +248,10 @@ def create_app(config_override: object | None = None) -> Flask:
             'import_backup', 'section_config', 'section_catalog',
             'signatures', 'structure',
             'segments',
+            # Line profiles feed the FortiWeb line wizard, which reads them
+            # under the device's product. Opened from the Global menu they
+            # were filed under 'global' and the wizard never saw them.
+            'line_profiles',
             # 'scheduled_actions' left this set on 2026-08-10, for the
             # reason 'change_requests' left it the day before: pinning
             # it to the FortiWeb ADOM meant the FortiADC/FAZ/FAC
@@ -2107,6 +2111,15 @@ def create_app(config_override: object | None = None) -> Flask:
                 _dnsb_store.migrate_singleton()
             except Exception:  # noqa: BLE001
                 app.logger.warning('DNS backend migration skipped',
+                                   exc_info=True)
+            # Line profiles once saved from the Global menu were filed under
+            # 'global' and never read by the wizard; move them to FortiWeb.
+            try:
+                from .services import line_profiles as _lp
+                _lp.adopt_global_profiles()
+            except Exception:  # noqa: BLE001 - never block boot on this
+                db.session.rollback()
+                app.logger.warning('line profile re-filing skipped',
                                    exc_info=True)
             # A stored allowlist from before the feature was removed is no
             # longer enforced. Say so once, loudly: an install that relied on

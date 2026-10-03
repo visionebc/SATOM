@@ -25,12 +25,15 @@
       <div class="d-flex align-items-center gap-2">
         <span class="badge bg-dark border" title="{{ _('Served from the local source of truth') }}">
           <i class="bi bi-database me-1"></i>{{ freshness or 'no local data' }}</span>
+        {% set _can_write = current_user.can('config_write') %}
+        {% if _can_write %}
         <form method="post" action="{{ url_for('web_protection.refresh', id=appliance.id) }}" class="d-inline">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="next" value="{{ request.full_path }}">
           <button type="submit" class="btn btn-outline-light btn-sm" title="{{ _('Pull live config from the device into the cache') }}">
             <i class="bi bi-arrow-clockwise me-1"></i>{{ _('Refresh') }}</button>
         </form>
+        {% endif %}
       </div>
     </div>
 
@@ -54,10 +57,12 @@
     </ul>
 
     <div class="fw-toolbar mb-2 d-flex align-items-center gap-2 flex-wrap">
+      {% if _can_write %}
       <a class="btn btn-fw-primary btn-sm"
          href="{{ url_for('objedit.edit', appliance_id=appliance.id, collection=tab.collection, title=tab.label, create=1) }}">
         <i class="bi bi-plus-lg me-1"></i>{{ _('Create New') }}
       </a>
+      {% endif %}
       <div class="fw-search-box">
         <i class="bi bi-search search-icon"></i>
         <input type="text" id="wp-obj-search" placeholder="{{ _('Search…') }}">
@@ -109,10 +114,12 @@
                 {% endif %}
                 <a href="{{ url_for('objedit.edit', appliance_id=appliance.id, collection=tab.collection, mkey=r.name, title=tab.label) }}"
                    class="btn btn-sm btn-outline-secondary" title="{{ _('Edit') }}"><i class="bi bi-pencil"></i></a>
+                {% if _can_write %}
                 <button type="button" class="btn btn-sm btn-outline-info" title="{{ _('Clone (copies the object and its sub-table rows under a new name)') }}"
                         data-js="wp-clone" data-name="{{ r.name }}"><i class="bi bi-files"></i></button>
                 <button type="button" class="btn btn-sm btn-outline-danger" title="{{ _('Delete') }}"
                         data-js="wp-delete" data-name="{{ r.name }}"><i class="bi bi-trash"></i></button>
+                {% endif %}
               </td>
             </tr>
             {% endfor %}

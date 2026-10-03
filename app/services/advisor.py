@@ -31,12 +31,15 @@ See ``docs/ai-advisor.md`` for the full design write-up.
 """
 from __future__ import annotations
 
+import ipaddress
 import json
 import queue
 import re
+import socket
 import threading
 import time
 from datetime import datetime
+from urllib.parse import urlparse
 
 from ..extensions import db
 from ..models import Appliance, LuaScript, visible_appliances
@@ -592,17 +595,86 @@ def call_tool(name: str, args: dict) -> dict:
 # sending a message
 # ---------------------------------------------------------------------------
 
+def _host_is_local(host: str) -> bool:
+    """True only when every address ``host`` names is loopback, link-local or
+    private. A name that does not resolve counts as NOT local: guessing
+    "local" on a lookup failure is how a public endpoint would skip redaction."""
+    host = (host or "").strip().strip("[]")
+    if not host:
+        return False
+    if host.lower() == "localhost":
+        return True
+    try:
+        addrs = [ipaddress.ip_address(host)]
+    except ValueError:
+        try:
+            infos = socket.getaddrinfo(host, None)
+        except (OSError, UnicodeError):
+            return False
+        addrs = []
+        for info in infos:
+            try:
+                addrs.append(ipaddress.ip_address(info[4][0].split("%", 1)[0]))
+            except ValueError:
+                return False
+    if not addrs:
+        return False
+    return all(a.is_loopback or a.is_link_local or a.is_private for a in addrs)
+
+
+def leaves_lan(provider: dict | None) -> bool:
+    """Whether a send to ``provider`` crosses the LAN boundary.
+
+    The provider KIND does not decide it: an ``ollama`` endpoint can sit on a
+    public host just as easily as on this LAN. Only the base URL's host does,
+    so a remote Ollama gets the same redaction, "Allow external providers"
+    gate and export-log row as any hosted API."""
+    if not provider:
+        return False
+    if provider.get("kind") != "ollama":
+        return True
+    try:
+        host = urlparse(provider.get("base_url") or "").hostname or ""
+    except ValueError:
+        return True
+    return not _host_is_local(host)
+
+
+def _outbound_history(conv: AdvisorConversation, is_external: bool,
+                      exclude_id: int | None = None) -> tuple[list[dict], int]:
+    """The earlier turns that travel with the next message, as they will leave
+    (the newest 19, so with the new message the model sees 20).
+
+    Every turn is redacted when the provider is external, not only the newest
+    one: the stored rows are the operator's raw text, and assistant rows may
+    hold device data a LOCAL provider echoed before the conversation was
+    switched to an external one. Re-sending them verbatim would walk around
+    the redaction the operator is shown for the new message."""
+    turns = [{"role": m.role, "content": m.content or ""}
+             for m in conv.messages
+             if m.role in ("user", "assistant") and m.id != exclude_id][-19:]
+    redactions = 0
+    if is_external:
+        for turn in turns:
+            turn["content"], n = redact_with_count(turn["content"])
+            redactions += n
+    return turns, redactions
+
+
 def preview_outbound(conv: AdvisorConversation, text: str,
                       attachments: list[dict] | None = None) -> dict:
     """What would actually leave the LAN if this were sent right now —
     the pre-send review the design committed to. Local Ollama never
     leaves the LAN, so its preview is a no-op (is_external False, zero
     redactions, verbatim text) rather than pretending to redact traffic
-    that never crosses the boundary this feature is guarding."""
+    that never crosses the boundary this feature is guarding.
+
+    The earlier turns go out with the new message, so their redactions are
+    counted too and the number of turns is reported."""
     attachments = attachments or []
     provider = get_provider(conv.provider_key) or get_provider(default_provider_key())
-    is_external = bool(provider) and provider["kind"] != "ollama"
-    total = 0
+    is_external = leaves_lan(provider)
+    prior, total = _outbound_history(conv, is_external)
     out_text = text or ""
     if is_external:
         out_text, n = redact_with_count(out_text)
@@ -619,6 +691,7 @@ def preview_outbound(conv: AdvisorConversation, text: str,
         "is_external": is_external,
         "provider_key": provider["key"] if provider else "",
         "redaction_count": total,
+        "history_turns": len(prior),
         "outbound_text": "\n\n".join(p for p in parts if p),
     }
 
@@ -678,7 +751,7 @@ def _resolve_provider(conv: AdvisorConversation) -> tuple[dict, bool]:
     provider = get_provider(conv.provider_key) or get_provider(default_provider_key())
     if not provider:
         raise ProviderError("no AI provider configured -- add one in Settings -> AI Advisor")
-    is_external = provider["kind"] != "ollama"
+    is_external = leaves_lan(provider)
     if is_external and not external_allowed():
         raise ProviderError(
             "external providers are disabled -- turn on \"Allow external providers\" "
@@ -816,12 +889,9 @@ def _run_exchange(conv_id: int, username: str, text: str,
     db.session.add(user_msg)
     db.session.commit()
 
-    history = [{"role": m.role, "content": m.content}
-               for m in conv.messages if m.role in ("user", "assistant")][-20:]
-    if history and history[-1]["content"] == text:
-        history[-1] = {"role": "user", "content": full_text}
-    else:
-        history.append({"role": "user", "content": full_text})
+    history, n = _outbound_history(conv, is_external, exclude_id=user_msg.id)
+    total_redactions += n
+    history.append({"role": "user", "content": full_text})
 
     # --- the exchange ----------------------------------------------------
     # Timed as ONE span across every tool round, because that whole span is
@@ -832,7 +902,7 @@ def _run_exchange(conv_id: int, username: str, text: str,
     rounds = 0
     executed: list[dict] = []
     sys_prompt = system_prompt()
-    bytes_sent = len(full_text.encode())
+    bytes_sent = sum(len(t["content"].encode()) for t in history)
     final_text = ""
     current_parts: list[str] = []
     persisted: dict = {}

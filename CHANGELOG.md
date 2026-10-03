@@ -6,6 +6,22 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+### Security — AI Advisor history left the LAN unredacted (2026-10-03)
+
+Only the newest message was redacted before an external send. The earlier
+turns of the conversation (up to 19) travelled with it verbatim: the stored
+user rows are the operator's raw text, and assistant rows can hold device data
+that a local model echoed before the conversation was switched to an external
+provider. Every turn that leaves the node is now redacted, counted in the
+export log and in the pre-send review, and the review says how many earlier
+messages go with the new one.
+
+An `ollama` provider was also treated as local because of its kind alone, so
+an Ollama endpoint on a public host skipped redaction, the "Allow external
+providers" switch and the export log. Locality now comes from the base URL:
+only loopback, link-local and private addresses (or `localhost`) count as
+local, and a host name that does not resolve counts as external.
+
 ## [2.10.1] - 2026-10-03
 
 ### Fixed — Stop did not stop a running deep capture (2026-10-03)

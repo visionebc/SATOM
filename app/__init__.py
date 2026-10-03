@@ -124,6 +124,11 @@ def create_app(config_override: object | None = None) -> Flask:
         from .models import User
         return User.query.get(int(user_id))
 
+    # Idle session lock (Settings -> General -> Session Lock). Registered
+    # before every other before_request gate so a locked session reaches none.
+    from .auth import session_lock as _session_lock
+    _session_lock.init_app(app)
+
     # -- blueprints -------------------------------------------------------
     _register_blueprints(app)
 
@@ -2146,6 +2151,10 @@ def create_app(config_override: object | None = None) -> Flask:
             _seed_capacity()
             if not app.config.get("TESTING"):
                 _seed_reports()
+            # Settings -> General -> Log Levels / Log Format, applied to the
+            # application log file at boot (and again on every save).
+            from .errors import apply_log_settings
+            apply_log_settings()
 
     # -- orphaned background jobs ------------------------------------------
     # A restart kills job worker threads without touching their state files,

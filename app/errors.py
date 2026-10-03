@@ -215,6 +215,74 @@ def configure_logging(app: Flask) -> None:
     app_logger.setLevel(logging.INFO)
 
 
+#: Settings -> General -> Log Format. Every variant keeps the timestamp: a
+#: file log without one cannot be correlated with anything.
+LOG_FORMATS = {
+    "plain": "%(asctime)s %(levelname)s — %(message)s",
+    "detailed": "%(asctime)s %(levelname)-7s [%(name)s] %(message)s",
+}
+
+
+class _JsonFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:  # noqa: D401
+        import json
+        out = {"time": self.formatTime(record, "%Y-%m-%dT%H:%M:%S"),
+               "level": record.levelname, "logger": record.name,
+               "message": record.getMessage()}
+        if record.exc_info:
+            out["exc"] = self.formatException(record.exc_info)
+        return json.dumps(out, ensure_ascii=False)
+
+
+class _LevelSetFilter(logging.Filter):
+    """Pass only the severities ticked in Settings -> General -> Log Levels
+    (CRITICAL travels with ERROR)."""
+
+    def __init__(self, levels):
+        super().__init__()
+        self.levels = set(levels)
+        if "ERROR" in self.levels:
+            self.levels.add("CRITICAL")
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return record.levelname in self.levels
+
+
+def apply_log_settings(levels=None, fmt=None) -> bool:
+    """Apply the General settings' log levels and format to the application
+    log file handler. Called at startup and when General settings are saved.
+    Reads the settings store when no values are given (needs an app context).
+    Returns False when there is no file handler to configure."""
+    if levels is None or fmt is None:
+        try:
+            from .services import settings_store as store
+            general = store.general()
+            levels = general["log_levels"] if levels is None else levels
+            fmt = general["log_format"] if fmt is None else fmt
+        except Exception:  # noqa: BLE001 - logging is best-effort
+            return False
+    levels = [lv for lv in (levels or []) if lv in ("DEBUG", "INFO", "WARNING", "ERROR")] \
+        or ["INFO", "WARNING", "ERROR"]
+    handlers = [h for h in logger.handlers if getattr(h, "_fortinet_file", False)]
+    if not handlers:
+        return False
+    if fmt == "json":
+        formatter: logging.Formatter = _JsonFormatter()
+    else:
+        formatter = logging.Formatter(LOG_FORMATS.get(fmt, LOG_FORMATS["detailed"]),
+                                      datefmt="%Y-%m-%d %H:%M:%S")
+    floor = min(getattr(logging, lv) for lv in levels)
+    for h in handlers:
+        h.setFormatter(formatter)
+        h.setLevel(floor)
+        for f in [f for f in h.filters if isinstance(f, _LevelSetFilter)]:
+            h.removeFilter(f)
+        h.addFilter(_LevelSetFilter(levels))
+    logger.setLevel(floor)
+    logging.getLogger("app").setLevel(floor)
+    return True
+
+
 # ---------------------------------------------------------------------------
 # Global error handlers
 # ---------------------------------------------------------------------------

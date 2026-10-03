@@ -112,13 +112,24 @@ def status():
 @login_required
 @require_permission(Permission.CONFIG_WRITE)
 def history():
-    return jsonify({'ok': True, 'files': logcollect.history()})
+    visible = _visible_ids()
+    return jsonify({'ok': True, 'files': [f for f in logcollect.history()
+                                          if str(f.get('device_id')) in visible]})
+
+
+def _visible_ids() -> set[str]:
+    """Ids (as the filename prefix spells them) of the devices this user can
+    see. A saved log is device output; maintenance devices and other ADOMs
+    stay out of the history and out of the file view, as everywhere else."""
+    return {str(a.id) for a in visible_appliances().all()}
 
 
 @bp.route('/file/<path:name>')
 @login_required
 @require_permission(Permission.CONFIG_WRITE)
 def view_file(name):
+    if str(logcollect._parse_meta(basename(name or ''))['device_id']) not in _visible_ids():
+        abort(404)
     text = logcollect.read_log(name)
     if text is None:
         abort(404)

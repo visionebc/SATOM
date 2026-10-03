@@ -1167,6 +1167,9 @@ def dismiss_proposal(pid):
     """Reject the drafted carve-out. Recorded, not deleted — a rejected
     suggestion is evidence that someone looked and said no."""
     prop = _prop_or_404(pid)
+    # Same device check as apply: a proposal for a device this user cannot
+    # see (maintenance, another ADOM) is not theirs to close either.
+    visible_appliance_or_404(prop.appliance_id or 0)
     try:
         advisor.dismiss_proposal(prop, by=getattr(current_user, 'username', '') or '')
     except ValueError as exc:

@@ -21,6 +21,7 @@ from flask_login import current_user, login_required
 
 from ..auth.decorators import require_permission
 from ..models import Appliance, Permission
+from ..models import visible_appliances, visible_appliance_or_404
 from ..services import appids as svc
 from ..services.audit import log_action
 
@@ -43,8 +44,10 @@ def index():
     src["has_password"] = bool(src.pop("password_enc", None))
     src["has_token"] = bool(src.pop("token_enc", None))
     # GLOBAL catalog: assignment spans BOTH products' appliances.
-    appliances = (Appliance.query
-                  .filter(Appliance.kind.in_(("fortiweb", "fortiadc")))
+    # visible_appliances: maintenance devices and other ADOMs stay out of the
+    # picker, exactly as on every other device list.
+    appliances = (visible_appliances(Appliance.query
+                                     .filter(Appliance.kind.in_(("fortiweb", "fortiadc"))))
                   .order_by(Appliance.name).all())
     return render_template(
         "appids/index.html",
@@ -192,6 +195,7 @@ def assign():
     except (TypeError, ValueError):
         flash("Pick an AppID and a device.", "warning")
         return redirect(url_for("appids.index"))
+    visible_appliance_or_404(appliance_id)
     policy = request.form.get("server_policy", "").strip()
     try:
         row = svc.assign(app_id_pk=app_id_pk, appliance_id=appliance_id,
@@ -213,6 +217,7 @@ def unassign():
         appliance_id = int(request.form.get("appliance_id", "0"))
     except (TypeError, ValueError):
         return redirect(url_for("appids.index"))
+    visible_appliance_or_404(appliance_id)
     policy = request.form.get("server_policy", "").strip()
     if svc.unassign(appliance_id, policy):
         log_action("appid.unassign", target=policy,

@@ -1038,10 +1038,10 @@ device.
   VM / any), size, uploader, notes and a **sha256** recorded at upload. The binary
   lives on disk; the database row keeps the metadata and the hash, so integrity is
   checkable later.
-- **Uploads are chunked and resumable.** A firmware image is hundreds of
-  megabytes and a single POST across a slow link is a coin flip; the upload goes
-  in parts with a status endpoint, and the file is only assembled and hashed once
-  every part has landed.
+- **Uploads keep running while you navigate.** A firmware image is hundreds of
+  megabytes; it goes up as one request that the Jobs dock tracks across page
+  changes, and the sha256 is computed by a background job once the file has
+  landed.
 - **The page is ADOM-scoped at the query, not in the template** — a FortiWeb
   workspace sees FortiWeb images and Global sees everything, and a hidden row was
   never fetched in the first place. Inside a concrete ADOM the product is not

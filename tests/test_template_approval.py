@@ -297,3 +297,16 @@ def test_provisioning_preview_says_secrets_are_not_pushed(app, client, monkeypat
     assert "<code>RADIUS server</code>" in body
     assert "<code>DNS</code>" not in body
     assert "entered at apply time" not in client.get("/provisioning/").get_data(as_text=True)
+
+
+def test_provisioning_list_hides_approve_reject_without_the_permission(app, client):
+    from tests.conftest import admin_user_id, make_user, profile_id, login
+    tid = _system_profile(app, status="pending")
+    login(client, make_user(app, username="op-prov", role="operator",
+                            profile_id=profile_id(app, "operator")))
+    body = client.get("/provisioning/").get_data(as_text=True)
+    assert "sys-prof" in body
+    assert f"/provisioning/{tid}/approve" not in body
+    login(client, admin_user_id(app))
+    body = client.get("/provisioning/").get_data(as_text=True)
+    assert f"/provisioning/{tid}/approve" in body

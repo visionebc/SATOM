@@ -339,3 +339,38 @@ def test_ui_and_rest_delete_both_retire_identity_and_drop_datasheet(app, logged_
         row = DeviceIdentity.query.filter_by(slug=device_identity.slug_for("fw-gone")).first()
         assert row is not None and row.retired_at is not None
     assert not os.path.exists(pdf)
+
+
+def test_appliance_pages_draw_only_the_verbs_the_user_holds(app, client):
+    """List and detail: no Add/Edit/Delete/View Backups for a read-only user;
+    Inspector/Rediscovery on FortiADC rows too; Firmware Reports for viewers;
+    the ADOM field says ADOM."""
+    from tests.conftest import admin_user_id, make_user, login
+    fw = _make_appliance(app, name="fw-verbs")
+    adc = _make_appliance(app, name="adc-verbs", kind="fortiadc", host="192.0.2.98")
+    login(client, make_user(app, username="ro-verbs", role="readonly"), product="global")
+    html = client.get("/appliances/", headers={"X-ADOM": "global"}).get_data(as_text=True)
+    assert '<button class="btn btn-fw-primary" data-js="open-add-appliance">' not in html
+    assert 'data-js="edit-appliance"\n' not in html and "data-appliance=" not in html
+    assert f"/appliances/{fw}/delete" not in html
+    assert f"/appliances/{adc}/inspector" in html
+    assert f"/appliances/{adc}/rediscover" in html
+    assert "ADOM (vdom)" in html
+    det = client.get(f"/appliances/{fw}", headers={"X-ADOM": "global"}).get_data(as_text=True)
+    assert f"/appliances/{fw}/edit" not in det
+    assert f"/backups/{fw}" not in det
+    assert "/appliances/flash-reports" in det
+    login(client, admin_user_id(app), product="global")
+    html = client.get("/appliances/", headers={"X-ADOM": "global"}).get_data(as_text=True)
+    assert '<button class="btn btn-fw-primary" data-js="open-add-appliance">' in html and f"/appliances/{fw}/delete" in html
+    assert f"/appliances/{adc}/upgrade\"" not in html
+    det = client.get(f"/appliances/{fw}", headers={"X-ADOM": "global"}).get_data(as_text=True)
+    assert f"/appliances/{fw}/edit" in det and f"/backups/{fw}" in det
+
+
+def test_operators_find_the_device_console_in_the_sidebar(app, client):
+    from tests.conftest import make_user, profile_id, login
+    login(client, make_user(app, username="op-console", role="operator",
+                            profile_id=profile_id(app, "operator")), product="fortiweb")
+    html = client.get("/appliances/").get_data(as_text=True)
+    assert "/console/" in html and "Device Console" in html

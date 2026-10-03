@@ -91,7 +91,7 @@
           {% set used = usage.get((model, fw), {}).get(r.object_type, 0) %}
           <tr>
             <td>{{ labels.get(r.object_type, {}).get('label', r.object_type) }}</td>
-            <td class="{{ 'cap-used-hi' if r.effective_cap and used >= 0.8 * r.effective_cap else '' }}">{{ used }}</td>
+            <td class="{{ 'cap-used-hi' if r.effective_cap and used >= (warn_pct.get(product, 80.0) / 100.0) * r.effective_cap else '' }}">{{ used }}</td>
             <td>
               <input type="hidden" name="row_id" value="{{ r.id }}">
               <input name="hard_{{ r.id }}" value="{{ r.hard_max if r.hard_max is not none }}"

@@ -593,7 +593,7 @@ def visible_appliances(query=None, user=None):
     """Scope an Appliance query to what *user* may see: maintenance-mode rows
     are dropped unless the user holds ``appliances.view_maintenance``, and the
     active ADOM only sees its own product's devices (FortiADC -> fortiadc,
-    FortiWeb -> everything else, Global/workers -> all)."""
+    FortiWeb -> fortiweb plus legacy rows with no kind, Global/workers -> all)."""
     q = Appliance.query if query is None else query
     from .services.product_scope import scope_appliance_query
     q = scope_appliance_query(q, Appliance.kind)

@@ -196,24 +196,6 @@ def test_unparseable_name_without_version_is_still_rejected(app, client):
         assert FirmwareImage.query.count() == 0
 
 
-def test_resumable_begin_derives_version_too(app, client):
-    """The chunked path is the one the browser actually uses for big images —
-    it must not reject a blank version the multipart path would have filled."""
-    login(client, _admin(app))
-    resp = client.post("/firmware/upload/begin", json={
-        "filename": "FWB_KVM-v8.0.5.F-build0110-FORTINET.out", "size": 4,
-    })
-    assert resp.status_code == 200, resp.get_data(as_text=True)
-    upload_id = resp.get_json()["upload_id"]
-    from app.views import firmware as fwv
-    with app.app_context():
-        import json as _j
-        with open(fwv._meta_file(fwv._upload_dir(upload_id)), encoding="utf-8") as fh:
-            meta = _j.load(fh)
-    assert meta["version"] == "8.0.5"
-    assert meta["build"] == "0110"
-
-
 def test_parse_name_endpoint_matches_the_upload_handlers(app, client):
     login(client, _admin(app))
     got = client.get("/firmware/parse-name",
@@ -285,29 +267,6 @@ def test_finalize_job_says_which_page_to_refresh(app, client):
     assert res.get("reload_path") == want
     # ...and that path is a page, not a string that merely looks like one.
     assert client.get(res["reload_path"]).status_code == 200
-
-
-def test_resumable_finish_also_says_which_page_to_refresh(app, client):
-    """The chunked path is the one the browser uses for real (600 MB) images.
-    It hands off to the same finalize job, so it must carry the same refresh
-    target -- the two upload paths have drifted apart before."""
-    login(client, _admin(app))
-    begin = client.post("/firmware/upload/begin",
-                        json={"filename": "b.out", "version": "7.6.4", "size": 4})
-    assert begin.status_code == 200, begin.get_data(as_text=True)
-    uid = begin.get_json()["upload_id"]
-    assert client.post("/firmware/upload/chunk",
-                       query_string={"upload_id": uid, "offset": 0},
-                       data=b"DATA",
-                       content_type="application/octet-stream").status_code == 200
-    fin = client.post("/firmware/upload/finish", query_string={"upload_id": uid})
-    assert fin.status_code == 202, fin.get_data(as_text=True)
-    st = _wait_job(fin.get_json()["job_id"])
-    assert st.get("status") == "success", st
-    with app.test_request_context():
-        from flask import url_for
-        want = url_for("firmware.index")
-    assert (st.get("result") or {}).get("reload_path") == want
 
 
 def test_jobs_js_refresh_gate_normalises_the_adom_prefix(app):

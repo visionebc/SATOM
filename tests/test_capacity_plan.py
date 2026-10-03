@@ -132,3 +132,24 @@ def test_delete_model_removes_one_products_catalog_only(app, client):
     with app.app_context():
         left = {x.product for x in CapacityLimit.query.filter_by(model="Shared-1")}
         assert left == {"fortiweb"}
+
+
+def test_capacity_page_highlights_usage_at_the_configured_warning(app, client, monkeypatch):
+    from tests.conftest import admin_user_id, login
+    from app.services import device_health
+    from app.views import capacity as capview
+    with app.app_context():
+        capacity.ensure_rows_for("FWB-HL", "7.6", product="fortiweb")
+        from app.models import CapacityLimit, db
+        for r in CapacityLimit.query.filter_by(model="FWB-HL"):
+            r.hard_max = 100
+        db.session.commit()
+    monkeypatch.setattr(capview, "_fleet_usage",
+                        lambda: {("FWB-HL", "7.6"): {k: 50 for k in capacity.OBJECT_TYPES}})
+    login(client, admin_user_id(app), product="global")
+    monkeypatch.setattr(device_health, "thresholds", lambda scope="": (40.0, 90.0))
+    body = client.get("/capacity/", headers={"X-ADOM": "global"}).get_data(as_text=True)
+    assert 'class="cap-used-hi"' in body
+    monkeypatch.setattr(device_health, "thresholds", lambda scope="": (80.0, 95.0))
+    body = client.get("/capacity/", headers={"X-ADOM": "global"}).get_data(as_text=True)
+    assert 'class="cap-used-hi"' not in body

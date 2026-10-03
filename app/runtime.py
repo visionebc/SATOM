@@ -106,7 +106,7 @@ AGENT_HEARTBEAT = (Path(__file__).resolve().parents[1]
 AGENT_MAX_SILENCE = 60.0
 
 #: Where the console offers the delegated operations.
-CONTAINER_OPS_PAGE = "System → Container operations"
+CONTAINER_OPS_PAGE = "Global → Administrator → Container operations"
 
 _WITHOUT_AGENT = (" The optional operations agent (deploy/docker/"
                   "compose.agent.yaml) performs it from the console.")

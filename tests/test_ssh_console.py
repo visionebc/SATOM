@@ -486,3 +486,12 @@ def test_every_admin_block_is_titled_the_same():
     base = (ROOT / "app" / "templates" / "base.html").read_text()
     assert 'data-nav-group="Administration"' not in base
     assert base.count('data-nav-group="Administrator"') == 5
+
+
+def test_the_refusal_names_the_checkbox_the_page_shows():
+    import re
+    page = (ROOT / "app" / "templates" / "console" / "index.html").read_text()
+    label = re.search(r"_\('(I understand this[^']*)'\)", page).group(1)
+    with pytest.raises(sc.ConsoleViolation) as ei:
+        sc.assert_console_command("execute reboot", allow_disruptive=False)
+    assert "'" + label + "'" in str(ei.value)

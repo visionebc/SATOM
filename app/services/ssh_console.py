@@ -192,7 +192,7 @@ def assert_console_command(command: str, *, allow_disruptive: bool = False) -> s
             f"mean it.")
     if tier == TIER_DISRUPTIVE and not allow_disruptive:
         raise ConsoleViolation(
-            f"refused: {why}. Tick 'I understand this is disruptive' and type "
+            f"refused: {why}. Tick 'I understand this script is disruptive' and type "
             f"the appliance name to send it.")
     return (command or "").strip()
 

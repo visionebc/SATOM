@@ -78,6 +78,12 @@
     <a class="fw-nav-item {{ 'active' if request.blueprint == 'change_requests' else '' }}" href="{{ url_for('change_requests.index', _adom=product.key) }}">
       <i class="bi bi-clipboard2-check fw-nav-icon"></i><span>{{ _('Change Requests') }}</span></a>
     {% endif %}
+    {# Device Console needs config_write, but its entry lives in the
+       Administrator group, which only user_manage holders see. Operators
+       find it here instead; administrators keep the one in their group. #}
+    {% if not current_user.can('user_manage') %}
+    {% include "partials/nav_console.html" %}
+    {% endif %}
   </div>
 </div>
 {% endif %}

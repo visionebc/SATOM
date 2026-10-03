@@ -49,8 +49,10 @@
       <span class="text-secondary" style="font-size:12.5px">{{ _('Scope') }}</span>
       <span class="fw-badge fw-badge-info" title="{{ scope_appl.host }}">{{ appliance_name_parts(scope_appl)[0] }}</span>
       <span class="font-monospace" style="font-size:12.5px">{{ _('ADOM') }} {{ scope_appl.vdom or 'root' }}</span>
+      {% if may_open('architecture.index') %}
       <a class="btn btn-fw-outline btn-sm" href="{{ url_for('architecture.index') }}">
         <i class="bi bi-diagram-3 me-1"></i>{{ _('Switch device') }}</a>
+      {% endif %}
     </div>
     <div class="text-secondary" style="font-size:12.5px">
       {{ fleet.swept_scopes }} / {{ fleet.scope_count }} {{ _('ADOM scopes swept') }}

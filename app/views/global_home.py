@@ -23,6 +23,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 from flask import current_app, render_template
+from flask_login import current_user
 
 from ..branding import get_product
 from ..models import Appliance, visible_appliances
@@ -78,7 +79,11 @@ def adom_cards(fleet: list) -> list[dict]:
 
 
 def dashboard():
-    fleet = visible_appliances().order_by(Appliance.kind, Appliance.name).all()
+    # The fleet table (name, address, zone) is the appliance inventory; a
+    # profile without appliances.view sees the counts' frame, not the rows.
+    fleet_hidden = not current_user.can('appliances.view')
+    fleet = [] if fleet_hidden else (
+        visible_appliances().order_by(Appliance.kind, Appliance.name).all())
     adoms = adom_cards(fleet)
 
     # Registry order for the table (fortiweb, fortiadc, … ), then anything the
@@ -116,4 +121,4 @@ def dashboard():
 
     return render_template('global_home/index.html', adoms=adoms, fleet=rows,
                            kind_meta=kind_meta, jobs_running=jobs_running,
-                           certs=certs)
+                           certs=certs, fleet_hidden=fleet_hidden)

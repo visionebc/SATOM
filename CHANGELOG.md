@@ -625,6 +625,23 @@ The FortiWeb sidebar offered Log Collection to read-only users, who then got
 an access-denied page: collecting logs needs edit rights. The entry now shows
 only to users who can open it.
 
+### Security — device-content pages need a view permission; the menu follows the routes (2026-10-03)
+
+A custom profile with no permissions could still open the FortiWeb workspace
+(server policies), protection pages, exceptions, WAF artifacts, server
+objects, the FortiADC / FortiAnalyzer / FortiAuthenticator pages, the API
+registry, Sentinel and the network tools, because those pages only required a
+signed-in session. The Global home also listed every appliance with its
+address. Each of these now requires the matching *view* key
+(Web Protection, API Registry, Monitoring, Network or the general view), and
+the home lists appliances only with *View appliances*. The seeded readonly,
+operator and admin profiles hold all of these keys, so nothing changes for
+them.
+
+The sidebar, the top-bar search and the home shortcuts now ask the page's own
+permission before showing a link, so a profile is never offered a page that
+then refuses it.
+
 ## [2.10.1] - 2026-10-03
 
 ### Fixed — Stop did not stop a running deep capture (2026-10-03)

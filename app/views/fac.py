@@ -30,6 +30,7 @@ from __future__ import annotations
 from flask import (Blueprint, abort, redirect, render_template, request,
                    url_for)
 from flask_login import login_required
+from ..auth.decorators import require_permission
 
 from ..clients.fortiauthenticator import FortiAuthenticatorClient
 from ..models import Appliance, visible_appliances, visible_appliance_or_404
@@ -66,6 +67,7 @@ def _fac_fleet():
 
 @bp.route('/')
 @login_required
+@require_permission('view')
 def index():
     """FortiAuthenticator dashboard + device picker."""
     groups = fac_menu.visible_menu()
@@ -95,6 +97,7 @@ def index():
 
 @bp.route('/use/<int:id>')
 @login_required
+@require_permission('view')
 def use_device(id):
     appl = visible_appliance_or_404(id)
     if appl.kind != 'fortiauthenticator':
@@ -168,6 +171,7 @@ def _is_singleton(row: dict) -> bool:
 
 @bp.route('/m/<item_key>')
 @login_required
+@require_permission('view')
 def menu_page(item_key):
     """One menu leaf: live registry-bound tabs off the selected FortiAuthenticator."""
     group, item = fac_menu.find_item(item_key)

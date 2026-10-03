@@ -2650,6 +2650,14 @@ style actions — and you can create your own profiles freely. The three seeded
 ones exist because they reproduce the legacy role behaviour exactly; they are a
 starting point, not the ceiling.
 
+A custom profile gets exactly what its keys say. Pages that show device
+content (FortiWeb workspace and protection pages, exceptions, artifacts,
+FortiADC / FortiAnalyzer / FortiAuthenticator pages, the API registry,
+Sentinel, the network tools) need the matching *view* key, and the Global home
+lists appliances only with *View appliances*. The sidebar, the top bar and the
+home shortcuts offer a page only when the profile can open it, so a narrow
+profile sees a short menu rather than links that answer *access denied*.
+
 An **anti-lockout guard** keeps at least one active account holding both user
 management and profile management, so this page cannot be used to remove the
 last administrator.

@@ -53,6 +53,7 @@ def _device_lists(appliance):
 
 @bp.route('/')
 @login_required
+@require_permission('protection.view')
 def index():
     appliances = visible_appliances().order_by(Appliance.name).all()
     from flask import redirect as _redir, url_for as _ufor
@@ -65,6 +66,7 @@ def index():
 
 @bp.route('/<int:id>')
 @login_required
+@require_permission('protection.view')
 def list_exceptions(id):
     """The (device, ADOM) inventory — option B of the two the operator asked for.
 
@@ -150,6 +152,7 @@ def list_exceptions(id):
 
 @bp.route('/type-fields')
 @login_required
+@require_permission('protection.view')
 def type_fields(id=None):
     """Field spec for a carve-out type, so the New/Edit form renders inputs."""
     key = request.args.get('type', '')
@@ -251,6 +254,7 @@ def _live_bindings_or_none(appliance):
 
 @bp.route('/<int:id>/impact')
 @login_required
+@require_permission('protection.view')
 def impact(id):
     """What deleting one carve-out would take away, and from whom."""
     appliance = visible_appliance_or_404(id)
@@ -316,6 +320,7 @@ def clone_exception(id):
 # --------------------------------------------------------------------------- #
 @bp.route('/<int:id>/deploy-targets')
 @login_required
+@require_permission('protection.view')
 def deploy_targets(id):
     """Every visible FortiWeb scope with a verdict for this carve-out.
 
@@ -389,6 +394,7 @@ def deploy(id):
 # --------------------------------------------------------------------------- #
 @bp.route('/<int:id>/advice', methods=['POST'])
 @login_required
+@require_permission('protection.view')
 def advice(id):
     """Analyse a DRAFT carve-out before it is saved or pushed.
 
@@ -480,6 +486,7 @@ def _policy_wpp_bindings(appliance):
 
 @bp.route('/<int:id>/inject-targets')
 @login_required
+@require_permission('protection.view')
 def inject_targets(id):
     """Candidate parent objects on the device a carve-out type can target."""
     appliance = visible_appliance_or_404(id)
@@ -556,6 +563,7 @@ def inject(id):
 # --------------------------------------------------------------------------- #
 @bp.route('/<int:id>/versions')
 @login_required
+@require_permission('protection.view')
 def version_history(id):
     """Every recorded state of one carve-out, newest first.
 
@@ -576,6 +584,7 @@ def version_history(id):
 
 @bp.route('/<int:id>/version-diff')
 @login_required
+@require_permission('protection.view')
 def version_diff(id):
     """Structural A->B comparison of two recorded bodies.
 
@@ -623,6 +632,7 @@ def rollback(id):
 
 @bp.route('/<int:id>/restorable')
 @login_required
+@require_permission('protection.view')
 def restorable(id):
     """Carve-outs deleted on this scope whose history can bring them back."""
     visible_appliance_or_404(id)

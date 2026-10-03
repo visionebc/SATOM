@@ -106,6 +106,7 @@ def _resolve_appliance(ref: attack_log.LogReference, explicit_id):
 
 @bp.route('/', methods=['GET'])
 @login_required
+@require_permission('view')
 def index():
     appliances = visible_appliances().order_by(Appliance.name).all()
     query = (request.args.get('q') or '').strip()
@@ -601,6 +602,7 @@ def _read_entry(appliance, msg_id: str):
 # --------------------------------------------------------------------------- #
 @bp.route('/field-intel', methods=['POST'])
 @login_required
+@require_permission('view')
 def field_intel():
     """What one field of one entry means, and what else on this box shares it.
 
@@ -819,6 +821,7 @@ def ask_field():
 # --------------------------------------------------------------------------- #
 @bp.route('/options', methods=['POST'])
 @login_required
+@require_permission('view')
 def carveout_options():
     """Which carve-out types fit this entry, and what can scope each of them.
 
@@ -861,6 +864,7 @@ def carveout_options():
 
 @bp.route('/build', methods=['POST'])
 @login_required
+@require_permission('view')
 def build_carveout():
     """Assemble a payload from the fields the operator ticked. Nothing is saved.
 

@@ -126,6 +126,11 @@ def apply():
     except runtime.CapabilityUnavailable as exc:
         flash(exc.reason, "warning")
         return redirect(url_for("self_update.index"))
+    log_action("self_update.apply", target=target,
+               extra={"request": uid, "role": role,
+                      "from": (info.get("current") or {}).get("sha", "")[:12],
+                      "pip": "do_pip" in request.form,
+                      "migrate": "do_migrate" in request.form})
     flash("Update queued (%s). The privileged runner is applying it — watch the "
           "live status below. The service will restart mid-update." % uid,
           "success")
@@ -159,6 +164,7 @@ def set_mode():
               "read-only).", "warning")
         return redirect(url_for("ha.index"))
     su.set_ha_mode(mode)
+    log_action("ha.mode", target=mode)
     flash("Deployment mode set to %s." % mode.upper(), "success")
     return redirect(url_for("ha.index"))
 
@@ -179,6 +185,7 @@ def set_deploy_mode():
               "PRIMARY node (this node's database is read-only).", "warning")
         return redirect(url_for("self_update.index"))
     reconciler.set_deploy_mode(mode)
+    log_action("self_update.deploy_mode", target=mode)
     flash("Deploy automation set to %s. In AUTO the reconciler drives the staged "
           "rollout (standby first, health-gated, then primary); in MANUAL it "
           "only observes and you apply by hand." % mode.upper(), "success")
@@ -207,6 +214,7 @@ def promote():
     except runtime.CapabilityUnavailable as exc:
         flash(exc.reason, "warning")
         return redirect(url_for("ha.index"))
+    log_action("ha.promote", target=this_node, extra={"request": uid})
     flash("Failover queued (%s). The privileged runner is promoting this node to "
           "PRIMARY and starting the app — watch the status below. Only promote "
           "when the old primary is confirmed DOWN." % uid, "success")
@@ -233,6 +241,7 @@ def save_node():
         flash("Both a node name (hostname) and a host/IP are required.", "danger")
     else:
         su.upsert_node(name, host, desc)
+        log_action("ha.node.save", target=name, extra={"host": host})
         flash("HA node '%s' (%s) saved. It propagates to the peer on the next "
               "data sync; its live state is probed on this page." % (name, host),
               "success")
@@ -248,6 +257,7 @@ def delete_node():
         flash("Cannot remove this node (self) from the HA registry.", "warning")
     else:
         su.remove_node(name)
+        log_action("ha.node.delete", target=name)
         flash("HA node '%s' removed from the registry." % name, "info")
     return redirect(url_for("ha.index"))
 

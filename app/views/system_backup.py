@@ -14,6 +14,7 @@ from flask_login import login_required
 
 from ..auth.decorators import require_permission
 from ..services import system_backup
+from ..services.audit import log_action
 
 bp = Blueprint("system_backup", __name__, url_prefix="/system-backup")
 
@@ -153,6 +154,9 @@ def create():
     publish_git = request.form.get("publish_git") == "on"
     res = system_backup.create_backup(include_reports=include_reports,
                                       publish_git=publish_git, label="manual")
+    log_action("system_backup.create", target=res.get("name") or "",
+               extra={"ok": bool(res.get("ok")), "include_reports": include_reports,
+                      "publish_git": publish_git, "detail": str(res.get("detail", ""))[:200]})
     if res["ok"]:
         flash(f"Backup created: {res['name']} ({res['size']//1024} KB) — {res['detail']}",
               "success")
@@ -190,6 +194,8 @@ def delete():
               "the datasync mirrors the deletion here within 5 minutes.", "warning")
         return redirect(url_for("system_backup.index"))
     res = system_backup.delete_backup(request.form.get("name", ""))
+    log_action("system_backup.delete", target=request.form.get("name", ""),
+               extra={"ok": bool(res.get("ok")), "detail": str(res.get("detail", ""))[:200]})
     flash(res["detail"], "success" if res["ok"] else "danger")
     return redirect(url_for("system_backup.index"))
 
@@ -203,6 +209,9 @@ def restore():
         flash("Restore not confirmed — type RESTORE to proceed.", "warning")
         return redirect(url_for("system_backup.index"))
     res = system_backup.restore_backup(name, restore_reports=True)
+    log_action("system_backup.restore", target=name,
+               extra={"ok": bool(res.get("ok")), "safety": res.get("safety"),
+                      "detail": str(res.get("detail", ""))[:200]})
     if res["ok"]:
         flash(f"Restored {name}. Safety dump: {res.get('safety')}. {res['detail']}",
               "success")
@@ -233,6 +242,8 @@ def code_rollback():
         flash("Already running that revision.", "info")
         return redirect(url_for("system_backup.index"))
     uid = su.request_update(target, current_user.username, origin="code-rollback")
+    log_action("system.code_rollback", target=target,
+               extra={"request": uid, "from": info.get("sha", "")[:12]})
     flash(f"Code rollback to {target} queued ({uid}) — follow it on the "
           "Software Update page. The service restarts when it applies.", "success")
     return redirect(url_for("system_backup.index"))
@@ -248,6 +259,8 @@ def firmware_pull():
     from ..services import backup_server as bksrv
     name = request.form.get("name", "")
     res = bksrv.pull_firmware(name, by=current_user.username)
+    log_action("system_backup.firmware_pull", target=name,
+               extra={"ok": bool(res.get("ok")), "detail": str(res.get("detail", ""))[:200]})
     flash(("Firmware: " + res["detail"]) if res["ok"] else
           ("Firmware pull failed: " + res["detail"]),
           "success" if res["ok"] else "danger")
@@ -342,6 +355,9 @@ def git_bundle_create():
     push = request.form.get("push_server") == "on"
     res = git_backup.create_bundle(label="manual", push_server=push,
                                    by=current_user.username)
+    log_action("system_backup.git_bundle_create", target=res.get("name") or "",
+               extra={"ok": bool(res.get("ok")), "push_server": push,
+                      "detail": str(res.get("detail", ""))[:200]})
     flash(("Git bundle: " + res["detail"]) if res["ok"] else
           ("Git bundle failed: " + res["detail"]),
           "success" if res["ok"] else "danger")
@@ -354,6 +370,8 @@ def git_bundle_create():
 def git_bundle_config():
     from ..services import git_backup
     cfg = git_backup.save_config(request.form)
+    log_action("system_backup.git_bundle_config",
+               extra={"keep": cfg.get("keep"), "push_server": bool(cfg.get("push_server"))})
     flash(f"Git bundle settings saved (keep {cfg['keep']}, "
           f"push to backup server {'on' if cfg['push_server'] else 'off'}).",
           "success")
@@ -385,6 +403,8 @@ def git_bundle_delete():
               "the datasync mirrors the deletion here within 5 minutes.", "warning")
         return redirect(url_for("system_backup.index"))
     res = git_backup.delete_bundle(request.form.get("name", ""))
+    log_action("system_backup.git_bundle_delete", target=request.form.get("name", ""),
+               extra={"ok": bool(res.get("ok")), "detail": str(res.get("detail", ""))[:200]})
     flash(res["detail"], "success" if res["ok"] else "danger")
     return redirect(url_for("system_backup.index"))
 

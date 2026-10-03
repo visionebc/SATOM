@@ -112,6 +112,7 @@ def login():
             return render_template('auth/login.html')
 
         authed = False
+        failure_logged = False
         # 1) Local account → local password only (never fall through to directory).
         if user and user.is_local:
             if user.check_password(password):
@@ -133,6 +134,7 @@ def login():
             else:
                 log_action('login.external_fail', target=username,
                            extra={'detail': result.get('detail', '')})
+                failure_logged = True
 
         if not authed:
             if user is not None:
@@ -145,6 +147,12 @@ def login():
                         username, real_client_ip(), LOCKOUT_THRESHOLD)
                     log_action('login.lockout', target=username)
                 _commit_quiet()
+            if not failure_logged:
+                # Every failed sign-in leaves a row, not only the one that
+                # trips the lockout: nine guesses against an account (or a
+                # spray across unknown names) were invisible in the trail.
+                log_action('login.fail', target=(username or '')[:128],
+                           extra={'known_user': user is not None})
             flash('Invalid username or password.', 'danger')
             return render_template('auth/login.html')
 

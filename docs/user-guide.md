@@ -2503,10 +2503,23 @@ The rest follow.
 ### 26.1 General — identity, logging, and the Libraries panel
 
 Application name (browser title and top bar), environment (which drives the
-**PROD**/**DEV** badge), default appliance platform, session-lock timeout, status
-poll interval, which log severities are written, display timezone, log format,
-and whether policy detail pages expose their raw JSON. A separate card opts an
-admin in or out of **bug-report notifications** (bell + email).
+**PROD**/**DEV** badge), default appliance platform, display timezone, and:
+
+- **Session Lock (minutes)** — an idle timeout (5 to 1440, default 60). A browser
+  session with no activity for that long is signed out on its next request,
+  with the message *"Your session was locked after N minutes of inactivity."*
+  (script callers get a JSON 401). Page loads, navigation and every form or
+  button that changes something count as activity; background refreshes — the
+  notification bell, job progress, status badges, edit-lock heartbeats and
+  other timed panel reloads — do not, so a tab left open still locks. API
+  tokens are not affected. The lock is audited as `session.idle_lock`.
+- **Log Levels** and **Log Format** — which severities are written to the
+  application log file and how (plain, detailed, or JSON lines). Applied at
+  start-up and immediately on save.
+
+The status-poll interval and raw-JSON toggle that used to sit here were removed:
+nothing ever read them. A separate card opts an admin in or out of
+**bug-report notifications** (bell + email).
 
 The **System Information** card is read-only inventory — version, node, Python,
 and the library list. Underneath it sits **Libraries**, which is a **second,
@@ -5136,7 +5149,7 @@ discipline:
 
 1. **The URL map is the authority on what exists.** Every parameterless page in
    the console is either **on the map** (109 today) or **excluded with a written
-   reason** (141 today — JSON feeds, downloads, redirects and fragments that
+   reason** (142 today — JSON feeds, downloads, redirects and fragments that
    are not pages). A page added without an entry fails the suite in the same
    commit that adds it, so the map can never be quietly missing something.
 2. **Nothing here is a second source of truth.** Paths are generated from the

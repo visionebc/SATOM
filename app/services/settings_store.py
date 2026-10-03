@@ -19,8 +19,8 @@ from ..models import AppSetting
 K_APP_NAME = "general.app_name"
 K_DEFAULT_KIND = "general.default_kind"
 K_SESSION_TIMEOUT = "general.session_timeout"      # minutes
-K_POLL_INTERVAL = "general.poll_interval"          # seconds
-K_SHOW_RAW = "general.show_raw_config"             # "1" / "0"
+K_POLL_INTERVAL = "general.poll_interval"          # seconds -- RETIRED: nothing read it
+K_SHOW_RAW = "general.show_raw_config"             # "1" / "0" -- RETIRED: nothing read it
 K_LOG_LEVELS = "general.log_levels"                # JSON list
 K_NAMING = "naming.scheme"                          # JSON dict of overrides
 K_CLS_PREFIX = "classification."                    # + zones|lines|departments -> JSON list
@@ -32,6 +32,7 @@ K_LOG_FORMAT = "general.log_format"                 # plain | detailed | json
 K_ENV_MODE = "general.env_mode"                     # production | development
 
 LOG_LEVELS_ALL = ["DEBUG", "INFO", "WARNING", "ERROR"]
+LOG_LEVELS_DEFAULT = ["INFO", "WARNING", "ERROR"]
 ENV_MODES = ("production", "development")
 LOG_FORMATS = ["plain", "detailed", "json"]
 DEFAULT_TIMEZONE = "Europe/Zurich"
@@ -55,7 +56,8 @@ DEFAULTS = {
     K_POLL_INTERVAL: "30",
     K_SHOW_RAW: "0",
     K_TIMEZONE: DEFAULT_TIMEZONE,
-    K_LOG_FORMAT: "plain",
+    # "detailed" is the format the log file has always been written in.
+    K_LOG_FORMAT: "detailed",
     K_ENV_MODE: "development",
 }
 
@@ -176,9 +178,9 @@ def general() -> dict[str, Any]:
         "session_timeout": _to_int(get_str(K_SESSION_TIMEOUT), 60),
         "poll_interval": _to_int(get_str(K_POLL_INTERVAL), 30),
         "show_raw_config": get_str(K_SHOW_RAW) == "1",
-        "log_levels": [lv for lv in get_json(K_LOG_LEVELS, LOG_LEVELS_ALL) if lv in LOG_LEVELS_ALL],
+        "log_levels": [lv for lv in get_json(K_LOG_LEVELS, LOG_LEVELS_DEFAULT) if lv in LOG_LEVELS_ALL],
         "timezone": _valid_tz(get_str(K_TIMEZONE)),
-        "log_format": (get_str(K_LOG_FORMAT) or "plain") if (get_str(K_LOG_FORMAT) or "plain") in LOG_FORMATS else "plain",
+        "log_format": (get_str(K_LOG_FORMAT) or "detailed") if (get_str(K_LOG_FORMAT) or "detailed") in LOG_FORMATS else "detailed",
         "env_mode": env_mode(),
     }
 
@@ -291,17 +293,26 @@ def normalise_default_kind(value: Any) -> str:
 
 
 def save_general(app_name: str, default_kind: str, session_timeout: Any,
-                 poll_interval: Any, show_raw_config: bool,
-                 log_levels: list[str], timezone: str = "",
-                 log_format: str = "plain", env_mode: str = "") -> None:
+                 poll_interval: Any = None, show_raw_config: bool | None = None,
+                 log_levels: list[str] | None = None, timezone: str = "",
+                 log_format: str = "detailed", env_mode: str = "") -> None:
+    """Persist the General tab. ``session_timeout`` is enforced as the idle
+    session lock (app/auth/session_lock.py); log levels/format are applied to
+    the application log (app/errors.py:apply_log_settings).
+
+    ``poll_interval`` and ``show_raw_config`` are retired -- nothing ever read
+    them -- and are no longer on the form. They are only written when a caller
+    still passes them, so an old stored value stays harmless."""
     set_str(K_APP_NAME, (app_name or "SATOM").strip())
     set_str(K_DEFAULT_KIND, normalise_default_kind(default_kind))
     set_str(K_SESSION_TIMEOUT, max(5, min(1440, _to_int(session_timeout, 60))))
-    set_str(K_POLL_INTERVAL, max(10, min(3600, _to_int(poll_interval, 30))))
-    set_str(K_SHOW_RAW, "1" if show_raw_config else "0")
-    set_json(K_LOG_LEVELS, [lv for lv in log_levels if lv in LOG_LEVELS_ALL] or ["INFO", "WARNING", "ERROR"])
+    if poll_interval is not None:
+        set_str(K_POLL_INTERVAL, max(10, min(3600, _to_int(poll_interval, 30))))
+    if show_raw_config is not None:
+        set_str(K_SHOW_RAW, "1" if show_raw_config else "0")
+    set_json(K_LOG_LEVELS, [lv for lv in (log_levels or []) if lv in LOG_LEVELS_ALL] or list(LOG_LEVELS_DEFAULT))
     set_str(K_TIMEZONE, _valid_tz(timezone))
-    set_str(K_LOG_FORMAT, log_format if log_format in LOG_FORMATS else "plain")
+    set_str(K_LOG_FORMAT, log_format if log_format in LOG_FORMATS else "detailed")
     if env_mode:
         save_env_mode(env_mode)
 

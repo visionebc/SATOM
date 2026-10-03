@@ -81,24 +81,17 @@
                   <label class="fw-form-label">{{ _('Session Lock (minutes)') }}</label>
                   <input type="number" name="session_timeout" class="form-control fw-form-control"
                          value="{{ settings.session_timeout }}" min="5" max="1440">
-                  <div class="form-text">{{ _('Inactivity before the session expires and re-asks for the password') }}</div>
-                </div>
-
-                <div class="col-md-6">
-                  <label class="fw-form-label">{{ _('Status Poll Interval (seconds)') }}</label>
-                  <input type="number" name="poll_interval" class="form-control fw-form-control"
-                         value="{{ settings.poll_interval }}" min="10" max="3600">
-                  <div class="form-text">{{ _('How often appliance online/offline status is checked') }}</div>
+                  <div class="form-text">{{ _('Minutes without activity before a browser session is signed out. Background refreshes (notifications, job progress, status badges) do not count as activity. API tokens are not affected.') }}</div>
                 </div>
 
                 <div class="col-md-6">
                   <label class="fw-form-label">{{ _('Log Format') }}</label>
                   <select name="log_format" class="form-select fw-form-control">
-                    <option value="plain" {{ 'selected' if settings.log_format == 'plain' else '' }}>{{ _('Plain text (level — message)') }}</option>
+                    <option value="plain" {{ 'selected' if settings.log_format == 'plain' else '' }}>{{ _('Plain text (time · level — message)') }}</option>
                     <option value="detailed" {{ 'selected' if settings.log_format == 'detailed' else '' }}>{{ _('Detailed (timestamp · level · logger · message)') }}</option>
                     <option value="json" {{ 'selected' if settings.log_format == 'json' else '' }}>{{ _('JSON (structured, one object per line)') }}</option>
                   </select>
-                  <div class="form-text">{{ _('How application log lines are written') }}</div>
+                  <div class="form-text">{{ _('How lines are written to the application log file (data/logs/satom.log). Applied on save.') }}</div>
                 </div>
 
                 <div class="col-md-6">
@@ -113,14 +106,6 @@
                     {% endfor %}
                   </div>
                   <div class="form-text">{{ _('Which severities are written to the application log') }}</div>
-                </div>
-
-                <div class="col-12">
-                  <div class="form-check form-switch">
-                    <input class="form-check-input" type="checkbox" name="show_raw_config" id="chk-raw"
-                           {{ 'checked' if settings.show_raw_config else '' }}>
-                    <label class="form-check-label" for="chk-raw">{{ _('Show raw JSON config on policy detail pages') }}</label>
-                  </div>
                 </div>
 
               </div>
@@ -180,7 +165,6 @@
                     <tr><td class="text-muted">{{ _('Version') }}</td><td><span class="fw-badge fw-badge-primary">v{{ app_version }}</span></td></tr>
                     <tr><td class="text-muted">{{ _('Default platform') }}</td><td>{{ platform_labels.get(settings.default_kind, settings.default_kind) }}</td></tr>
                     <tr><td class="text-muted">{{ _('Session lock') }}</td><td>{{ settings.session_timeout }} min</td></tr>
-                    <tr><td class="text-muted">{{ _('Status poll') }}</td><td>{{ settings.poll_interval }} s</td></tr>
                     <tr><td class="text-muted">{{ _('Log levels') }}</td><td>{{ settings.log_levels | join(', ') }}</td></tr>
                     <tr><td class="text-muted">{{ _('Timezone') }}</td><td>{{ settings.timezone }}</td></tr>
                     <tr><td class="text-muted">{{ _('Log format') }}</td><td>{{ settings.log_format }}</td></tr>

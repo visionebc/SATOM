@@ -440,6 +440,29 @@ def _template_lock_error(coll, name):
     return ''
 
 
+def _lease_conflict(appliance_id, coll, name):
+    """A ready ``(response, 409)`` when ANOTHER user holds the edit lease on
+    this object - or on the object a sub-table row belongs to - else None.
+
+    The server-side half of the lease. lock.js only advises in the browser; a
+    user without the lease (or who never asked for one) used to overwrite the
+    holder's work by posting here directly."""
+    if not name:
+        return None
+    from ..services import lock_service
+    parts = objform.collection_of(coll).split('/')
+    me = getattr(current_user, 'id', None)
+    for i in range(len(parts), 0, -1):
+        info = lock_service.status(appliance_id,
+                                   '%s:%s' % ('/'.join(parts[:i]), name))
+        if info and info.get('owner_user_id') != me:
+            who = info.get('owner_label') or 'another user'
+            return (jsonify(ok=False, lock=info, error=(
+                '"%s" is being edited by %s. Take over the edit lock first; '
+                'nothing was sent to the device.' % (name, who))), 409)
+    return None
+
+
 def _ref_guard(appl, fields, kind=''):
     """``(refusal, unverified)`` for the reference fields in ``fields``.
 
@@ -492,6 +515,9 @@ def save_object(appliance_id):
     lock = _template_lock_error(coll, mkey)
     if lock:
         return jsonify(ok=False, error=lock), 403
+    held = _lease_conflict(appliance_id, coll, mkey)
+    if held:
+        return held
     refusal, unverified = _ref_guard(appl, fields)
     if refusal:
         return refusal
@@ -596,6 +622,9 @@ def save_row(appliance_id):
     lock = _template_lock_error(coll, parent)
     if lock:
         return jsonify(ok=False, error=lock), 403
+    held = _lease_conflict(appliance_id, coll, parent)
+    if held:
+        return held
     refusal, _unverified = _ref_guard(appl, fields)
     if refusal:
         return refusal
@@ -653,6 +682,9 @@ def delete_row(appliance_id):
     lock = _template_lock_error(coll, parent)
     if lock:
         return jsonify(ok=False, error=lock), 403
+    held = _lease_conflict(appliance_id, coll, parent)
+    if held:
+        return held
 
     ops = FortiWebOps(appl)
 
@@ -695,6 +727,9 @@ def delete_object(appliance_id):
     lock = _template_lock_error(coll, mkey)
     if lock:
         return jsonify(ok=False, error=lock), 403
+    held = _lease_conflict(appliance_id, coll, mkey)
+    if held:
+        return held
     res = FortiWebOps(appl).delete(objform.rest_path(coll), mkey,
                                    dry_run=not do_apply,
                                    force=bool(body.get('force')))

@@ -882,6 +882,12 @@ def cr_view_context(cr, *, drift=False, back='',
         # question for the registry, asked now. The Schedule button is hidden
         # when the answer is no, and the service refuses it anyway.
         executable=sa.get_spec(cr.action) is not None,
+        # Offered exactly when svc.close_by_hand would accept it.
+        closable_by_hand=(cr.status not in ChangeRequest.TERMINAL and (
+            (sa.get_spec(cr.action) is None
+             and cr.status in ('approved', 'scheduled', 'in_progress'))
+            or (cr.status == 'in_progress' and cr.window_end is not None
+                and datetime.utcnow() > cr.window_end))),
         events=events,
         devices=devices,
         notice=svc.maintenance_notice(cr),
@@ -1192,6 +1198,27 @@ def cancel(id):
     return redirect(_after(id))
 
 
+@bp.route('/<int:id>/close-by-hand', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def close_by_hand(id):
+    """Mark a change completed or failed BY HAND: a documentary change type
+    (nothing else can ever close it), or one still in progress after its
+    window ended."""
+    _cr_in_scope_or_404(id)
+    outcome = (request.form.get('outcome') or '').strip()
+    note = (request.form.get('summary') or '').strip()[:2000]
+    try:
+        cr = svc.close_by_hand(id, outcome, by=current_user.username,
+                               summary=note)
+        log_action('change_request.closed_by_hand', target=cr.title,
+                   detail=f'outcome={outcome} note={note or "-"}')
+        flash(f'Change request marked {cr.status}.', 'success')
+    except ValueError as exc:
+        flash(str(exc), 'danger')
+    return redirect(_after(id))
+
+
 @bp.route('/<int:id>/mark-notified', methods=['POST'])
 @login_required
 @require_permission(Permission.USER_MANAGE)
@@ -1201,7 +1228,10 @@ def mark_notified(id):
     failure is reported and logged, never a 500."""
     from ..services import email_service as email
     cr = _cr_in_scope_or_404(id)
-    recipients = (request.form.get('recipients') or '').strip()
+    # The form posts no list of its own: the change's notify_to list (falling
+    # back to Settings -> Email default) is who this notice is for.
+    recipients = ((request.form.get('recipients') or '').strip()
+                  or svc.recipients_for(cr))
     stamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')
 
     if email.is_configured():

@@ -4564,7 +4564,10 @@ is opening a change ticket in your own CRM and handing the reference back.
 
 Events: `change.requested`, `change.approved`, `window.opening`,
 `window.closing`, `upgrade.finished`, `upgrade.failed` and `alert.fired`. The
-editor lists the exact payload each one carries.
+editor lists the exact payload each one carries. `window.opening` and
+`window.closing` fire when a change starts and finishes, whether or not NetBox
+is configured; `window.closing` carries the change's status (`completed`,
+`failed`) as its `outcome`.
 
 `alert.fired` is the health engine's, and it behaves unlike the other six: it
 fires **once per finding** rather than once per change, only for findings fresh
@@ -4787,17 +4790,40 @@ exactly why it does not — "before the maintenance window", "not approved",
 **Dry runs are not gated.** They send nothing to the appliance, so validating an
 image never needs a window.
 
-When an authorised push starts, its change moves to *in progress*; when it
-finishes — successfully or not — the change is closed with the real outcome and
-the end-of-window notice goes out. You no longer have to close it by hand.
+When an authorised push starts, its change moves to *in progress*. Each
+appliance's outcome is recorded on the change's timeline; the change is closed
+— with the real outcome and the end-of-window notice — once **every** appliance
+it names has a result (a one-appliance change closes at once). A failed
+appliance can be flashed again inside the window; its newer result replaces the
+failure. If the window ends with appliances never run, close the change with
+**Mark completed** / **Mark failed**.
+
+**The scheduler does not flash firmware.** A scheduled `upgrade` change reports
+each target as *not executed* and closes as failed; the change page marks
+upgrade changes *Flashed live, not by the scheduler*. Flash from each
+appliance's Upgrade page inside the window.
 
 The order to work in:
 
 1. **Upgrade Preparation** → run it → *Raise change request*.
 2. Fill in the window (in your timezone) and the rollback plan, save the draft.
 3. Print the change document, circulate it, collect the approvals.
-4. **Approve**, then **Schedule** — or flash by hand from the Upgrade page
-   inside the window.
+4. **Approve**, then flash each appliance from its Upgrade page inside the
+   window.
+
+Change-request lifecycle rules worth knowing:
+
+- Only a **draft** can be approved, and a completed or failed change cannot be
+  cancelled — the buttons were hidden before, now the server refuses too.
+- **Schedule** pressed after the window has already started binds the run to a
+  minute from now (rounds keep their spacing); after the window has closed it
+  is refused.
+- A **documentary** change type (one without an executor) is closed with
+  **Mark completed** / **Mark failed** once approved (Administrators only,
+  audited).
+- **Mark notified** e-mails the maintenance notice to the change's own
+  recipients (falling back to the Settings → Email default) when e-mail is
+  configured; otherwise it only records the notice as sent.
 
 ## 37. The Tools menu: certificate inspector, false-positive explainer, tracer
 

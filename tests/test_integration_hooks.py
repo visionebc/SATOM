@@ -757,3 +757,186 @@ def test_the_units_mirror_the_updater_pattern_and_watch_the_right_queue():
     assert "User=root" not in service
     assert "NoNewPrivileges=true" in service
     assert "ProtectSystem=strict" in service
+
+
+# ===========================================================================
+#  9. The shipped starters actually run (audit AU-02 / AU-03)
+# ===========================================================================
+class _Receiver:
+    """A real HTTP endpoint on loopback that answers every POST with a fixed
+    status and body, and remembers what it was sent."""
+
+    def __init__(self, status=200, body=b"{}"):
+        import http.server
+        import threading
+
+        outer = self
+        self.status, self.body, self.seen = status, body, []
+
+        class _H(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):  # noqa: N802 - stdlib name
+                n = int(self.headers.get("Content-Length") or 0)
+                outer.seen.append((self.path, self.rfile.read(n)))
+                self.send_response(outer.status)
+                self.end_headers()
+                self.wfile.write(outer.body)
+
+            def log_message(self, *a):
+                pass
+
+        self.srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _H)
+        self.url = "http://127.0.0.1:%d" % self.srv.server_address[1]
+        threading.Thread(target=self.srv.serve_forever, daemon=True).start()
+
+    def close(self):
+        self.srv.shutdown()
+        self.srv.server_close()
+
+
+def _starter_source(slug, url):
+    from app.services import hook_starters as HS
+    return (HS.STARTERS[slug]["source"]
+            .replace("https://crm.example.com/api/changes", url + "/api/changes")
+            .replace("https://api.telegram.org", url))
+
+
+_STARTER_CASES = {
+    # slug: (ok body, expected data on success)
+    "change-ticket": (b'{"id": "CRQ-77", "url": "https://crm.example/CRQ-77"}',
+                      {"crq_ref": "CRQ-77", "crq_url": "https://crm.example/CRQ-77"}),
+    "telegram": (b'{"ok": true}', {"chat_id": "-1001234567890"}),
+    "slack": (b"ok", {}),
+    "teams": (b"", {}),
+}
+
+_ALERT = {"severity": "warning", "node": "a1", "title": "t", "detail": "d",
+          "key": "k", "family": "f", "fired_at": "2026-10-03T00:00:00Z"}
+
+
+@pytest.mark.parametrize("slug", sorted(_STARTER_CASES))
+def test_every_starter_runs_and_reports_its_result(store, slug):
+    """A saved starter used to define run(ctx) and never call it: the hook did
+    nothing and was graded ok. It must now reach the endpoint and report."""
+    from app.services import hook_starters as HS
+    body, expected = _STARTER_CASES[slug]
+    rx = _Receiver(200, body)
+    try:
+        st_meta = HS.STARTERS[slug]
+        mk_hook(slug, _starter_source(slug, rx.url), event=st_meta["event"],
+                secrets=st_meta["secrets"])
+        payload = ({"cr_id": 5, "title": "x"} if st_meta["event"] == "change.requested"
+                   else dict(_ALERT))
+        st = run_one(st_meta["event"], payload,
+                     resolver=lambda name: rx.url + "/hook" if name.endswith("_URL")
+                     else "tok-" + "x" * 20)
+    finally:
+        rx.close()
+    assert st["status"] == "ok", st
+    assert st["result_reported"] is True, st
+    assert st["data"] == expected
+    assert len(rx.seen) == 1
+
+
+@pytest.mark.parametrize("slug", sorted(_STARTER_CASES))
+def test_every_starter_reports_a_non_2xx_as_failure(store, slug):
+    """The status check reads resp.status (the SDK has no status_code)."""
+    from app.services import hook_starters as HS
+    rx = _Receiver(503, b"busy")
+    try:
+        st_meta = HS.STARTERS[slug]
+        mk_hook(slug, _starter_source(slug, rx.url), event=st_meta["event"],
+                secrets=st_meta["secrets"])
+        payload = ({"cr_id": 5, "title": "x"} if st_meta["event"] == "change.requested"
+                   else dict(_ALERT))
+        st = run_one(st_meta["event"], payload,
+                     resolver=lambda name: rx.url + "/hook" if name.endswith("_URL")
+                     else "tok-" + "x" * 20)
+    finally:
+        rx.close()
+    assert st["status"] == "failed"
+    assert st["result_reported"] is True, st["stdout"]
+    assert "503" in json.dumps(st["data"])
+    assert "AttributeError" not in st["stdout"]
+
+
+def test_a_successful_change_requested_run_hands_its_data_to_the_write_back(store, monkeypatch):
+    """AU-01: the runner, not the sandboxed hook, records crq_ref on the CR."""
+    seen = []
+    monkeypatch.setattr(HR, "write_back_crq",
+                        lambda event, payload, data, slug="": seen.append(
+                            (event, payload.get("cr_id"), data, slug)) or "noted")
+    mk_hook("crm", """
+from satom_sdk import ctx
+ctx.result(True, {"crq_ref": "CRQ-1"})
+""")
+    st = run_one(payload={"cr_id": 9})
+    assert seen == [("change.requested", 9, {"crq_ref": "CRQ-1"}, "crm")]
+    assert st["crq_writeback"] == "noted"
+
+
+def test_a_failed_run_is_never_written_back(store, monkeypatch):
+    seen = []
+    monkeypatch.setattr(HR, "write_back_crq",
+                        lambda *a, **k: seen.append(a) or "noted")
+    mk_hook("crm", """
+from satom_sdk import ctx
+ctx.result(False, {"crq_ref": "CRQ-1"})
+""")
+    st = run_one(payload={"cr_id": 9})
+    assert st["status"] == "failed"
+    assert seen == []
+
+
+# ===========================================================================
+#  10. Secret values from the hook editor (audit AU-27)
+# ===========================================================================
+def test_the_editor_stores_a_declared_secret_write_only(store, app, client):
+    from conftest import admin_user_id, login
+    from app.models import AuditLog
+    with app.app_context():
+        mk_hook("crm", secrets=["CRM_TOKEN"])
+    login(client, admin_user_id(app))
+    page = client.get("/settings/integrations/hooks/crm")
+    assert page.status_code == 200
+    assert b"not set" in page.data and b'name="value"' in page.data
+
+    value = "s3cr3t-value-0123456789"
+    r = client.post("/settings/integrations/hooks/crm/secret",
+                    data={"name": "crm_token", "value": value},
+                    follow_redirects=True)
+    assert r.status_code == 200
+    assert value.encode() not in r.data
+    assert b"Secret CRM_TOKEN stored" in r.data
+    with app.app_context():
+        assert IH.secret_value("CRM_TOKEN") == value
+        rows = AuditLog.query.filter_by(action="integration.secret.set").all()
+        assert [row.target for row in rows] == ["CRM_TOKEN"]
+        assert all(value not in (row.extra or "") for row in AuditLog.query.all())
+    again = client.get("/settings/integrations/hooks/crm")
+    assert b"stored" in again.data and value.encode() not in again.data
+
+
+def test_the_editor_refuses_an_undeclared_name(store, app, client):
+    from conftest import admin_user_id, login
+    with app.app_context():
+        mk_hook("crm", secrets=["CRM_TOKEN"])
+    login(client, admin_user_id(app))
+    r = client.post("/settings/integrations/hooks/crm/secret",
+                    data={"name": "OTHER", "value": "x" * 20})
+    assert r.status_code == 302
+    with app.app_context():
+        assert IH.secret_value("OTHER") is None
+
+
+def test_storing_a_secret_needs_user_manage(store, app, client):
+    from conftest import login, make_user, profile_id
+    with app.app_context():
+        mk_hook("crm", secrets=["CRM_TOKEN"])
+    uid = make_user(app, "op", role="operator",
+                    profile_id=profile_id(app, "operator"))
+    login(client, uid)
+    r = client.post("/settings/integrations/hooks/crm/secret",
+                    data={"name": "CRM_TOKEN", "value": "x" * 20})
+    assert r.status_code in (302, 403)
+    with app.app_context():
+        assert IH.secret_value("CRM_TOKEN") is None

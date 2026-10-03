@@ -790,3 +790,46 @@ def test_the_window_button_gate_asks_the_same_author_the_press_does(app, client,
     button = button[:button.find("</form>")]
     assert "disabled" not in button, (
         "the button is dead for an appliance NetBox resolves by name")
+
+
+# --------------------------------------------------------------------------- #
+#  CRQ write-back from a change.requested hook (audit AU-01)                     #
+# --------------------------------------------------------------------------- #
+def test_a_hook_reported_crq_ref_is_written_onto_the_change(app):
+    from app.models import ChangeRequestEvent
+    from app.services import hook_runner as HR
+    with app.app_context():
+        cr = _mk_cr(status="draft")
+        note = HR.write_back_crq("change.requested", {"cr_id": cr.id},
+                                 {"crq_ref": "CRQ-88", "crq_url": "https://crm.example/88"},
+                                 slug="crm")
+        assert "recorded" in note and "NOT" not in note
+        assert cr.crq_ref == "CRQ-88"
+        assert cr.crq_url == "https://crm.example/88"
+        ev = ChangeRequestEvent.query.filter_by(cr_id=cr.id, kind="crq_created").all()
+        assert [e.by for e in ev] == ["hook:crm"]
+
+
+def test_write_back_ignores_other_events_and_results_without_a_ref(app):
+    from app.services import hook_runner as HR
+    with app.app_context():
+        cr = _mk_cr(status="draft")
+        assert HR.write_back_crq("change.approved", {"cr_id": cr.id},
+                                 {"crq_ref": "CRQ-1"}) == ""
+        assert HR.write_back_crq("change.requested", {"cr_id": cr.id},
+                                 {"crq_id": "CRQ-1"}) == ""
+        assert not (cr.crq_ref or "")
+
+
+def test_write_back_drops_a_non_http_link_and_skips_closed_changes(app):
+    from app.services import hook_runner as HR
+    with app.app_context():
+        cr = _mk_cr(status="draft")
+        HR.write_back_crq("change.requested", {"cr_id": cr.id},
+                          {"crq_ref": "CRQ-2", "crq_url": "javascript:alert(1)"})
+        assert cr.crq_ref == "CRQ-2" and not (cr.crq_url or "")
+        done = _mk_cr(status="completed")
+        note = HR.write_back_crq("change.requested", {"cr_id": done.id},
+                                 {"crq_ref": "CRQ-3"})
+        assert "NOT recorded" in note
+        assert not (done.crq_ref or "")

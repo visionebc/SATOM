@@ -35,7 +35,7 @@
       <label class="fw-form-label mb-0" for="naming-product" style="font-size:12px;">{{ _('Product') }}</label>
       <select id="naming-product" class="form-select fw-form-control form-select-sm" style="width:auto;"
               data-url="{{ url_for('naming.index') }}">
-        {% for pkey, plabel in products %}
+        {% for pkey, plabel in naming_products %}
         <option value="{{ pkey }}" {{ 'selected' if pkey == current_product else '' }}>{{ plabel }}</option>
         {% endfor %}
       </select>

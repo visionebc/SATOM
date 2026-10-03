@@ -519,7 +519,7 @@ development, single-node production and primary/standby shapes. It does <strong>
 cover external PostgreSQL.</p>
 <h3 id="31-get-the-source">3.1 Get the source</h3>
 <pre><code class="language-bash">mkdir -p /opt/satom-src &amp;&amp; cd /opt/satom-src
-curl -fsSL https://codeload.github.com/visionebc/SATOM/tar.gz/refs/tags/v2.10.0 \
+curl -fsSL https://codeload.github.com/visionebc/SATOM/tar.gz/refs/tags/v2.10.1 \
   | tar -xz --strip-components=1
 cd /opt/satom-src/deploy/docker
 </code></pre>
@@ -533,11 +533,11 @@ release pipeline from the same code as that release's offline bundles, for
 <code>linux/amd64</code>, and loads as <code>satom:&lt;ver&gt;</code>. Downloading it replaces the
 <code>build</code> step below:</p>
 <pre><code class="language-bash">cd /tmp
-curl -fLO https://github.com/visionebc/SATOM/releases/download/v2.10.0/satom-image-2.10.0-amd64.tar.gz
-curl -fLO https://github.com/visionebc/SATOM/releases/download/v2.10.0/satom-image-2.10.0-amd64.tar.gz.sha256
-sha256sum -c satom-image-2.10.0-amd64.tar.gz.sha256     # must print OK; stop if it does not
-gunzip -c satom-image-2.10.0-amd64.tar.gz | docker load  # Loaded image: satom:2.10.0
-docker image inspect satom:2.10.0 --format '{{index .Config.Labels &quot;org.opencontainers.image.version&quot;}}'   # 2.10.0
+curl -fLO https://github.com/visionebc/SATOM/releases/download/v2.10.1/satom-image-2.10.1-amd64.tar.gz
+curl -fLO https://github.com/visionebc/SATOM/releases/download/v2.10.1/satom-image-2.10.1-amd64.tar.gz.sha256
+sha256sum -c satom-image-2.10.1-amd64.tar.gz.sha256     # must print OK; stop if it does not
+gunzip -c satom-image-2.10.1-amd64.tar.gz | docker load  # Loaded image: satom:2.10.1
+docker image inspect satom:2.10.1 --format '{{index .Config.Labels &quot;org.opencontainers.image.version&quot;}}'   # 2.10.1
 </code></pre>
 <p>The <code>.sha256</code> names the file without a directory, so run <code>sha256sum -c</code> in
 the directory that holds both files. Use the image of the <strong>same</strong> version as
@@ -563,12 +563,12 @@ refuses to run when no placeholder is left, so it can never overwrite a real
 <h3 id="33-production-single-node">3.3 Production, single node</h3>
 <pre><code class="language-bash">cd /opt/satom-src/deploy/docker
 ./satom-docker.sh gen-secrets
-./satom-docker.sh build satom:2.10.0     # or load the published image instead (§3.1)
+./satom-docker.sh build satom:2.10.1     # or load the published image instead (§3.1)
 </code></pre>
 <p>Edit <code>.env</code>:</p>
 <pre><code class="language-ini">SATOM_ENV=prod                      # satom-docker.sh reads it from .env; see §3.4
 SATOM_NODE_ROLE=primary
-SATOM_IMAGE=satom:2.10.0             # compose.prod.yaml requires it to be set; it does NOT reject :local
+SATOM_IMAGE=satom:2.10.1             # compose.prod.yaml requires it to be set; it does NOT reject :local
 SATOM_SERVED_NAMES=&quot;satom.example.com&quot;   # quote it if it has spaces (§12)
 SATOM_PG_BIND=127.0.0.1:5432        # required by compose.prod.yaml even on a single node
 TZ=UTC
@@ -580,7 +580,7 @@ TZ=UTC
 engine does not have, Compose tries to pull it from a registry. For
 <code>satom:&lt;tag&gt;</code> that registry is Docker Hub, which is the substitution
 <code>satom-setup.sh</code> deliberately avoids. Check first:</p>
-<pre><code class="language-bash">docker image inspect satom:2.10.0 --format '{{.Id}}'
+<pre><code class="language-bash">docker image inspect satom:2.10.1 --format '{{.Id}}'
 </code></pre>
 <h3 id="34-deploydockersatom-dockersh--subcommand-reference">3.4 <code>deploy/docker/satom-docker.sh</code> — subcommand reference</h3>
 <p>The script reads <code>deploy/docker/.env</code> (it sources the file with <code>set -a</code>, so
@@ -3116,8 +3116,8 @@ used offline if you bring three things:</p>
 <code>sha256sum -c</code> next to them on the target, then <code>gunzip -c … | docker load</code>
 (§3.1). For an image you built yourself, and for the stock images, on the
 connected node:</p>
-<pre><code class="language-bash">./satom-docker.sh build satom:2.10.0
-./satom-docker.sh export satom:2.10.0 /tmp/satom-2.10.0.tar.gz          # also writes /tmp/satom-2.10.0.tar.gz.sha256
+<pre><code class="language-bash">./satom-docker.sh build satom:2.10.1
+./satom-docker.sh export satom:2.10.1 /tmp/satom-2.10.1.tar.gz          # also writes /tmp/satom-2.10.1.tar.gz.sha256
 docker pull postgres:15-bookworm; docker pull redis:7-alpine
 docker pull victoriametrics/victoria-metrics:v1.148.0; docker pull nginx:1.27-alpine
 docker save postgres:15-bookworm redis:7-alpine victoriametrics/victoria-metrics:v1.148.0 nginx:1.27-alpine \
@@ -3125,7 +3125,7 @@ docker save postgres:15-bookworm redis:7-alpine victoriametrics/victoria-metrics
 </code></pre>
 <p>On the target, put the tarball and its <code>.sha256</code> <strong>at the same path</strong> as on
 the build node, then:</p>
-<pre><code class="language-bash">./satom-docker.sh import /tmp/satom-2.10.0.tar.gz
+<pre><code class="language-bash">./satom-docker.sh import /tmp/satom-2.10.1.tar.gz
 gunzip -c /tmp/satom-base-images.tar.gz | docker load
 </code></pre>
 <p><code>import</code> runs <code>sha256sum -c</code> <strong>before</strong> loading. The <code>.sha256</code> file records the

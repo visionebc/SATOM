@@ -46,16 +46,16 @@
 <header class="page wrap">
   <h1>Release <span class="grad">notes</span></h1>
   <p class="sub">Pick a version on the left; its changes are on the right. The
-  shipped version is <b>v2.10.0</b>. Every entry here is a section of the
+  shipped version is <b>v2.10.1</b>. Every entry here is a section of the
   project's <code>CHANGELOG.md</code> — the same file that ships in the repository and
   is readable on a node with <code>satom show docs</code>. The full history in a
   single page is the <a href="docs/changelog.html">Changelog</a>.</p>
 </header>
 
 <section class="wrap">
-  <div class="doc rel-doc" id="relhub" data-rel-current="2.10.0">
+  <div class="doc rel-doc" id="relhub" data-rel-current="2.10.1">
     <aside class="toc rel-nav">
-      <div class="toc-title">Releases <span class="rel-count">55</span></div>
+      <div class="toc-title">Releases <span class="rel-count">56</span></div>
       <div class="rel-nav-search sitesearch" data-search-scope="releases">
         <label class="ss-field">
           <span class="ss-ico" aria-hidden="true">🔍</span>
@@ -70,8 +70,13 @@
         <span class="rel-nav-meta">unreleased · Changes · 0 entries</span>
         <ul class="rel-leads"></ul>
       </a>
-      <a class="rel-nav-item is-active" href="releases/v2.10.0.html" data-rel-version="2.10.0">
-        <span class="rel-nav-head"><span class="rel-nav-v">Version 2.10.0</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
+      <a class="rel-nav-item is-active" href="releases/v2.10.1.html" data-rel-version="2.10.1">
+        <span class="rel-nav-head"><span class="rel-nav-v">Version 2.10.1</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
+        <span class="rel-nav-meta">2026-10-03 · Fixed — Stop did not stop a running deep capture (2026-10-03) · 0 entries</span>
+        <ul class="rel-leads"></ul>
+      </a>
+      <a class="rel-nav-item" href="releases/v2.10.0.html" data-rel-version="2.10.0">
+        <span class="rel-nav-head"><span class="rel-nav-v">Version 2.10.0</span></span>
         <span class="rel-nav-meta">2026-10-03 · Added — job toasts can be minimised (2026-10-03) · 2 entries</span>
         <ul class="rel-leads"><li>The sweep never fed the local cache</li><li>A fresh install schedules no harvest and no probe sweep</li></ul>
       </a>
@@ -345,52 +350,27 @@
       <div class="ss-results" id="relsearch-results" role="region" aria-live="polite" hidden></div>
       <div id="rel-panel">
       <div class="rel-panel-head">
-        <h2>Version 2.10.0 <span class="rel-badge rel-now">current release</span></h2>
-        <p class="rel-meta">Released on 2026-10-03 — Added — job toasts can be minimised (2026-10-03) · 2 entries.</p>
+        <h2>Version 2.10.1 <span class="rel-badge rel-now">current release</span></h2>
+        <p class="rel-meta">Released on 2026-10-03 — Fixed — Stop did not stop a running deep capture (2026-10-03) · 0 entries.</p>
       </div>
         <div class="mdx">
-<h3 id="added--job-toasts-can-be-minimised-2026-10-03">Added — job toasts can be minimised (2026-10-03)</h3>
-<p>Requested from the field (SI-0005): "make the job notices minimisable, and
-let them go back to their size". Each toast in the jobs dock has a <strong>−</strong>
-button. A minimised toast is one line with the title, the percent and a thin
-progress bar; <strong>□</strong> or a click on the title restores it with its message and
-Stop button. The choice survives page navigation and a reload for the rest of
-the browser session; dismissing a toast forgets it.</p>
-<h3 id="fixed--deep-capture-showed-running-at-100--with-no-count-2026-10-03">Fixed — Deep capture showed "running…" at 100 % with no count (2026-10-03)</h3>
-<p>Reported from the field (SI-0004): with <em>Capture full WPP + policy depth</em> on,
-the rediscovery bar reached 100 % and then said only "Deep capture (WPP +
-policy graph) running…" for as long as the walk took. The deep pass now lists
-the server policies and WPPs first and reports each object it starts: the bar
-switches to the deep pass's own percent, and the line reads e.g. <em>Deep capture
-5/23 · 8 server policies, 14 WPPs · WPP 3/12: wpp-shop</em>. The job in the dock
-and on the Jobs page shows the same line and percent. The finished summary
-says how many policies and WPPs the depth came from. Each object also
-refreshes the run's heartbeat, so a long deep pass no longer looks like a dead
-one.</p>
-<h3 id="fixed--device-health-said-never-harvested-right-after-a-rediscovery-2026-10-03">Fixed — Device health said "never harvested" right after a rediscovery (2026-10-03)</h3>
-<p>Reported from the field (SI-0006): after a rediscovery, Device health showed
-<em>no cached configuration on this node</em>, <em>never harvested</em> and <em>4 probes have
-never run</em>. Two causes:</p>
-<ul>
-<li><strong>The sweep never fed the local cache.</strong> Rediscovery reads the same
-  endpoints as the hourly harvest and builds the same snapshot, but only the
-  harvest (<code>device_sync</code>) wrote it to the cache that Device health, the
-  section pages and the inventory read. A successful sweep now ingests its
-  snapshot into that cache and records a harvest run with trigger
-  <code>rediscovery</code>. Only the harvest keys are stored, so a rediscovery and an
-  hourly harvest of the same configuration are one SoT version, not two. If
-  the cache write fails, the sweep is still <em>done</em> and the summary says
-  <em>local cache not updated</em> with the reason.</li>
-<li><strong>A fresh install schedules no harvest and no probe sweep</strong> (by design: they
-  are data, created with <code>sudo satom execute seed actions --yes</code>). Device
-  health now says so. When <em>Harvest</em>, <em>Cache</em> or <em>Deep monitors</em> has nothing
-  to report and no enabled <code>device_sync</code> / <code>deep_monitor</code> schedule covers the
-  device, the reason ends with <em>no 'device_sync' schedule on this node (run:
-  sudo satom execute seed actions --yes)</em>.</li>
-</ul>
-<p>The <em>no hardware inventory</em> note now names the <strong>Scan hardware (SSH)</strong> button:
-rediscovery, including its SSH CLI capture, does not collect hardware.</p>
-<p>Guard: <code>tests/test_rediscovery_progress_cache.py</code>.</p>
+<h3 id="fixed--stop-did-not-stop-a-running-deep-capture-2026-10-03">Fixed — Stop did not stop a running deep capture (2026-10-03)</h3>
+<p>Pressing <strong>Stop</strong> while a rediscovery was in its deep pass (<em>Capture full WPP
++ policy depth</em>) said "stopping after the current step" and then walked every
+remaining server policy and WPP to the end. The deep pass now checks for a
+Stop before each object and before the certificate stores, finishes the object
+it is on, and ends as <strong>Stopped</strong> with where it was (for example <em>at object
+5/23 (WPP wpp-prod)</em>). What it had walked so far is discarded and the previous
+deep capture is kept: a partial one would read as the objects it never reached
+having been deleted. The sweep snapshot written before the deep pass is kept,
+and the CLI capture that would have followed is skipped. The page now says
+"stopping after the current object" during this pass.</p>
+<h3 id="fixed--two-api-hub-tests-failed-since-the-api-pack-release-2026-10-03">Fixed — two API-hub tests failed since the API-pack release (2026-10-03)</h3>
+<p><code>test_version_scoped_pages.py</code> had two failing tests since 2.6.0: its spy on
+<code>cli_coverage.report</code> did not accept the new <code>allow_pack</code> argument, the hub
+caught the resulting <code>TypeError</code> as a section error, and the spy recorded
+nothing. The spy now forwards extra arguments. Product behaviour was not
+affected.</p>
         </div>
       </div>
       <div class="callout" style="margin-top:24px;">

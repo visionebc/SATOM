@@ -6,6 +6,8 @@ source-available project — see [NOTICE](NOTICE) for the trademark disclaimer.
 
 ## [Unreleased]
 
+## [2.10.1] - 2026-10-03
+
 ### Fixed — Stop did not stop a running deep capture (2026-10-03)
 
 Pressing **Stop** while a rediscovery was in its deep pass (*Capture full WPP

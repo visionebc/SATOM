@@ -415,9 +415,9 @@ def create_app(config_override: object | None = None) -> Flask:
         if eff == 'fortianalyzer':
             # FortiAnalyzer sessions get the FAZ area + the product-neutral
             # shared pages + the product-scoped Fleet/Administration pages
-            # (Firmware, Network segment, Appliances, Audit). The
-            # Configuration/Operation/Automation sections are faz-blueprint
-            # scaffolds. RBAC still gates each write.
+            # (Firmware, Network segment, Appliances, Audit). The Device
+            # Manager / Log View / Reports ... sections are faz-blueprint
+            # pages over the live JSON-RPC API. RBAC still gates each write.
             faz_bps = {'concept_map', 'faz', 'faz_api', 'appliances', 'settings', 'audit', 'jobs',
                        'notifications', 'profiles', 'users',
                        'advisor', 'adom_assets', 'console',   # see the adc_bps note

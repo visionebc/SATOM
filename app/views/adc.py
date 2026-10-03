@@ -12,11 +12,13 @@ Objects are edited with the SAME logic as the FortiWeb generic editor
 (:mod:`app.views.objedit`): a FortiWeb-style FIELD FORM (widgets inferred from
 device truth via :mod:`app.services.adc_objform`) plus each registry-derived
 CHILD TABLE's rows (``<parent>_child_<seg>``, read scoped with ``?pkey=``).
-Every write is ``config_write``-gated, audited, and **dry-run by default** —
-the endpoint returns the exact request it would send and a real device write
-needs an explicit ``apply=true`` (FortiADC has no server-side dry-run, so the
-preview is built here; the contract the operator sees is identical). The raw
-JSON editor stays as the escape hatch for inline arrays/objects.
+Every write is ``config_write``-gated and audited. The FORM writes (field
+form, child rows, create) are **dry-run first** — the endpoint returns the
+exact request it would send and a real device write needs an explicit
+``apply=true`` (FortiADC has no server-side dry-run, so the preview is built
+here). The raw JSON save, the raw delete and the list-page Delete write
+IMMEDIATELY (their confirm dialogs say so); the raw JSON editor stays as the
+escape hatch for inline arrays/objects.
 """
 from __future__ import annotations
 

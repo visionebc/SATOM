@@ -47,9 +47,8 @@
     <div class="fw-empty-state-title">{{ _('No FortiAnalyzer appliances registered yet') }}</div>
     <div class="fw-empty-state-text">
       {{ _('Register the FortiAnalyzer unit under') }} <a href="{{ url_for('appliances.index') }}">{{ _('Appliances') }}</a>
-      with kind <code>fortianalyzer</code>. Fleet, Firmware and Administration work now;
-      the Configuration / Operation / Automation sections are scaffolds until the
-      FortiAnalyzer JSON-RPC backend is wired.
+      with kind <code>fortianalyzer</code>. Every section below then reads the unit
+      live over its JSON-RPC API.
     </div>
   </div>
   {% endif %}

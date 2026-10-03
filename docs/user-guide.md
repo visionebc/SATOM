@@ -1594,11 +1594,22 @@ Network, Shared Resources, User Authentication, System, Log & Report.
 - Object pages use the same form engine: identity/mkey handling, child tables
   (e.g. pool members) derived automatically, dry-run previews, audit on
   apply.
-- **Signatures** — WAF signature category/severity overview with per-severity
-  actions; deep editing through the object detail.
-- **API console** (bottom nav → API) — the registry-driven explorer: browse
-  the ADC endpoint catalog as the GUI menu, run live GETs and gated writes
-  against a chosen device, with history and syntax-highlighted responses.
+- Form writes (field form, child rows, create) are dry-run first. The raw JSON
+  save, raw delete and the list-page Delete apply **immediately** — their
+  confirm dialogs say so.
+- **Signatures** (Web Application Firewall group, `protection.view`) — WAF
+  signature category/severity overview with per-severity actions; deep editing
+  through the object detail.
+- **API console** (sidebar → API → Registry & console, `registry.view`) — the
+  registry-driven explorer: browse the ADC endpoint catalog as the GUI menu, run
+  live GETs and gated writes against a chosen device, with history and
+  syntax-highlighted responses. Writes are **dry-run by default**: without
+  **Apply** the console returns the request (method, path, body) and sends
+  nothing.
+- **Naming** patterns for FortiADC are **reference only**: the object editor and
+  the virtual-server wizard do not fill in or check names from them.
+- **No Firmware page** in this ADOM: the firmware library stores images, and no
+  path flashes a FortiADC with them.
 - Device actions at parity where the platform allows: test connection,
   VS inspector, discovery, SSH console with ADC presets, upgrade-prep health
   battery, SSH config backups. (Firmware flash / restore-apply have **no REST
@@ -1624,9 +1635,11 @@ Management** and **Logging**.
   loads its tabs from the registry endpoints bound to that leaf, capped at 500
   rows with the truncation stated rather than silently applied, and it never
   renders a device refusal as an empty table.
-- **API console** (bottom nav → API) — the registry-driven explorer over the
-  FAC catalogue, with live GETs and gated writes against a chosen device
-  (§30 covers the registry model behind all four consoles).
+- **API console** (sidebar → API → Registry & console, `registry.view`) — the
+  registry-driven explorer over the FAC catalogue, with live GETs and gated
+  writes against a chosen device (§30 covers the registry model behind all four
+  consoles). Catalog rows can be disabled and restored on the page; re-pointing
+  a disabled row keeps it disabled.
 - **Analysis** — entitlement, identity inventory and posture (see §13).
 
 **What does *not* apply to FortiAuthenticator.** The FAC ADOM's sidebar carries
@@ -1635,8 +1648,8 @@ no Operations group, and that is not an oversight:
 | Feature | In the FAC ADOM? |
 |---|---|
 | **Certificate Manager (§10)** | **No.** Scanning, issuance, deployment and the lifecycle sweep dispatch on FortiWeb and FortiADC only. The unit's own *Certificate Management* menu group is a **read view of the device's** certificates through the FAC section pages — it is not the fleet Certificate Manager, and material there is not managed, bound or swept by §10. |
-| **Device Backups (§11)** | **Not offered in this workspace.** The vault page is not in the FAC menu; the backup transports are written against the FortiWeb/FortiADC backup APIs. |
-| **Firmware upgrade (§12)** | **No.** Upgrade and Boot Partition are FortiWeb-only even on the appliance detail page, and the SSH console, discovery and upgrade-prep actions there are gated to FortiWeb and FortiADC. The firmware **library** may still open in this workspace — it is governed by the `firmware` capability on the ADOM row (§26.11), which an admin can tick, and this installation has it on. Storing an image there is harmless; there is simply no upgrade path that consumes it. |
+| **Device Backups (§11)** | **No.** The vault pages are closed to this workspace and not in the FAC menu; the backup transports are written against the FortiWeb/FortiADC backup APIs. |
+| **Firmware upgrade (§12)** | **No.** Upgrade and Boot Partition are FortiWeb-only even on the appliance detail page, and the SSH console, discovery and upgrade-prep actions there are gated to FortiWeb and FortiADC. The firmware library is closed to this workspace too: there is no upgrade path that would consume an image stored there. |
 | **Monitoring (§14)** | **Yes**, with product-appropriate kinds — a baseline plus the **entitlement** set (licence headroom, FortiToken pool), and load/memory read over REST rather than the CLI (§14.3, §14.4). |
 | **Appliances, Audit log, Network segment** | **Yes** — the shared administration pages. |
 
@@ -1662,8 +1675,12 @@ The `/faz/` ADOM mirrors the FortiAnalyzer menu: **Device Manager**,
   URI is a Registry edit, never a code change.
 - Section pages read **one tab per request**, so a heavy log view never blocks
   the rest of the page.
-- **API console** (bottom nav → API) — same registry-driven explorer, JSON-RPC
-  aware, with audited and permission-gated writes.
+- **Device Manager** — Authorize / Delete run in the FortiAnalyzer ADOM you
+  type in the dialog (default `root`); the device list spans every FAZ ADOM.
+- **API console** (sidebar → API → Registry & console, `registry.view`) — same
+  registry-driven explorer, JSON-RPC aware, with permission-gated writes that
+  are **dry-run by default** (tick **Apply** to send). The status badge shows the
+  device's JSON-RPC status code, not the transport's HTTP 200.
 - Operational endpoints (alerts, incidents, log statistics, storage) are
   deliberately **excluded from the configuration source of truth**: they change
   between two reads of an idle unit and would defeat change detection.
@@ -3559,9 +3576,17 @@ an endpoint, choose a method, supply a JSON body, execute.
 - The device's own response is shown as it came back — a device error is rendered
   as the device's error, never smoothed into an empty result.
 
-Unlike the FortiAuthenticator console (§17.2), the FortiWeb explorer's writes are
-**not dry-run by default** — this is the raw request console, and the confirmation
-is the permission.
+Unlike the FortiADC, FortiAuthenticator and FortiAnalyzer consoles (§17), the
+FortiWeb explorer's writes are **not dry-run by default** — this is the raw
+request console, and the confirmation is the permission.
+
+**The FortiADC, FortiAuthenticator and FortiAnalyzer consoles share one write
+policy:** a write without **Apply** returns the request (method, path, body) and
+sends nothing; an applied write is audited whether the device accepted or
+refused it (the refusal is recorded as the error); reads are not audited. Their
+catalog editors go through the same writer as FortiWeb and FortiADC, so the
+name/URI rules and the duplicate check of §30.2 apply to all four (a
+FortiAuthenticator URI must also stay under `/api/v1/`).
 
 Since 2.2.0 the explorer also knows **which firmware build** the selected
 appliance runs and what that build serves: see §30.10.

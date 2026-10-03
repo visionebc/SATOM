@@ -80,7 +80,7 @@ Managing these appliances directly has real business risks:
 
 | Risk / limitation | Status |
 |---|---|
-| The default administrator password is documented and must be changed at installation | Procedure documented; enforce at rollout |
+| There is no default administrator password: the installer asks for one (12 to 1024 characters) or generates it | Enforced by the installers and every in-app password path |
 | One deployment, one site — no high-availability pair of the manager itself yet | Mitigated by full system backups with verified restore; the appliances themselves keep working without the manager |
 | FortiADC support is newer than FortiWeb support; some device actions (firmware, restore-apply) are not possible remotely because the vendor provides no interface for them | The UI states these limits explicitly |
 | The project knowledge base inside the repository references internal infrastructure details | Should be reviewed/sanitized before sharing the code externally |

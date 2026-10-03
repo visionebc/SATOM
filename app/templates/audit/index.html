@@ -20,8 +20,9 @@
     <button class="btn btn-fw-outline btn-sm" data-js="audit-refresh">
       <i class="bi bi-arrow-clockwise me-1"></i>{{ _('Refresh') }}
     </button>
-    <a href="{{ url_for('audit.index') }}"
-       class="btn btn-secondary btn-sm">
+    {% set _export_args = request.args.to_dict() %}{% set _noop = _export_args.pop('page', None) %}
+    <a href="{{ url_for('audit.export_csv', **_export_args) }}"
+       class="btn btn-sm btn-outline-secondary" title="{{ _('Download the entries matching the current filters') }}">
       <i class="bi bi-download me-1"></i>{{ _('Export CSV') }}
     </a>
   </div>
@@ -178,18 +179,21 @@
 </div>
 
 <!-- Pagination -->
-{% if page is defined and (page > 1 or has_next) %}
+{% if pagination and (pagination.page > 1 or pagination.has_next) %}
+{% set _page_args = request.args.to_dict() %}
 <div class="d-flex justify-content-between align-items-center mt-3">
-  <span class="text-muted" style="font-size:13px;">Page {{ page }}</span>
+  <span class="text-muted" style="font-size:13px;">{{ _('Page') }} {{ pagination.page }}{% if pagination.pages %} / {{ pagination.pages }}{% endif %}</span>
   <div class="d-flex gap-2">
-    {% if page > 1 %}
-      <a href="?page={{ page - 1 }}&{{ request.query_string.decode() if request else '' }}"
+    {% if pagination.has_prev %}
+      {% set _noop = _page_args.update({'page': pagination.page - 1}) %}
+      <a href="{{ url_for('audit.index', **_page_args) }}"
          class="btn btn-outline-secondary btn-sm">
         <i class="bi bi-chevron-left"></i> {{ _('Previous') }}
       </a>
     {% endif %}
-    {% if has_next %}
-      <a href="?page={{ page + 1 }}&{{ request.query_string.decode() if request else '' }}"
+    {% if pagination.has_next %}
+      {% set _noop = _page_args.update({'page': pagination.page + 1}) %}
+      <a href="{{ url_for('audit.index', **_page_args) }}"
          class="btn btn-outline-secondary btn-sm">
         {{ _('Next') }} <i class="bi bi-chevron-right"></i>
       </a>

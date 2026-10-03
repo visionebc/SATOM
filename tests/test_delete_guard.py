@@ -478,3 +478,22 @@ def test_the_rollback_example_teaches_the_opt_out():
     assert calls, 'the Rollback docstring no longer shows a delete compensation'
     for call in calls:
         assert 'check_refs=False' in call, call
+
+
+def test_every_kept_reason_the_planner_emits_has_a_label_in_the_page():
+    """The preview mapped ``always_skip``, which the planner never emits, so
+    every kept object showed its raw reason code."""
+    import pathlib
+    from app.services.policy_graph import _skip_reason
+    page = (pathlib.Path(__file__).resolve().parents[1]
+            / "app/templates/workspace/policies.html").read_text("utf-8")
+    reasons = {_skip_reason(u) for u in (
+        "cmdb/waf/web-protection-profile.inline-protection",
+        "cmdb/system/certificate.local", "cmdb/system/ssl-ciphers",
+        "cmdb/server-policy/service.custom", "cmdb/system/interface")}
+    assert reasons == {"wpp-subtree", "certificate", "ssl-ciphers",
+                       "service", "system-object"}
+    for r in reasons:
+        assert "'%s':" % r in page, r
+    assert "always_skip" not in page
+    assert "Shared objects (WPP, pool, certificate, service) are kept" not in page

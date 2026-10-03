@@ -78,3 +78,24 @@ def test_apply_disable_spawns_job(app, client):
     assert r.status_code == 200
     j = r.get_json()
     assert j["ok"] and j.get("job_id")
+
+
+def test_bulk_clone_carries_the_wpp_suffix_to_the_engine(app, client,
+                                                         monkeypatch):
+    """The bulk dialog sends ``wpp_suffix`` (one WPP per source policy); the
+    parser dropped it, so the engine ran with its empty default."""
+    from app.services import policy_ops
+    seen = {}
+
+    def _preview(action, **kw):
+        seen.update(kw["opts"])
+        return []
+
+    monkeypatch.setattr(policy_ops, "preview", _preview)
+    aid = _fw(app)
+    login(client, admin_user_id(app))
+    r = client.post(f"/workspace/{aid}/policy-action/preview",
+                    json={"action": "clone_here", "policies": ["p1", "p2"],
+                          "copy_wpp": True, "wpp_suffix": "-copy"})
+    assert r.status_code == 200, r.get_data(as_text=True)
+    assert seen.get("wpp_suffix") == "-copy"

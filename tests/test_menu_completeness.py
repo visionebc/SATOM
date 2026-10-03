@@ -34,8 +34,8 @@ FIXTURE = Path(__file__).parent / "fixtures" / "menu_inventory.json"
 EXPECTED_WP_GROUPS = 7
 EXPECTED_WP_ITEMS = 22
 EXPECTED_SECTIONS = 12
-EXPECTED_SECTION_GROUPS = 66
-EXPECTED_SECTION_LEAVES = 210
+EXPECTED_SECTION_GROUPS = 64   # 2026-10-03: Known Good Bots + Session left with their dead endpoints (748e82d3)
+EXPECTED_SECTION_LEAVES = 201  # 2026-10-03: the 9 leaves whose endpoints 748e82d3 retired
 
 
 def _baseline() -> dict:

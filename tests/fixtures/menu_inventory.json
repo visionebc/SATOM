@@ -81,17 +81,12 @@
    "Known Bots": [
     "bot_known_bots"
    ],
-   "Known Good Bots": [
-    "bot_allow_list"
-   ],
    "Threshold Based Detection": [
     "bot_threshold_based_detection"
    ]
   },
   "dos_protection": {
    "Application": [
-    "http_access_limit",
-    "http_flood",
     "ddos_http_flood_prevention",
     "ddos_malicious_ip"
    ],
@@ -99,7 +94,6 @@
     "dos_policy"
    ],
    "Network": [
-    "tcp_flood",
     "ddos_http_access_limit",
     "ddos_tcp_flood_prevention"
    ]
@@ -129,9 +123,7 @@
    ],
    "Log Settings": [
     "log_disk",
-    "log_memory",
     "log_syslog",
-    "log_fortiguard",
     "fortianalyzer"
    ],
    "Log Types": [
@@ -155,7 +147,6 @@
    ],
    "Machine Learning": [
     "ml_policy",
-    "ml_anomaly_detection",
     "bot_detection_policy"
    ],
    "URL Replacer": [
@@ -332,17 +323,13 @@
    "Custom Tracking": [
     "waf_custom_tracking_policy"
    ],
-   "Session": [
-    "session_management"
-   ],
    "Threat Scoring": [
     "threat_score_profile",
     "server_policy_pattern_threat_weight"
    ],
    "User Tracking": [
     "user_tracking_policy",
-    "user_tracking_rule",
-    "user_auth"
+    "user_tracking_rule"
    ]
   },
   "user_authentication": {

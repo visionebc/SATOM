@@ -212,8 +212,15 @@ def test_removing_a_blueprint_reproduces_the_incident(app):
 class _Steps:
     def __init__(self):
         self.steps = []
+        self.current = None
+
+    def begin(self, name):
+        # Mirrors the runner's Steps.begin: announces the running step,
+        # appends nothing; the next step() clears it.
+        self.current = name
 
     def step(self, name, ok, detail=""):
+        self.current = None
         self.steps.append((name, ok, detail))
 
     def names(self):

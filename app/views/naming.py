@@ -30,7 +30,7 @@ def index():
         'naming/index.html',
         naming_sections=naming_svc.elements_by_section(product),
         naming_scheme=scheme,
-        products=naming_svc.PRODUCTS,
+        naming_products=naming_svc.PRODUCTS,  # not `products`: base.html reads that global (the ADOM registry)
         current_product=product,
         product_label=dict(naming_svc.PRODUCTS)[product],
     )

@@ -58,9 +58,9 @@
         <tbody>
           <tr>
             <td><span class="fw-badge fw-badge-success">{{ _('Full') }}</span></td>
-            <td>{{ _('Everything: address, DNS, machine, boot, walks the first-boot dialog over the serial console, registers the appliance, applies the profile.') }}</td>
+            <td>{{ _('Address, DNS, machine and boot, then waits for the appliance to answer on the reserved address, registers it and applies the profile. The first-boot dialog is not scripted: the appliance must come up on that address by itself (for example from a pre-configured image).') }}</td>
             <td>{{ _('No human step. Repeatable and auditable end to end; every action lands in the run log.') }}</td>
-            <td><strong>{{ _('Proxmox only.') }}</strong> {{ _('Needs an API serial console. Most moving parts, so the widest surface for a mid-run failure — which is why rollback exists.') }}</td>
+            <td><strong>{{ _('Proxmox only.') }}</strong> {{ _('Preflight requires an API serial console. Most moving parts, so the widest surface for a mid-run failure — which is why rollback exists.') }}</td>
           </tr>
           <tr>
             <td><span class="fw-badge fw-badge-primary">{{ _('Semi') }}</span></td>
@@ -70,10 +70,9 @@
           </tr>
           <tr>
             <td><span class="fw-badge fw-badge-primary">DHCP</span></td>
-            <td>{{ _('Builds and boots; the appliance takes a lease, SATOM finds it at that address and carries on.') }}</td>
-            <td>{{ _('Unattended without a serial console. Good on a build VLAN that runs DHCP.') }}</td>
-            <td>Needs DHCP reachable from the machine&rsquo;s network, and the address it lands on is
-                not the one you chose. Not every appliance takes a lease on its factory config.</td>
+            <td>{{ _('Builds and boots without reserving an address; the appliance takes a DHCP lease. SATOM then probes the management address entered on the run, registers the appliance and applies the profile. It does not discover the lease.') }}</td>
+            <td>{{ _('Unattended without a serial console. Good on a build VLAN that runs DHCP with a reservation for the machine.') }}</td>
+            <td>{{ _('You must know the address the appliance will take (a DHCP reservation) and enter it on the run; without one the run stops at the reachability step. Not every appliance takes a lease on its factory config.') }}</td>
           </tr>
           <tr>
             <td><span class="fw-badge fw-badge-secondary">{{ _('VM only') }}</span></td>

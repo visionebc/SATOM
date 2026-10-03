@@ -50,12 +50,12 @@
       {% set bk_owner = appliance if owns_device_scope(appliance) else device_scope_owner(appliance) %}
       {% if appliance.kind == 'fortiadc' %}
       <a href="{{ url_for('adc.use_device', id=appliance.id) }}" class="btn fw-btn-primary">{{ _('Browse Virtual Servers') }}</a>
-      {% if bk_owner and current_user.can('backup') %}<a href="{{ url_for('backups.list_backups', id=bk_owner.id) }}" class="btn btn-fw-secondary"{% if bk_owner.id != appliance.id %} title="{{ _('One backup covers every ADOM of this appliance') }}"{% endif %}>{{ _('View Backups') }}{% if bk_owner.id != appliance.id %} <span class="fw-tag ms-1">{{ bk_owner.name }}</span>{% endif %}</a>{% endif %}
+      {% if bk_owner and current_user.can('backups.view') %}<a href="{{ url_for('backups.list_backups', id=bk_owner.id) }}" class="btn btn-fw-secondary"{% if bk_owner.id != appliance.id %} title="{{ _('One backup covers every ADOM of this appliance') }}"{% endif %}>{{ _('View Backups') }}{% if bk_owner.id != appliance.id %} <span class="fw-tag ms-1">{{ bk_owner.name }}</span>{% endif %}</a>{% endif %}
       <a href="{{ url_for('adc_api.index') }}" class="btn fw-btn-secondary">{{ _('API Console') }}</a>
       {% else %}
       <a href="{{ url_for('workspace.appliance', appliance_id=appliance.id) }}" class="btn fw-btn-primary">{{ _('Browse Server Policies') }}</a>
       {# FortiAuthenticator: no backup transport, and its ADOM gate does not admit the Backups pages #}
-      {% if bk_owner and appliance.kind != 'fortiauthenticator' and current_user.can('backup') %}<a href="{{ url_for('backups.list_backups', id=bk_owner.id) }}" class="btn btn-fw-secondary"{% if bk_owner.id != appliance.id %} title="{{ _('One backup covers every ADOM of this appliance') }}"{% endif %}>{{ _('View Backups') }}{% if bk_owner.id != appliance.id %} <span class="fw-tag ms-1">{{ bk_owner.name }}</span>{% endif %}</a>{% endif %}
+      {% if bk_owner and appliance.kind != 'fortiauthenticator' and current_user.can('backups.view') %}<a href="{{ url_for('backups.list_backups', id=bk_owner.id) }}" class="btn btn-fw-secondary"{% if bk_owner.id != appliance.id %} title="{{ _('One backup covers every ADOM of this appliance') }}"{% endif %}>{{ _('View Backups') }}{% if bk_owner.id != appliance.id %} <span class="fw-tag ms-1">{{ bk_owner.name }}</span>{% endif %}</a>{% endif %}
       <a href="{{ url_for('analysis.dashboard', id=appliance.id) }}" class="btn fw-btn-secondary">{{ _('Analysis / FortiView') }}</a>
       {% endif %}
     </div>
@@ -182,7 +182,9 @@
          same answer gates the routes (auth.decorators.require_device_scope) —
          hiding a button that the URL still honours is decoration. #}
       {% if owns_device_scope(appliance) %}
+      {% if current_user.can('appliances.apply') %}
       <a href="{{ url_for('appliances.console', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm"><i class="bi bi-terminal me-1"></i>{{ _('Console') }}</a>
+      {% endif %}
       {% if appliance.is_cluster_member and current_user.can('config_write') %}
       <a href="{{ url_for('appliances.failover', id=appliance.id) }}" class="btn btn-fw-secondary btn-sm text-danger" title="{{ _('This node belongs to an HA cluster: hand its primary role over, or give it back') }}"><i class="bi bi-arrow-left-right me-1"></i>{{ _('HA Failover') }}</a>
       {% endif %}
@@ -195,7 +197,7 @@
       <a href="{{ url_for('appliances.downgrade', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm text-warning" title="{{ _('Boot this appliance from its alternate firmware partition (rollback / downgrade — real in-app push + reboot)') }}"><i class="bi bi-hdd-stack me-1"></i>{{ _('Boot Partition') }}</a>
       {% endif %}
       {% endif %}
-      {% if current_user.can('user_manage') %}
+      {% if current_user.can('user_manage') and current_user.can('backups.restore') %}
       <a href="{{ url_for('appliances.restore', id=appliance.id) }}" class="btn fw-btn-secondary btn-sm text-danger" title="{{ _('Manage this appliance\'s configuration-backup vault and restore a saved config (admin only)') }}"><i class="bi bi-arrow-counterclockwise me-1"></i>{{ _('Restore') }}</a>
       {% endif %}
       <a href="{{ url_for('appliances.flash_reports', appliance_id=appliance.id) }}" class="btn fw-btn-secondary btn-sm" title="Before/after firmware upgrade & boot-partition reports for this appliance"><i class="bi bi-clipboard-data me-1"></i>{{ _('Firmware Reports') }}</a>

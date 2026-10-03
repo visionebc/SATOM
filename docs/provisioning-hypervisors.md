@@ -172,7 +172,7 @@ sending commands at it blindly turns them into failed logins against an
 |---|---|
 | `full` | create, boot, configure and onboard without stopping |
 | `semi` | create and boot, then stop for the first-boot console; resume once the appliance answers |
-| `dhcp` | create and boot; the appliance takes a lease and SATOM finds it, then continues |
+| `dhcp` | create and boot without reserving an address; the appliance takes a lease, SATOM probes the management address entered on the run (it does not discover the lease), then continues |
 | `vm_only` | create the machine and stop |
 | `config_only` | the machine exists already — reserve the address, issue the certificate, apply the profile |
 
@@ -250,9 +250,9 @@ answer to that fact.
 
 | Mode | What it does | Advantages | Disadvantages |
 |---|---|---|---|
-| **full** | Address, DNS, machine, boot, walks the first-boot dialog over the serial console, registers the appliance, hands off to the configuration profile. | No human step. Repeatable and auditable end to end; every action lands in the run log. | **Proxmox only** — needs an API serial console. Most moving parts, so the widest surface for a mid-run failure; this is what rollback exists for. |
+| **full** | Address, DNS, machine, boot, then waits for the appliance to answer on the reserved address, registers it and hands off to the configuration profile. The first-boot dialog is not scripted: the appliance must come up on that address by itself. | No human step. Repeatable and auditable end to end; every action lands in the run log. | **Proxmox only** — needs an API serial console. Most moving parts, so the widest surface for a mid-run failure; this is what rollback exists for. |
 | **semi** | Builds and boots, then stops. The operator completes the first-boot dialog on the hypervisor console and resumes. | Works on **every** backend, including a free-licensed ESXi. The one manual step is the one a human is genuinely required for. | Not unattended — a run waits until somebody acts on it. |
-| **dhcp** | Builds and boots; the appliance takes a lease and SATOM finds it there. | Unattended without a serial console. | Needs DHCP reachable from the machine's network, and the address is not the one you chose. Not every appliance takes a lease on its factory configuration. |
+| **dhcp** | Builds and boots; the appliance takes a lease and SATOM probes the management address entered on the run (it does not discover the lease). | Unattended without a serial console. | You must know the address (a DHCP reservation) and enter it; without one the run stops at the reachability step. Not every appliance takes a lease on its factory configuration. |
 | **vm_only** | Creates and powers on the machine. Stops. | Smallest blast radius. Right when the appliance is configured by another team or tool. | No address, no DNS, no registration — nothing else in SATOM knows the machine exists. |
 | **config_only** | Skips machine creation: address, DNS, registration and profile against a machine that already exists. | Needs **no hypervisor at all**. The path for physical appliances and anything built outside SATOM. | You built the machine, so its CPU, memory, disk and network are outside the run log and outside the audit trail. |
 

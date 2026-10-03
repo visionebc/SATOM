@@ -217,7 +217,9 @@ Each appliance's detail page is the hub for device-level actions:
   references.
 - **SSH Console** — read-only troubleshooting presets (`get system status`,
   HA status, routing table, sniffer…) plus a command box. Destructive CLI is
-  not offered.
+  not offered. Running a command (even a read-only one) needs **Run appliance
+  actions** (`appliances.apply`); without it the console link is not shown and
+  the page lists the presets with a read-only notice.
 - **Backups / Restore / Upgrade / Boot partition** — see §11–§12.
 - **Sync devices** — the fleet list can be shared/re-imported so a fresh
   install inherits the same inventory.
@@ -950,8 +952,18 @@ This page is the missing third position: name the CA and keep the check on.
     fallback), **REST only**, or **SSH only** (`show full-configuration`).
     Unlicensed/locked devices are still backed up via SSH.
   - Upload `.conf` files by hand, download or delete rows at will.
-- **Restore** (appliance detail): pick a vault row and apply (FortiWeb; a
-  pre-restore safety backup is taken first). For FortiADC the vault works
+  - Permissions: **View backups** (`backups.view`, held by read-only too)
+    lists the vault — metadata only; creating, uploading and deleting need
+    **Create** or **Restore backups** (`backups.create` / `backups.restore`);
+    a **download** needs `backups.create`, because it is the full device
+    configuration. Buttons you cannot use are not shown.
+- **Restore** (appliance detail): pick a vault row and apply (FortiWeb). It
+  needs **Manage users** *and* **Restore backups** (`users.manage` +
+  `backups.restore`). Before a live restore a pre-restore safety backup is
+  pulled over the device **REST** API; if it cannot be taken the restore is
+  **aborted**, unless you tick *Restore without a pre-restore backup* (for a
+  device whose REST backup cannot work, e.g. a backup password is set) — that
+  choice is written to the audit log. For FortiADC the vault works
   (pull/upload/download) but config *apply* has no REST transport — the page
   says so honestly.
 - **System Backup & Restore** (Global → Administrator) backs up the **manager
@@ -1026,9 +1038,14 @@ Appliance detail → **Upgrade** (FortiWeb):
    the upgrade fixes and what it inherits.
 4. Unattended (scheduled) upgrades only ever run inside an **approved Change
    Request window** (§15) — there is no way to schedule a flash without an
-   approval.
-5. **Boot partition** management (view/boot the alternate partition) is a
-   separate, gated page.
+   approval. The scheduled path is **Upgrade Flow**; the Upgrade page itself
+   flashes now and has no "Schedule for later" card any more.
+5. **Boot partition** (flash the alternate partition / roll back) is the
+   **emergency path**: it does not need a change request, so it can roll back
+   a change that went wrong outside any window. A live flash requires ticking
+   *"I understand this live flash bypasses change control"* and typing the
+   appliance name; the attempt (refused or started) and its outcome are written
+   to the audit log.
 
 **The Firmware library** (Fleet → **Firmware**, admin) is the store the upgrade
 step 1 picks from, and it is worth using rather than re-uploading an image per
@@ -1930,9 +1947,9 @@ the first-boot dialog described in 21.2.
 
 | Mode | What it does | Advantages | Disadvantages |
 |---|---|---|---|
-| **Full** | Address, DNS, machine, boot, walks the first-boot dialog over the serial console, registers the appliance, applies the configuration profile. | No human step at all. Repeatable and auditable end to end — every action lands in the run log. | **Proxmox only.** The most moving parts, so the widest surface for a mid-run failure; this is what rollback exists for. |
+| **Full** | Address, DNS, machine, boot, then waits for the appliance to answer on the reserved address, registers it and applies the configuration profile. The first-boot dialog is not scripted: the appliance must come up on that address by itself. | No human step at all. Repeatable and auditable end to end — every action lands in the run log. | **Proxmox only.** The most moving parts, so the widest surface for a mid-run failure; this is what rollback exists for. |
 | **Semi** | Builds and boots, then stops. You complete the first-boot dialog on the hypervisor console and resume the run; the resume checks the box answers on its address, registers it and finishes the profile. | Works on **every** backend, including a free-licensed ESXi. The one manual step is the one a human is genuinely required for. | Not unattended — the run waits until somebody acts on it. |
-| **DHCP** | Builds and boots; the appliance takes a lease, SATOM finds it there and carries on. | Unattended without needing a serial console. | Needs DHCP reachable from that network, and the appliance ends up on an address you did not choose. Not every appliance takes a lease on its factory configuration. |
+| **DHCP** | Builds and boots; the appliance takes a lease and SATOM probes the management address entered on the run (it does not discover the lease), then carries on. | Unattended without needing a serial console. | You must know the address the appliance takes (a DHCP reservation) and enter it on the run; without one the run stops at the reachability step. Not every appliance takes a lease on its factory configuration. |
 | **VM only** | Creates and powers on the machine. Stops. | Smallest blast radius. The right choice when another team or tool configures the appliance. | No address, no DNS, no registration — nothing else in SATOM knows the machine exists until you add it. |
 | **Config only** | No hypervisor involved: reserve the address, issue the certificate, register and apply the profile against a machine that already exists. | Needs **no hypervisor at all** — the path for physical appliances and for anything built outside SATOM. | You built the machine, so its CPU, memory, disk and network are outside the run log and outside the audit trail. |
 
@@ -3384,7 +3401,8 @@ own labelled `.txt`.
 
 ### 27.2 Import Backup — parse a config file with no appliance at all
 
-FortiWeb ADOM → Operations → **Import Backup** (`config_write`).
+FortiWeb ADOM → Operations → **Import Backup** (`backups.restore`; operator
+and admin hold it).
 
 Upload a FortiWeb configuration backup — `.conf`, `.txt`, `.cfg`, `.zip` or
 `.gz` — and it is parsed **entirely offline**. **No appliance is contacted**, at
@@ -3442,7 +3460,9 @@ Then it is two-phase, as everywhere else in the product:
    Nothing is contacted for real.
 2. **Confirm** — a **canary-gated** live write: the first device goes first and
    the rest only follow if it succeeded. The result reports `{canary, rest,
-   aborted}`.
+   aborted}`. Only an **approved** profile can be deployed live (approval is
+   `operations.template_approve`, admin-only); a pending or rejected profile
+   keeps its preview, and the refused attempt is audited.
 
 Choosing *Entire fleet* is explicit. Selecting "selected devices" and then
 selecting nothing is **refused**, rather than being quietly treated as "all" —

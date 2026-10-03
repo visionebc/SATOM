@@ -266,7 +266,17 @@ def apply(template_id: int):
             target_hostname=target_hostname, change_id=change_id,
         )
 
-    # Confirmed -> real canary-gated write to live devices.
+    # Confirmed -> real canary-gated write to live devices. Only an APPROVED
+    # profile is fleet-deployable (operations.template_approve); the dry-run
+    # preview above stays available for a pending one.
+    if template.status != Template.STATUS_APPROVED:
+        log_action('provisioning.apply', target=profile.name,
+                   detail=f'refused: profile is {template.status}, not approved; '
+                          f'{mode}, host={target_hostname}, change={change_id}')
+        flash(f'"{profile.name}" is {template.status}: only an approved system '
+              f'profile can be deployed live. The preview stays available; ask an '
+              f'administrator to approve it first.', 'danger')
+        return redirect(url_for('provisioning.index'))
     flash(f'Deploying [{change_id}] to {target_hostname} — canary device writes first.', 'warning')
     result = prov.apply(profile, device_ids, dry_run=False, canary=1)
     log_action('provisioning.apply', target=profile.name,

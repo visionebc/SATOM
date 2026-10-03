@@ -116,26 +116,11 @@
   </div>
 </div>
 
-<div class="card shadow-sm">
-  <div class="card-header fw-card-header"><i class="bi bi-calendar-event me-1"></i>{{ _('Schedule for later') }}</div>
-  <div class="card-body">
-    <form method="POST" action="{{ url_for('appliances.upgrade_schedule', id=appliance.id) }}">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <div class="mb-3">{{ image_select('image_id') }}</div>
-      <div class="mb-3">
-        <label class="form-label">Date &amp; time <span class="text-muted">{{ _('(UTC)') }}</span></label>
-        <input class="form-control" type="datetime-local" name="when" required>
-      </div>
-      <div class="form-check mb-3">
-        <input class="form-check-input" type="checkbox" name="confirm_maturity" id="sched_maturity">
-        <label class="form-check-label" for="sched_maturity">Confirm maturity change (Mature&harr;Feature)</label>
-      </div>
-      <div class="fw-alert fw-alert-info small mb-3">
-        <i class="bi bi-info-circle me-1"></i>
-        {{ _('The upgrade is recorded as a one-shot') }} <b>{{ _('Scheduled Action') }}</b> {{ _('with the validated image. Unattended flashing is gated for safety (an approved Change Request / explicit operator run); the schedule is created and visible under Scheduled Actions.') }}
-      </div>
-      <button class="btn fw-btn-secondary" type="submit"><i class="bi bi-calendar-plus me-1"></i>{{ _('Schedule upgrade') }}</button>
-    </form>
+<div class="fw-alert fw-alert-info small d-flex align-items-start gap-2">
+  <i class="bi bi-calendar-event mt-1"></i>
+  <div>
+    {{ _('To flash in a maintenance window, use') }}
+    <a class="alert-link" href="{{ url_for('upgrade_flow.index') }}">{{ _('Upgrade Flow') }}</a>{{ _(': pre-upgrade, a change request with its window, approval and scheduled execution. This page flashes now, inside an approved change request.') }}
   </div>
 </div>
 {% endif %}

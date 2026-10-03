@@ -94,7 +94,6 @@ TITLES = {
     "appliances.detach_member": "Detach HA member",
     "appliances.console_run": "Console command",
     "appliances.upgrade_prep_run": "Upgrade preparation",
-    "appliances.upgrade_schedule": "Schedule upgrade",
     "appliances.restore_upload": "Upload configuration backup",
     "appliances.restore_fetch": "Fetch configuration backup",
     "appliances.restore_run": "Restore configuration",

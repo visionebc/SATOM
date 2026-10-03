@@ -9,7 +9,7 @@
 <div class="fw-alert fw-alert-danger d-flex align-items-start gap-2">
   <i class="bi bi-exclamation-octagon-fill mt-1"></i>
   <div>
-    {{ _('A live restore') }} <b>{{ _('overwrites the running configuration and reboots the appliance') }}</b>{{ _(', interrupting every service it fronts. A') }} <b>{{ _('pre-restore backup is taken automatically') }}</b> {{ _('before a live restore. Leave') }} <b>{{ _('Dry run') }}</b> {{ _('checked to validate without sending anything, and type the appliance name to authorise a live restore. Encrypted backups require the backup password.') }}
+    {{ _('A live restore') }} <b>{{ _('overwrites the running configuration and reboots the appliance') }}</b>{{ _(', interrupting every service it fronts. Before a live restore a') }} <b>{{ _('pre-restore backup is pulled over the device REST API') }}</b>{{ _('; if it cannot be taken the restore is aborted unless you explicitly choose to restore without one. Leave') }} <b>{{ _('Dry run') }}</b> {{ _('checked to validate without sending anything, and type the appliance name to authorise a live restore. Encrypted backups require the backup password.') }}
   </div>
 </div>
 
@@ -112,7 +112,12 @@
             <label class="form-check-label" for="dry_run">{{ _('Dry run (validate only — nothing is sent to the appliance)') }}</label>
           </div>
           <div id="live-fields" class="d-none border rounded p-3 mb-3" style="background:rgba(248,113,113,.06)">
-            <p class="small mb-2 text-danger"><i class="bi bi-exclamation-triangle me-1"></i>A live restore reboots {{ appliance.name }} and replaces its configuration. An automatic pre-restore backup is taken first.</p>
+            <p class="small mb-2 text-danger"><i class="bi bi-exclamation-triangle me-1"></i>A live restore reboots {{ appliance.name }} and replaces its configuration. A pre-restore backup is pulled over REST first; if that fails the restore is aborted.</p>
+            <div class="form-check mb-2">
+              <input class="form-check-input" type="checkbox" name="skip_pre_backup" id="skip_pre_backup">
+              <label class="form-check-label small" for="skip_pre_backup">{{ _('Restore without a pre-restore backup') }}
+                <span class="text-muted d-block">{{ _('Only if the device REST backup cannot work (e.g. a backup password is set). There is then no rollback copy; the choice is recorded in the audit log.') }}</span></label>
+            </div>
             <label class="form-label small">Type the appliance name <code>{{ appliance.name }}</code> to authorise:</label>
             <input class="form-control" type="text" name="confirm_name" autocomplete="off" placeholder="{{ appliance.name }}">
           </div>

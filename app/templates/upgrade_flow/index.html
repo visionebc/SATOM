@@ -65,6 +65,9 @@
         <span class="is-mono">prep={{ preselect_prep_unresolved }}</span>
       </div>
       {% endif %}
+      <p class="text-muted small mb-2">
+        {{ _('This flow covers') }} <span class="is-mono">{{ kinds|join(', ') or '—' }}</span>{{ _(': the products whose firmware SATOM can flash from a change. FortiADC has no flash path, so its pre-upgrade runs from the appliance page only.') }}
+      </p>
       {% if not devices %}
         <p class="text-muted mb-0">
           {{ _('No appliance of a type the pre-upgrade supports is visible to you.') }}

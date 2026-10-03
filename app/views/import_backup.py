@@ -22,7 +22,6 @@ from flask import (
 from flask_login import login_required
 
 from ..auth.decorators import require_permission
-from ..models import Permission
 from ..services import config_import
 from ..services.audit import log_action
 
@@ -40,7 +39,7 @@ def _data_dir() -> str:
 
 @bp.route("/", methods=["GET"])
 @login_required
-@require_permission(Permission.CONFIG_WRITE)
+@require_permission("backups.restore")
 def index():
     """Upload form + a table of previously imported snapshots."""
     imports = config_import.list_snapshots(_data_dir())
@@ -49,7 +48,7 @@ def index():
 
 @bp.route("/", methods=["POST"])
 @login_required
-@require_permission(Permission.CONFIG_WRITE)
+@require_permission("backups.restore")
 def upload():
     """Parse the uploaded config file offline and persist its snapshot."""
     file = request.files.get("config_file")
@@ -108,7 +107,7 @@ def upload():
 
 @bp.route("/view/<device>", methods=["GET"])
 @login_required
-@require_permission(Permission.CONFIG_WRITE)
+@require_permission("backups.restore")
 def view(device):
     """Render a parsed snapshot: firmware, totals, per-section counts, raw text."""
     snapshot = config_import.load_snapshot(device, root=_data_dir())

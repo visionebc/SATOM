@@ -116,16 +116,20 @@ def cr_draft_context() -> dict:
 
 
 def prep_kinds() -> tuple[str, ...]:
-    """Appliance kinds the pre-upgrade actually runs against.
+    """Appliance kinds this flow runs against, end to end.
 
-    DERIVED from the ``upgrade_prep`` action's own product list, never
-    re-listed here. A hand-kept copy is how this page would come to offer
-    FortiAnalyzer the day somebody adds it to the picker and nowhere else — the
-    sweep would run, every device would raise, and the operator would read
-    forty errors instead of one honest absence.
+    DERIVED, never re-listed here: the products the ``upgrade_prep`` action
+    pre-flights AND the change's own action (:data:`CR_ACTION`) can execute.
+    Stage 1 used to offer every pre-flight product, so a FortiADC could be
+    swept and then refused at stage 2 -- there is no ADC flash path. A
+    hand-kept copy is how this page would come to offer FortiAnalyzer the day
+    somebody adds it to the picker and nowhere else.
     """
-    spec = sa.ALL_ACTIONS.get('upgrade_prep')
-    return tuple(getattr(spec, 'products', ()) or ())
+    prep = sa.ALL_ACTIONS.get('upgrade_prep')
+    run = sa.ALL_ACTIONS.get(CR_ACTION)
+    executable = set(getattr(run, 'products', ()) or ())
+    return tuple(p for p in (getattr(prep, 'products', ()) or ())
+                 if p in executable)
 
 
 #: What one destination does to ONE appliance. Four outcomes, not a

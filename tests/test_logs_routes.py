@@ -52,3 +52,24 @@ def test_view_file_traversal_404(client, app):
 def test_requires_login():
     # unauthenticated → redirect to login (handled by login_required)
     pass
+
+
+def test_the_log_collection_link_is_offered_only_to_who_may_open_it(app, client):
+    """The page needs config_write; the sidebar offered it to readonly users,
+    who got a 403 (found by a production smoke on 2026-10-03)."""
+    from tests.conftest import login, make_user
+    from app.extensions import db
+    from app.models import Appliance
+    with app.app_context():
+        a = Appliance(name="fw-logs-nav", kind="fortiweb", host="192.0.2.5",
+                      port=443, username="u", password_enc="x", verify_ssl=False)
+        db.session.add(a)
+        db.session.commit()
+    for role, offered in (("readonly", False), ("operator", True)):
+        login(client, make_user(app, username="logs-" + role, role=role))
+        r = client.get("/web/", follow_redirects=True)
+        html = r.get_data(as_text=True)
+        assert r.status_code == 200 and 'data-nav-group=' in html, role   # a real page with its sidebar
+        assert ('href="/web/logs/"' in html) is offered, role
+        status = client.get("/web/logs/").status_code
+        assert (status == 200) is offered, (role, status)

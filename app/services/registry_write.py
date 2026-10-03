@@ -31,16 +31,31 @@ from ..registry import loader
 NAME_RE = re.compile(r"^[A-Za-z0-9_.\-]+$")
 
 #: The api_version column a new row takes when the caller does not say. Per
-#: product because the two catalogs genuinely differ: FortiWeb's REST is v2.0,
-#: FortiADC's is v1. A single default would silently file half the fleet under
-#: the wrong version, and ``(product, api_version, name)`` is the uniqueness
-#: key — so the wrong default does not collide, it DUPLICATES.
-DEFAULT_API_VERSION = {"fortiweb": "v2.0", "fortiadc": "v1"}
+#: product because the catalogs genuinely differ: FortiWeb's REST is v2.0,
+#: FortiADC's and FortiAuthenticator's are v1, FortiAnalyzer's is JSON-RPC. A
+#: single default would silently file half the fleet under the wrong version,
+#: and ``(product, api_version, name)`` is the uniqueness key — so the wrong
+#: default does not collide, it DUPLICATES.
+DEFAULT_API_VERSION = {"fortiweb": "v2.0", "fortiadc": "v1",
+                       "fortianalyzer": "jsonrpc", "fortiauthenticator": "v1"}
 
-#: Products whose catalog this writer will touch. Not a style check: the
-#: FortiAnalyzer / FortiAuthenticator catalogs are seeded but have no editor,
-#: and silently accepting a write for them would create rows nothing renders.
-WRITABLE_PRODUCTS = ("fortiweb", "fortiadc")
+#: Products whose catalog this writer will touch — every product that has a
+#: catalog editor (FortiWeb registry page, and the FortiADC, FortiAnalyzer and
+#: FortiAuthenticator API pages). A product outside this list has no editor,
+#: and silently accepting a write for it would create rows nothing renders.
+WRITABLE_PRODUCTS = ("fortiweb", "fortiadc", "fortianalyzer",
+                     "fortiauthenticator")
+
+#: FortiAuthenticator URNs must stay under the REST root: the console posts to
+#: whatever the catalog names, and the appliance GUI/admin views live on the
+#: same origin and answer to the same session.
+_FAC_URN_RE = re.compile(r"^/api/v1/[A-Za-z0-9_./\-]*$")
+
+#: The reason a URN is refused, per product (the example a user needs).
+_URN_HINT = {
+    "fortianalyzer": "URN must be an absolute JSON-RPC url (e.g. /dvmdb/device).",
+    "fortiauthenticator": "URN must be a path under /api/v1/.",
+}
 
 
 def default_api_version(product: str) -> str:
@@ -56,9 +71,10 @@ def validate(product: str, name: str, urn: str) -> str:
     if not NAME_RE.match(name):
         return ('Endpoint name may only contain letters, digits, "_", "-" '
                 'and ".".')
-    if not urn.startswith("/"):
-        return ("URN must be an absolute API path "
-                "(e.g. /api/v2.0/cmdb/... or /api/load_balance_pool).")
+    if not urn.startswith("/") or (
+            product == "fortiauthenticator" and not _FAC_URN_RE.match(urn)):
+        return _URN_HINT.get(product, "URN must be an absolute API path "
+                             "(e.g. /api/v2.0/cmdb/... or /api/load_balance_pool).")
     return ""
 
 
@@ -120,6 +136,10 @@ def invalidate(product: str) -> None:
     """
     if product == "fortiadc":
         loader.invalidate_adc_cache()
+    elif product == "fortianalyzer":
+        loader.invalidate_faz_cache()
+    elif product == "fortiauthenticator":
+        loader.invalidate_fac_cache()
     else:
         loader.invalidate_cache()
 

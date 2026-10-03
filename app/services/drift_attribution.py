@@ -84,7 +84,10 @@ _BY_TARGET_EXACT = frozenset({
 # twin and would sail through the ``faz.`` prefix.
 _FAILED_SUFFIX = ".failed"
 
-_MUTATING = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+# HTTP methods (FortiADC / FortiAuthenticator consoles) and the FortiAnalyzer
+# console's JSON-RPC write verbs, upper-cased like the methods are compared.
+_MUTATING = frozenset({"POST", "PUT", "PATCH", "DELETE",
+                       "EXEC", "ADD", "SET", "UPDATE"})
 
 # ``fortiweb_ops._record`` folds its status into one free-text detail string:
 #   'mkey=am-exc dry_run=False error='
@@ -135,10 +138,11 @@ def _succeeded(action: str, extra: dict) -> bool:
 
     * ``config.*`` — ``fortiweb_ops._record`` logs BOTH previews and refusals,
       so the detail string is the only witness; an unreadable one is a no.
-    * ``fac_api.execute`` / ``appliance.upgrade`` — logged even when the call
-      errored, so the ``error`` key decides.
-    * ``adc.*`` / ``faz.*`` / ``faz_api`` / ``adc_api`` — the call site returns
-      502 *before* logging, so the row's existence IS the success.
+    * ``fac_api.execute`` / ``faz_api.execute`` / ``adc_api.execute`` /
+      ``appliance.upgrade`` — logged even when the call errored, so the
+      ``error`` key decides. The consoles log applied WRITES only.
+    * ``adc.*`` / ``faz.*`` — the call site returns 502 *before* logging, so
+      the row's existence IS the success.
     """
     if action.startswith("config."):
         detail = extra.get("detail")
@@ -154,7 +158,7 @@ def _succeeded(action: str, extra: dict) -> bool:
     if action == "appliance.upgrade" and extra.get("dry_run"):
         return False
     if action in ("fac_api.execute", "faz_api.execute", "adc_api.execute"):
-        # The FAZ/ADC consoles log EVERY verb including GET; a read is not a
+        # Older FAZ/ADC console rows include reads (GET); a read is not a
         # write, and treating one as a receipt would silence a real drift.
         return str(extra.get("method", "")).upper() in _MUTATING
     return True

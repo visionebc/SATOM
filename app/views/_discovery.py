@@ -229,6 +229,10 @@ def run_payload(product: str):
                     "scope": scope, "blocks": len(rows), "budget": budget})
 
 
+#: Products whose catalog a discovery run may register into.
+_DISCOVERY_PRODUCTS = ("fortiweb", "fortiadc")
+
+
 def register_payload(product: str):
     """JSON: register the selected (name, urn) pairs — after re-asking the device.
 
@@ -237,8 +241,11 @@ def register_payload(product: str):
     again, a crafted form writes any URL into the catalog under any key. The
     device stays the authority, in the same request that performs the write.
     """
-    if product not in registry_write.WRITABLE_PRODUCTS:
-        return jsonify({"ok": False, "error": "%s endpoints are not editable" % product}), 400
+    # Narrower than registry_write.WRITABLE_PRODUCTS: the FortiAnalyzer and
+    # FortiAuthenticator catalogs have hand editors but no discovery run.
+    if product not in _DISCOVERY_PRODUCTS:
+        return jsonify({"ok": False, "error": "%s endpoints are not editable "
+                        "by a discovery run" % product}), 400
 
     appliance_id = request.form.get("appliance_id", type=int)
     if not appliance_id:

@@ -14,7 +14,11 @@ to the **fortiadc** product:
   :class:`app.clients.fortiadc.FortiADCClient` (``registry.execute_write`` gates
   the non-GET verbs).
 
-All writes are audited. The registry is 2D from day one
+**Console writes are DRY-RUN BY DEFAULT**, exactly like the FortiAuthenticator
+console: a mutating method returns the request it would send (method, path,
+body) and changes nothing until ``apply=true`` is passed. Every applied write
+is audited, including the ones the device refused (the ``error`` key says
+so); reads are not audited. The registry is 2D from day one
 (``product='fortiadc'``), so this never touches the FortiWeb catalog.
 """
 from __future__ import annotations
@@ -40,7 +44,17 @@ from . import _apiversions, _reconcile
 bp = Blueprint('adc_api', __name__, url_prefix='/adc/api')
 
 _NAME_RE = re.compile(r'^[A-Za-z0-9_.\-]+$')
+_METHODS = ('GET', 'POST', 'PUT', 'PATCH', 'DELETE')
 _WRITE_METHODS = {'POST', 'PUT', 'DELETE', 'PATCH'}
+
+
+def _write_error(resp):
+    """The device's refusal of a write, or None. An empty 2xx body is an
+    accepted write (the client's own check would call it unparseable)."""
+    err = FortiADCClient._device_error(resp)
+    if resp.status_code < 400 and err == 'unparseable response body':
+        return None
+    return err
 
 
 def _edit_context() -> dict:
@@ -136,9 +150,15 @@ def execute():
     endpoint = (request.form.get('endpoint') or '').strip()
     method = (request.form.get('method') or 'GET').upper()
     body_raw = (request.form.get('body') or '').strip()
+    apply_ = (request.form.get('apply') or '').lower() in ('1', 'true', 'on', 'yes')
 
     if not appliance_id or not endpoint:
         return jsonify(ok=False, error='Appliance and endpoint are required.')
+    # An allow-list, not just a write set: a verb outside it (a translated
+    # option label, a typo) would otherwise skip the write gate below and be
+    # forwarded to the device as-is.
+    if method not in _METHODS:
+        return jsonify(ok=False, error=f'Unknown HTTP method: {method}')
     if method in _WRITE_METHODS and not current_user.can('registry.execute_write'):
         return jsonify(ok=False, error='The "Execute write API calls" permission '
                                        'is required for non-GET methods.')
@@ -169,17 +189,33 @@ def execute():
         except ValueError as exc:
             return jsonify(ok=False, error=f'Invalid JSON body: {exc}')
 
+    preview = {'method': method, 'path': path, 'body': body}
+    write = method in _WRITE_METHODS
+
+    # DRY RUN — the default for every mutating method. Nothing is sent.
+    if write and not apply_:
+        return jsonify(ok=True, dry_run=True, path=path, request=preview,
+                       note=('Dry run — nothing was sent. Re-submit with Apply '
+                             'to perform this write on the device.'))
+
     try:
         resp = FortiADCClient(appliance).api_call(method, path, body)
-        log_action('adc_api.execute', target=appliance.name,
-                   extra={'method': method, 'endpoint': path})
-        try:
-            result = resp.json()
-        except Exception:  # noqa: BLE001
-            result = resp.text
-        return jsonify(ok=True, status=resp.status_code, path=path, result=result)
     except Exception as exc:  # noqa: BLE001
-        return jsonify(ok=False, error=str(exc))
+        if write:
+            log_action('adc_api.execute', target=appliance.name,
+                       extra={'method': method, 'endpoint': path,
+                              'error': str(exc)})
+        return jsonify(ok=False, error=str(exc), request=preview)
+    if write:
+        log_action('adc_api.execute', target=appliance.name,
+                   extra={'method': method, 'endpoint': path,
+                          'error': _write_error(resp)})
+    try:
+        result = resp.json()
+    except Exception:  # noqa: BLE001
+        result = resp.text
+    return jsonify(ok=True, dry_run=False, status=resp.status_code, path=path,
+                   request=preview, result=result)
 
 
 # --------------------------------------------------------------------------- #

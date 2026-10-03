@@ -212,6 +212,7 @@ def _field_since(product: str, endpoint: str, version: str) -> dict:
 
 @bp.route('/')
 @login_required
+@require_permission('registry.view')
 def index():
     appliances = visible_appliances().order_by(Appliance.name).all()
     # Registry-backed section > endpoint tree for the left-hand "API Menu"
@@ -288,6 +289,7 @@ def _tree_marks(view: dict) -> dict:
 
 @bp.route('/build')
 @login_required
+@require_permission('registry.view')
 def build_info():
     """The selected appliance's build: banner facts + per-leaf marks.
 
@@ -325,6 +327,7 @@ def build_info():
 
 @bp.route('/fields')
 @login_required
+@require_permission('registry.view')
 def endpoint_fields():
     """Fields one endpoint serves on the selected appliance's build."""
     appliance_id = request.args.get('appliance_id', type=int)
@@ -410,6 +413,7 @@ def _truthy(value) -> bool:
 
 @bp.route('/execute', methods=['POST'])
 @login_required
+@require_permission('registry.view')
 def execute():
     appliance_id = request.form.get('appliance_id', type=int)
     endpoint = request.form.get('endpoint', '').strip()
@@ -518,6 +522,7 @@ def cli_coverage_capture():
 
 @bp.route('/cli-coverage/probe', methods=['POST'])
 @login_required
+@require_permission('registry.view')
 def cli_coverage_probe():
     """Ask the device which candidate REST path exists for a CLI-only block.
 

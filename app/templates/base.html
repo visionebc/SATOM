@@ -372,8 +372,7 @@
         <div class="fw-nav-group-body">
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'appliances' else '' }}" href="{{ url_for('appliances.index') }}">
             <i class="bi bi-server fw-nav-icon"></i><span>{{ _('Appliances') }}</span></a>
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'audit' else '' }}" href="{{ url_for('audit.index') }}">
-            <i class="bi bi-clipboard-check fw-nav-icon"></i><span>{{ _('Audit Log') }}</span></a>
+          {% include "partials/nav_audit.html" %}
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'capacity' else '' }}" href="{{ url_for('capacity.index') }}">
             <i class="bi bi-speedometer2 fw-nav-icon"></i><span>{{ _('Capacity Limits') }}</span></a>
           {% include "partials/nav_collection.html" %}
@@ -448,8 +447,7 @@
         <div class="fw-nav-group-body">
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'appliances' else '' }}" href="{{ url_for('appliances.index') }}">
             <i class="bi bi-server fw-nav-icon"></i><span>{{ _('Appliances') }}</span></a>
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'audit' else '' }}" href="{{ url_for('audit.index') }}">
-            <i class="bi bi-clipboard-check fw-nav-icon"></i><span>{{ _('Audit Log') }}</span></a>
+          {% include "partials/nav_audit.html" %}
           {% include "partials/nav_collection.html" %}
           {% include "partials/nav_cr_types.html" %}
           {% include "partials/nav_adom_assets.html" %}
@@ -553,8 +551,7 @@
         <div class="fw-nav-group-body">
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'appliances' else '' }}" href="{{ url_for('appliances.index') }}">
             <i class="bi bi-server fw-nav-icon"></i><span>{{ _('Appliances') }}</span></a>
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'audit' else '' }}" href="{{ url_for('audit.index') }}">
-            <i class="bi bi-clipboard-check fw-nav-icon"></i><span>{{ _('Audit Log') }}</span></a>
+          {% include "partials/nav_audit.html" %}
           {% include "partials/nav_collection.html" %}
           {% include "partials/nav_cr_types.html" %}
           {% include "partials/nav_adom_assets.html" %}
@@ -631,8 +628,7 @@
         <div class="fw-nav-group-body">
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'appliances' else '' }}" href="{{ url_for('appliances.index') }}">
             <i class="bi bi-server fw-nav-icon"></i><span>{{ _('Appliances') }}</span></a>
-          <a class="fw-nav-item {{ 'active' if request.blueprint == 'audit' else '' }}" href="{{ url_for('audit.index') }}">
-            <i class="bi bi-clipboard-check fw-nav-icon"></i><span>{{ _('Audit Log') }}</span></a>
+          {% include "partials/nav_audit.html" %}
           {% include "partials/nav_collection.html" %}
           {% include "partials/nav_cr_types.html" %}
           {% include "partials/nav_adom_assets.html" %}
@@ -992,9 +988,7 @@
         <div class="fw-nav-group-body">
           <a class="fw-nav-item" href="{{ url_for('appliances.index') }}">
             <i class="bi bi-server fw-nav-icon"></i><span>{{ _('Appliances') }}</span></a>
-          <a class="fw-nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('audit.') else '' }}"
-             href="{{ url_for('audit.index') }}">
-            <i class="bi bi-clipboard-check fw-nav-icon"></i><span>{{ _('Audit Log') }}</span></a>
+          {% include "partials/nav_audit.html" %}
           <a class="fw-nav-item {{ 'active' if request.blueprint == 'capacity' else '' }}" href="{{ url_for('capacity.index') }}">
             <i class="bi bi-speedometer2 fw-nav-icon"></i><span>{{ _('Capacity Limits') }}</span></a>
           {% include "partials/nav_collection.html" %}

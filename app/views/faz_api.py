@@ -66,6 +66,7 @@ def _edit_context() -> dict:
 
 @bp.route('/')
 @login_required
+@require_permission('registry.view')
 def index():
     fleet = (visible_appliances().filter_by(kind='fortianalyzer')
              .order_by(Appliance.name).all())
@@ -93,6 +94,7 @@ def index():
 
 @bp.route('/execute', methods=['POST'])
 @login_required
+@require_permission('registry.view')
 def execute():
     appliance_id = request.form.get('appliance_id', type=int)
     endpoint = (request.form.get('endpoint') or '').strip()

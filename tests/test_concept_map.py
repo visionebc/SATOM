@@ -164,7 +164,9 @@ def test_the_stamp_does_not_replace_the_gate(app, client):
 def test_required_permission_reads_the_view_not_the_registry(app):
     with app.app_context():
         assert cmap.required_permission("users.index", app) == "user_manage"
-        assert cmap.required_permission("search.index", app) is None
+        assert cmap.required_permission("auth.profile", app) is None
+        # search.index carried no gate until the 2026-10-03 audit (MO-06).
+        assert cmap.required_permission("search.index", app) == "view"
 
 
 def test_a_user_without_the_permission_never_sees_the_page(app):
@@ -179,7 +181,8 @@ def test_a_user_without_the_permission_never_sees_the_page(app):
         clusters = cmap.build(_User(), app)
         shown = {p["endpoint"] for c in clusters for p in c["pages"]}
     assert "users.index" not in shown, "a gated page leaked into a read-only map"
-    assert "search.index" in shown, "an ungated page must still be listed"
+    assert "search.index" not in shown, "a VIEW-gated page leaked into a no-key map"
+    assert "auth.profile" in shown, "an ungated page must still be listed"
 
 
 def test_a_cluster_with_no_visible_page_is_dropped(app, monkeypatch):
@@ -200,9 +203,10 @@ def test_a_cluster_with_no_visible_page_is_dropped(app, monkeypatch):
     monkeypatch.setattr(cmap, "PAGES", gated)
     with app.test_request_context():
         visible = {p["endpoint"] for c in cmap.build(_User(), app) for p in c["pages"]}
-        # 'auth.profile' and 'audit.index' carry no decorator permission, so
-        # 'access' still has pages even for a user who can do nothing.
-        assert visible == {"auth.profile", "audit.index"}
+        # 'auth.profile' carries no decorator permission, so 'access' still has
+        # a page even for a user who can do nothing. 'audit.index' left this
+        # set when it gained its audit.view gate (2026-10-03 audit, AD-15).
+        assert visible == {"auth.profile"}
 
         monkeypatch.setattr(cmap, "PAGES", tuple(
             p for p in gated if p["endpoint"] not in ("auth.profile", "audit.index")))
@@ -221,7 +225,7 @@ def test_an_odd_user_object_hides_the_row_instead_of_500ing(app):
         clusters = cmap.build(_Broken(), app)
         shown = {p["endpoint"] for c in clusters for p in c["pages"]}
     assert "users.index" not in shown
-    assert "search.index" in shown
+    assert "auth.profile" in shown
 
 
 # --------------------------------------------------------------------------

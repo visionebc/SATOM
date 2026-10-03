@@ -4,6 +4,8 @@ from collections import OrderedDict
 from flask import (Blueprint, render_template, jsonify, url_for, request,
                    redirect, session)
 from flask_login import login_required, current_user
+from ..models import Permission
+from ..auth.decorators import require_permission
 
 from ..models import Appliance, visible_appliances, visible_appliance_or_404
 from ..services import device_context
@@ -41,6 +43,7 @@ def _facets(appliances):
 
 @bp.route('/')
 @login_required
+@require_permission(Permission.VIEW)
 def index():
     appliances = visible_appliances().all()
     zones, lines, depts = _facets(appliances)
@@ -60,6 +63,7 @@ def index():
 
 @bp.route('/picker')
 @login_required
+@require_permission(Permission.VIEW)
 def picker():
     """Lightweight device-picker fragment for the banner switch modal."""
     appliances = visible_appliances().all()
@@ -79,6 +83,7 @@ def picker():
 
 @bp.route('/select/<int:id>', methods=['POST'])
 @login_required
+@require_permission(Permission.VIEW)
 def select(id):
     """Pick a device → make it the session context, then go to its Server Policy."""
     appl = visible_appliance_or_404(id)
@@ -107,6 +112,7 @@ def select(id):
 
 @bp.route('/filters', methods=['POST'])
 @login_required
+@require_permission(Permission.VIEW)
 def save_filters():
     """Persist this user's Fleet-map filters (JSON body or form)."""
     data = request.get_json(silent=True) or request.form.to_dict()
@@ -119,6 +125,7 @@ def save_filters():
 
 @bp.route('/device/<int:id>')
 @login_required
+@require_permission(Permission.VIEW)
 def device_detail(id):
     """Read-only physical-inventory payload for the Fleet Map device card.
 
@@ -147,6 +154,7 @@ def device_detail(id):
 
 @bp.route('/device/<int:id>/macs', methods=['POST'])
 @login_required
+@require_permission(Permission.VIEW)
 def device_macs(id):
     """Probe the appliance for hardware addresses (read-only CLI over SSH).
 
@@ -211,6 +219,7 @@ def _service_port(name, svc_ports):
 
 @bp.route('/map-data')
 @login_required
+@require_permission(Permission.VIEW)
 def map_data():
     """Whole-fleet service topology from the device cache (no box calls)."""
     from ..services import read_layer
@@ -292,6 +301,7 @@ def map_data():
 
 @bp.route('/data')
 @login_required
+@require_permission(Permission.VIEW)
 def topology_data():
     """Legacy nodes/edges feed — kept for compatibility, now DB-first."""
     from ..services import read_layer
@@ -318,6 +328,7 @@ def topology_data():
 
 @bp.route('/policy/<int:appliance_id>/<path:name>')
 @login_required
+@require_permission(Permission.VIEW)
 def policy_data(appliance_id, name):
     """Full cached detail of ONE server policy for the Fleet Map modal.
 

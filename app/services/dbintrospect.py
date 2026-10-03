@@ -241,12 +241,55 @@ def is_read_only(sql):
     return True, ""
 
 
+#: Tables whose rows ARE credentials. Column masking keys on the result
+#: column NAME, and SQL can expose a column without naming it
+#: (``row_to_json(u)``, ``SELECT t.* FROM users t(a, b, c)``, an alias), so a
+#: query that references one of these tables by identifier is refused before it
+#: runs. Browse/masking stays as it was for every other table.
+SENSITIVE_TABLES = frozenset({
+    "users",               # password hashes, TOTP secrets, 2FA backup codes
+    "api_tokens",          # API token hashes
+    "app_settings",        # Fernet-encrypted directory/email/vault/hook secrets
+    "hypervisor_targets",  # hypervisor passwords and API token secrets
+    "dns_backends",        # DNS / IPAM provider credentials
+    "provision_runs",      # first-boot administrator passwords
+})
+
+_SQL_STRING = _re.compile(r"'(?:[^']|'')*'")
+_SQL_IDENT = _re.compile(r'"((?:[^"]|"")+)"|([A-Za-z_][A-Za-z0-9_$]*)')
+
+
+def sensitive_tables_referenced(sql) -> list[str]:
+    """Sensitive tables named anywhere in ``sql`` (quoted or bare, any case,
+    schema-qualified or not). String literals are ignored."""
+    text_ = _SQL_STRING.sub("''", sql or "")
+    hits = []
+    for m in _SQL_IDENT.finditer(text_):
+        name = (m.group(1).replace('""', '"') if m.group(1) is not None
+                else m.group(2)).lower()
+        if name in SENSITIVE_TABLES and name not in hits:
+            hits.append(name)
+    return hits
+
+
 def run_query(sql, max_rows=_CONSOLE_MAX):
     """Execute a READ-ONLY query in a rolled-back transaction with a statement
     timeout. Returns {columns, rows, truncated, row_count, error}."""
     ok, why = is_read_only(sql)
     if not ok:
         return {"columns": [], "rows": [], "truncated": False, "error": why}
+    hits = sensitive_tables_referenced(sql)
+    if hits:
+        try:
+            from .audit import log_action
+            log_action("database.query_refused", target=",".join(hits),
+                       extra={"reason": "sensitive table", "sql": (sql or "")[:300]})
+        except Exception:  # noqa: BLE001 - audit is best-effort
+            pass
+        return {"columns": [], "rows": [], "truncated": False,
+                "error": "refused: the query references a credential table (%s); "
+                         "those tables are not readable from the database tools"
+                         % ", ".join(hits)}
     q = (sql or "").strip().rstrip(";").strip()
     try:
         with db.engine.connect() as conn:

@@ -16,7 +16,7 @@
       <tbody>
       {% for r in open_reports %}
         <tr>
-          <td><span class="badge bg-secondary font-monospace" style="cursor:pointer" title="{{ _('Click to copy') }}" onclick="navigator.clipboard.writeText('{{ r.id }}');this.textContent='✓';setTimeout(()=>this.textContent='#{{ r.id }}',1200)">#{{ r.id }}</span></td>
+          <td><span class="badge bg-secondary font-monospace" style="cursor:pointer" title="{{ _('Click to copy') }}" data-fw-copy="{{ r.id }}">#{{ r.id }}</span></td>
           <td class="text-nowrap small">{{ r.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
           <td>{{ r.reporter_username }}</td>
           <td>
@@ -49,7 +49,7 @@
       <tbody>
       {% for r in resolved_reports %}
         <tr>
-          <td><span class="badge bg-secondary font-monospace" style="cursor:pointer" title="{{ _('Click to copy') }}" onclick="navigator.clipboard.writeText('{{ r.id }}');this.textContent='✓';setTimeout(()=>this.textContent='#{{ r.id }}',1200)">#{{ r.id }}</span></td>
+          <td><span class="badge bg-secondary font-monospace" style="cursor:pointer" title="{{ _('Click to copy') }}" data-fw-copy="{{ r.id }}">#{{ r.id }}</span></td>
           <td class="text-nowrap small">{{ r.resolved_at.strftime("%Y-%m-%d %H:%M") if r.resolved_at else "" }}</td>
           <td>{{ r.reporter_username }}</td>
           <td>{{ r.title }}</td>

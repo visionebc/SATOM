@@ -37,7 +37,7 @@
     <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('process.edit', pid=proc.id) }}">
       <i class="bi bi-pencil me-1"></i>{{ _('Settings') }}</a>
     <form method="post" action="{{ url_for('process.delete', pid=proc.id) }}"
-          onsubmit="return confirm('Delete this process? Its run history is kept.');">
+          data-fw-confirm-form="{{ _('Delete this process? Its run history is kept.') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button class="btn btn-outline-danger btn-sm"><i class="bi bi-trash"></i></button>
     </form>

@@ -236,9 +236,13 @@ def deploy(script, code: str, appliance, *, dry_run: bool = True) -> dict[str, A
     surfaced, never swallowed.
     """
     plan = deploy_plan(script, code)
-    if dry_run or appliance is None:
+    if dry_run:
         plan["dry_run"] = True
         return plan
+    if appliance is None:
+        # Never let "no target" read as a successful push.
+        return {**plan, "dry_run": True,
+                "error": "no target appliance -- nothing was pushed"}
     try:
         from ..clients import client_for
         from ..registry import loader as reg

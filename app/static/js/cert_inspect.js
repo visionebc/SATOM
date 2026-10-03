@@ -72,6 +72,9 @@
       '<textarea id="fw-ci-key" class="form-control form-control-sm font-monospace" rows="3" ' +
       'placeholder="' + KEY_PEM_PLACEHOLDER + '"></textarea>' +
       '<div class="form-text">Checked in-process against the leaf. Never stored, never logged.</div>' +
+      '<label class="form-label small fw-bold mb-1 mt-2" for="fw-ci-pass">Key passphrase' +
+      '<span class="text-muted fw-normal"> — only for an encrypted key</span></label>' +
+      '<input id="fw-ci-pass" type="password" class="form-control form-control-sm" autocomplete="off">' +
       '</div></div>' +
       '<div class="mt-2"><button class="btn btn-sm btn-fw-primary" id="fw-ci-run">' +
       '<i class="bi bi-search me-1"></i>Inspect</button></div>' +
@@ -88,7 +91,12 @@
       '<input id="fw-ci-free" class="form-control form-control-sm" placeholder="host:443 or https://host/path"></div>' +
       '<div class="col-md-2">' +
       '<button class="btn btn-sm btn-fw-primary w-100" id="fw-ci-probe"><i class="bi bi-broadcast me-1"></i>Probe</button>' +
-      '</div></div>' +
+      '</div>' +
+      '<div class="col-md-5">' +
+      '<label class="form-label small fw-bold mb-1" for="fw-ci-sni">SNI / hostname to check' +
+      '<span class="text-muted fw-normal"> — optional, defaults to the target</span></label>' +
+      '<input id="fw-ci-sni" class="form-control form-control-sm" placeholder="shop.example.com"></div>' +
+      '</div>' +
       '<div class="form-text mt-1" id="fw-ci-probenote"></div>' +
       '</div>' +
 
@@ -160,6 +168,7 @@
     post('/cert-inspect/paste', {
       pem: $('fw-ci-pem').value,
       key: $('fw-ci-key').value,
+      passphrase: $('fw-ci-pass').value,
       hostname: $('fw-ci-host').value.trim()
     }).then(r => {
       if (!r.d || !r.d.ok) { fail(r.d); return; }
@@ -172,9 +181,10 @@
     const free = $('fw-ci-free').value.trim();
     if (!inv && !free) { $('fw-ci-err').textContent = 'Pick an inventory destination or type a target.'; return; }
     busy(true, 'Opening a TLS connection from the server…');
+    const sni = $('fw-ci-sni').value.trim();
     post('/cert-inspect/probe', inv
-      ? { mode: 'inventory', target: inv }
-      : { mode: 'free', target: free }
+      ? { mode: 'inventory', target: inv, sni: sni }
+      : { mode: 'free', target: free, sni: sni }
     ).then(r => {
       if (!r.d || !r.d.ok) { fail(r.d); return; }
       render(r.d, r.d);

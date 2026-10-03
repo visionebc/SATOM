@@ -2,7 +2,9 @@
 backreference preview, and the FortiWeb/FortiADC-oriented reference library.
 
 FortiWeb AND FortiADC both evaluate regular expressions with PCRE, and BOTH
-reference capture groups in rewrite/redirect replacements as ``$0 $1 … $9``.
+reference capture groups in rewrite/redirect replacements as ``$0 $1 … $9``,
+where ``$0`` is the FIRST ``( … )`` group (Fortinet numbering is zero-based;
+there is no whole-match reference). The rewrite preview follows that numbering.
 Python's ``re`` is the closest server-side approximation available without
 shipping a PCRE binding — but it is an APPROXIMATION, not a compatible engine,
 and every verdict now says so (see ``engine_report``). ``pcre_divergences``
@@ -98,7 +100,7 @@ CHEATSHEET = [
         {"tok": "*?  +?", "desc": "Lazy (shortest match)", "ex": "<.*?>"},
     ]},
     {"group": "Groups & alternation", "items": [
-        {"tok": "( … )", "desc": "Capture group → $1, $2 …", "ex": "^/(.*)$"},
+        {"tok": "( … )", "desc": "Capture group → $0, $1 … in a rewrite (first group is $0)", "ex": "^/(.*)$"},
         {"tok": "(?: … )", "desc": "Non-capturing group", "ex": "(?:www\\.)?"},
         {"tok": "a|b", "desc": "a OR b", "ex": "\\.(zip|tar\\.gz)$"},
         {"tok": "(?i)", "desc": "Case-insensitive from here", "ex": "(?i)union\\s+select"},
@@ -160,11 +162,11 @@ _EXAMPLES: dict[str, list[dict]] = {
     ],
     "rewrite": [
         {"pattern": r"^/old-shop/(.*)$", "sample": "/old-shop/item/42",
-         "replacement": r"/new-shop/$1", "note": "Move /old-shop/* → /new-shop/*"},
+         "replacement": r"/new-shop/$0", "note": "Move /old-shop/* → /new-shop/*"},
         {"pattern": r"^/(.*)\.html$", "sample": "/about.html",
-         "replacement": r"/$1", "note": "Strip the .html suffix"},
+         "replacement": r"/$0", "note": "Strip the .html suffix"},
         {"pattern": r"^/product/([0-9]+)/?$", "sample": "/product/42",
-         "replacement": r"/item?id=$1", "note": "Pretty URL → query string"},
+         "replacement": r"/item?id=$0", "note": "Pretty URL → query string"},
     ],
     "signature": [
         {"pattern": r"(?i)union[\s/*]+select", "sample": "1 UNION SELECT password FROM users",
@@ -179,16 +181,16 @@ _EXAMPLES: dict[str, list[dict]] = {
 # Product-specific highlights, shown at the top of the library on each product.
 _PRODUCT_EXAMPLES: dict[str, list[dict]] = {
     "fortiweb": [
-        {"pattern": r"^/(.*)$", "sample": "/legacy/report", "replacement": r"/app/$1",
-         "note": "URL Rewriting: prefix every path with /app/ (rule capture $0=first group)"},
+        {"pattern": r"^/(.*)$", "sample": "/legacy/report", "replacement": r"/app/$0",
+         "note": "URL Rewriting: prefix every path with /app/ ($0 = the first group)"},
         {"pattern": r"(?i)(<|%3c)script", "sample": "%3Cscript>alert(1)",
          "note": "Custom signature: catch encoded and literal <script"},
     ],
     "fortiadc": [
-        {"pattern": r"(.*)", "sample": "shop.example.com", "replacement": r"https://$0/$1",
-         "note": "Content Rewriting: Host regex captures $0; pair with a URL regex that captures $1"},
-        {"pattern": r"^/(.*)$", "sample": "/cart", "replacement": r"/$1",
-         "note": "Content Rewriting URL regex — the $1 half of https://$0/$1"},
+        {"pattern": r"(.*)", "sample": "shop.example.com", "replacement": r"https://$0/",
+         "note": "Content Rewriting: Host regex captures $0; in one rule with a URL regex, that regex's group is $1 (https://$0/$1)"},
+        {"pattern": r"^/(.*)$", "sample": "/cart", "replacement": r"/$0",
+         "note": "Content Rewriting URL regex — tested alone its group is $0; paired with the Host regex in one rule it becomes the $1 of https://$0/$1"},
         {"pattern": r"^/(en|es|fr)/", "sample": "/es/checkout",
          "note": "Content Routing: send locale-prefixed traffic to a virtual server"},
     ],
@@ -271,9 +273,13 @@ def cheatsheet() -> list[dict]:
 
 def _to_python_repl(replacement: str) -> str:
     r"""Translate a FortiWeb/FortiADC replacement string (``$0 $1 … $9`` and
-    ``${0}``) into Python's ``\g<n>`` form so ``re.sub`` renders it. Literal
-    ``\1`` backrefs are also accepted (some operators write them). ``$$`` and a
-    literal ``$`` are preserved."""
+    ``${0}``) into Python's ``\g<n>`` form so ``re.sub`` renders it.
+
+    Fortinet numbering is zero-based: ``$0`` is the FIRST ``( … )`` group, so
+    ``$n`` becomes Python group ``n + 1``. Literal ``\1`` backrefs are also
+    accepted (some operators write them) with their usual one-based meaning,
+    so ``\1`` and ``$0`` name the same group. ``$$`` and a literal ``$`` are
+    preserved."""
     out = []
     i, n = 0, len(replacement)
     while i < n:
@@ -287,11 +293,11 @@ def _to_python_repl(replacement: str) -> str:
             if nxt == "{":            # ${12}
                 j = replacement.find("}", i + 2)
                 if j != -1 and replacement[i + 2:j].isdigit():
-                    out.append("\\g<%s>" % replacement[i + 2:j])
+                    out.append("\\g<%d>" % (int(replacement[i + 2:j]) + 1))
                     i = j + 1
                     continue
-            if nxt.isdigit():         # $1, $0 …
-                out.append("\\g<%s>" % nxt)
+            if nxt.isdigit():         # $0 = group 1, $1 = group 2 …
+                out.append("\\g<%d>" % (int(nxt) + 1))
                 i += 2
                 continue
         if c == "\\" and i + 1 < n and replacement[i + 1].isdigit():
@@ -366,9 +372,14 @@ def _render_rewrite_core(pattern: str, replacement: str, samples: list[str],
         try:
             out = rx.sub(py_repl, s, count=1)
             err = ""
-        except re.error as exc:
+        except (re.error, IndexError) as exc:
             out = None
-            err = "invalid replacement: %s" % exc
+            if "invalid group reference" in str(exc):
+                err = ("invalid replacement: it names more capture groups than "
+                       "the pattern has (%d) -- $0 is the first ( … ) group"
+                       % rx.groups)
+            else:
+                err = "invalid replacement: %s" % exc
         row = {"sample": s, "match": True, "output": out,
                "groups": list(m.groups())}
         if err:

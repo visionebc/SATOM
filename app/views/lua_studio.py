@@ -31,7 +31,8 @@ def _examples_json(target: str) -> str:
 
 
 def superadmin_required(fn):
-    """Super-admin = full admin capability set (User.is_admin_capable)."""
+    """Gate: the granular ``studio.lua_studio`` key (seeded on the admin
+    profile only; a custom profile may carry it too)."""
     @wraps(fn)
     @login_required
     def wrapper(*a, **kw):
@@ -175,6 +176,12 @@ def deploy(sid):
         abort(403)
     appliance = (visible_appliance_or_404(script.appliance_id)
                  if script.appliance_id else None)
+    if want_real and appliance is None:
+        # A real push with no target used to fall through to the dry-run plan
+        # and stamp the script "deployed" although nothing was sent.
+        return jsonify(ok=False, error=(
+            "No target appliance: pick one in the editor and save before a "
+            "real deploy.")), 400
     dry = not want_real
     # Always lint before any push.
     lint = lua.lint(script.code, script.target)

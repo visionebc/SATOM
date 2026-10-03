@@ -169,6 +169,7 @@ def _shows(inc, names) -> bool:
 
 @bp.route("/")
 @login_required
+@require_permission('monitoring.view')
 def index():
     return render_template(
         "sentinel/index.html",
@@ -177,6 +178,7 @@ def index():
 
 @bp.route("/data")
 @login_required
+@require_permission('monitoring.view')
 def data():
     """Poll target for the console. Same numbers, no page reload."""
     s = _svc()
@@ -322,6 +324,7 @@ def recompute():
 # --------------------------------------------------------------------------- #
 @bp.route("/incident/<int:iid>")
 @login_required
+@require_permission('monitoring.view')
 def incident_view(iid):
     s = _svc()
     inc = SentinelIncident.query.get_or_404(iid)
@@ -348,6 +351,7 @@ def incident_view(iid):
 
 @bp.route("/incident/<int:iid>/charts")
 @login_required
+@require_permission('monitoring.view')
 def incident_charts(iid):
     """Time-aligned series for the incident's window, one payload.
 
@@ -563,6 +567,7 @@ def context_context() -> dict:
 
 @bp.route("/context")
 @login_required
+@require_permission('monitoring.view')
 def context():
     return render_template("sentinel/context.html", **context_context())
 
@@ -1155,6 +1160,7 @@ def config_enabled() -> bool:
 # --------------------------------------------------------------------------- #
 @bp.route("/docs")
 @login_required
+@require_permission('monitoring.view')
 def docs():
     """The architecture, rendered from the LIVE tables it describes.
 

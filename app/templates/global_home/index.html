@@ -66,19 +66,19 @@
 <div class="fw-card mb-4" style="padding:18px 20px;">
   <h2 class="h6 mb-3"><i class="bi bi-globe2 me-2 text-accent"></i>{{ _('Global sections') }}</h2>
   <div class="d-flex flex-wrap gap-2">
-    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('monitoring.index') }}"><i class="bi bi-activity me-1"></i>{{ _('Monitoring') }}</a>
-    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('search.index') }}"><i class="bi bi-search me-1"></i>{{ _('Search') }}</a>
-    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('architecture.index') }}"><i class="bi bi-hdd-network me-1"></i>{{ _('Architecture') }}</a>
-    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('analysis.index') }}"><i class="bi bi-graph-up me-1"></i>{{ _('Analysis') }}</a>
-    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('fleet_objects.index') }}"><i class="bi bi-box-seam me-1"></i>{{ _('Fleet Objects') }}</a>
-    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('metrics.index') }}"><i class="bi bi-bar-chart-line me-1"></i>{{ _('Metrics') }}</a>
-    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('jobs.manager') }}"><i class="bi bi-list-task me-1"></i>{{ _('Jobs') }}</a>
+    {% if may_open('monitoring.index') %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('monitoring.index') }}"><i class="bi bi-activity me-1"></i>{{ _('Monitoring') }}</a>{% endif %}
+    {% if may_open('search.index') %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('search.index') }}"><i class="bi bi-search me-1"></i>{{ _('Search') }}</a>{% endif %}
+    {% if may_open('architecture.index') %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('architecture.index') }}"><i class="bi bi-hdd-network me-1"></i>{{ _('Architecture') }}</a>{% endif %}
+    {% if may_open('analysis.index') %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('analysis.index') }}"><i class="bi bi-graph-up me-1"></i>{{ _('Analysis') }}</a>{% endif %}
+    {% if may_open('fleet_objects.index') %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('fleet_objects.index') }}"><i class="bi bi-box-seam me-1"></i>{{ _('Fleet Objects') }}</a>{% endif %}
+    {% if may_open('metrics.index') %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('metrics.index') }}"><i class="bi bi-bar-chart-line me-1"></i>{{ _('Metrics') }}</a>{% endif %}
+    {% if may_open('jobs.manager') %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('jobs.manager') }}"><i class="bi bi-list-task me-1"></i>{{ _('Jobs') }}</a>{% endif %}
     {% if current_user and current_user.can('user_manage') %}
-    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('cert_manager.index') }}"><i class="bi bi-shield-lock me-1"></i>{{ _('Certificate Manager') }}</a>
-    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('appliances.index') }}"><i class="bi bi-server me-1"></i>{{ _('Appliances') }}</a>
-    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('audit.index') }}"><i class="bi bi-clipboard-check me-1"></i>{{ _('Audit Log') }}</a>
-    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('users.index') }}"><i class="bi bi-people me-1"></i>{{ _('Users') }}</a>
-    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('database.index') }}"><i class="bi bi-hdd me-1"></i>{{ _('Database') }}</a>
+    {% if may_open('cert_manager.index') %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('cert_manager.index') }}"><i class="bi bi-shield-lock me-1"></i>{{ _('Certificate Manager') }}</a>{% endif %}
+    {% if may_open('appliances.index') %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('appliances.index') }}"><i class="bi bi-server me-1"></i>{{ _('Appliances') }}</a>{% endif %}
+    {% if may_open('audit.index') %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('audit.index') }}"><i class="bi bi-clipboard-check me-1"></i>{{ _('Audit Log') }}</a>{% endif %}
+    {% if may_open('users.index') %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('users.index') }}"><i class="bi bi-people me-1"></i>{{ _('Users') }}</a>{% endif %}
+    {% if may_open('database.index') %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('database.index') }}"><i class="bi bi-hdd me-1"></i>{{ _('Database') }}</a>{% endif %}
     {% endif %}
   </div>
 </div>
@@ -129,10 +129,15 @@
   {% else %}
   <div class="fw-empty-state py-4">
     <div class="fw-empty-state-icon" style="font-size:32px;"><i class="bi bi-hdd-rack"></i></div>
+    {% if fleet_hidden %}
+    <div class="fw-empty-state-title">{{ _('Appliance inventory not available') }}</div>
+    <div class="fw-empty-state-text">{{ _('Your profile does not include viewing appliances.') }}</div>
+    {% else %}
     <div class="fw-empty-state-title">{{ _('No appliances registered yet') }}</div>
     <div class="fw-empty-state-text">Register
       {{ adoms | map(attribute='name') | join(' / ') }} devices under
       <a href="{{ url_for('appliances.index') }}">{{ _('Appliances') }}</a>.</div>
+    {% endif %}
   </div>
   {% endif %}
 </div>

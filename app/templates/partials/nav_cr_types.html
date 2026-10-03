@@ -12,5 +12,7 @@
    added to Global and forgotten in the other four is invisible without
    failing. tests/test_cr_types.py fails if any admin block stops including it.
    ========================================================================= #}
+{% if may_open('cr_types.index') %}
 <a class="fw-nav-item {{ 'active' if request.blueprint == 'cr_types' else '' }}" href="{{ url_for('cr_types.index', _adom=product.key) }}">
   <i class="bi bi-ui-checks-grid fw-nav-icon"></i><span>{{ _('Change Types') }}</span></a>
+{% endif %}

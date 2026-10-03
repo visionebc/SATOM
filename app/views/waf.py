@@ -37,6 +37,7 @@ import io
 from flask import (Blueprint, Response, flash, jsonify, redirect,
                    render_template, request, url_for)
 from flask_login import current_user, login_required
+from ..auth.decorators import require_permission
 
 from ..services import waf_artifact_fleet as artsvc
 from ..services import exception_fleet as excsvc
@@ -146,6 +147,7 @@ def _decorate(policies):
 
 @bp.route("/")
 @login_required
+@require_permission('protection.view')
 def index():
     universe = _universe()
     stats = svc.stats(universe)
@@ -161,6 +163,7 @@ def index():
 
 @bp.route("/inventory")
 @login_required
+@require_permission('protection.view')
 def inventory():
     universe = _universe()
     rows = _decorate(universe["policies"])
@@ -204,6 +207,7 @@ def inventory():
 
 @bp.route("/profiles")
 @login_required
+@require_permission('protection.view')
 def profiles():
     universe = _universe()
     used = {(p["scope"], p["wpp"]) for p in universe["policies"] if p["wpp"]}
@@ -251,6 +255,7 @@ def profiles():
 
 @bp.route("/coverage")
 @login_required
+@require_permission('protection.view')
 def coverage():
     universe = _universe()
     stats = svc.stats(universe)
@@ -303,6 +308,7 @@ def coverage():
 
 @bp.route("/artifacts")
 @login_required
+@require_permission('protection.view')
 def artifacts():
     """Fleet-wide file-backed objects: demand, supply, and the gap.
 
@@ -367,6 +373,7 @@ def artifacts():
 
 @bp.route("/api/artifacts.json")
 @login_required
+@require_permission('protection.view')
 def api_artifacts():
     universe = artsvc.collect(user=current_user)
     stats = artsvc.stats(universe)
@@ -392,6 +399,7 @@ def api_artifacts():
 
 @bp.route("/exceptions")
 @login_required
+@require_permission('protection.view')
 def exceptions():
     """Every authored carve-out across every visible scope, and who has it.
 
@@ -463,6 +471,7 @@ def exceptions():
 
 @bp.route("/api/exceptions.json")
 @login_required
+@require_permission('protection.view')
 def api_exceptions():
     universe = excsvc.collect(user=current_user)
     stats = universe["stats"]
@@ -489,6 +498,7 @@ def api_exceptions():
 
 @bp.route("/api/summary.json")
 @login_required
+@require_permission('protection.view')
 def api_summary():
     universe = _universe()
     stats = svc.stats(universe)
@@ -536,6 +546,7 @@ def _export_choices():
 
 @bp.route("/export")
 @login_required
+@require_permission('protection.view')
 def export():
     """Build the ZIP the panel asked for.
 

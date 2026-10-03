@@ -286,6 +286,7 @@ def _fleet_sample(coll, seg=None, parent_coll=None) -> dict:
 # --------------------------------------------------------------------------- #
 @bp.route('/<int:appliance_id>/edit')
 @login_required
+@require_permission('protection.view')
 def edit(appliance_id):
     appl = visible_appliance_or_404(appliance_id)
     coll = objform.collection_of(request.args.get('collection', ''))
@@ -385,6 +386,7 @@ def edit(appliance_id):
 
 @bp.route('/<int:appliance_id>/ref-options')
 @login_required
+@require_permission('protection.view')
 def ref_options(appliance_id):
     """Names of configured objects in a reference field's cmdb collection, so a
     ref ``<select>`` can be CHANGED on the device (not just preserve its current

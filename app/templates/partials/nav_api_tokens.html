@@ -6,6 +6,8 @@
    user_manage, like the Administrator group that includes this partial.
    ========================================================================= #}
 {% if product.cap_tokens %}
+{% if may_open('api_tokens.index') %}
 <a class="fw-nav-item {{ 'active' if request.blueprint == 'api_tokens' else '' }}" href="{{ url_for('api_tokens.index') }}">
   <i class="bi bi-key fw-nav-icon"></i><span>{{ _('API Tokens') }}</span></a>
+{% endif %}
 {% endif %}

@@ -19,21 +19,33 @@
 <div class="fw-nav-subgroup {{ 'open' if request.blueprint == 'waf' }}" data-nav-subgroup="WAF">
   <button type="button" class="fw-nav-item fw-nav-subtoggle"><i class="bi bi-shield-shaded fw-nav-icon"></i><span>{{ _('WAF') }}</span><i class="bi bi-chevron-down fw-nav-caret"></i></button>
   <div class="fw-nav-subgroup-body">
+    {% if may_open('waf.index') %}
     <a class="fw-nav-item {{ 'active' if request.endpoint == 'waf.index' else '' }}" href="{{ url_for('waf.index', _adom=product.key) }}">
       <i class="bi bi-speedometer2 fw-nav-icon"></i><span>{{ _('Overview') }}</span></a>
+    {% endif %}
+    {% if may_open('waf.inventory') %}
     <a class="fw-nav-item {{ 'active' if request.endpoint == 'waf.inventory' else '' }}" href="{{ url_for('waf.inventory', _adom=product.key) }}">
       <i class="bi bi-list-columns-reverse fw-nav-icon"></i><span>{{ _('Inventory') }}</span></a>
+    {% endif %}
+    {% if may_open('waf.profiles') %}
     <a class="fw-nav-item {{ 'active' if request.endpoint == 'waf.profiles' else '' }}" href="{{ url_for('waf.profiles', _adom=product.key) }}">
       <i class="bi bi-shield-check fw-nav-icon"></i><span>{{ _('Profiles') }}</span></a>
+    {% endif %}
+    {% if may_open('waf.coverage') %}
     <a class="fw-nav-item {{ 'active' if request.endpoint == 'waf.coverage' else '' }}" href="{{ url_for('waf.coverage', _adom=product.key) }}">
       <i class="bi bi-grid-3x3-gap fw-nav-icon"></i><span>{{ _('Coverage') }}</span></a>
+    {% endif %}
+    {% if may_open('waf.artifacts') %}
     <a class="fw-nav-item {{ 'active' if request.endpoint == 'waf.artifacts' else '' }}" href="{{ url_for('waf.artifacts', _adom=product.key) }}">
       <i class="bi bi-file-earmark-code fw-nav-icon"></i><span>{{ _('Artifacts') }}</span></a>
+    {% endif %}
     {# Fleet-wide carve-outs. Distinct from the device-scoped
        "Exceptions & Signature" entry in the WAF group: that one authors and
        pushes for ONE (device, ADOM); this one answers who across the estate
        has a given carve-out, which the device page structurally cannot. #}
+    {% if may_open('waf.exceptions') %}
     <a class="fw-nav-item {{ 'active' if request.endpoint == 'waf.exceptions' else '' }}" href="{{ url_for('waf.exceptions', _adom=product.key) }}">
       <i class="bi bi-slash-circle fw-nav-icon"></i><span>{{ _('Exceptions') }}</span></a>
+    {% endif %}
   </div>
 </div>

@@ -6,11 +6,12 @@
    OWN kind of device. The href is kept purely as a no-JS fallback —
    Bootstrap's modal data-api preventDefault()s the click on <a>. #}
 {% set _dc_color = '#d97706' if product.key == 'fortianalyzer' else '#10b981' %}
-{% set _dc_href = url_for('adc.index') if product.key == 'fortiadc'
-                  else (url_for('faz.index') if product.key == 'fortianalyzer'
-                        else (url_for('fac.index')
-                              if product.key == 'fortiauthenticator'
-                              else url_for('architecture.index'))) %}
+{% set _dc_ep = 'adc.index' if product.key == 'fortiadc'
+                else ('faz.index' if product.key == 'fortianalyzer'
+                      else ('fac.index' if product.key == 'fortiauthenticator'
+                            else 'architecture.index')) %}
+{# no-JS fallback only: never a link the route would refuse #}
+{% set _dc_href = url_for(_dc_ep) if may_open(_dc_ep) else '#' %}
 {% set _dc_current = current_appliance and (current_appliance.kind or 'fortiweb') == product.key %}
 <div class="fw-nav-context" data-nav-context="Device">
   <div class="fw-nav-section fw-nav-context-label"><i class="bi bi-hdd-rack fw-nav-section-icon" style="color:{{ _dc_color }};"></i><span>{{ _('Device') }}</span></div>

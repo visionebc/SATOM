@@ -46,6 +46,7 @@ def _edit_context() -> dict:
 
 @bp.route('/')
 @login_required
+@require_permission('registry.view')
 def index():
     # Fused into the API-Registry Explorer — send bookmarks there.
     return redirect(url_for('api_explorer.index'))
@@ -53,6 +54,7 @@ def index():
 
 @bp.route('/<path:section>')
 @login_required
+@require_permission('registry.view')
 def section_detail(section):
     # The by-section table view is gone (the Explorer's tree replaces it);
     # keep the route so old links resolve, redirect to the fused page.
@@ -61,6 +63,7 @@ def section_detail(section):
 
 @bp.route('/search')
 @login_required
+@require_permission('registry.view')
 def search():
     term = request.args.get('q', '').strip().lower()
     results = []

@@ -50,6 +50,7 @@ def _row_view(obj: dict) -> dict:
 
 @bp.route('/')
 @login_required
+@require_permission('protection.view')
 def index():
     """Appliance picker — choose a device to browse its Server Objects."""
     appliances = visible_appliances().order_by(Appliance.name).all()
@@ -63,6 +64,7 @@ def index():
 
 @bp.route('/<int:id>')
 @login_required
+@require_permission('protection.view')
 def overview(id):
     """The Server Objects menu for one device, plus the selected type's objects.
 

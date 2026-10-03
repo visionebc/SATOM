@@ -17,6 +17,7 @@ Read-only: ``@login_required`` only, no special permission.
 """
 from flask import Blueprint, Response, render_template, request
 from flask_login import login_required
+from ..auth.decorators import require_permission
 
 from ..services import fleet_objects as svc
 
@@ -25,6 +26,7 @@ bp = Blueprint('fleet_objects', __name__, url_prefix='/fleet-objects')
 
 @bp.route('/')
 @login_required
+@require_permission('protection.view')
 def index():
     # --- mode + query params --------------------------------------------
     type_key = request.args.get('type') or svc.DEFAULT_TYPE

@@ -58,6 +58,7 @@ def _faz_fleet():
 
 @bp.route('/')
 @login_required
+@require_permission('view')
 def index():
     """FortiAnalyzer dashboard + device picker."""
     groups = faz_menu.visible_menu()
@@ -72,6 +73,7 @@ def index():
 
 @bp.route('/use/<int:id>')
 @login_required
+@require_permission('view')
 def use_device(id):
     appl = visible_appliance_or_404(id)
     if appl.kind != 'fortianalyzer':
@@ -133,6 +135,7 @@ def _load_tab(appliance, logical: str, label: str) -> dict:
 
 @bp.route('/m/<item_key>')
 @login_required
+@require_permission('view')
 def menu_page(item_key):
     """One menu leaf: live registry-bound tabs off the selected FortiAnalyzer."""
     found = faz_menu.find_item(item_key)

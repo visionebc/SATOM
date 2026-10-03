@@ -81,6 +81,7 @@ def _derive_columns(rows: list) -> list[str]:
 # --------------------------------------------------------------------------- #
 @bp.route('/')
 @login_required
+@require_permission('view')
 def index():
     fleet = _adc_fleet()
     groups = adc_menu.menu()
@@ -91,6 +92,7 @@ def index():
 
 @bp.route('/use/<int:id>')
 @login_required
+@require_permission('view')
 def use_device(id):
     appl = visible_appliance_or_404(id)
     if appl.kind != 'fortiadc':
@@ -105,6 +107,7 @@ def use_device(id):
 # --------------------------------------------------------------------------- #
 @bp.route('/m/<item_key>')
 @login_required
+@require_permission('view')
 def menu_page(item_key):
     found = adc_menu.find_item(item_key)
     if not found:
@@ -170,6 +173,7 @@ def signatures():
 # --------------------------------------------------------------------------- #
 @bp.route('/obj/<logical>')
 @login_required
+@require_permission('view')
 def object_detail(logical):
     appliance = _current_adc()
     if appliance is None:
@@ -521,6 +525,7 @@ def _wizard_rollback(client, created):
 
 @bp.route('/wizard/virtual-server')
 @login_required
+@require_permission('view')
 def wizard_virtual_server():
     appliance = _current_adc()
     if appliance is None:

@@ -89,6 +89,7 @@ def _row_view(obj, columns, vlabels):
 
 @bp.route('/')
 @login_required
+@require_permission('protection.view')
 def index():
     from ..services import device_context as _dc
     _cur = _dc.current_appliance()
@@ -103,6 +104,7 @@ def index():
 # --------------------------------------------------------------------------- #
 @bp.route('/<int:id>')
 @login_required
+@require_permission('protection.view')
 def overview(id):
     appliance = visible_appliance_or_404(id)
     # DB-first: serve from the local source of truth; the device is touched only
@@ -152,6 +154,7 @@ def refresh(id):
 
 @bp.route('/<int:id>/wpp/<name>')
 @login_required
+@require_permission('protection.view')
 def wpp_detail(id, name):
     """Legacy detail URL → the FortiWeb-style profile form (generic editor,
     grouped exactly like the box's own profile page)."""
@@ -167,6 +170,7 @@ def wpp_detail(id, name):
 # --------------------------------------------------------------------------- #
 @bp.route('/<int:id>/m/<item_key>')
 @login_required
+@require_permission('protection.view')
 def menu_page(id, item_key):
     appliance = visible_appliance_or_404(id)
     item = wp_menu.item_for(item_key)
@@ -282,6 +286,7 @@ def _sig_catalog():
 
 @bp.route('/<int:id>/signatures/<path:name>')
 @login_required
+@require_permission('protection.view')
 def signature_policy(id, name):
     appliance = visible_appliance_or_404(id)
     from ..services import read_layer, waf_specs
@@ -329,6 +334,7 @@ def signature_policy(id, name):
 
 @bp.route('/<int:id>/signatures/<path:name>/search')
 @login_required
+@require_permission('protection.view')
 def sig_search(id, name):
     """Signature Details search — the catalog joined with THIS set's state
     (disabled / alert-only / exception count per signature id)."""
@@ -396,6 +402,7 @@ def sig_search(id, name):
 
 @bp.route('/<int:id>/signatures/<path:name>/exceptions/<sig_id>')
 @login_required
+@require_permission('protection.view')
 def sig_exceptions(id, name, sig_id):
     """The Exception tab rows for ONE signature id (the set's filter_list
     entries whose ``signature_id`` matches) — freshest source available."""
@@ -414,6 +421,7 @@ _WPP_PREF_KEYS = {"hide_default"}
 
 @bp.route('/prefs', methods=['POST'])
 @login_required
+@require_permission('protection.view')
 def set_pref():
     """Persist a per-user Web Protection view preference (DB-backed).
 

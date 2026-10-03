@@ -149,6 +149,7 @@ def _filter_groups(groups, drop_keys):
 
 @bp.route('/')
 @login_required
+@require_permission('protection.view')
 def index():
     appliances = visible_appliances().order_by(Appliance.name).all()
     from flask import redirect as _redir, url_for as _ufor
@@ -161,6 +162,7 @@ def index():
 
 @bp.route('/<int:appliance_id>')
 @login_required
+@require_permission('protection.view')
 def appliance(appliance_id):
     appl = visible_appliance_or_404(appliance_id)
     policies = []
@@ -489,6 +491,7 @@ def policy_action(appliance_id):
 
 @bp.route('/<int:appliance_id>/policy/<path:name>')
 @login_required
+@require_permission('protection.view')
 def policy_detail(appliance_id, name):
     appl = visible_appliance_or_404(appliance_id)
     data = {}
@@ -597,6 +600,7 @@ def _hc_state(v):
 
 @bp.route('/<int:appliance_id>/policy/<path:name>/health')
 @login_required
+@require_permission('protection.view')
 def policy_health(appliance_id, name):
     """Live per-backend health for one policy (runtime policystatus.detail probe).
 
@@ -624,6 +628,7 @@ def policy_health(appliance_id, name):
 
 @bp.route('/<int:appliance_id>/cmdb-options')
 @login_required
+@require_permission('protection.view')
 def cmdb_options(appliance_id):
     """Lazy options for a reference <select> — names of configured objects in
     the given cmdb collection. Allow-listed to the endpoints our schema declares
@@ -778,6 +783,7 @@ _CREATE_EPS = {
 
 @bp.route('/<int:appliance_id>/new-policy')
 @login_required
+@require_permission('protection.view')
 def new_policy(appliance_id):
     appl = visible_appliance_or_404(appliance_id)
     return render_template(

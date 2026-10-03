@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from flask import Blueprint, jsonify, request
 from flask_login import current_user, login_required
+from ..auth.decorators import require_permission
 
 from ..models import Appliance, visible_appliances
 from ..services import cert_inspect, net_guard
@@ -42,6 +43,7 @@ def _may_free() -> bool:
 
 @bp.route("/targets")
 @login_required
+@require_permission('view')
 def targets():
     """The inventory destinations this user may point the inspector at.
 
@@ -60,6 +62,7 @@ def targets():
 
 @bp.route("/paste", methods=["POST"])
 @login_required
+@require_permission('view')
 def paste():
     """Analyse pasted PEM material. Nothing leaves this process."""
     body = request.get_json(silent=True) or {}
@@ -81,6 +84,7 @@ def paste():
 
 @bp.route("/probe", methods=["POST"])
 @login_required
+@require_permission('view')
 def probe():
     """Open a TLS connection and analyse what the server presents."""
     body = request.get_json(silent=True) or {}

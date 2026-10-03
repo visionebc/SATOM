@@ -8,6 +8,8 @@
    but not audit.view saw a link that answers 403.
    ========================================================================= #}
 {% if current_user and current_user.can('audit.view') %}
+{% if may_open('audit.index') %}
 <a class="fw-nav-item {{ 'active' if request.blueprint == 'audit' else '' }}" href="{{ url_for('audit.index') }}">
   <i class="bi bi-clipboard-check fw-nav-icon"></i><span>{{ _('Audit Log') }}</span></a>
+{% endif %}
 {% endif %}

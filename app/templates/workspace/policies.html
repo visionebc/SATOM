@@ -82,9 +82,11 @@
     {% endif %}
     {# workspace.index redirects straight back to the current device; the
        architecture map is where a different device is picked. #}
+    {% if may_open('architecture.index') %}
     <a href="{{ url_for('architecture.index') }}" class="btn btn-secondary btn-sm">
       <i class="bi bi-chevron-left me-1"></i>{{ _('Change Appliance') }}
     </a>
+    {% endif %}
   </div>
 </div>
 

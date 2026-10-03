@@ -16,6 +16,8 @@
    blueprint, so a read-only operator gets a page, not a 403.
    ========================================================================= #}
 {% if current_user and current_user.can('view') %}
+{% if may_open('process.index') %}
 <a class="fw-nav-item {{ 'active' if request.blueprint == 'process' else '' }}" href="{{ url_for('process.index', _adom=product.key) }}">
   <i class="bi bi-diagram-3 fw-nav-icon"></i><span>{{ _('Process') }}</span></a>
+{% endif %}
 {% endif %}

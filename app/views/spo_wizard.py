@@ -120,6 +120,7 @@ def _payload(plans, extra=None):
 
 @bp.route('/<int:appliance_id>/spo-wizard')
 @login_required
+@require_permission('protection.view')
 def index(appliance_id: int):
     appl = visible_appliance_or_404(appliance_id)
     return render_template(
@@ -142,6 +143,7 @@ def index(appliance_id: int):
 
 @bp.route('/<int:appliance_id>/spo-wizard/plan', methods=['POST'])
 @login_required
+@require_permission('protection.view')
 def plan(appliance_id: int):
     """Inspection only. Safe to press at any time, at any permission level
     that can already see the device."""

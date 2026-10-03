@@ -240,9 +240,11 @@
         way to widen back to twelve, and a link is not where a device context
         should be able to change.
       #}
+      {% if may_open('architecture.index') %}
       <a class="btn btn-fw-outline btn-sm" href="{{ url_for('architecture.index') }}"
          title="{{ _('Go to the Architecture map and stand on a different device or ADOM. Everything on this page follows it.') }}">
         <i class="bi bi-diagram-3 me-1"></i>{{ _('Switch device') }}</a>
+      {% endif %}
     {% endif %}
   </div>
 </div>

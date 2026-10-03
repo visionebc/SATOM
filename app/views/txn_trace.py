@@ -21,6 +21,7 @@ import time
 
 from flask import Blueprint, jsonify, request
 from flask_login import current_user, login_required
+from ..auth.decorators import require_permission
 
 from ..models import Appliance, visible_appliances
 from ..services import net_guard, txn_trace
@@ -105,6 +106,7 @@ def _resolve(mode: str, raw: str, inventory: dict, default_port: int = 443,
 
 @bp.route("/context")
 @login_required
+@require_permission('view')
 def context():
     """What the panel needs to render before the operator types anything."""
     rows = []
@@ -119,6 +121,7 @@ def context():
 
 @bp.route("/run", methods=["POST"])
 @login_required
+@require_permission('view')
 def run():
     """Trace one transaction: leg A, leg C, and the diff.
 
@@ -227,6 +230,7 @@ def run():
 
 @bp.route("/derive", methods=["POST"])
 @login_required
+@require_permission('view')
 def derive():
     """Leg B — what the appliance forwards, read off its own configuration.
 
@@ -276,6 +280,7 @@ def derive():
 
 @bp.route("/correlate", methods=["POST"])
 @login_required
+@require_permission('view')
 def correlate():
     """Attack-log entries that could belong to a trace window."""
     body = request.get_json(silent=True) or {}
@@ -298,6 +303,7 @@ def correlate():
 
 @bp.route("/har", methods=["POST"])
 @login_required
+@require_permission('view')
 def har():
     """The traced legs as a HAR 1.2 log, for browser devtools."""
     body = request.get_json(silent=True) or {}

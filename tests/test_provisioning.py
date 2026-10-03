@@ -278,12 +278,14 @@ def test_both_upload_paths_take_the_product_from_the_adom(app):
     assert code.count("product = _adom") == 2
 
 
-def test_firmware_is_reachable_from_every_product_adom():
-    """It used to sit in the FortiAnalyzer set alone: FortiADC and
-    FortiAuthenticator sessions could not reach the page at all, while a
-    FortiAnalyzer session could see FortiWeb images."""
+def test_firmware_is_reachable_only_from_the_adoms_that_link_it():
+    """It used to sit in the FortiAnalyzer set alone, then in every device
+    ADOM. Since 2026-10-03 (owner decision) only the ADOMs whose sidebar links
+    it admit it: FortiAnalyzer does; FortiADC (no path flashes an ADC with a
+    vault image) and FortiAuthenticator (cap_firmware False) do not."""
     src = (pathlib.Path(__file__).resolve().parents[1]
            / "app" / "__init__.py").read_text()
-    for marker in ("adc_bps", "faz_bps", "fac_bps"):
+    for marker, want in (("adc_bps", False), ("faz_bps", True),
+                         ("fac_bps", False)):
         block = src.split(marker + " = {", 1)[1].split("}", 1)[0]
-        assert "'firmware'" in block, f"{marker} cannot reach the firmware page"
+        assert ("'firmware'" in block) is want, marker

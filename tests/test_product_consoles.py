@@ -367,6 +367,78 @@ def test_empty_pool_offers_the_required_member_fields(app, client, monkeypatch):
 
 
 # --------------------------------------------------------------------------- #
+#  ADOM gates, sidebar rules, ADC Signatures                                  #
+# --------------------------------------------------------------------------- #
+
+@pytest.mark.parametrize("product, url, home", [
+    ("fortiadc", "/firmware/", "/adc/"),
+    ("fortiauthenticator", "/firmware/", "/fac/"),
+    ("fortiauthenticator", "/backups/", "/fac/"),
+])
+def test_adom_gate_no_longer_admits_unlinked_pages(app, client, product, url, home):
+    login(client, admin_user_id(app), product=product)
+    r = client.get(url)
+    assert r.status_code in (301, 302) and r.headers["Location"].endswith(home), (
+        product, url, r.status_code, r.headers.get("Location"))
+
+
+def test_fortianalyzer_still_reaches_its_firmware_page(app, client):
+    login(client, admin_user_id(app), product="fortianalyzer")
+    assert client.get("/firmware/").status_code == 200
+
+
+def _sidebar(html):
+    return html[html.index('class="fw-nav-top"'):html.index("<!-- MAIN CONTENT -->")]
+
+
+@pytest.mark.parametrize("product, home, api", [
+    ("fortiadc", "/adc/", "/adc/api/"),
+    ("fortianalyzer", "/faz/", "/faz/api/"),
+    ("fortiauthenticator", "/fac/", "/fac/api/"),
+])
+def test_one_sidebar_rule_for_the_three_api_consoles(app, client, product, home, api):
+    """registry.view (the console's own gate) draws the link; nothing else."""
+    from conftest import make_user, profile_id
+    ro = make_user(app, "ro-" + product[:8], role="readonly",
+                   profile_id=profile_id(app, "readonly"))
+    login(client, ro, product=product)
+    side = _sidebar(client.get(home, follow_redirects=True).get_data(as_text=True))
+    assert f'href="{api}"' in side, product
+
+    from test_access_gates_audit import _zero_key_user
+    login(client, _zero_key_user(app, "nk-" + product[:8], keys=("view",)),
+          product=product)
+    side = _sidebar(client.get(home, follow_redirects=True).get_data(as_text=True))
+    assert f'href="{api}"' not in side, product
+
+
+def test_adc_signatures_open_to_protection_view(app, client, monkeypatch):
+    from app.views import adc
+    from conftest import make_user, profile_id
+
+    class _Client:
+        def __init__(self, appliance):
+            pass
+
+        def list_with_error(self, logical, **kw):
+            return [{"mkey": "sig-default", "status": "enable"}], None
+
+    monkeypatch.setattr(adc, "FortiADCClient", _Client)
+    _appl(app, "fortiadc", "adc01")
+    ro = make_user(app, "ro-sig", role="readonly",
+                   profile_id=profile_id(app, "readonly"))
+    login(client, ro, product="fortiadc")
+    r = client.get("/adc/signatures")
+    assert r.status_code == 200 and "sig-default" in r.get_data(as_text=True)
+    side = _sidebar(client.get("/adc/").get_data(as_text=True))
+    assert 'href="/adc/signatures"' in side
+
+    from test_access_gates_audit import _zero_key_user
+    login(client, _zero_key_user(app, "nk-sig", keys=("view",)), product="fortiadc")
+    assert client.get("/adc/signatures").status_code == 403
+
+
+# --------------------------------------------------------------------------- #
 #  FortiAnalyzer Device Manager: the ADOM is sent, not assumed               #
 # --------------------------------------------------------------------------- #
 
@@ -388,3 +460,12 @@ def test_faz_device_toolbar_sends_the_adom():
                             "faz", "section.html")).read()
     assert 'id="fazdev-adom"' in src
     assert "adom: ((document.getElementById('fazdev-adom')" in src
+
+
+def test_adc_naming_patterns_are_marked_reference_only(app, client):
+    login(client, admin_user_id(app), product="fortiadc")
+    html = client.get("/naming/?product=fortiadc").get_data(as_text=True)
+    assert "Reference only." in html
+    login(client, admin_user_id(app), product="fortiweb")
+    html = client.get("/naming/?product=fortiweb").get_data(as_text=True)
+    assert "Reference only." not in html

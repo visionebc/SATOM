@@ -52,7 +52,8 @@
       <a href="{{ url_for('adc_api.index') }}" class="btn fw-btn-secondary">{{ _('API Console') }}</a>
       {% else %}
       <a href="{{ url_for('workspace.appliance', appliance_id=appliance.id) }}" class="btn fw-btn-primary">{{ _('Browse Server Policies') }}</a>
-      {% if bk_owner %}<a href="{{ url_for('backups.list_backups', id=bk_owner.id) }}" class="btn btn-fw-secondary"{% if bk_owner.id != appliance.id %} title="{{ _('One backup covers every ADOM of this appliance') }}"{% endif %}>{{ _('View Backups') }}{% if bk_owner.id != appliance.id %} <span class="fw-tag ms-1">{{ bk_owner.name }}</span>{% endif %}</a>{% endif %}
+      {# FortiAuthenticator: no backup transport, and its ADOM gate does not admit the Backups pages #}
+      {% if bk_owner and appliance.kind != 'fortiauthenticator' %}<a href="{{ url_for('backups.list_backups', id=bk_owner.id) }}" class="btn btn-fw-secondary"{% if bk_owner.id != appliance.id %} title="{{ _('One backup covers every ADOM of this appliance') }}"{% endif %}>{{ _('View Backups') }}{% if bk_owner.id != appliance.id %} <span class="fw-tag ms-1">{{ bk_owner.name }}</span>{% endif %}</a>{% endif %}
       <a href="{{ url_for('analysis.dashboard', id=appliance.id) }}" class="btn fw-btn-secondary">{{ _('Analysis / FortiView') }}</a>
       {% endif %}
     </div>

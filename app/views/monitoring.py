@@ -152,6 +152,7 @@ def _payload() -> dict:
 
 @bp.route('/')
 @login_required
+@require_permission(Permission.VIEW)
 def index():
     """Device health — appliance cards, capacity guardrails, health alerts.
 
@@ -170,6 +171,7 @@ def index():
 
 @bp.route('/satom')
 @login_required
+@require_permission(Permission.VIEW)
 def satom():
     """SATOM health — this installation: nodes, DB, units, redundancy, crypto.
 
@@ -186,12 +188,14 @@ def satom():
 
 @bp.route('/data')
 @login_required
+@require_permission(Permission.VIEW)
 def data():
     return jsonify(_payload())
 
 
 @bp.route('/satom-data')
 @login_required
+@require_permission(Permission.VIEW)
 def satom_data():
     """Manager self-health only — no device cards.
 
@@ -290,6 +294,7 @@ def hw_scan():
 
 @bp.route('/infra')
 @login_required
+@require_permission(Permission.VIEW)
 def infra():
     """Cross-node + off-box infrastructure health (HA peers, Gitea, backup-server).
     Network probes with short timeouts — fetched by the card AFTER page render,
@@ -304,6 +309,7 @@ def infra():
 
 @bp.route('/encryption')
 @login_required
+@require_permission(Permission.VIEW)
 def encryption():
     """Per-channel encryption posture (DB replication TLS, inter-node HTTPS,
     datasync SSH, Git SoT, node cert). Live probes with short timeouts — fetched

@@ -1,0 +1,13 @@
+{# ============================================================================
+   Audit Log — Administrator entry. ONE definition, EVERY admin block in
+   base.html (2026-10-03).
+
+   Gated on ``audit.view``, the permission the page itself requires
+   (views/audit.py). The five inline copies it replaces were drawn for anyone
+   inside the Administrator group, so a custom profile holding users.manage
+   but not audit.view saw a link that answers 403.
+   ========================================================================= #}
+{% if current_user and current_user.can('audit.view') %}
+<a class="fw-nav-item {{ 'active' if request.blueprint == 'audit' else '' }}" href="{{ url_for('audit.index') }}">
+  <i class="bi bi-clipboard-check fw-nav-icon"></i><span>{{ _('Audit Log') }}</span></a>
+{% endif %}

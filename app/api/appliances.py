@@ -43,6 +43,7 @@ def _probe_in_own_context(app, appliance_id):
 
 @bp.route('/appliances', methods=['GET'])
 @login_required
+@require_permission('appliances.view')
 def list_appliances():
     """List appliances with a live-but-cached connectivity status.
 
@@ -196,6 +197,7 @@ def delete_appliance(id):
 
 @bp.route('/appliances/<int:id>/test', methods=['POST'])
 @login_required
+@require_permission('appliances.view')
 def test_appliance(id):
     """Connectivity check used by the appliances list UI (api.js).
     Returns {status: 'online'|'offline'} so the status badge updates."""

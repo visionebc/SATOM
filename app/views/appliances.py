@@ -170,6 +170,7 @@ def _chassis_groups(rows):
 
 @bp.route('/')
 @login_required
+@require_permission('appliances.view')
 def index():
     # Top-level rows only: standalones + cluster node 0. Member nodes are
     # rendered nested under their cluster, never as standalone entries.
@@ -222,6 +223,7 @@ def index():
 
 @bp.route('/<int:id>/members/roles')
 @login_required
+@require_permission('appliances.view')
 def member_roles(id):
     """Live HA role per member (read-only JSON for the cluster sub-cards)."""
     node0 = visible_appliance_or_404(id)
@@ -231,6 +233,7 @@ def member_roles(id):
 
 @bp.route('/<int:id>')
 @login_required
+@require_permission('appliances.view')
 def detail(id):
     appliance = visible_appliance_or_404(id)
     recent_audit = AuditLog.query.filter(
@@ -493,6 +496,7 @@ def delete(id):
 
 @bp.route('/<int:id>/datasheet')
 @login_required
+@require_permission('appliances.view')
 def datasheet(id):
     """Serve the appliance's datasheet PDF inline (read-only, any logged-in user)."""
     appliance = visible_appliance_or_404(id)
@@ -511,6 +515,7 @@ def datasheet(id):
 
 @bp.route('/<int:id>/test', methods=['POST'])
 @login_required
+@require_permission('appliances.view')
 def test_connection(id):
     appliance = visible_appliance_or_404(id)
     try:
@@ -1030,7 +1035,7 @@ def _scout_for(appliance, image, *, asked=True, current=None):
 
 @bp.route('/<int:id>/upgrade/advisory')
 @login_required
-@require_permission(Permission.CONFIG_WRITE)
+@require_permission('appliances.apply')
 @require_device_scope
 def upgrade_advisory(id):
     """Scout's panel for ONE candidate image, as an HTML fragment.
@@ -1055,7 +1060,7 @@ def upgrade_advisory(id):
 
 @bp.route('/<int:id>/upgrade')
 @login_required
-@require_permission(Permission.CONFIG_WRITE)
+@require_permission('appliances.apply')
 @require_device_scope
 def upgrade(id):
     appliance, _ = _fortiweb_or_404(id)
@@ -1085,7 +1090,7 @@ def upgrade(id):
 
 @bp.route('/<int:id>/upgrade', methods=['POST'])
 @login_required
-@require_permission(Permission.CONFIG_WRITE)
+@require_permission('appliances.apply')
 @require_device_scope
 def upgrade_push(id):
     appliance, _ = _fortiweb_or_404(id)
@@ -1179,7 +1184,7 @@ def upgrade_push(id):
 
 @bp.route('/<int:id>/upgrade/schedule', methods=['POST'])
 @login_required
-@require_permission(Permission.CONFIG_WRITE)
+@require_permission('appliances.apply')
 @require_device_scope
 def upgrade_schedule(id):
     """Record a one-shot scheduled firmware upgrade carrying the chosen stored
@@ -1268,6 +1273,7 @@ def _persist_firmware(appliance, fw):
 
 @bp.route('/flash-report/<job_id>', methods=['GET'])
 @login_required
+@require_permission('appliances.view')
 def flash_report_view(job_id):
     """Serve the self-contained before/after firmware-flash report for a job.
     Served from DISK so it survives the ephemeral job record; any signed-in
@@ -1288,6 +1294,7 @@ def flash_report_view(job_id):
 
 @bp.route('/flash-reports', methods=['GET'])
 @login_required
+@require_permission('appliances.view')
 def flash_reports():
     """History of every firmware-flash before/after report (upgrade + downgrade),
     newest first. Optional ?appliance_id= focuses one box."""
@@ -1627,7 +1634,7 @@ def _downgrade_context(appliance):
 
 @bp.route('/<int:id>/downgrade')
 @login_required
-@require_permission(Permission.CONFIG_WRITE)
+@require_permission('appliances.apply')
 @require_device_scope
 def downgrade(id):
     appliance, _ = _fortiweb_or_404(id)
@@ -1641,7 +1648,7 @@ def downgrade(id):
 
 @bp.route('/<int:id>/downgrade', methods=['POST'])
 @login_required
-@require_permission(Permission.CONFIG_WRITE)
+@require_permission('appliances.apply')
 @require_device_scope
 def downgrade_push(id):
     appliance, _ = _fortiweb_or_404(id)
@@ -1979,7 +1986,7 @@ def _failover_state(appliance):
 
 @bp.route('/<int:id>/failover')
 @login_required
-@require_permission(Permission.CONFIG_WRITE)
+@require_permission('appliances.apply')
 @require_device_scope
 def failover(id):
     appliance, why = _failover_or_404(id)
@@ -1994,7 +2001,7 @@ def failover(id):
 
 @bp.route('/<int:id>/failover/preflight', methods=['POST'])
 @login_required
-@require_permission(Permission.CONFIG_WRITE)
+@require_permission('appliances.apply')
 @require_device_scope
 def failover_preflight(id):
     """Readiness check. Runs the action's OWN dry run, which sends nothing.
@@ -2039,7 +2046,7 @@ def _failover_direction(raw):
 
 @bp.route('/<int:id>/failover', methods=['POST'])
 @login_required
-@require_permission(Permission.CONFIG_WRITE)
+@require_permission('appliances.apply')
 @require_device_scope
 def failover_run(id):
     """Fail over NOW — only inside an approved change request's open window.
@@ -2098,7 +2105,7 @@ def failover_run(id):
 
 @bp.route('/<int:id>/failover/schedule', methods=['POST'])
 @login_required
-@require_permission(Permission.CONFIG_WRITE)
+@require_permission('appliances.apply')
 @require_device_scope
 def failover_schedule(id):
     """Plan the failover: raise a change request for THIS cluster.

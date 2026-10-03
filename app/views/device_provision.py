@@ -65,6 +65,7 @@ def _available_targets():
 
 @bp.route("/")
 @login_required
+@require_permission('operations.view')
 def index():
     from ..models_provision import MODES, ProvisionRun
     from ..services.provision_runner import MODE_STEPS, MODE_STOP_REASON
@@ -101,6 +102,7 @@ def index():
 
 @bp.route("/data")
 @login_required
+@require_permission('operations.view')
 def data():
     from ..models_provision import ProvisionRun
     runs = _runs_query().order_by(ProvisionRun.created_at.desc()).limit(50).all()
@@ -233,6 +235,7 @@ def rollback(run_id: int):
 
 @bp.route("/<int:run_id>")
 @login_required
+@require_permission('operations.view')
 def detail(run_id: int):
     from ..services.provision_runner import MODE_STEPS
     run = _run_or_404(run_id)

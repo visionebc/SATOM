@@ -54,6 +54,7 @@ def _get(rid: int):
 
 @bp.route('/')
 @login_required
+@require_permission(Permission.VIEW)
 def index():
     rows = _scoped().limit(200).all()
     return render_template(
@@ -106,6 +107,7 @@ def _schedule_state() -> list[dict]:
 
 @bp.route('/data')
 @login_required
+@require_permission(Permission.VIEW)
 def data():
     rows = _scoped().limit(200).all()
     return jsonify({"ok": True,
@@ -115,6 +117,7 @@ def data():
 
 @bp.route('/<int:rid>')
 @login_required
+@require_permission(Permission.VIEW)
 def detail(rid: int):
     row = _get(rid)
     if row is None:
@@ -127,6 +130,7 @@ def detail(rid: int):
 
 @bp.route('/<int:rid>/json')
 @login_required
+@require_permission(Permission.VIEW)
 def as_json(rid: int):
     row = _get(rid)
     if row is None:
@@ -136,6 +140,7 @@ def as_json(rid: int):
 
 @bp.route('/<int:rid>/csv')
 @login_required
+@require_permission(Permission.VIEW)
 def as_csv(rid: int):
     row = _get(rid)
     if row is None:
@@ -150,6 +155,7 @@ def as_csv(rid: int):
 
 @bp.route('/<int:rid>/text')
 @login_required
+@require_permission(Permission.VIEW)
 def as_text(rid: int):
     row = _get(rid)
     if row is None:
@@ -206,6 +212,7 @@ def delete(rid: int):
 
 @bp.route('/preview')
 @login_required
+@require_permission(Permission.VIEW)
 def preview():
     """Build a period WITHOUT storing it — the 'what would this say' button."""
     period = (request.args.get('period') or 'daily').strip()

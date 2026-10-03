@@ -321,6 +321,7 @@ def attach(bp, spec: PageSpec) -> None:  # noqa: C901 - one route per view
 
     @bp.route('/')
     @login_required
+    @require_permission(Permission.VIEW)
     def index():
         try:
             can_edit = current_user.can(Permission.CONFIG_WRITE)
@@ -331,11 +332,13 @@ def attach(bp, spec: PageSpec) -> None:  # noqa: C901 - one route per view
 
     @bp.route('/data')
     @login_required
+    @require_permission(Permission.VIEW)
     def data():
         return jsonify(payload())
 
     @bp.route('/probe/<int:pid>/history')
     @login_required
+    @require_permission(Permission.VIEW)
     def history(pid: int):
         probe, err = get_probe(pid)
         if err:
@@ -354,6 +357,7 @@ def attach(bp, spec: PageSpec) -> None:  # noqa: C901 - one route per view
 
     @bp.route('/probe/<int:pid>/series')
     @login_required
+    @require_permission(Permission.VIEW)
     def probe_series(pid: int):
         """Chart data: 1 h / 24 h / 7 d / 30 d or explicit dates.
 
@@ -394,6 +398,7 @@ def attach(bp, spec: PageSpec) -> None:  # noqa: C901 - one route per view
 
     @bp.route('/device/<int:aid>/ports')
     @login_required
+    @require_permission(Permission.VIEW)
     def ports(aid: int):
         """Interface names for the probe form's port picker.
 
@@ -420,6 +425,7 @@ def attach(bp, spec: PageSpec) -> None:  # noqa: C901 - one route per view
     if spec.rollup:
         @bp.route('/policy/<int:aid>')
         @login_required
+        @require_permission(Permission.VIEW)
         def policy_detail(aid: int):
             """Everything stored about ONE server policy, in one object.
 
@@ -448,6 +454,7 @@ def attach(bp, spec: PageSpec) -> None:  # noqa: C901 - one route per view
 
     @bp.route('/policies/<int:aid>')
     @login_required
+    @require_permission(Permission.VIEW)
     def policies(aid: int):
         """Server-policy names for the target picker, from the LIVE box.
 

@@ -51,6 +51,7 @@ def _adc_hits(appliance, term: str) -> list[dict]:
 
 @bp.route('/')
 @login_required
+@require_permission(Permission.VIEW)
 def index():
     appliances = visible_appliances().order_by(Appliance.name).all()
     return render_template('search/index.html', appliances=appliances)
@@ -58,6 +59,7 @@ def index():
 
 @bp.route('/results')
 @login_required
+@require_permission(Permission.VIEW)
 def results():
     term = request.args.get('q', '').strip()
     appliance_ids = request.args.getlist('appliances', type=int)

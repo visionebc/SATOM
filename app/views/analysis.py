@@ -91,6 +91,7 @@ def _product() -> str:
 
 @bp.route('/')
 @login_required
+@require_permission(Permission.VIEW)
 def index():
     product = _product()
     svc = _analysis_service(product)
@@ -109,12 +110,14 @@ def index():
 
 @bp.route('/data')
 @login_required
+@require_permission(Permission.VIEW)
 def data():
     return jsonify(_analysis_service(_product()).analyze(_parse_filters(request.args)))
 
 
 @bp.route('/faz-ops')
 @login_required
+@require_permission(Permission.VIEW)
 def faz_ops():
     """LIVE FortiAnalyzer operational metrics: incoming log rate + per-ADOM
     storage/quota, read straight from the appliance via JSON-RPC. This is the
@@ -212,6 +215,7 @@ def faz_ops():
 
 @bp.route('/dashboard/<int:id>')
 @login_required
+@require_permission(Permission.VIEW)
 def dashboard(id):
     # Back-compat: the device detail page links here. Open the dashboard scoped
     # to that one device.
@@ -250,6 +254,7 @@ def _deep_device_ids(args):
 
 @bp.route('/wpp-matrix')
 @login_required
+@require_permission(Permission.VIEW)
 def wpp_matrix():
     return jsonify(analysis_deep.wpp_feature_matrix(
         device_ids=_deep_device_ids(request.args)))
@@ -257,6 +262,7 @@ def wpp_matrix():
 
 @bp.route('/subelements')
 @login_required
+@require_permission(Permission.VIEW)
 def subelements():
     rows = analysis_deep.subelement_counts(device_ids=_deep_device_ids(request.args))
     top = request.args.get('top', type=int)
@@ -265,6 +271,7 @@ def subelements():
 
 @bp.route('/orphans')
 @login_required
+@require_permission(Permission.VIEW)
 def orphans():
     return jsonify(analysis_deep.orphan_objects(
         device_ids=_deep_device_ids(request.args)))
@@ -272,6 +279,7 @@ def orphans():
 
 @bp.route('/deep/inventory')
 @login_required
+@require_permission(Permission.VIEW)
 def inventory():
     """Fleet cardinality: policies, distinct/unique pools, back-ends +
     ports, VIPs, SNI, certificates — over the deep cache."""
@@ -281,18 +289,21 @@ def inventory():
 
 @bp.route('/freshness')
 @login_required
+@require_permission(Permission.VIEW)
 def freshness():
     return jsonify(ana.deep_freshness(device_ids=_deep_device_ids(request.args)))
 
 
 @bp.route('/deep/wpp/<int:appliance_id>/<path:mkey>')
 @login_required
+@require_permission(Permission.VIEW)
 def wpp_drill(appliance_id, mkey):
     return jsonify(analysis_deep.wpp_drilldown(appliance_id, mkey) or {})
 
 
 @bp.route('/deep/policy/<int:appliance_id>/<path:mkey>')
 @login_required
+@require_permission(Permission.VIEW)
 def policy_drill(appliance_id, mkey):
     return jsonify(analysis_deep.server_policy_drilldown(appliance_id, mkey) or {})
 
@@ -320,6 +331,7 @@ def deep_run():
 
 @bp.route('/deep/objects')
 @login_required
+@require_permission(Permission.VIEW)
 def deep_objects():
     kind = (request.args.get('kind') or 'wpp').lower()
     logical = 'server_policy' if kind in ('policy', 'server_policy') else 'web_protection_profile'
@@ -329,6 +341,7 @@ def deep_objects():
 
 @bp.route('/deep/job/<job_id>')
 @login_required
+@require_permission(Permission.VIEW)
 def deep_job(job_id):
     from ..services import deep_jobs
     return jsonify(deep_jobs.load_job(job_id) or {"error": "not found"})

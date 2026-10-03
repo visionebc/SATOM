@@ -3404,6 +3404,7 @@ def save_scout():
 
 @bp.route('/sentinel', methods=['GET'])
 @login_required
+@require_permission(Permission.VIEW)
 def sentinel_section():
     """Settings → Sentinel as a full section, not a pane.
 
@@ -3431,6 +3432,7 @@ def sentinel_section():
 
 @bp.route('/sentinel/demo/<slug>')
 @login_required
+@require_permission(Permission.VIEW)
 def sentinel_demo(slug):
     """One scenario through the LIVE Sentinel engine, as JSON.
 

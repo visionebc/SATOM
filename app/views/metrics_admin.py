@@ -22,6 +22,7 @@ from __future__ import annotations
 
 from flask import Blueprint, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import login_required
+from ..models import Permission
 
 from ..auth.decorators import require_permission
 from ..extensions import csrf
@@ -39,6 +40,7 @@ def _visible_targets():
 
 @bp.route("/")
 @login_required
+@require_permission(Permission.VIEW)
 def index():
     from ..services import metrics_collect as mc
     from ..services import vm_store
@@ -59,6 +61,7 @@ def index():
 
 @bp.route("/data")
 @login_required
+@require_permission(Permission.VIEW)
 def data():
     from ..services import metrics_collect as mc
     from ..services import vm_store
@@ -144,6 +147,7 @@ def run_now():
 
 @bp.route("/stores")
 @login_required
+@require_permission(Permission.VIEW)
 def stores():
     """Per-node store state: reachable? how many series? last write? This is
     what tells the operator whether the pair is ACTUALLY redundant or only
@@ -243,6 +247,7 @@ def snapshot():
 
 @bp.route("/snapshots")
 @login_required
+@require_permission(Permission.VIEW)
 def snapshots():
     from ..services import metrics_collect as mc
     return jsonify(mc.snapshot_list())

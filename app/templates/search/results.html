@@ -16,6 +16,8 @@
 <form method="get" action="{{ url_for('search.results') }}" class="mb-4">
   <div class="d-flex gap-2">
     <input name="q" value="{{ term }}" class="form-control" placeholder="{{ _('Search across appliances...') }}">
+    {% for aid in appliance_ids or [] %}<input type="hidden" name="appliance_id" value="{{ aid }}">{% endfor %}
+    {% if obj_type %}<input type="hidden" name="obj_type" value="{{ obj_type }}">{% endif %}
     <button class="btn btn-primary">{{ _('Search') }}</button>
   </div>
 </form>

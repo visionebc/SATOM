@@ -846,3 +846,45 @@ def test_the_bucket_grid_is_capped_so_a_bad_range_cannot_exhaust_memory():
     start = datetime(2020, 1, 1)
     end = datetime(2026, 1, 1)
     assert len(ma.grid(start, end, "hour", [[]])) <= 5000
+
+
+# --------------------------------------------------------------------------- #
+#  Board create / edit from the page (native forms)                            #
+# --------------------------------------------------------------------------- #
+def test_the_create_board_form_lands_on_the_new_board(app, client):
+    """The page's Create board form is a native post; it used to show the raw
+    JSON envelope. With ``_redirect`` it navigates to the new board."""
+    login(client, admin_user_id(app), product=None)
+    html = client.get("/monitoring/analytics/").get_data(as_text=True)
+    assert 'name="_redirect"' in html
+    r = client.post("/monitoring/analytics/board",
+                    data={"title": "Weekly review", "_redirect": "1"})
+    assert r.status_code == 302
+    assert "board=weekly-review" in r.headers["Location"]
+    # script callers still get JSON
+    r2 = client.post("/monitoring/analytics/board", data={"title": "Other"})
+    assert r2.status_code == 200 and r2.get_json()["ok"] is True
+
+
+def test_a_custom_board_offers_an_edit_form_that_saves(app, client):
+    bid = _board(app, slug="custom-board")
+    login(client, admin_user_id(app), product=None)
+    html = client.get("/monitoring/analytics/?board=custom-board").get_data(as_text=True)
+    assert 'action="/monitoring/analytics/board/%d"' % bid in html
+    r = client.post("/monitoring/analytics/board/%d" % bid,
+                    data={"title": "Renamed", "description": "d",
+                          "default_range": "7d", "refresh_s": "60",
+                          "_redirect": "1"})
+    assert r.status_code == 302
+    with app.app_context():
+        from app.models_analytics import MonitorDashboard
+        b = MonitorDashboard.query.get(bid)
+        assert (b.title, b.default_range, b.refresh_s) == ("Renamed", "7d", 60)
+
+
+def test_a_builtin_board_offers_no_edit_form(app, client):
+    bid = _board(app, builtin=True, slug="builtin-board")
+    login(client, admin_user_id(app), product=None)
+    html = client.get("/monitoring/analytics/?board=builtin-board").get_data(as_text=True)
+    assert 'data-act="dup-board"' in html
+    assert 'action="/monitoring/analytics/board/%d"' % bid not in html

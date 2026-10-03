@@ -181,8 +181,8 @@ ESXi path is an OVF import rather than a datastore upload plus attach.</p>
 media. <code>FirmwareImage</code> now carries <code>image_kind</code> (<code>upgrade</code> | <code>install</code>,
 defaulting to <code>upgrade</code> because every pre-existing row is one) and, for
 install images, <code>hypervisor</code> (<code>kvm</code> | <code>vmware</code>). Accepted extensions follow
-the kind, in <strong>both</strong> upload paths — the multipart one and the resumable
-chunked one, which had two independent copies of the same hardcoded check.</p>
+the kind on the upload path. (A second, resumable chunked upload API that no
+page called carried its own copy of the check; it has been removed.)</p>
 <p>Offering the wrong artefact is not a validation nicety. An operator who picks
 an upgrade file to build a new VM learns about it from a machine that will not
 boot.</p>
@@ -244,7 +244,7 @@ sending commands at it blindly turns them into failed logins against an
 </tr>
 <tr>
 <td><code>dhcp</code></td>
-<td>create and boot; the appliance takes a lease and SATOM finds it, then continues</td>
+<td>create and boot without reserving an address; the appliance takes a lease, SATOM probes the management address entered on the run (it does not discover the lease), then continues</td>
 </tr>
 <tr>
 <td><code>vm_only</code></td>
@@ -325,7 +325,7 @@ answer to that fact.</p>
 <tbody>
 <tr>
 <td><strong>full</strong></td>
-<td>Address, DNS, machine, boot, walks the first-boot dialog over the serial console, registers the appliance, hands off to the configuration profile.</td>
+<td>Address, DNS, machine, boot, then waits for the appliance to answer on the reserved address, registers it and hands off to the configuration profile. The first-boot dialog is not scripted: the appliance must come up on that address by itself.</td>
 <td>No human step. Repeatable and auditable end to end; every action lands in the run log.</td>
 <td><strong>Proxmox only</strong> — needs an API serial console. Most moving parts, so the widest surface for a mid-run failure; this is what rollback exists for.</td>
 </tr>
@@ -337,9 +337,9 @@ answer to that fact.</p>
 </tr>
 <tr>
 <td><strong>dhcp</strong></td>
-<td>Builds and boots; the appliance takes a lease and SATOM finds it there.</td>
+<td>Builds and boots; the appliance takes a lease and SATOM probes the management address entered on the run (it does not discover the lease).</td>
 <td>Unattended without a serial console.</td>
-<td>Needs DHCP reachable from the machine's network, and the address is not the one you chose. Not every appliance takes a lease on its factory configuration.</td>
+<td>You must know the address (a DHCP reservation) and enter it; without one the run stops at the reachability step. Not every appliance takes a lease on its factory configuration.</td>
 </tr>
 <tr>
 <td><strong>vm_only</strong></td>

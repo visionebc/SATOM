@@ -392,6 +392,41 @@ through the API.</p>
   &quot;finished_at&quot;: &quot;2026-07-08T18:01:04+00:00&quot;
 }
 </code></pre>
+<h3 id="post-change-requestsidexternal-approval"><code>POST /change-requests/&lt;id&gt;/external-approval</code></h3>
+<p>The external change authority's verdict on a change request whose approval
+mode is <strong>External</strong>. Needs the <strong><code>admin</code></strong> scope (owner holds
+<code>user_manage</code>). Body: <code>{"approved": true|false, "by": "CAB", "detail": "CHG-7"}</code>
+— <code>approved</code> is required and must be a JSON boolean; <code>by</code> (default: the token
+name) is recorded as <code>api:&lt;by&gt;</code>. <code>false</code> withdraws an earlier approval, which
+makes the change un-runnable again.</p>
+<table>
+<thead>
+<tr>
+<th>answer</th>
+<th>when</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code> <code>{"ok": true, "external_approved_at": …}</code></td>
+<td>recorded</td>
+</tr>
+<tr>
+<td><code>400 bad_request</code></td>
+<td><code>approved</code> missing or not a boolean</td>
+</tr>
+<tr>
+<td><code>404 not_found</code></td>
+<td>no such change, or it names no appliance visible to the token's ADOM</td>
+</tr>
+<tr>
+<td><code>409 not_external</code> / <code>409 closed</code></td>
+<td>the change is approved in SATOM (Manual mode), or already completed / failed / cancelled — nothing recorded</td>
+</tr>
+</tbody>
+</table>
+<p>Every call is audited (<code>api.change_request.external_approval</code>, refusals as
+<code>…_refused</code>).</p>
 <hr>
 <h2 id="4-a-complete-example--drain--restore-a-backend">4. A complete example — drain / restore a backend</h2>
 <p>The API cannot <em>re-point</em> a backend to a new IP; what it can do is

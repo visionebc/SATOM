@@ -61,6 +61,7 @@
     <aside class="toc">
       <div class="toc-title">On this page</div>
       <a href="#unreleased">[Unreleased]</a>
+      <a href="#2110---2026-10-03">[2.11.0] - 2026-10-03</a>
       <a href="#2101---2026-10-03">[2.10.1] - 2026-10-03</a>
       <a href="#2100---2026-10-03">[2.10.0] - 2026-10-03</a>
       <a href="#291---2026-10-02">[2.9.1] - 2026-10-02</a>
@@ -104,7 +105,6 @@
       <a href="#141---2026-08-05">[1.4.1] - 2026-08-05</a>
       <a href="#140---2026-08-05">[1.4.0] - 2026-08-05</a>
       <a href="#135---2026-08-04">[1.3.5] - 2026-08-04</a>
-      <a href="#134---2026-08-04">[1.3.4] - 2026-08-04</a>
     </aside>
     <div class="doc-body mdx">
 <h1 id="changelog">Changelog</h1>
@@ -112,6 +112,474 @@
 <a href="https://keepachangelog.com/">Keep a Changelog</a>. This is a public,
 source-available project — see <a href="https://github.com/visionebc/SATOM/blob/main/NOTICE">NOTICE</a> for the trademark disclaimer.</p>
 <h2 id="unreleased">[Unreleased]</h2>
+<h2 id="2110---2026-10-03">[2.11.0] - 2026-10-03</h2>
+<h3 id="security--gunicorn-answered-plain-http-on-every-interface-after-an-update-2026-10-03">Security — gunicorn answered plain HTTP on every interface after an update (2026-10-03)</h3>
+<p>The shipped <code>satom.service</code> bound gunicorn to <code>0.0.0.0:8000</code> and relied on
+the installer to rewrite it to loopback. Every self-update copies the unit
+again without that rewrite, so after the first update the application
+answered plain HTTP on port 8000 from the network, next to the nginx TLS
+endpoint. The unit now binds <code>127.0.0.1:8000</code> itself. The System Backup page's
+peer comparison, the one peer probe that used port 8000 directly, now goes
+through the node vhost on 8443 like the others.</p>
+<p><strong>Already-installed nodes keep the old unit until their next update</strong>, which
+installs the corrected one. To close it now, set the bind in
+<code>/etc/systemd/system/satom.service</code> to <code>127.0.0.1:8000</code>, then run
+<code>systemctl daemon-reload &amp;&amp; systemctl restart satom</code>.</p>
+<h3 id="security--password-minimum-and-api-token-scopes-2026-10-03">Security — password minimum and API-token scopes (2026-10-03)</h3>
+<p>Settings → Change Password, Add User and an administrator's password reset
+accepted any non-empty password while their placeholders said "at least 8
+characters". Every web path now enforces the same 8-character minimum.</p>
+<p>An API token could be minted or edited with a scope its owner does not hold
+(for example <code>admin</code> for an operator), and the WAF carve-out listing honoured
+that <code>admin</code> scope to list every author's carve-outs. Minting and editing now
+refuse such scopes, and the listing also checks that the owner can use
+<code>admin</code>.</p>
+<h3 id="security--privileged-node-actions-left-no-audit-row-2026-10-03">Security — privileged node actions left no audit row (2026-10-03)</h3>
+<p>System backup create, restore and delete, git bundle create, settings and
+delete, firmware pull, code rollback, software update apply, deploy-automation
+mode, HA mode, standby promotion and HA node registry changes now write an
+audit row (with the outcome, failures included). So do the root CLI's
+<code>admin reset-password</code> and <code>admin unlock</code>, under the user <code>cli/root</code>, noting
+when the command re-activated a disabled account. Every failed local sign-in
+now writes <code>login.fail</code>; before, only the attempt that tripped the lockout
+was recorded.</p>
+<h3 id="security--by-id-routes-served-rows-the-lists-hide-2026-10-03">Security — by-id routes served rows the lists hide (2026-10-03)</h3>
+<p>Device lists are cut to what the user may see: maintenance devices are hidden
+from whoever lacks <em>View maintenance devices</em>, and each ADOM shows only its own
+product. About thirty routes skipped that cut, so the same rows were one URL
+(or one posted id) away. Each now applies the list's rule and answers 404:</p>
+<ul>
+<li><strong>FortiWeb:</strong> a carve-out could be edited or deleted through another
+  device's URL; template apply, AppID assign and dismissing an AI proposal
+  accepted any device id; Stored Assets could delete another ADOM's backup.</li>
+<li><strong>Devices:</strong> firmware reports listed and opened reports for every device;
+  firmware download/delete ignored the ADOM; the REST API could create or move
+  a device into another ADOM; System Provisioning's <em>Entire fleet</em> and baseline
+  apply wrote to every appliance in the table, not the visible ones (an empty
+  id list no longer means "all" anywhere in the bulk runner); Upgrade Flow
+  listed every batched rollout.</li>
+<li><strong>Monitoring:</strong> Analysis deep reads, drill-downs and <em>Run deep capture</em>
+  covered every device; Log Collection listed and served every saved log.</li>
+<li><strong>Automation:</strong> process runs, the recent-runs list and the calendar's run
+  history crossed ADOMs; edit leases could be taken on any device.</li>
+<li><strong>Tools:</strong> plugins and Lua scripts loaded by id or slug from any ADOM; Lua
+  accepted and deployed to any device; plugin and Python Console datasets
+  returned every device's rows, and the audit dataset ignored <em>View audit
+  log</em>; the plugin frame allowed <code>https:</code> images, an outbound channel for
+  the data it renders (now <code>data:</code> only); Sentinel's poll and incident page
+  showed incidents of hidden devices.</li>
+<li><strong>Registry:</strong> the FortiWeb endpoint toggle could flip another product's
+  catalog row.</li>
+</ul>
+<h3 id="security--read-pages-answered-any-signed-in-user-2026-10-03">Security — read pages answered any signed-in user (2026-10-03)</h3>
+<p>About 80 routes carried only a sign-in check, so a custom profile with no
+read permission at all (or with only <em>Manage users</em>) could open the audit
+trail, every Monitoring page (device health, metrics, deep and service
+monitors, analytics, reports, search, architecture, collection, analysis),
+the API Explorer and the FortiADC / FortiAnalyzer / FortiAuthenticator API
+consoles, the internal <code>/api/fw|adc/&lt;id&gt;/proxy</code> relay, the appliance list and
+detail pages, Device Provisioning and the Sentinel settings page. Each route
+now names its permission: <strong>View audit log</strong> for the audit trail, <strong>View
+registry</strong> for the API consoles and the proxy, <strong>View appliances</strong> for the
+inventory, <strong>View operations</strong> for Device Provisioning, and any read
+permission for the rest. The Audit Log menu entry follows its page's
+permission.</p>
+<p>Firmware upgrade, boot-partition switch, upgrade scheduling and HA failover
+were gated on any edit permission (for example <em>Edit protection</em>); they now
+need <strong>Run appliance actions</strong>.</p>
+<p>The three built-in profiles are unchanged: Read-only, Operator and Admin hold
+every permission these gates ask for.</p>
+<h3 id="security--ai-advisor-history-left-the-lan-unredacted-2026-10-03">Security — AI Advisor history left the LAN unredacted (2026-10-03)</h3>
+<p>Only the newest message was redacted before an external send. The earlier
+turns of the conversation (up to 19) travelled with it verbatim: the stored
+user rows are the operator's raw text, and assistant rows can hold device data
+that a local model echoed before the conversation was switched to an external
+provider. Every turn that leaves the node is now redacted, counted in the
+export log and in the pre-send review, and the review says how many earlier
+messages go with the new one.</p>
+<p>An <code>ollama</code> provider was also treated as local because of its kind alone, so
+an Ollama endpoint on a public host skipped redaction, the "Allow external
+providers" switch and the export log. Locality now comes from the base URL:
+only loopback, link-local and private addresses (or <code>localhost</code>) count as
+local, and a host name that does not resolve counts as external.</p>
+<h3 id="security--one-password-policy-12-to-1024-characters-2026-10-03">Security — one password policy: 12 to 1024 characters (2026-10-03)</h3>
+<p>The web console, the root CLI and the two installers each had their own rule
+(8, 12, 8, and 10 characters with three character classes). There is now one
+policy everywhere: at least 12 and at most 1024 characters, length only — no
+character-class rule. It applies to Add User, an administrator's password
+reset, Change Password, the reset link, <code>satom execute admin reset-password</code>,
+<code>install-satom.sh</code> and the guided <code>satom-setup.sh</code> (which still accepts the
+same answer-file keys). Existing passwords are not re-validated; the rule
+applies the next time a password is set.</p>
+<h3 id="security--session-lock-is-now-enforced-2026-10-03">Security — Session Lock is now enforced (2026-10-03)</h3>
+<p>Settings → General → <em>Session Lock (minutes)</em> was saved but never applied: a
+signed-in browser stayed signed in for weeks. It is now an idle timeout. A
+browser session with no activity for that long is signed out on its next
+request with <em>"Your session was locked after N minutes of inactivity."</em>
+(script callers get a JSON 401), and the lock is recorded in the audit log.
+Background refreshes — the notification bell, job progress, status badges,
+edit-lock heartbeats and other timed panel reloads — do not count as
+activity, so a tab left open still locks. API tokens are not affected.</p>
+<h3 id="security--sentinel-and-scout-settings-are-admin-only-end-to-end-2026-10-03">Security — Sentinel and Scout settings are admin-only end to end (2026-10-03)</h3>
+<p>The Sentinel and Scout settings panes were shown only to administrators, but
+their save actions accepted any user who could change configuration, so an
+operator could change them — including switching Scout off site-wide — with
+a direct request. Saving now requires user management, like the panes.</p>
+<h3 id="security--database-tools-refuse-queries-on-credential-tables-2026-10-03">Security — database tools refuse queries on credential tables (2026-10-03)</h3>
+<p>The SQL console masks sensitive columns by the name of the result column, so
+an alias or <code>row_to_json(...)</code> could reveal password hashes and secrets. A
+query in the console, a CSV export or a report widget that references a
+credential table — users, API tokens, application settings, hypervisor
+targets, DNS backends, provisioning runs — is now refused before it runs,
+and the refusal is audited. Column masking is unchanged for every other
+table.</p>
+<h3 id="security--edit-locks-2026-10-03">Security — Edit locks (2026-10-03)</h3>
+<p>Taking, keeping or taking over an edit lock now requires the Configure permission, so a read-only user can no longer take an operator's lock. The object editor's save and delete calls are refused while another user holds the object's lock, instead of the lock being a browser-side warning only, and the inline editor on configuration pages takes and shows the lock like the full-page editor.</p>
+<h3 id="security--the-ai-opinion-on-a-draft-exception-needs-the-ai-advisor-permission-2026-10-03">Security — The AI opinion on a draft exception needs the AI Advisor permission (2026-10-03)</h3>
+<p>"Analyse before implementing" still gives SATOM's own analysis to anyone who can open the exception. Sending the draft to the AI provider for the assistant's opinion now requires <code>advisor.use</code>, the same permission as every other AI feature. The Attack ID page also shows its AI buttons only to users who hold that permission. An old delete endpoint for exceptions was removed: it skipped the impact check and wrote no audit entry, and nothing in the interface used it.</p>
+<h3 id="security--device-refresh-and-raw-device-reads-tightened-2026-10-03">Security — Device refresh and raw device reads tightened (2026-10-03)</h3>
+<p>"Refresh from device" on Server Policy and Server Objects runs a full device sync, so it now needs <code>config_write</code>. That matches the refresh on Web Protection and the configuration sections. An address that forwarded any read request to a device using SATOM's own device credentials was removed. Nothing in the interface used it.</p>
+<h3 id="security--raw-api-proxy-writes-need-the-api-write-permission-2026-10-03">Security — Raw API proxy writes need the API-write permission (2026-10-03)</h3>
+<p>Write calls (POST, PUT, DELETE) sent through the internal appliance proxy under
+<code>/api/fw/</code> and <code>/api/adc/</code> now require <strong>Execute write API calls</strong>
+(<code>registry.execute_write</code>), the permission the API Explorer already requires for
+the same raw writes. Before, the broader configuration-write permission was
+enough, so operators could make arbitrary appliance REST writes through the proxy
+that the Explorer would have refused. Read calls are unchanged.</p>
+<h3 id="security--fetch-mac-addresses-requires-edit-rights-and-is-audited-2026-10-03">Security — "Fetch MAC addresses" requires edit rights and is audited (2026-10-03)</h3>
+<p>The Architecture device card's "Fetch MAC addresses" logs in to the appliance over SSH and updates the stored interface inventory, but any signed-in viewer could run it. It now requires <code>config_write</code>, the same as the Device health hardware scan, and every run is written to the audit log with its outcome. The button is hidden from users who cannot use it.</p>
+<h3 id="added--change-ticket-reference-written-back-from-a-hook-2026-10-03">Added — Change ticket reference written back from a hook (2026-10-03)</h3>
+<p>When a hook bound to <code>change.requested</code> succeeds and its result carries <code>crq_ref</code> (and optionally <code>crq_url</code>), the reference is now recorded on the change request, as the starter and the Request CRQ message always promised. A link that is not <code>http(s)://</code> is dropped and a closed change is left untouched; the run's status says whether the reference was recorded.</p>
+<h3 id="added--secret-values-for-integration-hooks-2026-10-03">Added — Secret values for integration hooks (2026-10-03)</h3>
+<p>The hook editor gains a write-only <strong>Secret values</strong> card for Administrators: each secret the hook declares can be given its value, which is stored encrypted, audited by name and never shown again (the card only says <em>stored</em> or <em>not set</em>). Before, values could only come from environment variables on the node.</p>
+<h3 id="added--external-change-approval-can-be-recorded-2026-10-03">Added — External change approval can be recorded (2026-10-03)</h3>
+<p>A change request in <strong>External</strong> approval mode could never run, because nothing recorded the external verdict. Integrations now send it with <code>POST /api/v1/change-requests/&lt;id&gt;/external-approval</code> (admin-scope token; changes outside the token's ADOM are not found; manual-mode and closed changes are refused; every call is audited). An Administrator can also record or withdraw the verdict by hand on the change's External change record card.</p>
+<h3 id="added--clear-all-on-the-notifications-page-2026-10-03">Added — "Clear all" on the Notifications page (2026-10-03)</h3>
+<p>The Notifications page now has a <strong>Clear all</strong> button. After you confirm, it
+permanently deletes all your notifications. The bell's <em>Clear</em> still only marks
+them read.</p>
+<h3 id="added--collection-page-peer-replication-status-and-store-snapshots-2026-10-03">Added — Collection page: peer replication status and store snapshots (2026-10-03)</h3>
+<p>The Collection page now shows whether this node's samples are also being written to the peer node: replication state, peer, last success and consecutive failures. A new "Store snapshots and nodes" card shows the state of each node's metrics store and lists existing store snapshots. Users with edit rights can take a snapshot or delete one. Deleting a snapshot is now audited.</p>
+<h3 id="changed--users-page-read-only-list-unlock-reset-password-clear-2fa-2026-10-03">Changed — Users page: read-only list, Unlock, Reset password, Clear 2FA (2026-10-03)</h3>
+<p>The <em>View users</em> permission now opens the user list read-only, with no
+controls, and gives its holders a Users entry in the sidebar; every action
+still needs <em>Manage users</em>. Each row now offers <strong>Reset password</strong> (local
+accounts, with confirmation), <strong>Clear 2FA</strong> (when enabled) and <strong>Unlock</strong>
+(when the account has failed sign-ins or is locked out) — all audited. Unlock
+clears the lockout and nothing else: a disabled account stays disabled. The
+root CLI's <code>execute admin unlock</code> now behaves the same way;
+<code>reset-password</code> still re-enables the account. A profile change is logged
+once instead of twice, and the Admins counter counts the accounts that can
+manage both users and profiles. The unreachable per-user edit page and legacy
+role endpoint were removed — the Change Profile dialog covers them.</p>
+<h3 id="changed--general-settings-log-levels-and-format-take-effect-dead-fields-removed-2026-10-03">Changed — General settings: log levels and format take effect; dead fields removed (2026-10-03)</h3>
+<p>The <em>Log Levels</em> and <em>Log Format</em> settings are now applied to the application
+log file at start-up and immediately on save (plain, detailed or JSON lines;
+every format keeps the timestamp). The <em>Status Poll Interval</em> and <em>Show raw
+JSON</em> fields were removed from the form because nothing ever read them.</p>
+<h3 id="changed--neutral-defaults-for-sentinel-ai-and-the-system-backup-schedule-2026-10-03">Changed — neutral defaults for Sentinel AI and the system-backup schedule (2026-10-03)</h3>
+<p>Sentinel's AI model endpoint now ships empty, and AI reasoning stays off until
+an endpoint is configured, even when its switch is on. The seeded nightly
+system-backup schedule on new installations no longer names a specific
+backup host.</p>
+<h3 id="changed--node-tls-renewal-controls-2026-10-03">Changed — Node TLS renewal controls (2026-10-03)</h3>
+<p>Settings → Node TLS has a new <em>Renewal of an imported certificate</em> card: choose
+<em>Alert only</em> or <em>Automatic pull</em>, enter the SSH source and file paths, and run
+<strong>Test now</strong>. <em>Renew now</em> is offered only for a certificate issued by the
+internal CA, and the page now explains that an imported certificate is shared
+between HA nodes.</p>
+<h3 id="changed--administration-screens-tidied-2026-10-03">Changed — Administration screens tidied (2026-10-03)</h3>
+<p>The Profiles tab needs <em>Manage profiles</em>; Certificate Manager links appear
+only to users who can open it; the API Tokens link appears in every ADOM
+whose product supports tokens; revoking or deleting an API token asks for
+confirmation; logo and favicon pickers accept every format the server
+accepts; saving DNS Lookup returns to its tab; the static "Security Status"
+checklist (which computed nothing) is gone; the HA diagram no longer claims
+replication on a standalone node; and shipped examples and help texts no
+longer carry deployment-specific host names, addresses or schedule numbers.
+Two unused settings endpoints for naming and segments were removed — their
+editors live on their own pages.</p>
+<h3 id="changed--backup-vault-and-restore-permissions-2026-10-03">Changed — Backup vault and restore permissions (2026-10-03)</h3>
+<p>The "View backups" permission now does what it says: it opens the Device Backups list (metadata only), so read-only users can see which backups exist. Creating, uploading and deleting backups still need a backup create or restore permission, and downloading a backup, which is the full device configuration, needs "Create backups". The appliance Restore page now needs both "Manage users" and "Restore backups", and Import Backup needs "Restore backups"; operators and administrators keep the access they had. Buttons and menu entries you cannot use are no longer shown. Upgrade Preparation is now granted by "Run appliance actions", the permission whose description already listed it.</p>
+<h3 id="changed--safer-live-restore-and-boot-partition-2026-10-03">Changed — Safer live restore and Boot Partition (2026-10-03)</h3>
+<p>A live configuration restore is now aborted when the automatic pre-restore backup (taken over the device REST API) cannot be made, so a restore never runs without a rollback copy by accident. If the device's REST backup cannot work, tick "Restore without a pre-restore backup"; that choice is recorded in the audit log. Boot Partition remains the emergency path that needs no change request, but a live flash now requires ticking an acknowledgement that it bypasses change control, the page says so, and every attempt and its outcome are written to the audit log.</p>
+<h3 id="changed--firmware-scheduling-goes-through-upgrade-flow-2026-10-03">Changed — Firmware scheduling goes through Upgrade Flow (2026-10-03)</h3>
+<p>The "Schedule for later" card on the single-appliance Upgrade page has been removed: the action it created could never run. Use Upgrade Flow, which raises a change request with its window and schedules the upgrade once approved. Existing scheduled entries are left as they are. Upgrade Flow now covers FortiWeb only, because SATOM has no firmware flash path for FortiADC; the page says so, and FortiADC pre-upgrade checks remain available from the appliance page.</p>
+<h3 id="changed--console-provisioning-approval-and-appliance-pages-2026-10-03">Changed — Console, provisioning approval and appliance pages (2026-10-03)</h3>
+<p>The appliance SSH console no longer offers a Run button to users who cannot run commands; they see the presets with a read-only notice, and the console link is hidden for them. Operators can now find the Device Console in the Automation menu. A system profile can only be deployed live once it is approved (its preview stays available), and Approve/Reject are only shown to users who may approve. The Appliances list and detail pages show Add, Edit, Delete and View Backups only to users who hold those permissions, offer the Policy Inspector and Rediscovery on FortiADC rows too, show Firmware Reports consistently, and label the vdom field as "ADOM (vdom)". The Device Provisioning mode table now describes what Full and DHCP modes really do (no scripted first-boot dialog, no lease discovery).</p>
+<h3 id="changed--wording-fixes-2026-10-03">Changed — Wording fixes (2026-10-03)</h3>
+<p>The Rediscovery Stop tooltip explains that a stop during the deep pass or CLI capture keeps the snapshot already saved. The console's refusal message names the checkbox the page actually shows. Capacity validation messages match the checks, and the capacity table highlights usage at your configured warning level instead of a fixed 80 percent. The "Network Segments" menu entry has one name everywhere, and the container-operations hint points at Global, Administrator, Container operations. The "Run appliance actions" and "Restore backups" permission descriptions now say what they unlock.</p>
+<h3 id="changed--read-only-users-see-read-only-pages-2026-10-03">Changed — Read-only users see read-only pages (2026-10-03)</h3>
+<p>Users without <code>config_write</code> no longer see buttons that would only fail with an error. This applies to Server Policy, the policy editor, Exceptions, Web Protection, Server Objects and WAF artifacts. Some buttons are greyed out instead of hidden, and the policy editor says it is read-only. The WAF protection areas in the sidebar are shown only to users who can open them. Users who hold <code>operations.view</code> but are not administrators now find the Template Library under Operations.</p>
+<h3 id="changed--wording-and-leftovers-2026-10-03">Changed — Wording and leftovers (2026-10-03)</h3>
+<p>The classification catalog counts line profiles when it reports where a value is used. The Fleet Objects header now says the data comes from SATOM's local copy of each device's configuration. A scheduled-action description and the artifact store's notes no longer describe features that were removed. An unused naming save route and the matching script on the Settings page were removed. Example placeholders use neutral names.</p>
+<h3 id="changed--appliances-sits-with-the-fleet-entries-in-the-sidebar-2026-10-03">Changed — Appliances sits with the fleet entries in the sidebar (2026-10-03)</h3>
+<p>The <strong>Appliances</strong> entry has moved from the Administrator group into each ADOM's
+Fleet group, and into the Global group of the Global ADOM. Anyone who can view
+appliances now sees it, not only administrators. Adding or editing a device still
+requires configuration-write access.</p>
+<h3 id="changed--documentation-corrections-2026-10-03">Changed — Documentation corrections (2026-10-03)</h3>
+<p>The sample nginx virtual host now allows uploads up to 400 MB, matching the
+largest update package the application accepts. <code>docs/INSTALL.md</code> now gives the
+same count of host-only actions that the container runtime gives up everywhere
+(five; four of them come back with the operations agent). Developer comments on
+integration hook paths, the template permissions, placeholder ADOMs, Concept Map
+deep links and directory sign-in profiles were corrected too.</p>
+<h3 id="changed--scout-a-typed-published-host-follows-the-free-target-rule-2026-10-03">Changed — Scout: a typed Published host follows the free-target rule (2026-10-03)</h3>
+<p>Scout dialled any host typed into "Published host", which bypassed the permission the certificate inspector and transaction tracer require for free targets. A typed host is now dialled only if the appliance publishes it (its own address or one of its VIPs), unless you hold <code>monitoring.probe_free</code> or user management. Leaving the field blank and using the object's VIP works as before. Read-only and operator users can no longer have Scout probe an arbitrary typed host.</p>
+<h3 id="changed--daily-inventory-snapshot-is-part-of-the-seeded-schedule-2026-10-03">Changed — Daily inventory snapshot is part of the seeded schedule (2026-10-03)</h3>
+<p>The Metrics page's daily inventory trend only appears when the "Record inventory snapshot" action runs every day, and until now you had to schedule it yourself. <code>satom execute seed actions</code> now creates it, daily at 23:50, and <code>diagnose install</code> lists it with the other minimum protections. Existing schedules are never changed. On an older node, run the seed command to add the missing row.</p>
+<h3 id="changed--monitoring-controls-follow-your-permissions-2026-10-03">Changed — Monitoring controls follow your permissions (2026-10-03)</h3>
+<p>Operators who can edit collection settings but are not administrators now find <strong>Collection</strong> at the end of the Monitoring menu. Before, the page could only be reached by typing its URL. On the Collection page, Run sweep now, Enable/Disable, Save and the interval fields are shown only to users who can change them. On Analysis, "Save pattern" is shown only to administrators and "Run deep capture" only to users with edit rights. Deep monitors and Service Monitor gain an <strong>Unmute</strong> action on muted probes.</p>
+<h3 id="changed--neutral-examples-in-the-interface-2026-10-03">Changed — Neutral examples in the interface (2026-10-03)</h3>
+<p>The DNS Lookup, probe form and installation health screens used placeholders and labels from the network this product was built on. They now use generic examples (<code>app.example.com</code>, <code>192.0.2.10</code>) and refer to "the backup target". The CPU/memory and discovery notes on the probe pages now list every product each reading is available on, including FortiAuthenticator.</p>
+<h3 id="changed--fortiadc-and-fortianalyzer-api-consoles-are-dry-run-by-default-2026-10-03">Changed — FortiADC and FortiAnalyzer API consoles are dry-run by default (2026-10-03)</h3>
+<p>The FortiADC and FortiAnalyzer API consoles now treat writes the way the FortiAuthenticator console always has: a POST, PUT, PATCH or DELETE (or a FortiAnalyzer write verb) returns a preview of the exact request (method, path and body) and sends nothing until you tick <strong>Apply</strong>. The three consoles also share one audit policy: every applied write is recorded, including the ones the device refused (the refusal is stored as the error), and reads are no longer written to the audit log. Change attribution now recognises FortiAnalyzer write verbs, so an applied FortiAnalyzer write can explain a configuration change.</p>
+<h3 id="changed--one-catalog-writer-for-every-product-2026-10-03">Changed — One catalog writer for every product (2026-10-03)</h3>
+<p>The FortiAnalyzer and FortiAuthenticator endpoint catalogs are now saved through the same writer as FortiWeb and FortiADC, so names, URIs and duplicates are checked the same way everywhere (a FortiAuthenticator URI must stay under <code>/api/v1/</code>). Re-pointing a disabled FortiAuthenticator endpoint no longer re-enables it silently, and enabled FortiAuthenticator endpoints can now be disabled from the page. Users without the "Execute write API calls" permission see the FortiAuthenticator write methods disabled, as on the other consoles.</p>
+<h3 id="changed--api-and-signatures-entries-in-the-product-menus-2026-10-03">Changed — API and Signatures entries in the product menus (2026-10-03)</h3>
+<p>The FortiADC, FortiAnalyzer and FortiAuthenticator menus show their API console under <strong>API → Registry &amp; console</strong> to every user who may open it (the "View registry" permission); before, FortiAuthenticator showed it to everyone and the other two only to user administrators. The FortiADC <strong>Signatures</strong> overview moved from Administrator to the Web Application Firewall group and opens to users with "View protection", so read-only and operator users can now see it.</p>
+<h3 id="changed--wording-2026-10-03">Changed — Wording (2026-10-03)</h3>
+<p>The Naming page marks FortiADC patterns as reference only (the FortiADC editor and wizard do not apply them). The FortiAnalyzer workspace description and dashboard no longer call its sections scaffolds; an installation still showing the old seeded description gets the new one on the next start (an edited description is kept). The FortiAuthenticator dashboard points to Administrator → Appliances.</p>
+<h3 id="changed--false-positive-explainer-fields-2026-10-03">Changed — False-positive explainer fields (2026-10-03)</h3>
+<p>The explainer has two optional fields: a Web Protection Profile, named in the
+"where on the device" path now shown under each carve-out, and a payload
+decoder that peels encoding layers off a value pasted without a log entry.</p>
+<h3 id="changed--ai-advisor-default-provider-2026-10-03">Changed — AI Advisor default provider (2026-10-03)</h3>
+<p>On first use the AI Advisor used to create a local Ollama provider pointing at
+a fixed private address. On new installations it is now created disabled,
+pointing at <code>http://localhost:11434</code>; edit it in Settings → AI Advisor, set
+your Ollama host and save it to enable it. Until then the advisor, document
+translation and the exception assistant say the provider is disabled instead
+of sending anything. Existing providers are unchanged. The provider and
+fetch-endpoint placeholders no longer show private addresses.</p>
+<h3 id="fixed--audit-log-paging-to-date-and-csv-export-2026-10-03">Fixed — Audit Log paging, "To" date and CSV export (2026-10-03)</h3>
+<p>The Audit Log never showed its page controls, so entries beyond the first
+page were unreachable; it now pages and keeps the filters. The <em>To</em> date now
+includes the whole day. <strong>Export CSV</strong> used to link back to the page; it now
+downloads the entries matching the current filters.</p>
+<h3 id="fixed--settings-and-administration-tools-2026-10-03">Fixed — settings and administration tools (2026-10-03)</h3>
+<ul>
+<li>Hour thresholds saved as decimals ("12.0") were silently ignored by the
+  alert engine, which fell back to its defaults; they are honoured now.</li>
+<li><em>Enable email sending</em> off now really stops every outgoing mail (alerts,
+  bug reports, Certificate Manager, change-request notices, reset links);
+  only the <em>Send test email</em> button still sends.</li>
+<li>Deleting an ADOM asks for confirmation again (the prompt was blocked by the
+  content security policy).</li>
+<li>A new LDAP bind password is stored where sign-in reads it when a secrets
+  vault is in use; saving the Authentication form no longer resets tuned LDAP
+  and RADIUS timeouts to 8 seconds.</li>
+<li>Certificate Manager issuance over ACME no longer demands an ADCS class
+  template; the ADCS request id the signer prints is recorded for revocation;
+  the pages name the configured protocol and the target appliance.</li>
+<li>Importing the same theme a third time no longer fails.</li>
+<li>Built-in database reports offer <em>Clone</em> instead of an <em>Edit</em> that could not
+  save; <em>Export CSV</em> in the SQL console exports what is in the editor even
+  before <em>Run</em>.</li>
+<li>Re-enabling a FortiAnalyzer menu group brings its items back.</li>
+<li>Code rollback on System Backup obeys the staged-rollout safeguard of
+  Software Update, and on a container installation code rollback and offline
+  update packages are refused with the reason instead of failing.</li>
+<li><em>Create backup now</em> can push the bundle to the backup server (ticked by
+  default when one is configured).</li>
+</ul>
+<h3 id="fixed--integration-hook-starters-actually-run-2026-10-03">Fixed — Integration hook starters actually run (2026-10-03)</h3>
+<p>The four starters offered by the hook editor (CRM change ticket, Telegram, Slack, Microsoft Teams) only defined a <code>run(ctx)</code> function and never called it, so a saved starter did nothing and its runs were still shown as <em>ok</em>. They also checked a <code>status_code</code> attribute the SDK response does not have. Starters now run when the hook fires, read <code>resp.status</code>, and report a non-2xx answer as a failed run with the receiving system's own words.</p>
+<h3 id="fixed--change-request-lifecycle-2026-10-03">Fixed — Change request lifecycle (2026-10-03)</h3>
+<ul>
+<li>Only a draft change request can be approved, and a completed or failed change can no longer be rewritten to cancelled. Hiding the buttons had not prevented either.</li>
+<li>Pressing <strong>Schedule</strong> after the maintenance window has started now starts the run a minute later (rounds keep their spacing) instead of creating a task that never fires; after the window has closed it is refused.</li>
+<li>A firmware upgrade or failover run live from an appliance page closes its change only when every appliance the change names has a result. Previously the first appliance closed the whole change and the others could no longer be run under it. A failed appliance can be retried inside the window.</li>
+<li>Documentary change types (and changes still in progress after their window) can be closed with <strong>Mark completed</strong> / <strong>Mark failed</strong>; before, nothing could close a documentary change.</li>
+<li><strong>Mark notified</strong> sends the maintenance notice to the change's own recipients instead of always to the e-mail default, and the notice card describes that correctly.</li>
+<li>The <code>window.opening</code> and <code>window.closing</code> hook events now fire when a change starts and finishes even without NetBox, and <code>window.closing</code> reports the documented outcome (<code>completed</code> / <code>failed</code>).</li>
+<li>A change page for a firmware upgrade now states that the scheduler does not flash firmware and that appliances are flashed live from their Upgrade page.</li>
+</ul>
+<h3 id="fixed--scheduled-actions-and-menus-2026-10-03">Fixed — Scheduled actions and menus (2026-10-03)</h3>
+<ul>
+<li>A one-time <strong>Run at</strong> is entered and shown in the console timezone (the field names the zone); it used to be read as UTC and fired off by the timezone offset. <strong>Next run</strong> in the list is shown in the console timezone with its zone, and a run skipped while the scheduler was down shows as <strong>missed</strong> instead of a blank.</li>
+<li><strong>Process</strong> now appears in the sidebar for read-only users and operators, in its own Automation group; it was only drawn inside the Administrator group.</li>
+<li>The NetBox reconciliation field is labelled <strong>Appliances per round</strong>, the sync action descriptions include FortiAuthenticator, and the deep-monitor sweep description matches its 3-minute default schedule.</li>
+</ul>
+<h3 id="fixed--appliance-quick-edit-no-longer-wipes-interfaces-and-ha-settings-2026-10-03">Fixed — Appliance quick edit no longer wipes interfaces and HA settings (2026-10-03)</h3>
+<p>Saving an appliance from the Edit dialog on the Appliances list deleted every documented interface and dissolved an HA cluster, because that dialog carries neither field set. Interfaces and HA settings are now changed only by a form that actually shows them (the full edit page); the quick edit leaves them alone.</p>
+<h3 id="fixed--firmware-rediscovery-and-device-health-2026-10-03">Fixed — Firmware, rediscovery and device health (2026-10-03)</h3>
+<p>The Upgrade and Boot Partition image pickers no longer offer install images (qcow2, ova and the like), which build a new VM and are not a flash payload. A second rediscovery can no longer start while the first one is still in its deep or CLI phase, and starting one no longer cancels a pending Stop. A FortiADC discovery that meets refused credentials now stops after one failed login, as FortiWeb already did, instead of trying every endpoint and risking an account lockout. Device health on the Monitoring page now grades each appliance with its own product's capacity and staleness limits, the same ones the alert engine uses. The hardware scan only targets FortiWeb appliances, the only product its command battery is written for, and the button is hidden where nothing can be scanned.</p>
+<h3 id="fixed--backups-deletion-and-console-across-products-2026-10-03">Fixed — Backups, deletion and console across products (2026-10-03)</h3>
+<p>"View Backups" for a FortiADC opened from the Global ADOM no longer ends on a "not found" page. Deleting an appliance through the REST API now retires its identity and removes its datasheet, exactly like the delete button. The Device Console presets and the diagnostics attached to a support bundle now match the appliance's product (FortiADC gets its own commands; FortiAnalyzer and FortiAuthenticator get none, and the bundle says so) instead of always sending FortiWeb commands. Adding a model on the Capacity Limits page records it for the product you choose, and removing a model only removes that product's rows.</p>
+<h3 id="fixed--rollouts-change-requests-and-provisioning-2026-10-03">Fixed — Rollouts, change requests and provisioning (2026-10-03)</h3>
+<p>A rollout split into several rounds is no longer closed by its first round: the change stays open until the last round succeeds, and a failed round still fails it so the remaining rounds do not flash. The Schedule button on a change request now honours the rollout plan saved on it. Upgrade Flow refuses to raise a change without appliances, a change naming no appliance can no longer be scheduled, and stage 1 offers each multi-ADOM appliance once (on the row that owns the device actions). On Device Provisioning a refused or failed preflight is shown as an error instead of "Nothing blocks this run", and the run buttons are only shown to users who may use them; Semi mode's Resume now carries on past first boot to registration and profile instead of pausing again. System Provisioning no longer promises secrets "entered at apply time": secrets are stripped when a profile is saved and are not pushed, and the deploy preview names the elements that will go out without them. Combos built from system profiles now push the profile's settings instead of nothing.</p>
+<h3 id="fixed--line-profiles-now-reach-the-line-wizard-2026-10-03">Fixed — Line profiles now reach the line wizard (2026-10-03)</h3>
+<p>Line profiles saved from their menu entry in the Global ADOM were filed under the Global ADOM. That is a product no device belongs to, so the wizard never used them and the Web Protection Profile drop-down was empty. The page now always files them as FortiWeb profiles, and profiles saved earlier are moved over at startup. The move is skipped when FortiWeb already has its own profile for the same line. Errors on the page now show as red alerts instead of blue notices that disappear on their own.</p>
+<h3 id="fixed--the-line-wizard-uses-your-naming-patterns-binds-its-certificate-and-checks-the-profile-first-2026-10-03">Fixed — The line wizard uses your naming patterns, binds its certificate and checks the profile first (2026-10-03)</h3>
+<p>Object names now come from the patterns saved under Administrator → Naming. Before, the wizard used the built-in defaults even when the patterns had been changed. A certificate issued by the wizard is now attached to the server policy it creates, which serves HTTPS with it. The wizard also checks during planning that the line's Web Protection Profile exists on the device. If the profile is missing, the plan is blocked before any address is reserved or any DNS record or certificate is created.</p>
+<h3 id="fixed--stored-assets-no-longer-reports-never-pushed-when-the-backup-server-cannot-be-read-2026-10-03">Fixed — Stored Assets no longer reports "never pushed" when the backup server cannot be read (2026-10-03)</h3>
+<p>When the backup server is unreachable or not configured, devices now show as "unknown" with the reason. Before, they were graded "never pushed", which contradicted the page banner. Folders with more files than the summary lists now say "Showing the N newest of M files".</p>
+<h3 id="fixed--creating-and-cloning-server-policies-2026-10-03">Fixed — Creating and cloning server policies (2026-10-03)</h3>
+<p>The New Server Policy form now includes the Web Protection Profile field. Its AppID picker lists the AppID catalog for administrators. Creating the policy for real, not as a preview, assigns the chosen AppID and records the assignment in the audit log. Bulk clones keep the profile name suffix you type. The delete dialog now says that objects used only by the deleted policy are deleted with it. The preview names the real reason each kept object is kept. "Change Appliance" now opens the device map instead of returning to the same device.</p>
+<h3 id="fixed--template-rollout-and-canary-order-2026-10-03">Fixed — Template rollout and canary order (2026-10-03)</h3>
+<p>Approving a Web Protection Profile template now deploys it to FortiWeb devices only. Before, the rollout also targeted FortiADC, FortiAnalyzer and FortiAuthenticator devices visible in the Global ADOM. The canary of a template apply is now the first device you selected, as the page says. Messages that pointed at a "WPP Templates" or "Settings → Signatures" menu now name the real entries, Template Library and Administrator → Signatures.</p>
+<h3 id="fixed--config-compare-exports-appids-and-structure-2026-10-03">Fixed — Config Compare, exports, AppIDs and Structure (2026-10-03)</h3>
+<p>The Config Compare export now contains every differing field. The page still shows only the first ones. The Fleet Exceptions export now returns you to that page when nothing was selected. On the AppIDs page, unticking "First row is a header" now works, so files without a header keep their first record. Assigning a FortiWeb policy also checks that the device has that policy in SATOM's local copy of its configuration. The Structure page's firmware selector works again. It is now limited to administrators, like the menu entry that leads to it.</p>
+<h3 id="fixed--change-requests-keep-their-final-outcome-2026-10-03">Fixed — Change requests keep their final outcome (2026-10-03)</h3>
+<p>Only a <strong>draft</strong> change request can be approved now. Approving a completed,
+failed or cancelled change used to set it back to <em>approved</em>, notify the
+integrations again and re-create its rollout plan. Cancelling a completed, failed
+or already cancelled change request is also refused, so its recorded outcome
+can't be overwritten. A change that is still in progress can be cancelled as
+before.</p>
+<h3 id="fixed--postgres-ssl-tuning-works-when-the-console-runs-as-the-service-account-2026-10-03">Fixed — Postgres SSL tuning works when the console runs as the service account (2026-10-03)</h3>
+<p>Settings → Node TLS → <em>Apply protocol &amp; ciphers</em> failed on every install where
+the web application runs as the unprivileged service account, because it tried
+to switch to the <code>postgres</code> user directly. The change now goes to the privileged
+updater on the same node. The updater checks the values again, applies them and
+reloads Postgres, and the page says the request was queued. The outcome appears
+under Software Update with the other updater requests. In the container
+runtime the action is refused with an explanation.</p>
+<h3 id="fixed--installer-pins-every-service-to-a-custom-service-account-2026-10-03">Fixed — Installer pins every service to a custom service account (2026-10-03)</h3>
+<p>With a custom service account (<code>SATOM_APP_USER</code>), the installer now applies the
+account to every SATOM service except the updater. It reads the service list from
+the shipped unit templates, as the self-update runner does. Previously the
+integration hook runner kept the default account until the first update, so hooks
+did not run on those installs.</p>
+<h3 id="fixed--concept-map-links-to-global-only-pages-2026-10-03">Fixed — Concept Map links to Global-only pages (2026-10-03)</h3>
+<p>From a product ADOM, the Concept Map listed SATOM Health, Infrastructure Health
+and Encryption Posture, but opening them redirected back to the device pages.
+These links now open in the Global ADOM, where the pages actually load.</p>
+<h3 id="fixed--smaller-interface-corrections-2026-10-03">Fixed — Smaller interface corrections (2026-10-03)</h3>
+<ul>
+<li>The "/" key now opens Search from any page that shows the top-bar search
+  button, as the button's tooltip says. On the Search page it still focuses the
+  search box.</li>
+<li>The infrastructure health card no longer shows internal host names. It
+  uses the labels "Git repository" and "Backup server", and when the backup
+  server isn't configured it points to <strong>Settings → Source of Truth &amp; Backup →
+  Backup Server</strong>, linked for administrators.</li>
+<li>Scheduled Actions shows a <strong>missed</strong> badge when a run was skipped because it
+  was overdue and catch-up is off. The <strong>running</strong> badge now shows while an
+  action is actually running.</li>
+<li>The profile page no longer accepts a hidden password-change submission.
+  Passwords are changed in Settings → My Account.</li>
+<li>The installer's standby hint now points to High Availability → Add node.</li>
+<li><code>satom show sudoers</code> no longer mentions a <code>config</code> command group that doesn't
+  exist.</li>
+</ul>
+<h3 id="fixed--global-search-filters-now-apply-2026-10-03">Fixed — Global Search filters now apply (2026-10-03)</h3>
+<p>The Appliance and Object Type selectors on Global Search were ignored: every search swept every visible appliance and every object collection. The results page now searches only the chosen appliance and only the chosen object type (server policies, virtual servers, pools, protection profiles or exceptions; on FortiADC the matching virtual-server, pool and WAF-profile collections), and the refine box on the results page keeps both filters.</p>
+<h3 id="fixed--analytics-boards-creating-and-editing-from-the-page-2026-10-03">Fixed — Analytics boards: creating and editing from the page (2026-10-03)</h3>
+<p>"Create board" used to leave the browser on a raw JSON response. It now opens the new board. Custom boards also gain an "Edit board" form for the title, description, default range and auto-refresh; built-in boards stay read-only and keep their Duplicate button.</p>
+<h3 id="fixed--new-probes-follow-the-three-minute-sweep-2026-10-03">Fixed — New probes follow the three-minute sweep (2026-10-03)</h3>
+<p>New deep-monitor and Service Monitor probes defaulted to a 5-minute interval, which under the 3-minute sweep actually ran every 6 minutes. The add-probe form, HTTPS policy discovery and new probes created without an interval now default to 3 minutes. The scheduled-action description and the documentation now state the 3-minute cadence consistently. Existing probes keep their configured interval.</p>
+<h3 id="fixed--fortiadc-response-time-series-no-longer-pose-as-per-service-data-2026-10-03">Fixed — FortiADC response-time series no longer pose as per-service data (2026-10-03)</h3>
+<p>FortiADC's device-wide client RTT, server RTT and application response time were stored under the per-policy metric names, so the Service drill-down appeared to cover FortiADC virtual servers while its RTT panels never matched one. They are now stored as <code>satom_adc_client_rtt_ms</code>, <code>satom_adc_server_rtt_ms</code> and <code>satom_adc_app_response_ms</code>. Custom panels that queried the old names for FortiADC need to switch to the new ones. History already recorded under the old names stays where it is.</p>
+<h3 id="fixed--monitoring-reports-show-the-fleet-metrics-section-2026-10-03">Fixed — Monitoring reports show the fleet metrics section (2026-10-03)</h3>
+<p>Period reports already computed a fleet section from the metrics store (min / average / maximum per device and metric, policies that were down, and collectors that failed), but only the JSON export showed it. The report page, the plain-text and e-mail body, and the CSV export now include it. If the metrics store could not be reached, the report says so rather than showing empty figures.</p>
+<h3 id="fixed--fortiadc-api-console-method-selector-2026-10-03">Fixed — FortiADC API console method selector (2026-10-03)</h3>
+<p>The method list now sends the real HTTP verb whatever the interface language. In a translated interface DELETE used to be sent as the translated word, which bypassed the write permission check and reached the device as an unknown verb; the server now refuses any method it does not know. PATCH, which the server already accepted, is offered in the list.</p>
+<h3 id="fixed--fortianalyzer-api-console-status-2026-10-03">Fixed — FortiAnalyzer API console status (2026-10-03)</h3>
+<p>The console reports the device's JSON-RPC status code and error instead of always saying 200.</p>
+<h3 id="fixed--fortiadc-object-editor-2026-10-03">Fixed — FortiADC object editor (2026-10-03)</h3>
+<p>The first member of an empty pool can be added from the form: the add-row form now shows the required fields (such as the real server) instead of only the name. Registry edits now reach the FortiADC editor and sidebar in every worker within a minute, not only in the worker that served the edit, and no longer need a restart.</p>
+<h3 id="fixed--fortianalyzer-device-manager-adom-2026-10-03">Fixed — FortiAnalyzer Device Manager ADOM (2026-10-03)</h3>
+<p>Authorize and Delete in the Device Manager now run in the FortiAnalyzer ADOM you enter in the dialog (default <code>root</code>) instead of always targeting <code>root</code>. The Devices tab no longer carries an "Add Device" label or an Edit button that could never be used.</p>
+<h3 id="fixed--transaction-tracer-legs-permissions-and-correlation-2026-10-03">Fixed — Transaction tracer: legs, permissions and correlation (2026-10-03)</h3>
+<p>A user without the free-target permission could not run any trace: the panel
+always declared the backend leg as a free target, even when the backend field
+was empty, so every request was refused while the message claimed inventory
+destinations remained available. The permission is now checked only for the
+legs actually traced, and the backend field is disabled for users who cannot
+use it.</p>
+<p>A backend typed as <code>host:port</code> without a scheme was traced over HTTPS on any
+port other than 80. It is now HTTPS only on 443 and 8443 and plain HTTP
+otherwise; type <code>https://</code> to force TLS. The inventory picker for leg A is now
+labelled as what it is, the appliance's management address, and dials the
+port recorded in the inventory instead of always 443. Leg B lists only
+FortiWeb devices (it reads FortiWeb server policies); any other kind is
+refused with a clear message instead of a read failure. Attack-log
+correlation now matches on the address the tracer left from, which is what
+the appliance logs as the source, instead of the destination it dialled.</p>
+<h3 id="fixed--certificate-inspector-key-passphrase-and-sni-fields-2026-10-03">Fixed — Certificate inspector: key passphrase and SNI fields (2026-10-03)</h3>
+<p>An encrypted private key always ended in "supply its passphrase" because the
+panel had nowhere to type one. The Paste tab now has a passphrase field and
+the Probe tab an optional SNI / hostname field.</p>
+<h3 id="fixed--lua-studio-a-real-deploy-without-a-target-2026-10-03">Fixed — Lua Studio: a real deploy without a target (2026-10-03)</h3>
+<p>Confirming a real deploy on a script with no target appliance returned the
+dry-run plan and marked the script "deployed" although nothing was sent. It is
+now refused with a message asking for a target, and the script keeps its
+status.</p>
+<h3 id="fixed--plugin-drafts-and-the-studio-menus-follow-the-studio-permissions-2026-10-03">Fixed — Plugin drafts and the Studio menus follow the Studio permissions (2026-10-03)</h3>
+<p>Draft and testing custom views, and the editor's live preview, required full
+administrator capability instead of the Plugin Studio permission, so an author
+given only that permission could not preview their own work. They now follow
+<code>studio.plugin_studio</code>.</p>
+<p>In the Global ADOM the Studio entries (Python Console, Plugin Studio, Lua
+Studio) were nested inside the Administrator group, invisible to anyone
+without user management. They now have their own Studio group, and every
+Studio link in every ADOM is shown only to holders of its own permission, so
+no menu entry answers 403.</p>
+<h3 id="fixed--regex-lab-rewrite-preview-numbering-2026-10-03">Fixed — Regex lab rewrite preview numbering (2026-10-03)</h3>
+<p>The rewrite preview treated <code>$0</code> as the whole match, while FortiWeb and
+FortiADC number replacement captures from zero (<code>$0</code> is the first <code>( … )</code>
+group). The preview, the examples, the cheat sheet and the group labels now
+use the appliance numbering, and a reference to a group the pattern does not
+have says so. Rewrite strings written for the old preview (<code>$1</code> for the first
+group) need to be shifted down by one.</p>
+<h3 id="removed--unused-firmware-upload-api-and-template-2026-10-03">Removed — Unused firmware upload API and template (2026-10-03)</h3>
+<p>The chunked, resumable firmware upload endpoints, which no page used, have been removed together with an unused Backups page template. Firmware uploads keep working as before and continue in the background while you navigate.</p>
+<h3 id="removed--legacy-deployinstallsh-2026-10-03">Removed — Legacy <code>deploy/install.sh</code> (2026-10-03)</h3>
+<p>The old development bootstrap script has been removed. It installed the
+application service as root on all interfaces with a SQLite database, which
+contradicts the privilege model and the PostgreSQL-only runtime. Use
+<code>installers/install-satom.sh</code> (or the guided <code>satom-setup.sh</code>) instead.</p>
+<h3 id="removed--unused-analysis-dashboard-template-2026-10-03">Removed — Unused Analysis dashboard template (2026-10-03)</h3>
+<p>An old Analysis dashboard template was still shipped, though no page used it (its address already redirects to Analysis). It has been removed.</p>
+<h3 id="removed--firmware-and-backups-pages-in-the-fortiadc-and-fortiauthenticator-workspaces-2026-10-03">Removed — Firmware and Backups pages in the FortiADC and FortiAuthenticator workspaces (2026-10-03)</h3>
+<p>The firmware library is no longer reachable from the FortiADC and FortiAuthenticator workspaces, and the backup vault is no longer reachable from the FortiAuthenticator workspace: neither menu linked them and no path can flash or back up those devices with them. The links that pointed there are hidden.</p>
+<h3 id="removed--unused-ai-advisor-attachment-endpoint-2026-10-03">Removed — Unused AI Advisor attachment endpoint (2026-10-03)</h3>
+<p>The <code>/advisor/attach/sot-search</code> endpoint, which no page called, is removed.
+The advisor model keeps its configuration search tool.</p>
+<h3 id="security--document-translation-honours-allow-external-providers-for-remote-ollama-2026-10-03">Security — document translation honours "Allow external providers" for remote Ollama (2026-10-03)</h3>
+<p>Translating a change-request document decided whether the AI provider leaves
+the network from its kind alone, so an Ollama provider on a public host was
+treated as local: no "Allow external providers" check and no external flag on
+the run. It now uses the same rule as the AI Advisor: only a base URL whose
+host is loopback, link-local or private counts as local.</p>
+<h3 id="fixed--delete-confirmations-that-never-asked-2026-10-03">Fixed — delete confirmations that never asked (2026-10-03)</h3>
+<p>Deleting a process, a change type or a WAF artifact version asked for
+confirmation through an inline handler that the page's Content Security
+Policy blocks, so the delete went through without asking. These forms now use
+the standard confirmation, and two more inline handlers (a CLI-coverage
+evidence selector and the copy badge in the problem-report inbox) were moved
+to the same mechanism. A test now refuses any inline event handler in a
+template.</p>
+<h3 id="fixed--naming-page-in-the-global-adom-2026-10-03">Fixed — Naming page in the Global ADOM (2026-10-03)</h3>
+<p>Administration → Naming answered with an error page when opened from the
+Global ADOM.</p>
+<h3 id="fixed--log-collection-link-for-read-only-users-2026-10-03">Fixed — Log Collection link for read-only users (2026-10-03)</h3>
+<p>The FortiWeb sidebar offered Log Collection to read-only users, who then got
+an access-denied page: collecting logs needs edit rights. The entry now shows
+only to users who can open it.</p>
+<h3 id="security--device-content-pages-need-a-view-permission-the-menu-follows-the-routes-2026-10-03">Security — device-content pages need a view permission; the menu follows the routes (2026-10-03)</h3>
+<p>A custom profile with no permissions could still open the FortiWeb workspace
+(server policies), protection pages, exceptions, WAF artifacts, server
+objects, the FortiADC / FortiAnalyzer / FortiAuthenticator pages, the API
+registry, Sentinel and the network tools, because those pages only required a
+signed-in session. The Global home also listed every appliance with its
+address. Each of these now requires the matching <em>view</em> key
+(Web Protection, API Registry, Monitoring, Network or the general view), and
+the home lists appliances only with <em>View appliances</em>. The seeded readonly,
+operator and admin profiles hold all of these keys, so nothing changes for
+them.</p>
+<p>The sidebar, the top-bar search and the home shortcuts now ask the page's own
+permission before showing a link, so a profile is never offered a page that
+then refuses it.</p>
+<h3 id="fixed--firmware-and-failover-buttons-lua-studio-deploy-refusals-2026-10-03">Fixed — firmware and failover buttons, Lua Studio deploy refusals (2026-10-03)</h3>
+<p>The Upgrade, Boot Partition and HA Failover buttons on the appliance pages were
+shown to anyone with an edit permission, but those pages need <em>Apply appliance
+changes</em>; they now show only to users who can open them. Lua Studio showed an
+empty red "Deploy result" when a deploy was refused (no target appliance, or
+the script failed lint); it now shows the reason.</p>
 <h2 id="2101---2026-10-03">[2.10.1] - 2026-10-03</h2>
 <h3 id="fixed--stop-did-not-stop-a-running-deep-capture-2026-10-03">Fixed — Stop did not stop a running deep capture (2026-10-03)</h3>
 <p>Pressing <strong>Stop</strong> while a rediscovery was in its deep pass (<em>Capture full WPP

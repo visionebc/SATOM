@@ -141,3 +141,131 @@ def test_wrong_product_token_cannot_run(app, client):
     r = client.post(f"/api/v1/actions/{aid}/run", headers=_auth(plaintext))
     assert r.status_code == 403
     assert r.get_json()["error"] == "wrong_product"
+
+
+# ------------------------------------------- external approval (audit AU-07)
+
+def _ext_cr(app, *, mode="external", status="approved", kind="fortiweb"):
+    import json as _json
+    from app.extensions import db
+    from app.models import Appliance, ChangeRequest
+    with app.app_context():
+        a = Appliance(name=f"ext-{kind}-{mode}-{status}", kind=kind,
+                      host="192.0.2.50", username="admin", password_enc="x")
+        db.session.add(a)
+        db.session.commit()
+        now = datetime.utcnow()
+        cr = ChangeRequest(title="ext", status=status, action="device_sync",
+                           approval_mode=mode, device_ids=_json.dumps([a.id]),
+                           window_start=now - timedelta(minutes=5),
+                           window_end=now + timedelta(hours=1))
+        db.session.add(cr)
+        db.session.commit()
+        return cr.id
+
+
+def _cr(app, cid):
+    from app.extensions import db
+    from app.models import ChangeRequest
+    with app.app_context():
+        cr = db.session.get(ChangeRequest, cid)
+        return cr.external_approved_at, cr.external_approved_by
+
+
+def _url(cid):
+    return f"/api/v1/change-requests/{cid}/external-approval"
+
+
+def test_an_admin_token_records_and_withdraws_an_external_approval(app, client):
+    from app.models import AuditLog
+    from app.services import change_requests as svc
+    cid = _ext_cr(app)
+    _pid, tok = _mint(app, owner_id=admin_user_id(app), scopes=["admin"])
+    r = client.post(_url(cid), json={"approved": True, "by": "CAB",
+                                     "detail": "CHG-7"}, headers=_auth(tok))
+    assert r.status_code == 200, r.get_json()
+    at, by = _cr(app, cid)
+    assert at is not None and by == "api:CAB"
+    with app.app_context():
+        from app.extensions import db
+        from app.models import ChangeRequest
+        ok, why = svc.cr_runnable(db.session.get(ChangeRequest, cid))
+        assert ok, why
+        assert AuditLog.query.filter_by(
+            action="api.change_request.external_approval").count() == 1
+    r = client.post(_url(cid), json={"approved": False}, headers=_auth(tok))
+    assert r.status_code == 200
+    assert _cr(app, cid)[0] is None
+
+
+def test_external_approval_needs_the_admin_scope(app, client):
+    cid = _ext_cr(app)
+    _pid, tok = _mint(app, owner_id=admin_user_id(app), scopes=["write"])
+    r = client.post(_url(cid), json={"approved": True}, headers=_auth(tok))
+    assert r.status_code == 403
+    assert _cr(app, cid)[0] is None
+
+
+def test_external_approval_token_owner_needs_user_manage(app, client):
+    from tests.conftest import profile_id
+    cid = _ext_cr(app)
+    op = make_user(app, username="opx", role="operator",
+                   profile_id=profile_id(app, "operator"))
+    _pid, tok = _mint(app, owner_id=op, scopes=["admin"])
+    r = client.post(_url(cid), json={"approved": True}, headers=_auth(tok))
+    assert r.status_code == 403
+    assert _cr(app, cid)[0] is None
+
+
+def test_a_manual_or_closed_change_refuses_an_external_verdict(app, client):
+    from app.models import AuditLog
+    _pid, tok = _mint(app, owner_id=admin_user_id(app), scopes=["admin"])
+    for kw in ({"mode": "manual"}, {"status": "completed"}):
+        cid = _ext_cr(app, **kw)
+        r = client.post(_url(cid), json={"approved": True}, headers=_auth(tok))
+        assert r.status_code == 409, kw
+        assert _cr(app, cid)[0] is None
+    with app.app_context():
+        assert AuditLog.query.filter_by(
+            action="api.change_request.external_approval_refused").count() == 2
+
+
+def test_external_approval_requires_a_boolean(app, client):
+    cid = _ext_cr(app)
+    _pid, tok = _mint(app, owner_id=admin_user_id(app), scopes=["admin"])
+    r = client.post(_url(cid), json={"approved": "yes"}, headers=_auth(tok))
+    assert r.status_code == 400
+    assert _cr(app, cid)[0] is None
+
+
+def test_a_change_in_another_adom_is_not_found(app, client):
+    cid = _ext_cr(app, kind="fortiadc")
+    _pid, tok = _mint(app, owner_id=admin_user_id(app), scopes=["admin"],
+                      product="fortiweb")
+    r = client.post(_url(cid), json={"approved": True}, headers=_auth(tok))
+    assert r.status_code == 404
+    assert _cr(app, cid)[0] is None
+
+
+def test_the_console_records_an_external_verdict_by_hand(app, client):
+    from tests.conftest import login, profile_id
+    cid = _ext_cr(app)
+    op = make_user(app, username="opy", role="operator",
+                   profile_id=profile_id(app, "operator"))
+    login(client, op)
+    client.post(f"/change-requests/{cid}/external-approval",
+                data={"decision": "approve"})
+    assert _cr(app, cid)[0] is None
+    login(client, admin_user_id(app))
+    page = client.get(f"/change-requests/{cid}").get_data(as_text=True)
+    import re
+    assert re.search(r'action="[^"]*/change-requests/%d/external-approval"' % cid, page)
+    r = client.post(f"/change-requests/{cid}/external-approval",
+                    data={"decision": "approve", "detail": "phone"})
+    assert r.status_code == 302
+    at, by = _cr(app, cid)
+    assert at is not None and by.endswith("(by hand)")
+    manual = _ext_cr(app, mode="manual")
+    client.post(f"/change-requests/{manual}/external-approval",
+                data={"decision": "approve"})
+    assert _cr(app, manual)[0] is None

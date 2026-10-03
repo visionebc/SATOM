@@ -1198,6 +1198,39 @@ def cancel(id):
     return redirect(_after(id))
 
 
+@bp.route('/<int:id>/external-approval', methods=['POST'])
+@login_required
+@require_permission(Permission.USER_MANAGE)
+def external_approval(id):
+    """Record the external authority's verdict BY HAND (the integration path is
+    POST /api/v1/change-requests/<id>/external-approval). For a change board
+    that answers by e-mail or phone; attributed to the person and audited."""
+    from ..services import cr_orchestrator as orch
+    cr = _cr_in_scope_or_404(id)
+    decision = (request.form.get('decision') or '').strip()
+    note = (request.form.get('detail') or '').strip()[:500]
+    if (cr.approval_mode or 'manual') != 'external':
+        flash('This change is approved in SATOM, not externally. Nothing was '
+              'recorded.', 'warning')
+        return redirect(_after(id))
+    if cr.status in ChangeRequest.TERMINAL:
+        flash(f'This change is already {cr.status}. Nothing was recorded.',
+              'warning')
+        return redirect(_after(id))
+    if decision not in ('approve', 'withdraw'):
+        flash('Choose approve or withdraw. Nothing was recorded.', 'warning')
+        return redirect(_after(id))
+    approved = decision == 'approve'
+    orch.record_external_approval(
+        cr, approved=approved, by=f'{current_user.username} (by hand)'[:64],
+        detail=note)
+    log_action('change_request.external_approval', target=cr.title,
+               detail=f"approved={approved} note={note or '-'}")
+    flash('External approval recorded.' if approved
+          else 'External approval withdrawn.', 'success')
+    return redirect(_after(id))
+
+
 @bp.route('/<int:id>/close-by-hand', methods=['POST'])
 @login_required
 @require_permission(Permission.USER_MANAGE)

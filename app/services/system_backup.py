@@ -534,14 +534,19 @@ def peer_inventory(host: str, timeout: float = 2.5) -> dict:
     cluster._probe_peer) so the admin sees what the backup server / standby
     actually holds — no SSH needed. Best-effort: unreachable → reachable=False."""
     import json as _json
-    import urllib.request
+    from . import node_security
     out = {"reachable": False, "host": host, "bundles": [], "vault": None}
     if not host or host == "127.0.0.1":
         return out
     try:
-        with urllib.request.urlopen(f"http://{host}:8000/healthz/backups",
-                                    timeout=timeout) as r:
-            data = _json.loads(r.read().decode("utf-8", "replace"))
+        # Through the node vhost (:8443, the installer always provisions it),
+        # like every other peer probe. Plain :8000 is loopback-only now, so
+        # the old direct http://peer:8000 call would always read "unreachable".
+        status, body, _secure = node_security.peer_get(host, "/healthz/backups",
+                                                       timeout=timeout)
+        if status != 200:
+            return out
+        data = _json.loads(body.decode("utf-8", "replace"))
         out.update(reachable=True,
                    bundles=data.get("bundles") or [],
                    vault=data.get("vault"))

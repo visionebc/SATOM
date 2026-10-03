@@ -10,6 +10,7 @@ from flask_login import login_required, current_user
 
 from .. import permissions as perm
 from ..auth.decorators import require_permission
+from ..auth.password_policy import password_problem
 from ..models import Appliance, db, Permission, Profile, User
 from ..services import access
 from ..services.audit import log_action
@@ -88,6 +89,9 @@ def create():
 
     if not username or not password:
         flash('Username and password are required.', 'danger')
+        return redirect(url_for('users.index'))
+    if password_problem(password):
+        flash(password_problem(password), 'danger')
         return redirect(url_for('users.index'))
     if confirm and confirm != password:
         flash('Passwords do not match.', 'danger')
@@ -213,8 +217,8 @@ def reset_password(id):
     User = _get_user_model()
     user = User.query.get_or_404(id)
     new_password = request.form.get('new_password', '')
-    if not new_password:
-        flash('New password is required.', 'danger')
+    if password_problem(new_password):
+        flash(password_problem(new_password), 'danger')
         return redirect(url_for('users.index'))
     user.set_password(new_password)
     db.session.commit()

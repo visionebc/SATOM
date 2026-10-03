@@ -4847,7 +4847,7 @@
               <div class="mb-3">
                 <label class="fw-form-label">{{ _('New Password') }} <span class="text-danger">*</span></label>
                 <input type="password" name="new_password" class="form-control fw-form-control"
-                       id="newPwd" placeholder="{{ _('At least 8 characters') }}" required autocomplete="new-password">
+                       id="newPwd" placeholder="{{ _('At least 8 characters') }}" required minlength="8" autocomplete="new-password">
                 <div class="mt-2" id="pwd-strength-bar" style="height:4px; border-radius:2px; background:#E9ECEF; overflow:hidden;">
                   <div id="pwd-strength-fill" style="height:100%; width:0; transition:width 0.3s, background 0.3s;"></div>
                 </div>

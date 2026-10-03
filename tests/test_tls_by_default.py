@@ -181,6 +181,19 @@ def test_the_simple_installer_does_not_publish_gunicorn_to_the_network():
     )
 
 
+def test_the_shipped_unit_binds_gunicorn_to_loopback():
+    """deploy/satom.service is what every self-update copies over the installed
+    unit. It used to say 0.0.0.0 and rely on install-satom.sh's sed, which no
+    update re-applies -- so after the first update gunicorn answered plain
+    HTTP on every interface, beside nginx (audit TR-01, 2026-10-03)."""
+    body = read(ROOT / "deploy" / "satom.service")
+    binds = re.findall(r"--bind\s+(\S+)", body)
+    assert binds, "deploy/satom.service no longer binds gunicorn -- guard inspected nothing"
+    assert all(b.startswith("127.0.0.1:") for b in binds), (
+        "deploy/satom.service publishes gunicorn on %s; the update path copies "
+        "this file verbatim, so it must be loopback already." % binds)
+
+
 # ---------------------------------------------------------------------------
 # 2. They provision the SAME TLS
 # ---------------------------------------------------------------------------

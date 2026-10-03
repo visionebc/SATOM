@@ -18,12 +18,17 @@
       <div class="card-header fw-card-header">{{ _('Presets') }}</div>
       <div class="list-group list-group-flush">
         {% for label, cmd in presets.items() %}
+        {% if current_user.can('appliances.apply') %}
         <button class="list-group-item list-group-item-action small console-preset" data-cmd="{{ cmd }}">{{ label }}</button>
+        {% else %}
+        <div class="list-group-item small" title="{{ cmd }}">{{ label }} <code class="d-block text-muted">{{ cmd }}</code></div>
+        {% endif %}
         {% endfor %}
       </div>
     </div>
   </div>
   <div class="col-md-9">
+    {% if current_user.can('appliances.apply') %}
     <div class="input-group mb-2">
       <span class="input-group-text">$</span>
       <input id="console-cmd" type="text" class="form-control" autocomplete="off" spellcheck="false"
@@ -31,9 +36,15 @@
       <button id="console-run" class="btn fw-btn-primary">{{ _('Run') }}</button>
     </div>
     <pre id="console-out" class="fw-console mb-0">Output will appear here…</pre>
+    {% else %}
+    <div class="fw-alert fw-alert-info small mb-0" id="console-readonly">
+      <i class="bi bi-eye me-1"></i>{{ _('You can see this appliance and its preset commands, but running a command (even a read-only one) needs the "Run appliance actions" permission. Ask an administrator if you need it.') }}
+    </div>
+    {% endif %}
   </div>
 </div>
 
+{% if current_user.can('appliances.apply') %}
 <script nonce="{{ csp_nonce }}">
 (function() {
   const token = document.querySelector('meta[name="csrf-token"]').content;
@@ -65,4 +76,5 @@
     b.addEventListener('click', () => { inp.value = b.dataset.cmd; run(); }));
 })();
 </script>
+{% endif %}
 {% endblock %}

@@ -79,7 +79,9 @@ GRANULAR_PERMISSIONS: list[dict] = [
 
     _p("backups.view", "View backups", "List existing backups"),
     _p("backups.create", "Create backups", "Download configuration backups"),
-    _p("backups.restore", "Restore backups", "Import/restore a configuration backup"),
+    _p("backups.restore", "Restore backups",
+       "Import Backup (offline parser) and, together with Manage users, the "
+       "appliance Restore page (vault and live config restore)"),
 
     _p("registry.view", "View registry", "Browse the endpoint registry & API explorer"),
     _p("registry.edit", "Edit registry", "Modify the endpoint registry"),

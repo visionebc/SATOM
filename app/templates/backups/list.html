@@ -35,6 +35,7 @@
     <a href="{{ url_for('backups.index') }}" class="btn btn-secondary btn-sm">
       <i class="bi bi-chevron-left me-1"></i>{{ _('Back') }}
     </a>
+    {% if current_user.can('backup') %}
     <button type="button" class="btn btn-fw-outline btn-sm" id="btn-show-upload">
       <i class="bi bi-upload me-1"></i>{{ _('Upload .conf') }}
     </button>
@@ -57,6 +58,7 @@
         <i class="bi bi-plus-lg me-1"></i>{{ _('Create Backup') }}
       </button>
     </form>
+    {% endif %}
   </div>
 </div>
 
@@ -67,6 +69,7 @@
 {% endif %}
 
 <!-- Upload panel (hidden by default) -->
+{% if current_user.can('backup') %}
 <div class="fw-card mb-3" id="upload-panel" style="display:none;">
   <div class="fw-card-body">
     <form method="POST" action="{{ url_for('backups.upload_backup', id=appliance.id) if appliance else '#' }}"
@@ -89,6 +92,7 @@
     </div>
   </div>
 </div>
+{% endif %}
 
 <!-- Stats -->
 <div class="row g-3 mb-4">
@@ -161,10 +165,13 @@
           <td><span style="font-size:12px;" class="text-muted">{{ b.firmware or '—' }}</span></td>
           <td><span style="font-size:12px;" class="text-muted">{{ b.created_by or '—' }}</span></td>
           <td class="actions-col">
+            {% if current_user.can('backups.create') %}
             <a href="{{ url_for('backups.download_backup', id=appliance.id, backup_id=b.id) if appliance else '#' }}"
                class="btn btn-sm btn-fw-outline btn-sm-icon me-1" title="{{ _('Download') }}">
               <i class="bi bi-download"></i>
             </a>
+            {% endif %}
+            {% if current_user.can('backup') %}
             <form method="POST"
                   action="{{ url_for('backups.delete_backup', id=appliance.id, backup_id=b.id) if appliance else '#' }}"
                   style="display:inline;"
@@ -174,6 +181,7 @@
                 <i class="bi bi-trash"></i>
               </button>
             </form>
+            {% endif %}
           </td>
         </tr>
         {% endfor %}
@@ -184,12 +192,14 @@
               <div class="fw-empty-state-icon"><i class="bi bi-cloud"></i></div>
               <div class="fw-empty-state-title">{{ _('No backups in the vault') }}</div>
               <div class="fw-empty-state-text">{{ _('Create a backup to pull the appliance configuration into the vault, or upload a .conf.') }}</div>
+              {% if current_user.can('backup') %}
               <form method="POST" action="{{ url_for('backups.create_backup', id=appliance.id) if appliance else '#' }}" class="mt-2">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="btn btn-fw-primary">
                   <i class="bi bi-plus-lg me-1"></i>{{ _('Create First Backup') }}
                 </button>
               </form>
+              {% endif %}
             </div>
           </td>
         </tr>

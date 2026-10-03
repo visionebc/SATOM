@@ -40,8 +40,9 @@ offline installer bundle to carry:
 
 - **`ollama`** — a local Ollama endpoint. The safe default: traffic never
   leaves the LAN, so it needs no API key and no "allow external" flag. A
-  provider named `ollama-local` is seeded automatically the first time the
-  page is opened.
+  provider named `ollama-local` (base URL `http://localhost:11434`) is seeded
+  **disabled** the first time the page is opened; nothing is sent to it until
+  an admin edits it in Settings → AI Advisor and saves it, which enables it.
 - **`openai`** — any **OpenAI-compatible** HTTP endpoint: OpenAI itself, or a
   gateway you control (Azure OpenAI behind a proxy, LiteLLM, vLLM with an
   API-key front door). `base_url` and `model` are configured per provider,

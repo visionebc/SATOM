@@ -263,7 +263,7 @@ than installing an application that cannot start.
   first). Roles: standalone, primary, standby — a standby needs Docker Compose
   ≥ 2.24.4. Update by re-running the script; `--uninstall` stops the stack and
   keeps the data, `--uninstall --purge` deletes it. **The Docker variant
-  disables the four host-only web actions** — Software Update & HA,
+  disables the five host-only web actions** — Software Update, HA promotion,
   service control, certificate activation and systemd unit health (§2.3,
   `app/runtime.py`); if you need them, install natively. Every `SETUP_*`
   variable of this mode, the files it writes and how to operate the result:
@@ -412,8 +412,8 @@ instead of shipping them broken — **unless the optional operations agent is
 enabled**. The agent (`deploy/docker/compose.agent.yaml`, off by default) is
 one extra container that holds the Docker socket; the web only drops a request
 into a volume, and the agent re-validates it against a closed list and does the
-work. With it, the four come back in the console under **System → Container
-operations**:
+work. With it, four of the five come back in the console under **System → Container
+operations** (HA promotion stays refused):
 
 | capability | without the agent | with the agent (System → Container operations) |
 |---|---|---|

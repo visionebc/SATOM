@@ -5,8 +5,8 @@
 <meta charset="UTF-8">
 <script>(function(){var d=document.documentElement;d.className+=" js";setTimeout(function(){if(!window.__satomReveal){d.className=d.className.replace(" js","");}},2500);try{var t=localStorage.getItem("satom.site.theme");if(t==="aurora"||t==="abyss"||t==="classic"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Version 2.2.0 — SATOM</title>
-<meta name="description" content="Released on 2026-09-26 — Added — a versioned API library for every product (2026-09-25) · 13 entries.">
+<title>Version 2.10.1 — SATOM</title>
+<meta name="description" content="Released on 2026-10-03 — Fixed — Stop did not stop a running deep capture (2026-10-03) · 0 entries.">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
@@ -45,8 +45,8 @@
 
 <header class="page wrap">
   <p class="eyebrow"><a href="../releases.html" style="color:inherit;text-decoration:none;">← Release notes</a></p>
-  <h1>Version 2.2.0 <span class="rel-badge">superseded</span></h1>
-  <p class="sub">Released on 2026-09-26 — Added — a versioned API library for every product (2026-09-25) · 13 entries.</p>
+  <h1>Version 2.10.1 <span class="rel-badge rel-now">current release</span></h1>
+  <p class="sub">Released on 2026-10-03 — Fixed — Stop did not stop a running deep capture (2026-10-03) · 0 entries.</p>
 </header>
 
 <section class="wrap">
@@ -62,7 +62,7 @@
         <span class="rel-nav-meta">unreleased · Changes · 0 entries</span>
         <ul class="rel-leads"></ul>
       </a>
-      <a class="rel-nav-item" href="v2.10.1.html" data-rel-version="2.10.1">
+      <a class="rel-nav-item is-active" href="v2.10.1.html" data-rel-version="2.10.1">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 2.10.1</span><span class="rel-nav-tag rel-nav-cur">current</span></span>
         <span class="rel-nav-meta">2026-10-03 · Fixed — Stop did not stop a running deep capture (2026-10-03) · 0 entries</span>
         <ul class="rel-leads"></ul>
@@ -117,7 +117,7 @@
         <span class="rel-nav-meta">2026-09-26 · Fixed · 14 entries</span>
         <ul class="rel-leads"><li>System → Container operations</li><li>What the agent accepts</li><li>Certificate import reloads the proxy, it never restarts it</li><li class="rel-more">… and 11 more</li></ul>
       </a>
-      <a class="rel-nav-item is-active" href="v2.2.0.html" data-rel-version="2.2.0">
+      <a class="rel-nav-item" href="v2.2.0.html" data-rel-version="2.2.0">
         <span class="rel-nav-head"><span class="rel-nav-v">Version 2.2.0</span></span>
         <span class="rel-nav-meta">2026-09-26 · Added — a versioned API library for every product (2026-09-25) · 13 entries</span>
         <ul class="rel-leads"><li>Five products</li><li>flask apilib</li><li>The API versions page covers every product</li><li class="rel-more">… and 10 more</li></ul>
@@ -340,84 +340,24 @@
     </aside>
     <div class="doc-body">
       <div class="mdx">
-<h3 id="added--a-versioned-api-library-for-every-product-2026-09-25">Added — a versioned API library for every product (2026-09-25)</h3>
-<p>SATOM now keeps an <strong>API library</strong>: an append-only record, in the database, of
-which endpoints and fields each firmware build serves, with every fact
-traceable to the evidence it came from. Evidence is stored once with a content
-hash and never rewritten; re-harvesting the same content only confirms it.
-Facts are kept per (field, build, source), so the library grows with the
-number of builds, not the number of sweeps. Reference:
-<a href="../docs/api-library.html"><code>docs/api-library.md</code></a>.</p>
-<ul>
-<li><strong>Five products.</strong> FortiWeb (sweeps and harvested schemas), FortiADC (sweeps
-  and the frozen pre-build-axis matrix), FortiAuthenticator (its own API
-  schema, read live and GET-only: 58 resources and 316 fields on 8.0.3),
-  FortiAnalyzer and FortiGate. The last two come from the vendor's Ansible
-  collections: <code>fortinet.fortianalyzer</code> 1.10.0 gives 202 endpoints and 2,275
-  fields across 56 builds (6.2.1 – 7.6.4), and <code>fortinet.fortios</code> 2.6.0 gives
-  723 endpoints and 11,049 fields across 37 builds (6.0.0 – 8.0.0). FortiGate
-  is catalog-only: SATOM does not manage it. Vendor data is labelled
-  <code>vendor_doc</code>, never outranks a measurement of a real box, and an open vendor
-  range stops at the newest build the collection knows about. The FortiWeb and
-  FortiADC collections carry no version data and are not used.</li>
-<li><strong><code>flask apilib</code></strong> — <code>backfill</code>, <code>import-vendor PATH</code>, <code>ingest-file PATH</code>,
-  <code>harvest-fac [--appliance NAME]</code> and <code>status</code>. Every command is safe to
-  re-run. To refresh vendor data, download the collection from Ansible Galaxy,
-  extract it and run <code>flask apilib import-vendor &lt;dir&gt;</code>
-  (<a href="../docs/cli.html"><code>docs/cli.md</code></a> §8).</li>
-<li><strong>The API versions page covers every product.</strong> A product selector reaches
-  FortiAuthenticator, FortiAnalyzer and FortiGate; the new <strong>Library
-  comparison</strong> compares any two builds (endpoints and fields added, removed,
-  retyped and renamed, with unknowns kept apart), and the <strong>Endpoint
-  drill-down</strong> lists a build's fields and answers <em>since which build?</em> for any
-  of them.</li>
-<li><strong>API field renames</strong> (<code>/web/registry/field-map</code>, <code>registry_edit</code>). An
-  operator can record that a firmware renamed a field, so comparisons and
-  pre-flights report a rename instead of a field lost plus one added. Mappings
-  are retired, never deleted.</li>
-<li><strong>The API explorer knows the build.</strong> It resolves the selected appliance to
-  its exact build, shows the build and its evidence in a banner, marks every
-  endpoint in the menu <code>served</code>, <code>absent</code> or <code>unknown</code>, lists the fields the
-  endpoint serves on that build, and offers <strong>Harvest this appliance now</strong> for
-  a build nobody has measured.</li>
-<li><strong>The clone dialog offers the destination's new fields.</strong> Fields the
-  destination build serves and the source's build lacks are listed with their
-  type, options and evidence. Nothing is added unless you fill a value, and
-  every value is re-checked on the server.</li>
-<li><strong>Harvests happen on their own.</strong> Every rediscovery sweep files its snapshot
-  in the library. When the firmware probe sees an appliance change build, it
-  queues one background harvest (switch: <code>APILIB_HARVEST_DISPATCH</code>, on by
-  default). A new scheduled action, <code>apilib_harvest</code>, harvests every appliance
-  whose build has no evidence; it is declared but not scheduled by default.</li>
-</ul>
-<h3 id="changed--firmware-answers-come-from-the-library-not-from-a-file-2026-09-25">Changed — firmware answers come from the library, not from a file (2026-09-25)</h3>
-<ul>
-<li>The firmware matrix, the clone and upgrade pre-flights and the API versions
-  page read the library. <code>data/api_matrix/&lt;product&gt;.json</code> is still written by
-  <strong>Rebuild</strong>, as an export for <code>satom get api versions</code> and
-  <code>satom get api preflight</code> on a node whose database is down; nothing in the
-  application reads it back.</li>
-<li>The clone and upgrade pre-flights resolve both appliances to their <strong>exact</strong>
-  builds and say which kind of evidence each answer rests on. An absence that
-  only the vendor's documentation claims is a warning; only an appliance that
-  rejected the endpoint blocks.</li>
-<li>The API explorer refuses, on the server, to send a request to an endpoint
-  the appliance's build is known not to serve, unless you confirm it. The
-  override is audited. An endpoint nobody has measured is sent with a warning.</li>
-</ul>
-<h3 id="fixed--evidence-lost-with-its-appliance-2026-09-25">Fixed — evidence lost with its appliance (2026-09-25)</h3>
-<ul>
-<li>Deleting or retiring an appliance no longer deletes the evidence for its
-  build. The 8.0.3 build, measured on two FortiADC appliances since retired,
-  had disappeared this way; <code>flask apilib backfill</code> restored it from the
-  archived snapshots.</li>
-<li>A rediscovery sweep run inside a job or a test could write the firmware
-  column, the export and the evidence into another application's database. It
-  now always writes to the database of the application running it.</li>
-<li>A sweep after a firmware check no longer overwrites the appliance's full
-  firmware string (with its build number) with the bare version.</li>
-</ul>
-<p class="rel-prevnext"><a href="v2.3.0.html">← Version 2.3.0</a> · <a href="v2.1.3.html">Version 2.1.3 →</a></p>
+<h3 id="fixed--stop-did-not-stop-a-running-deep-capture-2026-10-03">Fixed — Stop did not stop a running deep capture (2026-10-03)</h3>
+<p>Pressing <strong>Stop</strong> while a rediscovery was in its deep pass (<em>Capture full WPP
++ policy depth</em>) said "stopping after the current step" and then walked every
+remaining server policy and WPP to the end. The deep pass now checks for a
+Stop before each object and before the certificate stores, finishes the object
+it is on, and ends as <strong>Stopped</strong> with where it was (for example <em>at object
+5/23 (WPP wpp-prod)</em>). What it had walked so far is discarded and the previous
+deep capture is kept: a partial one would read as the objects it never reached
+having been deleted. The sweep snapshot written before the deep pass is kept,
+and the CLI capture that would have followed is skipped. The page now says
+"stopping after the current object" during this pass.</p>
+<h3 id="fixed--two-api-hub-tests-failed-since-the-api-pack-release-2026-10-03">Fixed — two API-hub tests failed since the API-pack release (2026-10-03)</h3>
+<p><code>test_version_scoped_pages.py</code> had two failing tests since 2.6.0: its spy on
+<code>cli_coverage.report</code> did not accept the new <code>allow_pack</code> argument, the hub
+caught the resulting <code>TypeError</code> as a section error, and the spy recorded
+nothing. The spy now forwards extra arguments. Product behaviour was not
+affected.</p>
+<p class="rel-prevnext"><a href="unreleased.html">← Unreleased — the next release</a> · <a href="v2.10.0.html">Version 2.10.0 →</a></p>
       </div>
       <div class="callout" style="margin-top:24px;">
         <span class="cico">🗒️</span>

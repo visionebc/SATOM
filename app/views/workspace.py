@@ -2,7 +2,7 @@ import re
 from urllib.parse import quote
 
 from flask import Blueprint, render_template, jsonify, request
-from flask_login import login_required
+from flask_login import current_user, login_required
 from ..auth.decorators import require_permission
 from ..models import Appliance
 from ..models import visible_appliances, visible_appliance_or_404
@@ -16,6 +16,8 @@ from ..services import policy_form
 from ..services import policy_ops
 from ..services import policy_links
 from ..services.fortiweb_ops import FortiWebOps
+from ..services import appids as appids_svc
+from ..services.audit import log_action
 from ..errors import flash_error, json_error, log_exception
 
 bp = Blueprint('workspace', __name__, url_prefix='/workspace')
@@ -291,6 +293,8 @@ def _parse_action(appliance_id):
         copy_wpp = body.get('copy_wpp')
         opts['copy_wpp'] = cfg['copy_wpp_default'] if copy_wpp is None else bool(copy_wpp)
         opts['wpp_new_name'] = (body.get('wpp_new_name') or '').strip()
+        # Bulk clones send a suffix instead of a name (one per source WPP).
+        opts['wpp_suffix'] = (body.get('wpp_suffix') or '').strip()
         vip_ip = (body.get('vip_ip') or '').strip()
         if len(policies) > 1:
             vip_ip = 'auto'   # bulk ⇒ dummy IP per the admin rules, always
@@ -800,6 +804,10 @@ def new_policy(appliance_id):
         pserver_keys=[k for k in create_skeleton_keys('pserver') if k != 'name'],
         wpp_field=descriptor('policy', 'web-protection-profile', '', {}),
         eps=_CREATE_EPS,
+        # Binding a policy to an AppID is an AppIDs-page (user_manage) action;
+        # the picker is offered only to users who could do it there.
+        appid_catalog=(appids_svc.catalog() if current_user.can('user_manage')
+                       else []),
     )
 
 
@@ -830,6 +838,17 @@ def create_policy(appliance_id):
     pname = (policy.get('name') or '').strip()
     if not pname:
         return jsonify(ok=False, error='Policy name is required'), 400
+    app_id_pk = None
+    if str(body.get('app_id_pk') or '').strip():
+        if not current_user.can('user_manage'):
+            return jsonify(ok=False, error='assigning an AppID requires the '
+                                           'user_manage permission'), 403
+        try:
+            app_id_pk = int(body.get('app_id_pk'))
+        except (TypeError, ValueError):
+            return jsonify(ok=False, error='invalid AppID'), 400
+        if appids_svc.get(app_id_pk) is None:
+            return jsonify(ok=False, error='no such AppID'), 400
     vserver_name = (body.get('vserver_name') or '').strip()
     pool_name = (body.get('pool_name') or '').strip()
     vips = body.get('vips') or []
@@ -871,4 +890,13 @@ def create_policy(appliance_id):
         if not res.ok:
             return jsonify(ok=False, applied=results,
                            error='%s failed: %s' % (label, res.get('error', ''))), 200
-    return jsonify(ok=True, dry_run=not do_apply, steps=results)
+    appid = ''
+    if do_apply and app_id_pk is not None:
+        row = appids_svc.assign(app_id_pk=app_id_pk, appliance_id=appl.id,
+                                server_policy=pname,
+                                by=getattr(current_user, 'username', '') or '')
+        appid = row.app.app_id if row.app is not None else ''
+        log_action('appid.assign', target=pname,
+                   extra={'app_id_pk': app_id_pk, 'appliance_id': appl.id})
+    return jsonify(ok=True, dry_run=not do_apply, steps=results,
+                   app_id=appid)

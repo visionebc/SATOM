@@ -1,0 +1,11 @@
+{# ============================================================================
+   API Tokens — Administrator entry, ONE definition for every admin block in
+   base.html (Documentation Center audit, 2026-10-03). It used to sit only in
+   the FortiWeb block although every ADOM whose product has ``cap_tokens``
+   mints tokens. Shown where the product says so; the page itself is gated on
+   user_manage, like the Administrator group that includes this partial.
+   ========================================================================= #}
+{% if product.cap_tokens %}
+<a class="fw-nav-item {{ 'active' if request.blueprint == 'api_tokens' else '' }}" href="{{ url_for('api_tokens.index') }}">
+  <i class="bi bi-key fw-nav-icon"></i><span>{{ _('API Tokens') }}</span></a>
+{% endif %}

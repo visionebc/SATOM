@@ -396,6 +396,15 @@ def _extract_cert_pem(out_path: str, stdout: str, stderr: str) -> str:
     return ""
 
 
+_REQUEST_ID_RE = re.compile(r"request\s*id(?:\s+is)?\s*[:=]?\s*\"?(\d{1,18})", re.IGNORECASE)
+
+
+def ca_request_id_from_log(log: str) -> str:
+    """The CA request id a signer printed, or "" when it printed none."""
+    m = _REQUEST_ID_RE.search(log or "")
+    return m.group(1) if m else ""
+
+
 def sign_csr(cert_class: str, csr_pem: str) -> tuple[str, str]:
     """Run the ACTIVE protocol's signing command against the CSR. Returns
     ``(cert_pem, log)``.
@@ -554,6 +563,12 @@ def create_certificate(appliance, cn: str, cert_class: str, *, extra_sans=None,
     row.expires_at = meta["expires_at"]
     if meta["sans"]:
         row.sans = meta["sans"]
+    # The ADCS request id, for a revoke command that references {request_id}.
+    # certipy / certreq print it ("Request ID is 42", "RequestId: 42"); a
+    # signer that does not leaves the column empty, as before.
+    rid = ca_request_id_from_log(sign_log)
+    if rid:
+        row.ca_request_id = rid
     db.session.commit()
     _event(row, "sign", True,
            f"signed serial={row.serial} expires={row.expires_at}", by=actor)
@@ -1060,7 +1075,7 @@ def expiring_certificates(appliance_id: int | None, cert_class: str,
     or revoked — the renewal candidates."""
     q = ManagedCertificate.query.filter(
         ManagedCertificate.cert_class == cert_class,
-        ManagedCertificate.status.in_(("active", "pending", "expiring")))
+        ManagedCertificate.status.in_(("active", "pending")))
     if appliance_id is not None:
         q = q.filter(ManagedCertificate.appliance_id == appliance_id)
     out = []

@@ -493,7 +493,7 @@ def probe(host: str, port: int = 443, timeout: float = 8.0) -> dict:
         if name_ok:
             res["reason"] = "certificate chain and hostname both verify"
             res["advice"] = ("This appliance can run with TLS verification ON. "
-                             "Tick 'Verify TLS' on its Appliance record.")
+                             "Tick 'Verify SSL Certificate' on its Appliance record.")
         else:
             names = ", ".join(res["leaf"]["sans"]) or res["leaf"]["common_name"]
             res["reason"] = f"chain is trusted but the hostname does not match: {name_err}"

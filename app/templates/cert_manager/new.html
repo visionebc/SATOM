@@ -16,14 +16,14 @@
   <div>
     <h1 class="fw-page-title"><i class="bi bi-plus-lg me-2 text-accent"></i>{{ _('New Certificate') }}</h1>
     <p class="text-muted mb-0" style="font-size:13px;">
-      {{ _('Generate a CSR, sign it at your ADCS, and (optionally) deploy the cert + key to the device. The new certificate is') }} <strong>{{ _('not') }}</strong> {{ _('bound to any policy — swap it in during a maintenance window.') }}
+      {{ _('Generate a CSR, have it signed by your CA') }} ({{ 'ACME' if protocol == 'acme' else 'ADCS' }}), {{ _('and (optionally) deploy the cert + key to the appliance. The new certificate is') }} <strong>{{ _('not') }}</strong> {{ _('bound to any policy — swap it in during a maintenance window.') }}
     </p>
   </div>
 </div>
 
 {% if not configured %}
 <div class="alert alert-warning" style="font-size:13px;">
-  {{ _('Configure the ADCS connection first in') }} <a href="{{ url_for('cert_manager.settings') }}">{{ _('Settings') }}</a>.
+  {{ _('Configure the') }} {{ 'ACME issuer' if protocol == 'acme' else 'ADCS connection' }} {{ _('first in') }} <a href="{{ url_for('cert_manager.settings') }}">{{ _('Settings') }}</a>.
 </div>
 {% endif %}
 
@@ -33,7 +33,7 @@
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="row g-3">
         <div class="col-md-6">
-          <label class="fw-form-label">{{ _('Target FortiWeb') }}</label>
+          <label class="fw-form-label">{{ _('Target appliance') }}</label>
           <select class="form-select fw-form-control" name="appliance_id" required>
             <option value="">{{ _('— select —') }}</option>
             {% for a in appliances %}
@@ -60,7 +60,7 @@
         <div class="col-12">
           <div class="form-check">
             <input class="form-check-input" type="checkbox" name="deploy" id="dep" checked>
-            <label class="form-check-label" for="dep">{{ _('Deploy to the device after signing (upload cert + key over SSH)') }}</label>
+            <label class="form-check-label" for="dep">{{ _('Deploy to the appliance after signing (FortiWeb: cert + key over SSH; FortiADC: REST upload)') }}</label>
           </div>
         </div>
       </div>

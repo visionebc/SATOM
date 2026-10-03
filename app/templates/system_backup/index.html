@@ -27,28 +27,28 @@
         <tr>
           <td><strong>{{ _('Database — live') }}</strong></td>
           <td>{{ _('PostgreSQL') }}</td>
-          <td>{{ _('Primary 248 (read-write) · standby 249 (streaming replica)') }}</td>
+          <td>{{ _('Primary (read-write) · standby (streaming replica)') }}</td>
           <td>{{ _('WAL streaming replication (continuous)') }}</td>
           <td>{% if peer.reachable %}<span class="badge bg-success">{{ _('replica reachable') }}</span>{% elif peer.host %}<span class="badge bg-danger">{{ _('standby unreachable') }}</span>{% else %}<span class="badge bg-secondary">{{ _('standalone') }}</span>{% endif %}</td>
         </tr>
         <tr>
           <td><strong>{{ _('Database — bundles') }}</strong></td>
           <td><code>.tar.gz</code> (pg_dump + <code>reports/</code>)</td>
-          <td>This node <code>data/system_backups/</code> · standby (rsync) · <strong>backup-server <code>/system/</code></strong> {{ _('(off-rack)') }}</td>
-          <td>Nightly 01:30 (<code>system_backup</code>, id11) + manual; pushed to backup-server by default</td>
+          <td>This node <code>data/system_backups/</code> · standby (rsync) · <strong>{{ _('backup server') }} <code>/system/</code></strong> {{ _('(off-rack)') }}</td>
+          <td>{{ _('Nightly (scheduled action') }} <code>system_backup</code>{{ _(') + manual; both push to the backup server when one is configured (manual: the box on Create backup)') }}</td>
           <td>
             <span class="badge bg-{{ 'success' if backups else 'secondary' }}">{{ backups|length }} local</span>
             {% if bk_system.configured %}
-              {% if bk_system.reachable %}<span class="badge bg-{{ 'success' if bk_system.files else 'warning text-dark' }}">{{ bk_system.files|length }} on backup-server</span>
-              {% else %}<span class="badge bg-danger">{{ _('backup-server unreachable') }}</span>{% endif %}
+              {% if bk_system.reachable %}<span class="badge bg-{{ 'success' if bk_system.files else 'warning text-dark' }}">{{ bk_system.files|length }} on the backup server</span>
+              {% else %}<span class="badge bg-danger">{{ _('backup server unreachable') }}</span>{% endif %}
             {% endif %}
           </td>
         </tr>
         <tr>
           <td><strong>{{ _('Device config — source of truth') }}</strong></td>
           <td><code>_config.json</code> (latest view) + content-addressed versions (<code>data/sot/</code>)</td>
-          <td>This node · standby (rsync) · backup-server <code>/system/sot/</code> · cache in Postgres</td>
-          <td>{{ _('Hourly sync (id5) records a version on every config change; nightly publish 02:45 (id12) pushes new blobs off-box — FortiWeb, FortiADC') }} <em>{{ _('and') }}</em> {{ _('FortiAnalyzer') }}</td>
+          <td>This node · standby (rsync) · backup server <code>/system/sot/</code> · cache in Postgres</td>
+          <td>{{ _('Hourly device sync records a version on every config change; the nightly publish pushes new blobs off-box — FortiWeb, FortiADC') }} <em>{{ _('and') }}</em> {{ _('FortiAnalyzer') }}</td>
           <td>
             {% set covered = sot|selectattr('has_json')|list|length %}
             <span class="badge bg-{{ 'success' if covered == sot|length and sot else 'warning text-dark' }}">{{ covered }}/{{ sot|length }} devices</span>
@@ -58,7 +58,7 @@
         <tr>
           <td><strong>{{ _('Git repository (application code)') }}</strong></td>
           <td><code>.bundle</code> (full history, all refs)</td>
-          <td>This node <code>data/git-bundles/</code> · standby (rsync) · <strong>backup-server <code>{{ gitb_cfg.remote_dir }}</code></strong> {{ _('· your laptop (download)') }}</td>
+          <td>This node <code>data/git-bundles/</code> · standby (rsync) · <strong>{{ _('backup server') }} <code>{{ gitb_cfg.remote_dir }}</code></strong> {{ _('· your laptop (download)') }}</td>
           <td>{{ _('Manual (below); captures CODE commits that cannot reach Gitea. Device-config history moved to the SoT store') }}</td>
           <td>
             <span class="badge bg-{{ 'success' if gitb else 'secondary' }}">{{ gitb|length }} local</span>
@@ -76,8 +76,8 @@
         <tr>
           <td><strong>{{ _('Appliance-pushed config') }}</strong></td>
           <td>{{ _('Fortinet config archive (zip)') }}</td>
-          <td>backup-server <code>/configs/&lt;device&gt;/</code> (independent of this app)</td>
-          <td>Each appliance pushes on its own schedule (<code>config system backup</code> → SFTP; fw6 daily 02:00)</td>
+          <td>{{ _('backup server') }} <code>/configs/&lt;device&gt;/</code> (independent of this app)</td>
+          <td>Each appliance pushes on its own schedule (<code>config system backup</code> → SFTP)</td>
           <td>
             {% if not bk.configured %}<span class="badge bg-secondary">{{ _('not configured') }}</span>
             {% elif not bk.reachable %}<span class="badge bg-danger">{{ _('unreachable') }}</span>
@@ -87,7 +87,7 @@
         <tr>
           <td><strong>{{ _('Firmware') }}</strong></td>
           <td><code>.out</code> binaries + manifest</td>
-          <td>backup-server <code>/firmware/</code> · manifest in firmware SoT repo · pullable into the console</td>
+          <td>{{ _('backup server') }} <code>/firmware/</code> · manifest in firmware SoT repo · pullable into the console</td>
           <td>{{ _('Uploaded to the backup server; Pull → Infrastructure → Firmware (sha256-verified)') }}</td>
           <td>
             {% if not bk.configured %}<span class="badge bg-secondary">{{ _('not configured') }}</span>
@@ -145,7 +145,7 @@
     <div class="card mb-3"><div class="card-header"><strong><i class="bi bi-hdd-stack me-1"></i>{{ _('Versioned SoT store (local)') }}</strong></div>
       <div class="card-body">
         <table class="table table-sm mb-2"><tbody>
-          <tr><td class="small text-muted" style="width:130px;">{{ _('Location') }}</td><td class="small font-monospace">{{ _('data/sot/ (replicated to the standby; blobs pushed to backup-server)') }}</td></tr>
+          <tr><td class="small text-muted" style="width:130px;">{{ _('Location') }}</td><td class="small font-monospace">{{ _('data/sot/ (replicated to the standby; blobs pushed to the backup server)') }}</td></tr>
           <tr><td class="small text-muted">{{ _('Devices') }}</td><td class="small">{{ sot_stats.devices }}</td></tr>
           <tr><td class="small text-muted">{{ _('Versions') }}</td><td class="small">{{ sot_stats.versions }} ({{ sot_stats.blobs }} distinct blob(s), {{ (sot_stats.bytes/1024)|round(0)|int }} KB)</td></tr>
         </tbody></table>
@@ -509,15 +509,15 @@
             <td>{{ _('≈ seconds (DB) / ≤ 5 min (files)') }}</td></tr>
         <tr><td><strong>{{ _('3. Versioned SoT store (local + off-box)') }}</strong></td>
             <td>Content-addressed snapshots of every device's config (<code>data/sot/objects/</code>, gzip, deduplicated — an unchanged config costs zero bytes per cycle) with the version index in Postgres. Replaced the git-committed <code>reports/</code> history on 2026-08-05: a repo receiving the whole fleet hourly grows without bound at scale, and this store keeps working with Gitea down</td>
-            <td>Hourly sync (<code>device_sync</code>, id5) records a version on every config CHANGE; nightly <code>device_inspect</code> (id12, 02:45) uploads new blobs to backup-server <code>/system/sot/</code>; plus the manual button</td>
+            <td>Hourly sync (<code>device_sync</code>) records a version on every config CHANGE; nightly <code>device_inspect</code> uploads new blobs to the backup server <code>/system/sot/</code>; plus the manual button</td>
             <td>{{ _('≤ 1 h (or on demand)') }}</td></tr>
-        <tr><td><strong>{{ _('4. External backup server (backup-server)') }}</strong></td>
+        <tr><td><strong>{{ _('4. External backup server') }}</strong></td>
             <td><strong>{{ _('App-pushed DB bundle') }}</strong> (<code>/system/</code> — this app's pg_dump, off-rack) · device-pushed config backups (<code>/configs/&lt;device&gt;/</code>) · firmware <code>.out</code> binaries (<code>/firmware/</code>)</td>
-            <td>The nightly <code>system_backup</code> (id11) pushes the pg_dump bundle to <code>/system/</code> over SFTP (default on). Separately, the appliances push their OWN config backups (<code>config system backup</code> → SFTP, e.g. fw6 daily 02:00) — zero dependency on this app or either HA node</td>
-            <td>{{ _('DB: ≤ 24 h · per-device schedule (fw6: ≤ 24 h)') }}</td></tr>
+            <td>The nightly <code>system_backup</code> pushes the pg_dump bundle to <code>/system/</code> over SFTP (default on). Separately, the appliances push their OWN config backups (<code>config system backup</code> → SFTP, on each appliance's own schedule) — zero dependency on this app or either HA node</td>
+            <td>{{ _('DB: ≤ 24 h · per-device schedule') }}</td></tr>
       </tbody>
     </table>
-    <p class="text-muted mb-2">Git now holds only the application CODE. Device-config history, pg_dump bundles and raw device-config exports all live under <code>data/</code>: they travel via rsync to the standby, and the pg_dump bundle + SoT blobs are additionally pushed to backup-server <code>/system/</code> so they have an off-rack copy on a separate failure domain. No backup copy depends on an external service being up.</p>
+    <p class="text-muted mb-2">Git now holds only the application CODE. Device-config history, pg_dump bundles and raw device-config exports all live under <code>data/</code>: they travel via rsync to the standby, and the pg_dump bundle + SoT blobs are additionally pushed to the backup server <code>/system/</code> so they have an off-rack copy on a separate failure domain. No backup copy depends on an external service being up.</p>
     <p class="text-muted mb-2">{{ _('The device-pushed backups on the external server are browsable here:') }} <em>{{ _('External backup server') }}</em> {{ _('card →') }} <strong>{{ _('Browse') }}</strong> {{ _('— compare two pushes (A → B), search inside B,') }} <strong>{{ _('click a filename') }}</strong> {{ _('(or') }} <em>{{ _('View B') }}</em>) to read the extracted config text inline, or download the raw archive. Firmware <code>.out</code> images listed there are pulled into Infrastructure → Firmware, sha256-verified.</p>
 
     <h6>{{ _('Rollback / restore procedures') }}</h6>
@@ -525,7 +525,7 @@
       <li><strong>{{ _('Whole instance') }}</strong> {{ _('— pick a bundle above →') }} <em>{{ _('Restore') }}</em> (type <code>RESTORE</code>). Takes a safety dump first, then <code>pg_restore --clean</code> + replaces <code>reports/</code>. If this node is dead, the same bundles exist on the backup server under <code>/opt/satom/data/system_backups/</code>.</li>
       <li><strong>{{ _('One device\'s JSON to an older version') }}</strong> {{ _('— pick the two versions in') }} <em>{{ _('Device config versions') }}</em>{{ _(', verify with') }} <em>{{ _('Compare') }}</em>. The store keeps every recorded version under <code>data/sot/objects/</code> (gzip JSON, named by sha256) — extract with <code>zcat</code> to inspect or re-import. This rolls back the JSON snapshot only — it does NOT push config to the device (use Templates/Provisioning for that).</li>
       <li><strong>{{ _('Single appliance config') }}</strong> {{ _('— use the per-appliance Backups page (vault); device-level restore is currently dry-run gated pending a live canary round-trip.') }}</li>
-      <li><strong>{{ _('Total loss of both nodes') }}</strong> — reinstall from Gitea or an installer bundle (code), then restore the newest DB bundle from any surviving copy (downloaded bundle, backup-server <code>/system/</code>, or the device-pushed backups on the external backup server). The bundle carries <code>data/reports/</code> AND the SoT store, so version history survives too.</li>
+      <li><strong>{{ _('Total loss of both nodes') }}</strong> — reinstall from Gitea or an installer bundle (code), then restore the newest DB bundle from any surviving copy (downloaded bundle, the backup server's <code>/system/</code>, or the device-pushed backups on the external backup server). The bundle carries <code>data/reports/</code> AND the SoT store, so version history survives too.</li>
       <li><strong>{{ _('Application code to an older version') }}</strong> — <em>{{ _('Application code') }}</em> {{ _('card above → pick the commit → Queue rollback. Goes through the self-update runner (checkout + pip + migrate + restart). Roll the standby the same way afterwards. Note: newer DB schema is not auto-downgraded — pair a code rollback with a database bundle restore when a migration was involved.') }}</li>
       <li><strong>{{ _('Firmware') }}</strong> — the <code>.out</code> images live on the external backup server (<code>/firmware/</code>), inventoried in the firmware SoT repo (manifest). <em>{{ _('Pull') }}</em> {{ _('brings the image into Infrastructure → Firmware (sha256-verified) and the per-appliance') }} <em>{{ _('Upgrade / Downgrade') }}</em> action flashes it from the console. A device factory-reset recovery = flash firmware + restore its own pushed config backup from <code>/configs/&lt;device&gt;/</code>.</li>
     </ol>
@@ -700,7 +700,7 @@
         .then(function (r) { return r.json(); })
         .then(function (d) {
           if (!d.configured) {
-            box.innerHTML = '<div class="alert alert-warning small py-2 mb-0">No backup server configured (Settings → SoT &amp; Backup).</div>';
+            box.innerHTML = '<div class="alert alert-warning small py-2 mb-0">No backup server configured (Settings → Source of Truth &amp; Backup → Backup Server).</div>';
             return;
           }
           if (!d.reachable) {

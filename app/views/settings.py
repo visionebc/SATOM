@@ -49,7 +49,6 @@ from ..services import faz_menu
 from ..services import alert_routing
 from ..services import alerts as alerts_svc
 from ..services.audit import log_action
-from . import _segments_form as segment_form
 
 bp = Blueprint('settings', __name__, url_prefix='/settings')
 
@@ -893,10 +892,10 @@ def delete_acme_provider(slug):
     return redirect(url_for('settings.index') + '#tab-certmgr')
 
 
-# The legacy POST /settings/naming is GONE (2026-10-03). Settings has no
-# Naming tab; the Naming page (naming.save) is the one writer, per product.
-# The old route wrote every element of BOTH products into the FortiWeb key,
-# so a partial post wiped FortiWeb's overrides.
+# POST /settings/naming and /settings/segments are GONE (2026-10-03 audit,
+# AD-58): nothing posted to them any more and both redirected to Settings tabs
+# that no longer exist. The writers are naming.save and segments.save, on the
+# pages that own those editors.
 
 
 # The blob-textarea POST that used to live here is GONE. It was already
@@ -907,23 +906,6 @@ def delete_acme_provider(slug):
 # Appliance / Baseline / segment reference in silence: exactly the failure
 # services/classification_ops.py exists to prevent. One writer, one set of
 # guards. See classification.save.
-
-
-@bp.route('/segments', methods=['POST'])
-@login_required
-@require_permission(Permission.USER_MANAGE)
-def save_segments():
-    rows, bad_cidr = segment_form.parse_rows(request.form)
-    try:
-        store.save_segments(rows)
-    except store.SegmentError as exc:
-        flash(str(exc), 'danger')
-        return redirect(url_for('settings.index') + '#tab-segments')
-    log_action('settings.segments', detail=f'{len(rows)} segment(s)')
-    if bad_cidr:
-        flash(f"Skipped invalid CIDR(s): {', '.join(bad_cidr)}", 'warning')
-    flash(f'{len(rows)} network segment(s) saved.', 'success')
-    return redirect(url_for('settings.index') + '#tab-segments')
 
 
 @bp.route('/access', methods=['POST'])
@@ -1757,10 +1739,10 @@ def save_dns_tool():
         saved = dns_tool_svc.save_dns_servers(rows)
     except ValueError as exc:
         flash(str(exc), 'danger')
-        return redirect(url_for('settings.index'))
+        return redirect(url_for('settings.index') + '#tab-dnstool')
     log_action('settings.dns_tool', target='dnstool.servers')
     flash(f'DNS server list saved ({len(saved)} servers).', 'success')
-    return redirect(url_for('settings.index'))
+    return redirect(url_for('settings.index') + '#tab-dnstool')
 
 
 # ---------------------------------------------------------------------------

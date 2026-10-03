@@ -430,7 +430,7 @@
               </h6>
             <div class="mb-3">
               <label class="form-label" style="font-size:13px;">{{ _('Remote URL') }} <span class="text-muted">{{ _('(without token)') }}</span></label>
-              <input type="url" id="gc-remote" class="form-control fw-form-control font-monospace" placeholder="{{ _('https://git.example.net/satom-dev/satom.git') }}">
+              <input type="url" id="gc-remote" class="form-control fw-form-control font-monospace" placeholder="{{ _('https://git.example.com/satom/satom.git') }}">
             </div>
             <div class="mb-3">
               <label class="form-label" style="font-size:13px;">{{ _('Token') }} <span class="text-muted">{{ _('(optional, embedded in URL)') }}</span></label>
@@ -782,7 +782,7 @@
             <div class="col-8">
               <label class="form-label">{{ _('Host') }}</label>
               <input type="text" name="host" class="form-control fw-form-control font-monospace"
-                     value="{{ sot_backup_server.host }}" placeholder="{{ _('backup-server.example.net') }}">
+                     value="{{ sot_backup_server.host }}" placeholder="{{ _('backup.example.com') }}">
             </div>
             <div class="col-4">
               <label class="form-label">{{ _('Port') }}</label>
@@ -944,8 +944,8 @@
     {% include 'users/_panel.html' %}
   </div>
   {% endif %}
-  {% if is_admin %}
-  <!-- PROFILES TAB -->
+  {% if is_admin and current_user.can('profiles.manage') %}
+  <!-- PROFILES TAB (every /profiles/ route needs profiles.manage) -->
   <div class="tab-pane fade" id="tab-profiles">
     {% set counts = profiles_counts %}
     {% include 'profiles/_panel.html' %}
@@ -1728,8 +1728,8 @@
               </div>
               <div class="mb-3">
                 <label class="fw-form-label">{{ _('Default profile for new directory users') }}</label>
-                <input type="text" name="default_profile" class="form-control fw-form-control" value="{{ auth_config.default_profile }}" placeholder="{{ _('operator') }}">
-                <div class="form-text">{{ _('A directory user is created on first sign-in with this profile; an admin can elevate them later under Users.') }}</div>
+                <input type="text" name="default_profile" class="form-control fw-form-control" value="{{ auth_config.default_profile }}" placeholder="readonly">
+                <div class="form-text">{{ _('A directory user is created on first sign-in with this profile (empty = readonly); an admin can elevate them later under Users.') }}</div>
               </div>
               <div class="mb-3 form-check">
                 <input class="form-check-input" type="checkbox" name="require_approval" id="auth-require-approval" {{ 'checked' if auth_config.require_approval else '' }}>
@@ -4022,7 +4022,7 @@
           <code title="{{ desc }}">&#123;{{ tok }}&#125;</code>{% if not loop.last %} {% endif %}
           {% endfor %}
           <div class="text-muted mt-1" style="font-size:11.5px;">
-            Example: <code>https://splunk.example.net/en-US/app/search/search?q=policy%3D&#123;policy&#125;%20vip%3D&#123;vip&#125;</code>
+            Example: <code>https://splunk.example.com/en-US/app/search/search?q=policy%3D&#123;policy&#125;%20vip%3D&#123;vip&#125;</code>
             &mdash; a link naming a field the policy doesn't have (e.g. <code>&#123;vip&#125;</code> on a
             policy with no VIP) is skipped, never rendered broken.
           </div>
@@ -4399,7 +4399,7 @@
           <div class="row g-3 mb-3">
             <div class="col-md-6">
               <label class="form-label">{{ _('Brand logo') }} <span class="text-muted">{{ _('(optional)') }}</span></label>
-              <input type="file" name="logo" class="form-control" accept=".png,.jpg,.jpeg,.webp,.gif,.svg">
+              <input type="file" name="logo" class="form-control" accept=".png,.jpg,.jpeg,.webp,.gif,.ico,.svg">
               <div class="form-text">
                 {{ _('Replaces the top-bar mark in every ADOM while this theme is active. Leave empty to keep the per-ADOM marks from') }} <a href="#tab-adoms" data-tab-jump="#tab-adoms">Settings&nbsp;&rarr;&nbsp;ADOMs</a>.
                 <label class="ms-2"><input type="checkbox" name="clear_logo" value="1"> {{ _('remove current') }}</label>
@@ -4407,7 +4407,7 @@
             </div>
             <div class="col-md-6">
               <label class="form-label">{{ _('Favicon') }} <span class="text-muted">{{ _('(optional)') }}</span></label>
-              <input type="file" name="favicon" class="form-control" accept=".png,.ico,.svg">
+              <input type="file" name="favicon" class="form-control" accept=".png,.jpg,.jpeg,.webp,.gif,.ico,.svg">
               <div class="form-text">
                 <label><input type="checkbox" name="clear_favicon" value="1"> {{ _('remove current') }}</label>
               </div>
@@ -4853,38 +4853,10 @@
     </div>
 
     <div class="row g-3">
-      <div class="col-lg-7">
-        <div class="fw-card">
-          <div class="fw-card-header">
-            <span class="fw-card-title"><i class="bi bi-shield-check me-2 text-accent"></i>{{ _('Security Status') }}</span>
-          </div>
-          <div class="fw-card-body">
-            {% set checks = [
-              ('CSRF Protection', True, 'All form submissions require a valid CSRF token'),
-              ('Session Cookies', True, 'HttpOnly + SameSite=Lax flags enforced'),
-              ('Security Headers', True, 'X-Frame-Options, X-Content-Type, CSP, HSTS enabled'),
-              ('Rate Limiting', True, '5 login attempts per minute per IP'),
-              ('Credential Encryption', True, 'API credentials encrypted with Fernet at rest'),
-              ('Password Hashing', True, 'scrypt with strong cost parameters'),
-              ('Audit Logging', True, 'All user actions logged with timestamp and IP'),
-              ('TLS Verification', True, 'SSL cert verification enabled by default per appliance'),
-            ] %}
-            {% for name, ok, desc in checks %}
-            <div class="d-flex align-items-start gap-3 py-2" style="border-bottom:1px solid #F0F2F5;">
-              <div class="mt-1">
-                {% if ok %}<i class="bi bi-check-circle-fill" style="color:var(--fw-success); font-size:16px;"></i>
-                {% else %}<i class="bi bi-x-circle-fill" style="color:var(--fw-danger); font-size:16px;"></i>{% endif %}
-              </div>
-              <div>
-                <div style="font-size:13.5px; font-weight:500;">{{ name }}</div>
-                <div style="font-size:12px; color:#6C757D;">{{ desc }}</div>
-              </div>
-            </div>
-            {% endfor %}
-          </div>
-        </div>
-      </div>
-
+      {# The hard-coded, all-green "Security Status" card was removed in the
+         2026-10-03 audit (AD-60): it computed nothing and claimed things that
+         were not true (e.g. "all user actions logged"). The live checks are on
+         Monitoring -> SATOM health. #}
       <div class="col-lg-5">
         <div class="fw-card">
           <div class="fw-card-header">

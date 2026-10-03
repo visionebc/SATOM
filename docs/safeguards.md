@@ -3156,7 +3156,11 @@ Two traps worth keeping:
   a fabricated series. CPU and memory keep coming from the read-only CLI.
 * `status_history/vs_status` is the analogue of FortiWeb's `policystatus`: ONE
   call carries the whole vdom, which is why virtual servers are a *collector*
-  and not a probe-per-service.
+  and not a probe-per-service. Its figures are a vdom aggregate with no
+  `policy` label, so they are published as `satom_adc_*` (including
+  `satom_adc_client_rtt_ms`, `satom_adc_server_rtt_ms`,
+  `satom_adc_app_response_ms`); only per-virtual-server rows use the shared
+  `satom_policy_*` names.
 
 Where a shape could not be verified against live hardware (FortiAnalyzer: none
 reachable since July 2026), the payload is read **defensively** and an

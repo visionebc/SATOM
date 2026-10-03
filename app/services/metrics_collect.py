@@ -492,12 +492,17 @@ def _collect_vservers(appliance, params, ts) -> list:
     so a device with 500 virtual servers costs one round trip. That shape is
     the entire reason this is a collector and not a probe-per-service.
 
-    Metric NAMES are deliberately shared with FortiWeb's server policies. A
-    server policy and a virtual server are the same concept — a published
-    service — and ``sessions``/``client_rtt``/``server_rtt``/``app_response``
-    mean the same thing on both. The ``kind`` label says which product a
-    series came from, so one fleet-wide expression covers both instead of
-    every dashboard carrying a per-product branch.
+    PER-VIRTUAL-SERVER metric names are deliberately shared with FortiWeb's
+    server policies (``satom_policy_up`` / ``_sessions`` / ``_conn_per_sec``,
+    each with a ``policy`` label). A server policy and a virtual server are the
+    same concept — a published service — and the ``kind`` label says which
+    product a series came from, so one fleet-wide expression covers both.
+
+    The vdom AGGREGATE (``vs_status``) is device-level and therefore carries
+    no ``policy`` label, so it is published under ``satom_adc_*`` names only —
+    including the RTT / app-response figures. Publishing those under the
+    ``satom_policy_*`` names made a per-service panel (``policy=~"$policy"``)
+    look as if it covered FortiADC virtual servers while it never matched one.
 
     Endpoint provenance: censused out of the GUI bundle and verified live on
     FortiADC-KVM 8.0.3 (2026-08-06). FortiADC has no ``monitor/`` namespace —
@@ -523,9 +528,9 @@ def _collect_vservers(appliance, params, ts) -> list:
             ("satom_adc_response_errors_total", "response_errors"),
             ("satom_adc_in_bytes_total", "in_bytes"),
             ("satom_adc_out_bytes_total", "out_bytes"),
-            ("satom_policy_client_rtt_ms", "client_rtt"),
-            ("satom_policy_server_rtt_ms", "server_rtt"),
-            ("satom_policy_app_response_ms", "app_response")):
+            ("satom_adc_client_rtt_ms", "client_rtt"),
+            ("satom_adc_server_rtt_ms", "server_rtt"),
+            ("satom_adc_app_response_ms", "app_response")):
         lines.append(vm_store.line(metric, L, _num(agg.get(key)), ts))
 
     # Per-virtual-server rows. UNVERIFIED SHAPE: both lab FortiADCs are

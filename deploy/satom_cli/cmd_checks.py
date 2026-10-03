@@ -40,6 +40,7 @@ MIN_ACTIONS = {
     "system_backup": "nightly database bundle",
     "deep_monitor": "probe sweep",
     "metrics_scrape": "fleet metrics collection (VictoriaMetrics)",
+    "inventory_snapshot": "daily inventory counts (Metrics trend)",
     # The sweep records; this is what carries the record to a human. Without it
     # the rollups accumulate for ninety days and nobody is told anything unless
     # they open the console, which is the same shape of gap as an unarmed
